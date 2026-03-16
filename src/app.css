@@ -1,0 +1,151 @@
+@config "../tailwind.config.ts";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Legacy Colors (kept for backward compatibility) */
+    --bg-primary: #FFFFFF;
+    --bg-secondary: #F4F3EE;
+    --bg-message-user: #F4F3EE;
+    --bg-message-assistant: #FFFFFF;
+    --bg-code: #F5F5F0;
+    --bg-hover: #EEEDEA;
+    
+    --text-primary: #1A1A1A;
+    --text-secondary: #6B6B6B;
+    --text-code: #1A1A1A;
+    
+    --accent: #C15F3C;
+    --accent-hover: #AE5630;
+    
+    --border: rgba(0,0,0,0.08);
+    --border-focus: #C15F3C;
+    
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+
+    /* Semantic Tokens - Surface */
+    --surface-page: #FFFFFF;
+    --surface-elevated: #F4F3EE;
+    --surface-overlay: #FFFFFF;
+    
+    /* Semantic Tokens - Text */
+    --text-muted: #6B6B6B;
+    
+    /* Semantic Tokens - Icon */
+    --icon-primary: #1A1A1A;
+    --icon-muted: #6B6B6B;
+    
+    /* Semantic Tokens - Status */
+    --danger: #DC2626;
+    --danger-hover: #B91C1C;
+    --success: #16A34A;
+    --success-hover: #15803D;
+    
+    /* Semantic Tokens - Interactive */
+    --focus-ring: #C15F3C;
+
+    /* Spacing System */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 48px;
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+  }
+
+  .dark {
+    /* Legacy Colors (kept for backward compatibility) */
+    --bg-primary: #1A1A1A;
+    --bg-secondary: #242424;
+    --bg-message-user: #2A2A2A;
+    --bg-message-assistant: #1A1A1A;
+    --bg-code: #2A2A2A;
+    --bg-hover: #333333;
+    
+    --text-primary: #ECECEC;
+    --text-secondary: #8A8A8A;
+    --text-code: #ECECEC;
+    
+    --accent: #D4836B;
+    --accent-hover: #C15F3C;
+    
+    --border: rgba(255,255,255,0.08);
+    --border-focus: #D4836B;
+    
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+    --shadow-md: 0 2px 8px rgba(0,0,0,0.2);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,0.2);
+
+    /* Semantic Tokens - Surface */
+    --surface-page: #1A1A1A;
+    --surface-elevated: #242424;
+    --surface-overlay: #2A2A2A;
+    
+    /* Semantic Tokens - Text */
+    --text-muted: #8A8A8A;
+    
+    /* Semantic Tokens - Icon */
+    --icon-primary: #ECECEC;
+    --icon-muted: #8A8A8A;
+    
+    /* Semantic Tokens - Status */
+    --danger: #EF4444;
+    --danger-hover: #DC2626;
+    --success: #22C55E;
+    --success-hover: #16A34A;
+    
+    /* Semantic Tokens - Interactive */
+    --focus-ring: #D4836B;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer components {
+  /* Prefers reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  .prose pre {
+    background-color: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    overflow-x: auto;
+    margin: var(--space-md) 0;
+  }
+  
+  .prose code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    background-color: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+  }
+  
+  .prose pre code {
+    background-color: transparent;
+    padding: 0;
+    font-size: 14px;
+  }
+}
