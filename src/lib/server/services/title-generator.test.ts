@@ -140,6 +140,27 @@ describe('generateTitle', () => {
     expect(title).toBe('Quoted Title');
   });
 
+  it('uses reasoning when content is null', async () => {
+    const mockFetch = vi.mocked(fetch);
+    const mockResponse = new Response(JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: null,
+            reasoning: 'Greeting and Assistance Offered'
+          }
+        }
+      ]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+    mockFetch.mockResolvedValue(mockResponse);
+
+    const title = await generateTitle('User', 'Assistant');
+    expect(title).toBe('Greeting and Assistance Offered');
+  });
+
   it('handles nemotron-nano being unreachable (throws)', async () => {
     const mockFetch = vi.mocked(fetch);
     const mockResponse = new Response(JSON.stringify({ error: 'Internal Server Error' }), {
@@ -153,7 +174,7 @@ describe('generateTitle', () => {
     );
   });
 
-  it('throws error when empty title generated', async () => {
+  it('falls back to the user message when the model returns no title', async () => {
     const mockFetch = vi.mocked(fetch);
     const mockResponse = new Response(JSON.stringify({
       choices: [
@@ -169,8 +190,7 @@ describe('generateTitle', () => {
     });
     mockFetch.mockResolvedValue(mockResponse);
 
-    await expect(generateTitle('User', 'Assistant')).rejects.toThrow(
-      'Empty title generated'
-    );
+    await expect(generateTitle('User asks for server deployment help', 'Assistant'))
+      .resolves.toBe('User asks for server deployment help');
   });
 });

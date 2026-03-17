@@ -1,6 +1,16 @@
 // src/lib/server/services/title-generator.ts
 import { config } from '../env';
 
+function fallbackTitle(userMessage: string): string {
+  const normalized = userMessage.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'New Conversation';
+  }
+
+  const words = normalized.split(' ').slice(0, 8);
+  return words.join(' ');
+}
+
 /**
  * Generate a conversation title using nemotron-nano
  * @param userMessage The user's message
@@ -38,10 +48,17 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   }
   
   const json = await response.json();
-   const title = json.choices?.[0]?.message?.content?.trim();
+  const message = json.choices?.[0]?.message;
+  const title = (
+    typeof message?.content === 'string' && message.content.trim()
+      ? message.content.trim()
+      : typeof message?.reasoning === 'string' && message.reasoning.trim()
+        ? message.reasoning.trim()
+        : ''
+  );
   
   if (!title) {
-    throw new Error('Empty title generated');
+    return fallbackTitle(userMessage);
   }
   
   // Remove surrounding quotes
