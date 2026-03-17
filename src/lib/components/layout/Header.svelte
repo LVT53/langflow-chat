@@ -38,11 +38,11 @@
 </script>
 
 <header
-	class="flex flex-none h-12 md:h-14 lg:h-16 w-full items-center justify-between border-b border-border bg-surface-page px-safe pt-safe shrink-0 box-content overflow-hidden"
+	class="flex flex-none h-[48px] md:h-[56px] lg:h-[64px] w-full items-center justify-between border-b border-border bg-surface-page px-safe pt-safe shrink-0 box-content overflow-hidden"
 >
-	<div class="flex items-center gap-2">
+	<div class="flex items-center gap-sm">
 		<button
-			class="inline-flex shrink-0 h-11 w-11 items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-primary"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] h-[44px] w-[44px] items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-primary"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -68,10 +68,10 @@
 		<div class="text-[16px] md:text-xl font-sans font-bold tracking-tight text-text-primary">AlfyAI</div>
 	</div>
 
-	<div class="flex items-center gap-2 md:gap-4">
+	<div class="flex items-center gap-sm md:gap-md">
 		<ThemeToggle />
 		<button
-			class="inline-flex shrink-0 h-11 w-11 items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] h-[44px] w-[44px] items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md"
 			on:click={handleNewConversation}
 			aria-label="New chat"
 			title="New chat"
@@ -79,12 +79,12 @@
 			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 		</button>
 		{#if user}
-			<span class="text-sm font-sans text-text-muted hide-on-mobile">
+			<span class="text-[14px] font-sans text-text-muted hide-on-mobile">
 				{user.displayName}
 			</span>
 		{/if}
 		<button
-			class="inline-flex shrink-0 h-11 items-center justify-center rounded-md bg-surface-elevated px-4 py-2 text-sm font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
+			class="inline-flex shrink-0 min-h-[44px] h-[44px] items-center justify-center rounded-md bg-surface-elevated px-[16px] py-[8px] text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
 			data-testid="logout-button"
 			on:click={handleLogout}
 		>

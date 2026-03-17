@@ -14,12 +14,12 @@
 
 <button
 	data-testid="theme-toggle"
-	class="relative inline-flex shrink-0 h-11 w-11 items-center justify-center rounded-md text-icon-muted hover:bg-surface-elevated hover:text-icon-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
+	class="relative inline-flex shrink-0 min-h-[44px] min-w-[44px] h-[44px] w-[44px] items-center justify-center rounded-md text-icon-muted hover:bg-surface-elevated hover:text-icon-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
 	on:click={toggleTheme}
 	title={tooltipText}
 	aria-label="Toggle theme"
 >
-	<div class="relative flex h-5 w-5 items-center justify-center overflow-hidden">
+	<div class="relative flex h-[20px] w-[20px] items-center justify-center overflow-hidden">
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
 			viewBox="0 0 24 24"
