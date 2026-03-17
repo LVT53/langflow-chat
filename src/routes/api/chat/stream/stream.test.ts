@@ -183,6 +183,26 @@ describe('POST /api/chat/stream', () => {
 		expect(body).not.toContain('"text":"Hi"');
 	});
 
+	it('parses newline-delimited Langflow JSON events without blank separators', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"Machine","text":"Hello"}}\n',
+				'{"event":"add_message","data":{"sender":"Machine","text":" world"}}\n',
+				'{"event":"end","data":{}}\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('"text":"Hello"');
+		expect(body).toContain('"text":" world"');
+		expect(body).toContain('event: end');
+	});
+
 	it('emits only deltas when Langflow sends cumulative assistant snapshots', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

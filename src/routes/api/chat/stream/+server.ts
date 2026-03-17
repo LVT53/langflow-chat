@@ -46,6 +46,23 @@ function classifyStreamError(rawMessage: string): StreamErrorCode {
 	return 'backend_failure';
 }
 
+function isAbruptUpstreamTermination(error: unknown): boolean {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+
+	const message = error.message.toLowerCase();
+	const cause = 'cause' in error ? (error as Error & { cause?: unknown }).cause : undefined;
+	const causeCode =
+		cause && typeof cause === 'object' && 'code' in cause ? (cause as { code?: unknown }).code : undefined;
+
+	return (
+		message.includes('terminated') ||
+		message.includes('socket') ||
+		causeCode === 'UND_ERR_SOCKET'
+	);
+}
+
 function streamErrorEvent(code: StreamErrorCode): string {
 	return `event: error\ndata: ${JSON.stringify({ code, message: FRIENDLY_STREAM_ERRORS[code] })}\n\n`;
 }
@@ -102,44 +119,86 @@ function parseJsonBlock(block: string): UpstreamEvent | null {
 	}
 }
 
+function parseEventBlock(block: string): UpstreamEvent | null {
+	return block.includes('event:') || block.includes('data:')
+		? parseSseBlock(block)
+		: parseJsonBlock(block);
+}
+
 async function* parseUpstreamEvents(
 	stream: ReadableStream<Uint8Array>
 ): AsyncGenerator<UpstreamEvent, void, unknown> {
-	const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
 	let buffer = '';
 
 	try {
 		while (true) {
-			const { done, value } = await reader.read();
+			let chunk: ReadableStreamReadResult<Uint8Array>;
+			try {
+				chunk = await reader.read();
+			} catch (error) {
+				const finalBlock = buffer.trim();
+				if (finalBlock) {
+					const event = parseEventBlock(finalBlock);
+					if (event) {
+						yield event;
+						return;
+					}
+				}
+				throw error;
+			}
+
+			const { done, value } = chunk;
 			if (done) break;
 			if (!value) continue;
 
-			buffer += value;
+			buffer += decoder.decode(value, { stream: true });
 			buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-			let separatorIndex = buffer.indexOf('\n\n');
-			while (separatorIndex !== -1) {
-				const block = buffer.slice(0, separatorIndex).trim();
-				buffer = buffer.slice(separatorIndex + 2);
+			if (buffer.includes('event:') || buffer.includes('data:')) {
+				let separatorIndex = buffer.indexOf('\n\n');
+				while (separatorIndex !== -1) {
+					const block = buffer.slice(0, separatorIndex).trim();
+					buffer = buffer.slice(separatorIndex + 2);
 
-				if (block) {
-					const event = block.includes('event:') || block.includes('data:')
-						? parseSseBlock(block)
-						: parseJsonBlock(block);
+					if (block) {
+						const event = parseEventBlock(block);
+						if (event) {
+							yield event;
+						}
+					}
+
+					separatorIndex = buffer.indexOf('\n\n');
+				}
+				continue;
+			}
+
+			let newlineIndex = buffer.indexOf('\n');
+			while (newlineIndex !== -1) {
+				const line = buffer.slice(0, newlineIndex).trim();
+				buffer = buffer.slice(newlineIndex + 1);
+
+				if (line) {
+					const event = parseJsonBlock(line);
 					if (event) {
 						yield event;
+					} else {
+						buffer = `${line}\n${buffer}`;
+						break;
 					}
 				}
 
-				separatorIndex = buffer.indexOf('\n\n');
+				newlineIndex = buffer.indexOf('\n');
 			}
 		}
 
+		buffer += decoder.decode();
+		buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
 		const finalBlock = buffer.trim();
 		if (finalBlock) {
-			const event = finalBlock.includes('event:') || finalBlock.includes('data:')
-				? parseSseBlock(finalBlock)
-				: parseJsonBlock(finalBlock);
+			const event = parseEventBlock(finalBlock);
 			if (event) {
 				yield event;
 			}
@@ -534,6 +593,10 @@ export const POST: RequestHandler = async (event) => {
 				completeSuccess();
 			} catch (error) {
 				if (!closed) {
+					if (isAbruptUpstreamTermination(error) && fullResponse.trim()) {
+						completeSuccess();
+						return;
+					}
 					console.error('Chat stream error:', error);
 					failStream(
 						classifyStreamError(error instanceof Error ? error.message : String(error))
