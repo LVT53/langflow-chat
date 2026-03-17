@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db';
-import { conversations } from '$lib/server/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { conversations, messages } from '$lib/server/db/schema';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Conversation } from '$lib/types';
 
@@ -28,7 +28,23 @@ export async function listConversations(userId: string): Promise<Conversation[]>
 		.from(conversations)
 		.where(eq(conversations.userId, userId))
 		.orderBy(desc(conversations.updatedAt));
-	return result.map(conv => ({
+
+	if (result.length === 0) {
+		return [];
+	}
+
+	const conversationIdsWithMessages = await db
+		.selectDistinct({ conversationId: messages.conversationId })
+		.from(messages)
+		.where(inArray(messages.conversationId, result.map((conversation) => conversation.id)));
+
+	const visibleConversationIds = new Set(
+		conversationIdsWithMessages.map((row) => row.conversationId)
+	);
+
+	return result
+		.filter((conv) => visibleConversationIds.has(conv.id))
+		.map(conv => ({
 		id: conv.id,
 		title: conv.title,
 		createdAt: conv.createdAt.getTime() / 1000,

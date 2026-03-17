@@ -50,15 +50,6 @@ export async function createNewConversation(): Promise<string> {
 			throw new Error('The server returned unexpected data. Please try again.');
 		}
 
-		conversations.update(items => [
-			{
-				id: data.id,
-				title: data.title || 'New Conversation',
-				updatedAt: data.updatedAt || Date.now() / 1000
-			},
-			...items
-		]);
-
 		return data.id;
 	} catch (error) {
 		console.error('Error in createNewConversation:', error);
@@ -69,6 +60,27 @@ export async function createNewConversation(): Promise<string> {
 	} finally {
 		isCreating = false;
 	}
+}
+
+export function upsertConversationLocal(id: string, title = 'New Conversation', updatedAt = Date.now() / 1000): void {
+	conversations.update((items) => {
+		const existingIndex = items.findIndex((item) => item.id === id);
+		if (existingIndex === -1) {
+			return [{ id, title, updatedAt }, ...items];
+		}
+
+		const nextItems = [...items];
+		nextItems[existingIndex] = {
+			...nextItems[existingIndex],
+			title,
+			updatedAt
+		};
+		return nextItems;
+	});
+}
+
+export function removeConversationLocal(id: string): void {
+	conversations.update((items) => items.filter((conversation) => conversation.id !== id));
 }
 
 export async function deleteConversationById(id: string): Promise<void> {

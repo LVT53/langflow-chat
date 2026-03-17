@@ -9,7 +9,11 @@
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
-	import { updateConversationTitleLocal } from '$lib/stores/conversations';
+	import {
+		removeConversationLocal,
+		updateConversationTitleLocal,
+		upsertConversationLocal
+	} from '$lib/stores/conversations';
 
 	export let data: PageData;
 
@@ -22,6 +26,7 @@
 	let lastAssistantResponse = '';
 	let canRetry = false;
 	let prevConversationId: string | null = null;
+	let hasPersistedMessages = false;
 
 	$: hasMessages = $messages.length > 0;
 
@@ -31,6 +36,7 @@
 			activeStream = null;
 		}
 		messages.set(data.messages ?? []);
+		hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 		sendError = null;
 		isSending = false;
 		titleGenerationTriggered = false;
@@ -79,6 +85,7 @@
 	onMount(() => {
 		currentConversationId.set(data.conversation.id);
 		messages.set(data.messages ?? []);
+		hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 		titleGenerationTriggered = false;
 		lastUserMessage = '';
 		lastAssistantResponse = '';
@@ -90,6 +97,16 @@
 			activeStream.abort();
 			activeStream = null;
 		}
+
+		if (!hasPersistedMessages && data?.conversation?.id) {
+			removeConversationLocal(data.conversation.id);
+			fetch(`/api/conversations/${data.conversation.id}`, {
+				method: 'DELETE',
+				keepalive: true
+			}).catch(() => {
+				// Ignore cleanup failures; draft conversations are filtered from the sidebar anyway.
+			});
+		}
 	});
 
 	function handleSend(event: CustomEvent<{ message: string }>) {
@@ -100,6 +117,8 @@
 		isSending = true;
 		lastUserMessage = text;
 		canRetry = true;
+		hasPersistedMessages = true;
+		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const userMsg: ChatMessage = {
 			id: crypto.randomUUID(),
@@ -186,7 +205,7 @@
 	<title>{data.conversation.title}</title>
 </svelte:head>
 
-<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page px-2 pb-2 md:px-4 md:pb-4 lg:px-6 lg:pb-6">
+<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page pb-2 md:pb-4 lg:pb-6">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
 		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
 			<MessageArea messages={$messages} />
