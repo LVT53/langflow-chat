@@ -13,13 +13,18 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   
   // Construct the prompt
   const prompt = `Summarize this conversation in 5-8 words as a title. Output only the title, nothing else.\n\nUser: ${userMessage}\nAssistant: ${truncatedResponse}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (config.nemotronApiKey) {
+    headers.Authorization = `Bearer ${config.nemotronApiKey}`;
+  }
   
   // Make POST request to nemotron-nano
   const response = await fetch(`${config.nemotronUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       model: config.nemotronModel,
       messages: [{ role: 'user', content: prompt }],

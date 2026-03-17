@@ -6,6 +6,7 @@ interface Config {
   langflowApiKey: string;
   langflowFlowId: string;
   nemotronUrl: string;
+  nemotronApiKey: string;
   nemotronModel: string;
   webhookPort: number;
   requestTimeoutMs: number;
@@ -38,6 +39,7 @@ const getConfig = (): Config => {
     langflowApiKey,
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     nemotronUrl: process.env.NEMOTRON_URL || 'http://192.168.1.96:30001/v1',
+    nemotronApiKey: process.env.NEMOTRON_API_KEY || '',
     nemotronModel: process.env.NEMOTRON_MODEL || 'nemotron-nano',
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),

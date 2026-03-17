@@ -6,6 +6,7 @@ vi.mock('../env', () => ({
     langflowApiKey: 'test-api-key',
     langflowFlowId: 'test-flow-id',
     nemotronUrl: 'http://localhost:30001/v1',
+    nemotronApiKey: '',
     nemotronModel: 'nemotron-nano',
     webhookPort: 8090,
     requestTimeoutMs: 5000,
@@ -50,6 +51,46 @@ describe('generateTitle', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: expect.stringContaining('User: Hello'),
+      })
+    );
+  });
+
+  it('sends bearer auth when a nemotron api key is configured', async () => {
+    vi.doMock('../env', () => ({
+      config: {
+        langflowApiUrl: 'http://localhost:7860',
+        langflowApiKey: 'test-api-key',
+        langflowFlowId: 'test-flow-id',
+        nemotronUrl: 'http://localhost:30001/v1',
+        nemotronApiKey: 'secret-key',
+        nemotronModel: 'nemotron-nano',
+        webhookPort: 8090,
+        requestTimeoutMs: 5000,
+        maxMessageLength: 10000,
+        sessionSecret: 'test-secret',
+        databasePath: './data/test.db',
+      },
+    }));
+
+    vi.resetModules();
+    const { generateTitle: generateTitleWithAuth } = await import('./title-generator');
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'Secure Title' } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+
+    await generateTitleWithAuth('User', 'Assistant');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/chat/completions'),
+      expect.objectContaining({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer secret-key'
+        }
       })
     );
   });
