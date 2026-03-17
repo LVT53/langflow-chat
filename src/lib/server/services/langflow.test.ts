@@ -5,6 +5,7 @@ vi.mock('../env', () => ({
     langflowApiUrl: 'http://localhost:7860',
     langflowApiKey: 'test-api-key',
     langflowFlowId: 'test-flow-id',
+    langflowWebhookSecret: '',
     nemotronUrl: 'http://localhost:30001/v1',
     nemotronModel: 'nemotron-nano',
     webhookPort: 8090,

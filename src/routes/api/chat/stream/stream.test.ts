@@ -36,7 +36,13 @@ function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.co
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body)
 		}),
-		locals: { user },
+		locals: {
+			user,
+			webhookBuffer: {
+				getSentences: vi.fn(() => null),
+				clearSession: vi.fn()
+			}
+		},
 		params: {},
 		url: new URL('http://localhost/api/chat/stream'),
 		route: { id: '/api/chat/stream' }
@@ -109,6 +115,57 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: token');
 		expect(body).toContain('"text":"Hello"');
 		expect(body).toContain('"text":" world"');
+	});
+
+	it('parses Langflow JSON event blocks and ignores echoed user messages', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"User","text":"Hi"}}\n\n',
+				'{"event":"add_message","data":{"sender":"Machine","text":"Hello"}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Hello"');
+		expect(body).not.toContain('"text":"Hi"');
+	});
+
+	it('prefers webhook sentence chunks over final upstream assistant message', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"Machine","text":"Final combined answer"}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		let pollCount = 0;
+		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
+		event.locals.webhookBuffer.getSentences.mockImplementation(() => {
+			pollCount++;
+			if (pollCount === 1) {
+				return { sentences: ['Elso mondat. '], isComplete: false };
+			}
+			return { sentences: ['Elso mondat. ', 'Masodik mondat.'], isComplete: true };
+		});
+
+		const response = await POST(event);
+		const bodyPromise = readSseResponse(response);
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		const body = await bodyPromise;
+
+		expect(body).toContain('"text":"Elso mondat. "');
+		expect(body).toContain('"text":"Masodik mondat."');
+		expect(body).not.toContain('Final combined answer');
+		expect(body).toContain('event: end');
 	});
 
 	it('stream ends with end event after [DONE]', async () => {

@@ -1,34 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/server/auth/hooks', () => ({
-	requireAuth: vi.fn()
-}));
-
 vi.mock('$lib/server/services/webhook-buffer', () => ({
 	webhookBuffer: {
 		addSentence: vi.fn(),
+		markComplete: vi.fn(),
 		getSentences: vi.fn(),
 		getAllSessionIds: vi.fn(),
 		getSessionData: vi.fn()
 	}
 }));
 
+vi.mock('$lib/server/env', () => ({
+	config: {
+		langflowWebhookSecret: 'test-webhook-secret'
+	}
+}));
+
 import { POST } from './+server';
 import type { WebhookSentencePayload } from '$lib/types';
 
-const mockRequireAuth = vi.fn();
+function makeEvent(
+	body: unknown,
+	options?: { secret?: string | null; user?: { id: string; email?: string } }
+) {
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+	if (options?.secret !== null) {
+		headers['x-webhook-secret'] = options?.secret ?? 'test-webhook-secret';
+	}
 
-function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
 		request: new Request('http://localhost/api/webhook/sentence', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers,
 			body: JSON.stringify(body)
 		}),
 		locals: { 
-			user, 
+			user: options?.user ?? { id: 'user-1', email: 'test@example.com' }, 
 			webhookBuffer: {
 				addSentence: vi.fn(),
+				markComplete: vi.fn(),
 				getSentences: vi.fn(),
 				getAllSessionIds: vi.fn(),
 				getSessionData: vi.fn()
@@ -43,7 +53,22 @@ function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.co
 describe('POST /api/webhook/sentence', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockRequireAuth.mockReturnValue(undefined);
+	});
+
+	it('returns 401 for missing webhook secret', async () => {
+		const payload: WebhookSentencePayload = {
+			session_id: 'session-1',
+			sentence: 'Hello world',
+			index: 0,
+			is_final: false
+		};
+
+		const event = makeEvent(payload, { secret: null });
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(401);
+		expect(data.error).toMatch(/Unauthorized webhook request/);
 	});
 
 	it('returns 200 OK for valid payload', async () => {
@@ -89,7 +114,7 @@ describe('POST /api/webhook/sentence', () => {
 
 		expect(response.status).toBe(400);
 		const data = await response.json();
-		expect(data.error).toMatch(/Missing required fields/);
+		expect(data.error).toMatch(/sentence is required unless is_final is true/i);
 	});
 
 	it('returns 400 for missing index', async () => {
@@ -206,13 +231,17 @@ describe('POST /api/webhook/sentence', () => {
 		const event = {
 			request: new Request('http://localhost/api/webhook/sentence', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					'x-webhook-secret': 'test-webhook-secret'
+				},
 				body: 'not-valid-json'
 			}),
 			locals: { 
 				user: { id: 'user-1' }, 
 				webhookBuffer: {
 					addSentence: vi.fn(),
+					markComplete: vi.fn(),
 					getSentences: vi.fn(),
 					getAllSessionIds: vi.fn(),
 					getSessionData: vi.fn()
@@ -239,7 +268,8 @@ describe('POST /api/webhook/sentence', () => {
 		};
 
 		const mockWebhookBuffer = {
-			addSentence: vi.fn()
+			addSentence: vi.fn(),
+			markComplete: vi.fn()
 		};
 
 		const event = makeEvent(payload);
@@ -275,7 +305,8 @@ describe('POST /api/webhook/sentence', () => {
 		};
 
 		const mockWebhookBuffer = {
-			addSentence: vi.fn()
+			addSentence: vi.fn(),
+			markComplete: vi.fn()
 		};
 
 		// Send sentences out of order
@@ -301,7 +332,8 @@ describe('POST /api/webhook/sentence', () => {
 		};
 
 		const mockWebhookBuffer = {
-			addSentence: vi.fn()
+			addSentence: vi.fn(),
+			markComplete: vi.fn()
 		};
 
 		const event = makeEvent(payload);
@@ -316,5 +348,27 @@ describe('POST /api/webhook/sentence', () => {
 			0,
 			true
 		);
+	});
+
+	it('allows a finalization-only webhook call', async () => {
+		const payload = {
+			session_id: 'session-1',
+			index: 3,
+			is_final: true
+		};
+
+		const mockWebhookBuffer = {
+			addSentence: vi.fn(),
+			markComplete: vi.fn()
+		};
+
+		const event = makeEvent(payload);
+		event.locals.webhookBuffer = mockWebhookBuffer;
+
+		const response = await POST(event);
+
+		expect(response.status).toBe(200);
+		expect(mockWebhookBuffer.markComplete).toHaveBeenCalledWith('session-1');
+		expect(mockWebhookBuffer.addSentence).not.toHaveBeenCalled();
 	});
 });

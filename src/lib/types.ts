@@ -71,7 +71,7 @@ export interface LangflowRunResponse {
 // Webhook types
 export interface WebhookSentencePayload {
   session_id: string;
-  sentence: string;
+  sentence?: string;
   index: number;
   is_final: boolean;
 }

@@ -3,7 +3,7 @@ import type { Handle } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/sentence'];
 
 export const handle: Handle = async ({ event, resolve }) => {
   const token = event.cookies.get('session');

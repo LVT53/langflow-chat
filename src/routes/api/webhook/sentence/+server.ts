@@ -1,8 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { WebhookSentencePayload } from '$lib/types';
+import { config } from '$lib/server/env';
 
 export const POST: RequestHandler = async (event) => {
+	if (config.langflowWebhookSecret) {
+		const providedSecret = event.request.headers.get('x-webhook-secret');
+		if (providedSecret !== config.langflowWebhookSecret) {
+			return json({ error: 'Unauthorized webhook request' }, { status: 401 });
+		}
+	}
+
 	let body: unknown;
 	try {
 		body = await event.request.json();
@@ -14,11 +22,10 @@ export const POST: RequestHandler = async (event) => {
 		!body ||
 		typeof body !== 'object' ||
 		!('session_id' in body) ||
-		!('sentence' in body) ||
 		!('index' in body) ||
 		!('is_final' in body)
 	) {
-		return json({ error: 'Missing required fields: session_id, sentence, index, is_final' }, { status: 400 });
+		return json({ error: 'Missing required fields: session_id, index, is_final' }, { status: 400 });
 	}
 
 	const { session_id, sentence, index, is_final } = body as WebhookSentencePayload;
@@ -27,7 +34,7 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'session_id must be a non-empty string' }, { status: 400 });
 	}
 
-	if (typeof sentence !== 'string' || sentence.trim().length === 0) {
+	if (sentence !== undefined && (typeof sentence !== 'string' || sentence.trim().length === 0)) {
 		return json({ error: 'sentence must be a non-empty string' }, { status: 400 });
 	}
 
@@ -44,7 +51,13 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'Webhook buffer not available' }, { status: 500 });
 	}
 
-	webhookBuffer.addSentence(session_id, sentence, index, is_final);
+	if (typeof sentence === 'string' && sentence.trim().length > 0) {
+		webhookBuffer.addSentence(session_id, sentence, index, is_final);
+	} else if (is_final) {
+		webhookBuffer.markComplete(session_id);
+	} else {
+		return json({ error: 'sentence is required unless is_final is true' }, { status: 400 });
+	}
 
 	return json({ success: true });
 };

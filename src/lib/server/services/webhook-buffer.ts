@@ -56,6 +56,24 @@ export class WebhookBuffer {
     }
   }
 
+  markComplete(sessionId: string): void {
+    const now = Date.now();
+    this.cleanupOldSessions(now);
+
+    let sessionData = this.sessions.get(sessionId);
+    if (!sessionData) {
+      sessionData = {
+        sentences: new Map(),
+        isComplete: false,
+        lastUpdated: now
+      };
+      this.sessions.set(sessionId, sessionData);
+    }
+
+    sessionData.isComplete = true;
+    sessionData.lastUpdated = now;
+  }
+
   getSentences(sessionId: string): { sentences: string[]; isComplete: boolean } | null {
     const sessionData = this.sessions.get(sessionId);
     if (!sessionData) {

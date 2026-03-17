@@ -19,6 +19,7 @@ Copy the `.env.example` file to `.env` and configure the following variables:
 | `LANGFLOW_API_URL` | URL of the Langflow API service | `http://localhost:7860` |
 | `LANGFLOW_API_KEY` | API key for Langflow authentication | `your-api-key-here` |
 | `LANGFLOW_FLOW_ID` | ID of the Langflow flow to use | `your-flow-id-here` |
+| `LANGFLOW_WEBHOOK_SECRET` | Shared secret for Langflow sentence webhooks | `change-me-webhook-secret` |
 | `NEMOTRON_URL` | URL of the Nemotron Nano service | `http://192.168.1.96:30001/v1` |
 | `NEMOTRON_API_KEY` | API key for Nemotron/OpenAI-compatible auth | `your-api-key-here` |
 | `NEMOTRON_MODEL` | Model name to use with Nemotron | `nemotron-nano` |

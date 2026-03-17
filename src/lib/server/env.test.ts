@@ -39,6 +39,7 @@ describe('Environment Configuration', () => {
     // Clear optional vars to test defaults
     delete process.env.LANGFLOW_API_URL
     delete process.env.LANGFLOW_FLOW_ID
+    delete process.env.LANGFLOW_WEBHOOK_SECRET
     delete process.env.NEMOTRON_URL
     delete process.env.NEMOTRON_API_KEY
     delete process.env.NEMOTRON_MODEL
@@ -52,6 +53,7 @@ describe('Environment Configuration', () => {
     expect(config.langflowApiUrl).toBe('http://localhost:7860')
     expect(config.langflowApiKey).toBe('test-api-key')
     expect(config.langflowFlowId).toBe('')
+    expect(config.langflowWebhookSecret).toBe('')
     expect(config.nemotronUrl).toBe('http://192.168.1.96:30001/v1')
     expect(config.nemotronApiKey).toBe('')
     expect(config.nemotronModel).toBe('nemotron-nano')
@@ -67,6 +69,7 @@ describe('Environment Configuration', () => {
     process.env.LANGFLOW_API_URL = 'http://test-langflow:8080'
     process.env.LANGFLOW_API_KEY = 'test-api-key-123'
     process.env.LANGFLOW_FLOW_ID = 'test-flow-id'
+    process.env.LANGFLOW_WEBHOOK_SECRET = 'test-webhook-secret'
     process.env.NEMOTRON_URL = 'http://test-nemotron:9000/v1'
     process.env.NEMOTRON_API_KEY = 'test-nemotron-key'
     process.env.NEMOTRON_MODEL = 'test-model'
@@ -81,6 +84,7 @@ describe('Environment Configuration', () => {
     expect(config.langflowApiUrl).toBe('http://test-langflow:8080')
     expect(config.langflowApiKey).toBe('test-api-key-123')
     expect(config.langflowFlowId).toBe('test-flow-id')
+    expect(config.langflowWebhookSecret).toBe('test-webhook-secret')
     expect(config.nemotronUrl).toBe('http://test-nemotron:9000/v1')
     expect(config.nemotronApiKey).toBe('test-nemotron-key')
     expect(config.nemotronModel).toBe('test-model')
