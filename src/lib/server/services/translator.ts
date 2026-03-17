@@ -119,6 +119,17 @@ const LONG_INPUT_SPLIT_THRESHOLD = 500;
 const MAX_BUFFER_LENGTH = 900;
 const FIRST_FLUSH_MAX = 260;
 const CLOSING_PUNCTUATION = new Set([')', ']', '}', '"', "'", '\u201d', '\u2019']);
+const STREAM_GROUP_MIN_SENTENCES = 2;
+const STREAM_GROUP_MIN_LENGTH = 240;
+const META_PREFIX_PATTERNS = [
+	/^\s*(?:rough|literal|direct|close|draft)\s+translation\s*:\s*/i,
+	/^\s*translation\s*:\s*/i,
+	/^\s*translated\s+text\s*:\s*/i,
+	/^\s*rough\s+draft\s*[:.-]?\s*/i,
+	/^\s*transzlatása\s*:\s*/i,
+	/^\s*transzláció\s*:\s*/i,
+	/^\s*fordítás\s*:\s*/i
+];
 
 type PlaceholderMap = Record<string, string>;
 type TranslationFallbackMode = 'original' | 'null';
@@ -372,6 +383,25 @@ function isHallucination(text: string): boolean {
 	return HALLUCINATION_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
+function sanitizeTranslationOutput(text: string): string {
+	let sanitized = text;
+
+	for (const pattern of META_PREFIX_PATTERNS) {
+		sanitized = sanitized.replace(pattern, '');
+	}
+
+	sanitized = sanitized.replace(
+		/(^|[\n\r]\s*)(?:rough|literal|close|draft)\s+translation\s*:\s*/gi,
+		'$1'
+	);
+	sanitized = sanitized.replace(/(^|[\n\r]\s*)rough\s+draft\.?\s*/gi, '$1');
+	sanitized = sanitized.replace(/(^|[\n\r]\s*)transzlatása\s*:\s*/gi, '$1');
+	sanitized = sanitized.replace(/(^|[\n\r]\s*)transzláció\s*:\s*/gi, '$1');
+	sanitized = sanitized.replace(/[ \t]{2,}/g, ' ');
+
+	return sanitized.trim();
+}
+
 function hasBrokenTargetScript(text: string): boolean {
 	const letters = Array.from(text.matchAll(/\p{L}/gu), (match) => match[0]);
 	if (letters.length === 0) {
@@ -418,10 +448,10 @@ async function translateEnglishSentenceInternal(
 	const { protectedText, terms } = extractTerms(coreSentence);
 	const markerList = Object.keys(terms).join(', ');
 	const baseSystem =
-		'You are a professional English (en) to Hungarian (hu) translator. Produce only the Hungarian translation, without any additional explanations.';
+		'You are a professional English (en) to Hungarian (hu) translator. Produce only the final Hungarian translation. Never add notes, commentary, labels, draft markers, bilingual output, explanations, or phrases like "translation:", "rough translation:", or "draft:".';
 	const systemInstruction =
 		markerList.length > 0
-			? `${baseSystem}\nIMPORTANT: The text contains markers (${markerList}). Keep every marker exactly as-is in your translation. Do not translate, remove, or modify any marker.`
+			? `${baseSystem}\nIMPORTANT: The text contains markers (${markerList}). Keep every marker exactly as-is in your translation. Do not translate, remove, or modify any marker. Output Hungarian only.`
 			: baseSystem;
 
 	let translated: string | null;
@@ -435,13 +465,16 @@ async function translateEnglishSentenceInternal(
 		return fallbackMode === 'null' ? null : sentence;
 	}
 
+	translated = sanitizeTranslationOutput(translated);
+
 	if (
+		!translated ||
 		isHallucination(translated) ||
 		hasBrokenTargetScript(translated) ||
 		translated.length > protectedText.length * 3
 	) {
 		let strictSystem =
-			'Translate ONLY the following sentence from English to Hungarian. Output ONLY the translation. Do not add any extra content.';
+			'Translate ONLY the following text from English to Hungarian. Output ONLY the final Hungarian translation. Do not add any extra content, labels, notes, draft markers, bilingual text, or English commentary.';
 		if (markerList.length > 0) {
 			strictSystem += ` Keep these markers exactly as-is: ${markerList}.`;
 		}
@@ -450,6 +483,10 @@ async function translateEnglishSentenceInternal(
 			translated = await requestTranslation(protectedText, strictSystem);
 		} catch {
 			return fallbackMode === 'null' ? null : sentence;
+		}
+
+		if (translated) {
+			translated = sanitizeTranslationOutput(translated);
 		}
 
 		if (
@@ -661,6 +698,7 @@ export class StreamingHungarianTranslator {
 	private insideFence = false;
 	private insidePreserve = false;
 	private deferredTranslation = '';
+	private pendingSegments: string[] = [];
 	private readonly sentenceBuffer = new SentenceBuffer(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
 
 	async addChunk(chunk: string): Promise<string[]> {
@@ -736,17 +774,8 @@ export class StreamingHungarianTranslator {
 
 		for (const token of prose.match(/\s+|\S+/g) ?? []) {
 			for (const segment of this.sentenceBuffer.addToken(token)) {
-				const candidate = `${this.deferredTranslation}${segment}`;
-				const translated = await translateEnglishSentenceInternal(candidate, {
-					fallbackMode: 'null'
-				});
-				if (translated === null) {
-					this.deferredTranslation = candidate;
-					continue;
-				}
-
-				this.deferredTranslation = '';
-				outputs.push(translated);
+				this.pendingSegments.push(segment);
+				outputs.push(...(await this.flushStableSegments()));
 			}
 		}
 
@@ -759,28 +788,55 @@ export class StreamingHungarianTranslator {
 		if (this.proseBuffer.trim()) {
 			for (const token of this.proseBuffer.match(/\s+|\S+/g) ?? [this.proseBuffer]) {
 				for (const segment of this.sentenceBuffer.addToken(token)) {
-					const candidate = `${this.deferredTranslation}${segment}`;
-					const translated = await translateEnglishSentenceInternal(candidate, {
-						fallbackMode: 'null'
-					});
-					if (translated === null) {
-						this.deferredTranslation = candidate;
-						continue;
-					}
-
-					this.deferredTranslation = '';
-					outputs.push(translated);
+					this.pendingSegments.push(segment);
 				}
 			}
 		}
 
-		const remaining = `${this.deferredTranslation}${this.sentenceBuffer.flushRemaining() ?? ''}`;
+		outputs.push(...(await this.flushStableSegments(true)));
+
+		const remaining = `${this.deferredTranslation}${this.pendingSegments.join('')}${this.sentenceBuffer.flushRemaining() ?? ''}`;
 		if (remaining) {
 			outputs.push((await translateEnglishSentenceInternal(remaining)) ?? remaining);
 		}
 
 		this.deferredTranslation = '';
+		this.pendingSegments = [];
 		this.proseBuffer = '';
+		return outputs;
+	}
+
+	private async flushStableSegments(force = false): Promise<string[]> {
+		const outputs: string[] = [];
+
+		while (this.pendingSegments.length > 0) {
+			const combinedPending = this.pendingSegments.join('');
+			if (
+				!force &&
+				this.pendingSegments.length < STREAM_GROUP_MIN_SENTENCES &&
+				combinedPending.trim().length < STREAM_GROUP_MIN_LENGTH
+			) {
+				break;
+			}
+
+			const segmentCount =
+				force || combinedPending.trim().length >= STREAM_GROUP_MIN_LENGTH
+					? this.pendingSegments.length
+					: STREAM_GROUP_MIN_SENTENCES;
+			const group = this.pendingSegments.splice(0, segmentCount).join('');
+			const candidate = `${this.deferredTranslation}${group}`;
+			const translated = await translateEnglishSentenceInternal(candidate, {
+				fallbackMode: 'null'
+			});
+			if (translated === null) {
+				this.deferredTranslation = candidate;
+				continue;
+			}
+
+			this.deferredTranslation = '';
+			outputs.push(translated);
+		}
+
 		return outputs;
 	}
 }

@@ -149,10 +149,45 @@ describe('translator service', () => {
 
 		const first = await translator.addChunk('First sentence. ');
 		const second = await translator.addChunk('Second sentence.');
+		const flushed = await translator.flush();
 
 		expect(first).toEqual([]);
-		expect(second).toEqual(['Magyar első mondat. Magyar második mondat.']);
-		expect(second.join('')).not.toContain('First sentence');
+		expect(second).toEqual([]);
+		expect(flushed).toEqual(['Magyar első mondat. Magyar második mondat.']);
+		expect(flushed.join('')).not.toContain('First sentence');
 		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it('strips translation meta prefixes from model output', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ text: 'rough translation: Magyar válasz.' }]
+			})
+		} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('Answer.');
+
+		expect(result).toBe('Magyar válasz.');
+	});
+
+	it('groups short streaming sentences into one translation batch', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ text: 'Magyar első. Magyar második.' }]
+			})
+		} as Response);
+
+		const { StreamingHungarianTranslator } = await import('./translator');
+		const translator = new StreamingHungarianTranslator();
+
+		const first = await translator.addChunk('First short sentence. ');
+		const second = await translator.addChunk('Second short sentence. ');
+
+		expect(first).toEqual([]);
+		expect(second).toEqual(['Magyar első. Magyar második.']);
+		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 });
