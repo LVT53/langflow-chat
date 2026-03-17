@@ -118,8 +118,10 @@ const CODE_LINE_PATTERNS = new RegExp(
 const LONG_INPUT_SPLIT_THRESHOLD = 500;
 const MAX_BUFFER_LENGTH = 900;
 const FIRST_FLUSH_MAX = 260;
+const CLOSING_PUNCTUATION = new Set([')', ']', '}', '"', "'", '\u201d', '\u2019']);
 
 type PlaceholderMap = Record<string, string>;
+type TranslationFallbackMode = 'original' | 'null';
 
 function buildHeaders(): Record<string, string> {
 	const headers: Record<string, string> = {
@@ -398,7 +400,11 @@ async function translateHungarianSegment(text: string): Promise<string> {
 	}
 }
 
-async function translateEnglishSentenceInternal(sentence: string): Promise<string> {
+async function translateEnglishSentenceInternal(
+	sentence: string,
+	options: { fallbackMode?: TranslationFallbackMode } = {}
+): Promise<string | null> {
+	const fallbackMode = options.fallbackMode ?? 'original';
 	if (!sentence.trim()) {
 		return sentence;
 	}
@@ -422,11 +428,11 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 	try {
 		translated = await requestTranslation(protectedText, systemInstruction);
 	} catch {
-		return sentence;
+		return fallbackMode === 'null' ? null : sentence;
 	}
 
 	if (!translated) {
-		return sentence;
+		return fallbackMode === 'null' ? null : sentence;
 	}
 
 	if (
@@ -443,7 +449,7 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 		try {
 			translated = await requestTranslation(protectedText, strictSystem);
 		} catch {
-			return sentence;
+			return fallbackMode === 'null' ? null : sentence;
 		}
 
 		if (
@@ -452,7 +458,7 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 			hasBrokenTargetScript(translated) ||
 			translated.length > protectedText.length * 3
 		) {
-			return sentence;
+			return fallbackMode === 'null' ? null : sentence;
 		}
 	}
 
@@ -476,13 +482,13 @@ async function translateEnglishProse(text: string): Promise<string> {
 
 	for (const token of tokens) {
 		for (const segment of buffer.addToken(token)) {
-			translatedParts.push(await translateEnglishSentenceInternal(segment));
+			translatedParts.push((await translateEnglishSentenceInternal(segment)) ?? segment);
 		}
 	}
 
 	const remaining = buffer.flushRemaining();
 	if (remaining) {
-		translatedParts.push(await translateEnglishSentenceInternal(remaining));
+		translatedParts.push((await translateEnglishSentenceInternal(remaining)) ?? remaining);
 	}
 
 	return translatedParts.join('');
@@ -608,7 +614,13 @@ export class SentenceBuffer {
 			const char = this.buffer[index];
 			if (!['.', '!', '?'].includes(char)) continue;
 
-			const afterIndex = index + 1;
+			let afterIndex = index + 1;
+			while (
+				afterIndex < this.buffer.length &&
+				CLOSING_PUNCTUATION.has(this.buffer[afterIndex] ?? '')
+			) {
+				afterIndex += 1;
+			}
 			if (afterIndex < this.buffer.length && !/\s/.test(this.buffer[afterIndex])) {
 				continue;
 			}
@@ -648,7 +660,8 @@ export class StreamingHungarianTranslator {
 	private proseBuffer = '';
 	private insideFence = false;
 	private insidePreserve = false;
-	private readonly sentenceBuffer = new SentenceBuffer();
+	private deferredTranslation = '';
+	private readonly sentenceBuffer = new SentenceBuffer(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
 
 	async addChunk(chunk: string): Promise<string[]> {
 		const outputs: string[] = [];
@@ -723,7 +736,17 @@ export class StreamingHungarianTranslator {
 
 		for (const token of prose.match(/\s+|\S+/g) ?? []) {
 			for (const segment of this.sentenceBuffer.addToken(token)) {
-				outputs.push(await translateEnglishSentenceInternal(segment));
+				const candidate = `${this.deferredTranslation}${segment}`;
+				const translated = await translateEnglishSentenceInternal(candidate, {
+					fallbackMode: 'null'
+				});
+				if (translated === null) {
+					this.deferredTranslation = candidate;
+					continue;
+				}
+
+				this.deferredTranslation = '';
+				outputs.push(translated);
 			}
 		}
 
@@ -736,16 +759,27 @@ export class StreamingHungarianTranslator {
 		if (this.proseBuffer.trim()) {
 			for (const token of this.proseBuffer.match(/\s+|\S+/g) ?? [this.proseBuffer]) {
 				for (const segment of this.sentenceBuffer.addToken(token)) {
-					outputs.push(await translateEnglishSentenceInternal(segment));
+					const candidate = `${this.deferredTranslation}${segment}`;
+					const translated = await translateEnglishSentenceInternal(candidate, {
+						fallbackMode: 'null'
+					});
+					if (translated === null) {
+						this.deferredTranslation = candidate;
+						continue;
+					}
+
+					this.deferredTranslation = '';
+					outputs.push(translated);
 				}
 			}
 		}
 
-		const remaining = this.sentenceBuffer.flushRemaining();
+		const remaining = `${this.deferredTranslation}${this.sentenceBuffer.flushRemaining() ?? ''}`;
 		if (remaining) {
-			outputs.push(await translateEnglishSentenceInternal(remaining));
+			outputs.push((await translateEnglishSentenceInternal(remaining)) ?? remaining);
 		}
 
+		this.deferredTranslation = '';
 		this.proseBuffer = '';
 		return outputs;
 	}
