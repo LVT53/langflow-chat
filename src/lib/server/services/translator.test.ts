@@ -72,4 +72,40 @@ describe('translator service', () => {
 		expect(result).toContain('Valódi fordítás.');
 		expect(fetch).toHaveBeenCalledTimes(2);
 	});
+
+	it('preserves surrounding whitespace when translating English output', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ text: 'Magyar szöveg.' }]
+			})
+		} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('Hello world.  \nNext line.');
+
+		expect(result).toContain('Magyar szöveg.  \n');
+	});
+
+	it('falls back when the translation output contains a broken non-latin script', async () => {
+		vi.mocked(fetch)
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					choices: [{ text: 'සමහරවිට' }]
+				})
+			} as Response)
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					choices: [{ text: '' }]
+				})
+			} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('Maybe.');
+
+		expect(result).toContain('Maybe.');
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
 });

@@ -116,8 +116,8 @@ const CODE_LINE_PATTERNS = new RegExp(
 );
 
 const LONG_INPUT_SPLIT_THRESHOLD = 500;
-const MAX_BUFFER_LENGTH = 500;
-const FIRST_FLUSH_MAX = 150;
+const MAX_BUFFER_LENGTH = 900;
+const FIRST_FLUSH_MAX = 260;
 
 type PlaceholderMap = Record<string, string>;
 
@@ -370,6 +370,16 @@ function isHallucination(text: string): boolean {
 	return HALLUCINATION_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
+function hasBrokenTargetScript(text: string): boolean {
+	const letters = Array.from(text.matchAll(/\p{L}/gu), (match) => match[0]);
+	if (letters.length === 0) {
+		return false;
+	}
+
+	const nonLatinLetters = letters.filter((letter) => !/\p{Script=Latin}/u.test(letter));
+	return nonLatinLetters.length / letters.length > 0.15;
+}
+
 async function translateHungarianSegment(text: string): Promise<string> {
 	const systemInstruction =
 		'You are a professional Hungarian (hu) to English (en) translator. Produce only the English translation, without any additional explanations.';
@@ -393,8 +403,13 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 		return sentence;
 	}
 
-	const trailingWhitespace = sentence.slice(sentence.trimEnd().length);
-	const { protectedText, terms } = extractTerms(sentence.trimEnd());
+	const leadingWhitespace = sentence.match(/^\s*/)?.[0] ?? '';
+	const trailingWhitespace = sentence.match(/\s*$/)?.[0] ?? '';
+	const coreSentence = sentence.slice(
+		leadingWhitespace.length,
+		sentence.length - trailingWhitespace.length
+	);
+	const { protectedText, terms } = extractTerms(coreSentence);
 	const markerList = Object.keys(terms).join(', ');
 	const baseSystem =
 		'You are a professional English (en) to Hungarian (hu) translator. Produce only the Hungarian translation, without any additional explanations.';
@@ -414,7 +429,11 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 		return sentence;
 	}
 
-	if (isHallucination(translated) || translated.length > protectedText.length * 3) {
+	if (
+		isHallucination(translated) ||
+		hasBrokenTargetScript(translated) ||
+		translated.length > protectedText.length * 3
+	) {
 		let strictSystem =
 			'Translate ONLY the following sentence from English to Hungarian. Output ONLY the translation. Do not add any extra content.';
 		if (markerList.length > 0) {
@@ -430,6 +449,7 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 		if (
 			!translated ||
 			isHallucination(translated) ||
+			hasBrokenTargetScript(translated) ||
 			translated.length > protectedText.length * 3
 		) {
 			return sentence;
@@ -446,17 +466,13 @@ async function translateEnglishSentenceInternal(sentence: string): Promise<strin
 		translated = translated.replaceAll(key, original);
 	}
 
-	if (trailingWhitespace) {
-		return `${translated.trimEnd()}${trailingWhitespace}`;
-	}
-
-	return `${translated} `;
+	return `${leadingWhitespace}${translated.trim()}${trailingWhitespace}`;
 }
 
 async function translateEnglishProse(text: string): Promise<string> {
 	const buffer = new SentenceBuffer(MAX_BUFFER_LENGTH, FIRST_FLUSH_MAX);
 	const translatedParts: string[] = [];
-	const tokens = text.match(/\S+\s*/g) ?? [text];
+	const tokens = text.match(/\s+|\S+/g) ?? [text];
 
 	for (const token of tokens) {
 		for (const segment of buffer.addToken(token)) {
@@ -559,15 +575,6 @@ export class SentenceBuffer {
 			const sentence = this.extractSentence();
 			if (sentence) {
 				segments.push(sentence);
-				this.isFirstFlush = false;
-				return segments;
-			}
-
-			const clauseMatch = /[,;:—]\s/.exec(this.buffer);
-			if (clauseMatch && clauseMatch.index >= 10) {
-				const splitPos = clauseMatch.index + clauseMatch[0].length;
-				segments.push(this.buffer.slice(0, splitPos));
-				this.buffer = this.buffer.slice(splitPos);
 				this.isFirstFlush = false;
 				return segments;
 			}
@@ -714,7 +721,7 @@ export class StreamingHungarianTranslator {
 		const prose = limit === undefined ? this.proseBuffer : this.proseBuffer.slice(0, limit);
 		const remainder = limit === undefined ? '' : this.proseBuffer.slice(limit);
 
-		for (const token of prose.match(/\S+\s*/g) ?? []) {
+		for (const token of prose.match(/\s+|\S+/g) ?? []) {
 			for (const segment of this.sentenceBuffer.addToken(token)) {
 				outputs.push(await translateEnglishSentenceInternal(segment));
 			}
@@ -727,7 +734,7 @@ export class StreamingHungarianTranslator {
 	async flush(): Promise<string[]> {
 		const outputs: string[] = [];
 		if (this.proseBuffer.trim()) {
-			for (const token of this.proseBuffer.match(/\S+\s*/g) ?? [this.proseBuffer]) {
+			for (const token of this.proseBuffer.match(/\s+|\S+/g) ?? [this.proseBuffer]) {
 				for (const segment of this.sentenceBuffer.addToken(token)) {
 					outputs.push(await translateEnglishSentenceInternal(segment));
 				}
