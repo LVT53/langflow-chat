@@ -48,4 +48,4 @@ if (browser) {
 export const currentConversationId = writable<string | null>(null);
 
 // Tracks whether the desktop sidebar is collapsed to icon-only mode
-export const sidebarCollapsed = writable<boolean>(false);
+export const sidebarCollapsed = writable<boolean>(true);

@@ -38,7 +38,7 @@
 	aria-live="polite"
 	aria-atomic="false"
 >
-	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg pb-24">
+	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg pb-40 md:pb-44">
 		{#if messages.length === 0}
 			<div class="h-full"></div>
 		{:else}
