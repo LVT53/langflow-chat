@@ -4,6 +4,7 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
 import { config } from '$lib/server/env';
+import { createMessage } from '$lib/server/services/messages';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -55,6 +56,8 @@ export const POST: RequestHandler = async (event) => {
 		const responseText =
 			sourceLanguage === 'hu' ? await translateEnglishToHungarian(text) : text;
 
+		await createMessage(conversationId, 'user', normalizedMessage);
+		await createMessage(conversationId, 'assistant', responseText);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
 		return json({

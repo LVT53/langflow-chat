@@ -1,0 +1,42 @@
+import { randomUUID } from 'crypto';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '$lib/server/db';
+import { messages } from '$lib/server/db/schema';
+import type { ChatMessage, MessageRole } from '$lib/types';
+
+function mapRowToChatMessage(row: typeof messages.$inferSelect): ChatMessage {
+	return {
+		id: row.id,
+		role: row.role as MessageRole,
+		content: row.content,
+		timestamp: row.createdAt.getTime()
+	};
+}
+
+export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
+	const result = await db
+		.select()
+		.from(messages)
+		.where(eq(messages.conversationId, conversationId))
+		.orderBy(asc(messages.createdAt));
+
+	return result.map(mapRowToChatMessage);
+}
+
+export async function createMessage(
+	conversationId: string,
+	role: MessageRole,
+	content: string
+): Promise<ChatMessage> {
+	const [message] = await db
+		.insert(messages)
+		.values({
+			id: randomUUID(),
+			conversationId,
+			role,
+			content
+		})
+		.returning();
+
+	return mapRowToChatMessage(message);
+}

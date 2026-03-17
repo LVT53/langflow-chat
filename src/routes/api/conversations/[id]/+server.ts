@@ -4,9 +4,9 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import {
 	getConversation,
 	updateConversationTitle,
-	deleteConversation,
-	touchConversation
+	deleteConversation
 } from '$lib/server/services/conversations';
+import { listMessages } from '$lib/server/services/messages';
 
 export const GET: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -18,7 +18,12 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: 'Conversation not found' }, { status: 404 });
 	}
 
-	return json(conversation);
+	const messageHistory = await listMessages(id);
+
+	return json({
+		conversation,
+		messages: messageHistory
+	});
 };
 
 export const PATCH: RequestHandler = async (event) => {

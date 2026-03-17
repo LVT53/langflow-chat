@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import type { Conversation } from '$lib/types';
+import type { ConversationDetail } from '$lib/types';
 
 export const load: PageLoad = async ({ params, fetch }) => {
 	const { conversationId } = params;
@@ -15,9 +15,10 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		throw error(res.status, 'Failed to load conversation');
 	}
 
-	const conversation: Conversation = await res.json();
+	const detail: ConversationDetail = await res.json();
 
 	return {
-		conversation
+		conversation: detail.conversation,
+		messages: detail.messages
 	};
 };

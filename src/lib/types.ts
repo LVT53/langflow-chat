@@ -22,6 +22,11 @@ export interface Conversation {
   updatedAt: number; // Unix timestamp
 }
 
+export interface ConversationDetail {
+  conversation: Conversation;
+  messages: ChatMessage[];
+}
+
 // ConversationListItem interface: id, title, updatedAt
 export interface ConversationListItem {
   id: string;

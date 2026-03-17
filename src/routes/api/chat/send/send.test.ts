@@ -13,6 +13,10 @@ vi.mock('$lib/server/services/langflow', () => ({
 	sendMessage: vi.fn()
 }));
 
+vi.mock('$lib/server/services/messages', () => ({
+	createMessage: vi.fn()
+}));
+
 vi.mock('$lib/server/services/language', () => ({
 	detectLanguage: vi.fn()
 }));
@@ -32,6 +36,7 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
+import { createMessage } from '$lib/server/services/messages';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -42,6 +47,7 @@ const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
+const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 const mockTranslateEnglishToHungarian = translateEnglishToHungarian as ReturnType<typeof vi.fn>;
@@ -64,7 +70,8 @@ describe('POST /api/chat/send', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
-		mockTouchConversation.mockResolvedValue(null);
+		mockTouchConversation.mockImplementation(async () => null);
+		mockCreateMessage.mockImplementation(async () => null);
 		mockDetectLanguage.mockReturnValue('en');
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 		mockTranslateEnglishToHungarian.mockImplementation(async (message: string) => `HU:${message}`);

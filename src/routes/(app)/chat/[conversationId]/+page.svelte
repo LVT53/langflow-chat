@@ -30,7 +30,7 @@
 			activeStream.abort();
 			activeStream = null;
 		}
-		messages.set([]);
+		messages.set(data.messages ?? []);
 		sendError = null;
 		isSending = false;
 		titleGenerationTriggered = false;
@@ -78,7 +78,7 @@
 
 	onMount(() => {
 		currentConversationId.set(data.conversation.id);
-		messages.set([]);
+		messages.set(data.messages ?? []);
 		titleGenerationTriggered = false;
 		lastUserMessage = '';
 		lastAssistantResponse = '';
@@ -246,7 +246,7 @@
 
 	.composer-layer-active {
 		top: 100%;
-		transform: translateY(calc(-100% - max(0.75rem, env(safe-area-inset-bottom))));
+		transform: translateY(calc(-100% - max(1.5rem, env(safe-area-inset-bottom))));
 	}
 
 	.intro-copy {

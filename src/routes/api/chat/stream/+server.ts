@@ -3,6 +3,7 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
 import { config } from '$lib/server/env';
+import { createMessage } from '$lib/server/services/messages';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -298,12 +299,13 @@ export const POST: RequestHandler = async (event) => {
 	let cancelStream = () => undefined;
 
 	const stream = new ReadableStream({
-		async start(controller) {
-			const upstreamAbortController = new AbortController();
-			const outputTranslator =
-				sourceLanguage === 'hu' ? new StreamingHungarianTranslator() : null;
-			let closed = false;
-			let ended = false;
+			async start(controller) {
+				const upstreamAbortController = new AbortController();
+				const outputTranslator =
+					sourceLanguage === 'hu' ? new StreamingHungarianTranslator() : null;
+				let closed = false;
+				let ended = false;
+				let fullResponse = '';
 
 			const closeStream = () => {
 				if (closed) return;
@@ -339,8 +341,10 @@ export const POST: RequestHandler = async (event) => {
 				}
 			};
 
-			const emitToken = (chunk: string) =>
-				enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+			const emitToken = (chunk: string) => {
+				fullResponse += chunk;
+				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+			};
 
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 
@@ -348,6 +352,10 @@ export const POST: RequestHandler = async (event) => {
 				if (ended || closed) return;
 				ended = true;
 				enqueueChunk(`event: end\ndata: {}\n\n`);
+				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
+				if (fullResponse.trim()) {
+					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);
+				}
 				touchConversation(user.id, conversationId).catch(() => undefined);
 				closeStream();
 			};
