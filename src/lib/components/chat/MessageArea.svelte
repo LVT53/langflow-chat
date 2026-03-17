@@ -38,13 +38,27 @@
 	aria-live="polite"
 	aria-atomic="false"
 >
-	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg pb-40 md:pb-44">
+	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg">
 		{#if messages.length === 0}
 			<div class="h-full"></div>
 		{:else}
 			{#each messages as message (message.id)}
 				<MessageBubble {message} />
 			{/each}
+			<div class="scroll-clearance" aria-hidden="true"></div>
 		{/if}
 	</div>
 </div>
+
+<style>
+	.scroll-clearance {
+		height: 11rem;
+		flex: 0 0 auto;
+	}
+
+	@media (min-width: 768px) {
+		.scroll-clearance {
+			height: 13rem;
+		}
+	}
+</style>
