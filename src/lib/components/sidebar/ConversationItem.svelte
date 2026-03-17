@@ -119,9 +119,9 @@
 		{/if}
 	</div>
 
-	<div class="relative flex h-11 w-11 flex-shrink-0 items-center justify-center" bind:this={menuRef}>
+	<div class="relative flex h-[44px] w-[44px] min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center" bind:this={menuRef}>
 		<button
-			class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-sm text-text-muted opacity-100 transition-opacity hover:bg-surface-elevated hover:text-text-primary focus-visible:bg-surface-elevated focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100"
+			class="flex h-[44px] w-[44px] min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-sm text-text-muted opacity-100 transition-opacity hover:bg-surface-elevated hover:text-text-primary focus-visible:bg-surface-elevated focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100"
 			class:opacity-100={menuOpen || active}
 			class:md:opacity-100={menuOpen || active}
 			on:click={toggleMenu}
