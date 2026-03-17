@@ -119,10 +119,11 @@
 		{/if}
 	</div>
 
-	<div class="relative flex-shrink-0" bind:this={menuRef}>
+	<div class="relative flex h-11 w-11 flex-shrink-0 items-center justify-center" bind:this={menuRef}>
 		<button
-			class="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted opacity-0 transition-opacity hover:bg-surface-elevated hover:text-text-primary focus-visible:opacity-100 focus-visible:bg-surface-elevated focus-visible:outline-none group-hover:opacity-100"
-			class:opacity-100={menuOpen}
+			class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-sm text-text-muted opacity-100 transition-opacity hover:bg-surface-elevated hover:text-text-primary focus-visible:bg-surface-elevated focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100"
+			class:opacity-100={menuOpen || active}
+			class:md:opacity-100={menuOpen || active}
 			on:click={toggleMenu}
 			aria-label="Conversation options"
 		>
