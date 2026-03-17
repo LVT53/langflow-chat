@@ -188,7 +188,10 @@
 	}
 
 	.sidebar-panel.sidebar-collapsed {
-		width: 48px;
+		width: 0;
+		border-right-color: transparent;
+		box-shadow: none;
+		background: transparent;
 		overflow: hidden;
 	}
 
@@ -213,7 +216,7 @@
 		}
 
 		.sidebar-panel.sidebar-collapsed {
-			width: 48px;
+			width: 0;
 		}
 
 		.mobile-overlay {

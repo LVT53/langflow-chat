@@ -52,13 +52,13 @@
 
 <style>
 	.scroll-clearance {
-		height: 11rem;
+		height: 9rem;
 		flex: 0 0 auto;
 	}
 
 	@media (min-width: 768px) {
 		.scroll-clearance {
-			height: 13rem;
+			height: 11rem;
 		}
 	}
 </style>

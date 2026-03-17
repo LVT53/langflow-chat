@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { sidebarOpen, currentConversationId, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
+	import {
+		sidebarOpen,
+		sidebarCollapsed,
+		currentConversationId,
+		SIDEBAR_DESKTOP_BREAKPOINT
+	} from '$lib/stores/ui';
 	import { createNewConversation } from '$lib/stores/conversations';
 	import type { SessionUser } from '$lib/types';
 	import ThemeToggle from './ThemeToggle.svelte';
@@ -28,6 +33,11 @@
 	}
 
 	function toggleSidebar() {
+		if (typeof window !== 'undefined' && window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT) {
+			sidebarCollapsed.update((collapsed) => !collapsed);
+			return;
+		}
+
 		sidebarOpen.update((open) => !open);
 	}
 
@@ -139,7 +149,7 @@
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
-			class="btn-icon-bare hide-on-desktop"
+			class="btn-icon-bare"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -353,9 +363,4 @@
 		}
 	}
 
-	@media (min-width: 1024px) {
-		.hide-on-desktop {
-			display: none !important;
-		}
-	}
 </style>

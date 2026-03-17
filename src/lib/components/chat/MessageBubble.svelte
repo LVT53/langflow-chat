@@ -11,9 +11,16 @@
 
 	$: isUser = message.role === 'user';
 
+	function getClipboardText(content: string) {
+		return content
+			.replace(/<\/?preserve>/gi, '')
+			.replace(/^\[Translation unavailable\]\s*/i, '')
+			.trim();
+	}
+
 	async function copyToClipboard() {
 		try {
-			await navigator.clipboard.writeText(message.content);
+			await navigator.clipboard.writeText(getClipboardText(message.content));
 			copied = true;
 			clearTimeout(copyTimeout);
 			copyTimeout = setTimeout(() => {
