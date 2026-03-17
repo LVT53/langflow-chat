@@ -217,55 +217,96 @@ function extractAssistantChunk(eventType: string, rawData: unknown): string {
 	return getTextContent(data);
 }
 
-function toIncrementalChunk(eventType: string, chunk: string, lastSnapshot: string): {
+function toIncrementalChunk(
+	eventType: string,
+	chunk: string,
+	lastSnapshot: string,
+	emittedText: string
+): {
 	chunk: string;
 	lastSnapshot: string;
+	emittedText: string;
 } {
 	if (eventType === 'token') {
 		return {
 			chunk,
-			lastSnapshot
+			lastSnapshot,
+			emittedText: emittedText + chunk
 		};
 	}
 
 	if (!chunk) {
 		return {
 			chunk: '',
-			lastSnapshot
+			lastSnapshot,
+			emittedText
 		};
+	}
+
+	if (emittedText) {
+		if (chunk === emittedText) {
+			return {
+				chunk: '',
+				lastSnapshot: chunk,
+				emittedText
+			};
+		}
+
+		if (chunk.startsWith(emittedText)) {
+			const delta = chunk.slice(emittedText.length);
+			return {
+				chunk: delta,
+				lastSnapshot: chunk,
+				emittedText: emittedText + delta
+			};
+		}
+
+		if (emittedText.startsWith(chunk)) {
+			return {
+				chunk: '',
+				lastSnapshot: chunk,
+				emittedText
+			};
+		}
 	}
 
 	if (!lastSnapshot) {
 		return {
 			chunk,
-			lastSnapshot: chunk
+			lastSnapshot: chunk,
+			emittedText: emittedText + chunk
 		};
 	}
 
 	if (chunk === lastSnapshot) {
 		return {
 			chunk: '',
-			lastSnapshot
+			lastSnapshot,
+			emittedText
 		};
 	}
 
 	if (chunk.startsWith(lastSnapshot)) {
+		const delta = chunk.slice(lastSnapshot.length);
 		return {
-			chunk: chunk.slice(lastSnapshot.length),
-			lastSnapshot: chunk
+			chunk: delta,
+			lastSnapshot: chunk,
+			emittedText: emittedText + delta
 		};
 	}
 
 	if (lastSnapshot.startsWith(chunk)) {
 		return {
 			chunk: '',
-			lastSnapshot
+			lastSnapshot,
+			emittedText
 		};
 	}
 
 	return {
 		chunk,
-		lastSnapshot: chunk
+		lastSnapshot: chunk,
+		emittedText: emittedText + chunk
 	};
 }
 
@@ -360,6 +401,7 @@ export const POST: RequestHandler = async (event) => {
 				let ended = false;
 				let fullResponse = '';
 				let lastAssistantSnapshot = '';
+				let emittedAssistantText = '';
 
 			const closeStream = () => {
 				if (closed) return;
@@ -457,12 +499,15 @@ export const POST: RequestHandler = async (event) => {
 						continue;
 					}
 
-					const { chunk, lastSnapshot } = toIncrementalChunk(
+					const incremental = toIncrementalChunk(
 						eventType,
 						rawChunk,
-						lastAssistantSnapshot
+						lastAssistantSnapshot,
+						emittedAssistantText
 					);
-					lastAssistantSnapshot = lastSnapshot;
+					lastAssistantSnapshot = incremental.lastSnapshot;
+					emittedAssistantText = incremental.emittedText;
+					const chunk = incremental.chunk;
 					if (!chunk) continue;
 
 					if (!outputTranslator) {

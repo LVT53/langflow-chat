@@ -212,6 +212,34 @@ describe('POST /api/chat/stream', () => {
 		);
 	});
 
+	it('does not duplicate the final add_message after token streaming', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"text":"Hello"}\n\n',
+				'event: token\ndata: {"text":" world"}\n\n',
+				'event: add_message\ndata: {"sender":"Machine","text":"Hello world"}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('"text":"Hello"');
+		expect(body).toContain('"text":" world"');
+		expect(body.match(/event: token/g)?.length).toBe(2);
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(1, 'conv-1', 'user', 'Hi');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			'conv-1',
+			'assistant',
+			'Hello world'
+		);
+	});
+
 	it('translates Hungarian input before sending it to Langflow', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
