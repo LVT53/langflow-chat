@@ -38,7 +38,7 @@
 </script>
 
 <header
-	class="grid grid-cols-[1fr_auto_1fr] flex-none w-full max-w-full h-[48px] md:h-[56px] lg:h-[64px] items-center border-b border-border bg-surface-page px-safe pt-safe shrink-0 z-10 gap-2 md:gap-4 box-border"
+	class="flex flex-none w-full max-w-full h-[48px] md:h-[56px] lg:h-[64px] items-center border-b border-border bg-surface-page px-safe pt-safe pb-sm shrink-0 z-10 gap-2 md:gap-4 box-border"
 >
 	<div class="flex min-w-0 items-center justify-start gap-sm">
 		<button
@@ -62,11 +62,10 @@
 				<line x1="3" x2="21" y1="18" y2="18" />
 			</svg>
 		</button>
+		<div class="hide-on-desktop text-[16px] font-sans font-bold tracking-tight text-text-primary whitespace-nowrap">AlfyAI</div>
 	</div>
-    
-	<div class="flex items-center justify-center px-2">
-		<div class="text-[16px] md:text-xl font-sans font-bold tracking-tight text-text-primary whitespace-nowrap">AlfyAI</div>
-	</div>
+
+	<div class="flex-1"></div>
 
 	<div class="flex min-w-0 items-center justify-end gap-sm md:gap-md">
 		<ThemeToggle />
