@@ -1,10 +1,8 @@
 import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { createHighlighter } from 'shiki';
 
 let highlighter: Awaited<ReturnType<typeof createHighlighter>> | null = null;
 let highlighterPromise: Promise<void> | null = null;
-let dompurifyInstance: ReturnType<typeof DOMPurify> | null = null;
 
 async function initHighlighter() {
   if (highlighter) return;
@@ -15,16 +13,6 @@ async function initHighlighter() {
         themes: ['github-light', 'github-dark'],
         langs: ['javascript', 'typescript', 'python', 'bash', 'json', 'html', 'css', 'yaml', 'markdown']
       });
-      // Initialize DOMPurify
-      if (typeof window !== 'undefined') {
-        // We are in the browser
-        dompurifyInstance = DOMPurify();
-      } else {
-        // We are in Node.js
-        const { JSDOM } = await import('jsdom');
-        const dom = new JSDOM("");
-        dompurifyInstance = DOMPurify(dom.window);
-      }
     })();
   }
   
@@ -75,10 +63,13 @@ function createMarkdownRenderer(isDark: boolean) {
 }
 
 function sanitizeHtml(html: string): string {
-  return dompurifyInstance!.sanitize(html, {
-    ADD_ATTR: ['style'],
-    ADD_TAGS: ['span']
-  });
+  return html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
+    .replace(/\son\w+=(['"]).*?\1/gi, '')
+    .replace(/\son\w+=([^\s>]+)/gi, '')
+    .replace(/\s(?:href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, '')
+    .replace(/\sstyle\s*=\s*(['"])[\s\S]*?\1/gi, '');
 }
 
 // Helper function to escape HTML

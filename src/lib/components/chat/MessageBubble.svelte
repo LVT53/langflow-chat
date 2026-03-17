@@ -46,7 +46,7 @@
 		{/if}
 
 		{#if !isUser && !message.isStreaming}
-			<div class="mt-3 flex justify-end opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100">
+			<div class="mt-3 flex justify-start opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100">
 				<button
 					type="button"
 					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
