@@ -42,7 +42,7 @@
 >
 	<div class="flex min-w-0 items-center justify-start gap-sm">
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-muted hover:text-icon-primary transition-colors duration-250 cursor-pointer"
+			class="btn-icon hide-on-desktop"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -71,7 +71,7 @@
 	<div class="flex min-w-0 items-center justify-end gap-sm md:gap-md">
 		<ThemeToggle />
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md transition-colors duration-250"
+			class="btn-icon hide-on-desktop-md"
 			on:click={handleNewConversation}
 			aria-label="New chat"
 			title="New chat"
@@ -84,7 +84,7 @@
 			</span>
 		{/if}
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] items-center justify-center rounded-md bg-surface-elevated p-sm md:px-md md:py-sm text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors duration-250"
+			class="btn-secondary text-[14px] p-2 md:px-4 md:py-2"
 			data-testid="logout-button"
 			on:click={handleLogout}
 			aria-label="Logout"
