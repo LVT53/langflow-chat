@@ -190,4 +190,34 @@ describe('translator service', () => {
 		expect(second).toEqual(['Magyar első. Magyar második.']);
 		expect(fetch).toHaveBeenCalledTimes(1);
 	});
+
+	it('removes short english artifact lines from translation output', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ text: 'Magyar bekezdés.\ntelephone.\nMásodik mondat.' }]
+			})
+		} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('Paragraph one.');
+
+		expect(result).toBe('Magyar bekezdés.\nMásodik mondat.');
+	});
+
+	it('dedupes repeated adjacent paragraphs from translation output', async () => {
+		const repeated =
+			'Az Egyesült Államok egy föderális köztársaság, amely 50 államból áll.\n\nAz Egyesült Államok egy föderális köztársaság, amely 50 államból áll.';
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ text: repeated }]
+			})
+		} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('The United States is a federal republic.');
+
+		expect(result).toBe('Az Egyesült Államok egy föderális köztársaság, amely 50 államból áll.');
+	});
 });

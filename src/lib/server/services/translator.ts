@@ -130,6 +130,7 @@ const META_PREFIX_PATTERNS = [
 	/^\s*transzláció\s*:\s*/i,
 	/^\s*fordítás\s*:\s*/i
 ];
+const SHORT_ENGLISH_ARTIFACT = /^[A-Za-z][A-Za-z' -]{0,24}[.!?]$/;
 
 type PlaceholderMap = Record<string, string>;
 type TranslationFallbackMode = 'original' | 'null';
@@ -397,9 +398,70 @@ function sanitizeTranslationOutput(text: string): string {
 	sanitized = sanitized.replace(/(^|[\n\r]\s*)rough\s+draft\.?\s*/gi, '$1');
 	sanitized = sanitized.replace(/(^|[\n\r]\s*)transzlatása\s*:\s*/gi, '$1');
 	sanitized = sanitized.replace(/(^|[\n\r]\s*)transzláció\s*:\s*/gi, '$1');
+	sanitized = removeShortEnglishArtifacts(sanitized);
+	sanitized = dedupeAdjacentParagraphs(sanitized);
 	sanitized = sanitized.replace(/[ \t]{2,}/g, ' ');
+	sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
 
 	return sanitized.trim();
+}
+
+function removeShortEnglishArtifacts(text: string): string {
+	return text
+		.split('\n')
+		.filter((line) => {
+			const trimmed = line.trim();
+			if (!trimmed) {
+				return true;
+			}
+
+			if (!SHORT_ENGLISH_ARTIFACT.test(trimmed)) {
+				return true;
+			}
+
+			return /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/.test(trimmed);
+		})
+		.join('\n')
+		.replace(/\s+([.!?])/g, '$1');
+}
+
+function normalizeParagraphForComparison(paragraph: string): string {
+	return paragraph
+		.toLowerCase()
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^\p{L}\p{N}]+/gu, ' ')
+		.trim();
+}
+
+function dedupeAdjacentParagraphs(text: string): string {
+	const paragraphs = text.split(/\n\s*\n/);
+	const deduped: string[] = [];
+
+	for (const paragraph of paragraphs) {
+		const trimmed = paragraph.trim();
+		if (!trimmed) {
+			continue;
+		}
+
+		const normalized = normalizeParagraphForComparison(trimmed);
+		const previous = deduped[deduped.length - 1];
+		if (previous) {
+			const previousNormalized = normalizeParagraphForComparison(previous);
+			if (
+				normalized === previousNormalized ||
+				(normalized.length > 120 &&
+					previousNormalized.length > 120 &&
+					(normalized.includes(previousNormalized) || previousNormalized.includes(normalized)))
+			) {
+				continue;
+			}
+		}
+
+		deduped.push(trimmed);
+	}
+
+	return deduped.join('\n\n');
 }
 
 function hasBrokenTargetScript(text: string): boolean {
