@@ -23,14 +23,24 @@ import { browser } from '$app/environment';
  * - Always reference Tailwind breakpoint values for consistency
  */
 
-const initialSidebarState = browser ? window.innerWidth >= 1024 : false;
+export const SIDEBAR_DESKTOP_BREAKPOINT = 1024;
+
+const initialSidebarState = browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false;
 export const sidebarOpen = writable<boolean>(initialSidebarState);
 
 if (browser) {
+  let wasDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+
   window.addEventListener('resize', () => {
-    if (window.innerWidth >= 1024) {
+    const isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+
+    if (isDesktop) {
+      sidebarOpen.set(true);
+    } else if (wasDesktop) {
       sidebarOpen.set(false);
     }
+
+    wasDesktop = isDesktop;
   });
 }
 

@@ -23,13 +23,17 @@ module.exports = {
 					DEFAULT: 'var(--accent)',
 					hover: 'var(--accent-hover)'
 				},
-				border: 'var(--border)',
-				focus: 'var(--border-focus)',
+				border: {
+					DEFAULT: 'var(--border-default)',
+					subtle: 'var(--border-subtle)',
+					focus: 'var(--border-focus)'
+				},
 				// Semantic Surface Tokens
 				surface: {
 					page: 'var(--surface-page)',
 					elevated: 'var(--surface-elevated)',
-					overlay: 'var(--surface-overlay)'
+					overlay: 'var(--surface-overlay)',
+					code: 'var(--surface-code)'
 				},
 				// Semantic Icon Tokens
 				icon: {
@@ -67,6 +71,12 @@ module.exports = {
 				'md': 'var(--shadow-md)',
 				'lg': 'var(--shadow-lg)',
 			},
+		transitionDuration: {
+			'micro': 'var(--duration-micro)',
+			'150': 'var(--duration-standard)',
+			'250': 'var(--duration-emphasis)',
+			'emphasis': 'var(--duration-emphasis)',
+		},
 			fontFamily: {
 				sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
 				serif: ["Georgia", "Times New Roman", "serif"],

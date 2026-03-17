@@ -90,7 +90,7 @@
 		tabindex="-1"
 		aria-labelledby="dialog-title"
 		aria-describedby="dialog-message"
-		class="relative w-full max-w-[480px] rounded-lg bg-surface-overlay p-lg shadow-lg border border-border"
+		class="relative w-full max-w-[480px] rounded-lg border border-border bg-surface-page p-lg shadow-lg"
 		on:click|stopPropagation
 		transition:scale={{ duration: 150, start: 0.95 }}
 	>
@@ -103,20 +103,20 @@
 		</p>
 
 		<div class="flex justify-end gap-md">
-<button
+			<button
 			type="button"
-			class="rounded-md border border-border bg-transparent min-h-[44px] px-md py-sm text-sm font-medium text-text-muted transition-colors duration-250 hover:bg-surface-elevated hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 dark:focus:ring-offset-surface-page cursor-pointer"
+			class="btn-secondary"
 			on:click={handleCancel}
-		>
+			>
 				{cancelText}
 			</button>
-<button
+			<button
 			data-testid="confirm-delete"
 			bind:this={confirmBtnRef}
 			type="button"
-			class="rounded-md min-h-[44px] px-md py-sm text-sm font-medium text-surface-page transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-surface-page {confirmVariant === 'danger' ? 'bg-danger hover:bg-danger-hover focus:ring-danger' : 'bg-accent hover:bg-accent-hover focus:ring-focus-ring'} cursor-pointer"
+			class={confirmVariant === 'danger' ? 'btn-danger' : 'btn-primary'}
 			on:click={handleConfirm}
-		>
+			>
 				{confirmText}
 			</button>
 		</div>

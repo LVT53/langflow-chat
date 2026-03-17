@@ -43,59 +43,61 @@
   <title>Sign In</title>
 </svelte:head>
 
-<div class="min-h-screen w-full flex items-center justify-center bg-surface-page p-lg md:p-2xl">
-  <div class="w-[90vw] sm:w-[448px] max-w-[448px] mx-auto p-xl md:p-2xl bg-surface-elevated rounded-lg shadow-lg border border-border">
-    <div class="text-center mb-10">
-      <h1 class="text-4xl md:text-5xl font-serif font-bold text-text-primary mb-3">Sign In</h1>
-      <p class="text-lg text-text-muted font-serif">Welcome back. Please enter your details.</p>
+<div class="flex min-h-[100svh] w-full items-center justify-center bg-surface-page px-4 py-6 md:px-8 md:py-10">
+  <div class="mx-auto w-full max-w-[448px] rounded-lg border border-border bg-surface-elevated p-xl md:p-2xl shadow-lg">
+    <div class="mb-10 text-center md:mb-12">
+      <h1 class="mb-3 text-4xl font-serif font-bold text-text-primary md:text-5xl">Sign In</h1>
+      <p class="mb-[30px] text-lg text-text-muted font-serif">Welcome back. Please enter your details.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit} class="flex flex-col gap-y-6">
-      <div class="space-y-2">
-        <label for="email" class="block text-sm font-medium text-text-primary font-serif">
-          Email address
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autocomplete="email"
-          bind:value={email}
-          disabled={loading}
-          on:input={() => error = ''}
-          class="w-full min-h-[48px] px-md py-sm font-serif text-base border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring focus:bg-surface-overlay disabled:opacity-50 transition-shadow placeholder-text-muted"
-          placeholder="you@example.com"
-        />
-      </div>
+    <form on:submit|preventDefault={handleSubmit} class="flex flex-col">
+      <div class="flex flex-col gap-[5px]">
+        <div class="space-y-2">
+          <label for="email" class="block text-sm font-medium text-text-primary font-serif">
+            Email address
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            bind:value={email}
+            disabled={loading}
+            on:input={() => error = ''}
+            class="box-border block w-full min-h-[48px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
+            placeholder="you@example.com"
+          />
+        </div>
 
-      <div class="space-y-2">
-        <label for="password" class="block text-sm font-medium text-text-primary font-serif">
-          Password
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          bind:value={password}
-          disabled={loading}
-          on:input={() => error = ''}
-          class="w-full min-h-[48px] px-md py-sm font-serif text-base border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring focus:bg-surface-overlay disabled:opacity-50 transition-shadow placeholder-text-muted"
-          placeholder="••••••••"
-        />
+        <div class="mb-[30px] space-y-2">
+          <label for="password" class="block text-sm font-medium text-text-primary font-serif">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            bind:value={password}
+            disabled={loading}
+            on:input={() => error = ''}
+            class="box-border block w-full min-h-[48px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
+            placeholder="••••••••"
+          />
+        </div>
       </div>
 
       {#if error}
-        <div class="p-md bg-surface-page text-danger text-sm md:text-base rounded-md border border-danger font-serif" role="alert" data-testid="login-error">
+        <div class="mt-6 rounded-md border border-danger bg-surface-page p-md text-sm text-danger font-serif md:text-base" role="alert" data-testid="login-error">
           {error}
         </div>
       {/if}
 
-       <button
-         type="submit"
-         disabled={loading}
-         class="w-full min-h-[56px] flex justify-center items-center py-sm px-md border border-transparent rounded-md shadow-sm text-lg font-serif font-bold text-surface-page bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:opacity-70 disabled:cursor-not-allowed transition-all mt-10 cursor-pointer"
-       >
+      <button
+        type="submit"
+        disabled={loading}
+        class="mt-8 flex min-h-[56px] w-full cursor-pointer items-center justify-center rounded-md border border-transparent bg-accent px-md py-sm text-lg font-serif font-bold text-surface-page shadow-sm transition-all hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-70"
+      >
         {#if loading}
           <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-surface-page" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

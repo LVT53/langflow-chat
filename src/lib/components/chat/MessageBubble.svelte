@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
-	import { formatRelativeTime } from '$lib/utils/time';
 	import type { ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import MessageLoading from './MessageLoading.svelte';
@@ -31,8 +30,8 @@
 		data-testid={isUser ? 'user-message' : 'assistant-message'}
 		class="relative flex flex-col font-serif
 		{isUser 
-			? 'bg-surface-elevated text-text-primary rounded-lg p-md max-w-[85%] md:max-w-[80%]' 
-			: 'bg-surface-page text-text-primary rounded-none p-0 w-full max-w-full'}"
+			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]' 
+			: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
 		{#if message.isStreaming}
 			<MessageLoading label="Thinking..." />
@@ -50,7 +49,7 @@
 			<div class="absolute -bottom-4 right-2 flex opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100 sm:-right-10 sm:bottom-0 sm:top-2 sm:h-fit">
 				<button
 					type="button"
-					class="flex min-h-[44px] min-w-[44px] p-sm sm:min-h-[36px] sm:min-w-[36px] items-center justify-center rounded-sm bg-transparent text-icon-muted hover:bg-surface-elevated hover:text-icon-primary transition-colors duration-250 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
 					on:click={copyToClipboard}
 					title="Copy message"
 					aria-label="Copy message"
@@ -68,10 +67,6 @@
 				</button>
 			</div>
 		{/if}
-	</div>
-
-	<div class="text-[12px] font-sans text-text-muted {isUser ? 'pr-2' : 'pl-2'}">
-		{formatRelativeTime(message.timestamp)}
 	</div>
 </div>
 

@@ -33,21 +33,21 @@
 	<title>Alfy AI</title>
 </svelte:head>
 
-<div class="flex h-full flex-col items-center justify-center bg-surface-page px-4 py-12">
-	<div class="flex w-full max-w-[640px] flex-col items-center gap-8">
+<div class="flex h-full flex-col items-center justify-center overflow-hidden bg-surface-page px-4 py-10 md:px-8">
+	<div class="flex w-full max-w-[760px] flex-col items-center gap-8">
 		{#if !hasStarted}
-			<div class="flex flex-col items-center gap-3 text-center" transition:fade={{ duration: 300 }}>
-				<h1 class="text-4xl font-serif font-medium text-text-primary md:text-5xl">
+			<div class="flex flex-col items-center px-2 text-center" transition:fade={{ duration: 260 }}>
+				<h1
+					class="max-w-[11ch] text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[4.75rem]"
+					style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
+				>
 					What can I help you with?
 				</h1>
-				<p class="text-lg font-serif text-text-muted">
-					Ask me anything.
-				</p>
 			</div>
 		{/if}
 
 		{#if error}
-			<div class="w-full rounded-md border border-danger bg-surface-page p-md text-sm font-serif text-danger" role="alert">
+			<div class="w-full rounded-md border border-danger bg-surface-page p-md text-sm font-serif text-danger shadow-sm" role="alert">
 				{error}
 			</div>
 		{/if}

@@ -1,0 +1,79 @@
+#!/usr/bin/env tsx
+
+// Load environment variables from .env file first
+import { config as dotenvConfig } from 'dotenv';
+dotenvConfig();
+
+// Set required environment variables if not set (or empty)
+if (!process.env.LANGFLOW_API_KEY) {
+  process.env.LANGFLOW_API_KEY = 'test-langflow-api-key-12345';
+}
+if (!process.env.SESSION_SECRET) {
+  process.env.SESSION_SECRET = 'test-session-secret-12345678901234567890123456789012';
+}
+if (!process.env.DATABASE_PATH) {
+  process.env.DATABASE_PATH = './data/chat.db';
+}
+
+// Import node modules
+import { mkdirSync, existsSync } from 'fs';
+import { dirname } from 'path';
+import { randomUUID } from 'crypto';
+import { execSync } from 'child_process';
+
+// Ensure the database directory exists (must be done before importing db module)
+const dbDir = dirname(process.env.DATABASE_PATH);
+if (!existsSync(dbDir)) {
+  console.log(`Creating database directory: ${dbDir}`);
+  mkdirSync(dbDir, { recursive: true });
+}
+
+// Import our application modules (now safe - env vars are already set and directory exists)
+import { db } from '$lib/server/db/index';
+import { users } from '$lib/server/db/schema';
+import bcrypt from 'bcryptjs';
+
+async function main() {
+  const args = process.argv.slice(2);
+  const emailArg = args.find(arg => arg.startsWith('--email='));
+  const passwordArg = args.find(arg => arg.startsWith('--password='));
+  const nameArg = args.find(arg => arg.startsWith('--name='));
+  
+  const email = emailArg ? emailArg.split('=')[1] : 'admin@local';
+  const password = passwordArg ? passwordArg.split('=')[1] : 'admin123';
+  const name = nameArg ? nameArg.split('=')[1] : 'Admin User';
+
+  // Apply pending database migrations
+  try {
+    execSync('npx drizzle-kit push', { stdio: 'inherit' });
+  } catch (migrationError) {
+    console.error('Error applying migrations:', migrationError);
+    process.exit(1);
+  }
+
+  const id = randomUUID();
+  const passwordHash = bcrypt.hashSync(password, 10);
+
+  try {
+    await db.insert(users).values({
+      id,
+      email,
+      name,
+      passwordHash,
+    });
+    console.log(`User created: ${email} (id: ${id})`);
+  } catch (err: any) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.message?.includes('UNIQUE constraint failed')) {
+      console.log('User already exists');
+      process.exit(0);
+    } else {
+      console.error('Error creating user:', err);
+      process.exit(1);
+    }
+  }
+}
+
+main().catch(err => {
+  console.error('Unexpected error:', err);
+  process.exit(1);
+});

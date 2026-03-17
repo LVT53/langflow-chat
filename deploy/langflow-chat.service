@@ -1,0 +1,17 @@
+[Unit]
+Description=Langflow Chat Application
+After=network.target
+
+[Service]
+Type=simple
+User=langflow
+WorkingDirectory=/opt/langflow-chat
+EnvironmentFile=/opt/langflow-chat/.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

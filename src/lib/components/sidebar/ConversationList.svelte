@@ -12,6 +12,7 @@
 
 	let loading = true;
 	let error: string | null = null;
+	let openMenuId: string | null = null;
 
 	onMount(async () => {
 		try {
@@ -26,12 +27,14 @@
 
 	function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
+		openMenuId = null;
 		currentConversationId.set(id);
 		goto(`/chat/${id}`);
 	}
 
 	async function handleRename(event: CustomEvent<{ id: string; title: string }>) {
 		const { id, title } = event.detail;
+		openMenuId = null;
 		try {
 			await renameConversation(id, title);
 		} catch (e) {
@@ -42,18 +45,26 @@
 
 	async function handleDelete(event: CustomEvent<{ id: string }>) {
 		const { id } = event.detail;
-		if (confirm('Delete this conversation?')) {
-			try {
-				await deleteConversationById(id);
-				if ($currentConversationId === id) {
-					currentConversationId.set(null);
-					goto('/');
-				}
-			} catch (e) {
-				console.error('Delete failed', e);
-				alert('Failed to delete conversation. Please try again.');
+		openMenuId = null;
+		try {
+			await deleteConversationById(id);
+			if ($currentConversationId === id) {
+				currentConversationId.set(null);
+				goto('/');
 			}
+		} catch (e) {
+			console.error('Delete failed', e);
+			alert('Failed to delete conversation. Please try again.');
 		}
+	}
+
+	function handleMenuToggle(event: CustomEvent<{ id: string; open: boolean }>) {
+		const { id, open } = event.detail;
+		openMenuId = open ? id : null;
+	}
+
+	function handleMenuClose() {
+		openMenuId = null;
 	}
 </script>
 
@@ -75,9 +86,12 @@
 			<ConversationItem
 				{conversation}
 				active={$currentConversationId === conversation.id}
+				menuOpen={openMenuId === conversation.id}
 				on:select={handleSelect}
 				on:rename={handleRename}
 				on:delete={handleDelete}
+				on:menuToggle={handleMenuToggle}
+				on:menuClose={handleMenuClose}
 			/>
 		{/each}
 	{/if}

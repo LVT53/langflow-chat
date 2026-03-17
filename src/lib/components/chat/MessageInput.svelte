@@ -32,10 +32,11 @@
 
 	function adjustHeight() {
 		if (!textarea) return;
-		textarea.style.height = 'auto';
+		const minHeight = 52;
+		textarea.style.height = `${minHeight}px`;
 		const isMobile = window.innerWidth < 768;
 		const maxHeight = isMobile ? 120 : 200;
-		textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
 	}
 
 	function handleInput() {
@@ -69,19 +70,7 @@
 </script>
 
 <div class="relative flex w-full flex-col">
-	<div class="flex items-end gap-xs rounded-lg border border-border bg-surface-elevated p-sm shadow-sm transition-shadow focus-within:border-focus-ring focus-within:ring-1 focus-within:ring-focus-ring">
-		<button
-			type="button"
-			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-surface-elevated hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-250 cursor-pointer"
-			disabled
-			title="File uploads coming soon"
-			aria-label="Attach file"
-		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-			</svg>
-		</button>
-
+	<div class="message-composer flex min-h-[96px] flex-col rounded-[1.25rem] border border-border px-6 py-5 transition-all duration-150 focus-within:border-focus-ring">
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
@@ -89,24 +78,38 @@
 			on:input={handleInput}
 			on:keydown={handleKeydown}
 			placeholder="Type a message..."
-			class="min-h-[44px] w-full resize-none overflow-y-auto border-0 bg-transparent py-3 text-[16px] leading-[1.5] font-sans text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0"
+			class="composer-textarea min-h-[52px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[20px] py-[20px] text-left text-[16px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
 			{disabled}
 		></textarea>
 
-<button
-    data-testid="send-button"
-    type="button"
-    on:click={send}
-    disabled={!canSend}
-    aria-label="Send message"
-    class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md bg-accent text-surface-page transition-colors duration-250 hover:bg-accent-hover disabled:bg-surface-page disabled:text-icon-muted disabled:border disabled:border-border disabled:cursor-not-allowed cursor-pointer"
->
-  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13" />
-    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-  </svg>
-</button>
+		<div class="composer-actions flex items-center justify-between gap-3 p-[10px]">
+			<button
+				type="button"
+				class="btn-icon-bare composer-icon flex-shrink-0 text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
+				disabled
+				title="File uploads coming soon"
+				aria-label="Attach file"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+				</svg>
+			</button>
+
+			<button
+				data-testid="send-button"
+				type="button"
+				on:click={send}
+				disabled={!canSend}
+				aria-label="Send message"
+				class="btn-primary composer-send min-h-[50px] min-w-[50px] flex-shrink-0 rounded-[15px] !px-0 shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="22" x2="11" y1="2" y2="13" />
+					<polygon points="22 2 15 22 11 13 2 9 22 2" />
+				</svg>
+			</button>
+		</div>
 	</div>
 
 	{#if showCharCount}
@@ -117,3 +120,39 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.message-composer {
+		background: color-mix(in srgb, var(--surface-elevated) 82%, var(--surface-page) 18%);
+		box-shadow:
+			0 1px 0 color-mix(in srgb, var(--border-default) 88%, transparent 12%),
+			0 14px 30px color-mix(in srgb, var(--accent) 7%, transparent 93%),
+			var(--shadow-lg);
+	}
+
+	:global(.dark) .message-composer {
+		background: color-mix(in srgb, var(--surface-overlay) 88%, #3a3a3a 12%);
+		box-shadow:
+			0 1px 0 color-mix(in srgb, var(--border-default) 92%, transparent 8%),
+			0 18px 38px rgba(0, 0, 0, 0.4),
+			0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent 90%);
+	}
+
+	.composer-icon {
+		align-self: center;
+	}
+
+	.composer-textarea {
+		align-self: stretch;
+	}
+
+	.composer-actions {
+		border-top: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent 28%);
+	}
+
+	.composer-send {
+		aspect-ratio: 1 / 1;
+		align-self: center;
+		overflow: hidden;
+	}
+</style>
