@@ -34,6 +34,38 @@ describe('translator service', () => {
 		expect(result).toContain('`npm run build`');
 	});
 
+	it('uses the vllm-compatible chat/completions translate format', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [{ message: { content: 'Hello world.' } }]
+			})
+		} as Response);
+
+		const { translateHungarianToEnglish } = await import('./translator');
+		await translateHungarianToEnglish('Szia világ.');
+
+		expect(fetch).toHaveBeenCalledWith(
+			expect.stringContaining('/chat/completions'),
+			expect.objectContaining({
+				method: 'POST',
+				body: expect.stringContaining('<<<source>>>hun_Latn')
+			})
+		);
+		expect(fetch).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({
+				body: expect.stringContaining('<<<target>>>eng_Latn')
+			})
+		);
+		expect(fetch).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({
+				body: expect.stringContaining('<<<text>>>Szia világ.')
+			})
+		);
+	});
+
 	it('preserves code blocks when translating English output to Hungarian', async () => {
 		vi.mocked(fetch).mockResolvedValue({
 			ok: true,

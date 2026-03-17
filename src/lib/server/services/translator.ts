@@ -134,6 +134,7 @@ const SHORT_ENGLISH_ARTIFACT = /^[A-Za-z][A-Za-z' -]{0,24}[.!?]$/;
 
 type PlaceholderMap = Record<string, string>;
 type TranslationFallbackMode = 'original' | 'null';
+type TranslateGemmaLanguageCode = 'eng_Latn' | 'hun_Latn';
 
 function buildHeaders(): Record<string, string> {
 	const headers: Record<string, string> = {
@@ -147,27 +148,36 @@ function buildHeaders(): Record<string, string> {
 	return headers;
 }
 
-function buildPrompt(systemInstruction: string, text: string): string {
+function buildTranslateGemmaContent(
+	sourceLanguage: TranslateGemmaLanguageCode,
+	targetLanguage: TranslateGemmaLanguageCode,
+	text: string
+): string {
 	return [
-		'<bos><start_of_turn>user',
-		systemInstruction,
-		'',
-		text.trim(),
-		'<end_of_turn>',
-		'<start_of_turn>model'
+		`<<<source>>>${sourceLanguage}`,
+		`<<<target>>>${targetLanguage}`,
+		`<<<text>>>${text.trim()}`
 	].join('\n');
 }
 
-async function requestTranslation(text: string, systemInstruction: string): Promise<string | null> {
-	const response = await fetch(`${config.translategemmaUrl}/completions`, {
+async function requestTranslation(
+	text: string,
+	sourceLanguage: TranslateGemmaLanguageCode,
+	targetLanguage: TranslateGemmaLanguageCode
+): Promise<string | null> {
+	const response = await fetch(`${config.translategemmaUrl}/chat/completions`, {
 		method: 'POST',
 		headers: buildHeaders(),
 		body: JSON.stringify({
 			model: config.translategemmaModel,
-			prompt: buildPrompt(systemInstruction, text),
+			messages: [
+				{
+					role: 'user',
+					content: buildTranslateGemmaContent(sourceLanguage, targetLanguage, text)
+				}
+			],
 			max_tokens: config.translationMaxTokens,
 			temperature: config.translationTemperature,
-			stop: ['<end_of_turn>'],
 			stream: false
 		})
 	});
@@ -177,7 +187,10 @@ async function requestTranslation(text: string, systemInstruction: string): Prom
 	}
 
 	const json = await response.json();
-	const translated = json.choices?.[0]?.text;
+	const translated =
+		json.choices?.[0]?.message?.content ??
+		json.choices?.[0]?.text ??
+		(json.choices?.[0]?.message?.content?.[0]?.text as string | undefined);
 	if (typeof translated !== 'string') {
 		return null;
 	}
@@ -475,11 +488,8 @@ function hasBrokenTargetScript(text: string): boolean {
 }
 
 async function translateHungarianSegment(text: string): Promise<string> {
-	const systemInstruction =
-		'You are a professional Hungarian (hu) to English (en) translator. Produce only the English translation, without any additional explanations.';
-
 	try {
-		const translated = await requestTranslation(text, systemInstruction);
+		const translated = await requestTranslation(text, 'hun_Latn', 'eng_Latn');
 		if (!translated) {
 			return text;
 		}
@@ -508,17 +518,10 @@ async function translateEnglishSentenceInternal(
 		sentence.length - trailingWhitespace.length
 	);
 	const { protectedText, terms } = extractTerms(coreSentence);
-	const markerList = Object.keys(terms).join(', ');
-	const baseSystem =
-		'You are a professional English (en) to Hungarian (hu) translator. Produce only the final Hungarian translation. Never add notes, commentary, labels, draft markers, bilingual output, explanations, or phrases like "translation:", "rough translation:", or "draft:".';
-	const systemInstruction =
-		markerList.length > 0
-			? `${baseSystem}\nIMPORTANT: The text contains markers (${markerList}). Keep every marker exactly as-is in your translation. Do not translate, remove, or modify any marker. Output Hungarian only.`
-			: baseSystem;
 
 	let translated: string | null;
 	try {
-		translated = await requestTranslation(protectedText, systemInstruction);
+		translated = await requestTranslation(protectedText, 'eng_Latn', 'hun_Latn');
 	} catch {
 		return fallbackMode === 'null' ? null : sentence;
 	}
@@ -535,14 +538,8 @@ async function translateEnglishSentenceInternal(
 		hasBrokenTargetScript(translated) ||
 		translated.length > protectedText.length * 3
 	) {
-		let strictSystem =
-			'Translate ONLY the following text from English to Hungarian. Output ONLY the final Hungarian translation. Do not add any extra content, labels, notes, draft markers, bilingual text, or English commentary.';
-		if (markerList.length > 0) {
-			strictSystem += ` Keep these markers exactly as-is: ${markerList}.`;
-		}
-
 		try {
-			translated = await requestTranslation(protectedText, strictSystem);
+			translated = await requestTranslation(protectedText, 'eng_Latn', 'hun_Latn');
 		} catch {
 			return fallbackMode === 'null' ? null : sentence;
 		}
