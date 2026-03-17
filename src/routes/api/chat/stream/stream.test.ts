@@ -142,6 +142,27 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('"text":" world"');
 	});
 
+	it('parses CRLF-delimited SSE blocks from Langflow', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: add_message\r\ndata: {"text":"Hello"}\r\n\r\n',
+				'event: add_message\r\ndata: {"text":" world"}\r\n\r\n',
+				'data: [DONE]\r\n\r\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Hello"');
+		expect(body).toContain('"text":" world"');
+		expect(body).toContain('event: end');
+	});
+
 	it('parses Langflow JSON event blocks and ignores echoed user messages', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

@@ -115,6 +115,7 @@ async function* parseUpstreamEvents(
 			if (!value) continue;
 
 			buffer += value;
+			buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
 			let separatorIndex = buffer.indexOf('\n\n');
 			while (separatorIndex !== -1) {
