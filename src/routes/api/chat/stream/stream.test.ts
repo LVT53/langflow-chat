@@ -162,6 +162,35 @@ describe('POST /api/chat/stream', () => {
 		expect(body).not.toContain('"text":"Hi"');
 	});
 
+	it('emits only deltas when Langflow sends cumulative assistant snapshots', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"Machine","text":"Hello"}}\n\n',
+				'{"event":"add_message","data":{"sender":"Machine","text":"Hello world"}}\n\n',
+				'{"event":"add_message","data":{"sender":"Machine","text":"Hello world again"}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('"text":"Hello"');
+		expect(body).toContain('"text":" world"');
+		expect(body).toContain('"text":" again"');
+		expect(body).not.toContain('"text":"Hello world"');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(1, 'conv-1', 'user', 'Hi');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			'conv-1',
+			'assistant',
+			'Hello world again'
+		);
+	});
+
 	it('translates Hungarian input before sending it to Langflow', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

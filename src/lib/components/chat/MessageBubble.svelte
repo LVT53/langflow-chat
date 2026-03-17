@@ -40,7 +40,7 @@
 			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]' 
 			: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
-		{#if message.isStreaming}
+		{#if message.isStreaming && !message.content}
 			<MessageLoading label="Thinking..." />
 		{:else if isUser}
 			<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
@@ -48,7 +48,11 @@
 			</div>
 		{:else}
 			<div class="prose-container w-full overflow-hidden text-[16px] leading-[1.6]">
-				<MarkdownRenderer content={message.content} isDark={$isDark} />
+				<MarkdownRenderer
+					content={message.content}
+					isDark={$isDark}
+					isStreaming={Boolean(message.isStreaming)}
+				/>
 			</div>
 		{/if}
 

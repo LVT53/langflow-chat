@@ -216,6 +216,58 @@ function extractAssistantChunk(eventType: string, rawData: unknown): string {
 	return getTextContent(data);
 }
 
+function toIncrementalChunk(eventType: string, chunk: string, lastSnapshot: string): {
+	chunk: string;
+	lastSnapshot: string;
+} {
+	if (eventType === 'token') {
+		return {
+			chunk,
+			lastSnapshot
+		};
+	}
+
+	if (!chunk) {
+		return {
+			chunk: '',
+			lastSnapshot
+		};
+	}
+
+	if (!lastSnapshot) {
+		return {
+			chunk,
+			lastSnapshot: chunk
+		};
+	}
+
+	if (chunk === lastSnapshot) {
+		return {
+			chunk: '',
+			lastSnapshot
+		};
+	}
+
+	if (chunk.startsWith(lastSnapshot)) {
+		return {
+			chunk: chunk.slice(lastSnapshot.length),
+			lastSnapshot: chunk
+		};
+	}
+
+	if (lastSnapshot.startsWith(chunk)) {
+		return {
+			chunk: '',
+			lastSnapshot
+		};
+	}
+
+	return {
+		chunk,
+		lastSnapshot: chunk
+	};
+}
+
 function extractErrorMessage(rawData: unknown): string {
 	const data = parseMaybeJson(rawData);
 
@@ -306,6 +358,7 @@ export const POST: RequestHandler = async (event) => {
 				let closed = false;
 				let ended = false;
 				let fullResponse = '';
+				let lastAssistantSnapshot = '';
 
 			const closeStream = () => {
 				if (closed) return;
@@ -398,10 +451,18 @@ export const POST: RequestHandler = async (event) => {
 						return;
 					}
 
-					const chunk = extractAssistantChunk(eventType, data);
-					if (!chunk) {
+					const rawChunk = extractAssistantChunk(eventType, data);
+					if (!rawChunk) {
 						continue;
 					}
+
+					const { chunk, lastSnapshot } = toIncrementalChunk(
+						eventType,
+						rawChunk,
+						lastAssistantSnapshot
+					);
+					lastAssistantSnapshot = lastSnapshot;
+					if (!chunk) continue;
 
 					if (!outputTranslator) {
 						if (!emitToken(chunk)) {
