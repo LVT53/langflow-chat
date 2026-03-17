@@ -3,6 +3,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * SCROLL OWNERSHIP CONTRACT
+ * =========================
+ * 
+ * This application follows a strict scroll containment strategy to ensure
+ * consistent behavior across desktop and mobile:
+ * 
+ * - BODY: Never scrolls (overscroll-behavior: none)
+ *   The body is locked to prevent accidental page scroll and pull-to-refresh
+ * 
+ * - APP ROOT: h-screen overflow-hidden (contains the entire app)
+ *   Located in src/routes/(app)/+layout.svelte
+ * 
+ * - SIDEBAR LIST: overflow-y-auto (scrollable conversation list)
+ *   Located in Sidebar component
+ * 
+ * - MESSAGE AREA: overflow-y-auto (scrollable message list)
+ *   Located in src/lib/components/chat/MessageArea.svelte
+ * 
+ * - MAIN CONTENT: No scroll (contained by message area)
+ * 
+ * Mobile Considerations:
+ * - overscroll-behavior: none prevents pull-to-refresh on chat surfaces
+ * - touch-action: pan-y allows vertical scrolling only on scrollable regions
+ */
+
 @layer base {
   :root {
     /* Legacy Colors (kept for backward compatibility) */
@@ -31,13 +57,20 @@
     --surface-page: #FFFFFF;
     --surface-elevated: #F4F3EE;
     --surface-overlay: #FFFFFF;
+    --surface-code: #F5F5F0;
     
     /* Semantic Tokens - Text */
+    --text-primary: #1A1A1A;
     --text-muted: #6B6B6B;
     
     /* Semantic Tokens - Icon */
     --icon-primary: #1A1A1A;
     --icon-muted: #6B6B6B;
+    
+    /* Semantic Tokens - Border */
+    --border-default: rgba(0,0,0,0.08);
+    --border-subtle: rgba(0,0,0,0.04);
+    --border-focus: #C15F3C;
     
     /* Semantic Tokens - Status */
     --danger: #DC2626;
@@ -46,6 +79,8 @@
     --success-hover: #15803D;
     
     /* Semantic Tokens - Interactive */
+    --accent: #C15F3C;
+    --accent-hover: #AE5630;
     --focus-ring: #C15F3C;
 
     /* Spacing System */
@@ -90,13 +125,20 @@
     --surface-page: #1A1A1A;
     --surface-elevated: #242424;
     --surface-overlay: #2A2A2A;
+    --surface-code: #2A2A2A;
     
     /* Semantic Tokens - Text */
+    --text-primary: #ECECEC;
     --text-muted: #8A8A8A;
     
     /* Semantic Tokens - Icon */
     --icon-primary: #ECECEC;
     --icon-muted: #8A8A8A;
+    
+    /* Semantic Tokens - Border */
+    --border-default: rgba(255,255,255,0.08);
+    --border-subtle: rgba(255,255,255,0.04);
+    --border-focus: #D4836B;
     
     /* Semantic Tokens - Status */
     --danger: #EF4444;
@@ -105,6 +147,8 @@
     --success-hover: #16A34A;
     
     /* Semantic Tokens - Interactive */
+    --accent: #D4836B;
+    --accent-hover: #C15F3C;
     --focus-ring: #D4836B;
   }
 
@@ -112,6 +156,8 @@
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    /* Prevent body scroll and pull-to-refresh on mobile */
+    overscroll-behavior: none;
   }
 }
 
@@ -127,8 +173,8 @@
   }
 
   .prose pre {
-    background-color: var(--bg-code);
-    border: 1px solid var(--border);
+    background-color: var(--surface-code);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: var(--space-md);
     overflow-x: auto;
@@ -137,7 +183,7 @@
   
   .prose code {
     font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-    background-color: var(--bg-code);
+    background-color: var(--surface-code);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
     font-size: 14px;
@@ -147,5 +193,18 @@
     background-color: transparent;
     padding: 0;
     font-size: 14px;
+  }
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .px-safe {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
