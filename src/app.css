@@ -43,11 +43,11 @@
     --text-secondary: #6B6B6B;
     --text-code: #1A1A1A;
     
-    --accent: #C15F3C;
-    --accent-hover: #AE5630;
+    --accent: #D97706;
+    --accent-hover: #B45309;
     
     --border: rgba(0,0,0,0.08);
-    --border-focus: #C15F3C;
+    --border-focus: #D97706;
     
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
     --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
@@ -70,32 +70,18 @@
     /* Semantic Tokens - Border */
     --border-default: rgba(0,0,0,0.08);
     --border-subtle: rgba(0,0,0,0.04);
-    --border-focus: #C15F3C;
+    --border-focus: #D97706;
     
     /* Semantic Tokens - Status */
-    --danger: #DC2626;
-    --danger-hover: #B91C1C;
-    --success: #16A34A;
-    --success-hover: #15803D;
+    --danger: #B91C1C;
+    --danger-hover: #991B1B;
+    --success: #15803D;
+    --success-hover: #166534;
     
     /* Semantic Tokens - Interactive */
-    --accent: #C15F3C;
-    --accent-hover: #AE5630;
-    --focus-ring: #C15F3C;
-
-    /* Spacing System */
-    --space-xs: 4px;
-    --space-sm: 8px;
-    --space-md: 16px;
-    --space-lg: 24px;
-    --space-xl: 32px;
-    --space-2xl: 48px;
-
-    /* Border Radius */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-full: 9999px;
+    --accent: #D97706;
+    --accent-hover: #B45309;
+    --focus-ring: #D97706;
   }
 
   .dark {
@@ -111,11 +97,11 @@
     --text-secondary: #8A8A8A;
     --text-code: #ECECEC;
     
-    --accent: #D4836B;
-    --accent-hover: #C15F3C;
+    --accent: #F59E0B;
+    --accent-hover: #FBBF24;
     
     --border: rgba(255,255,255,0.08);
-    --border-focus: #D4836B;
+    --border-focus: #F59E0B;
     
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
     --shadow-md: 0 2px 8px rgba(0,0,0,0.2);
@@ -129,46 +115,56 @@
     
     /* Semantic Tokens - Text */
     --text-primary: #ECECEC;
-    --text-muted: #8A8A8A;
+    --text-muted: #A0A0A0;
     
     /* Semantic Tokens - Icon */
     --icon-primary: #ECECEC;
-    --icon-muted: #8A8A8A;
+    --icon-muted: #A0A0A0;
     
     /* Semantic Tokens - Border */
     --border-default: rgba(255,255,255,0.08);
     --border-subtle: rgba(255,255,255,0.04);
-    --border-focus: #D4836B;
+    --border-focus: #F59E0B;
     
     /* Semantic Tokens - Status */
-    --danger: #EF4444;
-    --danger-hover: #DC2626;
+    --danger: #FF6B6B;
+    --danger-hover: #FF5757;
     --success: #22C55E;
-    --success-hover: #16A34A;
+    --success-hover: #4ADE80;
     
     /* Semantic Tokens - Interactive */
-    --accent: #D4836B;
-    --accent-hover: #C15F3C;
-    --focus-ring: #D4836B;
-  }
-
-  body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    /* Prevent body scroll and pull-to-refresh on mobile */
-    overscroll-behavior: none;
+    --accent: #F59E0B;
+    --accent-hover: #FBBF24;
+    --focus-ring: #F59E0B;
   }
 }
 
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Prevent body scroll and pull-to-refresh on mobile */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 @layer components {
-  /* Prefers reduced motion */
+  /* Prefers reduced motion - disables all animations for accessibility */
   @media (prefers-reduced-motion: reduce) {
-    * {
+    *,
+    *::before,
+    *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+    }
+
+    /* Override CSS variable durations for instant transitions */
+    :root {
+      --duration-micro: 0.01ms;
+      --duration-standard: 0.01ms;
+      --duration-emphasis: 0.01ms;
     }
   }
 

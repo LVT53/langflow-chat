@@ -41,14 +41,14 @@
 
 <!-- Sidebar -->
 <aside
-	class="sidebar-panel fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-surface-overlay shadow-lg transition-transform duration-[250ms] ease-out w-[280px] max-w-[100vw] lg:w-[260px]"
+	class="sidebar-panel fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-border bg-surface-overlay shadow-lg transition-transform duration-[var(--duration-standard)] ease-out w-[280px] max-w-[100vw] lg:w-[260px]"
 	class:-translate-x-[105%]={!open}
 	class:translate-x-0={open}
 >
 	<div class="mobile-close-header flex h-[48px] items-center px-2">
 		<!-- Mobile close button -->
 		<button
-			class="ml-auto inline-flex shrink-0 h-[44px] w-[44px] min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted hover:bg-surface-page hover:text-primary"
+			class="ml-auto inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md text-icon-muted hover:bg-surface-page hover:text-icon-primary transition-colors duration-250"
 			on:click={() => sidebarOpen.set(false)}
 			aria-label="Close sidebar"
 		>
@@ -71,10 +71,10 @@
 
 	<div class="p-4">
 		<button
-			data-testid="new-conversation"
-			class="desktop-min-h-0 flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium font-sans text-white transition-colors hover:bg-accent-hover focus:outline-none focus-ring min-h-[44px]"
-			on:click={handleNewConversation}
-		>
+		data-testid="new-conversation"
+		class="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-md py-sm text-sm font-medium font-sans text-surface-page transition-colors hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring min-h-[44px]"
+		on:click={handleNewConversation}
+	>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
 				width="16"
@@ -115,10 +115,6 @@
 
 		.mobile-close-header {
 			display: none !important;
-		}
-
-		.desktop-min-h-0 {
-			min-height: 0 !important;
 		}
 	}
 </style>

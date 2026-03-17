@@ -38,11 +38,11 @@
 </script>
 
 <header
-	class="flex flex-none h-[48px] md:h-[56px] lg:h-[64px] w-full items-center justify-between border-b border-border bg-surface-page px-safe pt-safe shrink-0 box-content overflow-hidden"
+	class="flex flex-none h-[48px] md:h-[56px] lg:h-[64px] items-center justify-between border-b border-border bg-surface-page px-safe pt-safe shrink-0 box-content z-10 gap-2 md:gap-4"
 >
-	<div class="flex items-center gap-sm">
+	<div class="flex flex-1 items-center justify-start gap-sm">
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] h-[44px] w-[44px] items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-primary"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-primary transition-colors duration-250"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -64,14 +64,14 @@
 		</button>
 	</div>
     
-	<div class="absolute left-1/2 -translate-x-1/2 title-responsive">
+	<div class="flex shrink-0 items-center justify-center px-2">
 		<div class="text-[16px] md:text-xl font-sans font-bold tracking-tight text-text-primary">AlfyAI</div>
 	</div>
 
-	<div class="flex items-center gap-sm md:gap-md">
+	<div class="flex flex-1 items-center justify-end gap-sm md:gap-md">
 		<ThemeToggle />
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] h-[44px] w-[44px] items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md transition-colors duration-250"
 			on:click={handleNewConversation}
 			aria-label="New chat"
 			title="New chat"
@@ -84,7 +84,7 @@
 			</span>
 		{/if}
 		<button
-			class="inline-flex shrink-0 min-h-[44px] h-[44px] items-center justify-center rounded-md bg-surface-elevated px-[16px] py-[8px] text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
+			class="inline-flex shrink-0 min-h-[44px] items-center justify-center rounded-md bg-surface-elevated px-md py-sm text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
 			data-testid="logout-button"
 			on:click={handleLogout}
 		>
@@ -102,10 +102,6 @@
 	@media (min-width: 768px) {
 		.hide-on-desktop-md {
 			display: none !important;
-		}
-		.title-responsive {
-			position: static !important;
-			transform: translateX(0) !important;
 		}
 	}
 	@media (min-width: 1024px) {
