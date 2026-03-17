@@ -12,7 +12,6 @@
 	async function handleSend(event: CustomEvent<{ message: string }>) {
 		if (creating) return;
 
-		const { message } = event.detail;
 		hasStarted = true;
 		creating = true;
 		error = null;
@@ -20,8 +19,7 @@
 		try {
 			const id = await createNewConversation();
 			currentConversationId.set(id);
-			// Navigate to chat page with the message as a query param
-			await goto(`/chat/${id}?message=${encodeURIComponent(message)}`);
+			await goto(`/chat/${id}`);
 		} catch {
 			error = 'Failed to create conversation. Please try again.';
 			hasStarted = false;
