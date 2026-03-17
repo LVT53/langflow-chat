@@ -14,7 +14,7 @@
 
 <button
 	data-testid="theme-toggle"
-	class="relative inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md text-icon-muted hover:bg-surface-elevated hover:text-icon-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors duration-250"
+	class="relative inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md text-icon-muted hover:bg-surface-elevated hover:text-icon-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors duration-250 cursor-pointer"
 	on:click={toggleTheme}
 	title={tooltipText}
 	aria-label="Toggle theme"

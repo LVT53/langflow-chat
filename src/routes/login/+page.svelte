@@ -43,14 +43,14 @@
   <title>Sign In</title>
 </svelte:head>
 
-<div class="min-h-screen flex items-center justify-center bg-surface-page p-lg md:p-2xl">
-  <div class="max-w-lg w-full mx-auto p-xl md:p-2xl bg-surface-elevated rounded-lg shadow-lg border border-border">
+<div class="min-h-screen w-full flex items-center justify-center bg-surface-page p-lg md:p-2xl">
+  <div class="w-[90vw] sm:w-[448px] max-w-[448px] mx-auto p-xl md:p-2xl bg-surface-elevated rounded-lg shadow-lg border border-border">
     <div class="text-center mb-10">
       <h1 class="text-4xl md:text-5xl font-serif font-bold text-text-primary mb-3">Sign In</h1>
       <p class="text-lg text-text-muted font-serif">Welcome back. Please enter your details.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit} class="space-y-6">
+    <form on:submit|preventDefault={handleSubmit} class="flex flex-col gap-y-6">
       <div class="space-y-2">
         <label for="email" class="block text-sm font-medium text-text-primary font-serif">
           Email address
@@ -91,11 +91,11 @@
         </div>
       {/if}
 
-      <button
-        type="submit"
-        disabled={loading}
-        class="w-full min-h-[56px] flex justify-center items-center py-sm px-md border border-transparent rounded-md shadow-sm text-lg font-serif font-bold text-surface-page bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:opacity-70 disabled:cursor-not-allowed transition-all mt-10"
-      >
+       <button
+         type="submit"
+         disabled={loading}
+         class="w-full min-h-[56px] flex justify-center items-center py-sm px-md border border-transparent rounded-md shadow-sm text-lg font-serif font-bold text-surface-page bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:opacity-70 disabled:cursor-not-allowed transition-all mt-6 cursor-pointer"
+       >
         {#if loading}
           <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-surface-page" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

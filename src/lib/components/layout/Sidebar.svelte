@@ -48,7 +48,7 @@
 	<div class="mobile-close-header flex h-[48px] items-center px-2">
 		<!-- Mobile close button -->
 		<button
-			class="ml-auto inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md text-icon-muted hover:bg-surface-page hover:text-icon-primary transition-colors duration-250"
+			class="ml-auto inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md text-icon-muted hover:bg-surface-elevated hover:text-icon-primary transition-colors duration-250 cursor-pointer"
 			on:click={() => sidebarOpen.set(false)}
 			aria-label="Close sidebar"
 		>
@@ -70,11 +70,11 @@
 	</div>
 
 	<div class="p-4">
-		<button
-		data-testid="new-conversation"
-		class="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-md py-sm text-sm font-medium font-sans text-surface-page transition-colors hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring min-h-[44px]"
-		on:click={handleNewConversation}
-	>
+<button
+	data-testid="new-conversation"
+	class="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-md py-sm text-sm font-medium font-sans text-surface-page transition-colors duration-250 hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring min-h-[44px] cursor-pointer"
+	on:click={handleNewConversation}
+>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
 				width="16"

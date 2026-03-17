@@ -121,7 +121,7 @@
 
 	<div class="relative flex min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center" bind:this={menuRef}>
 		<button
-			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-sm text-icon-muted opacity-100 transition-all duration-250 hover:bg-surface-elevated hover:text-icon-primary focus-visible:bg-surface-elevated focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100"
+			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-sm text-icon-muted opacity-100 transition-all duration-250 hover:bg-surface-elevated hover:text-icon-primary focus-visible:bg-surface-elevated focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
 			class:opacity-100={menuOpen || active}
 			class:md:opacity-100={menuOpen || active}
 			on:click={toggleMenu}
@@ -150,14 +150,14 @@
 			>
 				<button
 					data-testid="rename-option"
-					class="flex w-full items-center px-4 py-2 text-left text-sm font-sans text-text-primary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
+					class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-text-primary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
 					on:click={startRename}
 				>
 					Rename
 				</button>
 <button
   data-testid="delete-option"
-  class="flex w-full items-center px-4 py-2 text-left text-sm font-sans text-danger hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
+  class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-danger hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
   on:click={handleDelete}
 >
   Delete

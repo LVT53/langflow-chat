@@ -72,7 +72,7 @@
 	<div class="flex items-end gap-xs rounded-lg border border-border bg-surface-elevated p-sm shadow-sm transition-shadow focus-within:border-focus-ring focus-within:ring-1 focus-within:ring-focus-ring">
 		<button
 			type="button"
-			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-surface-page hover:text-icon-primary disabled:opacity-50 transition-colors duration-250"
+			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-surface-overlay hover:text-icon-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-250 cursor-pointer"
 			disabled
 			title="File uploads coming soon"
 			aria-label="Attach file"
@@ -95,12 +95,12 @@
 		></textarea>
 
 <button
-   data-testid="send-button"
-   type="button"
-   on:click={send}
-   disabled={!canSend}
-   aria-label="Send message"
-   class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md bg-accent text-surface-page transition-colors duration-250 hover:bg-accent-hover disabled:bg-surface-page disabled:text-icon-muted disabled:border disabled:border-border"
+    data-testid="send-button"
+    type="button"
+    on:click={send}
+    disabled={!canSend}
+    aria-label="Send message"
+    class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md bg-accent text-surface-page transition-colors duration-250 hover:bg-accent-hover disabled:bg-surface-page disabled:text-icon-muted disabled:border disabled:border-border disabled:cursor-not-allowed cursor-pointer"
 >
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="22" y1="2" x2="11" y2="13" />

@@ -38,11 +38,11 @@
 </script>
 
 <header
-	class="flex flex-none h-[48px] md:h-[56px] lg:h-[64px] items-center justify-between border-b border-border bg-surface-page px-safe pt-safe shrink-0 box-content z-10 gap-2 md:gap-4"
+	class="grid grid-cols-[1fr_auto_1fr] flex-none w-full max-w-full h-[48px] md:h-[56px] lg:h-[64px] items-center border-b border-border bg-surface-page px-safe pt-safe shrink-0 z-10 gap-2 md:gap-4 box-border"
 >
-	<div class="flex flex-1 items-center justify-start gap-sm">
+	<div class="flex min-w-0 items-center justify-start gap-sm">
 		<button
-			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-primary transition-colors duration-250"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hide-on-desktop text-icon-muted hover:text-icon-primary transition-colors duration-250 cursor-pointer"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -64,11 +64,11 @@
 		</button>
 	</div>
     
-	<div class="flex shrink-0 items-center justify-center px-2">
-		<div class="text-[16px] md:text-xl font-sans font-bold tracking-tight text-text-primary">AlfyAI</div>
+	<div class="flex items-center justify-center px-2">
+		<div class="text-[16px] md:text-xl font-sans font-bold tracking-tight text-text-primary whitespace-nowrap">AlfyAI</div>
 	</div>
 
-	<div class="flex flex-1 items-center justify-end gap-sm md:gap-md">
+	<div class="flex min-w-0 items-center justify-end gap-sm md:gap-md">
 		<ThemeToggle />
 		<button
 			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] p-sm items-center justify-center rounded-md hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-icon-muted hover:text-icon-primary hide-on-desktop-md transition-colors duration-250"
@@ -79,16 +79,23 @@
 			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 		</button>
 		{#if user}
-			<span class="text-[14px] font-sans text-text-muted hide-on-mobile">
+			<span class="text-[14px] font-sans text-text-muted hide-on-mobile truncate max-w-[150px]">
 				{user.displayName}
 			</span>
 		{/if}
 		<button
-			class="inline-flex shrink-0 min-h-[44px] items-center justify-center rounded-md bg-surface-elevated px-md py-sm text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
+			class="inline-flex shrink-0 min-h-[44px] min-w-[44px] items-center justify-center rounded-md bg-surface-elevated p-sm md:px-md md:py-sm text-[14px] font-medium font-sans text-text-primary hover:bg-surface-overlay border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors duration-250"
 			data-testid="logout-button"
 			on:click={handleLogout}
+			aria-label="Logout"
+			title="Logout"
 		>
-			Logout
+			<span class="hide-on-mobile">Logout</span>
+			<svg class="hide-on-desktop-md" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+				<polyline points="16 17 21 12 16 7"></polyline>
+				<line x1="21" y1="12" x2="9" y2="12"></line>
+			</svg>
 		</button>
 	</div>
 </header>
