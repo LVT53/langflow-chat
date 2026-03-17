@@ -72,7 +72,7 @@
 	<div class="flex items-end gap-xs rounded-lg border border-border bg-surface-elevated p-sm shadow-sm transition-shadow focus-within:border-focus-ring focus-within:ring-1 focus-within:ring-focus-ring">
 		<button
 			type="button"
-			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-surface-overlay hover:text-icon-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-250 cursor-pointer"
+			class="flex min-h-[44px] min-w-[44px] p-sm flex-shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-surface-elevated hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-250 cursor-pointer"
 			disabled
 			title="File uploads coming soon"
 			aria-label="Attach file"
@@ -89,7 +89,7 @@
 			on:input={handleInput}
 			on:keydown={handleKeydown}
 			placeholder="Type a message..."
-			class="min-h-[44px] w-full resize-none overflow-y-auto border-0 bg-transparent py-2.5 text-[16px] leading-[1.6] font-sans text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0"
+			class="min-h-[44px] w-full resize-none overflow-y-auto border-0 bg-transparent py-3 text-[16px] leading-[1.5] font-sans text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
 			{disabled}
 		></textarea>

@@ -146,22 +146,23 @@
 
 		{#if menuOpen}
 			<div
-				class="absolute right-0 top-full z-10 mt-1 w-32 rounded-md border border-default bg-surface-page py-1 shadow-lg"
+				class="absolute right-0 top-full z-50 mt-1 w-40 rounded-md border border-border-default bg-surface-overlay py-1 shadow-lg"
+				style="right: 0; left: auto;"
 			>
 				<button
 					data-testid="rename-option"
-					class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-text-primary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
+					class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-text-primary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px] cursor-pointer"
 					on:click={startRename}
 				>
 					Rename
 				</button>
-<button
-  data-testid="delete-option"
-  class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-danger hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px]"
-  on:click={handleDelete}
->
-  Delete
-</button>
+				<button
+					data-testid="delete-option"
+					class="flex w-full items-center px-md py-sm text-left text-sm font-sans text-danger hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none min-h-[44px] cursor-pointer"
+					on:click={handleDelete}
+				>
+					Delete
+				</button>
 			</div>
 		{/if}
 	</div>

@@ -63,7 +63,7 @@
           bind:value={email}
           disabled={loading}
           on:input={() => error = ''}
-          class="w-full min-h-[48px] px-md py-sm font-serif text-base md:text-lg border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring disabled:opacity-50 transition-shadow placeholder-text-muted"
+          class="w-full min-h-[48px] px-md py-sm font-serif text-base border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring focus:bg-surface-overlay disabled:opacity-50 transition-shadow placeholder-text-muted"
           placeholder="you@example.com"
         />
       </div>
@@ -80,7 +80,7 @@
           bind:value={password}
           disabled={loading}
           on:input={() => error = ''}
-          class="w-full min-h-[48px] px-md py-sm font-serif text-base md:text-lg border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring disabled:opacity-50 transition-shadow placeholder-text-muted"
+          class="w-full min-h-[48px] px-md py-sm font-serif text-base border border-border bg-surface-page text-text-primary rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-focus-ring focus:bg-surface-overlay disabled:opacity-50 transition-shadow placeholder-text-muted"
           placeholder="••••••••"
         />
       </div>
@@ -94,7 +94,7 @@
        <button
          type="submit"
          disabled={loading}
-         class="w-full min-h-[56px] flex justify-center items-center py-sm px-md border border-transparent rounded-md shadow-sm text-lg font-serif font-bold text-surface-page bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:opacity-70 disabled:cursor-not-allowed transition-all mt-6 cursor-pointer"
+         class="w-full min-h-[56px] flex justify-center items-center py-sm px-md border border-transparent rounded-md shadow-sm text-lg font-serif font-bold text-surface-page bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:opacity-70 disabled:cursor-not-allowed transition-all mt-10 cursor-pointer"
        >
         {#if loading}
           <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-surface-page" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
