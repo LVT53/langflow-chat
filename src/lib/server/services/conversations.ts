@@ -1,11 +1,11 @@
 import { db } from '$lib/server/db';
 import { conversations } from '$lib/server/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type { Conversation } from '$lib/types';
 
 export async function createConversation(userId: string, title?: string): Promise<Conversation> {
-	const id = uuidv4();
+	const id = randomUUID();
 	const [conversation] = await db
 		.insert(conversations)
 		.values({
