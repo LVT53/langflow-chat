@@ -42,7 +42,7 @@
 <!-- Sidebar -->
 <aside
 	class="sidebar-panel fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-surface-overlay shadow-lg transition-transform duration-[250ms] ease-out w-[280px] max-w-[100vw] lg:w-[260px]"
-	class:-translate-x-full={!open}
+	class:-translate-x-[105%]={!open}
 	class:translate-x-0={open}
 >
 	<div class="mobile-close-header flex h-[48px] items-center px-2">
