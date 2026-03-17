@@ -33,12 +33,12 @@
 <div 
 	bind:this={scrollContainer}
 	on:scroll={handleScroll}
-	class="flex-1 overflow-y-auto px-sm py-lg md:px-lg md:py-xl lg:px-xl"
+	class="h-full min-h-0 overflow-y-auto px-sm py-lg md:px-lg md:py-xl lg:px-xl"
 	style="touch-action: pan-y;"
 	aria-live="polite"
 	aria-atomic="false"
 >
-	<div class="mx-auto flex w-full max-w-[760px] flex-col gap-lg pb-6">
+	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg pb-24">
 		{#if messages.length === 0}
 			<div class="h-full"></div>
 		{:else}

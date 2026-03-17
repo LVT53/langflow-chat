@@ -13,6 +13,15 @@ vi.mock('$lib/server/services/langflow', () => ({
 	sendMessage: vi.fn()
 }));
 
+vi.mock('$lib/server/services/language', () => ({
+	detectLanguage: vi.fn()
+}));
+
+vi.mock('$lib/server/services/translator', () => ({
+	translateHungarianToEnglish: vi.fn(),
+	translateEnglishToHungarian: vi.fn()
+}));
+
 vi.mock('$lib/server/env', () => ({
 	config: {
 		maxMessageLength: 10000
@@ -23,11 +32,19 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
+import { detectLanguage } from '$lib/server/services/language';
+import {
+	translateEnglishToHungarian,
+	translateHungarianToEnglish
+} from '$lib/server/services/translator';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
+const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
+const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
+const mockTranslateEnglishToHungarian = translateEnglishToHungarian as ReturnType<typeof vi.fn>;
 
 function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -48,6 +65,9 @@ describe('POST /api/chat/send', () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockResolvedValue(null);
+		mockDetectLanguage.mockReturnValue('en');
+		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
+		mockTranslateEnglishToHungarian.mockImplementation(async (message: string) => `HU:${message}`);
 	});
 
 	it('returns AI response text for a valid request', async () => {
@@ -63,6 +83,22 @@ describe('POST /api/chat/send', () => {
 		expect(data.response.text).toBe('Hello from AI!');
 		expect(data.conversationId).toBe('conv-1');
 		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1');
+	});
+
+	it('translates Hungarian requests and responses', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockDetectLanguage.mockReturnValue('hu');
+		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {} });
+
+		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
+		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1');
+		expect(mockTranslateEnglishToHungarian).toHaveBeenCalledWith('Hello from AI!');
+		expect(data.response.text).toBe('HU:Hello from AI!');
 	});
 
 	it('returns 400 when message is empty', async () => {

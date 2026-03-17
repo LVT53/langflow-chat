@@ -20,6 +20,11 @@ Copy the `.env.example` file to `.env` and configure the following variables:
 | `LANGFLOW_API_KEY` | API key for Langflow authentication | `your-api-key-here` |
 | `LANGFLOW_FLOW_ID` | ID of the Langflow flow to use | `your-flow-id-here` |
 | `LANGFLOW_WEBHOOK_SECRET` | Shared secret for Langflow sentence webhooks | `change-me-webhook-secret` |
+| `TRANSLATEGEMMA_URL` | URL of the TranslateGemma vLLM endpoint | `http://192.168.1.96:30002/v1` |
+| `TRANSLATEGEMMA_API_KEY` | API key for TranslateGemma auth | `your-api-key-here` |
+| `TRANSLATEGEMMA_MODEL` | TranslateGemma model name | `translategemma` |
+| `TRANSLATION_MAX_TOKENS` | Max tokens per translation call | `256` |
+| `TRANSLATION_TEMPERATURE` | Temperature for translation calls | `0.1` |
 | `NEMOTRON_URL` | URL of the Nemotron Nano service | `http://192.168.1.96:30001/v1` |
 | `NEMOTRON_API_KEY` | API key for Nemotron/OpenAI-compatible auth | `your-api-key-here` |
 | `NEMOTRON_MODEL` | Model name to use with Nemotron | `nemotron-nano` |

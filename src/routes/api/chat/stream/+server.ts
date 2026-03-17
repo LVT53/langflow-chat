@@ -3,13 +3,15 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
 import { config } from '$lib/server/env';
+import { detectLanguage } from '$lib/server/services/language';
+import {
+	StreamingHungarianTranslator,
+	translateHungarianToEnglish
+} from '$lib/server/services/translator';
 
 const STREAM_TIMEOUT_MS = 120_000;
-const WEBHOOK_POLL_INTERVAL_MS = 100;
-const DIRECT_STREAM_GRACE_MS = 250;
 
 type StreamErrorCode = 'timeout' | 'network' | 'backend_failure';
-type StreamMode = 'pending' | 'direct' | 'webhook';
 
 type UpstreamEvent = {
 	event: string;
@@ -275,36 +277,39 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
+	const normalizedMessage = message.trim();
+	const sourceLanguage = detectLanguage(normalizedMessage);
+
+	let upstreamMessage = normalizedMessage;
+	try {
+		if (sourceLanguage === 'hu') {
+			upstreamMessage = await translateHungarianToEnglish(normalizedMessage);
+		}
+	} catch (error) {
+		console.error('Input translation error:', error);
+		return new Response(JSON.stringify({ error: 'Failed to prepare the translated prompt.' }), {
+			status: 502,
+			headers: { 'Content-Type': 'application/json' }
+		});
+	}
+
 	const encoder = new TextEncoder();
 	const downstreamAbortSignal = event.request.signal;
-	const webhookBuffer = event.locals.webhookBuffer;
 	let cancelStream = () => undefined;
 
 	const stream = new ReadableStream({
 		async start(controller) {
 			const upstreamAbortController = new AbortController();
+			const outputTranslator =
+				sourceLanguage === 'hu' ? new StreamingHungarianTranslator() : null;
 			let closed = false;
-			let success = false;
 			let ended = false;
-			let mode: StreamMode = 'pending';
-			let pendingDirectChunks: string[] = [];
-			let firstPendingDirectAt: number | null = null;
-			let webhookSentenceCount = 0;
-			let webhookComplete = false;
-			let upstreamComplete = false;
-			let webhookPollId: ReturnType<typeof setInterval> | undefined;
-
-			webhookBuffer?.clearSession(conversationId);
 
 			const closeStream = () => {
 				if (closed) return;
 				closed = true;
 				downstreamAbortSignal.removeEventListener('abort', closeStream);
 				upstreamAbortController.abort();
-				if (webhookPollId !== undefined) {
-					clearInterval(webhookPollId);
-				}
-				webhookBuffer?.clearSession(conversationId);
 				try {
 					controller.close();
 				} catch {
@@ -334,15 +339,14 @@ export const POST: RequestHandler = async (event) => {
 				}
 			};
 
-			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
-
 			const emitToken = (chunk: string) =>
 				enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+
+			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 
 			const completeSuccess = () => {
 				if (ended || closed) return;
 				ended = true;
-				success = true;
 				enqueueChunk(`event: end\ndata: {}\n\n`);
 				touchConversation(user.id, conversationId).catch(() => undefined);
 				closeStream();
@@ -355,91 +359,12 @@ export const POST: RequestHandler = async (event) => {
 				closeStream();
 			};
 
-			const flushPendingDirect = () => {
-				if (mode === 'webhook') {
-					pendingDirectChunks = [];
-					firstPendingDirectAt = null;
-					return;
-				}
-
-				for (const chunk of pendingDirectChunks) {
-					if (!emitToken(chunk)) {
-						return;
-					}
-				}
-
-				pendingDirectChunks = [];
-				firstPendingDirectAt = null;
-			};
-
-			const maybeFinish = () => {
-				if (mode === 'webhook') {
-					if (webhookComplete) {
-						completeSuccess();
-					}
-					return;
-				}
-
-				if (mode === 'pending' && firstPendingDirectAt !== null) {
-					const elapsed = Date.now() - firstPendingDirectAt;
-					if (elapsed >= DIRECT_STREAM_GRACE_MS) {
-						mode = 'direct';
-						flushPendingDirect();
-					}
-				}
-
-				if (upstreamComplete) {
-					if (
-						mode === 'pending' &&
-						firstPendingDirectAt !== null &&
-						Date.now() - firstPendingDirectAt < DIRECT_STREAM_GRACE_MS
-					) {
-						return;
-					}
-					if (mode === 'pending') {
-						mode = 'direct';
-						flushPendingDirect();
-					}
-					if (mode === 'direct') {
-						completeSuccess();
-					}
-				}
-			};
-
-			webhookPollId = setInterval(() => {
-				if (closed) return;
-
-				const result = webhookBuffer?.getSentences(conversationId);
-				if (!result) {
-					maybeFinish();
-					return;
-				}
-
-				const { sentences, isComplete } = result;
-				if (sentences.length > 0) {
-					mode = 'webhook';
-					pendingDirectChunks = [];
-					firstPendingDirectAt = null;
-				}
-
-				while (mode === 'webhook' && webhookSentenceCount < sentences.length) {
-					const text = sentences[webhookSentenceCount];
-					if (!emitToken(text)) {
-						return;
-					}
-					webhookSentenceCount++;
-				}
-
-				webhookComplete = isComplete && webhookSentenceCount >= sentences.length;
-				maybeFinish();
-			}, WEBHOOK_POLL_INTERVAL_MS);
-
 			const timeoutId = setTimeout(() => {
 				failStream('timeout');
 			}, STREAM_TIMEOUT_MS);
 
 			try {
-				const langflowStream = await sendMessageStream(message.trim(), conversationId, {
+				const langflowStream = await sendMessageStream(upstreamMessage, conversationId, {
 					signal: upstreamAbortController.signal
 				});
 				if (closed) return;
@@ -448,16 +373,21 @@ export const POST: RequestHandler = async (event) => {
 					if (closed) break;
 
 					const { event: eventType, data } = upstreamEvent;
-
-					if (data === '[DONE]') {
-						upstreamComplete = true;
-						maybeFinish();
-						continue;
+					if (data === '[DONE]' || eventType === 'end') {
+						if (outputTranslator) {
+							for (const chunk of await outputTranslator.flush()) {
+								if (!emitToken(chunk)) {
+									return;
+								}
+							}
+						}
+						completeSuccess();
+						return;
 					}
 
 					if (eventType === 'error') {
 						failStream(classifyStreamError(extractErrorMessage(data)));
-						break;
+						return;
 					}
 
 					const chunk = extractAssistantChunk(eventType, data);
@@ -465,24 +395,34 @@ export const POST: RequestHandler = async (event) => {
 						continue;
 					}
 
-					if (mode === 'webhook') {
+					if (!outputTranslator) {
+						if (!emitToken(chunk)) {
+							return;
+						}
 						continue;
 					}
 
-					pendingDirectChunks.push(chunk);
-					if (firstPendingDirectAt === null) {
-						firstPendingDirectAt = Date.now();
+					for (const translatedChunk of await outputTranslator.addChunk(chunk)) {
+						if (!emitToken(translatedChunk)) {
+							return;
+						}
 					}
-					maybeFinish();
 				}
 
-				upstreamComplete = true;
-				maybeFinish();
-			} catch (err) {
+				if (outputTranslator) {
+					for (const chunk of await outputTranslator.flush()) {
+						if (!emitToken(chunk)) {
+							return;
+						}
+					}
+				}
+				completeSuccess();
+			} catch (error) {
 				if (!closed) {
-					const rawMessage = err instanceof Error ? err.message : String(err);
-					console.error('Chat stream error:', err);
-					failStream(classifyStreamError(rawMessage));
+					console.error('Chat stream error:', error);
+					failStream(
+						classifyStreamError(error instanceof Error ? error.message : String(error))
+					);
 				}
 			} finally {
 				clearTimeout(timeoutId);

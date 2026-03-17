@@ -13,6 +13,18 @@ vi.mock('$lib/server/services/langflow', () => ({
 	sendMessageStream: vi.fn()
 }));
 
+vi.mock('$lib/server/services/language', () => ({
+	detectLanguage: vi.fn()
+}));
+
+vi.mock('$lib/server/services/translator', () => ({
+	translateHungarianToEnglish: vi.fn(),
+	StreamingHungarianTranslator: class {
+		addChunk = vi.fn(async (chunk: string) => [`HU:${chunk}`]);
+		flush = vi.fn(async () => []);
+	}
+}));
+
 vi.mock('$lib/server/env', () => ({
 	config: {
 		maxMessageLength: 10000
@@ -23,11 +35,15 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
+import { detectLanguage } from '$lib/server/services/language';
+import { translateHungarianToEnglish } from '$lib/server/services/translator';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessageStream = sendMessageStream as ReturnType<typeof vi.fn>;
+const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
+const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 
 function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -78,6 +94,8 @@ describe('POST /api/chat/stream', () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockResolvedValue(null);
+		mockDetectLanguage.mockReturnValue('en');
+		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 	});
 
 	it('returns text/event-stream content-type for valid request', async () => {
@@ -137,35 +155,24 @@ describe('POST /api/chat/stream', () => {
 		expect(body).not.toContain('"text":"Hi"');
 	});
 
-	it('prefers webhook sentence chunks over final upstream assistant message', async () => {
+	it('translates Hungarian input before sending it to Langflow', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
+		mockDetectLanguage.mockReturnValue('hu');
 		mockSendMessageStream.mockResolvedValue(
 			buildSseStream([
-				'{"event":"add_message","data":{"sender":"Machine","text":"Final combined answer"}}\n\n',
+				'{"event":"add_message","data":{"sender":"Machine","text":"Final English answer."}}\n\n',
 				'{"event":"end","data":{}}\n\n'
 			])
 		);
 
-		let pollCount = 0;
 		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
-		event.locals.webhookBuffer.getSentences.mockImplementation(() => {
-			pollCount++;
-			if (pollCount === 1) {
-				return { sentences: ['Elso mondat. '], isComplete: false };
-			}
-			return { sentences: ['Elso mondat. ', 'Masodik mondat.'], isComplete: true };
-		});
-
 		const response = await POST(event);
-		const bodyPromise = readSseResponse(response);
-		await new Promise((resolve) => setTimeout(resolve, 350));
-		const body = await bodyPromise;
+		const body = await readSseResponse(response);
 
-		expect(body).toContain('"text":"Elso mondat. "');
-		expect(body).toContain('"text":"Masodik mondat."');
-		expect(body).not.toContain('Final combined answer');
-		expect(body).toContain('event: end');
+		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
+		expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', expect.any(Object));
+		expect(body).toContain('"text":"HU:Final English answer."');
 	});
 
 	it('stream ends with end event after [DONE]', async () => {

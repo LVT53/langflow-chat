@@ -4,6 +4,11 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
 import { config } from '$lib/server/env';
+import { detectLanguage } from '$lib/server/services/language';
+import {
+	translateEnglishToHungarian,
+	translateHungarianToEnglish
+} from '$lib/server/services/translator';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -39,12 +44,21 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	try {
-		const { text } = await sendMessage(message.trim(), conversationId);
+		const normalizedMessage = message.trim();
+		const sourceLanguage = detectLanguage(normalizedMessage);
+		const upstreamMessage =
+			sourceLanguage === 'hu'
+				? await translateHungarianToEnglish(normalizedMessage)
+				: normalizedMessage;
+
+		const { text } = await sendMessage(upstreamMessage, conversationId);
+		const responseText =
+			sourceLanguage === 'hu' ? await translateEnglishToHungarian(text) : text;
 
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
 		return json({
-			response: { text },
+			response: { text: responseText },
 			conversationId
 		});
 	} catch (error) {
