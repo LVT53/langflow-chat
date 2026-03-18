@@ -263,7 +263,7 @@
 	<title>{data.conversation.title}</title>
 </svelte:head>
 
-<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page pb-2 md:pb-4 lg:pb-6">
+<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
 		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
 			<MessageArea messages={$messages} conversationId={data.conversation.id} />

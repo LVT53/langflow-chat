@@ -61,7 +61,7 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 	<title>Alfy AI</title>
 </svelte:head>
 
-<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page pb-2 md:pb-4 lg:pb-6">
+<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
 		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-no-animate={!isFromChat}>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
