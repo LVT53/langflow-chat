@@ -1,3 +1,4 @@
+@import "tailwindcss";
 @config "../tailwind.config.ts";
 @source "./**/*.{svelte,ts,js}";
 

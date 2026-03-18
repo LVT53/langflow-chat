@@ -213,9 +213,9 @@
 
 		<div class="composer-layer" class:composer-layer-active={hasMessages}>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
-				<div class="intro-copy text-center" class:intro-copy-hidden={hasMessages}>
-						<h1
-							class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[4rem]"
+				<div class="intro-copy px-2 text-center" class:intro-copy-hidden={hasMessages}>
+					<h1
+						class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
 							style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
 						>
 						What can I help you with?

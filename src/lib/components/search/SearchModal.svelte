@@ -138,15 +138,11 @@
 		>
 			<div class="border-b border-border px-6 py-5">
 				<div class="flex items-center justify-between gap-4">
-					<div class="flex items-center gap-3">
-						<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
-							<circle cx="11" cy="11" r="7"></circle>
-							<path d="m20 20-3.5-3.5"></path>
-						</svg>
-						<h2 id="search-dialog-title" class="text-[20px] font-sans font-semibold text-text-primary">
-							Search conversations
-						</h2>
-					</div>
+				<div class="flex items-center gap-3">
+					<h2 id="search-dialog-title" class="text-[20px] font-sans font-semibold text-text-primary">
+						Search conversations
+					</h2>
+				</div>
 					<button
 						type="button"
 						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-icon-primary"
@@ -158,11 +154,8 @@
 							<line x1="6" x2="18" y1="6" y2="18"></line>
 						</svg>
 					</button>
-				</div>
-				<p class="mt-2 pl-[34px] text-[14px] font-sans text-text-muted">
-					Find a conversation by title
-				</p>
 			</div>
+		</div>
 
 			<div class="border-b border-border px-6 py-4">
 				<div class="search-input-wrapper flex items-center gap-3 rounded-lg border border-border bg-surface-page px-4 py-3">
@@ -249,17 +242,7 @@
 				{/if}
 			</div>
 
-			<div class="border-t border-border bg-surface-elevated px-6 py-3">
-				<div class="flex items-center justify-between text-[13px] font-sans text-text-muted">
-					<span>
-						{#if normalizedSearchQuery}
-							{searchResults.length} result{searchResults.length === 1 ? '' : 's'}
-						{:else}
-							Recent conversations
-						{/if}
-					</span>
-				</div>
-			</div>
+
 		</div>
 	</div>
 {/if}

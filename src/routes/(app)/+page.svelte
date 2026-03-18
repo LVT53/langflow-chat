@@ -38,7 +38,7 @@
 		{#if !hasStarted}
 			<div class="flex flex-col items-center px-2 text-center" transition:fade={{ duration: 260 }}>
 				<h1
-					class="max-w-[11ch] text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[4.75rem]"
+					class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
 					style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
 				>
 					What can I help you with?

@@ -32,7 +32,7 @@
 
 	function adjustHeight() {
 		if (!textarea) return;
-		const minHeight = 40;
+		const minHeight = 90;
 		textarea.style.height = `${minHeight}px`;
 		const isMobile = window.innerWidth < 768;
 		const maxHeight = isMobile ? 100 : 168;
@@ -70,7 +70,7 @@
 </script>
 
 <div class="relative flex w-full flex-col">
-	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-5 py-4 transition-all duration-150 focus-within:border-focus-ring">
+	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-[6px] transition-all duration-150 focus-within:border-focus-ring">
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
@@ -78,12 +78,12 @@
 			on:input={handleInput}
 			on:keydown={handleKeydown}
 			placeholder="Type a message..."
-			class="composer-textarea min-h-[40px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[12px] text-left text-[16px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
+			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[16px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
 			{disabled}
 		></textarea>
 
-		<div class="composer-actions flex items-center justify-between gap-3 px-[10px] pt-[8px] pb-[4px]">
+		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[6px]">
 			<button
 				type="button"
 				class="btn-icon-bare composer-icon flex-shrink-0 text-text-muted disabled:cursor-not-allowed disabled:opacity-40"

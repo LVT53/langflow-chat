@@ -46,7 +46,7 @@
 <div class="flex min-h-[100svh] w-full items-center justify-center bg-surface-page px-4 py-6 md:px-8 md:py-10">
   <div class="mx-auto w-full max-w-[448px] rounded-lg border border-border bg-surface-elevated p-xl md:p-2xl shadow-lg">
     <div class="mb-10 text-center md:mb-12">
-      <h1 class="mb-3 text-4xl font-serif font-bold text-text-primary md:text-5xl">Sign In</h1>
+      <h1 class="mb-3 text-3xl font-serif font-bold text-text-primary md:text-4xl">Sign In</h1>
       <p class="mb-[30px] text-lg text-text-muted font-serif">Welcome back. Please enter your details.</p>
     </div>
 

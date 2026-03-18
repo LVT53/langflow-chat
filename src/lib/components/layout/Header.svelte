@@ -145,7 +145,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[68px] md:py-3 md:pl-10 md:pr-16 lg:h-[76px] lg:py-4 lg:pl-14 lg:pr-24 xl:pr-28"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[68px] md:py-3 md:pl-10 md:pr-4 lg:h-[76px] lg:py-4 lg:pl-14 lg:pr-4"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -171,19 +171,19 @@
 		</button>
 	</div>
 
-	<div class="hidden flex-1 md:block"></div>
 
-	<div class="flex min-w-0 flex-1 items-center justify-end gap-md pr-1 md:gap-xl md:pr-4 lg:gap-xl lg:pr-6">
+
+	<div class="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-3 lg:gap-3">
 		{#if user}
 			<span class="hide-on-mobile max-w-[150px] truncate text-[14px] font-sans text-text-muted">
 				{user.displayName}
 			</span>
 		{/if}
 
-		<div class="hide-on-mobile flex items-center gap-lg lg:gap-xl">
+		<div class="hide-on-mobile flex items-center gap-2 lg:gap-3">
 			<ThemeToggle />
 		<button
-			class="logout-button btn-secondary mr-2 px-3 text-[14px] md:mr-4 md:px-5 lg:mr-6 lg:px-6"
+			class="logout-button btn-secondary px-3 text-[14px] md:px-5 lg:px-6"
 			data-testid="logout-button"
 			on:click={handleLogout}
 			aria-label="Logout"
