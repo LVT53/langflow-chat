@@ -637,11 +637,24 @@ export const POST: RequestHandler = async (event) => {
 				});
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
+				let upstreamEventCount = 0;
 
 				for await (const upstreamEvent of parseUpstreamEvents(langflowStream)) {
 					if (closed) break;
 
 					const { event: eventType, data } = upstreamEvent;
+					upstreamEventCount += 1;
+					if (upstreamEventCount <= 8 || eventType === 'error') {
+						const dataPreview =
+							typeof data === 'string'
+								? data.slice(0, 500)
+								: JSON.stringify(data).slice(0, 500);
+						console.log('[STREAM] Upstream event', {
+							index: upstreamEventCount,
+							eventType,
+							dataPreview
+						});
+					}
 					if (data === '[DONE]' || eventType === 'end') {
 						if (outputTranslator) {
 							for (const chunk of await outputTranslator.flush()) {
@@ -655,6 +668,13 @@ export const POST: RequestHandler = async (event) => {
 					}
 
 					if (eventType === 'error') {
+						console.error('[STREAM] Upstream error event payload', {
+							conversationId,
+							data:
+								typeof data === 'string'
+									? data
+									: JSON.stringify(data).slice(0, 2000)
+						});
 						failStream(classifyStreamError(extractErrorMessage(data)));
 						return;
 					}
