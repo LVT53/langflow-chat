@@ -35,7 +35,17 @@
 			activeStream.abort();
 			activeStream = null;
 		}
-		messages.set(data.messages ?? []);
+		// Preserve local messages that have metadata not in database (tokenCount, etc)
+		const localMessages = $messages.filter(m => m.tokenCount !== undefined || m.generationSpeed !== undefined || m.thinking !== undefined);
+		const dbMessages = data.messages ?? [];
+		// Merge: db messages take precedence unless local has metadata
+		const merged = dbMessages.map(dm => {
+			const local = localMessages.find(lm => lm.id === dm.id);
+			return local || dm;
+		});
+		// Add any local-only messages (streaming placeholders)
+		const localOnly = localMessages.filter(lm => !dbMessages.some(dm => dm.id === lm.id));
+		messages.set([...merged, ...localOnly]);
 		hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 		sendError = null;
 		isSending = false;
@@ -46,7 +56,7 @@
 		currentConversationId.set(data.conversation.id);
 	}
 
-	$: if (data?.conversation?.id) {
+	$: if (data?.conversation?.id && !activeStream) {
 		if (data.conversation.id !== prevConversationId) {
 			prevConversationId = data.conversation.id;
 			resetState();
