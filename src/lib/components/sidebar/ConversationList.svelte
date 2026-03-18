@@ -15,11 +15,11 @@
 
 	$: visibleConversations = $conversations.length > 0 ? $conversations : initialConversations;
 
-	function handleSelect(event: CustomEvent<{ id: string }>) {
+	async function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
 		openMenuId = null;
 		currentConversationId.set(id);
-		goto(`/chat/${id}`);
+		await goto(`/chat/${id}`, { invalidateAll: false });
 	}
 
 	async function handleRename(event: CustomEvent<{ id: string; title: string }>) {

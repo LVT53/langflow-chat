@@ -26,6 +26,11 @@
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
+		// Store current conversation ID to trigger landing page animation
+		const currentId = $currentConversationId;
+		if (currentId && typeof window !== 'undefined') {
+			window.sessionStorage.setItem('previous-conversation-id', currentId);
+		}
 		currentConversationId.set(null);
 		await goto('/');
 
