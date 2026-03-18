@@ -64,8 +64,7 @@ export function streamChat(
 			const reader = res.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let expectTokenData = false;
-			let expectErrorData = false;
+			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | null = null;
 
 			try {
 				while (true) {
@@ -83,46 +82,17 @@ export function streamChat(
 
 					for (const line of lines) {
 						if (line.startsWith('event: token')) {
-							expectTokenData = true;
-							expectErrorData = false;
+							currentEvent = 'token';
 						} else if (line.startsWith('event: thinking')) {
-							expectTokenData = false;
-							expectErrorData = false;
-							try {
-								const parsed = JSON.parse(line.slice('data: '.length));
-								const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
-								console.log('[CLIENT] Received thinking chunk:', thinkingChunk.slice(0, 100));
-								if (thinkingChunk) {
-									callbacks.onThinking(thinkingChunk);
-								}
-							} catch {
-							}
+							currentEvent = 'thinking';
 						} else if (line.startsWith('event: end')) {
-							const rawData = line.slice('data: '.length);
-							let metadata: StreamMetadata | undefined;
-							try {
-								const parsed = JSON.parse(rawData);
-								console.log('[CLIENT] Received end event:', { tokenCount: parsed.tokenCount, generationSpeed: parsed.generationSpeed, hasThinking: !!parsed.thinking, wasStopped: parsed.wasStopped });
-								if (parsed.tokenCount || parsed.generationSpeed || parsed.thinking || parsed.wasStopped) {
-									metadata = {
-										tokenCount: parsed.tokenCount,
-										generationSpeed: parsed.generationSpeed,
-										thinking: parsed.thinking,
-										wasStopped: parsed.wasStopped
-									};
-								}
-							} catch {
-							}
-							callbacks.onEnd(fullText, metadata);
-							return;
+							currentEvent = 'end';
 						} else if (line.startsWith('event: error')) {
-							expectErrorData = true;
-							expectTokenData = false;
+							currentEvent = 'error';
 						} else if (line.startsWith('data: ')) {
 							const rawData = line.slice('data: '.length);
 
-							if (expectTokenData) {
-								expectTokenData = false;
+							if (currentEvent === 'token') {
 								try {
 									const parsed = JSON.parse(rawData);
 									const chunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
@@ -133,8 +103,41 @@ export function streamChat(
 								} catch {
 									/* noop */
 								}
-							} else if (expectErrorData) {
-								expectErrorData = false;
+							} else if (currentEvent === 'thinking') {
+								try {
+									const parsed = JSON.parse(rawData);
+									const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+									console.log('[CLIENT] Received thinking chunk:', thinkingChunk.slice(0, 100));
+									if (thinkingChunk) {
+										callbacks.onThinking(thinkingChunk);
+									}
+								} catch {
+									/* noop */
+								}
+							} else if (currentEvent === 'end') {
+								let metadata: StreamMetadata | undefined;
+								try {
+									const parsed = JSON.parse(rawData);
+									console.log('[CLIENT] Received end event:', {
+										tokenCount: parsed.tokenCount,
+										generationSpeed: parsed.generationSpeed,
+										hasThinking: !!parsed.thinking,
+										wasStopped: parsed.wasStopped
+									});
+									if (parsed.tokenCount || parsed.generationSpeed || parsed.thinking || parsed.wasStopped) {
+										metadata = {
+											tokenCount: parsed.tokenCount,
+											generationSpeed: parsed.generationSpeed,
+											thinking: parsed.thinking,
+											wasStopped: parsed.wasStopped
+										};
+									}
+								} catch {
+									/* noop */
+								}
+								callbacks.onEnd(fullText, metadata);
+								return;
+							} else if (currentEvent === 'error') {
 								let errorMessage = 'Stream error';
 								let errorCode: string | undefined;
 								try {
@@ -148,8 +151,7 @@ export function streamChat(
 								return;
 							}
 						} else if (line === '') {
-							expectTokenData = false;
-							expectErrorData = false;
+							currentEvent = null;
 						}
 					}
 				}

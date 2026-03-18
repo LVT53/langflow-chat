@@ -20,6 +20,7 @@ function buildFetchResponse(sseLines: string[], status = 200): Response {
 
 interface MockCallbacks {
 	onToken: ReturnType<typeof vi.fn>;
+	onThinking: ReturnType<typeof vi.fn>;
 	onEnd: ReturnType<typeof vi.fn>;
 	onError: ReturnType<typeof vi.fn>;
 }
@@ -27,6 +28,7 @@ interface MockCallbacks {
 function makeCallbacks(): MockCallbacks {
 	return {
 		onToken: vi.fn(),
+		onThinking: vi.fn(),
 		onEnd: vi.fn(),
 		onError: vi.fn()
 	};
@@ -104,8 +106,64 @@ describe('streamChat', () => {
 		await done;
 
 		expect(cb.onEnd).toHaveBeenCalledOnce();
-		expect(cb.onEnd).toHaveBeenCalledWith('Hello world');
+		expect(cb.onEnd).toHaveBeenCalledWith('Hello world', undefined);
 		expect(cb.onError).not.toHaveBeenCalled();
+	});
+
+	it('calls onThinking for thinking SSE chunks', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: thinking\n',
+				'data: {"text":"Need to reason first"}\n',
+				'\n',
+				'event: token\n',
+				'data: {"text":"Final answer"}\n',
+				'\n',
+				'event: end\n',
+				'data: {"thinking":"Need to reason first\\n"}\n',
+				'\n'
+			])
+		);
+
+		const cb = {
+			...makeCallbacks(),
+			onThinking: vi.fn()
+		};
+		const done = waitForStream(cb as unknown as MockCallbacks);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onThinking).toHaveBeenCalledOnce();
+		expect(cb.onThinking).toHaveBeenCalledWith('Need to reason first');
+		expect(cb.onEnd).toHaveBeenCalledWith('Final answer', {
+			thinking: 'Need to reason first\n'
+		});
+	});
+
+	it('parses end-event metadata from the data line', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: token\n',
+				'data: {"text":"Hello"}\n',
+				'\n',
+				'event: end\n',
+				'data: {"tokenCount":3,"generationSpeed":12.5,"wasStopped":false}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onEnd).toHaveBeenCalledWith('Hello', {
+			tokenCount: 3,
+			generationSpeed: 12.5,
+			wasStopped: false
+		});
 	});
 
 	it('calls onError on network failure', async () => {
