@@ -4,23 +4,31 @@
 	import MessageBubble from './MessageBubble.svelte';
 
 	export let messages: ChatMessage[] = [];
+	export let conversationId: string | null = null;
 
 	let scrollContainer: HTMLDivElement;
 	let shouldAutoScroll = true;
 	let lastMessageCount = 0;
 	let lastMessageId: string | undefined = undefined;
-	let isFirstLoad = true;
 	let isSmoothScrolling = false;
+	let lastConversationId: string | null = null;
+	let shouldJumpToConversationBottom = false;
 
 	onMount(() => {
-		// Initial scroll to bottom with a delay to ensure DOM is rendered
-		if (messages.length > 0) {
-			requestAnimationFrame(() => {
-				instantScrollToBottom();
-			});
+		// Initial load: ensure we land at the latest message.
+		if (messages.length > 0 && scrollContainer) {
+			jumpToBottomAfterRender();
 		}
-		isFirstLoad = false;
 	});
+
+	$: if (conversationId && conversationId !== lastConversationId) {
+		lastConversationId = conversationId;
+		shouldAutoScroll = true;
+		lastMessageCount = 0;
+		lastMessageId = undefined;
+		isSmoothScrolling = false;
+		shouldJumpToConversationBottom = true;
+	}
 
 	function handleScroll() {
 		if (!scrollContainer || isSmoothScrolling) return;
@@ -44,13 +52,14 @@
 	$: if (messages && messages.length > 0 && scrollContainer) {
 		const isNewMessage = hasNewMessage(messages);
 
-		if (isFirstLoad) {
-			// Initial load: instant scroll without animation
-			instantScrollToBottom();
+		if (shouldJumpToConversationBottom) {
+			// Switching to another conversation should always reveal the latest response.
+			jumpToBottomAfterRender();
+			shouldJumpToConversationBottom = false;
 		} else if (isNewMessage) {
 			// New message added: smooth scroll with animation
 			smoothScrollToBottom();
-		} else if (shouldAutoScroll) {
+		} else if (shouldAutoScroll && !isSmoothScrolling) {
 			// Streaming update: instant scroll if already at bottom
 			instantScrollToBottom();
 		}
@@ -60,9 +69,25 @@
 		lastMessageId = messages[messages.length - 1]?.id;
 	}
 
+	$: if (messages.length === 0 && shouldJumpToConversationBottom) {
+		// Do not consume the first user send as an initial-load jump for empty conversations.
+		shouldJumpToConversationBottom = false;
+	}
+
 	function instantScrollToBottom() {
 		if (!scrollContainer) return;
 		scrollContainer.scrollTop = scrollContainer.scrollHeight;
+	}
+
+	async function jumpToBottomAfterRender() {
+		if (!scrollContainer) return;
+		await tick();
+		requestAnimationFrame(() => {
+			instantScrollToBottom();
+			requestAnimationFrame(() => {
+				instantScrollToBottom();
+			});
+		});
 	}
 
 	async function smoothScrollToBottom() {

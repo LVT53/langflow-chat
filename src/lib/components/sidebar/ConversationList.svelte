@@ -15,17 +15,25 @@
 
 	$: visibleConversations = $conversations.length > 0 ? $conversations : initialConversations;
 
-	function handleSelect(event: CustomEvent<{ id: string }>) {
+	async function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
+		if (id === $currentConversationId) {
+			return;
+		}
+
+		const previousConversationId = $currentConversationId;
 		openMenuId = null;
 		// Update store immediately for UI feedback, then navigate
 		currentConversationId.set(id);
-		// Use invalidateAll: true to ensure fresh data
-		goto(`/chat/${id}`, { invalidateAll: true, replaceState: false }).catch((err) => {
+
+		// Use direct client navigation; forcing invalidateAll here can race the first chat load.
+		try {
+			await goto(`/chat/${id}`, { replaceState: false });
+		} catch (err) {
 			console.error('Navigation failed:', err);
 			// Reset on failure
-			currentConversationId.set(null);
-		});
+			currentConversationId.set(previousConversationId);
+		}
 	}
 
 	async function handleRename(event: CustomEvent<{ id: string; title: string }>) {
