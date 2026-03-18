@@ -21,6 +21,7 @@
 	let modalRef: HTMLDivElement;
 	let searchInputRef: HTMLInputElement;
 	let previousFocus: HTMLElement | null = null;
+	let searchLoading = false;
 	const focusableSelector =
 		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -51,33 +52,31 @@
 	}
 
 	async function openSearchModal() {
-		if ($conversations.length === 0) {
-			await loadConversations();
-		}
 		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		searchQuery = '';
 		showSearchModal = true;
 		setTimeout(() => {
 			searchInputRef?.focus();
 		}, 0);
+
+		if ($conversations.length === 0) {
+			searchLoading = true;
+			try {
+				await loadConversations();
+			} catch (error) {
+				console.error('Failed to load conversations for search modal:', error);
+			} finally {
+				searchLoading = false;
+			}
+		}
 	}
 
 	function closeSearchModal() {
 		showSearchModal = false;
 		searchQuery = '';
+		searchLoading = false;
 		previousFocus?.focus();
 		previousFocus = null;
-	}
-
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				if (node.parentNode) {
-					node.parentNode.removeChild(node);
-				}
-			}
-		};
 	}
 
 	function handleSearchBackdropClick(event: MouseEvent) {
@@ -268,7 +267,7 @@
 			</div>
 		{:else}
 			<!-- Full button when expanded -->
-			<div class="flex flex-col gap-2">
+			<div class="flex flex-col gap-4">
 				<button
 					data-testid="new-conversation"
 					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
@@ -282,7 +281,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-secondary flex w-full items-center justify-start gap-3 rounded-lg px-4 text-sm"
+					class="btn-secondary flex w-full items-center justify-start gap-2 rounded-lg px-4 text-sm"
 					on:click={openSearchModal}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -307,7 +306,6 @@
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
-		use:portal
 		class="search-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-4"
 		on:click={handleSearchBackdropClick}
 		transition:fade={{ duration: 180 }}
@@ -367,7 +365,20 @@
 			</div>
 
 			<div class="max-h-[420px] overflow-y-auto px-3 py-3 md:px-4">
-				{#if searchResults.length === 0}
+				{#if searchLoading}
+					<div class="flex flex-col items-center justify-center px-5 py-12 text-center">
+						<div class="search-empty-icon mb-4 flex h-12 w-12 items-center justify-center rounded-full">
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse text-icon-muted">
+								<circle cx="11" cy="11" r="7"></circle>
+								<path d="m20 20-3.5-3.5"></path>
+							</svg>
+						</div>
+						<h3 class="text-[15px] font-sans text-text-primary">Loading conversations</h3>
+						<p class="mt-2 max-w-[28ch] text-[14px] font-sans leading-[1.4] text-text-muted">
+							Hang on while your recent threads are fetched.
+						</p>
+					</div>
+				{:else if searchResults.length === 0}
 					<div class="flex flex-col items-center justify-center px-5 py-12 text-center">
 						<div class="search-empty-icon mb-4 flex h-12 w-12 items-center justify-center rounded-full">
 							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
