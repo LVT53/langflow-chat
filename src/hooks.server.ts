@@ -6,12 +6,17 @@ import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/sentence'];
 
 export const handle: Handle = async ({ event, resolve }) => {
-  const token = event.cookies.get('session');
-   
-  if (token) {
-    const sessionUser = await validateSession(token);
-    event.locals.user = sessionUser ?? null;
-  } else {
+  try {
+    const token = event.cookies.get('session');
+     
+    if (token) {
+      const sessionUser = await validateSession(token);
+      event.locals.user = sessionUser ?? null;
+    } else {
+      event.locals.user = null;
+    }
+  } catch (err) {
+    console.error('Session validation error:', err);
     event.locals.user = null;
   }
 

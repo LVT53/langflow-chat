@@ -9,21 +9,26 @@ import {
 import { listMessages } from '$lib/server/services/messages';
 
 export const GET: RequestHandler = async (event) => {
-	requireAuth(event);
-	const user = event.locals.user!;
-	const { id } = event.params;
+	try {
+		requireAuth(event);
+		const user = event.locals.user!;
+		const { id } = event.params;
 
-	const conversation = await getConversation(user.id, id);
-	if (!conversation) {
-		return json({ error: 'Conversation not found' }, { status: 404 });
+		const conversation = await getConversation(user.id, id);
+		if (!conversation) {
+			return json({ error: 'Conversation not found' }, { status: 404 });
+		}
+
+		const messageHistory = await listMessages(id);
+
+		return json({
+			conversation,
+			messages: messageHistory
+		});
+	} catch (err) {
+		console.error('Error loading conversation:', err);
+		return json({ error: 'Failed to load conversation' }, { status: 500 });
 	}
-
-	const messageHistory = await listMessages(id);
-
-	return json({
-		conversation,
-		messages: messageHistory
-	});
 };
 
 export const PATCH: RequestHandler = async (event) => {
