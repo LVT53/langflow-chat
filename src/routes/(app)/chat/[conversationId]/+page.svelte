@@ -18,7 +18,7 @@
 	export let data: PageData;
 	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
 
-	const messages = writable<ChatMessage[]>([]);
+	const messages = writable<ChatMessage[]>(data.messages ?? []);
 	let sendError: string | null = null;
 	let isSending = false;
 	let activeStream: StreamHandle | null = null;
@@ -27,7 +27,7 @@
 	let lastAssistantResponse = '';
 	let canRetry = false;
 	let prevConversationId: string | null = null;
-	let hasPersistedMessages = false;
+	let hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 
 	$: hasMessages = $messages.length > 0;
 

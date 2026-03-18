@@ -76,7 +76,14 @@
 
 	function instantScrollToBottom() {
 		if (!scrollContainer) return;
+		const previousScrollBehavior = scrollContainer.style.scrollBehavior;
+		scrollContainer.style.scrollBehavior = 'auto';
 		scrollContainer.scrollTop = scrollContainer.scrollHeight;
+		requestAnimationFrame(() => {
+			if (scrollContainer) {
+				scrollContainer.style.scrollBehavior = previousScrollBehavior;
+			}
+		});
 	}
 
 	async function jumpToBottomAfterRender() {
@@ -88,6 +95,9 @@
 				instantScrollToBottom();
 			});
 		});
+		setTimeout(() => {
+			instantScrollToBottom();
+		}, 360);
 	}
 
 	async function smoothScrollToBottom() {
