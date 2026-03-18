@@ -2,6 +2,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
 
@@ -39,7 +40,7 @@
 		};
 	}
 
-	$: if (isOpen) {
+	$: if (browser && isOpen) {
 		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		
 		tick().then(() => {
@@ -111,7 +112,7 @@
 	});
 
 	onDestroy(() => {
-		if (document.body.style.overflow === 'hidden') {
+		if (browser && document.body.style.overflow === 'hidden') {
 			document.body.style.overflow = '';
 		}
 	});
