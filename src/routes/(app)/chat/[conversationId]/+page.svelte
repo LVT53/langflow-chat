@@ -16,6 +16,7 @@
 	} from '$lib/stores/conversations';
 
 	export let data: PageData;
+	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
 
 	const messages = writable<ChatMessage[]>([]);
 	let sendError: string | null = null;
@@ -29,6 +30,25 @@
 	let hasPersistedMessages = false;
 
 	$: hasMessages = $messages.length > 0;
+
+	function maybeSendPendingInitialMessage() {
+		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
+			return;
+		}
+
+		const storageKey = `${PENDING_MESSAGE_PREFIX}${data.conversation.id}`;
+		const pendingMessage = window.sessionStorage.getItem(storageKey);
+		if (!pendingMessage?.trim()) {
+			return;
+		}
+
+		window.sessionStorage.removeItem(storageKey);
+		handleSend(
+			new CustomEvent('send', {
+				detail: { message: pendingMessage }
+			})
+		);
+	}
 
 	function resetState() {
 		if (activeStream) {
@@ -62,6 +82,7 @@
 		lastAssistantResponse = '';
 		canRetry = false;
 		currentConversationId.set(data.conversation.id);
+		maybeSendPendingInitialMessage();
 	}
 
 	$: if (data?.conversation?.id && !activeStream) {
@@ -102,12 +123,6 @@
 
 	onMount(() => {
 		currentConversationId.set(data.conversation.id);
-		messages.set(data.messages ?? []);
-		hasPersistedMessages = (data.messages?.length ?? 0) > 0;
-		titleGenerationTriggered = false;
-		lastUserMessage = '';
-		lastAssistantResponse = '';
-		canRetry = false;
 	});
 
 	onDestroy(() => {

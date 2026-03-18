@@ -5,6 +5,8 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 
+	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
+
 	let hasStarted = false;
 	let creating = false;
 	let error: string | null = null;
@@ -19,6 +21,9 @@
 		try {
 			const id = await createNewConversation();
 			currentConversationId.set(id);
+			if (typeof window !== 'undefined') {
+				window.sessionStorage.setItem(`${PENDING_MESSAGE_PREFIX}${id}`, text.trim());
+			}
 			await goto(`/chat/${id}`);
 		} catch {
 			error = 'Failed to create conversation. Please try again.';

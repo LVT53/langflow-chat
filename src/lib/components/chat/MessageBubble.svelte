@@ -2,7 +2,6 @@
 	import { isDark } from '$lib/stores/theme';
 	import type { ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
-	import MessageLoading from './MessageLoading.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 
 	export let message: ChatMessage;
@@ -59,9 +58,7 @@
 				isCollapsed={true}
 			/>
 		{/if}
-		{#if message.isStreaming && !message.content}
-			<MessageLoading label="Generating..." />
-		{:else if isUser}
+		{#if isUser}
 			<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
 				{message.content}
 			</div>

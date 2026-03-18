@@ -7,6 +7,7 @@
 		currentConversationId,
 		SIDEBAR_DESKTOP_BREAKPOINT
 	} from '$lib/stores/ui';
+	import { createNewConversation } from '$lib/stores/conversations';
 	import type { SessionUser } from '$lib/types';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { theme, isDark, setTheme } from '$lib/stores/theme';
@@ -42,9 +43,10 @@
 
 	async function handleNewConversation() {
 		try {
-			currentConversationId.set(null);
+			const id = await createNewConversation();
+			currentConversationId.set(id);
 			mobileMenuOpen = false;
-			await goto('/');
+			await goto(`/chat/${id}`);
 
 			if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
 				sidebarOpen.set(false);
