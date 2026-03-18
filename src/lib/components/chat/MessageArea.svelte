@@ -7,6 +7,8 @@
 
 	let scrollContainer: HTMLDivElement;
 	let shouldAutoScroll = true;
+	let lastMessageCount = 0;
+	let lastMessageId: string | undefined = undefined;
 
 	function handleScroll() {
 		if (!scrollContainer) return;
@@ -15,16 +17,42 @@
 		shouldAutoScroll = distanceToBottom < 50;
 	}
 
-	$: if (messages && messages.length > 0) {
-		if (shouldAutoScroll) {
-			scrollToBottom();
+	// Detect if a new message was added (not just content updates)
+	function hasNewMessage(currentMessages: ChatMessage[]): boolean {
+		if (currentMessages.length > lastMessageCount) {
+			return true;
 		}
+		// Check if the last message ID changed (new message vs updated)
+		const currentLastId = currentMessages[currentMessages.length - 1]?.id;
+		if (currentLastId !== lastMessageId) {
+			return true;
+		}
+		return false;
 	}
 
-	async function scrollToBottom() {
+	$: if (messages && messages.length > 0) {
+		const isNewMessage = hasNewMessage(messages);
+
+		// Always smooth scroll when a new message is added (user sent message)
+		// Otherwise only auto-scroll if user is already near bottom (streaming)
+		if (isNewMessage) {
+			scrollToBottom(true); // smooth scroll for new messages
+		} else if (shouldAutoScroll) {
+			scrollToBottom(false); // instant scroll for streaming updates
+		}
+
+		// Update tracking state
+		lastMessageCount = messages.length;
+		lastMessageId = messages[messages.length - 1]?.id;
+	}
+
+	async function scrollToBottom(smooth = false) {
 		await tick();
 		if (scrollContainer) {
-			scrollContainer.scrollTop = scrollContainer.scrollHeight;
+			scrollContainer.scrollTo({
+				top: scrollContainer.scrollHeight,
+				behavior: smooth ? 'smooth' : 'auto'
+			});
 		}
 	}
 </script>
