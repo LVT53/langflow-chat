@@ -291,10 +291,6 @@
 </div>
 
 <style>
-	.chat-stage {
-		padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-	}
-
 	.message-layer {
 		opacity: 0;
 		transform: translateY(18px);

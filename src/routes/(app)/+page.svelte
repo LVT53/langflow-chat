@@ -96,10 +96,6 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 </div>
 
 <style>
-	.chat-stage {
-		padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-	}
-
 	.composer-layer {
 		position: absolute;
 		left: 0;
