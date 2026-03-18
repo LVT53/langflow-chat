@@ -145,7 +145,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-5 pt-safe pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:pl-7 md:pr-9 lg:h-[68px] lg:pl-10 lg:pr-12"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-safe pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:pl-7 md:pr-12 lg:h-[68px] lg:pl-10 lg:pr-16"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -173,7 +173,7 @@
 
 	<div class="hidden flex-1 md:block"></div>
 
-	<div class="flex min-w-0 flex-1 items-center justify-end gap-md md:gap-lg">
+	<div class="flex min-w-0 flex-1 items-center justify-end gap-md pr-1 md:gap-lg md:pr-2 lg:pr-3">
 		{#if user}
 			<span class="hide-on-mobile max-w-[150px] truncate text-[14px] font-sans text-text-muted">
 				{user.displayName}

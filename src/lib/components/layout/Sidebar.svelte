@@ -63,6 +63,17 @@
 		searchQuery = '';
 	}
 
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				if (node.parentNode) {
+					node.parentNode.removeChild(node);
+				}
+			}
+		};
+	}
+
 	function handleSearchBackdropClick(event: MouseEvent) {
 		if (event.target === event.currentTarget) {
 			closeSearchModal();
@@ -211,7 +222,7 @@
 			</div>
 		{:else}
 			<!-- Full button when expanded -->
-			<div class="flex flex-col gap-2">
+			<div class="flex flex-col gap-3">
 				<button
 					data-testid="new-conversation"
 					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
@@ -251,6 +262,7 @@
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		class="fixed inset-0 z-[80] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
+		use:portal
 		on:click={handleSearchBackdropClick}
 		transition:fade={{ duration: 180 }}
 	>

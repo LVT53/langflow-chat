@@ -56,29 +56,34 @@
 			</div>
 		{/if}
 
-		{#if !message.isStreaming}
-			<div class="mt-3 flex justify-start opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100">
-				<button
-					type="button"
-					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
-					on:click={copyToClipboard}
-					title="Copy message"
-					aria-label="Copy message"
-				>
-					{#if copied}
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-primary">
-							<polyline points="20 6 9 17 4 12"></polyline>
-						</svg>
-					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-						</svg>
-					{/if}
-				</button>
-			</div>
-		{/if}
 	</div>
+
+	{#if !message.isStreaming}
+		<div
+			class="copy-action-row flex w-full opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100"
+			class:justify-end={isUser}
+			class:justify-start={!isUser}
+		>
+			<button
+				type="button"
+				class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+				on:click={copyToClipboard}
+				title="Copy message"
+				aria-label="Copy message"
+			>
+				{#if copied}
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-primary">
+						<polyline points="20 6 9 17 4 12"></polyline>
+					</svg>
+				{:else}
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+					</svg>
+				{/if}
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style lang="postcss">
@@ -91,6 +96,9 @@
 	}
 	.fade-in {
 		animation: fadeIn var(--duration-micro) var(--ease-out) forwards;
+	}
+	.copy-action-row {
+		margin-top: calc(var(--space-sm) * -1);
 	}
 	@keyframes fadeIn {
 		from { opacity: 0; }
