@@ -66,7 +66,7 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-no-animate={!isFromChat}>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
 				{#if !hasStarted}
-					<div class="intro-copy px-2 text-center" class:intro-copy-animate={isFromChat && animateIn} transition:fade={{ duration: 260 }}>
+					<div class="intro-copy px-2 text-center" in:fade={{ duration: isFromChat ? 400 : 0, delay: isFromChat ? 100 : 0 }}>
 						<h1
 							class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
 							style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
@@ -129,16 +129,7 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 	}
 
 	.intro-copy {
-		opacity: 0;
-		transform: translateY(12px);
-		transition:
-			opacity 320ms cubic-bezier(0.22, 1, 0.36, 1) 120ms,
-			transform 360ms cubic-bezier(0.22, 1, 0.36, 1) 120ms;
-	}
-
-	.intro-copy-animate {
-		opacity: 1;
-		transform: translateY(0);
+		/* Uses Svelte transitions instead of CSS classes */
 	}
 
 	.creating-indicator {
