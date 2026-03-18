@@ -1,6 +1,5 @@
 @config "../tailwind.config.ts";
 @source "./**/*.{svelte,ts,js}";
-@import "tailwindcss";
 
 /**
  * SCROLL OWNERSHIP CONTRACT
