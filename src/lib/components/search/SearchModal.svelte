@@ -63,7 +63,6 @@
 	}
 
 	function handleBackdropClick(event: MouseEvent) {
-		// Close when clicking the backdrop (outside the modal)
 		if (event.target === event.currentTarget) {
 			handleClose();
 		}
