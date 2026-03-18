@@ -145,7 +145,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[68px] md:pl-10 md:pr-16 lg:h-[76px] lg:pl-14 lg:pr-24 xl:pr-28"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[68px] md:py-3 md:pl-10 md:pr-16 lg:h-[76px] lg:py-4 lg:pl-14 lg:pr-24 xl:pr-28"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -182,15 +182,15 @@
 
 		<div class="hide-on-mobile flex items-center gap-lg lg:gap-xl">
 			<ThemeToggle />
-			<button
-				class="logout-button btn-secondary mr-1 px-3 text-[14px] md:mr-3 md:px-5 lg:px-6"
-				data-testid="logout-button"
-				on:click={handleLogout}
-				aria-label="Logout"
-				title="Logout"
-			>
-				<span class="hide-on-mobile">Logout</span>
-			</button>
+		<button
+			class="logout-button btn-secondary mr-2 px-3 text-[14px] md:mr-4 md:px-5 lg:mr-6 lg:px-6"
+			data-testid="logout-button"
+			on:click={handleLogout}
+			aria-label="Logout"
+			title="Logout"
+		>
+			<span class="hide-on-mobile">Logout</span>
+		</button>
 		</div>
 
 		<div class="hide-on-desktop-md">
