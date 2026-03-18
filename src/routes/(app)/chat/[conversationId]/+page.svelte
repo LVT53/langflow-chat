@@ -55,25 +55,7 @@
 			activeStream.abort();
 			activeStream = null;
 		}
-		// Preserve local messages that have metadata not in database (tokenCount, etc)
-		const localMessages = $messages.filter(
-			(m) =>
-				m.tokenCount !== undefined ||
-				m.thinkingTokenCount !== undefined ||
-				m.responseTokenCount !== undefined ||
-				m.totalTokenCount !== undefined ||
-				m.generationSpeed !== undefined ||
-				m.thinking !== undefined
-		);
-		const dbMessages = data.messages ?? [];
-		// Merge: db messages take precedence unless local has metadata
-		const merged = dbMessages.map(dm => {
-			const local = localMessages.find(lm => lm.id === dm.id);
-			return local || dm;
-		});
-		// Add any local-only messages (streaming placeholders)
-		const localOnly = localMessages.filter(lm => !dbMessages.some(dm => dm.id === lm.id));
-		messages.set([...merged, ...localOnly]);
+		messages.set(data.messages ?? []);
 		hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 		sendError = null;
 		isSending = false;
@@ -211,9 +193,7 @@
 									isThinkingStreaming: false,
 									thinkingTokenCount: metadata?.thinkingTokenCount,
 									responseTokenCount: metadata?.responseTokenCount,
-									totalTokenCount: metadata?.totalTokenCount ?? metadata?.tokenCount,
-									tokenCount: metadata?.tokenCount,
-									generationSpeed: metadata?.generationSpeed
+									totalTokenCount: metadata?.totalTokenCount
 								}
 							: m
 					);
