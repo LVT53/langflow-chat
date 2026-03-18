@@ -21,11 +21,14 @@
 			isFromChat = true;
 			// Clear the marker after reading it
 			sessionStorage.removeItem('previous-conversation-id');
-		}
-		// Trigger animation after a brief delay to ensure DOM is ready
-		requestAnimationFrame(() => {
+			// Small delay to allow DOM to render initial position before animating
+			setTimeout(() => {
+				animateIn = true;
+			}, 50);
+		} else {
+			// No animation needed for direct navigation
 			animateIn = true;
-		});
+		}
 	});
 
 async function handleSend(event: CustomEvent<{ message: string }>) {
@@ -60,7 +63,7 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 
 <div class="chat-page flex h-full min-w-0 flex-col bg-surface-page pb-2 md:pb-4 lg:pb-6">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-active={!isFromChat || !animateIn}>
+		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-no-animate={!isFromChat}>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
 				{#if !hasStarted}
 					<div class="intro-copy px-2 text-center" class:intro-copy-animate={isFromChat && animateIn} transition:fade={{ duration: 260 }}>
@@ -110,12 +113,15 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 			opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.composer-layer-active {
+	/* No animation - directly at center (for direct navigation to landing) */
+	.composer-layer-no-animate {
 		top: 50%;
 		transform: translateY(-50%);
 		opacity: 1;
+		transition: none;
 	}
 
+	/* Animation class - animates from bottom (100%) to center (50%) */
 	.composer-layer-animate {
 		top: 50%;
 		transform: translateY(-50%);

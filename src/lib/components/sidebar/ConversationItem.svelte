@@ -44,11 +44,7 @@
 		};
 	}
 
-	function handleSelect(e?: MouseEvent | KeyboardEvent) {
-		if (e) {
-			e.preventDefault();
-			e.stopPropagation();
-		}
+	function handleSelect() {
 		if (!isEditing && !menuOpen) {
 			dispatch('select', { id: conversation.id });
 		}
@@ -166,8 +162,8 @@
   class:bg-surface-elevated={active}
   class:border-accent={active}
   class:shadow-sm={active}
-  on:click={(e) => handleSelect(e)}
-  on:keydown={(e) => e.key === 'Enter' && handleSelect(e)}
+  on:click={handleSelect}
+  on:keydown={(e) => e.key === 'Enter' && handleSelect()}
   role="button"
   tabindex="0"
 >
