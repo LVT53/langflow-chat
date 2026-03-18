@@ -4,6 +4,7 @@
 	export let isCollapsed: boolean = true;
 
 	let expanded = !isCollapsed;
+	$: label = isStreaming ? 'Thinking' : 'Thought';
 
 	$: if (!isStreaming && isCollapsed) {
 		expanded = false;
@@ -22,7 +23,7 @@
 		aria-expanded={expanded}
 	>
 		<div class="thinking-indicator">
-			<span class="thinking-label">Thinking</span>
+			<span class="thinking-label">{label}</span>
 			{#if isStreaming}
 				<span class="shimmer-container">
 					<span class="shimmer"></span>

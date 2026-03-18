@@ -35,5 +35,6 @@ export const messages = sqliteTable('messages', {
     .references(() => conversations.id, { onDelete: 'cascade' }),
   role: text('role').notNull(),
   content: text('content').notNull(),
+  thinking: text('thinking'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

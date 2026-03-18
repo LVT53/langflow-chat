@@ -9,6 +9,7 @@ function mapRowToChatMessage(row: typeof messages.$inferSelect): ChatMessage {
 		id: row.id,
 		role: row.role as MessageRole,
 		content: row.content,
+		thinking: row.thinking ?? undefined,
 		timestamp: row.createdAt.getTime()
 	};
 }
@@ -26,7 +27,8 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 export async function createMessage(
 	conversationId: string,
 	role: MessageRole,
-	content: string
+	content: string,
+	thinking?: string
 ): Promise<ChatMessage> {
 	const [message] = await db
 		.insert(messages)
@@ -34,7 +36,8 @@ export async function createMessage(
 			id: randomUUID(),
 			conversationId,
 			role,
-			content
+			content,
+			thinking: thinking ?? null
 		})
 		.returning();
 

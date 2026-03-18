@@ -629,7 +629,9 @@ export const POST: RequestHandler = async (event) => {
 				);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
-					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);
+					createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined).catch(
+						() => undefined
+					);
 				}
 				touchConversation(user.id, conversationId).catch(() => undefined);
 				closeStream();

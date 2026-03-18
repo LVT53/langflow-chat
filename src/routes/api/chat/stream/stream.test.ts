@@ -228,7 +228,8 @@ describe('POST /api/chat/stream', () => {
 			2,
 			'conv-1',
 			'assistant',
-			'Hello world again'
+			'Hello world again',
+			undefined
 		);
 	});
 
@@ -256,7 +257,8 @@ describe('POST /api/chat/stream', () => {
 			2,
 			'conv-1',
 			'assistant',
-			'Hello world'
+			'Hello world',
+			undefined
 		);
 	});
 
