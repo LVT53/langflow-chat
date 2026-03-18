@@ -246,6 +246,10 @@
 			// The stream will trigger onEnd via the abort controller
 		}
 	}
+
+	function handleErrorClose() {
+		sendError = null;
+	}
 </script>
 
 <svelte:head>
@@ -270,7 +274,7 @@
 				</div>
 
 				{#if sendError}
-					<ErrorMessage error={sendError} onRetry={handleRetry} />
+					<ErrorMessage error={sendError} onRetry={handleRetry} onClose={handleErrorClose} />
 				{/if}
 
 				<MessageInput on:send={handleSend} on:stop={handleStop} disabled={isSending} isGenerating={isSending} />

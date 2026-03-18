@@ -1,0 +1,29 @@
+=== STATIC ANALYSIS (TSC & LINT) ===
+$ npm run lint
+npm ERR! Missing script: "lint"
+npm ERR!
+npm ERR! Did you mean this?
+npm ERR!   npm link # Symlink a package folder
+npm ERR!
+npm ERR! To see a list of scripts, run:
+npm ERR!   npm run
+Result: SKIPPED - no script
+
+=== BUILD SUCCESS ===
+$ LANGFLOW_API_KEY=mock SESSION_SECRET=mockmockmockmockmockmockmockmock LANGFLOW_FLOW_ID=mock LANGFLOW_BASE_URL=http://localhost:7860 npm run build
+
+> build
+> vite build
+
+vite v8.0.0 building ssr environment for production...
+✓ 194 modules transformed.
+rendering chunks...
+vite v8.0.0 building client environment for production...
+✓ 195 modules transformed.
+rendering chunks...
+computing gzip size...
+✓ built in 752ms
+✓ built in 1.73s
+Run npm run preview to preview your production build locally.
+
+(Build passed successfully)

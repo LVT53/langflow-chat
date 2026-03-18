@@ -1,0 +1,2 @@
+- Fixed incorrectly mapped icon classes (text-text-muted instead of text-icon-muted)
+- Added transition-colors duration-250 to fix instant hover effects

@@ -1,0 +1,21 @@
+=== PLAYWRIGHT RESULTS ===
+$ NODE_OPTIONS=--no-experimental-vm-modules npx playwright test --reporter=list --timeout=20000
+[dotenv@17.3.1] injecting env (3) from .env
+[globalSetup] Test user seeded: admin@local
+
+Running 40 tests using 1 worker
+
+Suite summary:
+- auth.spec.ts: 6 passed
+- chat.spec.ts: 8 passed
+- conversation.spec.ts: 6 passed
+- full-user-journey.test.ts: 4 passed
+- login.test.ts: 4 passed
+- mobile-design.spec.ts: 3 passed
+- responsive.spec.ts: 3 passed, 1 skipped placeholder
+- streaming.spec.ts: 5 passed
+
+Final result:
+- 39 passed
+- 1 skipped
+- 0 failed
