@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, onMount } from 'svelte';
+	import { tick, onDestroy } from 'svelte';
 	import type { ChatMessage } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
@@ -13,12 +13,12 @@
 	let isSmoothScrolling = false;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
+	let pendingBottomAlignmentTimeout: ReturnType<typeof setTimeout> | null = null;
+	let smoothScrollFrame: number | null = null;
 
-	onMount(() => {
-		// Initial load: ensure we land at the latest message.
-		if (messages.length > 0 && scrollContainer) {
-			jumpToBottomAfterRender();
-		}
+	onDestroy(() => {
+		cancelPendingBottomAlignment();
+		cancelSmoothScroll();
 	});
 
 	$: if (conversationId && conversationId !== lastConversationId) {
@@ -35,6 +35,15 @@
 		const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
 		const distanceToBottom = scrollHeight - scrollTop - clientHeight;
 		shouldAutoScroll = distanceToBottom < 50;
+		if (!shouldAutoScroll) {
+			cancelPendingBottomAlignment();
+		}
+	}
+
+	function handleUserScrollIntent() {
+		shouldAutoScroll = false;
+		cancelPendingBottomAlignment();
+		cancelSmoothScroll();
 	}
 
 	// Detect if a new message was added (not just content updates)
@@ -76,18 +85,12 @@
 
 	function instantScrollToBottom() {
 		if (!scrollContainer) return;
-		const previousScrollBehavior = scrollContainer.style.scrollBehavior;
-		scrollContainer.style.scrollBehavior = 'auto';
 		scrollContainer.scrollTop = scrollContainer.scrollHeight;
-		requestAnimationFrame(() => {
-			if (scrollContainer) {
-				scrollContainer.style.scrollBehavior = previousScrollBehavior;
-			}
-		});
 	}
 
 	async function jumpToBottomAfterRender() {
 		if (!scrollContainer) return;
+		cancelPendingBottomAlignment();
 		await tick();
 		requestAnimationFrame(() => {
 			instantScrollToBottom();
@@ -95,31 +98,81 @@
 				instantScrollToBottom();
 			});
 		});
-		setTimeout(() => {
-			instantScrollToBottom();
-		}, 360);
+		pendingBottomAlignmentTimeout = setTimeout(() => {
+			if (shouldAutoScroll) {
+				instantScrollToBottom();
+			}
+			pendingBottomAlignmentTimeout = null;
+		}, 320);
 	}
 
 	async function smoothScrollToBottom() {
 		if (!scrollContainer) return;
+		cancelSmoothScroll();
 		isSmoothScrolling = true;
 		await tick();
-		scrollContainer.scrollTo({
-			top: scrollContainer.scrollHeight,
-			behavior: 'smooth'
-		});
-		// Reset flag after animation completes (typical smooth scroll is ~300-500ms)
-		setTimeout(() => {
+
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			instantScrollToBottom();
 			isSmoothScrolling = false;
-		}, 500);
+			return;
+		}
+
+		const startTop = scrollContainer.scrollTop;
+		const startTime = performance.now();
+		const duration = 280;
+
+		const step = (timestamp: number) => {
+			if (!scrollContainer) {
+				cancelSmoothScroll();
+				return;
+			}
+
+			const targetTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+			const progress = Math.min(1, (timestamp - startTime) / duration);
+			const easedProgress = 1 - Math.pow(1 - progress, 3);
+			scrollContainer.scrollTop = startTop + (targetTop - startTop) * easedProgress;
+
+			if (progress < 1 && shouldAutoScroll) {
+				smoothScrollFrame = requestAnimationFrame(step);
+				return;
+			}
+
+			if (shouldAutoScroll) {
+				scrollContainer.scrollTop = targetTop;
+			}
+			isSmoothScrolling = false;
+			smoothScrollFrame = null;
+		};
+
+		smoothScrollFrame = requestAnimationFrame(step);
+	}
+
+	function cancelPendingBottomAlignment() {
+		if (pendingBottomAlignmentTimeout !== null) {
+			clearTimeout(pendingBottomAlignmentTimeout);
+			pendingBottomAlignmentTimeout = null;
+		}
+	}
+
+	function cancelSmoothScroll() {
+		if (smoothScrollFrame !== null) {
+			cancelAnimationFrame(smoothScrollFrame);
+			smoothScrollFrame = null;
+		}
+		isSmoothScrolling = false;
 	}
 </script>
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
 	bind:this={scrollContainer}
 	on:scroll={handleScroll}
+	on:wheel={handleUserScrollIntent}
+	on:pointerdown={handleUserScrollIntent}
+	on:touchstart={handleUserScrollIntent}
 	class="scroll-container h-full min-h-0 overflow-y-auto px-sm py-lg md:px-lg md:py-xl lg:px-xl"
-	style="touch-action: pan-y; scroll-behavior: smooth;"
+	style="touch-action: pan-y;"
 	aria-live="polite"
 	aria-atomic="false"
 >
@@ -137,17 +190,8 @@
 
 <style>
 	.scroll-container {
-		/* Ensure smooth scrolling works */
-		scroll-behavior: smooth;
 		/* Better momentum scrolling on mobile */
 		-webkit-overflow-scrolling: touch;
-	}
-
-	/* Disable smooth scroll for users who prefer reduced motion */
-	@media (prefers-reduced-motion: reduce) {
-		.scroll-container {
-			scroll-behavior: auto !important;
-		}
 	}
 
 	.scroll-clearance {
