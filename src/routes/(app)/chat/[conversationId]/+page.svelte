@@ -160,7 +160,13 @@
 			onToken(chunk) {
 				messages.update((msgs) =>
 					msgs.map((m) =>
-						m.id === placeholderId ? { ...m, content: m.content + chunk } : m
+						m.id === placeholderId
+							? {
+									...m,
+									content: m.content + chunk,
+									isThinkingStreaming: false
+								}
+							: m
 					)
 				);
 			},
