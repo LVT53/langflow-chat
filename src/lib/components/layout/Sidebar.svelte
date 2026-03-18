@@ -7,7 +7,7 @@
 		currentConversationId,
 		SIDEBAR_DESKTOP_BREAKPOINT
 	} from '$lib/stores/ui';
-	import { createNewConversation } from '$lib/stores/conversations';
+	import { conversations, createNewConversation, loadConversations } from '$lib/stores/conversations';
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import ConversationList from '../sidebar/ConversationList.svelte';
@@ -16,8 +16,19 @@
 
 	const dispatch = createEventDispatcher();
 	let isDesktop = false;
+	let showSearchModal = false;
+	let searchQuery = '';
+	let modalRef: HTMLDivElement;
+	let searchInputRef: HTMLInputElement;
 
 	$: isCollapsed = isDesktop && $sidebarCollapsed;
+	$: normalizedSearchQuery = searchQuery.trim().toLowerCase();
+	$: searchableConversations = $conversations;
+	$: searchResults = normalizedSearchQuery
+		? searchableConversations.filter((conversation) =>
+				conversation.title.toLowerCase().includes(normalizedSearchQuery)
+			)
+		: searchableConversations.slice(0, 7);
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
@@ -36,6 +47,37 @@
 		}
 	}
 
+	async function openSearchModal() {
+		if ($conversations.length === 0) {
+			await loadConversations();
+		}
+		searchQuery = '';
+		showSearchModal = true;
+		setTimeout(() => {
+			searchInputRef?.focus();
+		}, 0);
+	}
+
+	function closeSearchModal() {
+		showSearchModal = false;
+		searchQuery = '';
+	}
+
+	function handleSearchBackdropClick(event: MouseEvent) {
+		if (event.target === event.currentTarget) {
+			closeSearchModal();
+		}
+	}
+
+	async function handleSearchSelection(id: string) {
+		currentConversationId.set(id);
+		closeSearchModal();
+		await goto(`/chat/${id}`);
+		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
+			sidebarOpen.set(false);
+		}
+	}
+
 	function toggleCollapse() {
 		if (isDesktop) {
 			sidebarCollapsed.update((v) => !v);
@@ -49,6 +91,9 @@
 
 		syncViewportState();
 		window.addEventListener('resize', syncViewportState);
+		loadConversations().catch((error) => {
+			console.error('Failed to load conversations for sidebar controls:', error);
+		});
 
 		return () => window.removeEventListener('resize', syncViewportState);
 	});
@@ -138,31 +183,58 @@
 	<div class="shrink-0 py-md" class:px-lg={!isCollapsed} class:px-0={isCollapsed}>
 		{#if isCollapsed}
 			<!-- Icon-only when collapsed -->
-			<button
-				data-testid="new-conversation"
-				class="btn-icon-bare sidebar-rail-button w-full text-accent hover:text-accent-hover"
-				on:click={handleNewConversation}
-				title="New chat"
-				aria-label="New chat"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="12" x2="12" y1="5" y2="19" />
-					<line x1="5" x2="19" y1="12" y2="12" />
-				</svg>
-			</button>
+			<div class="flex w-full flex-col items-center gap-1">
+				<button
+					data-testid="new-conversation"
+					class="btn-icon-bare sidebar-rail-button w-full text-accent hover:text-accent-hover"
+					on:click={handleNewConversation}
+					title="New chat"
+					aria-label="New chat"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="12" x2="12" y1="5" y2="19" />
+						<line x1="5" x2="19" y1="12" y2="12" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="btn-icon-bare sidebar-rail-button w-full text-icon-muted hover:text-icon-primary"
+					on:click={openSearchModal}
+					title="Search"
+					aria-label="Search conversations"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="11" cy="11" r="7"></circle>
+						<path d="m20 20-3.5-3.5"></path>
+					</svg>
+				</button>
+			</div>
 		{:else}
 			<!-- Full button when expanded -->
-			<button
-				data-testid="new-conversation"
-				class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
-				on:click={handleNewConversation}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="12" x2="12" y1="5" y2="19" />
-					<line x1="5" x2="19" y1="12" y2="12" />
-				</svg>
-				New chat
-			</button>
+			<div class="flex flex-col gap-2">
+				<button
+					data-testid="new-conversation"
+					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
+					on:click={handleNewConversation}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="12" x2="12" y1="5" y2="19" />
+						<line x1="5" x2="19" y1="12" y2="12" />
+					</svg>
+					New chat
+				</button>
+				<button
+					type="button"
+					class="btn-secondary flex w-full items-center justify-start gap-3 rounded-lg px-4 text-sm"
+					on:click={openSearchModal}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="11" cy="11" r="7"></circle>
+						<path d="m20 20-3.5-3.5"></path>
+					</svg>
+					<span>Search</span>
+				</button>
+			</div>
 		{/if}
 	</div>
 
@@ -173,6 +245,70 @@
 		{/if}
 	</div>
 </aside>
+
+{#if showSearchModal}
+	<!-- svelte-ignore a11y-click-events-have-key-events -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="fixed inset-0 z-[80] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
+		on:click={handleSearchBackdropClick}
+		transition:fade={{ duration: 180 }}
+	>
+		<div
+			bind:this={modalRef}
+			class="search-modal w-full max-w-[560px] rounded-[1.1rem] border border-border bg-surface-overlay shadow-lg"
+		>
+			<div class="border-b border-border-subtle px-4 py-4 md:px-5">
+				<div class="flex items-center gap-3 rounded-[0.9rem] border border-border bg-surface-page px-3">
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
+						<circle cx="11" cy="11" r="7"></circle>
+						<path d="m20 20-3.5-3.5"></path>
+					</svg>
+					<input
+						bind:this={searchInputRef}
+						bind:value={searchQuery}
+						type="text"
+						placeholder="Search conversations"
+						class="h-12 w-full bg-transparent text-[15px] font-sans text-text-primary outline-none placeholder:text-text-muted"
+					/>
+					<button
+						type="button"
+						class="btn-icon-bare h-10 w-10 shrink-0 text-icon-muted hover:text-icon-primary"
+						on:click={closeSearchModal}
+						aria-label="Close search"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="18" x2="6" y1="6" y2="18"></line>
+							<line x1="6" x2="18" y1="6" y2="18"></line>
+						</svg>
+					</button>
+				</div>
+			</div>
+
+			<div class="max-h-[420px] overflow-y-auto px-3 py-3 md:px-4">
+				{#if searchResults.length === 0}
+					<div class="px-3 py-10 text-center text-sm text-text-muted">
+						No conversations found
+					</div>
+				{:else}
+					{#each searchResults as conversation (conversation.id)}
+						<button
+							type="button"
+							class="search-result-row flex w-full items-center rounded-[0.95rem] px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-page"
+							on:click={() => handleSearchSelection(conversation.id)}
+						>
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-[15px] font-sans text-text-primary">
+									{conversation.title}
+								</div>
+							</div>
+						</button>
+					{/each}
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.sidebar-panel {
@@ -196,6 +332,16 @@
 		min-height: 48px !important;
 		min-width: 48px !important;
 		border-radius: 0 !important;
+	}
+
+	.search-modal {
+		box-shadow:
+			0 22px 52px rgba(0, 0, 0, 0.18),
+			0 1px 0 color-mix(in srgb, var(--border-default) 85%, transparent 15%);
+	}
+
+	.search-result-row + .search-result-row {
+		margin-top: 2px;
 	}
 
 	@media (max-width: 1023px) {

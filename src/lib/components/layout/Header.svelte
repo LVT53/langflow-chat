@@ -145,7 +145,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page px-4 pt-safe pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:px-7 lg:h-[68px] lg:px-10"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-5 pt-safe pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:pl-7 md:pr-9 lg:h-[68px] lg:pl-10 lg:pr-12"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
