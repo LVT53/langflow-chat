@@ -148,7 +148,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[68px] md:py-3 md:pl-10 md:pr-4 lg:h-[76px] lg:py-4 lg:pl-14 lg:pr-4"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -177,23 +177,21 @@
 
 
 	<div class="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-3 lg:gap-3">
-		{#if user}
-			<span class="hide-on-mobile max-w-[150px] truncate text-[14px] font-sans text-text-muted">
-				{user.displayName}
-			</span>
-		{/if}
-
 		<div class="hide-on-mobile flex items-center gap-2 lg:gap-3">
 			<ThemeToggle />
-		<button
-			class="logout-button btn-secondary px-3 text-[14px] md:px-5 lg:px-6"
-			data-testid="logout-button"
-			on:click={handleLogout}
-			aria-label="Logout"
-			title="Logout"
-		>
-			<span class="hide-on-mobile">Logout</span>
-		</button>
+			<button
+				class="btn-icon-bare logout-icon"
+				data-testid="logout-button"
+				on:click={handleLogout}
+				aria-label="Logout"
+				title="Logout"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+					<polyline points="16 17 21 12 16 7"></polyline>
+					<line x1="21" y1="12" x2="9" y2="12"></line>
+				</svg>
+			</button>
 		</div>
 
 		<div class="hide-on-desktop-md">
@@ -263,10 +261,13 @@
 </header>
 
 <style>
-	.logout-button:hover {
-		background-color: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
-		border-color: color-mix(in srgb, var(--accent) 38%, var(--border-default) 62%);
-		color: var(--text-primary);
+	.logout-icon {
+		color: var(--accent);
+	}
+
+	.logout-icon:hover,
+	.logout-icon:focus-visible {
+		color: var(--accent-hover);
 	}
 
 	.mobile-user-trigger {
