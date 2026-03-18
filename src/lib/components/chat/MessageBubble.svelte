@@ -93,7 +93,7 @@
 
 	{#if !message.isStreaming}
 		<div
-			class="copy-action-row flex w-full items-center gap-1 opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100"
+			class="copy-action-row flex w-full items-center gap-0.5 opacity-100 transition-opacity duration-[var(--duration-micro)] md:opacity-0 md:group-hover:opacity-100"
 			class:justify-end={isUser}
 			class:justify-start={!isUser}
 		>
@@ -168,7 +168,7 @@
 		animation: fadeIn var(--duration-micro) var(--ease-out) forwards;
 	}
 	.copy-action-row {
-		margin-top: calc(var(--space-sm) * -1);
+		margin-top: calc(var(--space-sm) * -1.5);
 	}
 	@keyframes fadeIn {
 		from { opacity: 0; }
