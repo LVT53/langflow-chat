@@ -11,6 +11,8 @@ import {
 } from '$lib/server/services/translator';
 
 const STREAM_TIMEOUT_MS = 120_000;
+const THINKING_OPEN_TAG = '<thinking>';
+const THINKING_CLOSE_TAG = '</thinking>';
 
 type StreamErrorCode = 'timeout' | 'network' | 'backend_failure';
 
@@ -123,6 +125,18 @@ function parseEventBlock(block: string): UpstreamEvent | null {
 	return block.includes('event:') || block.includes('data:')
 		? parseSseBlock(block)
 		: parseJsonBlock(block);
+}
+
+function getPartialTagPrefixLength(value: string, tag: string): number {
+	const maxLength = Math.min(value.length, tag.length - 1);
+
+	for (let length = maxLength; length > 0; length -= 1) {
+		if (value.endsWith(tag.slice(0, length))) {
+			return length;
+		}
+	}
+
+	return 0;
 }
 
 async function* parseUpstreamEvents(
@@ -574,17 +588,109 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			let thinkingContent = '';
+			let inlineThinkingBuffer = '';
+			let insideInlineThinking = false;
 
-			const emitToken = (chunk: string, reasoning?: string) => {
-				if (reasoning) {
-					thinkingContent += reasoning + '\n';
-					enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
+			const emitThinking = (reasoning: string) => {
+				if (!reasoning) {
+					return true;
 				}
+
+				thinkingContent += reasoning;
+				return enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
+			};
+
+			const emitVisibleToken = (chunk: string) => {
 				if (!chunk) {
 					return true;
 				}
+
 				fullResponse += chunk;
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+			};
+
+			const emitInlineToken = (chunk: string) => {
+				if (!chunk) {
+					return true;
+				}
+
+				inlineThinkingBuffer += chunk;
+
+				while (inlineThinkingBuffer) {
+					if (insideInlineThinking) {
+						const closeIndex = inlineThinkingBuffer.indexOf(THINKING_CLOSE_TAG);
+						if (closeIndex !== -1) {
+							const thinkingChunk = inlineThinkingBuffer.slice(0, closeIndex);
+							if (thinkingChunk && !emitThinking(thinkingChunk)) {
+								return false;
+							}
+							inlineThinkingBuffer = inlineThinkingBuffer.slice(
+								closeIndex + THINKING_CLOSE_TAG.length
+							);
+							insideInlineThinking = false;
+							continue;
+						}
+
+						const partialCloseLength = getPartialTagPrefixLength(
+							inlineThinkingBuffer,
+							THINKING_CLOSE_TAG
+						);
+						const flushLength = inlineThinkingBuffer.length - partialCloseLength;
+						if (flushLength > 0) {
+							const thinkingChunk = inlineThinkingBuffer.slice(0, flushLength);
+							if (!emitThinking(thinkingChunk)) {
+								return false;
+							}
+							inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
+						}
+						break;
+					}
+
+					const openIndex = inlineThinkingBuffer.indexOf(THINKING_OPEN_TAG);
+					if (openIndex !== -1) {
+						const visibleChunk = inlineThinkingBuffer.slice(0, openIndex);
+						if (visibleChunk && !emitVisibleToken(visibleChunk)) {
+							return false;
+						}
+						inlineThinkingBuffer = inlineThinkingBuffer.slice(
+							openIndex + THINKING_OPEN_TAG.length
+						);
+						insideInlineThinking = true;
+						continue;
+					}
+
+					const partialOpenLength = getPartialTagPrefixLength(
+						inlineThinkingBuffer,
+						THINKING_OPEN_TAG
+					);
+					const flushLength = inlineThinkingBuffer.length - partialOpenLength;
+					if (flushLength > 0) {
+						const visibleChunk = inlineThinkingBuffer.slice(0, flushLength);
+						if (!emitVisibleToken(visibleChunk)) {
+							return false;
+						}
+						inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
+					}
+					break;
+				}
+
+				return true;
+			};
+
+			const flushInlineThinkingBuffer = () => {
+				if (!inlineThinkingBuffer) {
+					return true;
+				}
+
+				const remainder = inlineThinkingBuffer;
+				inlineThinkingBuffer = '';
+
+				if (insideInlineThinking) {
+					insideInlineThinking = false;
+					return emitThinking(remainder);
+				}
+
+				return emitVisibleToken(remainder);
 			};
 
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
@@ -671,10 +777,13 @@ export const POST: RequestHandler = async (event) => {
 					if (data === '[DONE]' || eventType === 'end') {
 						if (outputTranslator) {
 							for (const chunk of await outputTranslator.flush()) {
-								if (!emitToken(chunk)) {
+								if (!emitInlineToken(chunk)) {
 									return;
 								}
 							}
+						}
+						if (!flushInlineThinkingBuffer()) {
+							return;
 						}
 						completeSuccess();
 						return;
@@ -696,7 +805,9 @@ export const POST: RequestHandler = async (event) => {
 					const reasoningChunk = getReasoningContent(data);
 					if (reasoningChunk) {
 						console.log('[STREAM] Thinking chunk extracted:', reasoningChunk.slice(0, 100));
-						emitToken('', reasoningChunk);
+						if (!emitThinking(`${reasoningChunk}\n`)) {
+							return;
+						}
 					}
 					if (!rawChunk) {
 						continue;
@@ -716,14 +827,14 @@ export const POST: RequestHandler = async (event) => {
 					console.log('[STREAM] Token chunk, length:', chunk.length);
 
 					if (!outputTranslator) {
-						if (!emitToken(chunk)) {
+						if (!emitInlineToken(chunk)) {
 							return;
 						}
 						continue;
 					}
 
 					for (const translatedChunk of await outputTranslator.addChunk(chunk)) {
-						if (!emitToken(translatedChunk)) {
+						if (!emitInlineToken(translatedChunk)) {
 							return;
 						}
 					}
@@ -731,10 +842,13 @@ export const POST: RequestHandler = async (event) => {
 
 				if (outputTranslator) {
 					for (const chunk of await outputTranslator.flush()) {
-						if (!emitToken(chunk)) {
+						if (!emitInlineToken(chunk)) {
 							return;
 						}
 					}
+				}
+				if (!flushInlineThinkingBuffer()) {
+					return;
 				}
 				completeSuccess();
 			} catch (error) {

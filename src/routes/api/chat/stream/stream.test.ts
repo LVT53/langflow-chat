@@ -304,6 +304,35 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('"thinking":"First analyze the request.\\n"');
 	});
 
+	it('extracts inline thinking tags from token chunks and persists separated thinking', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"text":"Before<thinking>Need to reason"}\n\n',
+				'event: token\ndata: {"text":" carefully</thinking>After"}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: thinking');
+		expect(body).toContain('"text":"Before"');
+		expect(body).toContain('"text":"After"');
+		expect(body).toContain('"thinking":"Need to reason carefully"');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(1, 'conv-1', 'user', 'Hi');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			'conv-1',
+			'assistant',
+			'BeforeAfter',
+			'Need to reason carefully'
+		);
+	});
+
 	it('translates Hungarian input before sending it to Langflow', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
