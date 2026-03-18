@@ -2,8 +2,6 @@ export interface StreamMetadata {
 	thinkingTokenCount?: number;
 	responseTokenCount?: number;
 	totalTokenCount?: number;
-	tokenCount?: number;
-	generationSpeed?: number;
 	thinking?: string;
 	wasStopped?: boolean;
 }
@@ -215,8 +213,6 @@ export function streamChat(
 										parsed.thinkingTokenCount ||
 										parsed.responseTokenCount ||
 										parsed.totalTokenCount ||
-										parsed.tokenCount ||
-										parsed.generationSpeed ||
 										parsed.thinking ||
 										parsed.wasStopped
 									) {
@@ -224,8 +220,6 @@ export function streamChat(
 											thinkingTokenCount: parsed.thinkingTokenCount,
 											responseTokenCount: parsed.responseTokenCount,
 											totalTokenCount: parsed.totalTokenCount,
-											tokenCount: parsed.tokenCount,
-											generationSpeed: parsed.generationSpeed,
 											thinking: parsed.thinking,
 											wasStopped: parsed.wasStopped
 										};

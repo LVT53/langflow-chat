@@ -573,7 +573,6 @@ export const POST: RequestHandler = async (event) => {
 				}
 			};
 
-			const streamStartTime = Date.now();
 			let thinkingContent = '';
 
 			const emitToken = (chunk: string, reasoning?: string) => {
@@ -596,12 +595,6 @@ export const POST: RequestHandler = async (event) => {
 				const thinkingTokenCount = estimateTokenCount(thinkingContent);
 				const responseTokenCount = estimateTokenCount(fullResponse);
 				const totalTokenCount = thinkingTokenCount + responseTokenCount;
-				const streamDurationMs = Date.now() - streamStartTime;
-				const streamDurationSeconds = streamDurationMs > 0 ? streamDurationMs / 1000 : 0;
-				const generationSpeed =
-					streamDurationSeconds > 0
-						? Math.round((totalTokenCount / streamDurationSeconds) * 10) / 10
-						: 0;
 				console.log(
 					'[STREAM] End - thinkingTokenCount:',
 					thinkingTokenCount,
@@ -609,8 +602,6 @@ export const POST: RequestHandler = async (event) => {
 					responseTokenCount,
 					'totalTokenCount:',
 					totalTokenCount,
-					'speed:',
-					generationSpeed,
 					'thinkingLength:',
 					thinkingContent.length,
 					'wasStopped:',
@@ -621,8 +612,6 @@ export const POST: RequestHandler = async (event) => {
 						thinkingTokenCount,
 						responseTokenCount,
 						totalTokenCount,
-						tokenCount: totalTokenCount,
-						generationSpeed,
 						thinking: thinkingContent || undefined,
 						wasStopped
 					})}\n\n`

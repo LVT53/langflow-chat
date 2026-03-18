@@ -48,8 +48,6 @@ export interface ChatMessage {
   thinkingTokenCount?: number;
   responseTokenCount?: number;
   totalTokenCount?: number;
-  tokenCount?: number;
-  generationSpeed?: number;
 }
 
 // Langflow types

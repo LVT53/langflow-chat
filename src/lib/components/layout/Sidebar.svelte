@@ -8,7 +8,6 @@
 		SIDEBAR_DESKTOP_BREAKPOINT,
 		currentConversationId
 	} from '$lib/stores/ui';
-	import { createNewConversation } from '$lib/stores/conversations';
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import ConversationList from '../sidebar/ConversationList.svelte';
@@ -27,14 +26,8 @@
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
-		try {
-			const id = await createNewConversation();
-			currentConversationId.set(id);
-			await goto(`/chat/${id}`);
-		} catch (error) {
-			console.error('Failed to create new conversation:', error);
-			alert('Failed to create new conversation. Please try again.');
-		}
+		currentConversationId.set(null);
+		await goto('/');
 
 		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
 			sidebarOpen.set(false);

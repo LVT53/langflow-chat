@@ -211,7 +211,7 @@ describe('streamChat', () => {
 				'data: {"text":"Hello"}\n',
 				'\n',
 				'event: end\n',
-				'data: {"thinkingTokenCount":2,"responseTokenCount":3,"totalTokenCount":5,"tokenCount":5,"generationSpeed":12.5,"wasStopped":false}\n',
+				'data: {"thinkingTokenCount":2,"responseTokenCount":3,"totalTokenCount":5,"wasStopped":false}\n',
 				'\n'
 			])
 		);
@@ -225,8 +225,6 @@ describe('streamChat', () => {
 			thinkingTokenCount: 2,
 			responseTokenCount: 3,
 			totalTokenCount: 5,
-			tokenCount: 5,
-			generationSpeed: 12.5,
 			wasStopped: false
 		});
 	});

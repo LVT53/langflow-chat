@@ -9,16 +9,33 @@
 	let copied = false;
 	let copyTimeout: ReturnType<typeof setTimeout>;
 
+	function estimateTokenCount(text: string) {
+		const trimmed = text.trim();
+		if (!trimmed) return 0;
+
+		const segments = trimmed.match(/[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];
+		let estimated = 0;
+
+		for (const segment of segments) {
+			if (/^[\p{L}\p{N}]+$/u.test(segment)) {
+				const isAscii = /^[\x00-\x7F]+$/.test(segment);
+				estimated += Math.max(1, Math.ceil(segment.length / (isAscii ? 4 : 2)));
+				continue;
+			}
+
+			estimated += segment.length;
+		}
+
+		return estimated;
+	}
+
 	$: isUser = message.role === 'user';
 	$: hasThinking = Boolean(message.thinking?.trim());
-	$: thinkingTokenCount = message.thinkingTokenCount;
-	$: responseTokenCount = message.responseTokenCount;
-	$: totalTokenCount = message.totalTokenCount ?? message.tokenCount;
+	$: thinkingTokenCount = hasThinking ? estimateTokenCount(message.thinking ?? '') : 0;
+	$: responseTokenCount = estimateTokenCount(message.content);
+	$: totalTokenCount = thinkingTokenCount + responseTokenCount;
 	$: hasTokenInfo =
-		thinkingTokenCount !== undefined ||
-		responseTokenCount !== undefined ||
-		totalTokenCount !== undefined ||
-		message.generationSpeed !== undefined;
+		hasThinking || responseTokenCount > 0;
 
 	function getClipboardText(content: string) {
 		return content
@@ -95,28 +112,22 @@
 					</button>
 					<div class="info-tooltip">
 						<div class="tooltip-content">
-							{#if thinkingTokenCount !== undefined}
+							{#if hasThinking}
 								<div class="tooltip-row">
 									<span class="tooltip-label">Thinking tokens</span>
 									<span class="tooltip-value">{thinkingTokenCount.toLocaleString()}</span>
 								</div>
 							{/if}
-							{#if responseTokenCount !== undefined}
+							{#if responseTokenCount > 0}
 								<div class="tooltip-row">
 									<span class="tooltip-label">Response tokens</span>
 									<span class="tooltip-value">{responseTokenCount.toLocaleString()}</span>
 								</div>
 							{/if}
-							{#if totalTokenCount !== undefined}
+							{#if totalTokenCount > 0}
 								<div class="tooltip-row">
 									<span class="tooltip-label">Total tokens</span>
 									<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
-								</div>
-							{/if}
-							{#if message.generationSpeed !== undefined}
-								<div class="tooltip-row">
-									<span class="tooltip-label">Est. speed</span>
-									<span class="tooltip-value">{message.generationSpeed} tok/s</span>
 								</div>
 							{/if}
 						</div>
