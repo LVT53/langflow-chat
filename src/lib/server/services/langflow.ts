@@ -44,6 +44,11 @@ export async function sendMessage(message: string, sessionId: string): Promise<{
   
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}`;
+    console.log('[LANGFLOW] sendMessage request', {
+      url,
+      sessionId,
+      messageLength: message.length
+    });
     
     const body: LangflowRunRequest = {
       input_value: message,
@@ -63,7 +68,14 @@ export async function sendMessage(message: string, sessionId: string): Promise<{
     });
     
     if (!response.ok) {
-      throw new Error(`Langflow API error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text().catch(() => '');
+      console.error('[LANGFLOW] sendMessage non-OK response', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: errorBody.slice(0, 1000)
+      });
+      throw new Error(`Langflow API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ''}`);
     }
     
     const rawResponse: LangflowRunResponse = await response.json();
@@ -88,6 +100,11 @@ export async function sendMessageStream(
   
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}?stream=true`;
+    console.log('[LANGFLOW] sendMessageStream request', {
+      url,
+      sessionId,
+      messageLength: message.length
+    });
     
     const body: LangflowRunRequest = {
       input_value: message,
@@ -107,10 +124,18 @@ export async function sendMessageStream(
     });
     
     if (!response.ok) {
-      throw new Error(`Langflow API error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text().catch(() => '');
+      console.error('[LANGFLOW] sendMessageStream non-OK response', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: errorBody.slice(0, 1000)
+      });
+      throw new Error(`Langflow API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ''}`);
     }
     
     if (!response.body) {
+      console.error('[LANGFLOW] sendMessageStream missing response body', { url, sessionId });
       throw new Error('Response body is empty');
     }
     

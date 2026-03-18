@@ -599,9 +599,17 @@ export const POST: RequestHandler = async (event) => {
 			}, STREAM_TIMEOUT_MS);
 
 			try {
+				console.log('[STREAM] Starting upstream request', {
+					userId: user.id,
+					conversationId,
+					sourceLanguage,
+					normalizedMessageLength: normalizedMessage.length,
+					upstreamMessageLength: upstreamMessage.length
+				});
 				const langflowStream = await sendMessageStream(upstreamMessage, conversationId, {
 					signal: upstreamAbortController.signal
 				});
+				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 
 				for await (const upstreamEvent of parseUpstreamEvents(langflowStream)) {
@@ -676,7 +684,16 @@ export const POST: RequestHandler = async (event) => {
 						completeSuccess();
 						return;
 					}
-					console.error('Chat stream error:', error);
+					console.error('[STREAM] Chat stream error', {
+						conversationId,
+						userId: user.id,
+						message: error instanceof Error ? error.message : String(error),
+						stack: error instanceof Error ? error.stack : undefined,
+						cause:
+							error instanceof Error && 'cause' in error
+								? (error as Error & { cause?: unknown }).cause
+								: undefined
+					});
 					failStream(
 						classifyStreamError(error instanceof Error ? error.message : String(error))
 					);
