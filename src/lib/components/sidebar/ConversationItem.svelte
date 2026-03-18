@@ -45,11 +45,6 @@
 	}
 
 	function handleSelect(e?: MouseEvent) {
-		// Always prevent default to ensure no navigation issues
-		if (e) {
-			e.preventDefault();
-			e.stopImmediatePropagation();
-		}
 		// Only select if not currently editing and menu is closed
 		if (!isEditing && !menuOpen) {
 			dispatch('select', { id: conversation.id });
@@ -167,12 +162,11 @@
 <div
   data-testid="conversation-item"
   class="group relative flex min-h-[40px] cursor-pointer items-center justify-between rounded-xl border border-transparent transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
-  style="padding: 0 3px 0 10px; pointer-events: auto;"
+	style="padding: 0 3px 0 10px; pointer-events: auto;"
   class:bg-surface-elevated={active}
   class:border-accent={active}
   class:shadow-sm={active}
   on:click={(e) => handleSelect(e)}
-  on:mousedown={(e) => e.stopPropagation()}
   on:keydown={(e) => e.key === 'Enter' && handleSelect()}
   role="button"
   tabindex="0"
