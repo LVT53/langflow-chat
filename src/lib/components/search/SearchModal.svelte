@@ -24,7 +24,7 @@
 		? searchableConversations.filter((conversation) =>
 				conversation.title.toLowerCase().includes(normalizedSearchQuery)
 			)
-		: searchableConversations.slice(0, 7);
+		: searchableConversations.slice(0, 6);
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -186,7 +186,7 @@
 				</div>
 			</div>
 
-			<div class="max-h-[50vh] overflow-y-auto px-4 py-3">
+			<div class="max-h-[420px] overflow-y-auto px-4 py-3">
 				{#if searchLoading}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
@@ -214,7 +214,7 @@
 						{#each searchResults as conversation (conversation.id)}
 							<button
 								type="button"
-								class="search-result-item flex w-full items-center gap-4 rounded-lg px-4 py-4 text-left transition-colors duration-150 hover:bg-surface-elevated"
+								class="search-result-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
 								class:active={conversation.id === $currentConversationId}
 								on:click={() => handleSelection(conversation.id)}
 							>
