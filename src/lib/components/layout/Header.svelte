@@ -149,7 +149,7 @@
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
-			class="btn-icon-bare"
+			class="btn-icon-bare lg:hidden"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
