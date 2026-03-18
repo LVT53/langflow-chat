@@ -268,10 +268,10 @@
 			</div>
 		{:else}
 			<!-- Full button when expanded -->
-			<div class="flex flex-col gap-3">
+			<div class="flex flex-col gap-2">
 				<button
 					data-testid="new-conversation"
-					class="btn-primary mb-2 flex w-full items-center justify-center gap-3 rounded-lg text-sm shadow-sm"
+					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
 					on:click={handleNewConversation}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -282,7 +282,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-secondary flex w-full items-center justify-start gap-4 rounded-lg px-4 text-sm"
+					class="btn-secondary flex w-full items-center justify-start gap-3 rounded-lg px-4 text-sm"
 					on:click={openSearchModal}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
