@@ -145,7 +145,7 @@
 <svelte:window on:click={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:pl-7 md:pr-12 lg:h-[68px] lg:pl-10 lg:pr-16"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-8 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:h-[60px] md:pl-8 md:pr-14 lg:h-[68px] lg:pl-12 lg:pr-20 xl:pr-24"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -173,7 +173,7 @@
 
 	<div class="hidden flex-1 md:block"></div>
 
-	<div class="flex min-w-0 flex-1 items-center justify-end gap-md pr-1 md:gap-lg md:pr-2 lg:pr-3">
+	<div class="flex min-w-0 flex-1 items-center justify-end gap-md pr-1 md:gap-lg md:pr-3 lg:gap-xl lg:pr-4">
 		{#if user}
 			<span class="hide-on-mobile max-w-[150px] truncate text-[14px] font-sans text-text-muted">
 				{user.displayName}
@@ -183,7 +183,7 @@
 		<div class="hide-on-mobile flex items-center gap-md">
 			<ThemeToggle />
 			<button
-				class="logout-button btn-secondary mr-1 px-3 text-[14px] md:mr-2 md:px-4"
+				class="logout-button btn-secondary mr-1 px-3 text-[14px] md:mr-2 md:px-4 lg:px-5"
 				data-testid="logout-button"
 				on:click={handleLogout}
 				aria-label="Logout"
