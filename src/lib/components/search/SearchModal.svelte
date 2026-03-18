@@ -186,7 +186,7 @@
 				</div>
 			</div>
 
-			<div class="max-h-[420px] overflow-y-auto px-4 py-3">
+			<div class="max-h-[360px] overflow-y-auto px-4 py-3">
 				{#if searchLoading}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
@@ -210,7 +210,7 @@
 						</p>
 					</div>
 				{:else}
-					<div class="space-y-2">
+					<div class="space-y-1">
 						{#each searchResults as conversation (conversation.id)}
 							<button
 								type="button"
