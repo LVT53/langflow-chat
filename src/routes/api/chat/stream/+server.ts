@@ -536,6 +536,7 @@ export const POST: RequestHandler = async (event) => {
 				ended = true;
 				const duration = (Date.now() - streamStartTime) / 1000;
 				const generationSpeed = duration > 0 ? Math.round((tokenCount / duration) * 10) / 10 : 0;
+				console.log('[STREAM] End - tokenCount:', tokenCount, 'speed:', generationSpeed, 'thinkingLength:', thinkingContent.length, 'wasStopped:', wasStopped);
 				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount, generationSpeed, thinking: thinkingContent || undefined, wasStopped })}\n\n`);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
@@ -587,6 +588,8 @@ export const POST: RequestHandler = async (event) => {
 					const reasoningChunk = getReasoningContent(data);
 					if (reasoningChunk) {
 						thinkingContent += reasoningChunk + '\n';
+						console.log('[STREAM] Thinking chunk extracted:', reasoningChunk.slice(0, 100));
+						emitToken('', reasoningChunk);
 					}
 					if (!rawChunk) {
 						continue;
@@ -602,6 +605,8 @@ export const POST: RequestHandler = async (event) => {
 					emittedAssistantText = incremental.emittedText;
 					const chunk = incremental.chunk;
 					if (!chunk) continue;
+
+					console.log('[STREAM] Token chunk, length:', chunk.length, 'tokenCount:', tokenCount);
 
 					if (!outputTranslator) {
 						if (!emitToken(chunk)) {

@@ -147,6 +147,7 @@
 				);
 			},
 			onThinking(chunk) {
+				console.log('[PAGE] onThinking called, chunk length:', chunk.length, 'first 50 chars:', chunk.slice(0, 50));
 				messages.update((msgs) =>
 					msgs.map((m) =>
 						m.id === placeholderId
@@ -160,9 +161,10 @@
 				);
 			},
 			onEnd(_fullText, metadata) {
+				console.log('[PAGE] onEnd called, metadata:', metadata, 'fullText length:', _fullText.length);
 				lastAssistantResponse = _fullText;
-				messages.update((msgs) =>
-					msgs.map((m) =>
+				messages.update((msgs) => {
+					const updated = msgs.map((m) =>
 						m.id === placeholderId
 							? {
 									...m,
@@ -174,8 +176,11 @@
 									generationSpeed: metadata?.generationSpeed
 								}
 							: m
-					)
-				);
+					);
+					const msg = updated.find(m => m.id === placeholderId);
+					console.log('[PAGE] Updated message - hasThinking:', !!msg?.thinking, 'tokenCount:', msg?.tokenCount, 'generationSpeed:', msg?.generationSpeed);
+					return updated;
+				});
 				isSending = false;
 				activeStream = null;
 				canRetry = false;

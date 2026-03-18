@@ -85,22 +85,24 @@ export function streamChat(
 						if (line.startsWith('event: token')) {
 							expectTokenData = true;
 							expectErrorData = false;
-						} else if (line.startsWith('event: thinking')) {
-							expectTokenData = false;
-							expectErrorData = false;
-							try {
-								const parsed = JSON.parse(line.slice('data: '.length));
-								const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
-								if (thinkingChunk) {
-									callbacks.onThinking(thinkingChunk);
-								}
-							} catch {
+					} else if (line.startsWith('event: thinking')) {
+						expectTokenData = false;
+						expectErrorData = false;
+						try {
+							const parsed = JSON.parse(line.slice('data: '.length));
+							const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+							console.log('[CLIENT] Received thinking chunk:', thinkingChunk.slice(0, 100));
+							if (thinkingChunk) {
+								callbacks.onThinking(thinkingChunk);
 							}
+						} catch {
+						}
 						} else if (line.startsWith('event: end')) {
 							const rawData = line.slice('data: '.length);
 							let metadata: StreamMetadata | undefined;
 							try {
 								const parsed = JSON.parse(rawData);
+								console.log('[CLIENT] Received end event:', { tokenCount: parsed.tokenCount, generationSpeed: parsed.generationSpeed, hasThinking: !!parsed.thinking, wasStopped: parsed.wasStopped });
 								if (parsed.tokenCount || parsed.generationSpeed || parsed.thinking || parsed.wasStopped) {
 									metadata = {
 										tokenCount: parsed.tokenCount,
