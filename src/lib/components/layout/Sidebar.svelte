@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -20,6 +20,7 @@
 	let searchQuery = '';
 	let modalRef: HTMLDivElement;
 	let searchInputRef: HTMLInputElement;
+	let previousFocus: HTMLElement | null = null;
 
 	$: isCollapsed = isDesktop && $sidebarCollapsed;
 	$: normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -51,6 +52,7 @@
 		if ($conversations.length === 0) {
 			await loadConversations();
 		}
+		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		searchQuery = '';
 		showSearchModal = true;
 		setTimeout(() => {
@@ -61,21 +63,21 @@
 	function closeSearchModal() {
 		showSearchModal = false;
 		searchQuery = '';
-	}
-
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				if (node.parentNode) {
-					node.parentNode.removeChild(node);
-				}
-			}
-		};
+		previousFocus?.focus();
+		previousFocus = null;
 	}
 
 	function handleSearchBackdropClick(event: MouseEvent) {
 		if (event.target === event.currentTarget) {
+			closeSearchModal();
+		}
+	}
+
+	function handleWindowKeydown(event: KeyboardEvent) {
+		if (!showSearchModal) return;
+
+		if (event.key === 'Escape') {
+			event.preventDefault();
 			closeSearchModal();
 		}
 	}
@@ -108,7 +110,21 @@
 
 		return () => window.removeEventListener('resize', syncViewportState);
 	});
+
+	$: {
+		if (typeof document !== 'undefined') {
+			document.body.style.overflow = showSearchModal ? 'hidden' : '';
+		}
+	}
+
+	onDestroy(() => {
+		if (typeof document !== 'undefined' && document.body.style.overflow === 'hidden') {
+			document.body.style.overflow = '';
+		}
+	});
 </script>
+
+<svelte:window on:keydown={handleWindowKeydown} />
 
 <!-- Mobile Overlay -->
 {#if open}
@@ -225,7 +241,7 @@
 			<div class="flex flex-col gap-3">
 				<button
 					data-testid="new-conversation"
-					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
+					class="btn-primary mb-2 flex w-full items-center justify-center gap-3 rounded-lg text-sm shadow-sm"
 					on:click={handleNewConversation}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -236,7 +252,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-secondary flex w-full items-center justify-start gap-3 rounded-lg px-4 text-sm"
+					class="btn-secondary flex w-full items-center justify-start gap-4 rounded-lg px-4 text-sm"
 					on:click={openSearchModal}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -262,15 +278,20 @@
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		class="fixed inset-0 z-[80] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-		use:portal
 		on:click={handleSearchBackdropClick}
 		transition:fade={{ duration: 180 }}
 	>
 		<div
 			bind:this={modalRef}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="search-dialog-title"
+			tabindex="-1"
 			class="search-modal w-full max-w-[560px] rounded-[1.1rem] border border-border bg-surface-overlay shadow-lg"
+			on:click|stopPropagation
 		>
 			<div class="border-b border-border-subtle px-4 py-4 md:px-5">
+				<h2 id="search-dialog-title" class="sr-only">Search conversations</h2>
 				<div class="flex items-center gap-3 rounded-[0.9rem] border border-border bg-surface-page px-3">
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
 						<circle cx="11" cy="11" r="7"></circle>
