@@ -260,6 +260,48 @@ describe('POST /api/chat/stream', () => {
 		);
 	});
 
+	it('extracts reasoning from OpenAI-compatible streaming delta payloads', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"Need to break this down.","content":"Final"}}]}\n\n',
+				'event: token\ndata: {"choices":[{"delta":{"content":" answer"}}]}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: thinking');
+		expect(body).toContain('Need to break this down.');
+		expect(body).toContain('"text":"Final"');
+		expect(body).toContain('"text":" answer"');
+		expect(body).toContain('"thinking":"Need to break this down.\\n"');
+	});
+
+	it('extracts reasoning from OpenAI-compatible final message payloads', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"choices":[{"message":{"role":"assistant","reasoning_content":"First analyze the request.","content":"Completed response."}}]}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: thinking');
+		expect(body).toContain('First analyze the request.');
+		expect(body).toContain('"text":"Completed response."');
+		expect(body).toContain('"thinking":"First analyze the request.\\n"');
+	});
+
 	it('translates Hungarian input before sending it to Langflow', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
@@ -295,7 +337,7 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 
 		expect(body).toContain('event: end');
-		expect(body).toContain('data: {}');
+		expect(body).toContain('"tokenCount":1');
 	});
 
 	it('returns 401 when user is not authenticated', async () => {

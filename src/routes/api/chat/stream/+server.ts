@@ -214,6 +214,16 @@ function getNestedObject(value: unknown): Record<string, unknown> | null {
 		: null;
 }
 
+function getFirstChoice(value: unknown): Record<string, unknown> | null {
+	const payload = getNestedObject(value);
+	if (!payload || !Array.isArray(payload.choices) || payload.choices.length === 0) {
+		return null;
+	}
+
+	const [firstChoice] = payload.choices;
+	return getNestedObject(firstChoice);
+}
+
 function getSender(value: unknown): string | null {
 	const payload = getNestedObject(value);
 	if (!payload) return null;
@@ -243,6 +253,18 @@ function getTextContent(value: unknown): string {
 	const payload = getNestedObject(value);
 	if (!payload) return '';
 
+	const choice = getFirstChoice(payload);
+	if (choice) {
+		for (const key of ['delta', 'message']) {
+			if (key in choice) {
+				const nestedContent = getTextContent(choice[key]);
+				if (nestedContent) {
+					return nestedContent;
+				}
+			}
+		}
+	}
+
 	for (const key of ['text', 'chunk', 'content']) {
 		const candidate = payload[key];
 		if (typeof candidate === 'string' && candidate.length > 0) {
@@ -261,8 +283,24 @@ function getReasoningContent(value: unknown): string | null {
 	const payload = getNestedObject(value);
 	if (!payload) return null;
 
+	const choice = getFirstChoice(payload);
+	if (choice) {
+		for (const key of ['delta', 'message']) {
+			if (key in choice) {
+				const nestedReasoning = getReasoningContent(choice[key]);
+				if (nestedReasoning) {
+					return nestedReasoning;
+				}
+			}
+		}
+	}
+
 	if (typeof payload.reasoning === 'string' && payload.reasoning.trim()) {
 		return payload.reasoning.trim();
+	}
+
+	if (typeof payload.reasoning_content === 'string' && payload.reasoning_content.trim()) {
+		return payload.reasoning_content.trim();
 	}
 
 	if (typeof payload.thinking === 'string' && payload.thinking.trim()) {
@@ -520,12 +558,15 @@ export const POST: RequestHandler = async (event) => {
 			let thinkingContent = '';
 
 			const emitToken = (chunk: string, reasoning?: string) => {
-				fullResponse += chunk;
-				tokenCount += 1;
 				if (reasoning) {
 					thinkingContent += reasoning + '\n';
 					enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
 				}
+				if (!chunk) {
+					return true;
+				}
+				fullResponse += chunk;
+				tokenCount += 1;
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
@@ -587,7 +628,6 @@ export const POST: RequestHandler = async (event) => {
 					const rawChunk = extractAssistantChunk(eventType, data);
 					const reasoningChunk = getReasoningContent(data);
 					if (reasoningChunk) {
-						thinkingContent += reasoningChunk + '\n';
 						console.log('[STREAM] Thinking chunk extracted:', reasoningChunk.slice(0, 100));
 						emitToken('', reasoningChunk);
 					}
