@@ -87,7 +87,7 @@
   }
 </script>
 
-<div aria-hidden="false">
+<div class="markdown-container" class:is-streaming={isStreaming} aria-hidden="false">
   {#each blocks as block}
     {#if block.type === 'html'}
       <div class="prose max-w-none dark:prose-invert markdown-html">
@@ -103,6 +103,10 @@
 </div>
 
 <style>
+  .markdown-container {
+    position: relative;
+  }
+
   .markdown-html :global(*:last-child) {
     margin-bottom: 0;
   }
@@ -117,5 +121,40 @@
   @keyframes blink {
     0%, 50% { opacity: 1 }
     51%, 100% { opacity: 0 }
+  }
+
+  /* Streaming mask effect - creates smooth fade at bottom where new content appears */
+  .is-streaming::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2.5em;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      var(--surface-page) 100%
+    );
+    pointer-events: none;
+    opacity: 0.35;
+    animation: streamPulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes streamPulse {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.45; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .streaming-cursor {
+      animation: none;
+      opacity: 1;
+    }
+
+    .is-streaming::after {
+      animation: none;
+      opacity: 0.3;
+    }
   }
 </style>

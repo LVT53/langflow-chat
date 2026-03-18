@@ -37,13 +37,14 @@ export interface ConversationListItem {
 // MessageRole type: 'user' | 'assistant'
 export type MessageRole = 'user' | 'assistant';
 
-// ChatMessage interface: id (client-generated UUID), role, content (raw text/markdown), timestamp, isStreaming
 export interface ChatMessage {
-  id: string; // client-generated UUID
+  id: string;
   role: MessageRole;
-  content: string; // raw text/markdown
-  timestamp: number; // Unix timestamp
+  content: string;
+  timestamp: number;
   isStreaming?: boolean;
+  thinking?: string;
+  isThinkingStreaming?: boolean;
 }
 
 // Langflow types

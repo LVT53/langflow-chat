@@ -3,6 +3,7 @@
 	import type { ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import MessageLoading from './MessageLoading.svelte';
+	import ThinkingBlock from './ThinkingBlock.svelte';
 
 	export let message: ChatMessage;
 
@@ -10,6 +11,7 @@
 	let copyTimeout: ReturnType<typeof setTimeout>;
 
 	$: isUser = message.role === 'user';
+	$: hasThinking = Boolean(message.thinking?.trim());
 
 	function getClipboardText(content: string) {
 		return content
@@ -36,12 +38,19 @@
 	<div
 		data-testid={isUser ? 'user-message' : 'assistant-message'}
 		class="relative flex flex-col font-serif
-		{isUser 
-			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]' 
+		{isUser
+			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]'
 			: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
+		{#if !isUser && hasThinking}
+			<ThinkingBlock
+				content={message.thinking ?? ''}
+				isStreaming={Boolean(message.isThinkingStreaming)}
+				isCollapsed={true}
+			/>
+		{/if}
 		{#if message.isStreaming && !message.content}
-			<MessageLoading label="Thinking..." />
+			<MessageLoading label="Generating..." />
 		{:else if isUser}
 			<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
 				{message.content}
