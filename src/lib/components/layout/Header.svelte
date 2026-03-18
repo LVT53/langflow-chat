@@ -149,7 +149,7 @@
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
-			class="btn-icon-bare lg:hidden"
+			class="btn-icon-bare mobile-sidebar-toggle"
 			on:click={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
@@ -353,6 +353,12 @@
 
 	@media (max-width: 767px) {
 		.hide-on-mobile {
+			display: none !important;
+		}
+	}
+
+	@media (min-width: 1024px) {
+		.mobile-sidebar-toggle {
 			display: none !important;
 		}
 	}
