@@ -199,6 +199,13 @@
 			handleSend(retryEvent);
 		}
 	}
+
+	function handleStop() {
+		if (activeStream) {
+			activeStream.abort();
+			// The stream will trigger onEnd via the abort controller
+		}
+	}
 </script>
 
 <svelte:head>
@@ -226,7 +233,7 @@
 					<ErrorMessage error={sendError} onRetry={handleRetry} />
 				{/if}
 
-				<MessageInput on:send={handleSend} disabled={isSending} />
+				<MessageInput on:send={handleSend} on:stop={handleStop} disabled={isSending} isGenerating={isSending} />
 			</div>
 		</div>
 	</div>

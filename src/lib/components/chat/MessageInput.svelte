@@ -4,9 +4,11 @@
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
+	export let isGenerating: boolean = false;
 
 	const dispatch = createEventDispatcher<{
 		send: { message: string };
+		stop: void;
 	}>();
 
 	let textarea: HTMLTextAreaElement;
@@ -59,6 +61,10 @@
 		textarea.focus();
 	}
 
+	function stop() {
+		dispatch('stop');
+	}
+
 	onMount(() => {
 		if (textarea) {
 			textarea.focus();
@@ -96,19 +102,34 @@
 				</svg>
 			</button>
 
-			<button
-				data-testid="send-button"
-				type="button"
-				on:click={send}
-				disabled={!canSend}
-				aria-label="Send message"
-				class="btn-primary composer-send min-h-[50px] min-w-[50px] flex-shrink-0 rounded-[15px] !px-0 shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="22" x2="11" y1="2" y2="13" />
-					<polygon points="22 2 15 22 11 13 2 9 22 2" />
-				</svg>
-			</button>
+			<div class="action-button-container min-h-[50px] min-w-[50px] flex-shrink-0">
+				{#if isGenerating}
+					<button
+						type="button"
+						on:click={stop}
+						aria-label="Stop generation"
+						class="btn-danger composer-stop flex h-full w-full items-center justify-center rounded-[15px] shadow-sm animate-in"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+							<rect x="6" y="6" width="12" height="12" rx="2" />
+						</svg>
+					</button>
+				{:else}
+					<button
+						data-testid="send-button"
+						type="button"
+						on:click={send}
+						disabled={!canSend}
+						aria-label="Send message"
+						class="btn-primary composer-send flex h-full w-full items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="22" x2="11" y1="2" y2="13" />
+							<polygon points="22 2 15 22 11 13 2 9 22 2" />
+						</svg>
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
 
@@ -154,5 +175,39 @@
 		aspect-ratio: 1 / 1;
 		align-self: center;
 		overflow: hidden;
+	}
+
+	.action-button-container {
+		aspect-ratio: 1 / 1;
+		align-self: center;
+		overflow: hidden;
+	}
+
+	.composer-stop {
+		aspect-ratio: 1 / 1;
+		align-self: center;
+		overflow: hidden;
+	}
+
+	.animate-in {
+		animation: buttonFadeIn 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+	}
+
+	@keyframes buttonFadeIn {
+		from {
+			opacity: 0;
+			transform: scale(0.85) rotate(-8deg);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) rotate(0deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.animate-in {
+			animation: none;
+			opacity: 1;
+		}
 	}
 </style>
