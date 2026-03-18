@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, onMount } from 'svelte';
 	import type { ChatMessage } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
@@ -9,6 +9,15 @@
 	let shouldAutoScroll = true;
 	let lastMessageCount = 0;
 	let lastMessageId: string | undefined = undefined;
+	let hasInitialScrolled = false;
+
+	onMount(() => {
+		// Scroll to bottom on initial load when viewing existing chats
+		if (scrollContainer && messages.length > 0 && !hasInitialScrolled) {
+			scrollToBottom(false);
+			hasInitialScrolled = true;
+		}
+	});
 
 	function handleScroll() {
 		if (!scrollContainer) return;
@@ -39,6 +48,12 @@
 			scrollToBottom(true); // smooth scroll for new messages
 		} else if (shouldAutoScroll) {
 			scrollToBottom(false); // instant scroll for streaming updates
+		}
+
+		// Scroll to bottom on initial messages load (viewing existing chat)
+		if (lastMessageCount === 0 && !hasInitialScrolled) {
+			scrollToBottom(false);
+			hasInitialScrolled = true;
 		}
 
 		// Update tracking state
