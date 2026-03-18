@@ -11,8 +11,9 @@
 	let creating = false;
 	let error: string | null = null;
 
-	async function handleSend(event: CustomEvent<{ message: string }>) {
+async function handleSend(event: CustomEvent<{ message: string }>) {
 		if (creating) return;
+		const text = event.detail.message;
 
 		hasStarted = true;
 		creating = true;
