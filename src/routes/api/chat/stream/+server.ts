@@ -441,6 +441,26 @@ function extractErrorMessage(rawData: unknown): string {
 	return 'Streaming failed';
 }
 
+function estimateTokenCount(text: string): number {
+	const trimmed = text.trim();
+	if (!trimmed) return 0;
+
+	const segments = trimmed.match(/[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];
+	let estimated = 0;
+
+	for (const segment of segments) {
+		if (/^[\p{L}\p{N}]+$/u.test(segment)) {
+			const isAscii = /^[\x00-\x7F]+$/.test(segment);
+			estimated += Math.max(1, Math.ceil(segment.length / (isAscii ? 4 : 2)));
+			continue;
+		}
+
+		estimated += segment.length;
+	}
+
+	return estimated;
+}
+
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
@@ -554,19 +574,20 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			const streamStartTime = Date.now();
-			let tokenCount = 0;
+			let firstOutputAt: number | null = null;
 			let thinkingContent = '';
 
 			const emitToken = (chunk: string, reasoning?: string) => {
 				if (reasoning) {
+					firstOutputAt ??= Date.now();
 					thinkingContent += reasoning + '\n';
 					enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
 				}
 				if (!chunk) {
 					return true;
 				}
+				firstOutputAt ??= Date.now();
 				fullResponse += chunk;
-				tokenCount += 1;
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
@@ -575,10 +596,15 @@ export const POST: RequestHandler = async (event) => {
 			const completeSuccess = (wasStopped = false) => {
 				if (ended || closed) return;
 				ended = true;
-				const duration = (Date.now() - streamStartTime) / 1000;
-				const generationSpeed = duration > 0 ? Math.round((tokenCount / duration) * 10) / 10 : 0;
-				console.log('[STREAM] End - tokenCount:', tokenCount, 'speed:', generationSpeed, 'thinkingLength:', thinkingContent.length, 'wasStopped:', wasStopped);
-				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount, generationSpeed, thinking: thinkingContent || undefined, wasStopped })}\n\n`);
+				const estimatedTokenCount = estimateTokenCount(fullResponse);
+				const activeDurationMs = firstOutputAt ? Date.now() - firstOutputAt : Date.now() - streamStartTime;
+				const activeDurationSeconds = activeDurationMs > 0 ? activeDurationMs / 1000 : 0;
+				const generationSpeed =
+					activeDurationSeconds > 0
+						? Math.round((estimatedTokenCount / activeDurationSeconds) * 10) / 10
+						: 0;
+				console.log('[STREAM] End - estimatedTokenCount:', estimatedTokenCount, 'speed:', generationSpeed, 'thinkingLength:', thinkingContent.length, 'wasStopped:', wasStopped);
+				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount: estimatedTokenCount, generationSpeed, thinking: thinkingContent || undefined, wasStopped })}\n\n`);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
 					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);
@@ -654,7 +680,7 @@ export const POST: RequestHandler = async (event) => {
 					const chunk = incremental.chunk;
 					if (!chunk) continue;
 
-					console.log('[STREAM] Token chunk, length:', chunk.length, 'tokenCount:', tokenCount);
+					console.log('[STREAM] Token chunk, length:', chunk.length);
 
 					if (!outputTranslator) {
 						if (!emitToken(chunk)) {

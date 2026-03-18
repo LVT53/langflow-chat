@@ -91,13 +91,13 @@
 						<div class="tooltip-content">
 							{#if message.tokenCount !== undefined}
 								<div class="tooltip-row">
-									<span class="tooltip-label">Tokens</span>
+									<span class="tooltip-label">Est. tokens</span>
 									<span class="tooltip-value">{message.tokenCount.toLocaleString()}</span>
 								</div>
 							{/if}
 							{#if message.generationSpeed !== undefined}
 								<div class="tooltip-row">
-									<span class="tooltip-label">Speed</span>
+									<span class="tooltip-label">Est. speed</span>
 									<span class="tooltip-value">{message.generationSpeed} tok/s</span>
 								</div>
 							{/if}
