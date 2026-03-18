@@ -16,12 +16,27 @@ export interface StreamHandle {
 	abort: () => void;
 }
 
+const THINKING_OPEN_TAG = '<thinking>';
+const THINKING_CLOSE_TAG = '</thinking>';
+
 function toStreamError(message: string, code?: string): Error {
 	const error = new Error(message) as Error & { code?: string };
 	if (code) {
 		error.code = code;
 	}
 	return error;
+}
+
+function getPartialTagPrefixLength(value: string, tag: string): number {
+	const maxLength = Math.min(value.length, tag.length - 1);
+
+	for (let length = maxLength; length > 0; length -= 1) {
+		if (value.endsWith(tag.slice(0, length))) {
+			return length;
+		}
+	}
+
+	return 0;
 }
 
 export function streamChat(
@@ -32,6 +47,82 @@ export function streamChat(
 	const controller = new AbortController();
 	let aborted = false;
 	let fullText = '';
+	let inlineThinkingBuffer = '';
+	let insideInlineThinking = false;
+
+	function emitInlineChunk(chunk: string) {
+		if (!chunk) {
+			return;
+		}
+
+		inlineThinkingBuffer += chunk;
+
+		while (inlineThinkingBuffer) {
+			if (insideInlineThinking) {
+				const closeIndex = inlineThinkingBuffer.indexOf(THINKING_CLOSE_TAG);
+				if (closeIndex !== -1) {
+					const thinkingChunk = inlineThinkingBuffer.slice(0, closeIndex);
+					if (thinkingChunk) {
+						callbacks.onThinking(thinkingChunk);
+					}
+					inlineThinkingBuffer = inlineThinkingBuffer.slice(closeIndex + THINKING_CLOSE_TAG.length);
+					insideInlineThinking = false;
+					continue;
+				}
+
+				const partialCloseLength = getPartialTagPrefixLength(
+					inlineThinkingBuffer,
+					THINKING_CLOSE_TAG
+				);
+				const flushLength = inlineThinkingBuffer.length - partialCloseLength;
+				if (flushLength > 0) {
+					callbacks.onThinking(inlineThinkingBuffer.slice(0, flushLength));
+					inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
+				}
+				break;
+			}
+
+			const openIndex = inlineThinkingBuffer.indexOf(THINKING_OPEN_TAG);
+			if (openIndex !== -1) {
+				const visibleChunk = inlineThinkingBuffer.slice(0, openIndex);
+				if (visibleChunk) {
+					fullText += visibleChunk;
+					callbacks.onToken(visibleChunk);
+				}
+				inlineThinkingBuffer = inlineThinkingBuffer.slice(openIndex + THINKING_OPEN_TAG.length);
+				insideInlineThinking = true;
+				continue;
+			}
+
+			const partialOpenLength = getPartialTagPrefixLength(
+				inlineThinkingBuffer,
+				THINKING_OPEN_TAG
+			);
+			const flushLength = inlineThinkingBuffer.length - partialOpenLength;
+			if (flushLength > 0) {
+				const visibleChunk = inlineThinkingBuffer.slice(0, flushLength);
+				fullText += visibleChunk;
+				callbacks.onToken(visibleChunk);
+				inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
+			}
+			break;
+		}
+	}
+
+	function flushInlineBufferAtEnd() {
+		if (!inlineThinkingBuffer) {
+			return;
+		}
+
+		if (insideInlineThinking) {
+			callbacks.onThinking(inlineThinkingBuffer);
+		} else {
+			fullText += inlineThinkingBuffer;
+			callbacks.onToken(inlineThinkingBuffer);
+		}
+
+		inlineThinkingBuffer = '';
+	}
 
 	(async () => {
 		try {
@@ -71,6 +162,7 @@ export function streamChat(
 					const { done, value } = await reader.read();
 
 					if (done) {
+						flushInlineBufferAtEnd();
 						callbacks.onEnd(fullText);
 						break;
 					}
@@ -97,8 +189,7 @@ export function streamChat(
 									const parsed = JSON.parse(rawData);
 									const chunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
 									if (chunk) {
-										fullText += chunk;
-										callbacks.onToken(chunk);
+										emitInlineChunk(chunk);
 									}
 								} catch {
 									/* noop */
@@ -107,7 +198,6 @@ export function streamChat(
 								try {
 									const parsed = JSON.parse(rawData);
 									const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
-									console.log('[CLIENT] Received thinking chunk:', thinkingChunk.slice(0, 100));
 									if (thinkingChunk) {
 										callbacks.onThinking(thinkingChunk);
 									}
@@ -118,12 +208,6 @@ export function streamChat(
 								let metadata: StreamMetadata | undefined;
 								try {
 									const parsed = JSON.parse(rawData);
-									console.log('[CLIENT] Received end event:', {
-										tokenCount: parsed.tokenCount,
-										generationSpeed: parsed.generationSpeed,
-										hasThinking: !!parsed.thinking,
-										wasStopped: parsed.wasStopped
-									});
 									if (parsed.tokenCount || parsed.generationSpeed || parsed.thinking || parsed.wasStopped) {
 										metadata = {
 											tokenCount: parsed.tokenCount,
@@ -135,6 +219,7 @@ export function streamChat(
 								} catch {
 									/* noop */
 								}
+								flushInlineBufferAtEnd();
 								callbacks.onEnd(fullText, metadata);
 								return;
 							} else if (currentEvent === 'error') {

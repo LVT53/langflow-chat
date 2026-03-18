@@ -16,6 +16,8 @@
 
 	function getClipboardText(content: string) {
 		return content
+			.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+			.replace(/<\/?thinking>/gi, '')
 			.replace(/<\/?preserve>/gi, '')
 			.replace(/^\[Translation unavailable\]\s*/i, '')
 			.trim();

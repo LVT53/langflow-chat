@@ -141,6 +141,68 @@ describe('streamChat', () => {
 		});
 	});
 
+	it('routes inline <thinking> tags from token chunks into onThinking', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: token\n',
+				'data: {"text":"Before<thinking>Need to reason</thinking>After"}\n',
+				'\n',
+				'event: end\n',
+				'data: {}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onToken).toHaveBeenCalledTimes(2);
+		expect(cb.onToken).toHaveBeenNthCalledWith(1, 'Before');
+		expect(cb.onToken).toHaveBeenNthCalledWith(2, 'After');
+		expect(cb.onThinking).toHaveBeenCalledOnce();
+		expect(cb.onThinking).toHaveBeenCalledWith('Need to reason');
+		expect(cb.onEnd).toHaveBeenCalledWith('BeforeAfter', undefined);
+	});
+
+	it('handles inline <thinking> tags split across token events', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: token\n',
+				'data: {"text":"Start<th"}\n',
+				'\n',
+				'event: token\n',
+				'data: {"text":"inking>Need"}\n',
+				'\n',
+				'event: token\n',
+				'data: {"text":" to search</thin"}\n',
+				'\n',
+				'event: token\n',
+				'data: {"text":"king>End"}\n',
+				'\n',
+				'event: end\n',
+				'data: {}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onToken).toHaveBeenCalledTimes(2);
+		expect(cb.onToken).toHaveBeenNthCalledWith(1, 'Start');
+		expect(cb.onToken).toHaveBeenNthCalledWith(2, 'End');
+		expect(cb.onThinking).toHaveBeenCalledTimes(2);
+		expect(cb.onThinking).toHaveBeenNthCalledWith(1, 'Need');
+		expect(cb.onThinking).toHaveBeenNthCalledWith(2, ' to search');
+		expect(cb.onEnd).toHaveBeenCalledWith('StartEnd', undefined);
+	});
+
 	it('parses end-event metadata from the data line', async () => {
 		const mockFetch = vi.mocked(fetch);
 		mockFetch.mockResolvedValue(
