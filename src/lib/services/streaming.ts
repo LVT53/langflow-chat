@@ -1,6 +1,8 @@
 export interface StreamMetadata {
 	tokenCount?: number;
 	generationSpeed?: number;
+	thinking?: string;
+	wasStopped?: boolean;
 }
 
 export interface StreamCallbacks {
@@ -87,14 +89,15 @@ export function streamChat(
 							let metadata: StreamMetadata | undefined;
 							try {
 								const parsed = JSON.parse(rawData);
-								if (parsed.tokenCount || parsed.generationSpeed) {
+								if (parsed.tokenCount || parsed.generationSpeed || parsed.thinking || parsed.wasStopped) {
 									metadata = {
 										tokenCount: parsed.tokenCount,
-										generationSpeed: parsed.generationSpeed
+										generationSpeed: parsed.generationSpeed,
+										thinking: parsed.thinking,
+										wasStopped: parsed.wasStopped
 									};
 								}
 							} catch {
-								/* noop */
 							}
 							callbacks.onEnd(fullText, metadata);
 							return;

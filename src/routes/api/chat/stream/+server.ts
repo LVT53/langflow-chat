@@ -257,6 +257,25 @@ function getTextContent(value: unknown): string {
 	return '';
 }
 
+function getReasoningContent(value: unknown): string | null {
+	const payload = getNestedObject(value);
+	if (!payload) return null;
+
+	if (typeof payload.reasoning === 'string' && payload.reasoning.trim()) {
+		return payload.reasoning.trim();
+	}
+
+	if (typeof payload.thinking === 'string' && payload.thinking.trim()) {
+		return payload.thinking.trim();
+	}
+
+	if ('data' in payload) {
+		return getReasoningContent(payload.data);
+	}
+
+	return null;
+}
+
 function extractAssistantChunk(eventType: string, rawData: unknown): string {
 	const data = parseMaybeJson(rawData);
 	const sender = getSender(data);
@@ -498,21 +517,25 @@ export const POST: RequestHandler = async (event) => {
 
 			const streamStartTime = Date.now();
 			let tokenCount = 0;
+			let thinkingContent = '';
 
-			const emitToken = (chunk: string) => {
+			const emitToken = (chunk: string, reasoning?: string) => {
 				fullResponse += chunk;
 				tokenCount += 1;
+				if (reasoning) {
+					thinkingContent += reasoning;
+				}
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 
-			const completeSuccess = () => {
+			const completeSuccess = (wasStopped = false) => {
 				if (ended || closed) return;
 				ended = true;
 				const duration = (Date.now() - streamStartTime) / 1000;
 				const generationSpeed = duration > 0 ? Math.round((tokenCount / duration) * 10) / 10 : 0;
-				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount, generationSpeed })}\n\n`);
+				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount, generationSpeed, thinking: thinkingContent || undefined, wasStopped })}\n\n`);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
 					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);
@@ -560,6 +583,10 @@ export const POST: RequestHandler = async (event) => {
 					}
 
 					const rawChunk = extractAssistantChunk(eventType, data);
+					const reasoningChunk = getReasoningContent(data);
+					if (reasoningChunk) {
+						thinkingContent += reasoningChunk + '\n';
+					}
 					if (!rawChunk) {
 						continue;
 					}

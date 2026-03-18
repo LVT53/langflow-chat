@@ -108,7 +108,7 @@
 						type="button"
 						on:click={stop}
 						aria-label="Stop generation"
-						class="btn-danger composer-stop flex h-full w-full items-center justify-center rounded-[15px] shadow-sm animate-in"
+						class="composer-stop-accent flex h-full w-full items-center justify-center rounded-[15px] shadow-sm animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
 							<rect x="6" y="6" width="12" height="12" rx="2" />
@@ -187,6 +187,28 @@
 		aspect-ratio: 1 / 1;
 		align-self: center;
 		overflow: hidden;
+	}
+
+	.composer-stop-accent {
+		aspect-ratio: 1 / 1;
+		align-self: center;
+		overflow: hidden;
+		background-color: var(--accent);
+		color: white;
+		border: 1px solid transparent;
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
+	}
+
+	.composer-stop-accent:hover {
+		background-color: var(--accent-hover);
+		transform: scale(1.02);
+	}
+
+	.composer-stop-accent:focus-visible {
+		box-shadow: 0 0 0 2px var(--focus-ring);
 	}
 
 	.animate-in {

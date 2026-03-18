@@ -153,7 +153,10 @@
 						m.id === placeholderId
 							? {
 									...m,
+									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
 									isStreaming: false,
+									thinking: metadata?.thinking,
+									isThinkingStreaming: false,
 									tokenCount: metadata?.tokenCount,
 									generationSpeed: metadata?.generationSpeed
 								}
