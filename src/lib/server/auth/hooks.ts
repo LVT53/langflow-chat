@@ -8,6 +8,6 @@ export function requireAuth(event) {
 
 export function requireGuest(event) {
   if (event.locals.user) {
-    throw redirect(302, '/app/chat');
+    throw redirect(302, '/');
   }
 }
