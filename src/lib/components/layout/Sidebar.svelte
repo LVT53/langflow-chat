@@ -18,6 +18,7 @@
 	const dispatch = createEventDispatcher();
 	let isDesktop = false;
 	let showSearchModal = false;
+	let transitionsEnabled = false;
 
 	$: isCollapsed = isDesktop && $sidebarCollapsed;
 
@@ -57,6 +58,9 @@
 		};
 
 		syncViewportState();
+		requestAnimationFrame(() => {
+			transitionsEnabled = true;
+		});
 		window.addEventListener('resize', syncViewportState);
 
 		return () => window.removeEventListener('resize', syncViewportState);
@@ -83,6 +87,7 @@
 	class:opacity-100={open || isDesktop}
 	class:pointer-events-none={!open && !isDesktop}
 	class:sidebar-collapsed={isCollapsed}
+	class:transitions-enabled={transitionsEnabled}
 >
 	<!-- Sidebar Header: Title + Collapse button (desktop) / Close button (mobile) -->
 	<div
@@ -216,13 +221,17 @@
 	.sidebar-panel {
 		max-width: 100vw;
 		width: 100vw;
+		transition: none;
+		will-change: transform, width, opacity;
+	}
+
+	.sidebar-panel.transitions-enabled {
 		transition:
 			width 240ms cubic-bezier(0.22, 1, 0.36, 1),
 			transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
 			opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
 			background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
 			border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-		will-change: transform, width, opacity;
 	}
 
 	.sidebar-panel.sidebar-collapsed {
