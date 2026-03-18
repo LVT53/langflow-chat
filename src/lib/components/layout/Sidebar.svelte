@@ -209,7 +209,7 @@
 	</div>
 
 	<!-- Conversation List -->
-	<div class="flex-1 overflow-y-auto py-sm" class:px-md={!isCollapsed} class:px-1={isCollapsed}>
+	<div class="flex-1 overflow-y-auto py-sm" class:px-md={!isCollapsed} class:px-1={isCollapsed} style="pointer-events: auto;">
 		{#if !isCollapsed}
 			<ConversationList initialConversations={conversationsData} />
 		{/if}

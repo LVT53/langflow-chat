@@ -18,9 +18,13 @@
 	function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
 		openMenuId = null;
-		// Navigate first, then update the store to avoid race conditions
-		goto(`/chat/${id}`).then(() => {
-			currentConversationId.set(id);
+		// Update store immediately for UI feedback, then navigate
+		currentConversationId.set(id);
+		// Use invalidateAll: true to ensure fresh data
+		goto(`/chat/${id}`, { invalidateAll: true, replaceState: false }).catch((err) => {
+			console.error('Navigation failed:', err);
+			// Reset on failure
+			currentConversationId.set(null);
 		});
 	}
 
