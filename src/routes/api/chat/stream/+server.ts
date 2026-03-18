@@ -496,8 +496,12 @@ export const POST: RequestHandler = async (event) => {
 				}
 			};
 
+			const streamStartTime = Date.now();
+			let tokenCount = 0;
+
 			const emitToken = (chunk: string) => {
 				fullResponse += chunk;
+				tokenCount += 1;
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
@@ -506,7 +510,9 @@ export const POST: RequestHandler = async (event) => {
 			const completeSuccess = () => {
 				if (ended || closed) return;
 				ended = true;
-				enqueueChunk(`event: end\ndata: {}\n\n`);
+				const duration = (Date.now() - streamStartTime) / 1000;
+				const generationSpeed = duration > 0 ? Math.round((tokenCount / duration) * 10) / 10 : 0;
+				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount, generationSpeed })}\n\n`);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
 					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);

@@ -45,6 +45,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   thinking?: string;
   isThinkingStreaming?: boolean;
+  tokenCount?: number;
+  generationSpeed?: number;
 }
 
 // Langflow types

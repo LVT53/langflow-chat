@@ -1,6 +1,11 @@
+export interface StreamMetadata {
+	tokenCount?: number;
+	generationSpeed?: number;
+}
+
 export interface StreamCallbacks {
 	onToken: (chunk: string) => void;
-	onEnd: (fullText: string) => void;
+	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
 }
 
@@ -78,7 +83,20 @@ export function streamChat(
 							expectTokenData = true;
 							expectErrorData = false;
 						} else if (line.startsWith('event: end')) {
-							callbacks.onEnd(fullText);
+							const rawData = line.slice('data: '.length);
+							let metadata: StreamMetadata | undefined;
+							try {
+								const parsed = JSON.parse(rawData);
+								if (parsed.tokenCount || parsed.generationSpeed) {
+									metadata = {
+										tokenCount: parsed.tokenCount,
+										generationSpeed: parsed.generationSpeed
+									};
+								}
+							} catch {
+								/* noop */
+							}
+							callbacks.onEnd(fullText, metadata);
 							return;
 						} else if (line.startsWith('event: error')) {
 							expectErrorData = true;

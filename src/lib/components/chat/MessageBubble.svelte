@@ -12,6 +12,7 @@
 
 	$: isUser = message.role === 'user';
 	$: hasThinking = Boolean(message.thinking?.trim());
+	$: hasTokenInfo = message.tokenCount !== undefined || message.generationSpeed !== undefined;
 
 	function getClipboardText(content: string) {
 		return content
@@ -69,10 +70,41 @@
 
 	{#if !message.isStreaming}
 		<div
-			class="copy-action-row flex w-full opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100"
+			class="copy-action-row flex w-full items-center gap-1 opacity-0 transition-opacity duration-[var(--duration-micro)] group-hover:opacity-100"
 			class:justify-end={isUser}
 			class:justify-start={!isUser}
 		>
+			{#if !isUser && hasTokenInfo}
+				<div class="info-container">
+					<button
+						type="button"
+						class="btn-icon-bare info-button sm:!min-h-[36px] sm:!min-w-[36px]"
+						aria-label="Message info"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="10"></circle>
+							<line x1="12" y1="16" x2="12" y2="12"></line>
+							<line x1="12" y1="8" x2="12.01" y2="8"></line>
+						</svg>
+					</button>
+					<div class="info-tooltip">
+						<div class="tooltip-content">
+							{#if message.tokenCount !== undefined}
+								<div class="tooltip-row">
+									<span class="tooltip-label">Tokens</span>
+									<span class="tooltip-value">{message.tokenCount.toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if message.generationSpeed !== undefined}
+								<div class="tooltip-row">
+									<span class="tooltip-label">Speed</span>
+									<span class="tooltip-value">{message.generationSpeed} tok/s</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			{/if}
 			<button
 				type="button"
 				class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
@@ -112,5 +144,72 @@
 	@keyframes fadeIn {
 		from { opacity: 0; }
 		to { opacity: 1; }
+	}
+
+	.info-container {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.info-tooltip {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 50%;
+		transform: translateX(-50%) translateY(4px);
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out),
+			visibility var(--duration-standard);
+		z-index: 50;
+		pointer-events: none;
+	}
+
+	.info-container:hover .info-tooltip,
+	.info-button:focus-visible + .info-tooltip {
+		opacity: 1;
+		visibility: visible;
+		transform: translateX(-50%) translateY(0);
+		pointer-events: auto;
+	}
+
+	.tooltip-content {
+		background: var(--surface-overlay);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-md);
+		padding: var(--space-sm) var(--space-md);
+		box-shadow: var(--shadow-lg);
+		white-space: nowrap;
+	}
+
+	.tooltip-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-size: 12px;
+		line-height: 1.4;
+	}
+
+	.tooltip-row + .tooltip-row {
+		margin-top: var(--space-xs);
+	}
+
+	.tooltip-label {
+		color: var(--text-muted);
+	}
+
+	.tooltip-value {
+		color: var(--text-primary);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.info-tooltip {
+			transition: none;
+		}
 	}
 </style>

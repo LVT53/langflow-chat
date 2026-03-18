@@ -146,10 +146,19 @@
 					)
 				);
 			},
-			onEnd(_fullText) {
+			onEnd(_fullText, metadata) {
 				lastAssistantResponse = _fullText;
 				messages.update((msgs) =>
-					msgs.map((m) => (m.id === placeholderId ? { ...m, isStreaming: false } : m))
+					msgs.map((m) =>
+						m.id === placeholderId
+							? {
+									...m,
+									isStreaming: false,
+									tokenCount: metadata?.tokenCount,
+									generationSpeed: metadata?.generationSpeed
+								}
+							: m
+					)
 				);
 				isSending = false;
 				activeStream = null;
