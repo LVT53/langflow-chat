@@ -70,7 +70,7 @@
 </script>
 
 <div class="relative flex w-full flex-col">
-	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-[6px] transition-all duration-150 focus-within:border-focus-ring">
+	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-[4px] transition-all duration-150 focus-within:border-focus-ring">
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
