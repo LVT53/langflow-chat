@@ -186,7 +186,7 @@
 				</div>
 			</div>
 
-			<div class="max-h-[400px] overflow-y-auto px-4 py-3">
+			<div class="max-h-[423px] overflow-y-auto px-4 py-3">
 				{#if searchLoading}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
