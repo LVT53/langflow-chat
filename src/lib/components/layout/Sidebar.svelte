@@ -12,6 +12,8 @@
 	import { fade } from 'svelte/transition';
 	import ConversationList from '../sidebar/ConversationList.svelte';
 	import SearchModal from '../search/SearchModal.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
+	import { isDark, setTheme } from '$lib/stores/theme';
 	import type { ConversationListItem } from '$lib/types';
 
 	export let open = false;
@@ -23,6 +25,7 @@
 	let transitionsEnabled = false;
 
 	$: isCollapsed = isDesktop && $sidebarCollapsed;
+	$: themeLabel = $isDark ? 'Dark' : 'Light';
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
@@ -51,6 +54,19 @@
 		if (isDesktop) {
 			sidebarCollapsed.update((v) => !v);
 		}
+	}
+
+	async function handleLogout() {
+		try {
+			await fetch('/api/auth/logout', { method: 'POST' });
+			goto('/login');
+		} catch (error) {
+			console.error('Logout failed:', error);
+		}
+	}
+
+	function cycleTheme() {
+		setTheme($isDark ? 'light' : 'dark');
 	}
 
 	onMount(() => {
@@ -180,7 +196,6 @@
 				</button>
 			</div>
 		{:else}
-			<!-- Full button when expanded -->
 			<div class="flex flex-col gap-1.5">
 				<button
 					data-testid="new-conversation"
@@ -195,7 +210,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-secondary flex w-full items-center justify-start gap-2 rounded-lg px-4 text-sm"
+					class="btn-secondary flex w-full items-center justify-center gap-2 rounded-lg px-4 text-sm"
 					on:click={openSearchModal}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -208,11 +223,57 @@
 		{/if}
 	</div>
 
-	<!-- Conversation List -->
 	<div class="flex-1 overflow-y-auto py-sm" class:px-md={!isCollapsed} class:px-1={isCollapsed} style="pointer-events: auto;">
 		{#if !isCollapsed}
 			<ConversationList initialConversations={conversationsData} />
 		{/if}
+	</div>
+
+	<div
+		class="shrink-0 border-t border-border py-sm"
+		class:px-lg={!isCollapsed}
+		class:px-0={isCollapsed}
+	>
+		<div class="flex flex-col">
+			<button
+				type="button"
+				class="btn-ghost flex w-full items-center justify-start gap-3 rounded-lg px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary"
+				on:click={cycleTheme}
+				title={isCollapsed ? "Theme: {themeLabel}" : ""}
+				aria-label="Toggle theme"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="12" cy="12" r="4" />
+					<path d="M12 2v2" />
+					<path d="M12 20v2" />
+					<path d="m4.93 4.93 1.41 1.41" />
+					<path d="m17.66 17.66 1.41 1.41" />
+					<path d="M2 12h2" />
+					<path d="M20 12h2" />
+					<path d="m6.34 17.66-1.41 1.41" />
+					<path d="m19.07 4.93-1.41 1.41" />
+				</svg>
+				{#if !isCollapsed}
+					<span>Theme: {themeLabel}</span>
+				{/if}
+			</button>
+			<button
+				type="button"
+				class="btn-ghost flex w-full items-center justify-start gap-3 rounded-lg px-3 py-1.5 text-sm text-text-secondary hover:text-danger"
+				on:click={handleLogout}
+				title={isCollapsed ? "Logout" : ""}
+				aria-label="Logout"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+					<polyline points="16 17 21 12 16 7"></polyline>
+					<line x1="21" y1="12" x2="9" y2="12"></line>
+				</svg>
+				{#if !isCollapsed}
+					<span>Logout</span>
+				{/if}
+			</button>
+		</div>
 	</div>
 </aside>
 
@@ -257,7 +318,7 @@
 			position: static !important;
 			transform: translateX(0) !important;
 			opacity: 1 !important;
-			width: 360px;
+			width: 288px;
 		}
 
 		.sidebar-panel.sidebar-collapsed {
