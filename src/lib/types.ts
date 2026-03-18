@@ -45,6 +45,9 @@ export interface ChatMessage {
   isStreaming?: boolean;
   thinking?: string;
   isThinkingStreaming?: boolean;
+  thinkingTokenCount?: number;
+  responseTokenCount?: number;
+  totalTokenCount?: number;
   tokenCount?: number;
   generationSpeed?: number;
 }

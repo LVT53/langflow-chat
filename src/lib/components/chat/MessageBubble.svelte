@@ -12,7 +12,14 @@
 
 	$: isUser = message.role === 'user';
 	$: hasThinking = Boolean(message.thinking?.trim());
-	$: hasTokenInfo = message.tokenCount !== undefined || message.generationSpeed !== undefined;
+	$: thinkingTokenCount = message.thinkingTokenCount;
+	$: responseTokenCount = message.responseTokenCount;
+	$: totalTokenCount = message.totalTokenCount ?? message.tokenCount;
+	$: hasTokenInfo =
+		thinkingTokenCount !== undefined ||
+		responseTokenCount !== undefined ||
+		totalTokenCount !== undefined ||
+		message.generationSpeed !== undefined;
 
 	function getClipboardText(content: string) {
 		return content
@@ -91,10 +98,22 @@
 					</button>
 					<div class="info-tooltip">
 						<div class="tooltip-content">
-							{#if message.tokenCount !== undefined}
+							{#if thinkingTokenCount !== undefined}
 								<div class="tooltip-row">
-									<span class="tooltip-label">Est. tokens</span>
-									<span class="tooltip-value">{message.tokenCount.toLocaleString()}</span>
+									<span class="tooltip-label">Thinking tokens</span>
+									<span class="tooltip-value">{thinkingTokenCount.toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if responseTokenCount !== undefined}
+								<div class="tooltip-row">
+									<span class="tooltip-label">Response tokens</span>
+									<span class="tooltip-value">{responseTokenCount.toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if totalTokenCount !== undefined}
+								<div class="tooltip-row">
+									<span class="tooltip-label">Total tokens</span>
+									<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
 								</div>
 							{/if}
 							{#if message.generationSpeed !== undefined}

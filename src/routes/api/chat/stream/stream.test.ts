@@ -337,7 +337,9 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 
 		expect(body).toContain('event: end');
-		expect(body).toContain('"tokenCount":2');
+		expect(body).toContain('"thinkingTokenCount":0');
+		expect(body).toContain('"responseTokenCount":2');
+		expect(body).toContain('"totalTokenCount":2');
 	});
 
 	it('returns 401 when user is not authenticated', async () => {

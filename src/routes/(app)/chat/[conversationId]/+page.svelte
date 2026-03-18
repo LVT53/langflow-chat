@@ -36,7 +36,15 @@
 			activeStream = null;
 		}
 		// Preserve local messages that have metadata not in database (tokenCount, etc)
-		const localMessages = $messages.filter(m => m.tokenCount !== undefined || m.generationSpeed !== undefined || m.thinking !== undefined);
+		const localMessages = $messages.filter(
+			(m) =>
+				m.tokenCount !== undefined ||
+				m.thinkingTokenCount !== undefined ||
+				m.responseTokenCount !== undefined ||
+				m.totalTokenCount !== undefined ||
+				m.generationSpeed !== undefined ||
+				m.thinking !== undefined
+		);
 		const dbMessages = data.messages ?? [];
 		// Merge: db messages take precedence unless local has metadata
 		const merged = dbMessages.map(dm => {
@@ -157,7 +165,6 @@
 				);
 			},
 			onThinking(chunk) {
-				console.log('[PAGE] onThinking called, chunk length:', chunk.length, 'first 50 chars:', chunk.slice(0, 50));
 				messages.update((msgs) =>
 					msgs.map((m) =>
 						m.id === placeholderId
@@ -171,10 +178,9 @@
 				);
 			},
 			onEnd(_fullText, metadata) {
-				console.log('[PAGE] onEnd called, metadata:', metadata, 'fullText length:', _fullText.length);
 				lastAssistantResponse = _fullText;
 				messages.update((msgs) => {
-					const updated = msgs.map((m) =>
+					return msgs.map((m) =>
 						m.id === placeholderId
 							? {
 									...m,
@@ -182,14 +188,14 @@
 									isStreaming: false,
 									thinking: metadata?.thinking ?? m.thinking,
 									isThinkingStreaming: false,
+									thinkingTokenCount: metadata?.thinkingTokenCount,
+									responseTokenCount: metadata?.responseTokenCount,
+									totalTokenCount: metadata?.totalTokenCount ?? metadata?.tokenCount,
 									tokenCount: metadata?.tokenCount,
 									generationSpeed: metadata?.generationSpeed
 								}
 							: m
 					);
-					const msg = updated.find(m => m.id === placeholderId);
-					console.log('[PAGE] Updated message - hasThinking:', !!msg?.thinking, 'tokenCount:', msg?.tokenCount, 'generationSpeed:', msg?.generationSpeed);
-					return updated;
 				});
 				isSending = false;
 				activeStream = null;

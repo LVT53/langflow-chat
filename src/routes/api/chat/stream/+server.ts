@@ -574,19 +574,16 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			const streamStartTime = Date.now();
-			let firstOutputAt: number | null = null;
 			let thinkingContent = '';
 
 			const emitToken = (chunk: string, reasoning?: string) => {
 				if (reasoning) {
-					firstOutputAt ??= Date.now();
 					thinkingContent += reasoning + '\n';
 					enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
 				}
 				if (!chunk) {
 					return true;
 				}
-				firstOutputAt ??= Date.now();
 				fullResponse += chunk;
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
@@ -596,15 +593,40 @@ export const POST: RequestHandler = async (event) => {
 			const completeSuccess = (wasStopped = false) => {
 				if (ended || closed) return;
 				ended = true;
-				const estimatedTokenCount = estimateTokenCount(fullResponse);
-				const activeDurationMs = firstOutputAt ? Date.now() - firstOutputAt : Date.now() - streamStartTime;
-				const activeDurationSeconds = activeDurationMs > 0 ? activeDurationMs / 1000 : 0;
+				const thinkingTokenCount = estimateTokenCount(thinkingContent);
+				const responseTokenCount = estimateTokenCount(fullResponse);
+				const totalTokenCount = thinkingTokenCount + responseTokenCount;
+				const streamDurationMs = Date.now() - streamStartTime;
+				const streamDurationSeconds = streamDurationMs > 0 ? streamDurationMs / 1000 : 0;
 				const generationSpeed =
-					activeDurationSeconds > 0
-						? Math.round((estimatedTokenCount / activeDurationSeconds) * 10) / 10
+					streamDurationSeconds > 0
+						? Math.round((totalTokenCount / streamDurationSeconds) * 10) / 10
 						: 0;
-				console.log('[STREAM] End - estimatedTokenCount:', estimatedTokenCount, 'speed:', generationSpeed, 'thinkingLength:', thinkingContent.length, 'wasStopped:', wasStopped);
-				enqueueChunk(`event: end\ndata: ${JSON.stringify({ tokenCount: estimatedTokenCount, generationSpeed, thinking: thinkingContent || undefined, wasStopped })}\n\n`);
+				console.log(
+					'[STREAM] End - thinkingTokenCount:',
+					thinkingTokenCount,
+					'responseTokenCount:',
+					responseTokenCount,
+					'totalTokenCount:',
+					totalTokenCount,
+					'speed:',
+					generationSpeed,
+					'thinkingLength:',
+					thinkingContent.length,
+					'wasStopped:',
+					wasStopped
+				);
+				enqueueChunk(
+					`event: end\ndata: ${JSON.stringify({
+						thinkingTokenCount,
+						responseTokenCount,
+						totalTokenCount,
+						tokenCount: totalTokenCount,
+						generationSpeed,
+						thinking: thinkingContent || undefined,
+						wasStopped
+					})}\n\n`
+				);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
 					createMessage(conversationId, 'assistant', fullResponse).catch(() => undefined);
