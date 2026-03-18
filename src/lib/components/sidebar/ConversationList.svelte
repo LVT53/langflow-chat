@@ -1,29 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		conversations,
-		loadConversations,
 		deleteConversationById,
 		renameConversation
 	} from '$lib/stores/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
+	import type { ConversationListItem } from '$lib/types';
 	import ConversationItem from './ConversationItem.svelte';
 
-	let loading = true;
-	let error: string | null = null;
+	export let initialConversations: ConversationListItem[] = [];
+
 	let openMenuId: string | null = null;
 
-	onMount(async () => {
-		try {
-			await loadConversations();
-		} catch (e) {
-			error = 'Failed to load conversations';
-			console.error(e);
-		} finally {
-			loading = false;
-		}
-	});
+	$: visibleConversations = $conversations.length > 0 ? $conversations : initialConversations;
 
 	function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
@@ -69,20 +59,12 @@
 </script>
 
 <div class="flex h-full flex-col gap-1">
-	{#if loading}
-		<div class="flex h-full items-center justify-center p-4 text-sm text-text-muted">
-			Loading conversations...
-		</div>
-	{:else if error}
-		<div class="flex h-full items-center justify-center p-4 text-sm text-danger">
-			{error}
-		</div>
-	{:else if $conversations.length === 0}
+	{#if visibleConversations.length === 0}
 		<div class="flex h-full items-center justify-center p-4 text-sm text-text-muted">
 			No conversations yet
 		</div>
 	{:else}
-		{#each $conversations as conversation (conversation.id)}
+		{#each visibleConversations as conversation (conversation.id)}
 			<ConversationItem
 				{conversation}
 				active={$currentConversationId === conversation.id}

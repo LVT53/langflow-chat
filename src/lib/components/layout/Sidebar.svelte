@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { onDestroy, onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -12,11 +13,13 @@
 	import { fade } from 'svelte/transition';
 	import ConversationList from '../sidebar/ConversationList.svelte';
 	import SearchModal from '../search/SearchModal.svelte';
+	import type { ConversationListItem } from '$lib/types';
 
 	export let open = false;
+	export let conversationsData: ConversationListItem[] = [];
 
 	const dispatch = createEventDispatcher();
-	let isDesktop = false;
+	let isDesktop = browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false;
 	let showSearchModal = false;
 	let transitionsEnabled = false;
 
@@ -210,7 +213,7 @@
 	<!-- Conversation List -->
 	<div class="flex-1 overflow-y-auto py-sm" class:px-md={!isCollapsed} class:px-1={isCollapsed}>
 		{#if !isCollapsed}
-			<ConversationList />
+			<ConversationList initialConversations={conversationsData} />
 		{/if}
 	</div>
 </aside>
