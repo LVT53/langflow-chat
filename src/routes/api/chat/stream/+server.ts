@@ -523,7 +523,8 @@ export const POST: RequestHandler = async (event) => {
 				fullResponse += chunk;
 				tokenCount += 1;
 				if (reasoning) {
-					thinkingContent += reasoning;
+					thinkingContent += reasoning + '\n';
+					enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
 				}
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};

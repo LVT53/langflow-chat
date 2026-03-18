@@ -146,6 +146,19 @@
 					)
 				);
 			},
+			onThinking(chunk) {
+				messages.update((msgs) =>
+					msgs.map((m) =>
+						m.id === placeholderId
+							? {
+									...m,
+									thinking: (m.thinking ?? '') + chunk,
+									isThinkingStreaming: true
+								}
+							: m
+					)
+				);
+			},
 			onEnd(_fullText, metadata) {
 				lastAssistantResponse = _fullText;
 				messages.update((msgs) =>
@@ -155,7 +168,7 @@
 									...m,
 									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
 									isStreaming: false,
-									thinking: metadata?.thinking,
+									thinking: metadata?.thinking ?? m.thinking,
 									isThinkingStreaming: false,
 									tokenCount: metadata?.tokenCount,
 									generationSpeed: metadata?.generationSpeed

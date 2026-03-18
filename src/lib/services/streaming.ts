@@ -7,6 +7,7 @@ export interface StreamMetadata {
 
 export interface StreamCallbacks {
 	onToken: (chunk: string) => void;
+	onThinking: (chunk: string) => void;
 	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
 }
@@ -30,6 +31,7 @@ export function streamChat(
 ): StreamHandle {
 	const controller = new AbortController();
 	let aborted = false;
+	let fullText = '';
 
 	(async () => {
 		try {
@@ -62,7 +64,6 @@ export function streamChat(
 			const reader = res.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let fullText = '';
 			let expectTokenData = false;
 			let expectErrorData = false;
 
@@ -84,6 +85,17 @@ export function streamChat(
 						if (line.startsWith('event: token')) {
 							expectTokenData = true;
 							expectErrorData = false;
+						} else if (line.startsWith('event: thinking')) {
+							expectTokenData = false;
+							expectErrorData = false;
+							try {
+								const parsed = JSON.parse(line.slice('data: '.length));
+								const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+								if (thinkingChunk) {
+									callbacks.onThinking(thinkingChunk);
+								}
+							} catch {
+							}
 						} else if (line.startsWith('event: end')) {
 							const rawData = line.slice('data: '.length);
 							let metadata: StreamMetadata | undefined;
@@ -143,12 +155,12 @@ export function streamChat(
 				reader.releaseLock();
 			}
 		} catch (err) {
-			if (!aborted) {
-				if (err instanceof Error) {
-					callbacks.onError(err);
-				} else {
-					callbacks.onError(toStreamError(String(err)));
-				}
+			if (aborted) {
+				callbacks.onEnd(fullText, { wasStopped: true });
+			} else if (err instanceof Error) {
+				callbacks.onError(err);
+			} else {
+				callbacks.onError(toStreamError(String(err)));
 			}
 		}
 	})();
