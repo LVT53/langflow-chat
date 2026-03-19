@@ -1,13 +1,19 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import { sidebarOpen } from '$lib/stores/ui';
 	import { conversations } from '$lib/stores/conversations';
+	import { initSettings } from '$lib/stores/settings';
 	import type { LayoutData } from './$types';
 
 	export let data: LayoutData;
 
 	$: conversations.set(data.conversations ?? []);
+
+	onMount(() => {
+		initSettings();
+	});
 </script>
 
 <!-- 
