@@ -5,9 +5,9 @@ vi.mock('../env', () => ({
     langflowApiUrl: 'http://localhost:7860',
     langflowApiKey: 'test-api-key',
     langflowFlowId: 'test-flow-id',
-    nemotronUrl: 'http://localhost:30001/v1',
-    nemotronApiKey: '',
-    nemotronModel: 'nemotron-nano',
+    titleGenUrl: 'http://localhost:30001/v1',
+    titleGenApiKey: '',
+    titleGenModel: 'nemotron-nano',
     webhookPort: 8090,
     requestTimeoutMs: 5000,
     maxMessageLength: 10000,
@@ -55,15 +55,15 @@ describe('generateTitle', () => {
     );
   });
 
-  it('sends bearer auth when a nemotron api key is configured', async () => {
+  it('sends bearer auth when a title gen api key is configured', async () => {
     vi.doMock('../env', () => ({
       config: {
         langflowApiUrl: 'http://localhost:7860',
         langflowApiKey: 'test-api-key',
         langflowFlowId: 'test-flow-id',
-        nemotronUrl: 'http://localhost:30001/v1',
-        nemotronApiKey: 'secret-key',
-        nemotronModel: 'nemotron-nano',
+        titleGenUrl: 'http://localhost:30001/v1',
+        titleGenApiKey: 'secret-key',
+        titleGenModel: 'nemotron-nano',
         webhookPort: 8090,
         requestTimeoutMs: 5000,
         maxMessageLength: 10000,
@@ -161,7 +161,7 @@ describe('generateTitle', () => {
     expect(title).toBe('Greeting and Assistance Offered');
   });
 
-  it('handles nemotron-nano being unreachable (throws)', async () => {
+  it('handles title generation service being unreachable (throws)', async () => {
     const mockFetch = vi.mocked(fetch);
     const mockResponse = new Response(JSON.stringify({ error: 'Internal Server Error' }), {
       status: 500,

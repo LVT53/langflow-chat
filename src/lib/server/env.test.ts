@@ -45,9 +45,9 @@ describe('Environment Configuration', () => {
     delete process.env.TRANSLATEGEMMA_MODEL
     delete process.env.TRANSLATION_MAX_TOKENS
     delete process.env.TRANSLATION_TEMPERATURE
-    delete process.env.NEMOTRON_URL
-    delete process.env.NEMOTRON_API_KEY
-    delete process.env.NEMOTRON_MODEL
+    delete process.env.TITLE_GEN_URL
+    delete process.env.TITLE_GEN_API_KEY
+    delete process.env.TITLE_GEN_MODEL
     delete process.env.WEBHOOK_PORT
     delete process.env.REQUEST_TIMEOUT_MS
     delete process.env.MAX_MESSAGE_LENGTH
@@ -64,9 +64,9 @@ describe('Environment Configuration', () => {
     expect(config.translategemmaModel).toBe('translategemma')
     expect(config.translationMaxTokens).toBe(256)
     expect(config.translationTemperature).toBe(0.1)
-    expect(config.nemotronUrl).toBe('http://192.168.1.96:30001/v1')
-    expect(config.nemotronApiKey).toBe('')
-    expect(config.nemotronModel).toBe('nemotron-nano')
+    expect(config.titleGenUrl).toBe('http://192.168.1.96:30001/v1')
+    expect(config.titleGenApiKey).toBe('')
+    expect(config.titleGenModel).toBe('nemotron-nano')
     expect(config.webhookPort).toBe(8090)
     expect(config.requestTimeoutMs).toBe(120000)
     expect(config.maxMessageLength).toBe(10000)
@@ -85,9 +85,9 @@ describe('Environment Configuration', () => {
     process.env.TRANSLATEGEMMA_MODEL = 'test-translator-model'
     process.env.TRANSLATION_MAX_TOKENS = '512'
     process.env.TRANSLATION_TEMPERATURE = '0.2'
-    process.env.NEMOTRON_URL = 'http://test-nemotron:9000/v1'
-    process.env.NEMOTRON_API_KEY = 'test-nemotron-key'
-    process.env.NEMOTRON_MODEL = 'test-model'
+    process.env.TITLE_GEN_URL = 'http://test-nemotron:9000/v1'
+    process.env.TITLE_GEN_API_KEY = 'test-nemotron-key'
+    process.env.TITLE_GEN_MODEL = 'test-model'
     process.env.WEBHOOK_PORT = '3000'
     process.env.REQUEST_TIMEOUT_MS = '5000'
     process.env.MAX_MESSAGE_LENGTH = '5000'
@@ -105,9 +105,9 @@ describe('Environment Configuration', () => {
     expect(config.translategemmaModel).toBe('test-translator-model')
     expect(config.translationMaxTokens).toBe(512)
     expect(config.translationTemperature).toBe(0.2)
-    expect(config.nemotronUrl).toBe('http://test-nemotron:9000/v1')
-    expect(config.nemotronApiKey).toBe('test-nemotron-key')
-    expect(config.nemotronModel).toBe('test-model')
+    expect(config.titleGenUrl).toBe('http://test-nemotron:9000/v1')
+    expect(config.titleGenApiKey).toBe('test-nemotron-key')
+    expect(config.titleGenModel).toBe('test-model')
     expect(config.webhookPort).toBe(3000)
     expect(config.requestTimeoutMs).toBe(5000)
     expect(config.maxMessageLength).toBe(5000)

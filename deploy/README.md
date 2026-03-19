@@ -25,9 +25,9 @@ Copy the `.env.example` file to `.env` and configure the following variables:
 | `TRANSLATEGEMMA_MODEL` | vLLM-compatible TranslateGemma model name | `Infomaniak-AI/vllm-translategemma-12b-it` |
 | `TRANSLATION_MAX_TOKENS` | Max tokens per translation call | `256` |
 | `TRANSLATION_TEMPERATURE` | Temperature for translation calls | `0.1` |
-| `NEMOTRON_URL` | URL of the Nemotron Nano service | `http://192.168.1.96:30001/v1` |
-| `NEMOTRON_API_KEY` | API key for Nemotron/OpenAI-compatible auth | `your-api-key-here` |
-| `NEMOTRON_MODEL` | Model name to use with Nemotron | `nemotron-nano` |
+| `TITLE_GEN_URL` | URL of the title generation service | `http://192.168.1.96:30001/v1` |
+| `TITLE_GEN_API_KEY` | API key for title generation service auth | `your-api-key-here` |
+| `TITLE_GEN_MODEL` | Model name to use for title generation | `nemotron-nano` |
 | `WEBHOOK_PORT` | Port for webhook endpoints | `8090` |
 | `REQUEST_TIMEOUT_MS` | Request timeout in milliseconds | `120000` |
 | `MAX_MESSAGE_LENGTH` | Maximum message length allowed | `10000` |

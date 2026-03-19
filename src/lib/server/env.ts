@@ -1,6 +1,13 @@
 // src/lib/server/env.ts
 // Centralized environment configuration module
 
+export interface ModelConfig {
+  baseUrl: string;
+  apiKey: string;
+  modelName: string;
+  displayName: string;
+}
+
 interface Config {
   langflowApiUrl: string;
   langflowApiKey: string;
@@ -11,14 +18,16 @@ interface Config {
   translategemmaModel: string;
   translationMaxTokens: number;
   translationTemperature: number;
-  nemotronUrl: string;
-  nemotronApiKey: string;
-  nemotronModel: string;
+  titleGenUrl: string;
+  titleGenApiKey: string;
+  titleGenModel: string;
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
   sessionSecret: string;
   databasePath: string;
+  model1: ModelConfig;
+  model2: ModelConfig;
 }
 
 // Read and validate environment variables
@@ -50,14 +59,26 @@ const getConfig = (): Config => {
     translategemmaModel: process.env.TRANSLATEGEMMA_MODEL || 'translategemma',
     translationMaxTokens: parseInt(process.env.TRANSLATION_MAX_TOKENS || '256', 10),
     translationTemperature: parseFloat(process.env.TRANSLATION_TEMPERATURE || '0.1'),
-    nemotronUrl: process.env.NEMOTRON_URL || 'http://192.168.1.96:30001/v1',
-    nemotronApiKey: process.env.NEMOTRON_API_KEY || '',
-    nemotronModel: process.env.NEMOTRON_MODEL || 'nemotron-nano',
+    titleGenUrl: process.env.TITLE_GEN_URL || 'http://192.168.1.96:30001/v1',
+    titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
+    titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
     sessionSecret,
-    databasePath: process.env.DATABASE_PATH || './data/chat.db'
+    databasePath: process.env.DATABASE_PATH || './data/chat.db',
+    model1: {
+      baseUrl: process.env.MODEL_1_BASEURL || 'http://localhost:30001/v1',
+      apiKey: process.env.MODEL_1_API_KEY || '',
+      modelName: process.env.MODEL_1_NAME || 'model-1',
+      displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
+    },
+    model2: {
+      baseUrl: process.env.MODEL_2_BASEURL || '',
+      apiKey: process.env.MODEL_2_API_KEY || '',
+      modelName: process.env.MODEL_2_NAME || '',
+      displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
+    }
   };
 };
 

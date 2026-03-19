@@ -27,16 +27,16 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
     'Content-Type': 'application/json',
   };
 
-  if (config.nemotronApiKey) {
-    headers.Authorization = `Bearer ${config.nemotronApiKey}`;
+  if (config.titleGenApiKey) {
+    headers.Authorization = `Bearer ${config.titleGenApiKey}`;
   }
   
-  // Make POST request to nemotron-nano
-  const response = await fetch(`${config.nemotronUrl}/chat/completions`, {
+  // Make POST request to title generation service
+  const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model: config.nemotronModel,
+      model: config.titleGenModel,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 30,
       temperature: 0.3,
