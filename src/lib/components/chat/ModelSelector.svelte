@@ -181,7 +181,7 @@
 		background: var(--bg-primary, #ffffff);
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 4px;
 		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 		border-radius: var(--radius-md, 8px);
 		box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.08));
