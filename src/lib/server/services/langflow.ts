@@ -72,7 +72,8 @@ export async function sendMessage(
       tweaks: {
         // Pass model config to Langflow via tweaks
         model_name: modelName,
-        api_base: baseUrl
+        api_base: baseUrl,
+        system_prompt: modelConfig.systemPrompt
       }
     };
 
@@ -142,7 +143,8 @@ export async function sendMessageStream(
       session_id: sessionId,
       tweaks: {
         model_name: modelName,
-        api_base: baseUrl
+        api_base: baseUrl,
+        system_prompt: modelConfig.systemPrompt
       }
     };
 
