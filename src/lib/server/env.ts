@@ -73,14 +73,14 @@ const getConfig = (): Config => {
       apiKey: process.env.MODEL_1_API_KEY || '',
       modelName: process.env.MODEL_1_NAME || 'model-1',
       displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
-      systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || '',
+      systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || 'default',
     },
     model2: {
       baseUrl: process.env.MODEL_2_BASEURL || '',
       apiKey: process.env.MODEL_2_API_KEY || '',
       modelName: process.env.MODEL_2_NAME || '',
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
-      systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || '',
+      systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
     }
   };
 };

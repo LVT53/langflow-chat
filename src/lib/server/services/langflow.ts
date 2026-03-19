@@ -2,6 +2,7 @@
 import { config } from '../env';
 import type { LangflowRunRequest, LangflowRunResponse, LangflowMessage } from '$lib/types';
 import type { ModelId } from '$lib/stores/settings';
+import { getSystemPrompt } from '../prompts';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -73,7 +74,7 @@ export async function sendMessage(
         // Pass model config to Langflow via tweaks
         model_name: modelName,
         api_base: baseUrl,
-        system_prompt: modelConfig.systemPrompt
+        system_prompt: getSystemPrompt(modelConfig.systemPrompt)
       }
     };
 
@@ -144,7 +145,7 @@ export async function sendMessageStream(
       tweaks: {
         model_name: modelName,
         api_base: baseUrl,
-        system_prompt: modelConfig.systemPrompt
+        system_prompt: getSystemPrompt(modelConfig.systemPrompt)
       }
     };
 
