@@ -11,8 +11,14 @@ import {
 } from '$lib/server/services/translator';
 
 const STREAM_TIMEOUT_MS = 120_000;
+
+// Nemotron-style thinking tags
 const THINKING_OPEN_TAG = '<thinking>';
 const THINKING_CLOSE_TAG = '</thinking>';
+
+// Hermes 4-style thinking tags
+const HERMES_THINKING_OPEN_TAG = '<think>';
+const HERMES_THINKING_CLOSE_TAG = '</think>';
 
 type StreamErrorCode = 'timeout' | 'network' | 'backend_failure';
 
@@ -621,23 +627,53 @@ export const POST: RequestHandler = async (event) => {
 
 				while (inlineThinkingBuffer) {
 					if (insideInlineThinking) {
-						const closeIndex = inlineThinkingBuffer.indexOf(THINKING_CLOSE_TAG);
+						// Check for both Nemotron and Hermes close tags
+						const nemotronCloseIndex = inlineThinkingBuffer.indexOf(THINKING_CLOSE_TAG);
+						const hermesCloseIndex = inlineThinkingBuffer.indexOf(HERMES_THINKING_CLOSE_TAG);
+						
+						let closeIndex = -1;
+						let closeTagLength = 0;
+						
+						if (nemotronCloseIndex !== -1 && hermesCloseIndex !== -1) {
+							// Both found, use the first one
+							if (nemotronCloseIndex < hermesCloseIndex) {
+								closeIndex = nemotronCloseIndex;
+								closeTagLength = THINKING_CLOSE_TAG.length;
+							} else {
+								closeIndex = hermesCloseIndex;
+								closeTagLength = HERMES_THINKING_CLOSE_TAG.length;
+							}
+						} else if (nemotronCloseIndex !== -1) {
+							closeIndex = nemotronCloseIndex;
+							closeTagLength = THINKING_CLOSE_TAG.length;
+						} else if (hermesCloseIndex !== -1) {
+							closeIndex = hermesCloseIndex;
+							closeTagLength = HERMES_THINKING_CLOSE_TAG.length;
+						}
+						
 						if (closeIndex !== -1) {
 							const thinkingChunk = inlineThinkingBuffer.slice(0, closeIndex);
 							if (thinkingChunk && !emitThinking(thinkingChunk)) {
 								return false;
 							}
 							inlineThinkingBuffer = inlineThinkingBuffer.slice(
-								closeIndex + THINKING_CLOSE_TAG.length
+								closeIndex + closeTagLength
 							);
 							insideInlineThinking = false;
 							continue;
 						}
 
-						const partialCloseLength = getPartialTagPrefixLength(
+						// Check for partial close tags (both formats)
+						const partialNemotronCloseLength = getPartialTagPrefixLength(
 							inlineThinkingBuffer,
 							THINKING_CLOSE_TAG
 						);
+						const partialHermesCloseLength = getPartialTagPrefixLength(
+							inlineThinkingBuffer,
+							HERMES_THINKING_CLOSE_TAG
+						);
+						const partialCloseLength = Math.max(partialNemotronCloseLength, partialHermesCloseLength);
+						
 						const flushLength = inlineThinkingBuffer.length - partialCloseLength;
 						if (flushLength > 0) {
 							const thinkingChunk = inlineThinkingBuffer.slice(0, flushLength);
@@ -649,23 +685,53 @@ export const POST: RequestHandler = async (event) => {
 						break;
 					}
 
-					const openIndex = inlineThinkingBuffer.indexOf(THINKING_OPEN_TAG);
+					// Check for both Nemotron and Hermes open tags
+					const nemotronOpenIndex = inlineThinkingBuffer.indexOf(THINKING_OPEN_TAG);
+					const hermesOpenIndex = inlineThinkingBuffer.indexOf(HERMES_THINKING_OPEN_TAG);
+					
+					let openIndex = -1;
+					let openTagLength = 0;
+					
+					if (nemotronOpenIndex !== -1 && hermesOpenIndex !== -1) {
+						// Both found, use the first one
+						if (nemotronOpenIndex < hermesOpenIndex) {
+							openIndex = nemotronOpenIndex;
+							openTagLength = THINKING_OPEN_TAG.length;
+						} else {
+							openIndex = hermesOpenIndex;
+							openTagLength = HERMES_THINKING_OPEN_TAG.length;
+						}
+					} else if (nemotronOpenIndex !== -1) {
+						openIndex = nemotronOpenIndex;
+						openTagLength = THINKING_OPEN_TAG.length;
+					} else if (hermesOpenIndex !== -1) {
+						openIndex = hermesOpenIndex;
+						openTagLength = HERMES_THINKING_OPEN_TAG.length;
+					}
+					
 					if (openIndex !== -1) {
 						const visibleChunk = inlineThinkingBuffer.slice(0, openIndex);
 						if (visibleChunk && !emitVisibleToken(visibleChunk)) {
 							return false;
 						}
 						inlineThinkingBuffer = inlineThinkingBuffer.slice(
-							openIndex + THINKING_OPEN_TAG.length
+							openIndex + openTagLength
 						);
 						insideInlineThinking = true;
 						continue;
 					}
 
-					const partialOpenLength = getPartialTagPrefixLength(
+					// Check for partial open tags (both formats)
+					const partialNemotronOpenLength = getPartialTagPrefixLength(
 						inlineThinkingBuffer,
 						THINKING_OPEN_TAG
 					);
+					const partialHermesOpenLength = getPartialTagPrefixLength(
+						inlineThinkingBuffer,
+						HERMES_THINKING_OPEN_TAG
+					);
+					const partialOpenLength = Math.max(partialNemotronOpenLength, partialHermesOpenLength);
+					
 					const flushLength = inlineThinkingBuffer.length - partialOpenLength;
 					if (flushLength > 0) {
 						const visibleChunk = inlineThinkingBuffer.slice(0, flushLength);
