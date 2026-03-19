@@ -13,9 +13,9 @@ interface Config {
   langflowApiKey: string;
   langflowFlowId: string;
   langflowWebhookSecret: string;
-  translategemmaUrl: string;
-  translategemmaApiKey: string;
-  translategemmaModel: string;
+  translatorUrl: string;
+  translatorApiKey: string;
+  translatorModel: string;
   translationMaxTokens: number;
   translationTemperature: number;
   titleGenUrl: string;
@@ -54,9 +54,9 @@ const getConfig = (): Config => {
     langflowApiKey,
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
-    translategemmaUrl: process.env.TRANSLATEGEMMA_URL || 'http://192.168.1.96:30002/v1',
-    translategemmaApiKey: process.env.TRANSLATEGEMMA_API_KEY || '',
-    translategemmaModel: process.env.TRANSLATEGEMMA_MODEL || 'translategemma',
+    translatorUrl: process.env.TRANSLATOR_URL || 'http://192.168.1.96:30002/v1',
+    translatorApiKey: process.env.TRANSLATOR_API_KEY || '',
+    translatorModel: process.env.TRANSLATOR_MODEL || 'translategemma',
     translationMaxTokens: parseInt(process.env.TRANSLATION_MAX_TOKENS || '256', 10),
     translationTemperature: parseFloat(process.env.TRANSLATION_TEMPERATURE || '0.1'),
     titleGenUrl: process.env.TITLE_GEN_URL || 'http://192.168.1.96:30001/v1',

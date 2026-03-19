@@ -20,9 +20,9 @@ Copy the `.env.example` file to `.env` and configure the following variables:
 | `LANGFLOW_API_KEY` | API key for Langflow authentication | `your-api-key-here` |
 | `LANGFLOW_FLOW_ID` | ID of the Langflow flow to use | `your-flow-id-here` |
 | `LANGFLOW_WEBHOOK_SECRET` | Shared secret for Langflow sentence webhooks | `change-me-webhook-secret` |
-| `TRANSLATEGEMMA_URL` | URL of the TranslateGemma vLLM endpoint | `http://192.168.1.96:30002/v1` |
-| `TRANSLATEGEMMA_API_KEY` | API key for TranslateGemma auth | `your-api-key-here` |
-| `TRANSLATEGEMMA_MODEL` | vLLM-compatible TranslateGemma model name | `Infomaniak-AI/vllm-translategemma-12b-it` |
+| `TRANSLATOR_URL` | URL of the translator vLLM endpoint | `http://192.168.1.96:30002/v1` |
+| `TRANSLATOR_API_KEY` | API key for translator auth | `your-api-key-here` |
+| `TRANSLATOR_MODEL` | vLLM-compatible translator model name | `Infomaniak-AI/vllm-translategemma-12b-it` |
 | `TRANSLATION_MAX_TOKENS` | Max tokens per translation call | `256` |
 | `TRANSLATION_TEMPERATURE` | Temperature for translation calls | `0.1` |
 | `TITLE_GEN_URL` | URL of the title generation service | `http://192.168.1.96:30001/v1` |

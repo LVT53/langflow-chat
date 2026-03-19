@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../env', () => ({
 	config: {
-		translategemmaUrl: 'http://localhost:30002/v1',
-		translategemmaApiKey: '',
-		translategemmaModel: 'translategemma',
+		translatorUrl: 'http://localhost:30002/v1',
+		translatorApiKey: '',
+		translatorModel: 'translategemma',
 		translationMaxTokens: 256,
 		translationTemperature: 0.1
 	}

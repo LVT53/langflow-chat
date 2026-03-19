@@ -141,8 +141,8 @@ function buildHeaders(): Record<string, string> {
 		'Content-Type': 'application/json'
 	};
 
-	if (config.translategemmaApiKey) {
-		headers.Authorization = `Bearer ${config.translategemmaApiKey}`;
+	if (config.translatorApiKey) {
+		headers.Authorization = `Bearer ${config.translatorApiKey}`;
 	}
 
 	return headers;
@@ -165,11 +165,11 @@ async function requestTranslation(
 	sourceLanguage: TranslateGemmaLanguageCode,
 	targetLanguage: TranslateGemmaLanguageCode
 ): Promise<string | null> {
-	const response = await fetch(`${config.translategemmaUrl}/chat/completions`, {
+	const response = await fetch(`${config.translatorUrl}/chat/completions`, {
 		method: 'POST',
 		headers: buildHeaders(),
 		body: JSON.stringify({
-			model: config.translategemmaModel,
+			model: config.translatorModel,
 			messages: [
 				{
 					role: 'user',
