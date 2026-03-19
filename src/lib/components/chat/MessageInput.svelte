@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { currentConversationId } from '$lib/stores/ui';
+	import TranslationToggle from './TranslationToggle.svelte';
+	import ModelSelector from './ModelSelector.svelte';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -76,7 +78,7 @@
 </script>
 
 <div class="relative flex w-full flex-col">
-	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-[4px] transition-all duration-150 focus-within:border-focus-ring">
+	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-0 transition-all duration-150 focus-within:border-focus-ring">
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
@@ -90,17 +92,21 @@
 		></textarea>
 
 		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[6px]">
-			<button
-				type="button"
-				class="btn-icon-bare composer-icon flex-shrink-0 text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
-				disabled
-				title="File uploads coming soon"
-				aria-label="Attach file"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-				</svg>
-			</button>
+			<div class="flex items-center gap-2">
+				<ModelSelector />
+				<TranslationToggle />
+				<button
+					type="button"
+					class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
+					disabled
+					title="File uploads coming soon"
+					aria-label="Attach file"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+					</svg>
+				</button>
+			</div>
 
 			<div class="action-button-container min-h-[50px] min-w-[50px] flex-shrink-0">
 				{#if isGenerating}
