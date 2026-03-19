@@ -68,8 +68,8 @@ export async function sendMessage(
       session_id: sessionId,
       tweaks: {
         // Pass model name to Langflow via tweaks
-        // The vLLM node can be configured to read this parameter
-        model: modelName
+        // The vLLM node reads this via model_name field
+        model_name: modelName
       }
     };
 
@@ -135,8 +135,8 @@ export async function sendMessageStream(
       output_type: 'chat',
       session_id: sessionId,
       tweaks: {
-        // Pass model name to Langflow via tweaks
-        model: modelName
+        // Pass model name to Langflow via tweaks to match vLLM node field
+        model_name: modelName
       }
     };
 
