@@ -284,7 +284,7 @@
 					<ErrorMessage error={sendError} onRetry={handleRetry} onClose={handleErrorClose} />
 				{/if}
 
-				<MessageInput on:send={handleSend} on:stop={handleStop} disabled={isSending} isGenerating={isSending} />
+				<MessageInput on:send={handleSend} on:stop={handleStop} disabled={isSending} isGenerating={isSending} maxLength={data.maxMessageLength} />
 			</div>
 		</div>
 	</div>

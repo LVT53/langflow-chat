@@ -4,6 +4,8 @@
 	import MessageInput from '../chat/MessageInput.svelte';
 	import type { ChatMessage } from '$lib/types';
 
+	export let maxLength: number = 10000;
+
 	// Placeholder messages for now (actual logic in Tasks 18 & 20)
 	let messages: ChatMessage[] = [];
 
@@ -74,7 +76,7 @@
 			<MessageArea {messages} />
 			<div class="shrink-0 pt-md px-md pb-[calc(var(--space-md)+env(safe-area-inset-bottom))] md:px-2xl bg-primary">
 				<div class="mx-auto w-full max-w-[720px]">
-					<MessageInput on:send={handleSend} />
+					<MessageInput on:send={handleSend} {maxLength} />
 				</div>
 			</div>
 		</div>

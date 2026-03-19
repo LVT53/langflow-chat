@@ -5,6 +5,9 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import { onMount } from 'svelte';
+	import type { LayoutData } from './$types';
+
+	export let data: LayoutData;
 
 	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
 
@@ -89,7 +92,7 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 					</div>
 				{/if}
 
-				<MessageInput on:send={handleSend} disabled={creating} />
+				<MessageInput on:send={handleSend} disabled={creating} maxLength={data.maxMessageLength} />
 			</div>
 		</div>
 	</div>
