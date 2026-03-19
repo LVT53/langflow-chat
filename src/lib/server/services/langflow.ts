@@ -1,6 +1,7 @@
 // Langflow API client service
 import { config } from '../env';
 import type { LangflowRunRequest, LangflowRunResponse, LangflowMessage } from '$lib/types';
+import type { ModelId } from '$lib/stores/settings';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -38,25 +39,40 @@ export function extractMessageText(response: LangflowRunResponse): string {
   }
 }
 
-export async function sendMessage(message: string, sessionId: string): Promise<{ text: string; rawResponse: LangflowRunResponse }> {
+export async function sendMessage(
+  message: string,
+  sessionId: string,
+  modelId?: ModelId
+): Promise<{ text: string; rawResponse: LangflowRunResponse }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-  
+
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}`;
+
+    // Get model name from config based on modelId
+    const modelName = modelId ? config[modelId].modelName : config.model1.modelName;
+
     console.log('[LANGFLOW] sendMessage request', {
       url,
       sessionId,
-      messageLength: message.length
+      messageLength: message.length,
+      modelId,
+      modelName
     });
-    
-    const body: LangflowRunRequest = {
+
+    const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
       input_value: message,
       input_type: 'chat',
       output_type: 'chat',
-      session_id: sessionId
+      session_id: sessionId,
+      tweaks: {
+        // Pass model name to Langflow via tweaks
+        // The vLLM node can be configured to read this parameter
+        model: modelName
+      }
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -66,7 +82,7 @@ export async function sendMessage(message: string, sessionId: string): Promise<{
       body: JSON.stringify(body),
       signal: controller.signal
     });
-    
+
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
       console.error('[LANGFLOW] sendMessage non-OK response', {
@@ -77,10 +93,10 @@ export async function sendMessage(message: string, sessionId: string): Promise<{
       });
       throw new Error(`Langflow API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ''}`);
     }
-    
+
     const rawResponse: LangflowRunResponse = await response.json();
     const text = extractMessageText(rawResponse);
-    
+
     return { text, rawResponse };
   } catch (error) {
     throw error;
@@ -92,27 +108,38 @@ export async function sendMessage(message: string, sessionId: string): Promise<{
 export async function sendMessageStream(
   message: string,
   sessionId: string,
+  modelId?: ModelId,
   options?: { signal?: AbortSignal }
 ): Promise<ReadableStream<Uint8Array>> {
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), config.requestTimeoutMs);
   const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
-  
+
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}?stream=true`;
+
+    // Get model name from config based on modelId
+    const modelName = modelId ? config[modelId].modelName : config.model1.modelName;
+
     console.log('[LANGFLOW] sendMessageStream request', {
       url,
       sessionId,
-      messageLength: message.length
+      messageLength: message.length,
+      modelId,
+      modelName
     });
-    
-    const body: LangflowRunRequest = {
+
+    const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
       input_value: message,
       input_type: 'chat',
       output_type: 'chat',
-      session_id: sessionId
+      session_id: sessionId,
+      tweaks: {
+        // Pass model name to Langflow via tweaks
+        model: modelName
+      }
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -122,7 +149,7 @@ export async function sendMessageStream(
       body: JSON.stringify(body),
       signal
     });
-    
+
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
       console.error('[LANGFLOW] sendMessageStream non-OK response', {
@@ -133,12 +160,12 @@ export async function sendMessageStream(
       });
       throw new Error(`Langflow API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ''}`);
     }
-    
+
     if (!response.body) {
       console.error('[LANGFLOW] sendMessageStream missing response body', { url, sessionId });
       throw new Error('Response body is empty');
     }
-    
+
     return response.body as ReadableStream<Uint8Array>;
   } catch (error) {
     throw error;

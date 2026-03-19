@@ -13,6 +13,8 @@ export interface StreamCallbacks {
 	onError: (error: Error) => void;
 }
 
+export type ModelId = 'model1' | 'model2';
+
 export interface StreamHandle {
 	abort: () => void;
 }
@@ -43,7 +45,8 @@ function getPartialTagPrefixLength(value: string, tag: string): number {
 export function streamChat(
 	message: string,
 	conversationId: string,
-	callbacks: StreamCallbacks
+	callbacks: StreamCallbacks,
+	modelId?: ModelId
 ): StreamHandle {
 	const controller = new AbortController();
 	let aborted = false;
@@ -130,7 +133,7 @@ export function streamChat(
 			const res = await fetch('/api/chat/stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message, conversationId }),
+				body: JSON.stringify({ message, conversationId, model: modelId }),
 				signal: controller.signal
 			});
 

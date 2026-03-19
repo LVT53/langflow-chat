@@ -2,6 +2,7 @@
 	import { writable } from 'svelte/store';
 	import { onMount, onDestroy } from 'svelte';
 	import { currentConversationId } from '$lib/stores/ui';
+	import { selectedModel } from '$lib/stores/settings';
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
@@ -153,88 +154,93 @@
 
 		messages.update((msgs) => [...msgs, userMsg, placeholder]);
 
-		activeStream = streamChat(text, data.conversation.id, {
-			onToken(chunk) {
-				messages.update((msgs) =>
-					msgs.map((m) =>
-						m.id === placeholderId
-							? {
-									...m,
-									content: m.content + chunk,
-									isThinkingStreaming: false
-								}
-							: m
-					)
-				);
-			},
-			onThinking(chunk) {
-				messages.update((msgs) =>
-					msgs.map((m) =>
-						m.id === placeholderId
-							? {
-									...m,
-									thinking: (m.thinking ?? '') + chunk,
-									isThinkingStreaming: true
-								}
-							: m
-					)
-				);
-			},
-			onEnd(_fullText, metadata) {
-				lastAssistantResponse = _fullText;
-				messages.update((msgs) => {
-					return msgs.map((m) =>
-						m.id === placeholderId
-							? {
-									...m,
-									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
-									isStreaming: false,
-									thinking: metadata?.thinking ?? m.thinking,
-									isThinkingStreaming: false,
-									thinkingTokenCount: metadata?.thinkingTokenCount,
-									responseTokenCount: metadata?.responseTokenCount,
-									totalTokenCount: metadata?.totalTokenCount
-								}
-							: m
+		activeStream = streamChat(
+			text,
+			data.conversation.id,
+			{
+				onToken(chunk) {
+					messages.update((msgs) =>
+						msgs.map((m) =>
+							m.id === placeholderId
+								? {
+										...m,
+										content: m.content + chunk,
+										isThinkingStreaming: false
+									}
+								: m
+						)
 					);
-				});
-				isSending = false;
-				activeStream = null;
-				canRetry = false;
-
-				// Trigger title generation for new conversations (fire-and-forget)
-				if (!titleGenerationTriggered && data.conversation.title === 'New Conversation') {
-					titleGenerationTriggered = true;
-					const conversationIdForTitle = data.conversation.id;
-					fetch(`/api/conversations/${conversationIdForTitle}/title`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json'
-						},
-						body: JSON.stringify({
-							userMessage: lastUserMessage,
-							assistantResponse: lastAssistantResponse
-						})
-					}).then(async (res) => {
-						if (res.ok) {
-							const result = await res.json();
-							if (typeof result.title === 'string' && result.title.trim().length > 0) {
-								updateConversationTitleLocal(conversationIdForTitle, result.title);
-							}
-						}
-					}).catch(() => {
-						// Ignore errors, title remains "New conversation"
+				},
+				onThinking(chunk) {
+					messages.update((msgs) =>
+						msgs.map((m) =>
+							m.id === placeholderId
+								? {
+										...m,
+										thinking: (m.thinking ?? '') + chunk,
+										isThinkingStreaming: true
+									}
+								: m
+						)
+					);
+				},
+				onEnd(_fullText, metadata) {
+					lastAssistantResponse = _fullText;
+					messages.update((msgs) => {
+						return msgs.map((m) =>
+							m.id === placeholderId
+								? {
+										...m,
+										content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
+										isStreaming: false,
+										thinking: metadata?.thinking ?? m.thinking,
+										isThinkingStreaming: false,
+										thinkingTokenCount: metadata?.thinkingTokenCount,
+										responseTokenCount: metadata?.responseTokenCount,
+										totalTokenCount: metadata?.totalTokenCount
+									}
+								: m
+						);
 					});
+					isSending = false;
+					activeStream = null;
+					canRetry = false;
+
+					// Trigger title generation for new conversations (fire-and-forget)
+					if (!titleGenerationTriggered && data.conversation.title === 'New Conversation') {
+						titleGenerationTriggered = true;
+						const conversationIdForTitle = data.conversation.id;
+						fetch(`/api/conversations/${conversationIdForTitle}/title`, {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify({
+								userMessage: lastUserMessage,
+								assistantResponse: lastAssistantResponse
+							})
+						}).then(async (res) => {
+							if (res.ok) {
+								const result = await res.json();
+								if (typeof result.title === 'string' && result.title.trim().length > 0) {
+									updateConversationTitleLocal(conversationIdForTitle, result.title);
+								}
+							}
+						}).catch(() => {
+							// Ignore errors, title remains "New conversation"
+						});
+					}
+				},
+				onError(err) {
+					messages.update((msgs) => msgs.filter((m) => m.id !== placeholderId));
+					sendError = toFriendlySendError(err);
+					isSending = false;
+					activeStream = null;
+					canRetry = true;
 				}
 			},
-			onError(err) {
-				messages.update((msgs) => msgs.filter((m) => m.id !== placeholderId));
-				sendError = toFriendlySendError(err);
-				isSending = false;
-				activeStream = null;
-				canRetry = true;
-			}
-		});
+			$selectedModel
+		);
 	}
 
 	function handleRetry() {

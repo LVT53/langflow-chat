@@ -479,7 +479,7 @@ export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 
-	let body: { message?: unknown; conversationId?: unknown };
+	let body: { message?: unknown; conversationId?: unknown; model?: unknown };
 	try {
 		body = await event.request.json();
 	} catch {
@@ -489,7 +489,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const { message, conversationId } = body;
+	const { message, conversationId, model } = body;
 
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return new Response(JSON.stringify({ error: 'Message must be a non-empty string' }), {
@@ -513,6 +513,9 @@ export const POST: RequestHandler = async (event) => {
 			headers: { 'Content-Type': 'application/json' }
 		});
 	}
+
+	// Validate model parameter
+	const modelId = model === 'model1' || model === 'model2' ? model : undefined;
 
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
@@ -744,16 +747,17 @@ export const POST: RequestHandler = async (event) => {
 			}, STREAM_TIMEOUT_MS);
 
 			try {
-				console.log('[STREAM] Starting upstream request', {
-					userId: user.id,
-					conversationId,
-					sourceLanguage,
-					normalizedMessageLength: normalizedMessage.length,
-					upstreamMessageLength: upstreamMessage.length
-				});
-				const langflowStream = await sendMessageStream(upstreamMessage, conversationId, {
-					signal: upstreamAbortController.signal
-				});
+			console.log('[STREAM] Starting upstream request', {
+				userId: user.id,
+				conversationId,
+				sourceLanguage,
+				normalizedMessageLength: normalizedMessage.length,
+				upstreamMessageLength: upstreamMessage.length,
+				modelId
+			});
+			const langflowStream = await sendMessageStream(upstreamMessage, conversationId, modelId, {
+				signal: upstreamAbortController.signal
+			});
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

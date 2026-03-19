@@ -15,14 +15,14 @@ export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 
-	let body: { message?: unknown; conversationId?: unknown };
+	let body: { message?: unknown; conversationId?: unknown; model?: unknown };
 	try {
 		body = await event.request.json();
 	} catch {
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
-	const { message, conversationId } = body;
+	const { message, conversationId, model } = body;
 
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return json({ error: 'Message must be a non-empty string' }, { status: 400 });
@@ -39,6 +39,9 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'conversationId is required' }, { status: 400 });
 	}
 
+	// Validate model parameter
+	const modelId = model === 'model1' || model === 'model2' ? model : undefined;
+
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
 		return json({ error: 'Conversation not found' }, { status: 404 });
@@ -52,7 +55,7 @@ export const POST: RequestHandler = async (event) => {
 				? await translateHungarianToEnglish(normalizedMessage)
 				: normalizedMessage;
 
-		const { text } = await sendMessage(upstreamMessage, conversationId);
+		const { text } = await sendMessage(upstreamMessage, conversationId, modelId);
 		const responseText =
 			sourceLanguage === 'hu' ? await translateEnglishToHungarian(text) : text;
 
