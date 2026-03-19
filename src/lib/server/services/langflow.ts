@@ -50,15 +50,18 @@ export async function sendMessage(
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}`;
 
-    // Get model name from config based on modelId
-    const modelName = modelId ? config[modelId].modelName : config.model1.modelName;
+    // Get model config based on modelId
+    const modelConfig = modelId ? config[modelId] : config.model1;
+    const modelName = modelConfig.modelName;
+    const baseUrl = modelConfig.baseUrl;
 
     console.log('[LANGFLOW] sendMessage request', {
       url,
       sessionId,
       messageLength: message.length,
       modelId,
-      modelName
+      modelName,
+      baseUrl
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -67,9 +70,9 @@ export async function sendMessage(
       output_type: 'chat',
       session_id: sessionId,
       tweaks: {
-        // Pass model name to Langflow via tweaks
-        // The vLLM node reads this via model_name field
-        model_name: modelName
+        // Pass model config to Langflow via tweaks
+        model_name: modelName,
+        api_base: baseUrl
       }
     };
 
@@ -118,15 +121,18 @@ export async function sendMessageStream(
   try {
     const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}?stream=true`;
 
-    // Get model name from config based on modelId
-    const modelName = modelId ? config[modelId].modelName : config.model1.modelName;
+    // Get model config based on modelId
+    const modelConfig = modelId ? config[modelId] : config.model1;
+    const modelName = modelConfig.modelName;
+    const baseUrl = modelConfig.baseUrl;
 
     console.log('[LANGFLOW] sendMessageStream request', {
       url,
       sessionId,
       messageLength: message.length,
       modelId,
-      modelName
+      modelName,
+      baseUrl
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -135,8 +141,8 @@ export async function sendMessageStream(
       output_type: 'chat',
       session_id: sessionId,
       tweaks: {
-        // Pass model name to Langflow via tweaks to match vLLM node field
-        model_name: modelName
+        model_name: modelName,
+        api_base: baseUrl
       }
     };
 
