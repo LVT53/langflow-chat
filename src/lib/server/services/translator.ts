@@ -1,4 +1,4 @@
-import { config } from '../env';
+import { getConfig } from '../config-store';
 
 const INPUT_ABBREVIATIONS = new Set([
 	'dr.',
@@ -141,6 +141,7 @@ function buildHeaders(): Record<string, string> {
 		'Content-Type': 'application/json'
 	};
 
+	const config = getConfig();
 	if (config.translatorApiKey) {
 		headers.Authorization = `Bearer ${config.translatorApiKey}`;
 	}
@@ -165,6 +166,7 @@ async function requestTranslation(
 	sourceLanguage: TranslateGemmaLanguageCode,
 	targetLanguage: TranslateGemmaLanguageCode
 ): Promise<string | null> {
+	const config = getConfig();
 	const response = await fetch(`${config.translatorUrl}/chat/completions`, {
 		method: 'POST',
 		headers: buildHeaders(),

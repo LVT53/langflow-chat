@@ -6,6 +6,11 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   name: text('name'),
+  role: text('role').notNull().default('user'),
+  preferredModel: text('preferred_model').notNull().default('model1'),
+  translationEnabled: integer('translation_enabled').notNull().default(0),
+  theme: text('theme').notNull().default('system'),
+  avatarId: integer('avatar_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
@@ -36,5 +41,24 @@ export const messages = sqliteTable('messages', {
   role: text('role').notNull(),
   content: text('content').notNull(),
   thinking: text('thinking'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const adminConfig = sqliteTable('admin_config', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedBy: text('updated_by').notNull().references(() => users.id),
+});
+
+export const messageAnalytics = sqliteTable('message_analytics', {
+  id: text('id').primaryKey(),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  model: text('model').notNull(),
+  promptTokens: integer('prompt_tokens'),
+  completionTokens: integer('completion_tokens'),
+  reasoningTokens: integer('reasoning_tokens'),
+  generationTimeMs: integer('generation_time_ms'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

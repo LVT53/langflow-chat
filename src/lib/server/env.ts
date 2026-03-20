@@ -7,8 +7,7 @@ export interface ModelConfig {
   modelName: string;
   displayName: string;
   systemPrompt: string;
-  /** Per-model Langflow flow ID. Falls back to the global langflowFlowId when absent. */
-  flowId?: string;
+  flowId: string;
 }
 
 interface Config {
@@ -57,12 +56,12 @@ const getConfig = (): Config => {
     langflowApiKey,
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
-    translatorUrl: process.env.TRANSLATOR_URL || 'http://192.168.1.96:30002/v1',
+    translatorUrl: process.env.TRANSLATOR_URL || 'http://localhost:30002/v1',
     translatorApiKey: process.env.TRANSLATOR_API_KEY || '',
     translatorModel: process.env.TRANSLATOR_MODEL || 'translategemma',
     translationMaxTokens: parseInt(process.env.TRANSLATION_MAX_TOKENS || '256', 10),
     translationTemperature: parseFloat(process.env.TRANSLATION_TEMPERATURE || '0.1'),
-    titleGenUrl: process.env.TITLE_GEN_URL || 'http://192.168.1.96:30001/v1',
+    titleGenUrl: process.env.TITLE_GEN_URL || 'http://localhost:30001/v1',
     titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
     titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
     webhookPort,
@@ -76,7 +75,7 @@ const getConfig = (): Config => {
       modelName: process.env.MODEL_1_NAME || 'model-1',
       displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
       systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || 'default',
-      flowId: process.env.MODEL_1_FLOW_ID || undefined,
+      flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
     },
     model2: {
       baseUrl: process.env.MODEL_2_BASEURL || '',
@@ -84,7 +83,7 @@ const getConfig = (): Config => {
       modelName: process.env.MODEL_2_NAME || '',
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
       systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
-      flowId: process.env.MODEL_2_FLOW_ID || undefined,
+      flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
     }
   };
 };

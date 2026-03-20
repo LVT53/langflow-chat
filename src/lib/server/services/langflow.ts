@@ -1,8 +1,7 @@
 // Langflow API client service
-import { config } from '../env';
-import type { LangflowRunRequest, LangflowRunResponse, LangflowMessage } from '$lib/types';
-import type { ModelId } from '$lib/stores/settings';
+import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/types';
 import { getSystemPrompt } from '../prompts';
+import { getConfig } from '../config-store';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -45,16 +44,14 @@ export async function sendMessage(
   sessionId: string,
   modelId?: ModelId
 ): Promise<{ text: string; rawResponse: LangflowRunResponse }> {
+  const config = getConfig();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
-    // Get model config based on modelId, then resolve which flow to use.
-    // Per-model flow IDs take priority; the global LANGFLOW_FLOW_ID is the fallback.
     const modelConfig = modelId ? config[modelId] : config.model1;
     const flowId = modelConfig.flowId || config.langflowFlowId;
     const url = `${config.langflowApiUrl}/api/v1/run/${flowId}`;
-
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
@@ -119,17 +116,15 @@ export async function sendMessageStream(
   modelId?: ModelId,
   options?: { signal?: AbortSignal }
 ): Promise<ReadableStream<Uint8Array>> {
+  const config = getConfig();
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), config.requestTimeoutMs);
   const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
 
   try {
-    // Get model config based on modelId, then resolve which flow to use.
-    // Per-model flow IDs take priority; the global LANGFLOW_FLOW_ID is the fallback.
     const modelConfig = modelId ? config[modelId] : config.model1;
     const flowId = modelConfig.flowId || config.langflowFlowId;
     const url = `${config.langflowApiUrl}/api/v1/run/${flowId}?stream=true`;
-
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
@@ -159,7 +154,7 @@ export async function sendMessageStream(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': config.langflowApiKey
+        'x-api-key': config.langflowApiKey,
       },
       body: JSON.stringify(body),
       signal

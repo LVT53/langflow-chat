@@ -1,5 +1,26 @@
 // Shared TypeScript types and interfaces used across client and server
 
+export type UserRole = 'user' | 'admin';
+
+export type Theme = 'system' | 'light' | 'dark';
+
+export type ModelId = 'model1' | 'model2';
+
+export interface UserPreferences {
+  preferredModel: ModelId;
+  translationEnabled: boolean;
+  theme: Theme;
+  avatarId: number | null;
+}
+
+export interface UserSettings {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  preferences: UserPreferences;
+}
+
 // User interface: id, email, displayName
 export interface User {
   id: string;
@@ -12,6 +33,8 @@ export interface SessionUser {
   id: string;
   email: string;
   displayName: string;
+  role: UserRole;
+  avatarId: number | null;
 }
 
 // Conversation interface: id (Langflow session_id), title, createdAt, updatedAt (Unix timestamps)

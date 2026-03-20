@@ -1,12 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { WebhookSentencePayload } from '$lib/types';
-import { config } from '$lib/server/env';
+import { getConfig } from '$lib/server/config-store';
 
 export const POST: RequestHandler = async (event) => {
-	if (config.langflowWebhookSecret) {
+	const { langflowWebhookSecret } = getConfig();
+	if (langflowWebhookSecret) {
 		const providedSecret = event.request.headers.get('x-webhook-secret');
-		if (providedSecret !== config.langflowWebhookSecret) {
+		if (providedSecret !== langflowWebhookSecret) {
 			return json({ error: 'Unauthorized webhook request' }, { status: 401 });
 		}
 	}

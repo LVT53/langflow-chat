@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import { config } from '$lib/server/env';
+import { getConfig } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
 import { detectLanguage } from '$lib/server/services/language';
 import {
@@ -28,9 +28,10 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'Message must be a non-empty string' }, { status: 400 });
 	}
 
-	if (message.length > config.maxMessageLength) {
+	const { maxMessageLength } = getConfig();
+	if (message.length > maxMessageLength) {
 		return json(
-			{ error: `Message exceeds maximum length of ${config.maxMessageLength} characters` },
+			{ error: `Message exceeds maximum length of ${maxMessageLength} characters` },
 			{ status: 400 }
 		);
 	}

@@ -8,8 +8,6 @@
 		SIDEBAR_DESKTOP_BREAKPOINT
 	} from '$lib/stores/ui';
 	import type { SessionUser } from '$lib/types';
-	import ThemeToggle from './ThemeToggle.svelte';
-	import { theme, isDark, setTheme } from '$lib/stores/theme';
 
 	export let user: SessionUser | null = null;
 
@@ -18,8 +16,6 @@
 	let triggerRef: HTMLButtonElement;
 	let menuPositionStyle = '';
 	let menuBaseBackground = '';
-
-	$: mobileThemeLabel = $isDark ? 'Theme: Dark' : 'Theme: Light';
 
 	async function handleLogout() {
 		try {
@@ -58,10 +54,6 @@
 			console.error('Failed to create new conversation:', error);
 			alert('Failed to create new conversation. Please try again.');
 		}
-	}
-
-	function cycleTheme() {
-		setTheme($isDark ? 'light' : 'dark');
 	}
 
 	function setMenuBaseBackground() {
@@ -177,22 +169,6 @@
 
 
 	<div class="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-3 lg:gap-3">
-		<div class="hide-on-mobile flex items-center gap-2 lg:gap-3">
-			<ThemeToggle />
-			<button
-				class="btn-icon-bare logout-icon"
-				data-testid="logout-button"
-				on:click={handleLogout}
-				aria-label="Logout"
-				title="Logout"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-					<polyline points="16 17 21 12 16 7"></polyline>
-					<line x1="21" y1="12" x2="9" y2="12"></line>
-				</svg>
-			</button>
-		</div>
 
 		<div class="hide-on-desktop-md">
 			<button
@@ -228,20 +204,13 @@
 					</button>
 					<button
 						class="header-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-						on:click={cycleTheme}
+						on:click={() => { mobileMenuOpen = false; goto('/settings'); }}
 					>
 						<svg class="header-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<circle cx="12" cy="12" r="4" />
-							<path d="M12 2v2" />
-							<path d="M12 20v2" />
-							<path d="m4.93 4.93 1.41 1.41" />
-							<path d="m17.66 17.66 1.41 1.41" />
-							<path d="M2 12h2" />
-							<path d="M20 12h2" />
-							<path d="m6.34 17.66-1.41 1.41" />
-							<path d="m19.07 4.93-1.41 1.41" />
+							<path d="M20 21a8 8 0 0 0-16 0" />
+							<circle cx="12" cy="8" r="5" />
 						</svg>
-						<span>{mobileThemeLabel}</span>
+						<span>Profile &amp; Settings</span>
 					</button>
 					<button
 						class="header-option header-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"

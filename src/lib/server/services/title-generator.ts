@@ -1,5 +1,5 @@
 // src/lib/server/services/title-generator.ts
-import { config } from '../env';
+import { getConfig } from '../config-store';
 
 function fallbackTitle(userMessage: string): string {
   const normalized = userMessage.replace(/\s+/g, ' ').trim();
@@ -18,9 +18,10 @@ function fallbackTitle(userMessage: string): string {
  * @returns A generated title string
  */
 export async function generateTitle(userMessage: string, assistantResponse: string): Promise<string> {
+  const config = getConfig();
   // Truncate assistantResponse to 200 chars
   const truncatedResponse = assistantResponse.slice(0, 200);
-  
+
   // Construct the prompt
   const prompt = `Summarize this conversation in 5-8 words as a title. Output only the title, nothing else.\n\nUser: ${userMessage}\nAssistant: ${truncatedResponse}`;
   const headers: Record<string, string> = {
@@ -30,7 +31,7 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   if (config.titleGenApiKey) {
     headers.Authorization = `Bearer ${config.titleGenApiKey}`;
   }
-  
+
   // Make POST request to title generation service
   const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
     method: 'POST',

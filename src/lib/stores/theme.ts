@@ -24,14 +24,17 @@ function applyTheme(t: Theme) {
 	}
 }
 
-export function initTheme() {
+export function initTheme(serverTheme?: Theme) {
 	if (typeof window === 'undefined') return;
 
 	const stored = localStorage.getItem('theme') as Theme | null;
-	const initialTheme: Theme = stored && ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
+	// Server-provided preference takes priority over localStorage
+	const initialTheme: Theme =
+		serverTheme ?? (stored && ['light', 'dark', 'system'].includes(stored) ? stored : 'system');
 
 	theme.set(initialTheme);
 	applyTheme(initialTheme);
+	localStorage.setItem('theme', initialTheme);
 
 	window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 		if (get(theme) === 'system') {
@@ -44,4 +47,17 @@ export function setTheme(t: Theme) {
 	theme.set(t);
 	localStorage.setItem('theme', t);
 	applyTheme(t);
+}
+
+export async function setThemeAndSync(t: Theme): Promise<void> {
+	setTheme(t);
+	try {
+		await fetch('/api/settings/preferences', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ theme: t }),
+		});
+	} catch {
+		// Non-fatal: local theme already applied
+	}
 }

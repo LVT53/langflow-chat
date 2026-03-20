@@ -2,7 +2,8 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
-import { config } from '$lib/server/env';
+import { getConfig } from '$lib/server/config-store';
+import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage } from '$lib/server/services/messages';
 import { detectLanguage } from '$lib/server/services/language';
 import {
@@ -484,6 +485,7 @@ function estimateTokenCount(text: string): number {
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
+	const requestStartTime = Date.now();
 
 	let body: { message?: unknown; conversationId?: unknown; model?: unknown };
 	try {
@@ -504,10 +506,11 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	if (message.length > config.maxMessageLength) {
+	const { maxMessageLength } = getConfig();
+	if (message.length > maxMessageLength) {
 		return new Response(
 			JSON.stringify({
-				error: `Message exceeds maximum length of ${config.maxMessageLength} characters`
+				error: `Message exceeds maximum length of ${maxMessageLength} characters`
 			}),
 			{ status: 400, headers: { 'Content-Type': 'application/json' } }
 		);
@@ -801,9 +804,22 @@ export const POST: RequestHandler = async (event) => {
 				);
 				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
 				if (fullResponse.trim()) {
-					createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined).catch(
-						() => undefined
-					);
+					const genTimeMs = Date.now() - requestStartTime;
+					const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
+					createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined)
+						.then((assistantMsg) => {
+							if (assistantMsg) {
+								recordMessageAnalytics({
+									messageId: assistantMsg.id,
+									userId: user.id,
+									model: modelId,
+									completionTokens: responseTokenCount,
+									reasoningTokens: thinkingTokenCount,
+									generationTimeMs: genTimeMs,
+								}).catch(() => undefined);
+							}
+						})
+						.catch(() => undefined);
 				}
 				touchConversation(user.id, conversationId).catch(() => undefined);
 				closeStream();
