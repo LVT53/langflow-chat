@@ -232,7 +232,7 @@
 </script>
 
 <div class="flex h-full w-full flex-1 flex-col overflow-y-auto">
-	<div class="mx-auto w-full max-w-2xl px-4 py-8">
+	<div class="mx-auto w-full max-w-[672px] px-4 py-8">
 
 		<!-- Page header -->
 		<h1 class="mb-6 text-2xl font-semibold text-text-primary">Settings</h1>
