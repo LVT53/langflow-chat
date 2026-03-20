@@ -49,10 +49,12 @@ export async function sendMessage(
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
-    const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}`;
-
-    // Get model config based on modelId
+    // Get model config based on modelId, then resolve which flow to use.
+    // Per-model flow IDs take priority; the global LANGFLOW_FLOW_ID is the fallback.
     const modelConfig = modelId ? config[modelId] : config.model1;
+    const flowId = modelConfig.flowId || config.langflowFlowId;
+    const url = `${config.langflowApiUrl}/api/v1/run/${flowId}`;
+
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
@@ -62,7 +64,8 @@ export async function sendMessage(
       messageLength: message.length,
       modelId,
       modelName,
-      baseUrl
+      baseUrl,
+      flowId
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -121,10 +124,12 @@ export async function sendMessageStream(
   const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
 
   try {
-    const url = `${config.langflowApiUrl}/api/v1/run/${config.langflowFlowId}?stream=true`;
-
-    // Get model config based on modelId
+    // Get model config based on modelId, then resolve which flow to use.
+    // Per-model flow IDs take priority; the global LANGFLOW_FLOW_ID is the fallback.
     const modelConfig = modelId ? config[modelId] : config.model1;
+    const flowId = modelConfig.flowId || config.langflowFlowId;
+    const url = `${config.langflowApiUrl}/api/v1/run/${flowId}?stream=true`;
+
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
@@ -134,7 +139,8 @@ export async function sendMessageStream(
       messageLength: message.length,
       modelId,
       modelName,
-      baseUrl
+      baseUrl,
+      flowId
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {

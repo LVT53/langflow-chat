@@ -7,6 +7,8 @@ export interface ModelConfig {
   modelName: string;
   displayName: string;
   systemPrompt: string;
+  /** Per-model Langflow flow ID. Falls back to the global langflowFlowId when absent. */
+  flowId?: string;
 }
 
 interface Config {
@@ -74,6 +76,7 @@ const getConfig = (): Config => {
       modelName: process.env.MODEL_1_NAME || 'model-1',
       displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
       systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || 'default',
+      flowId: process.env.MODEL_1_FLOW_ID || undefined,
     },
     model2: {
       baseUrl: process.env.MODEL_2_BASEURL || '',
@@ -81,6 +84,7 @@ const getConfig = (): Config => {
       modelName: process.env.MODEL_2_NAME || '',
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
       systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
+      flowId: process.env.MODEL_2_FLOW_ID || undefined,
     }
   };
 };
