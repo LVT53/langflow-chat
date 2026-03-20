@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
+	import { Chart, DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale } from 'chart.js';
+	Chart.register(DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale);
 	import { goto } from '$app/navigation';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
@@ -59,6 +61,22 @@
 	let analyticsData: any = null;
 	let analyticsLoading = false;
 	let analyticsError = '';
+
+	// --- Chart state ---
+	let showAvatarPicker = false;
+	let modelChartCanvas: HTMLCanvasElement;
+	let userChartCanvas: HTMLCanvasElement;
+	let modelChart: Chart | null = null;
+	let userChart: Chart | null = null;
+
+	const CHART_COLORS = [
+		'rgba(194, 166, 106, 0.88)',
+		'rgba(107, 149, 194, 0.88)',
+		'rgba(107, 194, 149, 0.88)',
+		'rgba(194, 107, 107, 0.88)',
+		'rgba(149, 107, 194, 0.88)',
+		'rgba(194, 172, 107, 0.88)',
+	];
 
 	// --- Helpers ---
 	async function saveProfile() {
@@ -175,6 +193,100 @@
 		}
 	}
 
+	function destroyCharts() {
+		modelChart?.destroy();
+		modelChart = null;
+		userChart?.destroy();
+		userChart = null;
+	}
+
+	async function initCharts() {
+		if (!analyticsData) return;
+		await tick();
+		destroyCharts();
+
+		// Personal model doughnut
+		if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
+			const byModel = analyticsData.personal.byModel;
+			modelChart = new Chart(modelChartCanvas, {
+				type: 'doughnut',
+				data: {
+					labels: byModel.map((r: any) => r.model),
+					datasets: [{
+						data: byModel.map((r: any) => Number(r.msgCount)),
+						backgroundColor: CHART_COLORS.slice(0, byModel.length),
+						borderWidth: 2,
+						borderColor: 'transparent',
+						hoverBorderColor: 'rgba(255,255,255,0.6)',
+						hoverOffset: 10,
+					}],
+				},
+				options: {
+					cutout: '66%',
+					animation: { animateRotate: true, duration: 700, easing: 'easeInOutQuart' },
+					plugins: {
+						legend: {
+							position: 'bottom',
+							labels: { padding: 18, font: { size: 12 }, color: 'rgba(128,128,128,0.9)' },
+						},
+						tooltip: {
+							callbacks: {
+								label: (ctx) => ` ${ctx.label}: ${ctx.raw} messages`,
+							},
+						},
+					},
+				},
+			});
+		}
+
+		// Admin: top users horizontal bar chart
+		if (isAdmin && userChartCanvas && analyticsData.perUser?.length > 0) {
+			const top10 = [...analyticsData.perUser]
+				.sort((a: any, b: any) => b.messageCount - a.messageCount)
+				.slice(0, 10);
+			userChart = new Chart(userChartCanvas, {
+				type: 'bar',
+				data: {
+					labels: top10.map((r: any) => r.displayName || r.email),
+					datasets: [
+						{
+							label: 'Messages',
+							data: top10.map((r: any) => r.messageCount),
+							backgroundColor: 'rgba(194, 166, 106, 0.8)',
+							borderRadius: 4,
+						},
+						{
+							label: 'Conversations',
+							data: top10.map((r: any) => r.conversationCount),
+							backgroundColor: 'rgba(107, 149, 194, 0.75)',
+							borderRadius: 4,
+						},
+					],
+				},
+				options: {
+					indexAxis: 'y',
+					animation: { duration: 500 },
+					plugins: {
+						legend: {
+							position: 'top',
+							labels: { font: { size: 12 }, color: 'rgba(128,128,128,0.9)', padding: 16 },
+						},
+					},
+					scales: {
+						x: {
+							grid: { color: 'rgba(128,128,128,0.1)' },
+							ticks: { color: 'rgba(128,128,128,0.8)', font: { size: 11 } },
+						},
+						y: {
+							grid: { display: false },
+							ticks: { color: 'rgba(128,128,128,0.9)', font: { size: 12 } },
+						},
+					},
+				},
+			});
+		}
+	}
+
 	async function loadAnalytics() {
 		analyticsLoading = true;
 		analyticsError = '';
@@ -182,6 +294,7 @@
 			const res = await fetch('/api/analytics');
 			if (!res.ok) throw new Error('Failed to load analytics');
 			analyticsData = await res.json();
+			await initCharts();
 		} catch (e: any) {
 			analyticsError = e.message;
 		} finally {
@@ -189,12 +302,22 @@
 		}
 	}
 
-	function handleTabChange(tab: Tab) {
+	async function handleTabChange(tab: Tab) {
 		activeTab = tab;
-		if (tab === 'analytics' && !analyticsData && !analyticsLoading) {
-			loadAnalytics();
+		if (tab === 'analytics') {
+			if (!analyticsData && !analyticsLoading) {
+				await loadAnalytics();
+			} else if (analyticsData) {
+				await initCharts();
+			}
+		} else {
+			destroyCharts();
 		}
 	}
+
+	onDestroy(() => {
+		destroyCharts();
+	});
 
 	function formatMs(ms: number): string {
 		if (!ms) return '—';
@@ -269,23 +392,38 @@
 			<!-- Avatar picker -->
 			<section class="settings-card mb-4">
 				<h2 class="settings-section-title">Avatar</h2>
-				<div class="flex flex-wrap gap-3">
-					{#each Array.from({ length: AVATAR_COUNT }, (_, i) => i) as avatarIndex}
-						<button
-							class="avatar-swatch rounded-full focus:outline-none"
-							class:avatar-selected={selectedAvatar === avatarIndex}
-							style="background: {AVATAR_COLORS[avatarIndex]}; width: 44px; height: 44px;"
-							on:click={() => selectAvatar(avatarIndex)}
-							aria-label="Avatar {avatarIndex + 1}"
-							title="Avatar {avatarIndex + 1}"
-						>
-							<span class="block text-lg font-semibold text-white leading-none text-center">
-								{data.userSettings.name ? data.userSettings.name[0].toUpperCase() : (data.userSettings.email[0] ?? '?').toUpperCase()}
-							</span>
-						</button>
-					{/each}
+				<div class="flex items-center gap-4">
+					<AvatarCircle
+						userId={data.userSettings.id}
+						name={data.userSettings.name ?? data.userSettings.email}
+						avatarId={selectedAvatar}
+						size={48}
+					/>
+					<button
+						class="btn-secondary text-sm"
+						on:click={() => (showAvatarPicker = !showAvatarPicker)}
+					>
+						{showAvatarPicker ? 'Done' : 'Change Avatar'}
+					</button>
 				</div>
-				<p class="mt-3 text-xs text-text-muted">Profile pictures will be available in a future update.</p>
+				{#if showAvatarPicker}
+					<div class="mt-4 flex flex-wrap gap-3">
+						{#each Array.from({ length: AVATAR_COUNT }, (_, i) => i) as avatarIndex}
+							<button
+								class="avatar-swatch rounded-full focus:outline-none"
+								class:avatar-selected={selectedAvatar === avatarIndex}
+								style="background: {AVATAR_COLORS[avatarIndex]}; width: 44px; height: 44px;"
+								on:click={() => selectAvatar(avatarIndex)}
+								aria-label="Avatar {avatarIndex + 1}"
+								title="Avatar {avatarIndex + 1}"
+							>
+								<span class="block text-lg font-semibold text-white leading-none text-center">
+									{data.userSettings.name ? data.userSettings.name[0].toUpperCase() : (data.userSettings.email[0] ?? '?').toUpperCase()}
+								</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</section>
 
 			<!-- Profile info -->
@@ -386,11 +524,9 @@
 					</div>
 
 					<!-- Translation -->
-					<div class="flex items-center justify-between">
-						<div>
-							<p class="settings-label mb-0">Translation</p>
-							<p class="text-xs text-text-muted mt-0.5">Auto-translate Hungarian ↔ English</p>
-						</div>
+					<div>
+						<p class="settings-label mb-0">Translation</p>
+						<p class="text-xs text-text-muted mt-0.5 mb-2">Auto-translate Hungarian ↔ English</p>
 						<button
 							class="toggle-btn"
 							class:toggle-on={translationEnabled}
@@ -474,20 +610,10 @@
 					</div>
 
 					{#if analyticsData.personal.byModel?.length > 0}
-						<div class="mt-4">
-							<p class="settings-label mb-2">Model usage</p>
-							<div class="flex flex-col gap-1.5">
-								{#each analyticsData.personal.byModel as row}
-									{@const total = analyticsData.personal.totalMessages || 1}
-									{@const pct = Math.round((Number(row.msgCount) / total) * 100)}
-									<div class="flex items-center gap-2">
-										<div class="w-20 shrink-0 text-xs text-text-muted">{row.model}</div>
-										<div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-elevated">
-											<div class="h-2 rounded-full bg-accent transition-all" style="width: {pct}%"></div>
-										</div>
-										<div class="w-10 shrink-0 text-right text-xs text-text-muted">{pct}%</div>
-									</div>
-								{/each}
+						<div class="mt-5">
+							<p class="settings-label mb-3">Model usage</p>
+							<div style="max-width: 280px; margin: 0 auto;">
+								<canvas bind:this={modelChartCanvas}></canvas>
 							</div>
 						</div>
 					{/if}
@@ -520,25 +646,18 @@
 							</div>
 						</div>
 
-						{#if analyticsData.system.byModel?.length > 0}
-							<div class="mt-4">
-								<p class="settings-label mb-2">Model usage (system)</p>
-								<div class="flex flex-col gap-1.5">
-									{#each analyticsData.system.byModel as row}
-										{@const total = analyticsData.system.totalMessages || 1}
-										{@const pct = Math.round((Number(row.msgCount) / total) * 100)}
-										<div class="flex items-center gap-2">
-											<div class="w-20 shrink-0 text-xs text-text-muted">{row.model}</div>
-											<div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-elevated">
-												<div class="h-2 rounded-full bg-accent transition-all" style="width: {pct}%"></div>
-											</div>
-											<div class="w-10 shrink-0 text-right text-xs text-text-muted">{pct}%</div>
-										</div>
-									{/each}
-								</div>
-							</div>
-						{/if}
 					</section>
+
+
+					<!-- User activity chart -->
+					{#if analyticsData.perUser?.length > 0}
+						<section class="settings-card mb-4">
+							<h2 class="settings-section-title">User Activity</h2>
+							<div style="height: {Math.min(analyticsData.perUser.slice(0,10).length * 36 + 60, 420)}px; position: relative;">
+								<canvas bind:this={userChartCanvas}></canvas>
+							</div>
+						</section>
+					{/if}
 
 					<!-- Per-user table -->
 					{#if analyticsData.perUser?.length > 0}
