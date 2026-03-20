@@ -231,8 +231,8 @@
 	const NUMBER_KEYS = new Set(['MAX_MESSAGE_LENGTH', 'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TEMPERATURE']);
 </script>
 
-<div class="h-full overflow-y-auto">
-	<div class="mx-auto max-w-2xl px-4 py-8">
+<div class="flex h-full w-full flex-1 flex-col overflow-y-auto">
+	<div class="mx-auto w-full max-w-2xl px-4 py-8">
 
 		<!-- Page header -->
 		<h1 class="mb-6 text-2xl font-semibold text-text-primary">Settings</h1>
@@ -313,7 +313,7 @@
 						/>
 					</div>
 					{#if profileMessage}
-						<p class="text-sm text-[color:var(--status-success)]">{profileMessage}</p>
+						<p class="text-sm text-success">{profileMessage}</p>
 					{/if}
 					{#if profileError}
 						<p class="text-sm text-danger">{profileError}</p>
@@ -345,7 +345,7 @@
 						<input id="confirm-pw" type="password" class="settings-input" bind:value={confirmPassword} autocomplete="new-password" />
 					</div>
 					{#if passwordMessage}
-						<p class="text-sm text-[color:var(--status-success)]">{passwordMessage}</p>
+						<p class="text-sm text-success">{passwordMessage}</p>
 					{/if}
 					{#if passwordError}
 						<p class="text-sm text-danger">{passwordError}</p>
@@ -657,7 +657,7 @@
 			</section>
 
 			{#if adminMessage}
-				<p class="mb-3 text-sm text-[color:var(--status-success)]">{adminMessage}</p>
+				<p class="mb-3 text-sm text-success">{adminMessage}</p>
 			{/if}
 			{#if adminError}
 				<p class="mb-3 text-sm text-danger">{adminError}</p>
@@ -721,7 +721,7 @@
 	}
 
 	.settings-card-danger {
-		border-color: var(--status-danger);
+		border-color: var(--danger);
 	}
 
 	.settings-section-title {
