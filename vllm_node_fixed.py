@@ -231,6 +231,23 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             range_spec=RangeSpec(min=0, max=1, step=0.01),
             show=True,
         ),
+        SliderInput(
+            name="top_p",
+            display_name="Top P",
+            value=1.0,
+            range_spec=RangeSpec(min=0, max=1, step=0.01),
+            advanced=True,
+            info="Nucleus sampling: only tokens whose cumulative probability reaches top_p are considered. "
+                 "1.0 disables filtering (default).",
+        ),
+        IntInput(
+            name="top_k",
+            display_name="Top K",
+            value=-1,
+            advanced=True,
+            info="Limits sampling to the top-k most likely tokens at each step. "
+                 "Set to -1 to disable (vLLM default).",
+        ),
         IntInput(
             name="seed",
             display_name="Seed",
@@ -304,6 +321,11 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         chat_template_kwargs["enable_thinking"] = True
         user_extra_body["chat_template_kwargs"] = chat_template_kwargs
 
+        # top_k is vLLM-specific and not part of the OpenAI spec, so it goes in extra_body.
+        # -1 is vLLM's default (no limit), so we only set it when the user has changed it.
+        if self.top_k is not None and self.top_k != -1:
+            user_extra_body["top_k"] = self.top_k
+
         parameters: dict[str, Any] = {
             "api_key": SecretStr(self.api_key).get_secret_value() if self.api_key else None,
             "model": self.model_name,
@@ -312,6 +334,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "extra_body": user_extra_body,
             "base_url": self.api_base or "http://localhost:8000/v1",
             "temperature": self.temperature if self.temperature is not None else 0.1,
+            "top_p": self.top_p if self.top_p is not None else 1.0,
             "system_prompt": self.system_prompt or "",
         }
 
