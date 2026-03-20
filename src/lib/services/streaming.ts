@@ -186,8 +186,16 @@ export function streamChat(
 		if (insideInlineThinking) {
 			callbacks.onThinking(inlineThinkingBuffer);
 		} else {
-			fullText += inlineThinkingBuffer;
-			callbacks.onToken(inlineThinkingBuffer);
+			// A partial open tag buffered at flush time (e.g. "<thinking" with no ">" yet)
+			// must be discarded rather than leaked as visible text. This mirrors the same
+			// guard in the backend's flushInlineThinkingBuffer.
+			const isPartialOpenTag =
+				THINKING_OPEN_TAG.startsWith(inlineThinkingBuffer) ||
+				HERMES_THINKING_OPEN_TAG.startsWith(inlineThinkingBuffer);
+			if (!isPartialOpenTag) {
+				fullText += inlineThinkingBuffer;
+				callbacks.onToken(inlineThinkingBuffer);
+			}
 		}
 
 		inlineThinkingBuffer = '';

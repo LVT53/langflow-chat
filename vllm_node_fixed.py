@@ -38,6 +38,8 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     reasoning_open_tag: ClassVar[str] = "<thinking>"
     reasoning_close_tag: ClassVar[str] = "</thinking>"
 
+    system_prompt: str = ""
+
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
         extra_body = dict(payload.get("extra_body") or {})
         chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
@@ -87,10 +89,14 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             return reasoning
         return None
 
-    async def _astream(self, *args: Any, **kwargs: Any):
+    async def _astream(self, messages: Any, *args: Any, **kwargs: Any):
         """Stream model output while preserving reasoning in content tags."""
+        if self.system_prompt:
+            from langchain_core.messages import SystemMessage
+            if not any(isinstance(m, SystemMessage) for m in messages):
+                messages = [SystemMessage(content=self.system_prompt)] + list(messages)
         kwargs["stream"] = True
-        payload = self._get_request_payload(*args, **kwargs)
+        payload = self._get_request_payload(messages, *args, **kwargs)
         payload = self._merge_reasoning_body(payload)
 
         logger.debug("Executing Nemotron reasoning stream request")
@@ -119,6 +125,14 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
             default_chunk_class = generation_chunk.message.__class__
             yield generation_chunk
+
+    def _generate(self, messages: Any, *args: Any, **kwargs: Any) -> ChatResult:
+        """Inject system prompt for non-streaming calls."""
+        if self.system_prompt:
+            from langchain_core.messages import SystemMessage
+            if not any(isinstance(m, SystemMessage) for m in messages):
+                messages = [SystemMessage(content=self.system_prompt)] + list(messages)
+        return super()._generate(messages, *args, **kwargs)
 
     def _create_chat_result(self, response: Any, generation_info: dict[str, Any] | None = None) -> ChatResult:
         """Preserve non-stream reasoning by prepending tagged reasoning to content."""
@@ -274,6 +288,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         logger.info(f"model_name field value: {self.model_name}")
         logger.info(f"api_base field value: {self.api_base}")
         logger.info(f"api_key is set: {bool(self.api_key)}")
+        logger.info(f"system_prompt is set: {bool(self.system_prompt)}")
         
         # Validate model exists before trying to use it
         if not self._validate_model_exists(self.api_base, self.model_name, self.api_key or None):
@@ -297,6 +312,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "extra_body": user_extra_body,
             "base_url": self.api_base or "http://localhost:8000/v1",
             "temperature": self.temperature if self.temperature is not None else 0.1,
+            "system_prompt": self.system_prompt or "",
         }
 
         if self.seed is not None and self.seed != -1:

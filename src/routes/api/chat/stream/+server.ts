@@ -759,6 +759,14 @@ export const POST: RequestHandler = async (event) => {
 					return emitThinking(remainder);
 				}
 
+				// A partial open tag buffered at flush time (e.g. "<thinking" with no ">" yet)
+				// must be discarded rather than leaked as visible text. This can happen when the
+				// stream ends or an agent-loop iteration resets mid-tag.
+				const isPartialOpenTag =
+					THINKING_OPEN_TAG.startsWith(remainder) ||
+					HERMES_THINKING_OPEN_TAG.startsWith(remainder);
+				if (isPartialOpenTag) return true;
+
 				return emitVisibleToken(remainder);
 			};
 
