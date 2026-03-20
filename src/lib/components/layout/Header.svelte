@@ -116,10 +116,6 @@
 		updateMenuPosition();
 	}
 
-	$: if (mobileMenuOpen && $theme) {
-		setMenuBaseBackground();
-	}
-
 	onMount(() => {
 		const syncMenuPosition = () => {
 			if (mobileMenuOpen) {
