@@ -108,13 +108,15 @@
 	}
 </script>
 
-<div class="group flex w-full flex-col {isUser ? 'items-end' : 'items-start'} gap-md py-md fade-in">
+<div class="group flex w-full flex-col {isUser && !isEditing ? 'items-end' : 'items-start'} gap-md py-md fade-in">
 	<div
 		data-testid={isUser ? 'user-message' : 'assistant-message'}
 		class="relative flex flex-col font-serif
-		{isUser
+		{isUser && !isEditing
 			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]'
-			: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
+			: isUser
+				? 'w-full max-w-full rounded-md border border-border bg-surface-elevated p-md text-text-primary shadow-sm'
+				: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
 		{#if !isUser && hasThinking}
 			<ThinkingBlock
@@ -125,18 +127,18 @@
 		{/if}
 		{#if isUser}
 			{#if isEditing}
-				<div class="flex flex-col gap-2">
+				<div class="flex flex-col gap-3">
 					<textarea
 						bind:this={editTextarea}
-						class="w-full resize-none rounded-md border border-border bg-surface-page px-3 py-2 font-serif text-[16px] leading-[1.6] text-text-primary focus:border-focus-ring focus:outline-none focus:ring-2 focus:ring-focus-ring"
+						class="w-full resize-none rounded-md border border-border bg-surface-page px-4 py-3 font-serif text-[16px] leading-[1.6] text-text-primary focus:border-focus-ring focus:outline-none focus:ring-2 focus:ring-focus-ring"
 						bind:value={editText}
 						on:keydown={handleEditKeydown}
-						rows={Math.min(10, Math.max(2, editText.split('\n').length))}
+						rows={Math.min(10, Math.max(3, editText.split('\n').length))}
 					></textarea>
-					<div class="flex items-center gap-2 justify-end">
+					<div class="flex items-center gap-3 justify-end">
 						<span class="text-xs text-text-muted">⌘↵ to send</span>
-						<button type="button" class="btn-secondary !py-1 !px-3 !text-sm" on:click={cancelEdit}>Cancel</button>
-						<button type="button" class="btn-primary !py-1 !px-3 !text-sm" on:click={submitEdit} disabled={!editText.trim()}>Send</button>
+						<button type="button" class="btn-secondary" on:click={cancelEdit}>Cancel</button>
+						<button type="button" class="btn-primary" on:click={submitEdit} disabled={!editText.trim()}>Send</button>
 					</div>
 				</div>
 			{:else}
