@@ -4,7 +4,8 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import {
 	getConversation,
 	updateConversationTitle,
-	deleteConversation
+	deleteConversation,
+	moveConversationToProject
 } from '$lib/server/services/conversations';
 import { listMessages } from '$lib/server/services/messages';
 
@@ -37,7 +38,25 @@ export const PATCH: RequestHandler = async (event) => {
 	const { id } = event.params;
 
 	const body = await event.request.json().catch(() => null);
-	if (!body || typeof body.title !== 'string' || body.title.trim().length === 0) {
+	if (!body) {
+		return json({ error: 'Body is required' }, { status: 400 });
+	}
+
+	// Handle project assignment
+	if ('projectId' in body) {
+		const projectId = body.projectId === null || typeof body.projectId === 'string' ? body.projectId : undefined;
+		if (projectId === undefined) {
+			return json({ error: 'projectId must be a string or null' }, { status: 400 });
+		}
+		const conversation = await moveConversationToProject(user.id, id, projectId);
+		if (!conversation) {
+			return json({ error: 'Conversation not found' }, { status: 404 });
+		}
+		return json(conversation);
+	}
+
+	// Handle title rename
+	if (typeof body.title !== 'string' || body.title.trim().length === 0) {
 		return json({ error: 'Title is required' }, { status: 400 });
 	}
 

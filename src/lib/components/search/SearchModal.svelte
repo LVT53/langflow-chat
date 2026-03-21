@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
+	import { projects } from '$lib/stores/projects';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
 
 	export let isOpen = false;
@@ -20,6 +21,7 @@
 
 	$: normalizedSearchQuery = searchQuery.trim().toLowerCase();
 	$: searchableConversations = $conversations;
+	$: projectsMap = Object.fromEntries($projects.map(p => [p.id, p.name]));
 	$: searchResults = normalizedSearchQuery
 		? searchableConversations.filter((conversation) =>
 				conversation.title.toLowerCase().includes(normalizedSearchQuery)
@@ -228,8 +230,13 @@
 										{conversation.title}
 									</div>
 									{#if conversation.id === $currentConversationId}
-										<div class="mt-1 text-[13px] font-sans text-accent">
-											Current conversation
+										<div class="mt-0.5 text-[12px] font-sans text-accent">Current conversation</div>
+									{:else if conversation.projectId && projectsMap[conversation.projectId]}
+										<div class="mt-0.5 flex items-center gap-1 text-[12px] font-sans text-text-muted">
+											<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+												<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+											</svg>
+											{projectsMap[conversation.projectId]}
 										</div>
 									{/if}
 								</div>

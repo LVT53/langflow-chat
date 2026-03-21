@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import type { ConversationListItem } from '$lib/types';
-
+	import type { ConversationListItem, Project } from '$lib/types';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 
 	export let conversation: ConversationListItem;
 	export let active: boolean = false;
 	export let menuOpen: boolean = false;
+	export let projects: Project[] = [];
 
 	const dispatch = createEventDispatcher<{
 		select: { id: string };
 		rename: { id: string; title: string };
 		delete: { id: string };
+		moveToProject: { id: string; projectId: string | null };
 		menuToggle: { id: string; open: boolean };
 		menuClose: { id: string };
 	}>();
@@ -24,6 +25,9 @@
 	let showDeleteConfirm = false;
 	let menuPositionStyle = '';
 	let menuBaseBackground = '';
+	let showProjectSubmenu = false;
+	let submenuRef: HTMLDivElement;
+	let submenuPositionStyle = '';
 
 	function setMenuBaseBackground() {
 		if (typeof document === 'undefined') return;
@@ -45,7 +49,6 @@
 	}
 
 	function handleSelect(e?: MouseEvent) {
-		// Only select if not currently editing and menu is closed
 		if (!isEditing && !menuOpen) {
 			dispatch('select', { id: conversation.id });
 		}
@@ -55,6 +58,7 @@
 		e.stopPropagation();
 		isEditing = true;
 		editTitle = conversation.title;
+		showProjectSubmenu = false;
 		dispatch('menuClose', { id: conversation.id });
 		setTimeout(() => {
 			if (inputRef) {
@@ -85,6 +89,7 @@
 
 	function handleDelete(e: MouseEvent) {
 		e.stopPropagation();
+		showProjectSubmenu = false;
 		dispatch('menuClose', { id: conversation.id });
 		showDeleteConfirm = true;
 	}
@@ -100,6 +105,7 @@
 
 	function toggleMenu(e: MouseEvent) {
 		e.stopPropagation();
+		showProjectSubmenu = false;
 		if (!menuOpen) {
 			updateMenuPosition();
 		}
@@ -108,16 +114,17 @@
 
 	function handleOutsideClick(e: MouseEvent) {
 		const target = e.target as Node;
-		// Only handle if menu is open and click is outside menu and trigger button
 		if (
 			menuOpen &&
 			menuRef &&
 			triggerRef &&
 			!menuRef.contains(target) &&
-			!triggerRef.contains(target)
+			!triggerRef.contains(target) &&
+			!(submenuRef && submenuRef.contains(target))
 		) {
 			e.preventDefault();
 			e.stopPropagation();
+			showProjectSubmenu = false;
 			dispatch('menuClose', { id: conversation.id });
 		}
 	}
@@ -126,7 +133,7 @@
 		if (!triggerRef) return;
 		setMenuBaseBackground();
 		const rect = triggerRef.getBoundingClientRect();
-		const menuWidth = 176;
+		const menuWidth = 190;
 		const viewportPadding = 12;
 		const left = Math.min(
 			window.innerWidth - menuWidth - viewportPadding,
@@ -134,6 +141,35 @@
 		);
 		const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
 		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
+	}
+
+	function toggleProjectSubmenu(e: MouseEvent) {
+		e.stopPropagation();
+		showProjectSubmenu = !showProjectSubmenu;
+		if (showProjectSubmenu) {
+			updateSubmenuPosition();
+		}
+	}
+
+	function updateSubmenuPosition() {
+		if (!menuRef) return;
+		const rect = menuRef.getBoundingClientRect();
+		const submenuWidth = 200;
+		const viewportPadding = 12;
+		// Try right side first, fall back to left
+		let left = rect.right + 4;
+		if (left + submenuWidth > window.innerWidth - viewportPadding) {
+			left = rect.left - submenuWidth - 4;
+		}
+		const top = Math.min(window.innerHeight - 12, rect.top);
+		submenuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${submenuWidth}px;`;
+	}
+
+	function handleMoveToProject(e: MouseEvent, projectId: string | null) {
+		e.stopPropagation();
+		showProjectSubmenu = false;
+		dispatch('menuClose', { id: conversation.id });
+		dispatch('moveToProject', { id: conversation.id, projectId });
 	}
 
 	$: if (menuOpen) {
@@ -233,6 +269,23 @@
 					</svg>
 					<span>Rename</span>
 				</button>
+
+				{#if projects.length > 0 || conversation.projectId}
+					<button
+						class="conversation-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+						class:conversation-option-active={showProjectSubmenu}
+						on:click={toggleProjectSubmenu}
+					>
+						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+						</svg>
+						<span class="flex-1">Move to project</span>
+						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted mr-1">
+							<polyline points="9 18 15 12 9 6" />
+						</svg>
+					</button>
+				{/if}
+
 				<button
 					data-testid="delete-option"
 					class="conversation-option conversation-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -247,6 +300,46 @@
 					</svg>
 					<span>Delete</span>
 				</button>
+			</div>
+		{/if}
+
+		<!-- Project submenu flyout -->
+		{#if menuOpen && showProjectSubmenu}
+			<div
+				bind:this={submenuRef}
+				use:portal
+				class="conversation-menu z-[10000] overflow-hidden rounded-[0.75rem] border p-[5px]"
+				style={`${submenuPositionStyle} --conversation-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+			>
+				{#each projects as proj (proj.id)}
+					<button
+						class="conversation-option flex min-h-[36px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+						class:conversation-option-current={conversation.projectId === proj.id}
+						on:click={(e) => handleMoveToProject(e, proj.id)}
+					>
+						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+						</svg>
+						<span class="truncate">{proj.name}</span>
+						{#if conversation.projectId === proj.id}
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="ml-auto shrink-0 text-accent">
+								<polyline points="20 6 9 17 4 12" />
+							</svg>
+						{/if}
+					</button>
+				{/each}
+				{#if conversation.projectId}
+					<div class="my-[3px] border-t border-border-subtle mx-1"></div>
+					<button
+						class="conversation-option flex min-h-[36px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-muted transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+						on:click={(e) => handleMoveToProject(e, null)}
+					>
+						<svg class="conversation-option-icon opacity-60" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+						</svg>
+						<span>Remove from project</span>
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -294,6 +387,14 @@
 		background: rgba(194, 166, 106, 0.24) !important;
 	}
 
+	.conversation-option-active {
+		background: rgba(194, 166, 106, 0.18) !important;
+	}
+
+	.conversation-option-current {
+		background: rgba(194, 166, 106, 0.15) !important;
+	}
+
 	.conversation-option-danger:hover,
 	.conversation-option-danger:focus-visible {
 		background: rgba(186, 77, 77, 0.14) !important;
@@ -302,6 +403,7 @@
 	.conversation-option-icon {
 		margin-right: 7px;
 		color: color-mix(in srgb, var(--surface-overlay) 45%, var(--text-primary) 55%);
+		flex-shrink: 0;
 	}
 
 	.conversation-option-icon-danger {
@@ -311,6 +413,10 @@
 	:global(.dark) .conversation-option:hover,
 	:global(.dark) .conversation-option:focus-visible {
 		background: rgba(194, 166, 106, 0.3) !important;
+	}
+
+	:global(.dark) .conversation-option-active {
+		background: rgba(194, 166, 106, 0.25) !important;
 	}
 
 	:global(.dark) .conversation-option-danger:hover,

@@ -13,10 +13,11 @@
 	import ConversationList from '../sidebar/ConversationList.svelte';
 	import SearchModal from '../search/SearchModal.svelte';
 	import AvatarCircle from '../ui/AvatarCircle.svelte';
-	import type { ConversationListItem, SessionUser } from '$lib/types';
+	import type { ConversationListItem, SessionUser, Project } from '$lib/types';
 
 	export let open = false;
 	export let conversationsData: ConversationListItem[] = [];
+	export let projectsData: Project[] = [];
 	export let user: SessionUser | null = null;
 
 	const dispatch = createEventDispatcher();
@@ -28,7 +29,6 @@
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
-		// Store current conversation ID to trigger landing page animation
 		const currentId = $currentConversationId;
 		if (currentId && typeof window !== 'undefined') {
 			window.sessionStorage.setItem('previous-conversation-id', currentId);
@@ -101,15 +101,14 @@
 	class:sidebar-collapsed={isCollapsed}
 	class:transitions-enabled={transitionsEnabled}
 >
-	<!-- Sidebar Header: Title + Collapse button (desktop) / Close button (mobile) -->
+	<!-- Sidebar Header -->
 	<div
 		class="sidebar-header flex h-[64px] shrink-0 items-center border-b border-border"
 		class:justify-between={!isCollapsed}
 		class:justify-center={isCollapsed}
-		class:px-lg={!isCollapsed}
+		class:px-3={!isCollapsed}
 		class:px-0={isCollapsed}
 	>
-		<!-- AlfyAI Title (hidden when collapsed) -->
 		{#if !isCollapsed}
 			<div class="overflow-hidden whitespace-nowrap text-[20px] font-sans font-semibold tracking-[-0.03em] text-text-primary opacity-90 transition-opacity duration-150">
 				AlfyAI
@@ -120,17 +119,16 @@
 		<button
 			class="desktop-only btn-icon-bare sidebar-rail-button"
 			class:ml-auto={!isCollapsed}
+			class:collapse-btn-expanded={!isCollapsed}
 			on:click={toggleCollapse}
 			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 			title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 		>
 			{#if isCollapsed}
-				<!-- Chevron right (expand) -->
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
 					<polyline points="9 18 15 12 9 6" />
 				</svg>
 			{:else}
-				<!-- Chevron left (collapse) -->
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
 					<polyline points="15 18 9 12 15 6" />
 				</svg>
@@ -143,28 +141,18 @@
 			on:click={() => sidebarOpen.set(false)}
 			aria-label="Close sidebar"
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="24"
-				height="24"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
+			<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<line x1="18" x2="6" y1="6" y2="18" />
 				<line x1="6" x2="18" y1="6" y2="18" />
 			</svg>
 		</button>
 	</div>
 
-	<!-- New Chat Button -->
-	<div class="shrink-0 py-md" class:px-lg={!isCollapsed} class:px-0={isCollapsed}>
+	<!-- Search + New Chat -->
+	<div class="shrink-0 py-2" class:px-3={!isCollapsed} class:px-0={isCollapsed}>
 		{#if isCollapsed}
 			<!-- Icon-only when collapsed -->
-			<div class="flex w-full flex-col items-center gap-1">
+			<div class="flex w-full flex-col items-center gap-2">
 				<button
 					data-testid="new-conversation"
 					class="btn-icon-bare sidebar-rail-button w-full text-accent hover:text-accent-hover"
@@ -172,9 +160,9 @@
 					title="New chat"
 					aria-label="New chat"
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="12" x2="12" y1="5" y2="19" />
-						<line x1="5" x2="19" y1="12" y2="12" />
+					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
 					</svg>
 				</button>
 				<button
@@ -191,92 +179,117 @@
 				</button>
 			</div>
 		{:else}
-			<div class="flex flex-col gap-1.5">
-				<button
-					data-testid="new-conversation"
-					class="btn-primary flex w-full items-center justify-center gap-2 rounded-lg text-sm shadow-sm"
-					on:click={handleNewConversation}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="12" x2="12" y1="5" y2="19" />
-						<line x1="5" x2="19" y1="12" y2="12" />
-					</svg>
-					New chat
-				</button>
+			<!-- Expanded: search pill + compose icon in a single row -->
+			<div class="flex items-center gap-2">
+				<!-- Search pill -->
 				<button
 					type="button"
-					class="btn-secondary flex w-full items-center justify-center gap-2 rounded-lg px-4 text-sm"
+					class="search-pill flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-text-muted transition-colors duration-150 hover:border-border-focus hover:bg-surface-page focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={openSearchModal}
+					aria-label="Search conversations"
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+					<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
 						<circle cx="11" cy="11" r="7"></circle>
 						<path d="m20 20-3.5-3.5"></path>
 					</svg>
-					<span>Search</span>
+					<span class="flex-1 truncate">Search</span>
+					<kbd class="desktop-only hidden shrink-0 rounded px-1 py-0.5 font-mono text-[10px] text-text-muted/60 sm:inline-block" style="background: color-mix(in srgb, var(--surface-elevated) 80%, var(--border-default) 20%);">⌘K</kbd>
+				</button>
+				<!-- New chat compose button -->
+				<button
+					data-testid="new-conversation"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:bg-surface-elevated hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					on:click={handleNewConversation}
+					title="New chat"
+					aria-label="New chat"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+					</svg>
 				</button>
 			</div>
 		{/if}
 	</div>
 
+	<!-- Conversation list -->
 	<div class="flex-1 overflow-y-auto py-sm" class:px-sm={!isCollapsed} class:px-1={isCollapsed} style="pointer-events: auto;">
 		{#if !isCollapsed}
-			<ConversationList initialConversations={conversationsData} />
+			<ConversationList
+				initialConversations={conversationsData}
+				initialProjects={projectsData}
+			/>
 		{/if}
 	</div>
 
-	<div
-		class="shrink-0 border-t border-border py-sm"
-		class:px-lg={!isCollapsed}
-		class:px-0={isCollapsed}
-	>
-		<div class="flex flex-col">
-			<!-- Profile / Settings button -->
-			<button
-				type="button"
-				class="btn-ghost flex w-full items-center rounded-lg py-1.5 text-sm text-text-secondary hover:text-text-primary"
-				class:justify-start={!isCollapsed}
-				class:justify-center={isCollapsed}
-				class:gap-3={!isCollapsed}
-				class:px-3={!isCollapsed}
-				on:click={() => goto('/settings')}
-				title={isCollapsed ? 'Settings' : ''}
-				aria-label="Open settings"
-			>
-				<AvatarCircle
-					userId={user?.id ?? 'default'}
-					name={user?.displayName ?? null}
-					avatarId={user?.avatarId ?? null}
-					size={28}
-				/>
-				{#if !isCollapsed}
+	<!-- Bottom: Profile + Logout -->
+	<div class="shrink-0 border-t border-border py-sm" class:px-0={isCollapsed} class:px-3={!isCollapsed}>
+		{#if isCollapsed}
+			<!-- Collapsed: two stacked icons with doubled gap -->
+			<div class="flex flex-col items-center gap-2">
+				<button
+					type="button"
+					class="btn-icon-bare sidebar-rail-button w-full"
+					on:click={() => goto('/settings')}
+					title="Settings"
+					aria-label="Open settings"
+				>
+					<AvatarCircle
+						userId={user?.id ?? 'default'}
+						name={user?.displayName ?? null}
+						avatarId={user?.avatarId ?? null}
+						size={22}
+					/>
+				</button>
+				<button
+					type="button"
+					class="btn-icon-bare sidebar-rail-button w-full text-icon-muted hover:text-danger"
+					on:click={handleLogout}
+					title="Logout"
+					aria-label="Logout"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+						<polyline points="16 17 21 12 16 7"></polyline>
+						<line x1="21" y1="12" x2="9" y2="12"></line>
+					</svg>
+				</button>
+			</div>
+		{:else}
+			<!-- Expanded: profile info (→ settings) + logout icon in one row -->
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					class="profile-btn flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-1.5 py-1.5 text-sm text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					on:click={() => goto('/settings')}
+					aria-label="Open settings"
+				>
+					<AvatarCircle
+						userId={user?.id ?? 'default'}
+						name={user?.displayName ?? null}
+						avatarId={user?.avatarId ?? null}
+						size={28}
+					/>
 					<div class="min-w-0 flex-1 text-left">
 						<div class="truncate text-sm font-medium text-text-primary">{user?.displayName ?? 'Profile'}</div>
 						<div class="truncate text-xs text-text-muted">{user?.email ?? ''}</div>
 					</div>
-				{/if}
-			</button>
-			<button
-				type="button"
-				class="btn-ghost flex w-full items-center rounded-lg py-1.5 text-sm text-text-secondary hover:text-danger"
-				class:justify-start={!isCollapsed}
-				class:justify-center={isCollapsed}
-				class:gap-3={!isCollapsed}
-				class:px-3={!isCollapsed}
-				class:px-0={isCollapsed}
-				on:click={handleLogout}
-				title={isCollapsed ? "Logout" : ""}
-				aria-label="Logout"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-					<polyline points="16 17 21 12 16 7"></polyline>
-					<line x1="21" y1="12" x2="9" y2="12"></line>
-				</svg>
-				{#if !isCollapsed}
-					<span>Logout</span>
-				{/if}
-			</button>
-		</div>
+				</button>
+				<button
+					type="button"
+					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					on:click={handleLogout}
+					title="Logout"
+					aria-label="Logout"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+						<polyline points="16 17 21 12 16 7"></polyline>
+						<line x1="21" y1="12" x2="9" y2="12"></line>
+					</svg>
+				</button>
+			</div>
+		{/if}
 	</div>
 </aside>
 
@@ -305,9 +318,49 @@
 	}
 
 	.sidebar-rail-button {
-		min-height: 48px !important;
+		min-height: 36px !important;
 		min-width: 48px !important;
 		border-radius: 0 !important;
+	}
+
+	.search-pill {
+		background: color-mix(in srgb, var(--surface-elevated) 60%, var(--surface-overlay) 40%);
+	}
+
+	.search-pill:hover {
+		background: var(--surface-page);
+	}
+
+	.compose-btn {
+		border: 1px solid transparent;
+	}
+
+	.compose-btn:hover {
+		border-color: var(--border-subtle);
+	}
+
+	.logout-btn {
+		border: 1px solid transparent;
+	}
+
+	.logout-btn:hover {
+		background: color-mix(in srgb, var(--border-default) 18%, transparent 82%);
+		border-color: var(--border-default);
+	}
+
+	.profile-btn {
+		border: 1px solid transparent;
+		border-radius: 0.5rem;
+	}
+
+	.profile-btn:hover {
+		background: color-mix(in srgb, var(--border-default) 18%, transparent 82%);
+		border-color: var(--border-default);
+	}
+
+	.sidebar-rail-button.collapse-btn-expanded {
+		min-width: 36px !important;
+		width: 36px;
 	}
 
 	@media (max-width: 1023px) {

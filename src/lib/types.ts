@@ -37,10 +37,21 @@ export interface SessionUser {
   avatarId: number | null;
 }
 
+// Project interface: a named folder grouping conversations
+export interface Project {
+  id: string;
+  name: string;
+  color?: string | null;
+  sortOrder: number;
+  createdAt: number; // Unix timestamp
+  updatedAt: number; // Unix timestamp
+}
+
 // Conversation interface: id (Langflow session_id), title, createdAt, updatedAt (Unix timestamps)
 export interface Conversation {
   id: string; // Langflow session_id
   title: string;
+  projectId?: string | null;
   createdAt: number; // Unix timestamp
   updatedAt: number; // Unix timestamp
 }
@@ -55,6 +66,7 @@ export interface ConversationListItem {
   id: string;
   title: string;
   updatedAt: number; // Unix timestamp
+  projectId?: string | null;
 }
 
 // MessageRole type: 'user' | 'assistant'

@@ -1,0 +1,282 @@
+<script lang="ts">
+	import { createEventDispatcher, onMount } from 'svelte';
+	import type { Project } from '$lib/types';
+	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+
+	export let project: Project;
+	export let expanded: boolean = true;
+	export let menuOpen: boolean = false;
+
+	const dispatch = createEventDispatcher<{
+		toggle: { id: string; expanded: boolean };
+		rename: { id: string; name: string };
+		delete: { id: string };
+		menuToggle: { id: string; open: boolean };
+		menuClose: { id: string };
+	}>();
+
+	let isEditing = false;
+	let editName = '';
+	let inputRef: HTMLInputElement;
+	let menuRef: HTMLDivElement;
+	let triggerRef: HTMLButtonElement;
+	let showDeleteConfirm = false;
+	let menuPositionStyle = '';
+	let menuBaseBackground = '';
+
+	function setMenuBaseBackground() {
+		if (typeof document === 'undefined') return;
+		const isDark = document.documentElement.classList.contains('dark');
+		menuBaseBackground = isDark ? 'rgb(33 35 38 / 1)' : 'rgb(241 239 235 / 1)';
+	}
+
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				if (node.parentNode) node.parentNode.removeChild(node);
+			}
+		};
+	}
+
+	function updateMenuPosition() {
+		if (!triggerRef) return;
+		setMenuBaseBackground();
+		const rect = triggerRef.getBoundingClientRect();
+		const menuWidth = 176;
+		const viewportPadding = 12;
+		const left = Math.min(
+			window.innerWidth - menuWidth - viewportPadding,
+			Math.max(viewportPadding, rect.right - menuWidth)
+		);
+		const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
+		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
+	}
+
+	$: if (menuOpen) updateMenuPosition();
+
+	function toggleMenu(e: MouseEvent) {
+		e.stopPropagation();
+		if (!menuOpen) updateMenuPosition();
+		dispatch('menuToggle', { id: project.id, open: !menuOpen });
+	}
+
+	function handleOutsideClick(e: MouseEvent) {
+		const target = e.target as Node;
+		if (menuOpen && menuRef && triggerRef && !menuRef.contains(target) && !triggerRef.contains(target)) {
+			e.preventDefault();
+			e.stopPropagation();
+			dispatch('menuClose', { id: project.id });
+		}
+	}
+
+	function startRename(e: MouseEvent) {
+		e.stopPropagation();
+		isEditing = true;
+		editName = project.name;
+		dispatch('menuClose', { id: project.id });
+		setTimeout(() => {
+			if (inputRef) { inputRef.focus(); inputRef.select(); }
+		}, 0);
+	}
+
+	function saveRename() {
+		if (isEditing) {
+			isEditing = false;
+			const trimmed = editName.trim();
+			if (trimmed && trimmed !== project.name) {
+				dispatch('rename', { id: project.id, name: trimmed });
+			}
+		}
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+		else if (e.key === 'Escape') { isEditing = false; }
+	}
+
+	function handleDelete(e: MouseEvent) {
+		e.stopPropagation();
+		dispatch('menuClose', { id: project.id });
+		showDeleteConfirm = true;
+	}
+
+	function confirmDelete() {
+		showDeleteConfirm = false;
+		dispatch('delete', { id: project.id });
+	}
+
+	onMount(() => {
+		const sync = () => { if (menuOpen) updateMenuPosition(); };
+		window.addEventListener('resize', sync);
+		window.addEventListener('scroll', sync, true);
+		return () => {
+			window.removeEventListener('resize', sync);
+			window.removeEventListener('scroll', sync, true);
+		};
+	});
+</script>
+
+<svelte:window on:click={handleOutsideClick} />
+
+<!-- Project folder row -->
+<div
+	class="group flex min-h-[32px] cursor-pointer select-none items-center rounded-lg border border-transparent pr-0.5 pl-1 transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated"
+	on:click={() => dispatch('toggle', { id: project.id, expanded: !expanded })}
+	on:keydown={(e) => e.key === 'Enter' && dispatch('toggle', { id: project.id, expanded: !expanded })}
+	role="button"
+	tabindex="0"
+>
+	<!-- Expand chevron -->
+	<span
+		class="mr-1 flex h-4 w-4 shrink-0 items-center justify-center text-icon-muted transition-transform duration-150"
+		class:rotate-90={expanded}
+	>
+		<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+			<polyline points="9 18 15 12 9 6" />
+		</svg>
+	</span>
+
+	<!-- Folder icon -->
+	<span class="mr-1.5 flex shrink-0 items-center" class:text-accent={expanded} class:text-icon-muted={!expanded}>
+		{#if expanded}
+			<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M6 14a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h5a2 2 0 0 1 2 2v2"/>
+				<path d="M22 18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v7z"/>
+			</svg>
+		{:else}
+			<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+			</svg>
+		{/if}
+	</span>
+
+	<!-- Project name / edit input -->
+	<div class="min-w-0 flex-1 overflow-hidden">
+		{#if isEditing}
+			<input
+				bind:this={inputRef}
+				bind:value={editName}
+				on:blur={saveRename}
+				on:keydown={handleKeydown}
+				on:click|stopPropagation
+				class="w-full rounded-sm border border-border bg-surface-page px-1.5 py-0.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+			/>
+		{:else}
+			<span class="truncate text-[13px] font-medium font-sans text-text-primary">{project.name}</span>
+		{/if}
+	</div>
+
+	<!-- Context menu trigger -->
+	<button
+		bind:this={triggerRef}
+		class="btn-icon-bare ml-1 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-icon-muted opacity-100 transition-colors duration-150 hover:bg-surface-page hover:text-icon-primary focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
+		class:md:opacity-100={menuOpen}
+		on:click={toggleMenu}
+		aria-label="Project options"
+	>
+		<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+		</svg>
+	</button>
+
+	{#if menuOpen}
+		<div
+			bind:this={menuRef}
+			use:portal
+			class="project-menu z-[9999] overflow-hidden rounded-[0.75rem] border p-[5px]"
+			style={`${menuPositionStyle} --project-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+		>
+			<button
+				class="project-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+				on:click={startRename}
+			>
+				<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+				</svg>
+				<span>Rename</span>
+			</button>
+			<button
+				class="project-option project-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+				on:click={handleDelete}
+			>
+				<svg class="project-option-icon project-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+				</svg>
+				<span>Delete</span>
+			</button>
+		</div>
+	{/if}
+</div>
+
+{#if showDeleteConfirm}
+	<ConfirmDialog
+		title="Delete this project?"
+		message="The project will be deleted. All chats inside will become unorganized."
+		confirmText="Delete"
+		cancelText="Cancel"
+		confirmVariant="danger"
+		on:confirm={confirmDelete}
+		on:cancel={() => (showDeleteConfirm = false)}
+	/>
+{/if}
+
+<style>
+	.project-menu {
+		border-color: color-mix(in srgb, var(--border-default) 76%, var(--surface-page) 24%);
+		isolation: isolate;
+		pointer-events: auto;
+		box-shadow:
+			0 14px 30px rgba(0, 0, 0, 0.14),
+			0 1px 0 color-mix(in srgb, var(--border-default) 88%, transparent 12%);
+	}
+
+	:global(.dark) .project-menu {
+		border-color: color-mix(in srgb, var(--border-default) 84%, transparent 16%);
+		box-shadow:
+			0 16px 32px rgba(0, 0, 0, 0.4),
+			0 0 0 1px color-mix(in srgb, var(--border-default) 88%, transparent 12%);
+	}
+
+	.project-option {
+		border: 0;
+		border-radius: 0.75rem;
+		background: var(--project-menu-bg);
+		padding-inline: 0.65rem;
+		gap: 0.8rem;
+	}
+
+	.project-option:hover,
+	.project-option:focus-visible {
+		background: rgba(194, 166, 106, 0.24) !important;
+	}
+
+	.project-option-danger:hover,
+	.project-option-danger:focus-visible {
+		background: rgba(186, 77, 77, 0.14) !important;
+	}
+
+	.project-option-icon {
+		margin-right: 7px;
+		color: color-mix(in srgb, var(--surface-overlay) 45%, var(--text-primary) 55%);
+	}
+
+	.project-option-icon-danger {
+		color: color-mix(in srgb, var(--surface-overlay) 45%, var(--text-primary) 55%);
+	}
+
+	:global(.dark) .project-option:hover,
+	:global(.dark) .project-option:focus-visible {
+		background: rgba(194, 166, 106, 0.3) !important;
+	}
+
+	:global(.dark) .project-option-danger:hover,
+	:global(.dark) .project-option-danger:focus-visible {
+		background: rgba(186, 77, 77, 0.22) !important;
+	}
+
+	:global(.dark) .project-option-icon,
+	:global(.dark) .project-option-icon-danger {
+		color: color-mix(in srgb, var(--surface-overlay) 62%, var(--text-primary) 38%);
+	}
+</style>

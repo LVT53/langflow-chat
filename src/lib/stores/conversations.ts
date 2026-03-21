@@ -108,7 +108,25 @@ export async function renameConversation(id: string, title: string): Promise<voi
 }
 
 export function updateConversationTitleLocal(id: string, title: string): void {
-  conversations.update(items => 
+  conversations.update(items =>
     items.map(c => c.id === id ? { ...c, title } : c)
+  );
+}
+
+export async function moveConversationToProject(id: string, projectId: string | null): Promise<void> {
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId }),
+  });
+  if (!res.ok) throw new Error('Failed to move conversation');
+  conversations.update(items =>
+    items.map(c => c.id === id ? { ...c, projectId } : c)
+  );
+}
+
+export function clearProjectFromConversations(projectId: string): void {
+  conversations.update(items =>
+    items.map(c => c.projectId === projectId ? { ...c, projectId: null } : c)
   );
 }

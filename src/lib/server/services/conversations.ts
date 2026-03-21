@@ -17,6 +17,7 @@ export async function createConversation(userId: string, title?: string): Promis
 	return {
 		id: conversation.id,
 		title: conversation.title,
+		projectId: conversation.projectId ?? null,
 		createdAt: conversation.createdAt.getTime() / 1000,
 		updatedAt: conversation.updatedAt.getTime() / 1000,
 	};
@@ -47,6 +48,7 @@ export async function listConversations(userId: string): Promise<Conversation[]>
 		.map(conv => ({
 		id: conv.id,
 		title: conv.title,
+		projectId: conv.projectId ?? null,
 		createdAt: conv.createdAt.getTime() / 1000,
 		updatedAt: conv.updatedAt.getTime() / 1000,
 	}));
@@ -63,6 +65,7 @@ export async function getConversation(userId: string, conversationId: string): P
 	return {
 		id: conversation.id,
 		title: conversation.title,
+		projectId: conversation.projectId ?? null,
 		createdAt: conversation.createdAt.getTime() / 1000,
 		updatedAt: conversation.updatedAt.getTime() / 1000,
 	};
@@ -80,6 +83,7 @@ export async function updateConversationTitle(userId: string, conversationId: st
 	return {
 		id: conversation.id,
 		title: conversation.title,
+		projectId: conversation.projectId ?? null,
 		createdAt: conversation.createdAt.getTime() / 1000,
 		updatedAt: conversation.updatedAt.getTime() / 1000,
 	};
@@ -105,6 +109,27 @@ export async function touchConversation(userId: string, conversationId: string):
 	return {
 		id: conversation.id,
 		title: conversation.title,
+		projectId: conversation.projectId ?? null,
+		createdAt: conversation.createdAt.getTime() / 1000,
+		updatedAt: conversation.updatedAt.getTime() / 1000,
+	};
+}
+
+export async function moveConversationToProject(
+	userId: string,
+	conversationId: string,
+	projectId: string | null
+): Promise<Conversation | null> {
+	const [conversation] = await db
+		.update(conversations)
+		.set({ projectId, updatedAt: new Date() })
+		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
+		.returning();
+	if (!conversation) return null;
+	return {
+		id: conversation.id,
+		title: conversation.title,
+		projectId: conversation.projectId ?? null,
 		createdAt: conversation.createdAt.getTime() / 1000,
 		updatedAt: conversation.updatedAt.getTime() / 1000,
 	};
