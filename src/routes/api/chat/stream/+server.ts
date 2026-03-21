@@ -642,6 +642,10 @@ export const POST: RequestHandler = async (event) => {
 			let thinkingContent = '';
 			let inlineThinkingBuffer = '';
 			let insideInlineThinking = false;
+			// Accumulate completed tool calls for DB persistence.
+			// Only TOOL_START events carry the input; we store them all as 'done'
+			// because by stream end every tool that started has finished.
+			const completedToolCalls: Array<{ name: string; input: Record<string, unknown>; status: 'done' }> = [];
 
 			// Batch thinking chunks before emitting to the client.
 			// The model streams one word at a time, each wrapped in <thinking>…</thinking>,
@@ -682,6 +686,10 @@ export const POST: RequestHandler = async (event) => {
 				// UI always shows accumulated thinking before the tool call entry.
 				flushPendingThinking();
 				enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({ name, input, status })}\n\n`);
+				// Track completed tool calls for DB persistence (input only available at start).
+				if (status === 'running') {
+					completedToolCalls.push({ name, input, status: 'done' });
+				}
 			};
 
 			const emitInlineToken = (chunk: string) => {
@@ -864,7 +872,7 @@ export const POST: RequestHandler = async (event) => {
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
 					: Promise.resolve(undefined);
 				const assistantMsgPromise = fullResponse.trim()
-					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined).catch(() => undefined)
+					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined, completedToolCalls.length > 0 ? completedToolCalls : undefined).catch(() => undefined)
 					: Promise.resolve(undefined);
 
 				const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {

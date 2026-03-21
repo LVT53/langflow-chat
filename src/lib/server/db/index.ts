@@ -5,5 +5,15 @@ import * as schema from './schema';
 
 // Use process.env directly for database path
 const sqlite = new Database(process.env.DATABASE_PATH ?? './data/chat.db');
+
+// Inline schema migrations — safe to re-run: each ALTER TABLE is caught if
+// the column already exists (SQLite throws on duplicate column additions).
+const migrations: string[] = [
+	`ALTER TABLE messages ADD COLUMN tool_calls TEXT`,
+];
+for (const sql of migrations) {
+	try { sqlite.exec(sql); } catch { /* column already exists — ignore */ }
+}
+
 export const db = drizzle(sqlite, { schema });
 export type DatabaseInstance = typeof db;
