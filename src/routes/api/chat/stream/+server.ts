@@ -642,10 +642,12 @@ export const POST: RequestHandler = async (event) => {
 			let thinkingContent = '';
 			let inlineThinkingBuffer = '';
 			let insideInlineThinking = false;
-			// Accumulate completed tool calls for DB persistence.
-			// Only TOOL_START events carry the input; we store them all as 'done'
-			// because by stream end every tool that started has finished.
-			const completedToolCalls: Array<{ name: string; input: Record<string, unknown>; status: 'done' }> = [];
+			// Full interleaved segments for DB persistence — mirrors exactly what the
+			// client builds in thinkingSegments so the expanded view is identical on reload.
+			type ServerSegment =
+				| { type: 'text'; content: string }
+				| { type: 'tool_call'; name: string; input: Record<string, unknown>; status: 'running' | 'done' };
+			const serverSegments: ServerSegment[] = [];
 
 			// Batch thinking chunks before emitting to the client.
 			// The model streams one word at a time, each wrapped in <thinking>…</thinking>,
@@ -660,6 +662,13 @@ export const POST: RequestHandler = async (event) => {
 				const chunk = pendingThinkingBuffer;
 				pendingThinkingBuffer = '';
 				thinkingContent += chunk;
+				// Mirror the client's onThinking logic: append to last text segment or start a new one
+				const lastSeg = serverSegments[serverSegments.length - 1];
+				if (lastSeg?.type === 'text') {
+					lastSeg.content += chunk;
+				} else {
+					serverSegments.push({ type: 'text', content: chunk });
+				}
 				return enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
@@ -686,9 +695,17 @@ export const POST: RequestHandler = async (event) => {
 				// UI always shows accumulated thinking before the tool call entry.
 				flushPendingThinking();
 				enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({ name, input, status })}\n\n`);
-				// Track completed tool calls for DB persistence (input only available at start).
+				// Mirror client onToolCall: insert running entry or flip last matching entry to done
 				if (status === 'running') {
-					completedToolCalls.push({ name, input, status: 'done' });
+					serverSegments.push({ type: 'tool_call', name, input, status: 'running' });
+				} else {
+					for (let i = serverSegments.length - 1; i >= 0; i--) {
+						const s = serverSegments[i];
+						if (s.type === 'tool_call' && s.name === name && s.status === 'running') {
+							s.status = 'done';
+							break;
+						}
+					}
 				}
 			};
 
@@ -872,7 +889,7 @@ export const POST: RequestHandler = async (event) => {
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
 					: Promise.resolve(undefined);
 				const assistantMsgPromise = fullResponse.trim()
-					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined, completedToolCalls.length > 0 ? completedToolCalls : undefined).catch(() => undefined)
+					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined, serverSegments.length > 0 ? serverSegments : undefined).catch(() => undefined)
 					: Promise.resolve(undefined);
 
 				const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {

@@ -2,24 +2,18 @@ import { randomUUID } from 'crypto';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { messages } from '$lib/server/db/schema';
-import type { ChatMessage, MessageRole, ToolCallEntry } from '$lib/types';
+import type { ChatMessage, MessageRole, ThinkingSegment } from '$lib/types';
 
 function mapRowToChatMessage(row: typeof messages.$inferSelect): ChatMessage {
-	// Reconstruct thinkingSegments from persisted tool_calls JSON.
-	// Text segments are not stored separately (to avoid duplicating the thinking
-	// column), so on load segments contain only tool_call entries. ThinkingBlock
-	// renders the flat `thinking` text first, then the tool calls below it.
+	// Restore full interleaved thinkingSegments from persisted JSON.
+	// The column stores the complete segment array (text + tool_call entries in order)
+	// so the expanded ThinkingBlock view is identical to what was shown during streaming.
 	let thinkingSegments: ChatMessage['thinkingSegments'];
 	if (row.toolCalls) {
 		try {
-			const entries = JSON.parse(row.toolCalls) as ToolCallEntry[];
-			if (Array.isArray(entries) && entries.length > 0) {
-				thinkingSegments = entries.map((tc) => ({
-					type: 'tool_call' as const,
-					name: tc.name,
-					input: tc.input,
-					status: tc.status
-				}));
+			const parsed = JSON.parse(row.toolCalls) as ThinkingSegment[];
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				thinkingSegments = parsed;
 			}
 		} catch {
 			// Malformed JSON — silently ignore, fall back to flat thinking text
@@ -56,7 +50,7 @@ export async function createMessage(
 	role: MessageRole,
 	content: string,
 	thinking?: string,
-	toolCalls?: ToolCallEntry[]
+	thinkingSegments?: ThinkingSegment[]
 ): Promise<ChatMessage> {
 	const [message] = await db
 		.insert(messages)
@@ -66,7 +60,9 @@ export async function createMessage(
 			role,
 			content,
 			thinking: thinking ?? null,
-			toolCalls: toolCalls && toolCalls.length > 0 ? JSON.stringify(toolCalls) : null
+			toolCalls: thinkingSegments && thinkingSegments.length > 0
+				? JSON.stringify(thinkingSegments)
+				: null
 		})
 		.returning();
 

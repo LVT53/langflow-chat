@@ -19,11 +19,8 @@
 	// Shimmer while thinking is still possibly ongoing (between bursts or active).
 	$: showShimmer = !thinkingIsDone;
 
-	// Whether there are any segments at all (drives expanded-view rendering)
+	// Whether to render interleaved segments or fall back to flat content
 	$: hasSegments = segments.length > 0;
-	// True when segments came from streaming (contain interleaved text+tool_call).
-	// False when loaded from DB (only tool_call entries, no text segments).
-	$: hasTextSegments = segments.some((s) => s.type === 'text');
 
 	// All tool calls accumulated during this thinking phase — shown as a stacked
 	// list in the collapsed header so every tool is readable regardless of speed.
@@ -106,10 +103,6 @@
 	{#if expanded}
 		<div class="thinking-content" transition:slide|local>
 			{#if hasSegments}
-				{#if !hasTextSegments}
-					<!-- DB-loaded: no interleaving positions stored, show flat thinking text first -->
-					<pre class="thinking-text">{content}</pre>
-				{/if}
 				{#each segments as seg}
 					{#if seg.type === 'text'}
 						<pre class="thinking-text">{seg.content}</pre>
