@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { Chart, DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale } from 'chart.js';
-	Chart.register(DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale);
 	import { goto } from '$app/navigation';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
@@ -212,6 +210,12 @@
 		await tick();
 		destroyCharts();
 
+		// Dynamically import Chart.js only in the browser to avoid SSR issues
+		const { Chart, DoughnutController, ArcElement, Tooltip, Legend,
+			BarController, BarElement, CategoryScale, LinearScale } = await import('chart.js');
+		Chart.register(DoughnutController, ArcElement, Tooltip, Legend,
+			BarController, BarElement, CategoryScale, LinearScale);
+
 		// Personal model doughnut
 		if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
 			const byModel = analyticsData.personal.byModel;
@@ -230,6 +234,7 @@
 				},
 				options: {
 					cutout: '66%',
+					maintainAspectRatio: false,
 					animation: { animateRotate: true, duration: 700, easing: 'easeInOutQuart' },
 					plugins: {
 						legend: {
@@ -272,6 +277,7 @@
 				},
 				options: {
 					indexAxis: 'y',
+					maintainAspectRatio: false,
 					animation: { duration: 500 },
 					plugins: {
 						legend: {
@@ -298,7 +304,8 @@
 		analyticsLoading = true;
 		analyticsError = '';
 		try {
-			const res = await fetch('/api/analytics');
+			const analyticsUrl = import.meta.env.DEV ? '/api/analytics?mock=1' : '/api/analytics';
+			const res = await fetch(analyticsUrl);
 			if (!res.ok) throw new Error('Failed to load analytics');
 			analyticsData = await res.json();
 			await initCharts();
@@ -619,8 +626,8 @@
 					{#if analyticsData.personal.byModel?.length > 0}
 						<div class="mt-5">
 							<p class="settings-label mb-3">Model usage</p>
-							<div style="max-width: 280px; margin: 0 auto;">
-								<canvas bind:this={modelChartCanvas}></canvas>
+							<div style="max-width: 300px; height: 280px; margin: 0 auto; position: relative;">
+								<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
 							</div>
 						</div>
 					{/if}

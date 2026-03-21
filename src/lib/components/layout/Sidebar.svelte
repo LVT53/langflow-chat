@@ -218,7 +218,7 @@
 		{/if}
 	</div>
 
-	<div class="flex-1 overflow-y-auto py-sm" class:px-md={!isCollapsed} class:px-1={isCollapsed} style="pointer-events: auto;">
+	<div class="flex-1 overflow-y-auto py-sm" class:px-sm={!isCollapsed} class:px-1={isCollapsed} style="pointer-events: auto;">
 		{#if !isCollapsed}
 			<ConversationList initialConversations={conversationsData} />
 		{/if}
@@ -262,6 +262,7 @@
 				class:justify-center={isCollapsed}
 				class:gap-3={!isCollapsed}
 				class:px-3={!isCollapsed}
+				class:px-0={isCollapsed}
 				on:click={handleLogout}
 				title={isCollapsed ? "Logout" : ""}
 				aria-label="Logout"
@@ -320,7 +321,7 @@
 			position: static !important;
 			transform: translateX(0) !important;
 			opacity: 1 !important;
-			width: 288px;
+			width: 300px;
 		}
 
 		.sidebar-panel.sidebar-collapsed {

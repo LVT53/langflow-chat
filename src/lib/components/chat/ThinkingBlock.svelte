@@ -6,25 +6,17 @@
 	export let isDone: boolean = false;
 
 	let expanded = false;
-	let wasEverStreaming = false;
-	let userToggled = false;
 
-	$: label = isStreaming ? 'Thinking' : 'Thought';
+	// Show "Thinking" while any part of the message is still streaming;
+	// only flip to "Thought" once the complete response is done.
+	// This prevents the label from toggling between bursts of thinking.
+	$: label = isDone ? 'Thought' : 'Thinking';
 
-	// Auto-expand when thinking starts streaming for the first time.
-	$: if (isStreaming && !wasEverStreaming) {
-		wasEverStreaming = true;
-		expanded = true;
-	}
-
-	// Auto-collapse when the whole message is done — but only if the user
-	// hasn't manually toggled the block (so we respect explicit user intent).
-	$: if (isDone && wasEverStreaming && !userToggled) {
-		expanded = false;
-	}
+	// Show shimmer animation whenever the message is still generating,
+	// not just when thinking tokens are actively arriving.
+	$: showShimmer = !isDone;
 
 	function toggle() {
-		userToggled = true;
 		expanded = !expanded;
 	}
 </script>
@@ -42,7 +34,7 @@
 	>
 		<div class="thinking-indicator">
 			<span class="thinking-label">{label}</span>
-			{#if isStreaming}
+			{#if showShimmer}
 				<span class="shimmer-container">
 					<span class="shimmer"></span>
 				</span>

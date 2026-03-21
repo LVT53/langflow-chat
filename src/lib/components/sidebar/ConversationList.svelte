@@ -72,7 +72,7 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-1">
+<div class="flex h-full flex-col gap-0.5">
 	{#if visibleConversations.length === 0}
 		<div class="flex h-full items-center justify-center p-4 text-sm text-text-muted">
 			No conversations yet

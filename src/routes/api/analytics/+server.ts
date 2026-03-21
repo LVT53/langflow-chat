@@ -5,10 +5,48 @@ import { db } from '$lib/server/db';
 import { messageAnalytics, conversations, users } from '$lib/server/db/schema';
 import { eq, count, avg, sum, sql } from 'drizzle-orm';
 
+const MOCK_ANALYTICS = {
+  personal: {
+    byModel: [
+      { model: 'model1', msgCount: 87 },
+      { model: 'model2', msgCount: 34 },
+    ],
+    totalMessages: 121,
+    avgGenerationMs: 2340,
+    totalTokens: 48200,
+    reasoningTokens: 12400,
+    favoriteModel: 'model1',
+    chatCount: 18,
+  },
+  system: {
+    totalMessages: 430,
+    avgGenerationMs: 2100,
+    totalTokens: 176000,
+    reasoningTokens: 44000,
+    totalUsers: 5,
+    byModel: [
+      { model: 'model1', msgCount: 310 },
+      { model: 'model2', msgCount: 120 },
+    ],
+  },
+  perUser: [
+    { userId: '1', displayName: 'Admin', email: 'admin@demo.com', messageCount: 121, avgGenerationMs: 2340, totalTokens: 48200, reasoningTokens: 12400, favoriteModel: 'model1', conversationCount: 18 },
+    { userId: '2', displayName: 'Alice', email: 'alice@demo.com', messageCount: 95, avgGenerationMs: 1980, totalTokens: 38100, reasoningTokens: 9600, favoriteModel: 'model1', conversationCount: 12 },
+    { userId: '3', displayName: 'Bob', email: 'bob@demo.com', messageCount: 73, avgGenerationMs: 2600, totalTokens: 29400, reasoningTokens: 7800, favoriteModel: 'model2', conversationCount: 9 },
+    { userId: '4', displayName: 'Carol', email: 'carol@demo.com', messageCount: 88, avgGenerationMs: 1750, totalTokens: 35600, reasoningTokens: 8200, favoriteModel: 'model1', conversationCount: 14 },
+    { userId: '5', displayName: 'Dave', email: 'dave@demo.com', messageCount: 53, avgGenerationMs: 3100, totalTokens: 21300, reasoningTokens: 5800, favoriteModel: 'model2', conversationCount: 7 },
+  ],
+};
+
 export const GET: RequestHandler = async (event) => {
   requireAuth(event);
   const user = event.locals.user!;
   const isAdmin = user.role === 'admin';
+
+  // Dev-only mock mode for testing charts without real data
+  if (event.url.searchParams.get('mock') === '1') {
+    return json(isAdmin ? MOCK_ANALYTICS : { personal: MOCK_ANALYTICS.personal });
+  }
 
   // Personal stats for the requesting user
   const personalRows = await db
