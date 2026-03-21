@@ -218,7 +218,9 @@
 								}
 							}
 							if (lastRunningIdx !== -1) {
-								updated[lastRunningIdx] = { type: 'tool_call', name, input, status: 'done' as const };
+								// Preserve the original input stored at TOOL_START — the TOOL_END
+								// payload only carries the name, so `input` here is always {}.
+								updated[lastRunningIdx] = { ...updated[lastRunningIdx], status: 'done' as const };
 							}
 							return { ...m, thinkingSegments: updated };
 						})
