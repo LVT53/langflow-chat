@@ -643,13 +643,29 @@ export const POST: RequestHandler = async (event) => {
 			let inlineThinkingBuffer = '';
 			let insideInlineThinking = false;
 
-			const emitThinking = (reasoning: string) => {
-				if (!reasoning) {
-					return true;
-				}
+			// Batch thinking chunks before emitting to the client.
+			// The model streams one word at a time, each wrapped in <thinking>…</thinking>,
+			// producing hundreds of tiny SSE events. We accumulate until we have at least
+			// 80 characters worth of thinking text, then flush — reducing client-side
+			// store updates from ~200 to ~10 per response with no perceptible latency hit.
+			let pendingThinkingBuffer = '';
+			const THINKING_BATCH_MIN = 80;
 
-				thinkingContent += reasoning;
-				return enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: reasoning })}\n\n`);
+			const flushPendingThinking = (): boolean => {
+				if (!pendingThinkingBuffer) return true;
+				const chunk = pendingThinkingBuffer;
+				pendingThinkingBuffer = '';
+				thinkingContent += chunk;
+				return enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+			};
+
+			const emitThinking = (reasoning: string) => {
+				if (!reasoning) return true;
+				pendingThinkingBuffer += reasoning;
+				if (pendingThinkingBuffer.length >= THINKING_BATCH_MIN) {
+					return flushPendingThinking();
+				}
+				return true;
 			};
 
 			const emitVisibleToken = (chunk: string) => {
@@ -662,6 +678,9 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			const emitToolCallEvent = (name: string, input: Record<string, unknown>, status: 'running' | 'done') => {
+				// Flush any buffered thinking text before the tool call marker so the
+				// UI always shows accumulated thinking before the tool call entry.
+				flushPendingThinking();
 				enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({ name, input, status })}\n\n`);
 			};
 
@@ -932,6 +951,7 @@ export const POST: RequestHandler = async (event) => {
 								}
 							}
 						}
+						flushPendingThinking();
 						if (!flushInlineThinkingBuffer()) {
 							return;
 						}
@@ -1021,6 +1041,7 @@ export const POST: RequestHandler = async (event) => {
 						}
 					}
 				}
+				flushPendingThinking();
 				if (!flushInlineThinkingBuffer()) {
 					return;
 				}

@@ -54,52 +54,26 @@ def set_advanced_true(component_input):
 # ---------------------------------------------------------------------------
 
 class ToolCallEmitterCallback(AsyncCallbackHandler):
+    """Emits TOOL_START / TOOL_END markers into the Langflow SSE token stream.
+
+    EventManager.on_token signature (confirmed from logs):
+        on_token(*, event_type: str = 'token', data: LoggableType)
+
+    We pass data as {"chunk": marker} so the server's getTextContent() picks it
+    up via the standard 'chunk' key, matching the format of every other token
+    event in the stream.  Control characters in the marker are JSON-encoded in
+    transit (→ \\u0002 etc.) and decoded back server-side before regex matching.
+    """
+
     def __init__(self, event_manager: Any) -> None:
         super().__init__()
         self.event_manager = event_manager
 
     async def _emit(self, marker: str) -> None:
-        """Emit a marker token into the Langflow SSE stream.
-
-        Tries the most likely EventManager call signatures in order, printing
-        which one succeeds so we can remove the fallback chain once confirmed.
-        """
-        import inspect
-
-        # One-time: print the on_token signature so we can confirm the right kwarg.
         try:
-            sig = str(inspect.signature(self.event_manager.on_token))
-            print(f"[TOOL_CALLBACK] on_token signature: on_token{sig}", flush=True)
-        except Exception:
-            pass
-
-        # Attempt 1: chunk= (matches the upstream event data key {"chunk": "..."})
-        try:
-            await self.event_manager.on_token(chunk=marker)
-            print(f"[TOOL_CALLBACK] emit succeeded via on_token(chunk=...)", flush=True)
-            return
-        except TypeError:
-            pass
-
-        # Attempt 2: positional argument
-        try:
-            await self.event_manager.on_token(marker)
-            print(f"[TOOL_CALLBACK] emit succeeded via on_token(marker)", flush=True)
-            return
-        except TypeError:
-            pass
-
-        # Attempt 3: send_event directly with chunk=
-        try:
-            await self.event_manager.send_event(chunk=marker)
-            print(f"[TOOL_CALLBACK] emit succeeded via send_event(chunk=...)", flush=True)
-            return
-        except TypeError:
-            pass
-
-        # All attempts failed — print full method list for next debugging round
-        methods = [m for m in dir(self.event_manager) if not m.startswith("_")]
-        print(f"[TOOL_CALLBACK] All emit attempts failed. EventManager public methods: {methods}", flush=True)
+            await self.event_manager.on_token(data={"chunk": marker})
+        except Exception as e:
+            print(f"[TOOL_CALLBACK] emit failed: {type(e).__name__}: {e}", flush=True)
 
     async def on_tool_start(
         self,
@@ -108,7 +82,6 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         name = serialized.get("name", "tool")
-        print(f"[TOOL_CALLBACK] on_tool_start fired: tool={name!r}", flush=True)
         try:
             input_data: Any = json.loads(input_str)
         except (json.JSONDecodeError, TypeError):
@@ -123,7 +96,6 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         tool_name = name or kwargs.get("name") or "tool"
-        print(f"[TOOL_CALLBACK] on_tool_end fired: tool={tool_name!r}", flush=True)
         payload = json.dumps({"name": tool_name}, ensure_ascii=False)
         await self._emit(f"\x02TOOL_END\x1f{payload}\x03")
 
@@ -335,16 +307,11 @@ class AgentComponent(ToolCallingAgentComponent):
                 system_prompt=self.system_prompt,
             )
             # Inject tool call emitter directly onto each tool's `callbacks` list.
-            # with_config() is NOT used here — in this lfx/LangChain setup the parent's
-            # run_agent() passes its own callback config, which replaces any with_config
-            # binding. BaseTool.arun() builds its callback manager from BOTH the caller-
-            # supplied callbacks AND tool.callbacks, so attaching here always fires.
+            # with_config() is NOT used — the parent's run_agent() passes its own
+            # callback config, which replaces any with_config binding.
+            # BaseTool.arun() always merges tool.callbacks with caller-supplied
+            # callbacks, so attaching here guarantees on_tool_start/end fire.
             event_manager = getattr(self, "_event_manager", None)
-            print(
-                f"[TOOL_CALLBACK] message_response: event_manager={event_manager!r}, "
-                f"tools_count={len(self.tools) if self.tools else 0}",
-                flush=True,
-            )
             if event_manager is not None and self.tools:
                 cb = ToolCallEmitterCallback(event_manager)
                 for tool in self.tools:
@@ -355,22 +322,8 @@ class AgentComponent(ToolCallingAgentComponent):
                         # Frozen Pydantic model — bypass via object.__setattr__
                         try:
                             object.__setattr__(tool, "callbacks", existing + [cb])
-                        except Exception as e:
-                            print(
-                                f"[TOOL_CALLBACK] Cannot attach to tool "
-                                f"{getattr(tool, 'name', '?')}: {e}",
-                                flush=True,
-                            )
-                    print(
-                        f"[TOOL_CALLBACK] Callback attached to tool: {getattr(tool, 'name', '?')}",
-                        flush=True,
-                    )
-            else:
-                print(
-                    f"[TOOL_CALLBACK] Callback NOT attached: "
-                    f"event_manager_is_none={event_manager is None}, tools_empty={not self.tools}",
-                    flush=True,
-                )
+                        except Exception:
+                            pass
 
             agent = self.create_agent_runnable()
             result = await self.run_agent(agent)
