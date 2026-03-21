@@ -22,18 +22,12 @@
 	// Whether to render interleaved segments or fall back to flat content
 	$: hasSegments = segments.length > 0;
 
-	// Active tool: shown in the collapsed header while thinking is ongoing.
-	// We keep the LAST tool visible (running OR done) until thinkingIsDone so
-	// fast-completing tool calls remain readable. When thinking is fully over
-	// we hide the row entirely (ThinkingBlock collapses into "Thought").
-	$: activeTool = (() => {
-		if (thinkingIsDone) return null;
-		for (let i = segments.length - 1; i >= 0; i--) {
-			const s = segments[i];
-			if (s.type === 'tool_call') return s; // last tool regardless of status
-		}
-		return null;
-	})();
+	// All tool calls accumulated during this thinking phase — shown as a stacked
+	// list in the collapsed header so every tool is readable regardless of speed.
+	// The list slides away as a unit when thinkingIsDone becomes true.
+	$: visibleTools = thinkingIsDone
+		? []
+		: (segments.filter((s): s is ThinkingSegment & { type: 'tool_call' } => s.type === 'tool_call'));
 
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
@@ -88,17 +82,21 @@
 		</svg>
 	</button>
 
-	{#if activeTool}
-		<div class="tool-call-active" transition:slide|local={{ duration: 150 }}>
-			{#if activeTool.status === 'running'}
-				<span class="tool-dot"></span>
-			{:else}
-				<svg class="check-icon-header" viewBox="0 0 12 12" fill="none">
-					<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5"
-						stroke-linecap="round" stroke-linejoin="round"/>
-				</svg>
-			{/if}
-			<span class="tool-label-text">{formatToolCall(activeTool.name, activeTool.input)}</span>
+	{#if visibleTools.length > 0}
+		<div class="tool-call-stack" transition:slide|local={{ duration: 200 }}>
+			{#each visibleTools as tool (tool.name + JSON.stringify(tool.input))}
+				<div class="tool-call-row" class:is-running={tool.status === 'running'}>
+					{#if tool.status === 'running'}
+						<span class="tool-dot"></span>
+					{:else}
+						<svg class="check-icon-header" viewBox="0 0 12 12" fill="none">
+							<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5"
+								stroke-linecap="round" stroke-linejoin="round"/>
+						</svg>
+					{/if}
+					<span class="tool-label-text">{formatToolCall(tool.name, tool.input)}</span>
+				</div>
+			{/each}
 		</div>
 	{/if}
 
@@ -215,16 +213,24 @@
 		transform: rotate(180deg);
 	}
 
-	/* Active tool row — visible without expanding the block */
-	.tool-call-active {
+	/* Tool call stack — accumulates all tool rows, visible without expanding */
+	.tool-call-stack {
+		border-top: 1px solid var(--border-subtle);
+		padding: var(--space-xs) 0;
+	}
+
+	.tool-call-row {
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
-		padding: var(--space-xs) var(--space-md);
-		border-top: 1px solid var(--border-subtle);
+		padding: 3px var(--space-md);
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 		font-size: 12px;
 		color: var(--text-muted);
+	}
+
+	.tool-call-row.is-running {
+		color: var(--text-secondary);
 	}
 
 	.tool-dot {
