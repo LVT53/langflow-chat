@@ -125,7 +125,7 @@
 		}
 	});
 
-	function handleSend(event: CustomEvent<{ message: string }>, skipUserMessage = false) {
+	function handleSend(event: CustomEvent<{ message: string }>, skipUserMessage = false, skipPersistUserMessage = false) {
 		const text = event.detail.message;
 		if (!text.trim() || isSending) return;
 
@@ -145,11 +145,13 @@
 			isStreaming: true
 		};
 
+		let clientUserMsgId: string | null = null;
 		if (skipUserMessage) {
 			messages.update((msgs) => [...msgs, placeholder]);
 		} else {
+			clientUserMsgId = crypto.randomUUID();
 			const userMsg: ChatMessage = {
-				id: crypto.randomUUID(),
+				id: clientUserMsgId,
 				role: 'user',
 				content: text,
 				timestamp: Date.now()
@@ -189,21 +191,28 @@
 				},
 				onEnd(_fullText, metadata) {
 					lastAssistantResponse = _fullText;
+					const serverAssistantId = metadata?.assistantMessageId;
+					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
-						return msgs.map((m) =>
-							m.id === placeholderId
-								? {
-										...m,
-										content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
-										isStreaming: false,
-										thinking: metadata?.thinking ?? m.thinking,
-										isThinkingStreaming: false,
-										thinkingTokenCount: metadata?.thinkingTokenCount,
-										responseTokenCount: metadata?.responseTokenCount,
-										totalTokenCount: metadata?.totalTokenCount
-									}
-								: m
-						);
+						return msgs.map((m) => {
+							if (m.id === placeholderId) {
+								return {
+									...m,
+									id: serverAssistantId ?? m.id,
+									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
+									isStreaming: false,
+									thinking: metadata?.thinking ?? m.thinking,
+									isThinkingStreaming: false,
+									thinkingTokenCount: metadata?.thinkingTokenCount,
+									responseTokenCount: metadata?.responseTokenCount,
+									totalTokenCount: metadata?.totalTokenCount
+								};
+							}
+							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
+								return { ...m, id: serverUserMsgId };
+							}
+							return m;
+						});
 					});
 					isSending = false;
 					activeStream = null;
@@ -242,7 +251,8 @@
 					canRetry = true;
 				}
 			},
-			$selectedModel
+			$selectedModel,
+			skipPersistUserMessage
 		);
 	}
 
@@ -281,7 +291,7 @@
 		}).catch(() => {});
 
 		sendError = null;
-		handleSend(new CustomEvent('send', { detail: { message: userText } }), true);
+		handleSend(new CustomEvent('send', { detail: { message: userText } }), true, true);
 	}
 
 	function handleEdit(event: CustomEvent<{ messageId: string; newText: string }>) {

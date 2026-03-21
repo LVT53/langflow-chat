@@ -487,7 +487,7 @@ export const POST: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 	const requestStartTime = Date.now();
 
-	let body: { message?: unknown; conversationId?: unknown; model?: unknown };
+	let body: { message?: unknown; conversationId?: unknown; model?: unknown; skipPersistUserMessage?: unknown };
 	try {
 		body = await event.request.json();
 	} catch {
@@ -497,7 +497,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const { message, conversationId, model } = body;
+	const { message, conversationId, model, skipPersistUserMessage } = body;
 
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return new Response(JSON.stringify({ error: 'Message must be a non-empty string' }), {
@@ -793,36 +793,48 @@ export const POST: RequestHandler = async (event) => {
 					'wasStopped:',
 					wasStopped
 				);
-				enqueueChunk(
-					`event: end\ndata: ${JSON.stringify({
-						thinkingTokenCount,
-						responseTokenCount,
-						totalTokenCount,
-						thinking: thinkingContent || undefined,
-						wasStopped
-					})}\n\n`
-				);
-				createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined);
-				if (fullResponse.trim()) {
-					const genTimeMs = Date.now() - requestStartTime;
-					const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
-					createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined)
-						.then((assistantMsg) => {
-							if (assistantMsg) {
-								recordMessageAnalytics({
-									messageId: assistantMsg.id,
-									userId: user.id,
-									model: modelId,
-									completionTokens: responseTokenCount,
-									reasoningTokens: thinkingTokenCount,
-									generationTimeMs: genTimeMs,
-								}).catch(() => undefined);
-							}
-						})
-						.catch(() => undefined);
-				}
-				touchConversation(user.id, conversationId).catch(() => undefined);
-				closeStream();
+				const genTimeMs = Date.now() - requestStartTime;
+				const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
+				const persistUserMessage = skipPersistUserMessage !== true;
+
+				const userMsgPromise = persistUserMessage
+					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
+					: Promise.resolve(undefined);
+				const assistantMsgPromise = fullResponse.trim()
+					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined).catch(() => undefined)
+					: Promise.resolve(undefined);
+
+				const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {
+					enqueueChunk(
+						`event: end\ndata: ${JSON.stringify({
+							thinkingTokenCount,
+							responseTokenCount,
+							totalTokenCount,
+							thinking: thinkingContent || undefined,
+							wasStopped,
+							userMessageId: userMsgId,
+							assistantMessageId: assistantMsgId
+						})}\n\n`
+					);
+					touchConversation(user.id, conversationId).catch(() => undefined);
+					closeStream();
+				};
+
+				Promise.all([userMsgPromise, assistantMsgPromise]).then(([userMsg, assistantMsg]) => {
+					if (assistantMsg) {
+						recordMessageAnalytics({
+							messageId: assistantMsg.id,
+							userId: user.id,
+							model: modelId,
+							completionTokens: responseTokenCount,
+							reasoningTokens: thinkingTokenCount,
+							generationTimeMs: genTimeMs,
+						}).catch(() => undefined);
+					}
+					sendEndAndClose(userMsg?.id, assistantMsg?.id);
+				}).catch(() => {
+					sendEndAndClose();
+				});
 			};
 
 			const failStream = (code: StreamErrorCode) => {

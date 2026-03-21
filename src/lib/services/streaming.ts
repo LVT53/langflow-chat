@@ -4,6 +4,8 @@ export interface StreamMetadata {
 	totalTokenCount?: number;
 	thinking?: string;
 	wasStopped?: boolean;
+	userMessageId?: string;
+	assistantMessageId?: string;
 }
 
 export interface StreamCallbacks {
@@ -51,7 +53,8 @@ export function streamChat(
 	message: string,
 	conversationId: string,
 	callbacks: StreamCallbacks,
-	modelId?: ModelId
+	modelId?: ModelId,
+	skipPersistUserMessage?: boolean
 ): StreamHandle {
 	const controller = new AbortController();
 	let aborted = false;
@@ -206,7 +209,7 @@ export function streamChat(
 			const res = await fetch('/api/chat/stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message, conversationId, model: modelId }),
+				body: JSON.stringify({ message, conversationId, model: modelId, skipPersistUserMessage }),
 				signal: controller.signal
 			});
 
@@ -285,21 +288,15 @@ export function streamChat(
 								let metadata: StreamMetadata | undefined;
 								try {
 									const parsed = JSON.parse(rawData);
-									if (
-										parsed.thinkingTokenCount ||
-										parsed.responseTokenCount ||
-										parsed.totalTokenCount ||
-										parsed.thinking ||
-										parsed.wasStopped
-									) {
-										metadata = {
-											thinkingTokenCount: parsed.thinkingTokenCount,
-											responseTokenCount: parsed.responseTokenCount,
-											totalTokenCount: parsed.totalTokenCount,
-											thinking: parsed.thinking,
-											wasStopped: parsed.wasStopped
-										};
-									}
+									metadata = {
+										thinkingTokenCount: parsed.thinkingTokenCount,
+										responseTokenCount: parsed.responseTokenCount,
+										totalTokenCount: parsed.totalTokenCount,
+										thinking: parsed.thinking,
+										wasStopped: parsed.wasStopped,
+										userMessageId: parsed.userMessageId,
+										assistantMessageId: parsed.assistantMessageId
+									};
 								} catch {
 									/* noop */
 								}

@@ -23,7 +23,7 @@
 	import { slide } from 'svelte/transition';
 </script>
 
-<div class="thinking-block" class:is-streaming={isStreaming}>
+<div class="thinking-block" class:is-streaming={showShimmer}>
 	<button
 		type="button"
 		class="thinking-header"
