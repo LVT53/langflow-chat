@@ -5,6 +5,8 @@ from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
+from lfx.base.agents.events import ExceptionWithMessageError
+from lfx.log.logger import logger
 from lfx.schema.message import Message
 
 # Import the custom AgentComponent from agent_node.py
@@ -76,25 +78,37 @@ class NemotronAgentComponent(AgentComponent):
     name = "NemotronAgent"
 
     async def message_response(self) -> Message:
-        llm_model, self.chat_history, self.tools = await self.get_agent_requirements()
+        try:
+            llm_model, self.chat_history, self.tools = await self.get_agent_requirements()
 
-        self.set(
-            llm=llm_model,
-            tools=self.tools or [],
-            chat_history=self.chat_history,
-            input_value=self.input_value,
-            system_prompt=self.system_prompt,
-        )
+            self.set(
+                llm=llm_model,
+                tools=self.tools or [],
+                chat_history=self.chat_history,
+                input_value=self.input_value,
+                system_prompt=self.system_prompt,
+            )
 
-        agent = self.create_agent_runnable()
+            agent = self.create_agent_runnable()
 
-        # Inject tool call emitter only when the event manager is available
-        # (it is always injected by Langflow, but we guard defensively)
-        event_manager = getattr(self, "_event_manager", None)
-        if event_manager is not None and self.tools:
-            tool_callback = ToolCallEmitterCallback(event_manager)
-            agent = agent.with_config(callbacks=[tool_callback])
+            # Inject tool call emitter only when the event manager is available
+            # (it is always injected by Langflow, but we guard defensively)
+            event_manager = getattr(self, "_event_manager", None)
+            if event_manager is not None and self.tools:
+                tool_callback = ToolCallEmitterCallback(event_manager)
+                agent = agent.with_config(callbacks=[tool_callback])
 
-        result = await self.run_agent(agent)
-        self._agent_result = result
-        return result
+            result = await self.run_agent(agent)
+            self._agent_result = result
+
+        except (ValueError, TypeError, KeyError) as e:
+            await logger.aerror(f"{type(e).__name__}: {e!s}")
+            raise
+        except ExceptionWithMessageError as e:
+            await logger.aerror(f"ExceptionWithMessageError occurred: {e}")
+            raise
+        except Exception as e:
+            await logger.aerror(f"Unexpected error: {e!s}")
+            raise
+        else:
+            return result
