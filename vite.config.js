@@ -5,5 +5,8 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	ssr: {
 		external: ['@sveltejs/adapter-node']
+	},
+	optimizeDeps: {
+		include: ['chart.js/auto']
 	}
 });

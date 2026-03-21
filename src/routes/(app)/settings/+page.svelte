@@ -62,10 +62,8 @@
 
 	// --- Chart state ---
 	let showAvatarPicker = false;
-	let modelChartCanvas: HTMLCanvasElement;
-	let userChartCanvas: HTMLCanvasElement;
-	let modelChart: Chart | null = null;
-	let userChart: Chart | null = null;
+	let modelChart: any = null;
+	let userChart: any = null;
 
 	const CHART_COLORS = [
 		'rgba(194, 166, 106, 0.88)',
@@ -211,10 +209,16 @@
 		destroyCharts();
 
 		// Dynamically import Chart.js only in the browser to avoid SSR issues
-		const { Chart, DoughnutController, ArcElement, Tooltip, Legend,
-			BarController, BarElement, CategoryScale, LinearScale } = await import('chart.js');
-		Chart.register(DoughnutController, ArcElement, Tooltip, Legend,
-			BarController, BarElement, CategoryScale, LinearScale);
+		// chart.js/auto auto-registers all controllers, scales, and plugins
+		const { Chart } = await import('chart.js/auto');
+
+		// Use getElementById to avoid bind:this timing issues (binding may lag behind DOM insertion)
+		const modelChartCanvas = document.getElementById('model-chart-canvas') as HTMLCanvasElement | null;
+		const userChartCanvas = document.getElementById('user-chart-canvas') as HTMLCanvasElement | null;
+
+		// Defensively destroy any orphaned Chart.js instances (e.g. from HMR or eval tests)
+		if (modelChartCanvas) Chart.getChart(modelChartCanvas)?.destroy();
+		if (userChartCanvas) Chart.getChart(userChartCanvas)?.destroy();
 
 		// Personal model doughnut
 		if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
@@ -308,10 +312,11 @@
 			const res = await fetch(analyticsUrl);
 			if (!res.ok) throw new Error('Failed to load analytics');
 			analyticsData = await res.json();
+			// Set loading false first so the canvas is rendered into the DOM before initCharts runs
+			analyticsLoading = false;
 			await initCharts();
 		} catch (e: any) {
 			analyticsError = e.message;
-		} finally {
 			analyticsLoading = false;
 		}
 	}
@@ -627,7 +632,7 @@
 						<div class="mt-5">
 							<p class="settings-label mb-3">Model usage</p>
 							<div style="max-width: 300px; height: 280px; margin: 0 auto; position: relative;">
-								<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
+								<canvas id="model-chart-canvas" style="display: block; width: 100%; height: 100%;"></canvas>
 							</div>
 						</div>
 					{/if}
@@ -668,7 +673,7 @@
 						<section class="settings-card mb-4">
 							<h2 class="settings-section-title">User Activity</h2>
 							<div style="height: {Math.min(analyticsData.perUser.slice(0,10).length * 36 + 60, 420)}px; position: relative;">
-								<canvas bind:this={userChartCanvas}></canvas>
+								<canvas id="user-chart-canvas"></canvas>
 							</div>
 						</section>
 					{/if}
