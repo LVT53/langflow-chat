@@ -98,8 +98,9 @@ export const SYSTEM_PROMPTS: Record<string, string> = {
   'default': DEFAULT_PROMPT
 };
 
-// Get system prompt by name, fallback to default
+// Get system prompt by name, or return the value directly if it is not a
+// known key (i.e. the admin stored the full prompt text rather than a key).
 export function getSystemPrompt(name: string | undefined): string {
   if (!name) return DEFAULT_PROMPT;
-  return SYSTEM_PROMPTS[name] || DEFAULT_PROMPT;
+  return SYSTEM_PROMPTS[name] ?? name;
 }

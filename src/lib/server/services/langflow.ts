@@ -128,6 +128,7 @@ export async function sendMessageStream(
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
+    const systemPrompt = getSystemPrompt(modelConfig.systemPrompt);
     console.log('[LANGFLOW] sendMessageStream request', {
       url,
       sessionId,
@@ -135,7 +136,9 @@ export async function sendMessageStream(
       modelId,
       modelName,
       baseUrl,
-      flowId
+      flowId,
+      systemPromptLength: systemPrompt.length,
+      systemPromptPreview: systemPrompt.slice(0, 80)
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -146,7 +149,7 @@ export async function sendMessageStream(
       tweaks: {
         model_name: modelName,
         api_base: baseUrl,
-        system_prompt: getSystemPrompt(modelConfig.systemPrompt)
+        system_prompt: systemPrompt
       }
     };
 
