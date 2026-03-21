@@ -13,6 +13,7 @@ export interface StreamCallbacks {
 	onThinking: (chunk: string) => void;
 	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
+	onToolCall?: (name: string, input: Record<string, unknown>, status: 'running' | 'done') => void;
 }
 
 export type ModelId = 'model1' | 'model2';
@@ -235,7 +236,7 @@ export function streamChat(
 			const reader = res.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | null = null;
+			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | null = null;
 
 			try {
 				while (true) {
@@ -257,6 +258,8 @@ export function streamChat(
 							currentEvent = 'token';
 						} else if (line.startsWith('event: thinking')) {
 							currentEvent = 'thinking';
+						} else if (line.startsWith('event: tool_call')) {
+							currentEvent = 'tool_call';
 						} else if (line.startsWith('event: end')) {
 							currentEvent = 'end';
 						} else if (line.startsWith('event: error')) {
@@ -281,6 +284,13 @@ export function streamChat(
 									if (thinkingChunk) {
 										callbacks.onThinking(thinkingChunk);
 									}
+								} catch {
+									/* noop */
+								}
+							} else if (currentEvent === 'tool_call') {
+								try {
+									const parsed = JSON.parse(rawData);
+									callbacks.onToolCall?.(parsed.name, parsed.input ?? {}, parsed.status);
 								} catch {
 									/* noop */
 								}

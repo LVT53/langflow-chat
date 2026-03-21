@@ -13,6 +13,39 @@ import {
 
 const STREAM_TIMEOUT_MS = 120_000;
 
+// Tool call markers — STX/ETX control characters as delimiters, never in model output
+const TOOL_CALL_START_RE = /\x02TOOL_START\x1f([^\x03]*)\x03/g;
+const TOOL_CALL_END_RE = /\x02TOOL_END\x1f([^\x03]*)\x03/g;
+
+function processToolCallMarkers(
+	chunk: string,
+	emit: (name: string, input: Record<string, unknown>, status: 'running' | 'done') => void
+): string {
+	let result = chunk;
+
+	result = result.replace(TOOL_CALL_START_RE, (_, payload) => {
+		try {
+			const parsed = JSON.parse(payload) as { name?: string; input?: Record<string, unknown> };
+			emit(parsed.name ?? 'tool', parsed.input ?? {}, 'running');
+		} catch {
+			emit('tool', {}, 'running');
+		}
+		return '';
+	});
+
+	result = result.replace(TOOL_CALL_END_RE, (_, payload) => {
+		try {
+			const parsed = JSON.parse(payload) as { name?: string };
+			emit(parsed.name ?? 'tool', {}, 'done');
+		} catch {
+			emit('tool', {}, 'done');
+		}
+		return '';
+	});
+
+	return result;
+}
+
 // Nemotron-style thinking tags
 const THINKING_OPEN_TAG = '<thinking>';
 const THINKING_CLOSE_TAG = '</thinking>';
@@ -621,6 +654,10 @@ export const POST: RequestHandler = async (event) => {
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
+			const emitToolCallEvent = (name: string, input: Record<string, unknown>, status: 'running' | 'done') => {
+				enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({ name, input, status })}\n\n`);
+			};
+
 			const emitInlineToken = (chunk: string) => {
 				if (!chunk) {
 					return true;
@@ -949,16 +986,21 @@ export const POST: RequestHandler = async (event) => {
 						}
 					}
 
-					console.log('[STREAM] Token chunk, length:', chunk.length);
+					// Strip tool call markers, emitting structured tool_call SSE events
+					const cleanedChunk = processToolCallMarkers(chunk, emitToolCallEvent);
+
+					console.log('[STREAM] Token chunk, length:', cleanedChunk.length);
+
+					if (!cleanedChunk) continue;
 
 					if (!outputTranslator) {
-						if (!emitInlineToken(chunk)) {
+						if (!emitInlineToken(cleanedChunk)) {
 							return;
 						}
 						continue;
 					}
 
-					for (const translatedChunk of await outputTranslator.addChunk(chunk)) {
+					for (const translatedChunk of await outputTranslator.addChunk(cleanedChunk)) {
 						if (!emitInlineToken(translatedChunk)) {
 							return;
 						}

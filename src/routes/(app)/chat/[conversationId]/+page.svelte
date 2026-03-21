@@ -178,15 +178,50 @@
 				},
 				onThinking(chunk) {
 					messages.update((msgs) =>
-						msgs.map((m) =>
-							m.id === placeholderId
-								? {
-										...m,
-										thinking: (m.thinking ?? '') + chunk,
-										isThinkingStreaming: true
-									}
-								: m
-						)
+						msgs.map((m) => {
+							if (m.id !== placeholderId) return m;
+							const segs = m.thinkingSegments ?? [];
+							const last = segs[segs.length - 1];
+							const newSegs = last?.type === 'text'
+								? [...segs.slice(0, -1), { type: 'text' as const, content: last.content + chunk }]
+								: [...segs, { type: 'text' as const, content: chunk }];
+							return {
+								...m,
+								thinking: (m.thinking ?? '') + chunk,
+								thinkingSegments: newSegs,
+								isThinkingStreaming: true
+							};
+						})
+					);
+				},
+				onToolCall(name, input, status) {
+					messages.update((msgs) =>
+						msgs.map((m) => {
+							if (m.id !== placeholderId) return m;
+							const segs = m.thinkingSegments ?? [];
+							if (status === 'running') {
+								return {
+									...m,
+									thinkingSegments: [
+										...segs,
+										{ type: 'tool_call' as const, name, input, status: 'running' as const }
+									]
+								};
+							}
+							const updated = [...segs];
+							let lastRunningIdx = -1;
+							for (let i = updated.length - 1; i >= 0; i--) {
+								const s = updated[i];
+								if (s.type === 'tool_call' && s.name === name && s.status === 'running') {
+									lastRunningIdx = i;
+									break;
+								}
+							}
+							if (lastRunningIdx !== -1) {
+								updated[lastRunningIdx] = { type: 'tool_call', name, input, status: 'done' as const };
+							}
+							return { ...m, thinkingSegments: updated };
+						})
 					);
 				},
 				onEnd(_fullText, metadata) {

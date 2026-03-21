@@ -60,6 +60,16 @@ export interface ConversationListItem {
 // MessageRole type: 'user' | 'assistant'
 export type MessageRole = 'user' | 'assistant';
 
+export interface ToolCallEntry {
+  name: string;
+  input: Record<string, unknown>;
+  status: 'running' | 'done';
+}
+
+export type ThinkingSegment =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; name: string; input: Record<string, unknown>; status: 'running' | 'done' };
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -71,6 +81,9 @@ export interface ChatMessage {
   thinkingTokenCount?: number;
   responseTokenCount?: number;
   totalTokenCount?: number;
+  // Interleaved thinking text + tool call segments, built during streaming.
+  // Not persisted to DB — falls back to flat `thinking` string on page reload.
+  thinkingSegments?: ThinkingSegment[];
 }
 
 // Langflow types

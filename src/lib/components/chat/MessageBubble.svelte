@@ -40,6 +40,7 @@
 
 	$: isUser = message.role === 'user';
 	$: hasThinking = Boolean(message.thinking?.trim());
+	$: hasToolCalls = (message.thinkingSegments?.some((s) => s.type === 'tool_call')) ?? false;
 	$: thinkingTokenCount = hasThinking ? estimateTokenCount(message.thinking ?? '') : 0;
 	$: responseTokenCount = estimateTokenCount(message.content);
 	$: totalTokenCount = thinkingTokenCount + responseTokenCount;
@@ -118,11 +119,12 @@
 				? 'w-full max-w-full rounded-md border border-border bg-surface-elevated p-md text-text-primary shadow-sm'
 				: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
-		{#if !isUser && hasThinking}
+		{#if !isUser && (hasThinking || hasToolCalls)}
 			<ThinkingBlock
 				content={message.thinking ?? ''}
 				isStreaming={Boolean(message.isThinkingStreaming)}
 				thinkingIsDone={thinkingIsDone}
+				segments={message.thinkingSegments ?? []}
 			/>
 		{/if}
 		{#if isUser}
