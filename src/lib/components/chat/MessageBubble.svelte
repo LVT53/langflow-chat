@@ -34,8 +34,14 @@
 	$: thinkingTokenCount = hasThinking ? estimateTokenCount(message.thinking ?? '') : 0;
 	$: responseTokenCount = estimateTokenCount(message.content);
 	$: totalTokenCount = thinkingTokenCount + responseTokenCount;
-	$: hasTokenInfo =
-		hasThinking || responseTokenCount > 0;
+	$: hasTokenInfo = hasThinking || responseTokenCount > 0;
+
+	// Thinking is definitively done once visible response text has started streaming
+	// OR the whole message is complete. This keeps the label as "Thinking" between
+	// multi-burst thinking phases (isThinkingStreaming briefly false, but no content yet).
+	$: isDone = !message.isStreaming && !message.isThinkingStreaming;
+	$: thinkingIsDone = hasThinking && !message.isThinkingStreaming &&
+		(message.content.trim().length > 0 || isDone);
 
 	function getClipboardText(content: string) {
 		return content
@@ -72,7 +78,7 @@
 			<ThinkingBlock
 				content={message.thinking ?? ''}
 				isStreaming={Boolean(message.isThinkingStreaming)}
-				isDone={!message.isStreaming && !message.isThinkingStreaming}
+				thinkingIsDone={thinkingIsDone}
 			/>
 		{/if}
 		{#if isUser}

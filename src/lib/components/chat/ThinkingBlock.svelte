@@ -1,20 +1,18 @@
 <script lang="ts">
 	export let content: string = '';
 	export let isStreaming: boolean = false;
-	// True once the entire message (not just thinking) has finished generating.
-	// Used to auto-collapse the block after the user has been reading it live.
-	export let isDone: boolean = false;
+	// True once thinking is definitively over: visible response text has started
+	// arriving OR the whole message is done. Stays false between multi-burst
+	// thinking phases so the label doesn't flip "Thinking"→"Thought"→"Thinking".
+	export let thinkingIsDone: boolean = false;
 
 	let expanded = false;
 
-	// Show "Thinking" while any part of the message is still streaming;
-	// only flip to "Thought" once the complete response is done.
-	// This prevents the label from toggling between bursts of thinking.
-	$: label = isDone ? 'Thought' : 'Thinking';
+	// "Thought" only once we're sure thinking is over (response text started or done).
+	$: label = thinkingIsDone ? 'Thought' : 'Thinking';
 
-	// Show shimmer animation whenever the message is still generating,
-	// not just when thinking tokens are actively arriving.
-	$: showShimmer = !isDone;
+	// Shimmer while thinking is still possibly ongoing (between bursts or active).
+	$: showShimmer = !thinkingIsDone;
 
 	function toggle() {
 		expanded = !expanded;
