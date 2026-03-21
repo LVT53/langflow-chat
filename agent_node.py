@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from typing import TYPE_CHECKING, Any
@@ -71,7 +72,8 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
 
     async def _emit(self, marker: str) -> None:
         try:
-            await self.event_manager.on_token(data={"chunk": marker})
+            # on_token is synchronous — do NOT await it
+            self.event_manager.on_token(data={"chunk": marker})
         except Exception as e:
             print(f"[TOOL_CALLBACK] emit failed: {type(e).__name__}: {e}", flush=True)
 
@@ -85,7 +87,12 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         try:
             input_data: Any = json.loads(input_str)
         except (json.JSONDecodeError, TypeError):
-            input_data = {"input": str(input_str)}
+            # LangChain may pass a Python dict repr like "{'query': '...'}"
+            # with single quotes — json.loads fails on those, so try ast.literal_eval
+            try:
+                input_data = ast.literal_eval(input_str)
+            except Exception:
+                input_data = {"input": str(input_str)}
         payload = json.dumps({"name": name, "input": input_data}, ensure_ascii=False)
         await self._emit(f"\x02TOOL_START\x1f{payload}\x03")
 

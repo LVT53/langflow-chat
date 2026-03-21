@@ -22,11 +22,15 @@
 	// Whether to render interleaved segments or fall back to flat content
 	$: hasSegments = segments.length > 0;
 
-	// Active tool: last running tool_call segment (shown in header when collapsed)
+	// Active tool: shown in the collapsed header while thinking is ongoing.
+	// We keep the LAST tool visible (running OR done) until thinkingIsDone so
+	// fast-completing tool calls remain readable. When thinking is fully over
+	// we hide the row entirely (ThinkingBlock collapses into "Thought").
 	$: activeTool = (() => {
+		if (thinkingIsDone) return null;
 		for (let i = segments.length - 1; i >= 0; i--) {
 			const s = segments[i];
-			if (s.type === 'tool_call' && s.status === 'running') return s;
+			if (s.type === 'tool_call') return s; // last tool regardless of status
 		}
 		return null;
 	})();
@@ -86,7 +90,14 @@
 
 	{#if activeTool}
 		<div class="tool-call-active" transition:slide|local={{ duration: 150 }}>
-			<span class="tool-dot"></span>
+			{#if activeTool.status === 'running'}
+				<span class="tool-dot"></span>
+			{:else}
+				<svg class="check-icon-header" viewBox="0 0 12 12" fill="none">
+					<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5"
+						stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+			{/if}
 			<span class="tool-label-text">{formatToolCall(activeTool.name, activeTool.input)}</span>
 		</div>
 	{/if}
@@ -234,6 +245,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.check-icon-header {
+		color: var(--success);
+		width: 12px;
+		height: 12px;
+		flex-shrink: 0;
 	}
 
 	.thinking-content {
