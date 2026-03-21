@@ -58,6 +58,49 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         super().__init__()
         self.event_manager = event_manager
 
+    async def _emit(self, marker: str) -> None:
+        """Emit a marker token into the Langflow SSE stream.
+
+        Tries the most likely EventManager call signatures in order, printing
+        which one succeeds so we can remove the fallback chain once confirmed.
+        """
+        import inspect
+
+        # One-time: print the on_token signature so we can confirm the right kwarg.
+        try:
+            sig = str(inspect.signature(self.event_manager.on_token))
+            print(f"[TOOL_CALLBACK] on_token signature: on_token{sig}", flush=True)
+        except Exception:
+            pass
+
+        # Attempt 1: chunk= (matches the upstream event data key {"chunk": "..."})
+        try:
+            await self.event_manager.on_token(chunk=marker)
+            print(f"[TOOL_CALLBACK] emit succeeded via on_token(chunk=...)", flush=True)
+            return
+        except TypeError:
+            pass
+
+        # Attempt 2: positional argument
+        try:
+            await self.event_manager.on_token(marker)
+            print(f"[TOOL_CALLBACK] emit succeeded via on_token(marker)", flush=True)
+            return
+        except TypeError:
+            pass
+
+        # Attempt 3: send_event directly with chunk=
+        try:
+            await self.event_manager.send_event(chunk=marker)
+            print(f"[TOOL_CALLBACK] emit succeeded via send_event(chunk=...)", flush=True)
+            return
+        except TypeError:
+            pass
+
+        # All attempts failed — print full method list for next debugging round
+        methods = [m for m in dir(self.event_manager) if not m.startswith("_")]
+        print(f"[TOOL_CALLBACK] All emit attempts failed. EventManager public methods: {methods}", flush=True)
+
     async def on_tool_start(
         self,
         serialized: dict[str, Any],
@@ -71,11 +114,7 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         except (json.JSONDecodeError, TypeError):
             input_data = {"input": str(input_str)}
         payload = json.dumps({"name": name, "input": input_data}, ensure_ascii=False)
-        try:
-            await self.event_manager.on_token(token=f"\x02TOOL_START\x1f{payload}\x03")
-            print(f"[TOOL_CALLBACK] on_token(TOOL_START) emitted successfully", flush=True)
-        except Exception as e:
-            print(f"[TOOL_CALLBACK] on_token(TOOL_START) FAILED: {type(e).__name__}: {e}", flush=True)
+        await self._emit(f"\x02TOOL_START\x1f{payload}\x03")
 
     async def on_tool_end(
         self,
@@ -86,11 +125,7 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         tool_name = name or kwargs.get("name") or "tool"
         print(f"[TOOL_CALLBACK] on_tool_end fired: tool={tool_name!r}", flush=True)
         payload = json.dumps({"name": tool_name}, ensure_ascii=False)
-        try:
-            await self.event_manager.on_token(token=f"\x02TOOL_END\x1f{payload}\x03")
-            print(f"[TOOL_CALLBACK] on_token(TOOL_END) emitted successfully", flush=True)
-        except Exception as e:
-            print(f"[TOOL_CALLBACK] on_token(TOOL_END) FAILED: {type(e).__name__}: {e}", flush=True)
+        await self._emit(f"\x02TOOL_END\x1f{payload}\x03")
 
 
 class AgentComponent(ToolCallingAgentComponent):
