@@ -65,12 +65,17 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         name = serialized.get("name", "tool")
+        print(f"[TOOL_CALLBACK] on_tool_start fired: tool={name!r}", flush=True)
         try:
             input_data: Any = json.loads(input_str)
         except (json.JSONDecodeError, TypeError):
             input_data = {"input": str(input_str)}
         payload = json.dumps({"name": name, "input": input_data}, ensure_ascii=False)
-        await self.event_manager.on_token(token=f"\x02TOOL_START\x1f{payload}\x03")
+        try:
+            await self.event_manager.on_token(token=f"\x02TOOL_START\x1f{payload}\x03")
+            print(f"[TOOL_CALLBACK] on_token(TOOL_START) emitted successfully", flush=True)
+        except Exception as e:
+            print(f"[TOOL_CALLBACK] on_token(TOOL_START) FAILED: {type(e).__name__}: {e}", flush=True)
 
     async def on_tool_end(
         self,
@@ -79,8 +84,13 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         tool_name = name or kwargs.get("name") or "tool"
+        print(f"[TOOL_CALLBACK] on_tool_end fired: tool={tool_name!r}", flush=True)
         payload = json.dumps({"name": tool_name}, ensure_ascii=False)
-        await self.event_manager.on_token(token=f"\x02TOOL_END\x1f{payload}\x03")
+        try:
+            await self.event_manager.on_token(token=f"\x02TOOL_END\x1f{payload}\x03")
+            print(f"[TOOL_CALLBACK] on_token(TOOL_END) emitted successfully", flush=True)
+        except Exception as e:
+            print(f"[TOOL_CALLBACK] on_token(TOOL_END) FAILED: {type(e).__name__}: {e}", flush=True)
 
 
 class AgentComponent(ToolCallingAgentComponent):
@@ -293,8 +303,20 @@ class AgentComponent(ToolCallingAgentComponent):
 
             # Inject tool call emitter if the event manager is available and tools are connected
             event_manager = getattr(self, "_event_manager", None)
+            print(
+                f"[TOOL_CALLBACK] message_response: event_manager={event_manager!r}, "
+                f"tools_count={len(self.tools) if self.tools else 0}",
+                flush=True,
+            )
             if event_manager is not None and self.tools:
                 agent = agent.with_config(callbacks=[ToolCallEmitterCallback(event_manager)])
+                print(f"[TOOL_CALLBACK] ToolCallEmitterCallback injected via with_config", flush=True)
+            else:
+                print(
+                    f"[TOOL_CALLBACK] Callback NOT injected: "
+                    f"event_manager_is_none={event_manager is None}, tools_empty={not self.tools}",
+                    flush=True,
+                )
 
             result = await self.run_agent(agent)
 

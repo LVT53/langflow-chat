@@ -21,9 +21,15 @@ function processToolCallMarkers(
 	chunk: string,
 	emit: (name: string, input: Record<string, unknown>, status: 'running' | 'done') => void
 ): string {
+	// Debug: log any chunk that contains STX or the marker text
+	if (chunk.includes('\x02') || chunk.includes('TOOL_START') || chunk.includes('TOOL_END')) {
+		console.log('[TOOL_MARKER] Marker detected in chunk:', JSON.stringify(chunk).slice(0, 300));
+	}
+
 	let result = chunk;
 
 	result = result.replace(TOOL_CALL_START_RE, (_, payload) => {
+		console.log('[TOOL_MARKER] TOOL_START matched, payload:', payload.slice(0, 200));
 		try {
 			const parsed = JSON.parse(payload) as { name?: string; input?: Record<string, unknown> };
 			emit(parsed.name ?? 'tool', parsed.input ?? {}, 'running');
@@ -34,6 +40,7 @@ function processToolCallMarkers(
 	});
 
 	result = result.replace(TOOL_CALL_END_RE, (_, payload) => {
+		console.log('[TOOL_MARKER] TOOL_END matched, payload:', payload.slice(0, 200));
 		try {
 			const parsed = JSON.parse(payload) as { name?: string };
 			emit(parsed.name ?? 'tool', {}, 'done');
@@ -906,7 +913,7 @@ export const POST: RequestHandler = async (event) => {
 
 					const { event: eventType, data } = upstreamEvent;
 					upstreamEventCount += 1;
-					if (upstreamEventCount <= 8 || eventType === 'error') {
+					if (upstreamEventCount <= 20 || eventType === 'error') {
 						const dataPreview =
 							typeof data === 'string'
 								? data.slice(0, 500)
