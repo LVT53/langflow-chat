@@ -55,6 +55,13 @@
 		}
 	}
 
+	function navigateAndClose(path: string) {
+		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
+			sidebarOpen.set(false);
+		}
+		goto(path);
+	}
+
 	async function handleLogout() {
 		try {
 			await fetch('/api/auth/logout', { method: 'POST' });
@@ -92,7 +99,7 @@
 
 <!-- Sidebar -->
 <aside
-	class="sidebar-panel fixed inset-y-0 left-0 z-50 flex h-screen max-w-[100vw] flex-col border-r border-border bg-surface-overlay shadow-lg"
+	class="sidebar-panel fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-w-[100vw] flex-col border-r border-border bg-surface-overlay shadow-lg"
 	class:-translate-x-[105%]={!open}
 	class:translate-x-0={open}
 	class:opacity-0={!open && !isDesktop}
@@ -230,7 +237,7 @@
 				<button
 					type="button"
 					class="btn-icon-bare sidebar-rail-button w-full"
-					on:click={() => goto('/settings')}
+					on:click={() => navigateAndClose('/settings')}
 					title="Settings"
 					aria-label="Open settings"
 				>
@@ -261,7 +268,7 @@
 				<button
 					type="button"
 					class="profile-btn flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-1.5 py-1.5 text-sm text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={() => goto('/settings')}
+					on:click={() => navigateAndClose('/settings')}
 					aria-label="Open settings"
 				>
 					<AvatarCircle

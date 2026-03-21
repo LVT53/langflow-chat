@@ -23,6 +23,10 @@
 	
 	$: canSend = !isEmpty && !isOverMaxLength && !disabled;
 
+	function isMobile(): boolean {
+		return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+	}
+
 	let lastConversationId = '';
 	$: if ($currentConversationId && $currentConversationId !== lastConversationId && textarea) {
 		lastConversationId = $currentConversationId;
@@ -30,7 +34,9 @@
 		if (!message) {
 			message = '';
 			adjustHeight();
-			setTimeout(() => textarea.focus(), 0);
+			if (!isMobile()) {
+				setTimeout(() => textarea.focus(), 0);
+			}
 		}
 	}
 
@@ -69,7 +75,9 @@
 
 	onMount(() => {
 		if (textarea) {
-			textarea.focus();
+			if (!isMobile()) {
+				textarea.focus();
+			}
 			adjustHeight();
 		}
 		window.addEventListener('resize', adjustHeight);

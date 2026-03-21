@@ -29,7 +29,7 @@
   - Scroll is delegated to child components (Sidebar list, MessageArea)
   - See SCROLL OWNERSHIP CONTRACT in src/app.css
 -->
-<div class="flex h-screen w-full flex-col overflow-hidden bg-primary text-text-primary">
+<div class="flex h-[100dvh] w-full flex-col overflow-hidden bg-primary text-text-primary">
 	<Header />
 
 	<div class="flex h-full flex-1 overflow-hidden">

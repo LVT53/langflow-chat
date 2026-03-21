@@ -14,7 +14,7 @@
 		renameProject,
 		deleteProject
 	} from '$lib/stores/projects';
-	import { currentConversationId } from '$lib/stores/ui';
+	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
 	import type { ConversationListItem, Project } from '$lib/types';
 	import ConversationItem from './ConversationItem.svelte';
 	import ProjectItem from './ProjectItem.svelte';
@@ -71,6 +71,9 @@
 		currentConversationId.set(id);
 		try {
 			await goto(`/chat/${id}`, { replaceState: false });
+			if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
+				sidebarOpen.set(false);
+			}
 		} catch (err) {
 			console.error('Navigation failed:', err);
 			currentConversationId.set(previousConversationId);

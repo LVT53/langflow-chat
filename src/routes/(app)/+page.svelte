@@ -127,6 +127,15 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 		opacity: 1;
 	}
 
+	/* On mobile the header (52px) shifts the available area down, making top:50%
+	   land 26px below the true screen center. Compensate by nudging up. */
+	@media (max-width: 767px) {
+		.composer-layer-no-animate,
+		.composer-layer-animate {
+			top: calc(50% - 26px);
+		}
+	}
+
 	.intro-copy {
 		/* Uses Svelte transitions instead of CSS classes */
 	}
