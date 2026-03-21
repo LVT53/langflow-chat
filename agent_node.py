@@ -299,9 +299,11 @@ class AgentComponent(ToolCallingAgentComponent):
                 input_value=self.input_value,
                 system_prompt=self.system_prompt,
             )
-            agent = self.create_agent_runnable()
-
-            # Inject tool call emitter if the event manager is available and tools are connected
+            # Inject tool call emitter directly onto each tool's `callbacks` list.
+            # with_config() is NOT used here — in this lfx/LangChain setup the parent's
+            # run_agent() passes its own callback config, which replaces any with_config
+            # binding. BaseTool.arun() builds its callback manager from BOTH the caller-
+            # supplied callbacks AND tool.callbacks, so attaching here always fires.
             event_manager = getattr(self, "_event_manager", None)
             print(
                 f"[TOOL_CALLBACK] message_response: event_manager={event_manager!r}, "
@@ -309,15 +311,33 @@ class AgentComponent(ToolCallingAgentComponent):
                 flush=True,
             )
             if event_manager is not None and self.tools:
-                agent = agent.with_config(callbacks=[ToolCallEmitterCallback(event_manager)])
-                print(f"[TOOL_CALLBACK] ToolCallEmitterCallback injected via with_config", flush=True)
+                cb = ToolCallEmitterCallback(event_manager)
+                for tool in self.tools:
+                    existing = list(getattr(tool, "callbacks", None) or [])
+                    try:
+                        tool.callbacks = existing + [cb]
+                    except Exception:
+                        # Frozen Pydantic model — bypass via object.__setattr__
+                        try:
+                            object.__setattr__(tool, "callbacks", existing + [cb])
+                        except Exception as e:
+                            print(
+                                f"[TOOL_CALLBACK] Cannot attach to tool "
+                                f"{getattr(tool, 'name', '?')}: {e}",
+                                flush=True,
+                            )
+                    print(
+                        f"[TOOL_CALLBACK] Callback attached to tool: {getattr(tool, 'name', '?')}",
+                        flush=True,
+                    )
             else:
                 print(
-                    f"[TOOL_CALLBACK] Callback NOT injected: "
+                    f"[TOOL_CALLBACK] Callback NOT attached: "
                     f"event_manager_is_none={event_manager is None}, tools_empty={not self.tools}",
                     flush=True,
                 )
 
+            agent = self.create_agent_runnable()
             result = await self.run_agent(agent)
 
             # Store result for potential JSON output
