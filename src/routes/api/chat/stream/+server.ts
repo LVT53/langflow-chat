@@ -918,6 +918,16 @@ export const POST: RequestHandler = async (event) => {
 					const chunk = incremental.chunk;
 					if (!chunk) continue;
 
+					// Suppress duplicate visible text from Langflow's final summary event.
+					// Nemotron streams tokens as "<thinking>...</thinking>visible" so
+					// emittedAssistantText includes thinking tags, but the final non-token
+					// 'message' event has only 'visible text' (tags stripped by Langflow).
+					// toIncrementalChunk can't match them, so we guard here using fullResponse.
+					if (eventType !== 'token' && fullResponse && (chunk === fullResponse || fullResponse.endsWith(chunk))) {
+						console.log('[STREAM] Suppressing duplicate final chunk', { chunkLength: chunk.length });
+						continue;
+					}
+
 					console.log('[STREAM] Token chunk, length:', chunk.length);
 
 					if (!outputTranslator) {

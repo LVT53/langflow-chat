@@ -200,6 +200,13 @@
 		userChart = null;
 	}
 
+	// Map internal model key → display name
+	function modelDisplayName(key: string): string {
+		if (key === 'model1') return modelNames.model1;
+		if (key === 'model2') return modelNames.model2;
+		return key;
+	}
+
 	async function initCharts() {
 		if (!analyticsData) return;
 		await tick();
@@ -211,7 +218,7 @@
 			modelChart = new Chart(modelChartCanvas, {
 				type: 'doughnut',
 				data: {
-					labels: byModel.map((r: any) => r.model),
+					labels: byModel.map((r: any) => modelDisplayName(r.model)),
 					datasets: [{
 						data: byModel.map((r: any) => Number(r.msgCount)),
 						backgroundColor: CHART_COLORS.slice(0, byModel.length),
@@ -600,7 +607,7 @@
 							<div class="stat-label">Reasoning tokens</div>
 						</div>
 						<div class="stat-card">
-							<div class="stat-value">{analyticsData.personal.favoriteModel ?? '—'}</div>
+							<div class="stat-value">{analyticsData.personal.favoriteModel ? modelDisplayName(analyticsData.personal.favoriteModel) : '—'}</div>
 							<div class="stat-label">Favorite model</div>
 						</div>
 						<div class="stat-card">
@@ -686,7 +693,7 @@
 											<td class="py-2 pr-3 text-text-secondary">{formatMs(row.avgGenerationMs)}</td>
 											<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
 											<td class="py-2 pr-3 text-text-secondary">{formatNum(row.reasoningTokens)}</td>
-											<td class="py-2 pr-3 text-text-secondary">{row.favoriteModel ?? '—'}</td>
+											<td class="py-2 pr-3 text-text-secondary">{row.favoriteModel ? modelDisplayName(row.favoriteModel) : '—'}</td>
 											<td class="py-2 text-text-secondary">{formatNum(row.conversationCount)}</td>
 										</tr>
 									{/each}

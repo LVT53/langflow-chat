@@ -72,7 +72,7 @@
 			<ThinkingBlock
 				content={message.thinking ?? ''}
 				isStreaming={Boolean(message.isThinkingStreaming)}
-				isCollapsed={true}
+				isDone={!message.isStreaming && !message.isThinkingStreaming}
 			/>
 		{/if}
 		{#if isUser}

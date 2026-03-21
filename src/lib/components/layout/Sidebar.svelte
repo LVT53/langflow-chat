@@ -233,7 +233,11 @@
 			<!-- Profile / Settings button -->
 			<button
 				type="button"
-				class="btn-ghost flex w-full items-center justify-start gap-3 rounded-lg px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary"
+				class="btn-ghost flex w-full items-center rounded-lg py-1.5 text-sm text-text-secondary hover:text-text-primary"
+				class:justify-start={!isCollapsed}
+				class:justify-center={isCollapsed}
+				class:gap-3={!isCollapsed}
+				class:px-3={!isCollapsed}
 				on:click={() => goto('/settings')}
 				title={isCollapsed ? 'Settings' : ''}
 				aria-label="Open settings"
@@ -253,7 +257,11 @@
 			</button>
 			<button
 				type="button"
-				class="btn-ghost flex w-full items-center justify-start gap-3 rounded-lg px-3 py-1.5 text-sm text-text-secondary hover:text-danger"
+				class="btn-ghost flex w-full items-center rounded-lg py-1.5 text-sm text-text-secondary hover:text-danger"
+				class:justify-start={!isCollapsed}
+				class:justify-center={isCollapsed}
+				class:gap-3={!isCollapsed}
+				class:px-3={!isCollapsed}
 				on:click={handleLogout}
 				title={isCollapsed ? "Logout" : ""}
 				aria-label="Logout"

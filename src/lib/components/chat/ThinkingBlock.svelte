@@ -1,18 +1,36 @@
 <script lang="ts">
 	export let content: string = '';
 	export let isStreaming: boolean = false;
-	export let isCollapsed: boolean = true;
+	// True once the entire message (not just thinking) has finished generating.
+	// Used to auto-collapse the block after the user has been reading it live.
+	export let isDone: boolean = false;
 
-	let expanded = !isCollapsed;
+	let expanded = false;
+	let wasEverStreaming = false;
+	let userToggled = false;
+
 	$: label = isStreaming ? 'Thinking' : 'Thought';
 
-	$: if (!isStreaming && isCollapsed) {
+	// Auto-expand when thinking starts streaming for the first time.
+	$: if (isStreaming && !wasEverStreaming) {
+		wasEverStreaming = true;
+		expanded = true;
+	}
+
+	// Auto-collapse when the whole message is done — but only if the user
+	// hasn't manually toggled the block (so we respect explicit user intent).
+	$: if (isDone && wasEverStreaming && !userToggled) {
 		expanded = false;
 	}
 
 	function toggle() {
+		userToggled = true;
 		expanded = !expanded;
 	}
+</script>
+
+<script context="module">
+	import { slide } from 'svelte/transition';
 </script>
 
 <div class="thinking-block" class:is-streaming={isStreaming}>
@@ -52,10 +70,6 @@
 		</div>
 	{/if}
 </div>
-
-<script context="module">
-	import { slide } from 'svelte/transition';
-</script>
 
 <style>
 	.thinking-block {
