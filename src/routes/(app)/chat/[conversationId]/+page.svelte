@@ -125,7 +125,7 @@
 		}
 	});
 
-	function handleSend(event: CustomEvent<{ message: string }>) {
+	function handleSend(event: CustomEvent<{ message: string }>, skipUserMessage = false) {
 		const text = event.detail.message;
 		if (!text.trim() || isSending) return;
 
@@ -136,13 +136,6 @@
 		hasPersistedMessages = true;
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
-		const userMsg: ChatMessage = {
-			id: crypto.randomUUID(),
-			role: 'user',
-			content: text,
-			timestamp: Date.now()
-		};
-
 		const placeholderId = crypto.randomUUID();
 		const placeholder: ChatMessage = {
 			id: placeholderId,
@@ -152,7 +145,17 @@
 			isStreaming: true
 		};
 
-		messages.update((msgs) => [...msgs, userMsg, placeholder]);
+		if (skipUserMessage) {
+			messages.update((msgs) => [...msgs, placeholder]);
+		} else {
+			const userMsg: ChatMessage = {
+				id: crypto.randomUUID(),
+				role: 'user',
+				content: text,
+				timestamp: Date.now()
+			};
+			messages.update((msgs) => [...msgs, userMsg, placeholder]);
+		}
 
 		activeStream = streamChat(
 			text,
@@ -278,7 +281,7 @@
 		}).catch(() => {});
 
 		sendError = null;
-		handleSend(new CustomEvent('send', { detail: { message: userText } }));
+		handleSend(new CustomEvent('send', { detail: { message: userText } }), true);
 	}
 
 	function handleEdit(event: CustomEvent<{ messageId: string; newText: string }>) {
