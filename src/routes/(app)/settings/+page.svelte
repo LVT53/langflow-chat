@@ -28,6 +28,9 @@
 	let passwordSaving = false;
 	let passwordMessage = '';
 	let passwordError = '';
+	let showCurrentPw = false;
+	let showNewPw = false;
+	let showConfirmPw = false;
 
 	// --- Preferences state ---
 	let selectedModel = data.userSettings.preferences.preferredModel;
@@ -44,6 +47,7 @@
 	let deletePassword = '';
 	let deleteError = '';
 	let deleteLoading = false;
+	let showDeletePw = false;
 
 	// --- Admin config state ---
 	let adminConfig: Record<string, string> = {};
@@ -490,16 +494,34 @@
 				<h2 class="settings-section-title">Change Password</h2>
 				<div class="flex flex-col gap-3">
 					<div>
-						<label class="settings-label" for="current-pw">Current Password</label>
-						<input id="current-pw" type="password" class="settings-input" bind:value={currentPassword} autocomplete="current-password" />
+						<div class="flex items-center justify-between mb-1">
+							<label class="settings-label !mb-0" for="current-pw">Current Password</label>
+							<button type="button" class="pw-toggle" on:click={() => showCurrentPw = !showCurrentPw} tabindex="-1" aria-label={showCurrentPw ? 'Hide password' : 'Show password'}>
+								{#if showCurrentPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
+							</button>
+						</div>
+						<input id="current-pw" type={showCurrentPw ? 'text' : 'password'} class="settings-input" bind:value={currentPassword} autocomplete="current-password" />
 					</div>
 					<div>
-						<label class="settings-label" for="new-pw">New Password</label>
-						<input id="new-pw" type="password" class="settings-input" bind:value={newPassword} autocomplete="new-password" />
+						<div class="flex items-center justify-between mb-1">
+							<label class="settings-label !mb-0" for="new-pw">New Password</label>
+							<button type="button" class="pw-toggle" on:click={() => showNewPw = !showNewPw} tabindex="-1" aria-label={showNewPw ? 'Hide password' : 'Show password'}>
+								{#if showNewPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
+							</button>
+						</div>
+						<input id="new-pw" type={showNewPw ? 'text' : 'password'} class="settings-input" bind:value={newPassword} autocomplete="new-password" />
 					</div>
 					<div>
-						<label class="settings-label" for="confirm-pw">Confirm New Password</label>
-						<input id="confirm-pw" type="password" class="settings-input" bind:value={confirmPassword} autocomplete="new-password" />
+						<div class="flex items-center justify-between mb-1">
+							<label class="settings-label !mb-0" for="confirm-pw">Confirm New Password</label>
+							<button type="button" class="pw-toggle" on:click={() => showConfirmPw = !showConfirmPw} tabindex="-1" aria-label={showConfirmPw ? 'Hide password' : 'Show password'}>
+								{#if showConfirmPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
+							</button>
+						</div>
+						<input id="confirm-pw" type={showConfirmPw ? 'text' : 'password'} class="settings-input" bind:value={confirmPassword} autocomplete="new-password" />
 					</div>
 					{#if passwordMessage}
 						<p class="text-sm text-success">{passwordMessage}</p>
@@ -813,16 +835,22 @@
 	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 	<div
 		class="fixed inset-0 z-[9999] flex items-center justify-center bg-surface-overlay/60 backdrop-blur-sm"
-		on:click|self={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; }}
+		on:click|self={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
 	>
 		<div class="mx-4 w-full max-w-sm rounded-xl border border-border bg-surface-page p-6 shadow-lg">
 			<h3 class="mb-2 text-lg font-semibold text-text-primary">Delete Account</h3>
 			<p class="mb-4 text-sm text-text-secondary">
 				This will permanently delete your account, all chats, and all data. This cannot be undone.
 			</p>
-			<p class="mb-3 text-sm font-medium text-text-primary">Enter your password to confirm:</p>
+			<div class="flex items-center justify-between mb-1">
+				<p class="text-sm font-medium text-text-primary">Enter your password to confirm:</p>
+				<button type="button" class="pw-toggle" on:click={() => showDeletePw = !showDeletePw} tabindex="-1" aria-label={showDeletePw ? 'Hide password' : 'Show password'}>
+					{#if showDeletePw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+					{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
+				</button>
+			</div>
 			<input
-				type="password"
+				type={showDeletePw ? 'text' : 'password'}
 				class="settings-input mb-4"
 				bind:value={deletePassword}
 				placeholder="Your password"
@@ -841,7 +869,7 @@
 				</button>
 				<button
 					class="btn-secondary"
-					on:click={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; }}
+					on:click={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
 				>
 					Cancel
 				</button>
@@ -851,6 +879,23 @@
 {/if}
 
 <style>
+	.pw-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		font-family: inherit;
+		transition: color 150ms;
+	}
+	.pw-toggle:hover {
+		color: var(--text-primary);
+	}
+
 	.settings-card {
 		background: var(--surface-overlay);
 		border: 1px solid var(--border-default);

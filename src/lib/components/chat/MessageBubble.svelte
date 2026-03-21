@@ -3,11 +3,20 @@
 	import type { ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
+	import { createEventDispatcher, tick } from 'svelte';
 
 	export let message: ChatMessage;
 
+	const dispatch = createEventDispatcher<{
+		regenerate: { messageId: string };
+		edit: { messageId: string; newText: string };
+	}>();
+
 	let copied = false;
 	let copyTimeout: ReturnType<typeof setTimeout>;
+	let isEditing = false;
+	let editText = '';
+	let editTextarea: HTMLTextAreaElement;
 
 	function estimateTokenCount(text: string) {
 		const trimmed = text.trim();
@@ -64,6 +73,39 @@
 			console.error('Failed to copy text: ', err);
 		}
 	}
+
+	async function startEdit() {
+		editText = message.content;
+		isEditing = true;
+		await tick();
+		editTextarea?.focus();
+	}
+
+	function cancelEdit() {
+		isEditing = false;
+		editText = '';
+	}
+
+	function submitEdit() {
+		const trimmed = editText.trim();
+		if (!trimmed || trimmed === message.content) {
+			cancelEdit();
+			return;
+		}
+		dispatch('edit', { messageId: message.id, newText: trimmed });
+		isEditing = false;
+		editText = '';
+	}
+
+	function handleEditKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			submitEdit();
+		}
+		if (e.key === 'Escape') {
+			cancelEdit();
+		}
+	}
 </script>
 
 <div class="group flex w-full flex-col {isUser ? 'items-end' : 'items-start'} gap-md py-md fade-in">
@@ -82,9 +124,26 @@
 			/>
 		{/if}
 		{#if isUser}
-			<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
-				{message.content}
-			</div>
+			{#if isEditing}
+				<div class="flex flex-col gap-2">
+					<textarea
+						bind:this={editTextarea}
+						class="w-full resize-none rounded-md border border-border bg-surface-page px-3 py-2 font-serif text-[16px] leading-[1.6] text-text-primary focus:border-focus-ring focus:outline-none focus:ring-2 focus:ring-focus-ring"
+						bind:value={editText}
+						on:keydown={handleEditKeydown}
+						rows={Math.min(10, Math.max(2, editText.split('\n').length))}
+					></textarea>
+					<div class="flex items-center gap-2 justify-end">
+						<span class="text-xs text-text-muted">⌘↵ to send</span>
+						<button type="button" class="btn-secondary !py-1 !px-3 !text-sm" on:click={cancelEdit}>Cancel</button>
+						<button type="button" class="btn-primary !py-1 !px-3 !text-sm" on:click={submitEdit} disabled={!editText.trim()}>Send</button>
+					</div>
+				</div>
+			{:else}
+				<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
+					{message.content}
+				</div>
+			{/if}
 		{:else}
 			<div class="prose-container w-full overflow-hidden text-[16px] leading-[1.6]">
 				<MarkdownRenderer
@@ -97,7 +156,7 @@
 
 	</div>
 
-	{#if !message.isStreaming}
+	{#if !message.isStreaming && !isEditing}
 		<div
 			class="copy-action-row flex w-full items-center gap-0.5 opacity-100 transition-opacity duration-[var(--duration-micro)] md:opacity-0 md:group-hover:opacity-100"
 			class:justify-end={isUser}
@@ -140,6 +199,41 @@
 					</div>
 				</div>
 			{/if}
+
+			{#if !isUser}
+				<!-- Regenerate button -->
+				<button
+					type="button"
+					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+					on:click={() => dispatch('regenerate', { messageId: message.id })}
+					title="Regenerate response"
+					aria-label="Regenerate response"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 2v6h-6"/>
+						<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+						<path d="M3 22v-6h6"/>
+						<path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+					</svg>
+				</button>
+			{/if}
+
+			{#if isUser}
+				<!-- Edit button -->
+				<button
+					type="button"
+					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+					on:click={startEdit}
+					title="Edit message"
+					aria-label="Edit message"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+					</svg>
+				</button>
+			{/if}
+
 			<button
 				type="button"
 				class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"

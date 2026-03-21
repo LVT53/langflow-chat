@@ -7,10 +7,6 @@
 		currentConversationId,
 		SIDEBAR_DESKTOP_BREAKPOINT
 	} from '$lib/stores/ui';
-	import type { SessionUser } from '$lib/types';
-
-	export let user: SessionUser | null = null;
-
 	let mobileMenuOpen = false;
 	let menuRef: HTMLDivElement;
 	let triggerRef: HTMLButtonElement;
@@ -226,15 +222,6 @@
 </header>
 
 <style>
-	.logout-icon {
-		color: var(--accent);
-	}
-
-	.logout-icon:hover,
-	.logout-icon:focus-visible {
-		color: var(--accent-hover);
-	}
-
 	.mobile-user-trigger {
 		color: var(--accent);
 	}
@@ -318,12 +305,6 @@
 
 	:global(.dark) .header-option-icon-accent {
 		color: var(--accent);
-	}
-
-	@media (max-width: 767px) {
-		.hide-on-mobile {
-			display: none !important;
-		}
 	}
 
 	@media (min-width: 1024px) {

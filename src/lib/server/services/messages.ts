@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { messages } from '$lib/server/db/schema';
 import type { ChatMessage, MessageRole } from '$lib/types';
@@ -22,6 +22,11 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		.orderBy(asc(messages.createdAt));
 
 	return result.map(mapRowToChatMessage);
+}
+
+export async function deleteMessages(ids: string[]): Promise<void> {
+	if (ids.length === 0) return;
+	await db.delete(messages).where(inArray(messages.id, ids));
 }
 
 export async function createMessage(

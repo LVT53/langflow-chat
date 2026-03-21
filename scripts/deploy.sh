@@ -36,15 +36,4 @@ npx drizzle-kit push
 echo -e "${GREEN}✓ Database migrations complete${NC}"
 echo ""
 
-echo -e "${YELLOW}5. Restarting application...${NC}"
-if pm2 list | grep -q "$PM2_APP_NAME"; then
-    pm2 reload "$PM2_APP_NAME"
-    echo -e "${GREEN}✓ Application reloaded${NC}"
-else
-    echo -e "${RED}⚠ PM2 app '$PM2_APP_NAME' not found${NC}"
-    echo "Start manually: pm2 start ecosystem.config.cjs"
-fi
-echo ""
-
 echo -e "${GREEN}=== Deployment complete! ===${NC}"
-echo "Check logs: pm2 logs $PM2_APP_NAME"

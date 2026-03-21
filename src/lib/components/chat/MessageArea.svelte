@@ -1,10 +1,15 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, createEventDispatcher } from 'svelte';
 	import type { ChatMessage } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
 	export let messages: ChatMessage[] = [];
 	export let conversationId: string | null = null;
+
+	const dispatch = createEventDispatcher<{
+		regenerate: { messageId: string };
+		edit: { messageId: string; newText: string };
+	}>();
 
 	let scrollContainer: HTMLDivElement;
 	let shouldAutoScroll = true;
@@ -95,7 +100,11 @@
 			<div class="h-full"></div>
 		{:else}
 			{#each messages as message (message.id)}
-				<MessageBubble {message} />
+				<MessageBubble
+					{message}
+					on:regenerate={(e) => dispatch('regenerate', e.detail)}
+					on:edit={(e) => dispatch('edit', e.detail)}
+				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>
 		{/if}

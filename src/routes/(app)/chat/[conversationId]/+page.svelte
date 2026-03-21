@@ -253,6 +253,57 @@
 		}
 	}
 
+	function handleRegenerate(event: CustomEvent<{ messageId: string }>) {
+		if (isSending) return;
+		const { messageId } = event.detail;
+		const msgs = $messages;
+		const assistantIdx = msgs.findIndex((m) => m.id === messageId);
+		if (assistantIdx === -1) return;
+
+		// Find the user message immediately before this assistant message
+		const userIdx = assistantIdx - 1;
+		if (userIdx < 0 || msgs[userIdx].role !== 'user') return;
+
+		const userText = msgs[userIdx].content;
+		const idsToDelete = msgs.slice(assistantIdx).map((m) => m.id);
+
+		// Remove the assistant message(s) from in-memory state
+		messages.update((m) => m.slice(0, assistantIdx));
+
+		// Delete from DB (fire-and-forget, non-critical)
+		fetch(`/api/conversations/${data.conversation.id}/messages`, {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ messageIds: idsToDelete })
+		}).catch(() => {});
+
+		sendError = null;
+		handleSend(new CustomEvent('send', { detail: { message: userText } }));
+	}
+
+	function handleEdit(event: CustomEvent<{ messageId: string; newText: string }>) {
+		if (isSending) return;
+		const { messageId, newText } = event.detail;
+		const msgs = $messages;
+		const editIdx = msgs.findIndex((m) => m.id === messageId);
+		if (editIdx === -1) return;
+
+		const idsToDelete = msgs.slice(editIdx).map((m) => m.id);
+
+		// Remove all messages from the edited one onwards
+		messages.update((m) => m.slice(0, editIdx));
+
+		// Delete from DB (fire-and-forget, non-critical)
+		fetch(`/api/conversations/${data.conversation.id}/messages`, {
+			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ messageIds: idsToDelete })
+		}).catch(() => {});
+
+		sendError = null;
+		handleSend(new CustomEvent('send', { detail: { message: newText } }));
+	}
+
 	function handleStop() {
 		if (activeStream) {
 			activeStream.abort();
@@ -272,7 +323,7 @@
 <div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
 		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
-			<MessageArea messages={$messages} conversationId={data.conversation.id} />
+			<MessageArea messages={$messages} conversationId={data.conversation.id} on:regenerate={handleRegenerate} on:edit={handleEdit} />
 		</div>
 
 		<div class="composer-layer" class:composer-layer-active={hasMessages}>
