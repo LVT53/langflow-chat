@@ -14,6 +14,7 @@
 	import SearchModal from '../search/SearchModal.svelte';
 	import AvatarCircle from '../ui/AvatarCircle.svelte';
 	import type { ConversationListItem, SessionUser, Project } from '$lib/types';
+	import { avatarState } from '$lib/stores/avatar';
 
 	export let open = false;
 	export let conversationsData: ConversationListItem[] = [];
@@ -243,7 +244,8 @@
 						userId={user?.id ?? 'default'}
 						name={user?.displayName ?? null}
 						avatarId={user?.avatarId ?? null}
-						profilePicture={user?.profilePicture ?? null}
+						profilePicture={$avatarState.profilePicture}
+					cacheBuster={$avatarState.cacheBuster}
 						size={22}
 					/>
 				</button>
@@ -274,7 +276,8 @@
 						userId={user?.id ?? 'default'}
 						name={user?.displayName ?? null}
 						avatarId={user?.avatarId ?? null}
-						profilePicture={user?.profilePicture ?? null}
+						profilePicture={$avatarState.profilePicture}
+					cacheBuster={$avatarState.cacheBuster}
 						size={28}
 					/>
 					<div class="min-w-0 flex-1 text-left">

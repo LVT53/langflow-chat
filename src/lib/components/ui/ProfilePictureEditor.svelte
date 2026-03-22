@@ -101,14 +101,13 @@
 		ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
 		ctx.restore();
 
-		// Dimming mask outside crop circle
+		// Dimming mask outside crop circle (evenodd punches the circle out of the rect)
 		ctx.save();
 		ctx.fillStyle = 'rgba(0,0,0,0.45)';
-		ctx.fillRect(0, 0, W, H);
-		ctx.globalCompositeOperation = 'destination-out';
 		ctx.beginPath();
+		ctx.rect(0, 0, W, H);
 		ctx.arc(W / 2, H / 2, W / 2 - 2, 0, Math.PI * 2);
-		ctx.fill();
+		ctx.fill('evenodd');
 		ctx.restore();
 
 		// Crop circle border

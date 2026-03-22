@@ -6,6 +6,7 @@
 	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
+	import { avatarState, setAvatarUploaded, setAvatarRemoved } from '$lib/stores/avatar';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -68,8 +69,6 @@
 	// --- Avatar / profile picture state ---
 	let showAvatarPicker = false;
 	let showPictureEditor = false;
-	let avatarCacheBuster = Date.now();
-	let profilePicture: string | null = data.userSettings.profilePicture ?? null;
 	let removingPhoto = false;
 
 	async function removePhoto() {
@@ -77,7 +76,7 @@
 		try {
 			const res = await fetch('/api/settings/avatar', { method: 'DELETE' });
 			if (!res.ok) throw new Error('Failed to remove photo');
-			profilePicture = null;
+			setAvatarRemoved();
 		} catch {
 			// Non-fatal
 		} finally {
@@ -440,8 +439,8 @@
 						userId={data.userSettings.id}
 						name={data.userSettings.name ?? data.userSettings.email}
 						avatarId={selectedAvatar}
-						profilePicture={profilePicture}
-						cacheBuster={avatarCacheBuster}
+						profilePicture={$avatarState.profilePicture}
+						cacheBuster={$avatarState.cacheBuster}
 						size={48}
 					/>
 					<div class="flex flex-wrap items-center gap-2">
@@ -457,7 +456,7 @@
 						>
 							{showAvatarPicker ? 'Done' : 'Change Color'}
 						</button>
-						{#if profilePicture}
+						{#if $avatarState.profilePicture}
 							<button
 								class="btn-ghost text-sm"
 								style="color: var(--color-danger);"
@@ -887,8 +886,7 @@
 	<ProfilePictureEditor
 		on:close={() => (showPictureEditor = false)}
 		on:uploaded={() => {
-			avatarCacheBuster = Date.now();
-			profilePicture = data.userSettings.id;
+			setAvatarUploaded(data.userSettings.id);
 			showPictureEditor = false;
 		}}
 	/>

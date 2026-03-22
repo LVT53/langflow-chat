@@ -7,6 +7,7 @@
 	import { projects } from '$lib/stores/projects';
 	import { initSettings } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
+	import { initAvatar } from '$lib/stores/avatar';
 	import type { LayoutData } from './$types';
 
 	export let data: LayoutData;
@@ -20,6 +21,7 @@
 			model: data.userModel as 'model1' | 'model2',
 			translationEnabled: data.userTranslation,
 		});
+		initAvatar(data.user?.profilePicture ?? null);
 	});
 </script>
 
