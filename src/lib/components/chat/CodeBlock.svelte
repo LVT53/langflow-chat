@@ -103,7 +103,7 @@
 		border: none;
 		cursor: pointer;
 		padding: 0;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 14px;
 		font-weight: 500;
 		color: var(--text-muted);

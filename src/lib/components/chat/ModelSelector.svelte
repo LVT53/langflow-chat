@@ -131,7 +131,7 @@
 		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 		border-radius: var(--radius-md, 8px);
 		color: var(--text-primary, #1a1a1a);
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 14px;
 		font-weight: 400;
 		cursor: pointer;
@@ -195,7 +195,7 @@
 		padding: var(--space-sm, 8px) var(--space-md, 16px);
 		border-radius: var(--radius-sm, 4px);
 		cursor: pointer;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 14px;
 		color: var(--text-primary, #1a1a1a);
 		transition: background-color 150ms ease-out;

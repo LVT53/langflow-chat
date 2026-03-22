@@ -380,7 +380,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 12px;
 		line-height: 1.4;
 	}

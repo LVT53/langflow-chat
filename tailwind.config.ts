@@ -79,8 +79,8 @@ export default {
 			'emphasis': 'var(--duration-emphasis)',
 		},
 			fontFamily: {
-				sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
-				serif: ["Georgia", "Times New Roman", "serif"],
+				sans: ["Nimbus Sans L", "sans-serif"],
+				serif: ["Libre Baskerville", "serif"],
 				mono: ["JetBrains Mono", "Fira Code", "Consolas", "monospace"],
 			}
 		},

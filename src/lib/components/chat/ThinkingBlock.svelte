@@ -153,7 +153,7 @@
 	}
 
 	.thinking-label {
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 14px;
 		font-weight: 500;
 		color: var(--text-muted);
@@ -203,7 +203,7 @@
 		align-items: center;
 		gap: var(--space-xs);
 		padding: 3px 0;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 12px;
 		color: var(--text-muted);
 	}
@@ -245,7 +245,7 @@
 
 	.thinking-text {
 		margin: 0;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 13px;
 		line-height: 1.5;
 		color: var(--text-muted);
@@ -258,7 +258,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 12px;
 		color: var(--text-muted);
 		margin: var(--space-xs) 0;
