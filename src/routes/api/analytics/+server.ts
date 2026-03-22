@@ -24,6 +24,7 @@ const MOCK_ANALYTICS = {
     totalTokens: 176000,
     reasoningTokens: 44000,
     totalUsers: 5,
+    totalConversations: 60,
     byModel: [
       { model: 'model1', msgCount: 310 },
       { model: 'model2', msgCount: 120 },
@@ -101,6 +102,7 @@ export const GET: RequestHandler = async (event) => {
     .groupBy(messageAnalytics.model);
 
   const userCount = await db.select({ cnt: count(users.id) }).from(users);
+  const conversationCount = await db.select({ cnt: count(conversations.id) }).from(conversations);
 
   const systemStats = {
     totalMessages: Number(systemRows[0]?.msgCount ?? 0),
@@ -108,6 +110,7 @@ export const GET: RequestHandler = async (event) => {
     totalTokens: Number(systemRows[0]?.totalCompletion ?? 0),
     reasoningTokens: Number(systemRows[0]?.totalReasoning ?? 0),
     totalUsers: Number(userCount[0]?.cnt ?? 0),
+    totalConversations: Number(conversationCount[0]?.cnt ?? 0),
     byModel: systemModelRows,
   };
 

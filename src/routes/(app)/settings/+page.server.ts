@@ -24,6 +24,7 @@ export const load: ServerLoad = async (event) => {
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
       avatarId: userRow.avatarId ?? null,
     },
+    profilePicture: userRow.profilePicture ?? null,
   };
 
   const isAdmin = userRow.role === 'admin';

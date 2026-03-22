@@ -19,6 +19,7 @@ export interface UserSettings {
   name: string | null;
   role: UserRole;
   preferences: UserPreferences;
+  profilePicture: string | null;
 }
 
 // User interface: id, email, displayName
@@ -35,6 +36,7 @@ export interface SessionUser {
   displayName: string;
   role: UserRole;
   avatarId: number | null;
+  profilePicture: string | null;
 }
 
 // Project interface: a named folder grouping conversations

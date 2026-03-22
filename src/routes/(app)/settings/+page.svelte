@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
+	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
 	import type { PageData } from './$types';
@@ -64,8 +65,27 @@
 	let analyticsLoading = false;
 	let analyticsError = '';
 
-	// --- Chart state ---
+	// --- Avatar / profile picture state ---
 	let showAvatarPicker = false;
+	let showPictureEditor = false;
+	let avatarCacheBuster = Date.now();
+	let profilePicture: string | null = data.userSettings.profilePicture ?? null;
+	let removingPhoto = false;
+
+	async function removePhoto() {
+		removingPhoto = true;
+		try {
+			const res = await fetch('/api/settings/avatar', { method: 'DELETE' });
+			if (!res.ok) throw new Error('Failed to remove photo');
+			profilePicture = null;
+		} catch {
+			// Non-fatal
+		} finally {
+			removingPhoto = false;
+		}
+	}
+
+	// --- Chart state ---
 	let modelChart: any = null;
 	let userChart: any = null;
 
@@ -420,14 +440,34 @@
 						userId={data.userSettings.id}
 						name={data.userSettings.name ?? data.userSettings.email}
 						avatarId={selectedAvatar}
+						profilePicture={profilePicture}
+						cacheBuster={avatarCacheBuster}
 						size={48}
 					/>
-					<button
-						class="btn-secondary text-sm"
-						on:click={() => (showAvatarPicker = !showAvatarPicker)}
-					>
-						{showAvatarPicker ? 'Done' : 'Change Avatar'}
-					</button>
+					<div class="flex flex-wrap items-center gap-2">
+						<button
+							class="btn-secondary text-sm"
+							on:click={() => (showPictureEditor = true)}
+						>
+							Upload Photo
+						</button>
+						<button
+							class="btn-secondary text-sm"
+							on:click={() => (showAvatarPicker = !showAvatarPicker)}
+						>
+							{showAvatarPicker ? 'Done' : 'Change Color'}
+						</button>
+						{#if profilePicture}
+							<button
+								class="btn-ghost text-sm"
+								style="color: var(--color-danger);"
+								on:click={removePhoto}
+								disabled={removingPhoto}
+							>
+								{removingPhoto ? 'Removing…' : 'Remove Photo'}
+							</button>
+						{/if}
+					</div>
 				</div>
 				{#if showAvatarPicker}
 					<div class="mt-4 flex flex-wrap gap-3">
@@ -693,6 +733,10 @@
 								<div class="stat-value">{formatNum(analyticsData.system.totalTokens + analyticsData.system.reasoningTokens)}</div>
 								<div class="stat-label">Total incl. reasoning</div>
 							</div>
+							<div class="stat-card">
+								<div class="stat-value">{formatNum(analyticsData.system.totalConversations ?? 0)}</div>
+								<div class="stat-label">Total conversations</div>
+							</div>
 						</div>
 
 					</section>
@@ -837,6 +881,18 @@
 
 	</div>
 </div>
+
+<!-- Profile picture editor modal -->
+{#if showPictureEditor}
+	<ProfilePictureEditor
+		on:close={() => (showPictureEditor = false)}
+		on:uploaded={() => {
+			avatarCacheBuster = Date.now();
+			profilePicture = data.userSettings.id;
+			showPictureEditor = false;
+		}}
+	/>
+{/if}
 
 <!-- Delete account modal -->
 {#if showDeleteModal}

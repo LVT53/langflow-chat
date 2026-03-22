@@ -243,6 +243,7 @@
 						userId={user?.id ?? 'default'}
 						name={user?.displayName ?? null}
 						avatarId={user?.avatarId ?? null}
+						profilePicture={user?.profilePicture ?? null}
 						size={22}
 					/>
 				</button>
@@ -273,6 +274,7 @@
 						userId={user?.id ?? 'default'}
 						name={user?.displayName ?? null}
 						avatarId={user?.avatarId ?? null}
+						profilePicture={user?.profilePicture ?? null}
 						size={28}
 					/>
 					<div class="min-w-0 flex-1 text-left">
