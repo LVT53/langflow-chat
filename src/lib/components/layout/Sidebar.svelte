@@ -306,7 +306,6 @@
 		max-width: 100vw;
 		width: 100vw;
 		transition: none;
-		will-change: transform, width, opacity;
 	}
 
 	.sidebar-panel.transitions-enabled {

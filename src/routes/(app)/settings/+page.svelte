@@ -641,6 +641,10 @@
 							<div class="stat-label">Reasoning tokens</div>
 						</div>
 						<div class="stat-card">
+							<div class="stat-value">{formatNum(analyticsData.personal.totalTokens + analyticsData.personal.reasoningTokens)}</div>
+							<div class="stat-label">Total incl. reasoning</div>
+						</div>
+						<div class="stat-card">
 							<div class="stat-value">{analyticsData.personal.favoriteModel ? modelDisplayName(analyticsData.personal.favoriteModel) : '—'}</div>
 							<div class="stat-label">Favorite model</div>
 						</div>
@@ -684,6 +688,10 @@
 							<div class="stat-card">
 								<div class="stat-value">{formatNum(analyticsData.system.reasoningTokens)}</div>
 								<div class="stat-label">Reasoning tokens</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-value">{formatNum(analyticsData.system.totalTokens + analyticsData.system.reasoningTokens)}</div>
+								<div class="stat-label">Total incl. reasoning</div>
 							</div>
 						</div>
 
