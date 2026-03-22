@@ -14,10 +14,12 @@
 > - Non-streaming fallback for Hungarian (full response wait)
 > - Apache VirtualHost config, systemd service file, deployment docs
 > - File upload placeholder button (disabled, "coming soon")
+> - Translation pipeline toggle button (enable/disable translation, localStorage persistence)
+> - Model selection dropdown (2 models configurable via .env, localStorage persistence)
 > 
-> **Estimated Effort**: Large (15 atomic commits, ~43 tasks)
-> **Parallel Execution**: YES — 8 waves + Final Verification
-> **Critical Path**: Task 1 → Task 3 → Task 6 → Task 12 → Task 18 → Task 22 → Task 28 → Task 35 → Task 36 → Task 37 → Task 38 → Final
+> **Estimated Effort**: Large (17 atomic commits, ~45 tasks)
+> **Parallel Execution**: YES — 9 waves + Final Verification
+> **Critical Path**: Task 1 → Task 3 → Task 6 → Task 12 → Task 18 → Task 22 → Task 28 → Task 35 → Task 36 → Task 37 → Task 38 → Task 39 → Task 40 → Final
 
 ---
 
@@ -94,6 +96,8 @@ Build a production-ready, multi-user chat web application using SvelteKit that i
 - Apache VirtualHost config with SSE anti-buffering
 - systemd service file with auto-restart
 - `.env.example` with all configuration documented
+- Translation pipeline toggle button in message input (enable/disable, localStorage persistence)
+- Model selection dropdown with 2 configurable models (via .env, localStorage persistence)
 
 ### Must NOT Have (Guardrails)
 - NO message content stored in SQLite — only conversation metadata (id, title, user_id, timestamps)
@@ -207,15 +211,19 @@ Wave 7 (After Wave 6 — design reinspection, HIGH PRIORITY):
 Wave 8 (After Wave 7 — comprehensive codebase testing):
 ├── Task 38: Comprehensive Codebase Testing — full syntax + runtime verification against plan [deep]
 
+Wave 9 (After Wave 8 — new features: translation toggle + model selection):
+├── Task 39: Translation Pipeline Toggle Button [visual-engineering]
+├── Task 40: Model Selection Feature (2 fixed models via .env) [visual-engineering]
+
 Wave FINAL (After ALL tasks — independent review):
 ├── Task F1: Plan compliance audit [oracle]
 ├── Task F2: Code quality review (tsc, lint, vitest) [unspecified-high]
 ├── Task F3: Full QA — Playwright end-to-end verification [unspecified-high]
 ├── Task F4: Scope fidelity check (no over/under-build) [deep]
 
-Critical Path: Task 1 → Task 3 → Task 7 → Task 12 → Task 18 → Task 20 → Task 28 → Task 35 → Task 36 → Task 37 → Task 38 → F1-F4
+Critical Path: Task 1 → Task 3 → Task 7 → Task 12 → Task 18 → Task 20 → Task 28 → Task 35 → Task 36 → Task 37 → Task 38 → Task 39 → Task 40 → F1-F4
 Parallel Speedup: ~60% faster than sequential
-Max Concurrent: 7 (Waves 2 & 3)
+Max Concurrent: 7 (Waves 2 & 3) — Wave 9 adds 2 parallel tasks
 ```
 
 ### Dependency Matrix
@@ -262,6 +270,10 @@ Max Concurrent: 7 (Waves 2 & 3)
 | 38 | 37 | F1-F4 |
 | F1-F4 | 38 | — |
 
+| 39 | 15 | 40 |
+| 40 | 15 | — |
+| F1-F4 | 39, 40 | — |
+
 ### Agent Dispatch Summary
 
 - **Wave 1**: **5 tasks** — T1-T4 → `quick`, T5 → `unspecified-high`
@@ -272,6 +284,7 @@ Max Concurrent: 7 (Waves 2 & 3)
 - **Wave 6**: **1 task** — T36 → `visual-engineering` (mobile design polish per DESIGN_SPEC.md)
 - **Wave 7**: **1 task** — T37 → `visual-engineering` (comprehensive design reinspection — HIGH PRIORITY)
 - **Wave 8**: **1 task** — T38 → `deep` (comprehensive codebase testing with Playwright + Vitest)
+- **Wave 9**: **2 tasks** — T39-T40 → `visual-engineering` (translation toggle + model selection)
 - **FINAL**: **4 tasks** — F1 → `oracle`, F2-F3 → `unspecified-high`, F4 → `deep`
 
 ---
@@ -5614,25 +5627,338 @@ Max Concurrent: 7 (Waves 2 & 3)
 
 ---
 
+- [ ] 39. Translation Pipeline Toggle Button
+
+  **What to do**:
+  - Create `src/lib/stores/settings.ts` — settings store for user preferences:
+    ```typescript
+    type TranslationState = 'enabled' | 'disabled';
+    
+    // Persisted to localStorage, defaults to 'enabled'
+    export const translationState = writable<TranslationState>('enabled');
+    
+    // Initialize from localStorage on mount
+    export function initSettings(): void {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('translationState');
+        if (stored === 'enabled' || stored === 'disabled') {
+          translationState.set(stored);
+        }
+      }
+    }
+    
+    export function setTranslationState(state: TranslationState): void {
+      translationState.set(state);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('translationState', state);
+      }
+    }
+    ```
+  - Create `src/lib/components/chat/TranslationToggle.svelte`:
+    - Icon button with globe/language icon (SVG or Unicode 🌐)
+    - Positioned in the message input bar, **to the left of the file attachment button**
+    - Two states: enabled (accent color) and disabled (muted color)
+    - Tooltip: "Translation enabled" / "Translation disabled"
+    - Click toggles state and persists to localStorage
+    - Visual feedback: filled globe when enabled, outlined or crossed-out globe when disabled
+    - Style matching DESIGN_SPEC.md: `--text-secondary` default, `--accent` when active, 44x44px touch target
+  - Integrate into `MessageInput.svelte`:
+    - Import `TranslationToggle` component
+    - Place it in the `.composer-actions` div, to the left of the file attachment button
+    - The toggle does NOT dispatch events — the parent chat page reads the store directly
+  - Create `src/lib/types.ts` — add type:
+    ```typescript
+    export type TranslationState = 'enabled' | 'disabled';
+    export type ModelId = 'model1' | 'model2';
+    ```
+  - Write test `src/lib/stores/settings.test.ts`:
+    - Test: default state is 'enabled'
+    - Test: setTranslationState updates store
+    - Test: state persists to localStorage (mock localStorage)
+  - Write test `src/lib/components/chat/TranslationToggle.test.ts`:
+    - Test: component renders with globe icon
+    - Test: click toggles state
+    - Test: tooltip shows correct state text
+
+  **Must NOT do**:
+  - Do NOT store translation preference in the database (localStorage only)
+  - Do NOT add per-conversation translation settings (out of scope)
+  - Do NOT add any backend integration in this task (Task 40 handles that)
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+    - Reason: UI component with toggle state, icon styling, tooltip — primarily visual work
+  - **Skills**: [`playwright`]
+    - `playwright`: For verifying toggle interaction
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (with Task 40)
+  - **Parallel Group**: Wave 9
+  - **Blocks**: None
+  - **Blocked By**: Task 15 (needs MessageInput component to integrate into)
+
+  **References**:
+
+  **Pattern References**:
+  - `src/lib/components/chat/MessageInput.svelte` (Task 15) — integration point, button placement
+  - `src/lib/stores/theme.ts` (Task 11) — pattern for localStorage persistence
+
+  **Design Spec References**:
+  - `DESIGN_SPEC.md:310-312` — File attachment button placement; translation toggle goes to its left
+  - `DESIGN_SPEC.md:241-243` — Touch targets: 44×44px minimum on mobile
+  - `DESIGN_SPEC.md:346` — Icon buttons: 36×36px (desktop), 44×44px (mobile)
+
+  **WHY Each Reference Matters**:
+  - MessageInput.svelte defines the `.composer-actions` container — toggle must be placed correctly
+  - Theme store shows the proven pattern for localStorage persistence in SvelteKit
+  - DESIGN_SPEC.md defines exact sizing for icon buttons
+
+  **Acceptance Criteria**:
+  - [ ] Translation toggle button visible in message input bar (left of file icon)
+  - [ ] Clicking toggle switches between enabled/disabled states
+  - [ ] State persists across page refreshes (localStorage)
+  - [ ] Icon visual feedback indicates current state
+  - [ ] Tooltip shows "Translation enabled" / "Translation disabled"
+  - [ ] Touch target is 44×44px on mobile
+  - [ ] `npm test -- settings` → all tests pass
+
+  **QA Scenarios (MANDATORY)**:
+
+  ```
+  Scenario: Translation toggle shows and changes state
+    Tool: Playwright
+    Preconditions: Logged in, on conversation page
+    Steps:
+      1. Assert translation toggle button visible (selector: `[data-testid="translation-toggle"]`)
+      2. Assert initial state shows "Translation enabled" tooltip
+      3. Click the toggle
+      4. Assert tooltip changes to "Translation disabled"
+      5. Assert icon styling changed (check CSS class or style)
+      6. Screenshot both states
+    Expected Result: Toggle works with visual feedback
+    Failure Indicators: No toggle visible, click doesn't change state, no tooltip
+    Evidence: .sisyphus/evidence/task-39-translation-toggle.png
+
+  Scenario: Translation state persists across refresh
+    Tool: Playwright
+    Preconditions: Logged in
+    Steps:
+      1. Click toggle to disable translation
+      2. Reload the page
+      3. Assert toggle still shows disabled state
+      4. Assert localStorage has translationState=disabled
+    Expected Result: Preference remembered after refresh
+    Failure Indicators: State resets to enabled
+    Evidence: .sisyphus/evidence/task-39-translation-persist.png
+  ```
+
+  **Commit**: YES (group: commit 16)
+  - Message: `feat(settings): add translation pipeline toggle button in message input`
+  - Files: `src/lib/stores/settings.ts, src/lib/components/chat/TranslationToggle.svelte, src/lib/components/chat/MessageInput.svelte, src/lib/types.ts, src/lib/stores/settings.test.ts, src/lib/components/chat/TranslationToggle.test.ts`
+  - Pre-commit: `npm test -- settings && npm run build`
+
+---
+
+- [ ] 40. Model Selection Feature (2 Fixed Models via .env)
+
+  **What to do**:
+  - Update `src/lib/server/env.ts` — add model configuration variables:
+    ```typescript
+    interface ModelConfig {
+      baseUrl: string;
+      apiKey: string;
+      modelName: string;
+      displayName: string;
+    }
+    
+    // Add to Config interface:
+    model1: ModelConfig;
+    model2: ModelConfig;
+    ```
+  - Update `.env.example` with new variables:
+    ```
+    # Model 1 Configuration
+    MODEL_1_BASEURL=http://192.168.1.96:30001/v1
+    MODEL_1_API_KEY=your-api-key-here
+    MODEL_1_NAME=nemotron-nano
+    MODEL_1_DISPLAY_NAME=Nemotron Nano
+    
+    # Model 2 Configuration
+    MODEL_2_BASEURL=http://192.168.1.96:30002/v1
+    MODEL_2_API_KEY=your-api-key-here
+    MODEL_2_NAME=translategemma
+    MODEL_2_DISPLAY_NAME=TranslateGemma
+    ```
+  - Create `src/lib/components/chat/ModelSelector.svelte`:
+    - Dropdown or segmented control for model selection
+    - Positioned in the message input bar, **to the left of the translation toggle**
+    - Shows the two model display names from config
+    - Default selection: Model 1
+    - Selection persists to localStorage (`selectedModel: 'model1' | 'model2'`)
+    - Compact design: icon + dropdown on click, or two inline toggle buttons
+    - Style matching DESIGN_SPEC.md
+  - Add to `src/lib/stores/settings.ts`:
+    ```typescript
+    export const selectedModel = writable<ModelId>('model1');
+    
+    export function initModelSelection(): void {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('selectedModel');
+        if (stored === 'model1' || stored === 'model2') {
+          selectedModel.set(stored);
+        }
+      }
+    }
+    
+    export function setSelectedModel(model: ModelId): void {
+      selectedModel.set(model);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedModel', model);
+      }
+    }
+    ```
+  - Create API endpoint `src/routes/api/models/+server.ts`:
+    - GET: returns available models with display names
+    ```json
+    {
+      "models": [
+        { "id": "model1", "displayName": "Nemotron Nano" },
+        { "id": "model2", "displayName": "TranslateGemma" }
+      ]
+    }
+    ```
+  - Integrate into `MessageInput.svelte`:
+    - Import `ModelSelector` component
+    - Place in `.composer-actions`, left of translation toggle
+    - The selector updates the store — parent chat page reads it
+  - Update `src/lib/server/services/langflow.ts`:
+    - Add function to get model config by ID:
+    ```typescript
+    export function getModelConfig(modelId: 'model1' | 'model2'): ModelConfig {
+      return modelId === 'model1' ? config.model1 : config.model2;
+    }
+    ```
+    - Modify `sendMessage` and `sendMessageStream` to accept optional `modelId` parameter
+    - Route to the correct model endpoint based on selection
+  - Write test `src/lib/stores/settings.test.ts` (add to existing):
+    - Test: default model is 'model1'
+    - Test: setSelectedModel updates store
+    - Test: model selection persists to localStorage
+  - Write test `src/routes/api/models/models.test.ts`:
+    - Test: GET returns two models with display names
+
+  **Must NOT do**:
+  - Do NOT add more than 2 models (user specified 2 fixed models)
+  - Do NOT add dynamic model configuration (no admin UI)
+  - Do NOT store model preference in database (localStorage only)
+  - Do NOT integrate translation bypass logic here (separate concern)
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+    - Reason: Dropdown/selector UI component + styling + localStorage persistence
+  - **Skills**: [`playwright`]
+    - `playwright`: For verifying model selection interaction
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (with Task 39)
+  - **Parallel Group**: Wave 9
+  - **Blocks**: None
+  - **Blocked By**: Task 15 (needs MessageInput component to integrate into)
+
+  **References**:
+
+  **Pattern References**:
+  - `src/lib/components/chat/MessageInput.svelte` (Task 15) — integration point
+  - `src/lib/components/chat/TranslationToggle.svelte` (Task 39) — similar pattern for settings persistence
+  - `src/lib/server/env.ts` (Task 2) — config module to extend
+  - `src/lib/server/services/langflow.ts` (Task 12) — API client to modify for model routing
+
+  **Design Spec References**:
+  - `DESIGN_SPEC.md:310-312` — Button placement in input bar
+  - `DESIGN_SPEC.md:241-243` — Touch targets: 44×44px minimum
+
+  **WHY Each Reference Matters**:
+  - env.ts already defines the config pattern — extend with model configs
+  - langflow.ts handles API calls — must route to correct model endpoint
+  - TranslationToggle shows the pattern for localStorage persistence
+
+  **Acceptance Criteria**:
+  - [ ] Two model options visible in selector (display names from .env)
+  - [ ] Default selection is Model 1
+  - [ ] Selection persists across page refreshes (localStorage)
+  - [ ] GET `/api/models` returns model list with display names
+  - [ ] `npm test -- settings` → all tests pass
+  - [ ] `npm test -- models` → all tests pass
+
+  **QA Scenarios (MANDATORY)**:
+
+  ```
+  Scenario: Model selector shows two options
+    Tool: Playwright
+    Preconditions: Logged in, on conversation page
+    Steps:
+      1. Assert model selector visible (selector: `[data-testid="model-selector"]`)
+      2. Click the selector to open dropdown
+      3. Assert two options visible with display names from config
+      4. Assert Model 1 is selected by default
+      5. Screenshot
+    Expected Result: Model selector with two options
+    Failure Indicators: No selector, wrong number of options, no default
+    Evidence: .sisyphus/evidence/task-40-model-selector.png
+
+  Scenario: Model selection persists
+    Tool: Playwright
+    Preconditions: Logged in
+    Steps:
+      1. Click model selector, select Model 2
+      2. Assert Model 2 is now selected
+      3. Reload page
+      4. Assert Model 2 is still selected
+      5. Assert localStorage has selectedModel=model2
+    Expected Result: Selection remembered after refresh
+    Failure Indicators: Resets to Model 1
+    Evidence: .sisyphus/evidence/task-40-model-persist.png
+
+  Scenario: Models API returns correct data
+    Tool: Bash (curl)
+    Preconditions: Server running
+    Steps:
+      1. Run: `curl -s http://localhost:5173/api/models`
+      2. Parse JSON response
+      3. Assert `models` array has 2 items
+      4. Assert each item has `id` and `displayName`
+      5. Assert display names match .env config
+    Expected Result: API returns model configuration
+    Failure Indicators: Wrong format, missing fields, wrong names
+    Evidence: .sisyphus/evidence/task-40-models-api.txt
+  ```
+
+  **Commit**: YES (group: commit 16)
+  - Message: `feat(settings): add translation pipeline toggle button in message input`
+  - Files: `src/lib/server/env.ts, .env.example, src/lib/components/chat/ModelSelector.svelte, src/lib/components/chat/MessageInput.svelte, src/lib/stores/settings.ts, src/routes/api/models/+server.ts, src/lib/server/services/langflow.ts, src/routes/api/models/models.test.ts`
+  - Pre-commit: `npm test -- settings && npm test -- models && npm run build`
+
+---
+
 ## Final Verification Wave (MANDATORY — after ALL implementation tasks)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE. Rejection → fix → re-run.
 > **Task 38 has already verified runtime tests pass.** Final wave performs independent audits.
 
 - [ ] F1. **Plan Compliance Audit** — `oracle`
-  Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, check exports, validate structure). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Verify all task deliverables exist as files. Compare against plan requirements. Verify Task 37 evidence files exist in `.sisyphus/evidence/task-37-*`. Verify Task 38 evidence files exist in `.sisyphus/evidence/task-38-*`.
+  Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, check exports, validate structure). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Verify all task deliverables exist as files. Compare against plan requirements. Verify Task 37-40 evidence files exist in `.sisyphus/evidence/task-{N}-*`.
   Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | Evidence [N/N] | VERDICT: APPROVE/REJECT`
 
 - [ ] F2. **Code Quality Review** — `unspecified-high`
-  Run `npx tsc --noEmit` + `npm run lint` + `npm run build`. Run `npm test` and `npx playwright test` to confirm Task 38's fixes hold. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Verify all `.env.example` vars are documented.
+  Run `npx tsc --noEmit` + `npm run lint` + `npm run build`. Run `npm test` and `npx playwright test` to confirm Task 38's fixes hold. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Verify all `.env.example` vars are documented (including new MODEL_1_* and MODEL_2_* vars).
   Output: `Build [PASS/FAIL] | Lint [PASS/FAIL] | Tests [PASS/FAIL] | E2E [PASS/FAIL] | Files [N clean/N issues] | VERDICT`
 
 - [ ] F3. **Full QA — Playwright End-to-End Verification** — `unspecified-high`
-  Run the complete Playwright test suite. Additionally, manually execute key user journeys via Playwright to verify beyond scripted tests: login → create conversation → send message → receive streamed response → toggle dark mode → delete conversation → logout. Verify mock servers are used (no real API calls). Capture screenshots at each step. Cross-reference Task 37 design evidence screenshots — confirm visual quality is acceptable.
+  Run the complete Playwright test suite. Additionally, manually execute key user journeys via Playwright to verify beyond scripted tests: login → create conversation → send message → receive streamed response → toggle translation → select model → toggle dark mode → delete conversation → logout. Verify mock servers are used (no real API calls). Capture screenshots at each step. Cross-reference Task 37 design evidence screenshots — confirm visual quality is acceptable.
   Output: `Playwright Suite [PASS/FAIL] | Manual Journeys [N/N] | Visual Quality [PASS/FAIL] | VERDICT`
 
 - [ ] F4. **Scope Fidelity Check** — `deep`
-  For each task (including 37 and 38): read "What to do", read actual diff (git log/diff). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT Have" compliance: no message content in SQLite, no file upload logic, no export, no WebSocket, no admin UI, no auth libraries. Detect unaccounted changes. Verify Task 37 didn't change any logic. Verify Task 38 didn't add features.
+  For each task (including 37-40): read "What to do", read actual diff (git log/diff). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT Have" compliance: no message content in SQLite, no file upload logic, no export, no WebSocket, no admin UI, no auth libraries. Verify Tasks 39-40 only added UI toggle/selector and localStorage persistence, no backend logic changes beyond model config routing. Detect unaccounted changes.
   Output: `Tasks [N/N compliant] | Forbidden [CLEAN/N issues] | Unaccounted [CLEAN/N files] | VERDICT`
 
 ---
@@ -5659,6 +5985,7 @@ Max Concurrent: 7 (Waves 2 & 3)
 | 13 | `style(mobile): polish mobile design per DESIGN_SPEC.md` | src/lib/components/**/*.svelte, src/app.css, tests/e2e/mobile-design.spec.ts | `npm run build && npx tsc --noEmit` |
 | 14 | `fix(ui): comprehensive design reinspection — fix all visual discrepancies per DESIGN_SPEC.md` | src/lib/components/**/*.svelte, src/routes/**/*.svelte, src/app.css, tailwind.config.ts | `npm run build && npx tsc --noEmit` |
 | 15 | `test(all): comprehensive codebase testing — fix all syntax errors and test failures` | src/**/*.ts, src/**/*.svelte, tests/**/*.ts, tests/**/*.spec.ts | `npx tsc --noEmit && npm run lint && npm run build && npm test && npx playwright test` |
+| 16 | `feat(settings): add translation toggle and model selection in message input` | src/lib/stores/settings.ts, src/lib/components/chat/TranslationToggle.svelte, src/lib/components/chat/ModelSelector.svelte, src/lib/server/env.ts, .env.example | `npm test -- settings && npm run build` |
 
 ---
 
@@ -5706,5 +6033,10 @@ curl -X POST http://localhost:3000/api/auth/login \
 - [ ] Input area pinned to viewport bottom on mobile — verified by Task 37
 - [ ] Design reinspection complete — all visual components match DESIGN_SPEC.md (Task 37)
 - [ ] Comprehensive codebase testing complete — zero test failures (Task 38)
+- [ ] Translation toggle button exists in message input (Task 39)
+- [ ] Model selector exists in message input with 2 options (Task 40)
+- [ ] Translation and model preferences persist to localStorage (Tasks 39-40)
 - [ ] Task 37 evidence screenshots exist in `.sisyphus/evidence/task-37-*`
 - [ ] Task 38 evidence files exist in `.sisyphus/evidence/task-38-*`
+- [ ] Task 39 evidence files exist in `.sisyphus/evidence/task-39-*`
+- [ ] Task 40 evidence files exist in `.sisyphus/evidence/task-40-*`

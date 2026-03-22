@@ -1,10 +1,17 @@
 {
-  "active_plan": "/Users/lvt53/Desktop/langflow-design/.sisyphus/plans/ui-ux-improvements.md",
-  "started_at": "2026-03-17T13:29:04.606Z",
+  "active_plan": "/Users/lvt53/Desktop/langflow-design/.sisyphus/plans/translation-model-settings.md",
+  "started_at": "2026-03-19T10:55:05.557Z",
   "session_ids": [
-    "ses_30403a8efffe8ecypmUAyxU94L",
-    "ses_30401bdd0ffeIVp3Rppmu1tBeD"
+    "ses_2fa5449a5ffebpWLnuLcmmqr05",
+    "ses_2fa439e2effeBXy06Ukz2vy0TE",
+    "ses_2fa43abfcffeXO7H3Ef5eRwY2B",
+    "ses_2fa438a4cffeiYOOSaD3fKDmqU",
+    "ses_2fa3a7393ffeQCKdBDwmiiQ0xc",
+    "ses_2fa377c6dffewlMf3QAjMfU7kF",
+    "ses_2fa30253bffePlmNF0e0YDF3fw",
+    "ses_2fa150fe0ffebARVwXXT08n6zP",
+    "ses_2fa038a38ffeFxYEi4vGUzS3x8"
   ],
-  "plan_name": "ui-ux-improvements",
+  "plan_name": "translation-model-settings",
   "agent": "atlas"
 }

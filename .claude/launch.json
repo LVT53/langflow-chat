@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "LANGFLOW_API_KEY=local-test SESSION_SECRET=local-dev-secret-32chars-long DATABASE_PATH=./data/chat.db npm run dev"],
+      "port": 5173
+    }
+  ]
+}
