@@ -8,7 +8,7 @@
 <button
 	type="button"
 	data-testid="translation-toggle"
-	class="btn-icon-bare flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center transition-colors duration-150 {iconColorClass} hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+	class="btn-icon-bare flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center transition-colors duration-150 {iconColorClass} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
 	on:click={toggleTranslationState}
 	title={tooltipText}
 	aria-label={tooltipText}

@@ -200,7 +200,6 @@
 						<path d="m20 20-3.5-3.5"></path>
 					</svg>
 					<span class="flex-1 truncate">Search</span>
-					<kbd class="desktop-only hidden shrink-0 rounded px-1 py-0.5 font-mono text-[10px] text-text-muted/60 sm:inline-block" style="background: color-mix(in srgb, var(--surface-elevated) 80%, var(--border-default) 20%);">⌘K</kbd>
 				</button>
 				<!-- New chat compose button -->
 				<button
