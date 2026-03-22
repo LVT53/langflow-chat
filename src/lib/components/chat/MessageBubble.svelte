@@ -101,6 +101,44 @@
 		editText = '';
 	}
 
+	let showTimestampTooltip = false;
+
+	function formatTimestamp(ts: number): string {
+		const date = new Date(ts);
+		const now = new Date();
+		const isToday = date.toDateString() === now.toDateString();
+
+		if (isToday) {
+			const h = String(date.getHours()).padStart(2, '0');
+			const m = String(date.getMinutes()).padStart(2, '0');
+			return `${h}:${m}`;
+		}
+		const day = date.getDate();
+		const month = date.toLocaleString('en-GB', { month: 'short' });
+		return `${day} ${month}`;
+	}
+
+	function formatFullTimestamp(ts: number): string {
+		const date = new Date(ts);
+		const day = date.getDate();
+		const month = date.toLocaleString('en-GB', { month: 'long' });
+		const year = date.getFullYear();
+		const h = String(date.getHours()).padStart(2, '0');
+		const m = String(date.getMinutes()).padStart(2, '0');
+		return `${day} ${month} ${year}, ${h}:${m}`;
+	}
+
+	function toggleTimestampTooltip(e: MouseEvent) {
+		e.stopPropagation();
+		showTimestampTooltip = !showTimestampTooltip;
+		if (showTimestampTooltip) {
+			window.addEventListener('click', () => { showTimestampTooltip = false; }, { once: true });
+		}
+	}
+
+	$: timestampLabel = isUser ? formatTimestamp(message.timestamp) : '';
+	$: fullTimestampLabel = isUser ? formatFullTimestamp(message.timestamp) : '';
+
 	function handleEditKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
@@ -225,6 +263,16 @@
 			{/if}
 
 			{#if isUser}
+				<div class="timestamp-container">
+					<button
+						type="button"
+						class="timestamp-label font-mono tabular-nums"
+						on:click={toggleTimestampTooltip}
+					>{timestampLabel}</button>
+					<div class="timestamp-tooltip" class:visible={showTimestampTooltip}>
+						<div class="tooltip-content">{fullTimestampLabel}</div>
+					</div>
+				</div>
 				<!-- Edit button -->
 				<button
 					type="button"
@@ -345,6 +393,47 @@
 		color: var(--text-primary);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.timestamp-container {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.timestamp-label {
+		font-size: 11px;
+		color: var(--text-muted);
+		padding: 0 0.5rem;
+		min-height: 44px;
+		line-height: 1;
+		display: inline-flex;
+		align-items: center;
+		background: none;
+		border: none;
+		cursor: default;
+	}
+
+	.timestamp-tooltip {
+		position: absolute;
+		top: calc(100% - 10px);
+		left: 50%;
+		transform: translateX(-50%) translateY(-4px);
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out),
+			visibility var(--duration-standard);
+		z-index: 50;
+		pointer-events: none;
+		white-space: nowrap;
+	}
+
+	.timestamp-container:hover .timestamp-tooltip,
+	.timestamp-tooltip.visible {
+		opacity: 1;
+		visibility: visible;
+		transform: translateX(-50%) translateY(0);
 	}
 
 	.logo-signature {
