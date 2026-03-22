@@ -202,7 +202,7 @@ body {
     background-color: var(--surface-code);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
-    font-size: 14px;
+    font-size: 0.875em;
   }
   
   .prose pre code {

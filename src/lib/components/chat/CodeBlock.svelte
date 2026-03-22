@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition';
+
 	export let code: string = '';
 	export let language: string | undefined = undefined;
 
@@ -20,87 +22,122 @@
 	}
 </script>
 
-<div
-  class="group relative my-md w-full overflow-hidden rounded-lg border border-border bg-surface-code shadow-sm font-mono text-[14px]"
->
-  <div
-    class="flex items-center justify-between border-b border-border bg-surface-elevated px-md py-sm text-[12px] font-sans text-text-muted"
-    class:border-b-0={collapsed}
-  >
-    <button
-      type="button"
-      class="flex items-center gap-1.5 hover:text-text-base transition-colors"
-      on:click={() => (collapsed = !collapsed)}
-      aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
-      title={collapsed ? 'Expand' : 'Collapse'}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="chevron"
-        class:collapsed
-      >
-        <polyline points="6 9 12 15 18 9"></polyline>
-      </svg>
-      {#if language}
-        <span class="lowercase">{language}</span>
-      {:else}
-        <span class="text-text-subtle">code</span>
-      {/if}
-    </button>
+<div class="group relative my-md w-full font-mono text-[14px]">
+	<div class="code-header">
+		<button
+			type="button"
+			class="code-toggle"
+			on:click={() => (collapsed = !collapsed)}
+			aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="14"
+				height="14"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				class="chevron"
+				class:collapsed
+			>
+				<polyline points="6 9 12 15 18 9"></polyline>
+			</svg>
+			<span class="lowercase">{language ?? 'code'}</span>
+		</button>
 
-    {#if !collapsed}
-      <button
-        type="button"
-        class="btn-icon-bare gap-1.5 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
-        on:click={copyToClipboard}
-        aria-label="Copy code"
-        title="Copy code"
-      >
-        {#if copied}
-          <span class="text-success font-sans text-[12px] font-medium">Copied!</span>
-        {:else}
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-        {/if}
-      </button>
-    {/if}
-  </div>
+		{#if !collapsed}
+			<button
+				type="button"
+				class="btn-icon-bare gap-1.5 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+				on:click={copyToClipboard}
+				aria-label="Copy code"
+				title="Copy code"
+			>
+				{#if copied}
+					<span class="text-success font-sans text-[12px] font-medium">Copied!</span>
+				{:else}
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+					</svg>
+				{/if}
+			</button>
+		{/if}
+	</div>
 
-  {#if !collapsed}
-    <div class="code-content w-full overflow-x-auto p-md text-[14px] leading-[1.5]">
-      <slot></slot>
-    </div>
-  {/if}
+	{#if !collapsed}
+		<div class="code-body" transition:slide|local={{ duration: 200 }}>
+			<div class="code-content w-full overflow-x-auto p-md text-[14px] leading-[1.5]">
+				<slot></slot>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style lang="postcss">
-	.chevron {
-		transition: transform 0.15s ease;
-		transform: rotate(0deg);
+	.code-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-xs) 0;
 	}
+
+	.code-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs);
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-size: 14px;
+		font-weight: 500;
+		color: var(--text-muted);
+		transition: color var(--duration-standard) var(--ease-out);
+	}
+
+	.code-toggle:hover {
+		color: var(--text-primary);
+	}
+
+	.code-toggle:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--focus-ring);
+		border-radius: 2px;
+	}
+
+	.chevron {
+		color: var(--icon-muted);
+		transition: transform var(--duration-standard) var(--ease-out);
+		flex-shrink: 0;
+	}
+
 	.chevron.collapsed {
 		transform: rotate(-90deg);
 	}
+
+	.code-body {
+		border-radius: var(--radius-md, 0.5rem);
+		border: 1px solid var(--border-default);
+		background: var(--surface-code);
+		box-shadow: var(--shadow-sm);
+		overflow: hidden;
+	}
+
 	.code-content :global(pre) {
 		margin: 0 !important;
 		padding: 0 !important;
@@ -108,7 +145,14 @@
 		min-width: 100%;
 		width: max-content;
 	}
+
 	.code-content :global(code) {
 		font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.chevron {
+			transition: none;
+		}
 	}
 </style>
