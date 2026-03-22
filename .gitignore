@@ -25,3 +25,9 @@ tests/e2e/example.spec.ts
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# SQLite database (runtime data, not source)
+data/chat.db
+data/chat.db-shm
+data/chat.db-wal
+data/chat.db.bak
