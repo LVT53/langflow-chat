@@ -3,6 +3,7 @@
 	import type { ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
+	import LogoMark from './LogoMark.svelte';
 	import { createEventDispatcher, tick } from 'svelte';
 
 	export let message: ChatMessage;
@@ -50,6 +51,7 @@
 	// OR the whole message is complete. This keeps the label as "Thinking" between
 	// multi-burst thinking phases (isThinkingStreaming briefly false, but no content yet).
 	$: isDone = !message.isStreaming && !message.isThinkingStreaming;
+	$: showLogoBelow = !isUser && hasThinking;
 	$: thinkingIsDone = hasThinking && !message.isThinkingStreaming &&
 		(message.content.trim().length > 0 || isDone);
 
@@ -122,7 +124,6 @@
 		{#if !isUser && (hasThinking || hasToolCalls)}
 			<ThinkingBlock
 				content={message.thinking ?? ''}
-				isStreaming={Boolean(message.isThinkingStreaming)}
 				thinkingIsDone={thinkingIsDone}
 				segments={message.thinkingSegments ?? []}
 			/>
@@ -156,6 +157,11 @@
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
+			{#if showLogoBelow}
+				<div class="logo-below">
+					<LogoMark animated={!isDone} size={28} />
+				</div>
+			{/if}
 		{/if}
 
 	</div>
@@ -338,6 +344,13 @@
 		color: var(--text-primary);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.logo-below {
+		display: flex;
+		justify-content: flex-start;
+		margin-top: var(--space-sm);
+		opacity: 0.85;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

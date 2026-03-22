@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { ThinkingSegment } from '$lib/types';
+	import LogoMark from './LogoMark.svelte';
 
 	export let content: string = '';
-	export let isStreaming: boolean = false;
 	// True once thinking is definitively over: visible response text has started
 	// arriving OR the whole message is done. Stays false between multi-burst
 	// thinking phases so the label doesn't flip "Thinking"→"Thought"→"Thinking".
@@ -16,8 +16,8 @@
 	// "Thought" only once we're sure thinking is over (response text started or done).
 	$: label = thinkingIsDone ? 'Thought' : 'Thinking';
 
-	// Shimmer while thinking is still possibly ongoing (between bursts or active).
-	$: showShimmer = !thinkingIsDone;
+	// Logo and text sweep animation while thinking is still possibly ongoing.
+	$: isActiveThinking = !thinkingIsDone;
 
 	// Whether to render interleaved segments or fall back to flat content
 	$: hasSegments = segments.length > 0;
@@ -51,26 +51,24 @@
 	import { slide } from 'svelte/transition';
 </script>
 
-<div class="thinking-block" class:is-streaming={showShimmer}>
+<div class="thinking-block">
 	<button
 		type="button"
 		class="thinking-header"
 		on:click={toggle}
 		aria-expanded={expanded}
 	>
-		<div class="thinking-indicator">
-			<span class="thinking-label">{label}</span>
-			{#if showShimmer}
-				<span class="shimmer-container">
-					<span class="shimmer"></span>
-				</span>
-			{/if}
-		</div>
+		{#if isActiveThinking}
+			<span class="thinking-logo">
+				<LogoMark animated={true} size={16} />
+			</span>
+		{/if}
+		<span class="thinking-label" class:is-active={isActiveThinking}>{label}</span>
 		<svg
 			class="chevron"
 			class:expanded
-			width="16"
-			height="16"
+			width="14"
+			height="14"
 			viewBox="0 0 24 24"
 			fill="none"
 			stroke="currentColor"
@@ -130,41 +128,28 @@
 <style>
 	.thinking-block {
 		margin-bottom: var(--space-md);
-		border-radius: var(--radius-md);
-		background: var(--surface-elevated);
-		border: 1px solid var(--border-subtle);
-		overflow: hidden;
-	}
-
-	.thinking-block.is-streaming {
-		border-color: color-mix(in srgb, var(--accent) 30%, var(--border-subtle) 70%);
 	}
 
 	.thinking-header {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		padding: var(--space-sm) var(--space-md);
+		gap: var(--space-xs);
+		padding: var(--space-xs) 0;
 		background: transparent;
 		border: none;
 		cursor: pointer;
-		transition: background-color var(--duration-standard) var(--ease-out);
-	}
-
-	.thinking-header:hover {
-		background: color-mix(in srgb, var(--surface-page) 50%, transparent 50%);
 	}
 
 	.thinking-header:focus-visible {
 		outline: none;
-		box-shadow: inset 0 0 0 2px var(--focus-ring);
+		box-shadow: 0 0 0 2px var(--focus-ring);
+		border-radius: 2px;
 	}
 
-	.thinking-indicator {
+	.thinking-logo {
 		display: flex;
 		align-items: center;
-		gap: var(--space-sm);
+		flex-shrink: 0;
 	}
 
 	.thinking-label {
@@ -174,39 +159,34 @@
 		color: var(--text-muted);
 	}
 
-	.shimmer-container {
-		position: relative;
-		width: 60px;
-		height: 14px;
-		overflow: hidden;
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--accent) 15%, var(--surface-elevated) 85%);
+	@keyframes thinking-sweep {
+		0%   { background-position: 200% center; }
+		100% { background-position: -200% center; }
 	}
 
-	.shimmer {
-		position: absolute;
-		inset: 0;
+	.thinking-label.is-active {
 		background: linear-gradient(
 			90deg,
-			transparent 0%,
-			color-mix(in srgb, var(--accent) 60%, transparent 40%) 50%,
-			transparent 100%
+			var(--text-muted)    0%,
+			var(--text-muted)    35%,
+			var(--accent)        47%,
+			var(--text-primary)  50%,
+			var(--accent)        53%,
+			var(--text-muted)    65%,
+			var(--text-muted)    100%
 		);
-		animation: shimmer-slide 1.5s ease-in-out infinite;
-	}
-
-	@keyframes shimmer-slide {
-		0% {
-			transform: translateX(-100%);
-		}
-		100% {
-			transform: translateX(100%);
-		}
+		background-size: 300% 100%;
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+		-webkit-text-fill-color: transparent;
+		animation: thinking-sweep 2.5s linear infinite;
 	}
 
 	.chevron {
 		color: var(--icon-muted);
 		transition: transform var(--duration-standard) var(--ease-out);
+		flex-shrink: 0;
 	}
 
 	.chevron.expanded {
@@ -215,7 +195,6 @@
 
 	/* Tool call stack — accumulates all tool rows, visible without expanding */
 	.tool-call-stack {
-		border-top: 1px solid var(--border-subtle);
 		padding: var(--space-xs) 0;
 	}
 
@@ -223,7 +202,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
-		padding: 3px var(--space-md);
+		padding: 3px 0;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 		font-size: 12px;
 		color: var(--text-muted);
@@ -261,7 +240,7 @@
 	}
 
 	.thinking-content {
-		padding: 0 var(--space-md) var(--space-md);
+		padding: var(--space-sm) 0 var(--space-sm);
 	}
 
 	.thinking-text {
@@ -309,10 +288,11 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.shimmer {
+		.thinking-label.is-active {
+			color: var(--text-muted);
+			-webkit-text-fill-color: var(--text-muted);
+			background: none;
 			animation: none;
-			background: color-mix(in srgb, var(--accent) 30%, transparent 70%);
-			opacity: 0.5;
 		}
 
 		.chevron {

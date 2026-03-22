@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="106" viewBox="0 0 100 112">
+  <style>
+    .stroke {
+      fill: none; stroke: #C8A882; stroke-width: 4.2;
+      stroke-linecap: round; stroke-linejoin: round;
+      stroke-dasharray: 160;
+      animation: s 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes s {
+      0%   { stroke-dashoffset: 160; opacity: 1; }
+      60%  { stroke-dashoffset: 0;   opacity: 1; }
+      82%  { stroke-dashoffset: 0;   opacity: 1; }
+      100% { stroke-dashoffset: 0;   opacity: 0; }
+    }
+    .cb {
+      fill: none; stroke: #C8A882; stroke-width: 2.2;
+      stroke-linecap: round; stroke-dasharray: 48;
+      animation: cb 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes cb {
+      0%,30% { stroke-dashoffset: 48; opacity: 0; }
+      31%    { opacity: 1; }
+      60%    { stroke-dashoffset: 0; opacity: 1; }
+      82%    { opacity: 1; }
+      100%   { opacity: 0; }
+    }
+    .tkl {
+      fill: none; stroke: #C8A882; stroke-width: 1.8;
+      stroke-linecap: round; stroke-dasharray: 10;
+      animation: tkl 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes tkl {
+      0%,44% { stroke-dashoffset: 10; opacity: 0; }
+      45%    { opacity: 1; }
+      60%    { stroke-dashoffset: 0; opacity: 0.75; }
+      82%    { opacity: 0.75; }
+      100%   { opacity: 0; }
+    }
+    .tkr {
+      fill: none; stroke: #C8A882; stroke-width: 1.8;
+      stroke-linecap: round; stroke-dasharray: 10;
+      animation: tkr 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes tkr {
+      0%,52% { stroke-dashoffset: 10; opacity: 0; }
+      53%    { opacity: 1; }
+      60%    { stroke-dashoffset: 0; opacity: 0.75; }
+      82%    { opacity: 0.75; }
+      100%   { opacity: 0; }
+    }
+    .sfl {
+      fill: none; stroke: #C8A882; stroke-width: 3.2;
+      stroke-linecap: round; stroke-dasharray: 28;
+      animation: sfl 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes sfl {
+      0%,38% { stroke-dashoffset: 28; opacity: 0; }
+      39%    { opacity: 1; }
+      60%    { stroke-dashoffset: 0; opacity: 1; }
+      82%    { opacity: 1; }
+      100%   { opacity: 0; }
+    }
+    .sfr {
+      fill: none; stroke: #C8A882; stroke-width: 3.2;
+      stroke-linecap: round; stroke-dasharray: 28;
+      animation: sfr 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes sfr {
+      0%,46% { stroke-dashoffset: 28; opacity: 0; }
+      47%    { opacity: 1; }
+      60%    { stroke-dashoffset: 0; opacity: 1; }
+      82%    { opacity: 1; }
+      100%   { opacity: 0; }
+    }
+    .apx {
+      fill: #C8A882;
+      animation: apx 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes apx {
+      0%   { opacity: 1; }
+      82%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  </style>
+  <path class="stroke" d="M50 19 C46 40 36 64 24 88"/>
+  <path class="stroke" d="M50 19 C54 40 64 64 76 88"/>
+  <line class="cb"  x1="27" y1="57" x2="73" y2="57"/>
+  <line class="tkl" x1="27" y1="52" x2="27" y2="62"/>
+  <line class="tkr" x1="73" y1="52" x2="73" y2="62"/>
+  <line class="sfl" x1="14" y1="90" x2="36" y2="90"/>
+  <line class="sfr" x1="64" y1="90" x2="86" y2="90"/>
+  <circle class="apx" cx="50" cy="19" r="3.5"/>
+</svg>
