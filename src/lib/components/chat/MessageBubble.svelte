@@ -270,7 +270,11 @@
 						on:click={toggleTimestampTooltip}
 					>{timestampLabel}</button>
 					<div class="timestamp-tooltip" class:visible={showTimestampTooltip}>
-						<div class="tooltip-content">{fullTimestampLabel}</div>
+						<div class="tooltip-content">
+							<div class="tooltip-row">
+								<span class="tooltip-value">{fullTimestampLabel}</span>
+							</div>
+						</div>
 					</div>
 				</div>
 				<!-- Edit button -->
@@ -415,9 +419,9 @@
 
 	.timestamp-tooltip {
 		position: absolute;
-		top: calc(100% - 10px);
+		bottom: calc(100% + 8px);
 		left: 50%;
-		transform: translateX(-50%) translateY(-4px);
+		transform: translateX(-50%) translateY(4px);
 		opacity: 0;
 		visibility: hidden;
 		transition:
@@ -426,7 +430,6 @@
 			visibility var(--duration-standard);
 		z-index: 50;
 		pointer-events: none;
-		white-space: nowrap;
 	}
 
 	.timestamp-container:hover .timestamp-tooltip,
@@ -434,6 +437,7 @@
 		opacity: 1;
 		visibility: visible;
 		transform: translateX(-50%) translateY(0);
+		pointer-events: auto;
 	}
 
 	.logo-signature {
@@ -444,7 +448,8 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.info-tooltip {
+		.info-tooltip,
+		.timestamp-tooltip {
 			transition: none;
 		}
 	}
