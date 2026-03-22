@@ -157,12 +157,7 @@
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
-			{#if showLogoBelow && !isDone}
-				<div class="logo-below">
-					<LogoMark animated={true} size={30} />
-				</div>
 			{/if}
-		{/if}
 
 	</div>
 
@@ -349,13 +344,6 @@
 		color: var(--text-primary);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
-	}
-
-	.logo-below {
-		display: flex;
-		justify-content: flex-start;
-		margin-top: var(--space-sm);
-		opacity: 0.85;
 	}
 
 	.logo-signature {

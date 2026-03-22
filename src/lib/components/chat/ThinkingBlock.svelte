@@ -175,12 +175,12 @@
 			var(--text-muted)    65%,
 			var(--text-muted)    100%
 		);
-		background-size: 300% 100%;
+		background-size: 500% 100%;
 		background-clip: text;
 		-webkit-background-clip: text;
 		color: transparent;
 		-webkit-text-fill-color: transparent;
-		animation: thinking-sweep 2.5s linear infinite;
+		animation: thinking-sweep 4s linear infinite;
 	}
 
 	.chevron {
