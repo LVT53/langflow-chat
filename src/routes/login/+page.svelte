@@ -45,16 +45,16 @@
 </svelte:head>
 
 <div class="flex min-h-[100svh] w-full items-center justify-center bg-surface-page px-4 py-6 md:px-8 md:py-10">
-  <div class="mx-auto w-full max-w-[448px] rounded-lg border border-border bg-surface-elevated p-xl md:p-2xl shadow-lg">
-    <div class="mb-10 text-center md:mb-12">
-      <h1 class="mb-3 text-3xl font-serif font-bold text-text-primary md:text-4xl">Sign In</h1>
-      <p class="mb-[30px] text-lg text-text-muted font-serif">Welcome back. Please enter your details.</p>
+  <div class="mx-auto w-full max-w-[448px] rounded-lg border border-border bg-surface-elevated p-lg md:p-xl shadow-lg">
+    <div class="mb-6 text-center md:mb-8">
+      <h1 class="mb-2 text-2xl font-serif font-medium text-text-primary md:text-3xl">Sign In</h1>
+      <p class="text-sm text-text-muted">Welcome back. Please enter your details.</p>
     </div>
 
     <form on:submit|preventDefault={handleSubmit} class="flex flex-col">
-      <div class="flex flex-col gap-[5px]">
+      <div class="flex flex-col gap-md">
         <div class="space-y-2">
-          <label for="email" class="block text-sm font-medium text-text-primary font-serif">
+          <label for="email" class="block text-sm font-medium text-text-primary">
             Email address
           </label>
           <input
@@ -65,19 +65,19 @@
             bind:value={email}
             disabled={loading}
             on:input={() => error = ''}
-            class="box-border block w-full min-h-[48px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
+            class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="you@example.com"
           />
         </div>
 
-        <div class="mb-[30px] space-y-2">
+        <div class="space-y-2">
           <div class="flex items-center justify-between">
-            <label for="password" class="block text-sm font-medium text-text-primary font-serif">
+            <label for="password" class="block text-sm font-medium text-text-primary">
               Password
             </label>
             <button
               type="button"
-              class="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary font-serif transition-colors"
+              class="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"
               on:click={() => showPassword = !showPassword}
               tabindex="-1"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -104,25 +104,23 @@
             bind:value={password}
             disabled={loading}
             on:input={() => error = ''}
-            class="box-border block w-full min-h-[48px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
+            class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="••••••••"
           />
         </div>
       </div>
 
       {#if error}
-        <div class="mt-6 rounded-md border border-danger bg-surface-page p-md text-sm text-danger font-serif md:text-base" role="alert" data-testid="login-error">
-          {error}
-        </div>
+        <p class="mt-md text-sm text-danger" role="alert" data-testid="login-error">{error}</p>
       {/if}
 
       <button
         type="submit"
         disabled={loading}
-        class="mt-8 flex min-h-[56px] w-full cursor-pointer items-center justify-center rounded-md border border-transparent bg-accent px-md py-sm text-lg font-serif font-bold text-surface-page shadow-sm transition-all hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-70"
+        class="btn-primary mt-lg flex min-h-[44px] w-full cursor-pointer items-center justify-center disabled:cursor-not-allowed disabled:opacity-70"
       >
         {#if loading}
-          <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-surface-page" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
