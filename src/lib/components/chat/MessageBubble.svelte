@@ -260,7 +260,7 @@
 			</button>
 		</div>
 	{/if}
-	{#if showLogoBelow && isDone && isLast}
+	{#if showLogoBelow && thinkingIsDone && isLast}
 		<div class="logo-signature">
 			<LogoMark animated={false} size={42} />
 		</div>
