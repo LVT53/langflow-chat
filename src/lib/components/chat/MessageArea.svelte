@@ -99,9 +99,10 @@
 		{#if messages.length === 0}
 			<div class="h-full"></div>
 		{:else}
-			{#each messages as message (message.id)}
+			{#each messages as message, i (message.id)}
 				<MessageBubble
 					{message}
+					isLast={i === messages.length - 1}
 					on:regenerate={(e) => dispatch('regenerate', e.detail)}
 					on:edit={(e) => dispatch('edit', e.detail)}
 				/>

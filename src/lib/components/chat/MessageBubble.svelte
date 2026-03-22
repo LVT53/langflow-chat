@@ -7,6 +7,7 @@
 	import { createEventDispatcher, tick } from 'svelte';
 
 	export let message: ChatMessage;
+	export let isLast: boolean = false;
 
 	const dispatch = createEventDispatcher<{
 		regenerate: { messageId: string };
@@ -259,7 +260,7 @@
 			</button>
 		</div>
 	{/if}
-	{#if showLogoBelow && isDone}
+	{#if showLogoBelow && isDone && isLast}
 		<div class="logo-signature">
 			<LogoMark animated={false} size={42} />
 		</div>
