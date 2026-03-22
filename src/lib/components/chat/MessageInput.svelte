@@ -99,7 +99,7 @@
 			{disabled}
 		></textarea>
 
-		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[6px]">
+		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
 			<div class="flex items-center gap-2">
 				<ModelSelector />
 				<TranslationToggle />
