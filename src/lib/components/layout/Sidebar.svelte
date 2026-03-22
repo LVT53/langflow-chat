@@ -124,7 +124,7 @@
 
 		<!-- Desktop: Collapse/Expand toggle -->
 		<button
-			class="desktop-only btn-icon-bare"
+			class="desktop-only btn-icon-bare compose-btn"
 			class:ml-auto={!isCollapsed}
 			on:click={toggleCollapse}
 			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -161,7 +161,7 @@
 			<div class="flex w-full flex-col items-center gap-2">
 				<button
 					data-testid="new-conversation"
-					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:bg-surface-elevated hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={handleNewConversation}
 					title="New chat"
 					aria-label="New chat"
@@ -173,7 +173,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:bg-surface-elevated hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={openSearchModal}
 					title="Search"
 					aria-label="Search conversations"
@@ -203,7 +203,7 @@
 				<!-- New chat compose button -->
 				<button
 					data-testid="new-conversation"
-					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:bg-surface-elevated hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={handleNewConversation}
 					title="New chat"
 					aria-label="New chat"
@@ -334,7 +334,8 @@
 	}
 
 	.compose-btn:hover {
-		border-color: var(--border-subtle);
+		background: color-mix(in srgb, var(--border-default) 18%, transparent 82%);
+		border-color: var(--border-default);
 	}
 
 	.logout-btn {
