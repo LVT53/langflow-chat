@@ -124,9 +124,8 @@
 
 		<!-- Desktop: Collapse/Expand toggle -->
 		<button
-			class="desktop-only btn-icon-bare sidebar-rail-button"
+			class="desktop-only btn-icon-bare"
 			class:ml-auto={!isCollapsed}
-			class:collapse-btn-expanded={!isCollapsed}
 			on:click={toggleCollapse}
 			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 			title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -162,7 +161,7 @@
 			<div class="flex w-full flex-col items-center gap-2">
 				<button
 					data-testid="new-conversation"
-					class="btn-icon-bare sidebar-rail-button w-full text-accent hover:text-accent-hover"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:bg-surface-elevated hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={handleNewConversation}
 					title="New chat"
 					aria-label="New chat"
@@ -174,7 +173,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-icon-bare sidebar-rail-button w-full text-icon-muted hover:text-icon-primary"
+					class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:bg-surface-elevated hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={openSearchModal}
 					title="Search"
 					aria-label="Search conversations"
@@ -235,7 +234,7 @@
 			<div class="flex flex-col items-center gap-2">
 				<button
 					type="button"
-					class="btn-icon-bare sidebar-rail-button w-full"
+					class="profile-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={() => navigateAndClose('/settings')}
 					title="Settings"
 					aria-label="Open settings"
@@ -249,7 +248,7 @@
 				</button>
 				<button
 					type="button"
-					class="btn-icon-bare sidebar-rail-button w-full text-icon-muted hover:text-danger"
+					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={handleLogout}
 					title="Logout"
 					aria-label="Logout"
@@ -322,12 +321,6 @@
 		overflow: hidden;
 	}
 
-	.sidebar-rail-button {
-		min-height: 36px !important;
-		min-width: 48px !important;
-		border-radius: 0 !important;
-	}
-
 	.search-pill {
 		background: color-mix(in srgb, var(--surface-elevated) 60%, var(--surface-overlay) 40%);
 	}
@@ -361,11 +354,6 @@
 	.profile-btn:hover {
 		background: color-mix(in srgb, var(--border-default) 18%, transparent 82%);
 		border-color: var(--border-default);
-	}
-
-	.sidebar-rail-button.collapse-btn-expanded {
-		min-width: 36px !important;
-		width: 36px;
 	}
 
 	@media (max-width: 1023px) {
