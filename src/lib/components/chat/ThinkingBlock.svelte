@@ -60,7 +60,7 @@
 	>
 		{#if isActiveThinking}
 			<span class="thinking-logo">
-				<LogoMark animated={true} size={16} />
+				<LogoMark animated={true} size={30} />
 			</span>
 		{/if}
 		<span class="thinking-label" class:is-active={isActiveThinking}>{label}</span>
