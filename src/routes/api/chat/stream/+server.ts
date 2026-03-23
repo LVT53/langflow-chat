@@ -866,7 +866,7 @@ export const POST: RequestHandler = async (event) => {
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 
 			const completeSuccess = (wasStopped = false) => {
-				if (ended || closed) return;
+				if (ended) return; // Do not check `closed` — client may have disconnected but we still persist to DB
 				ended = true;
 				const thinkingTokenCount = estimateTokenCount(thinkingContent);
 				const responseTokenCount = estimateTokenCount(fullResponse);
