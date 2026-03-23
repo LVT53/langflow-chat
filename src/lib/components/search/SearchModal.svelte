@@ -45,7 +45,10 @@
 	$: if (browser && isOpen) {
 		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-		tick();
+		tick().then(() => {
+			const isMobile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+			if (!isMobile) searchInputRef?.focus();
+		});
 
 		if ($conversations.length === 0) {
 			searchLoading = true;

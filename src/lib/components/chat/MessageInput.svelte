@@ -34,6 +34,9 @@
 		if (!message) {
 			message = '';
 			adjustHeight();
+			if (!isMobile()) {
+				setTimeout(() => textarea.focus(), 0);
+			}
 		}
 	}
 
@@ -63,7 +66,9 @@
 		dispatch('send', { message: message.trim() });
 		message = '';
 		adjustHeight();
-		if (isMobile()) {
+		if (!isMobile()) {
+			textarea.focus();
+		} else {
 			textarea.blur();
 		}
 	}
@@ -77,6 +82,9 @@
 
 	onMount(() => {
 		if (textarea) {
+			if (!isMobile()) {
+				textarea.focus();
+			}
 			adjustHeight();
 		}
 		window.addEventListener('resize', adjustHeight);
