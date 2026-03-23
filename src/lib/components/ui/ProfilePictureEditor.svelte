@@ -347,6 +347,7 @@
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="pic-editor-title"
+		tabindex="-1"
 		class="relative w-full max-w-[520px] rounded-lg border border-border bg-surface-page p-lg shadow-lg"
 		on:click|stopPropagation
 		transition:scale={{ duration: 150, start: 0.95 }}
