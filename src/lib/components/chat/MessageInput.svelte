@@ -45,7 +45,7 @@
 		const minHeight = 90;
 		textarea.style.height = `${minHeight}px`;
 		const isMobileDevice = window.innerWidth < 768;
-		const maxHeight = isMobileDevice ? 200 : 168;
+		const maxHeight = isMobileDevice ? 120 : 240;
 		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
 	}
 
