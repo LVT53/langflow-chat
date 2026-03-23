@@ -66,7 +66,9 @@
 		dispatch('send', { message: message.trim() });
 		message = '';
 		adjustHeight();
-		textarea.focus();
+		if (!isMobile()) {
+			textarea.focus();
+		}
 	}
 
 	function stop() {
