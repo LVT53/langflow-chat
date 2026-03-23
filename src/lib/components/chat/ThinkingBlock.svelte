@@ -38,6 +38,18 @@
 		}
 	}
 
+	function isFetchTool(name: string): boolean {
+		const n = name.toLowerCase();
+		return n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse');
+	}
+
+	// Returns the raw URL for fetch-type tools, or null for everything else.
+	function getFetchUrl(name: string, input: Record<string, unknown>): string | null {
+		if (!isFetchTool(name)) return null;
+		const raw = String(Object.values(input)[0] ?? '');
+		try { new URL(raw); return raw; } catch { return null; }
+	}
+
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
 		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 60);
@@ -45,7 +57,7 @@
 			const q = input.query ?? input.q ?? Object.values(input)[0];
 			return `Searching: "${String(q ?? '').slice(0, 60)}"`;
 		}
-		if (n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse')) {
+		if (isFetchTool(name)) {
 			const raw = String(Object.values(input)[0] ?? '');
 			return `Fetching: ${extractHostname(raw)}`;
 		}
@@ -106,7 +118,11 @@
 								stroke-linecap="round" stroke-linejoin="round"/>
 						</svg>
 					{/if}
+					{#if getFetchUrl(tool.name, tool.input)}
+					<span class="tool-label-text">Fetching: <a class="tool-link" href={getFetchUrl(tool.name, tool.input)} target="_blank" rel="noopener noreferrer" on:click|stopPropagation>{extractHostname(String(Object.values(tool.input)[0] ?? ''))}</a></span>
+				{:else}
 					<span class="tool-label-text">{formatToolCall(tool.name, tool.input)}</span>
+				{/if}
 				</div>
 			{/each}
 		</div>
@@ -128,7 +144,11 @@
 							{:else}
 								<span class="tool-dot-inline"></span>
 							{/if}
+							{#if getFetchUrl(seg.name, seg.input)}
+							<span class="tool-item-label">Fetching: <a class="tool-link" href={getFetchUrl(seg.name, seg.input)} target="_blank" rel="noopener noreferrer">{extractHostname(String(Object.values(seg.input)[0] ?? ''))}</a></span>
+						{:else}
 							<span class="tool-item-label">{formatToolCall(seg.name, seg.input)}</span>
+						{/if}
 						</div>
 					{/if}
 				{/each}
@@ -244,6 +264,17 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		min-width: 0;
+	}
+
+	.tool-link {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+	}
+
+	.tool-link:hover {
+		text-decoration-color: currentColor;
 	}
 
 	.check-icon-header {
