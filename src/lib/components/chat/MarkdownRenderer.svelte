@@ -1,6 +1,7 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
   import { renderMarkdown, renderCodeBlock, initHighlighter } from '$lib/services/markdown';
+  import { afterUpdate } from 'svelte';
 
   export let content: string = '';
   export let isDark: boolean = false;
@@ -12,6 +13,9 @@
 
   let blocks: MarkdownBlock[] = [];
   let prevBlockCount = 0;
+  let container: HTMLDivElement;
+  let prevWordCount = 0;
+  let prevLastBlockEl: HTMLElement | null = null;
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -94,7 +98,7 @@
 
     return nextBlocks;
   }
-  
+
   async function renderContent(src: string) {
     await initHighlighter();
     const newBlocks = splitMarkdownBlocks(src);
@@ -124,12 +128,87 @@
       renderContent(content);
     }
   }
+
+  $: if (!isStreaming) {
+    prevWordCount = 0;
+    prevLastBlockEl = null;
+  }
+
+  // Walk the last html block's DOM and wrap newly arrived words in animated spans.
+  // Words at index < startIndex are already rendered; only wrap words >= startIndex.
+  // Returns the total word count after processing.
+  function wrapNewWords(element: HTMLElement, startIndex: number): number {
+    let wordIndex = 0;
+
+    function processNode(node: Node): void {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent ?? '';
+        const parts = text.split(/(\s+)/);
+
+        // Fast path: check if any word in this text node is new
+        let tempCount = wordIndex;
+        let nodeHasNew = false;
+        for (const part of parts) {
+          if (part.trim()) {
+            if (tempCount >= startIndex) { nodeHasNew = true; break; }
+            tempCount++;
+          }
+        }
+
+        if (!nodeHasNew) {
+          for (const part of parts) { if (part.trim()) wordIndex++; }
+          return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        for (const part of parts) {
+          if (!part.trim()) {
+            fragment.appendChild(document.createTextNode(part));
+          } else {
+            if (wordIndex >= startIndex) {
+              const span = document.createElement('span');
+              span.className = 'word-new';
+              span.textContent = part;
+              fragment.appendChild(span);
+            } else {
+              fragment.appendChild(document.createTextNode(part));
+            }
+            wordIndex++;
+          }
+        }
+        node.parentNode!.replaceChild(fragment, node);
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = (node as Element).tagName;
+        if (tagName === 'SCRIPT' || tagName === 'STYLE') return;
+        Array.from(node.childNodes).forEach(processNode);
+      }
+    }
+
+    Array.from(element.childNodes).forEach(processNode);
+    return wordIndex;
+  }
+
+  afterUpdate(() => {
+    if (!isStreaming || !container) return;
+
+    const blockEls = container.querySelectorAll<HTMLElement>(':scope > .markdown-html');
+    if (!blockEls.length) return;
+    const lastBlockEl = blockEls[blockEls.length - 1];
+
+    // Reset word count when the active block changes (e.g. a new block was added)
+    if (lastBlockEl !== prevLastBlockEl) {
+      prevWordCount = 0;
+      prevLastBlockEl = lastBlockEl;
+    }
+
+    prevWordCount = wrapNewWords(lastBlockEl, prevWordCount);
+  });
 </script>
 
-<div class="markdown-container" class:is-streaming={isStreaming} aria-hidden="false">
+<div class="markdown-container" bind:this={container} aria-hidden="false">
   {#each blocks as block}
     {#if block.type === 'html'}
-      <div class="prose max-w-none dark:prose-invert markdown-html" class:block-fade-in={block.isNew}>
+      <div class="prose max-w-none dark:prose-invert markdown-html">
         {@html block.html}
       </div>
     {:else}
@@ -151,6 +230,7 @@
     margin-bottom: 0;
   }
 
+  /* Code blocks fade in as a unit when they first appear */
   .block-fade-in {
     animation: blockFadeIn 450ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
@@ -166,8 +246,22 @@
     }
   }
 
+  /* Word-level fade-in for streaming text (applied via JS to dynamically created spans) */
+  :global(.word-new) {
+    animation: wordFadeIn 150ms ease-out forwards;
+  }
+
+  @keyframes wordFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .block-fade-in {
+      animation: none;
+      opacity: 1;
+    }
+    :global(.word-new) {
       animation: none;
       opacity: 1;
     }
