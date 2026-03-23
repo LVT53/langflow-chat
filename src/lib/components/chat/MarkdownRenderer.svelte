@@ -89,7 +89,7 @@
     if (isStreaming && newBlocks.length > oldCount) {
       setTimeout(() => {
         blocks = blocks.map((b) => ({ ...b, isNew: false }));
-      }, 350);
+      }, 500);
     }
   }
 
@@ -124,17 +124,17 @@
   }
 
   .block-fade-in {
-    animation: blockFadeIn 300ms var(--ease-out, cubic-bezier(0.4, 0, 0.2, 1)) forwards;
+    animation: blockFadeIn 450ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 
   @keyframes blockFadeIn {
     from {
       opacity: 0;
-      transform: translateY(3px);
+      transform: translateY(14px) scale(0.97);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
     }
   }
 
