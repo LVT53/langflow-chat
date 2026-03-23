@@ -234,6 +234,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		min-width: 0;
 	}
 
 	.check-icon-header {
@@ -282,6 +283,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		min-width: 0;
 	}
 
 	.check-icon {

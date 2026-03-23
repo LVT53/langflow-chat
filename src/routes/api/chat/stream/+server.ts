@@ -609,7 +609,8 @@ export const POST: RequestHandler = async (event) => {
 				if (closed) return;
 				closed = true;
 				downstreamAbortSignal.removeEventListener('abort', closeStream);
-				upstreamAbortController.abort();
+				// Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
+				// The client reloads persisted messages on visibility restore (mobile background fix).
 				try {
 					controller.close();
 				} catch {
@@ -634,7 +635,8 @@ export const POST: RequestHandler = async (event) => {
 					return true;
 				} catch {
 					closed = true;
-					upstreamAbortController.abort();
+					// Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
+				// The client reloads persisted messages on visibility restore (mobile background fix).
 					return false;
 				}
 			};
