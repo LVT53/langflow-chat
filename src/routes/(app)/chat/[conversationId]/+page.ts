@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
 import type { ConversationDetail } from '$lib/types';
 
@@ -7,12 +7,12 @@ export const load: PageLoad = async ({ params, fetch }) => {
 
 	const res = await fetch(`/api/conversations/${conversationId}`);
 
-	if (res.status === 404) {
-		throw error(404, 'Conversation not found');
+	if (res.status === 404 || res.status === 500) {
+		throw redirect(302, '/');
 	}
 
 	if (!res.ok) {
-		throw error(res.status, 'Failed to load conversation');
+		throw redirect(302, '/');
 	}
 
 	const detail: ConversationDetail = await res.json();
