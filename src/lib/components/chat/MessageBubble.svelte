@@ -321,6 +321,37 @@
 </div>
 
 <style lang="postcss">
+	/* Override Tailwind prose base font size to match reduced chat text size */
+	.prose-container :global(.prose) {
+		font-size: 14px;
+		line-height: 1.45;
+	}
+	@media (min-width: 768px) {
+		.prose-container :global(.prose) {
+			font-size: 15px;
+			line-height: 1.55;
+		}
+	}
+	/* Prevent wide prose content (tables, long URLs) from overflowing */
+	.prose-container :global(table) {
+		display: block;
+		overflow-x: auto;
+		max-width: 100%;
+	}
+	.prose-container :global(img) {
+		max-width: 100%;
+		height: auto;
+	}
+	.prose-container :global(*) {
+		word-break: break-word;
+		overflow-wrap: anywhere;
+	}
+	/* But don't break code — let it scroll */
+	.prose-container :global(pre),
+	.prose-container :global(code) {
+		word-break: normal;
+		overflow-wrap: normal;
+	}
 	.prose-container :global(p) {
 		margin-top: 0;
 		margin-bottom: var(--space-md);
