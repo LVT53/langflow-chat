@@ -21,7 +21,7 @@
 	$: showCharCount = message.length > maxLength * 0.8;
 	$: charCountColor = isOverMaxLength ? 'text-danger' : 'text-text-muted';
 	
-	$: canSend = !isEmpty && !isOverMaxLength && !disabled;
+	$: canSend = !isEmpty && !isOverMaxLength;
 
 	function isMobile(): boolean {
 		return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -44,8 +44,8 @@
 		if (!textarea) return;
 		const minHeight = 90;
 		textarea.style.height = `${minHeight}px`;
-		const isMobile = window.innerWidth < 768;
-		const maxHeight = isMobile ? 100 : 168;
+		const isMobileDevice = window.innerWidth < 768;
+		const maxHeight = isMobileDevice ? 200 : 168;
 		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
 	}
 
@@ -55,7 +55,7 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && !event.shiftKey) {
+		if (event.key === 'Enter' && !event.shiftKey && !isMobile()) {
 			event.preventDefault();
 			send();
 		}
@@ -94,9 +94,8 @@
 			on:input={handleInput}
 			on:keydown={handleKeydown}
 			placeholder="Type a message..."
-			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[16px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
+			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[14px] md:text-[15px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
-			{disabled}
 		></textarea>
 
 		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
@@ -133,7 +132,7 @@
 						data-testid="send-button"
 						type="button"
 						on:click={send}
-						disabled={!canSend}
+						disabled={!canSend || disabled}
 						aria-label="Send message"
 						class="btn-primary composer-send flex h-full w-full items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
 					>

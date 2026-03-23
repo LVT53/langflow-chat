@@ -1,12 +1,27 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
+	import { tick } from 'svelte';
 
 	export let code: string = '';
 	export let language: string | undefined = undefined;
 
 	let copied = false;
 	let collapsed = false;
+	let container: HTMLDivElement;
 	let copyTimeout: ReturnType<typeof setTimeout>;
+
+	async function toggleCollapse() {
+		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
+		const blockTop = container?.getBoundingClientRect().top ?? 0;
+		collapsed = !collapsed;
+		if (scrollEl) {
+			await tick();
+			requestAnimationFrame(() => {
+				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
+				scrollEl.scrollTop += newBlockTop - blockTop;
+			});
+		}
+	}
 
 	async function copyToClipboard() {
 		try {
@@ -22,12 +37,12 @@
 	}
 </script>
 
-<div class="group relative my-md w-full font-mono text-[14px]">
+<div class="group relative my-md w-full font-mono text-[14px]" bind:this={container}>
 	<div class="code-header">
 		<button
 			type="button"
 			class="code-toggle"
-			on:click={() => (collapsed = !collapsed)}
+			on:click={toggleCollapse}
 			aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
 		>
 			<svg

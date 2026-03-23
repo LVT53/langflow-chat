@@ -1,16 +1,17 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
   import { renderMarkdown, renderCodeBlock, initHighlighter } from '$lib/services/markdown';
-  
+
   export let content: string = '';
   export let isDark: boolean = false;
   export let isStreaming: boolean = false;
-  
+
   type MarkdownBlock =
-    | { type: 'html'; html: string }
-    | { type: 'code'; code: string; language?: string; html: string };
+    | { type: 'html'; html: string; isNew?: boolean }
+    | { type: 'code'; code: string; language?: string; html: string; isNew?: boolean };
 
   let blocks: MarkdownBlock[] = [];
+  let prevBlockCount = 0;
 
   function splitMarkdownBlocks(source: string): MarkdownBlock[] {
     const normalizedSource = source.startsWith('[Translation unavailable]')
@@ -79,9 +80,19 @@
   
   async function initialize() {
     await initHighlighter();
-    blocks = splitMarkdownBlocks(content);
+    const newBlocks = splitMarkdownBlocks(content);
+    const oldCount = prevBlockCount;
+    // Mark newly added blocks during streaming
+    blocks = newBlocks.map((b, i) => ({ ...b, isNew: isStreaming && i >= oldCount }));
+    prevBlockCount = newBlocks.length;
+    // Clear isNew flag after animation completes
+    if (isStreaming && newBlocks.length > oldCount) {
+      setTimeout(() => {
+        blocks = blocks.map((b) => ({ ...b, isNew: false }));
+      }, 350);
+    }
   }
-  
+
   $: if (content !== undefined || isDark !== undefined || isStreaming !== undefined) {
     initialize();
   }
@@ -90,16 +101,17 @@
 <div class="markdown-container" class:is-streaming={isStreaming} aria-hidden="false">
   {#each blocks as block}
     {#if block.type === 'html'}
-      <div class="prose max-w-none dark:prose-invert markdown-html">
+      <div class="prose max-w-none dark:prose-invert markdown-html" class:block-fade-in={block.isNew}>
         {@html block.html}
       </div>
     {:else}
-      <CodeBlock code={block.code} language={block.language}>
-        {@html block.html}
-      </CodeBlock>
+      <div class:block-fade-in={block.isNew}>
+        <CodeBlock code={block.code} language={block.language}>
+          {@html block.html}
+        </CodeBlock>
+      </div>
     {/if}
   {/each}
-  {#if isStreaming}<span class="streaming-cursor">▌</span>{/if}
 </div>
 
 <style>
@@ -111,50 +123,25 @@
     margin-bottom: 0;
   }
 
-  .streaming-cursor {
-    display: inline-block;
-    animation: blink 1s step-start infinite;
-    color: currentColor;
-    user-select: none;
+  .block-fade-in {
+    animation: blockFadeIn 300ms var(--ease-out, cubic-bezier(0.4, 0, 0.2, 1)) forwards;
   }
 
-  @keyframes blink {
-    0%, 50% { opacity: 1 }
-    51%, 100% { opacity: 0 }
-  }
-
-  /* Streaming mask effect - creates smooth fade at bottom where new content appears */
-  .is-streaming::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 2.5em;
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      var(--surface-page) 100%
-    );
-    pointer-events: none;
-    opacity: 0.35;
-    animation: streamPulse 1.8s ease-in-out infinite;
-  }
-
-  @keyframes streamPulse {
-    0%, 100% { opacity: 0.25; }
-    50% { opacity: 0.45; }
+  @keyframes blockFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .streaming-cursor {
+    .block-fade-in {
       animation: none;
       opacity: 1;
-    }
-
-    .is-streaming::after {
-      animation: none;
-      opacity: 0.3;
     }
   }
 </style>

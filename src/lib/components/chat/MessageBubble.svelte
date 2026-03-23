@@ -52,7 +52,8 @@
 	// OR the whole message is complete. This keeps the label as "Thinking" between
 	// multi-burst thinking phases (isThinkingStreaming briefly false, but no content yet).
 	$: isDone = !message.isStreaming && !message.isThinkingStreaming;
-	$: showLogoBelow = !isUser && hasThinking;
+	$: isGenerating = Boolean(message.isStreaming || message.isThinkingStreaming);
+	$: showLogoBelow = !isUser && isLast && (hasThinking || isGenerating);
 	$: thinkingIsDone = hasThinking && !message.isThinkingStreaming &&
 		(message.content.trim().length > 0 || isDone);
 
@@ -184,12 +185,12 @@
 					</div>
 				</div>
 			{:else}
-				<div class="whitespace-pre-wrap break-words text-[16px] leading-[1.6]">
+				<div class="whitespace-pre-wrap break-words text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
 					{message.content}
 				</div>
 			{/if}
 		{:else}
-			<div class="prose-container w-full overflow-hidden text-[16px] leading-[1.6]">
+			<div class="prose-container w-full overflow-hidden text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
 				<MarkdownRenderer
 					content={message.content}
 					isDark={$isDark}
@@ -312,9 +313,9 @@
 			</button>
 		</div>
 	{/if}
-	{#if showLogoBelow && thinkingIsDone && isLast}
+	{#if showLogoBelow}
 		<div class="logo-signature">
-			<LogoMark animated={false} size={42} />
+			<LogoMark animated={isGenerating} size={42} />
 		</div>
 	{/if}
 </div>
@@ -346,8 +347,8 @@
 	.info-tooltip {
 		position: absolute;
 		bottom: calc(100% + 8px);
-		left: 50%;
-		transform: translateX(-50%) translateY(4px);
+		left: 0;
+		transform: translateY(4px);
 		opacity: 0;
 		visibility: hidden;
 		transition:
@@ -356,13 +357,14 @@
 			visibility var(--duration-standard);
 		z-index: 50;
 		pointer-events: none;
+		max-width: calc(100vw - 2rem);
 	}
 
 	.info-container:hover .info-tooltip,
 	.info-button:focus-visible + .info-tooltip {
 		opacity: 1;
 		visibility: visible;
-		transform: translateX(-50%) translateY(0);
+		transform: translateY(0);
 		pointer-events: auto;
 	}
 

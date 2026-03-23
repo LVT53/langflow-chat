@@ -5,6 +5,7 @@
 
 	export let messages: ChatMessage[] = [];
 	export let conversationId: string | null = null;
+	export let isThinkingActive: boolean = false;
 
 	const dispatch = createEventDispatcher<{
 		regenerate: { messageId: string };
@@ -55,8 +56,8 @@
 		} else if (isNewMessage) {
 			// New message added: jump directly to the latest content.
 			alignToBottomAfterRender();
-		} else if (shouldAutoScroll) {
-			// Streaming update: instant scroll if already at bottom
+		} else if (shouldAutoScroll && isThinkingActive) {
+			// Only follow during thinking phase; stop once content streaming begins
 			instantScrollToBottom();
 		}
 

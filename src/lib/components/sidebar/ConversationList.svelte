@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, slide } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import {
 		conversations,
 		deleteConversationById,
@@ -65,7 +66,8 @@
 
 	async function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
-		if (id === $currentConversationId) return;
+		const onSettingsPage = $page.url.pathname.startsWith('/settings');
+		if (id === $currentConversationId && !onSettingsPage) return;
 		const previousConversationId = $currentConversationId;
 		openMenuId = null;
 		currentConversationId.set(id);
