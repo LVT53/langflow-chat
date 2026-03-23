@@ -15,7 +15,6 @@
 	let scrollContainer: HTMLDivElement;
 	let shouldAutoScroll = true;
 	let lastMessageCount = 0;
-	let lastMessageId: string | undefined = undefined;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
 
@@ -23,7 +22,6 @@
 		lastConversationId = conversationId;
 		shouldAutoScroll = true;
 		lastMessageCount = 0;
-		lastMessageId = undefined;
 		shouldJumpToConversationBottom = true;
 	}
 
@@ -34,16 +32,9 @@
 		shouldAutoScroll = distanceToBottom < 50;
 	}
 
-	// Detect if a new message was added (not just content updates)
+	// Detect if a new message was added (not just content updates or ID reconciliation on stream end)
 	function hasNewMessage(currentMessages: ChatMessage[]): boolean {
-		if (currentMessages.length > lastMessageCount) {
-			return true;
-		}
-		const currentLastId = currentMessages[currentMessages.length - 1]?.id;
-		if (currentLastId !== lastMessageId) {
-			return true;
-		}
-		return false;
+		return currentMessages.length > lastMessageCount;
 	}
 
 	$: if (messages && messages.length > 0 && scrollContainer) {
@@ -63,7 +54,6 @@
 
 		// Update tracking state
 		lastMessageCount = messages.length;
-		lastMessageId = messages[messages.length - 1]?.id;
 	}
 
 	$: if (messages.length === 0 && shouldJumpToConversationBottom) {
