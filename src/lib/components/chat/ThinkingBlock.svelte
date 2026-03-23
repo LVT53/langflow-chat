@@ -30,6 +30,14 @@
 		? []
 		: (segments.filter((s): s is ThinkingSegment & { type: 'tool_call' } => s.type === 'tool_call'));
 
+	function extractHostname(raw: string): string {
+		try {
+			return new URL(raw).hostname.replace(/^www\./, '');
+		} catch {
+			return raw.slice(0, 40);
+		}
+	}
+
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
 		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 60);
@@ -38,7 +46,8 @@
 			return `Searching: "${String(q ?? '').slice(0, 60)}"`;
 		}
 		if (n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse')) {
-			return `Fetching: ${firstVal()}`;
+			const raw = String(Object.values(input)[0] ?? '');
+			return `Fetching: ${extractHostname(raw)}`;
 		}
 		return firstVal() ? `${name}: ${firstVal()}` : name;
 	}
