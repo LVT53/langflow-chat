@@ -82,8 +82,11 @@
     await initHighlighter();
     const newBlocks = splitMarkdownBlocks(content);
     const oldCount = prevBlockCount;
-    // Mark newly added blocks during streaming
-    blocks = newBlocks.map((b, i) => ({ ...b, isNew: isStreaming && i >= oldCount }));
+    // Mark newly added blocks during streaming, preserve isNew on existing animating blocks
+    blocks = newBlocks.map((b, i) => ({
+      ...b,
+      isNew: (isStreaming && i >= oldCount) || (blocks[i]?.isNew === true)
+    }));
     prevBlockCount = newBlocks.length;
     // Clear isNew flag after animation completes
     if (isStreaming && newBlocks.length > oldCount) {
