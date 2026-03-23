@@ -68,11 +68,16 @@
 		adjustHeight();
 		if (!isMobile()) {
 			textarea.focus();
+		} else {
+			textarea.blur();
 		}
 	}
 
 	function stop() {
 		dispatch('stop');
+		if (isMobile()) {
+			textarea.blur();
+		}
 	}
 
 	onMount(() => {

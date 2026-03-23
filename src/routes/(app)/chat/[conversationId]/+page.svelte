@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { writable } from 'svelte/store';
 	import { onMount, onDestroy } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
@@ -29,6 +30,9 @@
 	let canRetry = false;
 	let prevConversationId: string | null = null;
 	let hasPersistedMessages = (data.messages?.length ?? 0) > 0;
+	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
+	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
+	let streamInterruptedByBackground = false;
 
 	$: hasMessages = $messages.length > 0;
 	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
@@ -105,11 +109,21 @@
 		return FRIENDLY_SEND_ERRORS.backend_failure;
 	}
 
+	function handleVisibilityChange() {
+		if (document.visibilityState === 'visible' && streamInterruptedByBackground) {
+			streamInterruptedByBackground = false;
+			invalidateAll();
+		}
+	}
+
 	onMount(() => {
 		currentConversationId.set(data.conversation.id);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 	});
 
 	onDestroy(() => {
+		document.removeEventListener('visibilitychange', handleVisibilityChange);
+
 		if (activeStream) {
 			activeStream.abort();
 			activeStream = null;
@@ -283,9 +297,19 @@
 				},
 				onError(err) {
 					messages.update((msgs) => msgs.filter((m) => m.id !== placeholderId));
-					sendError = toFriendlySendError(err);
-					isSending = false;
 					activeStream = null;
+					isSending = false;
+
+					// Detect browser-initiated abort (mobile backgrounding / connection drop).
+					// The server continues generating and persists the result; reload on return.
+					const isBrowserAbort =
+						err.name === 'AbortError' && document.visibilityState === 'hidden';
+					if (isBrowserAbort) {
+						streamInterruptedByBackground = true;
+						return;
+					}
+
+					sendError = toFriendlySendError(err);
 					canRetry = true;
 				}
 			},
