@@ -13,6 +13,23 @@
   let blocks: MarkdownBlock[] = [];
   let prevBlockCount = 0;
 
+  // Throttle rendering during streaming so each visual update is large
+  // enough that new blocks are perceivable with the fade-in animation.
+  let pendingContent: string | null = null;
+  let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+  const STREAM_THROTTLE_MS = 80;
+
+  function scheduleRender(src: string) {
+    pendingContent = src;
+    if (throttleTimer !== null) return;
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null;
+      const latest = pendingContent!;
+      pendingContent = null;
+      renderContent(latest);
+    }, STREAM_THROTTLE_MS);
+  }
+
   function splitMarkdownBlocks(source: string): MarkdownBlock[] {
     const normalizedSource = source.startsWith('[Translation unavailable]')
       ? source.substring('[Translation unavailable]'.length).trimStart()
@@ -78,17 +95,15 @@
     return nextBlocks;
   }
   
-  async function initialize() {
+  async function renderContent(src: string) {
     await initHighlighter();
-    const newBlocks = splitMarkdownBlocks(content);
+    const newBlocks = splitMarkdownBlocks(src);
     const oldCount = prevBlockCount;
-    // Mark newly added blocks during streaming, preserve isNew on existing animating blocks
     blocks = newBlocks.map((b, i) => ({
       ...b,
       isNew: (isStreaming && i >= oldCount) || (blocks[i]?.isNew === true)
     }));
     prevBlockCount = newBlocks.length;
-    // Clear isNew flag after animation completes
     if (isStreaming && newBlocks.length > oldCount) {
       setTimeout(() => {
         blocks = blocks.map((b) => ({ ...b, isNew: false }));
@@ -97,7 +112,17 @@
   }
 
   $: if (content !== undefined || isDark !== undefined || isStreaming !== undefined) {
-    initialize();
+    if (isStreaming) {
+      scheduleRender(content);
+    } else {
+      // Flush any pending throttled render immediately when streaming stops
+      if (throttleTimer !== null) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+        pendingContent = null;
+      }
+      renderContent(content);
+    }
   }
 </script>
 
