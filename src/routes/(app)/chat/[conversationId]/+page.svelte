@@ -31,6 +31,7 @@
 	let hasPersistedMessages = (data.messages?.length ?? 0) > 0;
 
 	$: hasMessages = $messages.length > 0;
+	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
 
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
@@ -373,7 +374,7 @@
 <div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
 		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
-			<MessageArea messages={$messages} conversationId={data.conversation.id} on:regenerate={handleRegenerate} on:edit={handleEdit} />
+			<MessageArea messages={$messages} conversationId={data.conversation.id} isThinkingActive={isThinkingActive} on:regenerate={handleRegenerate} on:edit={handleEdit} />
 		</div>
 
 		<div class="composer-layer" class:composer-layer-active={hasMessages}>

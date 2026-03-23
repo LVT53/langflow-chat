@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { ThinkingSegment } from '$lib/types';
-	import LogoMark from './LogoMark.svelte';
 
 	export let content: string = '';
 	// True once thinking is definitively over: visible response text has started
@@ -12,6 +12,7 @@
 	export let segments: ThinkingSegment[] = [];
 
 	let expanded = false;
+	let container: HTMLDivElement;
 
 	// "Thought" only once we're sure thinking is over (response text started or done).
 	$: label = thinkingIsDone ? 'Thought' : 'Thinking';
@@ -42,8 +43,17 @@
 		return firstVal() ? `${name}: ${firstVal()}` : name;
 	}
 
-	function toggle() {
+	async function toggle() {
+		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
+		const blockTop = container?.getBoundingClientRect().top ?? 0;
 		expanded = !expanded;
+		if (scrollEl) {
+			await tick();
+			requestAnimationFrame(() => {
+				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
+				scrollEl.scrollTop += newBlockTop - blockTop;
+			});
+		}
 	}
 </script>
 
@@ -51,18 +61,13 @@
 	import { slide } from 'svelte/transition';
 </script>
 
-<div class="thinking-block">
+<div class="thinking-block" bind:this={container}>
 	<button
 		type="button"
 		class="thinking-header"
 		on:click={toggle}
 		aria-expanded={expanded}
 	>
-		{#if isActiveThinking}
-			<span class="thinking-logo">
-				<LogoMark animated={true} size={30} />
-			</span>
-		{/if}
 		<span class="thinking-label" class:is-active={isActiveThinking}>{label}</span>
 		<svg
 			class="chevron"
@@ -128,28 +133,27 @@
 <style>
 	.thinking-block {
 		margin-bottom: var(--space-md);
+		width: 100%;
+		max-width: 100%;
+		overflow: hidden;
 	}
 
 	.thinking-header {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
 		padding: var(--space-xs) 0;
 		background: transparent;
 		border: none;
 		cursor: pointer;
+		max-width: 100%;
+		width: 100%;
 	}
 
 	.thinking-header:focus-visible {
 		outline: none;
 		box-shadow: 0 0 0 2px var(--focus-ring);
 		border-radius: 2px;
-	}
-
-	.thinking-logo {
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
 	}
 
 	.thinking-label {
