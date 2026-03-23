@@ -2,6 +2,7 @@
 	import { writable } from 'svelte/store';
 	import { onMount, onDestroy } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
@@ -122,7 +123,7 @@
 	});
 
 	onDestroy(() => {
-		document.removeEventListener('visibilitychange', handleVisibilityChange);
+		if (browser) document.removeEventListener('visibilitychange', handleVisibilityChange);
 
 		if (activeStream) {
 			activeStream.abort();
@@ -303,7 +304,7 @@
 					// Detect browser-initiated abort (mobile backgrounding / connection drop).
 					// The server continues generating and persists the result; reload on return.
 					const isBrowserAbort =
-						err.name === 'AbortError' && document.visibilityState === 'hidden';
+						err.name === 'AbortError' && browser && document.visibilityState === 'hidden';
 					if (isBrowserAbort) {
 						streamInterruptedByBackground = true;
 						return;
