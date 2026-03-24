@@ -576,10 +576,11 @@ export const POST: RequestHandler = async (event) => {
 
 	const normalizedMessage = message.trim();
 	const sourceLanguage = detectLanguage(normalizedMessage);
+	const isTranslationEnabled = user.translationEnabled;
 
 	let upstreamMessage = normalizedMessage;
 	try {
-		if (sourceLanguage === 'hu') {
+		if (sourceLanguage === 'hu' && isTranslationEnabled) {
 			upstreamMessage = await translateHungarianToEnglish(normalizedMessage);
 		}
 	} catch (error) {
@@ -598,7 +599,7 @@ export const POST: RequestHandler = async (event) => {
 			async start(controller) {
 				const upstreamAbortController = new AbortController();
 				const outputTranslator =
-					sourceLanguage === 'hu' ? new StreamingHungarianTranslator() : null;
+					sourceLanguage === 'hu' && isTranslationEnabled ? new StreamingHungarianTranslator() : null;
 				let closed = false;
 				let ended = false;
 				let fullResponse = '';

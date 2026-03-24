@@ -51,7 +51,7 @@ const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 
-function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
+function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com', translationEnabled: false }) {
 	return {
 		request: new Request('http://localhost/api/chat/stream', {
 			method: 'POST',
@@ -344,7 +344,7 @@ describe('POST /api/chat/stream', () => {
 			])
 		);
 
-		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
+		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' }, { id: 'user-1', email: 'test@example.com', translationEnabled: true });
 		const response = await POST(event);
 		const body = await readSseResponse(response);
 
