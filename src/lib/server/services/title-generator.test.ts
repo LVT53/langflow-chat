@@ -115,9 +115,9 @@ describe('generateTitle', () => {
     await generateTitle('User message', longResponse);
     const callArgs = mockFetch.mock.calls[0][1];
     const body = JSON.parse(typeof callArgs.body === 'string' ? callArgs.body : '');
-    const prompt = body.messages[0].content;
-    expect(prompt).toContain('Assistant: ' + 'x'.repeat(200));
-    expect(prompt).not.toContain('x'.repeat(201));
+    const lastMessage = body.messages[body.messages.length - 1];
+    expect(lastMessage.content).toContain('Assistant: ' + 'x'.repeat(200));
+    expect(lastMessage.content).not.toContain('x'.repeat(201));
   });
 
   it('removes surrounding quotes from generated title', async () => {
