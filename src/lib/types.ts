@@ -37,6 +37,7 @@ export interface SessionUser {
   role: UserRole;
   avatarId: number | null;
   profilePicture: string | null;
+  translationEnabled: boolean;
 }
 
 // Project interface: a named folder grouping conversations
