@@ -3,7 +3,7 @@
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 2;
+	export let speed: number = 6;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
