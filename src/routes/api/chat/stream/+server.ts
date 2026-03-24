@@ -881,9 +881,21 @@ export const POST: RequestHandler = async (event) => {
 						const closeIndex = preserveBuffer.indexOf(PRESERVE_CLOSE_TAG);
 						if (closeIndex !== -1) {
 							const content = preserveBuffer.slice(0, closeIndex);
-							const wrappedContent = `\`\`\`\n${content}\n\`\`\``;
-							if (!emitInlineToken(wrappedContent)) {
-								return false;
+							// Check if content already starts with a code fence
+							const trimmedContent = content.trimStart();
+							const alreadyHasCodeFence = trimmedContent.startsWith('```');
+
+							if (alreadyHasCodeFence) {
+								// Content already has code fences, just strip preserve tags and emit as-is
+								if (!emitInlineToken(content)) {
+									return false;
+								}
+							} else {
+								// Content doesn't have code fences, wrap it
+								const wrappedContent = `\`\`\`\n${content}\n\`\`\``;
+								if (!emitInlineToken(wrappedContent)) {
+									return false;
+								}
 							}
 							preserveBuffer = preserveBuffer.slice(closeIndex + PRESERVE_CLOSE_TAG.length);
 							insidePreserve = false;
@@ -933,8 +945,18 @@ export const POST: RequestHandler = async (event) => {
 
 				if (insidePreserve) {
 					insidePreserve = false;
-					const wrappedContent = `\`\`\`\n${remainder}\n\`\`\``;
-					return emitInlineToken(wrappedContent);
+					// Check if content already starts with a code fence
+					const trimmedRemainder = remainder.trimStart();
+					const alreadyHasCodeFence = trimmedRemainder.startsWith('```');
+
+					if (alreadyHasCodeFence) {
+						// Content already has code fences, emit as-is
+						return emitInlineToken(remainder);
+					} else {
+						// Content doesn't have code fences, wrap it
+						const wrappedContent = `\`\`\`\n${remainder}\n\`\`\``;
+						return emitInlineToken(wrappedContent);
+					}
 				}
 
 				const isPartialOpenTag = PRESERVE_OPEN_TAG.startsWith(remainder);
