@@ -98,6 +98,8 @@ export interface ChatMessage {
   // Interleaved thinking text + tool call segments, built during streaming.
   // Not persisted to DB — falls back to flat `thinking` string on page reload.
   thinkingSegments?: ThinkingSegment[];
+  // Display name of the model used for the response (assistant messages only)
+  modelDisplayName?: string;
 }
 
 // Langflow types

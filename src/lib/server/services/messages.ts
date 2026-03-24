@@ -1,10 +1,22 @@
 import { randomUUID } from 'crypto';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { messages } from '$lib/server/db/schema';
-import type { ChatMessage, MessageRole, ThinkingSegment } from '$lib/types';
+import { messages, messageAnalytics } from '$lib/server/db/schema';
+import type { ChatMessage, MessageRole, ThinkingSegment, ModelId } from '$lib/types';
+import { getConfig } from '$lib/server/config-store';
 
-function mapRowToChatMessage(row: typeof messages.$inferSelect): ChatMessage {
+function getModelDisplayName(modelId?: string | null): string | undefined {
+	if (!modelId) return undefined;
+	const config = getConfig();
+	if (modelId === 'model1') return config.model1.displayName;
+	if (modelId === 'model2') return config.model2.displayName;
+	return undefined;
+}
+
+function mapRowToChatMessage(
+	row: typeof messages.$inferSelect,
+	modelId?: string | null
+): ChatMessage {
 	// Restore full interleaved thinkingSegments from persisted JSON.
 	// The column stores the complete segment array (text + tool_call entries in order)
 	// so the expanded ThinkingBlock view is identical to what was shown during streaming.
@@ -26,18 +38,23 @@ function mapRowToChatMessage(row: typeof messages.$inferSelect): ChatMessage {
 		content: row.content,
 		thinking: row.thinking ?? undefined,
 		thinkingSegments,
-		timestamp: row.createdAt.getTime()
+		timestamp: row.createdAt.getTime(),
+		modelDisplayName: getModelDisplayName(modelId)
 	};
 }
 
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
 	const result = await db
-		.select()
+		.select({
+			message: messages,
+			model: messageAnalytics.model
+		})
 		.from(messages)
+		.leftJoin(messageAnalytics, eq(messages.id, messageAnalytics.messageId))
 		.where(eq(messages.conversationId, conversationId))
 		.orderBy(asc(messages.createdAt));
 
-	return result.map(mapRowToChatMessage);
+	return result.map((row) => mapRowToChatMessage(row.message, row.model));
 }
 
 export async function deleteMessages(ids: string[]): Promise<void> {

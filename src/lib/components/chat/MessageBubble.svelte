@@ -220,28 +220,34 @@
 							<line x1="12" y1="8" x2="12.01" y2="8"></line>
 						</svg>
 					</button>
-					<div class="info-tooltip">
-						<div class="tooltip-content">
-							{#if hasThinking}
-								<div class="tooltip-row">
-									<span class="tooltip-label">Thinking tokens</span>
-									<span class="tooltip-value">{thinkingTokenCount.toLocaleString()}</span>
-								</div>
-							{/if}
-							{#if responseTokenCount > 0}
-								<div class="tooltip-row">
-									<span class="tooltip-label">Response tokens</span>
-									<span class="tooltip-value">{responseTokenCount.toLocaleString()}</span>
-								</div>
-							{/if}
-							{#if totalTokenCount > 0}
-								<div class="tooltip-row">
-									<span class="tooltip-label">Total tokens</span>
-									<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
-								</div>
-							{/if}
+						<div class="info-tooltip">
+							<div class="tooltip-content">
+								{#if message.modelDisplayName}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Model</span>
+										<span class="tooltip-value">{message.modelDisplayName}</span>
+									</div>
+								{/if}
+								{#if hasThinking}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Thinking tokens</span>
+										<span class="tooltip-value">{thinkingTokenCount.toLocaleString()}</span>
+									</div>
+								{/if}
+								{#if responseTokenCount > 0}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Response tokens</span>
+										<span class="tooltip-value">{responseTokenCount.toLocaleString()}</span>
+									</div>
+								{/if}
+								{#if totalTokenCount > 0}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Total tokens</span>
+										<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
+									</div>
+								{/if}
+							</div>
 						</div>
-					</div>
 				</div>
 			{/if}
 
