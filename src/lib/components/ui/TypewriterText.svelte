@@ -24,7 +24,7 @@
 </script>
 
 <span class="typewriter-text" class:animating={isAnimating}>
-	{#each displayedChars as char, i (i)}
+	{#each displayedChars as char, i (`${animationKey}-${i}`)}
 		<span
 			in:fly={{
 				duration: 200,
