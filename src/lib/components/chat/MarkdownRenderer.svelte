@@ -67,7 +67,7 @@
     };
 
     for (const line of lines) {
-      const openingFenceMatch = line.match(/^\s*```([^\s`]*)\s*$/);
+      const openingFenceMatch = line.match(/^\s*```\s*([^\s`]*)\s*$/);
       const closingFenceMatch = line.match(/^\s*```\s*$/);
 
       if (!inCodeBlock && openingFenceMatch) {
