@@ -12,8 +12,17 @@
 	$: if (text) {
 		// Reset and start animation
 		animationKey += 1;
-		displayedChars = text.split('');
+		displayedChars = [];
 		isAnimating = true;
+
+		const chars = text.split('');
+
+		// Progressively add characters one by one
+		chars.forEach((char, i) => {
+			setTimeout(() => {
+				displayedChars = [...displayedChars, char];
+			}, delay + (i * speed));
+		});
 
 		// Stop animating after all characters have appeared
 		const totalDuration = delay + (text.length * speed) + 200;
