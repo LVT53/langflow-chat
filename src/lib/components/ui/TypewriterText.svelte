@@ -3,7 +3,7 @@
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 50;
+	export let speed: number = 17;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
@@ -37,10 +37,11 @@
 	{#each displayedChars as char, i (`${animationKey}-${i}`)}
 		<span
 			in:fade={{
-				duration: 150,
+				duration: 100,
 				delay: delay + (i * speed)
 			}}
 			class="char"
+			style="animation-delay: {delay + (i * speed)}ms"
 		>
 			{char === ' ' ? '\u00A0' : char}
 		</span>
