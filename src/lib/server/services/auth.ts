@@ -48,6 +48,7 @@ export async function validateSession(token: string): Promise<SessionUser | null
     role: (userObj.role ?? 'user') as import('../../types').UserRole,
     avatarId: userObj.avatarId ?? null,
     profilePicture: userObj.profilePicture ?? null,
+    translationEnabled: (userObj.translationEnabled ?? 0) === 1,
   };
 }
 

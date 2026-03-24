@@ -123,7 +123,11 @@ describe('validateSession', () => {
     expect(result).toEqual({
       id: 'user-1',
       email: 'test@example.com',
-      displayName: 'Test User'
+      displayName: 'Test User',
+      role: 'user',
+      avatarId: null,
+      profilePicture: null,
+      translationEnabled: false
     });
   });
 
