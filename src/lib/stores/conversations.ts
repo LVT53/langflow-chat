@@ -72,7 +72,6 @@ export function upsertConversationLocal(id: string, title = 'New Conversation', 
 		const nextItems = [...items];
 		nextItems[existingIndex] = {
 			...nextItems[existingIndex],
-			title,
 			updatedAt
 		};
 		return nextItems;
