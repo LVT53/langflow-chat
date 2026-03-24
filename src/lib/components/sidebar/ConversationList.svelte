@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade, slide } from 'svelte/transition';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import {
@@ -23,6 +24,12 @@
 	export let initialConversations: ConversationListItem[] = [];
 	export let initialProjects: Project[] = [];
 
+	let projectsStoreReady = false;
+	onMount(() => {
+		projectsStore.set(initialProjects);
+		projectsStoreReady = true;
+	});
+
 	let openMenuId: string | null = null;
 	let openProjectMenuId: string | null = null;
 	// Map of projectId → expanded state (local only)
@@ -35,7 +42,7 @@
 		? $conversations
 		: initialConversations;
 
-	$: allProjects = $projectsStore.length > 0 ? $projectsStore : initialProjects;
+	$: allProjects = projectsStoreReady ? $projectsStore : initialProjects;
 
 	// Ensure newly loaded projects default to expanded
 	$: {
