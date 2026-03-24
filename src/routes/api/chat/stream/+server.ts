@@ -906,7 +906,8 @@ export const POST: RequestHandler = async (event) => {
 						if (partialCloseLength > 0) {
 							break;
 						}
-						continue;
+						// No close tag found yet, break to wait for more chunks
+						break;
 					}
 
 					const openIndex = preserveBuffer.indexOf(PRESERVE_OPEN_TAG);
