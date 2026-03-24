@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 25;
+	export let speed: number = 60;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
@@ -16,7 +16,7 @@
 		isAnimating = true;
 
 		// Stop animating after all characters have appeared
-		const totalDuration = delay + (text.length * speed) + 150;
+		const totalDuration = delay + (text.length * speed) + 200;
 		setTimeout(() => {
 			isAnimating = false;
 		}, totalDuration);
@@ -26,7 +26,11 @@
 <span class="typewriter-text" class:animating={isAnimating}>
 	{#each displayedChars as char, i (i)}
 		<span
-			in:fade={{ duration: 150, delay: delay + (i * speed) }}
+			in:fly={{
+				duration: 200,
+				delay: delay + (i * speed),
+				y: 6
+			}}
 			class="char"
 		>
 			{char === ' ' ? '\u00A0' : char}
@@ -41,5 +45,6 @@
 
 	.char {
 		display: inline-block;
+		will-change: transform, opacity;
 	}
 </style>
