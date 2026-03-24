@@ -2,6 +2,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import type { ConversationListItem, Project } from '$lib/types';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+	import TypewriterText from '../ui/TypewriterText.svelte';
 
 	export let conversation: ConversationListItem;
 	export let active: boolean = false;
@@ -28,6 +29,18 @@
 	let showProjectSubmenu = false;
 	let submenuRef: HTMLDivElement;
 	let submenuPositionStyle = '';
+
+	// Track title changes for animation
+	let previousTitle = conversation.title;
+	let isNewTitle = false;
+
+	$: {
+		if (conversation.title !== previousTitle) {
+			// Check if this is a transition from "New Conversation" to a real title
+			isNewTitle = previousTitle === 'New Conversation' && conversation.title !== 'New Conversation';
+			previousTitle = conversation.title;
+		}
+	}
 
 	function setMenuBaseBackground() {
 		if (typeof document === 'undefined') return;
@@ -220,7 +233,11 @@
 			/>
 		{:else}
 			<div class="truncate px-1.5 text-[13px] font-sans text-text-primary">
-				{conversation.title}
+				{#if isNewTitle && !isEditing}
+					<TypewriterText text={conversation.title} speed={25} />
+				{:else}
+					{conversation.title}
+				{/if}
 			</div>
 		{/if}
 	</div>
