@@ -44,7 +44,8 @@ const COMMON_MISSPELLINGS: Record<string, string> = {
 
 // Hungarian-specific characters and common words for language detection
 const HUNGARIAN_CHARS = /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/;
-const HUNGARIAN_WORDS = /\b(és|a|az|hogy|nem|van|meg|ez|egy|kell|is|de|ha|azt|volt)\b/i;
+// Strong indicators - words that are distinctly Hungarian (not common English words)
+const STRONG_HUNGARIAN_WORDS = /\b(és|hogy|nem|van|meg|ez|egy|kell|azt|volt)\b/i;
 
 // Code-related keywords and patterns
 const CODE_PATTERNS = [
@@ -55,16 +56,12 @@ const CODE_PATTERNS = [
   /\b(html|css|javascript|python|java|typescript|react|vue|svelte)\b/i,
 ];
 
-/**
- * Detect the language of the text (English or Hungarian)
- * @param text The text to analyze
- * @returns 'hu' for Hungarian, 'en' for English (default)
- */
 function detectLanguage(text: string): 'en' | 'hu' {
   if (HUNGARIAN_CHARS.test(text)) {
     return 'hu';
   }
-  if (HUNGARIAN_WORDS.test(text)) {
+  const strongMatches = text.match(STRONG_HUNGARIAN_WORDS);
+  if (strongMatches && strongMatches.length >= 2) {
     return 'hu';
   }
   return 'en';
