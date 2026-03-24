@@ -234,7 +234,7 @@
 		{:else}
 			<div class="truncate px-1.5 text-[13px] font-sans text-text-primary">
 				{#if isNewTitle && !isEditing}
-					<TypewriterText text={conversation.title} speed={60} />
+					<TypewriterText text={conversation.title} speed={150} />
 				{:else}
 					{conversation.title}
 				{/if}
