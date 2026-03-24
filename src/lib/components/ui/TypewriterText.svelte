@@ -18,9 +18,10 @@
 		const chars = text.split('');
 
 		// Progressively add characters one by one
-		chars.forEach((char, i) => {
+		// Use chars.slice() to avoid closure capture issues with displayedChars
+		chars.forEach((_, i) => {
 			setTimeout(() => {
-				displayedChars = [...displayedChars, char];
+				displayedChars = chars.slice(0, i + 1);
 			}, delay + (i * speed));
 		});
 
