@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { fly } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 150;
+	export let speed: number = 50;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
@@ -36,10 +36,9 @@
 <span class="typewriter-text" class:animating={isAnimating}>
 	{#each displayedChars as char, i (`${animationKey}-${i}`)}
 		<span
-			in:fly={{
-				duration: 200,
-				delay: delay + (i * speed),
-				y: 6
+			in:fade={{
+				duration: 150,
+				delay: delay + (i * speed)
 			}}
 			class="char"
 		>
