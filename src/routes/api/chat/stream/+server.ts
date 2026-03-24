@@ -1048,7 +1048,11 @@ export const POST: RequestHandler = async (event) => {
 					if (!cleanedChunk) continue;
 
 					if (!outputTranslator) {
-						if (!emitInlineToken(cleanedChunk)) {
+						const processedChunk = cleanedChunk.replace(
+							/<preserve>(.*?)<\/preserve>/gs,
+							(_, content) => `\`\`\`\n${content}\n\`\`\``
+						);
+						if (!emitInlineToken(processedChunk)) {
 							return;
 						}
 						continue;
