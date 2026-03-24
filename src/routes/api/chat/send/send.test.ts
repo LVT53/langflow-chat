@@ -89,21 +89,22 @@ describe('POST /api/chat/send', () => {
 		expect(response.status).toBe(200);
 		expect(data.response.text).toBe('Hello from AI!');
 		expect(data.conversationId).toBe('conv-1');
-		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1');
+		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1', undefined);
 	});
 
-	it('translates Hungarian requests and responses', async () => {
+	it('translates Hungarian requests and responses when translationEnabled is true', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
 		mockDetectLanguage.mockReturnValue('hu');
 		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {} });
 
-		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
+		const userWithTranslation = { id: 'user-1', email: 'test@example.com', translationEnabled: true };
+		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' }, userWithTranslation);
 		const response = await POST(event);
 		const data = await response.json();
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1');
+		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined);
 		expect(mockTranslateEnglishToHungarian).toHaveBeenCalledWith('Hello from AI!');
 		expect(data.response.text).toBe('HU:Hello from AI!');
 	});

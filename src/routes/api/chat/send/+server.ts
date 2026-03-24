@@ -51,14 +51,18 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const normalizedMessage = message.trim();
 		const sourceLanguage = detectLanguage(normalizedMessage);
+		const isTranslationEnabled = user.translationEnabled;
+
 		const upstreamMessage =
-			sourceLanguage === 'hu'
+			sourceLanguage === 'hu' && isTranslationEnabled
 				? await translateHungarianToEnglish(normalizedMessage)
 				: normalizedMessage;
 
 		const { text } = await sendMessage(upstreamMessage, conversationId, modelId);
 		const responseText =
-			sourceLanguage === 'hu' ? await translateEnglishToHungarian(text) : text;
+			sourceLanguage === 'hu' && isTranslationEnabled
+				? await translateEnglishToHungarian(text)
+				: text;
 
 		await createMessage(conversationId, 'user', normalizedMessage);
 		await createMessage(conversationId, 'assistant', responseText);
