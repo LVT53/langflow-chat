@@ -1,6 +1,47 @@
 // src/lib/server/services/title-generator.ts
 import { getConfig } from '../config-store';
 
+// Common misspellings dictionary for post-processing correction
+const COMMON_MISSPELLINGS: Record<string, string> = {
+  'humantizing': 'humanizing',
+  'humantize': 'humanize',
+  'humantized': 'humanized',
+  'recieve': 'receive',
+  'recieved': 'received',
+  'seperate': 'separate',
+  'seperated': 'separated',
+  'occured': 'occurred',
+  'occurance': 'occurrence',
+  'definately': 'definitely',
+  'accomodate': 'accommodate',
+  'acheive': 'achieve',
+  'beleive': 'believe',
+  'calender': 'calendar',
+  'collegue': 'colleague',
+  'concious': 'conscious',
+  'existance': 'existence',
+  'goverment': 'government',
+  'independant': 'independent',
+  'maintainance': 'maintenance',
+  'neccessary': 'necessary',
+  'noticable': 'noticeable',
+  'occassion': 'occasion',
+  'paralell': 'parallel',
+  'persistant': 'persistent',
+  'posession': 'possession',
+  'prefered': 'preferred',
+  'proffesional': 'professional',
+  'publically': 'publicly',
+  'recomend': 'recommend',
+  'refering': 'referring',
+  'relevent': 'relevant',
+  'succesful': 'successful',
+  'supercede': 'supersede',
+  'tommorow': 'tomorrow',
+  'untill': 'until',
+  'wich': 'which',
+};
+
 // Hungarian-specific characters and common words for language detection
 const HUNGARIAN_CHARS = /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/;
 const HUNGARIAN_WORDS = /\b(és|a|az|hogy|nem|van|meg|ez|egy|kell|is|de|ha|azt|volt)\b/i;
@@ -51,10 +92,42 @@ function isShortMessage(message: string): boolean {
 }
 
 /**
+ * Correct common misspellings in the title
+ * @param title The title to correct
+ * @returns Title with corrected spellings
+ */
+function correctSpelling(title: string): string {
+  if (!title || typeof title !== 'string') {
+    return title;
+  }
+
+  // Split into words and correct each one
+  return title
+    .split(/\s+/)
+    .map(word => {
+      // Check for exact match (case-insensitive)
+      const lowerWord = word.toLowerCase();
+      if (COMMON_MISSPELLINGS[lowerWord]) {
+        // Preserve original capitalization pattern
+        if (word === word.toUpperCase()) {
+          return COMMON_MISSPELLINGS[lowerWord].toUpperCase();
+        } else if (word[0] === word[0]?.toUpperCase()) {
+          return COMMON_MISSPELLINGS[lowerWord].charAt(0).toUpperCase() +
+                 COMMON_MISSPELLINGS[lowerWord].slice(1);
+        }
+        return COMMON_MISSPELLINGS[lowerWord];
+      }
+      return word;
+    })
+    .join(' ');
+}
+
+/**
  * Clean and normalize the generated title
  * - Removes surrounding quotes
  * - Removes prefixes like "Title:" or "Conversation:"
  * - Removes trailing periods
+ * - Corrects common misspellings
  * - Trims whitespace
  * @param title The raw title from the model
  * @returns Cleaned title
@@ -76,8 +149,8 @@ function cleanTitle(title: string): string {
     /^chat[:\s-]+/i,
     /^topic[:\s-]+/i,
     /^subject[:\s-]+/i,
-    /^cím[:\s-]+/i,  // Hungarian for "title"
-    /^beszélgetés[:\s-]+/i,  // Hungarian for "conversation"
+    /^cím[:\s-]+/i,
+    /^beszélgetés[:\s-]+/i,
   ];
   
   for (const prefix of prefixes) {
@@ -89,6 +162,9 @@ function cleanTitle(title: string): string {
 
   // Trim again after all replacements
   cleaned = cleaned.trim();
+
+  // Apply spell correction
+  cleaned = correctSpelling(cleaned);
 
   return cleaned;
 }
@@ -126,6 +202,8 @@ function buildSystemMessage(language: 'en' | 'hu', isCodeRelated: boolean): stri
         'Csak a címet add vissza, semmi mást',
         'Ne használj idézőjeleket',
         'Ne adj magyarázatot',
+        'Használj helyes helyesírást és nyelvtant',
+        'Csak szabványos magyar szavakat használj',
       ]
     : [
         'Titles should be 3-6 words long',
@@ -133,6 +211,8 @@ function buildSystemMessage(language: 'en' | 'hu', isCodeRelated: boolean): stri
         'Return only the title, nothing else',
         'Do not use quotes',
         'Do not provide explanations',
+        'Use correct spelling and grammar',
+        'Use standard English words only',
       ];
 
   const codeInstruction = isCodeRelated
@@ -269,7 +349,7 @@ async function generateTitleWithTemperature(
     body: JSON.stringify({
       model: config.titleGenModel,
       messages,
-      max_tokens: 30,
+      max_tokens: 60,
       temperature,
     }),
   });
@@ -356,8 +436,8 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
     body: JSON.stringify({
       model: config.titleGenModel,
       messages,
-      max_tokens: 30,
-      temperature: 0.1,
+      max_tokens: 60,
+      temperature: 0.2,
     }),
   });
 
