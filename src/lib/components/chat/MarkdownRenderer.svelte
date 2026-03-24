@@ -8,14 +8,21 @@
   export let isStreaming: boolean = false;
 
   type MarkdownBlock =
-    | { type: 'html'; html: string; isNew?: boolean }
-    | { type: 'code'; code: string; language?: string; html: string; isNew?: boolean };
+    | { type: 'html'; html: string; isNew?: boolean; key: string }
+    | { type: 'code'; code: string; language?: string; html: string; isNew?: boolean; key: string };
 
   let blocks: MarkdownBlock[] = [];
-  let prevBlockCount = 0;
+  let renderedBlockKeys = new Set<string>();
   let container: HTMLDivElement;
   let prevWordCount = 0;
   let prevLastBlockEl: HTMLElement | null = null;
+
+  // Generate a stable key for a block based on its content and position
+  function generateBlockKey(block: Omit<MarkdownBlock, 'key'>, index: number): string {
+    const content = block.type === 'code' ? block.code : block.html;
+    // Include type, index, content length, and content prefix to ensure uniqueness
+    return `${block.type}:${index}:${content.length}:${content.slice(0, 50)}`;
+  }
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -34,12 +41,12 @@
     }, STREAM_THROTTLE_MS);
   }
 
-  function splitMarkdownBlocks(source: string): MarkdownBlock[] {
+  function splitMarkdownBlocks(source: string): Array<Omit<MarkdownBlock, 'key' | 'isNew'>> {
     const normalizedSource = source.startsWith('[Translation unavailable]')
       ? source.substring('[Translation unavailable]'.length).trimStart()
       : source;
     const lines = normalizedSource.split('\n');
-    const nextBlocks: MarkdownBlock[] = [];
+    const nextBlocks: Array<Omit<MarkdownBlock, 'key' | 'isNew'>> = [];
     const textLines: string[] = [];
     const codeLines: string[] = [];
     let language: string | undefined;
@@ -102,16 +109,32 @@
   async function renderContent(src: string) {
     await initHighlighter();
     const newBlocks = splitMarkdownBlocks(src);
-    const oldCount = prevBlockCount;
-    blocks = newBlocks.map((b, i) => ({
-      ...b,
-      isNew: (isStreaming && i >= oldCount) || (blocks[i]?.isNew === true)
-    }));
-    prevBlockCount = newBlocks.length;
-    if (isStreaming && newBlocks.length > oldCount) {
-      setTimeout(() => {
-        blocks = blocks.map((b) => ({ ...b, isNew: false }));
-      }, 500);
+    
+    // Generate keys and determine which blocks are new
+    blocks = newBlocks.map((b, i) => {
+      const key = generateBlockKey(b, i);
+      const isNew = isStreaming && !renderedBlockKeys.has(key);
+      
+      // Track this block as rendered
+      if (isStreaming) {
+        renderedBlockKeys.add(key);
+      }
+      
+      return {
+        ...b,
+        key,
+        isNew
+      };
+    });
+    
+    // Clear isNew flags after animation
+    if (isStreaming) {
+      const hasNewBlocks = blocks.some(b => b.isNew);
+      if (hasNewBlocks) {
+        setTimeout(() => {
+          blocks = blocks.map((b) => ({ ...b, isNew: false }));
+        }, 500);
+      }
     }
   }
 
@@ -132,6 +155,7 @@
   $: if (!isStreaming) {
     prevWordCount = 0;
     prevLastBlockEl = null;
+    renderedBlockKeys.clear();
   }
 
   // Walk the last html block's DOM and wrap newly arrived words in animated spans.
@@ -191,22 +215,25 @@
   afterUpdate(() => {
     if (!isStreaming || !container) return;
 
-    const blockEls = container.querySelectorAll<HTMLElement>(':scope > .markdown-html');
-    if (!blockEls.length) return;
-    const lastBlockEl = blockEls[blockEls.length - 1];
+    // Only animate the last HTML (text) block, not code blocks
+    // Code blocks should appear as complete units with their own animation
+    const htmlBlockEls = container.querySelectorAll<HTMLElement>(':scope > .markdown-html');
+    if (!htmlBlockEls.length) return;
+    
+    const lastHtmlBlockEl = htmlBlockEls[htmlBlockEls.length - 1];
 
     // Reset word count when the active block changes (e.g. a new block was added)
-    if (lastBlockEl !== prevLastBlockEl) {
+    if (lastHtmlBlockEl !== prevLastBlockEl) {
       prevWordCount = 0;
-      prevLastBlockEl = lastBlockEl;
+      prevLastBlockEl = lastHtmlBlockEl;
     }
 
-    prevWordCount = wrapNewWords(lastBlockEl, prevWordCount);
+    prevWordCount = wrapNewWords(lastHtmlBlockEl, prevWordCount);
   });
 </script>
 
 <div class="markdown-container" bind:this={container} aria-hidden="false">
-  {#each blocks as block}
+  {#each blocks as block (block.key)}
     {#if block.type === 'html'}
       <div class="prose max-w-none dark:prose-invert markdown-html">
         {@html block.html}
