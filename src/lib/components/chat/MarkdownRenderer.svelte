@@ -103,12 +103,16 @@
     await initHighlighter();
     const newBlocks = splitMarkdownBlocks(src);
     const oldCount = prevBlockCount;
+    
     blocks = newBlocks.map((b, i) => ({
       ...b,
-      isNew: (isStreaming && i >= oldCount) || (blocks[i]?.isNew === true)
+      isNew: isStreaming && i >= oldCount
     }));
+    
     prevBlockCount = newBlocks.length;
-    if (isStreaming && newBlocks.length > oldCount) {
+    
+    const hasNewBlocks = blocks.some(b => b.isNew);
+    if (isStreaming && hasNewBlocks) {
       setTimeout(() => {
         blocks = blocks.map((b) => ({ ...b, isNew: false }));
       }, 500);
@@ -132,6 +136,7 @@
   $: if (!isStreaming) {
     prevWordCount = 0;
     prevLastBlockEl = null;
+    prevBlockCount = 0;
   }
 
   // Walk the last html block's DOM and wrap newly arrived words in animated spans.
