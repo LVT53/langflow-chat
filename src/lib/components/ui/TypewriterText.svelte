@@ -3,7 +3,7 @@
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 6;
+	export let speed: number = 2;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
@@ -37,7 +37,7 @@
 	{#each displayedChars as char, i (`${animationKey}-${i}`)}
 		<span
 			in:fade={{
-				duration: 40,
+				duration: 20,
 				delay: delay + (i * speed)
 			}}
 			class="char"
@@ -56,26 +56,22 @@
 	.char {
 		display: inline-block;
 		will-change: transform, opacity;
-		background: linear-gradient(
-			90deg,
-			var(--text-muted)    0%,
-			var(--text-muted)    30%,
-			var(--accent)        45%,
-			var(--text-primary)  50%,
-			var(--accent)        55%,
-			var(--text-muted)    70%,
-			var(--text-muted)    100%
-		);
-		background-size: 300% 100%;
-		background-clip: text;
-		-webkit-background-clip: text;
-		color: transparent;
-		-webkit-text-fill-color: transparent;
-		animation: shimmer-sweep 1.5s ease-out;
+		color: var(--text-primary);
+		animation: shimmer-in 400ms ease-out forwards;
 	}
 
-	@keyframes shimmer-sweep {
-		0%   { background-position: 100% center; }
-		100% { background-position: -100% center; }
+	@keyframes shimmer-in {
+		0% {
+			color: var(--accent);
+			text-shadow: 0 0 8px rgba(194, 166, 106, 0.6);
+		}
+		50% {
+			color: color-mix(in srgb, var(--accent) 70%, var(--text-primary) 30%);
+			text-shadow: 0 0 4px rgba(194, 166, 106, 0.3);
+		}
+		100% {
+			color: var(--text-primary);
+			text-shadow: none;
+		}
 	}
 </style>
