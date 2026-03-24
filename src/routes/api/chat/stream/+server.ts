@@ -645,6 +645,8 @@ export const POST: RequestHandler = async (event) => {
 			let thinkingContent = '';
 			let inlineThinkingBuffer = '';
 			let insideInlineThinking = false;
+			let preserveBuffer = '';
+			let insidePreserve = false;
 			// Full interleaved segments for DB persistence — mirrors exactly what the
 			// client builds in thinkingSegments so the expanded view is identical on reload.
 			type ServerSegment =
@@ -864,6 +866,83 @@ export const POST: RequestHandler = async (event) => {
 				return emitVisibleToken(remainder);
 			};
 
+			const PRESERVE_OPEN_TAG = '<preserve>';
+			const PRESERVE_CLOSE_TAG = '</preserve>';
+
+			const emitChunkWithPreserveHandling = (chunk: string): boolean => {
+				if (!chunk) {
+					return true;
+				}
+
+				preserveBuffer += chunk;
+
+				while (preserveBuffer) {
+					if (insidePreserve) {
+						const closeIndex = preserveBuffer.indexOf(PRESERVE_CLOSE_TAG);
+						if (closeIndex !== -1) {
+							const content = preserveBuffer.slice(0, closeIndex);
+							const wrappedContent = `\`\`\`\n${content}\n\`\`\``;
+							if (!emitInlineToken(wrappedContent)) {
+								return false;
+							}
+							preserveBuffer = preserveBuffer.slice(closeIndex + PRESERVE_CLOSE_TAG.length);
+							insidePreserve = false;
+							continue;
+						}
+
+						const partialCloseLength = getPartialTagPrefixLength(preserveBuffer, PRESERVE_CLOSE_TAG);
+						if (partialCloseLength > 0) {
+							break;
+						}
+						continue;
+					}
+
+					const openIndex = preserveBuffer.indexOf(PRESERVE_OPEN_TAG);
+					if (openIndex !== -1) {
+						const visibleChunk = preserveBuffer.slice(0, openIndex);
+						if (visibleChunk && !emitInlineToken(visibleChunk)) {
+							return false;
+						}
+						preserveBuffer = preserveBuffer.slice(openIndex + PRESERVE_OPEN_TAG.length);
+						insidePreserve = true;
+						continue;
+					}
+
+					const partialOpenLength = getPartialTagPrefixLength(preserveBuffer, PRESERVE_OPEN_TAG);
+					const flushLength = preserveBuffer.length - partialOpenLength;
+					if (flushLength > 0) {
+						const visibleChunk = preserveBuffer.slice(0, flushLength);
+						if (!emitInlineToken(visibleChunk)) {
+							return false;
+						}
+						preserveBuffer = preserveBuffer.slice(flushLength);
+					}
+					break;
+				}
+
+				return true;
+			};
+
+			const flushPreserveBuffer = (): boolean => {
+				if (!preserveBuffer) {
+					return true;
+				}
+
+				const remainder = preserveBuffer;
+				preserveBuffer = '';
+
+				if (insidePreserve) {
+					insidePreserve = false;
+					const wrappedContent = `\`\`\`\n${remainder}\n\`\`\``;
+					return emitInlineToken(wrappedContent);
+				}
+
+				const isPartialOpenTag = PRESERVE_OPEN_TAG.startsWith(remainder);
+				if (isPartialOpenTag) return true;
+
+				return emitInlineToken(remainder);
+			};
+
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 
 			const completeSuccess = (wasStopped = false) => {
@@ -983,6 +1062,9 @@ export const POST: RequestHandler = async (event) => {
 						if (!flushInlineThinkingBuffer()) {
 							return;
 						}
+						if (!flushPreserveBuffer()) {
+							return;
+						}
 						completeSuccess();
 						return;
 					}
@@ -1049,11 +1131,7 @@ export const POST: RequestHandler = async (event) => {
 					if (!cleanedChunk) continue;
 
 					if (!outputTranslator) {
-						const processedChunk = cleanedChunk.replace(
-							/<preserve>(.*?)<\/preserve>/gs,
-							(_, content) => `\`\`\`\n${content}\n\`\`\``
-						);
-						if (!emitInlineToken(processedChunk)) {
+						if (!emitChunkWithPreserveHandling(cleanedChunk)) {
 							return;
 						}
 						continue;
@@ -1075,6 +1153,9 @@ export const POST: RequestHandler = async (event) => {
 				}
 				flushPendingThinking();
 				if (!flushInlineThinkingBuffer()) {
+					return;
+				}
+				if (!flushPreserveBuffer()) {
 					return;
 				}
 				completeSuccess();
