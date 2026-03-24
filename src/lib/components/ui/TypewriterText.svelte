@@ -3,7 +3,7 @@
 
 	export let text: string;
 	export let delay: number = 0;
-	export let speed: number = 17;
+	export let speed: number = 6;
 
 	let displayedChars: string[] = [];
 	let isAnimating = false;
@@ -37,7 +37,7 @@
 	{#each displayedChars as char, i (`${animationKey}-${i}`)}
 		<span
 			in:fade={{
-				duration: 100,
+				duration: 40,
 				delay: delay + (i * speed)
 			}}
 			class="char"
@@ -56,18 +56,26 @@
 	.char {
 		display: inline-block;
 		will-change: transform, opacity;
-		animation: glowPulse 300ms ease-out;
+		background: linear-gradient(
+			90deg,
+			var(--text-muted)    0%,
+			var(--text-muted)    30%,
+			var(--accent)        45%,
+			var(--text-primary)  50%,
+			var(--accent)        55%,
+			var(--text-muted)    70%,
+			var(--text-muted)    100%
+		);
+		background-size: 300% 100%;
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+		-webkit-text-fill-color: transparent;
+		animation: shimmer-sweep 1.5s ease-out;
 	}
 
-	@keyframes glowPulse {
-		0% {
-			text-shadow: 0 0 0 rgba(194, 166, 106, 0);
-		}
-		50% {
-			text-shadow: 0 0 8px rgba(194, 166, 106, 0.8), 0 0 12px rgba(194, 166, 106, 0.4);
-		}
-		100% {
-			text-shadow: 0 0 0 rgba(194, 166, 106, 0);
-		}
+	@keyframes shimmer-sweep {
+		0%   { background-position: 100% center; }
+		100% { background-position: -100% center; }
 	}
 </style>
