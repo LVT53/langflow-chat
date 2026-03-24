@@ -26,6 +26,7 @@ export const GET: RequestHandler = async (event) => {
       theme: (user.theme ?? 'system') as 'system' | 'light' | 'dark',
       avatarId: user.avatarId ?? null,
     },
+    profilePicture: user.profilePicture ?? null,
   };
 
   return json(settings);
