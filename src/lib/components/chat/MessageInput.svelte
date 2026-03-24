@@ -42,11 +42,13 @@
 
 	function adjustHeight() {
 		if (!textarea) return;
-		const minHeight = 90;
-		textarea.style.height = `${minHeight}px`;
-		const isMobileDevice = window.innerWidth < 768;
-		const maxHeight = isMobileDevice ? 120 : 240;
-		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
+		requestAnimationFrame(() => {
+			const minHeight = 90;
+			textarea.style.height = `${minHeight}px`;
+			const isMobileDevice = window.innerWidth < 768;
+			const maxHeight = isMobileDevice ? 120 : 240;
+			textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
+		});
 	}
 
 	function handleInput() {
