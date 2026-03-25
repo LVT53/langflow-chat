@@ -10,7 +10,7 @@ dotenvConfig();
 if (!process.env.LANGFLOW_API_KEY) process.env.LANGFLOW_API_KEY = 'placeholder';
 if (!process.env.SESSION_SECRET) process.env.SESSION_SECRET = 'placeholder-secret-32-chars-long!!';
 
-import Honcho from '@honcho-ai/core';
+import { Honcho } from '@honcho-ai/sdk';
 import { db } from '../src/lib/server/db';
 import { users, conversations, messages } from '../src/lib/server/db/schema';
 import { eq, asc } from 'drizzle-orm';
@@ -26,17 +26,13 @@ async function main() {
   const baseUrl = process.env.HONCHO_BASE_URL || 'http://localhost:8000';
   const workspaceName = process.env.HONCHO_WORKSPACE || 'alfyai-prod';
 
-  if (!apiKey) {
-    console.error('HONCHO_API_KEY is required');
-    process.exit(1);
-  }
-
-  const honcho = new Honcho({ apiKey, baseURL: baseUrl });
+  const honcho = new Honcho({
+    apiKey: apiKey || 'no-auth',
+    baseURL: baseUrl,
+    workspaceId: workspaceName,
+  });
   console.log('[BACKFILL] Connecting to Honcho at', baseUrl);
-
-  // Get or create workspace
-  const workspace = await honcho.workspaces.getOrCreate({ id: workspaceName });
-  console.log('[BACKFILL] Workspace:', workspace.id);
+  console.log('[BACKFILL] Workspace:', workspaceName);
 
   // Get all users
   const allUsers = await db.select().from(users);
@@ -48,9 +44,7 @@ async function main() {
     console.log(`\n[BACKFILL] Processing user: ${user.email} (${user.id})`);
 
     // Create peer for user
-    const peer = await honcho.workspaces.peers.getOrCreate(workspace.id, {
-      id: user.id,
-    });
+    const peer = await honcho.peer(user.id);
     console.log(`  Peer: ${peer.id}`);
 
     // Get all conversations for this user
@@ -62,14 +56,9 @@ async function main() {
     console.log(`  Conversations: ${userConversations.length}`);
 
     for (const conv of userConversations) {
-      // Create session for conversation
-      const session = await honcho.workspaces.sessions.getOrCreate(
-        workspace.id,
-        {
-          id: conv.id,
-          peers: { [peer.id]: {} },
-        }
-      );
+      // Create session for conversation and add peer
+      const session = await honcho.session(conv.id);
+      await session.addPeers(peer);
 
       // Get all messages in chronological order
       const convMessages = await db
@@ -84,26 +73,22 @@ async function main() {
         `  Conversation "${conv.title}": ${convMessages.length} messages`
       );
 
-      // Batch messages (Honcho supports bulk create)
+      // Build message inputs
       const batch = convMessages
         .filter((m) => m.content.trim())
-        .map((m) => ({
-          content: m.content,
-          peer_id: peer.id,
-          metadata: { role: m.role },
-          created_at: m.createdAt.toISOString(),
-        }));
+        .map((m) =>
+          peer.message(m.content, {
+            metadata: { role: m.role },
+            createdAt: m.createdAt.toISOString(),
+          })
+        );
 
       if (batch.length === 0) continue;
 
       // Send in batches of 50 to avoid oversized requests
       for (let i = 0; i < batch.length; i += 50) {
         const chunk = batch.slice(i, i + 50);
-        await honcho.workspaces.sessions.messages.create(
-          workspace.id,
-          session.id,
-          { messages: chunk }
-        );
+        await session.addMessages(chunk);
         totalMessages += chunk.length;
         await sleep(RATE_LIMIT_MS);
       }

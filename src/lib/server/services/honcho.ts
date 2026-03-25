@@ -2,66 +2,64 @@
 // Messages are mirrored to Honcho (fire-and-forget), and peer context
 // is injected into system prompts for personalized responses.
 
-import Honcho from '@honcho-ai/core';
+import { Honcho } from '@honcho-ai/sdk';
+import type { Peer } from '@honcho-ai/sdk/dist/peer';
+import type { Session } from '@honcho-ai/sdk/dist/session';
 import { getConfig } from '../config-store';
 import { getSystemPrompt } from '../prompts';
 
 let client: Honcho | null = null;
-let workspaceId: string | null = null;
 
 // In-memory caches (single-process app, stable IDs)
-const peerIdCache = new Map<string, string>();
-const sessionIdCache = new Map<string, string>();
+const peerCache = new Map<string, Peer>();
+const sessionCache = new Map<string, Session>();
 
 export function isHonchoEnabled(): boolean {
   return getConfig().honchoEnabled;
 }
 
-async function ensureInitialized(): Promise<Honcho> {
-  if (client && workspaceId) return client;
+async function ensureClient(): Promise<Honcho> {
+  if (client) return client;
 
   const config = getConfig();
 
   client = new Honcho({
     apiKey: config.honchoApiKey || 'no-auth',
     baseURL: config.honchoBaseUrl,
+    workspaceId: config.honchoWorkspace,
   });
 
-  const workspace = await client.workspaces.getOrCreate({
-    id: config.honchoWorkspace,
-  });
-  workspaceId = workspace.id;
-
-  console.log('[HONCHO] Initialized — workspace:', workspaceId);
+  console.log('[HONCHO] Initialized — workspace:', config.honchoWorkspace);
   return client;
 }
 
-export async function getOrCreatePeer(userId: string): Promise<string> {
-  const cached = peerIdCache.get(userId);
+async function getPeer(userId: string): Promise<Peer> {
+  const cached = peerCache.get(userId);
   if (cached) return cached;
 
-  const honcho = await ensureInitialized();
-  const peer = await honcho.workspaces.peers.getOrCreate(workspaceId!, {
-    id: userId,
-  });
-  peerIdCache.set(userId, peer.id);
-  return peer.id;
+  const honcho = await ensureClient();
+  const peer = await honcho.peer(userId);
+  peerCache.set(userId, peer);
+  return peer;
+}
+
+async function getSession(userId: string, conversationId: string): Promise<Session> {
+  const cached = sessionCache.get(conversationId);
+  if (cached) return cached;
+
+  const honcho = await ensureClient();
+  const session = await honcho.session(conversationId);
+  const peer = await getPeer(userId);
+  await session.addPeers(peer);
+  sessionCache.set(conversationId, session);
+  return session;
 }
 
 export async function getOrCreateSession(
   userId: string,
   conversationId: string
 ): Promise<string> {
-  const cached = sessionIdCache.get(conversationId);
-  if (cached) return cached;
-
-  const honcho = await ensureInitialized();
-  const peerId = await getOrCreatePeer(userId);
-  const session = await honcho.workspaces.sessions.getOrCreate(workspaceId!, {
-    id: conversationId,
-    peers: { [peerId]: {} },
-  });
-  sessionIdCache.set(conversationId, session.id);
+  const session = await getSession(userId, conversationId);
   return session.id;
 }
 
@@ -73,19 +71,10 @@ export async function mirrorMessage(
 ): Promise<void> {
   if (!isHonchoEnabled() || !content.trim()) return;
 
-  const honcho = await ensureInitialized();
-  const peerId = await getOrCreatePeer(userId);
-  const sessionId = await getOrCreateSession(userId, conversationId);
+  const peer = await getPeer(userId);
+  const session = await getSession(userId, conversationId);
 
-  await honcho.workspaces.sessions.messages.create(workspaceId!, sessionId, {
-    messages: [
-      {
-        content,
-        peer_id: peerId,
-        metadata: { role },
-      },
-    ],
-  });
+  await session.addMessages(peer.message(content, { metadata: { role } }));
 }
 
 export async function getPeerContext(userId: string): Promise<string | null> {
@@ -104,17 +93,15 @@ export async function getPeerContext(userId: string): Promise<string | null> {
 }
 
 async function queryPeerContext(userId: string): Promise<string | null> {
-  const honcho = await ensureInitialized();
-  const peerId = await getOrCreatePeer(userId);
+  const peer = await getPeer(userId);
 
-  const response = await honcho.workspaces.peers.chat(workspaceId!, peerId, {
-    query:
-      'Summarize what you know about this user: preferences, interests, communication style, and important context. Be concise (under 200 words).',
-    reasoning_level: 'low',
-  });
+  const response = await peer.chat(
+    'Summarize what you know about this user: preferences, interests, communication style, and important context. Be concise (under 200 words).',
+    { reasoningLevel: 'low' }
+  );
 
-  if (!response.content || response.content.trim().length === 0) return null;
-  return response.content.trim();
+  if (!response || response.trim().length === 0) return null;
+  return response.trim();
 }
 
 export async function buildEnhancedSystemPrompt(
@@ -141,7 +128,10 @@ export async function checkHealth(): Promise<{
   }
 
   try {
-    await ensureInitialized();
+    await ensureClient();
+    // Try to actually reach the API
+    const honcho = client!;
+    await honcho.getMetadata();
     return {
       enabled: true,
       connected: true,
