@@ -50,7 +50,12 @@ async function getSession(userId: string, conversationId: string): Promise<Sessi
   const honcho = await ensureClient();
   const session = await honcho.session(conversationId);
   const peer = await getPeer(userId);
-  await session.addPeers(peer);
+  try {
+    await session.addPeers(peer);
+    console.log(`[HONCHO] Added peer ${peer.id} to session ${conversationId}`);
+  } catch (err) {
+    console.error(`[HONCHO] Failed to add peer to session:`, err);
+  }
   sessionCache.set(conversationId, session);
   return session;
 }
@@ -74,7 +79,8 @@ export async function mirrorMessage(
   const peer = await getPeer(userId);
   const session = await getSession(userId, conversationId);
 
-  await session.addMessages(peer.message(content, { metadata: { role } }));
+  const msgs = await session.addMessages(peer.message(content, { metadata: { role } }));
+  console.log(`[HONCHO] Mirrored ${role} message to session ${conversationId} (${msgs.length} msgs created)`);
 }
 
 export async function getPeerContext(userId: string): Promise<string | null> {
