@@ -5,6 +5,7 @@ import * as schema from './schema';
 
 // Use process.env directly for database path
 const sqlite = new Database(process.env.DATABASE_PATH ?? './data/chat.db');
+sqlite.pragma('foreign_keys = ON');
 
 // Inline schema migrations — safe to re-run: each ALTER TABLE is caught if
 // the column already exists (SQLite throws on duplicate column additions).

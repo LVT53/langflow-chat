@@ -6,13 +6,15 @@
 
 	type KnowledgeTab = 'library' | 'memory';
 
-	const documents = (data.documents ?? []) as ArtifactSummary[];
-	const results = (data.results ?? []) as ArtifactSummary[];
-	const workflows = (data.workflows ?? []) as WorkCapsule[];
+	let documents = (data.documents ?? []) as ArtifactSummary[];
+	let results = (data.results ?? []) as ArtifactSummary[];
+	let workflows = (data.workflows ?? []) as WorkCapsule[];
 	const honchoEnabled = data.honchoEnabled ?? false;
 	const honchoOverview = data.honchoOverview?.trim() ?? '';
 
 	let activeTab: KnowledgeTab = 'library';
+	let deletingArtifactIds = new Set<string>();
+	let manageError = '';
 
 	const honchoHighlights = honchoOverview
 		? honchoOverview
@@ -25,6 +27,42 @@
 				)
 				.slice(0, 4)
 		: [];
+
+	function isDeletingArtifact(id: string): boolean {
+		return deletingArtifactIds.has(id);
+	}
+
+	function applyDeletedArtifactIds(ids: string[]) {
+		const deleted = new Set(ids);
+		documents = documents.filter((artifact) => !deleted.has(artifact.id));
+		results = results.filter((artifact) => !deleted.has(artifact.id));
+		workflows = workflows.filter((capsule) => !deleted.has(capsule.artifact.id));
+	}
+
+	async function removeArtifact(id: string, label: string) {
+		if (isDeletingArtifact(id)) return;
+		if (!window.confirm(`Remove "${label}" from the Knowledge Base?`)) return;
+
+		manageError = '';
+		deletingArtifactIds = new Set([...deletingArtifactIds, id]);
+
+		try {
+			const response = await fetch(`/api/knowledge/${id}`, {
+				method: 'DELETE',
+			});
+			const payload = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(payload.error ?? 'Failed to remove artifact.');
+			}
+			applyDeletedArtifactIds(payload.deletedArtifactIds ?? [id]);
+		} catch (error) {
+			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
+		} finally {
+			const next = new Set(deletingArtifactIds);
+			next.delete(id);
+			deletingArtifactIds = next;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -89,6 +127,12 @@
 			</div>
 		</div>
 
+		{#if manageError}
+			<div class="rounded-[1rem] border border-danger bg-surface-page px-4 py-3 text-sm font-sans text-danger shadow-sm" role="alert">
+				{manageError}
+			</div>
+		{/if}
+
 		{#if activeTab === 'library'}
 			<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
 				<div class="flex items-center justify-between">
@@ -104,13 +148,31 @@
 						{#each documents as artifact (artifact.id)}
 							<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
 								<div class="flex items-start justify-between gap-3">
-									<div>
+									<div class="min-w-0 flex-1">
 										<div class="text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
 										<div class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">{artifact.type}</div>
 									</div>
-									{#if artifact.sizeBytes}
-										<div class="text-xs font-sans text-text-muted">{Math.ceil(artifact.sizeBytes / 1024)} KB</div>
-									{/if}
+									<div class="flex items-start gap-2">
+										{#if artifact.sizeBytes}
+											<div class="pt-0.5 text-xs font-sans text-text-muted">{Math.ceil(artifact.sizeBytes / 1024)} KB</div>
+										{/if}
+										<button
+											type="button"
+											class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+											on:click={() => removeArtifact(artifact.id, artifact.name)}
+											disabled={isDeletingArtifact(artifact.id)}
+											aria-label={`Remove ${artifact.name}`}
+											title="Remove"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M3 6h18" />
+												<path d="M8 6V4h8v2" />
+												<path d="M19 6l-1 14H6L5 6" />
+												<path d="M10 11v6" />
+												<path d="M14 11v6" />
+											</svg>
+										</button>
+									</div>
 								</div>
 								{#if artifact.summary}
 									<p class="mt-3 text-sm font-serif leading-[1.45] text-text-secondary">{artifact.summary}</p>
@@ -134,7 +196,25 @@
 					{:else}
 						{#each results as artifact (artifact.id)}
 							<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
-								<div class="text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
+								<div class="flex items-start justify-between gap-3">
+									<div class="min-w-0 flex-1 text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
+									<button
+										type="button"
+										class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+										on:click={() => removeArtifact(artifact.id, artifact.name)}
+										disabled={isDeletingArtifact(artifact.id)}
+										aria-label={`Remove ${artifact.name}`}
+										title="Remove"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M3 6h18" />
+											<path d="M8 6V4h8v2" />
+											<path d="M19 6l-1 14H6L5 6" />
+											<path d="M10 11v6" />
+											<path d="M14 11v6" />
+										</svg>
+									</button>
+								</div>
 								{#if artifact.summary}
 									<p class="mt-3 text-sm font-serif leading-[1.45] text-text-secondary">{artifact.summary}</p>
 								{/if}
@@ -158,14 +238,32 @@
 						{#each workflows as capsule (capsule.artifact.id)}
 							<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
 								<div class="flex flex-wrap items-center justify-between gap-2">
-									<div>
+									<div class="min-w-0 flex-1">
 										<div class="text-sm font-sans font-medium text-text-primary">{capsule.artifact.name}</div>
 										{#if capsule.taskSummary}
 											<p class="mt-2 text-sm font-serif leading-[1.45] text-text-secondary">{capsule.taskSummary}</p>
 										{/if}
 									</div>
-									<div class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-										{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
+									<div class="flex items-center gap-2">
+										<div class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+											{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
+										</div>
+										<button
+											type="button"
+											class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+											on:click={() => removeArtifact(capsule.artifact.id, capsule.artifact.name)}
+											disabled={isDeletingArtifact(capsule.artifact.id)}
+											aria-label={`Remove ${capsule.artifact.name}`}
+											title="Remove"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M3 6h18" />
+												<path d="M8 6V4h8v2" />
+												<path d="M19 6l-1 14H6L5 6" />
+												<path d="M10 11v6" />
+												<path d="M14 11v6" />
+											</svg>
+										</button>
 									</div>
 								</div>
 								{#if capsule.workflowSummary}

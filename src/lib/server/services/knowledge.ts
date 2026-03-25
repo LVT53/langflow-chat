@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { basename, extname, join } from 'path';
 import {
 	and,
@@ -377,6 +377,78 @@ export async function listArtifactLinksForUser(
 		.where(and(eq(artifactLinks.userId, userId), eq(artifactLinks.artifactId, artifactId)))
 		.orderBy(desc(artifactLinks.createdAt));
 	return rows.map(mapArtifactLink);
+}
+
+export async function deleteArtifactForUser(
+	userId: string,
+	artifactId: string
+): Promise<{ deletedArtifactIds: string[] } | null> {
+	const artifact = await getArtifactForUser(userId, artifactId);
+	if (!artifact) return null;
+
+	const artifactIdsToDelete = new Set<string>([artifact.id]);
+	if (artifact.type === 'source_document') {
+		const derivedRows = await db
+			.select({ artifact: artifacts })
+			.from(artifactLinks)
+			.innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+			.where(
+				and(
+					eq(artifactLinks.userId, userId),
+					eq(artifactLinks.relatedArtifactId, artifact.id),
+					eq(artifactLinks.linkType, 'derived_from'),
+					eq(artifacts.type, 'normalized_document')
+				)
+			);
+
+		for (const row of derivedRows) {
+			artifactIdsToDelete.add(row.artifact.id);
+		}
+	}
+
+	const ids = Array.from(artifactIdsToDelete);
+	const artifactsToDelete = await db
+		.select()
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
+
+	await db.transaction(async (tx) => {
+		await tx
+			.delete(conversationWorkingSetItems)
+			.where(
+				and(
+					eq(conversationWorkingSetItems.userId, userId),
+					inArray(conversationWorkingSetItems.artifactId, ids)
+				)
+			);
+
+		await tx
+			.delete(artifactLinks)
+			.where(
+				and(
+					eq(artifactLinks.userId, userId),
+					or(
+						inArray(artifactLinks.artifactId, ids),
+						inArray(artifactLinks.relatedArtifactId, ids)
+					)
+				)
+			);
+
+		await tx
+			.delete(artifacts)
+			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
+	});
+
+	for (const row of artifactsToDelete) {
+		if (!row.storagePath) continue;
+		try {
+			await unlink(join(process.cwd(), row.storagePath));
+		} catch {
+			// If the file is already gone, the DB deletion is still authoritative.
+		}
+	}
+
+	return { deletedArtifactIds: ids };
 }
 
 export async function getArtifactsForUser(
