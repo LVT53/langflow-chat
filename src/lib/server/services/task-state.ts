@@ -2,17 +2,38 @@ import { randomUUID } from 'crypto';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
+	artifacts,
 	artifactChunks,
+	conversationContextStatus,
 	conversationTaskStates,
+	taskCheckpoints,
+	taskStateEvidenceLinks,
 } from '$lib/server/db/schema';
 import { getConfig } from '$lib/server/config-store';
-import type { Artifact, ArtifactChunk, TaskState } from '$lib/types';
+import type {
+	Artifact,
+	ArtifactChunk,
+	ContextDebugState,
+	RoutingStage,
+	TaskCheckpoint,
+	TaskEvidenceLink,
+	TaskState,
+	TaskSteeringAction,
+	VerificationStatus,
+} from '$lib/types';
 import { scoreMatch } from './working-set';
 
 const CHUNK_CHAR_TARGET = 1400;
 const CHUNK_CHAR_OVERLAP = 220;
 const TASK_MATCH_MIN_SCORE = 12;
 const MAX_LIST_ITEMS = 6;
+const CURRENT_TASK_STATUSES: TaskState['status'][] = ['active', 'revived', 'candidate'];
+const ROUTER_CONFIDENCE_MIN = 68;
+const RERANK_CONFIDENCE_MIN = 64;
+const VERIFY_CONFIDENCE_MIN = 64;
+const MAX_RERANK_CANDIDATES = 8;
+const MAX_SELECTED_EVIDENCE = 5;
+const MAX_SELECTED_LINKS = 12;
 
 function parseJsonStringArray(value: string | null): string[] {
 	if (!value) return [];
@@ -120,6 +141,9 @@ function mapTaskState(row: typeof conversationTaskStates.$inferSelect): TaskStat
 		conversationId: row.conversationId,
 		status: row.status as TaskState['status'],
 		objective: row.objective,
+		confidence: row.confidence ?? 0,
+		locked: row.locked === 1,
+		lastConfirmedTurnMessageId: row.lastConfirmedTurnMessageId ?? null,
 		constraints: parseJsonStringArray(row.constraintsJson),
 		factsToPreserve: parseJsonStringArray(row.factsToPreserveJson),
 		decisions: parseJsonStringArray(row.decisionsJson),
@@ -127,6 +151,39 @@ function mapTaskState(row: typeof conversationTaskStates.$inferSelect): TaskStat
 		activeArtifactIds: parseJsonStringArray(row.activeArtifactIdsJson),
 		nextSteps: parseJsonStringArray(row.nextStepsJson),
 		lastCheckpointAt: row.lastCheckpointAt ? row.lastCheckpointAt.getTime() : null,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+function mapTaskEvidenceLink(row: typeof taskStateEvidenceLinks.$inferSelect): TaskEvidenceLink {
+	return {
+		id: row.id,
+		taskId: row.taskId,
+		userId: row.userId,
+		conversationId: row.conversationId,
+		artifactId: row.artifactId,
+		chunkIndex: row.chunkIndex ?? null,
+		role: row.role as TaskEvidenceLink['role'],
+		origin: row.origin as TaskEvidenceLink['origin'],
+		confidence: row.confidence ?? 0,
+		reason: row.reason ?? null,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+function mapTaskCheckpoint(row: typeof taskCheckpoints.$inferSelect): TaskCheckpoint {
+	return {
+		id: row.id,
+		taskId: row.taskId,
+		userId: row.userId,
+		conversationId: row.conversationId,
+		checkpointType: row.checkpointType as TaskCheckpoint['checkpointType'],
+		content: row.content,
+		sourceTurnRange: row.sourceTurnRange ?? null,
+		sourceEvidenceIds: parseJsonStringArray(row.sourceEvidenceIdsJson),
+		verificationStatus: row.verificationStatus as VerificationStatus,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 	};
@@ -284,6 +341,18 @@ async function requestContextSummarizer(params: {
 	return typeof content === 'string' && content.trim() ? content.trim() : null;
 }
 
+async function requestStructuredControlModel<T extends Record<string, unknown>>(params: {
+	system: string;
+	user: string;
+	maxTokens: number;
+	temperature?: number;
+}): Promise<T | null> {
+	const content = await requestContextSummarizer(params);
+	if (!content) return null;
+	const parsed = parseJsonFromModel(content);
+	return parsed ? (parsed as T) : null;
+}
+
 async function summarizeTaskStateUpdate(params: {
 	existing: TaskState | null;
 	message: string;
@@ -387,25 +456,38 @@ function buildDeterministicTaskStateUpdate(params: {
 	};
 }
 
-async function setActiveTask(taskId: string, userId: string, conversationId: string): Promise<void> {
+function getCurrentTaskFromList(states: TaskState[]): TaskState | null {
+	return (
+		states.find((state) => state.locked && CURRENT_TASK_STATUSES.includes(state.status)) ??
+		states.find((state) => CURRENT_TASK_STATUSES.includes(state.status)) ??
+		null
+	);
+}
+
+async function setCurrentTask(
+	taskId: string,
+	userId: string,
+	conversationId: string,
+	nextStatus: TaskState['status'] = 'active'
+): Promise<void> {
 	await db
 		.update(conversationTaskStates)
 		.set({
-			status: 'cooling',
+			status: 'archived',
 			updatedAt: new Date(),
 		})
 		.where(
 			and(
 				eq(conversationTaskStates.userId, userId),
 				eq(conversationTaskStates.conversationId, conversationId),
-				eq(conversationTaskStates.status, 'active')
+				inArray(conversationTaskStates.status, CURRENT_TASK_STATUSES)
 			)
 		);
 
 	await db
 		.update(conversationTaskStates)
 		.set({
-			status: 'active',
+			status: nextStatus,
 			updatedAt: new Date(),
 		})
 		.where(eq(conversationTaskStates.taskId, taskId));
@@ -433,34 +515,262 @@ export async function getConversationTaskState(
 	userId: string,
 	conversationId: string
 ): Promise<TaskState | null> {
-	const [active] = await db
+	const states = await listConversationTaskStates(userId, conversationId);
+	return getCurrentTaskFromList(states) ?? states[0] ?? null;
+}
+
+export async function getTaskStateById(
+	userId: string,
+	taskId: string
+): Promise<TaskState | null> {
+	const [row] = await db
 		.select()
 		.from(conversationTaskStates)
 		.where(
 			and(
 				eq(conversationTaskStates.userId, userId),
-				eq(conversationTaskStates.conversationId, conversationId),
-				eq(conversationTaskStates.status, 'active')
+				eq(conversationTaskStates.taskId, taskId)
 			)
 		)
-		.orderBy(desc(conversationTaskStates.updatedAt))
 		.limit(1);
 
-	if (active) return mapTaskState(active);
+	return row ? mapTaskState(row) : null;
+}
 
-	const [fallback] = await db
+export async function listTaskEvidenceLinks(params: {
+	userId: string;
+	taskId: string;
+	roles?: TaskEvidenceLink['role'][];
+}): Promise<TaskEvidenceLink[]> {
+	const filters = [
+		eq(taskStateEvidenceLinks.userId, params.userId),
+		eq(taskStateEvidenceLinks.taskId, params.taskId),
+	];
+	if (params.roles?.length) {
+		filters.push(inArray(taskStateEvidenceLinks.role, params.roles));
+	}
+
+	const rows = await db
 		.select()
-		.from(conversationTaskStates)
-		.where(
-			and(
-				eq(conversationTaskStates.userId, userId),
-				eq(conversationTaskStates.conversationId, conversationId)
-			)
-		)
-		.orderBy(desc(conversationTaskStates.updatedAt))
-		.limit(1);
+		.from(taskStateEvidenceLinks)
+		.where(and(...filters))
+		.orderBy(desc(taskStateEvidenceLinks.updatedAt));
 
-	return fallback ? mapTaskState(fallback) : null;
+	return rows.map(mapTaskEvidenceLink);
+}
+
+export async function listTaskCheckpoints(params: {
+	userId: string;
+	taskId: string;
+	checkpointType?: TaskCheckpoint['checkpointType'];
+}): Promise<TaskCheckpoint[]> {
+	const filters = [
+		eq(taskCheckpoints.userId, params.userId),
+		eq(taskCheckpoints.taskId, params.taskId),
+	];
+	if (params.checkpointType) {
+		filters.push(eq(taskCheckpoints.checkpointType, params.checkpointType));
+	}
+
+	const rows = await db
+		.select()
+		.from(taskCheckpoints)
+		.where(and(...filters))
+		.orderBy(desc(taskCheckpoints.updatedAt));
+
+	return rows.map(mapTaskCheckpoint);
+}
+
+function buildTaskCandidateSummary(task: TaskState): Record<string, unknown> {
+	return {
+		taskId: task.taskId,
+		status: task.status,
+		objective: task.objective,
+		confidence: task.confidence,
+		locked: task.locked,
+		activeArtifactIds: task.activeArtifactIds.slice(0, 8),
+		updatedAt: task.updatedAt,
+	};
+}
+
+async function createTaskState(params: {
+	userId: string;
+	conversationId: string;
+	objective: string;
+	attachmentIds?: string[];
+	status?: TaskState['status'];
+	confidence?: number;
+	locked?: boolean;
+}): Promise<TaskState> {
+	const [created] = await db
+		.insert(conversationTaskStates)
+		.values({
+			taskId: randomUUID(),
+			userId: params.userId,
+			conversationId: params.conversationId,
+			status: params.status ?? 'candidate',
+			objective: clip(params.objective, 220),
+			confidence: Math.round(params.confidence ?? 40),
+			locked: params.locked ? 1 : 0,
+			openQuestionsJson: JSON.stringify([]),
+			activeArtifactIdsJson: JSON.stringify(uniqueCompact(params.attachmentIds ?? [], 12)),
+			lastCheckpointAt: new Date(),
+			updatedAt: new Date(),
+		})
+		.returning();
+
+	return mapTaskState(created);
+}
+
+type RoutedTaskState = {
+	taskState: TaskState | null;
+	routingStage: RoutingStage;
+	routingConfidence: number;
+};
+
+async function routeTaskStateForTurn(params: {
+	userId: string;
+	conversationId: string;
+	message: string;
+	attachmentIds?: string[];
+	createIfMissing?: boolean;
+}): Promise<RoutedTaskState> {
+	const attachmentIds = params.attachmentIds ?? [];
+	const states = await listConversationTaskStates(params.userId, params.conversationId);
+	const currentTask = getCurrentTaskFromList(states);
+
+	if (currentTask?.locked) {
+		return { taskState: currentTask, routingStage: 'deterministic', routingConfidence: 100 };
+	}
+
+	const ranked = states
+		.map((state) => ({
+			state,
+			score: scoreTaskState(state, params.message, attachmentIds),
+		}))
+		.sort((a, b) => b.score - a.score);
+
+	const best = ranked[0] ?? null;
+	const second = ranked[1] ?? null;
+	const ambiguous =
+		best !== null &&
+		second !== null &&
+		second.score >= Math.max(TASK_MATCH_MIN_SCORE - 2, best.score - 4);
+	const shouldRouteWithModel =
+		canUseContextSummarizer() &&
+		ranked.length > 0 &&
+		(ambiguous || (best?.score ?? 0) < TASK_MATCH_MIN_SCORE);
+
+	if (shouldRouteWithModel) {
+		type TaskRoutePayload = {
+			decision?: 'continue_active' | 'revive_task' | 'start_new_task';
+			taskId?: string;
+			confidence?: number;
+		};
+
+		try {
+			const routed = await requestStructuredControlModel<TaskRoutePayload>({
+				system:
+					'Route the current user turn to the correct task. Return strict JSON with decision, taskId, confidence. Decision must be one of continue_active, revive_task, start_new_task. Choose start_new_task when the user clearly changed topics.',
+				user: [
+					`User message: ${params.message}`,
+					`Attachment ids: ${JSON.stringify(attachmentIds)}`,
+					`Current task: ${currentTask ? JSON.stringify(buildTaskCandidateSummary(currentTask), null, 2) : 'null'}`,
+					`Candidate tasks: ${JSON.stringify(ranked.slice(0, 5).map((entry) => ({
+						...buildTaskCandidateSummary(entry.state),
+						score: entry.score,
+					})), null, 2)}`,
+				].join('\n\n'),
+				maxTokens: 220,
+				temperature: 0.0,
+			});
+
+			if (routed && typeof routed.confidence === 'number' && routed.confidence >= ROUTER_CONFIDENCE_MIN) {
+				if (routed.decision === 'start_new_task' && params.createIfMissing) {
+					const created = await createTaskState({
+						userId: params.userId,
+						conversationId: params.conversationId,
+						objective: params.message,
+						attachmentIds,
+						status: 'candidate',
+						confidence: routed.confidence,
+					});
+					await setCurrentTask(created.taskId, params.userId, params.conversationId, 'candidate');
+					return {
+						taskState: (await getConversationTaskState(params.userId, params.conversationId)) ?? created,
+						routingStage: 'task_router',
+						routingConfidence: Math.round(routed.confidence),
+					};
+				}
+
+				if (typeof routed.taskId === 'string') {
+					const chosen = states.find((state) => state.taskId === routed.taskId);
+					if (chosen) {
+						if (!currentTask || chosen.taskId !== currentTask.taskId) {
+							await setCurrentTask(
+								chosen.taskId,
+								params.userId,
+								params.conversationId,
+								routed.decision === 'revive_task' ? 'revived' : 'active'
+							);
+						}
+						return {
+							taskState: (await getConversationTaskState(params.userId, params.conversationId)) ?? chosen,
+							routingStage: 'task_router',
+							routingConfidence: Math.round(routed.confidence),
+						};
+					}
+				}
+			}
+		} catch (error) {
+			console.error('[TASK_STATE] Task routing model failed:', error);
+		}
+	}
+
+	if (best && best.score >= TASK_MATCH_MIN_SCORE) {
+		if (!currentTask || best.state.taskId !== currentTask.taskId) {
+			await setCurrentTask(
+				best.state.taskId,
+				params.userId,
+				params.conversationId,
+				best.state.status === 'archived' ? 'revived' : 'active'
+			);
+			return {
+				taskState: (await getConversationTaskState(params.userId, params.conversationId)) ?? best.state,
+				routingStage: 'deterministic',
+				routingConfidence: Math.min(99, Math.max(55, best.score * 4)),
+			};
+		}
+
+		return {
+			taskState: best.state,
+			routingStage: 'deterministic',
+			routingConfidence: Math.min(99, Math.max(55, best.score * 4)),
+		};
+	}
+
+	if (!params.createIfMissing) {
+		return {
+			taskState: best?.state ?? currentTask ?? null,
+			routingStage: 'deterministic',
+			routingConfidence: Math.min(50, Math.max(0, (best?.score ?? 0) * 4)),
+		};
+	}
+
+	const created = await createTaskState({
+		userId: params.userId,
+		conversationId: params.conversationId,
+		objective: params.message,
+		attachmentIds,
+		status: 'candidate',
+		confidence: 45,
+	});
+	await setCurrentTask(created.taskId, params.userId, params.conversationId, 'candidate');
+	return {
+		taskState: (await getConversationTaskState(params.userId, params.conversationId)) ?? created,
+		routingStage: 'deterministic',
+		routingConfidence: 45,
+	};
 }
 
 export async function selectTaskStateForTurn(params: {
@@ -470,52 +780,527 @@ export async function selectTaskStateForTurn(params: {
 	attachmentIds?: string[];
 	createIfMissing?: boolean;
 }): Promise<TaskState | null> {
-	const attachmentIds = params.attachmentIds ?? [];
-	const states = await listConversationTaskStates(params.userId, params.conversationId);
+	const routed = await routeTaskStateForTurn(params);
+	return routed.taskState;
+}
 
-	let best: TaskState | null = null;
-	let bestScore = -1;
+function getArtifactSearchBody(artifact: Artifact): string {
+	return [artifact.name, artifact.summary ?? '', artifact.contentText ?? ''].join('\n');
+}
 
-	for (const state of states) {
-		const score = scoreTaskState(state, params.message, attachmentIds);
-		if (score > bestScore) {
-			best = state;
-			bestScore = score;
-		}
-	}
+function dedupeArtifacts(list: Artifact[]): Artifact[] {
+	return Array.from(new Map(list.map((artifact) => [artifact.id, artifact])).values());
+}
 
-	if (best && bestScore >= TASK_MATCH_MIN_SCORE) {
-		if (best.status !== 'active') {
-			await setActiveTask(best.taskId, params.userId, params.conversationId);
-			return (await getConversationTaskState(params.userId, params.conversationId)) ?? best;
-		}
-		return best;
-	}
+async function replaceSystemSelectedEvidenceLinks(params: {
+	userId: string;
+	conversationId: string;
+	taskId: string;
+	selectedArtifacts: Array<{ artifactId: string; confidence: number; reason?: string | null }>;
+}): Promise<void> {
+	await db
+		.delete(taskStateEvidenceLinks)
+		.where(
+			and(
+				eq(taskStateEvidenceLinks.userId, params.userId),
+				eq(taskStateEvidenceLinks.taskId, params.taskId),
+				eq(taskStateEvidenceLinks.role, 'selected'),
+				eq(taskStateEvidenceLinks.origin, 'system')
+			)
+		);
 
-	if (!params.createIfMissing) {
-		return best;
-	}
+	if (params.selectedArtifacts.length === 0) return;
 
-	const [created] = await db
-		.insert(conversationTaskStates)
-		.values({
-			taskId: randomUUID(),
+	await db.insert(taskStateEvidenceLinks).values(
+		params.selectedArtifacts.slice(0, MAX_SELECTED_LINKS).map((artifact) => ({
+			id: randomUUID(),
+			taskId: params.taskId,
 			userId: params.userId,
 			conversationId: params.conversationId,
-			status: 'active',
-			objective: clip(params.message, 220),
-			openQuestionsJson: JSON.stringify(uniqueCompact([extractQuestionCandidate(params.message)], 4)),
-			activeArtifactIdsJson: JSON.stringify(uniqueCompact(attachmentIds, 12)),
-			lastCheckpointAt: new Date(),
+			artifactId: artifact.artifactId,
+			role: 'selected',
+			origin: 'system',
+			confidence: Math.round(artifact.confidence),
+			reason: artifact.reason ?? null,
 			updatedAt: new Date(),
-		})
-		.returning();
+		}))
+	);
+}
 
-	if (best) {
-		await setActiveTask(created.taskId, params.userId, params.conversationId);
+function computeEvidenceScore(params: {
+	artifact: Artifact;
+	message: string;
+	taskState: TaskState | null;
+	pinnedIds: Set<string>;
+	excludedIds: Set<string>;
+	currentAttachmentIds: Set<string>;
+	workingSetIds: Set<string>;
+}): number {
+	if (params.excludedIds.has(params.artifact.id)) return -1000;
+
+	let score = scoreMatch(params.message, getArtifactSearchBody(params.artifact)) * 10;
+	if (params.taskState) {
+		score += scoreMatch(params.taskState.objective, getArtifactSearchBody(params.artifact)) * 6;
+		if (params.taskState.activeArtifactIds.includes(params.artifact.id)) {
+			score += 16;
+		}
+	}
+	if (params.currentAttachmentIds.has(params.artifact.id)) score += 100;
+	if (params.workingSetIds.has(params.artifact.id)) score += 10;
+	if (params.pinnedIds.has(params.artifact.id)) score += 120;
+	if (params.artifact.conversationId === params.taskState?.conversationId) score += 4;
+	if (params.artifact.type === 'generated_output') score += 3;
+
+	return score;
+}
+
+async function maybeRerankEvidence(params: {
+	taskState: TaskState | null;
+	message: string;
+	candidates: Artifact[];
+	pinnedIds: Set<string>;
+	excludedIds: Set<string>;
+}): Promise<{
+	artifacts: Artifact[];
+	usedModel: boolean;
+	confidence: number;
+}> {
+	if (!canUseContextSummarizer() || params.candidates.length <= 2) {
+		return { artifacts: params.candidates, usedModel: false, confidence: 0 };
 	}
 
-	return mapTaskState(created);
+	type RerankPayload = {
+		selectedArtifactIds?: string[];
+		rejectedArtifactIds?: string[];
+		confidence?: number;
+	};
+
+	try {
+		const reranked = await requestStructuredControlModel<RerankPayload>({
+			system:
+				'Select the most relevant evidence artifacts for the current turn. Return strict JSON with selectedArtifactIds, rejectedArtifactIds, confidence. Favor the current user turn and current task. Never select irrelevant stale evidence.',
+			user: [
+				`Current task: ${params.taskState ? params.taskState.objective : 'none'}`,
+				`User message: ${params.message}`,
+				`Pinned artifact ids: ${JSON.stringify(Array.from(params.pinnedIds))}`,
+				`Excluded artifact ids: ${JSON.stringify(Array.from(params.excludedIds))}`,
+				`Candidates: ${JSON.stringify(params.candidates.slice(0, MAX_RERANK_CANDIDATES).map((artifact) => ({
+					id: artifact.id,
+					name: artifact.name,
+					type: artifact.type,
+					summary: clip(artifact.summary ?? artifact.contentText ?? artifact.name, 220),
+				})), null, 2)}`,
+			].join('\n\n'),
+			maxTokens: 260,
+			temperature: 0.0,
+		});
+
+		if (reranked && typeof reranked.confidence === 'number' && reranked.confidence >= RERANK_CONFIDENCE_MIN) {
+			const selectedIds = new Set(
+				(Array.isArray(reranked.selectedArtifactIds) ? reranked.selectedArtifactIds : [])
+					.filter((value): value is string => typeof value === 'string')
+			);
+			const artifacts = params.candidates.filter(
+				(artifact) => params.pinnedIds.has(artifact.id) || selectedIds.has(artifact.id)
+			);
+			if (artifacts.length > 0) {
+				return {
+					artifacts,
+					usedModel: true,
+					confidence: Math.round(reranked.confidence),
+				};
+			}
+		}
+	} catch (error) {
+		console.error('[TASK_STATE] Evidence reranker failed:', error);
+	}
+
+	return { artifacts: params.candidates, usedModel: false, confidence: 0 };
+}
+
+async function maybeVerifyEvidence(params: {
+	taskState: TaskState | null;
+	message: string;
+	selectedArtifacts: Artifact[];
+	pinnedIds: Set<string>;
+	shouldVerify: boolean;
+}): Promise<{
+	artifacts: Artifact[];
+	status: VerificationStatus;
+	fallbackToDeterministic: boolean;
+}> {
+	if (!params.shouldVerify || !canUseContextSummarizer() || params.selectedArtifacts.length === 0) {
+		return { artifacts: params.selectedArtifacts, status: 'skipped', fallbackToDeterministic: false };
+	}
+
+	type VerifyPayload = {
+		passed?: boolean;
+		vetoArtifactIds?: string[];
+		confidence?: number;
+	};
+
+	try {
+		const verified = await requestStructuredControlModel<VerifyPayload>({
+			system:
+				'Verify whether the selected evidence is tightly aligned with the current turn. Return strict JSON with passed, vetoArtifactIds, confidence. Veto stale or weakly related evidence.',
+			user: [
+				`Current task: ${params.taskState ? params.taskState.objective : 'none'}`,
+				`User message: ${params.message}`,
+				`Selected evidence: ${JSON.stringify(params.selectedArtifacts.map((artifact) => ({
+					id: artifact.id,
+					name: artifact.name,
+					summary: clip(artifact.summary ?? artifact.contentText ?? artifact.name, 200),
+				})), null, 2)}`,
+			].join('\n\n'),
+			maxTokens: 180,
+			temperature: 0.0,
+		});
+
+		if (verified && typeof verified.confidence === 'number' && verified.confidence >= VERIFY_CONFIDENCE_MIN) {
+			const vetoIds = new Set(
+				(Array.isArray(verified.vetoArtifactIds) ? verified.vetoArtifactIds : [])
+					.filter((value): value is string => typeof value === 'string')
+			);
+			const filtered = params.selectedArtifacts.filter(
+				(artifact) => params.pinnedIds.has(artifact.id) || !vetoIds.has(artifact.id)
+			);
+			if (filtered.length === 0 && params.selectedArtifacts.length > 0) {
+				return { artifacts: params.selectedArtifacts, status: 'fallback', fallbackToDeterministic: true };
+			}
+			return {
+				artifacts: filtered,
+				status: verified.passed === false ? 'failed' : 'passed',
+				fallbackToDeterministic: false,
+			};
+		}
+	} catch (error) {
+		console.error('[TASK_STATE] Evidence verifier failed:', error);
+	}
+
+	return { artifacts: params.selectedArtifacts, status: 'fallback', fallbackToDeterministic: false };
+}
+
+export async function prepareTaskContext(params: {
+	userId: string;
+	conversationId: string;
+	message: string;
+	attachmentIds?: string[];
+	currentAttachments: Artifact[];
+	workingSetArtifacts: Artifact[];
+	relevantArtifacts: Artifact[];
+}): Promise<{
+	taskState: TaskState | null;
+	routingStage: RoutingStage;
+	routingConfidence: number;
+	verificationStatus: VerificationStatus;
+	selectedArtifacts: Artifact[];
+	pinnedArtifactIds: string[];
+	excludedArtifactIds: string[];
+}> {
+	const attachmentIds = params.attachmentIds ?? [];
+	const routed = await routeTaskStateForTurn({
+		userId: params.userId,
+		conversationId: params.conversationId,
+		message: params.message,
+		attachmentIds,
+		createIfMissing: true,
+	});
+	const taskState = routed.taskState;
+	const links = taskState
+		? await listTaskEvidenceLinks({ userId: params.userId, taskId: taskState.taskId })
+		: [];
+	const pinnedIds = new Set(links.filter((link) => link.role === 'pinned').map((link) => link.artifactId));
+	const excludedIds = new Set(links.filter((link) => link.role === 'excluded').map((link) => link.artifactId));
+
+	const candidateArtifacts = dedupeArtifacts([
+		...params.currentAttachments,
+		...params.workingSetArtifacts,
+		...params.relevantArtifacts,
+	]).filter((artifact) => !excludedIds.has(artifact.id) || attachmentIds.includes(artifact.id));
+
+	const currentAttachmentIds = new Set(params.currentAttachments.map((artifact) => artifact.id));
+	const workingSetIds = new Set(params.workingSetArtifacts.map((artifact) => artifact.id));
+	const rankedCandidates = candidateArtifacts
+		.map((artifact) => ({
+			artifact,
+			score: computeEvidenceScore({
+				artifact,
+				message: params.message,
+				taskState,
+				pinnedIds,
+				excludedIds,
+				currentAttachmentIds,
+				workingSetIds,
+			}),
+		}))
+		.filter((entry) => entry.score > 0)
+		.sort((a, b) => b.score - a.score);
+
+	let selectedArtifacts = dedupeArtifacts([
+		...rankedCandidates
+			.filter((entry) => pinnedIds.has(entry.artifact.id) || currentAttachmentIds.has(entry.artifact.id))
+			.map((entry) => entry.artifact),
+		...rankedCandidates.slice(0, MAX_SELECTED_EVIDENCE).map((entry) => entry.artifact),
+	]);
+
+	let routingStage: RoutingStage = routed.routingStage;
+	let routingConfidence = routed.routingConfidence;
+	const reranked = await maybeRerankEvidence({
+		taskState,
+		message: params.message,
+		candidates: dedupeArtifacts([
+			...selectedArtifacts,
+			...rankedCandidates.slice(0, MAX_RERANK_CANDIDATES).map((entry) => entry.artifact),
+		]),
+		pinnedIds,
+		excludedIds,
+	});
+	if (reranked.usedModel) {
+		selectedArtifacts = dedupeArtifacts(reranked.artifacts);
+		routingStage = 'evidence_rerank';
+		routingConfidence = reranked.confidence;
+	}
+
+	const verified = await maybeVerifyEvidence({
+		taskState,
+		message: params.message,
+		selectedArtifacts,
+		pinnedIds,
+		shouldVerify:
+			routingStage !== 'deterministic' ||
+			excludedIds.size > 0 ||
+			pinnedIds.size > 0 ||
+			selectedArtifacts.length >= 4,
+	});
+
+	if (verified.fallbackToDeterministic) {
+		routingStage = 'verification_fallback';
+	}
+	selectedArtifacts = dedupeArtifacts(verified.artifacts);
+
+	if (taskState) {
+		await replaceSystemSelectedEvidenceLinks({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			taskId: taskState.taskId,
+			selectedArtifacts: selectedArtifacts
+				.filter((artifact) => !currentAttachmentIds.has(artifact.id))
+				.map((artifact) => ({
+				artifactId: artifact.id,
+				confidence: routingConfidence,
+				reason: routingStage === 'evidence_rerank' ? 'control-model selection' : 'deterministic selection',
+			})),
+		});
+	}
+
+	return {
+		taskState,
+		routingStage,
+		routingConfidence,
+		verificationStatus: verified.status,
+		selectedArtifacts,
+		pinnedArtifactIds: Array.from(pinnedIds),
+		excludedArtifactIds: Array.from(excludedIds),
+	};
+}
+
+export async function getContextDebugState(
+	userId: string,
+	conversationId: string
+): Promise<ContextDebugState | null> {
+	const taskState = await getConversationTaskState(userId, conversationId);
+	const [statusRow] = await db
+		.select()
+		.from(conversationContextStatus)
+		.where(
+			and(
+				eq(conversationContextStatus.userId, userId),
+				eq(conversationContextStatus.conversationId, conversationId)
+			)
+		)
+		.limit(1);
+
+	if (!taskState && !statusRow) return null;
+
+	const links = taskState
+		? await db
+				.select({ link: taskStateEvidenceLinks, artifact: artifacts })
+				.from(taskStateEvidenceLinks)
+				.innerJoin(artifacts, eq(taskStateEvidenceLinks.artifactId, artifacts.id))
+				.where(
+					and(
+						eq(taskStateEvidenceLinks.userId, userId),
+						eq(taskStateEvidenceLinks.taskId, taskState.taskId)
+					)
+				)
+				.orderBy(desc(taskStateEvidenceLinks.updatedAt))
+		: [];
+
+	const toDebugItems = (role: TaskEvidenceLink['role']) =>
+		links
+			.filter((entry) => entry.link.role === role)
+			.map((entry) => ({
+				artifactId: entry.artifact.id,
+				name: entry.artifact.name,
+				role,
+				origin: entry.link.origin as TaskEvidenceLink['origin'],
+				confidence: entry.link.confidence ?? 0,
+				reason: entry.link.reason ?? null,
+			}));
+
+	return {
+		activeTaskId: taskState?.taskId ?? null,
+		activeTaskObjective: taskState?.objective ?? null,
+		taskLocked: taskState?.locked ?? false,
+		routingStage: (statusRow?.routingStage ?? 'deterministic') as RoutingStage,
+		routingConfidence: statusRow?.routingConfidence ?? 0,
+		verificationStatus: (statusRow?.verificationStatus ?? 'skipped') as VerificationStatus,
+		selectedEvidence: toDebugItems('selected'),
+		pinnedEvidence: toDebugItems('pinned'),
+		excludedEvidence: toDebugItems('excluded'),
+	};
+}
+
+async function upsertEvidenceRole(params: {
+	taskId: string;
+	userId: string;
+	conversationId: string;
+	artifactId: string;
+	role: 'pinned' | 'excluded';
+	enabled: boolean;
+}): Promise<void> {
+	const oppositeRole = params.role === 'pinned' ? 'excluded' : 'pinned';
+	await db
+		.delete(taskStateEvidenceLinks)
+		.where(
+			and(
+				eq(taskStateEvidenceLinks.userId, params.userId),
+				eq(taskStateEvidenceLinks.taskId, params.taskId),
+				eq(taskStateEvidenceLinks.artifactId, params.artifactId),
+				eq(taskStateEvidenceLinks.origin, 'user'),
+				inArray(taskStateEvidenceLinks.role, [params.role, oppositeRole])
+			)
+		);
+
+	if (!params.enabled) return;
+
+	await db.insert(taskStateEvidenceLinks).values({
+		id: randomUUID(),
+		taskId: params.taskId,
+		userId: params.userId,
+		conversationId: params.conversationId,
+		artifactId: params.artifactId,
+		role: params.role,
+		origin: 'user',
+		confidence: 100,
+		reason: params.role === 'pinned' ? 'Pinned by user' : 'Excluded by user',
+		updatedAt: new Date(),
+	});
+}
+
+export async function applyTaskSteeringAction(params: {
+	userId: string;
+	conversationId: string;
+	action: TaskSteeringAction;
+	artifactId?: string | null;
+}): Promise<{ taskState: TaskState | null; contextDebug: ContextDebugState | null }> {
+	let taskState = await getConversationTaskState(params.userId, params.conversationId);
+
+	switch (params.action) {
+		case 'lock_task':
+		case 'unlock_task':
+			if (taskState) {
+				await db
+					.update(conversationTaskStates)
+					.set({
+						locked: params.action === 'lock_task' ? 1 : 0,
+						updatedAt: new Date(),
+					})
+					.where(eq(conversationTaskStates.taskId, taskState.taskId));
+			}
+			break;
+		case 'start_new_task': {
+			const created = await createTaskState({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				objective: 'New task',
+				status: 'candidate',
+				confidence: 100,
+				locked: true,
+			});
+			await setCurrentTask(created.taskId, params.userId, params.conversationId, 'candidate');
+			taskState = created;
+			break;
+		}
+		case 'pin_artifact':
+		case 'exclude_artifact':
+		case 'unpin_artifact':
+		case 'include_artifact':
+			if (taskState && params.artifactId) {
+				await upsertEvidenceRole({
+					taskId: taskState.taskId,
+					userId: params.userId,
+					conversationId: params.conversationId,
+					artifactId: params.artifactId,
+					role: params.action === 'pin_artifact' || params.action === 'unpin_artifact' ? 'pinned' : 'excluded',
+					enabled: params.action === 'pin_artifact' || params.action === 'exclude_artifact',
+				});
+			}
+			break;
+	}
+
+	taskState = await getConversationTaskState(params.userId, params.conversationId);
+	return {
+		taskState,
+		contextDebug: await getContextDebugState(params.userId, params.conversationId),
+	};
+}
+
+function buildCheckpointContent(taskState: TaskState): string {
+	return formatTaskStateForPrompt(taskState);
+}
+
+async function upsertTaskCheckpoint(params: {
+	taskState: TaskState;
+	checkpointType: TaskCheckpoint['checkpointType'];
+	content: string;
+	sourceEvidenceIds: string[];
+	verificationStatus?: VerificationStatus;
+	sourceTurnRange?: string | null;
+}): Promise<void> {
+	const existing = (
+		await listTaskCheckpoints({
+			userId: params.taskState.userId,
+			taskId: params.taskState.taskId,
+			checkpointType: params.checkpointType,
+		})
+	)[0];
+
+	if (existing && existing.content === params.content) {
+		await db
+			.update(taskCheckpoints)
+			.set({
+				sourceTurnRange: params.sourceTurnRange ?? existing.sourceTurnRange,
+				sourceEvidenceIdsJson: JSON.stringify(params.sourceEvidenceIds),
+				verificationStatus: params.verificationStatus ?? existing.verificationStatus,
+				updatedAt: new Date(),
+			})
+			.where(eq(taskCheckpoints.id, existing.id));
+		return;
+	}
+
+	await db.insert(taskCheckpoints).values({
+		id: randomUUID(),
+		taskId: params.taskState.taskId,
+		userId: params.taskState.userId,
+		conversationId: params.taskState.conversationId,
+		checkpointType: params.checkpointType,
+		content: params.content,
+		sourceTurnRange: params.sourceTurnRange ?? null,
+		sourceEvidenceIdsJson: JSON.stringify(params.sourceEvidenceIds),
+		verificationStatus: params.verificationStatus ?? 'skipped',
+		updatedAt: new Date(),
+	});
 }
 
 export async function updateTaskStateCheckpoint(params: {
@@ -525,16 +1310,19 @@ export async function updateTaskStateCheckpoint(params: {
 	assistantResponse: string;
 	attachmentIds?: string[];
 	promptArtifactIds?: string[];
+	userMessageId?: string | null;
+	assistantMessageId?: string | null;
 }): Promise<TaskState | null> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const promptArtifactIds = params.promptArtifactIds ?? [];
-	const existing = await selectTaskStateForTurn({
+	const routed = await routeTaskStateForTurn({
 		userId: params.userId,
 		conversationId: params.conversationId,
 		message: params.message,
 		attachmentIds,
 		createIfMissing: true,
 	});
+	const existing = routed.taskState;
 
 	if (!existing) return null;
 
@@ -553,11 +1341,19 @@ export async function updateTaskStateCheckpoint(params: {
 		promptArtifactIds,
 	});
 
+	const nextConfidence = Math.min(
+		100,
+		Math.max(existing.confidence, routed.routingConfidence, llmUpdate ? 82 : 72)
+	);
 	const [updated] = await db
 		.update(conversationTaskStates)
 		.set({
 			status: 'active',
 			objective: clip(merged.objective ?? existing.objective, 220),
+			confidence: nextConfidence,
+			locked: existing.locked ? 1 : 0,
+			lastConfirmedTurnMessageId:
+				params.assistantMessageId ?? params.userMessageId ?? existing.lastConfirmedTurnMessageId,
 			constraintsJson: JSON.stringify(merged.constraints ?? existing.constraints),
 			factsToPreserveJson: JSON.stringify(merged.factsToPreserve ?? existing.factsToPreserve),
 			decisionsJson: JSON.stringify(merged.decisions ?? existing.decisions),
@@ -570,8 +1366,36 @@ export async function updateTaskStateCheckpoint(params: {
 		.where(eq(conversationTaskStates.taskId, existing.taskId))
 		.returning();
 
-	await setActiveTask(existing.taskId, params.userId, params.conversationId);
-	return updated ? mapTaskState(updated) : existing;
+	await setCurrentTask(existing.taskId, params.userId, params.conversationId, 'active');
+	const current = updated ? mapTaskState(updated) : existing;
+	const checkpointContent = buildCheckpointContent(current);
+	const sourceEvidenceIds = uniqueCompact([...attachmentIds, ...promptArtifactIds], 12);
+	const sourceTurnRange =
+		params.userMessageId || params.assistantMessageId
+			? `${params.userMessageId ?? 'unknown'}..${params.assistantMessageId ?? 'unknown'}`
+			: null;
+
+	await upsertTaskCheckpoint({
+		taskState: current,
+		checkpointType: 'micro',
+		content: checkpointContent,
+		sourceEvidenceIds,
+		sourceTurnRange,
+		verificationStatus: 'skipped',
+	});
+
+	if (current.decisions.length > 0 || current.factsToPreserve.length > 1 || current.nextSteps.length > 0) {
+		await upsertTaskCheckpoint({
+			taskState: current,
+			checkpointType: 'stable',
+			content: checkpointContent,
+			sourceEvidenceIds,
+			sourceTurnRange,
+			verificationStatus: llmUpdate ? 'passed' : 'skipped',
+		});
+	}
+
+	return current;
 }
 
 export function formatTaskStateForPrompt(taskState: TaskState): string {

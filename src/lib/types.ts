@@ -66,6 +66,7 @@ export interface ConversationDetail {
   activeWorkingSet?: ArtifactSummary[];
   contextStatus?: ConversationContextStatus | null;
   taskState?: TaskState | null;
+  contextDebug?: ContextDebugState | null;
 }
 
 // ConversationListItem interface: id, title, updatedAt
@@ -123,9 +124,14 @@ export type ArtifactLinkType =
 
 export type MemoryLayer = 'session' | 'capsule' | 'documents' | 'outputs' | 'working_set' | 'task_state';
 
-export type TaskStateStatus = 'active' | 'cooling' | 'archived';
+export type TaskStateStatus = 'active' | 'candidate' | 'revived' | 'archived';
 
 export type CompactionMode = 'none' | 'deterministic' | 'llm_fallback';
+export type RoutingStage = 'deterministic' | 'task_router' | 'evidence_rerank' | 'verification_fallback';
+export type VerificationStatus = 'skipped' | 'passed' | 'failed' | 'fallback';
+export type TaskEvidenceRole = 'selected' | 'pinned' | 'excluded' | 'checkpoint_source';
+export type TaskEvidenceOrigin = 'system' | 'user';
+export type TaskCheckpointType = 'micro' | 'stable';
 
 export type WorkingSetState = 'active' | 'cooling';
 
@@ -181,6 +187,35 @@ export interface ArtifactChunk {
   updatedAt: number;
 }
 
+export interface TaskEvidenceLink {
+  id: string;
+  taskId: string;
+  userId: string;
+  conversationId: string;
+  artifactId: string;
+  chunkIndex: number | null;
+  role: TaskEvidenceRole;
+  origin: TaskEvidenceOrigin;
+  confidence: number;
+  reason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskCheckpoint {
+  id: string;
+  taskId: string;
+  userId: string;
+  conversationId: string;
+  checkpointType: TaskCheckpointType;
+  content: string;
+  sourceTurnRange: string | null;
+  sourceEvidenceIds: string[];
+  verificationStatus: VerificationStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ArtifactLink {
   id: string;
   userId: string;
@@ -227,6 +262,9 @@ export interface ConversationContextStatus {
   targetTokens: number;
   compactionApplied: boolean;
   compactionMode: CompactionMode;
+  routingStage: RoutingStage;
+  routingConfidence: number;
+  verificationStatus: VerificationStatus;
   layersUsed: MemoryLayer[];
   workingSetCount: number;
   workingSetArtifactIds: string[];
@@ -244,6 +282,9 @@ export interface TaskState {
   conversationId: string;
   status: TaskStateStatus;
   objective: string;
+  confidence: number;
+  locked: boolean;
+  lastConfirmedTurnMessageId: string | null;
   constraints: string[];
   factsToPreserve: string[];
   decisions: string[];
@@ -254,6 +295,36 @@ export interface TaskState {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ContextDebugEvidenceItem {
+  artifactId: string;
+  name: string;
+  role: TaskEvidenceRole;
+  origin: TaskEvidenceOrigin;
+  confidence: number;
+  reason: string | null;
+}
+
+export interface ContextDebugState {
+  activeTaskId: string | null;
+  activeTaskObjective: string | null;
+  taskLocked: boolean;
+  routingStage: RoutingStage;
+  routingConfidence: number;
+  verificationStatus: VerificationStatus;
+  selectedEvidence: ContextDebugEvidenceItem[];
+  pinnedEvidence: ContextDebugEvidenceItem[];
+  excludedEvidence: ContextDebugEvidenceItem[];
+}
+
+export type TaskSteeringAction =
+  | 'lock_task'
+  | 'unlock_task'
+  | 'start_new_task'
+  | 'pin_artifact'
+  | 'unpin_artifact'
+  | 'exclude_artifact'
+  | 'include_artifact';
 
 // Langflow types
 export interface LangflowMessage {

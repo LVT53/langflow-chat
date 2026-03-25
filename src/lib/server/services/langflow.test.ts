@@ -59,6 +59,9 @@ vi.mock('./honcho', () => ({
       targetTokens: 157286,
       compactionApplied: false,
       compactionMode: 'none',
+      routingStage: 'deterministic',
+      routingConfidence: 0,
+      verificationStatus: 'skipped',
       layersUsed: ['session'],
       workingSetCount: 0,
       workingSetArtifactIds: [],
@@ -69,6 +72,8 @@ vi.mock('./honcho', () => ({
       summary: null,
       updatedAt: Date.now(),
     },
+    taskState: null,
+    contextDebug: null,
   })),
   buildEnhancedSystemPrompt: vi.fn(async () => 'You are a helpful AI assistant.'),
 }));

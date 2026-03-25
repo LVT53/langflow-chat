@@ -27,6 +27,7 @@ vi.mock('$lib/server/services/knowledge', () => ({
 }));
 
 vi.mock('$lib/server/services/task-state', () => ({
+	getContextDebugState: vi.fn(async () => null),
 	getConversationTaskState: vi.fn(async () => null),
 	updateTaskStateCheckpoint: vi.fn(async () => null),
 }));

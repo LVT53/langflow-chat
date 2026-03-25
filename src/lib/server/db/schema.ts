@@ -111,6 +111,9 @@ export const conversationContextStatus = sqliteTable('conversation_context_statu
   targetTokens: integer('target_tokens').notNull().default(157286),
   compactionApplied: integer('compaction_applied').notNull().default(0),
   compactionMode: text('compaction_mode').notNull().default('none'),
+  routingStage: text('routing_stage').notNull().default('deterministic'),
+  routingConfidence: integer('routing_confidence').notNull().default(0),
+  verificationStatus: text('verification_status').notNull().default('skipped'),
   layersUsedJson: text('layers_used_json'),
   workingSetCount: integer('working_set_count').notNull().default(0),
   workingSetArtifactIdsJson: text('working_set_artifact_ids_json'),
@@ -132,6 +135,9 @@ export const conversationTaskStates = sqliteTable('conversation_task_states', {
     .references(() => conversations.id, { onDelete: 'cascade' }),
   status: text('status').notNull().default('active'),
   objective: text('objective').notNull(),
+  confidence: integer('confidence').notNull().default(0),
+  locked: integer('locked').notNull().default(0),
+  lastConfirmedTurnMessageId: text('last_confirmed_turn_message_id'),
   constraintsJson: text('constraints_json'),
   factsToPreserveJson: text('facts_to_preserve_json'),
   decisionsJson: text('decisions_json'),
@@ -139,6 +145,49 @@ export const conversationTaskStates = sqliteTable('conversation_task_states', {
   activeArtifactIdsJson: text('active_artifact_ids_json'),
   nextStepsJson: text('next_steps_json'),
   lastCheckpointAt: integer('last_checkpoint_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const taskStateEvidenceLinks = sqliteTable('task_state_evidence_links', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => conversationTaskStates.taskId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  artifactId: text('artifact_id')
+    .notNull()
+    .references(() => artifacts.id, { onDelete: 'cascade' }),
+  chunkIndex: integer('chunk_index'),
+  role: text('role').notNull(),
+  origin: text('origin').notNull().default('system'),
+  confidence: integer('confidence').notNull().default(0),
+  reason: text('reason'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const taskCheckpoints = sqliteTable('task_checkpoints', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => conversationTaskStates.taskId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  checkpointType: text('checkpoint_type').notNull(),
+  content: text('content').notNull(),
+  sourceTurnRange: text('source_turn_range'),
+  sourceEvidenceIdsJson: text('source_evidence_ids_json'),
+  verificationStatus: text('verification_status').notNull().default('skipped'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

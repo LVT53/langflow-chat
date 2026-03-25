@@ -14,7 +14,11 @@ import {
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
 } from '$lib/server/services/knowledge';
-import { getConversationTaskState, updateTaskStateCheckpoint } from '$lib/server/services/task-state';
+import {
+	getContextDebugState,
+	getConversationTaskState,
+	updateTaskStateCheckpoint,
+} from '$lib/server/services/task-state';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -990,22 +994,7 @@ export const POST: RequestHandler = async (event) => {
 
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
 			let latestContextStatus:
-				| {
-						estimatedTokens: number;
-						maxContextTokens: number;
-						thresholdTokens: number;
-						targetTokens: number;
-						compactionApplied: boolean;
-						compactionMode: 'none' | 'deterministic' | 'llm_fallback';
-						layersUsed: string[];
-						workingSetCount: number;
-						workingSetArtifactIds: string[];
-						workingSetApplied: boolean;
-						taskStateApplied: boolean;
-						promptArtifactCount: number;
-						recentTurnCount: number;
-						summary: string | null;
-				  }
+				| import('$lib/types').ConversationContextStatus
 				| undefined;
 			let latestActiveWorkingSet:
 				| Array<{
@@ -1022,6 +1011,10 @@ export const POST: RequestHandler = async (event) => {
 				| undefined;
 			let latestTaskState:
 				| import('$lib/types').TaskState
+				| null
+				| undefined;
+			let latestContextDebug:
+				| import('$lib/types').ContextDebugState
 				| null
 				| undefined;
 
@@ -1067,7 +1060,8 @@ export const POST: RequestHandler = async (event) => {
 							modelDisplayName,
 							contextStatus: latestContextStatus,
 							activeWorkingSet: latestActiveWorkingSet,
-							taskState: latestTaskState
+							taskState: latestTaskState,
+							contextDebug: latestContextDebug
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1141,7 +1135,10 @@ export const POST: RequestHandler = async (event) => {
 									assistantResponse: fullResponse,
 									attachmentIds: safeAttachmentIds,
 									promptArtifactIds: latestContextStatus?.workingSetArtifactIds ?? [],
+									userMessageId: userMsg?.id ?? null,
+									assistantMessageId: assistantMsg.id,
 								}).catch(async () => getConversationTaskState(user.id, conversationId));
+								latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 							})()
 						);
 					}
@@ -1195,25 +1192,15 @@ export const POST: RequestHandler = async (event) => {
 						: langflowResponse.stream;
 				latestContextStatus = langflowResponse instanceof ReadableStream
 					? undefined
-					: langflowResponse.contextStatus
-							? {
-								estimatedTokens: langflowResponse.contextStatus.estimatedTokens,
-								maxContextTokens: langflowResponse.contextStatus.maxContextTokens,
-								thresholdTokens: langflowResponse.contextStatus.thresholdTokens,
-								targetTokens: langflowResponse.contextStatus.targetTokens,
-								compactionApplied: langflowResponse.contextStatus.compactionApplied,
-								compactionMode: langflowResponse.contextStatus.compactionMode,
-								layersUsed: langflowResponse.contextStatus.layersUsed,
-								workingSetCount: langflowResponse.contextStatus.workingSetCount,
-								workingSetArtifactIds: langflowResponse.contextStatus.workingSetArtifactIds,
-								workingSetApplied: langflowResponse.contextStatus.workingSetApplied,
-								taskStateApplied: langflowResponse.contextStatus.taskStateApplied,
-								promptArtifactCount: langflowResponse.contextStatus.promptArtifactCount,
-								recentTurnCount: langflowResponse.contextStatus.recentTurnCount,
-								summary: langflowResponse.contextStatus.summary
-							}
-						: undefined;
-				latestTaskState = await getConversationTaskState(user.id, conversationId).catch(() => null);
+					: langflowResponse.contextStatus;
+				latestTaskState =
+					langflowResponse instanceof ReadableStream
+						? await getConversationTaskState(user.id, conversationId).catch(() => null)
+						: langflowResponse.taskState ?? await getConversationTaskState(user.id, conversationId).catch(() => null);
+				latestContextDebug =
+					langflowResponse instanceof ReadableStream
+						? await getContextDebugState(user.id, conversationId).catch(() => null)
+						: langflowResponse.contextDebug ?? await getContextDebugState(user.id, conversationId).catch(() => null);
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

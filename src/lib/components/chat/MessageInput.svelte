@@ -4,7 +4,7 @@
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
-	import type { ArtifactSummary, ConversationContextStatus, TaskState } from '$lib/types';
+	import type { ArtifactSummary, ContextDebugState, ConversationContextStatus, TaskState, TaskSteeringAction } from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -15,10 +15,12 @@
 	export let contextStatus: ConversationContextStatus | null = null;
 	export let attachedArtifacts: ArtifactSummary[] = [];
 	export let taskState: TaskState | null = null;
+	export let contextDebug: ContextDebugState | null = null;
 
 	const dispatch = createEventDispatcher<{
 		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
 		stop: void;
+		steer: { action: TaskSteeringAction; artifactId?: string };
 	}>();
 
 	let textarea: HTMLTextAreaElement;
@@ -190,6 +192,10 @@
 	function removePendingAttachment(id: string) {
 		pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== id);
 	}
+
+	function handleSteering(event: CustomEvent<{ action: TaskSteeringAction; artifactId?: string }>) {
+		dispatch('steer', event.detail);
+	}
 </script>
 
 <div class="relative flex w-full flex-col">
@@ -255,6 +261,8 @@
 					{contextStatus}
 					attachedArtifacts={composerArtifacts}
 					{taskState}
+					{contextDebug}
+					on:steer={handleSteering}
 				/>
 			</div>
 

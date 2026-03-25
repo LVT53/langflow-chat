@@ -24,5 +24,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		activeWorkingSet: detail.activeWorkingSet ?? [],
 		contextStatus: detail.contextStatus ?? null,
 		taskState: detail.taskState ?? null,
+		contextDebug: detail.contextDebug ?? null,
 	};
 };

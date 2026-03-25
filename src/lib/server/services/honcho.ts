@@ -21,13 +21,15 @@ import {
 import type {
 	Artifact,
 	ConversationContextStatus,
+	ContextDebugState,
 	MemoryLayer,
 	WorkCapsule,
 } from '$lib/types';
 import {
 	formatTaskStateForPrompt,
+	getContextDebugState,
 	getPromptArtifactSnippets,
-	selectTaskStateForTurn,
+	prepareTaskContext,
 	summarizeHistoricalContext,
 } from './task-state';
 
@@ -178,6 +180,10 @@ function serializeWorkingSetArtifacts(
 	}
 
 	return parts.join('\n\n');
+}
+
+function dedupeArtifacts(artifacts: Artifact[]): Artifact[] {
+	return Array.from(new Map(artifacts.map((artifact) => [artifact.id, artifact])).values());
 }
 
 export function isHonchoEnabled(): boolean {
@@ -364,7 +370,12 @@ export async function buildConstructedContext(params: {
 	conversationId: string;
 	message: string;
 	attachmentIds?: string[];
-}): Promise<{ inputValue: string; contextStatus: ConversationContextStatus }> {
+}): Promise<{
+	inputValue: string;
+	contextStatus: ConversationContextStatus;
+	taskState: import('$lib/types').TaskState | null;
+	contextDebug: ContextDebugState | null;
+}> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const session = await getSession(params.userId, params.conversationId);
 	const [
@@ -376,7 +387,6 @@ export async function buildConstructedContext(params: {
 		workingSetArtifacts,
 		relevantCapsules,
 		relevantArtifacts,
-		taskState,
 	] =
 		await Promise.all([
 			getSessionMessages(session).catch(() => []),
@@ -392,17 +402,32 @@ export async function buildConstructedContext(params: {
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(params.userId, params.message, params.conversationId, 6).catch(() => []),
-			selectTaskStateForTurn({
-				userId: params.userId,
-				conversationId: params.conversationId,
-				message: params.message,
-				attachmentIds,
-				createIfMissing: true,
-			}).catch(() => null),
 		]);
 
+	const preparedContext = await prepareTaskContext({
+		userId: params.userId,
+		conversationId: params.conversationId,
+		message: params.message,
+		attachmentIds,
+		currentAttachments,
+		workingSetArtifacts,
+		relevantArtifacts,
+	}).catch(() => ({
+		taskState: null,
+		routingStage: 'deterministic' as const,
+		routingConfidence: 0,
+		verificationStatus: 'fallback' as const,
+		selectedArtifacts: dedupeArtifacts([...currentAttachments, ...workingSetArtifacts]),
+		pinnedArtifactIds: [],
+		excludedArtifactIds: [],
+	}));
+	const taskState = preparedContext.taskState;
+	const selectedEvidence = preparedContext.selectedArtifacts.filter(
+		(artifact) => !attachmentIds.includes(artifact.id)
+	);
+
 	const promptArtifacts = new Map<string, Artifact>();
-	for (const artifact of [...currentAttachments, ...workingSetArtifacts, ...relevantArtifacts]) {
+	for (const artifact of [...currentAttachments, ...selectedEvidence]) {
 		promptArtifacts.set(artifact.id, artifact);
 	}
 	const artifactSnippets = await getPromptArtifactSnippets({
@@ -440,12 +465,11 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
-	if (workingSetArtifacts.length > 0) {
+	if (selectedEvidence.length > 0) {
 		sections.push({
 			title: 'Retrieved Evidence',
-			body: serializeWorkingSetArtifacts(workingSetArtifacts, artifactSnippets),
+			body: serializeWorkingSetArtifacts(selectedEvidence, artifactSnippets),
 			layer: 'working_set',
-			llmCompactible: true,
 		});
 	}
 
@@ -494,32 +518,6 @@ export async function buildConstructedContext(params: {
 			layer: 'capsule',
 			llmCompactible: true,
 		});
-	}
-
-	if (relevantArtifacts.length > 0) {
-		const dedupeIds = new Set([
-			...currentAttachments.map((artifact) => artifact.id),
-			...workingSetArtifacts.map((artifact) => artifact.id),
-		]);
-		const dedupedArtifacts = relevantArtifacts.filter((artifact) => !dedupeIds.has(artifact.id));
-		const outputs = dedupedArtifacts.filter((artifact) => artifact.type === 'generated_output');
-		const documents = dedupedArtifacts.filter((artifact) => artifact.type !== 'generated_output');
-		if (outputs.length > 0) {
-			sections.push({
-				title: 'Relevant Prior Results',
-				body: truncateByTokens(serializeArtifacts(outputs, 'Result', artifactSnippets), 1200),
-				layer: 'outputs',
-				llmCompactible: true,
-			});
-		}
-		if (documents.length > 0) {
-			sections.push({
-				title: 'Relevant Knowledge Documents',
-				body: truncateByTokens(serializeArtifacts(documents, 'Document', artifactSnippets), 1200),
-				layer: 'documents',
-				llmCompactible: true,
-			});
-		}
 	}
 
 	const sectionTotalEstimate = sections.reduce(
@@ -594,17 +592,25 @@ export async function buildConstructedContext(params: {
 		compactionApplied:
 			compactionApplied || compactionMode !== 'none' || estimateTokenCount(inputValue) >= COMPACTION_UI_THRESHOLD,
 		compactionMode,
+		routingStage: preparedContext.routingStage,
+		routingConfidence: preparedContext.routingConfidence,
+		verificationStatus: preparedContext.verificationStatus,
 		layersUsed: Array.from(layersUsed),
-		workingSetCount: workingSetArtifacts.length,
-		workingSetArtifactIds: workingSetArtifacts.map((artifact) => artifact.id),
-		workingSetApplied: workingSetArtifacts.length > 0,
+		workingSetCount: selectedEvidence.length,
+		workingSetArtifactIds: selectedEvidence.map((artifact) => artifact.id),
+		workingSetApplied: selectedEvidence.length > 0,
 		taskStateApplied: Boolean(taskState),
 		promptArtifactCount: promptArtifacts.size,
 		recentTurnCount,
 		summary: longSummary || null,
 	});
 
-	return { inputValue, contextStatus: status };
+	return {
+		inputValue,
+		contextStatus: status,
+		taskState,
+		contextDebug: await getContextDebugState(params.userId, params.conversationId).catch(() => null),
+	};
 }
 
 export async function getPeerContext(userId: string): Promise<string | null> {

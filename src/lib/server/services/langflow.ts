@@ -46,7 +46,13 @@ export async function sendMessage(
   modelId?: ModelId,
   userId?: string,
   options?: { attachmentIds?: string[] }
-): Promise<{ text: string; rawResponse: LangflowRunResponse; contextStatus?: import('$lib/types').ConversationContextStatus }> {
+): Promise<{
+  text: string;
+  rawResponse: LangflowRunResponse;
+  contextStatus?: import('$lib/types').ConversationContextStatus;
+  taskState?: import('$lib/types').TaskState | null;
+  contextDebug?: import('$lib/types').ContextDebugState | null;
+}> {
   const config = getConfig();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -60,6 +66,8 @@ export async function sendMessage(
 
     let inputValue = message;
     let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
+    let taskState: import('$lib/types').TaskState | null | undefined;
+    let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
     if (userId) {
       const constructed = await buildConstructedContext({
         userId,
@@ -69,6 +77,8 @@ export async function sendMessage(
       });
       inputValue = constructed.inputValue;
       contextStatus = constructed.contextStatus;
+      taskState = constructed.taskState;
+      contextDebug = constructed.contextDebug;
     }
 
     const systemPrompt = userId
@@ -122,7 +132,7 @@ export async function sendMessage(
     const rawResponse: LangflowRunResponse = await response.json();
     const text = extractMessageText(rawResponse);
 
-    return { text, rawResponse, contextStatus };
+    return { text, rawResponse, contextStatus, taskState, contextDebug };
   } catch (error) {
     throw error;
   } finally {
@@ -135,7 +145,12 @@ export async function sendMessageStream(
   sessionId: string,
   modelId?: ModelId,
   options?: { signal?: AbortSignal; userId?: string; attachmentIds?: string[] }
-): Promise<{ stream: ReadableStream<Uint8Array>; contextStatus?: import('$lib/types').ConversationContextStatus }> {
+): Promise<{
+  stream: ReadableStream<Uint8Array>;
+  contextStatus?: import('$lib/types').ConversationContextStatus;
+  taskState?: import('$lib/types').TaskState | null;
+  contextDebug?: import('$lib/types').ContextDebugState | null;
+}> {
   const config = getConfig();
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), config.requestTimeoutMs);
@@ -150,6 +165,8 @@ export async function sendMessageStream(
 
     let inputValue = message;
     let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
+    let taskState: import('$lib/types').TaskState | null | undefined;
+    let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
     if (options?.userId) {
       const constructed = await buildConstructedContext({
         userId: options.userId,
@@ -159,6 +176,8 @@ export async function sendMessageStream(
       });
       inputValue = constructed.inputValue;
       contextStatus = constructed.contextStatus;
+      taskState = constructed.taskState;
+      contextDebug = constructed.contextDebug;
     }
 
     const systemPrompt = options?.userId
@@ -216,7 +235,7 @@ export async function sendMessageStream(
       throw new Error('Response body is empty');
     }
 
-    return { stream: response.body as ReadableStream<Uint8Array>, contextStatus };
+    return { stream: response.body as ReadableStream<Uint8Array>, contextStatus, taskState, contextDebug };
   } catch (error) {
     throw error;
   } finally {

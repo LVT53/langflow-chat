@@ -123,6 +123,9 @@ function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): C
 		targetTokens: row.targetTokens,
 		compactionApplied: row.compactionApplied === 1,
 		compactionMode: (row.compactionMode ?? 'none') as CompactionMode,
+		routingStage: (row.routingStage ?? 'deterministic') as ConversationContextStatus['routingStage'],
+		routingConfidence: row.routingConfidence ?? 0,
+		verificationStatus: (row.verificationStatus ?? 'skipped') as ConversationContextStatus['verificationStatus'],
 		layersUsed: parseJsonStringArray(row.layersUsedJson) as MemoryLayer[],
 		workingSetCount: row.workingSetCount ?? 0,
 		workingSetArtifactIds: parseJsonStringArray(row.workingSetArtifactIdsJson),
@@ -1227,6 +1230,9 @@ export async function updateConversationContextStatus(params: {
 	estimatedTokens: number;
 	compactionApplied: boolean;
 	compactionMode?: CompactionMode;
+	routingStage?: ConversationContextStatus['routingStage'];
+	routingConfidence?: number;
+	verificationStatus?: ConversationContextStatus['verificationStatus'];
 	layersUsed: MemoryLayer[];
 	workingSetCount?: number;
 	workingSetArtifactIds?: string[];
@@ -1247,6 +1253,9 @@ export async function updateConversationContextStatus(params: {
 			targetTokens: TARGET_CONSTRUCTED_CONTEXT,
 			compactionApplied: params.compactionApplied ? 1 : 0,
 			compactionMode: params.compactionMode ?? 'none',
+			routingStage: params.routingStage ?? 'deterministic',
+			routingConfidence: Math.round(params.routingConfidence ?? 0),
+			verificationStatus: params.verificationStatus ?? 'skipped',
 			layersUsedJson: JSON.stringify(params.layersUsed),
 			workingSetCount: params.workingSetCount ?? 0,
 			workingSetArtifactIdsJson: JSON.stringify(params.workingSetArtifactIds ?? []),
@@ -1267,6 +1276,9 @@ export async function updateConversationContextStatus(params: {
 				targetTokens: TARGET_CONSTRUCTED_CONTEXT,
 				compactionApplied: params.compactionApplied ? 1 : 0,
 				compactionMode: params.compactionMode ?? 'none',
+				routingStage: params.routingStage ?? 'deterministic',
+				routingConfidence: Math.round(params.routingConfidence ?? 0),
+				verificationStatus: params.verificationStatus ?? 'skipped',
 				layersUsedJson: JSON.stringify(params.layersUsed),
 				workingSetCount: params.workingSetCount ?? 0,
 				workingSetArtifactIdsJson: JSON.stringify(params.workingSetArtifactIds ?? []),

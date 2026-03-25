@@ -14,7 +14,11 @@ import {
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
 } from '$lib/server/services/knowledge';
-import { getConversationTaskState, updateTaskStateCheckpoint } from '$lib/server/services/task-state';
+import {
+	getContextDebugState,
+	getConversationTaskState,
+	updateTaskStateCheckpoint,
+} from '$lib/server/services/task-state';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -123,7 +127,10 @@ export const POST: RequestHandler = async (event) => {
 			assistantResponse: responseText,
 			attachmentIds: safeAttachmentIds,
 			promptArtifactIds: contextStatus?.workingSetArtifactIds ?? [],
+			userMessageId: userMessage.id,
+			assistantMessageId: assistantMessage.id,
 		}).catch(async () => getConversationTaskState(user.id, conversationId));
+		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 		if (workCapsule?.workflowSummary) {
 			mirrorWorkCapsuleConclusion({
 				userId: user.id,
@@ -147,6 +154,7 @@ export const POST: RequestHandler = async (event) => {
 			contextStatus,
 			activeWorkingSet,
 			taskState,
+			contextDebug,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);

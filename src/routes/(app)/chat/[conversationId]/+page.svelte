@@ -8,7 +8,14 @@
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
-	import type { ArtifactSummary, ChatMessage, ConversationContextStatus, TaskState } from '$lib/types';
+	import type {
+		ArtifactSummary,
+		ChatMessage,
+		ContextDebugState,
+		ConversationContextStatus,
+		TaskState,
+		TaskSteeringAction,
+	} from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
@@ -35,6 +42,7 @@
 	let attachedArtifacts: ArtifactSummary[] = data.attachedArtifacts ?? [];
 	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
 	let taskState: TaskState | null = data.taskState ?? null;
+	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
@@ -100,6 +108,7 @@
 		attachedArtifacts = data.attachedArtifacts ?? [];
 		activeWorkingSet = data.activeWorkingSet ?? [];
 		taskState = data.taskState ?? null;
+		contextDebug = data.contextDebug ?? null;
 		currentConversationId.set(data.conversation.id);
 		maybeSendPendingInitialMessage();
 	}
@@ -303,6 +312,7 @@
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
+					contextDebug = metadata?.contextDebug ?? contextDebug;
 					const serverAssistantId = metadata?.assistantMessageId;
 					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
@@ -452,6 +462,22 @@
 		}
 	}
 
+	async function handleSteering(event: CustomEvent<{ action: TaskSteeringAction; artifactId?: string }>) {
+		const response = await fetch(`/api/conversations/${data.conversation.id}/task-steering`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(event.detail),
+		});
+
+		if (!response.ok) {
+			return;
+		}
+
+		const payload = await response.json();
+		taskState = payload.taskState ?? taskState;
+		contextDebug = payload.contextDebug ?? contextDebug;
+	}
+
 	function handleErrorClose() {
 		sendError = null;
 	}
@@ -498,7 +524,9 @@
 					{contextStatus}
 					{attachedArtifacts}
 					{taskState}
+					{contextDebug}
 					attachmentsEnabled={true}
+					on:steer={handleSteering}
 				/>
 			</div>
 		</div>
