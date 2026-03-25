@@ -21,12 +21,9 @@ async function ensureInitialized(): Promise<Honcho> {
   if (client && workspaceId) return client;
 
   const config = getConfig();
-  if (!config.honchoApiKey) {
-    throw new Error('[HONCHO] HONCHO_API_KEY is not set');
-  }
 
   client = new Honcho({
-    apiKey: config.honchoApiKey,
+    apiKey: config.honchoApiKey || 'no-auth',
     baseURL: config.honchoBaseUrl,
   });
 
