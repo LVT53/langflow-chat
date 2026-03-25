@@ -15,6 +15,9 @@ vi.mock('../env', () => ({
     titleGenUrl: '',
     titleGenApiKey: '',
     titleGenModel: '',
+    contextSummarizerUrl: '',
+    contextSummarizerApiKey: '',
+    contextSummarizerModel: '',
     webhookPort: 8090,
     requestTimeoutMs: 5000,
     maxMessageLength: 10000,
@@ -70,10 +73,14 @@ vi.mock('./knowledge', () => ({
     thresholdTokens: 209715,
     targetTokens: 157286,
     compactionApplied: false,
+    compactionMode: 'none',
     layersUsed: [],
     workingSetCount: 0,
     workingSetArtifactIds: [],
     workingSetApplied: false,
+    taskStateApplied: false,
+    promptArtifactCount: 0,
+    recentTurnCount: 0,
     summary: null,
     updatedAt: Date.now(),
   })),
@@ -122,7 +129,8 @@ describe('Honcho Service', () => {
     it('should return base prompt when Honcho is disabled', async () => {
       const { buildEnhancedSystemPrompt } = await import('./honcho');
       const result = await buildEnhancedSystemPrompt('default', 'user-123');
-      expect(result).toBe('You are a helpful AI assistant.');
+      expect(result).toContain('You are a helpful AI assistant.');
+      expect(result).toContain('Retrieved Context Discipline');
     });
   });
 

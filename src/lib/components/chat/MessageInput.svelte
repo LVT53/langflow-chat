@@ -4,7 +4,7 @@
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
-	import type { ArtifactSummary, ConversationContextStatus } from '$lib/types';
+	import type { ArtifactSummary, ConversationContextStatus, TaskState } from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -14,6 +14,7 @@
 	export let ensureConversation: (() => Promise<string>) | null = null;
 	export let contextStatus: ConversationContextStatus | null = null;
 	export let attachedArtifacts: ArtifactSummary[] = [];
+	export let taskState: TaskState | null = null;
 
 	const dispatch = createEventDispatcher<{
 		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
@@ -253,6 +254,7 @@
 				<ContextUsageRing
 					{contextStatus}
 					attachedArtifacts={composerArtifacts}
+					{taskState}
 				/>
 			</div>
 

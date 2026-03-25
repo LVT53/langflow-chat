@@ -67,6 +67,22 @@ export const artifacts = sqliteTable('artifacts', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const artifactChunks = sqliteTable('artifact_chunks', {
+  id: text('id').primaryKey(),
+  artifactId: text('artifact_id')
+    .notNull()
+    .references(() => artifacts.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }),
+  chunkIndex: integer('chunk_index').notNull(),
+  contentText: text('content_text').notNull(),
+  tokenEstimate: integer('token_estimate').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const artifactLinks = sqliteTable('artifact_links', {
   id: text('id').primaryKey(),
   userId: text('user_id')
@@ -94,11 +110,36 @@ export const conversationContextStatus = sqliteTable('conversation_context_statu
   thresholdTokens: integer('threshold_tokens').notNull().default(209715),
   targetTokens: integer('target_tokens').notNull().default(157286),
   compactionApplied: integer('compaction_applied').notNull().default(0),
+  compactionMode: text('compaction_mode').notNull().default('none'),
   layersUsedJson: text('layers_used_json'),
   workingSetCount: integer('working_set_count').notNull().default(0),
   workingSetArtifactIdsJson: text('working_set_artifact_ids_json'),
   workingSetApplied: integer('working_set_applied').notNull().default(0),
+  taskStateApplied: integer('task_state_applied').notNull().default(0),
+  promptArtifactCount: integer('prompt_artifact_count').notNull().default(0),
+  recentTurnCount: integer('recent_turn_count').notNull().default(0),
   summary: text('summary'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const conversationTaskStates = sqliteTable('conversation_task_states', {
+  taskId: text('task_id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('active'),
+  objective: text('objective').notNull(),
+  constraintsJson: text('constraints_json'),
+  factsToPreserveJson: text('facts_to_preserve_json'),
+  decisionsJson: text('decisions_json'),
+  openQuestionsJson: text('open_questions_json'),
+  activeArtifactIdsJson: text('active_artifact_ids_json'),
+  nextStepsJson: text('next_steps_json'),
+  lastCheckpointAt: integer('last_checkpoint_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 

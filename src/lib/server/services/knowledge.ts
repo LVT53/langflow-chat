@@ -27,6 +27,7 @@ import type {
 	ArtifactSummary,
 	ArtifactType,
 	ChatAttachment,
+	CompactionMode,
 	ConversationContextStatus,
 	ConversationWorkingSetItem,
 	MemoryLayer,
@@ -45,6 +46,7 @@ import {
 	WORKING_SET_PROMPT_LIMIT,
 	type WorkingSetCandidate,
 } from './working-set';
+import { syncArtifactChunks } from './task-state';
 
 export const MAX_MODEL_CONTEXT = 262_144;
 export const COMPACTION_UI_THRESHOLD = 209_715;
@@ -120,10 +122,14 @@ function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): C
 		thresholdTokens: row.thresholdTokens,
 		targetTokens: row.targetTokens,
 		compactionApplied: row.compactionApplied === 1,
+		compactionMode: (row.compactionMode ?? 'none') as CompactionMode,
 		layersUsed: parseJsonStringArray(row.layersUsedJson) as MemoryLayer[],
 		workingSetCount: row.workingSetCount ?? 0,
 		workingSetArtifactIds: parseJsonStringArray(row.workingSetArtifactIdsJson),
 		workingSetApplied: row.workingSetApplied === 1,
+		taskStateApplied: row.taskStateApplied === 1,
+		promptArtifactCount: row.promptArtifactCount ?? 0,
+		recentTurnCount: row.recentTurnCount ?? 0,
 		summary: row.summary ?? null,
 		updatedAt: row.updatedAt.getTime(),
 	};
@@ -207,7 +213,15 @@ async function createArtifact(params: {
 		})
 		.returning();
 
-	return mapArtifact(artifact);
+	const mapped = mapArtifact(artifact);
+	await syncArtifactChunks({
+		artifactId: mapped.id,
+		userId: mapped.userId,
+		conversationId: mapped.conversationId,
+		contentText: mapped.contentText,
+	});
+
+	return mapped;
 }
 
 async function updateArtifactBinaryHash(artifactId: string, binaryHash: string): Promise<void> {
@@ -699,17 +713,31 @@ export async function selectWorkingSetArtifactsForPrompt(
 		);
 
 	return rows
-		.map((row) => ({
-			artifact: mapArtifact(row.artifact),
-			score:
-				row.item.score +
-				scoreMatch(
-					message,
-					`${row.artifact.name}\n${row.artifact.summary ?? ''}\n${row.artifact.contentText ?? ''}`
-				) *
-					12,
-		}))
+		.map((row) => {
+			const artifact = mapArtifact(row.artifact);
+			const messageMatchScore = scoreMatch(
+				message,
+				`${row.artifact.name}\n${row.artifact.summary ?? ''}\n${row.artifact.contentText ?? ''}`
+			);
+			const reasonCodes = parseJsonStringArray(row.item.reasonCodesJson) as WorkingSetReasonCode[];
+			const explicitlyRequested =
+				scoreMatch(message, row.artifact.name) > 0 ||
+				scoreMatch(message, row.artifact.summary ?? '') > 1;
+			const promptEligible =
+				reasonCodes.includes('attached_this_turn') ||
+				messageMatchScore >= 2 ||
+				explicitlyRequested ||
+				(reasonCodes.includes('latest_generated_output') && messageMatchScore >= 1) ||
+				(reasonCodes.includes('recently_used_in_output') && messageMatchScore >= 1);
+
+			return {
+				artifact,
+				promptEligible,
+				score: row.item.score + messageMatchScore * 14 + (explicitlyRequested ? 14 : 0),
+			};
+		})
 		.filter((entry) => !exclude.has(entry.artifact.id))
+		.filter((entry) => entry.promptEligible)
 		.sort((a, b) => b.score - a.score)
 		.slice(0, WORKING_SET_PROMPT_LIMIT)
 		.map((entry) => entry.artifact);
@@ -987,6 +1015,12 @@ export async function upsertWorkCapsule(params: {
 			.where(eq(artifacts.id, existing[0].id))
 			.returning();
 		row = updated[0];
+		await syncArtifactChunks({
+			artifactId: row.id,
+			userId: row.userId,
+			conversationId: row.conversationId ?? null,
+			contentText: row.contentText ?? null,
+		});
 	} else {
 		row = (
 			await db
@@ -1192,10 +1226,14 @@ export async function updateConversationContextStatus(params: {
 	userId: string;
 	estimatedTokens: number;
 	compactionApplied: boolean;
+	compactionMode?: CompactionMode;
 	layersUsed: MemoryLayer[];
 	workingSetCount?: number;
 	workingSetArtifactIds?: string[];
 	workingSetApplied?: boolean;
+	taskStateApplied?: boolean;
+	promptArtifactCount?: number;
+	recentTurnCount?: number;
 	summary?: string | null;
 }): Promise<ConversationContextStatus> {
 	const [row] = await db
@@ -1208,10 +1246,14 @@ export async function updateConversationContextStatus(params: {
 			thresholdTokens: COMPACTION_UI_THRESHOLD,
 			targetTokens: TARGET_CONSTRUCTED_CONTEXT,
 			compactionApplied: params.compactionApplied ? 1 : 0,
+			compactionMode: params.compactionMode ?? 'none',
 			layersUsedJson: JSON.stringify(params.layersUsed),
 			workingSetCount: params.workingSetCount ?? 0,
 			workingSetArtifactIdsJson: JSON.stringify(params.workingSetArtifactIds ?? []),
 			workingSetApplied: params.workingSetApplied ? 1 : 0,
+			taskStateApplied: params.taskStateApplied ? 1 : 0,
+			promptArtifactCount: params.promptArtifactCount ?? 0,
+			recentTurnCount: params.recentTurnCount ?? 0,
 			summary: params.summary ?? null,
 			updatedAt: new Date(),
 		})
@@ -1222,15 +1264,19 @@ export async function updateConversationContextStatus(params: {
 				estimatedTokens: params.estimatedTokens,
 				maxContextTokens: MAX_MODEL_CONTEXT,
 				thresholdTokens: COMPACTION_UI_THRESHOLD,
-					targetTokens: TARGET_CONSTRUCTED_CONTEXT,
-					compactionApplied: params.compactionApplied ? 1 : 0,
-					layersUsedJson: JSON.stringify(params.layersUsed),
-					workingSetCount: params.workingSetCount ?? 0,
-					workingSetArtifactIdsJson: JSON.stringify(params.workingSetArtifactIds ?? []),
-					workingSetApplied: params.workingSetApplied ? 1 : 0,
-					summary: params.summary ?? null,
-					updatedAt: new Date(),
-				},
+				targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+				compactionApplied: params.compactionApplied ? 1 : 0,
+				compactionMode: params.compactionMode ?? 'none',
+				layersUsedJson: JSON.stringify(params.layersUsed),
+				workingSetCount: params.workingSetCount ?? 0,
+				workingSetArtifactIdsJson: JSON.stringify(params.workingSetArtifactIds ?? []),
+				workingSetApplied: params.workingSetApplied ? 1 : 0,
+				taskStateApplied: params.taskStateApplied ? 1 : 0,
+				promptArtifactCount: params.promptArtifactCount ?? 0,
+				recentTurnCount: params.recentTurnCount ?? 0,
+				summary: params.summary ?? null,
+				updatedAt: new Date(),
+			},
 		})
 		.returning();
 

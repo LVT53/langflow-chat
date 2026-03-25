@@ -13,6 +13,7 @@ import {
 	getConversationContextStatus,
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
+import { getConversationTaskState } from '$lib/server/services/task-state';
 
 export const GET: RequestHandler = async (event) => {
 	try {
@@ -25,11 +26,12 @@ export const GET: RequestHandler = async (event) => {
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 
-		const [messageHistory, attachedArtifacts, activeWorkingSet, contextStatus] = await Promise.all([
+		const [messageHistory, attachedArtifacts, activeWorkingSet, contextStatus, taskState] = await Promise.all([
 			listMessages(id),
 			listConversationArtifacts(user.id, id),
 			getConversationWorkingSet(user.id, id),
-			getConversationContextStatus(user.id, id)
+			getConversationContextStatus(user.id, id),
+			getConversationTaskState(user.id, id),
 		]);
 
 		return json({
@@ -37,7 +39,8 @@ export const GET: RequestHandler = async (event) => {
 			messages: messageHistory,
 			attachedArtifacts,
 			activeWorkingSet,
-			contextStatus
+			contextStatus,
+			taskState,
 		});
 	} catch (err) {
 		console.error('Error loading conversation:', err);

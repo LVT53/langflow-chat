@@ -24,6 +24,12 @@ import type {
 	MemoryLayer,
 	WorkCapsule,
 } from '$lib/types';
+import {
+	formatTaskStateForPrompt,
+	getPromptArtifactSnippets,
+	selectTaskStateForTurn,
+	summarizeHistoricalContext,
+} from './task-state';
 
 let client: Honcho | null = null;
 
@@ -135,22 +141,31 @@ function serializeCapsules(capsules: WorkCapsule[]): string {
 		.join('\n\n');
 }
 
-function serializeArtifacts(artifacts: Artifact[], label: string): string {
+function serializeArtifacts(
+	artifacts: Artifact[],
+	label: string,
+	snippets = new Map<string, string>()
+): string {
 	return artifacts
 		.map((artifact) => {
-			const excerptSource = artifact.contentText ?? artifact.summary ?? artifact.name;
+			const excerptSource =
+				snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
 			return `${label}: ${artifact.name}\n${truncateByTokens(excerptSource, 1200)}`;
 		})
 			.join('\n\n');
 }
 
-function serializeWorkingSetArtifacts(artifacts: Artifact[]): string {
+function serializeWorkingSetArtifacts(
+	artifacts: Artifact[],
+	snippets = new Map<string, string>()
+): string {
 	let budgetRemaining = WORKING_SET_PROMPT_TOKEN_BUDGET;
 	const parts: string[] = [];
 
 	for (const artifact of artifacts) {
 		if (budgetRemaining <= 0) break;
-		const excerptSource = artifact.contentText ?? artifact.summary ?? artifact.name;
+		const excerptSource =
+			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
 		const perArtifactBudget =
 			artifact.type === 'generated_output'
 				? WORKING_SET_OUTPUT_TOKEN_BUDGET
@@ -352,7 +367,17 @@ export async function buildConstructedContext(params: {
 }): Promise<{ inputValue: string; contextStatus: ConversationContextStatus }> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const session = await getSession(params.userId, params.conversationId);
-	const [sessionMessages, summaries, searchedMessages, peerContext, currentAttachments, workingSetArtifacts, relevantCapsules, relevantArtifacts] =
+	const [
+		sessionMessages,
+		summaries,
+		searchedMessages,
+		peerContext,
+		currentAttachments,
+		workingSetArtifacts,
+		relevantCapsules,
+		relevantArtifacts,
+		taskState,
+	] =
 		await Promise.all([
 			getSessionMessages(session).catch(() => []),
 			session.summaries().catch(() => null),
@@ -367,14 +392,49 @@ export async function buildConstructedContext(params: {
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(params.userId, params.message, params.conversationId, 6).catch(() => []),
+			selectTaskStateForTurn({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				message: params.message,
+				attachmentIds,
+				createIfMissing: true,
+			}).catch(() => null),
 		]);
 
-	const sections: Array<{ title: string; body: string; layer?: MemoryLayer; essential?: boolean }> = [];
+	const promptArtifacts = new Map<string, Artifact>();
+	for (const artifact of [...currentAttachments, ...workingSetArtifacts, ...relevantArtifacts]) {
+		promptArtifacts.set(artifact.id, artifact);
+	}
+	const artifactSnippets = await getPromptArtifactSnippets({
+		userId: params.userId,
+		artifacts: Array.from(promptArtifacts.values()),
+		query: params.message,
+		perArtifactLimit: 2,
+		perArtifactCharBudget: 1400,
+	}).catch(() => new Map<string, string>());
+
+	const recentTurnCount = Math.min(sessionMessages.length, 6);
+	const sections: Array<{
+		title: string;
+		body: string;
+		layer?: MemoryLayer;
+		essential?: boolean;
+		llmCompactible?: boolean;
+	}> = [];
+
+	if (taskState) {
+		sections.push({
+			title: 'Task State',
+			body: formatTaskStateForPrompt(taskState),
+			layer: 'task_state',
+			essential: true,
+		});
+	}
 
 	if (currentAttachments.length > 0) {
 		sections.push({
 			title: 'Current Attachments',
-			body: serializeArtifacts(currentAttachments, 'Attachment'),
+			body: serializeArtifacts(currentAttachments, 'Attachment', artifactSnippets),
 			layer: 'documents',
 			essential: true,
 		});
@@ -382,10 +442,10 @@ export async function buildConstructedContext(params: {
 
 	if (workingSetArtifacts.length > 0) {
 		sections.push({
-			title: 'Active Working Set',
-			body: serializeWorkingSetArtifacts(workingSetArtifacts),
+			title: 'Retrieved Evidence',
+			body: serializeWorkingSetArtifacts(workingSetArtifacts, artifactSnippets),
 			layer: 'working_set',
-			essential: true,
+			llmCompactible: true,
 		});
 	}
 
@@ -395,16 +455,17 @@ export async function buildConstructedContext(params: {
 			title: 'Session Summary',
 			body: truncateByTokens(longSummary, 1600),
 			layer: 'session',
-			essential: true,
+			llmCompactible: true,
 		});
 	}
 
 	if (sessionMessages.length > 0) {
 		sections.push({
 			title: 'Recent Session Turns',
-			body: serializeMessages(sessionMessages, params.userId, 10),
+			body: serializeMessages(sessionMessages, params.userId, recentTurnCount),
 			layer: 'session',
 			essential: true,
+			llmCompactible: true,
 		});
 	}
 
@@ -413,6 +474,7 @@ export async function buildConstructedContext(params: {
 			title: 'User Memory',
 			body: truncateByTokens(peerContext, 1400),
 			layer: 'session',
+			llmCompactible: true,
 		});
 	}
 
@@ -421,6 +483,7 @@ export async function buildConstructedContext(params: {
 			title: 'Relevant Session Recalls',
 			body: truncateByTokens(serializeSearchMessages(searchedMessages, params.userId), 1000),
 			layer: 'session',
+			llmCompactible: true,
 		});
 	}
 
@@ -429,6 +492,7 @@ export async function buildConstructedContext(params: {
 			title: 'Relevant Prior Workflows',
 			body: truncateByTokens(serializeCapsules(relevantCapsules), 1200),
 			layer: 'capsule',
+			llmCompactible: true,
 		});
 	}
 
@@ -443,16 +507,48 @@ export async function buildConstructedContext(params: {
 		if (outputs.length > 0) {
 			sections.push({
 				title: 'Relevant Prior Results',
-				body: truncateByTokens(serializeArtifacts(outputs, 'Result'), 1200),
+				body: truncateByTokens(serializeArtifacts(outputs, 'Result', artifactSnippets), 1200),
 				layer: 'outputs',
+				llmCompactible: true,
 			});
 		}
 		if (documents.length > 0) {
 			sections.push({
 				title: 'Relevant Knowledge Documents',
-				body: truncateByTokens(serializeArtifacts(documents, 'Document'), 1200),
+				body: truncateByTokens(serializeArtifacts(documents, 'Document', artifactSnippets), 1200),
 				layer: 'documents',
+				llmCompactible: true,
 			});
+		}
+	}
+
+	const sectionTotalEstimate = sections.reduce(
+		(total, section) => total + estimateTokenCount(buildSection(section.title, section.body)),
+		estimateTokenCount(params.message) + 12
+	);
+	let compactionMode: ConversationContextStatus['compactionMode'] = 'none';
+	if (sectionTotalEstimate > TARGET_CONSTRUCTED_CONTEXT) {
+		const compactibleSections = sections.filter((section) => section.llmCompactible && section.body.trim());
+		const condensedHistorical = await summarizeHistoricalContext({
+			message: params.message,
+			taskState,
+			sectionBodies: compactibleSections.map((section) => ({
+				title: section.title,
+				body: section.body,
+			})),
+			targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+		}).catch(() => null);
+		if (condensedHistorical) {
+			compactionMode = 'llm_fallback';
+			const retained = sections.filter((section) => !section.llmCompactible);
+			retained.push({
+				title: 'Historical Context Checkpoint',
+				body: condensedHistorical,
+				layer: taskState ? 'task_state' : 'session',
+				llmCompactible: true,
+			});
+			sections.length = 0;
+			sections.push(...retained);
 		}
 	}
 
@@ -468,6 +564,7 @@ export async function buildConstructedContext(params: {
 		const nextTotal = usedTokens + candidateTokens;
 		if (!section.essential && nextTotal > TARGET_CONSTRUCTED_CONTEXT) {
 			compactionApplied = true;
+			if (compactionMode === 'none') compactionMode = 'deterministic';
 			continue;
 		}
 		if (section.essential && nextTotal > TARGET_CONSTRUCTED_CONTEXT) {
@@ -476,6 +573,7 @@ export async function buildConstructedContext(params: {
 			bodyParts.push(truncated);
 			usedTokens += estimateTokenCount(truncated);
 			compactionApplied = true;
+			if (compactionMode === 'none') compactionMode = 'deterministic';
 		} else {
 			bodyParts.push(candidate);
 			usedTokens = nextTotal;
@@ -494,11 +592,15 @@ export async function buildConstructedContext(params: {
 		userId: params.userId,
 		estimatedTokens: estimateTokenCount(inputValue),
 		compactionApplied:
-			compactionApplied || estimateTokenCount(inputValue) >= COMPACTION_UI_THRESHOLD,
+			compactionApplied || compactionMode !== 'none' || estimateTokenCount(inputValue) >= COMPACTION_UI_THRESHOLD,
+		compactionMode,
 		layersUsed: Array.from(layersUsed),
 		workingSetCount: workingSetArtifacts.length,
 		workingSetArtifactIds: workingSetArtifacts.map((artifact) => artifact.id),
 		workingSetApplied: workingSetArtifacts.length > 0,
+		taskStateApplied: Boolean(taskState),
+		promptArtifactCount: promptArtifacts.size,
+		recentTurnCount,
 		summary: longSummary || null,
 	});
 
@@ -525,7 +627,18 @@ export async function buildEnhancedSystemPrompt(
 	promptName: string | undefined,
 	_userId: string
 ): Promise<string> {
-	return getSystemPrompt(promptName);
+	const basePrompt = getSystemPrompt(promptName);
+
+	return [
+		basePrompt,
+		'',
+		'## Retrieved Context Discipline',
+		'Use any retrieved task state, recalled session details, documents, workflows, or evidence as supporting context only.',
+		'Do not let stale or weakly related retrieved material steer the conversation.',
+		'Do not proactively pivot to old recalled documents, recipes, files, or workflows unless the latest user turn clearly asks for them or they are directly relevant to the active task.',
+		'If retrieved context conflicts with the current user intent, follow the current user intent and ignore the irrelevant retrieved material.',
+		'When prior evidence is relevant, use it naturally without over-explaining that it was retrieved.',
+	].join('\n');
 }
 
 export async function checkHealth(): Promise<{

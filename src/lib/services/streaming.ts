@@ -9,6 +9,7 @@ export interface StreamMetadata {
 	modelDisplayName?: string;
 	contextStatus?: import('$lib/types').ConversationContextStatus;
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
+	taskState?: import('$lib/types').TaskState | null;
 }
 
 export interface StreamCallbacks {
@@ -318,7 +319,8 @@ export function streamChat(
 										assistantMessageId: parsed.assistantMessageId,
 										modelDisplayName: parsed.modelDisplayName,
 										contextStatus: parsed.contextStatus,
-										activeWorkingSet: parsed.activeWorkingSet
+										activeWorkingSet: parsed.activeWorkingSet,
+										taskState: parsed.taskState
 									};
 									metadata = Object.values(nextMetadata).some((value) => value !== undefined)
 										? nextMetadata

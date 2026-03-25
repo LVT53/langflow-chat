@@ -51,6 +51,19 @@ const migrations: string[] = [
 		link_type TEXT NOT NULL,
 		created_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`CREATE TABLE IF NOT EXISTS artifact_chunks (
+		id TEXT PRIMARY KEY,
+		artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+		chunk_index INTEGER NOT NULL,
+		content_text TEXT NOT NULL,
+		token_estimate INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE INDEX IF NOT EXISTS artifact_chunks_artifact_idx ON artifact_chunks(artifact_id, chunk_index)`,
+	`CREATE INDEX IF NOT EXISTS artifact_chunks_user_conversation_idx ON artifact_chunks(user_id, conversation_id)`,
 	`CREATE TABLE IF NOT EXISTS conversation_context_status (
 		conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -59,16 +72,24 @@ const migrations: string[] = [
 		threshold_tokens INTEGER NOT NULL DEFAULT 209715,
 		target_tokens INTEGER NOT NULL DEFAULT 157286,
 		compaction_applied INTEGER NOT NULL DEFAULT 0,
+		compaction_mode TEXT NOT NULL DEFAULT 'none',
 		layers_used_json TEXT,
 		working_set_count INTEGER NOT NULL DEFAULT 0,
 		working_set_artifact_ids_json TEXT,
 		working_set_applied INTEGER NOT NULL DEFAULT 0,
+		task_state_applied INTEGER NOT NULL DEFAULT 0,
+		prompt_artifact_count INTEGER NOT NULL DEFAULT 0,
+		recent_turn_count INTEGER NOT NULL DEFAULT 0,
 		summary TEXT,
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`ALTER TABLE conversation_context_status ADD COLUMN compaction_mode TEXT NOT NULL DEFAULT 'none'`,
 	`ALTER TABLE conversation_context_status ADD COLUMN working_set_count INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE conversation_context_status ADD COLUMN working_set_artifact_ids_json TEXT`,
 	`ALTER TABLE conversation_context_status ADD COLUMN working_set_applied INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversation_context_status ADD COLUMN task_state_applied INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversation_context_status ADD COLUMN prompt_artifact_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversation_context_status ADD COLUMN recent_turn_count INTEGER NOT NULL DEFAULT 0`,
 	`CREATE TABLE IF NOT EXISTS conversation_working_set_items (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,6 +104,23 @@ const migrations: string[] = [
 		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`CREATE TABLE IF NOT EXISTS conversation_task_states (
+		task_id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		status TEXT NOT NULL DEFAULT 'active',
+		objective TEXT NOT NULL,
+		constraints_json TEXT,
+		facts_to_preserve_json TEXT,
+		decisions_json TEXT,
+		open_questions_json TEXT,
+		active_artifact_ids_json TEXT,
+		next_steps_json TEXT,
+		last_checkpoint_at INTEGER,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE INDEX IF NOT EXISTS conversation_task_states_conversation_idx ON conversation_task_states(conversation_id, updated_at)`,
 ];
 for (const sql of migrations) {
 	try { sqlite.exec(sql); } catch { /* column already exists — ignore */ }

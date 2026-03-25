@@ -51,10 +51,10 @@ export function scoreMatch(query: string, haystack: string): number {
 
 function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	const reasonCodes: WorkingSetReasonCode[] = [];
-	let score = Math.round((candidate.previousScore ?? 0) * 0.4);
+	let score = Math.round((candidate.previousScore ?? 0) * 0.25);
 
 	if ((candidate.previousScore ?? 0) > 0 && candidate.previousState === 'active') {
-		score += 6;
+		score += 3;
 		reasonCodes.push('persisted_from_previous_turn');
 	}
 
@@ -64,21 +64,21 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	}
 
 	if (candidate.isLatestGeneratedOutput) {
-		score += 72;
+		score += 54;
 		reasonCodes.push('latest_generated_output');
 	}
 
 	if (candidate.isLinkedToLatestOutput) {
-		score += 56;
+		score += 34;
 		reasonCodes.push('recently_used_in_output');
 	}
 
 	if (candidate.isLinkedFromWorkCapsule) {
-		score += 22;
+		score += 10;
 		reasonCodes.push('linked_from_work_capsule');
 	}
 
-	const matchBoost = clamp((candidate.messageMatchScore ?? 0) * 11, 0, 33);
+	const matchBoost = clamp((candidate.messageMatchScore ?? 0) * 15, 0, 60);
 	if (matchBoost > 0) {
 		score += matchBoost;
 		reasonCodes.push('matched_current_turn');

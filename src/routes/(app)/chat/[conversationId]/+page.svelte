@@ -8,7 +8,7 @@
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
-	import type { ArtifactSummary, ChatMessage, ConversationContextStatus } from '$lib/types';
+	import type { ArtifactSummary, ChatMessage, ConversationContextStatus, TaskState } from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
@@ -34,6 +34,7 @@
 	let contextStatus: ConversationContextStatus | null = data.contextStatus ?? null;
 	let attachedArtifacts: ArtifactSummary[] = data.attachedArtifacts ?? [];
 	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
+	let taskState: TaskState | null = data.taskState ?? null;
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
@@ -98,6 +99,7 @@
 		contextStatus = data.contextStatus ?? null;
 		attachedArtifacts = data.attachedArtifacts ?? [];
 		activeWorkingSet = data.activeWorkingSet ?? [];
+		taskState = data.taskState ?? null;
 		currentConversationId.set(data.conversation.id);
 		maybeSendPendingInitialMessage();
 	}
@@ -300,6 +302,7 @@
 					lastAssistantResponse = _fullText;
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
+					taskState = metadata?.taskState ?? taskState;
 					const serverAssistantId = metadata?.assistantMessageId;
 					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
@@ -494,6 +497,7 @@
 					conversationId={data.conversation.id}
 					{contextStatus}
 					{attachedArtifacts}
+					{taskState}
 					attachmentsEnabled={true}
 				/>
 			</div>

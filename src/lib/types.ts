@@ -65,6 +65,7 @@ export interface ConversationDetail {
   attachedArtifacts?: ArtifactSummary[];
   activeWorkingSet?: ArtifactSummary[];
   contextStatus?: ConversationContextStatus | null;
+  taskState?: TaskState | null;
 }
 
 // ConversationListItem interface: id, title, updatedAt
@@ -120,7 +121,11 @@ export type ArtifactLinkType =
   | 'supersedes'
   | 'captured_by_capsule';
 
-export type MemoryLayer = 'session' | 'capsule' | 'documents' | 'outputs' | 'working_set';
+export type MemoryLayer = 'session' | 'capsule' | 'documents' | 'outputs' | 'working_set' | 'task_state';
+
+export type TaskStateStatus = 'active' | 'cooling' | 'archived';
+
+export type CompactionMode = 'none' | 'deterministic' | 'llm_fallback';
 
 export type WorkingSetState = 'active' | 'cooling';
 
@@ -162,6 +167,18 @@ export interface Artifact extends ArtifactSummary {
   storagePath: string | null;
   contentText: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface ArtifactChunk {
+  id: string;
+  artifactId: string;
+  userId: string;
+  conversationId: string | null;
+  chunkIndex: number;
+  contentText: string;
+  tokenEstimate: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ArtifactLink {
@@ -209,11 +226,32 @@ export interface ConversationContextStatus {
   thresholdTokens: number;
   targetTokens: number;
   compactionApplied: boolean;
+  compactionMode: CompactionMode;
   layersUsed: MemoryLayer[];
   workingSetCount: number;
   workingSetArtifactIds: string[];
   workingSetApplied: boolean;
+  taskStateApplied: boolean;
+  promptArtifactCount: number;
+  recentTurnCount: number;
   summary: string | null;
+  updatedAt: number;
+}
+
+export interface TaskState {
+  taskId: string;
+  userId: string;
+  conversationId: string;
+  status: TaskStateStatus;
+  objective: string;
+  constraints: string[];
+  factsToPreserve: string[];
+  decisions: string[];
+  openQuestions: string[];
+  activeArtifactIds: string[];
+  nextSteps: string[];
+  lastCheckpointAt: number | null;
+  createdAt: number;
   updatedAt: number;
 }
 

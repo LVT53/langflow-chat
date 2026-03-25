@@ -121,6 +121,7 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 					conversationId={null}
 					contextStatus={null}
 					attachedArtifacts={[]}
+					taskState={null}
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
 				/>

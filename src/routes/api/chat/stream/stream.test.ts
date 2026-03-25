@@ -26,6 +26,11 @@ vi.mock('$lib/server/services/knowledge', () => ({
 	upsertWorkCapsule: vi.fn(async () => null)
 }));
 
+vi.mock('$lib/server/services/task-state', () => ({
+	getConversationTaskState: vi.fn(async () => null),
+	updateTaskStateCheckpoint: vi.fn(async () => null),
+}));
+
 vi.mock('$lib/server/services/language', () => ({
 	detectLanguage: vi.fn()
 }));
@@ -46,6 +51,9 @@ vi.mock('$lib/server/services/honcho', () => ({
 vi.mock('$lib/server/env', () => ({
 	config: {
 		maxMessageLength: 10000,
+		contextSummarizerUrl: '',
+		contextSummarizerApiKey: '',
+		contextSummarizerModel: '',
 		model1: {
 			displayName: 'Model 1'
 		},

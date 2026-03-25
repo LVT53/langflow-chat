@@ -19,6 +19,8 @@ export const ADMIN_CONFIG_KEYS = [
   'MODEL_2_FLOW_ID',
   'TITLE_GEN_URL',
   'TITLE_GEN_MODEL',
+  'CONTEXT_SUMMARIZER_URL',
+  'CONTEXT_SUMMARIZER_MODEL',
   'TRANSLATOR_URL',
   'TRANSLATOR_MODEL',
   'TRANSLATION_MAX_TOKENS',
@@ -41,6 +43,9 @@ export interface RuntimeConfig {
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
+  contextSummarizerUrl: string;
+  contextSummarizerApiKey: string;
+  contextSummarizerModel: string;
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
@@ -86,6 +91,8 @@ export async function refreshConfig(): Promise<void> {
   if (overrides.MODEL_2_FLOW_ID !== undefined) base.model2.flowId = overrides.MODEL_2_FLOW_ID;
   if (overrides.TITLE_GEN_URL !== undefined) base.titleGenUrl = overrides.TITLE_GEN_URL;
   if (overrides.TITLE_GEN_MODEL !== undefined) base.titleGenModel = overrides.TITLE_GEN_MODEL;
+  if (overrides.CONTEXT_SUMMARIZER_URL !== undefined) base.contextSummarizerUrl = overrides.CONTEXT_SUMMARIZER_URL;
+  if (overrides.CONTEXT_SUMMARIZER_MODEL !== undefined) base.contextSummarizerModel = overrides.CONTEXT_SUMMARIZER_MODEL;
   if (overrides.TRANSLATOR_URL !== undefined) base.translatorUrl = overrides.TRANSLATOR_URL;
   if (overrides.TRANSLATOR_MODEL !== undefined) base.translatorModel = overrides.TRANSLATOR_MODEL;
   if (overrides.TRANSLATION_MAX_TOKENS !== undefined) {
@@ -121,6 +128,8 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     MODEL_2_FLOW_ID: envConfig.model2.flowId,
     TITLE_GEN_URL: envConfig.titleGenUrl,
     TITLE_GEN_MODEL: envConfig.titleGenModel,
+    CONTEXT_SUMMARIZER_URL: envConfig.contextSummarizerUrl,
+    CONTEXT_SUMMARIZER_MODEL: envConfig.contextSummarizerModel,
     TRANSLATOR_URL: envConfig.translatorUrl,
     TRANSLATOR_MODEL: envConfig.translatorModel,
     TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),

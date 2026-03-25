@@ -23,6 +23,9 @@ interface Config {
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
+  contextSummarizerUrl: string;
+  contextSummarizerApiKey: string;
+  contextSummarizerModel: string;
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
@@ -68,6 +71,9 @@ const getConfig = (): Config => {
     titleGenUrl: process.env.TITLE_GEN_URL || 'http://localhost:30001/v1',
     titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
     titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
+    contextSummarizerUrl: process.env.CONTEXT_SUMMARIZER_URL || process.env.TITLE_GEN_URL || '',
+    contextSummarizerApiKey: process.env.CONTEXT_SUMMARIZER_API_KEY || process.env.TITLE_GEN_API_KEY || '',
+    contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || '',
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),

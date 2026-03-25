@@ -14,6 +14,7 @@ import {
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
 } from '$lib/server/services/knowledge';
+import { getConversationTaskState, updateTaskStateCheckpoint } from '$lib/server/services/task-state';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -995,10 +996,14 @@ export const POST: RequestHandler = async (event) => {
 						thresholdTokens: number;
 						targetTokens: number;
 						compactionApplied: boolean;
+						compactionMode: 'none' | 'deterministic' | 'llm_fallback';
 						layersUsed: string[];
 						workingSetCount: number;
 						workingSetArtifactIds: string[];
 						workingSetApplied: boolean;
+						taskStateApplied: boolean;
+						promptArtifactCount: number;
+						recentTurnCount: number;
 						summary: string | null;
 				  }
 				| undefined;
@@ -1014,6 +1019,10 @@ export const POST: RequestHandler = async (event) => {
 						createdAt: number;
 						updatedAt: number;
 				  }>
+				| undefined;
+			let latestTaskState:
+				| import('$lib/types').TaskState
+				| null
 				| undefined;
 
 			const completeSuccess = (wasStopped = false) => {
@@ -1057,7 +1066,8 @@ export const POST: RequestHandler = async (event) => {
 							assistantMessageId: assistantMsgId,
 							modelDisplayName,
 							contextStatus: latestContextStatus,
-							activeWorkingSet: latestActiveWorkingSet
+							activeWorkingSet: latestActiveWorkingSet,
+							taskState: latestTaskState
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1124,6 +1134,14 @@ export const POST: RequestHandler = async (event) => {
 									message: normalizedMessage,
 									latestOutputArtifactId: outputArtifact?.id ?? null
 								}).catch(async () => getConversationWorkingSet(user.id, conversationId));
+								latestTaskState = await updateTaskStateCheckpoint({
+									userId: user.id,
+									conversationId,
+									message: normalizedMessage,
+									assistantResponse: fullResponse,
+									attachmentIds: safeAttachmentIds,
+									promptArtifactIds: latestContextStatus?.workingSetArtifactIds ?? [],
+								}).catch(async () => getConversationTaskState(user.id, conversationId));
 							})()
 						);
 					}
@@ -1184,13 +1202,18 @@ export const POST: RequestHandler = async (event) => {
 								thresholdTokens: langflowResponse.contextStatus.thresholdTokens,
 								targetTokens: langflowResponse.contextStatus.targetTokens,
 								compactionApplied: langflowResponse.contextStatus.compactionApplied,
+								compactionMode: langflowResponse.contextStatus.compactionMode,
 								layersUsed: langflowResponse.contextStatus.layersUsed,
 								workingSetCount: langflowResponse.contextStatus.workingSetCount,
 								workingSetArtifactIds: langflowResponse.contextStatus.workingSetArtifactIds,
 								workingSetApplied: langflowResponse.contextStatus.workingSetApplied,
+								taskStateApplied: langflowResponse.contextStatus.taskStateApplied,
+								promptArtifactCount: langflowResponse.contextStatus.promptArtifactCount,
+								recentTurnCount: langflowResponse.contextStatus.recentTurnCount,
 								summary: langflowResponse.contextStatus.summary
 							}
 						: undefined;
+				latestTaskState = await getConversationTaskState(user.id, conversationId).catch(() => null);
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;
