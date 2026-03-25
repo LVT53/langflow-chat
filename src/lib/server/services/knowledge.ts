@@ -9,6 +9,7 @@ import {
 	inArray,
 	isNull,
 	like,
+	ne,
 	or,
 	sql
 } from 'drizzle-orm';
@@ -19,7 +20,8 @@ import {
 	conversationContextStatus,
 	conversationWorkingSetItems,
 	conversations,
-	messages
+	messages,
+	taskStateEvidenceLinks,
 } from '$lib/server/db/schema';
 import type {
 	Artifact,
@@ -396,6 +398,184 @@ export async function listArtifactLinksForUser(
 	return rows.map(mapArtifactLink);
 }
 
+export async function hardDeleteArtifactsForUser(
+	userId: string,
+	artifactIds: string[]
+): Promise<{ deletedArtifactIds: string[] }> {
+	const uniqueIds = Array.from(new Set(artifactIds));
+	if (uniqueIds.length === 0) {
+		return { deletedArtifactIds: [] };
+	}
+
+	const artifactsToDelete = await db
+		.select()
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, uniqueIds)));
+	const ids = artifactsToDelete.map((row) => row.id);
+
+	if (ids.length === 0) {
+		return { deletedArtifactIds: [] };
+	}
+
+	await db.transaction(async (tx) => {
+		await tx
+			.delete(conversationWorkingSetItems)
+			.where(
+				and(
+					eq(conversationWorkingSetItems.userId, userId),
+					inArray(conversationWorkingSetItems.artifactId, ids)
+				)
+			);
+
+		await tx
+			.delete(taskStateEvidenceLinks)
+			.where(
+				and(
+					eq(taskStateEvidenceLinks.userId, userId),
+					inArray(taskStateEvidenceLinks.artifactId, ids)
+				)
+			);
+
+		await tx
+			.delete(artifactLinks)
+			.where(
+				and(
+					eq(artifactLinks.userId, userId),
+					or(
+						inArray(artifactLinks.artifactId, ids),
+						inArray(artifactLinks.relatedArtifactId, ids)
+					)
+				)
+			);
+
+		await tx
+			.delete(artifacts)
+			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
+	});
+
+	for (const row of artifactsToDelete) {
+		if (!row.storagePath) continue;
+		try {
+			await unlink(join(process.cwd(), row.storagePath));
+		} catch {
+			// File deletion is best-effort; DB deletion remains authoritative.
+		}
+	}
+
+	return { deletedArtifactIds: ids };
+}
+
+export async function listConversationOwnedArtifacts(
+	userId: string,
+	conversationId: string
+): Promise<Artifact[]> {
+	const rows = await db
+		.select()
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.userId, userId),
+				eq(artifacts.conversationId, conversationId)
+			)
+		)
+		.orderBy(desc(artifacts.updatedAt));
+
+	return rows.map(mapArtifact);
+}
+
+export async function getSourceArtifactIdForNormalizedArtifact(
+	userId: string,
+	normalizedArtifactId: string
+): Promise<string | null> {
+	const [row] = await db
+		.select({ sourceArtifactId: artifactLinks.relatedArtifactId })
+		.from(artifactLinks)
+		.innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+		.where(
+			and(
+				eq(artifactLinks.userId, userId),
+				eq(artifactLinks.artifactId, normalizedArtifactId),
+				eq(artifactLinks.linkType, 'derived_from'),
+				eq(artifacts.type, 'normalized_document')
+			)
+		)
+		.limit(1);
+
+	return row?.sourceArtifactId ?? null;
+}
+
+export async function artifactHasReferencesOutsideConversation(
+	userId: string,
+	artifactId: string,
+	conversationId: string
+): Promise<boolean> {
+	const [artifactRow] = await db
+		.select({ conversationId: artifacts.conversationId })
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), eq(artifacts.id, artifactId)))
+		.limit(1);
+
+	if (artifactRow?.conversationId && artifactRow.conversationId !== conversationId) {
+		return true;
+	}
+
+	const linkRows = await db
+		.select({
+			conversationId: artifactLinks.conversationId,
+			messageConversationId: messages.conversationId,
+		})
+		.from(artifactLinks)
+		.leftJoin(messages, eq(artifactLinks.messageId, messages.id))
+		.where(
+			and(
+				eq(artifactLinks.userId, userId),
+				or(
+					eq(artifactLinks.artifactId, artifactId),
+					eq(artifactLinks.relatedArtifactId, artifactId)
+				)
+			)
+		);
+
+	if (
+		linkRows.some((row) => {
+			const linkedConversationId = row.conversationId ?? row.messageConversationId ?? null;
+			return linkedConversationId === null || linkedConversationId !== conversationId;
+		})
+	) {
+		return true;
+	}
+
+	const [evidenceReference] = await db
+		.select({ id: taskStateEvidenceLinks.id })
+		.from(taskStateEvidenceLinks)
+		.where(
+			and(
+				eq(taskStateEvidenceLinks.userId, userId),
+				eq(taskStateEvidenceLinks.artifactId, artifactId),
+				ne(taskStateEvidenceLinks.conversationId, conversationId)
+			)
+		)
+		.limit(1);
+
+	if (evidenceReference) {
+		return true;
+	}
+
+	const [workingSetReference] = await db
+		.select({ id: conversationWorkingSetItems.id })
+		.from(conversationWorkingSetItems)
+		.where(
+			and(
+				eq(conversationWorkingSetItems.userId, userId),
+				eq(conversationWorkingSetItems.artifactId, artifactId),
+				ne(conversationWorkingSetItems.conversationId, conversationId)
+			)
+		)
+		.limit(1);
+
+	return Boolean(workingSetReference);
+}
+
 export async function deleteArtifactForUser(
 	userId: string,
 	artifactId: string
@@ -424,48 +604,7 @@ export async function deleteArtifactForUser(
 	}
 
 	const ids = Array.from(artifactIdsToDelete);
-	const artifactsToDelete = await db
-		.select()
-		.from(artifacts)
-		.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
-
-	await db.transaction(async (tx) => {
-		await tx
-			.delete(conversationWorkingSetItems)
-			.where(
-				and(
-					eq(conversationWorkingSetItems.userId, userId),
-					inArray(conversationWorkingSetItems.artifactId, ids)
-				)
-			);
-
-		await tx
-			.delete(artifactLinks)
-			.where(
-				and(
-					eq(artifactLinks.userId, userId),
-					or(
-						inArray(artifactLinks.artifactId, ids),
-						inArray(artifactLinks.relatedArtifactId, ids)
-					)
-				)
-			);
-
-		await tx
-			.delete(artifacts)
-			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
-	});
-
-	for (const row of artifactsToDelete) {
-		if (!row.storagePath) continue;
-		try {
-			await unlink(join(process.cwd(), row.storagePath));
-		} catch {
-			// If the file is already gone, the DB deletion is still authoritative.
-		}
-	}
-
-	return { deletedArtifactIds: ids };
+	return hardDeleteArtifactsForUser(userId, ids);
 }
 
 export async function getArtifactsForUser(

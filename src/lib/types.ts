@@ -317,6 +317,42 @@ export interface ContextDebugState {
   excludedEvidence: ContextDebugEvidenceItem[];
 }
 
+export type PersonaMemoryScope = 'self' | 'assistant_about_user';
+
+export interface PersonaMemoryItem {
+  id: string;
+  content: string;
+  scope: PersonaMemoryScope;
+  sessionId: string | null;
+  conversationId: string | null;
+  conversationTitle: string | null;
+  createdAt: number;
+}
+
+export interface TaskMemoryItem {
+  taskId: string;
+  conversationId: string;
+  conversationTitle: string | null;
+  objective: string;
+  status: TaskStateStatus;
+  locked: boolean;
+  updatedAt: number;
+  lastCheckpointAt: number | null;
+  checkpointSummary: string | null;
+}
+
+export interface KnowledgeMemorySummary {
+  personaCount: number;
+  taskCount: number;
+  overview: string | null;
+}
+
+export interface KnowledgeMemoryPayload {
+  personaMemories: PersonaMemoryItem[];
+  taskMemories: TaskMemoryItem[];
+  summary: KnowledgeMemorySummary;
+}
+
 export type TaskSteeringAction =
   | 'lock_task'
   | 'unlock_task'

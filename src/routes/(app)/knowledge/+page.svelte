@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { ArtifactSummary, WorkCapsule } from '$lib/types';
+	import type {
+		ArtifactSummary,
+		KnowledgeMemoryPayload,
+		PersonaMemoryItem,
+		TaskMemoryItem,
+		WorkCapsule,
+	} from '$lib/types';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -9,14 +15,22 @@
 	let documents = (data.documents ?? []) as ArtifactSummary[];
 	let results = (data.results ?? []) as ArtifactSummary[];
 	let workflows = (data.workflows ?? []) as WorkCapsule[];
+	let personaMemories = (data.memory?.personaMemories ?? []) as PersonaMemoryItem[];
+	let taskMemories = (data.memory?.taskMemories ?? []) as TaskMemoryItem[];
+	let memorySummary = data.memory?.summary ?? {
+		personaCount: 0,
+		taskCount: 0,
+		overview: null,
+	};
 	const honchoEnabled = data.honchoEnabled ?? false;
-	const honchoOverview = data.honchoOverview?.trim() ?? '';
 
 	let activeTab: KnowledgeTab = 'library';
 	let deletingArtifactIds = new Set<string>();
+	let pendingMemoryActionKey: string | null = null;
 	let manageError = '';
 
-	const honchoHighlights = honchoOverview
+	$: honchoOverview = memorySummary.overview?.trim() ?? '';
+	$: honchoHighlights = honchoOverview
 		? honchoOverview
 				.split(/\n+/)
 				.flatMap((paragraph) =>
@@ -37,6 +51,66 @@
 		documents = documents.filter((artifact) => !deleted.has(artifact.id));
 		results = results.filter((artifact) => !deleted.has(artifact.id));
 		workflows = workflows.filter((capsule) => !deleted.has(capsule.artifact.id));
+	}
+
+	function applyMemoryPayload(payload: KnowledgeMemoryPayload) {
+		personaMemories = payload.personaMemories ?? [];
+		taskMemories = payload.taskMemories ?? [];
+		memorySummary = payload.summary ?? {
+			personaCount: 0,
+			taskCount: 0,
+			overview: null,
+		};
+	}
+
+	function isMemoryActionPending(key: string): boolean {
+		return pendingMemoryActionKey === key;
+	}
+
+	function formatMemoryScope(scope: PersonaMemoryItem['scope']): string {
+		return scope === 'assistant_about_user' ? 'Assistant about you' : 'Self conclusion';
+	}
+
+	function formatMemoryTimestamp(timestamp: number): string {
+		return new Intl.DateTimeFormat(undefined, {
+			dateStyle: 'medium',
+			timeStyle: 'short',
+		}).format(timestamp);
+	}
+
+	async function runMemoryAction(
+		payload:
+			| { action: 'forget_persona_memory'; conclusionId: string }
+			| { action: 'forget_all_persona_memory' }
+			| { action: 'forget_task_memory'; taskId: string },
+		key: string,
+		confirmationMessage?: string
+	) {
+		if (isMemoryActionPending(key)) return;
+		if (confirmationMessage && !window.confirm(confirmationMessage)) return;
+
+		manageError = '';
+		pendingMemoryActionKey = key;
+
+		try {
+			const response = await fetch('/api/knowledge/memory/actions', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(payload),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(result.error ?? 'Failed to update memory profile.');
+			}
+			applyMemoryPayload(result as KnowledgeMemoryPayload);
+		} catch (error) {
+			manageError =
+				error instanceof Error ? error.message : 'Failed to update memory profile.';
+		} finally {
+			pendingMemoryActionKey = null;
+		}
 	}
 
 	async function removeArtifact(id: string, label: string) {
@@ -291,13 +365,30 @@
 			<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
 				<div class="grid gap-4 lg:grid-cols-[1.35fr_0.85fr]">
 					<div class="rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
-						<div class="flex flex-wrap items-center gap-2">
-							<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								Memory Profile
-							</span>
-							<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								{honchoEnabled ? 'Live' : 'Unavailable'}
-							</span>
+						<div class="flex flex-wrap items-center justify-between gap-3">
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+									Memory Profile
+								</span>
+								<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+									{honchoEnabled ? 'Live' : 'Unavailable'}
+								</span>
+							</div>
+							{#if honchoEnabled && personaMemories.length > 0}
+								<button
+									type="button"
+									class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+									on:click={() =>
+										runMemoryAction(
+											{ action: 'forget_all_persona_memory' },
+											'forget-all-persona',
+											'Forget all persona memory items? This clears the live memory profile about you.'
+										)}
+									disabled={isMemoryActionPending('forget-all-persona')}
+								>
+									Forget all persona memory
+								</button>
+							{/if}
 						</div>
 						<h2 class="mt-4 text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
 							Memory Overview
@@ -308,31 +399,41 @@
 							</p>
 						{:else if honchoEnabled}
 							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is enabled, but there is not enough durable user memory yet to render a useful summary.
+								Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.
 							</p>
 						{:else}
 							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is disabled in this deployment, so the live memory overview is not available.
+								Memory Profile is disabled in this deployment, so the live persona memory overview is not available.
 							</p>
 						{/if}
 					</div>
 
 					<div class="space-y-4">
-						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-							<div class="text-[0.7rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-								What feeds this
+						<div class="grid grid-cols-2 gap-3">
+							<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+								<div class="text-[0.7rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+									Persona memory
+								</div>
+								<div class="mt-2 text-2xl font-serif text-text-primary">
+									{memorySummary.personaCount}
+								</div>
 							</div>
-							<p class="mt-3 text-sm font-sans leading-[1.6] text-text-secondary">
-								Recent chats, durable conclusions, saved workflow capsules, and linked knowledge artifacts all contribute to this memory view.
-							</p>
+							<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+								<div class="text-[0.7rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+									Task memory
+								</div>
+								<div class="mt-2 text-2xl font-serif text-text-primary">
+									{memorySummary.taskCount}
+								</div>
+							</div>
 						</div>
 
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="text-[0.7rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-								How it is used
+								How forgetting works
 							</div>
 							<p class="mt-3 text-sm font-sans leading-[1.6] text-text-secondary">
-								This overview is not pasted into every prompt verbatim. It is used as a compact recall layer so the assistant can keep continuity without bloating the main context window.
+								Persona memory removes Honcho-derived conclusions about you. Task memory forgets the local task-state checkpoints and evidence links used for long-horizon chat continuity.
 							</p>
 						</div>
 					</div>
@@ -350,9 +451,153 @@
 						{/each}
 					{:else}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted md:col-span-2">
-							As you work across conversations, this tab will surface a clearer system-generated picture of your preferences, context, and recurring patterns.
+							As you work across conversations, this tab will surface and manage the durable persona and task memory the system is carrying forward.
 						</div>
 					{/if}
+				</div>
+
+				<div class="mt-6 grid gap-4 lg:grid-cols-2">
+					<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+						<div class="flex items-center justify-between gap-3">
+							<div>
+								<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+									Persona memory
+								</div>
+								<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+									Forget individual memory items
+								</h3>
+							</div>
+							<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+								{personaMemories.length}
+							</span>
+						</div>
+
+						<div class="mt-4 space-y-3">
+							{#if !honchoEnabled}
+								<div class="rounded-[1rem] border border-dashed border-border px-4 py-5 text-sm text-text-muted">
+									Persona memory controls are unavailable because Honcho is disabled.
+								</div>
+							{:else if personaMemories.length === 0}
+								<div class="rounded-[1rem] border border-dashed border-border px-4 py-5 text-sm text-text-muted">
+									No persona memory items are currently stored.
+								</div>
+							{:else}
+								{#each personaMemories as memory (memory.id)}
+									<div class="rounded-[1rem] border border-border px-4 py-4">
+										<div class="flex items-start justify-between gap-3">
+											<div class="min-w-0 flex-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+														{formatMemoryScope(memory.scope)}
+													</span>
+													{#if memory.conversationTitle}
+														<span class="text-xs font-sans text-text-muted">
+															{memory.conversationTitle}
+														</span>
+													{:else if memory.sessionId}
+														<span class="text-xs font-sans text-text-muted">
+															Session {memory.sessionId.slice(0, 8)}
+														</span>
+													{/if}
+												</div>
+												<p class="mt-3 text-sm font-serif leading-[1.55] text-text-secondary">
+													{memory.content}
+												</p>
+												<div class="mt-3 text-xs font-sans text-text-muted">
+													{formatMemoryTimestamp(memory.createdAt)}
+												</div>
+											</div>
+											<button
+												type="button"
+												class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+												on:click={() =>
+													runMemoryAction(
+														{ action: 'forget_persona_memory', conclusionId: memory.id },
+														`persona-${memory.id}`,
+														'Forget this persona memory item?'
+													)}
+												disabled={isMemoryActionPending(`persona-${memory.id}`)}
+											>
+												Forget
+											</button>
+										</div>
+									</div>
+								{/each}
+							{/if}
+						</div>
+					</div>
+
+					<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+						<div class="flex items-center justify-between gap-3">
+							<div>
+								<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+									Task memory
+								</div>
+								<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+									Reset local task continuity
+								</h3>
+							</div>
+							<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+								{taskMemories.length}
+							</span>
+						</div>
+
+						<div class="mt-4 space-y-3">
+							{#if taskMemories.length === 0}
+								<div class="rounded-[1rem] border border-dashed border-border px-4 py-5 text-sm text-text-muted">
+									No task-state memory has been checkpointed yet.
+								</div>
+							{:else}
+								{#each taskMemories as memory (memory.taskId)}
+									<div class="rounded-[1rem] border border-border px-4 py-4">
+										<div class="flex items-start justify-between gap-3">
+											<div class="min-w-0 flex-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+														{memory.status}
+													</span>
+													{#if memory.locked}
+														<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+															Locked
+														</span>
+													{/if}
+													{#if memory.conversationTitle}
+														<span class="text-xs font-sans text-text-muted">
+															{memory.conversationTitle}
+														</span>
+													{/if}
+												</div>
+												<div class="mt-3 text-sm font-sans font-medium text-text-primary">
+													{memory.objective}
+												</div>
+												{#if memory.checkpointSummary}
+													<p class="mt-3 text-sm font-serif leading-[1.55] text-text-secondary">
+														{memory.checkpointSummary}
+													</p>
+												{/if}
+												<div class="mt-3 text-xs font-sans text-text-muted">
+													Updated {formatMemoryTimestamp(memory.updatedAt)}
+												</div>
+											</div>
+											<button
+												type="button"
+												class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+												on:click={() =>
+													runMemoryAction(
+														{ action: 'forget_task_memory', taskId: memory.taskId },
+														`task-${memory.taskId}`,
+														'Forget this task memory? The conversation can still continue, but its long-horizon task checkpoints will be cleared.'
+													)}
+												disabled={isMemoryActionPending(`task-${memory.taskId}`)}
+											>
+												Forget task memory
+											</button>
+										</div>
+									</div>
+								{/each}
+							{/if}
+						</div>
+					</div>
 				</div>
 			</section>
 		{/if}

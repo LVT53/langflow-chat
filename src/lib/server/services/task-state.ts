@@ -5,6 +5,7 @@ import {
 	artifacts,
 	artifactChunks,
 	conversationContextStatus,
+	conversations,
 	conversationTaskStates,
 	taskCheckpoints,
 	taskStateEvidenceLinks,
@@ -17,6 +18,7 @@ import type {
 	RoutingStage,
 	TaskCheckpoint,
 	TaskEvidenceLink,
+	TaskMemoryItem,
 	TaskState,
 	TaskSteeringAction,
 	VerificationStatus,
@@ -579,6 +581,86 @@ export async function listTaskCheckpoints(params: {
 		.orderBy(desc(taskCheckpoints.updatedAt));
 
 	return rows.map(mapTaskCheckpoint);
+}
+
+export async function listTaskMemoryItems(userId: string): Promise<TaskMemoryItem[]> {
+	const rows = await db
+		.select({
+			task: conversationTaskStates,
+			conversationTitle: conversations.title,
+		})
+		.from(conversationTaskStates)
+		.leftJoin(conversations, eq(conversationTaskStates.conversationId, conversations.id))
+		.where(eq(conversationTaskStates.userId, userId))
+		.orderBy(desc(conversationTaskStates.updatedAt));
+
+	if (rows.length === 0) {
+		return [];
+	}
+
+	const taskIds = rows.map((row) => row.task.taskId);
+	const checkpointRows = await db
+		.select()
+		.from(taskCheckpoints)
+		.where(
+			and(
+				eq(taskCheckpoints.userId, userId),
+				inArray(taskCheckpoints.taskId, taskIds)
+			)
+		)
+		.orderBy(desc(taskCheckpoints.updatedAt));
+
+	const latestCheckpointByTask = new Map<string, TaskCheckpoint>();
+	const latestStableCheckpointByTask = new Map<string, TaskCheckpoint>();
+
+	for (const row of checkpointRows) {
+		const checkpoint = mapTaskCheckpoint(row);
+		if (!latestCheckpointByTask.has(checkpoint.taskId)) {
+			latestCheckpointByTask.set(checkpoint.taskId, checkpoint);
+		}
+		if (
+			checkpoint.checkpointType === 'stable' &&
+			!latestStableCheckpointByTask.has(checkpoint.taskId)
+		) {
+			latestStableCheckpointByTask.set(checkpoint.taskId, checkpoint);
+		}
+	}
+
+	return rows.map((row) => {
+		const task = mapTaskState(row.task);
+		const checkpoint =
+			latestStableCheckpointByTask.get(task.taskId) ??
+			latestCheckpointByTask.get(task.taskId) ??
+			null;
+
+		return {
+			taskId: task.taskId,
+			conversationId: task.conversationId,
+			conversationTitle: row.conversationTitle ?? null,
+			objective: task.objective,
+			status: task.status,
+			locked: task.locked,
+			updatedAt: task.updatedAt,
+			lastCheckpointAt: task.lastCheckpointAt,
+			checkpointSummary: checkpoint ? clip(checkpoint.content, 240) : null,
+		};
+	});
+}
+
+export async function forgetTaskMemory(userId: string, taskId: string): Promise<boolean> {
+	const existing = await getTaskStateById(userId, taskId);
+	if (!existing) return false;
+
+	await db
+		.delete(conversationTaskStates)
+		.where(
+			and(
+				eq(conversationTaskStates.userId, userId),
+				eq(conversationTaskStates.taskId, taskId)
+			)
+		);
+
+	return true;
 }
 
 function buildTaskCandidateSummary(task: TaskState): Record<string, unknown> {

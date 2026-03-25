@@ -1,17 +1,18 @@
 import type { ServerLoad } from '@sveltejs/kit';
 import { listKnowledgeArtifacts } from '$lib/server/services/knowledge';
-import { getPeerContext, isHonchoEnabled } from '$lib/server/services/honcho';
+import { isHonchoEnabled } from '$lib/server/services/honcho';
+import { getKnowledgeMemory } from '$lib/server/services/memory';
 
 export const load: ServerLoad = async (event) => {
 	const user = event.locals.user!;
-	const [knowledge, honchoOverview] = await Promise.all([
+	const [knowledge, memory] = await Promise.all([
 		listKnowledgeArtifacts(user.id),
-		getPeerContext(user.id),
+		getKnowledgeMemory(user.id),
 	]);
 
 	return {
 		...knowledge,
 		honchoEnabled: isHonchoEnabled(),
-		honchoOverview,
+		memory,
 	};
 };

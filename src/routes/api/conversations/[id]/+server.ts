@@ -4,9 +4,9 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import {
 	getConversation,
 	updateConversationTitle,
-	deleteConversation,
 	moveConversationToProject
 } from '$lib/server/services/conversations';
+import { deleteConversationWithCleanup } from '$lib/server/services/cleanup';
 import { listMessages } from '$lib/server/services/messages';
 import {
 	getConversationWorkingSet,
@@ -91,10 +91,21 @@ export const DELETE: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 	const { id } = event.params;
 
-	const deleted = await deleteConversation(user.id, id);
+	let deleted;
+	try {
+		deleted = await deleteConversationWithCleanup(user.id, id);
+	} catch (error) {
+		console.error('[CONVERSATION_DELETE] Failed to fully delete conversation:', error);
+		return json({ error: 'Failed to fully delete conversation' }, { status: 500 });
+	}
+
 	if (!deleted) {
 		return json({ error: 'Conversation not found' }, { status: 404 });
 	}
 
-	return json({ success: true });
+	return json({
+		success: true,
+		deletedArtifactIds: deleted.deletedArtifactIds,
+		preservedArtifactIds: deleted.preservedArtifactIds,
+	});
 };

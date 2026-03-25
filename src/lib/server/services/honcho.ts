@@ -3,6 +3,7 @@ import { join } from 'path';
 import { createHash } from 'crypto';
 import { Honcho } from '@honcho-ai/sdk';
 import type { Message, Peer } from '@honcho-ai/sdk';
+import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
 import type { Session } from '@honcho-ai/sdk/dist/session';
 import { getConfig } from '../config-store';
 import { getSystemPrompt } from '../prompts';
@@ -37,6 +38,7 @@ let client: Honcho | null = null;
 
 const peerCache = new Map<string, Peer>();
 const sessionCache = new Map<string, Session>();
+const sessionOwnerCache = new Map<string, string>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 
@@ -239,6 +241,7 @@ async function getSession(userId: string, conversationId: string): Promise<Sessi
 	}
 
 	sessionCache.set(conversationId, session);
+	sessionOwnerCache.set(conversationId, userId);
 	return session;
 }
 
@@ -347,6 +350,241 @@ export async function mirrorWorkCapsuleConclusion(params: {
 	} catch (error) {
 		console.error('[HONCHO] Failed to mirror work capsule conclusion:', error);
 	}
+}
+
+function isHonchoMissingError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(message);
+}
+
+async function listPeerSessions(peer: Peer): Promise<Session[]> {
+	try {
+		const page = await peer.sessions();
+		return await page.toArray();
+	} catch (error) {
+		if (isHonchoMissingError(error)) return [];
+		throw error;
+	}
+}
+
+async function listScopeConclusions(
+	scope: ConclusionScope,
+	sessionId?: string
+): Promise<Array<{ id: string; content: string; sessionId: string | null; createdAt: string }>> {
+	try {
+		const page = await scope.list(sessionId ? { session: sessionId } : undefined);
+		return await page.toArray();
+	} catch (error) {
+		if (isHonchoMissingError(error)) return [];
+		throw error;
+	}
+}
+
+async function deleteScopeConclusions(
+	scope: ConclusionScope,
+	conclusionIds: string[]
+): Promise<void> {
+	for (const conclusionId of conclusionIds) {
+		try {
+			await scope.delete(conclusionId);
+		} catch (error) {
+			if (isHonchoMissingError(error)) continue;
+			throw error;
+		}
+	}
+}
+
+async function deleteHonchoSession(sessionId: string): Promise<void> {
+	try {
+		const honcho = await ensureClient();
+		const session = await honcho.session(sessionId);
+		await session.delete();
+	} catch (error) {
+		if (!isHonchoMissingError(error)) {
+			throw error;
+		}
+	} finally {
+		sessionCache.delete(sessionId);
+		sessionOwnerCache.delete(sessionId);
+	}
+}
+
+export function clearHonchoCaches(params: { userId?: string; conversationId?: string }): void {
+	if (params.userId) {
+		peerCache.delete(getHonchoUserPeerId(params.userId));
+		peerCache.delete(getHonchoAssistantPeerId(params.userId));
+
+		for (const [sessionId, ownerUserId] of sessionOwnerCache.entries()) {
+			if (ownerUserId !== params.userId) continue;
+			sessionOwnerCache.delete(sessionId);
+			sessionCache.delete(sessionId);
+		}
+	}
+
+	if (params.conversationId) {
+		sessionCache.delete(params.conversationId);
+		sessionOwnerCache.delete(params.conversationId);
+	}
+}
+
+function normalizeConclusionTimestamp(value: string): number {
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+export type HonchoPersonaMemoryRecord = {
+	id: string;
+	content: string;
+	scope: 'self' | 'assistant_about_user';
+	sessionId: string | null;
+	createdAt: number;
+};
+
+async function listVisiblePersonaMemoryRecords(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
+	if (!isHonchoEnabled()) return [];
+
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const assistantAboutUserScope = assistantPeer.conclusionsOf(userPeer);
+
+	const [selfConclusions, assistantAboutUserConclusions] = await Promise.all([
+		listScopeConclusions(userPeer.conclusions),
+		listScopeConclusions(assistantAboutUserScope),
+	]);
+
+	return [
+		...selfConclusions.map((item) => ({
+			id: item.id,
+			content: item.content,
+			scope: 'self' as const,
+			sessionId: item.sessionId,
+			createdAt: normalizeConclusionTimestamp(item.createdAt),
+		})),
+		...assistantAboutUserConclusions.map((item) => ({
+			id: item.id,
+			content: item.content,
+			scope: 'assistant_about_user' as const,
+			sessionId: item.sessionId,
+			createdAt: normalizeConclusionTimestamp(item.createdAt),
+		})),
+	].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function listPersonaMemories(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
+	return listVisiblePersonaMemoryRecords(userId);
+}
+
+export async function forgetPersonaMemory(userId: string, conclusionId: string): Promise<boolean> {
+	if (!isHonchoEnabled()) return false;
+
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const assistantAboutUserScope = assistantPeer.conclusionsOf(userPeer);
+	const records = await listVisiblePersonaMemoryRecords(userId);
+	const record = records.find((item) => item.id === conclusionId);
+	if (!record) return false;
+
+	if (record.scope === 'self') {
+		await deleteScopeConclusions(userPeer.conclusions, [conclusionId]);
+	} else {
+		await deleteScopeConclusions(assistantAboutUserScope, [conclusionId]);
+	}
+	return true;
+}
+
+export async function forgetAllPersonaMemories(userId: string): Promise<number> {
+	if (!isHonchoEnabled()) return 0;
+
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const assistantAboutUserScope = assistantPeer.conclusionsOf(userPeer);
+	const records = await listVisiblePersonaMemoryRecords(userId);
+	const selfIds = records.filter((item) => item.scope === 'self').map((item) => item.id);
+	const assistantIds = records
+		.filter((item) => item.scope === 'assistant_about_user')
+		.map((item) => item.id);
+
+	await Promise.all([
+		deleteScopeConclusions(userPeer.conclusions, selfIds),
+		deleteScopeConclusions(assistantAboutUserScope, assistantIds),
+	]);
+
+	return records.length;
+}
+
+export async function deleteConversationHonchoState(userId: string, conversationId: string): Promise<void> {
+	if (!isHonchoEnabled()) {
+		clearHonchoCaches({ conversationId, userId });
+		return;
+	}
+
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const scopes = [
+		userPeer.conclusions,
+		assistantPeer.conclusions,
+		userPeer.conclusionsOf(assistantPeer),
+		assistantPeer.conclusionsOf(userPeer),
+	];
+
+	for (const scope of scopes) {
+		const conclusions = await listScopeConclusions(scope, conversationId);
+		await deleteScopeConclusions(
+			scope,
+			conclusions.map((item) => item.id)
+		);
+	}
+
+	await deleteHonchoSession(conversationId);
+	clearHonchoCaches({ conversationId, userId });
+}
+
+export async function deleteAllHonchoStateForUser(userId: string): Promise<void> {
+	if (!isHonchoEnabled()) {
+		clearHonchoCaches({ userId });
+		return;
+	}
+
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const crossScopes = [
+		userPeer.conclusions,
+		assistantPeer.conclusions,
+		userPeer.conclusionsOf(assistantPeer),
+		assistantPeer.conclusionsOf(userPeer),
+	];
+
+	for (const scope of crossScopes) {
+		const conclusions = await listScopeConclusions(scope);
+		await deleteScopeConclusions(
+			scope,
+			conclusions.map((item) => item.id)
+		);
+	}
+
+	const sessions = new Map<string, Session>();
+	for (const session of await listPeerSessions(userPeer)) {
+		sessions.set(session.id, session);
+	}
+	for (const session of await listPeerSessions(assistantPeer)) {
+		sessions.set(session.id, session);
+	}
+
+	for (const sessionId of sessions.keys()) {
+		await deleteHonchoSession(sessionId);
+	}
+
+	clearHonchoCaches({ userId });
 }
 
 async function getSessionMessages(session: Session): Promise<Message[]> {
