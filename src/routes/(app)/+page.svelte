@@ -119,6 +119,8 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 					disabled={creating}
 					maxLength={data.maxMessageLength}
 					conversationId={null}
+					contextStatus={null}
+					attachedArtifacts={[]}
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
 				/>

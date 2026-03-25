@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { currentConversationId } from '$lib/stores/ui';
-	import TranslationToggle from './TranslationToggle.svelte';
-	import ModelSelector from './ModelSelector.svelte';
+	import ContextUsageRing from './ContextUsageRing.svelte';
+	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
-	import type { ArtifactSummary } from '$lib/types';
+	import type { ArtifactSummary, ConversationContextStatus } from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -12,6 +12,8 @@
 	export let conversationId: string | null = null;
 	export let attachmentsEnabled: boolean = false;
 	export let ensureConversation: (() => Promise<string>) | null = null;
+	export let contextStatus: ConversationContextStatus | null = null;
+	export let attachedArtifacts: ArtifactSummary[] = [];
 
 	const dispatch = createEventDispatcher<{
 		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
@@ -25,6 +27,7 @@
 	let uploadingAttachment = false;
 	let attachmentError = '';
 	let resolvedConversationId: string | null = conversationId;
+	let showToolsMenu = false;
 	
 	$: isEmpty = message.trim().length === 0;
 	$: isOverMaxLength = message.length > maxLength;
@@ -36,6 +39,11 @@
 		resolvedConversationId = conversationId;
 	}
 	$: canAttach = attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !uploadingAttachment;
+	$: composerArtifacts = Array.from(
+		new Map(
+			[...attachedArtifacts, ...pendingAttachments].map((artifact) => [artifact.id, artifact])
+		).values()
+	);
 
 	function isMobile(): boolean {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -52,6 +60,7 @@
 			message = '';
 			pendingAttachments = [];
 			attachmentError = '';
+			showToolsMenu = false;
 			adjustHeight();
 			if (!isMobile()) {
 				setTimeout(() => textarea.focus(), 0);
@@ -94,6 +103,7 @@
 		message = '';
 		pendingAttachments = [];
 		attachmentError = '';
+		showToolsMenu = false;
 		adjustHeight();
 		if (!isMobile()) {
 			textarea.focus();
@@ -104,6 +114,7 @@
 
 	function stop() {
 		dispatch('stop');
+		showToolsMenu = false;
 		if (isMobile()) {
 			textarea.blur();
 		}
@@ -122,7 +133,16 @@
 
 	function openFilePicker() {
 		if (!canAttach) return;
+		showToolsMenu = false;
 		fileInput?.click();
+	}
+
+	function toggleToolsMenu() {
+		showToolsMenu = !showToolsMenu;
+	}
+
+	function closeToolsMenu() {
+		showToolsMenu = false;
 	}
 
 	async function uploadFiles(files: FileList | null) {
@@ -206,20 +226,34 @@
 
 		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
 			<div class="flex items-center gap-2">
-				<ModelSelector />
-				<TranslationToggle />
-				<button
-					type="button"
-					class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
-					on:click={openFilePicker}
-					disabled={!canAttach}
-					title={attachmentsEnabled ? 'Attach file' : 'File uploads are unavailable'}
-					aria-label="Attach file"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-					</svg>
-				</button>
+				<div class="relative flex items-center">
+					<button
+						type="button"
+						class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted"
+						on:click={toggleToolsMenu}
+						aria-label="Open composer tools"
+						aria-expanded={showToolsMenu}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="12" x2="12" y1="5" y2="19" />
+							<line x1="5" x2="19" y1="12" y2="12" />
+						</svg>
+					</button>
+
+					{#if showToolsMenu}
+						<ComposerToolsMenu
+							{canAttach}
+							{attachmentsEnabled}
+							on:close={closeToolsMenu}
+							on:attach={openFilePicker}
+						/>
+					{/if}
+				</div>
+
+				<ContextUsageRing
+					{contextStatus}
+					attachedArtifacts={composerArtifacts}
+				/>
 			</div>
 
 			<div class="action-button-container min-h-[50px] min-w-[50px] flex-shrink-0">

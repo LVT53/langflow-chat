@@ -465,8 +465,6 @@
 				messages={$messages}
 				conversationId={data.conversation.id}
 				isThinkingActive={isThinkingActive}
-				{contextStatus}
-				{attachedArtifacts}
 				on:regenerate={handleRegenerate}
 				on:edit={handleEdit}
 			/>
@@ -494,6 +492,8 @@
 					isGenerating={isSending}
 					maxLength={data.maxMessageLength}
 					conversationId={data.conversation.id}
+					{contextStatus}
+					{attachedArtifacts}
 					attachmentsEnabled={true}
 				/>
 			</div>

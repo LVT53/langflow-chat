@@ -1,14 +1,11 @@
 <script lang="ts">
 	import { tick, createEventDispatcher } from 'svelte';
-	import type { ArtifactSummary, ChatMessage, ConversationContextStatus } from '$lib/types';
-	import ChatMetadataHeader from './ChatMetadataHeader.svelte';
+	import type { ChatMessage } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
 	export let messages: ChatMessage[] = [];
 	export let conversationId: string | null = null;
 	export let isThinkingActive: boolean = false;
-	export let contextStatus: ConversationContextStatus | null = null;
-	export let attachedArtifacts: ArtifactSummary[] = [];
 
 	const dispatch = createEventDispatcher<{
 		regenerate: { messageId: string };
@@ -93,7 +90,6 @@
 		{#if messages.length === 0}
 			<div class="h-full"></div>
 		{:else}
-			<ChatMetadataHeader {contextStatus} {attachedArtifacts} />
 			{#each messages as message, i (message.id)}
 				<MessageBubble
 					{message}

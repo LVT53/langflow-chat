@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { createEventDispatcher } from 'svelte';
 	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
 
 	interface Model {
@@ -12,6 +13,7 @@
 	let isLoading = true;
 	let error: string | null = null;
 	let dropdownRef: HTMLDivElement;
+	const dispatch = createEventDispatcher<{ select: { modelId: ModelId } }>();
 
 	onMount(async () => {
 		try {
@@ -46,6 +48,7 @@
 	function handleSelect(modelId: ModelId) {
 		setSelectedModel(modelId);
 		isOpen = false;
+		dispatch('select', { modelId });
 	}
 
 	function toggleDropdown() {
