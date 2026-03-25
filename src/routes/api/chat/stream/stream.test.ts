@@ -45,7 +45,13 @@ vi.mock('$lib/server/services/honcho', () => ({
 
 vi.mock('$lib/server/env', () => ({
 	config: {
-		maxMessageLength: 10000
+		maxMessageLength: 10000,
+		model1: {
+			displayName: 'Model 1'
+		},
+		model2: {
+			displayName: 'Model 2'
+		}
 	}
 }));
 
@@ -397,6 +403,7 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('"thinkingTokenCount":0');
 		expect(body).toContain('"responseTokenCount":2');
 		expect(body).toContain('"totalTokenCount":2');
+		expect(body).toContain('"modelDisplayName":"Model 1"');
 	});
 
 	it('returns 401 when user is not authenticated', async () => {

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
-	import { sidebarOpen } from '$lib/stores/ui';
+	import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
 	import { conversations } from '$lib/stores/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { initSettings } from '$lib/stores/settings';
@@ -14,6 +16,10 @@
 
 	$: conversations.set(data.conversations ?? []);
 	$: projects.set(data.projects ?? []);
+	$: if (browser) {
+		const match = $page.url.pathname.match(/^\/chat\/([^/]+)$/);
+		currentConversationId.set(match?.[1] ?? null);
+	}
 
 	onMount(() => {
 		initTheme(data.userTheme as 'system' | 'light' | 'dark');

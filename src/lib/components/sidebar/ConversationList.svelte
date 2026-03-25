@@ -73,8 +73,7 @@
 
 	async function handleSelect(event: CustomEvent<{ id: string }>) {
 		const id = event.detail.id;
-		const onSettingsPage = $page.url.pathname.startsWith('/settings');
-		if (id === $currentConversationId && !onSettingsPage) return;
+		if ($page.url.pathname === `/chat/${id}`) return;
 		const previousConversationId = $currentConversationId;
 		openMenuId = null;
 		currentConversationId.set(id);

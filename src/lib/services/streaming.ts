@@ -6,6 +6,7 @@ export interface StreamMetadata {
 	wasStopped?: boolean;
 	userMessageId?: string;
 	assistantMessageId?: string;
+	modelDisplayName?: string;
 	contextStatus?: import('$lib/types').ConversationContextStatus;
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
 }
@@ -307,17 +308,21 @@ export function streamChat(
 								let metadata: StreamMetadata | undefined;
 								try {
 									const parsed = JSON.parse(rawData);
-									metadata = {
+									const nextMetadata: StreamMetadata = {
 										thinkingTokenCount: parsed.thinkingTokenCount,
 										responseTokenCount: parsed.responseTokenCount,
-									totalTokenCount: parsed.totalTokenCount,
-									thinking: parsed.thinking,
-									wasStopped: parsed.wasStopped,
-									userMessageId: parsed.userMessageId,
-									assistantMessageId: parsed.assistantMessageId,
-									contextStatus: parsed.contextStatus,
-									activeWorkingSet: parsed.activeWorkingSet
-								};
+										totalTokenCount: parsed.totalTokenCount,
+										thinking: parsed.thinking,
+										wasStopped: parsed.wasStopped,
+										userMessageId: parsed.userMessageId,
+										assistantMessageId: parsed.assistantMessageId,
+										modelDisplayName: parsed.modelDisplayName,
+										contextStatus: parsed.contextStatus,
+										activeWorkingSet: parsed.activeWorkingSet
+									};
+									metadata = Object.values(nextMetadata).some((value) => value !== undefined)
+										? nextMetadata
+										: undefined;
 								} catch {
 									/* noop */
 								}

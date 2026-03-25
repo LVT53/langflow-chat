@@ -535,6 +535,7 @@ export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 	const requestStartTime = Date.now();
+	const runtimeConfig = getConfig();
 
 	let body: {
 		message?: unknown;
@@ -564,7 +565,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const { maxMessageLength } = getConfig();
+	const { maxMessageLength } = runtimeConfig;
 	if (message.length > maxMessageLength) {
 		return new Response(
 			JSON.stringify({
@@ -583,6 +584,8 @@ export const POST: RequestHandler = async (event) => {
 
 	// Validate model parameter
 	const modelId = model === 'model1' || model === 'model2' ? model : undefined;
+	const modelDisplayName =
+		modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
 
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
@@ -1052,6 +1055,7 @@ export const POST: RequestHandler = async (event) => {
 							wasStopped,
 							userMessageId: userMsgId,
 							assistantMessageId: assistantMsgId,
+							modelDisplayName,
 							contextStatus: latestContextStatus,
 							activeWorkingSet: latestActiveWorkingSet
 						})}\n\n`

@@ -8,8 +8,6 @@
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
-	import ContextStatus from '$lib/components/chat/ContextStatus.svelte';
-	import WorkingWithBlock from '$lib/components/chat/WorkingWithBlock.svelte';
 	import type { ArtifactSummary, ChatMessage, ConversationContextStatus } from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
@@ -42,8 +40,6 @@
 
 	$: hasMessages = $messages.length > 0;
 	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
-	$: visibleWorkingSet = activeWorkingSet.slice(0, 4);
-	$: workingSetOverflow = Math.max(0, activeWorkingSet.length - visibleWorkingSet.length);
 
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
@@ -311,14 +307,15 @@
 							if (m.id === placeholderId) {
 								return {
 									...m,
-									id: serverAssistantId ?? m.id,
-									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
-									isStreaming: false,
-									thinking: metadata?.thinking ?? m.thinking,
-									isThinkingStreaming: false,
-									thinkingTokenCount: metadata?.thinkingTokenCount,
-									responseTokenCount: metadata?.responseTokenCount,
-									totalTokenCount: metadata?.totalTokenCount
+								id: serverAssistantId ?? m.id,
+								content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
+								isStreaming: false,
+								thinking: metadata?.thinking ?? m.thinking,
+								isThinkingStreaming: false,
+								modelDisplayName: metadata?.modelDisplayName ?? m.modelDisplayName,
+								thinkingTokenCount: metadata?.thinkingTokenCount,
+								responseTokenCount: metadata?.responseTokenCount,
+								totalTokenCount: metadata?.totalTokenCount
 								};
 							}
 							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
@@ -464,7 +461,15 @@
 <div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
 		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
-			<MessageArea messages={$messages} conversationId={data.conversation.id} isThinkingActive={isThinkingActive} on:regenerate={handleRegenerate} on:edit={handleEdit} />
+			<MessageArea
+				messages={$messages}
+				conversationId={data.conversation.id}
+				isThinkingActive={isThinkingActive}
+				{contextStatus}
+				{attachedArtifacts}
+				on:regenerate={handleRegenerate}
+				on:edit={handleEdit}
+			/>
 		</div>
 
 		<div class="composer-layer" class:composer-layer-active={hasMessages}>
@@ -481,27 +486,6 @@
 				{#if sendError}
 					<ErrorMessage error={sendError} onRetry={handleRetry} onClose={handleErrorClose} />
 				{/if}
-
-				{#if contextStatus}
-					<ContextStatus {contextStatus} />
-				{/if}
-
-					{#if attachedArtifacts.length > 0}
-						<div class="flex flex-wrap gap-2">
-							{#each attachedArtifacts as artifact (artifact.id)}
-								<div class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-xs font-sans text-text-secondary">
-									{artifact.name}
-								</div>
-							{/each}
-						</div>
-					{/if}
-
-					{#if activeWorkingSet.length > 0}
-						<WorkingWithBlock
-							artifacts={activeWorkingSet.map(a => ({...a, type: a.type === 'generated_output' ? 'result' : 'document'}))}
-							maxVisible={3}
-						/>
-					{/if}
 
 					<MessageInput
 						on:send={handleSend}
