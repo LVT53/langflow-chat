@@ -4,6 +4,7 @@
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
+	import FileAttachment from './FileAttachment.svelte';
 	import { createEventDispatcher, tick } from 'svelte';
 
 	export let message: ChatMessage;
@@ -189,9 +190,7 @@
 				{#if hasAttachments}
 					<div class="mb-3 flex flex-wrap gap-2">
 						{#each message.attachments ?? [] as attachment (attachment.id)}
-							<div class="rounded-full border border-border bg-surface-page px-3 py-1 text-[11px] font-sans text-text-secondary">
-								{attachment.name}
-							</div>
+							<FileAttachment {attachment} variant="compact" />
 						{/each}
 					</div>
 				{/if}

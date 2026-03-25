@@ -8,6 +8,8 @@
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
+	import ContextStatus from '$lib/components/chat/ContextStatus.svelte';
+	import WorkingWithBlock from '$lib/components/chat/WorkingWithBlock.svelte';
 	import type { ArtifactSummary, ChatMessage, ConversationContextStatus } from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
@@ -481,23 +483,7 @@
 				{/if}
 
 				{#if contextStatus}
-					<div class="rounded-[1rem] border border-border bg-surface-elevated/80 px-4 py-3 text-xs font-sans text-text-secondary shadow-sm">
-						<div class="flex flex-wrap items-center justify-between gap-2">
-							<span>
-								Context {contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.maxContextTokens.toLocaleString()} tokens
-							</span>
-							{#if contextStatus.compactionApplied}
-								<span class="rounded-full bg-accent/10 px-2 py-1 text-accent">Optimized</span>
-							{/if}
-						</div>
-						{#if contextStatus.layersUsed.length > 0}
-							<div class="mt-2 flex flex-wrap gap-2">
-								{#each contextStatus.layersUsed as layer}
-									<span class="rounded-full border border-border px-2 py-1 uppercase tracking-[0.08em]">{layer}</span>
-								{/each}
-							</div>
-						{/if}
-					</div>
+					<ContextStatus {contextStatus} />
 				{/if}
 
 					{#if attachedArtifacts.length > 0}
@@ -511,24 +497,10 @@
 					{/if}
 
 					{#if activeWorkingSet.length > 0}
-						<div class="rounded-[1rem] border border-border bg-surface-elevated/70 px-4 py-3 text-xs font-sans text-text-secondary shadow-sm">
-							<div class="flex flex-wrap items-center gap-2">
-								<span class="uppercase tracking-[0.08em] text-text-muted">Working with</span>
-								{#each visibleWorkingSet as artifact (artifact.id)}
-									<div class="flex items-center gap-2 rounded-full border border-border bg-surface-page px-3 py-1 text-text-secondary">
-										<span class="text-[10px] uppercase tracking-[0.1em] text-text-muted">
-											{artifact.type === 'generated_output' ? 'Result' : 'Doc'}
-										</span>
-										<span class="max-w-[180px] truncate">{artifact.name}</span>
-									</div>
-								{/each}
-								{#if workingSetOverflow > 0}
-									<div class="rounded-full border border-border bg-surface-page px-3 py-1 text-text-muted">
-										+{workingSetOverflow}
-									</div>
-								{/if}
-							</div>
-						</div>
+						<WorkingWithBlock
+							artifacts={activeWorkingSet.map(a => ({...a, type: a.type === 'generated_output' ? 'result' : 'document'}))}
+							maxVisible={3}
+						/>
 					{/if}
 
 					<MessageInput

@@ -3,6 +3,7 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import TranslationToggle from './TranslationToggle.svelte';
 	import ModelSelector from './ModelSelector.svelte';
+	import FileAttachment from './FileAttachment.svelte';
 	import type { ArtifactSummary } from '$lib/types';
 
 	export let disabled: boolean = false;
@@ -193,17 +194,12 @@
 		{#if pendingAttachments.length > 0}
 			<div class="flex flex-wrap gap-2 px-[16px] pb-2 pt-1">
 				{#each pendingAttachments as attachment (attachment.id)}
-					<div class="attachment-chip flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs font-sans text-text-secondary">
-						<span class="truncate max-w-[180px]">{attachment.name}</span>
-						<button
-							type="button"
-							class="text-text-muted transition-colors hover:text-text-primary"
-							on:click={() => removePendingAttachment(attachment.id)}
-							aria-label={`Remove ${attachment.name}`}
-						>
-							×
-						</button>
-					</div>
+					<FileAttachment
+						{attachment}
+						variant="pending"
+						removable={true}
+						on:remove={(event) => removePendingAttachment(event.detail.id)}
+					/>
 				{/each}
 			</div>
 		{/if}
