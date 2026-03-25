@@ -10,19 +10,19 @@ import { renderMarkdown } from './markdown';
  *   - html: rendered HTML string
  *   - isComplete: true when content is not mid-code-block (rendering is final for this chunk)
  */
-export function renderStreamingMarkdown(
+export async function renderStreamingMarkdown(
 	content: string,
 	isDark: boolean
-): { html: string; isComplete: boolean } {
+): Promise<{ html: string; isComplete: boolean }> {
 	const fenceCount = (content.match(/```/g) || []).length;
 	const inCodeBlock = fenceCount % 2 !== 0;
 
 	if (inCodeBlock) {
 		const tempContent = content + '\n```';
-		const html = renderMarkdown(tempContent, isDark);
+		const html = await renderMarkdown(tempContent, isDark);
 		const trimmedHtml = html.replace(/<\/code><\/pre>\s*$/, '');
 		return { html: trimmedHtml, isComplete: false };
 	}
 
-	return { html: renderMarkdown(content, isDark), isComplete: true };
+	return { html: await renderMarkdown(content, isDark), isComplete: true };
 }

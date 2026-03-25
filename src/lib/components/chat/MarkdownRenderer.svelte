@@ -1,6 +1,6 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
-  import { renderMarkdown, renderCodeBlock, initHighlighter } from '$lib/services/markdown';
+  import { renderMarkdown, renderCodeBlock, prepareCodeHighlighting } from '$lib/services/markdown';
   import { afterUpdate } from 'svelte';
 
   export let content: string = '';
@@ -16,6 +16,7 @@
   let container: HTMLDivElement;
   let prevWordCount = 0;
   let prevLastBlockEl: HTMLElement | null = null;
+  let renderVersion = 0;
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -30,11 +31,11 @@
       throttleTimer = null;
       const latest = pendingContent!;
       pendingContent = null;
-      renderContent(latest);
+      void renderContent(latest);
     }, STREAM_THROTTLE_MS);
   }
 
-  function splitMarkdownBlocks(source: string): MarkdownBlock[] {
+  async function splitMarkdownBlocks(source: string): Promise<MarkdownBlock[]> {
     const normalizedSource = source.startsWith('[Translation unavailable]')
       ? source.substring('[Translation unavailable]'.length).trimStart()
       : source;
@@ -45,10 +46,10 @@
     let language: string | undefined;
     let inCodeBlock = false;
 
-    const flushText = () => {
+    const flushText = async () => {
       if (!textLines.length) return;
 
-      const html = renderMarkdown(textLines.join('\n'), isDark);
+      const html = await renderMarkdown(textLines.join('\n'), isDark);
       if (html.trim()) {
         nextBlocks.push({ type: 'html', html });
       }
@@ -71,7 +72,7 @@
       const closingFenceMatch = line.match(/^\s*```\s*$/);
 
       if (!inCodeBlock && openingFenceMatch) {
-        flushText();
+        await flushText();
         inCodeBlock = true;
         language = openingFenceMatch[1] || undefined;
         continue;
@@ -90,7 +91,7 @@
       }
     }
 
-    flushText();
+    await flushText();
 
     if (inCodeBlock) {
       flushCode();
@@ -100,8 +101,12 @@
   }
 
   async function renderContent(src: string) {
-    await initHighlighter();
-    const newBlocks = splitMarkdownBlocks(src);
+    const currentRender = ++renderVersion;
+    if (src.includes('```')) {
+      await prepareCodeHighlighting(src);
+    }
+    const newBlocks = await splitMarkdownBlocks(src);
+    if (currentRender !== renderVersion) return;
     const oldCount = prevBlockCount;
     
     blocks = newBlocks.map((b, i) => ({
@@ -129,7 +134,7 @@
         throttleTimer = null;
         pendingContent = null;
       }
-      renderContent(content);
+      void renderContent(content);
     }
   }
 

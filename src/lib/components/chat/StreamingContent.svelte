@@ -10,6 +10,7 @@
 	let lastContentLength = 0;
 	let renderedChunks: Array<{ id: number; html: string; isNew: boolean }> = [];
 	let chunkIdCounter = 0;
+	let renderVersion = 0;
 
 	// Split content into manageable chunks for animation
 	// We split on paragraph boundaries for natural fade-in points
@@ -21,27 +22,29 @@
 
 	async function updateChunks() {
 		if (content.length === lastContentLength) return;
+		const currentRender = ++renderVersion;
 
 		const newContent = content.slice(lastContentLength);
 		const newChunks = splitIntoChunks(newContent);
+		const nextChunks = [...renderedChunks];
 
 		if (newChunks.length > 0) {
 			for (const chunk of newChunks) {
 				// Skip if it's just whitespace
 				if (!chunk.trim()) {
 					// Append to previous chunk if exists
-					if (renderedChunks.length > 0) {
-						renderedChunks[renderedChunks.length - 1].html += chunk;
+					if (nextChunks.length > 0) {
+						nextChunks[nextChunks.length - 1].html += chunk;
 					}
 					continue;
 				}
 
-				const html = renderMarkdown(chunk, isDark);
-				renderedChunks = [
-					...renderedChunks,
-					{ id: chunkIdCounter++, html, isNew: isStreaming }
-				];
+				const html = await renderMarkdown(chunk, isDark);
+				if (currentRender !== renderVersion) return;
+				nextChunks.push({ id: chunkIdCounter++, html, isNew: isStreaming });
 			}
+
+			renderedChunks = nextChunks;
 
 			// Mark old chunks as no longer new after animation
 			if (isStreaming) {
@@ -57,7 +60,7 @@
 	}
 
 	$: if (content !== undefined) {
-		updateChunks();
+		void updateChunks();
 	}
 
 	onMount(() => {
