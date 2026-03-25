@@ -34,6 +34,10 @@ import type {
 } from '$lib/types';
 import { extractDocumentText } from './document-extraction';
 import {
+	deriveConversationArtifactBaseName,
+	isPlaceholderConversationTitle,
+} from './knowledge-labels';
+import {
 	rankWorkingSetCandidates,
 	scoreMatch,
 	WORKING_SET_ACTIVE_LIMIT,
@@ -581,16 +585,29 @@ export async function createGeneratedOutputArtifact(params: {
 	const trimmed = params.content.trim();
 	if (!trimmed) return null;
 
-	const conversationTitle = await db
-		.select({ title: conversations.title })
-		.from(conversations)
-		.where(and(eq(conversations.id, params.conversationId), eq(conversations.userId, params.userId)));
+	const [conversationTitle, latestUserMessage] = await Promise.all([
+		db
+			.select({ title: conversations.title })
+			.from(conversations)
+			.where(and(eq(conversations.id, params.conversationId), eq(conversations.userId, params.userId))),
+		db
+			.select({ content: messages.content })
+			.from(messages)
+			.where(and(eq(messages.conversationId, params.conversationId), eq(messages.role, 'user')))
+			.orderBy(desc(messages.createdAt))
+			.limit(1),
+	]);
+	const artifactBaseName = deriveConversationArtifactBaseName({
+		conversationTitle: conversationTitle[0]?.title,
+		fallbackText: latestUserMessage[0]?.content,
+		defaultLabel: 'Conversation',
+	});
 
 	const artifact = await createArtifact({
 		userId: params.userId,
 		conversationId: params.conversationId,
 		type: 'generated_output',
-		name: `${conversationTitle[0]?.title ?? 'Conversation'} result`,
+		name: `${artifactBaseName} result`,
 		mimeType: 'text/markdown',
 		extension: 'md',
 		sizeBytes: Buffer.byteLength(trimmed, 'utf8'),
@@ -675,12 +692,20 @@ export async function upsertWorkCapsule(params: {
 		.map((message) => message.content.trim())
 		.filter(Boolean)
 		.join(' ');
+	const conversationBaseName = deriveConversationArtifactBaseName({
+		conversationTitle: conversation.title,
+		fallbackText: taskSummary,
+		defaultLabel: 'Conversation',
+	});
+	const meaningfulConversationTitle = isPlaceholderConversationTitle(conversation.title)
+		? null
+		: conversation.title.trim();
 	const workflowSummary = [
 		sourceArtifactIds.length > 0 ? `Used ${sourceArtifactIds.length} source document(s).` : null,
 		outputArtifacts.length > 0 ? `Produced ${outputArtifacts.length} saved result(s).` : null,
 	].filter(Boolean).join(' ');
 	const keyConclusions = [
-		conversation.title !== 'New Conversation' ? `Project theme: ${conversation.title}` : null,
+		meaningfulConversationTitle ? `Project theme: ${meaningfulConversationTitle}` : null,
 		sourceArtifactIds.length > 0 ? 'The workflow depends on attached source documents.' : null,
 		outputArtifacts.length > 0 ? 'The conversation produced reusable written outputs.' : null,
 	].filter((item): item is string => Boolean(item));
@@ -690,7 +715,7 @@ export async function upsertWorkCapsule(params: {
 	].filter((item): item is string => Boolean(item));
 
 	const metadata = {
-		taskSummary: taskSummary || conversation.title,
+		taskSummary: taskSummary || meaningfulConversationTitle || conversationBaseName,
 		workflowSummary: workflowSummary || 'Conversation generated reusable knowledge.',
 		keyConclusions,
 		reusablePatterns,
@@ -721,9 +746,9 @@ export async function upsertWorkCapsule(params: {
 		const updated = await db
 			.update(artifacts)
 			.set({
-				name: `${safeStem(conversation.title)} workflow capsule`,
+				name: `${safeStem(conversationBaseName)} workflow capsule`,
 				contentText,
-				summary: guessSummary(contentText, conversation.title),
+				summary: guessSummary(contentText, conversationBaseName),
 				metadataJson: JSON.stringify(metadata),
 				updatedAt: new Date(),
 			})
@@ -739,11 +764,11 @@ export async function upsertWorkCapsule(params: {
 					userId: params.userId,
 					conversationId: params.conversationId,
 					type: 'work_capsule',
-					name: `${safeStem(conversation.title)} workflow capsule`,
+					name: `${safeStem(conversationBaseName)} workflow capsule`,
 					mimeType: 'text/plain',
 					extension: 'txt',
 					contentText,
-					summary: guessSummary(contentText, conversation.title),
+					summary: guessSummary(contentText, conversationBaseName),
 					metadataJson: JSON.stringify(metadata),
 					updatedAt: new Date(),
 				})
