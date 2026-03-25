@@ -99,50 +99,49 @@
 		<span class="ring-value">{contextStatus ? `${percent}` : '0'}</span>
 	</button>
 
-	{#if isOpen}
-		<div
-			class="ring-popover"
-			class:ring-popover--mobile-visible={mobile && isOpen}
-			role="status"
-			aria-live="polite"
-		>
-			<div class="popover-section">
-				<div class="popover-label">Context</div>
-				{#if contextStatus}
-					<div class="popover-stat">
-						<span>Usage</span>
-						<span>{contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.maxContextTokens.toLocaleString()}</span>
-					</div>
-					<div class="popover-stat">
-						<span>Optimization</span>
-						<span class={contextStatus.compactionApplied ? 'text-accent' : 'text-text-primary'}>
-							{contextStatus.compactionApplied ? 'Applied' : 'Not needed'}
-						</span>
-					</div>
-					{#if contextStatus.layersUsed.length > 0}
-						<div class="popover-chips">
-							{#each contextStatus.layersUsed as layer}
-								<span class="popover-chip">{formatLayer(layer)}</span>
-							{/each}
-						</div>
-					{/if}
-				{:else}
-					<div class="popover-empty">No context yet.</div>
-				{/if}
-			</div>
-
-			{#if attachedArtifacts.length > 0}
-				<div class="popover-section">
-					<div class="popover-label">Working with</div>
-					<div class="popover-list">
-						{#each attachedArtifacts as artifact (artifact.id)}
-							<div class="popover-item">{artifact.name}</div>
+	<div
+		class="ring-popover"
+		class:ring-popover--mobile-visible={mobile && isOpen}
+		role="status"
+		aria-live="polite"
+		aria-hidden={mobile ? !isOpen : undefined}
+	>
+		<div class="popover-section">
+			<div class="popover-label">Context</div>
+			{#if contextStatus}
+				<div class="popover-stat">
+					<span>Usage</span>
+					<span>{contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.maxContextTokens.toLocaleString()}</span>
+				</div>
+				<div class="popover-stat">
+					<span>Optimization</span>
+					<span class={contextStatus.compactionApplied ? 'text-accent' : 'text-text-primary'}>
+						{contextStatus.compactionApplied ? 'Applied' : 'Not needed'}
+					</span>
+				</div>
+				{#if contextStatus.layersUsed.length > 0}
+					<div class="popover-chips">
+						{#each contextStatus.layersUsed as layer}
+							<span class="popover-chip">{formatLayer(layer)}</span>
 						{/each}
 					</div>
-				</div>
+				{/if}
+			{:else}
+				<div class="popover-empty">No context yet.</div>
 			{/if}
 		</div>
-	{/if}
+
+		{#if attachedArtifacts.length > 0}
+			<div class="popover-section">
+				<div class="popover-label">Working with</div>
+				<div class="popover-list">
+					{#each attachedArtifacts as artifact (artifact.id)}
+						<div class="popover-item">{artifact.name}</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
