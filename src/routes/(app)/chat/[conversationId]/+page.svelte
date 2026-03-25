@@ -49,15 +49,37 @@
 		}
 
 		const storageKey = `${PENDING_MESSAGE_PREFIX}${data.conversation.id}`;
-		const pendingMessage = window.sessionStorage.getItem(storageKey);
-		if (!pendingMessage?.trim()) {
+		const pendingDraft = window.sessionStorage.getItem(storageKey);
+		if (!pendingDraft) {
 			return;
 		}
 
 		window.sessionStorage.removeItem(storageKey);
+		let message = '';
+		let attachmentIds: string[] = [];
+		let attachments: ArtifactSummary[] = [];
+		try {
+			const parsed = JSON.parse(pendingDraft) as {
+				message?: string;
+				attachmentIds?: string[];
+				attachments?: ArtifactSummary[];
+			};
+			message = typeof parsed.message === 'string' ? parsed.message : '';
+			attachmentIds = Array.isArray(parsed.attachmentIds)
+				? parsed.attachmentIds.filter((id): id is string => typeof id === 'string')
+				: [];
+			attachments = Array.isArray(parsed.attachments)
+				? parsed.attachments.filter((artifact): artifact is ArtifactSummary => typeof artifact?.id === 'string')
+				: [];
+		} catch {
+			message = pendingDraft;
+		}
+		if (!message.trim()) {
+			return;
+		}
 		handleSend(
 			new CustomEvent('send', {
-				detail: { message: pendingMessage, attachmentIds: [], attachments: [] }
+				detail: { message, attachmentIds, attachments }
 			})
 		);
 	}

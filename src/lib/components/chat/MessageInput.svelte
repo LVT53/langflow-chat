@@ -10,9 +10,10 @@
 	export let isGenerating: boolean = false;
 	export let conversationId: string | null = null;
 	export let attachmentsEnabled: boolean = false;
+	export let ensureConversation: (() => Promise<string>) | null = null;
 
 	const dispatch = createEventDispatcher<{
-		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[] };
+		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
 		stop: void;
 	}>();
 
@@ -22,6 +23,7 @@
 	let pendingAttachments: ArtifactSummary[] = [];
 	let uploadingAttachment = false;
 	let attachmentError = '';
+	let resolvedConversationId: string | null = conversationId;
 	
 	$: isEmpty = message.trim().length === 0;
 	$: isOverMaxLength = message.length > maxLength;
@@ -29,6 +31,10 @@
 	$: charCountColor = isOverMaxLength ? 'text-danger' : 'text-text-muted';
 	
 	$: canSend = !isEmpty && !isOverMaxLength;
+	$: if (conversationId) {
+		resolvedConversationId = conversationId;
+	}
+	$: canAttach = attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !uploadingAttachment;
 
 	function isMobile(): boolean {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -81,7 +87,8 @@
 		dispatch('send', {
 			message: message.trim(),
 			attachmentIds: pendingAttachments.map((attachment) => attachment.id),
-			attachments: pendingAttachments
+			attachments: pendingAttachments,
+			conversationId: resolvedConversationId
 		});
 		message = '';
 		pendingAttachments = [];
@@ -113,20 +120,28 @@
 	});
 
 	function openFilePicker() {
-		if (!attachmentsEnabled || !conversationId || uploadingAttachment) return;
+		if (!canAttach) return;
 		fileInput?.click();
 	}
 
 	async function uploadFiles(files: FileList | null) {
-		if (!files || !conversationId) return;
+		if (!files) return;
 		uploadingAttachment = true;
 		attachmentError = '';
 
 		try {
+			let targetConversationId = resolvedConversationId;
+			if (!targetConversationId && ensureConversation) {
+				targetConversationId = await ensureConversation();
+				resolvedConversationId = targetConversationId;
+			}
+			if (!targetConversationId) {
+				throw new Error('Unable to prepare a conversation for attachments.');
+			}
 			for (const file of Array.from(files)) {
 				const formData = new FormData();
 				formData.append('file', file);
-				formData.append('conversationId', conversationId);
+				formData.append('conversationId', targetConversationId);
 				const response = await fetch('/api/knowledge/upload', {
 					method: 'POST',
 					body: formData
@@ -199,8 +214,8 @@
 					type="button"
 					class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
 					on:click={openFilePicker}
-					disabled={!attachmentsEnabled || !conversationId || uploadingAttachment}
-					title={attachmentsEnabled ? 'Attach file' : 'File uploads are available in active chats'}
+					disabled={!canAttach}
+					title={attachmentsEnabled ? 'Attach file' : 'File uploads are unavailable'}
 					aria-label="Attach file"
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

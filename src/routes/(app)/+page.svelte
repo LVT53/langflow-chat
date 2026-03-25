@@ -16,6 +16,8 @@
 	let error: string | null = null;
 	let isFromChat = false;
 	let animateIn = false;
+	let preparedConversationId: string | null = null;
+	let preparedConversationPromise: Promise<string> | null = null;
 
 	onMount(() => {
 		// Check if we're arriving from a chat page (indicated by previous conversation ID being set)
@@ -34,7 +36,22 @@
 		}
 	});
 
-async function handleSend(event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: unknown[] }>) {
+	async function ensurePreparedConversation(): Promise<string> {
+		if (preparedConversationId) {
+			return preparedConversationId;
+		}
+		if (!preparedConversationPromise) {
+			preparedConversationPromise = createNewConversation().then((id) => {
+				preparedConversationId = id;
+				return id;
+			}).finally(() => {
+				preparedConversationPromise = null;
+			});
+		}
+		return preparedConversationPromise;
+	}
+
+async function handleSend(event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: unknown[]; conversationId: string | null }>) {
 		if (creating) return;
 		const text = event.detail.message;
 
@@ -43,12 +60,17 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 		error = null;
 
 		try {
-			// Start navigation immediately for better perceived performance
-			const idPromise = createNewConversation();
-			const id = await idPromise;
+			const id = event.detail.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
 			if (typeof window !== 'undefined') {
-				window.sessionStorage.setItem(`${PENDING_MESSAGE_PREFIX}${id}`, text.trim());
+				window.sessionStorage.setItem(
+					`${PENDING_MESSAGE_PREFIX}${id}`,
+					JSON.stringify({
+						message: text.trim(),
+						attachmentIds: event.detail.attachmentIds,
+						attachments: event.detail.attachments
+					})
+				);
 			}
 			await goto(`/chat/${id}`);
 		} catch {
@@ -97,7 +119,8 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 					disabled={creating}
 					maxLength={data.maxMessageLength}
 					conversationId={null}
-					attachmentsEnabled={false}
+					attachmentsEnabled={true}
+					ensureConversation={ensurePreparedConversation}
 				/>
 			</div>
 		</div>
