@@ -3,6 +3,7 @@ import { conversations, messages } from '$lib/server/db/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Conversation } from '$lib/types';
+import { isHonchoEnabled, getOrCreateSession } from './honcho';
 
 export async function createConversation(userId: string, title?: string): Promise<Conversation> {
 	const id = randomUUID();
@@ -14,6 +15,13 @@ export async function createConversation(userId: string, title?: string): Promis
 			title: title ?? 'New Conversation',
 		})
 		.returning();
+	// Pre-create Honcho session for this conversation
+	if (isHonchoEnabled()) {
+		getOrCreateSession(userId, id).catch((err) =>
+			console.error('[HONCHO] Create session failed:', err)
+		);
+	}
+
 	return {
 		id: conversation.id,
 		title: conversation.title,

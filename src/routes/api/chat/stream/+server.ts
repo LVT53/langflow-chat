@@ -5,6 +5,7 @@ import { sendMessageStream } from '$lib/server/services/langflow';
 import { getConfig } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage } from '$lib/server/services/messages';
+import { mirrorMessage } from '$lib/server/services/honcho';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -1024,6 +1025,17 @@ export const POST: RequestHandler = async (event) => {
 							generationTimeMs: genTimeMs,
 						}).catch(() => undefined);
 					}
+
+					// Fire-and-forget: mirror to Honcho for long-term memory reasoning
+					mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
+						console.error('[HONCHO] Mirror user message failed:', err)
+					);
+					if (fullResponse.trim()) {
+						mirrorMessage(user.id, conversationId, 'assistant', fullResponse).catch((err) =>
+							console.error('[HONCHO] Mirror assistant message failed:', err)
+						);
+					}
+
 					sendEndAndClose(userMsg?.id, assistantMsg?.id);
 				}).catch(() => {
 					sendEndAndClose();
@@ -1051,7 +1063,8 @@ export const POST: RequestHandler = async (event) => {
 				modelId
 			});
 			const langflowStream = await sendMessageStream(upstreamMessage, conversationId, modelId, {
-				signal: upstreamAbortController.signal
+				signal: upstreamAbortController.signal,
+				userId: user.id
 			});
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;

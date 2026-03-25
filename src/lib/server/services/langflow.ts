@@ -1,7 +1,9 @@
 // Langflow API client service
+import { randomUUID } from 'crypto';
 import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/types';
 import { getSystemPrompt } from '../prompts';
 import { getConfig } from '../config-store';
+import { buildEnhancedSystemPrompt } from './honcho';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -42,7 +44,8 @@ export function extractMessageText(response: LangflowRunResponse): string {
 export async function sendMessage(
   message: string,
   sessionId: string,
-  modelId?: ModelId
+  modelId?: ModelId,
+  userId?: string
 ): Promise<{ text: string; rawResponse: LangflowRunResponse }> {
   const config = getConfig();
   const controller = new AbortController();
@@ -54,6 +57,11 @@ export async function sendMessage(
     const url = `${config.langflowApiUrl}/api/v1/run/${flowId}`;
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
+
+    // Build system prompt with Honcho memory context if userId is available
+    const systemPrompt = userId
+      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, userId)
+      : getSystemPrompt(modelConfig.systemPrompt);
 
     console.log('[LANGFLOW] sendMessage request', {
       url,
@@ -69,12 +77,12 @@ export async function sendMessage(
       input_value: message,
       input_type: 'chat',
       output_type: 'chat',
-      session_id: sessionId,
+      // Fresh UUID prevents Langflow from accumulating unbounded history
+      session_id: randomUUID(),
       tweaks: {
-        // Pass model config to Langflow via tweaks
         model_name: modelName,
         api_base: baseUrl,
-        system_prompt: getSystemPrompt(modelConfig.systemPrompt)
+        system_prompt: systemPrompt
       }
     };
 
@@ -114,7 +122,7 @@ export async function sendMessageStream(
   message: string,
   sessionId: string,
   modelId?: ModelId,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; userId?: string }
 ): Promise<ReadableStream<Uint8Array>> {
   const config = getConfig();
   const timeoutController = new AbortController();
@@ -128,7 +136,11 @@ export async function sendMessageStream(
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
-    const systemPrompt = getSystemPrompt(modelConfig.systemPrompt);
+    // Build system prompt with Honcho memory context if userId is available
+    const systemPrompt = options?.userId
+      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, options.userId)
+      : getSystemPrompt(modelConfig.systemPrompt);
+
     console.log('[LANGFLOW] sendMessageStream request', {
       url,
       sessionId,
@@ -145,7 +157,8 @@ export async function sendMessageStream(
       input_value: message,
       input_type: 'chat',
       output_type: 'chat',
-      session_id: sessionId,
+      // Fresh UUID prevents Langflow from accumulating unbounded history
+      session_id: randomUUID(),
       tweaks: {
         model_name: modelName,
         api_base: baseUrl,

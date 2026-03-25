@@ -57,6 +57,23 @@
 	let adminMessage = '';
 	let adminError = '';
 
+	// --- Honcho memory state ---
+	let honchoHealth: { enabled: boolean; connected: boolean; workspace: string | null } | null = null;
+	let honchoLoading = false;
+
+	async function checkHonchoHealth() {
+		honchoLoading = true;
+		try {
+			const res = await fetch('/api/admin/honcho');
+			if (res.ok) {
+				honchoHealth = await res.json();
+			}
+		} catch {
+			honchoHealth = { enabled: false, connected: false, workspace: null };
+		}
+		honchoLoading = false;
+	}
+
 	if (isAdmin && (data as any).currentConfigValues) {
 		adminConfig = { ...(data as any).currentConfigValues };
 	}
@@ -856,6 +873,44 @@
 							/>
 						</div>
 					{/each}
+				</div>
+			</section>
+
+			<section class="settings-card mb-4">
+				<h2 class="settings-section-title">Honcho Memory</h2>
+				<div class="flex items-center justify-between mb-3">
+					<div>
+						<label class="settings-label mb-0" for="HONCHO_ENABLED">Enable Honcho</label>
+						<p class="text-xs text-text-tertiary">Cross-conversation long-term memory via Honcho</p>
+					</div>
+					<label class="relative inline-flex cursor-pointer items-center">
+						<input
+							id="HONCHO_ENABLED"
+							type="checkbox"
+							class="peer sr-only"
+							checked={adminConfig['HONCHO_ENABLED'] === 'true'}
+							on:change={(e) => { adminConfig['HONCHO_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
+						/>
+						<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
+					</label>
+				</div>
+				<div class="flex items-center gap-2 text-xs text-text-secondary">
+					<button
+						class="text-accent hover:underline"
+						on:click={checkHonchoHealth}
+						disabled={honchoLoading}
+					>
+						{honchoLoading ? 'Checking...' : 'Check Connection'}
+					</button>
+					{#if honchoHealth}
+						<span class="inline-flex items-center gap-1">
+							<span class="inline-block h-2 w-2 rounded-full {honchoHealth.connected ? 'bg-success' : 'bg-danger'}"></span>
+							{honchoHealth.connected ? 'Connected' : 'Disconnected'}
+							{#if honchoHealth.workspace}
+								<span class="text-text-tertiary">({honchoHealth.workspace})</span>
+							{/if}
+						</span>
+					{/if}
 				</div>
 			</section>
 

@@ -5,6 +5,7 @@ import { getConversation, touchConversation } from '$lib/server/services/convers
 import { sendMessage } from '$lib/server/services/langflow';
 import { getConfig } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
+import { mirrorMessage } from '$lib/server/services/honcho';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -58,7 +59,7 @@ export const POST: RequestHandler = async (event) => {
 				? await translateHungarianToEnglish(normalizedMessage)
 				: normalizedMessage;
 
-		const { text } = await sendMessage(upstreamMessage, conversationId, modelId);
+		const { text } = await sendMessage(upstreamMessage, conversationId, modelId, user.id);
 		const responseText =
 			sourceLanguage === 'hu' && isTranslationEnabled
 				? await translateEnglishToHungarian(text)
@@ -67,6 +68,14 @@ export const POST: RequestHandler = async (event) => {
 		await createMessage(conversationId, 'user', normalizedMessage);
 		await createMessage(conversationId, 'assistant', responseText);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
+
+		// Fire-and-forget: mirror to Honcho for long-term memory reasoning
+		mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
+			console.error('[HONCHO] Mirror user message failed:', err)
+		);
+		mirrorMessage(user.id, conversationId, 'assistant', text).catch((err) =>
+			console.error('[HONCHO] Mirror assistant message failed:', err)
+		);
 
 		return json({
 			response: { text: responseText },

@@ -23,6 +23,7 @@ export const ADMIN_CONFIG_KEYS = [
   'TRANSLATOR_MODEL',
   'TRANSLATION_MAX_TOKENS',
   'TRANSLATION_TEMPERATURE',
+  'HONCHO_ENABLED',
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -47,6 +48,10 @@ export interface RuntimeConfig {
   databasePath: string;
   model1: ModelConfig;
   model2: ModelConfig;
+  honchoApiKey: string;
+  honchoBaseUrl: string;
+  honchoWorkspace: string;
+  honchoEnabled: boolean;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -91,6 +96,7 @@ export async function refreshConfig(): Promise<void> {
     const v = parseFloat(overrides.TRANSLATION_TEMPERATURE);
     if (!isNaN(v)) base.translationTemperature = v;
   }
+  if (overrides.HONCHO_ENABLED !== undefined) base.honchoEnabled = overrides.HONCHO_ENABLED === 'true';
 
   runtimeConfig = base;
 }
@@ -119,5 +125,6 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     TRANSLATOR_MODEL: envConfig.translatorModel,
     TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
     TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
+    HONCHO_ENABLED: String(envConfig.honchoEnabled),
   };
 }

@@ -30,6 +30,10 @@ interface Config {
   databasePath: string;
   model1: ModelConfig;
   model2: ModelConfig;
+  honchoApiKey: string;
+  honchoBaseUrl: string;
+  honchoWorkspace: string;
+  honchoEnabled: boolean;
 }
 
 // Read and validate environment variables
@@ -84,7 +88,11 @@ const getConfig = (): Config => {
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
       systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
-    }
+    },
+    honchoApiKey: process.env.HONCHO_API_KEY || '',
+    honchoBaseUrl: process.env.HONCHO_BASE_URL || 'http://localhost:8000',
+    honchoWorkspace: process.env.HONCHO_WORKSPACE || 'alfyai-prod',
+    honchoEnabled: process.env.HONCHO_ENABLED === 'true',
   };
 };
 
