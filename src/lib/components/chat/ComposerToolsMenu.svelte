@@ -52,7 +52,7 @@
 </script>
 
 <div bind:this={root} class="tools-menu" role="menu" aria-label="Composer tools">
-	<div class="menu-row">
+	<div class="menu-row menu-row--static">
 		<div class="menu-label">Model</div>
 		<ModelSelector on:select={closeMenu} />
 	</div>
@@ -113,13 +113,17 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.65rem;
+		gap: 0.5rem;
 		border-radius: 0.72rem;
-		padding: 0.2rem;
+		padding: 0.08rem;
 	}
 
 	.menu-row + .menu-row {
-		margin-top: 0.15rem;
+		margin-top: 0.08rem;
+	}
+
+	.menu-row--static {
+		padding: 0.5rem 0.62rem;
 	}
 
 	.menu-row--button {
@@ -131,7 +135,7 @@
 		background: transparent;
 		text-align: left;
 		cursor: pointer;
-		padding: 0.62rem 0.75rem;
+		padding: 0.5rem 0.62rem;
 		transition:
 			background-color var(--duration-standard) var(--ease-out),
 			color var(--duration-standard) var(--ease-out);
@@ -152,6 +156,11 @@
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 0.88rem;
 		color: var(--text-primary);
+	}
+
+	.menu-row :global(.model-selector__trigger) {
+		min-height: 32px;
+		padding: 0.35rem 0.55rem;
 	}
 
 	.menu-icon {

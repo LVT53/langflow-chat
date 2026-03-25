@@ -74,7 +74,7 @@
 	<button
 		type="button"
 		class={`ring-button ${toneClass}`}
-		aria-label={contextStatus ? `Context usage ${percent}%` : 'No context yet'}
+		aria-label={contextStatus ? `Context usage ${percent}% (${contextStatus.estimatedTokens.toLocaleString()} tokens)` : 'No context yet'}
 		aria-expanded={isOpen}
 		on:click={handleClick}
 	>
@@ -211,10 +211,11 @@
 	.ring-value {
 		position: absolute;
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 600;
 		line-height: 1;
 		color: var(--text-primary);
+		text-transform: lowercase;
 	}
 
 	.ring-popover {
