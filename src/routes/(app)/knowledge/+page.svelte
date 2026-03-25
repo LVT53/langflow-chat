@@ -79,19 +79,19 @@
 							Knowledge Base
 						</h1>
 						<p class="max-w-[720px] text-sm font-sans leading-[1.5] text-text-secondary">
-							Persistent documents, saved results, workflow capsules, and a live Honcho memory view of what the system currently knows about you.
+							Persistent documents, saved results, workflow capsules, and a live memory view of what the system currently knows about you.
 						</p>
 					</div>
 					<div class="grid grid-cols-3 gap-2 text-left md:min-w-[320px]">
-						<div class="rounded-[1.1rem] border border-border bg-surface-page px-3 py-3">
+						<div class="rounded-[1.2rem] border border-border bg-surface-page px-3 py-3">
 							<div class="text-[0.65rem] font-sans uppercase tracking-[0.12em] text-text-muted">Docs</div>
 							<div class="mt-2 text-xl font-serif text-text-primary">{documents.length}</div>
 						</div>
-						<div class="rounded-[1.1rem] border border-border bg-surface-page px-3 py-3">
+						<div class="rounded-[1.2rem] border border-border bg-surface-page px-3 py-3">
 							<div class="text-[0.65rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
 							<div class="mt-2 text-xl font-serif text-text-primary">{results.length}</div>
 						</div>
-						<div class="rounded-[1.1rem] border border-border bg-surface-page px-3 py-3">
+						<div class="rounded-[1.2rem] border border-border bg-surface-page px-3 py-3">
 							<div class="text-[0.65rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
 							<div class="mt-2 text-xl font-serif text-text-primary">{workflows.length}</div>
 						</div>
@@ -121,7 +121,7 @@
 						on:click={() => (activeTab = 'memory')}
 						aria-pressed={activeTab === 'memory'}
 					>
-						Honcho Memory
+						Memory Profile
 					</button>
 				</div>
 			</div>
@@ -150,7 +150,7 @@
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0 flex-1">
 										<div class="text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
-										<div class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">{artifact.type}</div>
+										<div class="text-xs uppercase tracking-[0.08em] text-text-muted">{artifact.type}</div>
 									</div>
 									<div class="flex items-start gap-2">
 										{#if artifact.sizeBytes}
@@ -197,23 +197,27 @@
 						{#each results as artifact (artifact.id)}
 							<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
 								<div class="flex items-start justify-between gap-3">
-									<div class="min-w-0 flex-1 text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
-									<button
-										type="button"
-										class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
-										on:click={() => removeArtifact(artifact.id, artifact.name)}
-										disabled={isDeletingArtifact(artifact.id)}
-										aria-label={`Remove ${artifact.name}`}
-										title="Remove"
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<path d="M3 6h18" />
-											<path d="M8 6V4h8v2" />
-											<path d="M19 6l-1 14H6L5 6" />
-											<path d="M10 11v6" />
-											<path d="M14 11v6" />
-										</svg>
-									</button>
+									<div class="min-w-0 flex-1">
+										<div class="text-sm font-sans font-medium text-text-primary">{artifact.name}</div>
+									</div>
+									<div class="flex items-start gap-2">
+										<button
+											type="button"
+											class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+											on:click={() => removeArtifact(artifact.id, artifact.name)}
+											disabled={isDeletingArtifact(artifact.id)}
+											aria-label={`Remove ${artifact.name}`}
+											title="Remove"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M3 6h18" />
+												<path d="M8 6V4h8v2" />
+												<path d="M19 6l-1 14H6L5 6" />
+												<path d="M10 11v6" />
+												<path d="M14 11v6" />
+											</svg>
+										</button>
+									</div>
 								</div>
 								{#if artifact.summary}
 									<p class="mt-3 text-sm font-serif leading-[1.45] text-text-secondary">{artifact.summary}</p>
@@ -229,7 +233,7 @@
 					<h2 class="text-lg font-sans font-semibold text-text-primary">Workflows</h2>
 					<span class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">{workflows.length}</span>
 				</div>
-				<div class="mt-4 space-y-3">
+				<div class="mt-4 grid gap-3 md:grid-cols-2">
 					{#if workflows.length === 0}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
 							No workflow capsules yet.
@@ -237,14 +241,14 @@
 					{:else}
 						{#each workflows as capsule (capsule.artifact.id)}
 							<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
-								<div class="flex flex-wrap items-center justify-between gap-2">
+								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0 flex-1">
 										<div class="text-sm font-sans font-medium text-text-primary">{capsule.artifact.name}</div>
 										{#if capsule.taskSummary}
 											<p class="mt-2 text-sm font-serif leading-[1.45] text-text-secondary">{capsule.taskSummary}</p>
 										{/if}
 									</div>
-									<div class="flex items-center gap-2">
+									<div class="flex items-start gap-2">
 										<div class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 											{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
 										</div>
@@ -289,14 +293,14 @@
 					<div class="rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
 						<div class="flex flex-wrap items-center gap-2">
 							<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								Honcho user memory
+								Memory Profile
 							</span>
 							<span class="rounded-full border border-border px-3 py-1 text-[0.7rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 								{honchoEnabled ? 'Live' : 'Unavailable'}
 							</span>
 						</div>
 						<h2 class="mt-4 text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
-							What Honcho currently knows about you
+							Memory Overview
 						</h2>
 						{#if honchoOverview}
 							<p class="mt-4 text-base font-serif leading-[1.65] text-text-secondary">
@@ -304,11 +308,11 @@
 							</p>
 						{:else if honchoEnabled}
 							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Honcho memory is enabled, but there is not enough durable user memory yet to render a useful summary.
+								Memory Profile is enabled, but there is not enough durable user memory yet to render a useful summary.
 							</p>
 						{:else}
 							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Honcho is disabled in this deployment, so the live memory overview is not available.
+								Memory Profile is disabled in this deployment, so the live memory overview is not available.
 							</p>
 						{/if}
 					</div>
@@ -346,7 +350,7 @@
 						{/each}
 					{:else}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted md:col-span-2">
-							As you work across conversations, this tab will surface a clearer Honcho-generated picture of your preferences, context, and recurring patterns.
+							As you work across conversations, this tab will surface a clearer system-generated picture of your preferences, context, and recurring patterns.
 						</div>
 					{/if}
 				</div>
