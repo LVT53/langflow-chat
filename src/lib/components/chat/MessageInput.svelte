@@ -152,7 +152,9 @@
 				}
 				const payload = await response.json();
 				if (payload?.artifact) {
-					pendingAttachments = [...pendingAttachments, payload.artifact];
+					const next = new Map(pendingAttachments.map((attachment) => [attachment.id, attachment]));
+					next.set(payload.artifact.id, payload.artifact);
+					pendingAttachments = Array.from(next.values());
 				}
 			}
 		} catch (error) {

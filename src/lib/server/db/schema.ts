@@ -58,6 +58,7 @@ export const artifacts = sqliteTable('artifacts', {
   mimeType: text('mime_type'),
   extension: text('extension'),
   sizeBytes: integer('size_bytes'),
+  binaryHash: text('binary_hash'),
   storagePath: text('storage_path'),
   contentText: text('content_text'),
   summary: text('summary'),

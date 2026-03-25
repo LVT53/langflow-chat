@@ -29,6 +29,7 @@ const migrations: string[] = [
 		mime_type TEXT,
 		extension TEXT,
 		size_bytes INTEGER,
+		binary_hash TEXT,
 		storage_path TEXT,
 		content_text TEXT,
 		summary TEXT,
@@ -36,6 +37,9 @@ const migrations: string[] = [
 		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`ALTER TABLE artifacts ADD COLUMN binary_hash TEXT`,
+	`CREATE INDEX IF NOT EXISTS artifacts_user_binary_hash_idx ON artifacts(user_id, binary_hash)`,
+	`CREATE INDEX IF NOT EXISTS artifacts_user_size_idx ON artifacts(user_id, size_bytes)`,
 	`CREATE TABLE IF NOT EXISTS artifact_links (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -1,8 +1,9 @@
-import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { createHash, randomUUID } from 'crypto';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { basename, extname, join } from 'path';
 import {
 	and,
+	asc,
 	desc,
 	eq,
 	inArray,
@@ -166,6 +167,10 @@ function safeStem(name: string): string {
 	return stem.length > 0 ? stem : 'artifact';
 }
 
+function hashBinaryBuffer(buffer: Buffer): string {
+	return createHash('sha256').update(buffer).digest('hex');
+}
+
 async function createArtifact(params: {
 	id?: string;
 	userId: string;
@@ -175,6 +180,7 @@ async function createArtifact(params: {
 	mimeType?: string | null;
 	extension?: string | null;
 	sizeBytes?: number | null;
+	binaryHash?: string | null;
 	storagePath?: string | null;
 	contentText?: string | null;
 	summary?: string | null;
@@ -192,6 +198,7 @@ async function createArtifact(params: {
 			mimeType: params.mimeType ?? null,
 			extension: params.extension ?? null,
 			sizeBytes: params.sizeBytes ?? null,
+			binaryHash: params.binaryHash ?? null,
 			storagePath: params.storagePath ?? null,
 			contentText: params.contentText ?? null,
 			summary: params.summary ?? null,
@@ -201,6 +208,132 @@ async function createArtifact(params: {
 		.returning();
 
 	return mapArtifact(artifact);
+}
+
+async function updateArtifactBinaryHash(artifactId: string, binaryHash: string): Promise<void> {
+	await db
+		.update(artifacts)
+		.set({
+			binaryHash,
+			updatedAt: new Date(),
+		})
+		.where(eq(artifacts.id, artifactId));
+}
+
+async function getNormalizedArtifactForSource(
+	userId: string,
+	sourceArtifactId: string
+): Promise<Artifact | null> {
+	const rows = await db
+		.select({ artifact: artifacts })
+		.from(artifactLinks)
+		.innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+		.where(
+			and(
+				eq(artifactLinks.userId, userId),
+				eq(artifactLinks.relatedArtifactId, sourceArtifactId),
+				eq(artifactLinks.linkType, 'derived_from'),
+				eq(artifacts.type, 'normalized_document')
+			)
+		)
+		.orderBy(asc(artifactLinks.createdAt))
+		.limit(1);
+
+	return rows[0] ? mapArtifact(rows[0].artifact) : null;
+}
+
+async function ensureConversationAttachmentLink(params: {
+	userId: string;
+	artifactId: string;
+	conversationId: string;
+}): Promise<void> {
+	const existing = await db
+		.select({ id: artifactLinks.id })
+		.from(artifactLinks)
+		.where(
+			and(
+				eq(artifactLinks.userId, params.userId),
+				eq(artifactLinks.artifactId, params.artifactId),
+				eq(artifactLinks.conversationId, params.conversationId),
+				eq(artifactLinks.linkType, 'attached_to_conversation'),
+				isNull(artifactLinks.messageId)
+			)
+		)
+		.limit(1);
+
+	if (existing[0]) return;
+
+	await createArtifactLink({
+		userId: params.userId,
+		artifactId: params.artifactId,
+		linkType: 'attached_to_conversation',
+		conversationId: params.conversationId,
+	});
+}
+
+async function findDuplicateUploadedArtifact(params: {
+	userId: string;
+	binaryHash: string;
+	sizeBytes: number;
+}): Promise<{ artifact: Artifact; normalizedArtifact: Artifact | null } | null> {
+	const exactRows = await db
+		.select()
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.userId, params.userId),
+				eq(artifacts.type, 'source_document'),
+				eq(artifacts.binaryHash, params.binaryHash)
+			)
+		)
+		.orderBy(asc(artifacts.createdAt))
+		.limit(1);
+
+	if (exactRows[0]) {
+		return {
+			artifact: mapArtifact(exactRows[0]),
+			normalizedArtifact: await getNormalizedArtifactForSource(params.userId, exactRows[0].id),
+		};
+	}
+
+	const legacyCandidates = await db
+		.select()
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.userId, params.userId),
+				eq(artifacts.type, 'source_document'),
+				isNull(artifacts.binaryHash),
+				eq(artifacts.sizeBytes, params.sizeBytes)
+			)
+		)
+		.orderBy(asc(artifacts.createdAt))
+		.limit(24);
+
+	for (const candidate of legacyCandidates) {
+		if (!candidate.storagePath) continue;
+		try {
+			const buffer = await readFile(join(process.cwd(), candidate.storagePath));
+			const candidateHash = hashBinaryBuffer(buffer);
+			await updateArtifactBinaryHash(candidate.id, candidateHash);
+			if (candidateHash === params.binaryHash) {
+				return {
+					artifact: mapArtifact({
+						...candidate,
+						binaryHash: candidateHash,
+					}),
+					normalizedArtifact: await getNormalizedArtifactForSource(params.userId, candidate.id),
+				};
+			}
+		} catch (error) {
+			console.error('[KNOWLEDGE] Failed to hydrate artifact hash for dedupe:', {
+				artifactId: candidate.id,
+				error,
+			});
+		}
+	}
+
+	return null;
 }
 
 export async function createArtifactLink(params: {
@@ -262,16 +395,38 @@ export async function saveUploadedArtifact(params: {
 	userId: string;
 	conversationId: string;
 	file: File;
-}): Promise<Artifact> {
-	const artifactId = randomUUID();
+}): Promise<{ artifact: Artifact; reusedExistingArtifact: boolean; normalizedArtifact: Artifact | null }> {
 	const extension = fileExtension(params.file.name);
 	const userDir = knowledgeUserDir(params.userId);
+	const buffer = Buffer.from(await params.file.arrayBuffer());
+	const binaryHash = hashBinaryBuffer(buffer);
+
+	const duplicate = await findDuplicateUploadedArtifact({
+		userId: params.userId,
+		binaryHash,
+		sizeBytes: params.file.size,
+	});
+
+	if (duplicate) {
+		await ensureConversationAttachmentLink({
+			userId: params.userId,
+			artifactId: duplicate.artifact.id,
+			conversationId: params.conversationId,
+		});
+
+		return {
+			artifact: duplicate.artifact,
+			reusedExistingArtifact: true,
+			normalizedArtifact: duplicate.normalizedArtifact,
+		};
+	}
+
+	const artifactId = randomUUID();
 	await mkdir(userDir, { recursive: true });
 
 	const fileName = extension ? `${artifactId}.${extension}` : artifactId;
 	const storagePath = join('data', 'knowledge', params.userId, fileName);
 	const absolutePath = join(process.cwd(), storagePath);
-	const buffer = Buffer.from(await params.file.arrayBuffer());
 	await writeFile(absolutePath, buffer);
 
 	const artifact = await createArtifact({
@@ -283,6 +438,7 @@ export async function saveUploadedArtifact(params: {
 		mimeType: params.file.type || null,
 		extension,
 		sizeBytes: params.file.size,
+		binaryHash,
 		storagePath,
 		summary: params.file.name,
 		metadata: {
@@ -290,14 +446,17 @@ export async function saveUploadedArtifact(params: {
 		},
 	});
 
-	await createArtifactLink({
+	await ensureConversationAttachmentLink({
 		userId: params.userId,
 		artifactId: artifact.id,
-		linkType: 'attached_to_conversation',
 		conversationId: params.conversationId,
 	});
 
-	return artifact;
+	return {
+		artifact,
+		reusedExistingArtifact: false,
+		normalizedArtifact: null,
+	};
 }
 
 export async function createNormalizedArtifact(params: {
@@ -530,7 +689,8 @@ export async function attachArtifactsToMessage(params: {
 	messageId: string;
 	artifactIds: string[];
 }): Promise<void> {
-	if (params.artifactIds.length === 0) return;
+	const uniqueArtifactIds = Array.from(new Set(params.artifactIds));
+	if (uniqueArtifactIds.length === 0) return;
 
 	const ownedArtifacts = await db
 		.select()
@@ -538,7 +698,7 @@ export async function attachArtifactsToMessage(params: {
 		.where(
 			and(
 				eq(artifacts.userId, params.userId),
-				inArray(artifacts.id, params.artifactIds)
+				inArray(artifacts.id, uniqueArtifactIds)
 			)
 		);
 

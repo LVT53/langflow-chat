@@ -49,13 +49,14 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'File too large. Maximum size is 25MB.' }, { status: 400 });
 	}
 
-	const artifact = await saveUploadedArtifact({
+	const uploadResult = await saveUploadedArtifact({
 		userId: user.id,
 		conversationId,
 		file,
 	});
+	const artifact = uploadResult.artifact;
 
-	let normalizedArtifact = null;
+	let normalizedArtifact = uploadResult.normalizedArtifact;
 	let syncResult = await syncArtifactToHoncho({
 		userId: user.id,
 		conversationId,
@@ -84,6 +85,7 @@ export const POST: RequestHandler = async (event) => {
 	return json({
 		artifact,
 		normalizedArtifact,
+		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
 		honcho: syncResult,
 	});
 };
