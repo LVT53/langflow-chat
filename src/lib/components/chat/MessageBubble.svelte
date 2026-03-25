@@ -264,7 +264,7 @@
 				<!-- Regenerate button -->
 				<button
 					type="button"
-					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 					on:click={() => dispatch('regenerate', { messageId: message.id })}
 					title="Regenerate response"
 					aria-label="Regenerate response"
@@ -296,7 +296,7 @@
 				<!-- Edit button -->
 				<button
 					type="button"
-					class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 					on:click={startEdit}
 					title="Edit message"
 					aria-label="Edit message"
@@ -310,7 +310,7 @@
 
 			<button
 				type="button"
-				class="btn-icon-bare sm:!min-h-[36px] sm:!min-w-[36px]"
+				class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 				on:click={copyToClipboard}
 				title="Copy message"
 				aria-label="Copy message"

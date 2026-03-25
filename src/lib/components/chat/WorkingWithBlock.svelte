@@ -24,6 +24,7 @@
 
 <div
 	class="rounded-[1rem] border border-border bg-surface-elevated/70 px-4 py-3 text-xs font-sans text-text-secondary shadow-sm"
+	aria-label="Working with documents"
 >
 	<div class="flex flex-wrap items-center gap-2">
 		<span class="text-[0.7rem] uppercase tracking-[0.1em] text-text-muted">Working with</span>

@@ -11,7 +11,7 @@
 	let { contextStatus }: Props = $props();
 </script>
 
-<div class="rounded-[1.2rem] border border-border bg-surface-elevated/80 px-4 py-3">
+<div class="rounded-[1.2rem] border border-border bg-surface-elevated/80 px-4 py-3" role="status" aria-live="polite" aria-label="Context status">
 	<div class="flex flex-wrap items-center justify-between gap-2">
 		<span class="text-sm font-sans text-text-muted">
 			{contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.maxContextTokens.toLocaleString()} tokens
