@@ -24,7 +24,24 @@ export const POST: RequestHandler = async (event) => {
   let formData: FormData;
   try {
     formData = await event.request.formData();
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const contentLength = event.request.headers.get('content-length');
+    console.error('[AVATAR] Failed to parse multipart upload:', {
+      userId,
+      contentLength,
+      message,
+    });
+
+    if (message.toLowerCase().includes('request body size exceeded')) {
+      return json(
+        {
+          error: 'Upload exceeded the server request size limit.',
+        },
+        { status: 413 }
+      );
+    }
+
     return json({ error: 'Invalid form data' }, { status: 400 });
   }
 

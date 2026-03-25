@@ -36,6 +36,15 @@ Set the usual application secrets plus the Honcho and Langflow configuration:
 - `HONCHO_WORKSPACE`
 - optional `HONCHO_API_KEY` for authenticated deployments
 
+## Upload Body Size
+
+Adapter-node defaults request bodies to `512K`, which is too small for document uploads. This project now patches the production build so `npm run build` produces a server with a default `BODY_SIZE_LIMIT` of `32M`.
+
+You can still override that explicitly in deployment:
+
+- `BODY_SIZE_LIMIT=32M` or higher if you want more headroom
+- keep it above the app-level 25MB knowledge-upload limit so multipart overhead does not cause false failures
+
 ## Deploy Flow
 
 ```sh

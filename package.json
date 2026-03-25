@@ -1,7 +1,7 @@
 {
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && node scripts/patch-body-size-limit.mjs",
 		"preview": "vite preview",
 		"test": "vitest run",
 		"test:watch": "vitest",
