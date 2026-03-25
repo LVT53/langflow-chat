@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { messages, messageAnalytics } from '$lib/server/db/schema';
-import type { ChatMessage, MessageRole, ThinkingSegment, ModelId } from '$lib/types';
+import type { ChatMessage, MessageEvidenceSummary, MessageRole, ThinkingSegment } from '$lib/types';
 import { getConfig } from '$lib/server/config-store';
 import { listMessageAttachments } from './knowledge';
 
@@ -33,6 +33,18 @@ function mapRowToChatMessage(
 		}
 	}
 
+	let evidenceSummary: MessageEvidenceSummary | undefined;
+	if (row.metadataJson) {
+		try {
+			const parsed = JSON.parse(row.metadataJson) as { evidenceSummary?: MessageEvidenceSummary };
+			if (parsed?.evidenceSummary && Array.isArray(parsed.evidenceSummary.groups)) {
+				evidenceSummary = parsed.evidenceSummary;
+			}
+		} catch {
+			// Ignore malformed metadata and fall back to the core message payload.
+		}
+	}
+
 	return {
 		id: row.id,
 		role: row.role as MessageRole,
@@ -40,7 +52,8 @@ function mapRowToChatMessage(
 		thinking: row.thinking ?? undefined,
 		thinkingSegments,
 		timestamp: row.createdAt.getTime(),
-		modelDisplayName: getModelDisplayName(modelId)
+		modelDisplayName: getModelDisplayName(modelId),
+		evidenceSummary,
 	};
 }
 
@@ -74,7 +87,8 @@ export async function createMessage(
 	role: MessageRole,
 	content: string,
 	thinking?: string,
-	thinkingSegments?: ThinkingSegment[]
+	thinkingSegments?: ThinkingSegment[],
+	metadata?: { evidenceSummary?: MessageEvidenceSummary | null }
 ): Promise<ChatMessage> {
 	const [message] = await db
 		.insert(messages)
@@ -86,7 +100,8 @@ export async function createMessage(
 			thinking: thinking ?? null,
 			toolCalls: thinkingSegments && thinkingSegments.length > 0
 				? JSON.stringify(thinkingSegments)
-				: null
+				: null,
+			metadataJson: metadata ? JSON.stringify(metadata) : null,
 		})
 		.returning();
 

@@ -5,7 +5,13 @@ import { sendMessageStream } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage } from '$lib/server/services/messages';
-import { mirrorMessage, mirrorWorkCapsuleConclusion } from '$lib/server/services/honcho';
+import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
+import {
+	capturePersonaMemorySnapshot,
+	mirrorMessage,
+	mirrorWorkCapsuleConclusion,
+	syncConversationPersonaMemoryAttributions,
+} from '$lib/server/services/honcho';
 import {
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
@@ -33,7 +39,12 @@ const TOOL_CALL_END_RE = /\x02TOOL_END\x1f([^\x03]*)\x03/g;
 
 function processToolCallMarkers(
 	chunk: string,
-	emit: (name: string, input: Record<string, unknown>, status: 'running' | 'done') => void
+	emit: (
+		name: string,
+		input: Record<string, unknown>,
+		status: 'running' | 'done',
+		details?: StreamToolCallDetails
+	) => void
 ): string {
 	// Debug: log any chunk that contains STX or the marker text
 	if (chunk.includes('\x02') || chunk.includes('TOOL_START') || chunk.includes('TOOL_END')) {
@@ -45,7 +56,7 @@ function processToolCallMarkers(
 	result = result.replace(TOOL_CALL_START_RE, (_, payload) => {
 		console.log('[TOOL_MARKER] TOOL_START matched, payload:', payload.slice(0, 200));
 		try {
-			const parsed = JSON.parse(payload) as { name?: string; input?: Record<string, unknown> };
+			const parsed = JSON.parse(payload) as StreamToolCallPayload;
 			emit(parsed.name ?? 'tool', parsed.input ?? {}, 'running');
 		} catch {
 			emit('tool', {}, 'running');
@@ -56,8 +67,18 @@ function processToolCallMarkers(
 	result = result.replace(TOOL_CALL_END_RE, (_, payload) => {
 		console.log('[TOOL_MARKER] TOOL_END matched, payload:', payload.slice(0, 200));
 		try {
-			const parsed = JSON.parse(payload) as { name?: string };
-			emit(parsed.name ?? 'tool', {}, 'done');
+			const parsed = JSON.parse(payload) as StreamToolCallPayload;
+			emit(parsed.name ?? 'tool', {}, 'done', {
+				outputSummary: typeof parsed.outputSummary === 'string' ? parsed.outputSummary : null,
+				sourceType:
+					parsed.sourceType === 'web' ||
+					parsed.sourceType === 'tool' ||
+					parsed.sourceType === 'document' ||
+					parsed.sourceType === 'memory'
+						? parsed.sourceType
+						: null,
+				candidates: normalizeToolCandidates(parsed.candidates),
+			});
 		} catch {
 			emit('tool', {}, 'done');
 		}
@@ -82,11 +103,65 @@ type UpstreamEvent = {
 	data: unknown;
 };
 
+type StreamToolCallCandidate = {
+	id: string;
+	title: string;
+	url?: string | null;
+	snippet?: string | null;
+	sourceType?: 'web' | 'tool' | 'document' | 'memory' | null;
+};
+
+type StreamToolCallDetails = {
+	outputSummary?: string | null;
+	sourceType?: 'web' | 'tool' | 'document' | 'memory' | null;
+	candidates?: StreamToolCallCandidate[];
+};
+
+type StreamToolCallPayload = {
+	name?: string;
+	input?: Record<string, unknown>;
+	outputSummary?: string;
+	sourceType?: string;
+	candidates?: unknown;
+};
+
 const FRIENDLY_STREAM_ERRORS: Record<StreamErrorCode, string> = {
 	timeout: 'The response is taking too long. Please try again.',
 	network: 'We could not reach the chat service. Check your connection and try again.',
 	backend_failure: 'We hit a temporary issue generating a response. Please try again.'
 };
+
+function normalizeToolCandidates(value: unknown): StreamToolCallCandidate[] {
+	if (!Array.isArray(value)) return [];
+
+	return value
+		.map((candidate, index) => {
+			if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+			const record = candidate as Record<string, unknown>;
+			const id = typeof record.id === 'string' && record.id.trim() ? record.id : `candidate-${index}`;
+			const title =
+				typeof record.title === 'string' && record.title.trim()
+					? record.title.trim()
+					: typeof record.url === 'string'
+						? record.url
+						: null;
+			if (!title) return null;
+			return {
+				id,
+				title,
+				url: typeof record.url === 'string' ? record.url : null,
+				snippet: typeof record.snippet === 'string' ? record.snippet : null,
+				sourceType:
+					record.sourceType === 'web' ||
+					record.sourceType === 'tool' ||
+					record.sourceType === 'document' ||
+					record.sourceType === 'memory'
+						? record.sourceType
+						: null,
+			};
+		})
+		.filter((candidate): candidate is StreamToolCallCandidate => Boolean(candidate));
+}
 
 function classifyStreamError(rawMessage: string): StreamErrorCode {
 	const message = rawMessage.toLowerCase();
@@ -606,6 +681,9 @@ export const POST: RequestHandler = async (event) => {
 	const normalizedMessage = message.trim();
 	const sourceLanguage = detectLanguage(normalizedMessage);
 	const isTranslationEnabled = user.translationEnabled;
+	const personaMemorySnapshotPromise = capturePersonaMemorySnapshot(user.id).catch(
+		() => undefined
+	);
 
 	let upstreamMessage = normalizedMessage;
 	try {
@@ -680,7 +758,15 @@ export const POST: RequestHandler = async (event) => {
 			// client builds in thinkingSegments so the expanded view is identical on reload.
 			type ServerSegment =
 				| { type: 'text'; content: string }
-				| { type: 'tool_call'; name: string; input: Record<string, unknown>; status: 'running' | 'done' };
+				| {
+						type: 'tool_call';
+						name: string;
+						input: Record<string, unknown>;
+						status: 'running' | 'done';
+						outputSummary?: string | null;
+						sourceType?: 'web' | 'tool' | 'document' | 'memory' | null;
+						candidates?: StreamToolCallCandidate[];
+				  };
 			const serverSegments: ServerSegment[] = [];
 
 			// Batch thinking chunks before emitting to the client.
@@ -724,19 +810,50 @@ export const POST: RequestHandler = async (event) => {
 				return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
 			};
 
-			const emitToolCallEvent = (name: string, input: Record<string, unknown>, status: 'running' | 'done') => {
+			const emitToolCallEvent = (
+				name: string,
+				input: Record<string, unknown>,
+				status: 'running' | 'done',
+				details?: StreamToolCallDetails
+			) => {
 				// Flush any buffered thinking text before the tool call marker so the
 				// UI always shows accumulated thinking before the tool call entry.
 				flushPendingThinking();
-				enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({ name, input, status })}\n\n`);
+				enqueueChunk(
+					`event: tool_call\ndata: ${JSON.stringify({
+						name,
+						input,
+						status,
+						outputSummary: details?.outputSummary,
+						sourceType: details?.sourceType,
+						candidates: details?.candidates,
+					})}\n\n`
+				);
 				// Mirror client onToolCall: insert running entry or flip last matching entry to done
 				if (status === 'running') {
 					serverSegments.push({ type: 'tool_call', name, input, status: 'running' });
+					toolCallRecords.push({ name, input, status: 'running' });
 				} else {
 					for (let i = serverSegments.length - 1; i >= 0; i--) {
 						const s = serverSegments[i];
 						if (s.type === 'tool_call' && s.name === name && s.status === 'running') {
 							s.status = 'done';
+							s.outputSummary = details?.outputSummary ?? null;
+							s.sourceType = details?.sourceType ?? null;
+							s.candidates = details?.candidates;
+							break;
+						}
+					}
+					for (let i = toolCallRecords.length - 1; i >= 0; i--) {
+						const toolRecord = toolCallRecords[i];
+						if (toolRecord.name === name && toolRecord.status === 'running') {
+							toolCallRecords[i] = {
+								...toolRecord,
+								status: 'done',
+								outputSummary: details?.outputSummary ?? null,
+								sourceType: details?.sourceType ?? null,
+								candidates: details?.candidates,
+							};
 							break;
 						}
 					}
@@ -1020,6 +1137,18 @@ export const POST: RequestHandler = async (event) => {
 				| import('$lib/types').ContextDebugState
 				| null
 				| undefined;
+			let initialContextStatus:
+				| import('$lib/types').ConversationContextStatus
+				| undefined;
+			let initialTaskState:
+				| import('$lib/types').TaskState
+				| null
+				| undefined;
+			let initialContextDebug:
+				| import('$lib/types').ContextDebugState
+				| null
+				| undefined;
+			const toolCallRecords: import('$lib/types').ToolCallEntry[] = [];
 
 			const completeSuccess = (wasStopped = false) => {
 				if (ended) return; // Do not check `closed` — client may have disconnected but we still persist to DB
@@ -1042,15 +1171,44 @@ export const POST: RequestHandler = async (event) => {
 				const genTimeMs = Date.now() - requestStartTime;
 				const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
 				const persistUserMessage = skipPersistUserMessage !== true;
+				const messageEvidencePromise = buildAssistantEvidenceSummary({
+					message: normalizedMessage,
+					taskState: initialTaskState ?? latestTaskState ?? null,
+					contextStatus: initialContextStatus ?? latestContextStatus ?? null,
+					contextDebug: initialContextDebug ?? latestContextDebug ?? null,
+					toolCalls: toolCallRecords.filter((tool) => tool.status === 'done'),
+				}).catch((error) => {
+					console.error('[STREAM] Failed to build assistant evidence summary:', error);
+					return null;
+				});
 
 				const userMsgPromise = persistUserMessage
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
 					: Promise.resolve(undefined);
 				const assistantMsgPromise = fullResponse.trim()
-					? createMessage(conversationId, 'assistant', fullResponse, thinkingContent || undefined, serverSegments.length > 0 ? serverSegments : undefined).catch(() => undefined)
+					? messageEvidencePromise.then((messageEvidence) =>
+							(messageEvidence
+								? createMessage(
+										conversationId,
+										'assistant',
+										fullResponse,
+										thinkingContent || undefined,
+										serverSegments.length > 0 ? serverSegments : undefined,
+										{ evidenceSummary: messageEvidence }
+									)
+								: createMessage(
+										conversationId,
+										'assistant',
+										fullResponse,
+										thinkingContent || undefined,
+										serverSegments.length > 0 ? serverSegments : undefined
+									)
+							).catch(() => undefined)
+						)
 					: Promise.resolve(undefined);
 
-				const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {
+				const sendEndAndClose = async (userMsgId?: string, assistantMsgId?: string) => {
+					const messageEvidence = await messageEvidencePromise;
 					enqueueChunk(
 						`event: end\ndata: ${JSON.stringify({
 							thinkingTokenCount,
@@ -1064,7 +1222,8 @@ export const POST: RequestHandler = async (event) => {
 							contextStatus: latestContextStatus,
 							activeWorkingSet: latestActiveWorkingSet,
 							taskState: latestTaskState,
-							contextDebug: latestContextDebug
+							contextDebug: latestContextDebug,
+							messageEvidence,
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1146,21 +1305,37 @@ export const POST: RequestHandler = async (event) => {
 						);
 					}
 
-					// Fire-and-forget: mirror to Honcho for long-term memory reasoning
-					mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
-						console.error('[HONCHO] Mirror user message failed:', err)
-					);
+					const honchoTasks: Promise<unknown>[] = [
+						mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
+							console.error('[HONCHO] Mirror user message failed:', err)
+						),
+					];
 					if (fullResponse.trim()) {
-						mirrorMessage(user.id, conversationId, 'assistant', fullResponse).catch((err) =>
-							console.error('[HONCHO] Mirror assistant message failed:', err)
+						honchoTasks.push(
+							mirrorMessage(user.id, conversationId, 'assistant', fullResponse).catch((err) =>
+								console.error('[HONCHO] Mirror assistant message failed:', err)
+							)
 						);
 					}
 
 					Promise.allSettled(postPersistTasks).finally(() => {
-						sendEndAndClose(userMsg?.id, assistantMsg?.id);
+						void Promise.allSettled(honchoTasks)
+							.then(async () =>
+								syncConversationPersonaMemoryAttributions({
+									userId: user.id,
+									conversationId,
+									beforeIds: await personaMemorySnapshotPromise,
+									attempts: 3,
+									delayMs: 300,
+								})
+							)
+							.catch((err) =>
+								console.error('[HONCHO] Persona memory attribution sync failed:', err)
+							);
+						void sendEndAndClose(userMsg?.id, assistantMsg?.id);
 					});
 				}).catch(() => {
-					sendEndAndClose();
+					void sendEndAndClose();
 				});
 			};
 
@@ -1196,14 +1371,17 @@ export const POST: RequestHandler = async (event) => {
 				latestContextStatus = langflowResponse instanceof ReadableStream
 					? undefined
 					: langflowResponse.contextStatus;
+				initialContextStatus = latestContextStatus;
 				latestTaskState =
 					langflowResponse instanceof ReadableStream
 						? await getConversationTaskState(user.id, conversationId).catch(() => null)
 						: langflowResponse.taskState ?? await getConversationTaskState(user.id, conversationId).catch(() => null);
+				initialTaskState = latestTaskState;
 				latestContextDebug =
 					langflowResponse instanceof ReadableStream
 						? await getContextDebugState(user.id, conversationId).catch(() => null)
 						: langflowResponse.contextDebug ?? await getContextDebugState(user.id, conversationId).catch(() => null);
+				initialContextDebug = latestContextDebug;
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

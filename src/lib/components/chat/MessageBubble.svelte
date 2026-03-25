@@ -5,14 +5,19 @@
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
+	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
 	import { createEventDispatcher, tick } from 'svelte';
+	import type { TaskSteeringPayload } from '$lib/types';
 
 	export let message: ChatMessage;
 	export let isLast: boolean = false;
+	export let pinnedArtifactIds: string[] = [];
+	export let excludedArtifactIds: string[] = [];
 
 	const dispatch = createEventDispatcher<{
 		regenerate: { messageId: string };
 		edit: { messageId: string; newText: string };
+		steer: TaskSteeringPayload;
 	}>();
 
 	let copied = false;
@@ -206,6 +211,14 @@
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
+			{#if message.evidenceSummary && message.evidenceSummary.groups.length > 0}
+				<MessageEvidenceDetails
+					evidenceSummary={message.evidenceSummary}
+					{pinnedArtifactIds}
+					{excludedArtifactIds}
+					on:steer={(event) => dispatch('steer', event.detail)}
+				/>
+			{/if}
 			{/if}
 
 	</div>

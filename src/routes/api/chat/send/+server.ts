@@ -5,7 +5,13 @@ import { getConversation, touchConversation } from '$lib/server/services/convers
 import { sendMessage } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
-import { mirrorMessage, mirrorWorkCapsuleConclusion } from '$lib/server/services/honcho';
+import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
+import {
+	capturePersonaMemorySnapshot,
+	mirrorMessage,
+	mirrorWorkCapsuleConclusion,
+	syncConversationPersonaMemoryAttributions,
+} from '$lib/server/services/honcho';
 import {
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
@@ -72,13 +78,16 @@ export const POST: RequestHandler = async (event) => {
 		const normalizedMessage = message.trim();
 		const sourceLanguage = detectLanguage(normalizedMessage);
 		const isTranslationEnabled = user.translationEnabled;
+		const personaMemorySnapshotPromise = capturePersonaMemorySnapshot(user.id).catch(
+			() => undefined
+		);
 
 		const upstreamMessage =
 			sourceLanguage === 'hu' && isTranslationEnabled
 				? await translateHungarianToEnglish(normalizedMessage)
 				: normalizedMessage;
 
-		const { text, contextStatus } = await sendMessage(
+		const { text, contextStatus, taskState: initialTaskState, contextDebug: initialContextDebug } = await sendMessage(
 			upstreamMessage,
 			conversationId,
 			modelId,
@@ -105,7 +114,22 @@ export const POST: RequestHandler = async (event) => {
 			message: normalizedMessage,
 			attachmentIds: safeAttachmentIds
 		});
-		const assistantMessage = await createMessage(conversationId, 'assistant', responseText);
+		const messageEvidence = await buildAssistantEvidenceSummary({
+			message: normalizedMessage,
+			taskState: initialTaskState ?? null,
+			contextStatus: contextStatus ?? null,
+			contextDebug: initialContextDebug ?? null,
+		}).catch(() => null);
+		const assistantMessage = messageEvidence
+			? await createMessage(
+					conversationId,
+					'assistant',
+					responseText,
+					undefined,
+					undefined,
+					{ evidenceSummary: messageEvidence }
+				)
+			: await createMessage(conversationId, 'assistant', responseText);
 		const sourceArtifactIds = safeAttachmentIds.length > 0
 			? safeAttachmentIds
 			: await listConversationSourceArtifactIds(user.id, conversationId);
@@ -134,22 +158,36 @@ export const POST: RequestHandler = async (event) => {
 			assistantMessageId: assistantMessage.id,
 		}).catch(async () => getConversationTaskState(user.id, conversationId));
 		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
-		if (workCapsule?.workflowSummary) {
-			mirrorWorkCapsuleConclusion({
-				userId: user.id,
-				conversationId,
-				content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
-			}).catch((err) => console.error('[HONCHO] Mirror work capsule failed:', err));
-		}
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
-		// Fire-and-forget: mirror to Honcho for long-term memory reasoning
-		mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
-			console.error('[HONCHO] Mirror user message failed:', err)
-		);
-		mirrorMessage(user.id, conversationId, 'assistant', text).catch((err) =>
-			console.error('[HONCHO] Mirror assistant message failed:', err)
-		);
+		const honchoTasks: Promise<unknown>[] = [
+			mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
+				console.error('[HONCHO] Mirror user message failed:', err)
+			),
+			mirrorMessage(user.id, conversationId, 'assistant', text).catch((err) =>
+				console.error('[HONCHO] Mirror assistant message failed:', err)
+			),
+		];
+		if (workCapsule?.workflowSummary) {
+			honchoTasks.push(
+				mirrorWorkCapsuleConclusion({
+					userId: user.id,
+					conversationId,
+					content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
+				}).catch((err) => console.error('[HONCHO] Mirror work capsule failed:', err))
+			);
+		}
+		void Promise.allSettled(honchoTasks)
+			.then(async () =>
+				syncConversationPersonaMemoryAttributions({
+					userId: user.id,
+					conversationId,
+					beforeIds: await personaMemorySnapshotPromise,
+					attempts: 3,
+					delayMs: 300,
+				})
+			)
+			.catch((err) => console.error('[HONCHO] Persona memory attribution sync failed:', err));
 
 		return json({
 			response: { text: responseText },
@@ -158,6 +196,7 @@ export const POST: RequestHandler = async (event) => {
 			activeWorkingSet,
 			taskState,
 			contextDebug,
+			messageEvidence,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);

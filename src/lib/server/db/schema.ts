@@ -44,6 +44,7 @@ export const messages = sqliteTable('messages', {
   content: text('content').notNull(),
   thinking: text('thinking'),
   toolCalls: text('tool_calls'),
+  metadataJson: text('metadata_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
@@ -54,6 +55,7 @@ export const artifacts = sqliteTable('artifacts', {
     .references(() => users.id, { onDelete: 'cascade' }),
   conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
+  retrievalClass: text('retrieval_class').notNull().default('durable'),
   name: text('name').notNull(),
   mimeType: text('mime_type'),
   extension: text('extension'),
@@ -209,6 +211,20 @@ export const conversationWorkingSetItems = sqliteTable('conversation_working_set
   reasonCodesJson: text('reason_codes_json'),
   lastActivatedAt: integer('last_activated_at', { mode: 'timestamp' }),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const personaMemoryAttributions = sqliteTable('persona_memory_attributions', {
+  id: text('id').primaryKey(),
+  conclusionId: text('conclusion_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

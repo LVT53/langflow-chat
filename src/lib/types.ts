@@ -80,15 +80,63 @@ export interface ConversationListItem {
 // MessageRole type: 'user' | 'assistant'
 export type MessageRole = 'user' | 'assistant';
 
+export type EvidenceSourceType = 'web' | 'document' | 'memory' | 'tool';
+
+export interface ToolEvidenceCandidate {
+  id: string;
+  title: string;
+  url?: string | null;
+  snippet?: string | null;
+  sourceType: EvidenceSourceType;
+}
+
 export interface ToolCallEntry {
   name: string;
   input: Record<string, unknown>;
   status: 'running' | 'done';
+  outputSummary?: string | null;
+  sourceType?: EvidenceSourceType | null;
+  candidates?: ToolEvidenceCandidate[];
 }
 
 export type ThinkingSegment =
   | { type: 'text'; content: string }
-  | { type: 'tool_call'; name: string; input: Record<string, unknown>; status: 'running' | 'done' };
+  | {
+      type: 'tool_call';
+      name: string;
+      input: Record<string, unknown>;
+      status: 'running' | 'done';
+      outputSummary?: string | null;
+      sourceType?: EvidenceSourceType | null;
+      candidates?: ToolEvidenceCandidate[];
+    };
+
+export type MessageEvidenceStatus = 'selected' | 'rejected' | 'reference';
+
+export interface MessageEvidenceItem {
+  id: string;
+  title: string;
+  sourceType: EvidenceSourceType;
+  status: MessageEvidenceStatus;
+  description?: string | null;
+  url?: string | null;
+  artifactId?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+}
+
+export interface MessageEvidenceGroup {
+  sourceType: EvidenceSourceType;
+  label: string;
+  reranked: boolean;
+  confidence?: number | null;
+  items: MessageEvidenceItem[];
+}
+
+export interface MessageEvidenceSummary {
+  structuredWebSearch: boolean;
+  groups: MessageEvidenceGroup[];
+}
 
 export interface ChatMessage {
   id: string;
@@ -107,6 +155,7 @@ export interface ChatMessage {
   thinkingSegments?: ThinkingSegment[];
   // Display name of the model used for the response (assistant messages only)
   modelDisplayName?: string;
+  evidenceSummary?: MessageEvidenceSummary;
 }
 
 export type ArtifactType =
@@ -114,6 +163,11 @@ export type ArtifactType =
   | 'normalized_document'
   | 'generated_output'
   | 'work_capsule';
+
+export type ArtifactRetrievalClass =
+  | 'durable'
+  | 'ephemeral_followup'
+  | 'archived_duplicate';
 
 export type ArtifactLinkType =
   | 'attached_to_conversation'
@@ -132,6 +186,7 @@ export type VerificationStatus = 'skipped' | 'passed' | 'failed' | 'fallback';
 export type TaskEvidenceRole = 'selected' | 'pinned' | 'excluded' | 'checkpoint_source';
 export type TaskEvidenceOrigin = 'system' | 'user';
 export type TaskCheckpointType = 'micro' | 'stable';
+export type EvidencePreference = 'auto' | 'pinned' | 'excluded';
 
 export type WorkingSetState = 'active' | 'cooling';
 
@@ -158,6 +213,7 @@ export interface ChatAttachment {
 export interface ArtifactSummary {
   id: string;
   type: ArtifactType;
+  retrievalClass: ArtifactRetrievalClass;
   name: string;
   mimeType: string | null;
   sizeBytes: number | null;
@@ -299,10 +355,17 @@ export interface TaskState {
 export interface ContextDebugEvidenceItem {
   artifactId: string;
   name: string;
+  artifactType: ArtifactType;
+  sourceType: EvidenceSourceType;
   role: TaskEvidenceRole;
   origin: TaskEvidenceOrigin;
   confidence: number;
   reason: string | null;
+}
+
+export interface ContextDebugEvidenceSummaryItem {
+  sourceType: EvidenceSourceType;
+  count: number;
 }
 
 export interface ContextDebugState {
@@ -313,6 +376,7 @@ export interface ContextDebugState {
   routingConfidence: number;
   verificationStatus: VerificationStatus;
   selectedEvidence: ContextDebugEvidenceItem[];
+  selectedEvidenceBySource: ContextDebugEvidenceSummaryItem[];
   pinnedEvidence: ContextDebugEvidenceItem[];
   excludedEvidence: ContextDebugEvidenceItem[];
 }
@@ -357,10 +421,18 @@ export type TaskSteeringAction =
   | 'lock_task'
   | 'unlock_task'
   | 'start_new_task'
+  | 'set_artifact_preference'
   | 'pin_artifact'
   | 'unpin_artifact'
   | 'exclude_artifact'
   | 'include_artifact';
+
+export interface TaskSteeringPayload {
+  action: TaskSteeringAction;
+  artifactId?: string;
+  objective?: string;
+  preference?: EvidencePreference;
+}
 
 // Langflow types
 export interface LangflowMessage {

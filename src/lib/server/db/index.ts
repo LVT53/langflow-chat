@@ -11,6 +11,7 @@ sqlite.pragma('foreign_keys = ON');
 // the column already exists (SQLite throws on duplicate column additions).
 const migrations: string[] = [
 	`ALTER TABLE messages ADD COLUMN tool_calls TEXT`,
+	`ALTER TABLE messages ADD COLUMN metadata_json TEXT`,
 	`ALTER TABLE conversations ADD COLUMN project_id TEXT`,
 	`CREATE TABLE IF NOT EXISTS projects (
 		id TEXT PRIMARY KEY,
@@ -26,6 +27,7 @@ const migrations: string[] = [
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
 		type TEXT NOT NULL,
+		retrieval_class TEXT NOT NULL DEFAULT 'durable',
 		name TEXT NOT NULL,
 		mime_type TEXT,
 		extension TEXT,
@@ -38,6 +40,7 @@ const migrations: string[] = [
 		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`ALTER TABLE artifacts ADD COLUMN retrieval_class TEXT NOT NULL DEFAULT 'durable'`,
 	`ALTER TABLE artifacts ADD COLUMN binary_hash TEXT`,
 	`CREATE INDEX IF NOT EXISTS artifacts_user_binary_hash_idx ON artifacts(user_id, binary_hash)`,
 	`CREATE INDEX IF NOT EXISTS artifacts_user_size_idx ON artifacts(user_id, size_bytes)`,
@@ -162,6 +165,17 @@ const migrations: string[] = [
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
 	`CREATE INDEX IF NOT EXISTS task_checkpoints_task_idx ON task_checkpoints(task_id, checkpoint_type, updated_at)`,
+	`CREATE TABLE IF NOT EXISTS persona_memory_attributions (
+		id TEXT PRIMARY KEY,
+		conclusion_id TEXT NOT NULL,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		scope TEXT NOT NULL,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS persona_memory_attributions_conclusion_conversation_idx ON persona_memory_attributions(conclusion_id, conversation_id)`,
+	`CREATE INDEX IF NOT EXISTS persona_memory_attributions_conversation_idx ON persona_memory_attributions(conversation_id, updated_at)`,
 ];
 for (const sql of migrations) {
 	try { sqlite.exec(sql); } catch { /* column already exists — ignore */ }

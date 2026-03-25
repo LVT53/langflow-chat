@@ -14,7 +14,9 @@ import { getConfig } from '$lib/server/config-store';
 import type {
 	Artifact,
 	ArtifactChunk,
+	ArtifactType,
 	ContextDebugState,
+	EvidenceSourceType,
 	RoutingStage,
 	TaskCheckpoint,
 	TaskEvidenceLink,
@@ -23,6 +25,7 @@ import type {
 	TaskSteeringAction,
 	VerificationStatus,
 } from '$lib/types';
+import { collapseArtifactsByFamily } from './evidence-family';
 import { scoreMatch } from './working-set';
 
 const CHUNK_CHAR_TARGET = 1400;
@@ -36,6 +39,18 @@ const VERIFY_CONFIDENCE_MIN = 64;
 const MAX_RERANK_CANDIDATES = 8;
 const MAX_SELECTED_EVIDENCE = 5;
 const MAX_SELECTED_LINKS = 12;
+
+function toEvidenceSourceType(artifactType: ArtifactType): EvidenceSourceType {
+	switch (artifactType) {
+		case 'source_document':
+		case 'normalized_document':
+			return 'document';
+		case 'generated_output':
+		case 'work_capsule':
+		default:
+			return 'tool';
+	}
+}
 
 function parseJsonStringArray(value: string | null): string[] {
 	if (!value) return [];
@@ -279,7 +294,7 @@ function extractFactCandidates(text: string): string[] {
 	return sentences.slice(0, 3).map((sentence) => clip(sentence, 180));
 }
 
-function canUseContextSummarizer(): boolean {
+export function canUseContextSummarizer(): boolean {
 	const config = getConfig();
 	return Boolean(config.contextSummarizerUrl && config.contextSummarizerModel);
 }
@@ -343,7 +358,7 @@ async function requestContextSummarizer(params: {
 	return typeof content === 'string' && content.trim() ? content.trim() : null;
 }
 
-async function requestStructuredControlModel<T extends Record<string, unknown>>(params: {
+export async function requestStructuredControlModel<T extends Record<string, unknown>>(params: {
 	system: string;
 	user: string;
 	maxTokens: number;
@@ -1093,16 +1108,24 @@ export async function prepareTaskContext(params: {
 		: [];
 	const pinnedIds = new Set(links.filter((link) => link.role === 'pinned').map((link) => link.artifactId));
 	const excludedIds = new Set(links.filter((link) => link.role === 'excluded').map((link) => link.artifactId));
+	const currentAttachmentIds = new Set(params.currentAttachments.map((artifact) => artifact.id));
 
 	const candidateArtifacts = dedupeArtifacts([
 		...params.currentAttachments,
 		...params.workingSetArtifacts,
 		...params.relevantArtifacts,
 	]).filter((artifact) => !excludedIds.has(artifact.id) || attachmentIds.includes(artifact.id));
+	const collapsedCandidates = await collapseArtifactsByFamily({
+		userId: params.userId,
+		conversationId: params.conversationId,
+		query: params.message,
+		artifacts: candidateArtifacts,
+		pinnedIds,
+		currentAttachmentIds,
+	});
 
-	const currentAttachmentIds = new Set(params.currentAttachments.map((artifact) => artifact.id));
 	const workingSetIds = new Set(params.workingSetArtifacts.map((artifact) => artifact.id));
-	const rankedCandidates = candidateArtifacts
+	const rankedCandidates = collapsedCandidates
 		.map((artifact) => ({
 			artifact,
 			score: computeEvidenceScore({
@@ -1224,11 +1247,23 @@ export async function getContextDebugState(
 			.map((entry) => ({
 				artifactId: entry.artifact.id,
 				name: entry.artifact.name,
+				artifactType: entry.artifact.type as ArtifactType,
+				sourceType: toEvidenceSourceType(entry.artifact.type as ArtifactType),
 				role,
 				origin: entry.link.origin as TaskEvidenceLink['origin'],
 				confidence: entry.link.confidence ?? 0,
 				reason: entry.link.reason ?? null,
 			}));
+
+	const selectedEvidence = toDebugItems('selected');
+	const selectedEvidenceBySource = Array.from(
+		selectedEvidence.reduce((acc, item) => {
+			acc.set(item.sourceType, (acc.get(item.sourceType) ?? 0) + 1);
+			return acc;
+		}, new Map<EvidenceSourceType, number>())
+	)
+		.map(([sourceType, count]) => ({ sourceType, count }))
+		.sort((a, b) => b.count - a.count || a.sourceType.localeCompare(b.sourceType));
 
 	return {
 		activeTaskId: taskState?.taskId ?? null,
@@ -1237,7 +1272,8 @@ export async function getContextDebugState(
 		routingStage: (statusRow?.routingStage ?? 'deterministic') as RoutingStage,
 		routingConfidence: statusRow?.routingConfidence ?? 0,
 		verificationStatus: (statusRow?.verificationStatus ?? 'skipped') as VerificationStatus,
-		selectedEvidence: toDebugItems('selected'),
+		selectedEvidence,
+		selectedEvidenceBySource,
 		pinnedEvidence: toDebugItems('pinned'),
 		excludedEvidence: toDebugItems('excluded'),
 	};
@@ -1285,6 +1321,8 @@ export async function applyTaskSteeringAction(params: {
 	conversationId: string;
 	action: TaskSteeringAction;
 	artifactId?: string | null;
+	objective?: string | null;
+	preference?: 'auto' | 'pinned' | 'excluded' | null;
 }): Promise<{ taskState: TaskState | null; contextDebug: ContextDebugState | null }> {
 	let taskState = await getConversationTaskState(params.userId, params.conversationId);
 
@@ -1302,10 +1340,11 @@ export async function applyTaskSteeringAction(params: {
 			}
 			break;
 		case 'start_new_task': {
+			const nextObjective = params.objective?.trim() ? clip(params.objective.trim(), 220) : 'New task';
 			const created = await createTaskState({
 				userId: params.userId,
 				conversationId: params.conversationId,
-				objective: 'New task',
+				objective: nextObjective,
 				status: 'candidate',
 				confidence: 100,
 				locked: true,
@@ -1318,14 +1357,23 @@ export async function applyTaskSteeringAction(params: {
 		case 'exclude_artifact':
 		case 'unpin_artifact':
 		case 'include_artifact':
+		case 'set_artifact_preference':
 			if (taskState && params.artifactId) {
+				const nextPreference =
+					params.action === 'set_artifact_preference'
+						? params.preference ?? 'auto'
+						: params.action === 'pin_artifact'
+							? 'pinned'
+							: params.action === 'exclude_artifact'
+								? 'excluded'
+								: 'auto';
 				await upsertEvidenceRole({
 					taskId: taskState.taskId,
 					userId: params.userId,
 					conversationId: params.conversationId,
 					artifactId: params.artifactId,
-					role: params.action === 'pin_artifact' || params.action === 'unpin_artifact' ? 'pinned' : 'excluded',
-					enabled: params.action === 'pin_artifact' || params.action === 'exclude_artifact',
+					role: nextPreference === 'pinned' ? 'pinned' : 'excluded',
+					enabled: nextPreference !== 'auto',
 				});
 			}
 			break;
@@ -1585,8 +1633,61 @@ export async function getPromptArtifactSnippets(params: {
 				return a.chunk.chunkIndex - b.chunk.chunkIndex;
 			});
 
-		const selected = ranked.filter((entry) => entry.score > 0).slice(0, perArtifactLimit);
-		const chosen = selected.length > 0 ? selected : ranked.slice(0, 1);
+		let chosen = ranked.filter((entry) => entry.score > 0).slice(0, perArtifactLimit);
+		if (chosen.length === 0) {
+			chosen = ranked.slice(0, 1);
+		}
+
+		const rerankCandidates = ranked
+			.filter((entry) => entry.score > 0)
+			.slice(0, Math.max(perArtifactLimit, Math.min(6, ranked.length)));
+		if (canUseContextSummarizer() && params.query.trim() && rerankCandidates.length > 2) {
+			type ChunkRerankPayload = {
+				selectedChunkIndexes?: number[];
+				confidence?: number;
+			};
+
+			try {
+				const reranked = await requestStructuredControlModel<ChunkRerankPayload>({
+					system:
+						'Select the most relevant document chunks for the current user request. Return strict JSON with selectedChunkIndexes and confidence. Favor chunks that directly answer the request and avoid duplicate or weakly related chunks.',
+					user: [
+						`Artifact: ${artifact.name}`,
+						artifact.summary ? `Artifact summary: ${clip(artifact.summary, 220)}` : null,
+						`User message: ${params.query}`,
+						`Candidate chunks: ${JSON.stringify(
+							rerankCandidates.map((entry) => ({
+								chunkIndex: entry.chunk.chunkIndex,
+								score: entry.score,
+								content: clip(entry.chunk.contentText, 320),
+							})),
+							null,
+							2
+						)}`,
+					]
+						.filter((value): value is string => Boolean(value))
+						.join('\n\n'),
+					maxTokens: 220,
+					temperature: 0.0,
+				});
+				if (reranked && typeof reranked.confidence === 'number' && reranked.confidence >= RERANK_CONFIDENCE_MIN) {
+					const selectedIndexes = new Set(
+						(Array.isArray(reranked.selectedChunkIndexes) ? reranked.selectedChunkIndexes : []).filter(
+							(value): value is number => typeof value === 'number'
+						)
+					);
+					const rerankedSelection = rerankCandidates.filter((entry) =>
+						selectedIndexes.has(entry.chunk.chunkIndex)
+					);
+					if (rerankedSelection.length > 0) {
+						chosen = rerankedSelection.slice(0, perArtifactLimit);
+					}
+				}
+			} catch (error) {
+				console.error('[TASK_STATE] Chunk reranker failed:', error);
+			}
+		}
+
 		const combined = chosen
 			.map((entry) => clip(entry.chunk.contentText, Math.floor(perArtifactCharBudget / chosen.length)))
 			.join('\n\n');

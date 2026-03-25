@@ -52,6 +52,7 @@
 		"drizzle-orm": "^0.45.1",
 		"eventsource-parser": "^3.0.6",
 		"gel": "^2.2.0",
+		"lucide-svelte": "^1.0.1",
 		"marked": "^17.0.4",
 		"mysql2": "^3.20.0",
 		"shiki": "^4.0.2",

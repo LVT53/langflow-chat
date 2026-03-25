@@ -86,4 +86,56 @@ describe('MessageInput', () => {
 		await fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
 		expect(mockSend).not.toHaveBeenCalled();
 	});
+
+	it('dispatches optional task objective from the focus panel', async () => {
+		const steerSpy = vi.fn();
+		const { getByRole, getByPlaceholderText } = render(MessageInputWrapper, {
+			onSteer: steerSpy,
+			contextStatus: {
+				conversationId: 'conv-1',
+				userId: 'user-1',
+				estimatedTokens: 1200,
+				maxContextTokens: 262144,
+				thresholdTokens: 209715,
+				targetTokens: 157286,
+				compactionApplied: false,
+				compactionMode: 'none',
+				routingStage: 'deterministic',
+				routingConfidence: 0,
+				verificationStatus: 'skipped',
+				layersUsed: [],
+				workingSetCount: 0,
+				workingSetArtifactIds: [],
+				workingSetApplied: false,
+				taskStateApplied: false,
+				promptArtifactCount: 0,
+				recentTurnCount: 0,
+				summary: null,
+				updatedAt: Date.now(),
+			},
+			contextDebug: {
+				activeTaskId: null,
+				activeTaskObjective: 'Current task',
+				taskLocked: false,
+				routingStage: 'deterministic',
+				routingConfidence: 0,
+				verificationStatus: 'skipped',
+				selectedEvidence: [],
+				selectedEvidenceBySource: [],
+				pinnedEvidence: [],
+				excludedEvidence: [],
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Start new task' }));
+		const taskInput = getByPlaceholderText('Leave empty to infer from your next message') as HTMLInputElement;
+		await fireEvent.input(taskInput, { target: { value: 'Prepare internship applications' } });
+		await fireEvent.click(getByRole('button', { name: 'Start' }));
+
+		expect(steerSpy).toHaveBeenCalledWith({
+			action: 'start_new_task',
+			artifactId: undefined,
+			objective: 'Prepare internship applications',
+		});
+	});
 });

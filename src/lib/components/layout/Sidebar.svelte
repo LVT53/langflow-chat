@@ -8,7 +8,8 @@
 		SIDEBAR_DESKTOP_BREAKPOINT,
 		currentConversationId
 	} from '$lib/stores/ui';
-	import { goto } from '$app/navigation';
+	import { goto, preloadData } from '$app/navigation';
+	import { navigating } from '$app/stores';
 	import { fade } from 'svelte/transition';
 	import ConversationList from '../sidebar/ConversationList.svelte';
 	import SearchModal from '../search/SearchModal.svelte';
@@ -27,6 +28,7 @@
 	let transitionsEnabled = false;
 
 	$: isCollapsed = isDesktop && $sidebarCollapsed;
+	$: knowledgePending = $navigating?.to?.url.pathname === '/knowledge';
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
@@ -61,6 +63,11 @@
 			sidebarOpen.set(false);
 		}
 		goto(path);
+	}
+
+	function warmRoute(path: string) {
+		if (!browser) return;
+		void preloadData(path).catch(() => undefined);
 	}
 
 	async function handleLogout() {
@@ -188,13 +195,33 @@
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={() => navigateAndClose('/knowledge')}
+					on:mouseenter={() => warmRoute('/knowledge')}
+					on:focus={() => warmRoute('/knowledge')}
 					title="Knowledge base"
 					aria-label="Open knowledge base"
+					aria-busy={knowledgePending}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-						<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
-					</svg>
+					{#if knowledgePending}
+						<svg
+							class="animate-spin"
+							xmlns="http://www.w3.org/2000/svg"
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.1"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+							<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+						</svg>
+					{/if}
 				</button>
 			</div>
 		{:else}
@@ -230,13 +257,33 @@
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					on:click={() => navigateAndClose('/knowledge')}
+					on:mouseenter={() => warmRoute('/knowledge')}
+					on:focus={() => warmRoute('/knowledge')}
 					title="Knowledge base"
 					aria-label="Open knowledge base"
+					aria-busy={knowledgePending}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-						<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
-					</svg>
+					{#if knowledgePending}
+						<svg
+							class="animate-spin"
+							xmlns="http://www.w3.org/2000/svg"
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.1"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+							<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+						</svg>
+					{/if}
 				</button>
 			</div>
 		{/if}

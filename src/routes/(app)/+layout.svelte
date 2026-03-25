@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { navigating } from '$app/stores';
 	import { browser } from '$app/environment';
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
@@ -44,7 +45,41 @@
 		<Sidebar open={$sidebarOpen} conversationsData={data.conversations ?? []} projectsData={data.projects ?? []} user={data.user} on:new-conversation={() => {}} />
 
 		<main class="relative flex h-full flex-1 flex-col overflow-hidden min-w-0">
+			{#if $navigating}
+				<div class="pointer-events-none absolute inset-x-0 top-0 z-20 h-1 overflow-hidden">
+					<div class="route-progress h-full w-1/3 rounded-full bg-accent/80"></div>
+				</div>
+			{/if}
 			<slot />
 		</main>
 	</div>
 </div>
+
+<style>
+	@keyframes route-progress-slide {
+		0% {
+			transform: translateX(-120%) scaleX(0.7);
+			opacity: 0.35;
+		}
+		50% {
+			transform: translateX(60%) scaleX(1);
+			opacity: 0.9;
+		}
+		100% {
+			transform: translateX(280%) scaleX(0.8);
+			opacity: 0.35;
+		}
+	}
+
+	.route-progress {
+		animation: route-progress-slide 1s ease-in-out infinite;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.route-progress {
+			width: 100%;
+			animation: none;
+			opacity: 0.85;
+		}
+	}
+</style>

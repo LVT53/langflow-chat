@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { tick, createEventDispatcher } from 'svelte';
-	import type { ChatMessage } from '$lib/types';
+	import type { ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
 	export let messages: ChatMessage[] = [];
 	export let conversationId: string | null = null;
 	export let isThinkingActive: boolean = false;
+	export let contextDebug: ContextDebugState | null = null;
 
 	const dispatch = createEventDispatcher<{
 		regenerate: { messageId: string };
 		edit: { messageId: string; newText: string };
+		steer: TaskSteeringPayload;
 	}>();
 
 	let scrollContainer: HTMLDivElement;
@@ -66,6 +68,9 @@
 		scrollContainer.scrollTop = scrollContainer.scrollHeight;
 	}
 
+	$: pinnedArtifactIds = contextDebug?.pinnedEvidence.map((evidence) => evidence.artifactId) ?? [];
+	$: excludedArtifactIds = contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? [];
+
 	async function alignToBottomAfterRender() {
 		if (!scrollContainer) return;
 		await tick();
@@ -94,8 +99,11 @@
 				<MessageBubble
 					{message}
 					isLast={i === messages.length - 1}
+					{pinnedArtifactIds}
+					{excludedArtifactIds}
 					on:regenerate={(e) => dispatch('regenerate', e.detail)}
 					on:edit={(e) => dispatch('edit', e.detail)}
+					on:steer={(e) => dispatch('steer', e.detail)}
 				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>

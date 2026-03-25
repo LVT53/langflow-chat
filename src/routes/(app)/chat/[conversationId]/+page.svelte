@@ -6,6 +6,7 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
+	import EvidenceManager from '$lib/components/chat/EvidenceManager.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import type {
@@ -14,7 +15,7 @@
 		ContextDebugState,
 		ConversationContextStatus,
 		TaskState,
-		TaskSteeringAction,
+		TaskSteeringPayload,
 	} from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
@@ -43,6 +44,7 @@
 	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
 	let taskState: TaskState | null = data.taskState ?? null;
 	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
+	let evidenceManagerOpen = false;
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
@@ -109,6 +111,7 @@
 		activeWorkingSet = data.activeWorkingSet ?? [];
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
+		evidenceManagerOpen = false;
 		currentConversationId.set(data.conversation.id);
 		maybeSendPendingInitialMessage();
 	}
@@ -275,7 +278,7 @@
 						})
 					);
 				},
-				onToolCall(name, input, status) {
+				onToolCall(name, input, status, details) {
 					messages.update((msgs) =>
 						msgs.map((m) => {
 							if (m.id !== placeholderId) return m;
@@ -301,7 +304,13 @@
 							if (lastRunningIdx !== -1) {
 								// Preserve the original input stored at TOOL_START — the TOOL_END
 								// payload only carries the name, so `input` here is always {}.
-								updated[lastRunningIdx] = { ...updated[lastRunningIdx], status: 'done' as const };
+								updated[lastRunningIdx] = {
+									...updated[lastRunningIdx],
+									status: 'done' as const,
+									outputSummary: details?.outputSummary ?? null,
+									sourceType: details?.sourceType ?? null,
+									candidates: details?.candidates,
+								};
 							}
 							return { ...m, thinkingSegments: updated };
 						})
@@ -328,7 +337,8 @@
 								modelDisplayName: metadata?.modelDisplayName ?? m.modelDisplayName,
 								thinkingTokenCount: metadata?.thinkingTokenCount,
 								responseTokenCount: metadata?.responseTokenCount,
-								totalTokenCount: metadata?.totalTokenCount
+								totalTokenCount: metadata?.totalTokenCount,
+								evidenceSummary: metadata?.messageEvidence ?? m.evidenceSummary,
 								};
 							}
 							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
@@ -462,7 +472,7 @@
 		}
 	}
 
-	async function handleSteering(event: CustomEvent<{ action: TaskSteeringAction; artifactId?: string }>) {
+	async function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
 		const response = await fetch(`/api/conversations/${data.conversation.id}/task-steering`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -476,6 +486,14 @@
 		const payload = await response.json();
 		taskState = payload.taskState ?? taskState;
 		contextDebug = payload.contextDebug ?? contextDebug;
+	}
+
+	function openEvidenceManager() {
+		evidenceManagerOpen = true;
+	}
+
+	function closeEvidenceManager() {
+		evidenceManagerOpen = false;
 	}
 
 	function handleErrorClose() {
@@ -494,8 +512,10 @@
 				messages={$messages}
 				conversationId={data.conversation.id}
 				isThinkingActive={isThinkingActive}
+				{contextDebug}
 				on:regenerate={handleRegenerate}
 				on:edit={handleEdit}
+				on:steer={handleSteering}
 			/>
 		</div>
 
@@ -527,10 +547,18 @@
 					{contextDebug}
 					attachmentsEnabled={true}
 					on:steer={handleSteering}
+					on:manageEvidence={openEvidenceManager}
 				/>
 			</div>
 		</div>
 	</div>
+
+	<EvidenceManager
+		open={evidenceManagerOpen}
+		{contextDebug}
+		on:close={closeEvidenceManager}
+		on:steer={handleSteering}
+	/>
 </div>
 
 <style>

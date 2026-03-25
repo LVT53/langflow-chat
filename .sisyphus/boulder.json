@@ -1,30 +1,64 @@
 {
-  "active_plan": "/Users/lvt53/Desktop/langflow-design/.sisyphus/plans/translation-model-settings.md",
-  "started_at": "2026-03-19T10:55:05.557Z",
+  "active_plan": "/Users/lvt53/Desktop/langflow-design/.sisyphus/plans/knowledge-base-redesign.md",
+  "started_at": "2026-03-25T17:56:24.223Z",
   "session_ids": [
-    "ses_2fa5449a5ffebpWLnuLcmmqr05",
-    "ses_2fa439e2effeBXy06Ukz2vy0TE",
-    "ses_2fa43abfcffeXO7H3Ef5eRwY2B",
-    "ses_2fa438a4cffeiYOOSaD3fKDmqU",
-    "ses_2fa3a7393ffeQCKdBDwmiiQ0xc",
-    "ses_2fa377c6dffewlMf3QAjMfU7kF",
-    "ses_2fa30253bffePlmNF0e0YDF3fw",
-    "ses_2fa150fe0ffebARVwXXT08n6zP",
-    "ses_2fa038a38ffeFxYEi4vGUzS3x8",
-    "ses_2e092f5bcffeMD0hsGrtmiMFcq",
-    "ses_2e08f7720ffeHkooNt1Vk2i3CW",
-    "ses_2e08ac5d6ffer3QrTiUKjc1lDX",
-    "ses_2e0897f49ffe4DGhGXJZwA9J69",
-    "ses_2e084b904ffevOKrSe2qUZdR2Q",
-    "ses_2e0809f9effeMmrlTc4VwIRIag",
-    "ses_2e07e7476ffewNXyzmvcnbwA7B",
-    "ses_2e07d94f6ffey8G4SblfvQekj3",
-    "ses_2e07d9121ffeeS4M4SFhQQgkzM",
-    "ses_2e0794822ffeyX3y2Fm6sw8pNt",
-    "ses_2e0769f96ffe1dkOttFz3yyb1X",
-    "ses_2e073eaa5ffe6r2KkdkD2LgvTi",
-    "ses_2e0721dacffexGX0mBNbFDAf2q"
+    "ses_2d9e1ca6dffeqe1M1BuDLac549",
+    "ses_2d9db712dffealYLrPefp4o4SI",
+    "ses_2d9db6117ffe5cmR7hwrId55o1",
+    "ses_2d9db81b0ffeRhz8xxbbiLivEc",
+    "ses_2d9d9fdf5ffe9OFYW1x5Az1Zvm",
+    "ses_2d9da1449ffe4a8KacxFSNGd0w",
+    "ses_2d9d9f28bffeO6YBXcOGw1R2qT",
+    "ses_2d9d9e497ffeMFpe9uGjsqUgFm",
+    "ses_2d9da0879ffeb4h5xr1TudOTp8",
+    "ses_2d9d4443effech5f2gN9NTsVTg",
+    "ses_2d9d4563affeaoUa5EHfsGTFQW",
+    "ses_2d9d46657ffeC07YQboJCX5hyx",
+    "ses_2d9d9abf9fferDiFQDqUVUZgfu",
+    "ses_2d9d4369bffevy4R5Hw1np4mCh",
+    "ses_2d9b8a0a8ffeBAaPl7Z1ZYvcAO",
+    "ses_2d9b8c00bffe01Iy0zpW83DBLS",
+    "ses_2d9b8b140ffe3JZor4FEfKrOy2",
+    "ses_2d9a90c85ffeCYDYFC4gKZ9bdx"
   ],
-  "plan_name": "translation-model-settings",
-  "agent": "atlas"
+  "plan_name": "knowledge-base-redesign",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Extract FileAttachment.svelte Component",
+      "session_id": "ses_2d9db81b0ffeRhz8xxbbiLivEc",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-03-25T17:57:33.399Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Redesign Knowledge Base Header and Stats",
+      "session_id": "ses_2d9da1449ffe4a8KacxFSNGd0w",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-03-25T17:59:43.941Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "Update MessageBubble.svelte to Use FileAttachment Component",
+      "session_id": "ses_2d9d46657ffeC07YQboJCX5hyx",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-03-25T18:06:06.273Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Visual Regression Testing** — `unspecified-high` (+ `playwright` skill)",
+      "session_id": "ses_2d9a90c85ffeCYDYFC4gKZ9bdx",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-03-25T18:52:19.192Z"
+    }
+  }
 }

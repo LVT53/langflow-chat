@@ -42,6 +42,79 @@ def set_advanced_true(component_input):
     return component_input
 
 
+def _clip_text(value: Any, max_length: int = 240) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max(0, max_length - 1)].rstrip()}…"
+
+
+def _tool_source_type(name: str) -> str:
+    lowered = (name or "").lower()
+    if any(token in lowered for token in ("search", "searx", "tavily", "fetch", "browse", "web", "url")):
+        return "web"
+    return "tool"
+
+
+def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_candidate(title: Any, url: Any, snippet: Any = None) -> None:
+        if len(candidates) >= limit:
+            return
+        if not isinstance(title, str) or not title.strip():
+            return
+
+        normalized_url = str(url).strip() if isinstance(url, str) and str(url).strip() else None
+        dedupe_key = normalized_url or title.strip().lower()
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        candidates.append(
+            {
+                "id": dedupe_key,
+                "title": _clip_text(title, 160),
+                "url": normalized_url,
+                "snippet": _clip_text(snippet, 220) if snippet else None,
+                "sourceType": source_type,
+            }
+        )
+
+    def walk(node: Any) -> None:
+        if len(candidates) >= limit or node is None:
+            return
+
+        if isinstance(node, dict):
+            url = node.get("url") or node.get("link") or node.get("href")
+            title = node.get("title") or node.get("name") or node.get("url")
+            snippet = (
+                node.get("snippet")
+                or node.get("content")
+                or node.get("body")
+                or node.get("description")
+                or node.get("text")
+            )
+            if title:
+                add_candidate(title, url, snippet)
+            for child in node.values():
+                walk(child)
+            return
+
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+
+        if source_type == "web" and isinstance(node, str):
+            urls = re.findall(r"https?://[^\s)>\]]+", node)
+            for url in urls:
+                add_candidate(url, url, None)
+
+    walk(value)
+    return candidates
+
+
 # ---------------------------------------------------------------------------
 # Tool call emitter — injects structured markers into the Langflow token
 # stream so the app can surface real-time tool call activity in the UI.
@@ -103,7 +176,16 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         tool_name = name or kwargs.get("name") or "tool"
-        payload = json.dumps({"name": tool_name}, ensure_ascii=False)
+        source_type = _tool_source_type(tool_name)
+        payload = json.dumps(
+            {
+                "name": tool_name,
+                "sourceType": source_type,
+                "outputSummary": _clip_text(output, 280) if output is not None else None,
+                "candidates": _extract_candidates(output, source_type),
+            },
+            ensure_ascii=False,
+        )
         await self._emit(f"\x02TOOL_END\x1f{payload}\x03")
 
 

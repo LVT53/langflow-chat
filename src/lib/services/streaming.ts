@@ -11,6 +11,7 @@ export interface StreamMetadata {
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
 	taskState?: import('$lib/types').TaskState | null;
 	contextDebug?: import('$lib/types').ContextDebugState | null;
+	messageEvidence?: import('$lib/types').MessageEvidenceSummary | null;
 }
 
 export interface StreamCallbacks {
@@ -18,7 +19,16 @@ export interface StreamCallbacks {
 	onThinking: (chunk: string) => void;
 	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
-	onToolCall?: (name: string, input: Record<string, unknown>, status: 'running' | 'done') => void;
+	onToolCall?: (
+		name: string,
+		input: Record<string, unknown>,
+		status: 'running' | 'done',
+		details?: {
+			outputSummary?: string | null;
+			sourceType?: import('$lib/types').EvidenceSourceType | null;
+			candidates?: import('$lib/types').ToolEvidenceCandidate[];
+		}
+	) => void;
 }
 
 export type ModelId = 'model1' | 'model2';
@@ -302,7 +312,11 @@ export function streamChat(
 							} else if (currentEvent === 'tool_call') {
 								try {
 									const parsed = JSON.parse(rawData);
-									callbacks.onToolCall?.(parsed.name, parsed.input ?? {}, parsed.status);
+									callbacks.onToolCall?.(parsed.name, parsed.input ?? {}, parsed.status, {
+										outputSummary: parsed.outputSummary,
+										sourceType: parsed.sourceType,
+										candidates: parsed.candidates,
+									});
 								} catch {
 									/* noop */
 								}
@@ -322,7 +336,8 @@ export function streamChat(
 										contextStatus: parsed.contextStatus,
 										activeWorkingSet: parsed.activeWorkingSet,
 										taskState: parsed.taskState,
-										contextDebug: parsed.contextDebug
+										contextDebug: parsed.contextDebug,
+										messageEvidence: parsed.messageEvidence
 									};
 									metadata = Object.values(nextMetadata).some((value) => value !== undefined)
 										? nextMetadata

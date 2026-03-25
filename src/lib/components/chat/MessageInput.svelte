@@ -4,7 +4,7 @@
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
-	import type { ArtifactSummary, ContextDebugState, ConversationContextStatus, TaskState, TaskSteeringAction } from '$lib/types';
+	import type { ArtifactSummary, ContextDebugState, ConversationContextStatus, TaskState, TaskSteeringPayload } from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -20,7 +20,8 @@
 	const dispatch = createEventDispatcher<{
 		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
 		stop: void;
-		steer: { action: TaskSteeringAction; artifactId?: string };
+		steer: TaskSteeringPayload;
+		manageEvidence: void;
 	}>();
 
 	let textarea: HTMLTextAreaElement;
@@ -193,8 +194,12 @@
 		pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== id);
 	}
 
-	function handleSteering(event: CustomEvent<{ action: TaskSteeringAction; artifactId?: string }>) {
+	function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
 		dispatch('steer', event.detail);
+	}
+
+	function handleManageEvidence() {
+		dispatch('manageEvidence');
 	}
 </script>
 
@@ -263,6 +268,7 @@
 					{taskState}
 					{contextDebug}
 					on:steer={handleSteering}
+					on:manageEvidence={handleManageEvidence}
 				/>
 			</div>
 

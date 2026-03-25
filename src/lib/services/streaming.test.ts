@@ -230,6 +230,72 @@ describe('streamChat', () => {
 		});
 	});
 
+	it('parses tool-call details and assistant evidence metadata', async () => {
+		const mockFetch = vi.mocked(fetch);
+		const onToolCall = vi.fn();
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: tool_call\n',
+				'data: {"name":"web_search","input":{"query":"OpenAI news"},"status":"done","outputSummary":"Found sources","sourceType":"web","candidates":[{"id":"src-1","title":"OpenAI","url":"https://openai.com","sourceType":"web"}]}\n',
+				'\n',
+				'event: token\n',
+				'data: {"text":"Hello"}\n',
+				'\n',
+				'event: end\n',
+				'data: {"messageEvidence":{"structuredWebSearch":true,"groups":[{"sourceType":"web","label":"Web Search","reranked":true,"confidence":88,"items":[{"id":"src-1","title":"OpenAI","sourceType":"web","status":"selected","url":"https://openai.com"}]}]}}\n',
+				'\n'
+			])
+		);
+
+		const cb = {
+			...makeCallbacks(),
+			onToolCall,
+		};
+		const done = waitForStream(cb as unknown as MockCallbacks);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(onToolCall).toHaveBeenCalledWith(
+			'web_search',
+			{ query: 'OpenAI news' },
+			'done',
+			{
+				outputSummary: 'Found sources',
+				sourceType: 'web',
+				candidates: [
+					{
+						id: 'src-1',
+						title: 'OpenAI',
+						url: 'https://openai.com',
+						sourceType: 'web',
+					},
+				],
+			}
+		);
+		expect(cb.onEnd).toHaveBeenCalledWith('Hello', {
+			messageEvidence: {
+				structuredWebSearch: true,
+				groups: [
+					{
+						sourceType: 'web',
+						label: 'Web Search',
+						reranked: true,
+						confidence: 88,
+						items: [
+							{
+								id: 'src-1',
+								title: 'OpenAI',
+								sourceType: 'web',
+								status: 'selected',
+								url: 'https://openai.com',
+							},
+						],
+					},
+				],
+			},
+		});
+	});
+
 	it('calls onError on network failure', async () => {
 		const mockFetch = vi.mocked(fetch);
 		mockFetch.mockRejectedValue(new Error('Network failure'));

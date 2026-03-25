@@ -13,6 +13,7 @@ const VALID_ACTIONS = new Set<TaskSteeringAction>([
 	'lock_task',
 	'unlock_task',
 	'start_new_task',
+	'set_artifact_preference',
 	'pin_artifact',
 	'unpin_artifact',
 	'exclude_artifact',
@@ -32,13 +33,19 @@ export const POST: RequestHandler = async (event) => {
 	const body = await event.request.json().catch(() => null);
 	const action = body?.action;
 	const artifactId = typeof body?.artifactId === 'string' ? body.artifactId : null;
+	const objective = typeof body?.objective === 'string' ? body.objective : null;
+	const preference =
+		body?.preference === 'auto' || body?.preference === 'pinned' || body?.preference === 'excluded'
+			? body.preference
+			: null;
 
 	if (typeof action !== 'string' || !VALID_ACTIONS.has(action as TaskSteeringAction)) {
 		return json({ error: 'Invalid steering action' }, { status: 400 });
 	}
 
 	if (
-		(action === 'pin_artifact' ||
+		(action === 'set_artifact_preference' ||
+			action === 'pin_artifact' ||
 			action === 'unpin_artifact' ||
 			action === 'exclude_artifact' ||
 			action === 'include_artifact') &&
@@ -46,12 +53,17 @@ export const POST: RequestHandler = async (event) => {
 	) {
 		return json({ error: 'artifactId is required for artifact actions' }, { status: 400 });
 	}
+	if (action === 'set_artifact_preference' && !preference) {
+		return json({ error: 'preference is required for set_artifact_preference' }, { status: 400 });
+	}
 
 	const result = await applyTaskSteeringAction({
 		userId: user.id,
 		conversationId,
 		action: action as TaskSteeringAction,
 		artifactId,
+		objective,
+		preference,
 	});
 
 	return json({

@@ -1,0 +1,244 @@
+<script lang="ts">
+	import { createEventDispatcher } from 'svelte';
+	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
+	import type { EvidencePreference, MessageEvidenceSummary, TaskSteeringPayload } from '$lib/types';
+
+	export let evidenceSummary: MessageEvidenceSummary;
+	export let pinnedArtifactIds: string[] = [];
+	export let excludedArtifactIds: string[] = [];
+
+	const dispatch = createEventDispatcher<{
+		steer: TaskSteeringPayload;
+	}>();
+
+	let expanded = false;
+
+	$: totalItems = evidenceSummary.groups.reduce((count, group) => count + group.items.length, 0);
+	$: pinnedIds = new Set(pinnedArtifactIds);
+	$: excludedIds = new Set(excludedArtifactIds);
+
+	function steer(payload: TaskSteeringPayload) {
+		dispatch('steer', payload);
+	}
+
+	function preferenceFor(artifactId: string): EvidencePreference {
+		if (excludedIds.has(artifactId)) {
+			return 'excluded';
+		}
+		if (pinnedIds.has(artifactId)) {
+			return 'pinned';
+		}
+		return 'auto';
+	}
+</script>
+
+<div class="evidence-shell">
+	<button
+		type="button"
+		class="evidence-toggle"
+		aria-expanded={expanded}
+		on:click={() => (expanded = !expanded)}
+	>
+		<span>Evidence</span>
+		<span class="evidence-count">{totalItems}</span>
+	</button>
+
+	{#if expanded}
+		<div class="evidence-groups">
+			{#each evidenceSummary.groups as group (`${group.sourceType}-${group.label}`)}
+				<div class="evidence-group">
+					<div class="evidence-group-header">
+						<div class="evidence-group-title">{group.label}</div>
+						<div class="evidence-group-meta">
+							{#if group.reranked}
+								<span class="evidence-chip">Reranked{#if group.confidence} {group.confidence}%{/if}</span>
+							{/if}
+						</div>
+					</div>
+
+					<div class="evidence-list">
+						{#each group.items as item (`${group.sourceType}-${item.id}-${item.status}`)}
+							<div class={`evidence-row evidence-row--${item.status}`}>
+								<div class="evidence-copy">
+									<div class="evidence-title-line">
+										{#if item.url}
+											<a
+												class="evidence-title evidence-link"
+												href={item.url}
+												target="_blank"
+												rel="noopener noreferrer"
+											>
+												{item.title}
+											</a>
+										{:else}
+											<div class="evidence-title">{item.title}</div>
+										{/if}
+										<span class={`evidence-status evidence-status--${item.status}`}>{item.status}</span>
+									</div>
+									{#if item.description}
+										<div class="evidence-description">{item.description}</div>
+									{/if}
+								</div>
+
+								{#if item.artifactId}
+									<div class="evidence-actions">
+										<EvidencePreferenceControl
+											artifactId={item.artifactId}
+											preference={preferenceFor(item.artifactId)}
+											on:steer={(event) => steer(event.detail)}
+										/>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+</div>
+
+<style>
+	.evidence-shell {
+		margin-top: var(--space-md);
+		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent 30%);
+		padding-top: var(--space-sm);
+	}
+
+	.evidence-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		border: none;
+		background: transparent;
+		padding: 0;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.76rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.evidence-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.35rem;
+		height: 1.35rem;
+		border-radius: 9999px;
+		background: color-mix(in srgb, var(--accent) 16%, transparent 84%);
+		color: var(--text-primary);
+		font-size: 0.7rem;
+	}
+
+	.evidence-groups {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		margin-top: var(--space-sm);
+	}
+
+	.evidence-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+	}
+
+	.evidence-group-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.evidence-group-title {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.evidence-chip {
+		border: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent 30%);
+		border-radius: 9999px;
+		padding: 0.18rem 0.45rem;
+		font-size: 0.67rem;
+		color: var(--text-muted);
+	}
+
+	.evidence-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.evidence-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.85rem;
+		padding: 0.55rem 0.65rem;
+		border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--surface-elevated) 52%, transparent 48%);
+	}
+
+	.evidence-row--rejected {
+		opacity: 0.78;
+	}
+
+	.evidence-copy {
+		min-width: 0;
+		flex: 1;
+	}
+
+	.evidence-title-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem;
+	}
+
+	.evidence-title {
+		font-size: 0.82rem;
+		line-height: 1.35;
+		color: var(--text-primary);
+		word-break: break-word;
+	}
+
+	.evidence-link {
+		text-decoration: none;
+	}
+
+	.evidence-link:hover {
+		text-decoration: underline;
+	}
+
+	.evidence-status {
+		font-size: 0.66rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+	}
+
+	.evidence-status--selected {
+		color: var(--accent);
+	}
+
+	.evidence-description {
+		margin-top: 0.22rem;
+		font-size: 0.76rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
+		word-break: break-word;
+	}
+
+	.evidence-actions {
+		display: flex;
+		flex-shrink: 0;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+
+</style>

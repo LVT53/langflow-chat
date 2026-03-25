@@ -128,6 +128,75 @@ describe('Honcho Service', () => {
     });
   });
 
+  describe('persona memory attribution helpers', () => {
+    it('attributes sessionless persona memories only when they are new in the snapshot diff', async () => {
+      const { selectPersonaMemoryAttributionCandidates } = await import('./honcho');
+
+      const candidates = selectPersonaMemoryAttributionCandidates({
+        conversationId: 'conv-1',
+        beforeIds: new Set(['old-memory']),
+        records: [
+          {
+            id: 'old-memory',
+            scope: 'self',
+            sessionId: null,
+          },
+          {
+            id: 'new-promoted-memory',
+            scope: 'assistant_about_user',
+            sessionId: null,
+          },
+          {
+            id: 'session-bound-memory',
+            scope: 'self',
+            sessionId: 'conv-1',
+          },
+        ],
+      });
+
+      expect(candidates).toEqual([
+        {
+          id: 'new-promoted-memory',
+          scope: 'assistant_about_user',
+          sessionId: null,
+        },
+        {
+          id: 'session-bound-memory',
+          scope: 'self',
+          sessionId: 'conv-1',
+        },
+      ]);
+    });
+
+    it('deletes both session-bound and attributed persona memories for a conversation', async () => {
+      const { selectConversationPersonaMemoryDeletionIds } = await import('./honcho');
+
+      const ids = selectConversationPersonaMemoryDeletionIds({
+        conversationId: 'conv-1',
+        attributedIds: ['promoted-memory'],
+        records: [
+          {
+            id: 'session-bound-memory',
+            scope: 'self',
+            sessionId: 'conv-1',
+          },
+          {
+            id: 'promoted-memory',
+            scope: 'assistant_about_user',
+            sessionId: null,
+          },
+          {
+            id: 'other-memory',
+            scope: 'self',
+            sessionId: null,
+          },
+        ],
+      });
+
+      expect(ids).toEqual(['session-bound-memory', 'promoted-memory']);
+    });
+  });
+
   describe('buildEnhancedSystemPrompt', () => {
     it('should return base prompt when Honcho is disabled', async () => {
       const { buildEnhancedSystemPrompt } = await import('./honcho');

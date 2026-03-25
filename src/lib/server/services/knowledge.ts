@@ -48,6 +48,10 @@ import {
 	WORKING_SET_PROMPT_LIMIT,
 	type WorkingSetCandidate,
 } from './working-set';
+import {
+	classifyGeneratedOutputArtifact,
+	ensureGeneratedOutputRetrievalBackfill,
+} from './evidence-family';
 import { syncArtifactChunks } from './task-state';
 
 export const MAX_MODEL_CONTEXT = 262_144;
@@ -56,6 +60,37 @@ export const TARGET_CONSTRUCTED_CONTEXT = 157_286;
 export const WORKING_SET_PROMPT_TOKEN_BUDGET = 12_000;
 export const WORKING_SET_DOCUMENT_TOKEN_BUDGET = 1_500;
 export const WORKING_SET_OUTPUT_TOKEN_BUDGET = 2_000;
+
+type ArtifactSummaryRow = Pick<
+	typeof artifacts.$inferSelect,
+	| 'id'
+	| 'type'
+	| 'retrievalClass'
+	| 'name'
+	| 'mimeType'
+	| 'sizeBytes'
+	| 'conversationId'
+	| 'summary'
+	| 'createdAt'
+	| 'updatedAt'
+>;
+
+type WorkCapsuleArtifactRow = ArtifactSummaryRow &
+	Pick<typeof artifacts.$inferSelect, 'metadataJson'>;
+
+const knowledgeArtifactListSelection = {
+	id: artifacts.id,
+	type: artifacts.type,
+	retrievalClass: artifacts.retrievalClass,
+	name: artifacts.name,
+	mimeType: artifacts.mimeType,
+	sizeBytes: artifacts.sizeBytes,
+	conversationId: artifacts.conversationId,
+	summary: artifacts.summary,
+	metadataJson: artifacts.metadataJson,
+	createdAt: artifacts.createdAt,
+	updatedAt: artifacts.updatedAt,
+} as const;
 
 function parseJsonRecord(value: string | null): Record<string, unknown> | null {
 	if (!value) return null;
@@ -77,10 +112,11 @@ function parseJsonStringArray(value: string | null): string[] {
 	}
 }
 
-function mapArtifactSummary(row: typeof artifacts.$inferSelect): ArtifactSummary {
+function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
 	return {
 		id: row.id,
 		type: row.type as ArtifactType,
+		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactSummary['retrievalClass'],
 		name: row.name,
 		mimeType: row.mimeType,
 		sizeBytes: row.sizeBytes ?? null,
@@ -187,6 +223,7 @@ async function createArtifact(params: {
 	userId: string;
 	conversationId?: string | null;
 	type: ArtifactType;
+	retrievalClass?: Artifact['retrievalClass'];
 	name: string;
 	mimeType?: string | null;
 	extension?: string | null;
@@ -205,6 +242,7 @@ async function createArtifact(params: {
 			userId: params.userId,
 			conversationId: params.conversationId ?? null,
 			type: params.type,
+			retrievalClass: params.retrievalClass ?? 'durable',
 			name: params.name,
 			mimeType: params.mimeType ?? null,
 			extension: params.extension ?? null,
@@ -737,8 +775,10 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 	results: ArtifactSummary[];
 	workflows: WorkCapsule[];
 }> {
+	await ensureGeneratedOutputRetrievalBackfill(userId);
+
 	const rows = await db
-		.select()
+		.select(knowledgeArtifactListSelection)
 		.from(artifacts)
 		.where(eq(artifacts.userId, userId))
 		.orderBy(desc(artifacts.updatedAt));
@@ -747,7 +787,7 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 		.filter((row) => row.type === 'source_document' || row.type === 'normalized_document')
 		.map(mapArtifactSummary);
 
-	const latestGeneratedByConversation = new Map<string, typeof artifacts.$inferSelect>();
+	const latestGeneratedByConversation = new Map<string, (typeof rows)[number]>();
 	for (const row of rows) {
 		if (row.type !== 'generated_output') continue;
 		const key = row.conversationId ?? row.id;
@@ -838,6 +878,8 @@ export async function selectWorkingSetArtifactsForPrompt(
 	message: string,
 	excludeArtifactIds: string[] = []
 ): Promise<Artifact[]> {
+	await ensureGeneratedOutputRetrievalBackfill(userId);
+
 	const exclude = new Set(excludeArtifactIds);
 	const rows = await db
 		.select({
@@ -865,12 +907,18 @@ export async function selectWorkingSetArtifactsForPrompt(
 			const explicitlyRequested =
 				scoreMatch(message, row.artifact.name) > 0 ||
 				scoreMatch(message, row.artifact.summary ?? '') > 1;
+			const retrievalClass = (row.artifact.retrievalClass ?? 'durable') as Artifact['retrievalClass'];
+			const allowEphemeralOutput =
+				artifact.type === 'generated_output' &&
+				artifact.conversationId === conversationId &&
+				reasonCodes.includes('latest_generated_output');
 			const promptEligible =
-				reasonCodes.includes('attached_this_turn') ||
+				(artifact.type !== 'generated_output' || retrievalClass === 'durable' || allowEphemeralOutput) &&
+				(reasonCodes.includes('attached_this_turn') ||
 				messageMatchScore >= 2 ||
 				explicitlyRequested ||
 				(reasonCodes.includes('latest_generated_output') && messageMatchScore >= 1) ||
-				(reasonCodes.includes('recently_used_in_output') && messageMatchScore >= 1);
+				(reasonCodes.includes('recently_used_in_output') && messageMatchScore >= 1));
 
 			return {
 				artifact,
@@ -984,6 +1032,8 @@ export async function createGeneratedOutputArtifact(params: {
 	content: string;
 	sourceArtifactIds: string[];
 }): Promise<Artifact | null> {
+	await ensureGeneratedOutputRetrievalBackfill(params.userId);
+
 	const trimmed = params.content.trim();
 	if (!trimmed) return null;
 
@@ -1031,10 +1081,26 @@ export async function createGeneratedOutputArtifact(params: {
 		});
 	}
 
+	const retrievalClass = await classifyGeneratedOutputArtifact({
+		userId: params.userId,
+		artifact,
+	});
+	if (retrievalClass !== artifact.retrievalClass) {
+		const [updated] = await db
+			.update(artifacts)
+			.set({
+				retrievalClass,
+				updatedAt: new Date(),
+			})
+			.where(eq(artifacts.id, artifact.id))
+			.returning();
+		return updated ? mapArtifact(updated) : { ...artifact, retrievalClass };
+	}
+
 	return artifact;
 }
 
-function mapWorkCapsuleFromArtifact(row: typeof artifacts.$inferSelect): WorkCapsule {
+function mapWorkCapsuleFromArtifact(row: WorkCapsuleArtifactRow): WorkCapsule {
 	const metadata = parseJsonRecord(row.metadataJson ?? null);
 	return {
 		artifact: mapArtifactSummary(row),
@@ -1465,6 +1531,12 @@ async function findRelevantArtifacts(params: {
 			and(
 				eq(artifacts.userId, params.userId),
 				inArray(artifacts.type, params.types),
+				params.types.includes('generated_output')
+					? or(
+							ne(artifacts.type, 'generated_output'),
+							eq(artifacts.retrievalClass, 'durable')
+						)
+					: undefined,
 				params.excludeConversationId
 					? sql`${artifacts.conversationId} IS NULL OR ${artifacts.conversationId} <> ${params.excludeConversationId}`
 					: undefined,
@@ -1539,6 +1611,8 @@ export async function findRelevantKnowledgeArtifacts(
 	excludeConversationId?: string,
 	limit = 6
 ): Promise<Artifact[]> {
+	await ensureGeneratedOutputRetrievalBackfill(userId);
+
 	return findRelevantArtifacts({
 		userId,
 		query,
