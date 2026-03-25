@@ -94,6 +94,30 @@ describe('Honcho Service', () => {
     });
   });
 
+  describe('Honcho peer IDs', () => {
+    it('keeps compatible user peer ids unchanged', async () => {
+      const { getHonchoUserPeerId } = await import('./honcho');
+      expect(getHonchoUserPeerId('550e8400-e29b-41d4-a716-446655440000')).toBe(
+        '550e8400-e29b-41d4-a716-446655440000'
+      );
+    });
+
+    it('maps incompatible ids to deterministic safe peer ids', async () => {
+      const { getHonchoUserPeerId, getHonchoAssistantPeerId } = await import('./honcho');
+      const userPeerId = getHonchoUserPeerId('Jane Doe / sales');
+      const assistantPeerId = getHonchoAssistantPeerId('Jane Doe / sales');
+
+      expect(userPeerId).toMatch(/^[a-zA-Z0-9_-]+$/);
+      expect(userPeerId).not.toContain(' ');
+      expect(userPeerId).not.toContain('/');
+      expect(getHonchoUserPeerId('Jane Doe / sales')).toBe(userPeerId);
+
+      expect(assistantPeerId).toMatch(/^[a-zA-Z0-9_-]+$/);
+      expect(assistantPeerId.startsWith('assistant_')).toBe(true);
+      expect(assistantPeerId).not.toContain(':');
+    });
+  });
+
   describe('buildEnhancedSystemPrompt', () => {
     it('should return base prompt when Honcho is disabled', async () => {
       const { buildEnhancedSystemPrompt } = await import('./honcho');

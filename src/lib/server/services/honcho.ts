@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { Honcho } from '@honcho-ai/sdk';
 import type { Message, Peer } from '@honcho-ai/sdk';
 import type { Session } from '@honcho-ai/sdk/dist/session';
@@ -28,6 +29,8 @@ let client: Honcho | null = null;
 
 const peerCache = new Map<string, Peer>();
 const sessionCache = new Map<string, Session>();
+const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 
 function estimateTokenCount(text: string): number {
 	const trimmed = text.trim();
@@ -58,8 +61,26 @@ function buildSection(title: string, body: string): string {
 	return trimmed ? `## ${title}\n${trimmed}` : '';
 }
 
-function assistantPeerId(userId: string): string {
-	return `assistant:${userId}`;
+function normalizePeerIdFragment(rawId: string): string {
+	const trimmed = rawId.trim();
+	if (
+		trimmed &&
+		trimmed.length <= HONCHO_SAFE_ID_MAX_LENGTH &&
+		HONCHO_PEER_ID_PATTERN.test(trimmed)
+	) {
+		return trimmed;
+	}
+
+	const digest = createHash('sha256').update(rawId).digest('hex').slice(0, 32);
+	return `h_${digest}`;
+}
+
+export function getHonchoUserPeerId(userId: string): string {
+	return normalizePeerIdFragment(userId);
+}
+
+export function getHonchoAssistantPeerId(userId: string): string {
+	return `assistant_${normalizePeerIdFragment(userId)}`;
 }
 
 function roleForMessage(message: Message, userId: string): 'user' | 'assistant' {
@@ -68,7 +89,7 @@ function roleForMessage(message: Message, userId: string): 'user' | 'assistant' 
 	if (metadataRole === 'assistant' || metadataRole === 'user') {
 		return metadataRole;
 	}
-	return message.peerId === assistantPeerId(userId) ? 'assistant' : 'user';
+	return message.peerId === getHonchoAssistantPeerId(userId) ? 'assistant' : 'user';
 }
 
 function serializeMessages(messages: Message[], userId: string, limit: number): string {
@@ -173,11 +194,11 @@ async function getPeerById(peerId: string): Promise<Peer> {
 }
 
 export async function getUserPeer(userId: string): Promise<Peer> {
-	return getPeerById(userId);
+	return getPeerById(getHonchoUserPeerId(userId));
 }
 
 export async function getAssistantPeer(userId: string): Promise<Peer> {
-	return getPeerById(assistantPeerId(userId));
+	return getPeerById(getHonchoAssistantPeerId(userId));
 }
 
 async function getSession(userId: string, conversationId: string): Promise<Session> {
