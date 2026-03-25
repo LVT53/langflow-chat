@@ -41,6 +41,7 @@
 	}
 
 	$: isUser = message.role === 'user';
+	$: hasAttachments = (message.attachments?.length ?? 0) > 0;
 	$: hasThinking = Boolean(message.thinking?.trim());
 	$: hasToolCalls = (message.thinkingSegments?.some((s) => s.type === 'tool_call')) ?? false;
 	$: thinkingTokenCount = hasThinking ? estimateTokenCount(message.thinking ?? '') : 0;
@@ -185,6 +186,15 @@
 					</div>
 				</div>
 			{:else}
+				{#if hasAttachments}
+					<div class="mb-3 flex flex-wrap gap-2">
+						{#each message.attachments ?? [] as attachment (attachment.id)}
+							<div class="rounded-full border border-border bg-surface-page px-3 py-1 text-[11px] font-sans text-text-secondary">
+								{attachment.name}
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<div class="whitespace-pre-wrap break-words text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
 					{message.content}
 				</div>

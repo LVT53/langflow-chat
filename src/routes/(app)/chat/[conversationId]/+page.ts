@@ -19,6 +19,9 @@ export const load: PageLoad = async ({ params, fetch }) => {
 
 	return {
 		conversation: detail.conversation,
-		messages: detail.messages
+		messages: detail.messages,
+		attachedArtifacts: detail.attachedArtifacts ?? [],
+		activeWorkingSet: detail.activeWorkingSet ?? [],
+		contextStatus: detail.contextStatus ?? null
 	};
 };

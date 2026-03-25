@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { messages, messageAnalytics } from '$lib/server/db/schema';
 import type { ChatMessage, MessageRole, ThinkingSegment, ModelId } from '$lib/types';
 import { getConfig } from '$lib/server/config-store';
+import { listMessageAttachments } from './knowledge';
 
 function getModelDisplayName(modelId?: string | null): string | undefined {
 	if (!modelId) return undefined;
@@ -44,17 +45,23 @@ function mapRowToChatMessage(
 }
 
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
-	const result = await db
-		.select({
-			message: messages,
-			model: messageAnalytics.model
-		})
-		.from(messages)
-		.leftJoin(messageAnalytics, eq(messages.id, messageAnalytics.messageId))
-		.where(eq(messages.conversationId, conversationId))
-		.orderBy(asc(messages.createdAt));
+	const [result, attachmentMap] = await Promise.all([
+		db
+			.select({
+				message: messages,
+				model: messageAnalytics.model
+			})
+			.from(messages)
+			.leftJoin(messageAnalytics, eq(messages.id, messageAnalytics.messageId))
+			.where(eq(messages.conversationId, conversationId))
+			.orderBy(asc(messages.createdAt)),
+		listMessageAttachments(conversationId),
+	]);
 
-	return result.map((row) => mapRowToChatMessage(row.message, row.model));
+	return result.map((row) => ({
+		...mapRowToChatMessage(row.message, row.model),
+		attachments: attachmentMap.get(row.message.id) ?? [],
+	}));
 }
 
 export async function deleteMessages(ids: string[]): Promise<void> {

@@ -3,18 +3,25 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import TranslationToggle from './TranslationToggle.svelte';
 	import ModelSelector from './ModelSelector.svelte';
+	import type { ArtifactSummary } from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
 	export let isGenerating: boolean = false;
+	export let conversationId: string | null = null;
+	export let attachmentsEnabled: boolean = false;
 
 	const dispatch = createEventDispatcher<{
-		send: { message: string };
+		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[] };
 		stop: void;
 	}>();
 
 	let textarea: HTMLTextAreaElement;
+	let fileInput: HTMLInputElement;
 	let message = '';
+	let pendingAttachments: ArtifactSummary[] = [];
+	let uploadingAttachment = false;
+	let attachmentError = '';
 	
 	$: isEmpty = message.trim().length === 0;
 	$: isOverMaxLength = message.length > maxLength;
@@ -24,6 +31,9 @@
 	$: canSend = !isEmpty && !isOverMaxLength;
 
 	function isMobile(): boolean {
+		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+			return false;
+		}
 		return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 	}
 
@@ -33,6 +43,8 @@
 		// Only clear if we actually switched conversations, not on initial load if it already has text
 		if (!message) {
 			message = '';
+			pendingAttachments = [];
+			attachmentError = '';
 			adjustHeight();
 			if (!isMobile()) {
 				setTimeout(() => textarea.focus(), 0);
@@ -43,6 +55,7 @@
 	function adjustHeight() {
 		if (!textarea) return;
 		requestAnimationFrame(() => {
+			if (!textarea) return;
 			const minHeight = 90;
 			textarea.style.height = `${minHeight}px`;
 			const isMobileDevice = window.innerWidth < 768;
@@ -65,8 +78,14 @@
 
 	function send() {
 		if (!canSend) return;
-		dispatch('send', { message: message.trim() });
+		dispatch('send', {
+			message: message.trim(),
+			attachmentIds: pendingAttachments.map((attachment) => attachment.id),
+			attachments: pendingAttachments
+		});
 		message = '';
+		pendingAttachments = [];
+		attachmentError = '';
 		adjustHeight();
 		if (!isMobile()) {
 			textarea.focus();
@@ -92,10 +111,57 @@
 		window.addEventListener('resize', adjustHeight);
 		return () => window.removeEventListener('resize', adjustHeight);
 	});
+
+	function openFilePicker() {
+		if (!attachmentsEnabled || !conversationId || uploadingAttachment) return;
+		fileInput?.click();
+	}
+
+	async function uploadFiles(files: FileList | null) {
+		if (!files || !conversationId) return;
+		uploadingAttachment = true;
+		attachmentError = '';
+
+		try {
+			for (const file of Array.from(files)) {
+				const formData = new FormData();
+				formData.append('file', file);
+				formData.append('conversationId', conversationId);
+				const response = await fetch('/api/knowledge/upload', {
+					method: 'POST',
+					body: formData
+				});
+				if (!response.ok) {
+					const payload = await response.json().catch(() => ({}));
+					throw new Error(payload.error ?? 'Failed to upload attachment.');
+				}
+				const payload = await response.json();
+				if (payload?.artifact) {
+					pendingAttachments = [...pendingAttachments, payload.artifact];
+				}
+			}
+		} catch (error) {
+			attachmentError = error instanceof Error ? error.message : 'Failed to upload attachment.';
+		} finally {
+			uploadingAttachment = false;
+			if (fileInput) fileInput.value = '';
+		}
+	}
+
+	function removePendingAttachment(id: string) {
+		pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== id);
+	}
 </script>
 
 <div class="relative flex w-full flex-col">
 	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-0 transition-all duration-150 focus-within:border-focus-ring">
+		<input
+			bind:this={fileInput}
+			type="file"
+			class="hidden"
+			multiple
+			on:change={(event) => uploadFiles((event.currentTarget as HTMLInputElement).files)}
+		/>
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
@@ -107,6 +173,24 @@
 			rows="1"
 		></textarea>
 
+		{#if pendingAttachments.length > 0}
+			<div class="flex flex-wrap gap-2 px-[16px] pb-2 pt-1">
+				{#each pendingAttachments as attachment (attachment.id)}
+					<div class="attachment-chip flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs font-sans text-text-secondary">
+						<span class="truncate max-w-[180px]">{attachment.name}</span>
+						<button
+							type="button"
+							class="text-text-muted transition-colors hover:text-text-primary"
+							on:click={() => removePendingAttachment(attachment.id)}
+							aria-label={`Remove ${attachment.name}`}
+						>
+							×
+						</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
 			<div class="flex items-center gap-2">
 				<ModelSelector />
@@ -114,8 +198,9 @@
 				<button
 					type="button"
 					class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
-					disabled
-					title="File uploads coming soon"
+					on:click={openFilePicker}
+					disabled={!attachmentsEnabled || !conversationId || uploadingAttachment}
+					title={attachmentsEnabled ? 'Attach file' : 'File uploads are available in active chats'}
 					aria-label="Attach file"
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -162,6 +247,17 @@
 			</span>
 		</div>
 	{/if}
+
+	{#if uploadingAttachment || attachmentError}
+		<div class="mt-2 flex items-center justify-between px-2 text-xs font-sans">
+			{#if uploadingAttachment}
+				<span class="text-text-muted">Uploading attachment...</span>
+			{/if}
+			{#if attachmentError}
+				<span class="text-danger">{attachmentError}</span>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -191,6 +287,10 @@
 
 	.composer-actions {
 		border-top: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent 28%);
+	}
+
+	.attachment-chip {
+		background: color-mix(in srgb, var(--surface-page) 88%, var(--surface-elevated) 12%);
 	}
 
 	.composer-send {

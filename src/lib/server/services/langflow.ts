@@ -1,9 +1,8 @@
 // Langflow API client service
-import { randomUUID } from 'crypto';
 import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/types';
 import { getSystemPrompt } from '../prompts';
 import { getConfig } from '../config-store';
-import { buildEnhancedSystemPrompt } from './honcho';
+import { buildConstructedContext, buildEnhancedSystemPrompt } from './honcho';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -45,8 +44,9 @@ export async function sendMessage(
   message: string,
   sessionId: string,
   modelId?: ModelId,
-  userId?: string
-): Promise<{ text: string; rawResponse: LangflowRunResponse }> {
+  userId?: string,
+  options?: { attachmentIds?: string[] }
+): Promise<{ text: string; rawResponse: LangflowRunResponse; contextStatus?: import('$lib/types').ConversationContextStatus }> {
   const config = getConfig();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -58,7 +58,19 @@ export async function sendMessage(
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
-    // Build system prompt with Honcho memory context if userId is available
+    let inputValue = message;
+    let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
+    if (userId) {
+      const constructed = await buildConstructedContext({
+        userId,
+        conversationId: sessionId,
+        message,
+        attachmentIds: options?.attachmentIds,
+      });
+      inputValue = constructed.inputValue;
+      contextStatus = constructed.contextStatus;
+    }
+
     const systemPrompt = userId
       ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, userId)
       : getSystemPrompt(modelConfig.systemPrompt);
@@ -67,6 +79,7 @@ export async function sendMessage(
       url,
       sessionId,
       messageLength: message.length,
+      inputValueLength: inputValue.length,
       modelId,
       modelName,
       baseUrl,
@@ -74,11 +87,10 @@ export async function sendMessage(
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-      input_value: message,
+      input_value: inputValue,
       input_type: 'chat',
       output_type: 'chat',
-      // Fresh UUID prevents Langflow from accumulating unbounded history
-      session_id: randomUUID(),
+      session_id: sessionId,
       tweaks: {
         model_name: modelName,
         api_base: baseUrl,
@@ -110,7 +122,7 @@ export async function sendMessage(
     const rawResponse: LangflowRunResponse = await response.json();
     const text = extractMessageText(rawResponse);
 
-    return { text, rawResponse };
+    return { text, rawResponse, contextStatus };
   } catch (error) {
     throw error;
   } finally {
@@ -122,8 +134,8 @@ export async function sendMessageStream(
   message: string,
   sessionId: string,
   modelId?: ModelId,
-  options?: { signal?: AbortSignal; userId?: string }
-): Promise<ReadableStream<Uint8Array>> {
+  options?: { signal?: AbortSignal; userId?: string; attachmentIds?: string[] }
+): Promise<{ stream: ReadableStream<Uint8Array>; contextStatus?: import('$lib/types').ConversationContextStatus }> {
   const config = getConfig();
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), config.requestTimeoutMs);
@@ -136,7 +148,19 @@ export async function sendMessageStream(
     const modelName = modelConfig.modelName;
     const baseUrl = modelConfig.baseUrl;
 
-    // Build system prompt with Honcho memory context if userId is available
+    let inputValue = message;
+    let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
+    if (options?.userId) {
+      const constructed = await buildConstructedContext({
+        userId: options.userId,
+        conversationId: sessionId,
+        message,
+        attachmentIds: options.attachmentIds,
+      });
+      inputValue = constructed.inputValue;
+      contextStatus = constructed.contextStatus;
+    }
+
     const systemPrompt = options?.userId
       ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, options.userId)
       : getSystemPrompt(modelConfig.systemPrompt);
@@ -145,6 +169,7 @@ export async function sendMessageStream(
       url,
       sessionId,
       messageLength: message.length,
+      inputValueLength: inputValue.length,
       modelId,
       modelName,
       baseUrl,
@@ -154,11 +179,10 @@ export async function sendMessageStream(
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-      input_value: message,
+      input_value: inputValue,
       input_type: 'chat',
       output_type: 'chat',
-      // Fresh UUID prevents Langflow from accumulating unbounded history
-      session_id: randomUUID(),
+      session_id: sessionId,
       tweaks: {
         model_name: modelName,
         api_base: baseUrl,
@@ -192,7 +216,7 @@ export async function sendMessageStream(
       throw new Error('Response body is empty');
     }
 
-    return response.body as ReadableStream<Uint8Array>;
+    return { stream: response.body as ReadableStream<Uint8Array>, contextStatus };
   } catch (error) {
     throw error;
   } finally {

@@ -20,6 +20,64 @@ const migrations: string[] = [
 		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
+	`CREATE TABLE IF NOT EXISTS artifacts (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+		type TEXT NOT NULL,
+		name TEXT NOT NULL,
+		mime_type TEXT,
+		extension TEXT,
+		size_bytes INTEGER,
+		storage_path TEXT,
+		content_text TEXT,
+		summary TEXT,
+		metadata_json TEXT,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE TABLE IF NOT EXISTS artifact_links (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+		related_artifact_id TEXT REFERENCES artifacts(id) ON DELETE CASCADE,
+		conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+		message_id TEXT REFERENCES messages(id) ON DELETE CASCADE,
+		link_type TEXT NOT NULL,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE TABLE IF NOT EXISTS conversation_context_status (
+		conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		estimated_tokens INTEGER NOT NULL DEFAULT 0,
+		max_context_tokens INTEGER NOT NULL DEFAULT 262144,
+		threshold_tokens INTEGER NOT NULL DEFAULT 209715,
+		target_tokens INTEGER NOT NULL DEFAULT 157286,
+		compaction_applied INTEGER NOT NULL DEFAULT 0,
+		layers_used_json TEXT,
+		working_set_count INTEGER NOT NULL DEFAULT 0,
+		working_set_artifact_ids_json TEXT,
+		working_set_applied INTEGER NOT NULL DEFAULT 0,
+		summary TEXT,
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`ALTER TABLE conversation_context_status ADD COLUMN working_set_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversation_context_status ADD COLUMN working_set_artifact_ids_json TEXT`,
+	`ALTER TABLE conversation_context_status ADD COLUMN working_set_applied INTEGER NOT NULL DEFAULT 0`,
+	`CREATE TABLE IF NOT EXISTS conversation_working_set_items (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+		artifact_type TEXT NOT NULL,
+		score INTEGER NOT NULL DEFAULT 0,
+		state TEXT NOT NULL DEFAULT 'cooling',
+		reason_codes_json TEXT,
+		last_activated_at INTEGER,
+		last_used_at INTEGER,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
 ];
 for (const sql of migrations) {
 	try { sqlite.exec(sql); } catch { /* column already exists — ignore */ }

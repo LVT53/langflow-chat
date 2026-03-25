@@ -184,6 +184,18 @@
 						<path d="m20 20-3.5-3.5"></path>
 					</svg>
 				</button>
+				<button
+					type="button"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					on:click={() => navigateAndClose('/knowledge')}
+					title="Knowledge base"
+					aria-label="Open knowledge base"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+						<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+					</svg>
+				</button>
 			</div>
 		{:else}
 			<!-- Expanded: search pill + compose icon in a single row -->
@@ -212,6 +224,18 @@
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
 						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+					on:click={() => navigateAndClose('/knowledge')}
+					title="Knowledge base"
+					aria-label="Open knowledge base"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+						<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
 					</svg>
 				</button>
 			</div>

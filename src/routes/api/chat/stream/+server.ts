@@ -5,7 +5,15 @@ import { sendMessageStream } from '$lib/server/services/langflow';
 import { getConfig } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage } from '$lib/server/services/messages';
-import { mirrorMessage } from '$lib/server/services/honcho';
+import { mirrorMessage, mirrorWorkCapsuleConclusion } from '$lib/server/services/honcho';
+import {
+	attachArtifactsToMessage,
+	createGeneratedOutputArtifact,
+	getConversationWorkingSet,
+	listConversationSourceArtifactIds,
+	refreshConversationWorkingSet,
+	upsertWorkCapsule
+} from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -528,7 +536,13 @@ export const POST: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 	const requestStartTime = Date.now();
 
-	let body: { message?: unknown; conversationId?: unknown; model?: unknown; skipPersistUserMessage?: unknown };
+	let body: {
+		message?: unknown;
+		conversationId?: unknown;
+		model?: unknown;
+		skipPersistUserMessage?: unknown;
+		attachmentIds?: unknown;
+	};
 	try {
 		body = await event.request.json();
 	} catch {
@@ -538,7 +552,10 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const { message, conversationId, model, skipPersistUserMessage } = body;
+	const { message, conversationId, model, skipPersistUserMessage, attachmentIds } = body;
+	const safeAttachmentIds = Array.isArray(attachmentIds)
+		? attachmentIds.filter((id): id is string => typeof id === 'string')
+		: [];
 
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return new Response(JSON.stringify({ error: 'Message must be a non-empty string' }), {
@@ -968,6 +985,33 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			const emitError = (code: StreamErrorCode) => enqueueChunk(streamErrorEvent(code));
+			let latestContextStatus:
+				| {
+						estimatedTokens: number;
+						maxContextTokens: number;
+						thresholdTokens: number;
+						targetTokens: number;
+						compactionApplied: boolean;
+						layersUsed: string[];
+						workingSetCount: number;
+						workingSetArtifactIds: string[];
+						workingSetApplied: boolean;
+						summary: string | null;
+				  }
+				| undefined;
+			let latestActiveWorkingSet:
+				| Array<{
+						id: string;
+						type: string;
+						name: string;
+						mimeType: string | null;
+						sizeBytes: number | null;
+						conversationId: string | null;
+						summary: string | null;
+						createdAt: number;
+						updatedAt: number;
+				  }>
+				| undefined;
 
 			const completeSuccess = (wasStopped = false) => {
 				if (ended) return; // Do not check `closed` — client may have disconnected but we still persist to DB
@@ -1007,7 +1051,9 @@ export const POST: RequestHandler = async (event) => {
 							thinking: thinkingContent || undefined,
 							wasStopped,
 							userMessageId: userMsgId,
-							assistantMessageId: assistantMsgId
+							assistantMessageId: assistantMsgId,
+							contextStatus: latestContextStatus,
+							activeWorkingSet: latestActiveWorkingSet
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1015,6 +1061,26 @@ export const POST: RequestHandler = async (event) => {
 				};
 
 				Promise.all([userMsgPromise, assistantMsgPromise]).then(([userMsg, assistantMsg]) => {
+					const postPersistTasks: Promise<unknown>[] = [];
+					if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
+						postPersistTasks.push(
+							(async () => {
+								await attachArtifactsToMessage({
+									userId: user.id,
+									conversationId,
+									messageId: userMsg.id,
+									artifactIds: safeAttachmentIds
+								});
+								latestActiveWorkingSet = await refreshConversationWorkingSet({
+									userId: user.id,
+									conversationId,
+									message: normalizedMessage,
+									attachmentIds: safeAttachmentIds
+								});
+							})()
+						);
+					}
+
 					if (assistantMsg) {
 						recordMessageAnalytics({
 							messageId: assistantMsg.id,
@@ -1024,6 +1090,38 @@ export const POST: RequestHandler = async (event) => {
 							reasoningTokens: thinkingTokenCount,
 							generationTimeMs: genTimeMs,
 						}).catch(() => undefined);
+
+						postPersistTasks.push(
+							(async () => {
+								const sourceArtifactIds = safeAttachmentIds.length > 0
+									? safeAttachmentIds
+									: await listConversationSourceArtifactIds(user.id, conversationId);
+								const outputArtifact = await createGeneratedOutputArtifact({
+									userId: user.id,
+									conversationId,
+									messageId: assistantMsg.id,
+									content: fullResponse,
+									sourceArtifactIds
+								});
+								const workCapsule = await upsertWorkCapsule({
+									userId: user.id,
+									conversationId
+								});
+								if (workCapsule?.workflowSummary) {
+									await mirrorWorkCapsuleConclusion({
+										userId: user.id,
+										conversationId,
+										content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
+									});
+								}
+								latestActiveWorkingSet = await refreshConversationWorkingSet({
+									userId: user.id,
+									conversationId,
+									message: normalizedMessage,
+									latestOutputArtifactId: outputArtifact?.id ?? null
+								}).catch(async () => getConversationWorkingSet(user.id, conversationId));
+							})()
+						);
 					}
 
 					// Fire-and-forget: mirror to Honcho for long-term memory reasoning
@@ -1036,7 +1134,9 @@ export const POST: RequestHandler = async (event) => {
 						);
 					}
 
-					sendEndAndClose(userMsg?.id, assistantMsg?.id);
+					Promise.allSettled(postPersistTasks).finally(() => {
+						sendEndAndClose(userMsg?.id, assistantMsg?.id);
+					});
 				}).catch(() => {
 					sendEndAndClose();
 				});
@@ -1062,10 +1162,31 @@ export const POST: RequestHandler = async (event) => {
 				upstreamMessageLength: upstreamMessage.length,
 				modelId
 			});
-			const langflowStream = await sendMessageStream(upstreamMessage, conversationId, modelId, {
+			const langflowResponse = await sendMessageStream(upstreamMessage, conversationId, modelId, {
 				signal: upstreamAbortController.signal,
-				userId: user.id
+				userId: user.id,
+				attachmentIds: safeAttachmentIds
 			});
+				const langflowStream =
+					langflowResponse instanceof ReadableStream
+						? langflowResponse
+						: langflowResponse.stream;
+				latestContextStatus = langflowResponse instanceof ReadableStream
+					? undefined
+					: langflowResponse.contextStatus
+							? {
+								estimatedTokens: langflowResponse.contextStatus.estimatedTokens,
+								maxContextTokens: langflowResponse.contextStatus.maxContextTokens,
+								thresholdTokens: langflowResponse.contextStatus.thresholdTokens,
+								targetTokens: langflowResponse.contextStatus.targetTokens,
+								compactionApplied: langflowResponse.contextStatus.compactionApplied,
+								layersUsed: langflowResponse.contextStatus.layersUsed,
+								workingSetCount: langflowResponse.contextStatus.workingSetCount,
+								workingSetArtifactIds: langflowResponse.contextStatus.workingSetArtifactIds,
+								workingSetApplied: langflowResponse.contextStatus.workingSetApplied,
+								summary: langflowResponse.contextStatus.summary
+							}
+						: undefined;
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

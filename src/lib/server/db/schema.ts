@@ -47,6 +47,81 @@ export const messages = sqliteTable('messages', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const artifacts = sqliteTable('artifacts', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+  type: text('type').notNull(),
+  name: text('name').notNull(),
+  mimeType: text('mime_type'),
+  extension: text('extension'),
+  sizeBytes: integer('size_bytes'),
+  storagePath: text('storage_path'),
+  contentText: text('content_text'),
+  summary: text('summary'),
+  metadataJson: text('metadata_json'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const artifactLinks = sqliteTable('artifact_links', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  artifactId: text('artifact_id')
+    .notNull()
+    .references(() => artifacts.id, { onDelete: 'cascade' }),
+  relatedArtifactId: text('related_artifact_id').references(() => artifacts.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }),
+  messageId: text('message_id').references(() => messages.id, { onDelete: 'cascade' }),
+  linkType: text('link_type').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const conversationContextStatus = sqliteTable('conversation_context_status', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  estimatedTokens: integer('estimated_tokens').notNull().default(0),
+  maxContextTokens: integer('max_context_tokens').notNull().default(262144),
+  thresholdTokens: integer('threshold_tokens').notNull().default(209715),
+  targetTokens: integer('target_tokens').notNull().default(157286),
+  compactionApplied: integer('compaction_applied').notNull().default(0),
+  layersUsedJson: text('layers_used_json'),
+  workingSetCount: integer('working_set_count').notNull().default(0),
+  workingSetArtifactIdsJson: text('working_set_artifact_ids_json'),
+  workingSetApplied: integer('working_set_applied').notNull().default(0),
+  summary: text('summary'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const conversationWorkingSetItems = sqliteTable('conversation_working_set_items', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  artifactId: text('artifact_id')
+    .notNull()
+    .references(() => artifacts.id, { onDelete: 'cascade' }),
+  artifactType: text('artifact_type').notNull(),
+  score: integer('score').notNull().default(0),
+  state: text('state').notNull().default('cooling'),
+  reasonCodesJson: text('reason_codes_json'),
+  lastActivatedAt: integer('last_activated_at', { mode: 'timestamp' }),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const adminConfig = sqliteTable('admin_config', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

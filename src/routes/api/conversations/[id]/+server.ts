@@ -8,6 +8,11 @@ import {
 	moveConversationToProject
 } from '$lib/server/services/conversations';
 import { listMessages } from '$lib/server/services/messages';
+import {
+	getConversationWorkingSet,
+	getConversationContextStatus,
+	listConversationArtifacts
+} from '$lib/server/services/knowledge';
 
 export const GET: RequestHandler = async (event) => {
 	try {
@@ -20,11 +25,19 @@ export const GET: RequestHandler = async (event) => {
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 
-		const messageHistory = await listMessages(id);
+		const [messageHistory, attachedArtifacts, activeWorkingSet, contextStatus] = await Promise.all([
+			listMessages(id),
+			listConversationArtifacts(user.id, id),
+			getConversationWorkingSet(user.id, id),
+			getConversationContextStatus(user.id, id)
+		]);
 
 		return json({
 			conversation,
-			messages: messageHistory
+			messages: messageHistory,
+			attachedArtifacts,
+			activeWorkingSet,
+			contextStatus
 		});
 	} catch (err) {
 		console.error('Error loading conversation:', err);

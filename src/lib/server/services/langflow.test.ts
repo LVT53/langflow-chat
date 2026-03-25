@@ -18,10 +18,48 @@ vi.mock('../env', () => ({
     maxMessageLength: 10000,
     sessionSecret: 'test-secret',
     databasePath: './data/test.db',
+    model1: {
+      baseUrl: 'http://localhost:30001/v1',
+      apiKey: '',
+      modelName: 'model-1',
+      displayName: 'Model 1',
+      systemPrompt: 'default',
+      flowId: 'test-flow-id',
+    },
+    model2: {
+      baseUrl: '',
+      apiKey: '',
+      modelName: '',
+      displayName: 'Model 2',
+      systemPrompt: 'default',
+      flowId: '',
+    },
   },
 }));
 
 vi.stubGlobal('fetch', vi.fn());
+
+vi.mock('./honcho', () => ({
+  buildConstructedContext: vi.fn(async ({ message }: { message: string }) => ({
+    inputValue: `CTX:${message}`,
+    contextStatus: {
+      conversationId: 'test-session',
+      userId: 'user-1',
+      estimatedTokens: 42,
+      maxContextTokens: 262144,
+      thresholdTokens: 209715,
+      targetTokens: 157286,
+      compactionApplied: false,
+      layersUsed: ['session'],
+      workingSetCount: 0,
+      workingSetArtifactIds: [],
+      workingSetApplied: false,
+      summary: null,
+      updatedAt: Date.now(),
+    },
+  })),
+  buildEnhancedSystemPrompt: vi.fn(async () => 'You are a helpful AI assistant.'),
+}));
 
 describe('Langflow API Client Service', () => {
   beforeEach(() => {
@@ -116,13 +154,19 @@ describe('Langflow API Client Service', () => {
             input_value: 'Hello',
             input_type: 'chat',
             output_type: 'chat',
-            session_id: 'test-session'
+            session_id: 'test-session',
+            tweaks: {
+              model_name: 'model-1',
+              api_base: 'http://localhost:30001/v1',
+              system_prompt: 'You are a helpful AI assistant.'
+            }
           })
         })
       );
 
       expect(result).toEqual({
         text: 'AI response',
+        contextStatus: undefined,
         rawResponse: {
           outputs: [{
             outputs: [{
@@ -141,7 +185,8 @@ describe('Langflow API Client Service', () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error'
+        statusText: 'Internal Server Error',
+        text: vi.fn().mockResolvedValue('')
       }));
 
       const { sendMessage } = await import('./langflow');
@@ -162,7 +207,7 @@ describe('Langflow API Client Service', () => {
 
       const { sendMessageStream } = await import('./langflow');
 
-      const stream = await sendMessageStream('Hello', 'test-session');
+      const response = await sendMessageStream('Hello', 'test-session');
 
       expect(fetch).toHaveBeenCalledWith(
         'http://localhost:7860/api/v1/run/test-flow-id?stream=true',
@@ -176,19 +221,25 @@ describe('Langflow API Client Service', () => {
             input_value: 'Hello',
             input_type: 'chat',
             output_type: 'chat',
-            session_id: 'test-session'
+            session_id: 'test-session',
+            tweaks: {
+              model_name: 'model-1',
+              api_base: 'http://localhost:30001/v1',
+              system_prompt: 'You are a helpful AI assistant.'
+            }
           })
         })
       );
 
-      expect(stream).toBeDefined();
+      expect(response.stream).toBeDefined();
     });
 
     it('should throw error on non-200 response for streaming', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error'
+        statusText: 'Internal Server Error',
+        text: vi.fn().mockResolvedValue('')
       }));
 
       const { sendMessageStream } = await import('./langflow');

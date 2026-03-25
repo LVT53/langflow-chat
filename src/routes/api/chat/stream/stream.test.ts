@@ -17,6 +17,15 @@ vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn()
 }));
 
+vi.mock('$lib/server/services/knowledge', () => ({
+	attachArtifactsToMessage: vi.fn(),
+	createGeneratedOutputArtifact: vi.fn(),
+	getConversationWorkingSet: vi.fn(async () => []),
+	listConversationSourceArtifactIds: vi.fn(async () => []),
+	refreshConversationWorkingSet: vi.fn(async () => []),
+	upsertWorkCapsule: vi.fn(async () => null)
+}));
+
 vi.mock('$lib/server/services/language', () => ({
 	detectLanguage: vi.fn()
 }));
@@ -27,6 +36,11 @@ vi.mock('$lib/server/services/translator', () => ({
 		addChunk = vi.fn(async (chunk: string) => [`HU:${chunk}`]);
 		flush = vi.fn(async () => []);
 	}
+}));
+
+vi.mock('$lib/server/services/honcho', () => ({
+	mirrorMessage: vi.fn(async () => undefined),
+	mirrorWorkCapsuleConclusion: vi.fn(async () => undefined)
 }));
 
 vi.mock('$lib/server/env', () => ({
@@ -100,7 +114,12 @@ describe('POST /api/chat/stream', () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
-		mockCreateMessage.mockImplementation(async () => null);
+		mockCreateMessage.mockImplementation(async () => ({
+			id: crypto.randomUUID(),
+			role: 'assistant',
+			content: '',
+			timestamp: Date.now()
+		}));
 		mockDetectLanguage.mockReturnValue('en');
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 	});
@@ -229,6 +248,7 @@ describe('POST /api/chat/stream', () => {
 			'conv-1',
 			'assistant',
 			'Hello world again',
+			undefined,
 			undefined
 		);
 	});
@@ -258,6 +278,7 @@ describe('POST /api/chat/stream', () => {
 			'conv-1',
 			'assistant',
 			'Hello world',
+			undefined,
 			undefined
 		);
 	});
@@ -329,7 +350,8 @@ describe('POST /api/chat/stream', () => {
 			'conv-1',
 			'assistant',
 			'BeforeAfter',
-			'Need to reason carefully'
+			'Need to reason carefully',
+			[{ type: 'text', content: 'Need to reason carefully' }]
 		);
 	});
 
@@ -349,7 +371,11 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-		expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', expect.any(Object));
+		expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, {
+			signal: expect.any(Object),
+			userId: 'user-1',
+			attachmentIds: []
+		});
 		expect(body).toContain('"text":"HU:Final English answer."');
 	});
 

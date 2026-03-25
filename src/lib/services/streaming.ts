@@ -6,6 +6,8 @@ export interface StreamMetadata {
 	wasStopped?: boolean;
 	userMessageId?: string;
 	assistantMessageId?: string;
+	contextStatus?: import('$lib/types').ConversationContextStatus;
+	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
 }
 
 export interface StreamCallbacks {
@@ -55,7 +57,8 @@ export function streamChat(
 	conversationId: string,
 	callbacks: StreamCallbacks,
 	modelId?: ModelId,
-	skipPersistUserMessage?: boolean
+	skipPersistUserMessage?: boolean,
+	attachmentIds?: string[]
 ): StreamHandle {
 	const controller = new AbortController();
 	let aborted = false;
@@ -210,7 +213,13 @@ export function streamChat(
 			const res = await fetch('/api/chat/stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message, conversationId, model: modelId, skipPersistUserMessage }),
+				body: JSON.stringify({
+					message,
+					conversationId,
+					model: modelId,
+					skipPersistUserMessage,
+					attachmentIds
+				}),
 				signal: controller.signal
 			});
 
@@ -301,12 +310,14 @@ export function streamChat(
 									metadata = {
 										thinkingTokenCount: parsed.thinkingTokenCount,
 										responseTokenCount: parsed.responseTokenCount,
-										totalTokenCount: parsed.totalTokenCount,
-										thinking: parsed.thinking,
-										wasStopped: parsed.wasStopped,
-										userMessageId: parsed.userMessageId,
-										assistantMessageId: parsed.assistantMessageId
-									};
+									totalTokenCount: parsed.totalTokenCount,
+									thinking: parsed.thinking,
+									wasStopped: parsed.wasStopped,
+									userMessageId: parsed.userMessageId,
+									assistantMessageId: parsed.assistantMessageId,
+									contextStatus: parsed.contextStatus,
+									activeWorkingSet: parsed.activeWorkingSet
+								};
 								} catch {
 									/* noop */
 								}

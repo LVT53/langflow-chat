@@ -54,6 +54,34 @@ vi.mock('../db/schema', () => ({
   adminConfig: {},
 }));
 
+vi.mock('./knowledge', () => ({
+  COMPACTION_UI_THRESHOLD: 209715,
+  MAX_MODEL_CONTEXT: 262144,
+  TARGET_CONSTRUCTED_CONTEXT: 157286,
+  findRelevantKnowledgeArtifacts: vi.fn(async () => []),
+  findRelevantWorkCapsules: vi.fn(async () => []),
+  getArtifactsForUser: vi.fn(async () => []),
+  selectWorkingSetArtifactsForPrompt: vi.fn(async () => []),
+  updateConversationContextStatus: vi.fn(async () => ({
+    conversationId: 'conv-456',
+    userId: 'user-123',
+    estimatedTokens: 0,
+    maxContextTokens: 262144,
+    thresholdTokens: 209715,
+    targetTokens: 157286,
+    compactionApplied: false,
+    layersUsed: [],
+    workingSetCount: 0,
+    workingSetArtifactIds: [],
+    workingSetApplied: false,
+    summary: null,
+    updatedAt: Date.now(),
+  })),
+  WORKING_SET_DOCUMENT_TOKEN_BUDGET: 1500,
+  WORKING_SET_OUTPUT_TOKEN_BUDGET: 2000,
+  WORKING_SET_PROMPT_TOKEN_BUDGET: 12000,
+}));
+
 describe('Honcho Service', () => {
   beforeEach(() => {
     vi.resetModules();

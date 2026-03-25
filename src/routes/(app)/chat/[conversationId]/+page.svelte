@@ -8,7 +8,7 @@
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
-	import type { ChatMessage } from '$lib/types';
+	import type { ArtifactSummary, ChatMessage, ConversationContextStatus } from '$lib/types';
 	import type { PageData } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
@@ -31,12 +31,17 @@
 	let canRetry = false;
 	let prevConversationId: string | null = null;
 	let hasPersistedMessages = (data.messages?.length ?? 0) > 0;
+	let contextStatus: ConversationContextStatus | null = data.contextStatus ?? null;
+	let attachedArtifacts: ArtifactSummary[] = data.attachedArtifacts ?? [];
+	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
 
 	$: hasMessages = $messages.length > 0;
 	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
+	$: visibleWorkingSet = activeWorkingSet.slice(0, 4);
+	$: workingSetOverflow = Math.max(0, activeWorkingSet.length - visibleWorkingSet.length);
 
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
@@ -52,7 +57,7 @@
 		window.sessionStorage.removeItem(storageKey);
 		handleSend(
 			new CustomEvent('send', {
-				detail: { message: pendingMessage }
+				detail: { message: pendingMessage, attachmentIds: [], attachments: [] }
 			})
 		);
 	}
@@ -70,6 +75,9 @@
 		lastUserMessage = '';
 		lastAssistantResponse = '';
 		canRetry = false;
+		contextStatus = data.contextStatus ?? null;
+		attachedArtifacts = data.attachedArtifacts ?? [];
+		activeWorkingSet = data.activeWorkingSet ?? [];
 		currentConversationId.set(data.conversation.id);
 		maybeSendPendingInitialMessage();
 	}
@@ -141,8 +149,14 @@
 		}
 	});
 
-	function handleSend(event: CustomEvent<{ message: string }>, skipUserMessage = false, skipPersistUserMessage = false) {
+	function handleSend(
+		event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: ArtifactSummary[] }>,
+		skipUserMessage = false,
+		skipPersistUserMessage = false
+	) {
 		const text = event.detail.message;
+		const attachmentIds = event.detail.attachmentIds ?? [];
+		const newAttachments = event.detail.attachments ?? [];
 		if (!text.trim() || isSending) return;
 
 		sendError = null;
@@ -150,6 +164,13 @@
 		lastUserMessage = text;
 		canRetry = true;
 		hasPersistedMessages = true;
+		if (newAttachments.length > 0) {
+			const merged = new Map(attachedArtifacts.map((artifact) => [artifact.id, artifact]));
+			for (const attachment of newAttachments) {
+				merged.set(attachment.id, attachment);
+			}
+			attachedArtifacts = Array.from(merged.values());
+		}
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const placeholderId = crypto.randomUUID();
@@ -170,6 +191,19 @@
 				id: clientUserMsgId,
 				role: 'user',
 				content: text,
+				attachments: attachedArtifacts
+					.filter((artifact) => attachmentIds.includes(artifact.id))
+					.map((artifact) => ({
+						id: artifact.id,
+						artifactId: artifact.id,
+						name: artifact.name,
+						type: artifact.type,
+						mimeType: artifact.mimeType,
+						sizeBytes: artifact.sizeBytes,
+						conversationId: artifact.conversationId,
+						messageId: null,
+						createdAt: artifact.createdAt
+					})),
 				timestamp: Date.now()
 			};
 			messages.update((msgs) => [...msgs, userMsg, placeholder]);
@@ -244,6 +278,8 @@
 				},
 				onEnd(_fullText, metadata) {
 					lastAssistantResponse = _fullText;
+					contextStatus = metadata?.contextStatus ?? contextStatus;
+					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					const serverAssistantId = metadata?.assistantMessageId;
 					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
@@ -315,7 +351,8 @@
 				}
 			},
 			$selectedModel,
-			skipPersistUserMessage
+			skipPersistUserMessage,
+			attachmentIds
 		);
 	}
 
@@ -323,7 +360,7 @@
 		if (canRetry && lastUserMessage) {
 			sendError = null;
 			const retryEvent = new CustomEvent('send', {
-				detail: { message: lastUserMessage }
+				detail: { message: lastUserMessage, attachmentIds: [], attachments: [] }
 			});
 			handleSend(retryEvent);
 		}
@@ -354,7 +391,11 @@
 		}).catch(() => {});
 
 		sendError = null;
-		handleSend(new CustomEvent('send', { detail: { message: userText } }), true, true);
+		handleSend(
+			new CustomEvent('send', { detail: { message: userText, attachmentIds: [], attachments: [] } }),
+			true,
+			true
+		);
 	}
 
 	function handleEdit(event: CustomEvent<{ messageId: string; newText: string }>) {
@@ -377,7 +418,7 @@
 		}).catch(() => {});
 
 		sendError = null;
-		handleSend(new CustomEvent('send', { detail: { message: newText } }));
+		handleSend(new CustomEvent('send', { detail: { message: newText, attachmentIds: [], attachments: [] } }));
 	}
 
 	function handleStop() {
@@ -417,7 +458,66 @@
 					<ErrorMessage error={sendError} onRetry={handleRetry} onClose={handleErrorClose} />
 				{/if}
 
-				<MessageInput on:send={handleSend} on:stop={handleStop} disabled={isSending} isGenerating={isSending} maxLength={data.maxMessageLength} />
+				{#if contextStatus}
+					<div class="rounded-[1rem] border border-border bg-surface-elevated/80 px-4 py-3 text-xs font-sans text-text-secondary shadow-sm">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<span>
+								Context {contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.maxContextTokens.toLocaleString()} tokens
+							</span>
+							{#if contextStatus.compactionApplied}
+								<span class="rounded-full bg-accent/10 px-2 py-1 text-accent">Optimized</span>
+							{/if}
+						</div>
+						{#if contextStatus.layersUsed.length > 0}
+							<div class="mt-2 flex flex-wrap gap-2">
+								{#each contextStatus.layersUsed as layer}
+									<span class="rounded-full border border-border px-2 py-1 uppercase tracking-[0.08em]">{layer}</span>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+					{#if attachedArtifacts.length > 0}
+						<div class="flex flex-wrap gap-2">
+							{#each attachedArtifacts as artifact (artifact.id)}
+								<div class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-xs font-sans text-text-secondary">
+									{artifact.name}
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					{#if activeWorkingSet.length > 0}
+						<div class="rounded-[1rem] border border-border bg-surface-elevated/70 px-4 py-3 text-xs font-sans text-text-secondary shadow-sm">
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="uppercase tracking-[0.08em] text-text-muted">Working with</span>
+								{#each visibleWorkingSet as artifact (artifact.id)}
+									<div class="flex items-center gap-2 rounded-full border border-border bg-surface-page px-3 py-1 text-text-secondary">
+										<span class="text-[10px] uppercase tracking-[0.1em] text-text-muted">
+											{artifact.type === 'generated_output' ? 'Result' : 'Doc'}
+										</span>
+										<span class="max-w-[180px] truncate">{artifact.name}</span>
+									</div>
+								{/each}
+								{#if workingSetOverflow > 0}
+									<div class="rounded-full border border-border bg-surface-page px-3 py-1 text-text-muted">
+										+{workingSetOverflow}
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<MessageInput
+						on:send={handleSend}
+					on:stop={handleStop}
+					disabled={isSending}
+					isGenerating={isSending}
+					maxLength={data.maxMessageLength}
+					conversationId={data.conversation.id}
+					attachmentsEnabled={true}
+				/>
 			</div>
 		</div>
 	</div>

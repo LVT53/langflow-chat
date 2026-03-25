@@ -17,6 +17,15 @@ vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn()
 }));
 
+vi.mock('$lib/server/services/knowledge', () => ({
+	attachArtifactsToMessage: vi.fn(),
+	createGeneratedOutputArtifact: vi.fn(),
+	getConversationWorkingSet: vi.fn(async () => []),
+	listConversationSourceArtifactIds: vi.fn(async () => []),
+	refreshConversationWorkingSet: vi.fn(async () => []),
+	upsertWorkCapsule: vi.fn(async () => null)
+}));
+
 vi.mock('$lib/server/services/language', () => ({
 	detectLanguage: vi.fn()
 }));
@@ -24,6 +33,11 @@ vi.mock('$lib/server/services/language', () => ({
 vi.mock('$lib/server/services/translator', () => ({
 	translateHungarianToEnglish: vi.fn(),
 	translateEnglishToHungarian: vi.fn()
+}));
+
+vi.mock('$lib/server/services/honcho', () => ({
+	mirrorMessage: vi.fn(async () => undefined),
+	mirrorWorkCapsuleConclusion: vi.fn(async () => undefined)
 }));
 
 vi.mock('$lib/server/env', () => ({
@@ -71,7 +85,12 @@ describe('POST /api/chat/send', () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
-		mockCreateMessage.mockImplementation(async () => null);
+		mockCreateMessage.mockImplementation(async () => ({
+			id: crypto.randomUUID(),
+			role: 'user',
+			content: '',
+			timestamp: Date.now()
+		}));
 		mockDetectLanguage.mockReturnValue('en');
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 		mockTranslateEnglishToHungarian.mockImplementation(async (message: string) => `HU:${message}`);
@@ -80,7 +99,7 @@ describe('POST /api/chat/send', () => {
 	it('returns AI response text for a valid request', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
-		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {} });
+		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {}, contextStatus: undefined });
 
 		const event = makeEvent({ message: 'Hello', conversationId: 'conv-1' });
 		const response = await POST(event);
@@ -89,14 +108,16 @@ describe('POST /api/chat/send', () => {
 		expect(response.status).toBe(200);
 		expect(data.response.text).toBe('Hello from AI!');
 		expect(data.conversationId).toBe('conv-1');
-		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1', undefined);
+		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1', undefined, 'user-1', {
+			attachmentIds: []
+		});
 	});
 
 	it('translates Hungarian requests and responses when translationEnabled is true', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
 		mockDetectLanguage.mockReturnValue('hu');
-		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {} });
+		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {}, contextStatus: undefined });
 
 		const userWithTranslation = { id: 'user-1', email: 'test@example.com', translationEnabled: true };
 		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' }, userWithTranslation);
@@ -104,7 +125,9 @@ describe('POST /api/chat/send', () => {
 		const data = await response.json();
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined);
+		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, 'user-1', {
+			attachmentIds: []
+		});
 		expect(mockTranslateEnglishToHungarian).toHaveBeenCalledWith('Hello from AI!');
 		expect(data.response.text).toBe('HU:Hello from AI!');
 	});

@@ -34,7 +34,7 @@
 		}
 	});
 
-async function handleSend(event: CustomEvent<{ message: string }>) {
+async function handleSend(event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: unknown[] }>) {
 		if (creating) return;
 		const text = event.detail.message;
 
@@ -92,7 +92,13 @@ async function handleSend(event: CustomEvent<{ message: string }>) {
 					</div>
 				{/if}
 
-				<MessageInput on:send={handleSend} disabled={creating} maxLength={data.maxMessageLength} />
+				<MessageInput
+					on:send={handleSend}
+					disabled={creating}
+					maxLength={data.maxMessageLength}
+					conversationId={null}
+					attachmentsEnabled={false}
+				/>
 			</div>
 		</div>
 	</div>

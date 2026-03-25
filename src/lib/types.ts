@@ -62,6 +62,9 @@ export interface Conversation {
 export interface ConversationDetail {
   conversation: Conversation;
   messages: ChatMessage[];
+  attachedArtifacts?: ArtifactSummary[];
+  activeWorkingSet?: ArtifactSummary[];
+  contextStatus?: ConversationContextStatus | null;
 }
 
 // ConversationListItem interface: id, title, updatedAt
@@ -90,6 +93,7 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   timestamp: number;
+  attachments?: ChatAttachment[];
   isStreaming?: boolean;
   thinking?: string;
   isThinkingStreaming?: boolean;
@@ -101,6 +105,116 @@ export interface ChatMessage {
   thinkingSegments?: ThinkingSegment[];
   // Display name of the model used for the response (assistant messages only)
   modelDisplayName?: string;
+}
+
+export type ArtifactType =
+  | 'source_document'
+  | 'normalized_document'
+  | 'generated_output'
+  | 'work_capsule';
+
+export type ArtifactLinkType =
+  | 'attached_to_conversation'
+  | 'derived_from'
+  | 'used_in_output'
+  | 'supersedes'
+  | 'captured_by_capsule';
+
+export type MemoryLayer = 'session' | 'capsule' | 'documents' | 'outputs' | 'working_set';
+
+export type WorkingSetState = 'active' | 'cooling';
+
+export type WorkingSetReasonCode =
+  | 'attached_this_turn'
+  | 'recently_used_in_output'
+  | 'latest_generated_output'
+  | 'matched_current_turn'
+  | 'persisted_from_previous_turn'
+  | 'linked_from_work_capsule';
+
+export interface ChatAttachment {
+  id: string;
+  artifactId: string;
+  name: string;
+  type: ArtifactType;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  conversationId: string | null;
+  messageId?: string | null;
+  createdAt: number;
+}
+
+export interface ArtifactSummary {
+  id: string;
+  type: ArtifactType;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  conversationId: string | null;
+  summary: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Artifact extends ArtifactSummary {
+  userId: string;
+  extension: string | null;
+  storagePath: string | null;
+  contentText: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface ArtifactLink {
+  id: string;
+  userId: string;
+  artifactId: string;
+  relatedArtifactId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
+  linkType: ArtifactLinkType;
+  createdAt: number;
+}
+
+export interface WorkCapsule {
+  artifact: ArtifactSummary;
+  conversationId: string | null;
+  taskSummary: string | null;
+  workflowSummary: string | null;
+  keyConclusions: string[];
+  reusablePatterns: string[];
+  sourceArtifactIds: string[];
+  outputArtifactIds: string[];
+}
+
+export interface ConversationWorkingSetItem {
+  id: string;
+  userId: string;
+  conversationId: string;
+  artifactId: string;
+  artifactType: Exclude<ArtifactType, 'work_capsule'>;
+  score: number;
+  state: WorkingSetState;
+  reasonCodes: WorkingSetReasonCode[];
+  lastActivatedAt: number | null;
+  lastUsedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ConversationContextStatus {
+  conversationId: string;
+  userId: string;
+  estimatedTokens: number;
+  maxContextTokens: number;
+  thresholdTokens: number;
+  targetTokens: number;
+  compactionApplied: boolean;
+  layersUsed: MemoryLayer[];
+  workingSetCount: number;
+  workingSetArtifactIds: string[];
+  workingSetApplied: boolean;
+  summary: string | null;
+  updatedAt: number;
 }
 
 // Langflow types
