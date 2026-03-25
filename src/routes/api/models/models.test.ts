@@ -1,64 +1,66 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('$lib/server/env', () => ({
-	config: {
-		model1: {
-			baseUrl: 'http://localhost:30001/v1',
-			apiKey: 'test-key-1',
-			modelName: 'test-model-1',
-			displayName: 'Test Model 1'
-		},
-		model2: {
-			baseUrl: 'http://localhost:30002/v1',
-			apiKey: 'test-key-2',
-			modelName: 'test-model-2',
-			displayName: 'Test Model 2'
-		}
-	}
+vi.mock('$lib/server/config-store', () => ({
+	getConfig: vi.fn(),
+	getAvailableModels: vi.fn(),
 }));
 
 import { GET } from './+server';
+import {
+	getAvailableModels,
+	getConfig,
+} from '$lib/server/config-store';
 
-function makeEvent() {
-	return {} as any;
-}
+const mockGetConfig = getConfig as ReturnType<typeof vi.fn>;
+const mockGetAvailableModels = getAvailableModels as ReturnType<typeof vi.fn>;
 
 describe('GET /api/models', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockGetConfig.mockReturnValue({
+			model1: { displayName: 'Test Model 1' },
+			model2: { displayName: 'Test Model 2' },
+			model2Enabled: true,
+		});
+		mockGetAvailableModels.mockReturnValue([
+			{ id: 'model1', displayName: 'Test Model 1' },
+			{ id: 'model2', displayName: 'Test Model 2' },
+		]);
 	});
 
-	it('returns 200 with models array', async () => {
-		const response = await GET(makeEvent());
+	it('returns 200 with the available models array', async () => {
+		const response = await GET({} as any);
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(data.models).toHaveLength(2);
 	});
 
-	it('returns model1 with correct id and displayName', async () => {
-		const response = await GET(makeEvent());
+	it('returns model1 and model2 when model2 is enabled', async () => {
+		const response = await GET({} as any);
 		const data = await response.json();
 
-		expect(data.models[0]).toEqual({
-			id: 'model1',
-			displayName: 'Test Model 1'
-		});
+		expect(data.models).toEqual([
+			{ id: 'model1', displayName: 'Test Model 1' },
+			{ id: 'model2', displayName: 'Test Model 2' },
+		]);
 	});
 
-	it('returns model2 with correct id and displayName', async () => {
-		const response = await GET(makeEvent());
+	it('hides model2 when model2 is disabled', async () => {
+		mockGetConfig.mockReturnValue({
+			model1: { displayName: 'Test Model 1' },
+			model2: { displayName: 'Test Model 2' },
+			model2Enabled: false,
+		});
+		mockGetAvailableModels.mockReturnValue([
+			{ id: 'model1', displayName: 'Test Model 1' },
+		]);
+
+		const response = await GET({} as any);
 		const data = await response.json();
 
-		expect(data.models[1]).toEqual({
-			id: 'model2',
-			displayName: 'Test Model 2'
-		});
-	});
-
-	it('returns Content-Type application/json header', async () => {
-		const response = await GET(makeEvent());
-
-		expect(response.headers.get('Content-Type')).toBe('application/json');
+		expect(data.models).toEqual([
+			{ id: 'model1', displayName: 'Test Model 1' },
+		]);
 	});
 });

@@ -42,6 +42,10 @@
 
 	// Model display names
 	const modelNames = (data as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
+	const availableModels = ((data as any).availableModels ?? [
+		{ id: 'model1', displayName: modelNames.model1 },
+		{ id: 'model2', displayName: modelNames.model2 },
+	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
 	const adminModelNames = isAdmin ? ((data as any).modelNames ?? modelNames) : modelNames;
 
 	// --- Delete account modal ---
@@ -401,6 +405,7 @@
 		MODEL_2_DISPLAY_NAME: 'Model 2 Display Name',
 		MODEL_2_SYSTEM_PROMPT: 'Model 2 System Prompt',
 		MODEL_2_FLOW_ID: 'Model 2 Flow ID',
+		MODEL_2_ENABLED: 'Enable Model 2',
 		TITLE_GEN_URL: 'Title Generator URL',
 		TITLE_GEN_MODEL: 'Title Generator Model',
 		TRANSLATOR_URL: 'Translator URL',
@@ -603,20 +608,15 @@
 					<div>
 						<p class="settings-label">Default Model</p>
 						<div class="flex gap-2">
-							<button
-								class="pref-pill"
-								class:pref-pill-active={selectedModel === 'model1'}
-								on:click={() => changeModel('model1')}
-							>
-								{modelNames.model1}
-							</button>
-							<button
-								class="pref-pill"
-								class:pref-pill-active={selectedModel === 'model2'}
-								on:click={() => changeModel('model2')}
-							>
-								{modelNames.model2}
-							</button>
+							{#each availableModels as model}
+								<button
+									class="pref-pill"
+									class:pref-pill-active={selectedModel === model.id}
+									on:click={() => changeModel(model.id)}
+								>
+									{model.displayName}
+								</button>
+							{/each}
 						</div>
 					</div>
 
@@ -831,6 +831,22 @@
 			<section class="settings-card mb-4">
 				<h2 class="settings-section-title">Model 2</h2>
 				<div class="flex flex-col gap-3">
+					<div class="flex items-center justify-between">
+						<div>
+							<label class="settings-label mb-0" for="MODEL_2_ENABLED">{CONFIG_LABELS['MODEL_2_ENABLED']}</label>
+							<p class="text-xs text-text-tertiary">Hide model 2 from the app and force fallbacks to model 1</p>
+						</div>
+						<label class="relative inline-flex cursor-pointer items-center">
+							<input
+								id="MODEL_2_ENABLED"
+								type="checkbox"
+								class="peer sr-only"
+								checked={adminConfig['MODEL_2_ENABLED'] !== 'false'}
+								on:change={(e) => { adminConfig['MODEL_2_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
+							/>
+							<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
+						</label>
+					</div>
 					{#each ['MODEL_2_BASEURL', 'MODEL_2_NAME', 'MODEL_2_DISPLAY_NAME', 'MODEL_2_FLOW_ID'] as key}
 						<div>
 							<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>

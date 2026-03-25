@@ -33,6 +33,7 @@ interface Config {
   databasePath: string;
   model1: ModelConfig;
   model2: ModelConfig;
+  model2Enabled: boolean;
   honchoApiKey: string;
   honchoBaseUrl: string;
   honchoWorkspace: string;
@@ -95,6 +96,7 @@ const getConfig = (): Config => {
       systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
     },
+    model2Enabled: process.env.MODEL_2_ENABLED !== 'false',
     honchoApiKey: process.env.HONCHO_API_KEY || '',
     honchoBaseUrl: process.env.HONCHO_BASE_URL || 'http://localhost:8000',
     honchoWorkspace: process.env.HONCHO_WORKSPACE || 'alfyai-prod',

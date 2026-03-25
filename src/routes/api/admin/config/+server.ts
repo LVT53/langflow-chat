@@ -27,12 +27,14 @@ export const GET: RequestHandler = async (event) => {
     MODEL_2_DISPLAY_NAME: runtime.model2.displayName,
     MODEL_2_SYSTEM_PROMPT: getSystemPrompt(runtime.model2.systemPrompt),
     MODEL_2_FLOW_ID: runtime.model2.flowId,
+    MODEL_2_ENABLED: String(runtime.model2Enabled),
     TITLE_GEN_URL: runtime.titleGenUrl,
     TITLE_GEN_MODEL: runtime.titleGenModel,
     TRANSLATOR_URL: runtime.translatorUrl,
     TRANSLATOR_MODEL: runtime.translatorModel,
     TRANSLATION_MAX_TOKENS: String(runtime.translationMaxTokens),
     TRANSLATION_TEMPERATURE: String(runtime.translationTemperature),
+    HONCHO_ENABLED: String(runtime.honchoEnabled),
   };
 
   return json({ keys: ADMIN_CONFIG_KEYS, currentValues, overrides, envDefaults });

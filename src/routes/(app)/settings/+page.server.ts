@@ -3,7 +3,13 @@ import type { ServerLoad } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { users, adminConfig } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
-import { getConfig, getEnvDefaults, ADMIN_CONFIG_KEYS } from '$lib/server/config-store';
+import {
+  getAvailableModels,
+  getConfig,
+  getEnvDefaults,
+  ADMIN_CONFIG_KEYS,
+  normalizeModelSelection
+} from '$lib/server/config-store';
 import { getSystemPrompt } from '$lib/server/prompts';
 import type { UserSettings } from '$lib/types';
 
@@ -19,7 +25,7 @@ export const load: ServerLoad = async (event) => {
     name: userRow.name,
     role: userRow.role as 'user' | 'admin',
     preferences: {
-      preferredModel: (userRow.preferredModel ?? 'model1') as 'model1' | 'model2',
+      preferredModel: normalizeModelSelection(userRow.preferredModel ?? 'model1'),
       translationEnabled: (userRow.translationEnabled ?? 0) === 1,
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
       avatarId: userRow.avatarId ?? null,
@@ -55,12 +61,14 @@ export const load: ServerLoad = async (event) => {
     MODEL_2_DISPLAY_NAME: runtime.model2.displayName,
     MODEL_2_SYSTEM_PROMPT: getSystemPrompt(runtime.model2.systemPrompt),
     MODEL_2_FLOW_ID: runtime.model2.flowId,
+    MODEL_2_ENABLED: String(runtime.model2Enabled),
     TITLE_GEN_URL: runtime.titleGenUrl,
     TITLE_GEN_MODEL: runtime.titleGenModel,
     TRANSLATOR_URL: runtime.translatorUrl,
     TRANSLATOR_MODEL: runtime.translatorModel,
     TRANSLATION_MAX_TOKENS: String(runtime.translationMaxTokens),
     TRANSLATION_TEMPERATURE: String(runtime.translationTemperature),
+    HONCHO_ENABLED: String(runtime.honchoEnabled),
   };
 
   // Get runtime model display names for preferences section
@@ -76,5 +84,6 @@ export const load: ServerLoad = async (event) => {
     configOverrides,
     envDefaults,
     modelNames,
+    availableModels: getAvailableModels(runtime),
   };
 };

@@ -4,6 +4,7 @@
 import { config as envConfig, type ModelConfig } from './env';
 import { db } from './db';
 import { adminConfig } from './db/schema';
+import type { ModelId } from '$lib/types';
 
 export const ADMIN_CONFIG_KEYS = [
   'MAX_MESSAGE_LENGTH',
@@ -17,6 +18,7 @@ export const ADMIN_CONFIG_KEYS = [
   'MODEL_2_DISPLAY_NAME',
   'MODEL_2_SYSTEM_PROMPT',
   'MODEL_2_FLOW_ID',
+  'MODEL_2_ENABLED',
   'TITLE_GEN_URL',
   'TITLE_GEN_MODEL',
   'CONTEXT_SUMMARIZER_URL',
@@ -53,6 +55,7 @@ export interface RuntimeConfig {
   databasePath: string;
   model1: ModelConfig;
   model2: ModelConfig;
+  model2Enabled: boolean;
   honchoApiKey: string;
   honchoBaseUrl: string;
   honchoWorkspace: string;
@@ -89,6 +92,7 @@ export async function refreshConfig(): Promise<void> {
   if (overrides.MODEL_2_DISPLAY_NAME !== undefined) base.model2.displayName = overrides.MODEL_2_DISPLAY_NAME;
   if (overrides.MODEL_2_SYSTEM_PROMPT !== undefined) base.model2.systemPrompt = overrides.MODEL_2_SYSTEM_PROMPT;
   if (overrides.MODEL_2_FLOW_ID !== undefined) base.model2.flowId = overrides.MODEL_2_FLOW_ID;
+  if (overrides.MODEL_2_ENABLED !== undefined) base.model2Enabled = overrides.MODEL_2_ENABLED === 'true';
   if (overrides.TITLE_GEN_URL !== undefined) base.titleGenUrl = overrides.TITLE_GEN_URL;
   if (overrides.TITLE_GEN_MODEL !== undefined) base.titleGenModel = overrides.TITLE_GEN_MODEL;
   if (overrides.CONTEXT_SUMMARIZER_URL !== undefined) base.contextSummarizerUrl = overrides.CONTEXT_SUMMARIZER_URL;
@@ -112,6 +116,35 @@ export function getConfig(): RuntimeConfig {
   return runtimeConfig;
 }
 
+export function isModelEnabled(modelId: ModelId, config: RuntimeConfig = runtimeConfig): boolean {
+  if (modelId === 'model1') return true;
+  return config.model2Enabled !== false;
+}
+
+export function normalizeModelSelection(
+  modelId: string | null | undefined,
+  config: RuntimeConfig = runtimeConfig
+): ModelId {
+  if (modelId === 'model2' && config.model2Enabled !== false) {
+    return 'model2';
+  }
+  return 'model1';
+}
+
+export function getAvailableModels(
+  config: RuntimeConfig = runtimeConfig
+): Array<{ id: ModelId; displayName: string }> {
+  const models: Array<{ id: ModelId; displayName: string }> = [
+    { id: 'model1', displayName: config.model1.displayName },
+  ];
+
+  if (config.model2Enabled !== false) {
+    models.push({ id: 'model2', displayName: config.model2.displayName });
+  }
+
+  return models;
+}
+
 // Returns the env-var default value for each admin config key (for UI display)
 export function getEnvDefaults(): Record<AdminConfigKey, string> {
   return {
@@ -126,6 +159,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     MODEL_2_DISPLAY_NAME: envConfig.model2.displayName,
     MODEL_2_SYSTEM_PROMPT: envConfig.model2.systemPrompt,
     MODEL_2_FLOW_ID: envConfig.model2.flowId,
+    MODEL_2_ENABLED: String(envConfig.model2Enabled),
     TITLE_GEN_URL: envConfig.titleGenUrl,
     TITLE_GEN_MODEL: envConfig.titleGenModel,
     CONTEXT_SUMMARIZER_URL: envConfig.contextSummarizerUrl,

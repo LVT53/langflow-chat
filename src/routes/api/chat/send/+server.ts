@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import { getConfig } from '$lib/server/config-store';
+import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
 import { mirrorMessage, mirrorWorkCapsuleConclusion } from '$lib/server/services/honcho';
 import {
@@ -55,7 +55,10 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	// Validate model parameter
-	const modelId = model === 'model1' || model === 'model2' ? model : undefined;
+	const modelId =
+		model === 'model1' || model === 'model2'
+			? normalizeModelSelection(model, getConfig())
+			: undefined;
 	const safeAttachmentIds = Array.isArray(attachmentIds)
 		? attachmentIds.filter((id): id is string => typeof id === 'string')
 		: [];

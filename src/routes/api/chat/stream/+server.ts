@@ -2,7 +2,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
-import { getConfig } from '$lib/server/config-store';
+import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage } from '$lib/server/services/messages';
 import { mirrorMessage, mirrorWorkCapsuleConclusion } from '$lib/server/services/honcho';
@@ -588,7 +588,10 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	// Validate model parameter
-	const modelId = model === 'model1' || model === 'model2' ? model : undefined;
+	const modelId =
+		model === 'model1' || model === 'model2'
+			? normalizeModelSelection(model, runtimeConfig)
+			: undefined;
 	const modelDisplayName =
 		modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
 
