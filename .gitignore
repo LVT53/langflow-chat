@@ -24,7 +24,11 @@ vite.config.ts.timestamp-*
 tests/e2e/example.spec.ts
 
 # Claude Code worktrees
-.claude/worktrees/
+.claude/
+
+# Local agent notes, screenshots, and test artifacts
+.sisyphus/
+test-results/
 
 # SQLite database (runtime data, not source)
 data/chat.db

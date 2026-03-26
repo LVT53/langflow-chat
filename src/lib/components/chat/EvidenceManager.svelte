@@ -67,10 +67,7 @@
 	>
 		<div class="evidence-panel">
 			<div class="panel-header">
-				<div>
-					<div class="panel-kicker">Evidence</div>
-					<h2 class="panel-title">Manage evidence</h2>
-				</div>
+				<h2 class="panel-title">Manage evidence</h2>
 				<button type="button" class="panel-close" aria-label="Close evidence manager" on:click={close}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 						<path d="M6 6 18 18" />
@@ -202,22 +199,15 @@
 		padding: 1rem 1rem 0.85rem;
 	}
 
-	.panel-kicker {
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.68rem;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
-		color: var(--text-muted);
-	}
-
 	.panel-title {
-		margin: 0.3rem 0 0;
+		margin: 0;
 		font-size: 1.05rem;
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.panel-close {
+		cursor: pointer;
 		display: inline-flex;
 		height: 2.25rem;
 		width: 2.25rem;

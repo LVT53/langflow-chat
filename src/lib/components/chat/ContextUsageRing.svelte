@@ -233,13 +233,6 @@
 				>
 					{contextDebug?.taskLocked ? 'Unlock task' : 'Lock task'}
 				</button>
-				<button
-					type="button"
-					class="popover-action-button"
-					on:click={openEvidenceManager}
-				>
-					Manage evidence
-				</button>
 				{#if showNewTaskForm}
 					<div class="task-form">
 						<label class="task-form-label" for="new-task-objective">Optional task name</label>
@@ -278,6 +271,13 @@
 						Start new task
 					</button>
 				{/if}
+				<button
+					type="button"
+					class="popover-action-button"
+					on:click={openEvidenceManager}
+				>
+					Manage evidence
+				</button>
 			</div>
 		</div>
 
@@ -496,6 +496,7 @@
 	}
 
 	.popover-action-button {
+		cursor: pointer;
 		border: 1px solid color-mix(in srgb, var(--border-default) 75%, transparent 25%);
 		border-radius: 9999px;
 		background: color-mix(in srgb, var(--surface-page) 75%, var(--surface-elevated) 25%);

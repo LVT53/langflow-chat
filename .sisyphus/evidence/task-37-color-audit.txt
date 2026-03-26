@@ -1,9 +1,0 @@
-=== COLOR AUDIT ===
-Scope: Component and route files only (src/routes/ and src/lib/components/), excluding app.css.
-Note: src/app.css is intentionally excluded per the plan audit step.
-
-Command run:
-$ grep -E -i ':\s*#[0-9a-f]{3,6}|rgb\(' -r src/routes src/lib/components
-
-Result:
-No matches found
