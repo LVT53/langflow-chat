@@ -11,6 +11,7 @@ import { db } from '../db';
 import { personaMemoryAttributions } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
 import {
+	AttachmentReadinessError,
 	COMPACTION_UI_THRESHOLD,
 	findRelevantKnowledgeArtifacts,
 	findRelevantWorkCapsules,
@@ -902,6 +903,23 @@ export async function buildConstructedContext(params: {
 		]);
 	const currentAttachments = resolvedAttachments.promptArtifacts;
 	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
+	if (attachmentIds.length > 0) {
+		console.info('[CONTEXT] Attachment resolution', {
+			conversationId: params.conversationId,
+			requestedAttachmentIds: attachmentIds,
+			displayArtifactCount: resolvedAttachments.displayArtifacts.length,
+			promptArtifactCount: currentAttachments.length,
+			unresolvedAttachmentIds: resolvedAttachments.unresolvedItems.map(
+				(item) => item.requestedArtifactId
+			),
+		});
+	}
+	if (resolvedAttachments.unresolvedItems.length > 0) {
+		throw new AttachmentReadinessError(
+			'One or more attached files could not be prepared for chat. Remove the file or upload a supported text-readable document.',
+			resolvedAttachments.unresolvedItems.map((item) => item.requestedArtifactId)
+		);
+	}
 	const documentFocused =
 		attachmentIds.length > 0 ||
 		/\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i.test(
@@ -966,6 +984,13 @@ export async function buildConstructedContext(params: {
 			body: serializeArtifacts(currentAttachments, 'Attachment', artifactSnippets),
 			layer: 'documents',
 			essential: true,
+		});
+	}
+	if (attachmentIds.length > 0) {
+		console.info('[CONTEXT] Attachment section emitted', {
+			conversationId: params.conversationId,
+			emitted: currentAttachments.length > 0,
+			promptArtifactCount: currentAttachments.length,
 		});
 	}
 

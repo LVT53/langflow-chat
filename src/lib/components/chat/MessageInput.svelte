@@ -4,7 +4,15 @@
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
-	import type { ArtifactSummary, ContextDebugState, ConversationContextStatus, TaskState, TaskSteeringPayload } from '$lib/types';
+	import type {
+		ArtifactSummary,
+		ContextDebugState,
+		ConversationContextStatus,
+		KnowledgeUploadResponse,
+		PendingAttachment,
+		TaskState,
+		TaskSteeringPayload,
+	} from '$lib/types';
 
 	export let disabled: boolean = false;
 	export let maxLength: number = 10000;
@@ -27,8 +35,8 @@
 	let textarea: HTMLTextAreaElement;
 	let fileInput: HTMLInputElement;
 	let message = '';
-	let pendingAttachments: ArtifactSummary[] = [];
-	let uploadingAttachment = false;
+	let pendingAttachments: PendingAttachment[] = [];
+	let uploadState: 'idle' | 'uploading' | 'preparing' = 'idle';
 	let attachmentError = '';
 	let resolvedConversationId: string | null = conversationId;
 	let showToolsMenu = false;
@@ -37,15 +45,19 @@
 	$: isOverMaxLength = message.length > maxLength;
 	$: showCharCount = message.length > maxLength * 0.8;
 	$: charCountColor = isOverMaxLength ? 'text-danger' : 'text-text-muted';
+	$: isUploadingAttachment = uploadState !== 'idle';
+	$: pendingAttachmentArtifacts = pendingAttachments.map((attachment) => attachment.artifact);
+	$: hasUnreadyAttachment = pendingAttachments.some((attachment) => !attachment.promptReady);
+	$: attachmentReadinessErrors = pendingAttachments.filter((attachment) => Boolean(attachment.readinessError));
 	
-	$: canSend = !isEmpty && !isOverMaxLength;
+	$: canSend = !isEmpty && !isOverMaxLength && !isUploadingAttachment && !hasUnreadyAttachment;
 	$: if (conversationId) {
 		resolvedConversationId = conversationId;
 	}
-	$: canAttach = attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !uploadingAttachment;
+	$: canAttach = attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !isUploadingAttachment;
 	$: composerArtifacts = Array.from(
 		new Map(
-			[...attachedArtifacts, ...pendingAttachments].map((artifact) => [artifact.id, artifact])
+			[...attachedArtifacts, ...pendingAttachmentArtifacts].map((artifact) => [artifact.id, artifact])
 		).values()
 	);
 
@@ -64,6 +76,7 @@
 			message = '';
 			pendingAttachments = [];
 			attachmentError = '';
+			uploadState = 'idle';
 			showToolsMenu = false;
 			adjustHeight();
 			if (!isMobile()) {
@@ -100,8 +113,8 @@
 		if (!canSend) return;
 		dispatch('send', {
 			message: message.trim(),
-			attachmentIds: pendingAttachments.map((attachment) => attachment.id),
-			attachments: pendingAttachments,
+			attachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
+			attachments: pendingAttachmentArtifacts,
 			conversationId: resolvedConversationId
 		});
 		message = '';
@@ -151,8 +164,14 @@
 
 	async function uploadFiles(files: FileList | null) {
 		if (!files) return;
-		uploadingAttachment = true;
+		uploadState = 'uploading';
 		attachmentError = '';
+		let preparingTimer: ReturnType<typeof setTimeout> | null = null;
+		if (typeof window !== 'undefined') {
+			preparingTimer = window.setTimeout(() => {
+				uploadState = 'preparing';
+			}, 900);
+		}
 
 		try {
 			let targetConversationId = resolvedConversationId;
@@ -175,23 +194,37 @@
 					const payload = await response.json().catch(() => ({}));
 					throw new Error(payload.error ?? 'Failed to upload attachment.');
 				}
-				const payload = await response.json();
+				const payload = (await response.json()) as Partial<KnowledgeUploadResponse>;
 				if (payload?.artifact) {
-					const next = new Map(pendingAttachments.map((attachment) => [attachment.id, attachment]));
-					next.set(payload.artifact.id, payload.artifact);
+					const next = new Map(
+						pendingAttachments.map((attachment) => [attachment.artifact.id, attachment])
+					);
+					next.set(payload.artifact.id, {
+						artifact: payload.artifact,
+						promptReady: Boolean(payload.promptReady),
+						promptArtifactId:
+							typeof payload.promptArtifactId === 'string' ? payload.promptArtifactId : null,
+						readinessError:
+							typeof payload.readinessError === 'string' && payload.readinessError.trim()
+								? payload.readinessError
+								: null,
+					});
 					pendingAttachments = Array.from(next.values());
 				}
 			}
 		} catch (error) {
 			attachmentError = error instanceof Error ? error.message : 'Failed to upload attachment.';
 		} finally {
-			uploadingAttachment = false;
+			if (preparingTimer) {
+				clearTimeout(preparingTimer);
+			}
+			uploadState = 'idle';
 			if (fileInput) fileInput.value = '';
 		}
 	}
 
 	function removePendingAttachment(id: string) {
-		pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== id);
+		pendingAttachments = pendingAttachments.filter((attachment) => attachment.artifact.id !== id);
 	}
 
 	function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
@@ -225,9 +258,9 @@
 
 		{#if pendingAttachments.length > 0}
 			<div class="flex flex-wrap gap-2 px-[16px] pb-2 pt-1">
-				{#each pendingAttachments as attachment (attachment.id)}
+				{#each pendingAttachments as attachment (attachment.artifact.id)}
 					<FileAttachment
-						{attachment}
+						attachment={attachment.artifact}
 						variant="pending"
 						removable={true}
 						on:remove={(event) => removePendingAttachment(event.detail.id)}
@@ -311,14 +344,21 @@
 		</div>
 	{/if}
 
-	{#if uploadingAttachment || attachmentError}
-		<div class="mt-2 flex items-center justify-between px-2 text-xs font-sans">
-			{#if uploadingAttachment}
-				<span class="text-text-muted">Uploading attachment...</span>
+	{#if isUploadingAttachment || attachmentError || attachmentReadinessErrors.length > 0}
+		<div class="mt-2 flex flex-col gap-1 px-2 text-xs font-sans">
+			{#if uploadState === 'uploading'}
+				<span class="text-text-muted">Uploading file...</span>
+			{:else if uploadState === 'preparing'}
+				<span class="text-text-muted">Preparing file for chat...</span>
 			{/if}
 			{#if attachmentError}
 				<span class="text-danger">{attachmentError}</span>
 			{/if}
+			{#each attachmentReadinessErrors as attachment (attachment.artifact.id)}
+				<span class="text-danger">
+					{attachment.artifact.name}: {attachment.readinessError}
+				</span>
+			{/each}
 		</div>
 	{/if}
 </div>

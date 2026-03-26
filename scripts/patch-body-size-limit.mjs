@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const BUILD_HANDLER_PATH = join(process.cwd(), 'build', 'handler.js');
-const DEFAULT_BODY_SIZE_LIMIT = '32M';
+const DEFAULT_BODY_SIZE_LIMIT = '50M';
 const TARGET = "const body_size_limit = parse_as_bytes(env('BODY_SIZE_LIMIT', '512K'));";
 const REPLACEMENT = `const body_size_limit = parse_as_bytes(env('BODY_SIZE_LIMIT', '${DEFAULT_BODY_SIZE_LIMIT}'));`;
 

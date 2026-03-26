@@ -147,7 +147,10 @@ function buildCurrentAttachmentGroup(
 			sourceType: 'document',
 			status: 'selected',
 			artifactId: artifact.id,
-			description: artifact.summary ? clip(artifact.summary, 180) : 'Attached in this turn.',
+			description: artifact.summary
+				? `Included automatically for this turn. ${clip(artifact.summary, 180)}`
+				: 'Included automatically for this turn.',
+			currentTurnAttachment: true,
 		})),
 	};
 }

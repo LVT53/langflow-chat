@@ -80,7 +80,7 @@
 									{/if}
 								</div>
 
-								{#if item.artifactId}
+								{#if item.artifactId && !item.currentTurnAttachment}
 									<div class="evidence-actions">
 										<EvidencePreferenceControl
 											artifactId={item.artifactId}

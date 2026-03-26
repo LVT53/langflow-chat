@@ -308,32 +308,155 @@ function withAttachmentDisplayName(promptArtifact: Artifact, displayArtifact: Ar
 	};
 }
 
+type PromptAttachmentResolutionItem = {
+	requestedArtifactId: string;
+	displayArtifact: Artifact | null;
+	promptArtifact: Artifact | null;
+	promptReady: boolean;
+	readinessError: string | null;
+};
+
+export class AttachmentReadinessError extends Error {
+	code = 'attachment_not_ready' as const;
+	status = 422 as const;
+	attachmentIds: string[];
+
+	constructor(message: string, attachmentIds: string[]) {
+		super(message);
+		this.name = 'AttachmentReadinessError';
+		this.attachmentIds = attachmentIds;
+	}
+}
+
+export function isAttachmentReadinessError(error: unknown): error is AttachmentReadinessError {
+	return (
+		error instanceof AttachmentReadinessError ||
+		(typeof error === 'object' &&
+			error !== null &&
+			'code' in error &&
+			(error as { code?: unknown }).code === 'attachment_not_ready')
+	);
+}
+
+function buildAttachmentReadinessErrorMessage(items: PromptAttachmentResolutionItem[]): string {
+	if (items.some((item) => item.displayArtifact === null)) {
+		return 'One or more attached files are no longer available. Remove them and upload again.';
+	}
+
+	return 'One or more attached files could not be prepared for chat. Remove the file or upload a supported text-readable document.';
+}
+
 export async function resolvePromptAttachmentArtifacts(
 	userId: string,
 	attachmentIds: string[]
 ): Promise<{
 	displayArtifacts: Artifact[];
 	promptArtifacts: Artifact[];
+	items: PromptAttachmentResolutionItem[];
+	unresolvedItems: PromptAttachmentResolutionItem[];
 }> {
 	const displayArtifacts = await getArtifactsForUser(userId, attachmentIds);
 	if (displayArtifacts.length === 0) {
-		return { displayArtifacts: [], promptArtifacts: [] };
+		const items = attachmentIds.map((attachmentId) => ({
+			requestedArtifactId: attachmentId,
+			displayArtifact: null,
+			promptArtifact: null,
+			promptReady: false,
+			readinessError: 'Attached file is no longer available.',
+		}));
+		return { displayArtifacts: [], promptArtifacts: [], items, unresolvedItems: items };
 	}
 
-	const resolved = await Promise.all(
-		displayArtifacts.map(async (artifact) => {
-			if (artifact.type !== 'source_document') {
-				return withAttachmentDisplayName(artifact, artifact);
+	const displayArtifactsById = new Map(displayArtifacts.map((artifact) => [artifact.id, artifact]));
+	const items = await Promise.all(
+		attachmentIds.map(async (attachmentId) => {
+			const displayArtifact = displayArtifactsById.get(attachmentId) ?? null;
+			if (!displayArtifact) {
+				return {
+					requestedArtifactId: attachmentId,
+					displayArtifact: null,
+					promptArtifact: null,
+					promptReady: false,
+					readinessError: 'Attached file is no longer available.',
+				};
 			}
 
-			const normalized = await getNormalizedArtifactForSource(userId, artifact.id);
-			return withAttachmentDisplayName(normalized ?? artifact, artifact);
+			if (displayArtifact.type !== 'source_document') {
+				return {
+					requestedArtifactId: attachmentId,
+					displayArtifact,
+					promptArtifact: withAttachmentDisplayName(displayArtifact, displayArtifact),
+					promptReady: true,
+					readinessError: null,
+				};
+			}
+
+			const normalized = await getNormalizedArtifactForSource(userId, displayArtifact.id);
+			if (!normalized) {
+				return {
+					requestedArtifactId: attachmentId,
+					displayArtifact,
+					promptArtifact: null,
+					promptReady: false,
+					readinessError:
+						'This file could not be prepared for chat. Supported extraction currently works best for text, HTML, JSON, PDF, DOCX, PPTX, and XLSX files.',
+				};
+			}
+
+			return {
+				requestedArtifactId: attachmentId,
+				displayArtifact,
+				promptArtifact: withAttachmentDisplayName(normalized, displayArtifact),
+				promptReady: true,
+				readinessError: null,
+			};
 		})
 	);
+	const unresolvedItems = items.filter((item) => !item.promptReady);
 
 	return {
 		displayArtifacts,
-		promptArtifacts: Array.from(new Map(resolved.map((artifact) => [artifact.id, artifact])).values()),
+		promptArtifacts: Array.from(
+			new Map(
+				items
+					.flatMap((item) => (item.promptArtifact ? [[item.promptArtifact.id, item.promptArtifact] as const] : []))
+			).values()
+		),
+		items,
+		unresolvedItems,
+	};
+}
+
+export async function assertPromptReadyAttachments(params: {
+	userId: string;
+	conversationId: string;
+	attachmentIds: string[];
+}): Promise<{
+	displayArtifacts: Artifact[];
+	promptArtifacts: Artifact[];
+}> {
+	const resolved = await resolvePromptAttachmentArtifacts(params.userId, params.attachmentIds);
+
+	if (params.attachmentIds.length > 0) {
+		console.info('[ATTACHMENTS] Prompt readiness preflight', {
+			conversationId: params.conversationId,
+			requestedAttachmentIds: params.attachmentIds,
+			displayArtifactCount: resolved.displayArtifacts.length,
+			promptArtifactCount: resolved.promptArtifacts.length,
+			unresolvedAttachmentIds: resolved.unresolvedItems.map((item) => item.requestedArtifactId),
+		});
+	}
+
+	if (resolved.unresolvedItems.length > 0) {
+		throw new AttachmentReadinessError(
+			buildAttachmentReadinessErrorMessage(resolved.unresolvedItems),
+			resolved.unresolvedItems.map((item) => item.requestedArtifactId)
+		);
+	}
+
+	return {
+		displayArtifacts: resolved.displayArtifacts,
+		promptArtifacts: resolved.promptArtifacts,
 	};
 }
 

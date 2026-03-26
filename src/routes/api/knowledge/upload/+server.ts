@@ -7,7 +7,7 @@ import {
 } from '$lib/server/services/knowledge';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -28,7 +28,7 @@ export const POST: RequestHandler = async (event) => {
 		if (message.toLowerCase().includes('request body size exceeded')) {
 			return json(
 				{
-					error: 'Upload exceeded the server request size limit. This deployment should allow files up to 25MB; if this persists, increase BODY_SIZE_LIMIT on the server.',
+					error: 'Upload exceeded the server request size limit. This deployment should allow files up to 50MB; if this persists, increase BODY_SIZE_LIMIT on the server.',
 				},
 				{ status: 413 }
 			);
@@ -46,7 +46,7 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'conversationId is required' }, { status: 400 });
 	}
 	if (file.size > MAX_FILE_SIZE) {
-		return json({ error: 'File too large. Maximum size is 25MB.' }, { status: 400 });
+		return json({ error: 'File too large. Maximum size is 50MB.' }, { status: 400 });
 	}
 
 	const uploadResult = await saveUploadedArtifact({
@@ -93,10 +93,18 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
+	const promptReady = Boolean(normalizedArtifact?.id);
+	const readinessError = promptReady
+		? null
+		: 'This file could not be prepared for chat. Remove it or upload a supported text-readable document.';
+
 	return json({
 		artifact,
 		normalizedArtifact,
 		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
 		honcho: syncResult,
+		promptReady,
+		promptArtifactId: normalizedArtifact?.id ?? null,
+		readinessError,
 	});
 };

@@ -19,10 +19,22 @@ vi.mock('$lib/server/services/messages', () => ({
 }));
 
 vi.mock('$lib/server/services/knowledge', () => ({
+	assertPromptReadyAttachments: vi.fn(async () => ({
+		displayArtifacts: [],
+		promptArtifacts: [],
+	})),
 	attachArtifactsToMessage: vi.fn(),
 	createGeneratedOutputArtifact: vi.fn(),
 	getConversationWorkingSet: vi.fn(async () => []),
 	getArtifactsForUser: vi.fn(async () => []),
+	isAttachmentReadinessError: vi.fn((error: unknown) => {
+		return (
+			typeof error === 'object' &&
+			error !== null &&
+			'code' in error &&
+			(error as { code?: unknown }).code === 'attachment_not_ready'
+		);
+	}),
 	listConversationSourceArtifactIds: vi.fn(async () => []),
 	refreshConversationWorkingSet: vi.fn(async () => []),
 	upsertWorkCapsule: vi.fn(async () => null)
@@ -61,6 +73,7 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
 import { createMessage } from '$lib/server/services/messages';
+import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -72,6 +85,7 @@ const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
+const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 const mockTranslateEnglishToHungarian = translateEnglishToHungarian as ReturnType<typeof vi.fn>;
@@ -102,6 +116,7 @@ describe('POST /api/chat/send', () => {
 			timestamp: Date.now()
 		}));
 		mockDetectLanguage.mockReturnValue('en');
+		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 		mockTranslateEnglishToHungarian.mockImplementation(async (message: string) => `HU:${message}`);
 	});
@@ -182,6 +197,31 @@ describe('POST /api/chat/send', () => {
 
 		expect(response.status).toBe(404);
 		expect(data.error).toMatch(/not found/i);
+		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('returns 422 when a same-turn attachment is not prompt-ready', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockAssertPromptReadyAttachments.mockRejectedValue({
+			name: 'AttachmentReadinessError',
+			message: 'Attached file is not ready for chat.',
+			code: 'attachment_not_ready',
+			status: 422,
+			attachmentIds: ['artifact-1'],
+		});
+
+		const event = makeEvent({
+			message: 'Use this file',
+			conversationId: 'conv-1',
+			attachmentIds: ['artifact-1'],
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(data.code).toBe('attachment_not_ready');
+		expect(data.error).toMatch(/not ready/i);
 		expect(mockSendMessage).not.toHaveBeenCalled();
 	});
 

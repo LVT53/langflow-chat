@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import MessageInputWrapper from './MessageInputWrapper.test.svelte';
 import MessageInput from './MessageInput.svelte';
+
+const fetchMock = vi.fn();
+vi.stubGlobal('fetch', fetchMock);
 
 describe('MessageInput', () => {
 	beforeEach(() => {
@@ -137,5 +140,116 @@ describe('MessageInput', () => {
 			artifactId: undefined,
 			objective: 'Prepare internship applications',
 		});
+	});
+
+	it('disables send while an attachment upload is still in progress', async () => {
+		let resolveUpload: ((value: unknown) => void) | null = null;
+		fetchMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveUpload = resolve;
+				})
+		);
+
+		const artifact = {
+			id: 'artifact-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'recipe.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 12,
+			conversationId: 'conv-1',
+			summary: 'Dinner recipe',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		const sendSpy = vi.fn();
+		const { container, getByPlaceholderText, getByLabelText, getByText } = render(
+			MessageInputWrapper,
+			{
+				conversationId: 'conv-1',
+				attachmentsEnabled: true,
+				onSend: sendSpy,
+			}
+		);
+
+		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		const sendButton = getByLabelText('Send message') as HTMLButtonElement;
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+		await fireEvent.input(textarea, { target: { value: 'Use this file' } });
+		expect(sendButton.disabled).toBe(false);
+
+		const file = new File(['hello'], 'recipe.txt', { type: 'text/plain' });
+		await fireEvent.change(fileInput, { target: { files: [file] } });
+
+		await waitFor(() => {
+			expect(getByText('Uploading file...')).toBeDefined();
+			expect(sendButton.disabled).toBe(true);
+		});
+
+		resolveUpload?.({
+			ok: true,
+			json: async () => ({
+				artifact,
+				promptReady: true,
+				promptArtifactId: 'normalized-1',
+				readinessError: null,
+			}),
+		});
+
+		await waitFor(() => {
+			expect(sendButton.disabled).toBe(false);
+		});
+		expect(sendSpy).not.toHaveBeenCalled();
+	});
+
+	it('blocks send when an uploaded attachment is not prompt-ready', async () => {
+		fetchMock.mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				artifact: {
+					id: 'artifact-2',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'scan.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 128,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+				promptReady: false,
+				promptArtifactId: null,
+				readinessError: 'This file could not be prepared for chat.',
+			}),
+		});
+
+		const sendSpy = vi.fn();
+		const { container, getByPlaceholderText, getByLabelText, findByText } = render(
+			MessageInputWrapper,
+			{
+				conversationId: 'conv-1',
+				attachmentsEnabled: true,
+				onSend: sendSpy,
+			}
+		);
+
+		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		const sendButton = getByLabelText('Send message') as HTMLButtonElement;
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+		await fireEvent.input(textarea, { target: { value: 'Use this file' } });
+		await fireEvent.change(fileInput, {
+			target: { files: [new File(['scan'], 'scan.pdf', { type: 'application/pdf' })] },
+		});
+
+		expect(await findByText(/scan\.pdf: This file could not be prepared for chat\./i)).toBeDefined();
+		expect(sendButton.disabled).toBe(true);
+
+		await fireEvent.click(sendButton);
+		expect(sendSpy).not.toHaveBeenCalled();
 	});
 });

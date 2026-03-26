@@ -13,10 +13,12 @@ import {
 	syncConversationPersonaMemoryAttributions,
 } from '$lib/server/services/honcho';
 import {
+	assertPromptReadyAttachments,
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
 	getConversationWorkingSet,
 	getArtifactsForUser,
+	isAttachmentReadinessError,
 	listConversationSourceArtifactIds,
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
@@ -76,6 +78,14 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	try {
+		if (safeAttachmentIds.length > 0) {
+			await assertPromptReadyAttachments({
+				userId: user.id,
+				conversationId,
+				attachmentIds: safeAttachmentIds,
+			});
+		}
+
 		const normalizedMessage = message.trim();
 		const sourceLanguage = detectLanguage(normalizedMessage);
 		const isTranslationEnabled = user.translationEnabled;
@@ -215,6 +225,12 @@ export const POST: RequestHandler = async (event) => {
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);
+		if (isAttachmentReadinessError(error)) {
+			return json(
+				{ error: error.message, code: error.code, attachmentIds: error.attachmentIds },
+				{ status: error.status }
+			);
+		}
 		return json(
 			{ error: 'Failed to get response from AI. Please try again.' },
 			{ status: 502 }

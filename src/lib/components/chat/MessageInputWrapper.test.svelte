@@ -4,6 +4,8 @@
 
 	export let maxLength = 10000;
 	export let disabled = false;
+	export let conversationId: string | null = null;
+	export let attachmentsEnabled = false;
 	export let contextStatus: ConversationContextStatus | null = null;
 	export let contextDebug: ContextDebugState | null = null;
 
@@ -19,4 +21,13 @@
 	}
 </script>
 
-<MessageInput {maxLength} {disabled} {contextStatus} {contextDebug} on:send={handleSend} on:steer={handleSteer} />
+<MessageInput
+	{maxLength}
+	{disabled}
+	{conversationId}
+	{attachmentsEnabled}
+	{contextStatus}
+	{contextDebug}
+	on:send={handleSend}
+	on:steer={handleSteer}
+/>

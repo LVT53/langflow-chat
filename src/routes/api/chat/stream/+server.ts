@@ -13,10 +13,12 @@ import {
 	syncConversationPersonaMemoryAttributions,
 } from '$lib/server/services/honcho';
 import {
+	assertPromptReadyAttachments,
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
 	getConversationWorkingSet,
 	getArtifactsForUser,
+	isAttachmentReadinessError,
 	listConversationSourceArtifactIds,
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
@@ -677,6 +679,31 @@ export const POST: RequestHandler = async (event) => {
 			status: 404,
 			headers: { 'Content-Type': 'application/json' }
 		});
+	}
+
+	if (safeAttachmentIds.length > 0) {
+		try {
+			await assertPromptReadyAttachments({
+				userId: user.id,
+				conversationId,
+				attachmentIds: safeAttachmentIds,
+			});
+		} catch (error) {
+			if (isAttachmentReadinessError(error)) {
+				return new Response(
+					JSON.stringify({
+						error: error.message,
+						code: error.code,
+						attachmentIds: error.attachmentIds,
+					}),
+					{
+						status: error.status,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+			throw error;
+		}
 	}
 
 	const normalizedMessage = message.trim();

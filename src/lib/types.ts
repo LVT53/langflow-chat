@@ -124,6 +124,7 @@ export interface MessageEvidenceItem {
   artifactId?: string | null;
   confidence?: number | null;
   reason?: string | null;
+  currentTurnAttachment?: boolean;
 }
 
 export interface MessageEvidenceGroup {
@@ -225,6 +226,26 @@ export interface ArtifactSummary {
   summary: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface PendingAttachment {
+  artifact: ArtifactSummary;
+  promptReady: boolean;
+  promptArtifactId?: string | null;
+  readinessError?: string | null;
+}
+
+export interface KnowledgeUploadResponse {
+  artifact: ArtifactSummary;
+  normalizedArtifact: ArtifactSummary | null;
+  reusedExistingArtifact: boolean;
+  honcho: {
+    uploaded: boolean;
+    mode: 'native' | 'normalized' | 'none';
+  };
+  promptReady: boolean;
+  promptArtifactId?: string | null;
+  readinessError?: string | null;
 }
 
 export interface Artifact extends ArtifactSummary {

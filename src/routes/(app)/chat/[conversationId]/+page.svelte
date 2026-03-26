@@ -144,6 +144,9 @@
 
 	function toFriendlySendError(error: Error): string {
 		const errorWithCode = error as Error & { code?: unknown };
+		if (errorWithCode.code === 'attachment_not_ready') {
+			return error.message;
+		}
 		if (errorWithCode.code === 'timeout') return FRIENDLY_SEND_ERRORS.timeout;
 		if (errorWithCode.code === 'network') return FRIENDLY_SEND_ERRORS.network;
 		if (errorWithCode.code === 'backend_failure') return FRIENDLY_SEND_ERRORS.backend_failure;
