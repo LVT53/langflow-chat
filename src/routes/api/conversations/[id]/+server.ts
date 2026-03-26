@@ -14,7 +14,7 @@ import {
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
-import { getActiveProjectSummary } from '$lib/server/services/project-memory';
+import { attachContinuityToTaskState } from '$lib/server/services/project-memory';
 import { getContextDebugState, getConversationTaskState } from '$lib/server/services/task-state';
 
 export const GET: RequestHandler = async (event) => {
@@ -38,7 +38,6 @@ export const GET: RequestHandler = async (event) => {
 				contextStatus: null,
 				taskState: null,
 				contextDebug: null,
-				activeProject: null,
 				draft,
 				bootstrap: true,
 			});
@@ -61,11 +60,9 @@ export const GET: RequestHandler = async (event) => {
 			getContextDebugState(user.id, id),
 			getConversationDraft(user.id, id),
 		]);
-		const activeProject = await getActiveProjectSummary({
-			userId: user.id,
-			conversationId: id,
-			taskId: taskState?.taskId ?? null,
-		}).catch(() => null);
+		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
+			() => taskState
+		);
 
 		return json({
 			conversation,
@@ -73,9 +70,8 @@ export const GET: RequestHandler = async (event) => {
 			attachedArtifacts,
 			activeWorkingSet,
 			contextStatus,
-			taskState,
+			taskState: taskStateWithContinuity,
 			contextDebug,
-			activeProject,
 			draft,
 			bootstrap: false,
 		});

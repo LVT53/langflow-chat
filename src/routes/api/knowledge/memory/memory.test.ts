@@ -46,9 +46,9 @@ const memoryPayload = {
 			checkpointSummary: 'Keep the new timeline and key constraints.',
 		},
 	],
-	projectMemories: [
+	focusContinuities: [
 		{
-			projectId: 'project-1',
+			continuityId: 'continuity-1',
 			name: 'Study roadmap',
 			summary: 'Long-term planning for coursework and revision.',
 			status: 'active',
@@ -61,7 +61,7 @@ const memoryPayload = {
 	summary: {
 		personaCount: 1,
 		taskCount: 1,
-		projectCount: 1,
+		focusContinuityCount: 1,
 		overview: 'The user likes concise responses.',
 	},
 };
@@ -130,25 +130,25 @@ describe('knowledge memory routes', () => {
 		);
 	});
 
-	it('supports forgetting a project memory item', async () => {
+	it('supports forgetting a focus continuity item', async () => {
 		mockApplyKnowledgeMemoryAction.mockResolvedValue(memoryPayload);
 
 		const response = await POST_MEMORY_ACTION(
 			makePostEvent({
-				action: 'forget_project_memory',
-				projectId: 'project-1',
+				action: 'forget_focus_continuity',
+				continuityId: 'continuity-1',
 			})
 		);
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(data.summary.projectCount).toBe(1);
+		expect(data.summary.focusContinuityCount).toBe(1);
 		expect(mockApplyKnowledgeMemoryAction).toHaveBeenCalledWith(
 			'user-1',
 			'Test User',
 			{
-				action: 'forget_project_memory',
-				projectId: 'project-1',
+				action: 'forget_focus_continuity',
+				continuityId: 'continuity-1',
 			}
 		);
 	});

@@ -4,10 +4,10 @@
 	import { renderMarkdown } from '$lib/services/markdown';
 	import type {
 		ArtifactSummary,
+		FocusContinuityItem,
 		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
 		PersonaMemoryItem,
-		ProjectMemoryItem,
 		TaskMemoryItem,
 		WorkCapsule,
 	} from '$lib/types';
@@ -16,19 +16,22 @@
 	export let data: PageData;
 
 	type KnowledgeTab = 'library' | 'memory';
-	type MemoryModal = 'persona' | 'task' | 'project' | null;
+	type MemoryModal = 'persona' | 'focus' | null;
 	type LibraryModal = 'documents' | 'results' | 'workflows' | null;
+	type PersonaMemoryFilter = 'active' | 'dormant' | 'archived';
+	type FocusContinuityView = 'tasks' | 'across_chats';
+	const personaMemoryFilters: PersonaMemoryFilter[] = ['active', 'dormant', 'archived'];
 
 	let documents = (data.documents ?? []) as KnowledgeDocumentItem[];
 	let results = (data.results ?? []) as ArtifactSummary[];
 	let workflows = (data.workflows ?? []) as WorkCapsule[];
 	let personaMemories = [] as PersonaMemoryItem[];
 	let taskMemories = [] as TaskMemoryItem[];
-	let projectMemories = [] as ProjectMemoryItem[];
+	let focusContinuities = [] as FocusContinuityItem[];
 	let memorySummary = {
 		personaCount: 0,
 		taskCount: 0,
-		projectCount: 0,
+		focusContinuityCount: 0,
 		overview: null,
 	};
 	const honchoEnabled = data.honchoEnabled ?? false;
@@ -45,14 +48,21 @@
 	let activeLibraryModal = null as LibraryModal;
 	let honchoOverviewHtml = '';
 	let selectedPersonaMemoryIds = [] as string[];
-	let personaMemoryFilter: 'active' | 'dormant' | 'archived' = 'active';
+	let personaMemoryFilter: PersonaMemoryFilter = 'active';
 	let selectedTaskMemoryIds = [] as string[];
-	let selectedProjectMemoryIds = [] as string[];
+	let selectedFocusContinuityIds = [] as string[];
+	let focusContinuityView: FocusContinuityView = 'tasks';
 	const userDisplayName = data.userDisplayName?.trim() || 'You';
 	$: deletingArtifactCount = deletingArtifactIds.size;
 	$: filteredPersonaMemories = personaMemories.filter(
 		(memory) => memory.state === personaMemoryFilter
 	);
+	$: personaMemoryStateCounts = {
+		active: personaMemories.filter((memory) => memory.state === 'active').length,
+		dormant: personaMemories.filter((memory) => memory.state === 'dormant').length,
+		archived: personaMemories.filter((memory) => memory.state === 'archived').length,
+	};
+	$: focusContinuityItemCount = taskMemories.length + focusContinuities.length;
 
 	$: honchoOverview = memorySummary.overview?.trim() ?? '';
 	$: void renderHonchoOverview(honchoOverview, $isDark);
@@ -90,16 +100,26 @@
 		return deletingArtifactIds.has(id);
 	}
 
+	function getDefaultPersonaMemoryFilter(memories: PersonaMemoryItem[]): PersonaMemoryFilter {
+		if (memories.some((memory) => memory.state === 'active')) return 'active';
+		if (memories.some((memory) => memory.state === 'dormant')) return 'dormant';
+		if (memories.some((memory) => memory.state === 'archived')) return 'archived';
+		return 'active';
+	}
+
 	function applyMemoryPayload(payload: KnowledgeMemoryPayload) {
 		personaMemories = payload.personaMemories ?? [];
 		taskMemories = payload.taskMemories ?? [];
-		projectMemories = payload.projectMemories ?? [];
+		focusContinuities = payload.focusContinuities ?? [];
 		memorySummary = payload.summary ?? {
 			personaCount: 0,
 			taskCount: 0,
-			projectCount: 0,
+			focusContinuityCount: 0,
 			overview: null,
 		};
+		if (activeMemoryModal === 'persona') {
+			personaMemoryFilter = getDefaultPersonaMemoryFilter(personaMemories);
+		}
 		memoryLoaded = true;
 		memoryLoadError = '';
 	}
@@ -138,7 +158,10 @@
 		activeLibraryModal = null;
 		activeMemoryModal = kind;
 		if (kind === 'persona') {
-			personaMemoryFilter = 'active';
+			personaMemoryFilter = getDefaultPersonaMemoryFilter(personaMemories);
+		}
+		if (kind === 'focus') {
+			focusContinuityView = 'tasks';
 		}
 		void ensureMemoryLoaded();
 	}
@@ -165,7 +188,7 @@
 	function resetModalSelections() {
 		selectedPersonaMemoryIds = [];
 		selectedTaskMemoryIds = [];
-		selectedProjectMemoryIds = [];
+		selectedFocusContinuityIds = [];
 	}
 
 	function togglePersonaSelection(id: string) {
@@ -194,17 +217,17 @@
 				: taskMemories.map((memory) => memory.taskId);
 	}
 
-	function toggleProjectSelection(id: string) {
-		selectedProjectMemoryIds = selectedProjectMemoryIds.includes(id)
-			? selectedProjectMemoryIds.filter((value) => value !== id)
-			: [...selectedProjectMemoryIds, id];
+	function toggleFocusContinuitySelection(id: string) {
+		selectedFocusContinuityIds = selectedFocusContinuityIds.includes(id)
+			? selectedFocusContinuityIds.filter((value) => value !== id)
+			: [...selectedFocusContinuityIds, id];
 	}
 
-	function toggleAllProjectSelections() {
-		selectedProjectMemoryIds =
-			selectedProjectMemoryIds.length === projectMemories.length
+	function toggleAllFocusContinuitySelections() {
+		selectedFocusContinuityIds =
+			selectedFocusContinuityIds.length === focusContinuities.length
 				? []
-				: projectMemories.map((memory) => memory.projectId);
+				: focusContinuities.map((memory) => memory.continuityId);
 	}
 
 	function getPrimaryPersonaScope(memory: PersonaMemoryItem): 'self' | 'assistant_about_user' {
@@ -303,6 +326,7 @@
 			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 			| { action: 'forget_all_persona_memory' }
 			| { action: 'forget_task_memory'; taskId: string }
+			| { action: 'forget_focus_continuity'; continuityId: string }
 			| { action: 'forget_project_memory'; projectId: string }
 	): Promise<KnowledgeMemoryPayload> {
 		const response = await fetch('/api/knowledge/memory/actions', {
@@ -324,6 +348,7 @@
 			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 			| { action: 'forget_all_persona_memory' }
 			| { action: 'forget_task_memory'; taskId: string }
+			| { action: 'forget_focus_continuity'; continuityId: string }
 			| { action: 'forget_project_memory'; projectId: string },
 		key: string,
 		confirmationMessage?: string
@@ -347,8 +372,15 @@
 			if (payload.action === 'forget_all_persona_memory') {
 				selectedPersonaMemoryIds = [];
 			}
+			if (payload.action === 'forget_focus_continuity') {
+				selectedFocusContinuityIds = selectedFocusContinuityIds.filter(
+					(id) => id !== payload.continuityId
+				);
+			}
 			if (payload.action === 'forget_project_memory') {
-				selectedProjectMemoryIds = selectedProjectMemoryIds.filter((id) => id !== payload.projectId);
+				selectedFocusContinuityIds = selectedFocusContinuityIds.filter(
+					(id) => id !== payload.projectId
+				);
 			}
 		} catch (error) {
 			manageError =
@@ -422,28 +454,31 @@
 		}
 	}
 
-	async function runBulkProjectForget() {
-		if (selectedProjectMemoryIds.length === 0) return;
+	async function runBulkFocusContinuityForget() {
+		if (selectedFocusContinuityIds.length === 0) return;
 		if (
 			!window.confirm(
-				`Forget ${selectedProjectMemoryIds.length} selected project memory item${selectedProjectMemoryIds.length === 1 ? '' : 's'}?`
+				`Forget ${selectedFocusContinuityIds.length} selected continuity item${selectedFocusContinuityIds.length === 1 ? '' : 's'} across chats?`
 			)
 		) {
 			return;
 		}
 
 		manageError = '';
-		pendingMemoryActionKey = 'forget-selected-project';
+		pendingMemoryActionKey = 'forget-selected-focus-continuity';
 
 		try {
 			let result: KnowledgeMemoryPayload | null = null;
-			for (const id of selectedProjectMemoryIds) {
-				result = await submitMemoryAction({ action: 'forget_project_memory', projectId: id });
+			for (const id of selectedFocusContinuityIds) {
+				result = await submitMemoryAction({
+					action: 'forget_focus_continuity',
+					continuityId: id,
+				});
 			}
 			if (result) {
 				applyMemoryPayload(result);
 			}
-			selectedProjectMemoryIds = [];
+			selectedFocusContinuityIds = [];
 		} catch (error) {
 			manageError =
 				error instanceof Error ? error.message : 'Failed to update memory profile.';
@@ -600,7 +635,7 @@
 							runKnowledgeAction(
 								'forget_everything',
 								'forget-everything',
-								'Forget everything in the Knowledge Base? This removes persona memory, task memory, project memory, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
+								'Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
 							)}
 						disabled={isKnowledgeActionPending('forget-everything')}
 					>
@@ -739,7 +774,7 @@
 				</section>
 			{:else}
 				<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-					<div class="grid gap-4 lg:grid-cols-3">
+					<div class="grid gap-4 lg:grid-cols-2">
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="flex items-center justify-between gap-3">
 								<div>
@@ -781,61 +816,29 @@
 							<div class="flex items-center justify-between gap-3">
 								<div>
 									<h3 class="text-lg font-sans font-semibold text-text-primary">
-										Reset local task continuity
+										Manage focus continuity
 									</h3>
 								</div>
 								<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-									{taskMemories.length}
+									{focusContinuityItemCount}
 								</span>
 							</div>
 
 							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-								Task continuity is now managed in a modal table, so large task histories stay readable and don’t dominate the page layout.
+								Focus continuity combines per-chat task checkpoints with across-chat continuity groups in one background system.
 							</p>
 
 							<div class="mt-4 flex flex-wrap items-center gap-3">
 								<button
 									type="button"
 									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									on:click={() => openMemoryModal('task')}
+									on:click={() => openMemoryModal('focus')}
 								>
-									Manage task memory
+									Manage focus continuity
 								</button>
-								{#if memoryLoaded && taskMemories.length === 0}
+								{#if memoryLoaded && focusContinuityItemCount === 0}
 									<span class="text-xs font-sans text-text-muted">
-										No task-state memory has been checkpointed yet.
-									</span>
-								{/if}
-							</div>
-						</div>
-
-						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-							<div class="flex items-center justify-between gap-3">
-								<div>
-									<h3 class="text-lg font-sans font-semibold text-text-primary">
-										Track ongoing work across chats
-									</h3>
-								</div>
-								<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-									{projectMemories.length}
-								</span>
-							</div>
-
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-								Project memory keeps recurring long-term efforts from fragmenting into isolated task memories across conversations.
-							</p>
-
-							<div class="mt-4 flex flex-wrap items-center gap-3">
-								<button
-									type="button"
-									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									on:click={() => openMemoryModal('project')}
-								>
-									Manage project memory
-								</button>
-								{#if memoryLoaded && projectMemories.length === 0}
-									<span class="text-xs font-sans text-text-muted">
-										No ongoing project memory has been captured yet.
+										No focus continuity has been captured yet.
 									</span>
 								{/if}
 							</div>
@@ -880,9 +883,7 @@
 			aria-labelledby={
 				activeMemoryModal === 'persona'
 					? 'persona-memory-dialog-title'
-					: activeMemoryModal === 'task'
-						? 'task-memory-dialog-title'
-						: 'project-memory-dialog-title'
+					: 'focus-memory-dialog-title'
 			}
 			tabindex={-1}
 			class="max-h-[88vh] w-full max-w-[1100px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
@@ -893,32 +894,24 @@
 					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
 						{activeMemoryModal === 'persona'
 							? 'Persona memory'
-							: activeMemoryModal === 'task'
-								? 'Task memory'
-								: 'Project memory'}
+							: 'Focus continuity'}
 					</div>
 					<h3
 						id={
 							activeMemoryModal === 'persona'
 								? 'persona-memory-dialog-title'
-								: activeMemoryModal === 'task'
-									? 'task-memory-dialog-title'
-									: 'project-memory-dialog-title'
+								: 'focus-memory-dialog-title'
 						}
 						class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary"
 					>
 						{activeMemoryModal === 'persona'
 							? 'Manage stored persona memories'
-							: activeMemoryModal === 'task'
-								? 'Manage stored task continuity'
-								: 'Manage ongoing project memory'}
+							: 'Manage focus continuity'}
 					</h3>
 					<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">
 						{activeMemoryModal === 'persona'
 							? 'Review memory items in a compact table and forget individual entries without scrolling through long cards.'
-							: activeMemoryModal === 'task'
-								? 'Inspect task-level checkpoints and reset the long-horizon continuity for tasks you no longer want the system to carry forward.'
-								: 'Track longer-running efforts across conversations and forget project-level memory without touching the chat history.'}
+							: 'Inspect both per-chat task continuity and across-chat continuity groups without treating long-horizon work as a separate project UI.'}
 					</p>
 				</div>
 				<div class="flex shrink-0 items-center gap-2">
@@ -932,7 +925,7 @@
 							Forget selected ({selectedPersonaMemoryIds.length})
 						</button>
 					{/if}
-					{#if activeMemoryModal === 'task' && selectedTaskMemoryIds.length > 0}
+					{#if activeMemoryModal === 'focus' && focusContinuityView === 'tasks' && selectedTaskMemoryIds.length > 0}
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
@@ -942,14 +935,14 @@
 							Forget selected ({selectedTaskMemoryIds.length})
 						</button>
 					{/if}
-					{#if activeMemoryModal === 'project' && selectedProjectMemoryIds.length > 0}
+					{#if activeMemoryModal === 'focus' && focusContinuityView === 'across_chats' && selectedFocusContinuityIds.length > 0}
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={runBulkProjectForget}
-							disabled={isMemoryActionPending('forget-selected-project')}
+							on:click={runBulkFocusContinuityForget}
+							disabled={isMemoryActionPending('forget-selected-focus-continuity')}
 						>
-							Forget selected ({selectedProjectMemoryIds.length})
+							Forget selected ({selectedFocusContinuityIds.length})
 						</button>
 					{/if}
 					{#if activeMemoryModal === 'persona' && honchoEnabled && personaMemories.length > 0}
@@ -1002,7 +995,7 @@
 					{:else}
 						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
 							<div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-								{#each ['active', 'dormant', 'archived'] as state}
+								{#each personaMemoryFilters as state}
 									<button
 										type="button"
 										class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
@@ -1011,11 +1004,11 @@
 												: 'border-border text-text-muted'
 										}`}
 										on:click={() => {
-											personaMemoryFilter = state as 'active' | 'dormant' | 'archived';
+											personaMemoryFilter = state;
 											selectedPersonaMemoryIds = [];
 										}}
 									>
-										{state}
+										{state} ({personaMemoryStateCounts[state]})
 									</button>
 								{/each}
 							</div>
@@ -1110,96 +1103,129 @@
 							</table>
 						</div>
 					{/if}
-				{:else if activeMemoryModal === 'task'}
-					{#if taskMemories.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-							No task-state memory has been checkpointed yet.
+				{:else}
+					<div class="border-b border-border px-4 py-3">
+						<div class="flex flex-wrap items-center gap-2">
+							<button
+								type="button"
+								class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+									focusContinuityView === 'tasks'
+										? 'border-border bg-surface-elevated text-text-primary'
+										: 'border-border text-text-muted'
+								}`}
+								on:click={() => {
+									focusContinuityView = 'tasks';
+									selectedTaskMemoryIds = [];
+								}}
+							>
+								Tasks ({taskMemories.length})
+							</button>
+							<button
+								type="button"
+								class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+									focusContinuityView === 'across_chats'
+										? 'border-border bg-surface-elevated text-text-primary'
+										: 'border-border text-text-muted'
+								}`}
+								on:click={() => {
+									focusContinuityView = 'across_chats';
+									selectedFocusContinuityIds = [];
+								}}
+							>
+								Across chats ({focusContinuities.length})
+							</button>
 						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<table class="min-w-[980px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-											<input
-												type="checkbox"
-												checked={taskMemories.length > 0 && selectedTaskMemoryIds.length === taskMemories.length}
-												on:change={toggleAllTaskSelections}
-												aria-label="Select all task memories"
-											/>
-										</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Objective</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Checkpoint</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Conversation</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Updated</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each taskMemories as memory (memory.taskId)}
-										<tr class="border-b border-border last:border-b-0">
-											<td class="px-4 py-3 align-top">
+					</div>
+
+					{#if focusContinuityView === 'tasks'}
+						{#if taskMemories.length === 0}
+							<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
+								No task-state continuity has been checkpointed yet.
+							</div>
+						{:else}
+							<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
+								<table class="min-w-[980px] w-full border-collapse">
+									<thead>
+										<tr class="border-b border-border bg-surface-elevated/70 text-left">
+											<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
 												<input
 													type="checkbox"
-													checked={selectedTaskMemoryIds.includes(memory.taskId)}
-													on:change={() => toggleTaskSelection(memory.taskId)}
-													aria-label={`Select ${memory.objective}`}
+													checked={taskMemories.length > 0 && selectedTaskMemoryIds.length === taskMemories.length}
+													on:change={toggleAllTaskSelections}
+													aria-label="Select all task continuity items"
 												/>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="text-sm font-sans font-medium text-text-primary">
-													{memory.objective}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.checkpointSummary ?? ''}>
-													{memory.checkpointSummary ?? 'No checkpoint summary stored yet.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{memory.conversationTitle ?? 'Conversation memory'}
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="flex flex-wrap gap-2">
-													<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-														{memory.status}
-													</span>
-													{#if memory.locked}
-														<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-															Locked
-														</span>
-													{/if}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatMemoryTimestamp(memory.updatedAt)}
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() =>
-														runMemoryAction(
-															{ action: 'forget_task_memory', taskId: memory.taskId },
-															`task-${memory.taskId}`,
-															'Forget this task memory? The conversation can still continue, but its long-horizon task checkpoints will be cleared.'
-														)}
-													disabled={isMemoryActionPending(`task-${memory.taskId}`)}
-												>
-													Forget
-												</button>
-											</td>
+											</th>
+											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Objective</th>
+											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Checkpoint</th>
+											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Conversation</th>
+											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
+											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Updated</th>
+											<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
 										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{:else}
-					{#if projectMemories.length === 0}
+									</thead>
+									<tbody>
+										{#each taskMemories as memory (memory.taskId)}
+											<tr class="border-b border-border last:border-b-0">
+												<td class="px-4 py-3 align-top">
+													<input
+														type="checkbox"
+														checked={selectedTaskMemoryIds.includes(memory.taskId)}
+														on:change={() => toggleTaskSelection(memory.taskId)}
+														aria-label={`Select ${memory.objective}`}
+													/>
+												</td>
+												<td class="px-4 py-3 align-top">
+													<div class="text-sm font-sans font-medium text-text-primary">
+														{memory.objective}
+													</div>
+												</td>
+												<td class="px-4 py-3 align-top">
+													<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.checkpointSummary ?? ''}>
+														{memory.checkpointSummary ?? 'No checkpoint summary stored yet.'}
+													</div>
+												</td>
+												<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
+													{memory.conversationTitle ?? 'Conversation memory'}
+												</td>
+												<td class="px-4 py-3 align-top">
+													<div class="flex flex-wrap gap-2">
+														<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+															{memory.status}
+														</span>
+														{#if memory.locked}
+															<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+																Locked
+															</span>
+														{/if}
+													</div>
+												</td>
+												<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
+													{formatMemoryTimestamp(memory.updatedAt)}
+												</td>
+												<td class="px-4 py-3 align-top text-right">
+													<button
+														type="button"
+														class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+														on:click={() =>
+															runMemoryAction(
+																{ action: 'forget_task_memory', taskId: memory.taskId },
+																`task-${memory.taskId}`,
+																'Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.'
+															)}
+														disabled={isMemoryActionPending(`task-${memory.taskId}`)}
+													>
+														Forget
+													</button>
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					{:else if focusContinuities.length === 0}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-							No project memory has been captured yet.
+							No across-chat continuity groups have been captured yet.
 						</div>
 					{:else}
 						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
@@ -1209,12 +1235,12 @@
 										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
 											<input
 												type="checkbox"
-												checked={projectMemories.length > 0 && selectedProjectMemoryIds.length === projectMemories.length}
-												on:change={toggleAllProjectSelections}
-												aria-label="Select all project memories"
+												checked={focusContinuities.length > 0 && selectedFocusContinuityIds.length === focusContinuities.length}
+												on:change={toggleAllFocusContinuitySelections}
+												aria-label="Select all across-chat continuity items"
 											/>
 										</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Project</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Continuity</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Linked chats</th>
@@ -1223,13 +1249,13 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each projectMemories as memory (memory.projectId)}
+									{#each focusContinuities as memory (memory.continuityId)}
 										<tr class="border-b border-border last:border-b-0">
 											<td class="px-4 py-3 align-top">
 												<input
 													type="checkbox"
-													checked={selectedProjectMemoryIds.includes(memory.projectId)}
-													on:change={() => toggleProjectSelection(memory.projectId)}
+													checked={selectedFocusContinuityIds.includes(memory.continuityId)}
+													on:change={() => toggleFocusContinuitySelection(memory.continuityId)}
 													aria-label={`Select ${memory.name}`}
 												/>
 											</td>
@@ -1243,7 +1269,7 @@
 											</td>
 											<td class="px-4 py-3 align-top">
 												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.summary ?? ''}>
-													{memory.summary ?? 'No project summary stored yet.'}
+													{memory.summary ?? 'No continuity summary stored yet.'}
 												</div>
 											</td>
 											<td class="px-4 py-3 align-top">
@@ -1265,11 +1291,11 @@
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													on:click={() =>
 														runMemoryAction(
-															{ action: 'forget_project_memory', projectId: memory.projectId },
-															`project-${memory.projectId}`,
-															'Forget this project memory? Ongoing project continuity across conversations will be cleared.'
+															{ action: 'forget_focus_continuity', continuityId: memory.continuityId },
+															`focus-continuity-${memory.continuityId}`,
+															'Forget this across-chat continuity group? Conversation history will stay intact.'
 														)}
-													disabled={isMemoryActionPending(`project-${memory.projectId}`)}
+													disabled={isMemoryActionPending(`focus-continuity-${memory.continuityId}`)}
 												>
 													Forget
 												</button>

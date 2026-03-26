@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import type {
-		ActiveProjectSummary,
 		ArtifactSummary,
 		ContextDebugState,
 		ConversationContextStatus,
@@ -14,7 +13,6 @@
 	export let attachedArtifacts: ArtifactSummary[] = [];
 	export let taskState: TaskState | null = null;
 	export let contextDebug: ContextDebugState | null = null;
-	export let activeProject: ActiveProjectSummary | null = null;
 
 	const dispatch = createEventDispatcher<{
 		steer: TaskSteeringPayload;
@@ -23,7 +21,6 @@
 
 	let root: HTMLDivElement;
 	let isOpen = false;
-	let projectPopoverOpen = false;
 	let mobile = false;
 	let showNewTaskForm = false;
 	let newTaskObjective = '';
@@ -50,7 +47,6 @@
 		const handlePointerDown = (event: MouseEvent | TouchEvent) => {
 			if (root && !root.contains(event.target as Node)) {
 				isOpen = false;
-				projectPopoverOpen = false;
 				resetNewTaskForm();
 			}
 		};
@@ -71,7 +67,6 @@
 			if (!isOpen) {
 				resetNewTaskForm();
 			}
-			projectPopoverOpen = false;
 		}
 	}
 
@@ -129,19 +124,11 @@
 		dispatch('manageEvidence');
 		if (mobile) {
 			isOpen = false;
-			projectPopoverOpen = false;
 			resetNewTaskForm();
 		}
 	}
 
-	function toggleProjectPopover() {
-		projectPopoverOpen = !projectPopoverOpen;
-		if (projectPopoverOpen) {
-			isOpen = false;
-		}
-	}
-
-	function formatProjectStatus(status: ActiveProjectSummary['status'] | undefined): string {
+	function formatContinuityStatus(status: string | undefined): string {
 		if (status === 'dormant') return 'Dormant';
 		if (status === 'archived') return 'Archived';
 		return 'Active';
@@ -184,6 +171,7 @@
 	$: dashOffset = circumference * (1 - ratio);
 	$: percent = Math.round(ratio * 100);
 	$: activeObjective = contextDebug?.activeTaskObjective ?? taskState?.objective ?? null;
+	$: continuity = taskState?.continuity ?? null;
 	$: toneClass = !contextStatus
 		? 'ring-button--idle'
 		: contextStatus.compactionMode === 'llm_fallback'
@@ -201,43 +189,6 @@
 	bind:this={root}
 	class="ring-root relative"
 >
-	{#if activeProject}
-		<div class="project-chip-shell">
-			<button
-				type="button"
-				class="project-chip"
-				aria-expanded={projectPopoverOpen}
-				on:click={toggleProjectPopover}
-			>
-				<span class="project-chip-label">Project</span>
-				<span class="project-chip-name">{activeProject.name}</span>
-			</button>
-
-			{#if projectPopoverOpen}
-				<div class="project-popover" role="dialog" aria-label="Active project">
-					<div class="popover-section">
-						<div class="popover-label">Project</div>
-						<div class="project-popover-title">{activeProject.name}</div>
-						{#if activeProject.summary}
-							<div class="popover-copy">{activeProject.summary}</div>
-						{/if}
-						<div class="popover-stat">
-							<span>Status</span>
-							<span>{formatProjectStatus(activeProject.status)}</span>
-						</div>
-						<div class="popover-stat">
-							<span>Linked chats</span>
-							<span>{activeProject.linkedTaskCount}</span>
-						</div>
-						<a class="popover-action-link" href="/knowledge">
-							Manage project memory
-						</a>
-					</div>
-				</div>
-			{/if}
-		</div>
-	{/if}
-
 	<button
 		type="button"
 		class={`ring-button ${toneClass}`}
@@ -338,6 +289,24 @@
 			</div>
 		</div>
 
+		{#if continuity}
+			<div class="popover-section">
+				<div class="popover-label">Across chats</div>
+				<div class="popover-copy">{continuity.name}</div>
+				{#if continuity.summary}
+					<div class="popover-copy popover-copy--muted">{continuity.summary}</div>
+				{/if}
+				<div class="popover-stat">
+					<span>Status</span>
+					<span>{formatContinuityStatus(continuity.status)}</span>
+				</div>
+				<div class="popover-stat">
+					<span>Linked chats</span>
+					<span>{continuity.linkedTaskCount}</span>
+				</div>
+			</div>
+		{/if}
+
 		<div class="popover-section">
 			<div class="popover-label">Context</div>
 			{#if contextStatus}
@@ -410,72 +379,6 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-	}
-
-	.project-chip-shell {
-		position: relative;
-	}
-
-	.project-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		min-height: 36px;
-		max-width: 190px;
-		border: 1px solid color-mix(in srgb, var(--border-default) 76%, transparent 24%);
-		border-radius: 9999px;
-		background: color-mix(in srgb, var(--surface-page) 72%, var(--surface-elevated) 28%);
-		padding: 0 0.8rem;
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.74rem;
-		color: var(--text-primary);
-	}
-
-	.project-chip-label {
-		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		font-size: 0.62rem;
-	}
-
-	.project-chip-name {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.project-popover {
-		position: absolute;
-		left: 0;
-		top: calc(100% + 0.5rem);
-		z-index: 40;
-		min-width: 260px;
-		max-width: min(320px, calc(100vw - 2rem));
-		border: 1px solid color-mix(in srgb, var(--border-default) 78%, transparent 22%);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--surface-overlay) 96%, transparent 4%);
-		box-shadow: var(--shadow-lg);
-	}
-
-	.project-popover-title {
-		font-family: 'Iowan Old Style', Georgia, serif;
-		font-size: 0.95rem;
-		color: var(--text-primary);
-	}
-
-	.popover-action-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 34px;
-		margin-top: 0.75rem;
-		border: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent 20%);
-		border-radius: 9999px;
-		padding: 0 0.85rem;
-		font-size: 0.78rem;
-		font-family: 'Nimbus Sans L', sans-serif;
-		color: var(--text-primary);
-		text-decoration: none;
 	}
 
 	.ring-button {
@@ -625,6 +528,10 @@
 		font-size: 0.84rem;
 		line-height: 1.45;
 		color: var(--text-primary);
+	}
+
+	.popover-copy--muted {
+		color: var(--text-secondary);
 	}
 
 	.popover-actions {

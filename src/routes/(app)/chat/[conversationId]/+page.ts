@@ -34,7 +34,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		contextStatus: detail.contextStatus ?? null,
 		taskState: detail.taskState ?? null,
 		contextDebug: detail.contextDebug ?? null,
-		activeProject: detail.activeProject ?? null,
 		draft: detail.draft ?? null,
 		bootstrap: detail.bootstrap ?? false,
 	};

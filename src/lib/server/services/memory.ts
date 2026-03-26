@@ -12,16 +12,18 @@ import {
 import { runUserMemoryMaintenance } from './memory-maintenance';
 import {
 	deletePersonaMemoryClustersForConclusionIds,
+	ensurePersonaMemoryClustersReady,
 	getPersonaMemoryClusterConclusionIds,
 	listPersonaMemoryClusters,
 } from './persona-memory';
-import { forgetProjectMemory, listProjectMemoryItems } from './project-memory';
+import { forgetFocusContinuity, listFocusContinuityItems } from './project-memory';
 import { forgetTaskMemory, listTaskMemoryItems } from './task-state';
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 	| { action: 'forget_all_persona_memory' }
 	| { action: 'forget_task_memory'; taskId: string }
+	| { action: 'forget_focus_continuity'; continuityId: string }
 	| { action: 'forget_project_memory'; projectId: string };
 
 function escapeRegExp(value: string): string {
@@ -114,10 +116,12 @@ export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string
 ): Promise<KnowledgeMemoryPayload> {
-	const [personaMemories, taskMemories, projectMemories, overview] = await Promise.all([
+	await ensurePersonaMemoryClustersReady(userId, 'knowledge_read');
+
+	const [personaMemories, taskMemories, focusContinuities, overview] = await Promise.all([
 		enrichPersonaMemories(userId, userDisplayName),
 		listTaskMemoryItems(userId),
-		listProjectMemoryItems(userId),
+		listFocusContinuityItems(userId),
 		getPeerContext(userId, userDisplayName),
 	]);
 
@@ -134,20 +138,20 @@ export async function getKnowledgeMemory(
 				userDisplayName
 			),
 		})),
-		projectMemories: projectMemories.map((projectMemory) => ({
-			...projectMemory,
+		focusContinuities: focusContinuities.map((continuity) => ({
+			...continuity,
 			name:
-				sanitizeMemoryText(projectMemory.name, userId, userDisplayName) ??
-				projectMemory.name,
-			summary: sanitizeMemoryText(projectMemory.summary, userId, userDisplayName),
-			conversationTitles: projectMemory.conversationTitles.map(
+				sanitizeMemoryText(continuity.name, userId, userDisplayName) ??
+				continuity.name,
+			summary: sanitizeMemoryText(continuity.summary, userId, userDisplayName),
+			conversationTitles: continuity.conversationTitles.map(
 				(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
 			),
 		})),
 		summary: {
 			personaCount: personaMemories.length,
 			taskCount: taskMemories.length,
-			projectCount: projectMemories.length,
+			focusContinuityCount: focusContinuities.length,
 			overview: sanitizeMemoryText(overview, userId, userDisplayName),
 		},
 	};
@@ -177,8 +181,11 @@ export async function applyKnowledgeMemoryAction(
 		case 'forget_task_memory':
 			await forgetTaskMemory(userId, payload.taskId);
 			break;
+		case 'forget_focus_continuity':
+			await forgetFocusContinuity(userId, payload.continuityId);
+			break;
 		case 'forget_project_memory':
-			await forgetProjectMemory(userId, payload.projectId);
+			await forgetFocusContinuity(userId, payload.projectId);
 			break;
 	}
 

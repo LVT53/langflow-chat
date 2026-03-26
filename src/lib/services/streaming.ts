@@ -11,7 +11,6 @@ export interface StreamMetadata {
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
 	taskState?: import('$lib/types').TaskState | null;
 	contextDebug?: import('$lib/types').ContextDebugState | null;
-	activeProject?: import('$lib/types').ActiveProjectSummary | null;
 	messageEvidence?: import('$lib/types').MessageEvidenceSummary | null;
 }
 

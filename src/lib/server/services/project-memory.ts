@@ -9,10 +9,10 @@ import {
 	taskCheckpoints,
 } from '$lib/server/db/schema';
 import type {
-	ActiveProjectSummary,
-	ProjectMemoryItem,
-	ProjectMemoryStatus,
+	FocusContinuityItem,
+	FocusContinuityStatus,
 	TaskState,
+	TaskContinuitySummary,
 } from '$lib/types';
 import { scoreMatch } from './working-set';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
@@ -60,7 +60,7 @@ function overlapScore(left: string[], right: string[]): number {
 	return overlap;
 }
 
-function projectStatusForLastActive(lastActiveAt: number | null, now = Date.now()): ProjectMemoryStatus {
+function projectStatusForLastActive(lastActiveAt: number | null, now = Date.now()): FocusContinuityStatus {
 	if (!lastActiveAt) return 'archived';
 	const ageDays = Math.floor((now - lastActiveAt) / 86_400_000);
 	if (ageDays >= 45) return 'archived';
@@ -72,7 +72,7 @@ type ProjectCandidate = {
 	projectId: string;
 	name: string;
 	summary: string | null;
-	status: ProjectMemoryStatus;
+	status: FocusContinuityStatus;
 	lastActiveAt: number | null;
 	artifactIds: string[];
 	score: number;
@@ -97,7 +97,7 @@ async function listProjectCandidates(userId: string): Promise<ProjectCandidate[]
 			projectId,
 			name: row.project.name,
 			summary: row.project.summary ?? null,
-			status: row.project.status as ProjectMemoryStatus,
+			status: row.project.status as FocusContinuityStatus,
 			lastActiveAt: row.project.lastActiveAt ? row.project.lastActiveAt.getTime() : null,
 			artifactIds: [],
 			score: 0,
@@ -213,7 +213,7 @@ async function getLatestStableCheckpoint(taskId: string): Promise<string | null>
 	return row?.content ?? null;
 }
 
-export async function syncProjectMemoryFromTaskState(params: {
+export async function syncTaskContinuityFromTaskState(params: {
 	userId: string;
 	taskState: TaskState;
 }): Promise<string | null> {
@@ -310,7 +310,7 @@ export async function syncProjectMemoryFromTaskState(params: {
 	return projectId;
 }
 
-export async function listProjectMemoryItems(userId: string): Promise<ProjectMemoryItem[]> {
+export async function listFocusContinuityItems(userId: string): Promise<FocusContinuityItem[]> {
 	const rows = await db
 		.select({
 			project: memoryProjects,
@@ -325,13 +325,13 @@ export async function listProjectMemoryItems(userId: string): Promise<ProjectMem
 
 	if (rows.length === 0) return [];
 
-	const grouped = new Map<string, ProjectMemoryItem>();
+	const grouped = new Map<string, FocusContinuityItem>();
 	for (const row of rows) {
 		const existing = grouped.get(row.project.projectId) ?? {
-			projectId: row.project.projectId,
+			continuityId: row.project.projectId,
 			name: row.project.name,
 			summary: row.project.summary ?? null,
-			status: row.project.status as ProjectMemoryStatus,
+			status: row.project.status as FocusContinuityStatus,
 			lastActiveAt: row.project.lastActiveAt ? row.project.lastActiveAt.getTime() : null,
 			updatedAt: row.project.updatedAt.getTime(),
 			linkedTaskCount: 0,
@@ -352,11 +352,11 @@ export async function listProjectMemoryItems(userId: string): Promise<ProjectMem
 	}));
 }
 
-export async function getActiveProjectSummary(params: {
+async function getContinuitySummaryForTask(params: {
 	userId: string;
 	conversationId: string;
 	taskId?: string | null;
-}): Promise<ActiveProjectSummary | null> {
+}): Promise<TaskContinuitySummary | null> {
 	let taskId = params.taskId ?? null;
 
 	if (!taskId) {
@@ -410,30 +410,62 @@ export async function getActiveProjectSummary(params: {
 	const linkedTaskCount = linkedCountRow.filter((row) => row.projectId === project.projectId).length;
 
 	return {
-		projectId: project.projectId,
+		continuityId: project.projectId,
 		name: project.name,
 		summary: project.summary ?? null,
-		status: project.status as ProjectMemoryStatus,
+		status: project.status as FocusContinuityStatus,
 		linkedTaskCount,
 		lastActiveAt: project.lastActiveAt ? project.lastActiveAt.getTime() : null,
 		updatedAt: project.updatedAt.getTime(),
 	};
 }
 
-export async function forgetProjectMemory(userId: string, projectId: string): Promise<boolean> {
+export async function getTaskContinuitySummary(params: {
+	userId: string;
+	conversationId: string;
+	taskId?: string | null;
+}): Promise<TaskContinuitySummary | null> {
+	return getContinuitySummaryForTask(params);
+}
+
+export async function attachContinuityToTaskState<T extends TaskState | null>(
+	userId: string,
+	taskState: T
+): Promise<T> {
+	if (!taskState) {
+		return taskState;
+	}
+
+	const continuity = await getTaskContinuitySummary({
+		userId,
+		conversationId: taskState.conversationId,
+		taskId: taskState.taskId,
+	}).catch(() => null);
+
+	return {
+		...taskState,
+		continuity,
+	} as T;
+}
+
+export async function forgetFocusContinuity(userId: string, continuityId: string): Promise<boolean> {
 	const [existing] = await db
 		.select({ projectId: memoryProjects.projectId })
 		.from(memoryProjects)
-		.where(and(eq(memoryProjects.userId, userId), eq(memoryProjects.projectId, projectId)))
+		.where(and(eq(memoryProjects.userId, userId), eq(memoryProjects.projectId, continuityId)))
 		.limit(1);
 
 	if (!existing) return false;
 
 	await db
 		.delete(memoryProjects)
-		.where(and(eq(memoryProjects.userId, userId), eq(memoryProjects.projectId, projectId)));
+		.where(and(eq(memoryProjects.userId, userId), eq(memoryProjects.projectId, continuityId)));
 	return true;
 }
+
+export const syncProjectMemoryFromTaskState = syncTaskContinuityFromTaskState;
+export const listProjectMemoryItems = listFocusContinuityItems;
+export const forgetProjectMemory = forgetFocusContinuity;
 
 export async function deleteAllProjectMemory(userId: string): Promise<void> {
 	await db.delete(memoryProjects).where(eq(memoryProjects.userId, userId));

@@ -24,6 +24,9 @@ const FULL_SWEEP_INTERVAL_MS = 7 * DAY_MS;
 const ACTIVE_PROMPT_LIMIT = 8;
 const DORMANT_PROMPT_LIMIT = 2;
 const PROMPT_TEXT_BUDGET = 1600;
+const SEMANTIC_RECONCILE_MIN_CONFIDENCE = 72;
+const MAX_SEMANTIC_CANDIDATES = 4;
+const ensureClustersReadyInFlight = new Map<string, Promise<void>>();
 
 type ClusterPlan = {
 	clusterId: string;
@@ -65,6 +68,11 @@ type DreamClassification = {
 	salienceScore: number;
 	stateHint?: PersonaMemoryState | null;
 	supersededBy?: string | null;
+};
+
+type SemanticFingerprint = {
+	subject: string | null;
+	slot: string | null;
 };
 
 function normalizeWhitespace(value: string): string {
@@ -378,6 +386,167 @@ function deriveSupersessionSignature(text: string): string | null {
 	return null;
 }
 
+function deriveSemanticFingerprint(text: string): SemanticFingerprint {
+	const normalized = normalizeWhitespace(text).replace(/[.]+$/, '');
+	const patterns = [
+		/^(.+?) (is|are) (.+)$/i,
+		/^(.+?) (likes|dislikes|loves|hates|prefers) (.+)$/i,
+		/^(.+?) lives in (.+)$/i,
+		/^(.+?) works as (.+)$/i,
+		/^(.+?) moved to (.+)$/i,
+		/^(.+?) studies (.+)$/i,
+	];
+
+	for (const pattern of patterns) {
+		const match = normalized.match(pattern);
+		if (!match) continue;
+		const subject = normalizeMemoryText(match[1]);
+		const slot = normalizeMemoryText(match[2]);
+		return { subject, slot };
+	}
+
+	return { subject: null, slot: null };
+}
+
+function isSemanticMemoryClass(memoryClass: PersonaMemoryClass): boolean {
+	return (
+		memoryClass === 'identity_profile' ||
+		memoryClass === 'stable_preference' ||
+		memoryClass === 'situational_context' ||
+		memoryClass === 'long_term_context'
+	);
+}
+
+function semanticOverlapScore(left: ClusterPlan, right: ClusterPlan): number {
+	if (!isSemanticMemoryClass(left.memoryClass) || !isSemanticMemoryClass(right.memoryClass)) {
+		return 0;
+	}
+
+	if (
+		normalizeMemoryText(left.canonicalText) === normalizeMemoryText(right.canonicalText)
+	) {
+		return 0;
+	}
+
+	const leftFingerprint = deriveSemanticFingerprint(left.canonicalText);
+	const rightFingerprint = deriveSemanticFingerprint(right.canonicalText);
+	const sameSubject =
+		Boolean(leftFingerprint.subject) &&
+		leftFingerprint.subject === rightFingerprint.subject;
+	const sameSlot = Boolean(leftFingerprint.slot) && leftFingerprint.slot === rightFingerprint.slot;
+	const lexicalScore = Math.max(
+		scoreMatch(left.canonicalText, right.canonicalText),
+		scoreMatch(right.canonicalText, left.canonicalText)
+	);
+
+	if (sameSubject && sameSlot) {
+		return 1.0;
+	}
+	if (sameSubject && lexicalScore >= 0.26) {
+		return 0.84 + Math.min(0.12, lexicalScore * 0.2);
+	}
+	if (lexicalScore >= 0.42 && left.memoryClass === right.memoryClass) {
+		return lexicalScore;
+	}
+
+	return 0;
+}
+
+async function applyTargetedSemanticSupersession(plans: ClusterPlan[]): Promise<void> {
+	if (!canUseContextSummarizer()) {
+		return;
+	}
+
+	const ordered = plans
+		.filter((plan) => isSemanticMemoryClass(plan.memoryClass))
+		.slice()
+		.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+	const byId = new Map(ordered.map((plan) => [plan.clusterId, plan]));
+
+	type RawSemanticSupersession = {
+		supersedesClusterIds?: string[];
+		confidence?: number;
+		rationale?: string;
+	};
+
+	for (const primary of ordered) {
+		if (primary.state === 'archived') continue;
+
+		const candidates = ordered
+			.filter((candidate) => {
+				if (candidate.clusterId === primary.clusterId) return false;
+				if (candidate.state === 'archived') return false;
+				if (candidate.lastSeenAt >= primary.lastSeenAt) return false;
+				return semanticOverlapScore(primary, candidate) >= 0.42;
+			})
+			.sort(
+				(left, right) =>
+					semanticOverlapScore(primary, right) - semanticOverlapScore(primary, left) ||
+					right.lastSeenAt - left.lastSeenAt
+			)
+			.slice(0, MAX_SEMANTIC_CANDIDATES);
+
+		if (candidates.length === 0) continue;
+
+		try {
+			const response = await requestStructuredControlModel<RawSemanticSupersession>({
+				system:
+					'You reconcile persona memories. Return strict JSON with supersedesClusterIds, confidence, rationale. Only mark an older candidate as superseded when the primary memory clearly replaces it for the same subject/topic. Do not mark related-but-compatible facts as superseded.',
+				user: JSON.stringify(
+					{
+						primary: {
+							clusterId: primary.clusterId,
+							canonicalText: primary.canonicalText,
+							memoryClass: primary.memoryClass,
+							lastSeenAt: primary.lastSeenAt,
+						},
+						candidates: candidates.map((candidate) => ({
+							clusterId: candidate.clusterId,
+							canonicalText: candidate.canonicalText,
+							memoryClass: candidate.memoryClass,
+							lastSeenAt: candidate.lastSeenAt,
+							overlapScore: semanticOverlapScore(primary, candidate),
+						})),
+					},
+					null,
+					2
+				),
+				maxTokens: 240,
+				temperature: 0.0,
+			});
+
+			const confidence =
+				typeof response?.confidence === 'number'
+					? Math.max(0, Math.min(100, Math.round(response.confidence)))
+					: 0;
+			if (confidence < SEMANTIC_RECONCILE_MIN_CONFIDENCE) {
+				continue;
+			}
+
+			const supersededIds = Array.isArray(response?.supersedesClusterIds)
+				? response.supersedesClusterIds.filter((value): value is string => typeof value === 'string')
+				: [];
+
+			for (const candidateId of supersededIds) {
+				const candidate = byId.get(candidateId);
+				if (!candidate || candidate.state === 'archived') continue;
+				candidate.metadata = {
+					...candidate.metadata,
+					supersededByClusterId: primary.clusterId,
+					semanticSupersessionConfidence: confidence,
+					semanticSupersessionRationale:
+						typeof response?.rationale === 'string' ? clip(response.rationale, 220) : null,
+				};
+				candidate.state = 'archived';
+				candidate.decayAt = null;
+				candidate.archiveAt = Date.now();
+			}
+		} catch (error) {
+			console.error('[PERSONA_MEMORY] Semantic supersession failed:', error);
+		}
+	}
+}
+
 function markSupersededClusters(plans: ClusterPlan[]): void {
 	const grouped = new Map<string, ClusterPlan[]>();
 
@@ -614,6 +783,66 @@ export async function refreshPersonaClusterStates(userId: string): Promise<void>
 	}
 }
 
+export async function ensurePersonaMemoryClustersReady(
+	userId: string,
+	reason = 'read'
+): Promise<void> {
+	const existing = ensureClustersReadyInFlight.get(userId);
+	if (existing) {
+		return existing;
+	}
+
+	const pending = (async () => {
+		const { listPersonaMemories } = await import('./honcho');
+		const [rawRecords, existingSnapshots] = await Promise.all([
+			listPersonaMemories(userId).catch(() => []),
+			loadExistingClusterSnapshots(userId),
+		]);
+		const rawNewestAt = rawRecords.reduce(
+			(max, record) => Math.max(max, record.createdAt),
+			0
+		);
+		const latestDreamAt = Array.from(existingSnapshots.values()).reduce(
+			(max, snapshot) => Math.max(max, snapshot.lastDreamedAt ?? 0),
+			0
+		);
+		const force = rawRecords.length > 0 && existingSnapshots.size === 0;
+		const gate = computeDreamGate({
+			rawRecords,
+			existingSnapshots,
+			force,
+		});
+
+		if (existingSnapshots.size > 0 && rawRecords.length === 0) {
+			await syncPersonaMemoryClusters({
+				userId,
+				rawRecords,
+				reason,
+			});
+			return;
+		}
+
+		if (force || gate.shouldDream) {
+			await syncPersonaMemoryClusters({
+				userId,
+				rawRecords,
+				reason,
+				force,
+			});
+			return;
+		}
+
+		if (rawNewestAt <= latestDreamAt || rawRecords.length > 0) {
+			await refreshPersonaClusterStates(userId);
+		}
+	})().finally(() => {
+		ensureClustersReadyInFlight.delete(userId);
+	});
+
+	ensureClustersReadyInFlight.set(userId, pending);
+	return pending;
+}
+
 export async function syncPersonaMemoryClusters(params: {
 	userId: string;
 	rawRecords: HonchoPersonaMemoryRecord[];
@@ -722,7 +951,8 @@ export async function syncPersonaMemoryClusters(params: {
 	}
 
 	markSupersededClusters(plans);
-
+	await applyTargetedSemanticSupersession(plans);
+	markSupersededClusters(plans);
 	await db.delete(personaMemoryClusterMembers).where(eq(personaMemoryClusterMembers.userId, params.userId));
 	await db.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, params.userId));
 
@@ -856,6 +1086,8 @@ export async function buildPersonaPromptContext(
 	userId: string,
 	query: string
 ): Promise<string> {
+	await ensurePersonaMemoryClustersReady(userId, 'prompt_read');
+
 	const items = (await listPersonaMemoryClusters(userId)).filter((item) => item.state !== 'archived');
 	if (items.length === 0) return '';
 

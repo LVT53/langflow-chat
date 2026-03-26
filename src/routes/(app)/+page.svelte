@@ -176,7 +176,6 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 					attachedArtifacts={[]}
 					taskState={null}
 					contextDebug={null}
-					activeProject={null}
 					draftText={conversationDraft?.draftText ?? ''}
 					draftAttachments={conversationDraft?.selectedAttachments ?? []}
 					draftVersion={conversationDraft?.updatedAt ?? 0}

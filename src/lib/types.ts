@@ -67,7 +67,6 @@ export interface ConversationDetail {
   contextStatus?: ConversationContextStatus | null;
   taskState?: TaskState | null;
   contextDebug?: ContextDebugState | null;
-  activeProject?: ActiveProjectSummary | null;
   draft?: ConversationDraft | null;
   bootstrap?: boolean;
 }
@@ -402,6 +401,7 @@ export interface TaskState {
   activeArtifactIds: string[];
   nextSteps: string[];
   lastCheckpointAt: number | null;
+  continuity?: TaskContinuitySummary | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -481,24 +481,24 @@ export interface TaskMemoryItem {
   checkpointSummary: string | null;
 }
 
-export type ProjectMemoryStatus = 'active' | 'dormant' | 'archived';
+export type FocusContinuityStatus = 'active' | 'dormant' | 'archived';
 
-export interface ProjectMemoryItem {
-  projectId: string;
+export interface FocusContinuityItem {
+  continuityId: string;
   name: string;
   summary: string | null;
-  status: ProjectMemoryStatus;
+  status: FocusContinuityStatus;
   lastActiveAt: number | null;
   updatedAt: number;
   linkedTaskCount: number;
   conversationTitles: string[];
 }
 
-export interface ActiveProjectSummary {
-  projectId: string;
+export interface TaskContinuitySummary {
+  continuityId: string;
   name: string;
   summary: string | null;
-  status: ProjectMemoryStatus;
+  status: FocusContinuityStatus;
   linkedTaskCount: number;
   lastActiveAt: number | null;
   updatedAt: number;
@@ -507,14 +507,14 @@ export interface ActiveProjectSummary {
 export interface KnowledgeMemorySummary {
   personaCount: number;
   taskCount: number;
-  projectCount: number;
+  focusContinuityCount: number;
   overview: string | null;
 }
 
 export interface KnowledgeMemoryPayload {
   personaMemories: PersonaMemoryItem[];
   taskMemories: TaskMemoryItem[];
-  projectMemories: ProjectMemoryItem[];
+  focusContinuities: FocusContinuityItem[];
   summary: KnowledgeMemorySummary;
 }
 

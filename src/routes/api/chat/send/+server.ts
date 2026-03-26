@@ -34,7 +34,10 @@ import {
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import { getActiveProjectSummary, syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
+import {
+	attachContinuityToTaskState,
+	syncTaskContinuityFromTaskState,
+} from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -171,19 +174,17 @@ export const POST: RequestHandler = async (event) => {
 			assistantMessageId: assistantMessage.id,
 		}).catch(async () => getConversationTaskState(user.id, conversationId));
 		if (taskState) {
-			void syncProjectMemoryFromTaskState({
+			await syncTaskContinuityFromTaskState({
 				userId: user.id,
 				taskState,
 			}).catch((error) =>
-				console.error('[PROJECT_MEMORY] Failed to sync project memory from send:', error)
+				console.error('[CONTINUITY] Failed to sync focus continuity from send:', error)
 			);
 		}
+		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
+			() => taskState
+		);
 		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
-		const activeProject = await getActiveProjectSummary({
-			userId: user.id,
-			conversationId,
-			taskId: taskState?.taskId ?? null,
-		}).catch(() => null);
 		await clearConversationDraft(user.id, conversationId).catch(() => undefined);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
@@ -194,7 +195,7 @@ export const POST: RequestHandler = async (event) => {
 				const messageEvidence = await buildAssistantEvidenceSummary({
 					userId: user.id,
 					message: normalizedMessage,
-					taskState: taskState ?? initialTaskState ?? null,
+					taskState: taskStateWithContinuity ?? initialTaskState ?? null,
 					contextStatus: contextStatus ?? null,
 					contextDebug: contextDebug ?? initialContextDebug ?? null,
 					currentAttachments,
@@ -246,9 +247,8 @@ export const POST: RequestHandler = async (event) => {
 			conversationId,
 			contextStatus,
 			activeWorkingSet,
-			taskState,
+			taskState: taskStateWithContinuity,
 			contextDebug,
-			activeProject,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);

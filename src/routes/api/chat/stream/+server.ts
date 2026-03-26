@@ -34,7 +34,10 @@ import {
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import { getActiveProjectSummary, syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
+import {
+	attachContinuityToTaskState,
+	syncTaskContinuityFromTaskState,
+} from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -1175,10 +1178,6 @@ export const POST: RequestHandler = async (event) => {
 				| import('$lib/types').ContextDebugState
 				| null
 				| undefined;
-			let latestActiveProject:
-				| import('$lib/types').ActiveProjectSummary
-				| null
-				| undefined;
 			let initialContextStatus:
 				| import('$lib/types').ConversationContextStatus
 				| undefined;
@@ -1243,7 +1242,6 @@ export const POST: RequestHandler = async (event) => {
 							activeWorkingSet: latestActiveWorkingSet,
 							taskState: latestTaskState,
 							contextDebug: latestContextDebug,
-							activeProject: latestActiveProject,
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1252,6 +1250,7 @@ export const POST: RequestHandler = async (event) => {
 
 				Promise.all([userMsgPromise, assistantMsgPromise]).then(([userMsg, assistantMsg]) => {
 					const postPersistTasks: Promise<unknown>[] = [];
+					let uiStateTask: Promise<unknown> = Promise.resolve();
 					if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
 						postPersistTasks.push(
 							(async () => {
@@ -1281,62 +1280,60 @@ export const POST: RequestHandler = async (event) => {
 							generationTimeMs: genTimeMs,
 						}).catch(() => undefined);
 
-						postPersistTasks.push(
-							(async () => {
-								const sourceArtifactIds = safeAttachmentIds.length > 0
-									? safeAttachmentIds
-									: await listConversationSourceArtifactIds(user.id, conversationId);
-								const outputArtifact = await createGeneratedOutputArtifact({
+						uiStateTask = (async () => {
+							const sourceArtifactIds = safeAttachmentIds.length > 0
+								? safeAttachmentIds
+								: await listConversationSourceArtifactIds(user.id, conversationId);
+							const outputArtifact = await createGeneratedOutputArtifact({
+								userId: user.id,
+								conversationId,
+								messageId: assistantMsg.id,
+								content: fullResponse,
+								sourceArtifactIds
+							});
+							const workCapsule = await upsertWorkCapsule({
+								userId: user.id,
+								conversationId
+							});
+							if (workCapsule?.workflowSummary) {
+								await mirrorWorkCapsuleConclusion({
 									userId: user.id,
 									conversationId,
-									messageId: assistantMsg.id,
-									content: fullResponse,
-									sourceArtifactIds
+									content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
 								});
-								const workCapsule = await upsertWorkCapsule({
+							}
+							latestActiveWorkingSet = await refreshConversationWorkingSet({
+								userId: user.id,
+								conversationId,
+								message: normalizedMessage,
+								latestOutputArtifactId: outputArtifact?.id ?? null
+							}).catch(async () => getConversationWorkingSet(user.id, conversationId));
+							latestTaskState = await updateTaskStateCheckpoint({
+								userId: user.id,
+								conversationId,
+								message: normalizedMessage,
+								assistantResponse: fullResponse,
+								attachmentIds: safeAttachmentIds,
+								promptArtifactIds: latestContextStatus?.workingSetArtifactIds ?? [],
+								userMessageId: userMsg?.id ?? null,
+								assistantMessageId: assistantMsg.id,
+							}).catch(async () => getConversationTaskState(user.id, conversationId));
+							if (latestTaskState) {
+								await syncTaskContinuityFromTaskState({
 									userId: user.id,
-									conversationId
-								});
-								if (workCapsule?.workflowSummary) {
-									await mirrorWorkCapsuleConclusion({
-										userId: user.id,
-										conversationId,
-										content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
-									});
-								}
-								latestActiveWorkingSet = await refreshConversationWorkingSet({
-									userId: user.id,
-									conversationId,
-									message: normalizedMessage,
-									latestOutputArtifactId: outputArtifact?.id ?? null
-								}).catch(async () => getConversationWorkingSet(user.id, conversationId));
-								latestTaskState = await updateTaskStateCheckpoint({
-									userId: user.id,
-									conversationId,
-									message: normalizedMessage,
-									assistantResponse: fullResponse,
-									attachmentIds: safeAttachmentIds,
-									promptArtifactIds: latestContextStatus?.workingSetArtifactIds ?? [],
-									userMessageId: userMsg?.id ?? null,
-									assistantMessageId: assistantMsg.id,
-								}).catch(async () => getConversationTaskState(user.id, conversationId));
-								if (latestTaskState) {
-									void syncProjectMemoryFromTaskState({
-										userId: user.id,
-										taskState: latestTaskState,
-									}).catch((error) =>
-										console.error('[PROJECT_MEMORY] Failed to sync project memory from stream:', error)
-									);
-								}
-								latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
-								latestActiveProject = await getActiveProjectSummary({
-									userId: user.id,
-									conversationId,
-									taskId: latestTaskState?.taskId ?? null,
-								}).catch(() => null);
-								await clearConversationDraft(user.id, conversationId).catch(() => undefined);
-							})()
-						);
+									taskState: latestTaskState,
+								}).catch((error) =>
+									console.error('[CONTINUITY] Failed to sync focus continuity from stream:', error)
+								);
+							}
+							latestTaskState = await attachContinuityToTaskState(
+								user.id,
+								latestTaskState ?? null
+							).catch(() => latestTaskState ?? null);
+							latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
+							await clearConversationDraft(user.id, conversationId).catch(() => undefined);
+						})();
+						postPersistTasks.push(uiStateTask);
 
 						postPersistTasks.push(
 							(async () => {
@@ -1381,7 +1378,9 @@ export const POST: RequestHandler = async (event) => {
 						);
 					}
 
-					void sendEndAndClose(userMsg?.id, assistantMsg?.id);
+					void uiStateTask.finally(() => {
+						void sendEndAndClose(userMsg?.id, assistantMsg?.id);
+					});
 					Promise.allSettled(postPersistTasks).finally(() => {
 						void Promise.allSettled(honchoTasks)
 							.then(async () =>
@@ -1441,17 +1440,15 @@ export const POST: RequestHandler = async (event) => {
 					langflowResponse instanceof ReadableStream
 						? await getConversationTaskState(user.id, conversationId).catch(() => null)
 						: langflowResponse.taskState ?? await getConversationTaskState(user.id, conversationId).catch(() => null);
+				latestTaskState = await attachContinuityToTaskState(user.id, latestTaskState ?? null).catch(
+					() => latestTaskState ?? null
+				);
 				initialTaskState = latestTaskState;
 				latestContextDebug =
 					langflowResponse instanceof ReadableStream
 						? await getContextDebugState(user.id, conversationId).catch(() => null)
 						: langflowResponse.contextDebug ?? await getContextDebugState(user.id, conversationId).catch(() => null);
 				initialContextDebug = latestContextDebug;
-				latestActiveProject = await getActiveProjectSummary({
-					userId: user.id,
-					conversationId,
-					taskId: latestTaskState?.taskId ?? null,
-				}).catch(() => null);
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

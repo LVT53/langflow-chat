@@ -376,7 +376,7 @@
 	.prose-container :global(h5),
 	.prose-container :global(h6) {
 		word-break: break-word;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 	/* But don't break code — let it scroll */
 	.prose-container :global(pre),
@@ -386,26 +386,39 @@
 	}
 	.prose-container :global(.markdown-table-wrap) {
 		max-width: 100%;
-		overflow-x: auto;
 		margin: 0 0 var(--space-md);
+	}
+	.prose-container :global(.markdown-table-wrap[data-overflow='scroll']) {
+		overflow-x: auto;
 		padding-bottom: 0.15rem;
 	}
+	.prose-container :global(.markdown-table-wrap[data-overflow='fit']) {
+		overflow-x: hidden;
+	}
 	.prose-container :global(.markdown-table-wrap table) {
+		width: 100%;
+		table-layout: fixed;
+		border-collapse: collapse;
+	}
+	.prose-container :global(.markdown-table-wrap[data-overflow='scroll'] table) {
 		width: max-content;
 		min-width: 100%;
 		table-layout: auto;
-		border-collapse: collapse;
 	}
 	.prose-container :global(.markdown-table-wrap th),
 	.prose-container :global(.markdown-table-wrap td) {
 		white-space: normal;
 		word-break: normal;
 		overflow-wrap: break-word;
+		hyphens: auto;
 		vertical-align: top;
 	}
-	.prose-container :global(.markdown-table-wrap th:first-child),
-	.prose-container :global(.markdown-table-wrap td:first-child) {
-		min-width: 14rem;
+	.prose-container :global(.markdown-table-wrap th a),
+	.prose-container :global(.markdown-table-wrap td a),
+	.prose-container :global(.markdown-table-wrap th code),
+	.prose-container :global(.markdown-table-wrap td code) {
+		word-break: break-word;
+		overflow-wrap: anywhere;
 	}
 	.prose-container :global(p) {
 		margin-top: 0;

@@ -47,11 +47,11 @@ describe('Knowledge page', () => {
 			json: async () => ({
 				personaMemories: [],
 				taskMemories: [],
-				projectMemories: [],
+				focusContinuities: [],
 				summary: {
 					personaCount: 3,
 					taskCount: 2,
-					projectCount: 1,
+					focusContinuityCount: 1,
 					overview: 'Knows the user prefers concise responses.',
 				},
 			}),
@@ -74,8 +74,7 @@ describe('Knowledge page', () => {
 			expect(getByText('Memory Overview')).toBeDefined();
 			expect(getAllByText('Knows the user prefers concise responses.').length).toBeGreaterThan(0);
 			expect(getByRole('button', { name: /manage persona memory/i })).toBeDefined();
-			expect(getByRole('button', { name: /manage task memory/i })).toBeDefined();
-			expect(getByRole('button', { name: /manage project memory/i })).toBeDefined();
+			expect(getByRole('button', { name: /manage focus continuity/i })).toBeDefined();
 		});
 		expect(queryByText(/memory signal/i)).toBeNull();
 		unmount();
@@ -132,11 +131,11 @@ describe('Knowledge page', () => {
 					},
 				],
 				taskMemories: [],
-				projectMemories: [],
+				focusContinuities: [],
 				summary: {
 					personaCount: 2,
 					taskCount: 0,
-					projectCount: 0,
+					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
 				},
 			}),
@@ -227,11 +226,11 @@ describe('Knowledge page', () => {
 					},
 				],
 				taskMemories: [],
-				projectMemories: [],
+				focusContinuities: [],
 				summary: {
 					personaCount: 2,
 					taskCount: 0,
-					projectCount: 0,
+					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
 				},
 			}),
@@ -259,6 +258,66 @@ describe('Knowledge page', () => {
 			expect(getByRole('dialog')).toHaveTextContent('Prefers concise replies.');
 		});
 
+		unmount();
+	});
+
+	it('defaults the persona filter to the first non-empty state', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				personaMemories: [
+					{
+						id: 'dormant-1',
+						canonicalText: 'Used sourdough last month.',
+						memoryClass: 'situational_context',
+						state: 'dormant',
+						salienceScore: 44,
+						sourceCount: 1,
+						conversationTitles: ['Cooking'],
+						firstSeenAt: Date.now() - 100_000,
+						lastSeenAt: Date.now() - 50_000,
+						pinned: false,
+						members: [
+							{
+								id: 'member-1',
+								content: 'Used sourdough last month.',
+								scope: 'self',
+								sessionId: 'session-1',
+								conversationTitle: 'Cooking',
+								createdAt: Date.now() - 50_000,
+							},
+						],
+					},
+				],
+				taskMemories: [],
+				focusContinuities: [],
+				summary: {
+					personaCount: 1,
+					taskCount: 0,
+					focusContinuityCount: 0,
+					overview: 'Knows past cooking context.',
+				},
+			}),
+		} as Response);
+
+		const { getByRole, findByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+		await waitFor(() => {
+			expect(getByRole('button', { name: /manage persona memory/i })).toBeDefined();
+		});
+		await fireEvent.click(getByRole('button', { name: /manage persona memory/i }));
+
+		expect(await findByText('Used sourdough last month.')).toBeDefined();
+		expect(getByRole('button', { name: /dormant \(1\)/i })).toBeDefined();
 		unmount();
 	});
 

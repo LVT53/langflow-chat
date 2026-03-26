@@ -5,7 +5,6 @@
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import type {
-		ActiveProjectSummary,
 		ArtifactSummary,
 		ContextDebugState,
 		ConversationContextStatus,
@@ -25,7 +24,6 @@
 	export let attachedArtifacts: ArtifactSummary[] = [];
 	export let taskState: TaskState | null = null;
 	export let contextDebug: ContextDebugState | null = null;
-	export let activeProject: ActiveProjectSummary | null = null;
 	export let draftText: string = '';
 	export let draftAttachments: PendingAttachment[] = [];
 	export let draftVersion: number = 0;
@@ -365,7 +363,6 @@
 					attachedArtifacts={composerArtifacts}
 					{taskState}
 					{contextDebug}
-					{activeProject}
 					on:steer={handleSteering}
 					on:manageEvidence={handleManageEvidence}
 				/>

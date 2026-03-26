@@ -10,7 +10,6 @@
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import type {
-		ActiveProjectSummary,
 		ArtifactSummary,
 		ChatMessage,
 		ConversationDetail,
@@ -48,7 +47,6 @@
 	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
 	let taskState: TaskState | null = data.taskState ?? null;
 	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
-	let activeProject: ActiveProjectSummary | null = data.activeProject ?? null;
 	let conversationDraft: ConversationDraft | null = data.draft ?? null;
 	let evidenceManagerOpen = false;
 	let bootstrapMode = data.bootstrap ?? false;
@@ -126,7 +124,6 @@
 		activeWorkingSet = data.activeWorkingSet ?? [];
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
-		activeProject = data.activeProject ?? null;
 		conversationDraft = data.draft ?? null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
@@ -230,7 +227,6 @@
 			contextStatus = payload.contextStatus ?? contextStatus;
 			taskState = payload.taskState ?? taskState;
 			contextDebug = payload.contextDebug ?? contextDebug;
-			activeProject = payload.activeProject ?? activeProject;
 			conversationDraft = payload.draft ?? conversationDraft;
 			bootstrapMode = false;
 
@@ -443,7 +439,6 @@
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
-					activeProject = metadata?.activeProject ?? activeProject;
 					const serverAssistantId = metadata?.assistantMessageId;
 					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
@@ -741,7 +736,6 @@
 						{attachedArtifacts}
 						{taskState}
 						{contextDebug}
-						{activeProject}
 						draftText={conversationDraft?.draftText ?? ''}
 						draftAttachments={conversationDraft?.selectedAttachments ?? []}
 						draftVersion={conversationDraft?.updatedAt ?? 0}
