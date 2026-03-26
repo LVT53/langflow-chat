@@ -196,9 +196,49 @@ const migrations: string[] = [
 		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS persona_memory_attributions_conclusion_conversation_idx ON persona_memory_attributions(conclusion_id, conversation_id)`,
-	`CREATE INDEX IF NOT EXISTS persona_memory_attributions_conversation_idx ON persona_memory_attributions(conversation_id, updated_at)`,
-];
+		`CREATE UNIQUE INDEX IF NOT EXISTS persona_memory_attributions_conclusion_conversation_idx ON persona_memory_attributions(conclusion_id, conversation_id)`,
+		`CREATE INDEX IF NOT EXISTS persona_memory_attributions_conversation_idx ON persona_memory_attributions(conversation_id, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS persona_memory_clusters (
+			cluster_id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			canonical_text TEXT NOT NULL,
+			memory_class TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'active',
+			salience_score INTEGER NOT NULL DEFAULT 0,
+			source_count INTEGER NOT NULL DEFAULT 0,
+			first_seen_at INTEGER,
+			last_seen_at INTEGER,
+			last_dreamed_at INTEGER,
+			decay_at INTEGER,
+			archive_at INTEGER,
+			pinned INTEGER NOT NULL DEFAULT 0,
+			metadata_json TEXT,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)`,
+		`CREATE INDEX IF NOT EXISTS persona_memory_clusters_user_state_idx ON persona_memory_clusters(user_id, state, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS persona_memory_cluster_members (
+			id TEXT PRIMARY KEY,
+			cluster_id TEXT NOT NULL REFERENCES persona_memory_clusters(cluster_id) ON DELETE CASCADE,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			conclusion_id TEXT NOT NULL,
+			content TEXT NOT NULL,
+			scope TEXT NOT NULL,
+			session_id TEXT,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS persona_memory_cluster_members_conclusion_idx ON persona_memory_cluster_members(user_id, conclusion_id)`,
+		`CREATE INDEX IF NOT EXISTS persona_memory_cluster_members_cluster_idx ON persona_memory_cluster_members(cluster_id, created_at)`,
+		`CREATE TABLE IF NOT EXISTS conversation_drafts (
+			conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			draft_text TEXT NOT NULL DEFAULT '',
+			selected_attachment_ids_json TEXT,
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)`,
+		`CREATE INDEX IF NOT EXISTS conversation_drafts_user_updated_idx ON conversation_drafts(user_id, updated_at)`,
+	];
 for (const sql of migrations) {
 	try { sqlite.exec(sql); } catch { /* column already exists — ignore */ }
 }

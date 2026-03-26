@@ -8,14 +8,18 @@ import {
 	getHonchoAssistantPeerId,
 	getHonchoUserPeerId,
 	getPeerContext,
-	listPersonaMemories,
 } from './honcho';
 import { runUserMemoryMaintenance } from './memory-maintenance';
+import {
+	deletePersonaMemoryClustersForConclusionIds,
+	getPersonaMemoryClusterConclusionIds,
+	listPersonaMemoryClusters,
+} from './persona-memory';
 import { forgetProjectMemory, listProjectMemoryItems } from './project-memory';
 import { forgetTaskMemory, listTaskMemoryItems } from './task-state';
 
 export type KnowledgeMemoryAction =
-	| { action: 'forget_persona_memory'; conclusionId: string }
+	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 	| { action: 'forget_all_persona_memory' }
 	| { action: 'forget_task_memory'; taskId: string }
 	| { action: 'forget_project_memory'; projectId: string };
@@ -68,12 +72,14 @@ async function enrichPersonaMemories(
 	userId: string,
 	userDisplayName: string
 ): Promise<PersonaMemoryItem[]> {
-	const records = await listPersonaMemories(userId);
+	const records = await listPersonaMemoryClusters(userId);
 	const conversationIds = Array.from(
 		new Set(
-			records
-				.map((record) => record.sessionId)
-				.filter((sessionId): sessionId is string => Boolean(sessionId))
+			records.flatMap((record) =>
+				record.members
+					.map((member) => member.sessionId)
+					.filter((sessionId): sessionId is string => Boolean(sessionId))
+			)
 		)
 	);
 
@@ -87,32 +93,21 @@ async function enrichPersonaMemories(
 					.from(conversations)
 					.where(inArray(conversations.id, conversationIds))
 			: [];
-
 	const titleMap = new Map(titleRows.map((row) => [row.id, row.title]));
-	const unique = new Map<string, PersonaMemoryItem>();
 
-	for (const record of records) {
-		const item: PersonaMemoryItem = {
-			id: record.id,
-			content: sanitizeMemoryText(record.content, userId, userDisplayName) ?? record.content,
-			scope: record.scope,
-			sessionId: record.sessionId,
-			conversationId: record.sessionId,
-			conversationTitle: record.sessionId ? titleMap.get(record.sessionId) ?? null : null,
-			createdAt: record.createdAt,
-		};
-		const dedupeKey = `${item.scope}:${item.id}`;
-		const existing = unique.get(dedupeKey);
-		if (
-			!existing ||
-			item.createdAt > existing.createdAt ||
-			(item.conversationTitle && !existing.conversationTitle)
-		) {
-			unique.set(dedupeKey, item);
-		}
-	}
-
-	return Array.from(unique.values()).sort((left, right) => right.createdAt - left.createdAt);
+	return records.map((record) => ({
+		...record,
+		canonicalText:
+			sanitizeMemoryText(record.canonicalText, userId, userDisplayName) ?? record.canonicalText,
+		conversationTitles: record.conversationTitles.map(
+			(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
+		),
+		members: record.members.map((member) => ({
+			...member,
+			content: sanitizeMemoryText(member.content, userId, userDisplayName) ?? member.content,
+			conversationTitle: member.sessionId ? titleMap.get(member.sessionId) ?? member.conversationTitle : member.conversationTitle,
+		})),
+	}));
 }
 
 export async function getKnowledgeMemory(
@@ -165,7 +160,16 @@ export async function applyKnowledgeMemoryAction(
 ): Promise<KnowledgeMemoryPayload> {
 	switch (payload.action) {
 		case 'forget_persona_memory':
-			await forgetPersonaMemory(userId, payload.conclusionId);
+			if (typeof payload.clusterId === 'string') {
+				const conclusionIds = await getPersonaMemoryClusterConclusionIds(userId, payload.clusterId);
+				for (const conclusionId of conclusionIds) {
+					await forgetPersonaMemory(userId, conclusionId);
+				}
+				await deletePersonaMemoryClustersForConclusionIds(userId, conclusionIds);
+			} else if (typeof payload.conclusionId === 'string') {
+				await forgetPersonaMemory(userId, payload.conclusionId);
+				await deletePersonaMemoryClustersForConclusionIds(userId, [payload.conclusionId]);
+			}
 			break;
 		case 'forget_all_persona_memory':
 			await forgetAllPersonaMemories(userId);

@@ -30,6 +30,14 @@
 		}
 		return 'auto';
 	}
+
+	function formatChannel(channel: string): string {
+		if (channel === 'attached') return 'Attached';
+		if (channel === 'retrieved') return 'Retrieved';
+		if (channel === 'web') return 'Web';
+		if (channel === 'memory') return 'Memory';
+		return 'Tool';
+	}
 </script>
 
 <div class="evidence-shell">
@@ -77,6 +85,13 @@
 									</div>
 									{#if item.description}
 										<div class="evidence-description">{item.description}</div>
+									{/if}
+									{#if item.channels && item.channels.length > 0}
+										<div class="evidence-channel-row">
+											{#each item.channels as channel (`${item.id}-${channel}`)}
+												<span class="evidence-channel-chip">{formatChannel(channel)}</span>
+											{/each}
+										</div>
 									{/if}
 								</div>
 
@@ -239,6 +254,22 @@
 		flex-shrink: 0;
 		flex-wrap: wrap;
 		gap: 0.35rem;
+	}
+
+	.evidence-channel-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.4rem;
+	}
+
+	.evidence-channel-chip {
+		border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent 28%);
+		border-radius: 9999px;
+		padding: 0.14rem 0.42rem;
+		font-size: 0.64rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		color: var(--text-muted);
 	}
 
 </style>

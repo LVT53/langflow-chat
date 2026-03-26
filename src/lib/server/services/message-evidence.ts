@@ -2,6 +2,7 @@ import type {
 	ArtifactSummary,
 	ContextDebugState,
 	ConversationContextStatus,
+	EvidenceChannel,
 	EvidenceSourceType,
 	MessageEvidenceGroup,
 	MessageEvidenceItem,
@@ -10,7 +11,9 @@ import type {
 	ToolCallEntry,
 	ToolEvidenceCandidate,
 } from '$lib/types';
+import { getArtifactsForUser } from './knowledge';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
+import { resolveArtifactFamilyKeys } from './evidence-family';
 
 const GROUP_LABELS: Record<EvidenceSourceType, string> = {
 	web: 'Web Search',
@@ -41,8 +44,26 @@ function sanitizeUrl(value: unknown): string | null {
 	}
 }
 
-function uniqueById<T extends { id: string }>(items: T[]): T[] {
-	return Array.from(new Map(items.map((item) => [item.id, item])).values());
+function uniqueByCanonicalId<T extends { canonicalId?: string; id: string }>(items: T[]): T[] {
+	return Array.from(
+		new Map(items.map((item) => [item.canonicalId ?? item.id, item])).values()
+	);
+}
+
+function canonicalKeyForCandidate(
+	sourceType: EvidenceSourceType,
+	candidate: { id: string; title: string; url?: string | null }
+): string {
+	const sanitizedUrl = sanitizeUrl(candidate.url);
+	if (sanitizedUrl) return `${sourceType}:url:${sanitizedUrl}`;
+	return `${sourceType}:item:${candidate.id || candidate.title.toLowerCase()}`;
+}
+
+function mergeChannels(
+	left: EvidenceChannel[] | undefined,
+	right: EvidenceChannel[] | undefined
+): EvidenceChannel[] {
+	return Array.from(new Set([...(left ?? []), ...(right ?? [])]));
 }
 
 function buildMemoryGroup(contextStatus: ConversationContextStatus | null | undefined): MessageEvidenceGroup | null {
@@ -102,14 +123,91 @@ function buildMemoryGroup(contextStatus: ConversationContextStatus | null | unde
 	};
 }
 
-function buildArtifactGroups(contextDebug: ContextDebugState | null | undefined): MessageEvidenceGroup[] {
-	if (!contextDebug?.selectedEvidence.length) return [];
+async function buildArtifactGroups(params: {
+	userId?: string;
+	contextDebug: ContextDebugState | null | undefined;
+	currentAttachments: ArtifactSummary[] | undefined;
+}): Promise<MessageEvidenceGroup[]> {
+	const selectedEvidence = params.contextDebug?.selectedEvidence ?? [];
+	const currentAttachments = params.currentAttachments ?? [];
+	if (selectedEvidence.length === 0 && currentAttachments.length === 0) return [];
 
-	const bySource = new Map<EvidenceSourceType, MessageEvidenceItem[]>();
-	for (const evidence of contextDebug.selectedEvidence) {
-		const list = bySource.get(evidence.sourceType) ?? [];
-		list.push({
+	const artifactIds = Array.from(
+		new Set([
+			...selectedEvidence.map((evidence) => evidence.artifactId),
+			...currentAttachments.map((artifact) => artifact.id),
+		])
+	);
+	const artifactRows =
+		params.userId && artifactIds.length > 0
+			? await getArtifactsForUser(params.userId, artifactIds).catch(() => [])
+			: [];
+	const artifactMap = new Map(artifactRows.map((artifact) => [artifact.id, artifact]));
+	const familyKeys =
+		params.userId && artifactRows.length > 0
+			? await resolveArtifactFamilyKeys(params.userId, artifactRows).catch(() => new Map<string, string>())
+			: new Map<string, string>();
+	const grouped = new Map<EvidenceSourceType, Map<string, MessageEvidenceItem>>();
+
+	const upsertItem = (item: MessageEvidenceItem) => {
+		const byCanonical = grouped.get(item.sourceType) ?? new Map<string, MessageEvidenceItem>();
+		const canonicalId = item.canonicalId ?? item.id;
+		const existing = byCanonical.get(canonicalId);
+		if (!existing) {
+			byCanonical.set(canonicalId, item);
+			grouped.set(item.sourceType, byCanonical);
+			return;
+		}
+
+		byCanonical.set(canonicalId, {
+			...existing,
+			id: existing.id,
+			title: existing.title.length >= item.title.length ? existing.title : item.title,
+			status:
+				existing.status === 'selected' || item.status === 'selected'
+					? 'selected'
+					: existing.status === 'reference' || item.status === 'reference'
+						? 'reference'
+						: 'rejected',
+			description: existing.description ?? item.description ?? null,
+			artifactId: existing.artifactId ?? item.artifactId ?? null,
+			confidence: Math.max(existing.confidence ?? 0, item.confidence ?? 0) || undefined,
+			reason: existing.reason ?? item.reason ?? null,
+			currentTurnAttachment: Boolean(existing.currentTurnAttachment && item.currentTurnAttachment),
+			channels: mergeChannels(existing.channels, item.channels),
+		});
+	};
+
+	for (const attachment of currentAttachments) {
+		const artifact = artifactMap.get(attachment.id);
+		const canonicalId = familyKeys.get(attachment.id) ?? `document:${attachment.id}`;
+		upsertItem({
+			id: attachment.id,
+			canonicalId,
+			title: attachment.name,
+			sourceType: 'document',
+			status: 'selected',
+			artifactId: attachment.id,
+			description: attachment.summary
+				? `Included automatically for this turn. ${clip(attachment.summary, 180)}`
+				: 'Included automatically for this turn.',
+			currentTurnAttachment: true,
+			channels: ['attached'],
+		});
+		if (artifact && !familyKeys.has(artifact.id)) {
+			familyKeys.set(artifact.id, canonicalId);
+		}
+	}
+
+	for (const evidence of selectedEvidence) {
+		const artifact = artifactMap.get(evidence.artifactId);
+		const canonicalId =
+			artifact && params.userId
+				? familyKeys.get(evidence.artifactId) ?? `${evidence.sourceType}:${evidence.artifactId}`
+				: `${evidence.sourceType}:${evidence.artifactId}`;
+		upsertItem({
 			id: evidence.artifactId,
+			canonicalId,
 			title: evidence.name,
 			sourceType: evidence.sourceType,
 			status: 'selected',
@@ -117,42 +215,36 @@ function buildArtifactGroups(contextDebug: ContextDebugState | null | undefined)
 			confidence: evidence.confidence,
 			reason: evidence.reason,
 			description: evidence.reason,
+			currentTurnAttachment: false,
+			channels:
+				evidence.sourceType === 'document'
+					? ['retrieved']
+					: evidence.sourceType === 'tool'
+						? ['tool']
+						: evidence.sourceType === 'web'
+							? ['web']
+							: ['memory'],
 		});
-		bySource.set(evidence.sourceType, list);
 	}
 
-	return Array.from(bySource.entries())
+	return Array.from(grouped.entries())
 		.map(([sourceType, items]) => ({
 			sourceType,
 			label: GROUP_LABELS[sourceType],
-			reranked: contextDebug.routingStage === 'evidence_rerank',
-			confidence: contextDebug.routingConfidence,
-			items: items.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0) || a.title.localeCompare(b.title)),
+			reranked: params.contextDebug?.routingStage === 'evidence_rerank',
+			confidence: params.contextDebug?.routingConfidence,
+			items: Array.from(items.values())
+				.map((item) => ({
+					...item,
+					currentTurnAttachment:
+						item.currentTurnAttachment === true && (item.channels?.length ?? 0) === 1,
+				}))
+				.sort(
+					(a, b) =>
+						(b.confidence ?? 0) - (a.confidence ?? 0) || a.title.localeCompare(b.title)
+				),
 		}))
 		.filter((group) => group.items.length > 0);
-}
-
-function buildCurrentAttachmentGroup(
-	attachments: ArtifactSummary[] | undefined
-): MessageEvidenceGroup | null {
-	if (!attachments?.length) return null;
-
-	return {
-		sourceType: 'document',
-		label: 'Attached Files',
-		reranked: false,
-		items: attachments.map((artifact) => ({
-			id: artifact.id,
-			title: artifact.name,
-			sourceType: 'document',
-			status: 'selected',
-			artifactId: artifact.id,
-			description: artifact.summary
-				? `Included automatically for this turn. ${clip(artifact.summary, 180)}`
-				: 'Included automatically for this turn.',
-			currentTurnAttachment: true,
-		})),
-	};
 }
 
 function getToolCallSourceType(tool: ToolCallEntry): EvidenceSourceType {
@@ -170,17 +262,19 @@ async function buildRerankedToolGroup(params: {
 	taskState: TaskState | null;
 	toolCalls: ToolCallEntry[];
 }): Promise<MessageEvidenceGroup | null> {
-	const candidateItems = uniqueById(
+	const candidateItems = uniqueByCanonicalId(
 		params.toolCalls.flatMap((tool) =>
 			(tool.candidates ?? [])
 				.filter((candidate) => candidate.sourceType === params.sourceType)
 				.map((candidate) => ({
 					id: candidate.id,
+					canonicalId: canonicalKeyForCandidate(params.sourceType, candidate),
 					title: candidate.title,
 					sourceType: params.sourceType,
 					status: 'reference' as const,
 					description: candidate.snippet ?? null,
 					url: sanitizeUrl(candidate.url),
+					channels: [params.sourceType === 'web' ? 'web' : 'tool'] as EvidenceChannel[],
 				}))
 		)
 	);
@@ -191,10 +285,12 @@ async function buildRerankedToolGroup(params: {
 					.filter((tool) => getToolCallSourceType(tool) === params.sourceType)
 					.map((tool, index) => ({
 						id: `${tool.name}-${index}`,
+						canonicalId: `${params.sourceType}:tool:${tool.name}-${index}`,
 						title: tool.name,
 						sourceType: params.sourceType,
 						status: 'reference' as const,
 						description: tool.outputSummary ? clip(tool.outputSummary, 180) : null,
+						channels: [params.sourceType === 'web' ? 'web' : 'tool'] as EvidenceChannel[],
 					}))
 			: [];
 
@@ -291,6 +387,7 @@ async function buildRerankedToolGroup(params: {
 }
 
 export async function buildAssistantEvidenceSummary(params: {
+	userId?: string;
 	message: string;
 	taskState: TaskState | null;
 	contextStatus?: ConversationContextStatus | null;
@@ -300,8 +397,11 @@ export async function buildAssistantEvidenceSummary(params: {
 }): Promise<MessageEvidenceSummary | null> {
 	const toolCalls = params.toolCalls ?? [];
 	const groups = [
-		buildCurrentAttachmentGroup(params.currentAttachments),
-		...buildArtifactGroups(params.contextDebug),
+		...(await buildArtifactGroups({
+			userId: params.userId,
+			contextDebug: params.contextDebug,
+			currentAttachments: params.currentAttachments,
+		})),
 		buildMemoryGroup(params.contextStatus),
 		await buildRerankedToolGroup({
 			sourceType: 'web',

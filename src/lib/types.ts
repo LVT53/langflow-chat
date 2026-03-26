@@ -67,6 +67,8 @@ export interface ConversationDetail {
   contextStatus?: ConversationContextStatus | null;
   taskState?: TaskState | null;
   contextDebug?: ContextDebugState | null;
+  activeProject?: ActiveProjectSummary | null;
+  draft?: ConversationDraft | null;
   bootstrap?: boolean;
 }
 
@@ -114,8 +116,11 @@ export type ThinkingSegment =
 
 export type MessageEvidenceStatus = 'selected' | 'rejected' | 'reference';
 
+export type EvidenceChannel = 'attached' | 'retrieved' | 'tool' | 'web' | 'memory';
+
 export interface MessageEvidenceItem {
   id: string;
+  canonicalId?: string;
   title: string;
   sourceType: EvidenceSourceType;
   status: MessageEvidenceStatus;
@@ -125,6 +130,7 @@ export interface MessageEvidenceItem {
   confidence?: number | null;
   reason?: string | null;
   currentTurnAttachment?: boolean;
+  channels?: EvidenceChannel[];
 }
 
 export interface MessageEvidenceGroup {
@@ -248,6 +254,14 @@ export interface PendingAttachment {
   promptReady: boolean;
   promptArtifactId?: string | null;
   readinessError?: string | null;
+}
+
+export interface ConversationDraft {
+  conversationId: string;
+  draftText: string;
+  selectedAttachmentIds: string[];
+  selectedAttachments: PendingAttachment[];
+  updatedAt: number;
 }
 
 export interface KnowledgeUploadResponse {
@@ -423,14 +437,36 @@ export interface ContextDebugState {
 
 export type PersonaMemoryScope = 'self' | 'assistant_about_user';
 
-export interface PersonaMemoryItem {
+export type PersonaMemoryClass =
+  | 'perishable_fact'
+  | 'situational_context'
+  | 'stable_preference'
+  | 'identity_profile'
+  | 'long_term_context';
+
+export type PersonaMemoryState = 'active' | 'dormant' | 'archived';
+
+export interface PersonaMemoryMemberItem {
   id: string;
   content: string;
   scope: PersonaMemoryScope;
   sessionId: string | null;
-  conversationId: string | null;
   conversationTitle: string | null;
   createdAt: number;
+}
+
+export interface PersonaMemoryItem {
+  id: string;
+  canonicalText: string;
+  memoryClass: PersonaMemoryClass;
+  state: PersonaMemoryState;
+  salienceScore: number;
+  sourceCount: number;
+  conversationTitles: string[];
+  firstSeenAt: number;
+  lastSeenAt: number;
+  pinned: boolean;
+  members: PersonaMemoryMemberItem[];
 }
 
 export interface TaskMemoryItem {
@@ -456,6 +492,16 @@ export interface ProjectMemoryItem {
   updatedAt: number;
   linkedTaskCount: number;
   conversationTitles: string[];
+}
+
+export interface ActiveProjectSummary {
+  projectId: string;
+  name: string;
+  summary: string | null;
+  status: ProjectMemoryStatus;
+  linkedTaskCount: number;
+  lastActiveAt: number | null;
+  updatedAt: number;
 }
 
 export interface KnowledgeMemorySummary {

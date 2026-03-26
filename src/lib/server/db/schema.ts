@@ -260,6 +260,55 @@ export const personaMemoryAttributions = sqliteTable('persona_memory_attribution
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const personaMemoryClusters = sqliteTable('persona_memory_clusters', {
+  clusterId: text('cluster_id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  canonicalText: text('canonical_text').notNull(),
+  memoryClass: text('memory_class').notNull(),
+  state: text('state').notNull().default('active'),
+  salienceScore: integer('salience_score').notNull().default(0),
+  sourceCount: integer('source_count').notNull().default(0),
+  firstSeenAt: integer('first_seen_at', { mode: 'timestamp' }),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+  lastDreamedAt: integer('last_dreamed_at', { mode: 'timestamp' }),
+  decayAt: integer('decay_at', { mode: 'timestamp' }),
+  archiveAt: integer('archive_at', { mode: 'timestamp' }),
+  pinned: integer('pinned').notNull().default(0),
+  metadataJson: text('metadata_json'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const personaMemoryClusterMembers = sqliteTable('persona_memory_cluster_members', {
+  id: text('id').primaryKey(),
+  clusterId: text('cluster_id')
+    .notNull()
+    .references(() => personaMemoryClusters.clusterId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conclusionId: text('conclusion_id').notNull(),
+  content: text('content').notNull(),
+  scope: text('scope').notNull(),
+  sessionId: text('session_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const conversationDrafts = sqliteTable('conversation_drafts', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  draftText: text('draft_text').notNull().default(''),
+  selectedAttachmentIdsJson: text('selected_attachment_ids_json'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const adminConfig = sqliteTable('admin_config', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

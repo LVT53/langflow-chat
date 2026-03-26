@@ -2,13 +2,18 @@ import { randomUUID } from 'crypto';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
+	memoryProjectTaskLinks,
 	conversationTaskStates,
 	conversations,
 	memoryProjects,
-	memoryProjectTaskLinks,
 	taskCheckpoints,
 } from '$lib/server/db/schema';
-import type { ProjectMemoryItem, ProjectMemoryStatus, TaskState } from '$lib/types';
+import type {
+	ActiveProjectSummary,
+	ProjectMemoryItem,
+	ProjectMemoryStatus,
+	TaskState,
+} from '$lib/types';
 import { scoreMatch } from './working-set';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 
@@ -345,6 +350,74 @@ export async function listProjectMemoryItems(userId: string): Promise<ProjectMem
 		...item,
 		conversationTitles: item.conversationTitles.slice(0, 3),
 	}));
+}
+
+export async function getActiveProjectSummary(params: {
+	userId: string;
+	conversationId: string;
+	taskId?: string | null;
+}): Promise<ActiveProjectSummary | null> {
+	let taskId = params.taskId ?? null;
+
+	if (!taskId) {
+		const [taskRow] = await db
+			.select({ taskId: conversationTaskStates.taskId })
+			.from(conversationTaskStates)
+			.where(
+				and(
+					eq(conversationTaskStates.userId, params.userId),
+					eq(conversationTaskStates.conversationId, params.conversationId)
+				)
+			)
+			.orderBy(desc(conversationTaskStates.updatedAt))
+			.limit(1);
+		taskId = taskRow?.taskId ?? null;
+	}
+
+	if (!taskId) return null;
+
+	const [projectRow, linkedCountRow] = await Promise.all([
+		db
+			.select({
+				projectId: memoryProjects.projectId,
+				name: memoryProjects.name,
+				summary: memoryProjects.summary,
+				status: memoryProjects.status,
+				lastActiveAt: memoryProjects.lastActiveAt,
+				updatedAt: memoryProjects.updatedAt,
+			})
+			.from(memoryProjectTaskLinks)
+			.innerJoin(memoryProjects, eq(memoryProjectTaskLinks.projectId, memoryProjects.projectId))
+			.where(
+				and(
+					eq(memoryProjectTaskLinks.userId, params.userId),
+					eq(memoryProjectTaskLinks.taskId, taskId)
+				)
+			)
+			.limit(1),
+		db
+			.select({
+				projectId: memoryProjectTaskLinks.projectId,
+				taskId: memoryProjectTaskLinks.taskId,
+			})
+			.from(memoryProjectTaskLinks)
+			.where(eq(memoryProjectTaskLinks.userId, params.userId)),
+	]);
+
+	const project = projectRow[0];
+	if (!project) return null;
+
+	const linkedTaskCount = linkedCountRow.filter((row) => row.projectId === project.projectId).length;
+
+	return {
+		projectId: project.projectId,
+		name: project.name,
+		summary: project.summary ?? null,
+		status: project.status as ProjectMemoryStatus,
+		linkedTaskCount,
+		lastActiveAt: project.lastActiveAt ? project.lastActiveAt.getTime() : null,
+		updatedAt: project.updatedAt.getTime(),
+	};
 }
 
 export async function forgetProjectMemory(userId: string, projectId: string): Promise<boolean> {

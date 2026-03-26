@@ -20,6 +20,7 @@ const {
   mockSessionSearch,
   mockSessionAddPeers,
   mockPeerContext,
+  mockBuildPersonaPromptContext,
 } = vi.hoisted(() => {
   const now = Date.now();
   const mockDisplayArtifact = {
@@ -101,6 +102,7 @@ const {
     mockSessionSearch: vi.fn(async () => []),
     mockSessionAddPeers: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
+    mockBuildPersonaPromptContext: vi.fn(async () => ''),
   };
 });
 
@@ -212,6 +214,10 @@ vi.mock('./task-state', () => ({
   prepareTaskContext: mockPrepareTaskContext,
   requestStructuredControlModel: mockRequestStructuredControlModel,
   summarizeHistoricalContext: mockSummarizeHistoricalContext,
+}));
+
+vi.mock('./persona-memory', () => ({
+  buildPersonaPromptContext: mockBuildPersonaPromptContext,
 }));
 
 describe('Honcho Service', () => {
@@ -348,6 +354,35 @@ describe('Honcho Service', () => {
       expect(result.inputValue).toContain('Could you explain the contents of this file in detail?');
       expect(mockPrepareTaskContext).toHaveBeenCalled();
       expect(mockResolvePromptAttachmentArtifacts).toHaveBeenCalledWith('user-123', [mockDisplayArtifact.id]);
+    });
+
+    it('counts recent turns by user-led turns instead of raw message count', async () => {
+      mockSessionMessages.mockResolvedValueOnce({
+        toArray: async () => [
+          { content: 'Turn 1 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:00:00.000Z', peerId: 'user' },
+          { content: 'Turn 1 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:00:01.000Z', peerId: 'assistant' },
+          { content: 'Turn 2 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:01:00.000Z', peerId: 'user' },
+          { content: 'Turn 2 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:01:01.000Z', peerId: 'assistant' },
+          { content: 'Turn 3 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:02:00.000Z', peerId: 'user' },
+          { content: 'Turn 3 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:02:01.000Z', peerId: 'assistant' },
+          { content: 'Turn 4 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:03:00.000Z', peerId: 'user' },
+          { content: 'Turn 4 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:03:01.000Z', peerId: 'assistant' },
+        ],
+      });
+
+      const { buildConstructedContext } = await import('./honcho');
+
+      await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-456',
+        message: 'Continue from earlier.',
+      });
+
+      expect(mockUpdateConversationContextStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          recentTurnCount: 4,
+        })
+      );
     });
   });
 

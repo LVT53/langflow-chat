@@ -7,7 +7,9 @@ import {
 } from '$lib/server/db/schema';
 import { getConfig } from '$lib/server/config-store';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
+import type { HonchoPersonaMemoryRecord } from './honcho';
 import { forgetPersonaMemory, listPersonaMemories } from './honcho';
+import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
 import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './project-memory';
 
 const KEEP_MICRO_CHECKPOINTS = 6;
@@ -21,11 +23,11 @@ function taskIsStale(updatedAt: Date, now = Date.now()): boolean {
 	return now - updatedAt.getTime() >= TASK_ARCHIVE_AFTER_DAYS * 86_400_000;
 }
 
-async function dedupePersonaMemory(userId: string): Promise<void> {
+async function dedupePersonaMemory(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	const records = await listPersonaMemories(userId).catch(() => []);
-	if (records.length <= 1) return;
+	if (records.length <= 1) return records;
 
-	const kept: Array<{ id: string; content: string }> = [];
+	const kept: HonchoPersonaMemoryRecord[] = [];
 	for (const record of records) {
 		const duplicate = kept.some((existing) =>
 			areNearDuplicateArtifactTexts(record.content, existing.content)
@@ -40,8 +42,10 @@ async function dedupePersonaMemory(userId: string): Promise<void> {
 			);
 			continue;
 		}
-		kept.push({ id: record.id, content: record.content });
+		kept.push(record);
 	}
+
+	return kept;
 }
 
 async function pruneTaskCheckpoints(userId: string): Promise<void> {
@@ -114,7 +118,13 @@ export async function runUserMemoryMaintenance(
 	reason = 'manual'
 ): Promise<void> {
 	try {
-		await dedupePersonaMemory(userId);
+		const dedupedPersonaRecords = await dedupePersonaMemory(userId);
+		await syncPersonaMemoryClusters({
+			userId,
+			rawRecords: dedupedPersonaRecords,
+			reason,
+		});
+		await refreshPersonaClusterStates(userId);
 		await pruneTaskCheckpoints(userId);
 		await archiveStaleTaskMemory(userId);
 		await updateProjectMemoryStatuses(userId);

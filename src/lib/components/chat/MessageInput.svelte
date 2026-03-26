@@ -5,6 +5,7 @@
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import type {
+		ActiveProjectSummary,
 		ArtifactSummary,
 		ContextDebugState,
 		ConversationContextStatus,
@@ -24,12 +25,22 @@
 	export let attachedArtifacts: ArtifactSummary[] = [];
 	export let taskState: TaskState | null = null;
 	export let contextDebug: ContextDebugState | null = null;
+	export let activeProject: ActiveProjectSummary | null = null;
+	export let draftText: string = '';
+	export let draftAttachments: PendingAttachment[] = [];
+	export let draftVersion: number = 0;
 
 	const dispatch = createEventDispatcher<{
 		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
 		stop: void;
 		steer: TaskSteeringPayload;
 		manageEvidence: void;
+		draftchange: {
+			conversationId: string | null;
+			draftText: string;
+			selectedAttachmentIds: string[];
+			selectedAttachments: PendingAttachment[];
+		};
 	}>();
 
 	let textarea: HTMLTextAreaElement;
@@ -40,6 +51,9 @@
 	let attachmentError = '';
 	let resolvedConversationId: string | null = conversationId;
 	let showToolsMenu = false;
+	let appliedDraftVersion = -1;
+	let lastEmittedDraftKey = '';
+	let ensureDraftConversationPromise: Promise<string> | null = null;
 	
 	$: isEmpty = message.trim().length === 0;
 	$: isOverMaxLength = message.length > maxLength;
@@ -60,6 +74,21 @@
 			[...attachedArtifacts, ...pendingAttachmentArtifacts].map((artifact) => [artifact.id, artifact])
 		).values()
 	);
+	$: if (draftVersion !== appliedDraftVersion) {
+		const shouldApplyDraft =
+			appliedDraftVersion === -1 ||
+			draftVersion === 0 ||
+			(message.trim().length === 0 && pendingAttachments.length === 0);
+		appliedDraftVersion = draftVersion;
+		if (shouldApplyDraft) {
+			message = draftText;
+			pendingAttachments = draftAttachments.map((attachment) => ({ ...attachment }));
+			attachmentError = '';
+			uploadState = 'idle';
+			showToolsMenu = false;
+			adjustHeight();
+		}
+	}
 
 	function isMobile(): boolean {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -100,6 +129,7 @@
 	function handleInput() {
 		message = textarea.value;
 		adjustHeight();
+		void emitDraftChange();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -210,6 +240,7 @@
 								: null,
 					});
 					pendingAttachments = Array.from(next.values());
+					void emitDraftChange();
 				}
 			}
 		} catch (error) {
@@ -225,6 +256,7 @@
 
 	function removePendingAttachment(id: string) {
 		pendingAttachments = pendingAttachments.filter((attachment) => attachment.artifact.id !== id);
+		void emitDraftChange();
 	}
 
 	function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
@@ -233,6 +265,39 @@
 
 	function handleManageEvidence() {
 		dispatch('manageEvidence');
+	}
+
+	async function ensureDraftConversationId(): Promise<string | null> {
+		if (resolvedConversationId) return resolvedConversationId;
+		if (!ensureConversation) return null;
+		if (!ensureDraftConversationPromise) {
+			ensureDraftConversationPromise = ensureConversation()
+				.then((id) => {
+					resolvedConversationId = id;
+					return id;
+				})
+				.finally(() => {
+					ensureDraftConversationPromise = null;
+				});
+		}
+		return ensureDraftConversationPromise;
+	}
+
+	async function emitDraftChange(force = false) {
+		const hasMeaningfulDraft = message.trim().length > 0 || pendingAttachments.length > 0;
+		const draftConversationId = hasMeaningfulDraft
+			? await ensureDraftConversationId()
+			: resolvedConversationId;
+		const payload = {
+			conversationId: draftConversationId,
+			draftText: message,
+			selectedAttachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
+			selectedAttachments: pendingAttachments.map((attachment) => ({ ...attachment })),
+		};
+		const key = JSON.stringify(payload);
+		if (!force && key === lastEmittedDraftKey) return;
+		lastEmittedDraftKey = key;
+		dispatch('draftchange', payload);
 	}
 </script>
 
@@ -300,6 +365,7 @@
 					attachedArtifacts={composerArtifacts}
 					{taskState}
 					{contextDebug}
+					{activeProject}
 					on:steer={handleSteering}
 					on:manageEvidence={handleManageEvidence}
 				/>

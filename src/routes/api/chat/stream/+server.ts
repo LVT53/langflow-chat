@@ -1,6 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
+import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
 import { sendMessageStream } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
@@ -33,7 +34,7 @@ import {
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import { syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
+import { getActiveProjectSummary, syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -1174,6 +1175,10 @@ export const POST: RequestHandler = async (event) => {
 				| import('$lib/types').ContextDebugState
 				| null
 				| undefined;
+			let latestActiveProject:
+				| import('$lib/types').ActiveProjectSummary
+				| null
+				| undefined;
 			let initialContextStatus:
 				| import('$lib/types').ConversationContextStatus
 				| undefined;
@@ -1238,6 +1243,7 @@ export const POST: RequestHandler = async (event) => {
 							activeWorkingSet: latestActiveWorkingSet,
 							taskState: latestTaskState,
 							contextDebug: latestContextDebug,
+							activeProject: latestActiveProject,
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1323,6 +1329,12 @@ export const POST: RequestHandler = async (event) => {
 									);
 								}
 								latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
+								latestActiveProject = await getActiveProjectSummary({
+									userId: user.id,
+									conversationId,
+									taskId: latestTaskState?.taskId ?? null,
+								}).catch(() => null);
+								await clearConversationDraft(user.id, conversationId).catch(() => undefined);
 							})()
 						);
 
@@ -1334,6 +1346,7 @@ export const POST: RequestHandler = async (event) => {
 											? await getArtifactsForUser(user.id, safeAttachmentIds)
 											: [];
 									const messageEvidence = await buildAssistantEvidenceSummary({
+										userId: user.id,
 										message: normalizedMessage,
 										taskState: latestTaskState ?? initialTaskState ?? null,
 										contextStatus: latestContextStatus ?? initialContextStatus ?? null,
@@ -1434,6 +1447,11 @@ export const POST: RequestHandler = async (event) => {
 						? await getContextDebugState(user.id, conversationId).catch(() => null)
 						: langflowResponse.contextDebug ?? await getContextDebugState(user.id, conversationId).catch(() => null);
 				initialContextDebug = latestContextDebug;
+				latestActiveProject = await getActiveProjectSummary({
+					userId: user.id,
+					conversationId,
+					taskId: latestTaskState?.taskId ?? null,
+				}).catch(() => null);
 				console.log('[STREAM] Upstream stream connected', { conversationId });
 				if (closed) return;
 				let upstreamEventCount = 0;

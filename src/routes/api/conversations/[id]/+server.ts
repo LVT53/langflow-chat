@@ -13,6 +13,8 @@ import {
 	getConversationContextStatus,
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
+import { getConversationDraft } from '$lib/server/services/conversation-drafts';
+import { getActiveProjectSummary } from '$lib/server/services/project-memory';
 import { getContextDebugState, getConversationTaskState } from '$lib/server/services/task-state';
 
 export const GET: RequestHandler = async (event) => {
@@ -27,6 +29,7 @@ export const GET: RequestHandler = async (event) => {
 		}
 
 		if (event.url.searchParams.get('view') === 'bootstrap') {
+			const draft = await getConversationDraft(user.id, id).catch(() => null);
 			return json({
 				conversation,
 				messages: [],
@@ -35,18 +38,34 @@ export const GET: RequestHandler = async (event) => {
 				contextStatus: null,
 				taskState: null,
 				contextDebug: null,
+				activeProject: null,
+				draft,
 				bootstrap: true,
 			});
 		}
 
-		const [messageHistory, attachedArtifacts, activeWorkingSet, contextStatus, taskState, contextDebug] = await Promise.all([
+		const [
+			messageHistory,
+			attachedArtifacts,
+			activeWorkingSet,
+			contextStatus,
+			taskState,
+			contextDebug,
+			draft,
+		] = await Promise.all([
 			listMessages(id),
 			listConversationArtifacts(user.id, id),
 			getConversationWorkingSet(user.id, id),
 			getConversationContextStatus(user.id, id),
 			getConversationTaskState(user.id, id),
 			getContextDebugState(user.id, id),
+			getConversationDraft(user.id, id),
 		]);
+		const activeProject = await getActiveProjectSummary({
+			userId: user.id,
+			conversationId: id,
+			taskId: taskState?.taskId ?? null,
+		}).catch(() => null);
 
 		return json({
 			conversation,
@@ -56,6 +75,8 @@ export const GET: RequestHandler = async (event) => {
 			contextStatus,
 			taskState,
 			contextDebug,
+			activeProject,
+			draft,
 			bootstrap: false,
 		});
 	} catch (err) {

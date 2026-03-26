@@ -45,10 +45,14 @@
 	let honchoOverviewHtml = '';
 	let honchoHighlightHtmlBlocks = [] as string[];
 	let selectedPersonaMemoryIds = [] as string[];
+	let personaMemoryFilter: 'active' | 'dormant' | 'archived' = 'active';
 	let selectedTaskMemoryIds = [] as string[];
 	let selectedProjectMemoryIds = [] as string[];
 	const userDisplayName = data.userDisplayName?.trim() || 'You';
 	$: deletingArtifactCount = deletingArtifactIds.size;
+	$: filteredPersonaMemories = personaMemories.filter(
+		(memory) => memory.state === personaMemoryFilter
+	);
 
 	$: honchoOverview = memorySummary.overview?.trim() ?? '';
 	$: honchoHighlightBlocks = honchoOverview ? buildHighlightBlocks(honchoOverview) : [];
@@ -148,6 +152,9 @@
 		resetModalSelections();
 		activeLibraryModal = null;
 		activeMemoryModal = kind;
+		if (kind === 'persona') {
+			personaMemoryFilter = 'active';
+		}
 		void ensureMemoryLoaded();
 	}
 
@@ -190,9 +197,9 @@
 
 	function toggleAllPersonaSelections() {
 		selectedPersonaMemoryIds =
-			selectedPersonaMemoryIds.length === personaMemories.length
+			selectedPersonaMemoryIds.length === filteredPersonaMemories.length
 				? []
-				: personaMemories.map((memory) => memory.id);
+				: filteredPersonaMemories.map((memory) => memory.id);
 	}
 
 	function toggleAllTaskSelections() {
@@ -215,21 +222,32 @@
 				: projectMemories.map((memory) => memory.projectId);
 	}
 
-	function formatPersonaActor(scope: PersonaMemoryItem['scope']): string {
-		return scope === 'assistant_about_user' ? 'AlfyAI' : userDisplayName;
+	function getPrimaryPersonaScope(memory: PersonaMemoryItem): 'self' | 'assistant_about_user' {
+		return memory.members[0]?.scope ?? 'self';
 	}
 
-	function formatPersonaOrigin(scope: PersonaMemoryItem['scope']): string {
-		return scope === 'assistant_about_user' ? 'Assistant inference' : 'Direct memory';
+	function formatPersonaActor(memory: PersonaMemoryItem): string {
+		return getPrimaryPersonaScope(memory) === 'assistant_about_user' ? 'AlfyAI' : userDisplayName;
 	}
 
-	function formatMemorySource(
-		conversationTitle: string | null,
-		sessionId: string | null
-	): string {
-		if (conversationTitle) return conversationTitle;
-		if (sessionId) return 'Conversation memory';
+	function formatPersonaOrigin(memory: PersonaMemoryItem): string {
+		const scope = getPrimaryPersonaScope(memory);
+		const sourceLabel = scope === 'assistant_about_user' ? 'Assistant inference' : 'Direct memory';
+		return `${sourceLabel} · ${memory.sourceCount} source${memory.sourceCount === 1 ? '' : 's'}`;
+	}
+
+	function formatPersonaSource(memory: PersonaMemoryItem): string {
+		if (memory.conversationTitles.length > 0) {
+			return memory.conversationTitles.join(', ');
+		}
+		if (memory.members.some((member) => Boolean(member.sessionId))) {
+			return 'Conversation memory';
+		}
 		return 'General memory';
+	}
+
+	function formatPersonaClass(memoryClass: PersonaMemoryItem['memoryClass']): string {
+		return memoryClass.replace(/_/g, ' ');
 	}
 
 	function formatMemoryTimestamp(timestamp: number): string {
@@ -240,7 +258,7 @@
 	}
 
 	function getPersonaRowKey(memory: PersonaMemoryItem, index: number): string {
-		return `${memory.scope}:${memory.id}:${index}`;
+		return `${memory.state}:${memory.id}:${index}`;
 	}
 
 	function formatArtifactSize(sizeBytes: number | null | undefined): string {
@@ -297,7 +315,7 @@
 
 	async function submitMemoryAction(
 		payload:
-			| { action: 'forget_persona_memory'; conclusionId: string }
+			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 			| { action: 'forget_all_persona_memory' }
 			| { action: 'forget_task_memory'; taskId: string }
 			| { action: 'forget_project_memory'; projectId: string }
@@ -318,7 +336,7 @@
 
 	async function runMemoryAction(
 		payload:
-			| { action: 'forget_persona_memory'; conclusionId: string }
+			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
 			| { action: 'forget_all_persona_memory' }
 			| { action: 'forget_task_memory'; taskId: string }
 			| { action: 'forget_project_memory'; projectId: string },
@@ -335,7 +353,8 @@
 			const result = await submitMemoryAction(payload);
 			applyMemoryPayload(result);
 			if (payload.action === 'forget_persona_memory') {
-				selectedPersonaMemoryIds = selectedPersonaMemoryIds.filter((id) => id !== payload.conclusionId);
+				const forgottenId = payload.clusterId ?? payload.conclusionId;
+				selectedPersonaMemoryIds = selectedPersonaMemoryIds.filter((id) => id !== forgottenId);
 			}
 			if (payload.action === 'forget_task_memory') {
 				selectedTaskMemoryIds = selectedTaskMemoryIds.filter((id) => id !== payload.taskId);
@@ -373,7 +392,7 @@
 				result = await submitMemoryAction({ action: 'forget_all_persona_memory' });
 			} else {
 				for (const id of selectedPersonaMemoryIds) {
-					result = await submitMemoryAction({ action: 'forget_persona_memory', conclusionId: id });
+					result = await submitMemoryAction({ action: 'forget_persona_memory', clusterId: id });
 				}
 			}
 			if (result) {
@@ -1025,53 +1044,93 @@
 						</div>
 					{:else}
 						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
+							<div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+								{#each ['active', 'dormant', 'archived'] as state}
+									<button
+										type="button"
+										class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+											personaMemoryFilter === state
+												? 'border-border bg-surface-elevated text-text-primary'
+												: 'border-border text-text-muted'
+										}`}
+										on:click={() => {
+											personaMemoryFilter = state as 'active' | 'dormant' | 'archived';
+											selectedPersonaMemoryIds = [];
+										}}
+									>
+										{state}
+									</button>
+								{/each}
+							</div>
 							<table class="min-w-[880px] w-full border-collapse">
 								<thead>
 									<tr class="border-b border-border bg-surface-elevated/70 text-left">
 										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
 											<input
 												type="checkbox"
-												checked={personaMemories.length > 0 && selectedPersonaMemoryIds.length === personaMemories.length}
+												checked={filteredPersonaMemories.length > 0 && selectedPersonaMemoryIds.length === filteredPersonaMemories.length}
 												on:change={toggleAllPersonaSelections}
 												aria-label="Select all persona memories"
 											/>
 										</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Actor</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Memory</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Class</th>
 										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Source</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Added</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Last seen</th>
 										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
 									</tr>
 								</thead>
 								<tbody>
-									{#each personaMemories as memory, index (getPersonaRowKey(memory, index))}
+									{#each filteredPersonaMemories as memory, index (getPersonaRowKey(memory, index))}
 										<tr class="border-b border-border last:border-b-0">
 											<td class="px-4 py-3 align-top">
 												<input
 													type="checkbox"
 													checked={selectedPersonaMemoryIds.includes(memory.id)}
 													on:change={() => togglePersonaSelection(memory.id)}
-													aria-label={`Select ${memory.content}`}
+													aria-label={`Select ${memory.canonicalText}`}
 												/>
 											</td>
 											<td class="px-4 py-3 align-top">
 												<div class="text-sm font-sans font-medium text-text-primary">
-													{formatPersonaActor(memory.scope)}
+													{formatPersonaActor(memory)}
 												</div>
 												<div class="mt-1 text-xs font-sans text-text-muted">
-													{formatPersonaOrigin(memory.scope)}
+													{formatPersonaOrigin(memory)}
 												</div>
 											</td>
 											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.content}>
-													{memory.content}
+												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.canonicalText}>
+													{memory.canonicalText}
+												</div>
+												{#if memory.members.length > 1}
+													<details class="mt-2 text-xs font-sans text-text-muted">
+														<summary>Show raw memories ({memory.members.length})</summary>
+														<div class="mt-2 space-y-2">
+															{#each memory.members as member (`${memory.id}-${member.id}`)}
+																<div>
+																	<div>{member.content}</div>
+																	<div class="mt-1 text-[0.68rem] text-text-muted">
+																		{member.conversationTitle ?? 'Conversation memory'} · {formatMemoryTimestamp(member.createdAt)}
+																	</div>
+																</div>
+															{/each}
+														</div>
+													</details>
+												{/if}
+											</td>
+											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
+												<div>{formatPersonaClass(memory.memoryClass)}</div>
+												<div class="mt-1 text-xs text-text-muted">
+													Salience {memory.salienceScore}
 												</div>
 											</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatMemorySource(memory.conversationTitle, memory.sessionId)}
+												{formatPersonaSource(memory)}
 											</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatMemoryTimestamp(memory.createdAt)}
+												{formatMemoryTimestamp(memory.lastSeenAt)}
 											</td>
 											<td class="px-4 py-3 align-top text-right">
 												<button
@@ -1079,7 +1138,7 @@
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													on:click={() =>
 														runMemoryAction(
-															{ action: 'forget_persona_memory', conclusionId: memory.id },
+															{ action: 'forget_persona_memory', clusterId: memory.id },
 															`persona-${memory.id}`,
 															'Forget this persona memory item?'
 														)}

@@ -5,11 +5,13 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import { onMount } from 'svelte';
+	import type { ConversationDetail, ConversationDraft, PendingAttachment } from '$lib/types';
 	import type { LayoutData } from './$types';
 
 	export let data: LayoutData;
 
 	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
+	const LANDING_DRAFT_CONVERSATION_KEY = 'landing-draft-conversation-id';
 
 	let hasStarted = false;
 	let creating = false;
@@ -18,6 +20,7 @@
 	let animateIn = false;
 	let preparedConversationId: string | null = null;
 	let preparedConversationPromise: Promise<string> | null = null;
+	let conversationDraft: ConversationDraft | null = null;
 
 	onMount(() => {
 		// Check if we're arriving from a chat page (indicated by previous conversation ID being set)
@@ -34,6 +37,12 @@
 			// No animation needed for direct navigation
 			animateIn = true;
 		}
+
+		const storedConversationId = sessionStorage.getItem(LANDING_DRAFT_CONVERSATION_KEY);
+		if (storedConversationId) {
+			preparedConversationId = storedConversationId;
+			void loadPreparedDraft(storedConversationId);
+		}
 	});
 
 	async function ensurePreparedConversation(): Promise<string> {
@@ -43,6 +52,9 @@
 		if (!preparedConversationPromise) {
 			preparedConversationPromise = createNewConversation().then((id) => {
 				preparedConversationId = id;
+				if (typeof window !== 'undefined') {
+					window.sessionStorage.setItem(LANDING_DRAFT_CONVERSATION_KEY, id);
+				}
 				return id;
 			}).finally(() => {
 				preparedConversationPromise = null;
@@ -63,6 +75,7 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 			const id = event.detail.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
 			if (typeof window !== 'undefined') {
+				window.sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
 				window.sessionStorage.setItem(
 					`${PENDING_MESSAGE_PREFIX}${id}`,
 					JSON.stringify({
@@ -78,6 +91,45 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 			hasStarted = false;
 		} finally {
 			creating = false;
+		}
+	}
+
+	async function loadPreparedDraft(conversationId: string) {
+		try {
+			const response = await fetch(`/api/conversations/${conversationId}`);
+			if (!response.ok) {
+				sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+				return;
+			}
+			const payload = (await response.json()) as ConversationDetail;
+			conversationDraft = payload.draft ?? null;
+		} catch {
+			sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+		}
+	}
+
+	function handleDraftChange(
+		event: CustomEvent<{
+			conversationId: string | null;
+			draftText: string;
+			selectedAttachmentIds: string[];
+			selectedAttachments: PendingAttachment[];
+		}>
+	) {
+		const conversationId = event.detail.conversationId;
+		if (conversationId) {
+			preparedConversationId = conversationId;
+			sessionStorage.setItem(LANDING_DRAFT_CONVERSATION_KEY, conversationId);
+		}
+		conversationDraft = {
+			conversationId: conversationId ?? preparedConversationId ?? 'draft',
+			draftText: event.detail.draftText,
+			selectedAttachmentIds: event.detail.selectedAttachmentIds,
+			selectedAttachments: event.detail.selectedAttachments,
+			updatedAt: Date.now(),
+		};
+		if (!event.detail.draftText.trim() && event.detail.selectedAttachmentIds.length === 0) {
+			sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
 		}
 	}
 </script>
@@ -116,13 +168,18 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 
 				<MessageInput
 					on:send={handleSend}
+					on:draftchange={handleDraftChange}
 					disabled={creating}
 					maxLength={data.maxMessageLength}
-					conversationId={null}
+					conversationId={preparedConversationId}
 					contextStatus={null}
 					attachedArtifacts={[]}
 					taskState={null}
 					contextDebug={null}
+					activeProject={null}
+					draftText={conversationDraft?.draftText ?? ''}
+					draftAttachments={conversationDraft?.selectedAttachments ?? []}
+					draftVersion={conversationDraft?.updatedAt ?? 0}
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
 				/>

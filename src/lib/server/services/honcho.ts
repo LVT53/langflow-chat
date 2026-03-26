@@ -44,6 +44,7 @@ import {
 	logAttachmentTrace,
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
+import { buildPersonaPromptContext } from './persona-memory';
 
 let client: Honcho | null = null;
 
@@ -118,6 +119,38 @@ function serializeMessages(messages: Message[], userId: string, limit: number): 
 		.slice(-limit)
 		.map((message) => `${roleForMessage(message, userId).toUpperCase()}: ${message.content.trim()}`)
 		.join('\n\n');
+}
+
+function selectRecentTurns(
+	messages: Message[],
+	userId: string,
+	limit: number
+): Array<{ messages: Message[] }> {
+	const turns: Array<{ messages: Message[] }> = [];
+	let currentTurn: Message[] = [];
+
+	for (const message of messages) {
+		const role = roleForMessage(message, userId);
+		if (role === 'user') {
+			if (currentTurn.length > 0) {
+				turns.push({ messages: currentTurn });
+			}
+			currentTurn = [message];
+			continue;
+		}
+
+		if (currentTurn.length === 0) {
+			currentTurn = [message];
+		} else {
+			currentTurn.push(message);
+		}
+	}
+
+	if (currentTurn.length > 0) {
+		turns.push({ messages: currentTurn });
+	}
+
+	return turns.slice(-limit);
 }
 
 function serializeSearchMessages(messages: Message[], userId: string): string {
@@ -904,7 +937,7 @@ export async function buildConstructedContext(params: {
 			getSessionMessages(session).catch(() => []),
 			session.summaries().catch(() => null),
 			session.search(params.message, { limit: 4 }).catch(() => []),
-			getPeerContextString(params.userId, params.message).catch(() => ''),
+			buildPersonaPromptContext(params.userId, params.message).catch(() => ''),
 			resolvePromptAttachmentArtifacts(params.userId, attachmentIds),
 			selectWorkingSetArtifactsForPrompt(
 				params.userId,
@@ -974,7 +1007,9 @@ export async function buildConstructedContext(params: {
 		perArtifactCharBudget: documentFocused ? 2200 : 1400,
 	}).catch(() => new Map<string, string>());
 
-	const recentTurnCount = Math.min(sessionMessages.length, 6);
+	const recentTurns = selectRecentTurns(sessionMessages, params.userId, 6);
+	const recentTurnCount = recentTurns.length;
+	const recentTurnMessages = recentTurns.flatMap((turn) => turn.messages);
 	const sections: Array<{
 		title: string;
 		body: string;
@@ -1063,7 +1098,7 @@ export async function buildConstructedContext(params: {
 	if (sessionMessages.length > 0) {
 		sections.push({
 			title: 'Recent Session Turns',
-			body: serializeMessages(sessionMessages, params.userId, recentTurnCount),
+			body: serializeMessages(recentTurnMessages, params.userId, recentTurnMessages.length),
 			layer: 'session',
 			essential: true,
 			llmCompactible: true,

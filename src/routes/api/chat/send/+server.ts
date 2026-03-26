@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
+import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
 import { sendMessage } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
@@ -33,7 +34,7 @@ import {
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import { syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
+import { getActiveProjectSummary, syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -178,6 +179,12 @@ export const POST: RequestHandler = async (event) => {
 			);
 		}
 		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
+		const activeProject = await getActiveProjectSummary({
+			userId: user.id,
+			conversationId,
+			taskId: taskState?.taskId ?? null,
+		}).catch(() => null);
+		await clearConversationDraft(user.id, conversationId).catch(() => undefined);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
 		void (async () => {
@@ -185,6 +192,7 @@ export const POST: RequestHandler = async (event) => {
 				const currentAttachments =
 					safeAttachmentIds.length > 0 ? await getArtifactsForUser(user.id, safeAttachmentIds) : [];
 				const messageEvidence = await buildAssistantEvidenceSummary({
+					userId: user.id,
 					message: normalizedMessage,
 					taskState: taskState ?? initialTaskState ?? null,
 					contextStatus: contextStatus ?? null,
@@ -240,6 +248,7 @@ export const POST: RequestHandler = async (event) => {
 			activeWorkingSet,
 			taskState,
 			contextDebug,
+			activeProject,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);

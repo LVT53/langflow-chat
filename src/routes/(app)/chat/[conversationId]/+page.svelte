@@ -10,11 +10,14 @@
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import type {
+		ActiveProjectSummary,
 		ArtifactSummary,
 		ChatMessage,
 		ConversationDetail,
+		ConversationDraft,
 		ContextDebugState,
 		ConversationContextStatus,
+		PendingAttachment,
 		TaskState,
 		TaskSteeringPayload,
 	} from '$lib/types';
@@ -45,6 +48,8 @@
 	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
 	let taskState: TaskState | null = data.taskState ?? null;
 	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
+	let activeProject: ActiveProjectSummary | null = data.activeProject ?? null;
+	let conversationDraft: ConversationDraft | null = data.draft ?? null;
 	let evidenceManagerOpen = false;
 	let bootstrapMode = data.bootstrap ?? false;
 	let hydratingConversation = false;
@@ -52,6 +57,8 @@
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
 	const evidencePollControllers = new Map<string, AbortController>();
+	let draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastDraftPersistKey = '';
 
 	$: hasMessages = $messages.length > 0;
 	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
@@ -119,6 +126,8 @@
 		activeWorkingSet = data.activeWorkingSet ?? [];
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
+		activeProject = data.activeProject ?? null;
+		conversationDraft = data.draft ?? null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
 		evidenceManagerOpen = false;
@@ -191,6 +200,10 @@
 			activeStream.abort();
 			activeStream = null;
 		}
+		if (draftPersistTimer) {
+			clearTimeout(draftPersistTimer);
+			draftPersistTimer = null;
+		}
 
 		if (!hasPersistedMessages && data?.conversation?.id) {
 			removeConversationLocal(data.conversation.id);
@@ -217,6 +230,8 @@
 			contextStatus = payload.contextStatus ?? contextStatus;
 			taskState = payload.taskState ?? taskState;
 			contextDebug = payload.contextDebug ?? contextDebug;
+			activeProject = payload.activeProject ?? activeProject;
+			conversationDraft = payload.draft ?? conversationDraft;
 			bootstrapMode = false;
 
 			if (!activeStream && $messages.length === 0 && (payload.messages?.length ?? 0) > 0) {
@@ -428,6 +443,7 @@
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
+					activeProject = metadata?.activeProject ?? activeProject;
 					const serverAssistantId = metadata?.assistantMessageId;
 					const serverUserMsgId = metadata?.userMessageId;
 					messages.update((msgs) => {
@@ -454,6 +470,7 @@
 							return m;
 						});
 					});
+					conversationDraft = null;
 					isSending = false;
 					activeStream = null;
 					canRetry = false;
@@ -609,6 +626,74 @@
 	function handleErrorClose() {
 		sendError = null;
 	}
+
+	function handleDraftChange(
+		event: CustomEvent<{
+			conversationId: string | null;
+			draftText: string;
+			selectedAttachmentIds: string[];
+			selectedAttachments: PendingAttachment[];
+		}>
+	) {
+		const nextConversationId = event.detail.conversationId ?? data.conversation.id;
+		conversationDraft = {
+			conversationId: nextConversationId,
+			draftText: event.detail.draftText,
+			selectedAttachmentIds: event.detail.selectedAttachmentIds,
+			selectedAttachments: event.detail.selectedAttachments,
+			updatedAt: Date.now(),
+		};
+		void persistDraftState(
+			event.detail.draftText,
+			event.detail.selectedAttachmentIds,
+			false,
+			nextConversationId
+		);
+	}
+
+	async function persistDraftState(
+		draftText: string,
+		selectedAttachmentIds: string[],
+		immediate = false,
+		conversationId = data.conversation.id
+	) {
+		const payload = { draftText, selectedAttachmentIds };
+		const key = `${conversationId}:${JSON.stringify(payload)}`;
+		if (!immediate && key === lastDraftPersistKey) return;
+		lastDraftPersistKey = key;
+
+		if (draftPersistTimer) {
+			clearTimeout(draftPersistTimer);
+			draftPersistTimer = null;
+		}
+
+		const runPersist = async () => {
+			try {
+				if (!draftText.trim() && selectedAttachmentIds.length === 0) {
+					await fetch(`/api/conversations/${conversationId}/draft`, { method: 'DELETE' });
+					return;
+				}
+
+				await fetch(`/api/conversations/${conversationId}/draft`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload),
+				});
+			} catch {
+				// Ignore transient persistence failures in the composer.
+			}
+		};
+
+		if (immediate) {
+			await runPersist();
+			return;
+		}
+
+		draftPersistTimer = setTimeout(() => {
+			void runPersist();
+			draftPersistTimer = null;
+		}, 400);
+	}
 </script>
 
 <svelte:head>
@@ -646,19 +731,24 @@
 
 					<MessageInput
 						on:send={handleSend}
-					on:stop={handleStop}
-					disabled={isSending}
-					isGenerating={isSending}
-					maxLength={data.maxMessageLength}
-					conversationId={data.conversation.id}
-					{contextStatus}
-					{attachedArtifacts}
-					{taskState}
-					{contextDebug}
-					attachmentsEnabled={true}
-					on:steer={handleSteering}
-					on:manageEvidence={openEvidenceManager}
-				/>
+						on:stop={handleStop}
+						on:draftchange={handleDraftChange}
+						disabled={isSending}
+						isGenerating={isSending}
+						maxLength={data.maxMessageLength}
+						conversationId={data.conversation.id}
+						{contextStatus}
+						{attachedArtifacts}
+						{taskState}
+						{contextDebug}
+						{activeProject}
+						draftText={conversationDraft?.draftText ?? ''}
+						draftAttachments={conversationDraft?.selectedAttachments ?? []}
+						draftVersion={conversationDraft?.updatedAt ?? 0}
+						attachmentsEnabled={true}
+						on:steer={handleSteering}
+						on:manageEvidence={openEvidenceManager}
+					/>
 			</div>
 		</div>
 	</div>

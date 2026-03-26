@@ -161,7 +161,7 @@ async function renderMarkdown(content: string, isDark: boolean): Promise<string>
     gfm: true
   });
 
-  return sanitizeHtml(html as string);
+  return sanitizeHtml(wrapMarkdownTables(html as string));
 }
 
 function renderCodeBlock(content: string, language: string | undefined, isDark: boolean): string {
@@ -187,6 +187,12 @@ function normalizeMarkdownContent(content: string): string {
   }
 
   return content;
+}
+
+function wrapMarkdownTables(html: string): string {
+  return html
+    .replace(/<table>/g, '<div class="markdown-table-wrap"><table class="markdown-table">')
+    .replace(/<\/table>/g, '</table></div>');
 }
 
 function createMarkdownRenderer(isDark: boolean) {

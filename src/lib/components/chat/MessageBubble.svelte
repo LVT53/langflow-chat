@@ -362,17 +362,19 @@
 			line-height: 1.55;
 		}
 	}
-	/* Prevent wide prose content (tables, long URLs) from overflowing */
-	.prose-container :global(table) {
-		display: block;
-		overflow-x: auto;
-		max-width: 100%;
-	}
 	.prose-container :global(img) {
 		max-width: 100%;
 		height: auto;
 	}
-	.prose-container :global(*) {
+	.prose-container :global(p),
+	.prose-container :global(li),
+	.prose-container :global(blockquote),
+	.prose-container :global(h1),
+	.prose-container :global(h2),
+	.prose-container :global(h3),
+	.prose-container :global(h4),
+	.prose-container :global(h5),
+	.prose-container :global(h6) {
 		word-break: break-word;
 		overflow-wrap: anywhere;
 	}
@@ -381,6 +383,29 @@
 	.prose-container :global(code) {
 		word-break: normal;
 		overflow-wrap: normal;
+	}
+	.prose-container :global(.markdown-table-wrap) {
+		max-width: 100%;
+		overflow-x: auto;
+		margin: 0 0 var(--space-md);
+		padding-bottom: 0.15rem;
+	}
+	.prose-container :global(.markdown-table-wrap table) {
+		width: max-content;
+		min-width: 100%;
+		table-layout: auto;
+		border-collapse: collapse;
+	}
+	.prose-container :global(.markdown-table-wrap th),
+	.prose-container :global(.markdown-table-wrap td) {
+		white-space: normal;
+		word-break: normal;
+		overflow-wrap: break-word;
+		vertical-align: top;
+	}
+	.prose-container :global(.markdown-table-wrap th:first-child),
+	.prose-container :global(.markdown-table-wrap td:first-child) {
+		min-width: 14rem;
 	}
 	.prose-container :global(p) {
 		margin-top: 0;
