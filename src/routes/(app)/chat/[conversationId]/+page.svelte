@@ -327,6 +327,7 @@
 		const placeholderId = crypto.randomUUID();
 		const placeholder: ChatMessage = {
 			id: placeholderId,
+			renderKey: placeholderId,
 			role: 'assistant',
 			content: '',
 			timestamp: Date.now(),
@@ -340,6 +341,7 @@
 			clientUserMsgId = crypto.randomUUID();
 			const userMsg: ChatMessage = {
 				id: clientUserMsgId,
+				renderKey: clientUserMsgId,
 				role: 'user',
 				content: text,
 				attachments: attachedArtifacts
@@ -446,21 +448,26 @@
 							if (m.id === placeholderId) {
 								return {
 									...m,
-								id: serverAssistantId ?? m.id,
-								content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
-								isStreaming: false,
-								thinking: metadata?.thinking ?? m.thinking,
-								isThinkingStreaming: false,
-								modelDisplayName: metadata?.modelDisplayName ?? m.modelDisplayName,
-								thinkingTokenCount: metadata?.thinkingTokenCount,
-								responseTokenCount: metadata?.responseTokenCount,
-								totalTokenCount: metadata?.totalTokenCount,
-								evidenceSummary: m.evidenceSummary,
-								evidencePending: Boolean(serverAssistantId),
+									renderKey: m.renderKey ?? placeholderId,
+									id: serverAssistantId ?? m.id,
+									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
+									isStreaming: false,
+									thinking: metadata?.thinking ?? m.thinking,
+									isThinkingStreaming: false,
+									modelDisplayName: metadata?.modelDisplayName ?? m.modelDisplayName,
+									thinkingTokenCount: metadata?.thinkingTokenCount,
+									responseTokenCount: metadata?.responseTokenCount,
+									totalTokenCount: metadata?.totalTokenCount,
+									evidenceSummary: m.evidenceSummary,
+									evidencePending: Boolean(serverAssistantId),
 								};
 							}
 							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
-								return { ...m, id: serverUserMsgId };
+								return {
+									...m,
+									renderKey: m.renderKey ?? clientUserMsgId,
+									id: serverUserMsgId,
+								};
 							}
 							return m;
 						});

@@ -149,6 +149,9 @@ export type MessageEvidenceStatusState = 'pending' | 'ready' | 'failed' | 'none'
 
 export interface ChatMessage {
   id: string;
+  // Stable client-side identity used for keyed rendering so stream finalization
+  // can swap in persisted IDs without remounting the message bubble.
+  renderKey?: string;
   role: MessageRole;
   content: string;
   timestamp: number;

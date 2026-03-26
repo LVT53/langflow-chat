@@ -1,7 +1,13 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
   import { renderMarkdown, renderCodeBlock, prepareCodeHighlighting } from '$lib/services/markdown';
-  import { afterUpdate } from 'svelte';
+  import {
+    deriveBalancedColumnWidths,
+    getTableColumnCount,
+    hasExtremeUnbreakableContent,
+    resolveTableOverflowMode,
+  } from '$lib/services/table-layout';
+  import { afterUpdate, onMount } from 'svelte';
 
   export let content: string = '';
   export let isDark: boolean = false;
@@ -17,11 +23,8 @@
   let prevWordCount = 0;
   let prevLastBlockEl: HTMLElement | null = null;
   let renderVersion = 0;
-  const tableColumnPresets: Record<number, string[]> = {
-    2: ['44%', '56%'],
-    3: ['34%', '33%', '33%'],
-    4: ['28%', '24%', '24%', '24%'],
-  };
+  let resizeObserver: ResizeObserver | null = null;
+  let resizeFrame = 0;
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -203,20 +206,6 @@
     return wordIndex;
   }
 
-  function getTableColumnCount(table: HTMLTableElement): number {
-    const headerRow = table.tHead?.rows?.[0];
-    const firstBodyRow = table.tBodies?.[0]?.rows?.[0];
-    const firstRow = headerRow ?? firstBodyRow ?? table.rows?.[0];
-    return firstRow ? Array.from(firstRow.cells).reduce((sum, cell) => sum + (cell.colSpan || 1), 0) : 0;
-  }
-
-  function hasExtremeUnbreakableContent(table: HTMLTableElement): boolean {
-    return Array.from(table.querySelectorAll('th, td')).some((cell) => {
-      const tokens = (cell.textContent ?? '').split(/\s+/).filter(Boolean);
-      return tokens.some((token) => token.length >= 52);
-    });
-  }
-
   function applyBalancedTableLayout(table: HTMLTableElement) {
     const columnCount = getTableColumnCount(table);
     table.dataset.columnCount = String(columnCount);
@@ -226,24 +215,44 @@
       return;
     }
 
-    wrapper.dataset.overflow = columnCount > 4 || hasExtremeUnbreakableContent(table) ? 'scroll' : 'fit';
+    const forceScroll = columnCount > 4 || hasExtremeUnbreakableContent(table);
+    wrapper.dataset.overflow = forceScroll ? 'scroll' : 'fit';
 
     const existingColgroup = table.querySelector('colgroup[data-balanced-columns]');
     existingColgroup?.remove();
 
-    const preset = tableColumnPresets[columnCount];
-    if (!preset) {
+    const widths = forceScroll ? null : deriveBalancedColumnWidths(table, columnCount);
+    if (!widths) {
       return;
     }
 
     const colgroup = document.createElement('colgroup');
     colgroup.dataset.balancedColumns = 'true';
-    for (const width of preset) {
+    for (const width of widths) {
       const col = document.createElement('col');
       col.style.width = width;
       colgroup.appendChild(col);
     }
     table.insertBefore(colgroup, table.firstChild);
+
+    requestAnimationFrame(() => {
+      if (!table.isConnected) return;
+      const currentWrapper = table.closest('.markdown-table-wrap');
+      if (!(currentWrapper instanceof HTMLElement)) return;
+
+      const overflowMode = resolveTableOverflowMode({
+        columnCount,
+        forceScroll,
+        wrapperWidth: currentWrapper.clientWidth,
+        tableWidth: table.scrollWidth,
+      });
+
+      currentWrapper.dataset.overflow = overflowMode;
+
+      if (overflowMode === 'scroll') {
+        table.querySelector('colgroup[data-balanced-columns]')?.remove();
+      }
+    });
   }
 
   function enhanceRenderedTables() {
@@ -253,9 +262,51 @@
     });
   }
 
+  function scheduleTableEnhancement() {
+    if (resizeFrame) {
+      cancelAnimationFrame(resizeFrame);
+    }
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      enhanceRenderedTables();
+    });
+  }
+
+  onMount(() => {
+    const handleViewportChange = () => scheduleTableEnhancement();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        scheduleTableEnhancement();
+      });
+      if (container) {
+        resizeObserver.observe(container);
+      }
+    }
+
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    document.fonts?.ready.then(() => scheduleTableEnhancement()).catch(() => undefined);
+
+    return () => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      if (resizeFrame) {
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = 0;
+      }
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+      window.visualViewport?.removeEventListener('resize', handleViewportChange);
+    };
+  });
+
   afterUpdate(() => {
     if (container) {
-      enhanceRenderedTables();
+      resizeObserver?.disconnect();
+      resizeObserver?.observe(container);
+      scheduleTableEnhancement();
     }
 
     if (!isStreaming || !container) return;
@@ -292,6 +343,9 @@
 <style>
   .markdown-container {
     position: relative;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .markdown-html :global(*:last-child) {

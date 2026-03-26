@@ -161,12 +161,12 @@
 <div class="group flex w-full flex-col {isUser && !isEditing ? 'items-end' : 'items-start'} gap-md py-md fade-in">
 	<div
 		data-testid={isUser ? 'user-message' : 'assistant-message'}
-		class="relative flex flex-col font-serif
+		class="relative flex min-w-0 flex-col font-serif
 		{isUser && !isEditing
-			? 'max-w-[85%] rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]'
+			? 'max-w-[85%] min-w-0 rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]'
 			: isUser
-				? 'w-full max-w-full rounded-md border border-border bg-surface-elevated p-md text-text-primary shadow-sm'
-				: 'w-full max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
+				? 'w-full min-w-0 max-w-full rounded-md border border-border bg-surface-elevated p-md text-text-primary shadow-sm'
+				: 'w-full min-w-0 max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
 		{#if !isUser && (hasThinking || hasToolCalls)}
 			<ThinkingBlock
@@ -204,7 +204,7 @@
 				</div>
 			{/if}
 		{:else}
-			<div class="prose-container w-full overflow-hidden text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
+			<div class="prose-container min-w-0 w-full overflow-hidden text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
 				<MarkdownRenderer
 					content={message.content}
 					isDark={$isDark}
@@ -352,6 +352,19 @@
 
 <style lang="postcss">
 	/* Override Tailwind prose base font size to match reduced chat text size */
+	.prose-container {
+		min-width: 0;
+		width: 100%;
+		max-width: 100%;
+		overflow-x: clip;
+	}
+
+	.prose-container :global(.prose) {
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
+	}
+
 	.prose-container :global(.prose) {
 		font-size: 14px;
 		line-height: 1.45;
@@ -385,6 +398,8 @@
 		overflow-wrap: normal;
 	}
 	.prose-container :global(.markdown-table-wrap) {
+		width: 100%;
+		min-width: 0;
 		max-width: 100%;
 		margin: 0 0 var(--space-md);
 	}
@@ -393,10 +408,11 @@
 		padding-bottom: 0.15rem;
 	}
 	.prose-container :global(.markdown-table-wrap[data-overflow='fit']) {
-		overflow-x: hidden;
+		overflow-x: clip;
 	}
 	.prose-container :global(.markdown-table-wrap table) {
 		width: 100%;
+		min-width: 0;
 		table-layout: fixed;
 		border-collapse: collapse;
 	}
@@ -419,6 +435,13 @@
 	.prose-container :global(.markdown-table-wrap td code) {
 		word-break: break-word;
 		overflow-wrap: anywhere;
+	}
+	.prose-container :global(a),
+	.prose-container :global(li code),
+	.prose-container :global(p code),
+	.prose-container :global(blockquote code) {
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 	.prose-container :global(p) {
 		margin-top: 0;

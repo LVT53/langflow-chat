@@ -53,6 +53,7 @@ function mapRowToChatMessage(
 
 	return {
 		id: row.id,
+		renderKey: row.id,
 		role: row.role as MessageRole,
 		content: row.content,
 		thinking: row.thinking ?? undefined,

@@ -163,6 +163,7 @@
 	.thinking-block {
 		margin-bottom: var(--space-md);
 		width: 100%;
+		min-width: 0;
 		max-width: 100%;
 		overflow: hidden;
 	}
@@ -177,6 +178,7 @@
 		cursor: pointer;
 		max-width: 100%;
 		width: 100%;
+		min-width: 0;
 	}
 
 	.thinking-header:focus-visible {
@@ -229,6 +231,8 @@
 	/* Tool call stack — accumulates all tool rows, visible without expanding */
 	.tool-call-stack {
 		padding: var(--space-xs) 0;
+		width: 100%;
+		min-width: 0;
 	}
 
 	.tool-call-row {
@@ -239,6 +243,8 @@
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 12px;
 		color: var(--text-muted);
+		width: 100%;
+		min-width: 0;
 	}
 
 	.tool-call-row.is-running {
@@ -260,10 +266,12 @@
 	}
 
 	.tool-label-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		flex: 1 1 auto;
 		min-width: 0;
+		max-width: 100%;
+		white-space: normal;
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.tool-link {
@@ -271,6 +279,8 @@
 		text-decoration: underline;
 		text-underline-offset: 2px;
 		text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.tool-link:hover {
@@ -286,6 +296,8 @@
 
 	.thinking-content {
 		padding: var(--space-sm) 0 var(--space-sm);
+		width: 100%;
+		min-width: 0;
 	}
 
 	.thinking-text {
@@ -307,6 +319,8 @@
 		font-size: 12px;
 		color: var(--text-muted);
 		margin: var(--space-xs) 0;
+		width: 100%;
+		min-width: 0;
 	}
 
 	.tool-dot-inline {
@@ -320,10 +334,12 @@
 	}
 
 	.tool-item-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		flex: 1 1 auto;
 		min-width: 0;
+		max-width: 100%;
+		white-space: normal;
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.check-icon {
