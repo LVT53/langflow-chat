@@ -205,7 +205,7 @@ function buildSystemMessage(language: 'en' | 'hu', isCodeRelated: boolean): stri
 
   const rules = language === 'hu'
     ? [
-        'A cím legyen 3-6 szó hosszú',
+        'A cím legyen 4-7 célzott szó hosszú',
         'Használj cselekvő vagy tárgyas formát',
         'Csak a címet add vissza, semmi mást',
         'Ne használj idézőjeleket',
@@ -214,7 +214,7 @@ function buildSystemMessage(language: 'en' | 'hu', isCodeRelated: boolean): stri
         'Csak szabványos magyar szavakat használj',
       ]
     : [
-        'Titles should be 3-6 words long',
+        'Titles should be 4-7 targeted words long',
         'Use action or noun phrase format',
         'Return only the title, nothing else',
         'Do not use quotes',
@@ -244,22 +244,22 @@ function buildFewShotExamples(language: 'en' | 'hu', isCodeRelated: boolean): Ar
       {
         user: 'Hogyan tudok React komponenst létrehozni?',
         assistant: 'A React komponensek funkcionális komponensek vagy osztályok formájában hozhatók létre...',
-        title: 'React komponens létrehozása',
+        title: 'React komponens létrehozási alapok',
       },
       {
         user: 'Mi a különbség a let és const között?',
         assistant: 'A let változó deklarálására szolgál, amelynek értéke megváltoztatható...',
-        title: 'Let és const különbségei',
+        title: 'Let és const használati különbségek',
       },
       {
         user: 'Segítség a Python függvényekkel',
         assistant: 'A Python függvények a def kulcsszóval definiálhatók...',
-        title: 'Python függvények segítség',
+        title: 'Python függvények gyakorlati áttekintése',
       },
       {
         user: 'Szeretnék tanácsot adatbázis tervezéshez',
         assistant: 'Az adatbázis tervezésnél fontos a normalizálás és a kapcsolatok...',
-        title: 'Adatbázis tervezési tanácsok',
+        title: 'Adatbázis tervezési tanácsok kezdéshez',
       },
     ];
 
@@ -272,22 +272,22 @@ function buildFewShotExamples(language: 'en' | 'hu', isCodeRelated: boolean): Ar
       {
         user: 'How do I create a React component?',
         assistant: 'React components can be created as functional components or classes...',
-        title: 'Creating React Components',
+        title: 'How to Create React Components',
       },
       {
         user: "What's the difference between let and const?",
         assistant: 'let is used for variable declarations that can be reassigned...',
-        title: 'Let vs Const Differences',
+        title: 'Key Differences Between Let and Const',
       },
       {
         user: 'Help with Python functions',
         assistant: 'Python functions are defined using the def keyword...',
-        title: 'Python Functions Help',
+        title: 'Help With Python Function Basics',
       },
       {
         user: 'I need advice on database design',
         assistant: 'Database design involves normalization and establishing relationships...',
-        title: 'Database Design Advice',
+        title: 'Practical Database Design Advice',
       },
     ];
 
@@ -296,7 +296,7 @@ function buildFewShotExamples(language: 'en' | 'hu', isCodeRelated: boolean): Ar
       examples.push({
         user: 'How do I fix this JavaScript error?',
         assistant: 'The error occurs because you are trying to access a property of undefined...',
-        title: 'JavaScript Error Debugging',
+        title: 'Debugging a JavaScript Undefined Error',
       });
     }
 

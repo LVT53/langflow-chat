@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
 	import type {
 		ArtifactSummary,
@@ -43,7 +44,6 @@
 	let activeMemoryModal = null as MemoryModal;
 	let activeLibraryModal = null as LibraryModal;
 	let honchoOverviewHtml = '';
-	let honchoHighlightHtmlBlocks = [] as string[];
 	let selectedPersonaMemoryIds = [] as string[];
 	let personaMemoryFilter: 'active' | 'dormant' | 'archived' = 'active';
 	let selectedTaskMemoryIds = [] as string[];
@@ -55,8 +55,7 @@
 	);
 
 	$: honchoOverview = memorySummary.overview?.trim() ?? '';
-	$: honchoHighlightBlocks = honchoOverview ? buildHighlightBlocks(honchoOverview) : [];
-	$: void renderHonchoOverview(honchoOverview, honchoHighlightBlocks);
+	$: void renderHonchoOverview(honchoOverview, $isDark);
 
 	let overviewRenderVersion = 0;
 
@@ -69,35 +68,21 @@
 			.replaceAll("'", '&#39;');
 	}
 
-	function buildHighlightBlocks(source: string): string[] {
-		return source
-			.split(/\n\s*\n+/)
-			.map((block) => block.trim())
-			.filter(Boolean)
-			.slice(0, 4);
-	}
-
-	async function renderHonchoOverview(source: string, highlightBlocks: string[]) {
+	async function renderHonchoOverview(source: string, isDarkMode: boolean) {
 		const renderVersion = ++overviewRenderVersion;
 
 		if (!source) {
 			honchoOverviewHtml = '';
-			honchoHighlightHtmlBlocks = [];
 			return;
 		}
 
 		try {
-			const [overviewHtml, ...signalHtml] = await Promise.all([
-				renderMarkdown(source, false),
-				...highlightBlocks.map((block) => renderMarkdown(block, false)),
-			]);
+			const overviewHtml = await renderMarkdown(source, isDarkMode);
 			if (renderVersion !== overviewRenderVersion) return;
 			honchoOverviewHtml = overviewHtml;
-			honchoHighlightHtmlBlocks = signalHtml;
 		} catch {
 			if (renderVersion !== overviewRenderVersion) return;
 			honchoOverviewHtml = `<p>${escapeHtml(source)}</p>`;
-			honchoHighlightHtmlBlocks = highlightBlocks.map((block) => `<p>${escapeHtml(block)}</p>`);
 		}
 	}
 
@@ -754,52 +739,11 @@
 				</section>
 			{:else}
 				<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-					<div class="rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
-						<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
-							Memory Overview
-						</h2>
-						{#if honchoOverview}
-							<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary">
-								{@html honchoOverviewHtml}
-							</div>
-						{:else if honchoEnabled}
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.
-							</p>
-						{:else}
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is disabled in this deployment, so the live persona memory overview is not available.
-							</p>
-						{/if}
-					</div>
-
-					<div class="mt-4 grid gap-3 md:grid-cols-2">
-						{#if honchoHighlightBlocks.length > 0}
-							{#each honchoHighlightBlocks as highlight, index}
-								<div class="rounded-[1.2rem] border border-border bg-surface-page px-4 py-4">
-									<div class="text-[0.7rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-										Memory signal
-									</div>
-									<div class="memory-markdown memory-signal-markdown mt-3 text-sm text-text-secondary">
-										{@html honchoHighlightHtmlBlocks[index] ?? `<p>${escapeHtml(highlight)}</p>`}
-									</div>
-								</div>
-							{/each}
-						{:else}
-							<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted md:col-span-2">
-								As you work across conversations, this tab will surface and manage the durable persona and task memory the system is carrying forward.
-							</div>
-						{/if}
-					</div>
-
-					<div class="mt-6 grid gap-4 lg:grid-cols-3">
+					<div class="grid gap-4 lg:grid-cols-3">
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="flex items-center justify-between gap-3">
 								<div>
-									<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-										Persona memory
-									</div>
-									<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+									<h3 class="text-lg font-sans font-semibold text-text-primary">
 										Manage durable profile memories
 									</h3>
 								</div>
@@ -836,10 +780,7 @@
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="flex items-center justify-between gap-3">
 								<div>
-									<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-										Task memory
-									</div>
-									<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+									<h3 class="text-lg font-sans font-semibold text-text-primary">
 										Reset local task continuity
 									</h3>
 								</div>
@@ -871,10 +812,7 @@
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="flex items-center justify-between gap-3">
 								<div>
-									<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-										Project memory
-									</div>
-									<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+									<h3 class="text-lg font-sans font-semibold text-text-primary">
 										Track ongoing work across chats
 									</h3>
 								</div>
@@ -902,6 +840,25 @@
 								{/if}
 							</div>
 						</div>
+					</div>
+
+					<div class="mt-6 rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
+						<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
+							Memory Overview
+						</h2>
+						{#if honchoOverview}
+							<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">
+								{@html honchoOverviewHtml}
+							</div>
+						{:else if honchoEnabled}
+							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
+								Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.
+							</p>
+						{:else}
+							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
+								Memory Profile is disabled in this deployment, so the live persona memory overview is not available.
+							</p>
+						{/if}
 					</div>
 				</section>
 			{/if}
@@ -1602,10 +1559,22 @@
 		padding-left: 1.25rem;
 	}
 
-	.memory-signal-markdown :global(p),
-	.memory-signal-markdown :global(li) {
-		font-size: 0.92rem;
-		line-height: 1.6;
+	.memory-markdown :global(pre) {
+		background: var(--surface-code);
+		border-color: var(--border-default);
+	}
+
+	.memory-markdown :global(code) {
+		color: var(--text-primary);
+	}
+
+	.memory-markdown :global(:not(pre) > code) {
+		background: color-mix(in srgb, var(--surface-code) 90%, transparent 10%);
+	}
+
+	.memory-markdown :global(pre code) {
+		background: transparent;
+		color: inherit;
 	}
 
 	.memory-preview {

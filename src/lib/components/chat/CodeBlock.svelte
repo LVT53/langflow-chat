@@ -37,7 +37,7 @@
 	}
 </script>
 
-<div class="group relative my-md w-full font-mono text-[14px]" bind:this={container}>
+<div class="code-block relative my-md w-full font-mono text-[14px]" bind:this={container}>
 	<div class="code-header">
 		<button
 			type="button"
@@ -66,7 +66,7 @@
 		{#if !collapsed}
 			<button
 				type="button"
-				class="btn-icon-bare gap-1.5 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+				class="btn-icon-bare copy-button gap-1.5"
 				on:click={copyToClipboard}
 				aria-label="Copy code"
 				title="Copy code"
@@ -103,6 +103,10 @@
 </div>
 
 <style lang="postcss">
+	.code-block {
+		position: relative;
+	}
+
 	.code-header {
 		display: flex;
 		align-items: center;
@@ -163,6 +167,21 @@
 
 	.code-content :global(code) {
 		font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+	}
+
+	.copy-button {
+		transition: opacity var(--duration-standard) var(--ease-out);
+	}
+
+	@media (min-width: 768px) {
+		.copy-button {
+			opacity: 0;
+		}
+
+		.code-block:hover .copy-button,
+		.copy-button:focus-visible {
+			opacity: 1;
+		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import { createEventDispatcher } from 'svelte';
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
 	import type { EvidencePreference, MessageEvidenceSummary, TaskSteeringPayload } from '$lib/types';
@@ -12,6 +14,7 @@
 	}>();
 
 	let expanded = false;
+	let container: HTMLDivElement;
 
 	$: totalItems = evidenceSummary.groups.reduce((count, group) => count + group.items.length, 0);
 	$: pinnedIds = new Set(pinnedArtifactIds);
@@ -38,21 +41,50 @@
 		if (channel === 'memory') return 'Memory';
 		return 'Tool';
 	}
+
+	async function toggle() {
+		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
+		const blockTop = container?.getBoundingClientRect().top ?? 0;
+		expanded = !expanded;
+		if (scrollEl) {
+			await tick();
+			requestAnimationFrame(() => {
+				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
+				scrollEl.scrollTop += newBlockTop - blockTop;
+			});
+		}
+	}
 </script>
 
-<div class="evidence-shell">
+<div class="evidence-shell" bind:this={container}>
 	<button
 		type="button"
 		class="evidence-toggle"
 		aria-expanded={expanded}
-		on:click={() => (expanded = !expanded)}
+		on:click={toggle}
 	>
-		<span>Evidence</span>
-		<span class="evidence-count">{totalItems}</span>
+		<span class="evidence-toggle-copy">
+			<span class="evidence-label">Evidence</span>
+			<span class="evidence-count">{totalItems}</span>
+		</span>
+		<svg
+			class="chevron"
+			class:expanded
+			width="14"
+			height="14"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<polyline points="6 9 12 15 18 9" />
+		</svg>
 	</button>
 
 	{#if expanded}
-		<div class="evidence-groups">
+		<div class="evidence-groups" transition:slide|local>
 			{#each evidenceSummary.groups as group (`${group.sourceType}-${group.label}`)}
 				<div class="evidence-group">
 					<div class="evidence-group-header">
@@ -121,17 +153,36 @@
 	}
 
 	.evidence-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		width: 100%;
+		border: none;
+		background: transparent;
+		padding: var(--space-xs) 0;
+		font-family: 'Nimbus Sans L', sans-serif;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.evidence-toggle:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--focus-ring);
+		border-radius: 2px;
+	}
+
+	.evidence-toggle-copy {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
-		border: none;
-		background: transparent;
-		padding: 0;
-		font-family: 'Nimbus Sans L', sans-serif;
+		min-width: 0;
+	}
+
+	.evidence-label {
 		font-size: 0.76rem;
 		letter-spacing: 0.03em;
 		text-transform: uppercase;
-		color: var(--text-muted);
 	}
 
 	.evidence-count {
@@ -144,6 +195,16 @@
 		background: color-mix(in srgb, var(--accent) 16%, transparent 84%);
 		color: var(--text-primary);
 		font-size: 0.7rem;
+	}
+
+	.chevron {
+		color: var(--icon-muted);
+		flex-shrink: 0;
+		transition: transform var(--duration-standard) var(--ease-out);
+	}
+
+	.chevron.expanded {
+		transform: rotate(180deg);
 	}
 
 	.evidence-groups {
@@ -270,6 +331,12 @@
 		font-size: 0.64rem;
 		font-family: 'Nimbus Sans L', sans-serif;
 		color: var(--text-muted);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.chevron {
+			transition: none;
+		}
 	}
 
 </style>

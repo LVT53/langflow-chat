@@ -45,6 +45,9 @@ describe('generateTitle', () => {
 
     const title = await generateTitle('Hello', 'Hi there! How can I help you today?');
     expect(title).toBe('A Great Conversation Title');
+    const callArgs = mockFetch.mock.calls[0]?.[1];
+    const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
+    expect(body.messages[0].content).toContain('Titles should be 4-7 targeted words long');
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/chat/completions'),
       expect.objectContaining({

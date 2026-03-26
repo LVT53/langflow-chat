@@ -5,6 +5,19 @@ import KnowledgePage from './+page.svelte';
 describe('Knowledge page', () => {
 	beforeEach(() => {
 		vi.restoreAllMocks();
+		Object.defineProperty(window, 'matchMedia', {
+			writable: true,
+			value: vi.fn().mockImplementation(() => ({
+				matches: false,
+				media: '',
+				onchange: null,
+				addListener: vi.fn(),
+				removeListener: vi.fn(),
+				addEventListener: vi.fn(),
+				removeEventListener: vi.fn(),
+				dispatchEvent: vi.fn(),
+			})),
+		});
 	});
 
 	afterEach(() => {
@@ -44,7 +57,7 @@ describe('Knowledge page', () => {
 			}),
 		} as Response);
 
-		const { getAllByText, getByRole, getByText, unmount } = render(KnowledgePage, {
+		const { getAllByText, getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
 			data: {
 				documents: [],
 				results: [],
@@ -60,7 +73,11 @@ describe('Knowledge page', () => {
 		await waitFor(() => {
 			expect(getByText('Memory Overview')).toBeDefined();
 			expect(getAllByText('Knows the user prefers concise responses.').length).toBeGreaterThan(0);
+			expect(getByRole('button', { name: /manage persona memory/i })).toBeDefined();
+			expect(getByRole('button', { name: /manage task memory/i })).toBeDefined();
+			expect(getByRole('button', { name: /manage project memory/i })).toBeDefined();
 		});
+		expect(queryByText(/memory signal/i)).toBeNull();
 		unmount();
 	});
 
