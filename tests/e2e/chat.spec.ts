@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, createConversation } from './helpers';
+import { login, openConversationComposer } from './helpers';
 
 const MOCK_RESPONSE_TEXT = 'Hello from mock Langflow! This is a test response.';
 
@@ -30,24 +30,24 @@ test.describe('Chat send/receive messages', () => {
   });
 
   test('message input is visible after creating a conversation', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await expect(page.getByTestId('message-input')).toBeVisible();
     await expect(page.getByTestId('send-button')).toBeVisible();
   });
 
   test('send button is disabled when input is empty', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await expect(page.getByTestId('send-button')).toBeDisabled();
   });
 
   test('send button is enabled when input has text', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Hello');
     await expect(page.getByTestId('send-button')).toBeEnabled();
   });
 
   test('sends a message and displays user message in chat', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Hello AI!');
     await page.getByTestId('send-button').click();
 
@@ -55,7 +55,7 @@ test.describe('Chat send/receive messages', () => {
   });
 
   test('receives an assistant response after sending a message', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Hello AI!');
     await page.getByTestId('send-button').click();
 
@@ -63,7 +63,7 @@ test.describe('Chat send/receive messages', () => {
   });
 
   test('pressing Enter sends the message', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Message via Enter key');
     await page.getByTestId('message-input').press('Enter');
 
@@ -71,7 +71,7 @@ test.describe('Chat send/receive messages', () => {
   });
 
   test('Shift+Enter does not send the message (newline)', async ({ page }) => {
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Line 1');
     await page.getByTestId('message-input').press('Shift+Enter');
 
@@ -89,7 +89,7 @@ test.describe('Chat send/receive messages', () => {
       });
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Trigger error');
     await page.getByTestId('send-button').click();
 

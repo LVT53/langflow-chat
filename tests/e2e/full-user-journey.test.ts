@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, createConversation } from './helpers';
+import { login, createConversation, openConversationComposer } from './helpers';
 
 const MOCK_RESPONSE = 'This is a mock response from the AI.';
 
@@ -35,7 +35,7 @@ test.describe('Full User Journey', () => {
   test('user can send a message and receive a response', async ({ page }) => {
     await login(page);
     await mockStreamRoute(page);
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Hello AI!');
     await page.getByTestId('send-button').click();
     await expect(page.getByTestId('user-message').first()).toContainText('Hello AI!', { timeout: 10000 });

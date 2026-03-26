@@ -1,69 +1,95 @@
 import { writable } from 'svelte/store';
+import { updateUserPreferences } from '$lib/client/api/settings';
+import type { ModelId } from '$lib/types';
 
 export type TranslationState = 'enabled' | 'disabled';
-export type ModelId = 'model1' | 'model2';
+export type { ModelId };
 
 export const translationState = writable<TranslationState>('enabled');
 export const selectedModel = writable<ModelId>('model1');
 
-export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean }): void {
-	if (typeof window !== 'undefined') {
-		// Server-provided preferences take priority
-		if (serverPrefs?.model) {
-			selectedModel.set(serverPrefs.model);
-			localStorage.setItem('selectedModel', serverPrefs.model);
-		} else {
-			const storedModel = localStorage.getItem('selectedModel');
-			if (storedModel === 'model1' || storedModel === 'model2') {
-				selectedModel.set(storedModel);
-			}
-		}
+const SELECTED_MODEL_KEY = 'selectedModel';
+const TRANSLATION_STATE_KEY = 'translationState';
 
-		if (serverPrefs?.translationEnabled !== undefined) {
-			const state: TranslationState = serverPrefs.translationEnabled ? 'enabled' : 'disabled';
-			translationState.set(state);
-			localStorage.setItem('translationState', state);
-		} else {
-			const storedTranslation = localStorage.getItem('translationState');
-			if (storedTranslation === 'enabled' || storedTranslation === 'disabled') {
-				translationState.set(storedTranslation);
-			}
+function canUseStorage(): boolean {
+	return typeof window !== 'undefined';
+}
+
+function persistSelectedModel(model: ModelId): void {
+	if (canUseStorage()) {
+		localStorage.setItem(SELECTED_MODEL_KEY, model);
+	}
+}
+
+function persistTranslationState(state: TranslationState): void {
+	if (canUseStorage()) {
+		localStorage.setItem(TRANSLATION_STATE_KEY, state);
+	}
+}
+
+function readStoredModel(): ModelId | null {
+	if (!canUseStorage()) return null;
+
+	const storedModel = localStorage.getItem(SELECTED_MODEL_KEY);
+	return storedModel === 'model1' || storedModel === 'model2' ? storedModel : null;
+}
+
+function readStoredTranslationState(): TranslationState | null {
+	if (!canUseStorage()) return null;
+
+	const storedTranslation = localStorage.getItem(TRANSLATION_STATE_KEY);
+	return storedTranslation === 'enabled' || storedTranslation === 'disabled' ? storedTranslation : null;
+}
+
+export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean }): void {
+	if (!canUseStorage()) {
+		return;
+	}
+
+	if (serverPrefs?.model) {
+		selectedModel.set(serverPrefs.model);
+		persistSelectedModel(serverPrefs.model);
+	} else {
+		const storedModel = readStoredModel();
+		if (storedModel) {
+			selectedModel.set(storedModel);
+		}
+	}
+
+	if (serverPrefs?.translationEnabled !== undefined) {
+		const state: TranslationState = serverPrefs.translationEnabled ? 'enabled' : 'disabled';
+		translationState.set(state);
+		persistTranslationState(state);
+	} else {
+		const storedTranslation = readStoredTranslationState();
+		if (storedTranslation) {
+			translationState.set(storedTranslation);
 		}
 	}
 }
 
 export function setTranslationState(state: TranslationState): void {
 	translationState.set(state);
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('translationState', state);
-	}
+	persistTranslationState(state);
 }
 
 export function toggleTranslationState(): void {
 	translationState.update((current) => {
 		const newState: TranslationState = current === 'enabled' ? 'disabled' : 'enabled';
-		if (typeof window !== 'undefined') {
-			localStorage.setItem('translationState', newState);
-		}
+		persistTranslationState(newState);
 		return newState;
 	});
 }
 
 export function setSelectedModel(model: ModelId): void {
 	selectedModel.set(model);
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('selectedModel', model);
-	}
+	persistSelectedModel(model);
 }
 
 export async function setSelectedModelAndSync(model: ModelId): Promise<void> {
 	setSelectedModel(model);
 	try {
-		await fetch('/api/settings/preferences', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ preferredModel: model }),
-		});
+		await updateUserPreferences({ preferredModel: model });
 	} catch {
 		// Non-fatal: local preference already applied
 	}
@@ -73,11 +99,7 @@ export async function setTranslationAndSync(enabled: boolean): Promise<void> {
 	const state: TranslationState = enabled ? 'enabled' : 'disabled';
 	setTranslationState(state);
 	try {
-		await fetch('/api/settings/preferences', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ translationEnabled: enabled }),
-		});
+		await updateUserPreferences({ translationEnabled: enabled });
 	} catch {
 		// Non-fatal
 	}

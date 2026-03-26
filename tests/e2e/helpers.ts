@@ -1,15 +1,28 @@
-import { type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 const TEST_EMAIL = process.env.E2E_EMAIL || 'admin@local';
 const TEST_PASSWORD = process.env.E2E_PASSWORD || 'admin123';
 
 export async function login(page: Page, email = TEST_EMAIL, password = TEST_PASSWORD) {
   await page.goto('/login');
-  await page.waitForLoadState('networkidle');
-  await page.waitForSelector('input[name="email"]', { state: 'visible' });
-  await page.fill('[name="email"]', email);
-  await page.fill('[name="password"]', password);
-  await page.click('button[type="submit"]');
+  const result = await page.evaluate(
+    async ({ email: nextEmail, password: nextPassword }) => {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: nextEmail, password: nextPassword }),
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+      };
+    },
+    { email, password }
+  );
+
+  expect(result.ok, `Login failed with status ${result.status}`).toBe(true);
+  await page.goto('/');
   await page.waitForURL('/', { timeout: 15000 });
 }
 
@@ -21,9 +34,26 @@ export async function logout(page: Page) {
   }
 }
 
-export async function createConversation(page: Page): Promise<string> {
+export async function openConversationComposer(page: Page) {
   await page.click('[data-testid="new-conversation"]');
-  await page.waitForURL(/\/chat\//, { timeout: 10000 });
+  await expect(page).toHaveURL('/', { timeout: 10000 });
+  await page.getByTestId('message-input').waitFor({ state: 'visible' });
+}
+
+export async function ensureSidebarExpanded(page: Page) {
+  const expandButton = page.getByRole('button', { name: 'Expand sidebar' });
+  if (await expandButton.isVisible().catch(() => false)) {
+    await expandButton.click();
+  }
+}
+
+export async function createConversation(
+  page: Page,
+  firstMessage = 'Create a test conversation'
+): Promise<string> {
+  await openConversationComposer(page);
+  await sendMessage(page, firstMessage);
+  await page.waitForURL(/\/chat\//, { timeout: 15000 });
   const url = page.url();
   const match = url.match(/\/chat\/([^/?#]+)/);
   return match ? match[1] : '';

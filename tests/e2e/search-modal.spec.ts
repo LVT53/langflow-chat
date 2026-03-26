@@ -41,6 +41,7 @@ test.describe('Search Modal Visual Tests', () => {
 
 	test('search modal renders correctly in light mode', async ({ page }) => {
 		await page.evaluate(() => {
+			localStorage.setItem('theme', 'light');
 			document.documentElement.classList.remove('dark');
 		});
 		
@@ -56,19 +57,26 @@ test.describe('Search Modal Visual Tests', () => {
 
 	test('search modal renders correctly in dark mode', async ({ page }) => {
 		await page.evaluate(() => {
-			document.documentElement.classList.add('dark');
+			localStorage.setItem('theme', 'dark');
 		});
 		
 		await page.click('button[aria-label="Search conversations"]');
 		
 		const modal = page.locator('role=dialog[name="Search conversations"]');
 		await modal.waitFor({ state: 'visible' });
+		await page.evaluate(() => {
+			document.documentElement.classList.add('dark');
+		});
+		await page.waitForFunction(
+			() => getComputedStyle(document.body).backgroundColor === 'rgb(26, 26, 26)'
+		);
 		
 		await expect(modal).toHaveScreenshot('search-modal-dark.png', {
 			maxDiffPixels: 100
 		});
 		
 		await page.evaluate(() => {
+			localStorage.setItem('theme', 'light');
 			document.documentElement.classList.remove('dark');
 		});
 	});

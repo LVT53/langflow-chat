@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, createConversation } from './helpers';
+import { login, openConversationComposer } from './helpers';
 
 const STREAMING_TEXT = 'The quick brown fox jumps over the lazy dog this is streaming';
 
@@ -33,7 +33,7 @@ test.describe('SSE streaming verification', () => {
       });
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Tell me something');
     await page.getByTestId('send-button').click();
 
@@ -55,7 +55,7 @@ test.describe('SSE streaming verification', () => {
       });
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Trigger streaming');
     await page.getByTestId('send-button').click();
 
@@ -73,7 +73,7 @@ test.describe('SSE streaming verification', () => {
       });
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Full text test');
     await page.getByTestId('send-button').click();
 
@@ -90,7 +90,7 @@ test.describe('SSE streaming verification', () => {
       });
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Trigger stream error');
     await page.getByTestId('send-button').click();
 
@@ -117,7 +117,7 @@ test.describe('SSE streaming verification', () => {
       }
     });
 
-    await createConversation(page);
+    await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Test retry flow');
     await page.getByTestId('send-button').click();
 

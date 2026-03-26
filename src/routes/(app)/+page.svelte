@@ -9,7 +9,7 @@
 		setLandingDraftConversationId,
 		storePendingConversationMessage,
 	} from '$lib/client/conversation-session';
-	import { createNewConversation } from '$lib/stores/conversations';
+	import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import { onMount } from 'svelte';
@@ -84,6 +84,7 @@
 		try {
 			const id = event.detail.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
+			upsertConversationLocal(id, 'New Conversation', Date.now() / 1000);
 			setLandingDraftConversationId(null);
 			storePendingConversationMessage(id, {
 				message: text,

@@ -1,24 +1,42 @@
 import { test, expect } from '@playwright/test';
-import { login, createConversation } from './helpers';
+import {
+  login,
+  createConversation,
+  ensureSidebarExpanded,
+  openConversationComposer,
+} from './helpers';
 
 test.describe('Conversation CRUD operations', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
+    await page.route('**/api/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: 'event: token\ndata: {"text":"ok"}\n\nevent: end\ndata: {}\n\n',
+      });
+    });
   });
 
-  test('creates a new conversation via sidebar button', async ({ page }) => {
-    const convId = await createConversation(page);
-    expect(convId).toBeTruthy();
-    await expect(page).toHaveURL(new RegExp(`/chat/${convId}`));
+  test('sidebar new chat button opens the home composer', async ({ page }) => {
+    await openConversationComposer(page);
+    await expect(page.getByTestId('message-input')).toBeVisible();
+    await expect(page).toHaveURL('/');
   });
 
-  test('new conversation appears in sidebar', async ({ page }) => {
+  test('conversation appears in sidebar after the first send', async ({ page }) => {
     await createConversation(page);
+    await ensureSidebarExpanded(page);
     await expect(page.getByTestId('conversation-item').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('renames a conversation', async ({ page }) => {
     await createConversation(page);
+    await ensureSidebarExpanded(page);
     await expect(page.getByTestId('conversation-item').first()).toBeVisible({ timeout: 10000 });
 
     const item = page.getByTestId('conversation-item').first();
@@ -36,6 +54,7 @@ test.describe('Conversation CRUD operations', () => {
 
   test('cancels rename when pressing Escape', async ({ page }) => {
     await createConversation(page);
+    await ensureSidebarExpanded(page);
     await expect(page.getByTestId('conversation-item').first()).toBeVisible({ timeout: 10000 });
 
     const item = page.getByTestId('conversation-item').first();
@@ -54,6 +73,7 @@ test.describe('Conversation CRUD operations', () => {
 
   test('deletes a conversation with confirmation dialog', async ({ page }) => {
     await createConversation(page);
+    await ensureSidebarExpanded(page);
     await expect(page.getByTestId('conversation-item').first()).toBeVisible({ timeout: 10000 });
 
     const item = page.getByTestId('conversation-item').first();
@@ -61,15 +81,17 @@ test.describe('Conversation CRUD operations', () => {
     await item.getByRole('button', { name: 'Conversation options' }).click();
     await page.getByTestId('delete-option').click();
 
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const deleteDialog = page.getByRole('dialog', { name: 'Delete this conversation?' });
+    await expect(deleteDialog).toBeVisible();
 
     await page.getByTestId('confirm-delete').click();
 
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5000 });
+    await expect(deleteDialog).not.toBeVisible({ timeout: 5000 });
   });
 
   test('cancels deletion from confirmation dialog', async ({ page }) => {
     await createConversation(page);
+    await ensureSidebarExpanded(page);
     await expect(page.getByTestId('conversation-item').first()).toBeVisible({ timeout: 10000 });
 
     const initialCount = await page.getByTestId('conversation-item').count();
@@ -79,9 +101,10 @@ test.describe('Conversation CRUD operations', () => {
     await item.getByRole('button', { name: 'Conversation options' }).click();
     await page.getByTestId('delete-option').click();
 
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const deleteDialog = page.getByRole('dialog', { name: 'Delete this conversation?' });
+    await expect(deleteDialog).toBeVisible();
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible();
+    await expect(deleteDialog).not.toBeVisible();
 
     await expect(page.getByTestId('conversation-item')).toHaveCount(initialCount);
   });

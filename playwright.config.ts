@@ -2,6 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+const E2E_HOST = '127.0.0.1';
+const E2E_PORT = 5173;
+const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
@@ -10,14 +14,15 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: E2E_BASE_URL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   timeout: 60000,
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
+    command:
+      'dotenv_config_path=.env node -r dotenv/config ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
+    url: E2E_BASE_URL,
     timeout: 120 * 1000,
     reuseExistingServer: !process.env.CI,
     env: {
