@@ -213,9 +213,24 @@ describe('Langflow API Client Service', () => {
         .toThrow('Langflow API error: 500 Internal Server Error');
     });
 
-    it('fails closed when attachments are requested but the final prompt bundle has no attachment section', async () => {
+    it('still sends when attachments are requested but the final prompt bundle marker is missing', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const { sendMessage } = await import('./langflow');
       const { buildConstructedContext } = await import('./honcho');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'AI response'
+                }
+              }
+            }]
+          }]
+        }),
+        ok: true
+      }));
 
       vi.mocked(buildConstructedContext).mockResolvedValueOnce({
         inputValue: 'CTX:Hello',
@@ -224,16 +239,19 @@ describe('Langflow API Client Service', () => {
         contextDebug: null,
       });
 
-      await expect(
-        sendMessage('Hello', 'test-session', undefined, 'user-1', {
-          attachmentIds: ['artifact-1'],
-          attachmentTraceId: 'trace-1',
-        })
-      ).rejects.toMatchObject({
-        code: 'attachment_not_ready',
+      const result = await sendMessage('Hello', 'test-session', undefined, 'user-1', {
+        attachmentIds: ['artifact-1'],
+        attachmentTraceId: 'trace-1',
       });
 
-      expect(fetch).not.toHaveBeenCalled();
+      expect(result.text).toBe('AI response');
+      expect(fetch).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[LANGFLOW] Attachment marker missing from outgoing request bundle',
+        expect.objectContaining({
+          sessionId: 'test-session',
+        })
+      );
     });
   });
 
@@ -302,9 +320,15 @@ describe('Langflow API Client Service', () => {
         .toThrow('Response body is empty');
     });
 
-    it('fails closed for streaming when attachments are requested but the prompt bundle has no attachment section', async () => {
+    it('still streams when attachments are requested but the prompt bundle marker is missing', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const { sendMessageStream } = await import('./langflow');
       const { buildConstructedContext } = await import('./honcho');
+      const mockBody = {} as ReadableStream<Uint8Array>;
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: mockBody
+      }));
 
       vi.mocked(buildConstructedContext).mockResolvedValueOnce({
         inputValue: 'CTX:Hello',
@@ -313,17 +337,20 @@ describe('Langflow API Client Service', () => {
         contextDebug: null,
       });
 
-      await expect(
-        sendMessageStream('Hello', 'test-session', undefined, {
-          userId: 'user-1',
-          attachmentIds: ['artifact-1'],
-          attachmentTraceId: 'trace-2',
-        })
-      ).rejects.toMatchObject({
-        code: 'attachment_not_ready',
+      const result = await sendMessageStream('Hello', 'test-session', undefined, {
+        userId: 'user-1',
+        attachmentIds: ['artifact-1'],
+        attachmentTraceId: 'trace-2',
       });
 
-      expect(fetch).not.toHaveBeenCalled();
+      expect(result.stream).toBe(mockBody);
+      expect(fetch).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[LANGFLOW] Attachment marker missing from outgoing streaming bundle',
+        expect.objectContaining({
+          sessionId: 'test-session',
+        })
+      );
     });
   });
 });

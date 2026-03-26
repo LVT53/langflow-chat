@@ -3,7 +3,6 @@ import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/type
 import { getSystemPrompt } from '../prompts';
 import { getConfig } from '../config-store';
 import { buildConstructedContext, buildEnhancedSystemPrompt } from './honcho';
-import { AttachmentReadinessError } from './knowledge';
 import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
@@ -98,10 +97,12 @@ export async function sendMessage(
         attachmentSectionPreviewHash: attachmentSection.previewHash,
       });
       if (!attachmentSection.hasMarker) {
-        throw new AttachmentReadinessError(
-          'Attached file content was missing from the final prompt bundle. Remove the file and upload it again before sending.',
-          options?.attachmentIds ?? []
-        );
+        console.warn('[LANGFLOW] Attachment marker missing from outgoing request bundle', {
+          sessionId,
+          attachmentIds: options?.attachmentIds ?? [],
+          traceId: options?.attachmentTraceId ?? null,
+          inputValueLength: inputValue.length,
+        });
       }
     }
 
@@ -221,10 +222,12 @@ export async function sendMessageStream(
         attachmentSectionPreviewHash: attachmentSection.previewHash,
       });
       if (!attachmentSection.hasMarker) {
-        throw new AttachmentReadinessError(
-          'Attached file content was missing from the final prompt bundle. Remove the file and upload it again before sending.',
-          options?.attachmentIds ?? []
-        );
+        console.warn('[LANGFLOW] Attachment marker missing from outgoing streaming bundle', {
+          sessionId,
+          attachmentIds: options?.attachmentIds ?? [],
+          traceId: options?.attachmentTraceId ?? null,
+          inputValueLength: inputValue.length,
+        });
       }
     }
 
