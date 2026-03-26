@@ -4,7 +4,7 @@ import { getConversation, touchConversation } from '$lib/server/services/convers
 import { sendMessageStream } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
-import { createMessage } from '$lib/server/services/messages';
+import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import {
 	capturePersonaMemorySnapshot,
@@ -16,6 +16,7 @@ import {
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
 	getConversationWorkingSet,
+	getArtifactsForUser,
 	listConversationSourceArtifactIds,
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
@@ -1171,44 +1172,22 @@ export const POST: RequestHandler = async (event) => {
 				const genTimeMs = Date.now() - requestStartTime;
 				const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
 				const persistUserMessage = skipPersistUserMessage !== true;
-				const messageEvidencePromise = buildAssistantEvidenceSummary({
-					message: normalizedMessage,
-					taskState: initialTaskState ?? latestTaskState ?? null,
-					contextStatus: initialContextStatus ?? latestContextStatus ?? null,
-					contextDebug: initialContextDebug ?? latestContextDebug ?? null,
-					toolCalls: toolCallRecords.filter((tool) => tool.status === 'done'),
-				}).catch((error) => {
-					console.error('[STREAM] Failed to build assistant evidence summary:', error);
-					return null;
-				});
 
 				const userMsgPromise = persistUserMessage
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
 					: Promise.resolve(undefined);
 				const assistantMsgPromise = fullResponse.trim()
-					? messageEvidencePromise.then((messageEvidence) =>
-							(messageEvidence
-								? createMessage(
-										conversationId,
-										'assistant',
-										fullResponse,
-										thinkingContent || undefined,
-										serverSegments.length > 0 ? serverSegments : undefined,
-										{ evidenceSummary: messageEvidence }
-									)
-								: createMessage(
-										conversationId,
-										'assistant',
-										fullResponse,
-										thinkingContent || undefined,
-										serverSegments.length > 0 ? serverSegments : undefined
-									)
-							).catch(() => undefined)
-						)
+					? createMessage(
+							conversationId,
+							'assistant',
+							fullResponse,
+							thinkingContent || undefined,
+							serverSegments.length > 0 ? serverSegments : undefined,
+							{ evidenceStatus: 'pending' }
+						).catch(() => undefined)
 					: Promise.resolve(undefined);
 
 				const sendEndAndClose = async (userMsgId?: string, assistantMsgId?: string) => {
-					const messageEvidence = await messageEvidencePromise;
 					enqueueChunk(
 						`event: end\ndata: ${JSON.stringify({
 							thinkingTokenCount,
@@ -1223,7 +1202,6 @@ export const POST: RequestHandler = async (event) => {
 							activeWorkingSet: latestActiveWorkingSet,
 							taskState: latestTaskState,
 							contextDebug: latestContextDebug,
-							messageEvidence,
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
@@ -1303,6 +1281,34 @@ export const POST: RequestHandler = async (event) => {
 								latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 							})()
 						);
+
+						postPersistTasks.push(
+							(async () => {
+								try {
+									const currentAttachments =
+										safeAttachmentIds.length > 0
+											? await getArtifactsForUser(user.id, safeAttachmentIds)
+											: [];
+									const messageEvidence = await buildAssistantEvidenceSummary({
+										message: normalizedMessage,
+										taskState: latestTaskState ?? initialTaskState ?? null,
+										contextStatus: latestContextStatus ?? initialContextStatus ?? null,
+										contextDebug: latestContextDebug ?? initialContextDebug ?? null,
+										toolCalls: toolCallRecords.filter((tool) => tool.status === 'done'),
+										currentAttachments,
+									});
+									await updateMessageEvidence(assistantMsg.id, {
+										evidenceSummary: messageEvidence,
+										evidenceStatus: messageEvidence ? 'ready' : 'none',
+									});
+								} catch (error) {
+									console.error('[STREAM] Failed to persist assistant evidence summary:', error);
+									await updateMessageEvidence(assistantMsg.id, {
+										evidenceStatus: 'failed',
+									}).catch(() => undefined);
+								}
+							})()
+						);
 					}
 
 					const honchoTasks: Promise<unknown>[] = [
@@ -1318,6 +1324,7 @@ export const POST: RequestHandler = async (event) => {
 						);
 					}
 
+					void sendEndAndClose(userMsg?.id, assistantMsg?.id);
 					Promise.allSettled(postPersistTasks).finally(() => {
 						void Promise.allSettled(honchoTasks)
 							.then(async () =>
@@ -1332,7 +1339,6 @@ export const POST: RequestHandler = async (event) => {
 							.catch((err) =>
 								console.error('[HONCHO] Persona memory attribution sync failed:', err)
 							);
-						void sendEndAndClose(userMsg?.id, assistantMsg?.id);
 					});
 				}).catch(() => {
 					void sendEndAndClose();

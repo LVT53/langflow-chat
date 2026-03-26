@@ -299,6 +299,44 @@ async function getNormalizedArtifactForSource(
 	return rows[0] ? mapArtifact(rows[0].artifact) : null;
 }
 
+function withAttachmentDisplayName(promptArtifact: Artifact, displayArtifact: Artifact): Artifact {
+	return {
+		...promptArtifact,
+		name: displayArtifact.name,
+		mimeType: displayArtifact.mimeType ?? promptArtifact.mimeType,
+		sizeBytes: displayArtifact.sizeBytes ?? promptArtifact.sizeBytes,
+	};
+}
+
+export async function resolvePromptAttachmentArtifacts(
+	userId: string,
+	attachmentIds: string[]
+): Promise<{
+	displayArtifacts: Artifact[];
+	promptArtifacts: Artifact[];
+}> {
+	const displayArtifacts = await getArtifactsForUser(userId, attachmentIds);
+	if (displayArtifacts.length === 0) {
+		return { displayArtifacts: [], promptArtifacts: [] };
+	}
+
+	const resolved = await Promise.all(
+		displayArtifacts.map(async (artifact) => {
+			if (artifact.type !== 'source_document') {
+				return withAttachmentDisplayName(artifact, artifact);
+			}
+
+			const normalized = await getNormalizedArtifactForSource(userId, artifact.id);
+			return withAttachmentDisplayName(normalized ?? artifact, artifact);
+		})
+	);
+
+	return {
+		displayArtifacts,
+		promptArtifacts: Array.from(new Map(resolved.map((artifact) => [artifact.id, artifact])).values()),
+	};
+}
+
 async function ensureConversationAttachmentLink(params: {
 	userId: string;
 	artifactId: string;

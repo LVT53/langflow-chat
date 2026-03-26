@@ -82,6 +82,17 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
+	if (!normalizedArtifact && artifact.storagePath) {
+		normalizedArtifact = await createNormalizedArtifact({
+			userId: user.id,
+			conversationId,
+			sourceArtifactId: artifact.id,
+			sourceStoragePath: artifact.storagePath,
+			sourceName: artifact.name,
+			sourceMimeType: artifact.mimeType,
+		});
+	}
+
 	return json({
 		artifact,
 		normalizedArtifact,

@@ -14,7 +14,7 @@ import {
 	COMPACTION_UI_THRESHOLD,
 	findRelevantKnowledgeArtifacts,
 	findRelevantWorkCapsules,
-	getArtifactsForUser,
+	resolvePromptAttachmentArtifacts,
 	selectWorkingSetArtifactsForPrompt,
 	TARGET_CONSTRUCTED_CONTEXT,
 	updateConversationContextStatus,
@@ -880,7 +880,7 @@ export async function buildConstructedContext(params: {
 		summaries,
 		searchedMessages,
 		peerContext,
-		currentAttachments,
+		resolvedAttachments,
 		workingSetArtifacts,
 		relevantCapsules,
 		relevantArtifacts,
@@ -890,7 +890,7 @@ export async function buildConstructedContext(params: {
 			session.summaries().catch(() => null),
 			session.search(params.message, { limit: 4 }).catch(() => []),
 			getPeerContextString(params.userId, params.message).catch(() => ''),
-			getArtifactsForUser(params.userId, attachmentIds),
+			resolvePromptAttachmentArtifacts(params.userId, attachmentIds),
 			selectWorkingSetArtifactsForPrompt(
 				params.userId,
 				params.conversationId,
@@ -900,6 +900,13 @@ export async function buildConstructedContext(params: {
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(params.userId, params.message, params.conversationId, 6).catch(() => []),
 		]);
+	const currentAttachments = resolvedAttachments.promptArtifacts;
+	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
+	const documentFocused =
+		attachmentIds.length > 0 ||
+		/\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i.test(
+			params.message
+		);
 
 	const preparedContext = await prepareTaskContext({
 		userId: params.userId,
@@ -920,7 +927,7 @@ export async function buildConstructedContext(params: {
 	}));
 	const taskState = preparedContext.taskState;
 	const selectedEvidence = preparedContext.selectedArtifacts.filter(
-		(artifact) => !attachmentIds.includes(artifact.id)
+		(artifact) => !currentAttachmentIds.has(artifact.id)
 	);
 
 	const promptArtifacts = new Map<string, Artifact>();
@@ -931,8 +938,8 @@ export async function buildConstructedContext(params: {
 		userId: params.userId,
 		artifacts: Array.from(promptArtifacts.values()),
 		query: params.message,
-		perArtifactLimit: 2,
-		perArtifactCharBudget: 1400,
+		perArtifactLimit: documentFocused ? 4 : 2,
+		perArtifactCharBudget: documentFocused ? 2200 : 1400,
 	}).catch(() => new Map<string, string>());
 
 	const recentTurnCount = Math.min(sessionMessages.length, 6);

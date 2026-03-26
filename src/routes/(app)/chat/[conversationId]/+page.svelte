@@ -12,6 +12,7 @@
 	import type {
 		ArtifactSummary,
 		ChatMessage,
+		ConversationDetail,
 		ContextDebugState,
 		ConversationContextStatus,
 		TaskState,
@@ -45,9 +46,12 @@
 	let taskState: TaskState | null = data.taskState ?? null;
 	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
 	let evidenceManagerOpen = false;
+	let bootstrapMode = data.bootstrap ?? false;
+	let hydratingConversation = false;
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
+	const evidencePollControllers = new Map<string, AbortController>();
 
 	$: hasMessages = $messages.length > 0;
 	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
@@ -94,6 +98,10 @@
 	}
 
 	function resetState() {
+		for (const controller of evidencePollControllers.values()) {
+			controller.abort();
+		}
+		evidencePollControllers.clear();
 		if (activeStream) {
 			activeStream.abort();
 			activeStream = null;
@@ -111,9 +119,14 @@
 		activeWorkingSet = data.activeWorkingSet ?? [];
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
+		bootstrapMode = data.bootstrap ?? false;
+		hydratingConversation = false;
 		evidenceManagerOpen = false;
 		currentConversationId.set(data.conversation.id);
 		maybeSendPendingInitialMessage();
+		if (bootstrapMode) {
+			void hydrateConversationDetail(data.conversation.id);
+		}
 	}
 
 	$: if (data?.conversation?.id && !activeStream) {
@@ -166,6 +179,10 @@
 
 	onDestroy(() => {
 		if (browser) document.removeEventListener('visibilitychange', handleVisibilityChange);
+		for (const controller of evidencePollControllers.values()) {
+			controller.abort();
+		}
+		evidencePollControllers.clear();
 
 		if (activeStream) {
 			activeStream.abort();
@@ -182,6 +199,92 @@
 			});
 		}
 	});
+
+	async function hydrateConversationDetail(conversationId: string) {
+		if (hydratingConversation) return;
+		hydratingConversation = true;
+
+		try {
+			const response = await fetch(`/api/conversations/${conversationId}`);
+			if (!response.ok) return;
+
+			const payload = (await response.json()) as ConversationDetail;
+			attachedArtifacts = payload.attachedArtifacts ?? attachedArtifacts;
+			activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
+			contextStatus = payload.contextStatus ?? contextStatus;
+			taskState = payload.taskState ?? taskState;
+			contextDebug = payload.contextDebug ?? contextDebug;
+			bootstrapMode = false;
+
+			if (!activeStream && $messages.length === 0 && (payload.messages?.length ?? 0) > 0) {
+				messages.set(payload.messages ?? []);
+				hasPersistedMessages = true;
+			}
+		} catch {
+			// Ignore hydration failures; the optimistic chat flow can continue without it.
+		} finally {
+			hydratingConversation = false;
+		}
+	}
+
+	function patchMessage(messageId: string, updater: (message: ChatMessage) => ChatMessage) {
+		messages.update((list) => list.map((message) => (message.id === messageId ? updater(message) : message)));
+	}
+
+	async function pollMessageEvidence(messageId: string) {
+		evidencePollControllers.get(messageId)?.abort();
+		const controller = new AbortController();
+		evidencePollControllers.set(messageId, controller);
+
+		const attempts = 12;
+		for (let attempt = 0; attempt < attempts; attempt += 1) {
+			if (controller.signal.aborted) return;
+
+			try {
+				const response = await fetch(
+					`/api/conversations/${data.conversation.id}/messages/${messageId}/evidence`,
+					{ signal: controller.signal }
+				);
+
+				if (response.status === 202) {
+					await new Promise((resolve) => setTimeout(resolve, attempt < 4 ? 250 : 500));
+					continue;
+				}
+
+				if (response.status === 204 || response.status === 404) {
+					patchMessage(messageId, (message) => ({
+						...message,
+						evidencePending: false,
+					}));
+					return;
+				}
+
+				if (!response.ok) {
+					break;
+				}
+
+				const payload = (await response.json()) as {
+					evidenceSummary?: ChatMessage['evidenceSummary'];
+				};
+				patchMessage(messageId, (message) => ({
+					...message,
+					evidenceSummary: payload.evidenceSummary,
+					evidencePending: false,
+				}));
+				return;
+			} catch (error) {
+				if ((error as Error).name === 'AbortError') {
+					return;
+				}
+				break;
+			}
+		}
+
+		patchMessage(messageId, (message) => ({
+			...message,
+			evidencePending: false,
+		}));
+	}
 
 	function handleSend(
 		event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: ArtifactSummary[] }>,
@@ -338,7 +441,8 @@
 								thinkingTokenCount: metadata?.thinkingTokenCount,
 								responseTokenCount: metadata?.responseTokenCount,
 								totalTokenCount: metadata?.totalTokenCount,
-								evidenceSummary: metadata?.messageEvidence ?? m.evidenceSummary,
+								evidenceSummary: m.evidenceSummary,
+								evidencePending: Boolean(serverAssistantId),
 								};
 							}
 							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
@@ -350,6 +454,9 @@
 					isSending = false;
 					activeStream = null;
 					canRetry = false;
+					if (serverAssistantId) {
+						void pollMessageEvidence(serverAssistantId);
+					}
 
 					// Trigger title generation for new conversations (fire-and-forget)
 					if (!titleGenerationTriggered && data.conversation.title === 'New Conversation') {

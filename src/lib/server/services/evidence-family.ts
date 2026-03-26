@@ -212,8 +212,8 @@ function compareFamilyRepresentative(params: {
 			if (artifact.type === 'source_document') return 2;
 			return 3;
 		}
-		if (artifact.type === 'source_document') return 0;
-		if (artifact.type === 'normalized_document') return 1;
+		if (artifact.type === 'normalized_document') return 0;
+		if (artifact.type === 'source_document') return 1;
 		if (artifact.type === 'generated_output') return 2;
 		return 3;
 	};

@@ -218,6 +218,8 @@
 					{excludedArtifactIds}
 					on:steer={(event) => dispatch('steer', event.detail)}
 				/>
+			{:else if message.evidencePending}
+				<div class="evidence-pending">Evidence is loading…</div>
 			{/if}
 			{/if}
 
@@ -392,6 +394,17 @@
 	}
 	.copy-action-row {
 		margin-top: calc(var(--space-sm) * -1.5);
+	}
+
+	.evidence-pending {
+		margin-top: var(--space-md);
+		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent 30%);
+		padding-top: var(--space-sm);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.76rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: var(--text-muted);
 	}
 	@keyframes fadeIn {
 		from { opacity: 0; }

@@ -1,4 +1,5 @@
 import type {
+	ArtifactSummary,
 	ContextDebugState,
 	ConversationContextStatus,
 	EvidenceSourceType,
@@ -129,6 +130,26 @@ function buildArtifactGroups(contextDebug: ContextDebugState | null | undefined)
 			items: items.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0) || a.title.localeCompare(b.title)),
 		}))
 		.filter((group) => group.items.length > 0);
+}
+
+function buildCurrentAttachmentGroup(
+	attachments: ArtifactSummary[] | undefined
+): MessageEvidenceGroup | null {
+	if (!attachments?.length) return null;
+
+	return {
+		sourceType: 'document',
+		label: 'Attached Files',
+		reranked: false,
+		items: attachments.map((artifact) => ({
+			id: artifact.id,
+			title: artifact.name,
+			sourceType: 'document',
+			status: 'selected',
+			artifactId: artifact.id,
+			description: artifact.summary ? clip(artifact.summary, 180) : 'Attached in this turn.',
+		})),
+	};
 }
 
 function getToolCallSourceType(tool: ToolCallEntry): EvidenceSourceType {
@@ -272,9 +293,11 @@ export async function buildAssistantEvidenceSummary(params: {
 	contextStatus?: ConversationContextStatus | null;
 	contextDebug?: ContextDebugState | null;
 	toolCalls?: ToolCallEntry[];
+	currentAttachments?: ArtifactSummary[];
 }): Promise<MessageEvidenceSummary | null> {
 	const toolCalls = params.toolCalls ?? [];
 	const groups = [
+		buildCurrentAttachmentGroup(params.currentAttachments),
 		...buildArtifactGroups(params.contextDebug),
 		buildMemoryGroup(params.contextStatus),
 		await buildRerankedToolGroup({

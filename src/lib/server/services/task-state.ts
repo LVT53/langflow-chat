@@ -38,7 +38,10 @@ const RERANK_CONFIDENCE_MIN = 64;
 const VERIFY_CONFIDENCE_MIN = 64;
 const MAX_RERANK_CANDIDATES = 8;
 const MAX_SELECTED_EVIDENCE = 5;
+const MAX_DOCUMENT_FOCUSED_EVIDENCE = 3;
 const MAX_SELECTED_LINKS = 12;
+const DOCUMENT_FOCUS_RE =
+	/\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i;
 
 function toEvidenceSourceType(artifactType: ArtifactType): EvidenceSourceType {
 	switch (artifactType) {
@@ -81,6 +84,10 @@ function clip(text: string, maxLength: number): string {
 	const normalized = text.replace(/\s+/g, ' ').trim();
 	if (normalized.length <= maxLength) return normalized;
 	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function isDocumentFocusedTurn(message: string, attachmentIds: string[]): boolean {
+	return attachmentIds.length > 0 || DOCUMENT_FOCUS_RE.test(message);
 }
 
 export function estimateTokenCount(text: string): number {
@@ -957,6 +964,7 @@ async function maybeRerankEvidence(params: {
 	candidates: Artifact[];
 	pinnedIds: Set<string>;
 	excludedIds: Set<string>;
+	protectedIds?: Set<string>;
 }): Promise<{
 	artifacts: Artifact[];
 	usedModel: boolean;
@@ -998,7 +1006,10 @@ async function maybeRerankEvidence(params: {
 					.filter((value): value is string => typeof value === 'string')
 			);
 			const artifacts = params.candidates.filter(
-				(artifact) => params.pinnedIds.has(artifact.id) || selectedIds.has(artifact.id)
+				(artifact) =>
+					params.pinnedIds.has(artifact.id) ||
+					(params.protectedIds?.has(artifact.id) ?? false) ||
+					selectedIds.has(artifact.id)
 			);
 			if (artifacts.length > 0) {
 				return {
@@ -1021,6 +1032,7 @@ async function maybeVerifyEvidence(params: {
 	selectedArtifacts: Artifact[];
 	pinnedIds: Set<string>;
 	shouldVerify: boolean;
+	protectedIds?: Set<string>;
 }): Promise<{
 	artifacts: Artifact[];
 	status: VerificationStatus;
@@ -1059,7 +1071,10 @@ async function maybeVerifyEvidence(params: {
 					.filter((value): value is string => typeof value === 'string')
 			);
 			const filtered = params.selectedArtifacts.filter(
-				(artifact) => params.pinnedIds.has(artifact.id) || !vetoIds.has(artifact.id)
+				(artifact) =>
+					params.pinnedIds.has(artifact.id) ||
+					(params.protectedIds?.has(artifact.id) ?? false) ||
+					!vetoIds.has(artifact.id)
 			);
 			if (filtered.length === 0 && params.selectedArtifacts.length > 0) {
 				return { artifacts: params.selectedArtifacts, status: 'fallback', fallbackToDeterministic: true };
@@ -1125,6 +1140,8 @@ export async function prepareTaskContext(params: {
 	});
 
 	const workingSetIds = new Set(params.workingSetArtifacts.map((artifact) => artifact.id));
+	const documentFocused = isDocumentFocusedTurn(params.message, attachmentIds);
+	const selectedEvidenceLimit = documentFocused ? MAX_DOCUMENT_FOCUSED_EVIDENCE : MAX_SELECTED_EVIDENCE;
 	const rankedCandidates = collapsedCandidates
 		.map((artifact) => ({
 			artifact,
@@ -1145,7 +1162,7 @@ export async function prepareTaskContext(params: {
 		...rankedCandidates
 			.filter((entry) => pinnedIds.has(entry.artifact.id) || currentAttachmentIds.has(entry.artifact.id))
 			.map((entry) => entry.artifact),
-		...rankedCandidates.slice(0, MAX_SELECTED_EVIDENCE).map((entry) => entry.artifact),
+		...rankedCandidates.slice(0, selectedEvidenceLimit).map((entry) => entry.artifact),
 	]);
 
 	let routingStage: RoutingStage = routed.routingStage;
@@ -1159,6 +1176,7 @@ export async function prepareTaskContext(params: {
 		]),
 		pinnedIds,
 		excludedIds,
+		protectedIds: currentAttachmentIds,
 	});
 	if (reranked.usedModel) {
 		selectedArtifacts = dedupeArtifacts(reranked.artifacts);
@@ -1171,6 +1189,7 @@ export async function prepareTaskContext(params: {
 		message: params.message,
 		selectedArtifacts,
 		pinnedIds,
+		protectedIds: currentAttachmentIds,
 		shouldVerify:
 			routingStage !== 'deterministic' ||
 			excludedIds.size > 0 ||

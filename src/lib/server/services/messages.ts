@@ -1,10 +1,21 @@
 import { randomUUID } from 'crypto';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { messages, messageAnalytics } from '$lib/server/db/schema';
-import type { ChatMessage, MessageEvidenceSummary, MessageRole, ThinkingSegment } from '$lib/types';
+import type {
+	ChatMessage,
+	MessageEvidenceStatusState,
+	MessageEvidenceSummary,
+	MessageRole,
+	ThinkingSegment,
+} from '$lib/types';
 import { getConfig } from '$lib/server/config-store';
 import { listMessageAttachments } from './knowledge';
+
+type PersistedMessageMetadata = {
+	evidenceSummary?: MessageEvidenceSummary | null;
+	evidenceStatus?: MessageEvidenceStatusState;
+};
 
 function getModelDisplayName(modelId?: string | null): string | undefined {
 	if (!modelId) return undefined;
@@ -33,17 +44,12 @@ function mapRowToChatMessage(
 		}
 	}
 
-	let evidenceSummary: MessageEvidenceSummary | undefined;
-	if (row.metadataJson) {
-		try {
-			const parsed = JSON.parse(row.metadataJson) as { evidenceSummary?: MessageEvidenceSummary };
-			if (parsed?.evidenceSummary && Array.isArray(parsed.evidenceSummary.groups)) {
-				evidenceSummary = parsed.evidenceSummary;
-			}
-		} catch {
-			// Ignore malformed metadata and fall back to the core message payload.
-		}
-	}
+	const metadata = parseMetadata(row.metadataJson);
+	const evidenceSummary =
+		metadata?.evidenceSummary && Array.isArray(metadata.evidenceSummary.groups)
+			? metadata.evidenceSummary
+			: undefined;
+	const evidencePending = metadata?.evidenceStatus === 'pending' && !evidenceSummary;
 
 	return {
 		id: row.id,
@@ -54,7 +60,18 @@ function mapRowToChatMessage(
 		timestamp: row.createdAt.getTime(),
 		modelDisplayName: getModelDisplayName(modelId),
 		evidenceSummary,
+		evidencePending,
 	};
+}
+
+function parseMetadata(value: string | null): PersistedMessageMetadata | null {
+	if (!value) return null;
+	try {
+		const parsed = JSON.parse(value) as PersistedMessageMetadata;
+		return parsed && typeof parsed === 'object' ? parsed : null;
+	} catch {
+		return null;
+	}
 }
 
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
@@ -88,7 +105,7 @@ export async function createMessage(
 	content: string,
 	thinking?: string,
 	thinkingSegments?: ThinkingSegment[],
-	metadata?: { evidenceSummary?: MessageEvidenceSummary | null }
+	metadata?: PersistedMessageMetadata
 ): Promise<ChatMessage> {
 	const [message] = await db
 		.insert(messages)
@@ -106,4 +123,67 @@ export async function createMessage(
 		.returning();
 
 	return mapRowToChatMessage(message);
+}
+
+export async function getMessageEvidenceState(
+	conversationId: string,
+	messageId: string
+): Promise<{
+	status: MessageEvidenceStatusState;
+	evidenceSummary: MessageEvidenceSummary | null;
+} | null> {
+	const [row] = await db
+		.select({ metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(and(eq(messages.id, messageId), eq(messages.conversationId, conversationId)))
+		.limit(1);
+
+	if (!row) return null;
+
+	const metadata = parseMetadata(row.metadataJson);
+	const evidenceSummary =
+		metadata?.evidenceSummary && Array.isArray(metadata.evidenceSummary.groups)
+			? metadata.evidenceSummary
+			: null;
+
+	return {
+		status: metadata?.evidenceStatus ?? (evidenceSummary ? 'ready' : 'none'),
+		evidenceSummary,
+	};
+}
+
+export async function updateMessageEvidence(
+	messageId: string,
+	params: {
+		evidenceSummary?: MessageEvidenceSummary | null;
+		evidenceStatus: MessageEvidenceStatusState;
+	}
+): Promise<void> {
+	const [row] = await db
+		.select({ metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(eq(messages.id, messageId))
+		.limit(1);
+
+	if (!row) return;
+
+	const existing = parseMetadata(row.metadataJson) ?? {};
+	const next: PersistedMessageMetadata = {
+		...existing,
+		evidenceStatus: params.evidenceStatus,
+	};
+
+	if (params.evidenceSummary && params.evidenceSummary.groups.length > 0) {
+		next.evidenceSummary = params.evidenceSummary;
+		next.evidenceStatus = 'ready';
+	} else if (params.evidenceStatus !== 'ready') {
+		delete next.evidenceSummary;
+	}
+
+	await db
+		.update(messages)
+		.set({
+			metadataJson: JSON.stringify(next),
+		})
+		.where(eq(messages.id, messageId));
 }

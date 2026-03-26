@@ -4,7 +4,7 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
 import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
-import { createMessage } from '$lib/server/services/messages';
+import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import {
 	capturePersonaMemorySnapshot,
@@ -16,6 +16,7 @@ import {
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
 	getConversationWorkingSet,
+	getArtifactsForUser,
 	listConversationSourceArtifactIds,
 	refreshConversationWorkingSet,
 	upsertWorkCapsule
@@ -114,22 +115,14 @@ export const POST: RequestHandler = async (event) => {
 			message: normalizedMessage,
 			attachmentIds: safeAttachmentIds
 		});
-		const messageEvidence = await buildAssistantEvidenceSummary({
-			message: normalizedMessage,
-			taskState: initialTaskState ?? null,
-			contextStatus: contextStatus ?? null,
-			contextDebug: initialContextDebug ?? null,
-		}).catch(() => null);
-		const assistantMessage = messageEvidence
-			? await createMessage(
-					conversationId,
-					'assistant',
-					responseText,
-					undefined,
-					undefined,
-					{ evidenceSummary: messageEvidence }
-				)
-			: await createMessage(conversationId, 'assistant', responseText);
+		const assistantMessage = await createMessage(
+			conversationId,
+			'assistant',
+			responseText,
+			undefined,
+			undefined,
+			{ evidenceStatus: 'pending' }
+		);
 		const sourceArtifactIds = safeAttachmentIds.length > 0
 			? safeAttachmentIds
 			: await listConversationSourceArtifactIds(user.id, conversationId);
@@ -159,6 +152,29 @@ export const POST: RequestHandler = async (event) => {
 		}).catch(async () => getConversationTaskState(user.id, conversationId));
 		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
+
+		void (async () => {
+			try {
+				const currentAttachments =
+					safeAttachmentIds.length > 0 ? await getArtifactsForUser(user.id, safeAttachmentIds) : [];
+				const messageEvidence = await buildAssistantEvidenceSummary({
+					message: normalizedMessage,
+					taskState: taskState ?? initialTaskState ?? null,
+					contextStatus: contextStatus ?? null,
+					contextDebug: contextDebug ?? initialContextDebug ?? null,
+					currentAttachments,
+				});
+				await updateMessageEvidence(assistantMessage.id, {
+					evidenceSummary: messageEvidence,
+					evidenceStatus: messageEvidence ? 'ready' : 'none',
+				});
+			} catch (error) {
+				console.error('[SEND] Failed to persist assistant evidence summary:', error);
+				await updateMessageEvidence(assistantMessage.id, {
+					evidenceStatus: 'failed',
+				}).catch(() => undefined);
+			}
+		})();
 
 		const honchoTasks: Promise<unknown>[] = [
 			mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
@@ -196,7 +212,6 @@ export const POST: RequestHandler = async (event) => {
 			activeWorkingSet,
 			taskState,
 			contextDebug,
-			messageEvidence,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);

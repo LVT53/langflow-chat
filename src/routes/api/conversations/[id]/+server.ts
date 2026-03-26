@@ -26,6 +26,19 @@ export const GET: RequestHandler = async (event) => {
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 
+		if (event.url.searchParams.get('view') === 'bootstrap') {
+			return json({
+				conversation,
+				messages: [],
+				attachedArtifacts: [],
+				activeWorkingSet: [],
+				contextStatus: null,
+				taskState: null,
+				contextDebug: null,
+				bootstrap: true,
+			});
+		}
+
 		const [messageHistory, attachedArtifacts, activeWorkingSet, contextStatus, taskState, contextDebug] = await Promise.all([
 			listMessages(id),
 			listConversationArtifacts(user.id, id),
@@ -43,6 +56,7 @@ export const GET: RequestHandler = async (event) => {
 			contextStatus,
 			taskState,
 			contextDebug,
+			bootstrap: false,
 		});
 	} catch (err) {
 		console.error('Error loading conversation:', err);

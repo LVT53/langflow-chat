@@ -14,13 +14,15 @@ vi.mock('$lib/server/services/langflow', () => ({
 }));
 
 vi.mock('$lib/server/services/messages', () => ({
-	createMessage: vi.fn()
+	createMessage: vi.fn(),
+	updateMessageEvidence: vi.fn(async () => undefined),
 }));
 
 vi.mock('$lib/server/services/knowledge', () => ({
 	attachArtifactsToMessage: vi.fn(),
 	createGeneratedOutputArtifact: vi.fn(),
 	getConversationWorkingSet: vi.fn(async () => []),
+	getArtifactsForUser: vi.fn(async () => []),
 	listConversationSourceArtifactIds: vi.fn(async () => []),
 	refreshConversationWorkingSet: vi.fn(async () => []),
 	upsertWorkCapsule: vi.fn(async () => null)
@@ -266,7 +268,8 @@ describe('POST /api/chat/stream', () => {
 			'assistant',
 			'Hello world again',
 			undefined,
-			undefined
+			undefined,
+			{ evidenceStatus: 'pending' }
 		);
 	});
 
@@ -296,7 +299,8 @@ describe('POST /api/chat/stream', () => {
 			'assistant',
 			'Hello world',
 			undefined,
-			undefined
+			undefined,
+			{ evidenceStatus: 'pending' }
 		);
 	});
 
@@ -368,7 +372,8 @@ describe('POST /api/chat/stream', () => {
 			'assistant',
 			'BeforeAfter',
 			'Need to reason carefully',
-			[{ type: 'text', content: 'Need to reason carefully' }]
+			[{ type: 'text', content: 'Need to reason carefully' }],
+			{ evidenceStatus: 'pending' }
 		);
 	});
 

@@ -67,6 +67,7 @@ export interface ConversationDetail {
   contextStatus?: ConversationContextStatus | null;
   taskState?: TaskState | null;
   contextDebug?: ContextDebugState | null;
+  bootstrap?: boolean;
 }
 
 // ConversationListItem interface: id, title, updatedAt
@@ -138,6 +139,8 @@ export interface MessageEvidenceSummary {
   groups: MessageEvidenceGroup[];
 }
 
+export type MessageEvidenceStatusState = 'pending' | 'ready' | 'failed' | 'none';
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -156,6 +159,7 @@ export interface ChatMessage {
   // Display name of the model used for the response (assistant messages only)
   modelDisplayName?: string;
   evidenceSummary?: MessageEvidenceSummary;
+  evidencePending?: boolean;
 }
 
 export type ArtifactType =

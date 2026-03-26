@@ -212,6 +212,7 @@
 
 	<div
 		class="ring-popover"
+		class:ring-popover--mobile={mobile}
 		class:ring-popover--mobile-visible={mobile && isOpen}
 		role="dialog"
 		aria-label="Context focus panel"
@@ -452,6 +453,21 @@
 		opacity: 1;
 		transform: translateY(0);
 		pointer-events: auto;
+	}
+
+	.ring-popover--mobile {
+		position: fixed;
+		left: 50%;
+		right: auto;
+		bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
+		width: min(22rem, calc(100vw - 1.5rem));
+		max-height: min(70vh, 30rem);
+		overflow-y: auto;
+		transform: translateX(-50%) translateY(6px);
+	}
+
+	.ring-popover--mobile.ring-popover--mobile-visible {
+		transform: translateX(-50%) translateY(0);
 	}
 
 	.popover-section + .popover-section {
