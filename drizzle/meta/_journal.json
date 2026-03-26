@@ -36,6 +36,13 @@
       "when": 1774233600000,
       "tag": "0004_profile_picture",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774567460032,
+      "tag": "0005_flaky_famine",
+      "breakpoints": true
     }
   ]
 }

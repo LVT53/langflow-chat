@@ -70,6 +70,31 @@ test.describe('Chat send/receive messages', () => {
     await expect(page.getByTestId('user-message').first()).toContainText('Message via Enter key', { timeout: 10000 });
   });
 
+  test('landing-page send still works when conversation creation resolves after send', async ({ page }) => {
+    await page.unroute('**/api/conversations');
+    await page.route('**/api/conversations', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+
+      await page.waitForTimeout(250);
+      await route.continue();
+    });
+
+    await openConversationComposer(page);
+    await page.getByTestId('message-input').fill('Race condition message');
+    await page.getByTestId('message-input').press('Enter');
+
+    await page.waitForURL(/\/chat\//, { timeout: 15000 });
+    await expect(page.getByTestId('user-message').first()).toContainText('Race condition message', {
+      timeout: 10000,
+    });
+    await expect(page.getByTestId('assistant-message').first()).toContainText(MOCK_RESPONSE_TEXT, {
+      timeout: 15000,
+    });
+  });
+
   test('Shift+Enter does not send the message (newline)', async ({ page }) => {
     await openConversationComposer(page);
     await page.getByTestId('message-input').fill('Line 1');

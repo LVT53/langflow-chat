@@ -12,7 +12,7 @@ export default async function globalSetup() {
 
   try {
     execSync(
-      `npx drizzle-kit push --config=drizzle.config.ts`,
+      'npm run db:prepare',
       {
         stdio: 'pipe',
         env: {
@@ -26,7 +26,7 @@ export default async function globalSetup() {
       }
     );
   } catch (err) {
-    console.warn('[globalSetup] drizzle-kit push failed (may already be up to date):', (err as Error).message?.slice(0, 200));
+    console.warn('[globalSetup] db:prepare failed:', (err as Error).message?.slice(0, 200));
   }
 
   try {

@@ -12,6 +12,7 @@ if (!process.env.DATABASE_PATH) process.env.DATABASE_PATH = './data/chat.db';
 import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { randomUUID } from 'crypto';
+import { execSync } from 'child_process';
 
 const dbDir = dirname(process.env.DATABASE_PATH!);
 if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
@@ -22,6 +23,8 @@ import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 
 async function main() {
+  execSync('npm run db:prepare', { stdio: 'inherit' });
+
   const args = process.argv.slice(2);
 
   const get = (flag: string) => {

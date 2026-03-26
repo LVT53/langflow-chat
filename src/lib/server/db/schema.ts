@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const users = sqliteTable('users', {
@@ -67,7 +67,10 @@ export const artifacts = sqliteTable('artifacts', {
   metadataJson: text('metadata_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  userBinaryHashIdx: index('artifacts_user_binary_hash_idx').on(table.userId, table.binaryHash),
+  userSizeIdx: index('artifacts_user_size_idx').on(table.userId, table.sizeBytes),
+}));
 
 export const artifactChunks = sqliteTable('artifact_chunks', {
   id: text('id').primaryKey(),
@@ -83,7 +86,13 @@ export const artifactChunks = sqliteTable('artifact_chunks', {
   tokenEstimate: integer('token_estimate').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  artifactIdx: index('artifact_chunks_artifact_idx').on(table.artifactId, table.chunkIndex),
+  userConversationIdx: index('artifact_chunks_user_conversation_idx').on(
+    table.userId,
+    table.conversationId
+  ),
+}));
 
 export const artifactLinks = sqliteTable('artifact_links', {
   id: text('id').primaryKey(),
@@ -149,7 +158,12 @@ export const conversationTaskStates = sqliteTable('conversation_task_states', {
   lastCheckpointAt: integer('last_checkpoint_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  conversationIdx: index('conversation_task_states_conversation_idx').on(
+    table.conversationId,
+    table.updatedAt
+  ),
+}));
 
 export const taskStateEvidenceLinks = sqliteTable('task_state_evidence_links', {
   id: text('id').primaryKey(),
@@ -172,7 +186,13 @@ export const taskStateEvidenceLinks = sqliteTable('task_state_evidence_links', {
   reason: text('reason'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  taskIdx: index('task_state_evidence_links_task_idx').on(
+    table.taskId,
+    table.role,
+    table.updatedAt
+  ),
+}));
 
 export const taskCheckpoints = sqliteTable('task_checkpoints', {
   id: text('id').primaryKey(),
@@ -192,7 +212,13 @@ export const taskCheckpoints = sqliteTable('task_checkpoints', {
   verificationStatus: text('verification_status').notNull().default('skipped'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  taskIdx: index('task_checkpoints_task_idx').on(
+    table.taskId,
+    table.checkpointType,
+    table.updatedAt
+  ),
+}));
 
 export const conversationWorkingSetItems = sqliteTable('conversation_working_set_items', {
   id: text('id').primaryKey(),
@@ -226,7 +252,13 @@ export const memoryProjects = sqliteTable('memory_projects', {
   lastActiveAt: integer('last_active_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  userStatusIdx: index('memory_projects_user_status_idx').on(
+    table.userId,
+    table.status,
+    table.updatedAt
+  ),
+}));
 
 export const memoryProjectTaskLinks = sqliteTable('memory_project_task_links', {
   id: text('id').primaryKey(),
@@ -244,7 +276,13 @@ export const memoryProjectTaskLinks = sqliteTable('memory_project_task_links', {
     .references(() => conversations.id, { onDelete: 'cascade' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  taskIdx: uniqueIndex('memory_project_task_links_task_idx').on(table.taskId),
+  projectIdx: index('memory_project_task_links_project_idx').on(
+    table.projectId,
+    table.updatedAt
+  ),
+}));
 
 export const personaMemoryAttributions = sqliteTable('persona_memory_attributions', {
   id: text('id').primaryKey(),
@@ -258,7 +296,15 @@ export const personaMemoryAttributions = sqliteTable('persona_memory_attribution
   scope: text('scope').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  conclusionConversationIdx: uniqueIndex(
+    'persona_memory_attributions_conclusion_conversation_idx'
+  ).on(table.conclusionId, table.conversationId),
+  conversationIdx: index('persona_memory_attributions_conversation_idx').on(
+    table.conversationId,
+    table.updatedAt
+  ),
+}));
 
 export const personaMemoryClusters = sqliteTable('persona_memory_clusters', {
   clusterId: text('cluster_id').primaryKey(),
@@ -279,7 +325,13 @@ export const personaMemoryClusters = sqliteTable('persona_memory_clusters', {
   metadataJson: text('metadata_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  userStateIdx: index('persona_memory_clusters_user_state_idx').on(
+    table.userId,
+    table.state,
+    table.updatedAt
+  ),
+}));
 
 export const personaMemoryClusterMembers = sqliteTable('persona_memory_cluster_members', {
   id: text('id').primaryKey(),
@@ -295,7 +347,16 @@ export const personaMemoryClusterMembers = sqliteTable('persona_memory_cluster_m
   sessionId: text('session_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  conclusionIdx: uniqueIndex('persona_memory_cluster_members_conclusion_idx').on(
+    table.userId,
+    table.conclusionId
+  ),
+  clusterIdx: index('persona_memory_cluster_members_cluster_idx').on(
+    table.clusterId,
+    table.createdAt
+  ),
+}));
 
 export const conversationDrafts = sqliteTable('conversation_drafts', {
   conversationId: text('conversation_id')
@@ -307,13 +368,15 @@ export const conversationDrafts = sqliteTable('conversation_drafts', {
   draftText: text('draft_text').notNull().default(''),
   selectedAttachmentIdsJson: text('selected_attachment_ids_json'),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  userUpdatedIdx: index('conversation_drafts_user_updated_idx').on(table.userId, table.updatedAt),
+}));
 
 export const adminConfig = sqliteTable('admin_config', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-  updatedBy: text('updated_by').notNull().references(() => users.id),
+  updatedBy: text('updated_by').notNull(),
 });
 
 export const projects = sqliteTable('projects', {

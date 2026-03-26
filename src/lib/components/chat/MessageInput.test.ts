@@ -252,4 +252,47 @@ describe('MessageInput', () => {
 		await fireEvent.click(sendButton);
 		expect(sendSpy).not.toHaveBeenCalled();
 	});
+
+	it('ignores stale async draft emissions after send clears the composer', async () => {
+		let resolveConversation: ((id: string) => void) | null = null;
+		const ensureConversation = vi.fn(
+			() =>
+				new Promise<string>((resolve) => {
+					resolveConversation = resolve;
+				})
+		);
+		const sendSpy = vi.fn();
+		const draftSpy = vi.fn();
+		const { getByPlaceholderText } = render(MessageInputWrapper, {
+			ensureConversation,
+			onSend: (message: string) =>
+				sendSpy({
+					message,
+					attachmentIds: [],
+					attachments: [],
+					conversationId: null,
+				}),
+			onDraftChange: draftSpy,
+		});
+
+		const input = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		await fireEvent.input(input, { target: { value: 'Race me' } });
+		await fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+
+		expect(sendSpy).toHaveBeenCalledWith({
+			message: 'Race me',
+			attachmentIds: [],
+			attachments: [],
+			conversationId: null,
+		});
+		expect(draftSpy).not.toHaveBeenCalled();
+
+		resolveConversation?.('conv-race');
+		await waitFor(() => {
+			expect(ensureConversation).toHaveBeenCalledTimes(1);
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(draftSpy).not.toHaveBeenCalled();
+	});
 });

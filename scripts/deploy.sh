@@ -32,7 +32,7 @@ echo -e "${GREEN}✓ Build complete${NC}"
 echo ""
 
 echo -e "${YELLOW}4. Running database migrations...${NC}"
-npx drizzle-kit push
+npm run db:prepare
 echo -e "${GREEN}✓ Database migrations complete${NC}"
 echo ""
 

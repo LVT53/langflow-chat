@@ -37,7 +37,7 @@ describe('seed-user script', () => {
   it('runs the script and invokes all expected side effects with default args', async () => {
     await import('../scripts/seed-user');
 
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith('npx drizzle-kit push', { stdio: 'inherit' });
+    expect(vi.mocked(execSync)).toHaveBeenCalledWith('npm run db:prepare', { stdio: 'inherit' });
     expect(vi.mocked(bcrypt.hashSync)).toHaveBeenCalledWith('admin123', 10);
     expect(vi.mocked(db.insert)).toHaveBeenCalled();
     const insertResult = vi.mocked(db.insert).mock.results[0].value;

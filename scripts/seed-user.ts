@@ -43,11 +43,11 @@ async function main() {
   const password = passwordArg ? passwordArg.split('=')[1] : 'admin123';
   const name = nameArg ? nameArg.split('=')[1] : 'Admin User';
 
-  // Apply pending database migrations
+  // Prepare the database schema before seeding.
   try {
-    execSync('npx drizzle-kit push', { stdio: 'inherit' });
+    execSync('npm run db:prepare', { stdio: 'inherit' });
   } catch (migrationError) {
-    console.error('Error applying migrations:', migrationError);
+    console.error('Error preparing database:', migrationError);
     process.exit(1);
   }
 

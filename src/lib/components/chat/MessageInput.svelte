@@ -52,6 +52,7 @@
 	let appliedDraftVersion = -1;
 	let lastEmittedDraftKey = '';
 	let ensureDraftConversationPromise: Promise<string> | null = null;
+	let draftEmissionVersion = 0;
 	
 	$: isEmpty = message.trim().length === 0;
 	$: isOverMaxLength = message.length > maxLength;
@@ -84,6 +85,8 @@
 			attachmentError = '';
 			uploadState = 'idle';
 			showToolsMenu = false;
+			lastEmittedDraftKey = '';
+			draftEmissionVersion += 1;
 			adjustHeight();
 		}
 	}
@@ -105,6 +108,8 @@
 			attachmentError = '';
 			uploadState = 'idle';
 			showToolsMenu = false;
+			lastEmittedDraftKey = '';
+			draftEmissionVersion += 1;
 			adjustHeight();
 			if (!isMobile()) {
 				setTimeout(() => textarea.focus(), 0);
@@ -126,6 +131,7 @@
 
 	function handleInput() {
 		message = textarea.value;
+		draftEmissionVersion += 1;
 		adjustHeight();
 		void emitDraftChange();
 	}
@@ -149,6 +155,8 @@
 		pendingAttachments = [];
 		attachmentError = '';
 		showToolsMenu = false;
+		lastEmittedDraftKey = '';
+		draftEmissionVersion += 1;
 		adjustHeight();
 		if (!isMobile()) {
 			textarea.focus();
@@ -236,8 +244,9 @@
 							typeof payload.readinessError === 'string' && payload.readinessError.trim()
 								? payload.readinessError
 								: null,
-					});
+							});
 					pendingAttachments = Array.from(next.values());
+					draftEmissionVersion += 1;
 					void emitDraftChange();
 				}
 			}
@@ -254,6 +263,7 @@
 
 	function removePendingAttachment(id: string) {
 		pendingAttachments = pendingAttachments.filter((attachment) => attachment.artifact.id !== id);
+		draftEmissionVersion += 1;
 		void emitDraftChange();
 	}
 
@@ -282,15 +292,19 @@
 	}
 
 	async function emitDraftChange(force = false) {
-		const hasMeaningfulDraft = message.trim().length > 0 || pendingAttachments.length > 0;
+		const emissionVersion = draftEmissionVersion;
+		const nextMessage = message;
+		const nextPendingAttachments = pendingAttachments.map((attachment) => ({ ...attachment }));
+		const hasMeaningfulDraft = nextMessage.trim().length > 0 || nextPendingAttachments.length > 0;
 		const draftConversationId = hasMeaningfulDraft
 			? await ensureDraftConversationId()
 			: resolvedConversationId;
+		if (emissionVersion !== draftEmissionVersion) return;
 		const payload = {
 			conversationId: draftConversationId,
-			draftText: message,
-			selectedAttachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
-			selectedAttachments: pendingAttachments.map((attachment) => ({ ...attachment })),
+			draftText: nextMessage,
+			selectedAttachmentIds: nextPendingAttachments.map((attachment) => attachment.artifact.id),
+			selectedAttachments: nextPendingAttachments,
 		};
 		const key = JSON.stringify(payload);
 		if (!force && key === lastEmittedDraftKey) return;
