@@ -31,7 +31,7 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	try {
-		const memory = await applyKnowledgeMemoryAction(user.id, body);
+		const memory = await applyKnowledgeMemoryAction(user.id, user.displayName, body);
 		return json(memory);
 	} catch (error) {
 		console.error('[KNOWLEDGE_MEMORY] Failed to apply memory action:', error);

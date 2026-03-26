@@ -1118,13 +1118,17 @@ export async function buildConstructedContext(params: {
 	};
 }
 
-export async function getPeerContext(userId: string): Promise<string | null> {
+export async function getPeerContext(
+	userId: string,
+	userDisplayName?: string | null
+): Promise<string | null> {
 	if (!isHonchoEnabled()) return null;
 
 	try {
 		const peer = await getUserPeer(userId);
+		const safeDisplayName = userDisplayName?.trim() || 'the user';
 		const response = await peer.chat(
-			'Summarize what you know about this user: preferences, interests, communication style, and important context. Be concise (under 200 words).',
+			`Summarize what you know about ${safeDisplayName}: preferences, interests, communication style, and important context. Be concise (under 200 words). Refer to them as "${safeDisplayName}" or "the user", never by internal IDs or peer IDs.`,
 			{ reasoningLevel: 'low' }
 		);
 		return response?.trim() || null;
@@ -1145,6 +1149,10 @@ export async function buildEnhancedSystemPrompt(
 		'',
 		'## Retrieved Context Discipline',
 		'Use any retrieved task state, recalled session details, documents, workflows, or evidence as supporting context only.',
+		'User profile and persona memory describe the human user, not you.',
+		'Never adopt the user’s biography, preferences, education, profession, or life circumstances as your own identity.',
+		'You remain AlfyAI, the assistant, even when memory says the user is a student, designer, applicant, or has other personal traits.',
+		'Do not restate user-memory facts in first person unless the user is directly quoting themselves.',
 		'Do not let stale or weakly related retrieved material steer the conversation.',
 		'Do not proactively pivot to old recalled documents, recipes, files, or workflows unless the latest user turn clearly asks for them or they are directly relevant to the active task.',
 		'If retrieved context conflicts with the current user intent, follow the current user intent and ignore the irrelevant retrieved material.',

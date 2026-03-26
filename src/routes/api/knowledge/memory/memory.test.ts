@@ -56,7 +56,7 @@ const memoryPayload = {
 function makeGetEvent() {
 	return {
 		request: new Request('http://localhost/api/knowledge/memory'),
-		locals: { user: { id: 'user-1' } },
+		locals: { user: { id: 'user-1', displayName: 'Test User' } },
 		params: {},
 		url: new URL('http://localhost/api/knowledge/memory'),
 		route: { id: '/api/knowledge/memory' },
@@ -70,7 +70,7 @@ function makePostEvent(body: unknown) {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
 		}),
-		locals: { user: { id: 'user-1' } },
+		locals: { user: { id: 'user-1', displayName: 'Test User' } },
 		params: {},
 		url: new URL('http://localhost/api/knowledge/memory/actions'),
 		route: { id: '/api/knowledge/memory/actions' },
@@ -91,7 +91,7 @@ describe('knowledge memory routes', () => {
 
 		expect(response.status).toBe(200);
 		expect(data.summary.personaCount).toBe(1);
-		expect(mockGetKnowledgeMemory).toHaveBeenCalledWith('user-1');
+		expect(mockGetKnowledgeMemory).toHaveBeenCalledWith('user-1', 'Test User');
 	});
 
 	it('applies a memory action and returns the refreshed payload', async () => {
@@ -107,10 +107,14 @@ describe('knowledge memory routes', () => {
 
 		expect(response.status).toBe(200);
 		expect(data.summary.taskCount).toBe(1);
-		expect(mockApplyKnowledgeMemoryAction).toHaveBeenCalledWith('user-1', {
-			action: 'forget_persona_memory',
-			conclusionId: 'conclusion-1',
-		});
+		expect(mockApplyKnowledgeMemoryAction).toHaveBeenCalledWith(
+			'user-1',
+			'Test User',
+			{
+				action: 'forget_persona_memory',
+				conclusionId: 'conclusion-1',
+			}
+		);
 	});
 
 	it('rejects invalid memory action payloads', async () => {

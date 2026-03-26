@@ -5,6 +5,8 @@ import type { KnowledgeMemoryPayload, PersonaMemoryItem } from '$lib/types';
 import {
 	forgetAllPersonaMemories,
 	forgetPersonaMemory,
+	getHonchoAssistantPeerId,
+	getHonchoUserPeerId,
 	getPeerContext,
 	listPersonaMemories,
 } from './honcho';
@@ -15,8 +17,53 @@ export type KnowledgeMemoryAction =
 	| { action: 'forget_all_persona_memory' }
 	| { action: 'forget_task_memory'; taskId: string };
 
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function replaceAllCaseInsensitive(text: string, needle: string, replacement: string): string {
+	if (!needle.trim()) return text;
+	return text.replace(new RegExp(escapeRegExp(needle), 'gi'), replacement);
+}
+
+function sanitizeMemoryText(
+	text: string | null,
+	userId: string,
+	userDisplayName: string
+): string | null {
+	if (!text?.trim()) return text;
+
+	const safeDisplayName = userDisplayName.trim() || 'the user';
+	const honchoUserPeerId = getHonchoUserPeerId(userId);
+	const honchoAssistantPeerId = getHonchoAssistantPeerId(userId);
+	let sanitized = text;
+
+	sanitized = sanitized.replace(
+		new RegExp(`\\bthe user\\s+${escapeRegExp(userId)}\\b`, 'gi'),
+		safeDisplayName
+	);
+	sanitized = sanitized.replace(
+		new RegExp(`\\buser\\s+${escapeRegExp(userId)}\\b`, 'gi'),
+		safeDisplayName
+	);
+	sanitized = sanitized.replace(
+		new RegExp(`\\bthe user\\s+${escapeRegExp(honchoUserPeerId)}\\b`, 'gi'),
+		safeDisplayName
+	);
+	sanitized = sanitized.replace(
+		new RegExp(`\\buser\\s+${escapeRegExp(honchoUserPeerId)}\\b`, 'gi'),
+		safeDisplayName
+	);
+	sanitized = replaceAllCaseInsensitive(sanitized, honchoAssistantPeerId, 'AlfyAI');
+	sanitized = replaceAllCaseInsensitive(sanitized, honchoUserPeerId, safeDisplayName);
+	sanitized = replaceAllCaseInsensitive(sanitized, userId, safeDisplayName);
+
+	return sanitized;
+}
+
 async function enrichPersonaMemories(
-	userId: string
+	userId: string,
+	userDisplayName: string
 ): Promise<PersonaMemoryItem[]> {
 	const records = await listPersonaMemories(userId);
 	const conversationIds = Array.from(
@@ -42,7 +89,7 @@ async function enrichPersonaMemories(
 
 	return records.map((record) => ({
 		id: record.id,
-		content: record.content,
+		content: sanitizeMemoryText(record.content, userId, userDisplayName) ?? record.content,
 		scope: record.scope,
 		sessionId: record.sessionId,
 		conversationId: record.sessionId,
@@ -51,26 +98,40 @@ async function enrichPersonaMemories(
 	}));
 }
 
-export async function getKnowledgeMemory(userId: string): Promise<KnowledgeMemoryPayload> {
+export async function getKnowledgeMemory(
+	userId: string,
+	userDisplayName: string
+): Promise<KnowledgeMemoryPayload> {
 	const [personaMemories, taskMemories, overview] = await Promise.all([
-		enrichPersonaMemories(userId),
+		enrichPersonaMemories(userId, userDisplayName),
 		listTaskMemoryItems(userId),
-		getPeerContext(userId),
+		getPeerContext(userId, userDisplayName),
 	]);
 
 	return {
 		personaMemories,
-		taskMemories,
+		taskMemories: taskMemories.map((taskMemory) => ({
+			...taskMemory,
+			objective:
+				sanitizeMemoryText(taskMemory.objective, userId, userDisplayName) ??
+				taskMemory.objective,
+			checkpointSummary: sanitizeMemoryText(
+				taskMemory.checkpointSummary,
+				userId,
+				userDisplayName
+			),
+		})),
 		summary: {
 			personaCount: personaMemories.length,
 			taskCount: taskMemories.length,
-			overview,
+			overview: sanitizeMemoryText(overview, userId, userDisplayName),
 		},
 	};
 }
 
 export async function applyKnowledgeMemoryAction(
 	userId: string,
+	userDisplayName: string,
 	payload: KnowledgeMemoryAction
 ): Promise<KnowledgeMemoryPayload> {
 	switch (payload.action) {
@@ -85,5 +146,5 @@ export async function applyKnowledgeMemoryAction(
 			break;
 	}
 
-	return getKnowledgeMemory(userId);
+	return getKnowledgeMemory(userId, userDisplayName);
 }

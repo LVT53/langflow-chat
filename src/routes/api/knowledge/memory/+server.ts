@@ -8,7 +8,7 @@ export const GET: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 
 	try {
-		const memory = await getKnowledgeMemory(user.id);
+		const memory = await getKnowledgeMemory(user.id, user.displayName);
 		return json(memory);
 	} catch (error) {
 		console.error('[KNOWLEDGE_MEMORY] Failed to load knowledge memory:', error);

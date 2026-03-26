@@ -203,6 +203,7 @@ describe('Honcho Service', () => {
       const result = await buildEnhancedSystemPrompt('default', 'user-123');
       expect(result).toContain('You are a helpful AI assistant.');
       expect(result).toContain('Retrieved Context Discipline');
+      expect(result).toContain('User profile and persona memory describe the human user, not you.');
     });
   });
 
