@@ -144,6 +144,12 @@ const FRIENDLY_STREAM_ERRORS: Record<StreamErrorCode, string> = {
 	backend_failure: 'We hit a temporary issue generating a response. Please try again.'
 };
 
+const URL_LIST_TOOL_RECOVERY_APPENDIX = [
+	'Important retry guard for URL-processing tools:',
+	'- If a tool uses a field named `urls`, it must be a JSON array of strings.',
+	'- Even for one link, pass `["https://example.com"]`, never a bare string.',
+].join('\n');
+
 function normalizeToolCandidates(value: unknown): StreamToolCallCandidate[] {
 	if (!Array.isArray(value)) return [];
 
@@ -599,9 +605,21 @@ function extractErrorMessage(rawData: unknown): string {
 
 	if (typeof payload.message === 'string') return payload.message;
 	if (typeof payload.error === 'string') return payload.error;
+	if (typeof payload.text === 'string') return payload.text;
+	if (typeof payload.detail === 'string') return payload.detail;
+	if (typeof payload.reason === 'string') return payload.reason;
 	if ('data' in payload) return extractErrorMessage(payload.data);
 
 	return 'Streaming failed';
+}
+
+function isUrlListValidationError(rawMessage: string): boolean {
+	const message = rawMessage.toLowerCase();
+	return (
+		message.includes('validation error') &&
+		message.includes('urls') &&
+		(message.includes('valid list') || message.includes('type=list_type'))
+	);
 }
 
 function estimateTokenCount(text: string): number {
@@ -1414,20 +1432,33 @@ export const POST: RequestHandler = async (event) => {
 			}, STREAM_TIMEOUT_MS);
 
 			try {
-			console.log('[STREAM] Starting upstream request', {
-				userId: user.id,
-				conversationId,
-				sourceLanguage,
-				normalizedMessageLength: normalizedMessage.length,
-				upstreamMessageLength: upstreamMessage.length,
-				modelId
-			});
-			const langflowResponse = await sendMessageStream(upstreamMessage, conversationId, modelId, {
-				signal: upstreamAbortController.signal,
-				userId: user.id,
-				attachmentIds: safeAttachmentIds,
-				attachmentTraceId,
-			});
+				let usedUrlListRecovery = false;
+
+				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
+					console.log('[STREAM] Starting upstream request', {
+						userId: user.id,
+						conversationId,
+						sourceLanguage,
+						normalizedMessageLength: normalizedMessage.length,
+						upstreamMessageLength: upstreamMessage.length,
+						modelId,
+						attempt,
+						urlListRecovery: usedUrlListRecovery,
+					});
+					const langflowResponse = await sendMessageStream(
+						upstreamMessage,
+						conversationId,
+						modelId,
+						{
+							signal: upstreamAbortController.signal,
+							userId: user.id,
+							attachmentIds: safeAttachmentIds,
+							attachmentTraceId,
+							systemPromptAppendix: usedUrlListRecovery
+								? URL_LIST_TOOL_RECOVERY_APPENDIX
+								: undefined,
+						}
+					);
 				const langflowStream =
 					langflowResponse instanceof ReadableStream
 						? langflowResponse
@@ -1489,14 +1520,35 @@ export const POST: RequestHandler = async (event) => {
 					}
 
 					if (eventType === 'error') {
+						const errorMessage = extractErrorMessage(data);
 						console.error('[STREAM] Upstream error event payload', {
 							conversationId,
+							attempt,
+							errorMessage,
 							data:
 								typeof data === 'string'
 									? data
 									: JSON.stringify(data).slice(0, 2000)
 						});
-						failStream(classifyStreamError(extractErrorMessage(data)));
+						const canRetryUrlListValidation =
+							!usedUrlListRecovery &&
+							isUrlListValidationError(errorMessage) &&
+							!fullResponse.trim() &&
+							!thinkingContent.trim() &&
+							toolCallRecords.length === 0 &&
+							!emittedAssistantText.trim();
+						if (canRetryUrlListValidation) {
+							usedUrlListRecovery = true;
+							lastAssistantSnapshot = '';
+							emittedAssistantText = '';
+							console.warn('[STREAM] Retrying upstream after URL list validation error', {
+								conversationId,
+								attempt,
+								errorMessage,
+							});
+							continue upstreamAttempt;
+						}
+						failStream(classifyStreamError(errorMessage));
 						return;
 					}
 
@@ -1578,6 +1630,8 @@ export const POST: RequestHandler = async (event) => {
 					return;
 				}
 				completeSuccess();
+				return;
+				}
 			} catch (error) {
 				if (!closed) {
 					if (isAbruptUpstreamTermination(error) && fullResponse.trim()) {

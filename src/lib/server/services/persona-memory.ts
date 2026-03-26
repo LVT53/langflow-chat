@@ -13,6 +13,7 @@ import type {
 	PersonaMemoryState,
 } from '$lib/types';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
+import { listPersonaMemories } from './honcho';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
@@ -793,7 +794,6 @@ export async function ensurePersonaMemoryClustersReady(
 	}
 
 	const pending = (async () => {
-		const { listPersonaMemories } = await import('./honcho');
 		const [rawRecords, existingSnapshots] = await Promise.all([
 			listPersonaMemories(userId).catch(() => []),
 			loadExistingClusterSnapshots(userId),

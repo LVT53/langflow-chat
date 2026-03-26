@@ -8,6 +8,40 @@ import {
 	summarizeAttachmentSectionInInput,
 } from './attachment-trace';
 
+const URL_LIST_TOOL_ARGUMENT_GUARD = [
+	'Tool argument safety for URL-processing tools:',
+	'- If a tool field is named `urls` or expects a list of URLs/links, always pass an array of strings.',
+	'- For a single link, use `["https://example.com"]`, never a bare string.',
+].join('\n');
+
+function containsHttpUrl(value: string): boolean {
+	return /https?:\/\/[^\s)>\]]+/i.test(value);
+}
+
+function buildOutboundSystemPrompt(params: {
+	basePrompt: string;
+	inputValue: string;
+	systemPromptAppendix?: string;
+}): string {
+	const basePrompt = params.basePrompt.trim();
+	const additions: string[] = [];
+
+	if (containsHttpUrl(params.inputValue)) {
+		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
+	}
+
+	if (typeof params.systemPromptAppendix === 'string' && params.systemPromptAppendix.trim()) {
+		additions.push(params.systemPromptAppendix.trim());
+	}
+
+	if (additions.length === 0) {
+		return params.basePrompt;
+	}
+
+	const uniqueAdditions = Array.from(new Set(additions));
+	return `${basePrompt}\n\n## Tool Argument Safety\n${uniqueAdditions.join('\n')}`;
+}
+
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
 
@@ -49,7 +83,11 @@ export async function sendMessage(
   sessionId: string,
   modelId?: ModelId,
   userId?: string,
-  options?: { attachmentIds?: string[]; attachmentTraceId?: string }
+  options?: {
+    attachmentIds?: string[];
+    attachmentTraceId?: string;
+    systemPromptAppendix?: string;
+  }
 ): Promise<{
   text: string;
   rawResponse: LangflowRunResponse;
@@ -106,9 +144,14 @@ export async function sendMessage(
       }
     }
 
-    const systemPrompt = userId
+    const baseSystemPrompt = userId
       ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, userId)
       : getSystemPrompt(modelConfig.systemPrompt);
+    const systemPrompt = buildOutboundSystemPrompt({
+      basePrompt: baseSystemPrompt,
+      inputValue,
+      systemPromptAppendix: options?.systemPromptAppendix,
+    });
 
     console.log('[LANGFLOW] sendMessage request', {
       url,
@@ -174,6 +217,7 @@ export async function sendMessageStream(
     userId?: string;
     attachmentIds?: string[];
     attachmentTraceId?: string;
+    systemPromptAppendix?: string;
   }
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
@@ -231,9 +275,14 @@ export async function sendMessageStream(
       }
     }
 
-    const systemPrompt = options?.userId
+    const baseSystemPrompt = options?.userId
       ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, options.userId)
       : getSystemPrompt(modelConfig.systemPrompt);
+    const systemPrompt = buildOutboundSystemPrompt({
+      basePrompt: baseSystemPrompt,
+      inputValue,
+      systemPromptAppendix: options?.systemPromptAppendix,
+    });
 
     console.log('[LANGFLOW] sendMessageStream request', {
       url,

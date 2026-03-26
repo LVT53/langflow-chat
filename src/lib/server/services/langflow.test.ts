@@ -253,6 +253,33 @@ describe('Langflow API Client Service', () => {
         })
       );
     });
+
+    it('adds a URL list guard when the outbound prompt contains a link', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'AI response'
+                }
+              }
+            }]
+          }]
+        }),
+        ok: true
+      }));
+
+      const { sendMessage } = await import('./langflow');
+
+      await sendMessage('Please inspect https://example.com/article', 'test-session');
+
+      const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+      const body = JSON.parse(String(request?.body));
+      expect(body.tweaks.system_prompt).toContain('Tool argument safety');
+      expect(body.tweaks.system_prompt).toContain('field is named `urls`');
+      expect(body.tweaks.system_prompt).toContain('["https://example.com"]');
+    });
   });
 
   describe('sendMessageStream', () => {

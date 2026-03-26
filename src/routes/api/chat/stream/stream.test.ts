@@ -521,6 +521,58 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('temporary issue generating a response');
 	});
 
+	it('retries once with a stricter URL-list tool guard after the upstream urls validation error', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream
+			.mockResolvedValueOnce(
+				buildSseStream([
+					'event: error\ndata: {"data":{"text":"1 validation error for InputSchema\\nurls\\n  Input should be a valid list [type=list_type, input_value=\'https://example.com\', input_type=str]\\n"}}\n\n'
+				])
+			)
+			.mockResolvedValueOnce(
+				buildSseStream([
+					'event: token\ndata: {"text":"Recovered answer"}\n\n',
+					'data: [DONE]\n\n'
+				])
+			);
+
+		const event = makeEvent({
+			message: 'Check https://example.com',
+			conversationId: 'conv-1'
+		});
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('"text":"Recovered answer"');
+		expect(body).toContain('event: end');
+		expect(body).not.toContain('event: error');
+		expect(mockSendMessageStream).toHaveBeenCalledTimes(2);
+		expect(mockSendMessageStream).toHaveBeenNthCalledWith(
+			1,
+			'Check https://example.com',
+			'conv-1',
+			undefined,
+			expect.objectContaining({
+				signal: expect.any(Object),
+				userId: 'user-1',
+				attachmentIds: []
+			})
+		);
+		expect(mockSendMessageStream).toHaveBeenNthCalledWith(
+			2,
+			'Check https://example.com',
+			'conv-1',
+			undefined,
+			expect.objectContaining({
+				signal: expect.any(Object),
+				userId: 'user-1',
+				attachmentIds: [],
+				systemPromptAppendix: expect.stringContaining('field named `urls`')
+			})
+		);
+	});
+
 	it('returns 400 when message is empty', async () => {
 		const event = makeEvent({ message: '', conversationId: 'conv-1' });
 		const response = await POST(event);
