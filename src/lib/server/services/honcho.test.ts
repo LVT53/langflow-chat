@@ -1,5 +1,137 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const {
+  mockDisplayArtifact,
+  mockPromptArtifact,
+  mockResolvePromptAttachmentArtifacts,
+  mockSelectWorkingSetArtifactsForPrompt,
+  mockFindRelevantKnowledgeArtifacts,
+  mockFindRelevantWorkCapsules,
+  mockUpdateConversationContextStatus,
+  mockCanUseContextSummarizer,
+  mockFormatTaskStateForPrompt,
+  mockGetContextDebugState,
+  mockGetPromptArtifactSnippets,
+  mockPrepareTaskContext,
+  mockRequestStructuredControlModel,
+  mockSummarizeHistoricalContext,
+  mockSessionMessages,
+  mockSessionSummaries,
+  mockSessionSearch,
+  mockSessionAddPeers,
+  mockPeerContext,
+} = vi.hoisted(() => {
+  const now = Date.now();
+  const mockDisplayArtifact = {
+    id: 'source-attachment-1',
+    userId: 'user-123',
+    type: 'source_document' as const,
+    retrievalClass: 'durable' as const,
+    name: 'test.txt',
+    mimeType: 'text/plain',
+    sizeBytes: 151,
+    conversationId: 'conv-456',
+    summary: null,
+    createdAt: now,
+    updatedAt: now,
+    extension: '.txt',
+    storagePath: null,
+    contentText: null,
+    metadata: null,
+  };
+  const mockPromptArtifact = {
+    ...mockDisplayArtifact,
+    id: 'normalized-attachment-1',
+    type: 'normalized_document' as const,
+    contentText: 'This is the normalized attachment text that must reach the model.',
+  };
+
+  return {
+    mockDisplayArtifact,
+    mockPromptArtifact,
+    mockResolvePromptAttachmentArtifacts: vi.fn(async () => ({
+      displayArtifacts: [mockDisplayArtifact],
+      promptArtifacts: [mockPromptArtifact],
+      unresolvedItems: [],
+    })),
+    mockSelectWorkingSetArtifactsForPrompt: vi.fn(async () => []),
+    mockFindRelevantKnowledgeArtifacts: vi.fn(async () => []),
+    mockFindRelevantWorkCapsules: vi.fn(async () => []),
+    mockUpdateConversationContextStatus: vi.fn(async () => ({
+      conversationId: 'conv-456',
+      userId: 'user-123',
+      estimatedTokens: 0,
+      maxContextTokens: 262144,
+      thresholdTokens: 209715,
+      targetTokens: 157286,
+      compactionApplied: false,
+      compactionMode: 'none',
+      routingStage: 'deterministic',
+      routingConfidence: 0,
+      verificationStatus: 'skipped',
+      layersUsed: [],
+      workingSetCount: 0,
+      workingSetArtifactIds: [],
+      workingSetApplied: false,
+      taskStateApplied: false,
+      promptArtifactCount: 0,
+      recentTurnCount: 0,
+      summary: null,
+      updatedAt: now,
+    })),
+    mockCanUseContextSummarizer: vi.fn(() => false),
+    mockFormatTaskStateForPrompt: vi.fn((taskState: { objective: string }) => `Objective: ${taskState.objective}`),
+    mockGetContextDebugState: vi.fn(async () => null),
+    mockGetPromptArtifactSnippets: vi.fn(async ({ artifacts }: { artifacts: Array<{ id: string; contentText: string | null }> }) =>
+      new Map(artifacts.map((artifact) => [artifact.id, artifact.contentText ?? '']))
+    ),
+    mockPrepareTaskContext: vi.fn(async ({ currentAttachments }: { currentAttachments: unknown[] }) => ({
+      taskState: null,
+      routingStage: 'deterministic' as const,
+      routingConfidence: 0,
+      verificationStatus: 'skipped' as const,
+      selectedArtifacts: currentAttachments,
+      pinnedArtifactIds: [],
+      excludedArtifactIds: [],
+    })),
+    mockRequestStructuredControlModel: vi.fn(),
+    mockSummarizeHistoricalContext: vi.fn(async () => null),
+    mockSessionMessages: vi.fn(async () => ({ toArray: async () => [] })),
+    mockSessionSummaries: vi.fn(async () => null),
+    mockSessionSearch: vi.fn(async () => []),
+    mockSessionAddPeers: vi.fn(async () => undefined),
+    mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
+  };
+});
+
+vi.mock('@honcho-ai/sdk', () => {
+  class Honcho {
+    async session(id: string) {
+      return {
+        id,
+        addPeers: mockSessionAddPeers,
+        messages: mockSessionMessages,
+        summaries: mockSessionSummaries,
+        search: mockSessionSearch,
+      };
+    }
+
+    async peer(id: string) {
+      return {
+        id,
+        context: mockPeerContext,
+        message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
+          content,
+          metadata: options?.metadata ?? {},
+          peerId: id,
+        }),
+      };
+    }
+  }
+
+  return { Honcho };
+});
+
 // Mock env config
 vi.mock('../env', () => ({
   config: {
@@ -61,40 +193,31 @@ vi.mock('./knowledge', () => ({
   COMPACTION_UI_THRESHOLD: 209715,
   MAX_MODEL_CONTEXT: 262144,
   TARGET_CONSTRUCTED_CONTEXT: 157286,
-  findRelevantKnowledgeArtifacts: vi.fn(async () => []),
-  findRelevantWorkCapsules: vi.fn(async () => []),
+  findRelevantKnowledgeArtifacts: mockFindRelevantKnowledgeArtifacts,
+  findRelevantWorkCapsules: mockFindRelevantWorkCapsules,
   getArtifactsForUser: vi.fn(async () => []),
-  selectWorkingSetArtifactsForPrompt: vi.fn(async () => []),
-  updateConversationContextStatus: vi.fn(async () => ({
-    conversationId: 'conv-456',
-    userId: 'user-123',
-    estimatedTokens: 0,
-    maxContextTokens: 262144,
-    thresholdTokens: 209715,
-    targetTokens: 157286,
-    compactionApplied: false,
-    compactionMode: 'none',
-    routingStage: 'deterministic',
-    routingConfidence: 0,
-    verificationStatus: 'skipped',
-    layersUsed: [],
-    workingSetCount: 0,
-    workingSetArtifactIds: [],
-    workingSetApplied: false,
-    taskStateApplied: false,
-    promptArtifactCount: 0,
-    recentTurnCount: 0,
-    summary: null,
-    updatedAt: Date.now(),
-  })),
+  resolvePromptAttachmentArtifacts: mockResolvePromptAttachmentArtifacts,
+  selectWorkingSetArtifactsForPrompt: mockSelectWorkingSetArtifactsForPrompt,
+  updateConversationContextStatus: mockUpdateConversationContextStatus,
   WORKING_SET_DOCUMENT_TOKEN_BUDGET: 1500,
   WORKING_SET_OUTPUT_TOKEN_BUDGET: 2000,
   WORKING_SET_PROMPT_TOKEN_BUDGET: 12000,
 }));
 
+vi.mock('./task-state', () => ({
+  canUseContextSummarizer: mockCanUseContextSummarizer,
+  formatTaskStateForPrompt: mockFormatTaskStateForPrompt,
+  getContextDebugState: mockGetContextDebugState,
+  getPromptArtifactSnippets: mockGetPromptArtifactSnippets,
+  prepareTaskContext: mockPrepareTaskContext,
+  requestStructuredControlModel: mockRequestStructuredControlModel,
+  summarizeHistoricalContext: mockSummarizeHistoricalContext,
+}));
+
 describe('Honcho Service', () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.clearAllMocks();
   });
 
   describe('isHonchoEnabled', () => {
@@ -204,6 +327,27 @@ describe('Honcho Service', () => {
       expect(result).toContain('You are a helpful AI assistant.');
       expect(result).toContain('Retrieved Context Discipline');
       expect(result).toContain('User profile and persona memory describe the human user, not you.');
+    });
+  });
+
+  describe('buildConstructedContext', () => {
+    it('keeps the current attachments section when historical reranking is effectively a no-op', async () => {
+      const { buildConstructedContext } = await import('./honcho');
+
+      const result = await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-456',
+        message: 'Could you explain the contents of this file in detail?',
+        attachmentIds: [mockDisplayArtifact.id],
+        attachmentTraceId: 'trace-attachment-alias',
+      });
+
+      expect(result.inputValue).toContain('## Current Attachments');
+      expect(result.inputValue).toContain(mockPromptArtifact.contentText);
+      expect(result.inputValue).toContain('## Current User Message');
+      expect(result.inputValue).toContain('Could you explain the contents of this file in detail?');
+      expect(mockPrepareTaskContext).toHaveBeenCalled();
+      expect(mockResolvePromptAttachmentArtifacts).toHaveBeenCalledWith('user-123', [mockDisplayArtifact.id]);
     });
   });
 

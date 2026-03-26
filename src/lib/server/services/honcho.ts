@@ -1097,21 +1097,23 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
-	const rerankedSections = await maybeRerankHistoricalSections({
+	let effectiveSections = [
+		...(await maybeRerankHistoricalSections({
 		message: params.message,
 		taskState,
 		sections,
-	}).catch(() => sections);
-	sections.length = 0;
-	sections.push(...rerankedSections);
+	}).catch(() => sections)),
+	];
 
-	const sectionTotalEstimate = sections.reduce(
+	const sectionTotalEstimate = effectiveSections.reduce(
 		(total, section) => total + estimateTokenCount(buildSection(section.title, section.body)),
 		estimateTokenCount(params.message) + 12
 	);
 	let compactionMode: ConversationContextStatus['compactionMode'] = 'none';
 	if (sectionTotalEstimate > TARGET_CONSTRUCTED_CONTEXT) {
-		const compactibleSections = sections.filter((section) => section.llmCompactible && section.body.trim());
+		const compactibleSections = effectiveSections.filter(
+			(section) => section.llmCompactible && section.body.trim()
+		);
 		const condensedHistorical = await summarizeHistoricalContext({
 			message: params.message,
 			taskState,
@@ -1123,15 +1125,14 @@ export async function buildConstructedContext(params: {
 		}).catch(() => null);
 		if (condensedHistorical) {
 			compactionMode = 'llm_fallback';
-			const retained = sections.filter((section) => !section.llmCompactible);
+			const retained = effectiveSections.filter((section) => !section.llmCompactible);
 			retained.push({
 				title: 'Historical Context Checkpoint',
 				body: condensedHistorical,
 				layer: taskState ? 'task_state' : 'session',
 				llmCompactible: true,
 			});
-			sections.length = 0;
-			sections.push(...retained);
+			effectiveSections = retained;
 		}
 	}
 
@@ -1140,7 +1141,7 @@ export async function buildConstructedContext(params: {
 	let usedTokens = estimateTokenCount(params.message) + 12;
 	let compactionApplied = false;
 
-	for (const section of sections) {
+	for (const section of effectiveSections) {
 		const candidate = buildSection(section.title, section.body);
 		if (!candidate) continue;
 		const candidateTokens = estimateTokenCount(candidate);
