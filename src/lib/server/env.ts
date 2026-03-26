@@ -15,6 +15,7 @@ interface Config {
   langflowApiKey: string;
   langflowFlowId: string;
   langflowWebhookSecret: string;
+  attachmentTraceDebug: boolean;
   translatorUrl: string;
   translatorApiKey: string;
   translatorModel: string;
@@ -64,6 +65,7 @@ const getConfig = (): Config => {
     langflowApiKey,
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
+    attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === 'true',
     translatorUrl: process.env.TRANSLATOR_URL || 'http://localhost:30002/v1',
     translatorApiKey: process.env.TRANSLATOR_API_KEY || '',
     translatorModel: process.env.TRANSLATOR_MODEL || 'translategemma',

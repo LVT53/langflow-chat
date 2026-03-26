@@ -199,6 +199,31 @@ describe('POST /api/chat/stream', () => {
 		expect(mockSendMessageStream).not.toHaveBeenCalled();
 	});
 
+	it('emits an error event when prompt construction fails closed after preflight', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockRejectedValue({
+			name: 'AttachmentReadinessError',
+			message: 'Attached file content was missing from the final prompt bundle.',
+			code: 'attachment_not_ready',
+			status: 422,
+			attachmentIds: ['artifact-1'],
+		});
+
+		const event = makeEvent({
+			message: 'Use this file',
+			conversationId: 'conv-1',
+			attachmentIds: ['artifact-1'],
+		});
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('text/event-stream');
+		expect(body).toContain('event: error');
+		expect(body).toContain('"code":"backend_failure"');
+	});
+
 	it('stream contains token events with text chunks', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

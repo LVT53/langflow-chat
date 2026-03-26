@@ -7,6 +7,10 @@ import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
 import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import {
+	createAttachmentTraceId,
+	logAttachmentTrace,
+} from '$lib/server/services/attachment-trace';
+import {
 	capturePersonaMemorySnapshot,
 	mirrorMessage,
 	mirrorWorkCapsuleConclusion,
@@ -71,6 +75,8 @@ export const POST: RequestHandler = async (event) => {
 	const safeAttachmentIds = Array.isArray(attachmentIds)
 		? attachmentIds.filter((id): id is string => typeof id === 'string')
 		: [];
+	const attachmentTraceId =
+		safeAttachmentIds.length > 0 ? createAttachmentTraceId('send') : undefined;
 
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
@@ -83,6 +89,7 @@ export const POST: RequestHandler = async (event) => {
 				userId: user.id,
 				conversationId,
 				attachmentIds: safeAttachmentIds,
+				traceId: attachmentTraceId,
 			});
 		}
 
@@ -103,7 +110,7 @@ export const POST: RequestHandler = async (event) => {
 			conversationId,
 			modelId,
 			user.id,
-			{ attachmentIds: safeAttachmentIds }
+			{ attachmentIds: safeAttachmentIds, attachmentTraceId }
 		);
 		const responseText =
 			sourceLanguage === 'hu' && isTranslationEnabled
@@ -225,6 +232,18 @@ export const POST: RequestHandler = async (event) => {
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);
+		if (attachmentTraceId) {
+			logAttachmentTrace('send_failure', {
+				traceId: attachmentTraceId,
+				conversationId,
+				attachmentIds: safeAttachmentIds,
+				errorMessage: error instanceof Error ? error.message : String(error),
+				errorCode:
+					typeof error === 'object' && error !== null && 'code' in error
+						? (error as { code?: unknown }).code ?? null
+						: null,
+			});
+		}
 		if (isAttachmentReadinessError(error)) {
 			return json(
 				{ error: error.message, code: error.code, attachmentIds: error.attachmentIds },

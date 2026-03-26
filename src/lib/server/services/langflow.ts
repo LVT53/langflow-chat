@@ -3,6 +3,11 @@ import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/type
 import { getSystemPrompt } from '../prompts';
 import { getConfig } from '../config-store';
 import { buildConstructedContext, buildEnhancedSystemPrompt } from './honcho';
+import { AttachmentReadinessError } from './knowledge';
+import {
+	logAttachmentTrace,
+	summarizeAttachmentSectionInInput,
+} from './attachment-trace';
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
@@ -45,7 +50,7 @@ export async function sendMessage(
   sessionId: string,
   modelId?: ModelId,
   userId?: string,
-  options?: { attachmentIds?: string[] }
+  options?: { attachmentIds?: string[]; attachmentTraceId?: string }
 ): Promise<{
   text: string;
   rawResponse: LangflowRunResponse;
@@ -74,11 +79,30 @@ export async function sendMessage(
         conversationId: sessionId,
         message,
         attachmentIds: options?.attachmentIds,
+        attachmentTraceId: options?.attachmentTraceId,
       });
       inputValue = constructed.inputValue;
       contextStatus = constructed.contextStatus;
       taskState = constructed.taskState;
       contextDebug = constructed.contextDebug;
+    }
+
+    const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
+    if ((options?.attachmentIds?.length ?? 0) > 0) {
+      logAttachmentTrace('langflow_request', {
+        traceId: options?.attachmentTraceId ?? null,
+        sessionId,
+        inputValueLength: inputValue.length,
+        hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
+        attachmentSectionPreview: attachmentSection.preview,
+        attachmentSectionPreviewHash: attachmentSection.previewHash,
+      });
+      if (!attachmentSection.hasMarker) {
+        throw new AttachmentReadinessError(
+          'Attached file content was missing from the final prompt bundle. Remove the file and upload it again before sending.',
+          options?.attachmentIds ?? []
+        );
+      }
     }
 
     const systemPrompt = userId
@@ -144,7 +168,12 @@ export async function sendMessageStream(
   message: string,
   sessionId: string,
   modelId?: ModelId,
-  options?: { signal?: AbortSignal; userId?: string; attachmentIds?: string[] }
+  options?: {
+    signal?: AbortSignal;
+    userId?: string;
+    attachmentIds?: string[];
+    attachmentTraceId?: string;
+  }
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   contextStatus?: import('$lib/types').ConversationContextStatus;
@@ -173,11 +202,30 @@ export async function sendMessageStream(
         conversationId: sessionId,
         message,
         attachmentIds: options.attachmentIds,
+        attachmentTraceId: options.attachmentTraceId,
       });
       inputValue = constructed.inputValue;
       contextStatus = constructed.contextStatus;
       taskState = constructed.taskState;
       contextDebug = constructed.contextDebug;
+    }
+
+    const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
+    if ((options?.attachmentIds?.length ?? 0) > 0) {
+      logAttachmentTrace('langflow_request', {
+        traceId: options?.attachmentTraceId ?? null,
+        sessionId,
+        inputValueLength: inputValue.length,
+        hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
+        attachmentSectionPreview: attachmentSection.preview,
+        attachmentSectionPreviewHash: attachmentSection.previewHash,
+      });
+      if (!attachmentSection.hasMarker) {
+        throw new AttachmentReadinessError(
+          'Attached file content was missing from the final prompt bundle. Remove the file and upload it again before sending.',
+          options?.attachmentIds ?? []
+        );
+      }
     }
 
     const systemPrompt = options?.userId

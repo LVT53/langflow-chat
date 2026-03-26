@@ -120,4 +120,60 @@ describe('Knowledge page', () => {
 		expect(queryByText('Self conclusion')).toBeNull();
 		unmount();
 	});
+
+	it('shows a visible pending state while removing a document and only removes it after confirmation', async () => {
+		let resolveDelete: ((value: Response) => void) | null = null;
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		vi.spyOn(globalThis, 'fetch').mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveDelete = resolve as (value: Response) => void;
+				})
+		);
+
+		const document = {
+			id: 'doc-1',
+			type: 'source_document',
+			retrievalClass: 'durable' as const,
+			name: 'recipe.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Dinner recipe',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [document],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /manage documents/i }));
+		await fireEvent.click(getByRole('button', { name: 'Remove' }));
+
+		await waitFor(() => {
+			expect(getByText(/Removing 1 item from the Knowledge Base/i)).toBeDefined();
+			expect(getByText('recipe.pdf')).toBeDefined();
+		});
+
+		resolveDelete?.({
+			ok: true,
+			json: async () => ({
+				success: true,
+				deletedArtifactIds: ['doc-1'],
+				message: 'Removed from the Knowledge Base.',
+			}),
+		} as Response);
+
+		await waitFor(() => {
+			expect(queryByText('recipe.pdf')).toBeNull();
+		});
+		unmount();
+	});
 });

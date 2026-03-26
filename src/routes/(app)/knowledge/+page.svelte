@@ -42,6 +42,7 @@
 	let selectedPersonaMemoryIds = [] as string[];
 	let selectedTaskMemoryIds = [] as string[];
 	const userDisplayName = data.userDisplayName?.trim() || 'You';
+	$: deletingArtifactCount = deletingArtifactIds.size;
 
 	$: honchoOverview = memorySummary.overview?.trim() ?? '';
 	$: honchoHighlightBlocks = honchoOverview ? buildHighlightBlocks(honchoOverview) : [];
@@ -358,10 +359,12 @@
 				method: 'DELETE',
 			});
 			const payload = await response.json().catch(() => ({}));
-			if (!response.ok) {
-				throw new Error(payload.error ?? 'Failed to remove artifact.');
+			if (!response.ok || payload.success === false) {
+				throw new Error(
+					payload.message ?? payload.error ?? 'Failed to remove artifact.'
+				);
 			}
-			applyDeletedArtifactIds(payload.deletedArtifactIds ?? [id]);
+			applyDeletedArtifactIds(payload.deletedArtifactIds?.length ? payload.deletedArtifactIds : [id]);
 		} catch (error) {
 			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
 		} finally {
@@ -995,6 +998,15 @@
 			</div>
 
 			<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
+				{#if deletingArtifactCount > 0}
+					<div
+						class="mb-4 rounded-[1rem] border border-border bg-surface-page px-4 py-3 text-sm font-sans text-text-secondary shadow-sm"
+						role="status"
+						aria-live="polite"
+					>
+						Removing {deletingArtifactCount} item{deletingArtifactCount === 1 ? '' : 's'} from the Knowledge Base…
+					</div>
+				{/if}
 				{#if activeLibraryModal === 'documents'}
 					{#if documents.length === 0}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
@@ -1014,7 +1026,11 @@
 								</thead>
 								<tbody>
 									{#each documents as artifact (artifact.id)}
-										<tr class="border-b border-border last:border-b-0">
+										<tr
+											class={`border-b border-border last:border-b-0 ${
+												isDeletingArtifact(artifact.id) ? 'opacity-60' : ''
+											}`}
+										>
 											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{artifact.type}</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
@@ -1029,8 +1045,9 @@
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													on:click={() => removeArtifact(artifact.id, artifact.name)}
 													disabled={isDeletingArtifact(artifact.id)}
+													aria-busy={isDeletingArtifact(artifact.id)}
 												>
-													Remove
+													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
 												</button>
 											</td>
 										</tr>
@@ -1057,7 +1074,11 @@
 								</thead>
 								<tbody>
 									{#each results as artifact (artifact.id)}
-										<tr class="border-b border-border last:border-b-0">
+										<tr
+											class={`border-b border-border last:border-b-0 ${
+												isDeletingArtifact(artifact.id) ? 'opacity-60' : ''
+											}`}
+										>
 											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{artifact.type}</td>
 											<td class="px-4 py-3 align-top">
@@ -1071,8 +1092,9 @@
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													on:click={() => removeArtifact(artifact.id, artifact.name)}
 													disabled={isDeletingArtifact(artifact.id)}
+													aria-busy={isDeletingArtifact(artifact.id)}
 												>
-													Remove
+													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
 												</button>
 											</td>
 										</tr>
@@ -1100,7 +1122,11 @@
 								</thead>
 								<tbody>
 									{#each workflows as capsule (capsule.artifact.id)}
-										<tr class="border-b border-border last:border-b-0">
+										<tr
+											class={`border-b border-border last:border-b-0 ${
+												isDeletingArtifact(capsule.artifact.id) ? 'opacity-60' : ''
+											}`}
+										>
 											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{capsule.artifact.name}</td>
 											<td class="px-4 py-3 align-top">
 												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
@@ -1121,8 +1147,9 @@
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													on:click={() => removeArtifact(capsule.artifact.id, capsule.artifact.name)}
 													disabled={isDeletingArtifact(capsule.artifact.id)}
+													aria-busy={isDeletingArtifact(capsule.artifact.id)}
 												>
-													Remove
+													{isDeletingArtifact(capsule.artifact.id) ? 'Removing…' : 'Remove'}
 												</button>
 											</td>
 										</tr>

@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
+	artifactChunks,
 	artifactLinks,
 	artifacts,
 	conversationContextStatus,
@@ -36,6 +37,11 @@ import type {
 	WorkingSetReasonCode,
 	WorkCapsule,
 } from '$lib/types';
+import {
+	hasMeaningfulAttachmentText,
+	logAttachmentTrace,
+	summarizeAttachmentTraceText,
+} from './attachment-trace';
 import { extractDocumentText } from './document-extraction';
 import {
 	deriveConversationArtifactBaseName,
@@ -308,12 +314,23 @@ function withAttachmentDisplayName(promptArtifact: Artifact, displayArtifact: Ar
 	};
 }
 
+type PromptArtifactDiagnostics = {
+	contentLength: number;
+	contentPreview: string | null;
+	contentHash: string | null;
+	chunkCount: number;
+};
+
 type PromptAttachmentResolutionItem = {
 	requestedArtifactId: string;
 	displayArtifact: Artifact | null;
 	promptArtifact: Artifact | null;
 	promptReady: boolean;
 	readinessError: string | null;
+	contentLength: number;
+	contentPreview: string | null;
+	contentHash: string | null;
+	chunkCount: number;
 };
 
 export class AttachmentReadinessError extends Error {
@@ -343,7 +360,71 @@ function buildAttachmentReadinessErrorMessage(items: PromptAttachmentResolutionI
 		return 'One or more attached files are no longer available. Remove them and upload again.';
 	}
 
+	if (items.length === 1) {
+		const item = items[0];
+		if (item.displayArtifact?.name && item.readinessError) {
+			return `${item.displayArtifact.name}: ${item.readinessError}`;
+		}
+	}
+
 	return 'One or more attached files could not be prepared for chat. Remove the file or upload a supported text-readable document.';
+}
+
+async function getPromptArtifactDiagnostics(
+	userId: string,
+	promptArtifact: Artifact | null
+): Promise<PromptArtifactDiagnostics> {
+	if (!promptArtifact) {
+		return {
+			contentLength: 0,
+			contentPreview: null,
+			contentHash: null,
+			chunkCount: 0,
+		};
+	}
+
+	const [{ chunkCount = 0 } = { chunkCount: 0 }] = await db
+		.select({
+			chunkCount: sql<number>`count(*)`,
+		})
+		.from(artifactChunks)
+		.where(
+			and(
+				eq(artifactChunks.userId, userId),
+				eq(artifactChunks.artifactId, promptArtifact.id)
+			)
+		);
+
+	return {
+		...summarizeAttachmentTraceText(promptArtifact.contentText),
+		chunkCount: Number(chunkCount ?? 0),
+	};
+}
+
+async function buildPromptAttachmentResolutionItem(params: {
+	userId: string;
+	requestedArtifactId: string;
+	displayArtifact: Artifact;
+	promptArtifact: Artifact | null;
+	readinessError: string;
+}): Promise<PromptAttachmentResolutionItem> {
+	const diagnostics = await getPromptArtifactDiagnostics(params.userId, params.promptArtifact);
+	const promptReady =
+		Boolean(params.promptArtifact) &&
+		hasMeaningfulAttachmentText(params.promptArtifact?.contentText) &&
+		diagnostics.contentLength > 0;
+
+	return {
+		requestedArtifactId: params.requestedArtifactId,
+		displayArtifact: params.displayArtifact,
+		promptArtifact: params.promptArtifact,
+		promptReady,
+		readinessError: promptReady ? null : params.readinessError,
+		contentLength: diagnostics.contentLength,
+		contentPreview: diagnostics.contentPreview,
+		contentHash: diagnostics.contentHash,
+		chunkCount: diagnostics.chunkCount,
+	};
 }
 
 export async function resolvePromptAttachmentArtifacts(
@@ -363,6 +444,10 @@ export async function resolvePromptAttachmentArtifacts(
 			promptArtifact: null,
 			promptReady: false,
 			readinessError: 'Attached file is no longer available.',
+			contentLength: 0,
+			contentPreview: null,
+			contentHash: null,
+			chunkCount: 0,
 		}));
 		return { displayArtifacts: [], promptArtifacts: [], items, unresolvedItems: items };
 	}
@@ -378,17 +463,22 @@ export async function resolvePromptAttachmentArtifacts(
 					promptArtifact: null,
 					promptReady: false,
 					readinessError: 'Attached file is no longer available.',
+					contentLength: 0,
+					contentPreview: null,
+					contentHash: null,
+					chunkCount: 0,
 				};
 			}
 
 			if (displayArtifact.type !== 'source_document') {
-				return {
+				return buildPromptAttachmentResolutionItem({
+					userId,
 					requestedArtifactId: attachmentId,
 					displayArtifact,
 					promptArtifact: withAttachmentDisplayName(displayArtifact, displayArtifact),
-					promptReady: true,
-					readinessError: null,
-				};
+					readinessError:
+						'This attachment does not contain enough readable text to use in chat. Remove it or upload a supported text-readable document.',
+				});
 			}
 
 			const normalized = await getNormalizedArtifactForSource(userId, displayArtifact.id);
@@ -400,16 +490,21 @@ export async function resolvePromptAttachmentArtifacts(
 					promptReady: false,
 					readinessError:
 						'This file could not be prepared for chat. Supported extraction currently works best for text, HTML, JSON, PDF, DOCX, PPTX, and XLSX files.',
+					contentLength: 0,
+					contentPreview: null,
+					contentHash: null,
+					chunkCount: 0,
 				};
 			}
 
-			return {
+			return buildPromptAttachmentResolutionItem({
+				userId,
 				requestedArtifactId: attachmentId,
 				displayArtifact,
 				promptArtifact: withAttachmentDisplayName(normalized, displayArtifact),
-				promptReady: true,
-				readinessError: null,
-			};
+				readinessError:
+					'This file was uploaded, but no usable readable text could be prepared for chat from it.',
+			});
 		})
 	);
 	const unresolvedItems = items.filter((item) => !item.promptReady);
@@ -419,7 +514,11 @@ export async function resolvePromptAttachmentArtifacts(
 		promptArtifacts: Array.from(
 			new Map(
 				items
-					.flatMap((item) => (item.promptArtifact ? [[item.promptArtifact.id, item.promptArtifact] as const] : []))
+					.flatMap((item) =>
+						item.promptReady && item.promptArtifact
+							? [[item.promptArtifact.id, item.promptArtifact] as const]
+							: []
+					)
 			).values()
 		),
 		items,
@@ -431,6 +530,7 @@ export async function assertPromptReadyAttachments(params: {
 	userId: string;
 	conversationId: string;
 	attachmentIds: string[];
+	traceId?: string;
 }): Promise<{
 	displayArtifacts: Artifact[];
 	promptArtifacts: Artifact[];
@@ -444,6 +544,21 @@ export async function assertPromptReadyAttachments(params: {
 			displayArtifactCount: resolved.displayArtifacts.length,
 			promptArtifactCount: resolved.promptArtifacts.length,
 			unresolvedAttachmentIds: resolved.unresolvedItems.map((item) => item.requestedArtifactId),
+		});
+		logAttachmentTrace('preflight', {
+			traceId: params.traceId ?? null,
+			conversationId: params.conversationId,
+			requestedAttachmentIds: params.attachmentIds,
+			displayArtifactIds: resolved.displayArtifacts.map((artifact) => artifact.id),
+			promptArtifactIds: resolved.promptArtifacts.map((artifact) => artifact.id),
+			unresolvedAttachments: resolved.unresolvedItems.map((item) => ({
+				artifactId: item.requestedArtifactId,
+				name: item.displayArtifact?.name ?? null,
+				readinessError: item.readinessError,
+				contentLength: item.contentLength,
+				chunkCount: item.chunkCount,
+				contentHash: item.contentHash,
+			})),
 		});
 	}
 
@@ -600,10 +715,14 @@ export async function listArtifactLinksForUser(
 export async function hardDeleteArtifactsForUser(
 	userId: string,
 	artifactIds: string[]
-): Promise<{ deletedArtifactIds: string[] }> {
+): Promise<{
+	deletedArtifactIds: string[];
+	deletedStoragePaths: string[];
+	failedStoragePaths: string[];
+}> {
 	const uniqueIds = Array.from(new Set(artifactIds));
 	if (uniqueIds.length === 0) {
-		return { deletedArtifactIds: [] };
+		return { deletedArtifactIds: [], deletedStoragePaths: [], failedStoragePaths: [] };
 	}
 
 	const artifactsToDelete = await db
@@ -613,7 +732,7 @@ export async function hardDeleteArtifactsForUser(
 	const ids = artifactsToDelete.map((row) => row.id);
 
 	if (ids.length === 0) {
-		return { deletedArtifactIds: [] };
+		return { deletedArtifactIds: [], deletedStoragePaths: [], failedStoragePaths: [] };
 	}
 
 	await db.transaction(async (tx) => {
@@ -652,16 +771,29 @@ export async function hardDeleteArtifactsForUser(
 			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
 	});
 
+	const deletedStoragePaths: string[] = [];
+	const failedStoragePaths: string[] = [];
 	for (const row of artifactsToDelete) {
 		if (!row.storagePath) continue;
 		try {
 			await unlink(join(process.cwd(), row.storagePath));
-		} catch {
-			// File deletion is best-effort; DB deletion remains authoritative.
+			deletedStoragePaths.push(row.storagePath);
+		} catch (error) {
+			failedStoragePaths.push(row.storagePath);
+			console.warn('[KNOWLEDGE_DELETE] File cleanup failed after DB deletion', {
+				userId,
+				artifactId: row.id,
+				storagePath: row.storagePath,
+				error,
+			});
 		}
 	}
 
-	return { deletedArtifactIds: ids };
+	return {
+		deletedArtifactIds: ids,
+		deletedStoragePaths,
+		failedStoragePaths,
+	};
 }
 
 export async function listConversationOwnedArtifacts(
@@ -778,7 +910,12 @@ export async function artifactHasReferencesOutsideConversation(
 export async function deleteArtifactForUser(
 	userId: string,
 	artifactId: string
-): Promise<{ deletedArtifactIds: string[] } | null> {
+): Promise<{
+	deletedArtifactIds: string[];
+	deletedStoragePaths: string[];
+	failedStoragePaths: string[];
+} | null> {
+	const startedAt = Date.now();
 	const artifact = await getArtifactForUser(userId, artifactId);
 	if (!artifact) return null;
 
@@ -803,7 +940,25 @@ export async function deleteArtifactForUser(
 	}
 
 	const ids = Array.from(artifactIdsToDelete);
-	return hardDeleteArtifactsForUser(userId, ids);
+	const result = await hardDeleteArtifactsForUser(userId, ids);
+	console.info('[KNOWLEDGE_DELETE] Artifact delete completed', {
+		userId,
+		artifactId: artifact.id,
+		artifactType: artifact.type,
+		derivedArtifactIds: ids.filter((id) => id !== artifact.id),
+		deletedArtifactIds: result.deletedArtifactIds,
+		deletedStoragePathCount: result.deletedStoragePaths.length,
+		failedStoragePathCount: result.failedStoragePaths.length,
+		durationMs: Date.now() - startedAt,
+	});
+	if (result.failedStoragePaths.length > 0) {
+		console.warn('[KNOWLEDGE_DELETE] Artifact delete completed with file cleanup gaps', {
+			userId,
+			artifactId: artifact.id,
+			failedStoragePaths: result.failedStoragePaths,
+		});
+	}
+	return result;
 }
 
 export async function getArtifactsForUser(

@@ -6,6 +6,7 @@ vi.mock('$lib/server/auth/hooks', () => ({
 
 vi.mock('$lib/server/services/knowledge', () => ({
 	createNormalizedArtifact: vi.fn(),
+	resolvePromptAttachmentArtifacts: vi.fn(),
 	saveUploadedArtifact: vi.fn(),
 }));
 
@@ -13,13 +14,23 @@ vi.mock('$lib/server/services/honcho', () => ({
 	syncArtifactToHoncho: vi.fn(),
 }));
 
+vi.mock('$lib/server/services/attachment-trace', () => ({
+	createAttachmentTraceId: vi.fn(() => 'trace-upload'),
+	logAttachmentTrace: vi.fn(),
+}));
+
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { createNormalizedArtifact, saveUploadedArtifact } from '$lib/server/services/knowledge';
+import {
+	createNormalizedArtifact,
+	resolvePromptAttachmentArtifacts,
+	saveUploadedArtifact,
+} from '$lib/server/services/knowledge';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockCreateNormalizedArtifact = createNormalizedArtifact as ReturnType<typeof vi.fn>;
+const mockResolvePromptAttachmentArtifacts = resolvePromptAttachmentArtifacts as ReturnType<typeof vi.fn>;
 const mockSaveUploadedArtifact = saveUploadedArtifact as ReturnType<typeof vi.fn>;
 const mockSyncArtifactToHoncho = syncArtifactToHoncho as ReturnType<typeof vi.fn>;
 
@@ -44,6 +55,12 @@ describe('POST /api/knowledge/upload', () => {
 		mockRequireAuth.mockReturnValue(undefined);
 		mockSyncArtifactToHoncho.mockResolvedValue({ uploaded: true, mode: 'native' });
 		mockCreateNormalizedArtifact.mockResolvedValue(null);
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [],
+			promptArtifacts: [],
+			items: [],
+			unresolvedItems: [],
+		});
 	});
 
 	it('rejects files larger than 50MB', async () => {
@@ -91,6 +108,24 @@ describe('POST /api/knowledge/upload', () => {
 			reusedExistingArtifact: false,
 			normalizedArtifact,
 		});
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [artifact],
+			promptArtifacts: [normalizedArtifact],
+			items: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: normalizedArtifact,
+					promptReady: true,
+					readinessError: null,
+					contentLength: 320,
+					contentPreview: 'Recipe text',
+					contentHash: 'hash-1',
+					chunkCount: 2,
+				},
+			],
+			unresolvedItems: [],
+		});
 
 		const formData = new FormData();
 		formData.append('file', new File(['recipe'], 'recipe.pdf', { type: 'application/pdf' }));
@@ -125,6 +160,36 @@ describe('POST /api/knowledge/upload', () => {
 		});
 		mockSyncArtifactToHoncho.mockResolvedValue({ uploaded: false, mode: 'none' });
 		mockCreateNormalizedArtifact.mockResolvedValue(null);
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [artifact],
+			promptArtifacts: [],
+			items: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: null,
+					promptReady: false,
+					readinessError: 'This file could not be prepared for chat.',
+					contentLength: 0,
+					contentPreview: null,
+					contentHash: null,
+					chunkCount: 0,
+				},
+			],
+			unresolvedItems: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: null,
+					promptReady: false,
+					readinessError: 'This file could not be prepared for chat.',
+					contentLength: 0,
+					contentPreview: null,
+					contentHash: null,
+					chunkCount: 0,
+				},
+			],
+		});
 
 		const formData = new FormData();
 		formData.append('file', new File(['scan'], 'scan.pdf', { type: 'application/pdf' }));
@@ -137,6 +202,68 @@ describe('POST /api/knowledge/upload', () => {
 		expect(data.promptReady).toBe(false);
 		expect(data.promptArtifactId).toBeNull();
 		expect(data.readinessError).toMatch(/could not be prepared for chat/i);
+	});
+
+	it('returns promptReady false when the normalized artifact exists but the extracted content is too thin', async () => {
+		const artifact = {
+			id: 'artifact-3',
+			type: 'source_document',
+			retrievalClass: 'durable',
+			name: 'emptyish.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Thin extraction',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		const normalizedArtifact = {
+			id: 'normalized-3',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: 'emptyish.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 12,
+			conversationId: 'conv-1',
+			summary: 'Thin text',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockSaveUploadedArtifact.mockResolvedValue({
+			artifact,
+			reusedExistingArtifact: false,
+			normalizedArtifact,
+		});
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [artifact],
+			promptArtifacts: [],
+			items: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: normalizedArtifact,
+					promptReady: false,
+					readinessError: 'This file was uploaded, but no usable readable text could be prepared for chat from it.',
+					contentLength: 8,
+					contentPreview: 'Too thin',
+					contentHash: 'hash-thin',
+					chunkCount: 1,
+				},
+			],
+			unresolvedItems: [],
+		});
+
+		const formData = new FormData();
+		formData.append('file', new File(['thin'], 'emptyish.pdf', { type: 'application/pdf' }));
+		formData.append('conversationId', 'conv-1');
+
+		const response = await POST(makeEventWithFormData(formData));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.promptReady).toBe(false);
+		expect(data.promptArtifactId).toBeNull();
+		expect(data.readinessError).toMatch(/usable readable text/i);
 	});
 
 	it('returns updated 413 guidance when multipart parsing exceeds the server limit', async () => {

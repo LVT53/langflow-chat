@@ -212,6 +212,29 @@ describe('Langflow API Client Service', () => {
         .rejects
         .toThrow('Langflow API error: 500 Internal Server Error');
     });
+
+    it('fails closed when attachments are requested but the final prompt bundle has no attachment section', async () => {
+      const { sendMessage } = await import('./langflow');
+      const { buildConstructedContext } = await import('./honcho');
+
+      vi.mocked(buildConstructedContext).mockResolvedValueOnce({
+        inputValue: 'CTX:Hello',
+        contextStatus: null as any,
+        taskState: null,
+        contextDebug: null,
+      });
+
+      await expect(
+        sendMessage('Hello', 'test-session', undefined, 'user-1', {
+          attachmentIds: ['artifact-1'],
+          attachmentTraceId: 'trace-1',
+        })
+      ).rejects.toMatchObject({
+        code: 'attachment_not_ready',
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('sendMessageStream', () => {
@@ -277,6 +300,30 @@ describe('Langflow API Client Service', () => {
       await expect(sendMessageStream('Hello', 'test-session'))
         .rejects
         .toThrow('Response body is empty');
+    });
+
+    it('fails closed for streaming when attachments are requested but the prompt bundle has no attachment section', async () => {
+      const { sendMessageStream } = await import('./langflow');
+      const { buildConstructedContext } = await import('./honcho');
+
+      vi.mocked(buildConstructedContext).mockResolvedValueOnce({
+        inputValue: 'CTX:Hello',
+        contextStatus: null as any,
+        taskState: null,
+        contextDebug: null,
+      });
+
+      await expect(
+        sendMessageStream('Hello', 'test-session', undefined, {
+          userId: 'user-1',
+          attachmentIds: ['artifact-1'],
+          attachmentTraceId: 'trace-2',
+        })
+      ).rejects.toMatchObject({
+        code: 'attachment_not_ready',
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 });

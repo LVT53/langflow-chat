@@ -39,6 +39,11 @@ import {
 	requestStructuredControlModel,
 	summarizeHistoricalContext,
 } from './task-state';
+import {
+	hasMeaningfulAttachmentText,
+	logAttachmentTrace,
+	summarizeAttachmentTraceText,
+} from './attachment-trace';
 
 let client: Honcho | null = null;
 
@@ -163,6 +168,14 @@ function serializeArtifacts(
 			return `${label}: ${artifact.name}\n${truncateByTokens(excerptSource, 1200)}`;
 		})
 			.join('\n\n');
+}
+
+function extractSerializedAttachmentBody(serialized: string): string {
+	return serialized
+		.split('\n')
+		.filter((line) => !line.startsWith('Attachment: '))
+		.join('\n')
+		.trim();
 }
 
 function serializeWorkingSetArtifacts(
@@ -868,6 +881,7 @@ export async function buildConstructedContext(params: {
 	conversationId: string;
 	message: string;
 	attachmentIds?: string[];
+	attachmentTraceId?: string;
 }): Promise<{
 	inputValue: string;
 	contextStatus: ConversationContextStatus;
@@ -978,10 +992,31 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
+	const serializedCurrentAttachments =
+		currentAttachments.length > 0
+			? serializeArtifacts(currentAttachments, 'Attachment', artifactSnippets)
+			: '';
+	const serializedAttachmentBody = extractSerializedAttachmentBody(serializedCurrentAttachments);
+
 	if (currentAttachments.length > 0) {
+		logAttachmentTrace('constructed_context', {
+			traceId: params.attachmentTraceId ?? null,
+			conversationId: params.conversationId,
+			emitted: true,
+			promptArtifactIds: currentAttachments.map((artifact) => artifact.id),
+			promptArtifactNames: currentAttachments.map((artifact) => artifact.name),
+			sectionTokenEstimate: estimateTokenCount(serializedCurrentAttachments),
+			...summarizeAttachmentTraceText(serializedAttachmentBody, 420),
+		});
+		if (!hasMeaningfulAttachmentText(serializedAttachmentBody)) {
+			throw new AttachmentReadinessError(
+				'Attached file content was missing from the constructed context. Remove the file and upload it again before sending.',
+				attachmentIds
+			);
+		}
 		sections.push({
 			title: 'Current Attachments',
-			body: serializeArtifacts(currentAttachments, 'Attachment', artifactSnippets),
+			body: serializedCurrentAttachments,
 			layer: 'documents',
 			essential: true,
 		});
@@ -992,6 +1027,19 @@ export async function buildConstructedContext(params: {
 			emitted: currentAttachments.length > 0,
 			promptArtifactCount: currentAttachments.length,
 		});
+		if (currentAttachments.length === 0) {
+			logAttachmentTrace('constructed_context', {
+				traceId: params.attachmentTraceId ?? null,
+				conversationId: params.conversationId,
+				emitted: false,
+				promptArtifactIds: [],
+				promptArtifactNames: [],
+				sectionTokenEstimate: 0,
+				contentLength: 0,
+				contentPreview: null,
+				contentHash: null,
+			});
+		}
 	}
 
 	if (selectedEvidence.length > 0) {

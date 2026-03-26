@@ -7,6 +7,10 @@ import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import {
+	createAttachmentTraceId,
+	logAttachmentTrace,
+} from '$lib/server/services/attachment-trace';
+import {
 	capturePersonaMemorySnapshot,
 	mirrorMessage,
 	mirrorWorkCapsuleConclusion,
@@ -672,6 +676,8 @@ export const POST: RequestHandler = async (event) => {
 			: undefined;
 	const modelDisplayName =
 		modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
+	const attachmentTraceId =
+		safeAttachmentIds.length > 0 ? createAttachmentTraceId('stream') : undefined;
 
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
@@ -687,6 +693,7 @@ export const POST: RequestHandler = async (event) => {
 				userId: user.id,
 				conversationId,
 				attachmentIds: safeAttachmentIds,
+				traceId: attachmentTraceId,
 			});
 		} catch (error) {
 			if (isAttachmentReadinessError(error)) {
@@ -1395,7 +1402,8 @@ export const POST: RequestHandler = async (event) => {
 			const langflowResponse = await sendMessageStream(upstreamMessage, conversationId, modelId, {
 				signal: upstreamAbortController.signal,
 				userId: user.id,
-				attachmentIds: safeAttachmentIds
+				attachmentIds: safeAttachmentIds,
+				attachmentTraceId,
 			});
 				const langflowStream =
 					langflowResponse instanceof ReadableStream
@@ -1560,6 +1568,14 @@ export const POST: RequestHandler = async (event) => {
 								? (error as Error & { cause?: unknown }).cause
 								: undefined
 					});
+					if (attachmentTraceId) {
+						logAttachmentTrace('stream_failure', {
+							traceId: attachmentTraceId,
+							conversationId,
+							attachmentIds: safeAttachmentIds,
+							errorMessage: error instanceof Error ? error.message : String(error),
+						});
+					}
 					failStream(
 						classifyStreamError(error instanceof Error ? error.message : String(error))
 					);

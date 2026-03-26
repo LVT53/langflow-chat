@@ -37,6 +37,7 @@ export interface RuntimeConfig {
   langflowApiKey: string;
   langflowFlowId: string;
   langflowWebhookSecret: string;
+  attachmentTraceDebug: boolean;
   translatorUrl: string;
   translatorApiKey: string;
   translatorModel: string;

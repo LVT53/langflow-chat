@@ -225,6 +225,30 @@ describe('POST /api/chat/send', () => {
 		expect(mockSendMessage).not.toHaveBeenCalled();
 	});
 
+	it('returns 422 when prompt construction fails closed after preflight', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessage.mockRejectedValue({
+			name: 'AttachmentReadinessError',
+			message: 'Attached file content was missing from the final prompt bundle.',
+			code: 'attachment_not_ready',
+			status: 422,
+			attachmentIds: ['artifact-1'],
+		});
+
+		const event = makeEvent({
+			message: 'Use this file',
+			conversationId: 'conv-1',
+			attachmentIds: ['artifact-1'],
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(data.code).toBe('attachment_not_ready');
+		expect(data.error).toMatch(/final prompt bundle/i);
+	});
+
 	it('returns 502 when Langflow sendMessage throws', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

@@ -3,15 +3,21 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import {
 	createNormalizedArtifact,
+	resolvePromptAttachmentArtifacts,
 	saveUploadedArtifact,
 } from '$lib/server/services/knowledge';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
+import {
+	createAttachmentTraceId,
+	logAttachmentTrace,
+} from '$lib/server/services/attachment-trace';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
+	const traceId = createAttachmentTraceId('upload');
 
 	let formData: FormData;
 	try {
@@ -93,10 +99,26 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const promptReady = Boolean(normalizedArtifact?.id);
-	const readinessError = promptReady
-		? null
+	const resolvedAttachment = await resolvePromptAttachmentArtifacts(user.id, [artifact.id]);
+	const resolvedItem = resolvedAttachment.items[0];
+	const promptReady = resolvedItem?.promptReady ?? false;
+	const readinessError = resolvedItem
+		? resolvedItem.readinessError
 		: 'This file could not be prepared for chat. Remove it or upload a supported text-readable document.';
+
+	logAttachmentTrace('upload_result', {
+		traceId,
+		userId: user.id,
+		conversationId,
+		sourceArtifactId: artifact.id,
+		normalizedArtifactId: normalizedArtifact?.id ?? null,
+		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
+		promptReady,
+		promptArtifactId: resolvedItem?.promptArtifact?.id ?? null,
+		extractionTextLength: resolvedItem?.contentLength ?? 0,
+		chunkCount: resolvedItem?.chunkCount ?? 0,
+		contentHash: resolvedItem?.contentHash ?? null,
+	});
 
 	return json({
 		artifact,
@@ -104,7 +126,7 @@ export const POST: RequestHandler = async (event) => {
 		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
 		honcho: syncResult,
 		promptReady,
-		promptArtifactId: normalizedArtifact?.id ?? null,
+		promptArtifactId: promptReady ? resolvedItem?.promptArtifact?.id ?? null : null,
 		readinessError,
 	});
 };
