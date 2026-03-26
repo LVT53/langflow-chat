@@ -89,16 +89,30 @@ async function enrichPersonaMemories(
 			: [];
 
 	const titleMap = new Map(titleRows.map((row) => [row.id, row.title]));
+	const unique = new Map<string, PersonaMemoryItem>();
 
-	return records.map((record) => ({
-		id: record.id,
-		content: sanitizeMemoryText(record.content, userId, userDisplayName) ?? record.content,
-		scope: record.scope,
-		sessionId: record.sessionId,
-		conversationId: record.sessionId,
-		conversationTitle: record.sessionId ? titleMap.get(record.sessionId) ?? null : null,
-		createdAt: record.createdAt,
-	}));
+	for (const record of records) {
+		const item: PersonaMemoryItem = {
+			id: record.id,
+			content: sanitizeMemoryText(record.content, userId, userDisplayName) ?? record.content,
+			scope: record.scope,
+			sessionId: record.sessionId,
+			conversationId: record.sessionId,
+			conversationTitle: record.sessionId ? titleMap.get(record.sessionId) ?? null : null,
+			createdAt: record.createdAt,
+		};
+		const dedupeKey = `${item.scope}:${item.id}`;
+		const existing = unique.get(dedupeKey);
+		if (
+			!existing ||
+			item.createdAt > existing.createdAt ||
+			(item.conversationTitle && !existing.conversationTitle)
+		) {
+			unique.set(dedupeKey, item);
+		}
+	}
+
+	return Array.from(unique.values()).sort((left, right) => right.createdAt - left.createdAt);
 }
 
 export async function getKnowledgeMemory(

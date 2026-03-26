@@ -125,6 +125,66 @@ describe('Knowledge page', () => {
 		unmount();
 	});
 
+	it('still opens the persona memory modal when duplicate memory ids are returned', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				personaMemories: [
+					{
+						id: 'dup-1',
+						content: 'Prefers concise replies.',
+						scope: 'self',
+						sessionId: 'session-1',
+						conversationId: 'session-1',
+						conversationTitle: 'Chat A',
+						createdAt: Date.now(),
+					},
+					{
+						id: 'dup-1',
+						content: 'Prefers concise replies.',
+						scope: 'self',
+						sessionId: 'session-1',
+						conversationId: 'session-1',
+						conversationTitle: 'Chat A',
+						createdAt: Date.now() - 1_000,
+					},
+				],
+				taskMemories: [],
+				projectMemories: [],
+				summary: {
+					personaCount: 2,
+					taskCount: 0,
+					projectCount: 0,
+					overview: 'Knows the user prefers concise responses.',
+				},
+			}),
+		} as Response);
+
+		const { getByRole, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+		await waitFor(() => {
+			expect(getByRole('button', { name: /manage persona memory/i })).toBeDefined();
+		});
+
+		await fireEvent.click(getByRole('button', { name: /manage persona memory/i }));
+
+		await waitFor(() => {
+			expect(getByRole('dialog')).toBeDefined();
+			expect(getByRole('dialog')).toHaveTextContent('Prefers concise replies.');
+		});
+
+		unmount();
+	});
+
 	it('shows a visible pending state while removing a document and only removes it after confirmation', async () => {
 		let resolveDelete: ((value: Response) => void) | null = null;
 		vi.spyOn(window, 'confirm').mockReturnValue(true);

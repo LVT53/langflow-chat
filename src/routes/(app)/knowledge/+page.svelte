@@ -239,6 +239,10 @@
 		}).format(timestamp);
 	}
 
+	function getPersonaRowKey(memory: PersonaMemoryItem, index: number): string {
+		return `${memory.scope}:${memory.id}:${index}`;
+	}
+
 	function formatArtifactSize(sizeBytes: number | null | undefined): string {
 		if (!sizeBytes) return 'Unknown size';
 		return `${Math.ceil(sizeBytes / 1024)} KB`;
@@ -1040,7 +1044,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each personaMemories as memory (memory.id)}
+									{#each personaMemories as memory, index (getPersonaRowKey(memory, index))}
 										<tr class="border-b border-border last:border-b-0">
 											<td class="px-4 py-3 align-top">
 												<input
