@@ -61,6 +61,7 @@ export interface RuntimeConfig {
   honchoBaseUrl: string;
   honchoWorkspace: string;
   honchoEnabled: boolean;
+  memoryMaintenanceIntervalMinutes: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {

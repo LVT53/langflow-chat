@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { messages, messageAnalytics } from '$lib/server/db/schema';
+import { conversations, messages, messageAnalytics } from '$lib/server/db/schema';
 import type {
 	ChatMessage,
 	MessageEvidenceStatusState,
@@ -186,4 +186,36 @@ export async function updateMessageEvidence(
 			metadataJson: JSON.stringify(next),
 		})
 		.where(eq(messages.id, messageId));
+}
+
+export async function clearMessageEvidenceForUser(userId: string): Promise<void> {
+	const conversationRows = await db
+		.select({ id: conversations.id })
+		.from(conversations)
+		.where(eq(conversations.userId, userId));
+	const conversationIds = conversationRows.map((row) => row.id);
+	if (conversationIds.length === 0) return;
+
+	const rows = await db
+		.select({ id: messages.id, metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(inArray(messages.conversationId, conversationIds));
+
+	for (const row of rows) {
+		const metadata = parseMetadata(row.metadataJson);
+		if (!metadata || (!('evidenceSummary' in metadata) && !('evidenceStatus' in metadata))) {
+			continue;
+		}
+
+		const next = { ...metadata };
+		delete next.evidenceSummary;
+		delete next.evidenceStatus;
+
+		await db
+			.update(messages)
+			.set({
+				metadataJson: Object.keys(next).length > 0 ? JSON.stringify(next) : null,
+			})
+			.where(eq(messages.id, row.id));
+	}
 }

@@ -228,6 +228,21 @@ export interface ArtifactSummary {
   updatedAt: number;
 }
 
+export interface KnowledgeDocumentItem {
+  id: string;
+  displayArtifactId: string;
+  promptArtifactId: string | null;
+  familyArtifactIds: string[];
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  conversationId: string | null;
+  summary: string | null;
+  normalizedAvailable: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface PendingAttachment {
   artifact: ArtifactSummary;
   promptReady: boolean;
@@ -430,15 +445,30 @@ export interface TaskMemoryItem {
   checkpointSummary: string | null;
 }
 
+export type ProjectMemoryStatus = 'active' | 'dormant' | 'archived';
+
+export interface ProjectMemoryItem {
+  projectId: string;
+  name: string;
+  summary: string | null;
+  status: ProjectMemoryStatus;
+  lastActiveAt: number | null;
+  updatedAt: number;
+  linkedTaskCount: number;
+  conversationTitles: string[];
+}
+
 export interface KnowledgeMemorySummary {
   personaCount: number;
   taskCount: number;
+  projectCount: number;
   overview: string | null;
 }
 
 export interface KnowledgeMemoryPayload {
   personaMemories: PersonaMemoryItem[];
   taskMemories: TaskMemoryItem[];
+  projectMemories: ProjectMemoryItem[];
   summary: KnowledgeMemorySummary;
 }
 

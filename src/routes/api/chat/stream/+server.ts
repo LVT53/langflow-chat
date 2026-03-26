@@ -32,6 +32,8 @@ import {
 	getConversationTaskState,
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
+import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	StreamingHungarianTranslator,
@@ -1312,6 +1314,14 @@ export const POST: RequestHandler = async (event) => {
 									userMessageId: userMsg?.id ?? null,
 									assistantMessageId: assistantMsg.id,
 								}).catch(async () => getConversationTaskState(user.id, conversationId));
+								if (latestTaskState) {
+									void syncProjectMemoryFromTaskState({
+										userId: user.id,
+										taskState: latestTaskState,
+									}).catch((error) =>
+										console.error('[PROJECT_MEMORY] Failed to sync project memory from stream:', error)
+									);
+								}
 								latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 							})()
 						);
@@ -1370,8 +1380,9 @@ export const POST: RequestHandler = async (event) => {
 									delayMs: 300,
 								})
 							)
+							.then(() => runUserMemoryMaintenance(user.id, 'chat_stream'))
 							.catch((err) =>
-								console.error('[HONCHO] Persona memory attribution sync failed:', err)
+								console.error('[STREAM] Post-stream memory maintenance failed:', err)
 							);
 					});
 				}).catch(() => {

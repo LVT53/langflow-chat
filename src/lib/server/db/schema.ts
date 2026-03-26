@@ -215,6 +215,37 @@ export const conversationWorkingSetItems = sqliteTable('conversation_working_set
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const memoryProjects = sqliteTable('memory_projects', {
+  projectId: text('project_id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  summary: text('summary'),
+  status: text('status').notNull().default('active'),
+  lastActiveAt: integer('last_active_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+export const memoryProjectTaskLinks = sqliteTable('memory_project_task_links', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => memoryProjects.projectId, { onDelete: 'cascade' }),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => conversationTaskStates.taskId, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const personaMemoryAttributions = sqliteTable('persona_memory_attributions', {
   id: text('id').primaryKey(),
   conclusionId: text('conclusion_id').notNull(),

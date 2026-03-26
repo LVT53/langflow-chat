@@ -10,12 +10,15 @@ import {
 	getPeerContext,
 	listPersonaMemories,
 } from './honcho';
+import { runUserMemoryMaintenance } from './memory-maintenance';
+import { forgetProjectMemory, listProjectMemoryItems } from './project-memory';
 import { forgetTaskMemory, listTaskMemoryItems } from './task-state';
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; conclusionId: string }
 	| { action: 'forget_all_persona_memory' }
-	| { action: 'forget_task_memory'; taskId: string };
+	| { action: 'forget_task_memory'; taskId: string }
+	| { action: 'forget_project_memory'; projectId: string };
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -102,9 +105,10 @@ export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string
 ): Promise<KnowledgeMemoryPayload> {
-	const [personaMemories, taskMemories, overview] = await Promise.all([
+	const [personaMemories, taskMemories, projectMemories, overview] = await Promise.all([
 		enrichPersonaMemories(userId, userDisplayName),
 		listTaskMemoryItems(userId),
+		listProjectMemoryItems(userId),
 		getPeerContext(userId, userDisplayName),
 	]);
 
@@ -121,9 +125,20 @@ export async function getKnowledgeMemory(
 				userDisplayName
 			),
 		})),
+		projectMemories: projectMemories.map((projectMemory) => ({
+			...projectMemory,
+			name:
+				sanitizeMemoryText(projectMemory.name, userId, userDisplayName) ??
+				projectMemory.name,
+			summary: sanitizeMemoryText(projectMemory.summary, userId, userDisplayName),
+			conversationTitles: projectMemory.conversationTitles.map(
+				(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
+			),
+		})),
 		summary: {
 			personaCount: personaMemories.length,
 			taskCount: taskMemories.length,
+			projectCount: projectMemories.length,
 			overview: sanitizeMemoryText(overview, userId, userDisplayName),
 		},
 	};
@@ -144,7 +159,11 @@ export async function applyKnowledgeMemoryAction(
 		case 'forget_task_memory':
 			await forgetTaskMemory(userId, payload.taskId);
 			break;
+		case 'forget_project_memory':
+			await forgetProjectMemory(userId, payload.projectId);
+			break;
 	}
 
+	await runUserMemoryMaintenance(userId, `knowledge_memory:${payload.action}`);
 	return getKnowledgeMemory(userId, userDisplayName);
 }

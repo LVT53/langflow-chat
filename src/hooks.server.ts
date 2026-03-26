@@ -3,9 +3,11 @@ import type { Handle } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 import { refreshConfig } from '$lib/server/config-store';
+import { ensureMemoryMaintenanceScheduler } from '$lib/server/services/memory-maintenance';
 
 // Load admin config overrides once at startup
 refreshConfig().catch((err) => console.error('Config refresh failed:', err));
+ensureMemoryMaintenanceScheduler();
 
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/sentence'];
 

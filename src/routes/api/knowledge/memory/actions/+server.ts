@@ -6,7 +6,8 @@ import { applyKnowledgeMemoryAction } from '$lib/server/services/memory';
 function isValidPayload(body: unknown): body is
 	| { action: 'forget_persona_memory'; conclusionId: string }
 	| { action: 'forget_all_persona_memory' }
-	| { action: 'forget_task_memory'; taskId: string } {
+	| { action: 'forget_task_memory'; taskId: string }
+	| { action: 'forget_project_memory'; projectId: string } {
 	if (!body || typeof body !== 'object') return false;
 	const action = (body as Record<string, unknown>).action;
 
@@ -16,6 +17,10 @@ function isValidPayload(body: unknown): body is
 
 	if (action === 'forget_task_memory') {
 		return typeof (body as Record<string, unknown>).taskId === 'string';
+	}
+
+	if (action === 'forget_project_memory') {
+		return typeof (body as Record<string, unknown>).projectId === 'string';
 	}
 
 	return action === 'forget_all_persona_memory';

@@ -2,7 +2,16 @@ import { rm } from 'fs/promises';
 import { join } from 'path';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations, users } from '$lib/server/db/schema';
+import {
+	artifacts,
+	conversationContextStatus,
+	conversationTaskStates,
+	conversationWorkingSetItems,
+	conversations,
+	memoryProjects,
+	personaMemoryAttributions,
+	users,
+} from '$lib/server/db/schema';
 import { verifyPassword } from './auth';
 import {
 	artifactHasReferencesOutsideConversation,
@@ -14,6 +23,7 @@ import {
 	deleteAllHonchoStateForUser,
 	deleteConversationHonchoState,
 } from './honcho';
+import { clearMessageEvidenceForUser } from './messages';
 
 export type DeleteUserAccountResult =
 	| { status: 'deleted' }
@@ -109,4 +119,32 @@ export async function deleteConversationWithCleanup(
 		deletedArtifactIds,
 		preservedArtifactIds,
 	};
+}
+
+export async function resetKnowledgeBaseState(userId: string): Promise<{
+	deletedArtifactIds: string[];
+}> {
+	await deleteAllHonchoStateForUser(userId);
+
+	const artifactRows = await db
+		.select({ id: artifacts.id })
+		.from(artifacts)
+		.where(eq(artifacts.userId, userId));
+	const deletedArtifactIds = artifactRows.map((row) => row.id);
+
+	if (deletedArtifactIds.length > 0) {
+		await hardDeleteArtifactsForUser(userId, deletedArtifactIds);
+	}
+
+	await db.transaction((tx) => {
+		tx.delete(conversationTaskStates).where(eq(conversationTaskStates.userId, userId));
+		tx.delete(memoryProjects).where(eq(memoryProjects.userId, userId));
+		tx.delete(personaMemoryAttributions).where(eq(personaMemoryAttributions.userId, userId));
+		tx.delete(conversationWorkingSetItems).where(eq(conversationWorkingSetItems.userId, userId));
+		tx.delete(conversationContextStatus).where(eq(conversationContextStatus.userId, userId));
+	});
+
+	await clearMessageEvidenceForUser(userId);
+
+	return { deletedArtifactIds };
 }

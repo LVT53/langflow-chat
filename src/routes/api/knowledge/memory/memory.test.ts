@@ -46,9 +46,22 @@ const memoryPayload = {
 			checkpointSummary: 'Keep the new timeline and key constraints.',
 		},
 	],
+	projectMemories: [
+		{
+			projectId: 'project-1',
+			name: 'Study roadmap',
+			summary: 'Long-term planning for coursework and revision.',
+			status: 'active',
+			lastActiveAt: Date.now(),
+			updatedAt: Date.now(),
+			linkedTaskCount: 2,
+			conversationTitles: ['Plans'],
+		},
+	],
 	summary: {
 		personaCount: 1,
 		taskCount: 1,
+		projectCount: 1,
 		overview: 'The user likes concise responses.',
 	},
 };
@@ -113,6 +126,29 @@ describe('knowledge memory routes', () => {
 			{
 				action: 'forget_persona_memory',
 				conclusionId: 'conclusion-1',
+			}
+		);
+	});
+
+	it('supports forgetting a project memory item', async () => {
+		mockApplyKnowledgeMemoryAction.mockResolvedValue(memoryPayload);
+
+		const response = await POST_MEMORY_ACTION(
+			makePostEvent({
+				action: 'forget_project_memory',
+				projectId: 'project-1',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.summary.projectCount).toBe(1);
+		expect(mockApplyKnowledgeMemoryAction).toHaveBeenCalledWith(
+			'user-1',
+			'Test User',
+			{
+				action: 'forget_project_memory',
+				projectId: 'project-1',
 			}
 		);
 	});

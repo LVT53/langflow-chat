@@ -1,0 +1,84 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$lib/server/auth/hooks', () => ({
+	requireAuth: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/knowledge', () => ({
+	deleteKnowledgeArtifactsByAction: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/cleanup', () => ({
+	resetKnowledgeBaseState: vi.fn(),
+}));
+
+import { POST } from './+server';
+import { requireAuth } from '$lib/server/auth/hooks';
+import { deleteKnowledgeArtifactsByAction } from '$lib/server/services/knowledge';
+import { resetKnowledgeBaseState } from '$lib/server/services/cleanup';
+
+const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockDeleteKnowledgeArtifactsByAction = deleteKnowledgeArtifactsByAction as ReturnType<
+	typeof vi.fn
+>;
+const mockResetKnowledgeBaseState = resetKnowledgeBaseState as ReturnType<typeof vi.fn>;
+
+function makeEvent(body: unknown) {
+	return {
+		request: new Request('http://localhost/api/knowledge/actions', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		}),
+		locals: { user: { id: 'user-1', displayName: 'Test User' } },
+		params: {},
+		url: new URL('http://localhost/api/knowledge/actions'),
+		route: { id: '/api/knowledge/actions' },
+	} as any;
+}
+
+describe('POST /api/knowledge/actions', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockRequireAuth.mockReturnValue(undefined);
+	});
+
+	it('bulk-forgets all documents', async () => {
+		mockDeleteKnowledgeArtifactsByAction.mockResolvedValue({
+			deletedArtifactIds: ['doc-1', 'doc-2'],
+		});
+
+		const response = await POST(makeEvent({ action: 'forget_all_documents' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.success).toBe(true);
+		expect(data.deletedArtifactIds).toEqual(['doc-1', 'doc-2']);
+		expect(mockDeleteKnowledgeArtifactsByAction).toHaveBeenCalledWith(
+			'user-1',
+			'forget_all_documents'
+		);
+	});
+
+	it('resets all KB memory and artifacts without deleting conversations', async () => {
+		mockResetKnowledgeBaseState.mockResolvedValue({
+			deletedArtifactIds: ['doc-1', 'result-1'],
+		});
+
+		const response = await POST(makeEvent({ action: 'forget_everything' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.success).toBe(true);
+		expect(data.deletedArtifactIds).toEqual(['doc-1', 'result-1']);
+		expect(mockResetKnowledgeBaseState).toHaveBeenCalledWith('user-1');
+	});
+
+	it('rejects invalid action payloads', async () => {
+		const response = await POST(makeEvent({ action: 'wipe_it_all' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.error).toMatch(/invalid knowledge action payload/i);
+	});
+});

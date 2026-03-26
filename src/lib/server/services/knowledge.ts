@@ -27,6 +27,7 @@ import {
 import type {
 	Artifact,
 	ArtifactLink,
+	KnowledgeDocumentItem,
 	ArtifactSummary,
 	ArtifactType,
 	ChatAttachment,
@@ -130,6 +131,30 @@ function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
 		summary: row.summary ?? null,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+function mapLogicalDocumentItem(params: {
+	displayArtifact: ArtifactSummary;
+	promptArtifactId: string | null;
+	familyArtifactIds: string[];
+	normalizedAvailable: boolean;
+	summary: string | null;
+	updatedAt: number;
+}): KnowledgeDocumentItem {
+	return {
+		id: params.displayArtifact.id,
+		displayArtifactId: params.displayArtifact.id,
+		promptArtifactId: params.promptArtifactId,
+		familyArtifactIds: params.familyArtifactIds,
+		name: params.displayArtifact.name,
+		mimeType: params.displayArtifact.mimeType,
+		sizeBytes: params.displayArtifact.sizeBytes,
+		conversationId: params.displayArtifact.conversationId,
+		summary: params.summary,
+		normalizedAvailable: params.normalizedAvailable,
+		createdAt: params.displayArtifact.createdAt,
+		updatedAt: params.updatedAt,
 	};
 }
 
@@ -735,26 +760,28 @@ export async function hardDeleteArtifactsForUser(
 		return { deletedArtifactIds: [], deletedStoragePaths: [], failedStoragePaths: [] };
 	}
 
-	await db.transaction(async (tx) => {
-		await tx
+	db.transaction((tx) => {
+		tx
 			.delete(conversationWorkingSetItems)
 			.where(
 				and(
 					eq(conversationWorkingSetItems.userId, userId),
 					inArray(conversationWorkingSetItems.artifactId, ids)
 				)
-			);
+			)
+			.run();
 
-		await tx
+		tx
 			.delete(taskStateEvidenceLinks)
 			.where(
 				and(
 					eq(taskStateEvidenceLinks.userId, userId),
 					inArray(taskStateEvidenceLinks.artifactId, ids)
 				)
-			);
+			)
+			.run();
 
-		await tx
+		tx
 			.delete(artifactLinks)
 			.where(
 				and(
@@ -764,11 +791,13 @@ export async function hardDeleteArtifactsForUser(
 						inArray(artifactLinks.relatedArtifactId, ids)
 					)
 				)
-			);
+			)
+			.run();
 
-		await tx
+		tx
 			.delete(artifacts)
-			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)));
+			.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)))
+			.run();
 	});
 
 	const deletedStoragePaths: string[] = [];
@@ -961,6 +990,63 @@ export async function deleteArtifactForUser(
 	return result;
 }
 
+export type KnowledgeBulkAction =
+	| 'forget_all_documents'
+	| 'forget_all_results'
+	| 'forget_all_workflows';
+
+async function listDocumentRootArtifactIds(userId: string): Promise<string[]> {
+	const documents = await listLogicalDocuments(userId);
+	return documents.map((document) => document.id);
+}
+
+export async function deleteKnowledgeArtifactsByAction(
+	userId: string,
+	action: KnowledgeBulkAction
+): Promise<{
+	deletedArtifactIds: string[];
+	deletedStoragePaths: string[];
+	failedStoragePaths: string[];
+}> {
+	let rootArtifactIds: string[] = [];
+
+	if (action === 'forget_all_documents') {
+		rootArtifactIds = await listDocumentRootArtifactIds(userId);
+	} else {
+		const type = action === 'forget_all_results' ? 'generated_output' : 'work_capsule';
+		const rows = await db
+			.select({ id: artifacts.id })
+			.from(artifacts)
+			.where(and(eq(artifacts.userId, userId), eq(artifacts.type, type)));
+		rootArtifactIds = rows.map((row) => row.id);
+	}
+
+	if (rootArtifactIds.length === 0) {
+		return { deletedArtifactIds: [], deletedStoragePaths: [], failedStoragePaths: [] };
+	}
+
+	const expandedIds = new Set<string>(rootArtifactIds);
+	if (action === 'forget_all_documents') {
+		const derivedRows = await db
+			.select({ artifactId: artifactLinks.artifactId })
+			.from(artifactLinks)
+			.innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+			.where(
+				and(
+					eq(artifactLinks.userId, userId),
+					inArray(artifactLinks.relatedArtifactId, rootArtifactIds),
+					eq(artifactLinks.linkType, 'derived_from'),
+					eq(artifacts.type, 'normalized_document')
+				)
+			);
+		for (const row of derivedRows) {
+			expandedIds.add(row.artifactId);
+		}
+	}
+
+	return hardDeleteArtifactsForUser(userId, Array.from(expandedIds));
+}
+
 export async function getArtifactsForUser(
 	userId: string,
 	artifactIds: string[]
@@ -1086,8 +1172,91 @@ export async function createNormalizedArtifact(params: {
 	return artifact;
 }
 
+async function listLogicalDocuments(userId: string): Promise<KnowledgeDocumentItem[]> {
+	const rows = await db
+		.select(knowledgeArtifactListSelection)
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.userId, userId),
+				inArray(artifacts.type, ['source_document', 'normalized_document'])
+			)
+		)
+		.orderBy(desc(artifacts.updatedAt));
+
+	if (rows.length === 0) return [];
+
+	const summaries = rows.map(mapArtifactSummary);
+	const byId = new Map(summaries.map((item) => [item.id, item]));
+	const sourceArtifacts = summaries.filter((item) => item.type === 'source_document');
+	const normalizedArtifacts = summaries.filter((item) => item.type === 'normalized_document');
+
+	const derivedRows =
+		normalizedArtifacts.length === 0
+			? []
+			: await db
+					.select({
+						normalizedArtifactId: artifactLinks.artifactId,
+						sourceArtifactId: artifactLinks.relatedArtifactId,
+					})
+					.from(artifactLinks)
+					.where(
+						and(
+							eq(artifactLinks.userId, userId),
+							inArray(
+								artifactLinks.artifactId,
+								normalizedArtifacts.map((item) => item.id)
+							),
+							eq(artifactLinks.linkType, 'derived_from')
+						)
+					);
+
+	const normalizedBySourceId = new Map<string, ArtifactSummary>();
+	const sourceByNormalizedId = new Map<string, string>();
+	for (const row of derivedRows) {
+		if (!(row.sourceArtifactId && row.normalizedArtifactId)) continue;
+		const normalized = byId.get(row.normalizedArtifactId);
+		if (!normalized) continue;
+		normalizedBySourceId.set(row.sourceArtifactId, normalized);
+		sourceByNormalizedId.set(row.normalizedArtifactId, row.sourceArtifactId);
+	}
+
+	const documents: KnowledgeDocumentItem[] = [];
+	for (const source of sourceArtifacts) {
+		const normalized = normalizedBySourceId.get(source.id) ?? null;
+		documents.push(
+			mapLogicalDocumentItem({
+				displayArtifact: source,
+				promptArtifactId: normalized?.id ?? null,
+				familyArtifactIds: [source.id, normalized?.id ?? null].filter(
+					(value): value is string => Boolean(value)
+				),
+				normalizedAvailable: Boolean(normalized),
+				summary: normalized?.summary ?? source.summary,
+				updatedAt: Math.max(source.updatedAt, normalized?.updatedAt ?? source.updatedAt),
+			})
+		);
+	}
+
+	for (const normalized of normalizedArtifacts) {
+		if (sourceByNormalizedId.has(normalized.id)) continue;
+		documents.push(
+			mapLogicalDocumentItem({
+				displayArtifact: normalized,
+				promptArtifactId: normalized.id,
+				familyArtifactIds: [normalized.id],
+				normalizedAvailable: true,
+				summary: normalized.summary,
+				updatedAt: normalized.updatedAt,
+			})
+		);
+	}
+
+	return documents.sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
 export async function listKnowledgeArtifacts(userId: string): Promise<{
-	documents: ArtifactSummary[];
+	documents: KnowledgeDocumentItem[];
 	results: ArtifactSummary[];
 	workflows: WorkCapsule[];
 }> {
@@ -1099,9 +1268,7 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 		.where(eq(artifacts.userId, userId))
 		.orderBy(desc(artifacts.updatedAt));
 
-	const documents = rows
-		.filter((row) => row.type === 'source_document' || row.type === 'normalized_document')
-		.map(mapArtifactSummary);
+	const documents = await listLogicalDocuments(userId);
 
 	const latestGeneratedByConversation = new Map<string, (typeof rows)[number]>();
 	for (const row of rows) {
@@ -1932,7 +2099,7 @@ export async function findRelevantKnowledgeArtifacts(
 	return findRelevantArtifacts({
 		userId,
 		query,
-		types: ['source_document', 'normalized_document', 'generated_output'],
+		types: ['normalized_document', 'generated_output'],
 		limit,
 		excludeConversationId,
 	});

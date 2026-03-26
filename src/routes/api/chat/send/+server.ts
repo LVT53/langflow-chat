@@ -32,6 +32,8 @@ import {
 	getConversationTaskState,
 	updateTaskStateCheckpoint,
 } from '$lib/server/services/task-state';
+import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { syncProjectMemoryFromTaskState } from '$lib/server/services/project-memory';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	translateEnglishToHungarian,
@@ -167,6 +169,14 @@ export const POST: RequestHandler = async (event) => {
 			userMessageId: userMessage.id,
 			assistantMessageId: assistantMessage.id,
 		}).catch(async () => getConversationTaskState(user.id, conversationId));
+		if (taskState) {
+			void syncProjectMemoryFromTaskState({
+				userId: user.id,
+				taskState,
+			}).catch((error) =>
+				console.error('[PROJECT_MEMORY] Failed to sync project memory from send:', error)
+			);
+		}
 		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
 		await touchConversation(user.id, conversationId).catch(() => undefined);
 
@@ -220,7 +230,8 @@ export const POST: RequestHandler = async (event) => {
 					delayMs: 300,
 				})
 			)
-			.catch((err) => console.error('[HONCHO] Persona memory attribution sync failed:', err));
+			.then(() => runUserMemoryMaintenance(user.id, 'chat_send'))
+			.catch((err) => console.error('[SEND] Post-send memory maintenance failed:', err));
 
 		return json({
 			response: { text: responseText },

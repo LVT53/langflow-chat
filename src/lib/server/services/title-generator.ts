@@ -67,6 +67,17 @@ function detectLanguage(text: string): 'en' | 'hu' {
   return 'en';
 }
 
+const EXPLICIT_ENGLISH_HINT_RE =
+  /\b(in english|english title|respond in english|answer in english)\b|angolul/i;
+const EXPLICIT_HUNGARIAN_HINT_RE =
+  /\b(in hungarian|hungarian title|respond in hungarian|answer in hungarian)\b|magyarul/i;
+
+function resolveTitleLanguage(userMessage: string): 'en' | 'hu' {
+  if (EXPLICIT_ENGLISH_HINT_RE.test(userMessage)) return 'en';
+  if (EXPLICIT_HUNGARIAN_HINT_RE.test(userMessage)) return 'hu';
+  return detectLanguage(userMessage);
+}
+
 /**
  * Check if the conversation is code-related
  * @param userMessage The user's message
@@ -310,9 +321,7 @@ async function generateTitleWithTemperature(
 ): Promise<string | null> {
   const config = getConfig();
   
-  // Detect language and code-related status
-  const combinedText = `${userMessage} ${assistantResponse}`;
-  const language = detectLanguage(combinedText);
+  const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   
   // Truncate assistantResponse to 200 chars
@@ -410,8 +419,7 @@ async function generateTitleWithRetry(
 
 export async function generateTitle(userMessage: string, assistantResponse: string): Promise<string> {
   const config = getConfig();
-  const combinedText = `${userMessage} ${assistantResponse}`;
-  const language = detectLanguage(combinedText);
+  const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   const truncatedResponse = assistantResponse.slice(0, 200);
 
@@ -449,6 +457,13 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   if (!rawTitle) {
     return fallbackTitle(userMessage);
   }
+  const cleanedTitle = cleanTitle(rawTitle);
+  if (!cleanedTitle) {
+    return fallbackTitle(userMessage);
+  }
+  if (detectLanguage(cleanedTitle) !== language) {
+    return fallbackTitle(userMessage);
+  }
 
-  return cleanTitle(rawTitle);
+  return cleanedTitle;
 }

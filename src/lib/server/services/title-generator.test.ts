@@ -193,4 +193,38 @@ describe('generateTitle', () => {
     await expect(generateTitle('User asks for server deployment help', 'Assistant'))
       .resolves.toBe('User asks for server deployment help');
   });
+
+  it('uses the latest user-message language even if the assistant text is Hungarian', async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'English Debug Summary' } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+
+    await generateTitle(
+      'Please summarize what this file is about in English.',
+      'A feltöltött fájl magyar nyelvű.'
+    );
+
+    const callArgs = mockFetch.mock.calls[0]?.[1];
+    const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
+    expect(body.messages[0].content).toContain('You are a conversation title generator');
+    expect(body.messages[0].content).not.toContain('Te egy beszélgetés cím generátor vagy');
+  });
+
+  it('falls back to the user message when the model returns a title in the wrong language', async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'Magyar cím' } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+
+    await expect(
+      generateTitle('Please explain the attached deployment notes in English', 'Rendben.')
+    ).resolves.toBe('Please explain the attached deployment notes in English');
+  });
 });

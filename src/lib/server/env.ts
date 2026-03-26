@@ -39,6 +39,7 @@ interface Config {
   honchoBaseUrl: string;
   honchoWorkspace: string;
   honchoEnabled: boolean;
+  memoryMaintenanceIntervalMinutes: number;
 }
 
 // Read and validate environment variables
@@ -103,6 +104,10 @@ const getConfig = (): Config => {
     honchoBaseUrl: process.env.HONCHO_BASE_URL || 'http://localhost:8000',
     honchoWorkspace: process.env.HONCHO_WORKSPACE || 'alfyai-prod',
     honchoEnabled: process.env.HONCHO_ENABLED === 'true',
+    memoryMaintenanceIntervalMinutes: Math.max(
+      0,
+      parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES || '0', 10) || 0
+    ),
   };
 };
 

@@ -3,8 +3,10 @@
 	import { renderMarkdown } from '$lib/services/markdown';
 	import type {
 		ArtifactSummary,
+		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
 		PersonaMemoryItem,
+		ProjectMemoryItem,
 		TaskMemoryItem,
 		WorkCapsule,
 	} from '$lib/types';
@@ -13,17 +15,19 @@
 	export let data: PageData;
 
 	type KnowledgeTab = 'library' | 'memory';
-	type MemoryModal = 'persona' | 'task' | null;
+	type MemoryModal = 'persona' | 'task' | 'project' | null;
 	type LibraryModal = 'documents' | 'results' | 'workflows' | null;
 
-	let documents = (data.documents ?? []) as ArtifactSummary[];
+	let documents = (data.documents ?? []) as KnowledgeDocumentItem[];
 	let results = (data.results ?? []) as ArtifactSummary[];
 	let workflows = (data.workflows ?? []) as WorkCapsule[];
 	let personaMemories = [] as PersonaMemoryItem[];
 	let taskMemories = [] as TaskMemoryItem[];
+	let projectMemories = [] as ProjectMemoryItem[];
 	let memorySummary = {
 		personaCount: 0,
 		taskCount: 0,
+		projectCount: 0,
 		overview: null,
 	};
 	const honchoEnabled = data.honchoEnabled ?? false;
@@ -31,6 +35,7 @@
 	let activeTab: KnowledgeTab = 'library';
 	let deletingArtifactIds = new Set<string>();
 	let pendingMemoryActionKey: string | null = null;
+	let pendingKnowledgeActionKey: string | null = null;
 	let manageError = '';
 	let memoryLoaded = false;
 	let memoryLoading = false;
@@ -41,6 +46,7 @@
 	let honchoHighlightHtmlBlocks = [] as string[];
 	let selectedPersonaMemoryIds = [] as string[];
 	let selectedTaskMemoryIds = [] as string[];
+	let selectedProjectMemoryIds = [] as string[];
 	const userDisplayName = data.userDisplayName?.trim() || 'You';
 	$: deletingArtifactCount = deletingArtifactIds.size;
 
@@ -95,19 +101,14 @@
 		return deletingArtifactIds.has(id);
 	}
 
-	function applyDeletedArtifactIds(ids: string[]) {
-		const deleted = new Set(ids);
-		documents = documents.filter((artifact) => !deleted.has(artifact.id));
-		results = results.filter((artifact) => !deleted.has(artifact.id));
-		workflows = workflows.filter((capsule) => !deleted.has(capsule.artifact.id));
-	}
-
 	function applyMemoryPayload(payload: KnowledgeMemoryPayload) {
 		personaMemories = payload.personaMemories ?? [];
 		taskMemories = payload.taskMemories ?? [];
+		projectMemories = payload.projectMemories ?? [];
 		memorySummary = payload.summary ?? {
 			personaCount: 0,
 			taskCount: 0,
+			projectCount: 0,
 			overview: null,
 		};
 		memoryLoaded = true;
@@ -172,6 +173,7 @@
 	function resetModalSelections() {
 		selectedPersonaMemoryIds = [];
 		selectedTaskMemoryIds = [];
+		selectedProjectMemoryIds = [];
 	}
 
 	function togglePersonaSelection(id: string) {
@@ -198,6 +200,19 @@
 			selectedTaskMemoryIds.length === taskMemories.length
 				? []
 				: taskMemories.map((memory) => memory.taskId);
+	}
+
+	function toggleProjectSelection(id: string) {
+		selectedProjectMemoryIds = selectedProjectMemoryIds.includes(id)
+			? selectedProjectMemoryIds.filter((value) => value !== id)
+			: [...selectedProjectMemoryIds, id];
+	}
+
+	function toggleAllProjectSelections() {
+		selectedProjectMemoryIds =
+			selectedProjectMemoryIds.length === projectMemories.length
+				? []
+				: projectMemories.map((memory) => memory.projectId);
 	}
 
 	function formatPersonaActor(scope: PersonaMemoryItem['scope']): string {
@@ -229,11 +244,59 @@
 		return `${Math.ceil(sizeBytes / 1024)} KB`;
 	}
 
+	function formatDocumentKind(document: KnowledgeDocumentItem): string {
+		return document.normalizedAvailable ? 'Indexed document' : 'Source-only document';
+	}
+
+	function getLibraryBulkAction(kind: Exclude<LibraryModal, null>) {
+		if (kind === 'documents') return 'forget_all_documents' as const;
+		if (kind === 'results') return 'forget_all_results' as const;
+		return 'forget_all_workflows' as const;
+	}
+
+	function getLibraryBulkKey(kind: Exclude<LibraryModal, null>): string {
+		return `forget-all-${kind}`;
+	}
+
+	function getLibraryBulkLabel(kind: Exclude<LibraryModal, null>): string {
+		if (kind === 'documents') return 'Forget all documents';
+		if (kind === 'results') return 'Forget all results';
+		return 'Forget all workflows';
+	}
+
+	function getLibraryBulkConfirmation(kind: Exclude<LibraryModal, null>): string {
+		if (kind === 'documents') {
+			return 'Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.';
+		}
+		if (kind === 'results') {
+			return 'Forget all saved results from the Knowledge Base?';
+		}
+		return 'Forget all workflows from the Knowledge Base?';
+	}
+
+	function getLibraryItemCount(kind: Exclude<LibraryModal, null>): number {
+		if (kind === 'documents') return documents.length;
+		if (kind === 'results') return results.length;
+		return workflows.length;
+	}
+
+	async function refreshKnowledgeLibrary() {
+		const response = await fetch('/api/knowledge');
+		const result = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			throw new Error(result.error ?? 'Failed to refresh the Knowledge Base.');
+		}
+		documents = result.documents ?? [];
+		results = result.results ?? [];
+		workflows = result.workflows ?? [];
+	}
+
 	async function submitMemoryAction(
 		payload:
 			| { action: 'forget_persona_memory'; conclusionId: string }
 			| { action: 'forget_all_persona_memory' }
 			| { action: 'forget_task_memory'; taskId: string }
+			| { action: 'forget_project_memory'; projectId: string }
 	): Promise<KnowledgeMemoryPayload> {
 		const response = await fetch('/api/knowledge/memory/actions', {
 			method: 'POST',
@@ -253,7 +316,8 @@
 		payload:
 			| { action: 'forget_persona_memory'; conclusionId: string }
 			| { action: 'forget_all_persona_memory' }
-			| { action: 'forget_task_memory'; taskId: string },
+			| { action: 'forget_task_memory'; taskId: string }
+			| { action: 'forget_project_memory'; projectId: string },
 		key: string,
 		confirmationMessage?: string
 	) {
@@ -274,6 +338,9 @@
 			}
 			if (payload.action === 'forget_all_persona_memory') {
 				selectedPersonaMemoryIds = [];
+			}
+			if (payload.action === 'forget_project_memory') {
+				selectedProjectMemoryIds = selectedProjectMemoryIds.filter((id) => id !== payload.projectId);
 			}
 		} catch (error) {
 			manageError =
@@ -347,6 +414,80 @@
 		}
 	}
 
+	async function runBulkProjectForget() {
+		if (selectedProjectMemoryIds.length === 0) return;
+		if (
+			!window.confirm(
+				`Forget ${selectedProjectMemoryIds.length} selected project memory item${selectedProjectMemoryIds.length === 1 ? '' : 's'}?`
+			)
+		) {
+			return;
+		}
+
+		manageError = '';
+		pendingMemoryActionKey = 'forget-selected-project';
+
+		try {
+			let result: KnowledgeMemoryPayload | null = null;
+			for (const id of selectedProjectMemoryIds) {
+				result = await submitMemoryAction({ action: 'forget_project_memory', projectId: id });
+			}
+			if (result) {
+				applyMemoryPayload(result);
+			}
+			selectedProjectMemoryIds = [];
+		} catch (error) {
+			manageError =
+				error instanceof Error ? error.message : 'Failed to update memory profile.';
+		} finally {
+			pendingMemoryActionKey = null;
+		}
+	}
+
+	function isKnowledgeActionPending(key: string): boolean {
+		return pendingKnowledgeActionKey === key;
+	}
+
+	async function runKnowledgeAction(
+		action: 'forget_all_documents' | 'forget_all_results' | 'forget_all_workflows' | 'forget_everything',
+		key: string,
+		confirmationMessage: string
+	) {
+		if (isKnowledgeActionPending(key)) return;
+		if (!window.confirm(confirmationMessage)) return;
+
+		manageError = '';
+		pendingKnowledgeActionKey = key;
+
+		try {
+			const response = await fetch('/api/knowledge/actions', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ action }),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || result.success === false) {
+				throw new Error(result.error ?? result.message ?? 'Failed to update the Knowledge Base.');
+			}
+
+			await refreshKnowledgeLibrary();
+			if (action === 'forget_everything' || memoryLoaded || activeTab === 'memory') {
+				await ensureMemoryLoaded(true);
+			}
+			if (action === 'forget_everything') {
+				activeMemoryModal = null;
+				activeLibraryModal = null;
+				resetModalSelections();
+			}
+		} catch (error) {
+			manageError = error instanceof Error ? error.message : 'Failed to update the Knowledge Base.';
+		} finally {
+			pendingKnowledgeActionKey = null;
+		}
+	}
+
 	async function removeArtifact(id: string, label: string) {
 		if (isDeletingArtifact(id)) return;
 		if (!window.confirm(`Remove "${label}" from the Knowledge Base?`)) return;
@@ -364,7 +505,7 @@
 					payload.message ?? payload.error ?? 'Failed to remove artifact.'
 				);
 			}
-			applyDeletedArtifactIds(payload.deletedArtifactIds?.length ? payload.deletedArtifactIds : [id]);
+			await refreshKnowledgeLibrary();
 		} catch (error) {
 			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
 		} finally {
@@ -404,10 +545,10 @@
 	<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
 		<div class="rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="flex flex-col gap-5">
-				<div class="space-y-2">
-					<h1 class="text-[2rem] font-serif tracking-[-0.05em] text-text-primary md:text-[2.75rem]">
-						Knowledge Base
-					</h1>
+			<div class="space-y-2">
+				<h1 class="text-[2rem] font-serif tracking-[-0.05em] text-text-primary md:text-[2.75rem]">
+					Knowledge Base
+				</h1>
 					<p class="max-w-[720px] text-sm font-sans leading-[1.5] text-text-secondary">
 						Persistent documents, saved results, workflow capsules, and a live memory view of what the system currently knows about you.
 					</p>
@@ -442,6 +583,22 @@
 						{/if}
 					</button>
 				</div>
+
+				<div class="flex justify-end">
+					<button
+						type="button"
+						class="rounded-full border border-danger px-4 py-2 text-sm font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+						on:click={() =>
+							runKnowledgeAction(
+								'forget_everything',
+								'forget-everything',
+								'Forget everything in the Knowledge Base? This removes persona memory, task memory, project memory, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
+							)}
+						disabled={isKnowledgeActionPending('forget-everything')}
+					>
+						{isKnowledgeActionPending('forget-everything') ? 'Resetting…' : 'Forget everything'}
+					</button>
+				</div>
 			</div>
 		</div>
 
@@ -468,7 +625,7 @@
 							</span>
 						</div>
 						<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-							Source files and normalized documents you want the assistant to retrieve from later.
+							Uploaded files are managed as single logical documents, while their extracted text stays available behind the scenes for retrieval.
 						</p>
 						<button
 							type="button"
@@ -612,7 +769,7 @@
 						{/if}
 					</div>
 
-					<div class="mt-6 grid gap-4 lg:grid-cols-2">
+					<div class="mt-6 grid gap-4 lg:grid-cols-3">
 						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 							<div class="flex items-center justify-between gap-3">
 								<div>
@@ -645,7 +802,7 @@
 									<span class="text-xs font-sans text-text-muted">
 										Unavailable while Honcho is disabled.
 									</span>
-								{:else if personaMemories.length === 0}
+								{:else if memoryLoaded && personaMemories.length === 0}
 									<span class="text-xs font-sans text-text-muted">
 										No stored persona memory yet.
 									</span>
@@ -680,9 +837,44 @@
 								>
 									Manage task memory
 								</button>
-								{#if taskMemories.length === 0}
+								{#if memoryLoaded && taskMemories.length === 0}
 									<span class="text-xs font-sans text-text-muted">
 										No task-state memory has been checkpointed yet.
+									</span>
+								{/if}
+							</div>
+						</div>
+
+						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+							<div class="flex items-center justify-between gap-3">
+								<div>
+									<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+										Project memory
+									</div>
+									<h3 class="mt-2 text-lg font-sans font-semibold text-text-primary">
+										Track ongoing work across chats
+									</h3>
+								</div>
+								<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+									{projectMemories.length}
+								</span>
+							</div>
+
+							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
+								Project memory keeps recurring long-term efforts from fragmenting into isolated task memories across conversations.
+							</p>
+
+							<div class="mt-4 flex flex-wrap items-center gap-3">
+								<button
+									type="button"
+									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+									on:click={() => openMemoryModal('project')}
+								>
+									Manage project memory
+								</button>
+								{#if memoryLoaded && projectMemories.length === 0}
+									<span class="text-xs font-sans text-text-muted">
+										No ongoing project memory has been captured yet.
 									</span>
 								{/if}
 							</div>
@@ -705,7 +897,13 @@
 		<div
 			role="dialog"
 			aria-modal="true"
-			aria-labelledby={activeMemoryModal === 'persona' ? 'persona-memory-dialog-title' : 'task-memory-dialog-title'}
+			aria-labelledby={
+				activeMemoryModal === 'persona'
+					? 'persona-memory-dialog-title'
+					: activeMemoryModal === 'task'
+						? 'task-memory-dialog-title'
+						: 'project-memory-dialog-title'
+			}
 			tabindex={-1}
 			class="max-h-[88vh] w-full max-w-[1100px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
 			on:click|stopPropagation
@@ -713,20 +911,34 @@
 			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
 				<div>
 					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-						{activeMemoryModal === 'persona' ? 'Persona memory' : 'Task memory'}
+						{activeMemoryModal === 'persona'
+							? 'Persona memory'
+							: activeMemoryModal === 'task'
+								? 'Task memory'
+								: 'Project memory'}
 					</div>
 					<h3
-						id={activeMemoryModal === 'persona' ? 'persona-memory-dialog-title' : 'task-memory-dialog-title'}
+						id={
+							activeMemoryModal === 'persona'
+								? 'persona-memory-dialog-title'
+								: activeMemoryModal === 'task'
+									? 'task-memory-dialog-title'
+									: 'project-memory-dialog-title'
+						}
 						class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary"
 					>
 						{activeMemoryModal === 'persona'
 							? 'Manage stored persona memories'
-							: 'Manage stored task continuity'}
+							: activeMemoryModal === 'task'
+								? 'Manage stored task continuity'
+								: 'Manage ongoing project memory'}
 					</h3>
 					<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">
 						{activeMemoryModal === 'persona'
 							? 'Review memory items in a compact table and forget individual entries without scrolling through long cards.'
-							: 'Inspect task-level checkpoints and reset the long-horizon continuity for tasks you no longer want the system to carry forward.'}
+							: activeMemoryModal === 'task'
+								? 'Inspect task-level checkpoints and reset the long-horizon continuity for tasks you no longer want the system to carry forward.'
+								: 'Track longer-running efforts across conversations and forget project-level memory without touching the chat history.'}
 					</p>
 				</div>
 				<div class="flex shrink-0 items-center gap-2">
@@ -748,6 +960,16 @@
 							disabled={isMemoryActionPending('forget-selected-task')}
 						>
 							Forget selected ({selectedTaskMemoryIds.length})
+						</button>
+					{/if}
+					{#if activeMemoryModal === 'project' && selectedProjectMemoryIds.length > 0}
+						<button
+							type="button"
+							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+							on:click={runBulkProjectForget}
+							disabled={isMemoryActionPending('forget-selected-project')}
+						>
+							Forget selected ({selectedProjectMemoryIds.length})
 						</button>
 					{/if}
 					{#if activeMemoryModal === 'persona' && honchoEnabled && personaMemories.length > 0}
@@ -780,7 +1002,15 @@
 			</div>
 
 			<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
-				{#if activeMemoryModal === 'persona'}
+				{#if memoryLoading && !memoryLoaded}
+					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
+						Loading memory profile…
+					</div>
+				{:else if memoryLoadError && !memoryLoaded}
+					<div class="rounded-[1.2rem] border border-danger bg-surface-page px-4 py-5 text-sm font-sans text-danger">
+						{memoryLoadError}
+					</div>
+				{:else if activeMemoryModal === 'persona'}
 					{#if !honchoEnabled}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
 							Persona memory controls are unavailable because Honcho is disabled.
@@ -860,7 +1090,7 @@
 							</table>
 						</div>
 					{/if}
-				{:else}
+				{:else if activeMemoryModal === 'task'}
 					{#if taskMemories.length === 0}
 						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
 							No task-state memory has been checkpointed yet.
@@ -946,6 +1176,90 @@
 							</table>
 						</div>
 					{/if}
+				{:else}
+					{#if projectMemories.length === 0}
+						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
+							No project memory has been captured yet.
+						</div>
+					{:else}
+						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
+							<table class="min-w-[980px] w-full border-collapse">
+								<thead>
+									<tr class="border-b border-border bg-surface-elevated/70 text-left">
+										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
+											<input
+												type="checkbox"
+												checked={projectMemories.length > 0 && selectedProjectMemoryIds.length === projectMemories.length}
+												on:change={toggleAllProjectSelections}
+												aria-label="Select all project memories"
+											/>
+										</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Project</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Linked chats</th>
+										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Updated</th>
+										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each projectMemories as memory (memory.projectId)}
+										<tr class="border-b border-border last:border-b-0">
+											<td class="px-4 py-3 align-top">
+												<input
+													type="checkbox"
+													checked={selectedProjectMemoryIds.includes(memory.projectId)}
+													on:change={() => toggleProjectSelection(memory.projectId)}
+													aria-label={`Select ${memory.name}`}
+												/>
+											</td>
+											<td class="px-4 py-3 align-top">
+												<div class="text-sm font-sans font-medium text-text-primary">
+													{memory.name}
+												</div>
+												<div class="mt-1 text-xs font-sans text-text-muted">
+													{memory.linkedTaskCount} linked task{memory.linkedTaskCount === 1 ? '' : 's'}
+												</div>
+											</td>
+											<td class="px-4 py-3 align-top">
+												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.summary ?? ''}>
+													{memory.summary ?? 'No project summary stored yet.'}
+												</div>
+											</td>
+											<td class="px-4 py-3 align-top">
+												<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+													{memory.status}
+												</span>
+											</td>
+											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
+												{memory.conversationTitles.length > 0
+													? memory.conversationTitles.join(', ')
+													: 'Conversation memory'}
+											</td>
+											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
+												{formatMemoryTimestamp(memory.updatedAt)}
+											</td>
+											<td class="px-4 py-3 align-top text-right">
+												<button
+													type="button"
+													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+													on:click={() =>
+														runMemoryAction(
+															{ action: 'forget_project_memory', projectId: memory.projectId },
+															`project-${memory.projectId}`,
+															'Forget this project memory? Ongoing project continuity across conversations will be cleared.'
+														)}
+													disabled={isMemoryActionPending(`project-${memory.projectId}`)}
+												>
+													Forget
+												</button>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -984,20 +1298,48 @@
 								: 'Manage workflows'}
 					</h3>
 				</div>
-				<button
-					type="button"
-					class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-					on:click={closeLibraryModal}
-					aria-label="Close library manager"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="18" x2="6" y1="6" y2="18" />
-						<line x1="6" x2="18" y1="6" y2="18" />
-					</svg>
-				</button>
+				<div class="flex shrink-0 items-center gap-2">
+					{#if activeLibraryModal && getLibraryItemCount(activeLibraryModal) > 0}
+						<button
+							type="button"
+							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+							on:click={() =>
+								runKnowledgeAction(
+									getLibraryBulkAction(activeLibraryModal),
+									getLibraryBulkKey(activeLibraryModal),
+									getLibraryBulkConfirmation(activeLibraryModal)
+								)}
+							disabled={isKnowledgeActionPending(getLibraryBulkKey(activeLibraryModal))}
+						>
+							{isKnowledgeActionPending(getLibraryBulkKey(activeLibraryModal))
+								? 'Removing…'
+								: getLibraryBulkLabel(activeLibraryModal)}
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
+						on:click={closeLibraryModal}
+						aria-label="Close library manager"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="18" x2="6" y1="6" y2="18" />
+							<line x1="6" x2="18" y1="6" y2="18" />
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
+				{#if pendingKnowledgeActionKey}
+					<div
+						class="mb-4 rounded-[1rem] border border-border bg-surface-page px-4 py-3 text-sm font-sans text-text-secondary shadow-sm"
+						role="status"
+						aria-live="polite"
+					>
+						Updating the Knowledge Base…
+					</div>
+				{/if}
 				{#if deletingArtifactCount > 0}
 					<div
 						class="mb-4 rounded-[1rem] border border-border bg-surface-page px-4 py-3 text-sm font-sans text-text-secondary shadow-sm"
@@ -1032,7 +1374,7 @@
 											}`}
 										>
 											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{artifact.type}</td>
+											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatDocumentKind(artifact)}</td>
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
 											<td class="px-4 py-3 align-top">
 												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">

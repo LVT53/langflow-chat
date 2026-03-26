@@ -165,6 +165,28 @@ const migrations: string[] = [
 		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`,
 	`CREATE INDEX IF NOT EXISTS task_checkpoints_task_idx ON task_checkpoints(task_id, checkpoint_type, updated_at)`,
+	`CREATE TABLE IF NOT EXISTS memory_projects (
+		project_id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		summary TEXT,
+		status TEXT NOT NULL DEFAULT 'active',
+		last_active_at INTEGER,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE INDEX IF NOT EXISTS memory_projects_user_status_idx ON memory_projects(user_id, status, updated_at)`,
+	`CREATE TABLE IF NOT EXISTS memory_project_task_links (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL REFERENCES memory_projects(project_id) ON DELETE CASCADE,
+		task_id TEXT NOT NULL REFERENCES conversation_task_states(task_id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS memory_project_task_links_task_idx ON memory_project_task_links(task_id)`,
+	`CREATE INDEX IF NOT EXISTS memory_project_task_links_project_idx ON memory_project_task_links(project_id, updated_at)`,
 	`CREATE TABLE IF NOT EXISTS persona_memory_attributions (
 		id TEXT PRIMARY KEY,
 		conclusion_id TEXT NOT NULL,
