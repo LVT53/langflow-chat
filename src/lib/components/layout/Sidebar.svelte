@@ -11,6 +11,7 @@
 	import { goto, preloadData } from '$app/navigation';
 	import { navigating } from '$app/stores';
 	import { fade } from 'svelte/transition';
+	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import ConversationList from '../sidebar/ConversationList.svelte';
 	import SearchModal from '../search/SearchModal.svelte';
 	import AvatarCircle from '../ui/AvatarCircle.svelte';
@@ -32,10 +33,7 @@
 
 	async function handleNewConversation() {
 		dispatch('new-conversation');
-		const currentId = $currentConversationId;
-		if (currentId && typeof window !== 'undefined') {
-			window.sessionStorage.setItem('previous-conversation-id', currentId);
-		}
+		markPreviousConversationId($currentConversationId);
 		currentConversationId.set(null);
 		await goto('/');
 

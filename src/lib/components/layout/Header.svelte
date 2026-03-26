@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -34,11 +35,7 @@
 
 	async function handleNewConversation() {
 		try {
-			// Store current conversation ID to trigger landing page animation
-			const currentId = $currentConversationId;
-			if (currentId && typeof window !== 'undefined') {
-				window.sessionStorage.setItem('previous-conversation-id', currentId);
-			}
+			markPreviousConversationId($currentConversationId);
 			currentConversationId.set(null);
 			mobileMenuOpen = false;
 			await goto('/');

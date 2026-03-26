@@ -16,8 +16,12 @@ import {
 	getPersonaMemoryClusterConclusionIds,
 	listPersonaMemoryClusters,
 } from './persona-memory';
-import { forgetFocusContinuity, listFocusContinuityItems } from './project-memory';
-import { forgetTaskMemory, listTaskMemoryItems } from './task-state';
+import {
+	forgetFocusContinuity,
+	forgetTaskMemory,
+	listFocusContinuityItems,
+	listTaskMemoryItems,
+} from './task-state';
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }

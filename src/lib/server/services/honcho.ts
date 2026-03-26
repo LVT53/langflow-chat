@@ -10,6 +10,22 @@ import { getConfig } from '../config-store';
 import { db } from '../db';
 import { personaMemoryAttributions } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
+import { estimateTokenCount } from '$lib/server/utils/tokens';
+import {
+	buildContextSection,
+	compactContextSections,
+	dedupeById,
+	extractSerializedAttachmentBody,
+	rerankHistoricalSections,
+	serializeArtifacts,
+	serializePeerContext,
+	serializeRoleMessages,
+	serializeWorkCapsules,
+	serializeWorkingSetArtifacts,
+	selectRecentRoleTurns,
+	truncateToTokenBudget,
+	type PromptContextSection,
+} from '$lib/server/utils/prompt-context';
 import {
 	AttachmentReadinessError,
 	COMPACTION_UI_THRESHOLD,
@@ -27,8 +43,6 @@ import type {
 	Artifact,
 	ConversationContextStatus,
 	ContextDebugState,
-	MemoryLayer,
-	WorkCapsule,
 } from '$lib/types';
 import {
 	canUseContextSummarizer,
@@ -53,35 +67,6 @@ const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
-
-function estimateTokenCount(text: string): number {
-	const trimmed = text.trim();
-	if (!trimmed) return 0;
-	const segments = trimmed.match(/[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];
-	let estimated = 0;
-
-	for (const segment of segments) {
-		if (/^[\p{L}\p{N}]+$/u.test(segment)) {
-			const isAscii = /^[\x00-\x7F]+$/.test(segment);
-			estimated += Math.max(1, Math.ceil(segment.length / (isAscii ? 4 : 2)));
-			continue;
-		}
-		estimated += segment.length;
-	}
-
-	return estimated;
-}
-
-function truncateByTokens(text: string, maxTokens: number): string {
-	if (estimateTokenCount(text) <= maxTokens) return text;
-	const chars = Math.max(300, maxTokens * 4);
-	return `${text.slice(0, chars).trim()}\n...[truncated]`;
-}
-
-function buildSection(title: string, body: string): string {
-	const trimmed = body.trim();
-	return trimmed ? `## ${title}\n${trimmed}` : '';
-}
 
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
@@ -112,207 +97,6 @@ function roleForMessage(message: Message, userId: string): 'user' | 'assistant' 
 		return metadataRole;
 	}
 	return message.peerId === getHonchoAssistantPeerId(userId) ? 'assistant' : 'user';
-}
-
-function serializeMessages(messages: Message[], userId: string, limit: number): string {
-	return messages
-		.slice(-limit)
-		.map((message) => `${roleForMessage(message, userId).toUpperCase()}: ${message.content.trim()}`)
-		.join('\n\n');
-}
-
-function selectRecentTurns(
-	messages: Message[],
-	userId: string,
-	limit: number
-): Array<{ messages: Message[] }> {
-	const turns: Array<{ messages: Message[] }> = [];
-	let currentTurn: Message[] = [];
-
-	for (const message of messages) {
-		const role = roleForMessage(message, userId);
-		if (role === 'user') {
-			if (currentTurn.length > 0) {
-				turns.push({ messages: currentTurn });
-			}
-			currentTurn = [message];
-			continue;
-		}
-
-		if (currentTurn.length === 0) {
-			currentTurn = [message];
-		} else {
-			currentTurn.push(message);
-		}
-	}
-
-	if (currentTurn.length > 0) {
-		turns.push({ messages: currentTurn });
-	}
-
-	return turns.slice(-limit);
-}
-
-function serializeSearchMessages(messages: Message[], userId: string): string {
-	return messages
-		.map((message) => `${roleForMessage(message, userId).toUpperCase()}: ${message.content.trim()}`)
-		.join('\n\n');
-}
-
-function serializePeerContext(peerContext: { representation: string | null; peerCard: string[] | null }): string {
-	const parts: string[] = [];
-	if (peerContext.representation?.trim()) {
-		parts.push(peerContext.representation.trim());
-	}
-	if (peerContext.peerCard?.length) {
-		parts.push(`Peer card:\n- ${peerContext.peerCard.join('\n- ')}`);
-	}
-	return parts.join('\n\n');
-}
-
-function serializeCapsules(capsules: WorkCapsule[]): string {
-	return capsules
-		.map((capsule) => {
-			const lines = [
-				`Workflow: ${capsule.artifact.name}`,
-				capsule.taskSummary ? `Task: ${capsule.taskSummary}` : null,
-				capsule.workflowSummary ? `Summary: ${capsule.workflowSummary}` : null,
-				capsule.keyConclusions.length > 0
-					? `Key conclusions: ${capsule.keyConclusions.join(' ')}`
-					: null,
-				capsule.reusablePatterns.length > 0
-					? `Reusable patterns: ${capsule.reusablePatterns.join(' ')}`
-					: null,
-			].filter((line): line is string => Boolean(line));
-			return lines.join('\n');
-		})
-		.join('\n\n');
-}
-
-function serializeArtifacts(
-	artifacts: Artifact[],
-	label: string,
-	snippets = new Map<string, string>()
-): string {
-	return artifacts
-		.map((artifact) => {
-			const excerptSource =
-				snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
-			return `${label}: ${artifact.name}\n${truncateByTokens(excerptSource, 1200)}`;
-		})
-			.join('\n\n');
-}
-
-function extractSerializedAttachmentBody(serialized: string): string {
-	return serialized
-		.split('\n')
-		.filter((line) => !line.startsWith('Attachment: '))
-		.join('\n')
-		.trim();
-}
-
-function serializeWorkingSetArtifacts(
-	artifacts: Artifact[],
-	snippets = new Map<string, string>()
-): string {
-	let budgetRemaining = WORKING_SET_PROMPT_TOKEN_BUDGET;
-	const parts: string[] = [];
-
-	for (const artifact of artifacts) {
-		if (budgetRemaining <= 0) break;
-		const excerptSource =
-			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
-		const perArtifactBudget =
-			artifact.type === 'generated_output'
-				? WORKING_SET_OUTPUT_TOKEN_BUDGET
-				: WORKING_SET_DOCUMENT_TOKEN_BUDGET;
-		const excerptBudget = Math.min(perArtifactBudget, budgetRemaining);
-		const kind = artifact.type === 'generated_output' ? 'Result' : 'Document';
-		const section = `${kind}: ${artifact.name}\n${truncateByTokens(excerptSource, excerptBudget)}`;
-		parts.push(section);
-		budgetRemaining -= estimateTokenCount(section);
-	}
-
-	return parts.join('\n\n');
-}
-
-function dedupeArtifacts(artifacts: Artifact[]): Artifact[] {
-	return Array.from(new Map(artifacts.map((artifact) => [artifact.id, artifact])).values());
-}
-
-async function maybeRerankHistoricalSections(params: {
-	message: string;
-	taskState: { objective: string } | null;
-	sections: Array<{
-		title: string;
-		body: string;
-		layer?: MemoryLayer;
-		essential?: boolean;
-		llmCompactible?: boolean;
-	}>;
-}): Promise<typeof params.sections> {
-	if (!canUseContextSummarizer()) return params.sections;
-
-	const candidateSections = params.sections.filter(
-		(section) =>
-			!section.essential &&
-			section.llmCompactible &&
-			(section.layer === 'session' || section.layer === 'capsule') &&
-			section.body.trim()
-	);
-
-	if (candidateSections.length <= 2) {
-		return params.sections;
-	}
-
-	type SectionRerankPayload = {
-		selectedTitles?: string[];
-		confidence?: number;
-	};
-
-	try {
-		const reranked = await requestStructuredControlModel<SectionRerankPayload>({
-			system:
-				'Select the historical support sections that are most useful for the current turn. Return strict JSON with selectedTitles and confidence. Favor current intent and avoid stale or weakly related memory.',
-			user: [
-				params.taskState ? `Current task: ${params.taskState.objective}` : null,
-				`User message: ${params.message}`,
-				`Candidate sections: ${JSON.stringify(
-					candidateSections.map((section) => ({
-						title: section.title,
-						layer: section.layer ?? null,
-						preview: truncateByTokens(section.body, 180),
-					})),
-					null,
-					2
-				)}`,
-			]
-				.filter((value): value is string => Boolean(value))
-				.join('\n\n'),
-			maxTokens: 220,
-			temperature: 0.0,
-		});
-
-		if (!(reranked && typeof reranked.confidence === 'number' && reranked.confidence >= 64)) {
-			return params.sections;
-		}
-
-		const selectedTitles = new Set(
-			(Array.isArray(reranked.selectedTitles) ? reranked.selectedTitles : []).filter(
-				(value): value is string => typeof value === 'string'
-			)
-		);
-		if (selectedTitles.size === 0) {
-			return params.sections;
-		}
-
-		return params.sections.filter(
-			(section) => section.essential || !candidateSections.includes(section) || selectedTitles.has(section.title)
-		);
-	} catch (error) {
-		console.error('[HONCHO] Historical section reranker failed:', error);
-		return params.sections;
-	}
 }
 
 export function isHonchoEnabled(): boolean {
@@ -471,7 +255,7 @@ export async function mirrorWorkCapsuleConclusion(params: {
 	try {
 		const peer = await getUserPeer(params.userId);
 		await peer.conclusions.create({
-			content: truncateByTokens(params.content, 800),
+			content: truncateToTokenBudget(params.content, 800),
 			sessionId: params.conversationId,
 		});
 	} catch (error) {
@@ -986,7 +770,7 @@ export async function buildConstructedContext(params: {
 		routingStage: 'deterministic' as const,
 		routingConfidence: 0,
 		verificationStatus: 'fallback' as const,
-		selectedArtifacts: dedupeArtifacts([...currentAttachments, ...workingSetArtifacts]),
+		selectedArtifacts: dedupeById([...currentAttachments, ...workingSetArtifacts]),
 		pinnedArtifactIds: [],
 		excludedArtifactIds: [],
 	}));
@@ -1007,16 +791,14 @@ export async function buildConstructedContext(params: {
 		perArtifactCharBudget: documentFocused ? 2200 : 1400,
 	}).catch(() => new Map<string, string>());
 
-	const recentTurns = selectRecentTurns(sessionMessages, params.userId, 6);
+	const recentTurns = selectRecentRoleTurns(
+		sessionMessages,
+		(message) => roleForMessage(message, params.userId),
+		6
+	);
 	const recentTurnCount = recentTurns.length;
 	const recentTurnMessages = recentTurns.flatMap((turn) => turn.messages);
-	const sections: Array<{
-		title: string;
-		body: string;
-		layer?: MemoryLayer;
-		essential?: boolean;
-		llmCompactible?: boolean;
-	}> = [];
+	const sections: PromptContextSection[] = [];
 
 	if (taskState) {
 		sections.push({
@@ -1029,7 +811,11 @@ export async function buildConstructedContext(params: {
 
 	const serializedCurrentAttachments =
 		currentAttachments.length > 0
-			? serializeArtifacts(currentAttachments, 'Attachment', artifactSnippets)
+			? serializeArtifacts({
+					artifacts: currentAttachments,
+					label: 'Attachment',
+					snippets: artifactSnippets,
+				})
 			: '';
 	const serializedAttachmentBody = extractSerializedAttachmentBody(serializedCurrentAttachments);
 
@@ -1080,7 +866,13 @@ export async function buildConstructedContext(params: {
 	if (selectedEvidence.length > 0) {
 		sections.push({
 			title: 'Retrieved Evidence',
-			body: serializeWorkingSetArtifacts(selectedEvidence, artifactSnippets),
+			body: serializeWorkingSetArtifacts({
+				artifacts: selectedEvidence,
+				snippets: artifactSnippets,
+				totalBudget: WORKING_SET_PROMPT_TOKEN_BUDGET,
+				documentBudget: WORKING_SET_DOCUMENT_TOKEN_BUDGET,
+				outputBudget: WORKING_SET_OUTPUT_TOKEN_BUDGET,
+			}),
 			layer: 'working_set',
 		});
 	}
@@ -1089,7 +881,7 @@ export async function buildConstructedContext(params: {
 	if (longSummary.trim()) {
 		sections.push({
 			title: 'Session Summary',
-			body: truncateByTokens(longSummary, 1600),
+			body: truncateToTokenBudget(longSummary, 1600),
 			layer: 'session',
 			llmCompactible: true,
 		});
@@ -1098,7 +890,12 @@ export async function buildConstructedContext(params: {
 	if (sessionMessages.length > 0) {
 		sections.push({
 			title: 'Recent Session Turns',
-			body: serializeMessages(recentTurnMessages, params.userId, recentTurnMessages.length),
+			body: serializeRoleMessages(
+				recentTurnMessages,
+				(message) => roleForMessage(message, params.userId),
+				(message) => message.content,
+				recentTurnMessages.length
+			),
 			layer: 'session',
 			essential: true,
 			llmCompactible: true,
@@ -1108,7 +905,7 @@ export async function buildConstructedContext(params: {
 	if (peerContext.trim()) {
 		sections.push({
 			title: 'User Memory',
-			body: truncateByTokens(peerContext, 1400),
+			body: truncateToTokenBudget(peerContext, 1400),
 			layer: 'session',
 			llmCompactible: true,
 		});
@@ -1117,7 +914,14 @@ export async function buildConstructedContext(params: {
 	if (searchedMessages.length > 0) {
 		sections.push({
 			title: 'Relevant Session Recalls',
-			body: truncateByTokens(serializeSearchMessages(searchedMessages, params.userId), 1000),
+			body: truncateToTokenBudget(
+				serializeRoleMessages(
+					searchedMessages,
+					(message) => roleForMessage(message, params.userId),
+					(message) => message.content
+				),
+				1000
+			),
 			layer: 'session',
 			llmCompactible: true,
 		});
@@ -1126,22 +930,26 @@ export async function buildConstructedContext(params: {
 	if (relevantCapsules.length > 0) {
 		sections.push({
 			title: 'Relevant Prior Workflows',
-			body: truncateByTokens(serializeCapsules(relevantCapsules), 1200),
+			body: truncateToTokenBudget(serializeWorkCapsules(relevantCapsules), 1200),
 			layer: 'capsule',
 			llmCompactible: true,
 		});
 	}
 
 	let effectiveSections = [
-		...(await maybeRerankHistoricalSections({
-		message: params.message,
-		taskState,
-		sections,
-	}).catch(() => sections)),
+		...(await rerankHistoricalSections({
+			enabled: canUseContextSummarizer(),
+			message: params.message,
+			taskObjective: taskState?.objective ?? null,
+			sections,
+			requestStructuredModel: requestStructuredControlModel,
+			logPrefix: '[HONCHO]',
+		}).catch(() => sections)),
 	];
 
 	const sectionTotalEstimate = effectiveSections.reduce(
-		(total, section) => total + estimateTokenCount(buildSection(section.title, section.body)),
+		(total, section) =>
+			total + estimateTokenCount(buildContextSection(section.title, section.body)),
 		estimateTokenCount(params.message) + 12
 	);
 	let compactionMode: ConversationContextStatus['compactionMode'] = 'none';
@@ -1171,52 +979,27 @@ export async function buildConstructedContext(params: {
 		}
 	}
 
-	let bodyParts: string[] = [];
-	let layersUsed = new Set<MemoryLayer>();
-	let usedTokens = estimateTokenCount(params.message) + 12;
-	let compactionApplied = false;
-
-	for (const section of effectiveSections) {
-		const candidate = buildSection(section.title, section.body);
-		if (!candidate) continue;
-		const candidateTokens = estimateTokenCount(candidate);
-		const nextTotal = usedTokens + candidateTokens;
-		if (!section.essential && nextTotal > TARGET_CONSTRUCTED_CONTEXT) {
-			compactionApplied = true;
-			if (compactionMode === 'none') compactionMode = 'deterministic';
-			continue;
-		}
-		if (section.essential && nextTotal > TARGET_CONSTRUCTED_CONTEXT) {
-			const remaining = Math.max(400, TARGET_CONSTRUCTED_CONTEXT - usedTokens - 200);
-			const truncated = buildSection(section.title, truncateByTokens(section.body, remaining));
-			bodyParts.push(truncated);
-			usedTokens += estimateTokenCount(truncated);
-			compactionApplied = true;
-			if (compactionMode === 'none') compactionMode = 'deterministic';
-		} else {
-			bodyParts.push(candidate);
-			usedTokens = nextTotal;
-		}
-		if (section.layer) layersUsed.add(section.layer);
-	}
-
-	const inputValue = [
-		'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.',
-		...bodyParts,
-		buildSection('Current User Message', params.message),
-	].join('\n\n');
+	const compacted = compactContextSections({
+		intro: 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.',
+		message: params.message,
+		sections: effectiveSections,
+		targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+		initialCompactionMode: compactionMode,
+	});
 
 	const status = await updateConversationContextStatus({
 		conversationId: params.conversationId,
 		userId: params.userId,
-		estimatedTokens: estimateTokenCount(inputValue),
+		estimatedTokens: compacted.estimatedTokens,
 		compactionApplied:
-			compactionApplied || compactionMode !== 'none' || estimateTokenCount(inputValue) >= COMPACTION_UI_THRESHOLD,
-		compactionMode,
+			compacted.compactionApplied ||
+			compacted.compactionMode !== 'none' ||
+			compacted.estimatedTokens >= COMPACTION_UI_THRESHOLD,
+		compactionMode: compacted.compactionMode,
 		routingStage: preparedContext.routingStage,
 		routingConfidence: preparedContext.routingConfidence,
 		verificationStatus: preparedContext.verificationStatus,
-		layersUsed: Array.from(layersUsed),
+		layersUsed: compacted.layersUsed,
 		workingSetCount: selectedEvidence.length,
 		workingSetArtifactIds: selectedEvidence.map((artifact) => artifact.id),
 		workingSetApplied: selectedEvidence.length > 0,
@@ -1227,7 +1010,7 @@ export async function buildConstructedContext(params: {
 	});
 
 	return {
-		inputValue,
+		inputValue: compacted.inputValue,
 		contextStatus: status,
 		taskState,
 		contextDebug: await getContextDebugState(params.userId, params.conversationId).catch(() => null),

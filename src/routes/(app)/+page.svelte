@@ -1,17 +1,27 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { fade, fly } from 'svelte/transition';
+	import {
+		cleanupPreparedConversation,
+		consumePreviousConversationId,
+		createConversationDraftRecord,
+		getLandingDraftConversationId,
+		setLandingDraftConversationId,
+		storePendingConversationMessage,
+	} from '$lib/client/conversation-session';
 	import { createNewConversation } from '$lib/stores/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import { onMount } from 'svelte';
-	import type { ConversationDetail, ConversationDraft, PendingAttachment } from '$lib/types';
+	import type {
+		ArtifactSummary,
+		ConversationDetail,
+		ConversationDraft,
+		PendingAttachment,
+	} from '$lib/types';
 	import type { LayoutData } from './$types';
 
 	export let data: LayoutData;
-
-	const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
-	const LANDING_DRAFT_CONVERSATION_KEY = 'landing-draft-conversation-id';
 
 	let hasStarted = false;
 	let creating = false;
@@ -23,22 +33,17 @@
 	let conversationDraft: ConversationDraft | null = null;
 
 	onMount(() => {
-		// Check if we're arriving from a chat page (indicated by previous conversation ID being set)
-		const previousId = sessionStorage.getItem('previous-conversation-id');
+		const previousId = consumePreviousConversationId();
 		if (previousId) {
 			isFromChat = true;
-			// Clear the marker after reading it
-			sessionStorage.removeItem('previous-conversation-id');
-			// Small delay to allow DOM to render initial position before animating
 			setTimeout(() => {
 				animateIn = true;
 			}, 50);
 		} else {
-			// No animation needed for direct navigation
 			animateIn = true;
 		}
 
-		const storedConversationId = sessionStorage.getItem(LANDING_DRAFT_CONVERSATION_KEY);
+		const storedConversationId = getLandingDraftConversationId();
 		if (storedConversationId) {
 			preparedConversationId = storedConversationId;
 			void loadPreparedDraft(storedConversationId);
@@ -52,9 +57,7 @@
 		if (!preparedConversationPromise) {
 			preparedConversationPromise = createNewConversation().then((id) => {
 				preparedConversationId = id;
-				if (typeof window !== 'undefined') {
-					window.sessionStorage.setItem(LANDING_DRAFT_CONVERSATION_KEY, id);
-				}
+				setLandingDraftConversationId(id);
 				return id;
 			}).finally(() => {
 				preparedConversationPromise = null;
@@ -63,7 +66,14 @@
 		return preparedConversationPromise;
 	}
 
-async function handleSend(event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: unknown[]; conversationId: string | null }>) {
+	async function handleSend(
+		event: CustomEvent<{
+			message: string;
+			attachmentIds: string[];
+			attachments: ArtifactSummary[];
+			conversationId: string | null;
+		}>
+	) {
 		if (creating) return;
 		const text = event.detail.message;
 
@@ -74,17 +84,12 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 		try {
 			const id = event.detail.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
-			if (typeof window !== 'undefined') {
-				window.sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
-				window.sessionStorage.setItem(
-					`${PENDING_MESSAGE_PREFIX}${id}`,
-					JSON.stringify({
-						message: text.trim(),
-						attachmentIds: event.detail.attachmentIds,
-						attachments: event.detail.attachments
-					})
-				);
-			}
+			setLandingDraftConversationId(null);
+			storePendingConversationMessage(id, {
+				message: text,
+				attachmentIds: event.detail.attachmentIds,
+				attachments: event.detail.attachments,
+			});
 			await goto(`/chat/${id}`);
 		} catch {
 			error = 'Failed to create conversation. Please try again.';
@@ -98,13 +103,15 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 		try {
 			const response = await fetch(`/api/conversations/${conversationId}`);
 			if (!response.ok) {
-				sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+				preparedConversationId = null;
+				setLandingDraftConversationId(null);
 				return;
 			}
 			const payload = (await response.json()) as ConversationDetail;
 			conversationDraft = payload.draft ?? null;
 		} catch {
-			sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+			preparedConversationId = null;
+			setLandingDraftConversationId(null);
 		}
 	}
 
@@ -116,20 +123,32 @@ async function handleSend(event: CustomEvent<{ message: string; attachmentIds: s
 			selectedAttachments: PendingAttachment[];
 		}>
 	) {
-		const conversationId = event.detail.conversationId;
-		if (conversationId) {
-			preparedConversationId = conversationId;
-			sessionStorage.setItem(LANDING_DRAFT_CONVERSATION_KEY, conversationId);
-		}
-		conversationDraft = {
-			conversationId: conversationId ?? preparedConversationId ?? 'draft',
+		const nextDraft = createConversationDraftRecord({
+			conversationId: event.detail.conversationId,
+			fallbackConversationId: preparedConversationId,
 			draftText: event.detail.draftText,
 			selectedAttachmentIds: event.detail.selectedAttachmentIds,
 			selectedAttachments: event.detail.selectedAttachments,
-			updatedAt: Date.now(),
-		};
-		if (!event.detail.draftText.trim() && event.detail.selectedAttachmentIds.length === 0) {
-			sessionStorage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+		});
+		const stalePreparedConversationId =
+			(event.detail.conversationId ?? preparedConversationId) ?? null;
+
+		if (!nextDraft) {
+			conversationDraft = null;
+			preparedConversationId = null;
+			setLandingDraftConversationId(null);
+			if (stalePreparedConversationId) {
+				cleanupPreparedConversation({
+					conversationId: stalePreparedConversationId,
+				});
+			}
+			return;
+		}
+
+		conversationDraft = nextDraft;
+		if (nextDraft.conversationId !== 'draft') {
+			preparedConversationId = nextDraft.conversationId;
+			setLandingDraftConversationId(nextDraft.conversationId);
 		}
 	}
 </script>

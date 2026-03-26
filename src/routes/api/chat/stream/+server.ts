@@ -1,48 +1,34 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getConversation, touchConversation } from '$lib/server/services/conversations';
-import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
+import { touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
-import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
-import { recordMessageAnalytics } from '$lib/server/services/analytics';
-import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
-import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
-import {
-	createAttachmentTraceId,
-	logAttachmentTrace,
-} from '$lib/server/services/attachment-trace';
-import {
-	capturePersonaMemorySnapshot,
-	mirrorMessage,
-	mirrorWorkCapsuleConclusion,
-	syncConversationPersonaMemoryAttributions,
-} from '$lib/server/services/honcho';
-import {
-	assertPromptReadyAttachments,
-	attachArtifactsToMessage,
-	createGeneratedOutputArtifact,
-	getConversationWorkingSet,
-	getArtifactsForUser,
-	isAttachmentReadinessError,
-	listConversationSourceArtifactIds,
-	refreshConversationWorkingSet,
-	upsertWorkCapsule
-} from '$lib/server/services/knowledge';
-import {
-	getContextDebugState,
-	getConversationTaskState,
-	updateTaskStateCheckpoint,
-} from '$lib/server/services/task-state';
-import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { getConfig } from '$lib/server/config-store';
+import { createMessage } from '$lib/server/services/messages';
+import { logAttachmentTrace } from '$lib/server/services/attachment-trace';
 import {
 	attachContinuityToTaskState,
-	syncTaskContinuityFromTaskState,
-} from '$lib/server/services/project-memory';
-import { detectLanguage } from '$lib/server/services/language';
+	getContextDebugState,
+	getConversationTaskState,
+} from '$lib/server/services/task-state';
+import { StreamingHungarianTranslator } from '$lib/server/services/translator';
 import {
-	StreamingHungarianTranslator,
-	translateHungarianToEnglish
-} from '$lib/server/services/translator';
+	buildUpstreamMessage,
+	shouldTranslateHungarian,
+} from '$lib/server/services/chat-turn/execute';
+import {
+	persistAssistantEvidence,
+	persistAssistantTurnState,
+	persistUserTurnAttachments,
+	runPostTurnTasks,
+} from '$lib/server/services/chat-turn/finalize';
+import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
+import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
+import {
+	createEventStreamResponse,
+	createStreamJsonErrorResponse,
+} from '$lib/server/services/chat-turn/stream';
+import type { WorkCapsuleSummary } from '$lib/server/services/chat-turn/types';
+import { estimateTokenCount } from '$lib/server/utils/tokens';
 
 const STREAM_TIMEOUT_MS = 120_000;
 
@@ -622,138 +608,46 @@ function isUrlListValidationError(rawMessage: string): boolean {
 	);
 }
 
-function estimateTokenCount(text: string): number {
-	const trimmed = text.trim();
-	if (!trimmed) return 0;
-
-	const segments = trimmed.match(/[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];
-	let estimated = 0;
-
-	for (const segment of segments) {
-		if (/^[\p{L}\p{N}]+$/u.test(segment)) {
-			const isAscii = /^[\x00-\x7F]+$/.test(segment);
-			estimated += Math.max(1, Math.ceil(segment.length / (isAscii ? 4 : 2)));
-			continue;
-		}
-
-		estimated += segment.length;
-	}
-
-	return estimated;
-}
-
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 	const requestStartTime = Date.now();
 	const runtimeConfig = getConfig();
 
-	let body: {
-		message?: unknown;
-		conversationId?: unknown;
-		model?: unknown;
-		skipPersistUserMessage?: unknown;
-		attachmentIds?: unknown;
-	};
-	try {
-		body = await event.request.json();
-	} catch {
-		return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' }
-		});
+	const parsedRequest = await parseChatTurnRequest(event.request, runtimeConfig, 'stream');
+	if (!parsedRequest.ok) {
+		return createStreamJsonErrorResponse(parsedRequest.error);
 	}
 
-	const { message, conversationId, model, skipPersistUserMessage, attachmentIds } = body;
-	const safeAttachmentIds = Array.isArray(attachmentIds)
-		? attachmentIds.filter((id): id is string => typeof id === 'string')
-		: [];
-
-	if (typeof message !== 'string' || message.trim().length === 0) {
-		return new Response(JSON.stringify({ error: 'Message must be a non-empty string' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' }
-		});
+	const preflight = await preflightChatTurn({
+		userId: user.id,
+		translationEnabled: user.translationEnabled,
+		request: parsedRequest.value,
+	});
+	if (!preflight.ok) {
+		return createStreamJsonErrorResponse(preflight.error);
 	}
 
-	const { maxMessageLength } = runtimeConfig;
-	if (message.length > maxMessageLength) {
-		return new Response(
-			JSON.stringify({
-				error: `Message exceeds maximum length of ${maxMessageLength} characters`
-			}),
-			{ status: 400, headers: { 'Content-Type': 'application/json' } }
-		);
-	}
-
-	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
-		return new Response(JSON.stringify({ error: 'conversationId is required' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' }
-		});
-	}
-
-	// Validate model parameter
-	const modelId =
-		model === 'model1' || model === 'model2'
-			? normalizeModelSelection(model, runtimeConfig)
-			: undefined;
-	const modelDisplayName =
-		modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
-	const attachmentTraceId =
-		safeAttachmentIds.length > 0 ? createAttachmentTraceId('stream') : undefined;
-
-	const conversation = await getConversation(user.id, conversationId);
-	if (!conversation) {
-		return new Response(JSON.stringify({ error: 'Conversation not found' }), {
-			status: 404,
-			headers: { 'Content-Type': 'application/json' }
-		});
-	}
-
-	if (safeAttachmentIds.length > 0) {
-		try {
-			await assertPromptReadyAttachments({
-				userId: user.id,
-				conversationId,
-				attachmentIds: safeAttachmentIds,
-				traceId: attachmentTraceId,
-			});
-		} catch (error) {
-			if (isAttachmentReadinessError(error)) {
-				return new Response(
-					JSON.stringify({
-						error: error.message,
-						code: error.code,
-						attachmentIds: error.attachmentIds,
-					}),
-					{
-						status: error.status,
-						headers: { 'Content-Type': 'application/json' },
-					}
-				);
-			}
-			throw error;
-		}
-	}
-
-	const normalizedMessage = message.trim();
-	const sourceLanguage = detectLanguage(normalizedMessage);
-	const isTranslationEnabled = user.translationEnabled;
-	const personaMemorySnapshotPromise = capturePersonaMemorySnapshot(user.id).catch(
-		() => undefined
-	);
+	const turn = preflight.value;
+	const conversationId = turn.conversationId;
+	const normalizedMessage = turn.normalizedMessage;
+	const modelId = turn.modelId;
+	const modelDisplayName = turn.modelDisplayName;
+	const skipPersistUserMessage = turn.skipPersistUserMessage;
+	const safeAttachmentIds = turn.attachmentIds;
+	const attachmentTraceId = turn.attachmentTraceId;
+	const sourceLanguage = turn.sourceLanguage;
+	const isTranslationEnabled = turn.translationEnabled;
+	const personaMemorySnapshotPromise = turn.personaMemorySnapshotPromise;
 
 	let upstreamMessage = normalizedMessage;
 	try {
-		if (sourceLanguage === 'hu' && isTranslationEnabled) {
-			upstreamMessage = await translateHungarianToEnglish(normalizedMessage);
-		}
+		upstreamMessage = await buildUpstreamMessage(turn);
 	} catch (error) {
 		console.error('Input translation error:', error);
-		return new Response(JSON.stringify({ error: 'Failed to prepare the translated prompt.' }), {
+		return createStreamJsonErrorResponse({
 			status: 502,
-			headers: { 'Content-Type': 'application/json' }
+			error: 'Failed to prepare the translated prompt.',
 		});
 	}
 
@@ -765,7 +659,7 @@ export const POST: RequestHandler = async (event) => {
 			async start(controller) {
 				const upstreamAbortController = new AbortController();
 				const outputTranslator =
-					sourceLanguage === 'hu' && isTranslationEnabled ? new StreamingHungarianTranslator() : null;
+					shouldTranslateHungarian(turn) ? new StreamingHungarianTranslator() : null;
 				let closed = false;
 				let ended = false;
 				let fullResponse = '';
@@ -1228,8 +1122,8 @@ export const POST: RequestHandler = async (event) => {
 					wasStopped
 				);
 				const genTimeMs = Date.now() - requestStartTime;
-				const modelId = typeof model === 'string' && (model === 'model1' || model === 'model2') ? model : 'model1';
-				const persistUserMessage = skipPersistUserMessage !== true;
+				const analyticsModel = modelId ?? 'model1';
+				const persistUserMessage = !skipPersistUserMessage;
 
 				const userMsgPromise = persistUserMessage
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
@@ -1271,128 +1165,64 @@ export const POST: RequestHandler = async (event) => {
 					let uiStateTask: Promise<unknown> = Promise.resolve();
 					if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
 						postPersistTasks.push(
-							(async () => {
-								await attachArtifactsToMessage({
-									userId: user.id,
-									conversationId,
-									messageId: userMsg.id,
-									artifactIds: safeAttachmentIds
-								});
-								latestActiveWorkingSet = await refreshConversationWorkingSet({
-									userId: user.id,
-									conversationId,
-									message: normalizedMessage,
-									attachmentIds: safeAttachmentIds
-								});
-							})()
+							persistUserTurnAttachments({
+								userId: user.id,
+								conversationId,
+								messageId: userMsg.id,
+								normalizedMessage,
+								attachmentIds: safeAttachmentIds,
+							}).then((workingSet) => {
+								latestActiveWorkingSet = workingSet ?? latestActiveWorkingSet;
+							})
 						);
 					}
 
+					let latestWorkCapsule: WorkCapsuleSummary;
 					if (assistantMsg) {
-						recordMessageAnalytics({
-							messageId: assistantMsg.id,
+						uiStateTask = persistAssistantTurnState({
 							userId: user.id,
-							model: modelId,
-							completionTokens: responseTokenCount,
-							reasoningTokens: thinkingTokenCount,
-							generationTimeMs: genTimeMs,
-						}).catch(() => undefined);
-
-						uiStateTask = (async () => {
-							const sourceArtifactIds = safeAttachmentIds.length > 0
-								? safeAttachmentIds
-								: await listConversationSourceArtifactIds(user.id, conversationId);
-							const outputArtifact = await createGeneratedOutputArtifact({
-								userId: user.id,
-								conversationId,
-								messageId: assistantMsg.id,
-								content: fullResponse,
-								sourceArtifactIds
-							});
-							const workCapsule = await upsertWorkCapsule({
-								userId: user.id,
-								conversationId
-							});
-							if (workCapsule?.workflowSummary) {
-								await mirrorWorkCapsuleConclusion({
-									userId: user.id,
-									conversationId,
-									content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
-								});
-							}
-							latestActiveWorkingSet = await refreshConversationWorkingSet({
-								userId: user.id,
-								conversationId,
-								message: normalizedMessage,
-								latestOutputArtifactId: outputArtifact?.id ?? null
-							}).catch(async () => getConversationWorkingSet(user.id, conversationId));
-							latestTaskState = await updateTaskStateCheckpoint({
-								userId: user.id,
-								conversationId,
-								message: normalizedMessage,
-								assistantResponse: fullResponse,
-								attachmentIds: safeAttachmentIds,
-								promptArtifactIds: latestContextStatus?.workingSetArtifactIds ?? [],
-								userMessageId: userMsg?.id ?? null,
-								assistantMessageId: assistantMsg.id,
-							}).catch(async () => getConversationTaskState(user.id, conversationId));
-							if (latestTaskState) {
-								await syncTaskContinuityFromTaskState({
-									userId: user.id,
-									taskState: latestTaskState,
-								}).catch((error) =>
-									console.error('[CONTINUITY] Failed to sync focus continuity from stream:', error)
-								);
-							}
-							latestTaskState = await attachContinuityToTaskState(
-								user.id,
-								latestTaskState ?? null
-							).catch(() => latestTaskState ?? null);
-							latestContextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
-							await clearConversationDraft(user.id, conversationId).catch(() => undefined);
-						})();
+							conversationId,
+							normalizedMessage,
+							assistantResponse: fullResponse,
+							attachmentIds: safeAttachmentIds,
+							contextStatus: latestContextStatus,
+							initialTaskState,
+							initialContextDebug,
+							userMessageId: userMsg?.id ?? null,
+							assistantMessageId: assistantMsg.id,
+							analytics: {
+								model: analyticsModel,
+								completionTokens: responseTokenCount,
+								reasoningTokens: thinkingTokenCount,
+								generationTimeMs: genTimeMs,
+							},
+							continuitySource: 'stream',
+						}).then((turnState) => {
+							latestActiveWorkingSet = turnState.activeWorkingSet;
+							latestTaskState = turnState.taskState;
+							latestContextDebug = turnState.contextDebug;
+							latestWorkCapsule = turnState.workCapsule;
+						});
 						postPersistTasks.push(uiStateTask);
 
 						postPersistTasks.push(
 							(async () => {
-								try {
-									const currentAttachments =
-										safeAttachmentIds.length > 0
-											? await getArtifactsForUser(user.id, safeAttachmentIds)
-											: [];
-									const messageEvidence = await buildAssistantEvidenceSummary({
-										userId: user.id,
-										message: normalizedMessage,
-										taskState: latestTaskState ?? initialTaskState ?? null,
-										contextStatus: latestContextStatus ?? initialContextStatus ?? null,
-										contextDebug: latestContextDebug ?? initialContextDebug ?? null,
-										toolCalls: toolCallRecords.filter((tool) => tool.status === 'done'),
-										currentAttachments,
-									});
-									await updateMessageEvidence(assistantMsg.id, {
-										evidenceSummary: messageEvidence,
-										evidenceStatus: messageEvidence ? 'ready' : 'none',
-									});
-								} catch (error) {
-									console.error('[STREAM] Failed to persist assistant evidence summary:', error);
-									await updateMessageEvidence(assistantMsg.id, {
-										evidenceStatus: 'failed',
-									}).catch(() => undefined);
-								}
+								await uiStateTask.catch(() => undefined);
+								await persistAssistantEvidence({
+									logPrefix: '[STREAM]',
+									userId: user.id,
+									conversationId,
+									assistantMessageId: assistantMsg.id,
+									normalizedMessage,
+									attachmentIds: safeAttachmentIds,
+									taskState: latestTaskState,
+									contextStatus: latestContextStatus ?? initialContextStatus ?? null,
+									contextDebug: latestContextDebug,
+									initialTaskState,
+									initialContextDebug,
+									toolCalls: toolCallRecords,
+								});
 							})()
-						);
-					}
-
-					const honchoTasks: Promise<unknown>[] = [
-						mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
-							console.error('[HONCHO] Mirror user message failed:', err)
-						),
-					];
-					if (fullResponse.trim()) {
-						honchoTasks.push(
-							mirrorMessage(user.id, conversationId, 'assistant', fullResponse).catch((err) =>
-								console.error('[HONCHO] Mirror assistant message failed:', err)
-							)
 						);
 					}
 
@@ -1400,20 +1230,16 @@ export const POST: RequestHandler = async (event) => {
 						void sendEndAndClose(userMsg?.id, assistantMsg?.id);
 					});
 					Promise.allSettled(postPersistTasks).finally(() => {
-						void Promise.allSettled(honchoTasks)
-							.then(async () =>
-								syncConversationPersonaMemoryAttributions({
-									userId: user.id,
-									conversationId,
-									beforeIds: await personaMemorySnapshotPromise,
-									attempts: 3,
-									delayMs: 300,
-								})
-							)
-							.then(() => runUserMemoryMaintenance(user.id, 'chat_stream'))
-							.catch((err) =>
-								console.error('[STREAM] Post-stream memory maintenance failed:', err)
-							);
+						void runPostTurnTasks({
+							logPrefix: '[STREAM]',
+							userId: user.id,
+							conversationId,
+							upstreamMessage,
+							assistantMirrorContent: fullResponse,
+							workCapsule: latestWorkCapsule,
+							personaMemorySnapshotPromise,
+							maintenanceReason: 'chat_stream',
+						});
 					});
 				}).catch(() => {
 					void sendEndAndClose();
@@ -1670,11 +1496,5 @@ export const POST: RequestHandler = async (event) => {
 		}
 	});
 
-	return new Response(stream, {
-		headers: {
-			'Content-Type': 'text/event-stream',
-			'Cache-Control': 'no-cache',
-			Connection: 'keep-alive'
-		}
-	});
+	return createEventStreamResponse(stream);
 };

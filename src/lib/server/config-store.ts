@@ -74,42 +74,98 @@ function buildDefaultConfig(): RuntimeConfig {
 
 let runtimeConfig: RuntimeConfig = buildDefaultConfig();
 
+type OverrideApplier = (config: RuntimeConfig, value: string) => void;
+
+function parseIntOverride(value: string): number | undefined {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function parseFloatOverride(value: string): number | undefined {
+  const parsed = parseFloat(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
+  MAX_MESSAGE_LENGTH: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.maxMessageLength = parsed;
+  },
+  MODEL_1_BASEURL: (config, value) => {
+    config.model1.baseUrl = value;
+  },
+  MODEL_1_NAME: (config, value) => {
+    config.model1.modelName = value;
+  },
+  MODEL_1_DISPLAY_NAME: (config, value) => {
+    config.model1.displayName = value;
+  },
+  MODEL_1_SYSTEM_PROMPT: (config, value) => {
+    config.model1.systemPrompt = value;
+  },
+  MODEL_1_FLOW_ID: (config, value) => {
+    config.model1.flowId = value;
+  },
+  MODEL_2_BASEURL: (config, value) => {
+    config.model2.baseUrl = value;
+  },
+  MODEL_2_NAME: (config, value) => {
+    config.model2.modelName = value;
+  },
+  MODEL_2_DISPLAY_NAME: (config, value) => {
+    config.model2.displayName = value;
+  },
+  MODEL_2_SYSTEM_PROMPT: (config, value) => {
+    config.model2.systemPrompt = value;
+  },
+  MODEL_2_FLOW_ID: (config, value) => {
+    config.model2.flowId = value;
+  },
+  MODEL_2_ENABLED: (config, value) => {
+    config.model2Enabled = value === 'true';
+  },
+  TITLE_GEN_URL: (config, value) => {
+    config.titleGenUrl = value;
+  },
+  TITLE_GEN_MODEL: (config, value) => {
+    config.titleGenModel = value;
+  },
+  CONTEXT_SUMMARIZER_URL: (config, value) => {
+    config.contextSummarizerUrl = value;
+  },
+  CONTEXT_SUMMARIZER_MODEL: (config, value) => {
+    config.contextSummarizerModel = value;
+  },
+  TRANSLATOR_URL: (config, value) => {
+    config.translatorUrl = value;
+  },
+  TRANSLATOR_MODEL: (config, value) => {
+    config.translatorModel = value;
+  },
+  TRANSLATION_MAX_TOKENS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.translationMaxTokens = parsed;
+  },
+  TRANSLATION_TEMPERATURE: (config, value) => {
+    const parsed = parseFloatOverride(value);
+    if (parsed !== undefined) config.translationTemperature = parsed;
+  },
+  HONCHO_ENABLED: (config, value) => {
+    config.honchoEnabled = value === 'true';
+  },
+};
+
 export async function refreshConfig(): Promise<void> {
   const rows = await db.select().from(adminConfig);
   const overrides: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
   const base = buildDefaultConfig();
 
-  if (overrides.MAX_MESSAGE_LENGTH !== undefined) {
-    const v = parseInt(overrides.MAX_MESSAGE_LENGTH, 10);
-    if (!isNaN(v)) base.maxMessageLength = v;
+  for (const key of ADMIN_CONFIG_KEYS) {
+    const value = overrides[key];
+    if (value === undefined) continue;
+    overrideAppliers[key](base, value);
   }
-  if (overrides.MODEL_1_BASEURL !== undefined) base.model1.baseUrl = overrides.MODEL_1_BASEURL;
-  if (overrides.MODEL_1_NAME !== undefined) base.model1.modelName = overrides.MODEL_1_NAME;
-  if (overrides.MODEL_1_DISPLAY_NAME !== undefined) base.model1.displayName = overrides.MODEL_1_DISPLAY_NAME;
-  if (overrides.MODEL_1_SYSTEM_PROMPT !== undefined) base.model1.systemPrompt = overrides.MODEL_1_SYSTEM_PROMPT;
-  if (overrides.MODEL_1_FLOW_ID !== undefined) base.model1.flowId = overrides.MODEL_1_FLOW_ID;
-  if (overrides.MODEL_2_BASEURL !== undefined) base.model2.baseUrl = overrides.MODEL_2_BASEURL;
-  if (overrides.MODEL_2_NAME !== undefined) base.model2.modelName = overrides.MODEL_2_NAME;
-  if (overrides.MODEL_2_DISPLAY_NAME !== undefined) base.model2.displayName = overrides.MODEL_2_DISPLAY_NAME;
-  if (overrides.MODEL_2_SYSTEM_PROMPT !== undefined) base.model2.systemPrompt = overrides.MODEL_2_SYSTEM_PROMPT;
-  if (overrides.MODEL_2_FLOW_ID !== undefined) base.model2.flowId = overrides.MODEL_2_FLOW_ID;
-  if (overrides.MODEL_2_ENABLED !== undefined) base.model2Enabled = overrides.MODEL_2_ENABLED === 'true';
-  if (overrides.TITLE_GEN_URL !== undefined) base.titleGenUrl = overrides.TITLE_GEN_URL;
-  if (overrides.TITLE_GEN_MODEL !== undefined) base.titleGenModel = overrides.TITLE_GEN_MODEL;
-  if (overrides.CONTEXT_SUMMARIZER_URL !== undefined) base.contextSummarizerUrl = overrides.CONTEXT_SUMMARIZER_URL;
-  if (overrides.CONTEXT_SUMMARIZER_MODEL !== undefined) base.contextSummarizerModel = overrides.CONTEXT_SUMMARIZER_MODEL;
-  if (overrides.TRANSLATOR_URL !== undefined) base.translatorUrl = overrides.TRANSLATOR_URL;
-  if (overrides.TRANSLATOR_MODEL !== undefined) base.translatorModel = overrides.TRANSLATOR_MODEL;
-  if (overrides.TRANSLATION_MAX_TOKENS !== undefined) {
-    const v = parseInt(overrides.TRANSLATION_MAX_TOKENS, 10);
-    if (!isNaN(v)) base.translationMaxTokens = v;
-  }
-  if (overrides.TRANSLATION_TEMPERATURE !== undefined) {
-    const v = parseFloat(overrides.TRANSLATION_TEMPERATURE);
-    if (!isNaN(v)) base.translationTemperature = v;
-  }
-  if (overrides.HONCHO_ENABLED !== undefined) base.honchoEnabled = overrides.HONCHO_ENABLED === 'true';
 
   runtimeConfig = base;
 }

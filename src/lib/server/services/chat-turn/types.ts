@@ -1,0 +1,108 @@
+import type {
+	ContextDebugState,
+	ConversationContextStatus,
+	ModelId,
+	TaskState,
+	ToolCallEntry,
+} from '$lib/types';
+
+export type ChatTurnRoute = 'send' | 'stream';
+
+export type ChatTurnRequestError = {
+	status: number;
+	error: string;
+	code?: string;
+	attachmentIds?: string[];
+};
+
+export type ParsedChatTurnRequest = {
+	conversationId: string;
+	normalizedMessage: string;
+	modelId: ModelId | undefined;
+	modelDisplayName: string;
+	attachmentIds: string[];
+	skipPersistUserMessage: boolean;
+	attachmentTraceId?: string;
+};
+
+export type PreflightedChatTurn = ParsedChatTurnRequest & {
+	sourceLanguage: string;
+	translationEnabled: boolean;
+	personaMemorySnapshotPromise: Promise<ReadonlySet<string> | undefined>;
+};
+
+export type WorkingSetItem = {
+	id: string;
+	type: string;
+	name: string;
+	mimeType: string | null;
+	sizeBytes: number | null;
+	conversationId: string | null;
+	summary: string | null;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type WorkCapsuleSummary =
+	| {
+			workflowSummary: string | null;
+			taskSummary: string | null;
+			artifact: { name: string };
+	  }
+	| null
+	| undefined;
+
+export type AssistantAnalytics = {
+	model: string;
+	completionTokens?: number;
+	reasoningTokens?: number;
+	generationTimeMs?: number;
+};
+
+export type PersistAssistantTurnStateParams = {
+	userId: string;
+	conversationId: string;
+	normalizedMessage: string;
+	assistantResponse: string;
+	attachmentIds: string[];
+	contextStatus?: ConversationContextStatus | null;
+	initialTaskState?: TaskState | null;
+	initialContextDebug?: ContextDebugState | null;
+	userMessageId?: string | null;
+	assistantMessageId: string;
+	analytics?: AssistantAnalytics | null;
+	continuitySource: 'send' | 'stream';
+};
+
+export type PersistAssistantTurnStateResult = {
+	activeWorkingSet: WorkingSetItem[] | undefined;
+	taskState: TaskState | null | undefined;
+	contextDebug: ContextDebugState | null | undefined;
+	workCapsule: WorkCapsuleSummary;
+};
+
+export type PersistAssistantEvidenceParams = {
+	logPrefix: '[SEND]' | '[STREAM]';
+	userId: string;
+	conversationId: string;
+	assistantMessageId: string;
+	normalizedMessage: string;
+	attachmentIds: string[];
+	taskState?: TaskState | null;
+	contextStatus?: ConversationContextStatus | null;
+	contextDebug?: ContextDebugState | null;
+	initialTaskState?: TaskState | null;
+	initialContextDebug?: ContextDebugState | null;
+	toolCalls?: ToolCallEntry[];
+};
+
+export type RunPostTurnTasksParams = {
+	logPrefix: '[SEND]' | '[STREAM]';
+	userId: string;
+	conversationId: string;
+	upstreamMessage: string;
+	assistantMirrorContent?: string;
+	workCapsule?: WorkCapsuleSummary;
+	personaMemorySnapshotPromise: Promise<ReadonlySet<string> | undefined>;
+	maintenanceReason: 'chat_send' | 'chat_stream';
+};

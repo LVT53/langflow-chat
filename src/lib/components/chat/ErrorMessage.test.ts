@@ -48,26 +48,42 @@ describe('ErrorMessage', () => {
 	});
 
 	it('shows error icon', () => {
-		const { getByRole } = render(ErrorMessage, { 
-			props: { 
-				error: 'Error occurred',
-				onRetry: vi.fn() 
-			} 
-		});
-		
-		expect(getByRole('img', { name: /error/i })).toBeInTheDocument();
-	});
-
-	it('applies correct styling classes', () => {
 		const { container } = render(ErrorMessage, { 
 			props: { 
 				error: 'Error occurred',
-				onRetry: vi.fn() 
+				onRetry: vi.fn(),
+				onClose: vi.fn(),
 			} 
 		});
 		
-		expect(container.firstChild).toHaveClass('border-t');
-		expect(container.firstChild).toHaveClass('flex');
-		expect(container.firstChild).toHaveClass('items-center');
+		expect(container.querySelector('.error-icon svg')).toBeTruthy();
+	});
+
+	it('renders the expected alert shell classes', () => {
+		const { container, getByRole } = render(ErrorMessage, { 
+			props: { 
+				error: 'Error occurred',
+				onRetry: vi.fn(),
+				onClose: vi.fn(),
+			} 
+		});
+		
+		expect(getByRole('alert')).toHaveClass('error-toast');
+		expect(container.querySelector('.error-actions')).toBeTruthy();
+	});
+
+	it('calls onClose when the dismiss button is clicked', async () => {
+		const onClose = vi.fn();
+		const { getByRole } = render(ErrorMessage, {
+			props: {
+				error: 'Error occurred',
+				onRetry: vi.fn(),
+				onClose,
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /dismiss error/i }));
+
+		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 });

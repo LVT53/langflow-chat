@@ -41,8 +41,10 @@ vi.mock('$lib/server/services/knowledge', () => ({
 }));
 
 vi.mock('$lib/server/services/task-state', () => ({
+	attachContinuityToTaskState: vi.fn(async (_userId: string, taskState: unknown) => taskState),
 	getContextDebugState: vi.fn(async () => null),
 	getConversationTaskState: vi.fn(async () => null),
+	syncTaskContinuityFromTaskState: vi.fn(async () => null),
 	updateTaskStateCheckpoint: vi.fn(async () => null),
 }));
 

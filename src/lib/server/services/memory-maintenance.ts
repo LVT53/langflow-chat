@@ -10,7 +10,7 @@ import { areNearDuplicateArtifactTexts } from './evidence-family';
 import type { HonchoPersonaMemoryRecord } from './honcho';
 import { forgetPersonaMemory, listPersonaMemories } from './honcho';
 import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
-import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './project-memory';
+import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './task-state';
 
 const KEEP_MICRO_CHECKPOINTS = 6;
 const KEEP_STABLE_CHECKPOINTS = 3;

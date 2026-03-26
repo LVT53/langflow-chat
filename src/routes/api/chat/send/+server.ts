@@ -1,262 +1,137 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getConversation, touchConversation } from '$lib/server/services/conversations';
-import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
+import { touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import { getConfig, normalizeModelSelection } from '$lib/server/config-store';
-import { createMessage, updateMessageEvidence } from '$lib/server/services/messages';
-import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
+import { getConfig } from '$lib/server/config-store';
+import { createMessage } from '$lib/server/services/messages';
+import { logAttachmentTrace } from '$lib/server/services/attachment-trace';
+import { isAttachmentReadinessError } from '$lib/server/services/knowledge';
+import { buildSendResponseText, buildUpstreamMessage } from '$lib/server/services/chat-turn/execute';
 import {
-	createAttachmentTraceId,
-	logAttachmentTrace,
-} from '$lib/server/services/attachment-trace';
-import {
-	capturePersonaMemorySnapshot,
-	mirrorMessage,
-	mirrorWorkCapsuleConclusion,
-	syncConversationPersonaMemoryAttributions,
-} from '$lib/server/services/honcho';
-import {
-	assertPromptReadyAttachments,
-	attachArtifactsToMessage,
-	createGeneratedOutputArtifact,
-	getConversationWorkingSet,
-	getArtifactsForUser,
-	isAttachmentReadinessError,
-	listConversationSourceArtifactIds,
-	refreshConversationWorkingSet,
-	upsertWorkCapsule
-} from '$lib/server/services/knowledge';
-import {
-	getContextDebugState,
-	getConversationTaskState,
-	updateTaskStateCheckpoint,
-} from '$lib/server/services/task-state';
-import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import {
-	attachContinuityToTaskState,
-	syncTaskContinuityFromTaskState,
-} from '$lib/server/services/project-memory';
-import { detectLanguage } from '$lib/server/services/language';
-import {
-	translateEnglishToHungarian,
-	translateHungarianToEnglish
-} from '$lib/server/services/translator';
+	persistAssistantEvidence,
+	persistAssistantTurnState,
+	persistUserTurnAttachments,
+	runPostTurnTasks,
+} from '$lib/server/services/chat-turn/finalize';
+import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
+import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 
-	let body: { message?: unknown; conversationId?: unknown; model?: unknown; attachmentIds?: unknown };
-	try {
-		body = await event.request.json();
-	} catch {
-		return json({ error: 'Invalid JSON body' }, { status: 400 });
+	const parsedRequest = await parseChatTurnRequest(event.request, getConfig(), 'send');
+	if (!parsedRequest.ok) {
+		return json({ error: parsedRequest.error.error }, { status: parsedRequest.error.status });
 	}
 
-	const { message, conversationId, model, attachmentIds } = body;
-
-	if (typeof message !== 'string' || message.trim().length === 0) {
-		return json({ error: 'Message must be a non-empty string' }, { status: 400 });
-	}
-
-	const { maxMessageLength } = getConfig();
-	if (message.length > maxMessageLength) {
+	const preflight = await preflightChatTurn({
+		userId: user.id,
+		translationEnabled: user.translationEnabled,
+		request: parsedRequest.value,
+	});
+	if (!preflight.ok) {
 		return json(
-			{ error: `Message exceeds maximum length of ${maxMessageLength} characters` },
-			{ status: 400 }
+			{
+				error: preflight.error.error,
+				code: preflight.error.code,
+				attachmentIds: preflight.error.attachmentIds,
+			},
+			{ status: preflight.error.status }
 		);
 	}
 
-	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
-		return json({ error: 'conversationId is required' }, { status: 400 });
-	}
-
-	// Validate model parameter
-	const modelId =
-		model === 'model1' || model === 'model2'
-			? normalizeModelSelection(model, getConfig())
-			: undefined;
-	const safeAttachmentIds = Array.isArray(attachmentIds)
-		? attachmentIds.filter((id): id is string => typeof id === 'string')
-		: [];
-	const attachmentTraceId =
-		safeAttachmentIds.length > 0 ? createAttachmentTraceId('send') : undefined;
-
-	const conversation = await getConversation(user.id, conversationId);
-	if (!conversation) {
-		return json({ error: 'Conversation not found' }, { status: 404 });
-	}
+	const turn = preflight.value;
 
 	try {
-		if (safeAttachmentIds.length > 0) {
-			await assertPromptReadyAttachments({
-				userId: user.id,
-				conversationId,
-				attachmentIds: safeAttachmentIds,
-				traceId: attachmentTraceId,
-			});
-		}
-
-		const normalizedMessage = message.trim();
-		const sourceLanguage = detectLanguage(normalizedMessage);
-		const isTranslationEnabled = user.translationEnabled;
-		const personaMemorySnapshotPromise = capturePersonaMemorySnapshot(user.id).catch(
-			() => undefined
-		);
-
-		const upstreamMessage =
-			sourceLanguage === 'hu' && isTranslationEnabled
-				? await translateHungarianToEnglish(normalizedMessage)
-				: normalizedMessage;
-
-		const { text, contextStatus, taskState: initialTaskState, contextDebug: initialContextDebug } = await sendMessage(
-			upstreamMessage,
-			conversationId,
-			modelId,
-			user.id,
-			{ attachmentIds: safeAttachmentIds, attachmentTraceId }
-		);
-		const responseText =
-			sourceLanguage === 'hu' && isTranslationEnabled
-				? await translateEnglishToHungarian(text)
-				: text;
-
-		const userMessage = await createMessage(conversationId, 'user', normalizedMessage);
-		if (safeAttachmentIds.length > 0) {
-			await attachArtifactsToMessage({
-				userId: user.id,
-				conversationId,
-				messageId: userMessage.id,
-				artifactIds: safeAttachmentIds
-			});
-		}
-		await refreshConversationWorkingSet({
-			userId: user.id,
-			conversationId,
-			message: normalizedMessage,
-			attachmentIds: safeAttachmentIds
+		const upstreamMessage = await buildUpstreamMessage(turn);
+		const {
+			text,
+			contextStatus,
+			taskState: initialTaskState,
+			contextDebug: initialContextDebug,
+		} = await sendMessage(upstreamMessage, turn.conversationId, turn.modelId, user.id, {
+			attachmentIds: turn.attachmentIds,
+			attachmentTraceId: turn.attachmentTraceId,
 		});
+		const responseText = await buildSendResponseText({
+			responseText: text,
+			sourceLanguage: turn.sourceLanguage,
+			translationEnabled: turn.translationEnabled,
+		});
+
+		const userMessage = await createMessage(turn.conversationId, 'user', turn.normalizedMessage);
+		await persistUserTurnAttachments({
+			userId: user.id,
+			conversationId: turn.conversationId,
+			messageId: userMessage.id,
+			normalizedMessage: turn.normalizedMessage,
+			attachmentIds: turn.attachmentIds,
+		});
+
 		const assistantMessage = await createMessage(
-			conversationId,
+			turn.conversationId,
 			'assistant',
 			responseText,
 			undefined,
 			undefined,
 			{ evidenceStatus: 'pending' }
 		);
-		const sourceArtifactIds = safeAttachmentIds.length > 0
-			? safeAttachmentIds
-			: await listConversationSourceArtifactIds(user.id, conversationId);
-		const outputArtifact = await createGeneratedOutputArtifact({
+		const turnState = await persistAssistantTurnState({
 			userId: user.id,
-			conversationId,
-			messageId: assistantMessage.id,
-			content: responseText,
-			sourceArtifactIds
-		});
-		const workCapsule = await upsertWorkCapsule({ userId: user.id, conversationId });
-		const activeWorkingSet = await refreshConversationWorkingSet({
-			userId: user.id,
-			conversationId,
-			message: normalizedMessage,
-			latestOutputArtifactId: outputArtifact?.id ?? null
-		}).catch(async () => getConversationWorkingSet(user.id, conversationId));
-		const taskState = await updateTaskStateCheckpoint({
-			userId: user.id,
-			conversationId,
-			message: normalizedMessage,
+			conversationId: turn.conversationId,
+			normalizedMessage: turn.normalizedMessage,
 			assistantResponse: responseText,
-			attachmentIds: safeAttachmentIds,
-			promptArtifactIds: contextStatus?.workingSetArtifactIds ?? [],
+			attachmentIds: turn.attachmentIds,
+			contextStatus,
+			initialTaskState,
+			initialContextDebug,
 			userMessageId: userMessage.id,
 			assistantMessageId: assistantMessage.id,
-		}).catch(async () => getConversationTaskState(user.id, conversationId));
-		if (taskState) {
-			await syncTaskContinuityFromTaskState({
-				userId: user.id,
-				taskState,
-			}).catch((error) =>
-				console.error('[CONTINUITY] Failed to sync focus continuity from send:', error)
-			);
-		}
-		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
-			() => taskState
-		);
-		const contextDebug = await getContextDebugState(user.id, conversationId).catch(() => null);
-		await clearConversationDraft(user.id, conversationId).catch(() => undefined);
-		await touchConversation(user.id, conversationId).catch(() => undefined);
+			continuitySource: 'send',
+		});
+		await touchConversation(user.id, turn.conversationId).catch(() => undefined);
 
-		void (async () => {
-			try {
-				const currentAttachments =
-					safeAttachmentIds.length > 0 ? await getArtifactsForUser(user.id, safeAttachmentIds) : [];
-				const messageEvidence = await buildAssistantEvidenceSummary({
-					userId: user.id,
-					message: normalizedMessage,
-					taskState: taskStateWithContinuity ?? initialTaskState ?? null,
-					contextStatus: contextStatus ?? null,
-					contextDebug: contextDebug ?? initialContextDebug ?? null,
-					currentAttachments,
-				});
-				await updateMessageEvidence(assistantMessage.id, {
-					evidenceSummary: messageEvidence,
-					evidenceStatus: messageEvidence ? 'ready' : 'none',
-				});
-			} catch (error) {
-				console.error('[SEND] Failed to persist assistant evidence summary:', error);
-				await updateMessageEvidence(assistantMessage.id, {
-					evidenceStatus: 'failed',
-				}).catch(() => undefined);
-			}
-		})();
-
-		const honchoTasks: Promise<unknown>[] = [
-			mirrorMessage(user.id, conversationId, 'user', upstreamMessage).catch((err) =>
-				console.error('[HONCHO] Mirror user message failed:', err)
-			),
-			mirrorMessage(user.id, conversationId, 'assistant', text).catch((err) =>
-				console.error('[HONCHO] Mirror assistant message failed:', err)
-			),
-		];
-		if (workCapsule?.workflowSummary) {
-			honchoTasks.push(
-				mirrorWorkCapsuleConclusion({
-					userId: user.id,
-					conversationId,
-					content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`
-				}).catch((err) => console.error('[HONCHO] Mirror work capsule failed:', err))
-			);
-		}
-		void Promise.allSettled(honchoTasks)
-			.then(async () =>
-				syncConversationPersonaMemoryAttributions({
-					userId: user.id,
-					conversationId,
-					beforeIds: await personaMemorySnapshotPromise,
-					attempts: 3,
-					delayMs: 300,
-				})
-			)
-			.then(() => runUserMemoryMaintenance(user.id, 'chat_send'))
-			.catch((err) => console.error('[SEND] Post-send memory maintenance failed:', err));
+		void persistAssistantEvidence({
+			logPrefix: '[SEND]',
+			userId: user.id,
+			conversationId: turn.conversationId,
+			assistantMessageId: assistantMessage.id,
+			normalizedMessage: turn.normalizedMessage,
+			attachmentIds: turn.attachmentIds,
+			taskState: turnState.taskState,
+			contextStatus,
+			contextDebug: turnState.contextDebug,
+			initialTaskState,
+			initialContextDebug,
+		});
+		void runPostTurnTasks({
+			logPrefix: '[SEND]',
+			userId: user.id,
+			conversationId: turn.conversationId,
+			upstreamMessage,
+			assistantMirrorContent: text,
+			workCapsule: turnState.workCapsule,
+			personaMemorySnapshotPromise: turn.personaMemorySnapshotPromise,
+			maintenanceReason: 'chat_send',
+		});
 
 		return json({
 			response: { text: responseText },
-			conversationId,
+			conversationId: turn.conversationId,
 			contextStatus,
-			activeWorkingSet,
-			taskState: taskStateWithContinuity,
-			contextDebug,
+			activeWorkingSet: turnState.activeWorkingSet,
+			taskState: turnState.taskState,
+			contextDebug: turnState.contextDebug,
 		});
 	} catch (error) {
 		console.error('Langflow sendMessage error:', error);
-		if (attachmentTraceId) {
+		if (turn.attachmentTraceId) {
 			logAttachmentTrace('send_failure', {
-				traceId: attachmentTraceId,
-				conversationId,
-				attachmentIds: safeAttachmentIds,
+				traceId: turn.attachmentTraceId,
+				conversationId: turn.conversationId,
+				attachmentIds: turn.attachmentIds,
 				errorMessage: error instanceof Error ? error.message : String(error),
 				errorCode:
 					typeof error === 'object' && error !== null && 'code' in error

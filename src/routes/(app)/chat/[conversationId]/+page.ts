@@ -1,15 +1,14 @@
 import { redirect } from '@sveltejs/kit';
 import { browser } from '$app/environment';
+import { hasPendingConversationMessage } from '$lib/client/conversation-session';
 import type { PageLoad } from './$types';
 import type { ConversationDetail } from '$lib/types';
-
-const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
 
 export const load: PageLoad = async ({ params, fetch }) => {
 	const { conversationId } = params;
 	const useBootstrap =
 		browser && typeof window !== 'undefined'
-			? Boolean(window.sessionStorage.getItem(`${PENDING_MESSAGE_PREFIX}${conversationId}`))
+			? hasPendingConversationMessage(conversationId)
 			: false;
 
 	const res = await fetch(

@@ -14,8 +14,11 @@ import {
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
-import { attachContinuityToTaskState } from '$lib/server/services/project-memory';
-import { getContextDebugState, getConversationTaskState } from '$lib/server/services/task-state';
+import {
+	attachContinuityToTaskState,
+	getContextDebugState,
+	getConversationTaskState,
+} from '$lib/server/services/task-state';
 
 export const GET: RequestHandler = async (event) => {
 	try {

@@ -12,6 +12,8 @@ import type {
 	PersonaMemoryMemberItem,
 	PersonaMemoryState,
 } from '$lib/types';
+import { parseJsonRecord as parseJsonRecordOrNull } from '$lib/server/utils/json';
+import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
 import { listPersonaMemories } from './honcho';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
@@ -76,10 +78,6 @@ type SemanticFingerprint = {
 	slot: string | null;
 };
 
-function normalizeWhitespace(value: string): string {
-	return value.replace(/\s+/g, ' ').trim();
-}
-
 function normalizeMemoryText(value: string): string {
 	return normalizeWhitespace(value).toLowerCase();
 }
@@ -93,21 +91,11 @@ function clusterIdForKey(key: string): string {
 }
 
 function clip(value: string, maxLength: number): string {
-	const normalized = normalizeWhitespace(value);
-	if (normalized.length <= maxLength) return normalized;
-	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+	return clipText(value, maxLength);
 }
 
 function parseJsonRecord(value: string | null): Record<string, unknown> {
-	if (!value) return {};
-	try {
-		const parsed = JSON.parse(value) as unknown;
-		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
-	} catch {
-		return {};
-	}
+	return parseJsonRecordOrNull(value) ?? {};
 }
 
 function parseInventoryFingerprint(text: string): InventoryFingerprint | null {
