@@ -1,36 +1,56 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 
-	export let text: string;
-	export let delay: number = 0;
-	export let speed: number = 6;
+	let {
+		text,
+		delay = 0,
+		speed = 6
+	}: {
+		text: string;
+		delay?: number;
+		speed?: number;
+	} = $props();
 
-	let displayedChars: string[] = [];
-	let isAnimating = false;
-	let animationKey = 0;
+	let displayedChars = $state<string[]>([]);
+	let isAnimating = $state(false);
+	let animationKey = $state(0);
+	let animationSeed = 0;
 
-	$: if (text) {
-		// Reset and start animation
-		animationKey += 1;
+	$effect(() => {
+		if (!text) {
+			displayedChars = [];
+			isAnimating = false;
+			return;
+		}
+
+		animationSeed += 1;
+		animationKey = animationSeed;
 		displayedChars = [];
 		isAnimating = true;
 
 		const chars = text.split('');
+		const timeoutIds: ReturnType<typeof setTimeout>[] = [];
 
-		// Progressively add characters one by one
-		// Use chars.slice() to avoid closure capture issues with displayedChars
-		chars.forEach((_, i) => {
-			setTimeout(() => {
-				displayedChars = chars.slice(0, i + 1);
-			}, delay + (i * speed));
+		chars.forEach((_, index) => {
+			timeoutIds.push(
+				setTimeout(() => {
+					displayedChars = chars.slice(0, index + 1);
+				}, delay + index * speed)
+			);
 		});
 
-		// Stop animating after all characters have appeared
-		const totalDuration = delay + (text.length * speed) + 200;
-		setTimeout(() => {
-			isAnimating = false;
-		}, totalDuration);
-	}
+		timeoutIds.push(
+			setTimeout(() => {
+				isAnimating = false;
+			}, delay + text.length * speed + 200)
+		);
+
+		return () => {
+			for (const timeoutId of timeoutIds) {
+				clearTimeout(timeoutId);
+			}
+		};
+	});
 </script>
 
 <span class="typewriter-text" class:animating={isAnimating}>

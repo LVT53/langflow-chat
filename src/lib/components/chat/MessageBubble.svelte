@@ -6,25 +6,33 @@
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
-	import { createEventDispatcher, tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
 
-	export let message: ChatMessage;
-	export let isLast: boolean = false;
-	export let pinnedArtifactIds: string[] = [];
-	export let excludedArtifactIds: string[] = [];
+	let {
+		message,
+		isLast = false,
+		pinnedArtifactIds = [],
+		excludedArtifactIds = [],
+		onRegenerate = undefined,
+		onEdit = undefined,
+		onSteer = undefined,
+	}: {
+		message: ChatMessage;
+		isLast?: boolean;
+		pinnedArtifactIds?: string[];
+		excludedArtifactIds?: string[];
+		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
+		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		regenerate: { messageId: string };
-		edit: { messageId: string; newText: string };
-		steer: TaskSteeringPayload;
-	}>();
-
-	let copied = false;
-	let copyTimeout: ReturnType<typeof setTimeout>;
-	let isEditing = false;
-	let editText = '';
-	let editTextarea: HTMLTextAreaElement;
+	let copied = $state(false);
+	let copyTimeout: ReturnType<typeof setTimeout> | undefined;
+	let isEditing = $state(false);
+	let editText = $state('');
+	let editTextarea = $state<HTMLTextAreaElement | null>(null);
+	let showTimestampTooltip = $state(false);
 
 	function estimateTokenCount(text: string) {
 		const trimmed = text.trim();
@@ -46,23 +54,26 @@
 		return estimated;
 	}
 
-	$: isUser = message.role === 'user';
-	$: hasAttachments = (message.attachments?.length ?? 0) > 0;
-	$: hasThinking = Boolean(message.thinking?.trim());
-	$: hasToolCalls = (message.thinkingSegments?.some((s) => s.type === 'tool_call')) ?? false;
-	$: thinkingTokenCount = hasThinking ? estimateTokenCount(message.thinking ?? '') : 0;
-	$: responseTokenCount = estimateTokenCount(message.content);
-	$: totalTokenCount = thinkingTokenCount + responseTokenCount;
-	$: hasTokenInfo = hasThinking || responseTokenCount > 0;
+	let isUser = $derived(message.role === 'user');
+	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
+	let hasThinking = $derived(Boolean(message.thinking?.trim()));
+	let hasToolCalls = $derived(
+		(message.thinkingSegments?.some((segment) => segment.type === 'tool_call')) ?? false
+	);
+	let thinkingTokenCount = $derived(hasThinking ? estimateTokenCount(message.thinking ?? '') : 0);
+	let responseTokenCount = $derived(estimateTokenCount(message.content));
+	let totalTokenCount = $derived(thinkingTokenCount + responseTokenCount);
+	let hasTokenInfo = $derived(hasThinking || responseTokenCount > 0);
 
 	// Thinking is definitively done once visible response text has started streaming
 	// OR the whole message is complete. This keeps the label as "Thinking" between
 	// multi-burst thinking phases (isThinkingStreaming briefly false, but no content yet).
-	$: isDone = !message.isStreaming && !message.isThinkingStreaming;
-	$: isGenerating = Boolean(message.isStreaming || message.isThinkingStreaming);
-	$: showLogoBelow = !isUser && isLast && (hasThinking || isGenerating);
-	$: thinkingIsDone = hasThinking && !message.isThinkingStreaming &&
-		(message.content.trim().length > 0 || isDone);
+	let isDone = $derived(!message.isStreaming && !message.isThinkingStreaming);
+	let isGenerating = $derived(Boolean(message.isStreaming || message.isThinkingStreaming));
+	let showLogoBelow = $derived(!isUser && isLast && (hasThinking || isGenerating));
+	let thinkingIsDone = $derived(
+		hasThinking && !message.isThinkingStreaming && (message.content.trim().length > 0 || isDone)
+	);
 
 	function getClipboardText(content: string) {
 		return content
@@ -104,12 +115,10 @@
 			cancelEdit();
 			return;
 		}
-		dispatch('edit', { messageId: message.id, newText: trimmed });
+		onEdit?.({ messageId: message.id, newText: trimmed });
 		isEditing = false;
 		editText = '';
 	}
-
-	let showTimestampTooltip = false;
 
 	function formatTimestamp(ts: number): string {
 		const date = new Date(ts);
@@ -139,13 +148,10 @@
 	function toggleTimestampTooltip(e: MouseEvent) {
 		e.stopPropagation();
 		showTimestampTooltip = !showTimestampTooltip;
-		if (showTimestampTooltip) {
-			window.addEventListener('click', () => { showTimestampTooltip = false; }, { once: true });
-		}
 	}
 
-	$: timestampLabel = isUser ? formatTimestamp(message.timestamp) : '';
-	$: fullTimestampLabel = isUser ? formatFullTimestamp(message.timestamp) : '';
+	let timestampLabel = $derived(isUser ? formatTimestamp(message.timestamp) : '');
+	let fullTimestampLabel = $derived(isUser ? formatFullTimestamp(message.timestamp) : '');
 
 	function handleEditKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -156,6 +162,25 @@
 			cancelEdit();
 		}
 	}
+
+	$effect(() => {
+		if (!showTimestampTooltip) return;
+
+		const handleWindowClick = () => {
+			showTimestampTooltip = false;
+		};
+
+		window.addEventListener('click', handleWindowClick, { once: true });
+		return () => {
+			window.removeEventListener('click', handleWindowClick);
+		};
+	});
+
+	onDestroy(() => {
+		if (copyTimeout) {
+			clearTimeout(copyTimeout);
+		}
+	});
 </script>
 
 <div class="group flex w-full flex-col {isUser && !isEditing ? 'items-end' : 'items-start'} gap-md py-md fade-in">
@@ -182,13 +207,13 @@
 						bind:this={editTextarea}
 						class="w-full resize-none rounded-md border border-border bg-surface-page px-4 py-3 font-serif text-[16px] leading-[1.6] text-text-primary focus:border-focus-ring focus:outline-none focus:ring-2 focus:ring-focus-ring"
 						bind:value={editText}
-						on:keydown={handleEditKeydown}
+						onkeydown={handleEditKeydown}
 						rows={Math.min(10, Math.max(3, editText.split('\n').length))}
 					></textarea>
 					<div class="flex items-center gap-3 justify-end">
 						<span class="text-xs text-text-muted">⌘↵ to send</span>
-						<button type="button" class="btn-secondary" on:click={cancelEdit}>Cancel</button>
-						<button type="button" class="btn-primary" on:click={submitEdit} disabled={!editText.trim()}>Send</button>
+						<button type="button" class="btn-secondary" onclick={cancelEdit}>Cancel</button>
+						<button type="button" class="btn-primary" onclick={submitEdit} disabled={!editText.trim()}>Send</button>
 					</div>
 				</div>
 			{:else}
@@ -216,7 +241,7 @@
 					evidenceSummary={message.evidenceSummary}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					on:steer={(event) => dispatch('steer', event.detail)}
+					onSteer={onSteer}
 				/>
 			{:else if message.evidencePending}
 				<div class="evidence-pending">Evidence is loading…</div>
@@ -280,7 +305,7 @@
 				<button
 					type="button"
 					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
-					on:click={() => dispatch('regenerate', { messageId: message.id })}
+					onclick={() => onRegenerate?.({ messageId: message.id })}
 					title="Regenerate response"
 					aria-label="Regenerate response"
 				>
@@ -298,7 +323,7 @@
 					<button
 						type="button"
 						class="timestamp-label font-mono tabular-nums"
-						on:click={toggleTimestampTooltip}
+						onclick={toggleTimestampTooltip}
 					>{timestampLabel}</button>
 					<div class="timestamp-tooltip" class:visible={showTimestampTooltip}>
 						<div class="tooltip-content">
@@ -312,7 +337,7 @@
 				<button
 					type="button"
 					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
-					on:click={startEdit}
+					onclick={startEdit}
 					title="Edit message"
 					aria-label="Edit message"
 				>
@@ -326,7 +351,7 @@
 			<button
 				type="button"
 				class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
-				on:click={copyToClipboard}
+				onclick={copyToClipboard}
 				title="Copy message"
 				aria-label="Copy message"
 			>

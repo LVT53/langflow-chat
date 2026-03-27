@@ -21,39 +21,48 @@
 	import ConversationItem from './ConversationItem.svelte';
 	import ProjectItem from './ProjectItem.svelte';
 
-	export let initialConversations: ConversationListItem[] = [];
-	export let initialProjects: Project[] = [];
+	let {
+		initialConversations = [],
+		initialProjects = []
+	}: {
+		initialConversations?: ConversationListItem[];
+		initialProjects?: Project[];
+	} = $props();
 
-	let projectsStoreReady = false;
+	let projectsStoreReady = $state(false);
 	onMount(() => {
 		projectsStore.set(initialProjects);
 		projectsStoreReady = true;
 	});
 
-	let openMenuId: string | null = null;
-	let openProjectMenuId: string | null = null;
+	let openMenuId = $state<string | null>(null);
+	let openProjectMenuId = $state<string | null>(null);
 	// Map of projectId → expanded state (local only)
-	let expandedProjects: Record<string, boolean> = {};
-	let isCreatingProject = false;
-	let newProjectName = '';
-	let newProjectInputRef: HTMLInputElement;
+	let expandedProjects = $state<Record<string, boolean>>({});
+	let isCreatingProject = $state(false);
+	let newProjectName = $state('');
+	let newProjectInputRef = $state<HTMLInputElement | undefined>(undefined);
 
-	$: visibleConversations = $conversations.length > 0 || $projectsStore.length > 0
+	const visibleConversations = $derived($conversations.length > 0 || $projectsStore.length > 0
 		? $conversations
-		: initialConversations;
+		: initialConversations);
 
-	$: allProjects = projectsStoreReady ? $projectsStore : initialProjects;
+	const allProjects = $derived(projectsStoreReady ? $projectsStore : initialProjects);
 
 	// Ensure newly loaded projects default to expanded
-	$: {
-		for (const p of allProjects) {
-			if (!(p.id in expandedProjects)) {
-				expandedProjects[p.id] = false;
-			}
+	$effect(() => {
+		const missingProjects = allProjects.filter((project) => !(project.id in expandedProjects));
+		if (missingProjects.length === 0) {
+			return;
 		}
-	}
 
-	$: conversationsByProject = (() => {
+		expandedProjects = {
+			...expandedProjects,
+			...Object.fromEntries(missingProjects.map((project) => [project.id, false]))
+		};
+	});
+
+	const conversationsByProject = $derived.by(() => {
 		const map: Record<string, ConversationListItem[]> = {};
 		for (const p of allProjects) {
 			map[p.id] = [];
@@ -67,12 +76,12 @@
 			}
 		}
 		return { byProject: map, unorganized };
-	})();
+	});
 
 	// ── Conversation handlers ──────────────────────────────────────────────────
 
-	async function handleSelect(event: CustomEvent<{ id: string }>) {
-		const id = event.detail.id;
+	async function handleSelect(payload: { id: string }) {
+		const id = payload.id;
 		if ($page.url.pathname === `/chat/${id}`) return;
 		const previousConversationId = $currentConversationId;
 		openMenuId = null;
@@ -88,8 +97,8 @@
 		}
 	}
 
-	async function handleRename(event: CustomEvent<{ id: string; title: string }>) {
-		const { id, title } = event.detail;
+	async function handleRename(payload: { id: string; title: string }) {
+		const { id, title } = payload;
 		openMenuId = null;
 		try {
 			await renameConversation(id, title);
@@ -99,8 +108,8 @@
 		}
 	}
 
-	async function handleDelete(event: CustomEvent<{ id: string }>) {
-		const { id } = event.detail;
+	async function handleDelete(payload: { id: string }) {
+		const { id } = payload;
 		openMenuId = null;
 		try {
 			await deleteConversationById(id);
@@ -114,8 +123,8 @@
 		}
 	}
 
-	async function handleMoveToProject(event: CustomEvent<{ id: string; projectId: string | null }>) {
-		const { id, projectId } = event.detail;
+	async function handleMoveToProject(payload: { id: string; projectId: string | null }) {
+		const { id, projectId } = payload;
 		openMenuId = null;
 		try {
 			await moveConversationToProject(id, projectId);
@@ -125,24 +134,26 @@
 		}
 	}
 
-	function handleMenuToggle(event: CustomEvent<{ id: string; open: boolean }>) {
-		const { id, open } = event.detail;
+	function handleMenuToggle(payload: { id: string; open: boolean }) {
+		const { id, open } = payload;
 		openMenuId = open ? id : null;
 	}
 
-	function handleMenuClose() {
-		openMenuId = null;
+	function handleMenuClose(payload?: { id: string }) {
+		if (!payload || openMenuId === payload.id) {
+			openMenuId = null;
+		}
 	}
 
 	// ── Project handlers ───────────────────────────────────────────────────────
 
-	function handleProjectToggle(event: CustomEvent<{ id: string; expanded: boolean }>) {
-		const { id, expanded } = event.detail;
+	function handleProjectToggle(payload: { id: string; expanded: boolean }) {
+		const { id, expanded } = payload;
 		expandedProjects = { ...expandedProjects, [id]: expanded };
 	}
 
-	async function handleProjectRename(event: CustomEvent<{ id: string; name: string }>) {
-		const { id, name } = event.detail;
+	async function handleProjectRename(payload: { id: string; name: string }) {
+		const { id, name } = payload;
 		openProjectMenuId = null;
 		try {
 			await renameProject(id, name);
@@ -152,8 +163,8 @@
 		}
 	}
 
-	async function handleProjectDelete(event: CustomEvent<{ id: string }>) {
-		const { id } = event.detail;
+	async function handleProjectDelete(payload: { id: string }) {
+		const { id } = payload;
 		openProjectMenuId = null;
 		try {
 			clearProjectFromConversations(id);
@@ -164,13 +175,15 @@
 		}
 	}
 
-	function handleProjectMenuToggle(event: CustomEvent<{ id: string; open: boolean }>) {
-		const { id, open } = event.detail;
+	function handleProjectMenuToggle(payload: { id: string; open: boolean }) {
+		const { id, open } = payload;
 		openProjectMenuId = open ? id : null;
 	}
 
-	function handleProjectMenuClose() {
-		openProjectMenuId = null;
+	function handleProjectMenuClose(payload?: { id: string }) {
+		if (!payload || openProjectMenuId === payload.id) {
+			openProjectMenuId = null;
+		}
 	}
 
 	// ── Create project ─────────────────────────────────────────────────────────
@@ -213,7 +226,7 @@
 					class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-icon-muted opacity-0 transition-opacity duration-100 hover:text-icon-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
 					title="New project"
 					aria-label="Create new project"
-					on:click={startCreateProject}
+					onclick={startCreateProject}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
 						<line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
@@ -227,8 +240,8 @@
 					<input
 						bind:this={newProjectInputRef}
 						bind:value={newProjectName}
-						on:blur={commitCreateProject}
-						on:keydown={handleNewProjectKeydown}
+						onblur={commitCreateProject}
+						onkeydown={handleNewProjectKeydown}
 						placeholder="Project name"
 						class="w-full rounded-md border border-border bg-surface-page px-2.5 py-1.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-text-muted"
 					/>
@@ -243,11 +256,11 @@
 							{project}
 							expanded={expandedProjects[project.id] ?? false}
 							menuOpen={openProjectMenuId === project.id}
-							on:toggle={handleProjectToggle}
-							on:rename={handleProjectRename}
-							on:delete={handleProjectDelete}
-							on:menuToggle={handleProjectMenuToggle}
-							on:menuClose={handleProjectMenuClose}
+							onToggle={handleProjectToggle}
+							onRename={handleProjectRename}
+							onDelete={handleProjectDelete}
+							onMenuToggle={handleProjectMenuToggle}
+							onMenuClose={handleProjectMenuClose}
 						/>
 						<!-- Conversations inside this project -->
 						{#if expandedProjects[project.id] ?? false}
@@ -259,12 +272,12 @@
 										active={$currentConversationId === conversation.id}
 										menuOpen={openMenuId === conversation.id}
 										projects={allProjects}
-										on:select={handleSelect}
-										on:rename={handleRename}
-										on:delete={handleDelete}
-										on:moveToProject={handleMoveToProject}
-										on:menuToggle={handleMenuToggle}
-										on:menuClose={handleMenuClose}
+										onSelect={handleSelect}
+										onRename={handleRename}
+										onDelete={handleDelete}
+										onMoveToProject={handleMoveToProject}
+										onMenuToggle={handleMenuToggle}
+										onMenuClose={handleMenuClose}
 									/>
 								</div>
 							{/each}
@@ -287,7 +300,7 @@
 				class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-icon-muted opacity-0 transition-opacity duration-100 hover:text-icon-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
 				title="New project"
 				aria-label="Create new project"
-				on:click={startCreateProject}
+				onclick={startCreateProject}
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
 					<line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
@@ -299,8 +312,8 @@
 				<input
 					bind:this={newProjectInputRef}
 					bind:value={newProjectName}
-					on:blur={commitCreateProject}
-					on:keydown={handleNewProjectKeydown}
+					onblur={commitCreateProject}
+					onkeydown={handleNewProjectKeydown}
 					placeholder="Project name"
 					class="w-full rounded-md border border-border bg-surface-page px-2.5 py-1.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-text-muted"
 				/>
@@ -309,7 +322,7 @@
 			<!-- Creative empty state: dashed folder card -->
 			<button
 				class="empty-projects-btn mx-1 mb-2 flex w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-lg border border-dashed px-3 py-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-				on:click={startCreateProject}
+				onclick={startCreateProject}
 				aria-label="Create new project"
 			>
 				<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-elevated text-icon-muted">
@@ -340,12 +353,12 @@
 					active={$currentConversationId === conversation.id}
 					menuOpen={openMenuId === conversation.id}
 					projects={allProjects}
-					on:select={handleSelect}
-					on:rename={handleRename}
-					on:delete={handleDelete}
-					on:moveToProject={handleMoveToProject}
-					on:menuToggle={handleMenuToggle}
-					on:menuClose={handleMenuClose}
+					onSelect={handleSelect}
+					onRename={handleRename}
+					onDelete={handleDelete}
+					onMoveToProject={handleMoveToProject}
+					onMenuToggle={handleMenuToggle}
+					onMenuClose={handleMenuClose}
 				/>
 			{/each}
 		{/if}

@@ -19,18 +19,32 @@
 		ConversationDraft,
 		PendingAttachment,
 	} from '$lib/types';
-	import type { LayoutData } from './$types';
+	import type { PageProps } from './$types';
 
-	export let data: LayoutData;
+	let { data }: PageProps = $props();
 
-	let hasStarted = false;
-	let creating = false;
-	let error: string | null = null;
-	let isFromChat = false;
-	let animateIn = false;
-	let preparedConversationId: string | null = null;
+	type MessageInputSendPayload = {
+		message: string;
+		attachmentIds: string[];
+		attachments: ArtifactSummary[];
+		conversationId: string | null;
+	};
+
+	type MessageInputDraftPayload = {
+		conversationId: string | null;
+		draftText: string;
+		selectedAttachmentIds: string[];
+		selectedAttachments: PendingAttachment[];
+	};
+
+	let hasStarted = $state(false);
+	let creating = $state(false);
+	let error = $state<string | null>(null);
+	let isFromChat = $state(false);
+	let animateIn = $state(false);
+	let preparedConversationId = $state<string | null>(null);
 	let preparedConversationPromise: Promise<string> | null = null;
-	let conversationDraft: ConversationDraft | null = null;
+	let conversationDraft = $state<ConversationDraft | null>(null);
 
 	onMount(() => {
 		const previousId = consumePreviousConversationId();
@@ -66,30 +80,23 @@
 		return preparedConversationPromise;
 	}
 
-	async function handleSend(
-		event: CustomEvent<{
-			message: string;
-			attachmentIds: string[];
-			attachments: ArtifactSummary[];
-			conversationId: string | null;
-		}>
-	) {
+	async function handleSend(payload: MessageInputSendPayload) {
 		if (creating) return;
-		const text = event.detail.message;
+		const text = payload.message;
 
 		hasStarted = true;
 		creating = true;
 		error = null;
 
 		try {
-			const id = event.detail.conversationId ?? await ensurePreparedConversation();
+			const id = payload.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
 			upsertConversationLocal(id, 'New Conversation', Date.now() / 1000);
 			setLandingDraftConversationId(null);
 			storePendingConversationMessage(id, {
 				message: text,
-				attachmentIds: event.detail.attachmentIds,
-				attachments: event.detail.attachments,
+				attachmentIds: payload.attachmentIds,
+				attachments: payload.attachments,
 			});
 			await goto(`/chat/${id}`);
 		} catch {
@@ -116,23 +123,16 @@
 		}
 	}
 
-	function handleDraftChange(
-		event: CustomEvent<{
-			conversationId: string | null;
-			draftText: string;
-			selectedAttachmentIds: string[];
-			selectedAttachments: PendingAttachment[];
-		}>
-	) {
+	function handleDraftChange(payload: MessageInputDraftPayload) {
 		const nextDraft = createConversationDraftRecord({
-			conversationId: event.detail.conversationId,
+			conversationId: payload.conversationId,
 			fallbackConversationId: preparedConversationId,
-			draftText: event.detail.draftText,
-			selectedAttachmentIds: event.detail.selectedAttachmentIds,
-			selectedAttachments: event.detail.selectedAttachments,
+			draftText: payload.draftText,
+			selectedAttachmentIds: payload.selectedAttachmentIds,
+			selectedAttachments: payload.selectedAttachments,
 		});
 		const stalePreparedConversationId =
-			(event.detail.conversationId ?? preparedConversationId) ?? null;
+			(payload.conversationId ?? preparedConversationId) ?? null;
 
 		if (!nextDraft) {
 			conversationDraft = null;
@@ -187,8 +187,8 @@
 				{/if}
 
 				<MessageInput
-					on:send={handleSend}
-					on:draftchange={handleDraftChange}
+					onSend={handleSend}
+					onDraftChange={handleDraftChange}
 					disabled={creating}
 					maxLength={data.maxMessageLength}
 					conversationId={preparedConversationId}

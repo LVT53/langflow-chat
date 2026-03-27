@@ -6,8 +6,7 @@ const config = {
 		adapter: adapter({
 			out: 'build',
 			precompress: false,
-			envPrefix: '',
-			polyfill: true
+			envPrefix: ''
 		}),
 		alias: {
 			'$lib': 'src/lib'

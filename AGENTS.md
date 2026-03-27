@@ -10,6 +10,18 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - The goal is to avoid stale code, deprecated patterns, and implementations that drift away from the real versions used in this repo.
 - If the Svelte MCP/docs tool is unavailable in the current session, use the best available official docs path before coding and call out that fallback explicitly.
 
+## Svelte 5 Migration Rules
+
+- Prefer Svelte 5 callback props over `createEventDispatcher` for component-to-parent communication.
+- Prefer `$props()` and typed `PageProps` / `LayoutProps` in SvelteKit route components.
+- Prefer modern event attributes like `onclick` and `onsubmit` over legacy `on:` directives in touched files.
+- In rune components, declare `bind:this` refs with `$state(...)` when the ref is later read by effects or handlers.
+- Touch event attributes are passive by default in Svelte 5. If a handler truly needs `preventDefault()` (for example custom touch dragging), attach a non-passive listener via an action or explicit `addEventListener`, not legacy event modifiers.
+- Prefer `{@render children()}` in layouts over legacy route `<slot />` usage.
+- Do not introduce new `afterUpdate` or `beforeUpdate` calls; use a modern effect- or action-based approach instead.
+- Do not introduce new legacy `<slot>` usage in app components; prefer explicit props or snippets when composition is needed.
+- Legacy syntax that still exists in untouched files is migration debt, not a pattern to copy forward.
+
 ## Purpose
 
 - Use the existing boundaries in this file before inventing new ones.
@@ -22,6 +34,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - Routes are adapters. Durable logic belongs in server services, client API modules, stores, or shared helpers.
 - Shared behavior should exist once. Do not copy logic between `send` and `stream`, between multiple stores, or between multiple services.
 - Runtime config flows through `src/lib/server/config-store.ts`. Do not bypass it in code that should respect admin overrides.
+- `src/lib/server/env.ts` owns environment parsing, including `getDatabasePath()` for DB bootstrap-only access. Do not read `DATABASE_PATH` directly anywhere else.
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
@@ -169,6 +182,10 @@ Do not:
   - [`src/routes/(app)/settings/+page.server.ts`](./src/routes/(app)/settings/+page.server.ts)
   - [`src/routes/api/settings/+server.ts`](./src/routes/api/settings/+server.ts)
 
+Notes:
+- `env.ts` also owns `getDatabasePath()` for bootstrap-only DB path access.
+- `config-store.ts` remains the override-aware runtime config boundary. `getDatabasePath()` is for early DB/bootstrap code, not for general runtime settings reads.
+
 If you add a new runtime-configurable setting:
 1. add env parsing/default handling in `env.ts` if it is environment-backed
 2. add runtime normalization and override support in `config-store.ts`
@@ -177,6 +194,8 @@ If you add a new runtime-configurable setting:
 
 Do not:
 - read directly from `process.env` or `env.ts` inside services that should respect admin overrides
+- read `process.env.DATABASE_PATH` directly outside `env.ts`
+- import override-aware runtime config into bootstrap code that only needs the DB file path
 - document a config variable publicly without confirming it exists in real code paths
 - add admin-configurable behavior in the UI without threading it through `config-store.ts`
 
@@ -221,11 +240,13 @@ Do not:
 
 Rules:
 - `client/api/` owns reusable request/response parsing and shared HTTP behavior.
+- `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
 - stores own browser state, optimistic updates, and UI-facing transitions.
 - `conversation-session.ts` owns landing draft IDs, pending first-message replay, previous-conversation markers, and draft cleanup rules.
 
 Do not:
 - put raw `fetch` + `res.ok` + JSON parsing boilerplate into stores
+- open-code settings/admin/analytics browser fetches in `settings/+page.svelte` when they can live in `src/lib/client/api/settings.ts`
 - invent new `sessionStorage` keys in components or pages when the conversation-session helper should own them
 - make stores mutate unrelated domains because it feels convenient
 - move reusable HTTP error handling into page files
@@ -351,6 +372,7 @@ Run these too when relevant:
 - No duplicate DB repository wrappers.
 - No stores that also become API clients.
 - No monolithic catch-all service file that mixes unrelated concerns again.
+- No revival of deleted legacy files just because they reappear as untracked leftovers after merges or agentic runs; verify git history before restoring anything outside the tracked graph.
 
 ## Doc Map
 

@@ -2,33 +2,29 @@
 	import { tick } from 'svelte';
 	import type { ThinkingSegment } from '$lib/types';
 
-	export let content: string = '';
-	// True once thinking is definitively over: visible response text has started
-	// arriving OR the whole message is done. Stays false between multi-burst
-	// thinking phases so the label doesn't flip "Thinking"→"Thought"→"Thinking".
-	export let thinkingIsDone: boolean = false;
-	// Interleaved thinking text + tool call segments, built during streaming.
-	// Falls back to flat `content` string when absent (e.g. DB-loaded messages).
-	export let segments: ThinkingSegment[] = [];
+	let {
+		content = '',
+		thinkingIsDone = false,
+		segments = []
+	}: {
+		content?: string;
+		thinkingIsDone?: boolean;
+		segments?: ThinkingSegment[];
+	} = $props();
 
-	let expanded = false;
-	let container: HTMLDivElement;
+	let expanded = $state(false);
+	let container = $state<HTMLDivElement | undefined>(undefined);
 
-	// "Thought" only once we're sure thinking is over (response text started or done).
-	$: label = thinkingIsDone ? 'Thought' : 'Thinking';
-
-	// Logo and text sweep animation while thinking is still possibly ongoing.
-	$: isActiveThinking = !thinkingIsDone;
-
-	// Whether to render interleaved segments or fall back to flat content
-	$: hasSegments = segments.length > 0;
-
-	// All tool calls accumulated during this thinking phase — shown as a stacked
-	// list in the collapsed header so every tool is readable regardless of speed.
-	// The list slides away as a unit when thinkingIsDone becomes true.
-	$: visibleTools = thinkingIsDone
-		? []
-		: (segments.filter((s): s is ThinkingSegment & { type: 'tool_call' } => s.type === 'tool_call'));
+	const label = $derived(thinkingIsDone ? 'Thought' : 'Thinking');
+	const isActiveThinking = $derived(!thinkingIsDone);
+	const hasSegments = $derived(segments.length > 0);
+	const visibleTools = $derived(
+		thinkingIsDone
+			? []
+			: segments.filter(
+					(segment): segment is ThinkingSegment & { type: 'tool_call' } => segment.type === 'tool_call'
+				)
+	);
 
 	function extractHostname(raw: string): string {
 		try {
@@ -78,7 +74,7 @@
 	}
 </script>
 
-<script context="module">
+<script module>
 	import { slide } from 'svelte/transition';
 </script>
 
@@ -86,7 +82,7 @@
 	<button
 		type="button"
 		class="thinking-header"
-		on:click={toggle}
+		onclick={toggle}
 		aria-expanded={expanded}
 	>
 		<span class="thinking-label" class:is-active={isActiveThinking}>{label}</span>
@@ -119,7 +115,7 @@
 						</svg>
 					{/if}
 					{#if getFetchUrl(tool.name, tool.input)}
-					<span class="tool-label-text">Fetching: <a class="tool-link" href={getFetchUrl(tool.name, tool.input)} target="_blank" rel="noopener noreferrer" on:click|stopPropagation>{extractHostname(String(Object.values(tool.input)[0] ?? ''))}</a></span>
+					<span class="tool-label-text">Fetching: <a class="tool-link" href={getFetchUrl(tool.name, tool.input)} target="_blank" rel="noopener noreferrer" onclick={(event) => event.stopPropagation()}>{extractHostname(String(Object.values(tool.input)[0] ?? ''))}</a></span>
 				{:else}
 					<span class="tool-label-text">{formatToolCall(tool.name, tool.input)}</span>
 				{/if}

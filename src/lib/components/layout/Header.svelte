@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { logout } from '$lib/client/api/auth';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import {
 		sidebarOpen,
@@ -8,15 +9,15 @@
 		currentConversationId,
 		SIDEBAR_DESKTOP_BREAKPOINT
 	} from '$lib/stores/ui';
-	let mobileMenuOpen = false;
-	let menuRef: HTMLDivElement;
-	let triggerRef: HTMLButtonElement;
-	let menuPositionStyle = '';
-	let menuBaseBackground = '';
+	let mobileMenuOpen = $state(false);
+	let menuRef = $state<HTMLDivElement | undefined>(undefined);
+	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
+	let menuPositionStyle = $state('');
+	let menuBaseBackground = $state('');
 
 	async function handleLogout() {
 		try {
-			await fetch('/api/auth/logout', { method: 'POST' });
+			await logout();
 			mobileMenuOpen = false;
 			goto('/login');
 		} catch (error) {
@@ -105,9 +106,11 @@
 		}
 	}
 
-	$: if (mobileMenuOpen) {
-		updateMenuPosition();
-	}
+	$effect(() => {
+		if (mobileMenuOpen) {
+			updateMenuPosition();
+		}
+	});
 
 	onMount(() => {
 		const syncMenuPosition = () => {
@@ -126,7 +129,7 @@
 	});
 </script>
 
-<svelte:window on:click={handleOutsideClick} />
+<svelte:window onclick={handleOutsideClick} />
 
 <header
 	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
@@ -134,7 +137,7 @@
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
 			class="btn-icon-bare mobile-sidebar-toggle"
-			on:click={toggleSidebar}
+			onclick={toggleSidebar}
 			aria-label="Toggle sidebar"
 		>
 			<svg
@@ -163,7 +166,7 @@
 			<button
 				bind:this={triggerRef}
 				class="btn-icon-bare mobile-user-trigger"
-				on:click={toggleMobileMenu}
+				onclick={toggleMobileMenu}
 				aria-label="Open user menu"
 				title="Open user menu"
 				aria-expanded={mobileMenuOpen}
@@ -183,7 +186,7 @@
 				>
 					<button
 						class="header-option header-option-accent flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-						on:click={handleNewConversation}
+						onclick={handleNewConversation}
 					>
 						<svg class="header-option-icon header-option-icon-accent" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="12" x2="12" y1="5" y2="19" />
@@ -193,7 +196,10 @@
 					</button>
 					<button
 						class="header-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-						on:click={() => { mobileMenuOpen = false; goto('/settings'); }}
+						onclick={() => {
+							mobileMenuOpen = false;
+							goto('/settings');
+						}}
 					>
 						<svg class="header-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M20 21a8 8 0 0 0-16 0" />
@@ -203,7 +209,7 @@
 					</button>
 					<button
 						class="header-option header-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-						on:click={handleLogout}
+						onclick={handleLogout}
 					>
 						<svg class="header-option-icon header-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>

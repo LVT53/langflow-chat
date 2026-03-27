@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../env', () => ({
+  getDatabasePath: () => './data/test.db',
   config: {
     langflowApiUrl: 'http://localhost:7860',
     langflowApiKey: 'test-api-key',
@@ -60,6 +61,7 @@ describe('generateTitle', () => {
 
   it('sends bearer auth when a title gen api key is configured', async () => {
     vi.doMock('../env', () => ({
+      getDatabasePath: () => './data/test.db',
       config: {
         langflowApiUrl: 'http://localhost:7860',
         langflowApiKey: 'test-api-key',

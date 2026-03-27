@@ -2,40 +2,48 @@
 	import MessageInput from './MessageInput.svelte';
 	import type { ContextDebugState, ConversationContextStatus, TaskSteeringPayload } from '$lib/types';
 
-	export let maxLength = 10000;
-	export let disabled = false;
-	export let conversationId: string | null = null;
-	export let attachmentsEnabled = false;
-	export let contextStatus: ConversationContextStatus | null = null;
-	export let contextDebug: ContextDebugState | null = null;
-	export let ensureConversation: (() => Promise<string>) | null = null;
-
-	export let onSend: (message: string) => void = () => {};
-	export let onSteer: (payload: TaskSteeringPayload) => void = () => {};
-	export let onDraftChange: (
-		payload: {
+	let {
+		maxLength = 10000,
+		disabled = false,
+		conversationId = null,
+		attachmentsEnabled = false,
+		contextStatus = null,
+		contextDebug = null,
+		ensureConversation = null,
+		onSend = () => {},
+		onSteer = () => {},
+		onDraftChange = () => {}
+	}: {
+		maxLength?: number;
+		disabled?: boolean;
+		conversationId?: string | null;
+		attachmentsEnabled?: boolean;
+		contextStatus?: ConversationContextStatus | null;
+		contextDebug?: ContextDebugState | null;
+		ensureConversation?: (() => Promise<string>) | null;
+		onSend?: (message: string) => void;
+		onSteer?: (payload: TaskSteeringPayload) => void;
+		onDraftChange?: (payload: {
 			conversationId: string | null;
 			draftText: string;
 			selectedAttachmentIds: string[];
-		}
-	) => void = () => {};
+		}) => void;
+	} = $props();
 
-	function handleSend(event: CustomEvent<{ message: string }>) {
-		onSend(event.detail.message);
+	function handleSend(payload: { message: string }) {
+		onSend(payload.message);
 	}
 
-	function handleSteer(event: CustomEvent<TaskSteeringPayload>) {
-		onSteer(event.detail);
+	function handleSteer(payload: TaskSteeringPayload) {
+		onSteer(payload);
 	}
 
-	function handleDraftChange(
-		event: CustomEvent<{
-			conversationId: string | null;
-			draftText: string;
-			selectedAttachmentIds: string[];
-		}>
-	) {
-		onDraftChange(event.detail);
+	function handleDraftChange(payload: {
+		conversationId: string | null;
+		draftText: string;
+		selectedAttachmentIds: string[];
+	}) {
+		onDraftChange(payload);
 	}
 </script>
 
@@ -47,7 +55,7 @@
 	{ensureConversation}
 	{contextStatus}
 	{contextDebug}
-	on:send={handleSend}
-	on:steer={handleSteer}
-	on:draftchange={handleDraftChange}
+	onSend={handleSend}
+	onSteer={handleSteer}
+	onDraftChange={handleDraftChange}
 />

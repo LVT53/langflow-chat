@@ -4,99 +4,111 @@
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
+	import {
+		deleteAccount,
+		deleteAvatar,
+		fetchAnalytics,
+		fetchHonchoHealth,
+		updateAdminConfig,
+		updatePassword,
+		updateProfile,
+		updateUserPreferences,
+	} from '$lib/client/api/settings';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
 	import { avatarState, setAvatarUploaded, setAvatarRemoved } from '$lib/stores/avatar';
-	import type { PageData } from './$types';
+	import type { PageProps } from './$types';
 
-	export let data: PageData;
+	let { data }: PageProps = $props();
+	const getData = () => data;
+	const initialUserSettings = getData().userSettings;
+	const initialPreferences = initialUserSettings.preferences;
+	const initialCurrentConfigValues = (getData() as any).currentConfigValues as
+		| Record<string, string>
+		| undefined;
 
 	// --- Tabs ---
 	type Tab = 'profile' | 'analytics' | 'administration';
-	let activeTab: Tab = 'profile';
-	const isAdmin = data.userSettings.role === 'admin';
+	let activeTab = $state<Tab>('profile');
+	const isAdmin = initialUserSettings.role === 'admin';
 
 	// --- Profile state ---
-	let name = data.userSettings.name ?? '';
-	let email = data.userSettings.email;
-	let profileSaving = false;
-	let profileMessage = '';
-	let profileError = '';
+	let name = $state(initialUserSettings.name ?? '');
+	let email = $state(initialUserSettings.email);
+	let profileSaving = $state(false);
+	let profileMessage = $state('');
+	let profileError = $state('');
 
 	// --- Password state ---
-	let currentPassword = '';
-	let newPassword = '';
-	let confirmPassword = '';
-	let passwordSaving = false;
-	let passwordMessage = '';
-	let passwordError = '';
-	let showCurrentPw = false;
-	let showNewPw = false;
-	let showConfirmPw = false;
+	let currentPassword = $state('');
+	let newPassword = $state('');
+	let confirmPassword = $state('');
+	let passwordSaving = $state(false);
+	let passwordMessage = $state('');
+	let passwordError = $state('');
+	let showCurrentPw = $state(false);
+	let showNewPw = $state(false);
+	let showConfirmPw = $state(false);
 
 	// --- Preferences state ---
-	let selectedModel = data.userSettings.preferences.preferredModel;
-	let translationEnabled = data.userSettings.preferences.translationEnabled;
-	let selectedTheme = data.userSettings.preferences.theme;
-	let selectedAvatar = data.userSettings.preferences.avatarId;
+	let selectedModel = $state(initialPreferences.preferredModel);
+	let translationEnabled = $state(initialPreferences.translationEnabled);
+	let selectedTheme = $state(initialPreferences.theme);
+	let selectedAvatar = $state(initialPreferences.avatarId);
 
 	// Model display names
-	const modelNames = (data as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
-	const availableModels = ((data as any).availableModels ?? [
+	const modelNames = (getData() as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
+	const availableModels = ((getData() as any).availableModels ?? [
 		{ id: 'model1', displayName: modelNames.model1 },
 		{ id: 'model2', displayName: modelNames.model2 },
 	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
-	const adminModelNames = isAdmin ? ((data as any).modelNames ?? modelNames) : modelNames;
+	const adminModelNames = isAdmin ? ((getData() as any).modelNames ?? modelNames) : modelNames;
 
 	// --- Delete account modal ---
-	let showDeleteModal = false;
-	let deletePassword = '';
-	let deleteError = '';
-	let deleteLoading = false;
-	let showDeletePw = false;
+	let showDeleteModal = $state(false);
+	let deletePassword = $state('');
+	let deleteError = $state('');
+	let deleteLoading = $state(false);
+	let showDeletePw = $state(false);
 
 	// --- Admin config state ---
-	let adminConfig: Record<string, string> = {};
-	let adminSaving = false;
-	let adminMessage = '';
-	let adminError = '';
+	let adminConfig = $state<Record<string, string>>(initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {});
+	let adminSaving = $state(false);
+	let adminMessage = $state('');
+	let adminError = $state('');
 
 	// --- Honcho memory state ---
-	let honchoHealth: { enabled: boolean; connected: boolean; workspace: string | null } | null = null;
-	let honchoLoading = false;
+	let honchoHealth = $state<{
+		enabled: boolean;
+		connected: boolean;
+		workspace: string | null;
+	} | null>(null);
+	let honchoLoading = $state(false);
 
 	async function checkHonchoHealth() {
 		honchoLoading = true;
 		try {
-			const res = await fetch('/api/admin/honcho');
-			if (res.ok) {
-				honchoHealth = await res.json();
-			}
+			honchoHealth = await fetchHonchoHealth();
 		} catch {
 			honchoHealth = { enabled: false, connected: false, workspace: null };
 		}
 		honchoLoading = false;
 	}
 
-	if (isAdmin && (data as any).currentConfigValues) {
-		adminConfig = { ...(data as any).currentConfigValues };
-	}
-
 	// --- Analytics state ---
-	let analyticsData: any = null;
-	let analyticsLoading = false;
-	let analyticsError = '';
+	let analyticsData = $state<any>(null);
+	let analyticsLoading = $state(false);
+	let analyticsError = $state('');
 
 	// --- Avatar / profile picture state ---
-	let showAvatarPicker = false;
-	let showPictureEditor = false;
-	let removingPhoto = false;
+	let showAvatarPicker = $state(false);
+	let showPictureEditor = $state(false);
+	let removingPhoto = $state(false);
 
 	async function removePhoto() {
 		removingPhoto = true;
 		try {
-			const res = await fetch('/api/settings/avatar', { method: 'DELETE' });
-			if (!res.ok) throw new Error('Failed to remove photo');
+			await deleteAvatar();
 			setAvatarRemoved();
 		} catch {
 			// Non-fatal
@@ -124,13 +136,7 @@
 		profileMessage = '';
 		profileError = '';
 		try {
-			const res = await fetch('/api/settings/profile', {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name: name.trim() || null, email }),
-			});
-			const json = await res.json();
-			if (!res.ok) throw new Error(json.error ?? 'Save failed');
+			await updateProfile({ name: name.trim() || null, email });
 			profileMessage = 'Profile updated.';
 		} catch (e: any) {
 			profileError = e.message;
@@ -152,13 +158,7 @@
 		}
 		passwordSaving = true;
 		try {
-			const res = await fetch('/api/settings/password', {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ currentPassword, newPassword }),
-			});
-			const json = await res.json();
-			if (!res.ok) throw new Error(json.error ?? 'Save failed');
+			await updatePassword({ currentPassword, newPassword });
 			passwordMessage = 'Password changed.';
 			currentPassword = '';
 			newPassword = '';
@@ -172,11 +172,7 @@
 
 	async function selectAvatar(id: number) {
 		selectedAvatar = id;
-		await fetch('/api/settings/preferences', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ avatarId: id }),
-		}).catch(() => {});
+		await updateUserPreferences({ avatarId: id }).catch(() => {});
 	}
 
 	async function changeModel(model: 'model1' | 'model2') {
@@ -198,13 +194,7 @@
 		deleteError = '';
 		deleteLoading = true;
 		try {
-			const res = await fetch('/api/settings/account', {
-				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ password: deletePassword }),
-			});
-			const json = await res.json();
-			if (!res.ok) throw new Error(json.error ?? 'Delete failed');
+			await deleteAccount(deletePassword);
 			goto('/login');
 		} catch (e: any) {
 			deleteError = e.message;
@@ -218,13 +208,7 @@
 		adminMessage = '';
 		adminError = '';
 		try {
-			const res = await fetch('/api/admin/config', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(adminConfig),
-			});
-			const json = await res.json();
-			if (!res.ok) throw new Error(json.error ?? 'Save failed');
+			await updateAdminConfig(adminConfig);
 			adminMessage = 'Configuration saved.';
 		} catch (e: any) {
 			adminError = e.message;
@@ -352,10 +336,7 @@
 		analyticsLoading = true;
 		analyticsError = '';
 		try {
-			const analyticsUrl = import.meta.env.DEV ? '/api/analytics?mock=1' : '/api/analytics';
-			const res = await fetch(analyticsUrl);
-			if (!res.ok) throw new Error('Failed to load analytics');
-			analyticsData = await res.json();
+			analyticsData = await fetchAnalytics(import.meta.env.DEV);
 			// Set loading false first so the canvas is rendered into the DOM before initCharts runs
 			analyticsLoading = false;
 			await initCharts();
@@ -429,14 +410,14 @@
 			<button
 				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
 				class:tab-active={activeTab === 'profile'}
-				on:click={() => handleTabChange('profile')}
+				onclick={() => handleTabChange('profile')}
 			>
 				Profile
 			</button>
 			<button
 				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
 				class:tab-active={activeTab === 'analytics'}
-				on:click={() => handleTabChange('analytics')}
+				onclick={() => handleTabChange('analytics')}
 			>
 				Analytics
 			</button>
@@ -444,7 +425,7 @@
 				<button
 					class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
 					class:tab-active={activeTab === 'administration'}
-					on:click={() => handleTabChange('administration')}
+					onclick={() => handleTabChange('administration')}
 				>
 					Administration
 				</button>
@@ -468,13 +449,13 @@
 					<div class="flex flex-wrap items-center gap-2">
 						<button
 							class="btn-secondary text-sm"
-							on:click={() => (showPictureEditor = true)}
+							onclick={() => (showPictureEditor = true)}
 						>
 							Upload Photo
 						</button>
 						<button
 							class="btn-secondary text-sm"
-							on:click={() => (showAvatarPicker = !showAvatarPicker)}
+							onclick={() => (showAvatarPicker = !showAvatarPicker)}
 						>
 							{showAvatarPicker ? 'Done' : 'Change Color'}
 						</button>
@@ -482,7 +463,7 @@
 							<button
 								class="btn-ghost text-sm"
 								style="color: var(--color-danger);"
-								on:click={removePhoto}
+								onclick={removePhoto}
 								disabled={removingPhoto}
 							>
 								{removingPhoto ? 'Removing…' : 'Remove Photo'}
@@ -497,7 +478,7 @@
 								class="avatar-swatch rounded-full focus:outline-none"
 								class:avatar-selected={selectedAvatar === avatarIndex}
 								style="background: {AVATAR_COLORS[avatarIndex]}; width: 44px; height: 44px;"
-								on:click={() => selectAvatar(avatarIndex)}
+								onclick={() => selectAvatar(avatarIndex)}
 								aria-label="Avatar {avatarIndex + 1}"
 								title="Avatar {avatarIndex + 1}"
 							>
@@ -542,7 +523,7 @@
 					{/if}
 					<button
 						class="btn-primary self-start"
-						on:click={saveProfile}
+						onclick={saveProfile}
 						disabled={profileSaving}
 					>
 						{profileSaving ? 'Saving…' : 'Save'}
@@ -557,7 +538,7 @@
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<label class="settings-label !mb-0" for="current-pw">Current Password</label>
-							<button type="button" class="pw-toggle" on:click={() => showCurrentPw = !showCurrentPw} tabindex="-1" aria-label={showCurrentPw ? 'Hide password' : 'Show password'}>
+							<button type="button" class="pw-toggle" onclick={() => showCurrentPw = !showCurrentPw} tabindex="-1" aria-label={showCurrentPw ? 'Hide password' : 'Show password'}>
 								{#if showCurrentPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
 							</button>
@@ -567,7 +548,7 @@
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<label class="settings-label !mb-0" for="new-pw">New Password</label>
-							<button type="button" class="pw-toggle" on:click={() => showNewPw = !showNewPw} tabindex="-1" aria-label={showNewPw ? 'Hide password' : 'Show password'}>
+							<button type="button" class="pw-toggle" onclick={() => showNewPw = !showNewPw} tabindex="-1" aria-label={showNewPw ? 'Hide password' : 'Show password'}>
 								{#if showNewPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
 							</button>
@@ -577,7 +558,7 @@
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<label class="settings-label !mb-0" for="confirm-pw">Confirm New Password</label>
-							<button type="button" class="pw-toggle" on:click={() => showConfirmPw = !showConfirmPw} tabindex="-1" aria-label={showConfirmPw ? 'Hide password' : 'Show password'}>
+							<button type="button" class="pw-toggle" onclick={() => showConfirmPw = !showConfirmPw} tabindex="-1" aria-label={showConfirmPw ? 'Hide password' : 'Show password'}>
 								{#if showConfirmPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
 							</button>
@@ -592,7 +573,7 @@
 					{/if}
 					<button
 						class="btn-primary self-start"
-						on:click={savePassword}
+						onclick={savePassword}
 						disabled={passwordSaving}
 					>
 						{passwordSaving ? 'Saving…' : 'Change Password'}
@@ -612,7 +593,7 @@
 								<button
 									class="pref-pill"
 									class:pref-pill-active={selectedModel === model.id}
-									on:click={() => changeModel(model.id)}
+									onclick={() => changeModel(model.id)}
 								>
 									{model.displayName}
 								</button>
@@ -627,7 +608,7 @@
 						<button
 							class="toggle-btn"
 							class:toggle-on={translationEnabled}
-							on:click={() => changeTranslation(!translationEnabled)}
+							onclick={() => changeTranslation(!translationEnabled)}
 							aria-label="Toggle translation"
 							role="switch"
 							aria-checked={translationEnabled}
@@ -644,7 +625,7 @@
 								<button
 									class="pref-pill"
 									class:pref-pill-active={selectedTheme === t}
-									on:click={() => changeTheme(t as 'system' | 'light' | 'dark')}
+									onclick={() => changeTheme(t as 'system' | 'light' | 'dark')}
 								>
 									{t.charAt(0).toUpperCase() + t.slice(1)}
 								</button>
@@ -660,7 +641,7 @@
 				<p class="mb-4 text-sm text-text-secondary">
 					Permanently delete your account and all data including chat history. This cannot be undone.
 				</p>
-				<button class="btn-danger" on:click={() => (showDeleteModal = true)}>
+				<button class="btn-danger" onclick={() => (showDeleteModal = true)}>
 					Delete Account
 				</button>
 			</section>
@@ -673,7 +654,7 @@
 			{:else if analyticsError}
 				<div class="settings-card">
 					<p class="text-danger text-sm">{analyticsError}</p>
-					<button class="btn-secondary mt-3" on:click={loadAnalytics}>Retry</button>
+					<button class="btn-secondary mt-3" onclick={loadAnalytics}>Retry</button>
 				</div>
 			{:else if analyticsData}
 				<!-- Personal stats -->
@@ -842,7 +823,7 @@
 								type="checkbox"
 								class="peer sr-only"
 								checked={adminConfig['MODEL_2_ENABLED'] !== 'false'}
-								on:change={(e) => { adminConfig['MODEL_2_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
+								onchange={(e) => { adminConfig['MODEL_2_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
 							/>
 							<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
 						</label>
@@ -905,7 +886,7 @@
 							type="checkbox"
 							class="peer sr-only"
 							checked={adminConfig['HONCHO_ENABLED'] === 'true'}
-							on:change={(e) => { adminConfig['HONCHO_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
+							onchange={(e) => { adminConfig['HONCHO_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
 						/>
 						<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
 					</label>
@@ -913,7 +894,7 @@
 				<div class="flex items-center gap-2 text-xs text-text-secondary">
 					<button
 						class="text-accent hover:underline"
-						on:click={checkHonchoHealth}
+						onclick={checkHonchoHealth}
 						disabled={honchoLoading}
 					>
 						{honchoLoading ? 'Checking...' : 'Check Connection'}
@@ -944,7 +925,7 @@
 			{#if adminError}
 				<p class="mb-3 text-sm text-danger">{adminError}</p>
 			{/if}
-			<button class="btn-primary w-full mb-8" on:click={saveAdminConfig} disabled={adminSaving}>
+			<button class="btn-primary w-full mb-8" onclick={saveAdminConfig} disabled={adminSaving}>
 				{adminSaving ? 'Saving…' : 'Save Configuration'}
 			</button>
 		{/if}
@@ -955,8 +936,8 @@
 <!-- Profile picture editor modal -->
 {#if showPictureEditor}
 	<ProfilePictureEditor
-		on:close={() => (showPictureEditor = false)}
-		on:uploaded={() => {
+		onClose={() => (showPictureEditor = false)}
+		onUploaded={() => {
 			setAvatarUploaded(data.userSettings.id);
 			showPictureEditor = false;
 		}}
@@ -965,10 +946,17 @@
 
 <!-- Delete account modal -->
 {#if showDeleteModal}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-[9999] flex items-center justify-center bg-surface-overlay/60 backdrop-blur-sm"
-		on:click|self={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
+		role="presentation"
+		onclick={(event) => {
+			if (event.target !== event.currentTarget) return;
+			showDeleteModal = false;
+			deletePassword = '';
+			deleteError = '';
+			showDeletePw = false;
+		}}
 	>
 		<div class="mx-4 w-full max-w-sm rounded-xl border border-border bg-surface-page p-6 shadow-lg">
 			<h3 class="mb-2 text-lg font-semibold text-text-primary">Delete Account</h3>
@@ -977,7 +965,7 @@
 			</p>
 			<div class="flex items-center justify-between mb-1">
 				<p class="text-sm font-medium text-text-primary">Enter your password to confirm:</p>
-				<button type="button" class="pw-toggle" on:click={() => showDeletePw = !showDeletePw} tabindex="-1" aria-label={showDeletePw ? 'Hide password' : 'Show password'}>
+				<button type="button" class="pw-toggle" onclick={() => showDeletePw = !showDeletePw} tabindex="-1" aria-label={showDeletePw ? 'Hide password' : 'Show password'}>
 					{#if showDeletePw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 					{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
 				</button>
@@ -995,14 +983,14 @@
 			<div class="flex gap-2">
 				<button
 					class="btn-danger flex-1"
-					on:click={confirmDeleteAccount}
+					onclick={confirmDeleteAccount}
 					disabled={deleteLoading || !deletePassword}
 				>
 					{deleteLoading ? 'Deleting…' : 'Delete permanently'}
 				</button>
 				<button
 					class="btn-secondary"
-					on:click={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
+					onclick={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
 				>
 					Cancel
 				</button>

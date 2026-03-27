@@ -16,7 +16,7 @@ describe('Environment Configuration', () => {
     process.env.SESSION_SECRET = 'test-session-secret-12345678901234567890123456789012'
 
     await expect(
-      import('./env').then(({ config }) => config)
+      import('./env').then(({ config }) => config.langflowApiKey)
     ).rejects.toThrow('Missing required environment variable: LANGFLOW_API_KEY')
   })
 
@@ -27,7 +27,7 @@ describe('Environment Configuration', () => {
     process.env.LANGFLOW_API_KEY = 'test-api-key'
 
     await expect(
-      import('./env').then(({ config }) => config)
+      import('./env').then(({ config }) => config.sessionSecret)
     ).rejects.toThrow('Missing required environment variable: SESSION_SECRET')
   })
 

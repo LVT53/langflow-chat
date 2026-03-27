@@ -1,31 +1,40 @@
 <script lang="ts">
-	import { tick, createEventDispatcher } from 'svelte';
+	import { tick } from 'svelte';
 	import type { ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 
-	export let messages: ChatMessage[] = [];
-	export let conversationId: string | null = null;
-	export let isThinkingActive: boolean = false;
-	export let contextDebug: ContextDebugState | null = null;
+	let {
+		messages = [],
+		conversationId = null,
+		isThinkingActive = false,
+		contextDebug = null,
+		onRegenerate = undefined,
+		onEdit = undefined,
+		onSteer = undefined,
+	}: {
+		messages?: ChatMessage[];
+		conversationId?: string | null;
+		isThinkingActive?: boolean;
+		contextDebug?: ContextDebugState | null;
+		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
+		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		regenerate: { messageId: string };
-		edit: { messageId: string; newText: string };
-		steer: TaskSteeringPayload;
-	}>();
-
-	let scrollContainer: HTMLDivElement;
+	let scrollContainer = $state<HTMLDivElement | null>(null);
 	let shouldAutoScroll = true;
 	let lastMessageCount = 0;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
 
-	$: if (conversationId && conversationId !== lastConversationId) {
-		lastConversationId = conversationId;
-		shouldAutoScroll = true;
-		lastMessageCount = 0;
-		shouldJumpToConversationBottom = true;
-	}
+	$effect(() => {
+		if (conversationId && conversationId !== lastConversationId) {
+			lastConversationId = conversationId;
+			shouldAutoScroll = true;
+			lastMessageCount = 0;
+			shouldJumpToConversationBottom = true;
+		}
+	});
 
 	function handleScroll() {
 		if (!scrollContainer) return;
@@ -39,37 +48,50 @@
 		return currentMessages.length > lastMessageCount;
 	}
 
-	$: if (messages && messages.length > 0 && scrollContainer) {
+	$effect.pre(() => {
+		messages;
+		scrollContainer;
+		isThinkingActive;
+
+		if (!scrollContainer) return;
+
+		if (messages.length === 0) {
+			if (shouldJumpToConversationBottom) {
+				// Do not consume the first user send as an initial-load jump for empty conversations.
+				shouldJumpToConversationBottom = false;
+			}
+			lastMessageCount = 0;
+			return;
+		}
+
 		const isNewMessage = hasNewMessage(messages);
 
 		if (shouldJumpToConversationBottom) {
 			// Switching to another conversation should always reveal the latest response.
-			alignToBottomAfterRender();
+			void alignToBottomAfterRender();
 			shouldJumpToConversationBottom = false;
 		} else if (isNewMessage) {
 			// New message added: jump directly to the latest content.
-			alignToBottomAfterRender();
+			void alignToBottomAfterRender();
 		} else if (shouldAutoScroll && isThinkingActive) {
-			// Only follow during thinking phase; stop once content streaming begins
+			// Only follow during thinking phase; stop once content streaming begins.
 			instantScrollToBottom();
 		}
 
-		// Update tracking state
 		lastMessageCount = messages.length;
-	}
-
-	$: if (messages.length === 0 && shouldJumpToConversationBottom) {
-		// Do not consume the first user send as an initial-load jump for empty conversations.
-		shouldJumpToConversationBottom = false;
-	}
+	});
 
 	function instantScrollToBottom() {
 		if (!scrollContainer) return;
 		scrollContainer.scrollTop = scrollContainer.scrollHeight;
 	}
 
-	$: pinnedArtifactIds = contextDebug?.pinnedEvidence.map((evidence) => evidence.artifactId) ?? [];
-	$: excludedArtifactIds = contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? [];
+	let pinnedArtifactIds = $derived(
+		contextDebug?.pinnedEvidence.map((evidence) => evidence.artifactId) ?? []
+	);
+	let excludedArtifactIds = $derived(
+		contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? []
+	);
 
 	async function alignToBottomAfterRender() {
 		if (!scrollContainer) return;
@@ -85,7 +107,7 @@
 
 <div
 	bind:this={scrollContainer}
-	on:scroll={handleScroll}
+	onscroll={handleScroll}
 	class="scroll-container h-full min-h-0 overflow-x-hidden overflow-y-auto px-sm py-lg md:px-lg md:py-xl lg:px-xl"
 	style="touch-action: pan-y;"
 	aria-live="polite"
@@ -101,9 +123,9 @@
 					isLast={i === messages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					on:regenerate={(e) => dispatch('regenerate', e.detail)}
-					on:edit={(e) => dispatch('edit', e.detail)}
-					on:steer={(e) => dispatch('steer', e.detail)}
+					{onRegenerate}
+					{onEdit}
+					{onSteer}
 				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>

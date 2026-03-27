@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { logout } from '$lib/client/api/auth';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -18,21 +18,26 @@
 	import type { ConversationListItem, SessionUser, Project } from '$lib/types';
 	import { avatarState } from '$lib/stores/avatar';
 
-	export let open = false;
-	export let conversationsData: ConversationListItem[] = [];
-	export let projectsData: Project[] = [];
-	export let user: SessionUser | null = null;
+	let {
+		open = false,
+		conversationsData = [],
+		projectsData = [],
+		user = null
+	}: {
+		open?: boolean;
+		conversationsData?: ConversationListItem[];
+		projectsData?: Project[];
+		user?: SessionUser | null;
+	} = $props();
 
-	const dispatch = createEventDispatcher();
-	let isDesktop = browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false;
-	let showSearchModal = false;
-	let transitionsEnabled = false;
+	let isDesktop = $state(browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false);
+	let showSearchModal = $state(false);
+	let transitionsEnabled = $state(false);
 
-	$: isCollapsed = isDesktop && $sidebarCollapsed;
-	$: knowledgePending = $navigating?.to?.url.pathname === '/knowledge';
+	const isCollapsed = $derived(isDesktop && $sidebarCollapsed);
+	const knowledgePending = $derived($navigating?.to?.url.pathname === '/knowledge');
 
 	async function handleNewConversation() {
-		dispatch('new-conversation');
 		markPreviousConversationId($currentConversationId);
 		currentConversationId.set(null);
 		await goto('/');
@@ -70,7 +75,7 @@
 
 	async function handleLogout() {
 		try {
-			await fetch('/api/auth/logout', { method: 'POST' });
+			await logout();
 			goto('/login');
 		} catch (error) {
 			console.error('Logout failed:', error);
@@ -94,12 +99,12 @@
 
 <!-- Mobile Overlay -->
 {#if open}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="mobile-overlay fixed inset-0 z-40 bg-surface-overlay/50 backdrop-blur-sm"
 		transition:fade={{ duration: 250 }}
-		on:click={() => sidebarOpen.set(false)}
+		onclick={() => sidebarOpen.set(false)}
 	></div>
 {/if}
 
@@ -132,7 +137,7 @@
 		<button
 			class="desktop-only btn-icon-bare compose-btn"
 			class:ml-auto={!isCollapsed}
-			on:click={toggleCollapse}
+			onclick={toggleCollapse}
 			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 			title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 		>
@@ -150,7 +155,7 @@
 		<!-- Mobile: Close button -->
 		<button
 			class="mobile-only btn-icon-bare ml-auto"
-			on:click={() => sidebarOpen.set(false)}
+			onclick={() => sidebarOpen.set(false)}
 			aria-label="Close sidebar"
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -168,7 +173,7 @@
 				<button
 					data-testid="new-conversation"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={handleNewConversation}
+					onclick={handleNewConversation}
 					title="New chat"
 					aria-label="New chat"
 				>
@@ -180,7 +185,7 @@
 				<button
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={openSearchModal}
+					onclick={openSearchModal}
 					title="Search"
 					aria-label="Search conversations"
 				>
@@ -192,9 +197,9 @@
 				<button
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={() => navigateAndClose('/knowledge')}
-					on:mouseenter={() => warmRoute('/knowledge')}
-					on:focus={() => warmRoute('/knowledge')}
+					onclick={() => navigateAndClose('/knowledge')}
+					onmouseenter={() => warmRoute('/knowledge')}
+					onfocus={() => warmRoute('/knowledge')}
 					title="Knowledge base"
 					aria-label="Open knowledge base"
 					aria-busy={knowledgePending}
@@ -229,7 +234,7 @@
 				<button
 					type="button"
 					class="search-pill flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-text-muted transition-colors duration-150 hover:border-border-focus hover:bg-surface-page focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={openSearchModal}
+					onclick={openSearchModal}
 					aria-label="Search conversations"
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
@@ -242,7 +247,7 @@
 				<button
 					data-testid="new-conversation"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={handleNewConversation}
+					onclick={handleNewConversation}
 					title="New chat"
 					aria-label="New chat"
 				>
@@ -254,9 +259,9 @@
 				<button
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={() => navigateAndClose('/knowledge')}
-					on:mouseenter={() => warmRoute('/knowledge')}
-					on:focus={() => warmRoute('/knowledge')}
+					onclick={() => navigateAndClose('/knowledge')}
+					onmouseenter={() => warmRoute('/knowledge')}
+					onfocus={() => warmRoute('/knowledge')}
 					title="Knowledge base"
 					aria-label="Open knowledge base"
 					aria-busy={knowledgePending}
@@ -305,7 +310,7 @@
 				<button
 					type="button"
 					class="profile-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={() => navigateAndClose('/settings')}
+					onclick={() => navigateAndClose('/settings')}
 					title="Settings"
 					aria-label="Open settings"
 				>
@@ -321,7 +326,7 @@
 				<button
 					type="button"
 					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={handleLogout}
+					onclick={handleLogout}
 					title="Logout"
 					aria-label="Logout"
 				>
@@ -338,7 +343,7 @@
 				<button
 					type="button"
 					class="profile-btn flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-1.5 py-1.5 text-sm text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={() => navigateAndClose('/settings')}
+					onclick={() => navigateAndClose('/settings')}
 					aria-label="Open settings"
 				>
 					<AvatarCircle
@@ -357,7 +362,7 @@
 				<button
 					type="button"
 					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					on:click={handleLogout}
+					onclick={handleLogout}
 					title="Logout"
 					aria-label="Logout"
 				>

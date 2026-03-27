@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createEventDispatcher } from 'svelte';
 	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
 
 	interface Model {
@@ -8,12 +7,15 @@
 		displayName: string;
 	}
 
-	let models: Model[] = [];
-	let isOpen = false;
-	let isLoading = true;
-	let error: string | null = null;
-	let dropdownRef: HTMLDivElement;
-	const dispatch = createEventDispatcher<{ select: { modelId: ModelId } }>();
+	let { onSelect }: {
+		onSelect?: (payload: { modelId: ModelId }) => void;
+	} = $props();
+
+	let models = $state<Model[]>([]);
+	let isOpen = $state(false);
+	let isLoading = $state(true);
+	let error = $state<string | null>(null);
+	let dropdownRef = $state<HTMLDivElement | undefined>(undefined);
 
 	onMount(async () => {
 		try {
@@ -48,7 +50,7 @@
 	function handleSelect(modelId: ModelId) {
 		setSelectedModel(modelId);
 		isOpen = false;
-		dispatch('select', { modelId });
+		onSelect?.({ modelId });
 	}
 
 	function toggleDropdown() {
@@ -61,14 +63,14 @@
 		}
 	}
 
-	$: currentModel = models.find((m) => m.id === $selectedModel);
+	const currentModel = $derived(models.find((model) => model.id === $selectedModel));
 </script>
 
-<div class="model-selector" bind:this={dropdownRef} on:keydown={handleKeydown} role="presentation">
+<div class="model-selector" bind:this={dropdownRef} onkeydown={handleKeydown} role="presentation">
 	<button
 		type="button"
 		class="model-selector__trigger"
-		on:click={toggleDropdown}
+		onclick={toggleDropdown}
 		aria-haspopup="listbox"
 		aria-expanded={isOpen}
 		aria-label="Select model"
@@ -107,8 +109,8 @@
 					aria-selected={$selectedModel === model.id}
 					class="model-selector__option"
 					class:model-selector__option--selected={$selectedModel === model.id}
-					on:click={() => handleSelect(model.id)}
-					on:keydown={(e) => e.key === 'Enter' && handleSelect(model.id)}
+					onclick={() => handleSelect(model.id)}
+					onkeydown={(event) => event.key === 'Enter' && handleSelect(model.id)}
 					tabindex="0"
 					data-testid="model-option-{model.id}"
 				>

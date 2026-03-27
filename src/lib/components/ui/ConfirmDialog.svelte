@@ -1,21 +1,28 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
 
-	export let title: string;
-	export let message: string;
-	export let confirmText: string = 'Confirm';
-	export let cancelText: string = 'Cancel';
-	export let confirmVariant: 'primary' | 'danger' = 'primary';
+	let {
+		title,
+		message,
+		confirmText = 'Confirm',
+		cancelText = 'Cancel',
+		confirmVariant = 'primary',
+		onConfirm,
+		onCancel
+	}: {
+		title: string;
+		message: string;
+		confirmText?: string;
+		cancelText?: string;
+		confirmVariant?: 'primary' | 'danger';
+		onConfirm?: () => void;
+		onCancel?: () => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		confirm: void;
-		cancel: void;
-	}>();
-
-	let dialogRef: HTMLDivElement;
+	let dialogRef = $state<HTMLDivElement | undefined>(undefined);
 	let previousFocus: HTMLElement | null = null;
-	let confirmBtnRef: HTMLButtonElement;
+	let confirmBtnRef = $state<HTMLButtonElement | undefined>(undefined);
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
@@ -46,11 +53,11 @@
 	}
 
 	function handleConfirm() {
-		dispatch('confirm');
+		onConfirm?.();
 	}
 
 	function handleCancel() {
-		dispatch('cancel');
+		onCancel?.();
 	}
 
 	onMount(() => {
@@ -70,17 +77,17 @@
 	});
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="fixed inset-0 z-50 flex items-center justify-center p-md"
 	transition:fade={{ duration: 150 }}
 >
 	<div 
 		class="absolute inset-0 bg-surface-page opacity-80 backdrop-blur-sm" 
-		on:click={handleCancel}
+		onclick={handleCancel}
 	></div>
 
 	<div
@@ -91,7 +98,7 @@
 		aria-labelledby="dialog-title"
 		aria-describedby="dialog-message"
 		class="relative w-full max-w-[480px] rounded-lg border border-border bg-surface-page p-lg shadow-lg"
-		on:click|stopPropagation
+		onclick={(event) => event.stopPropagation()}
 		transition:scale={{ duration: 150, start: 0.95 }}
 	>
 		<h2 id="dialog-title" class="mb-sm text-xl font-semibold text-text-primary">
@@ -106,7 +113,7 @@
 			<button
 			type="button"
 			class="btn-secondary"
-			on:click={handleCancel}
+			onclick={handleCancel}
 			>
 				{cancelText}
 			</button>
@@ -115,7 +122,7 @@
 			bind:this={confirmBtnRef}
 			type="button"
 			class={confirmVariant === 'danger' ? 'btn-danger' : 'btn-primary'}
-			on:click={handleConfirm}
+			onclick={handleConfirm}
 			>
 				{confirmText}
 			</button>

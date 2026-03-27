@@ -65,6 +65,7 @@ vi.mock('$lib/server/services/honcho', () => ({
 }));
 
 vi.mock('$lib/server/env', () => ({
+	getDatabasePath: () => './data/test.db',
 	config: {
 		maxMessageLength: 10000
 	}

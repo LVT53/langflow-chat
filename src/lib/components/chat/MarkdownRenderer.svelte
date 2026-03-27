@@ -7,24 +7,31 @@
     hasExtremeUnbreakableContent,
     resolveTableOverflowMode,
   } from '$lib/services/table-layout';
-  import { afterUpdate, onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
-  export let content: string = '';
-  export let isDark: boolean = false;
-  export let isStreaming: boolean = false;
+  let {
+    content = '',
+    isDark = false,
+    isStreaming = false
+  }: {
+    content?: string;
+    isDark?: boolean;
+    isStreaming?: boolean;
+  } = $props();
 
   type MarkdownBlock =
     | { type: 'html'; html: string; isNew?: boolean }
     | { type: 'code'; code: string; language?: string; html: string; isNew?: boolean };
 
-  let blocks: MarkdownBlock[] = [];
+  let blocks = $state<MarkdownBlock[]>([]);
   let prevBlockCount = 0;
-  let container: HTMLDivElement;
+  let container = $state<HTMLDivElement | null>(null);
   let prevWordCount = 0;
   let prevLastBlockEl: HTMLElement | null = null;
   let renderVersion = 0;
   let resizeObserver: ResizeObserver | null = null;
   let resizeFrame = 0;
+  let postRenderVersion = 0;
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -32,18 +39,18 @@
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
   const STREAM_THROTTLE_MS = 80;
 
-  function scheduleRender(src: string) {
+  function scheduleRender(src: string, darkMode: boolean, streaming: boolean) {
     pendingContent = src;
     if (throttleTimer !== null) return;
     throttleTimer = setTimeout(() => {
       throttleTimer = null;
       const latest = pendingContent!;
       pendingContent = null;
-      void renderContent(latest);
+      void renderContent(latest, darkMode, streaming);
     }, STREAM_THROTTLE_MS);
   }
 
-  async function splitMarkdownBlocks(source: string): Promise<MarkdownBlock[]> {
+  async function splitMarkdownBlocks(source: string, darkMode: boolean): Promise<MarkdownBlock[]> {
     const normalizedSource = source.startsWith('[Translation unavailable]')
       ? source.substring('[Translation unavailable]'.length).trimStart()
       : source;
@@ -57,7 +64,7 @@
     const flushText = async () => {
       if (!textLines.length) return;
 
-      const html = await renderMarkdown(textLines.join('\n'), isDark);
+      const html = await renderMarkdown(textLines.join('\n'), darkMode);
       if (html.trim()) {
         nextBlocks.push({ type: 'html', html });
       }
@@ -69,7 +76,7 @@
         type: 'code',
         code: codeLines.join('\n'),
         language,
-        html: renderCodeBlock(codeLines.join('\n'), language, isDark)
+        html: renderCodeBlock(codeLines.join('\n'), language, darkMode)
       });
       codeLines.length = 0;
       language = undefined;
@@ -108,49 +115,57 @@
     return nextBlocks;
   }
 
-  async function renderContent(src: string) {
+  async function renderContent(src: string, darkMode: boolean, streaming: boolean) {
     const currentRender = ++renderVersion;
     if (src.includes('```')) {
       await prepareCodeHighlighting(src);
     }
-    const newBlocks = await splitMarkdownBlocks(src);
+    const newBlocks = await splitMarkdownBlocks(src, darkMode);
     if (currentRender !== renderVersion) return;
     const oldCount = prevBlockCount;
     
     blocks = newBlocks.map((b, i) => ({
       ...b,
-      isNew: isStreaming && i >= oldCount
+      isNew: streaming && i >= oldCount
     }));
     
     prevBlockCount = newBlocks.length;
     
     const hasNewBlocks = blocks.some(b => b.isNew);
-    if (isStreaming && hasNewBlocks) {
+    if (streaming && hasNewBlocks) {
       setTimeout(() => {
         blocks = blocks.map((b) => ({ ...b, isNew: false }));
       }, 500);
     }
   }
 
-  $: if (content !== undefined || isDark !== undefined || isStreaming !== undefined) {
-    if (isStreaming) {
-      scheduleRender(content);
-    } else {
-      // Flush any pending throttled render immediately when streaming stops
-      if (throttleTimer !== null) {
-        clearTimeout(throttleTimer);
-        throttleTimer = null;
-        pendingContent = null;
-      }
-      void renderContent(content);
-    }
-  }
+  $effect(() => {
+    const nextContent = content;
+    const darkMode = isDark;
+    const streaming = isStreaming;
 
-  $: if (!isStreaming) {
-    prevWordCount = 0;
-    prevLastBlockEl = null;
-    prevBlockCount = 0;
-  }
+    if (streaming) {
+      scheduleRender(nextContent, darkMode, streaming);
+      return;
+    }
+
+    // Flush any pending throttled render immediately when streaming stops.
+    if (throttleTimer !== null) {
+      clearTimeout(throttleTimer);
+      throttleTimer = null;
+      pendingContent = null;
+    }
+
+    void renderContent(nextContent, darkMode, streaming);
+  });
+
+  $effect(() => {
+    if (!isStreaming) {
+      prevWordCount = 0;
+      prevLastBlockEl = null;
+      prevBlockCount = 0;
+    }
+  });
 
   // Walk the last html block's DOM and wrap newly arrived words in animated spans.
   // Words at index < startIndex are already rendered; only wrap words >= startIndex.
@@ -292,6 +307,10 @@
     return () => {
       resizeObserver?.disconnect();
       resizeObserver = null;
+      if (throttleTimer !== null) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
       if (resizeFrame) {
         cancelAnimationFrame(resizeFrame);
         resizeFrame = 0;
@@ -302,14 +321,15 @@
     };
   });
 
-  afterUpdate(() => {
-    if (container) {
-      resizeObserver?.disconnect();
-      resizeObserver?.observe(container);
-      scheduleTableEnhancement();
-    }
+  async function runPostRenderEffects(version: number) {
+    await tick();
+    if (version !== postRenderVersion || !container) return;
 
-    if (!isStreaming || !container) return;
+    resizeObserver?.disconnect();
+    resizeObserver?.observe(container);
+    scheduleTableEnhancement();
+
+    if (!isStreaming) return;
 
     const blockEls = container.querySelectorAll<HTMLElement>(':scope > .markdown-html');
     if (!blockEls.length) return;
@@ -321,6 +341,18 @@
     }
 
     prevWordCount = wrapNewWords(lastBlockEl, prevWordCount);
+  }
+
+  $effect(() => {
+    blocks;
+    isStreaming;
+
+    if (!container) {
+      return;
+    }
+
+    const version = ++postRenderVersion;
+    void runPostRenderEffects(version);
   });
 </script>
 
@@ -332,9 +364,7 @@
       </div>
     {:else}
       <div class:block-fade-in={block.isNew}>
-        <CodeBlock code={block.code} language={block.language}>
-          {@html block.html}
-        </CodeBlock>
+        <CodeBlock code={block.code} language={block.language} contentHtml={block.html} />
       </div>
     {/if}
   {/each}

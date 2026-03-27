@@ -11,16 +11,23 @@
 	import { initSettings } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
 	import { initAvatar } from '$lib/stores/avatar';
-	import type { LayoutData } from './$types';
+	import type { LayoutProps } from './$types';
 
-	export let data: LayoutData;
+	let { data, children }: LayoutProps = $props();
 
-	$: conversations.set(data.conversations ?? []);
-	$: projects.set(data.projects ?? []);
-	$: if (browser) {
+	$effect(() => {
+		conversations.set(data.conversations ?? []);
+	});
+
+	$effect(() => {
+		projects.set(data.projects ?? []);
+	});
+
+	$effect(() => {
+		if (!browser) return;
 		const match = $page.url.pathname.match(/^\/chat\/([^/]+)$/);
 		currentConversationId.set(match?.[1] ?? null);
-	}
+	});
 
 	onMount(() => {
 		initTheme(data.userTheme as 'system' | 'light' | 'dark');
@@ -42,7 +49,7 @@
 	<Header />
 
 	<div class="flex h-full flex-1 overflow-hidden">
-		<Sidebar open={$sidebarOpen} conversationsData={data.conversations ?? []} projectsData={data.projects ?? []} user={data.user} on:new-conversation={() => {}} />
+		<Sidebar open={$sidebarOpen} conversationsData={data.conversations ?? []} projectsData={data.projects ?? []} user={data.user} />
 
 		<main class="relative flex h-full flex-1 flex-col overflow-hidden min-w-0">
 			{#if $navigating}
@@ -50,7 +57,7 @@
 					<div class="route-progress h-full w-1/3 rounded-full bg-accent/80"></div>
 				</div>
 			{/if}
-			<slot />
+			{@render children()}
 		</main>
 	</div>
 </div>

@@ -136,6 +136,7 @@ vi.mock('@honcho-ai/sdk', () => {
 
 // Mock env config
 vi.mock('../env', () => ({
+  getDatabasePath: () => './data/test.db',
   config: {
     langflowApiUrl: 'http://localhost:7860',
     langflowApiKey: 'test-api-key',

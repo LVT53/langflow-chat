@@ -1,24 +1,38 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	
-	export let visible: boolean = true;
-	export let label: string;
+	let {
+		visible = true,
+		label
+	}: {
+		visible?: boolean;
+		label?: string;
+	} = $props();
 
-	let elapsed = 0;
-	let intervalId: ReturnType<typeof setInterval>;
+	let elapsed = $state(0);
 
-	onMount(() => {
-		if (visible && label === undefined) {
-			intervalId = setInterval(() => {
-				elapsed += 1;
-			}, 1000);
+	$effect(() => {
+		elapsed = 0;
+		if (!visible || label !== undefined) {
+			return;
 		}
+
+		const intervalId = setInterval(() => {
+			elapsed += 1;
+		}, 1000);
+
 		return () => {
 			clearInterval(intervalId);
 		};
 	});
 
-	$: message = label !== undefined ? label : elapsed < 30 ? 'Thinking...' : elapsed < 60 ? 'Still working...' : 'Almost there...';
+	const message = $derived(
+		label !== undefined
+			? label
+			: elapsed < 30
+				? 'Thinking...'
+				: elapsed < 60
+					? 'Still working...'
+					: 'Almost there...'
+	);
 </script>
 
 {#if visible}

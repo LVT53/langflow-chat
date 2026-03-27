@@ -1,18 +1,20 @@
 <script lang="ts">
 	import type { ArtifactSummary } from '$lib/types';
 
-	export let attachment: ArtifactSummary;
-	export let removable: boolean = false;
-	export let variant: 'compact' | 'pending' = 'compact';
-
-	const dispatch = createEventDispatcher<{
-		remove: { id: string };
-	}>();
-
-	import { createEventDispatcher } from 'svelte';
+	let {
+		attachment,
+		removable = false,
+		variant = 'compact',
+		onRemove
+	}: {
+		attachment: ArtifactSummary;
+		removable?: boolean;
+		variant?: 'compact' | 'pending';
+		onRemove?: (payload: { id: string }) => void;
+	} = $props();
 
 	function handleRemove() {
-		dispatch('remove', { id: attachment.id });
+		onRemove?.({ id: attachment.id });
 	}
 </script>
 
@@ -46,7 +48,7 @@
 		<button
 			type="button"
 			class="remove-button"
-			on:click={handleRemove}
+			onclick={handleRemove}
 			aria-label={`Remove ${attachment.name}`}
 		>
 			<svg

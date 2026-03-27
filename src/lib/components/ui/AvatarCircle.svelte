@@ -1,19 +1,28 @@
 <script lang="ts">
 	import { getAvatarColor } from '$lib/utils/avatar';
 
-	export let userId: string;
-	export let name: string | null = null;
-	export let avatarId: number | null = null;
-	export let size: number = 28;
-	export let profilePicture: string | null = null;
-	export let cacheBuster: number = 0;
+	let {
+		userId,
+		name = null,
+		avatarId = null,
+		size = 28,
+		profilePicture = null,
+		cacheBuster = 0
+	}: {
+		userId: string;
+		name?: string | null;
+		avatarId?: number | null;
+		size?: number;
+		profilePicture?: string | null;
+		cacheBuster?: number;
+	} = $props();
 
-	$: color = getAvatarColor(avatarId, userId);
-	$: initial = name ? name[0].toUpperCase() : (userId[0] ?? '?').toUpperCase();
-	$: fontSize = Math.round(size * 0.42);
-	$: imgSrc = profilePicture
+	const color = $derived(getAvatarColor(avatarId, userId));
+	const initial = $derived(name ? name[0].toUpperCase() : (userId[0] ?? '?').toUpperCase());
+	const fontSize = $derived(Math.round(size * 0.42));
+	const imgSrc = $derived(profilePicture
 		? `/api/avatar/${userId}${cacheBuster ? `?t=${cacheBuster}` : ''}`
-		: null;
+		: null);
 </script>
 
 {#if imgSrc}

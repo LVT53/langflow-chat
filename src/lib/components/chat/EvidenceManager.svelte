@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
 	import type {
 		ContextDebugState,
@@ -7,16 +6,20 @@
 		TaskSteeringPayload,
 	} from '$lib/types';
 
-	export let open = false;
-	export let contextDebug: ContextDebugState | null = null;
-
-	const dispatch = createEventDispatcher<{
-		close: void;
-		steer: TaskSteeringPayload;
-	}>();
+	let {
+		open = false,
+		contextDebug = null,
+		onClose = undefined,
+		onSteer = undefined,
+	}: {
+		open?: boolean;
+		contextDebug?: ContextDebugState | null;
+		onClose?: (() => void) | undefined;
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	} = $props();
 
 	function close() {
-		dispatch('close');
+		onClose?.();
 	}
 
 	function handleBackdropClick(event: MouseEvent) {
@@ -41,19 +44,22 @@
 		return 'auto';
 	}
 
-	$: pinnedIds = new Set(contextDebug?.pinnedEvidence.map((item) => item.artifactId) ?? []);
-	$: excludedIds = new Set(contextDebug?.excludedEvidence.map((item) => item.artifactId) ?? []);
-	$: selectedRows =
+	let pinnedIds = $derived(new Set(contextDebug?.pinnedEvidence.map((item) => item.artifactId) ?? []));
+	let excludedIds = $derived(
+		new Set(contextDebug?.excludedEvidence.map((item) => item.artifactId) ?? [])
+	);
+	let selectedRows = $derived(
 		contextDebug?.selectedEvidence.filter(
 			(item) => !pinnedIds.has(item.artifactId) && !excludedIds.has(item.artifactId)
-		) ?? [];
+		) ?? []
+	);
 
-	function steer(event: CustomEvent<TaskSteeringPayload>) {
-		dispatch('steer', event.detail);
+	function steer(payload: TaskSteeringPayload) {
+		onSteer?.(payload);
 	}
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
 	<div
@@ -62,13 +68,13 @@
 		aria-label="Evidence manager"
 		aria-modal="true"
 		tabindex="-1"
-		on:click={handleBackdropClick}
-		on:keydown={handleKeydown}
+		onclick={handleBackdropClick}
+		onkeydown={handleKeydown}
 	>
 		<div class="evidence-panel">
 			<div class="panel-header">
 				<h2 class="panel-title">Manage evidence</h2>
-				<button type="button" class="panel-close" aria-label="Close evidence manager" on:click={close}>
+				<button type="button" class="panel-close" aria-label="Close evidence manager" onclick={close}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 						<path d="M6 6 18 18" />
 						<path d="M18 6 6 18" />
@@ -98,7 +104,7 @@
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference={preferenceFor(item.artifactId)}
-										on:steer={steer}
+										onSteer={steer}
 									/>
 								</div>
 							{/each}
@@ -127,7 +133,7 @@
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference="pinned"
-										on:steer={steer}
+										onSteer={steer}
 									/>
 								</div>
 							{/each}
@@ -156,7 +162,7 @@
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference="excluded"
-										on:steer={steer}
+										onSteer={steer}
 									/>
 								</div>
 							{/each}

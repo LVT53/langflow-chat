@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
+	import { get } from 'svelte/store';
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -7,26 +8,29 @@
 	import { projects } from '$lib/stores/projects';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
 
-	export let isOpen = false;
-	export let onClose: () => void = () => {};
+	let { isOpen = false, onClose = () => {} }: {
+		isOpen?: boolean;
+		onClose?: () => void;
+	} = $props();
 
-	let searchQuery = '';
-	let modalRef: HTMLDivElement;
-	let searchInputRef: HTMLInputElement;
+	let searchQuery = $state('');
+	let searchLoading = $state(false);
+	let modalRef = $state<HTMLDivElement | undefined>(undefined);
+	let searchInputRef = $state<HTMLInputElement | undefined>(undefined);
 	let previousFocus: HTMLElement | null = null;
-	let searchLoading = false;
+	let wasOpen = false;
 
 	const focusableSelector =
 		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-	$: normalizedSearchQuery = searchQuery.trim().toLowerCase();
-	$: searchableConversations = $conversations;
-	$: projectsMap = Object.fromEntries($projects.map(p => [p.id, p.name]));
-	$: searchResults = normalizedSearchQuery
+	const normalizedSearchQuery = $derived(searchQuery.trim().toLowerCase());
+	const searchableConversations = $derived($conversations);
+	const projectsMap = $derived(Object.fromEntries($projects.map((project) => [project.id, project.name])));
+	const searchResults = $derived(normalizedSearchQuery
 		? searchableConversations.filter((conversation) =>
 				conversation.title.toLowerCase().includes(normalizedSearchQuery)
 			)
-		: searchableConversations.slice(0, 6);
+		: searchableConversations.slice(0, 6));
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -42,21 +46,30 @@
 		};
 	}
 
-	$: if (browser && isOpen) {
+	$effect(() => {
+		if (!browser || !isOpen || wasOpen) {
+			wasOpen = isOpen;
+			return;
+		}
+
 		previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-		tick().then(() => {
+		void tick().then(() => {
 			const isMobile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-			if (!isMobile) searchInputRef?.focus();
+			if (!isMobile) {
+				searchInputRef?.focus();
+			}
 		});
 
-		if ($conversations.length === 0) {
+		if (get(conversations).length === 0) {
 			searchLoading = true;
-			loadConversations().finally(() => {
+			void loadConversations().finally(() => {
 				searchLoading = false;
 			});
 		}
-	}
+
+		wasOpen = true;
+	});
 
 	function handleClose() {
 		searchQuery = '';
@@ -107,13 +120,6 @@
 		}
 	}
 
-	onMount(() => {
-		window.addEventListener('keydown', handleKeydown);
-		return () => {
-			window.removeEventListener('keydown', handleKeydown);
-		};
-	});
-
 	onDestroy(() => {
 		if (browser && document.body.style.overflow === 'hidden') {
 			document.body.style.overflow = '';
@@ -121,13 +127,15 @@
 	});
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if isOpen}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		use:portal
 		class="search-portal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4"
-		on:click={handleBackdropClick}
+		onclick={handleBackdropClick}
 		transition:fade={{ duration: 150 }}
 	>
 		<div
@@ -137,7 +145,6 @@
 			aria-labelledby="search-dialog-title"
 			tabindex="-1"
 			class="search-portal-modal w-full max-w-[720px] overflow-hidden rounded-xl border border-border bg-surface-overlay shadow-2xl"
-			on:click|stopPropagation
 		>
 			<div class="border-b border-border px-6 py-5">
 				<div class="flex items-center justify-between gap-4">
@@ -149,7 +156,7 @@
 					<button
 						type="button"
 						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-icon-primary"
-						on:click={handleClose}
+						onclick={handleClose}
 						aria-label="Close search"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -177,7 +184,7 @@
 						<button
 							type="button"
 							class="btn-icon-bare h-8 w-8 text-icon-muted hover:text-icon-primary"
-							on:click={() => searchQuery = ''}
+							onclick={() => (searchQuery = '')}
 							aria-label="Clear search"
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -219,7 +226,7 @@
 								type="button"
 								class="search-result-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
 								class:active={conversation.id === $currentConversationId}
-								on:click={() => handleSelection(conversation.id)}
+								onclick={() => handleSelection(conversation.id)}
 							>
 								<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
 									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">

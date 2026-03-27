@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount, tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import type {
 		ArtifactSummary,
 		ContextDebugState,
@@ -9,22 +9,28 @@
 		TaskSteeringPayload,
 	} from '$lib/types';
 
-	export let contextStatus: ConversationContextStatus | null = null;
-	export let attachedArtifacts: ArtifactSummary[] = [];
-	export let taskState: TaskState | null = null;
-	export let contextDebug: ContextDebugState | null = null;
+	let {
+		contextStatus = null,
+		attachedArtifacts = [],
+		taskState = null,
+		contextDebug = null,
+		onSteer = undefined,
+		onManageEvidence = undefined,
+	}: {
+		contextStatus?: ConversationContextStatus | null;
+		attachedArtifacts?: ArtifactSummary[];
+		taskState?: TaskState | null;
+		contextDebug?: ContextDebugState | null;
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+		onManageEvidence?: (() => void) | undefined;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		steer: TaskSteeringPayload;
-		manageEvidence: void;
-	}>();
-
-	let root: HTMLDivElement;
-	let isOpen = false;
-	let mobile = false;
-	let showNewTaskForm = false;
-	let newTaskObjective = '';
-	let newTaskInput: HTMLInputElement | null = null;
+	let root = $state<HTMLDivElement | null>(null);
+	let isOpen = $state(false);
+	let mobile = $state(false);
+	let showNewTaskForm = $state(false);
+	let newTaskObjective = $state('');
+	let newTaskInput = $state<HTMLInputElement | null>(null);
 
 	const size = 38;
 	const strokeWidth = 3;
@@ -112,7 +118,7 @@
 	}
 
 	function steer(action: TaskSteeringAction, artifactId?: string, objective?: string) {
-		dispatch('steer', { action, artifactId, objective });
+		onSteer?.({ action, artifactId, objective });
 	}
 
 	function resetNewTaskForm() {
@@ -121,7 +127,7 @@
 	}
 
 	function openEvidenceManager() {
-		dispatch('manageEvidence');
+		onManageEvidence?.();
 		if (mobile) {
 			isOpen = false;
 			resetNewTaskForm();
@@ -164,25 +170,29 @@
 		}
 	}
 
-	$: promptBudget = contextStatus ? Math.max(contextStatus.targetTokens, 1) : 1;
-	$: ratio = contextStatus
+	let promptBudget = $derived(contextStatus ? Math.max(contextStatus.targetTokens, 1) : 1);
+	let ratio = $derived(
+		contextStatus
 		? Math.max(0, Math.min(1, contextStatus.estimatedTokens / promptBudget))
-		: 0;
-	$: dashOffset = circumference * (1 - ratio);
-	$: percent = Math.round(ratio * 100);
-	$: activeObjective = contextDebug?.activeTaskObjective ?? taskState?.objective ?? null;
-	$: continuity = taskState?.continuity ?? null;
-	$: toneClass = !contextStatus
-		? 'ring-button--idle'
-		: contextStatus.compactionMode === 'llm_fallback'
-			? 'ring-button--compact'
-			: contextStatus.compactionMode === 'deterministic'
-				? 'ring-button--high'
-				: ratio >= 0.9
+		: 0
+	);
+	let dashOffset = $derived(circumference * (1 - ratio));
+	let percent = $derived(Math.round(ratio * 100));
+	let activeObjective = $derived(contextDebug?.activeTaskObjective ?? taskState?.objective ?? null);
+	let continuity = $derived(taskState?.continuity ?? null);
+	let toneClass = $derived(
+		!contextStatus
+			? 'ring-button--idle'
+			: contextStatus.compactionMode === 'llm_fallback'
+				? 'ring-button--compact'
+				: contextStatus.compactionMode === 'deterministic'
 					? 'ring-button--high'
-					: ratio >= 0.75
-						? 'ring-button--medium'
-						: 'ring-button--normal';
+					: ratio >= 0.9
+						? 'ring-button--high'
+						: ratio >= 0.75
+							? 'ring-button--medium'
+							: 'ring-button--normal'
+	);
 </script>
 
 <div
@@ -194,7 +204,7 @@
 		class={`ring-button ${toneClass}`}
 		aria-label={contextStatus ? `Prompt budget usage ${percent}% (${contextStatus.estimatedTokens.toLocaleString()} tokens)` : 'No context yet'}
 		aria-expanded={isOpen}
-		on:click={handleClick}
+		onclick={handleClick}
 	>
 		<svg class="ring-svg" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
 			<circle
@@ -237,7 +247,7 @@
 				<button
 					type="button"
 					class="popover-action-button"
-					on:click={() => steer(contextDebug?.taskLocked ? 'unlock_task' : 'lock_task')}
+					onclick={() => steer(contextDebug?.taskLocked ? 'unlock_task' : 'lock_task')}
 				>
 					{contextDebug?.taskLocked ? 'Unlock task' : 'Lock task'}
 				</button>
@@ -251,20 +261,20 @@
 							type="text"
 							placeholder="Leave empty to infer from your next message"
 							bind:value={newTaskObjective}
-							on:keydown={handleNewTaskKeydown}
+							onkeydown={handleNewTaskKeydown}
 						/>
 						<div class="task-form-actions">
 							<button
 								type="button"
 								class="popover-action-button"
-								on:click={submitNewTask}
+								onclick={submitNewTask}
 							>
 								Start
 							</button>
 							<button
 								type="button"
 								class="popover-action-button popover-action-button--ghost"
-								on:click={cancelNewTaskForm}
+								onclick={cancelNewTaskForm}
 							>
 								Cancel
 							</button>
@@ -274,7 +284,7 @@
 					<button
 						type="button"
 						class="popover-action-button"
-						on:click={openNewTaskForm}
+						onclick={openNewTaskForm}
 					>
 						Start new task
 					</button>
@@ -282,7 +292,7 @@
 				<button
 					type="button"
 					class="popover-action-button"
-					on:click={openEvidenceManager}
+					onclick={openEvidenceManager}
 				>
 					Manage evidence
 				</button>

@@ -11,6 +11,7 @@ vi.mock('$lib/server/services/webhook-buffer', () => ({
 }));
 
 vi.mock('$lib/server/env', () => ({
+	getDatabasePath: () => './data/test.db',
 	config: {
 		langflowWebhookSecret: 'test-webhook-secret'
 	}

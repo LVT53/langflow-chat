@@ -1,7 +1,13 @@
 <script lang="ts">
-	export let error: string;
-	export let onRetry: () => void;
-	export let onClose: () => void;
+	let {
+		error,
+		onRetry,
+		onClose
+	}: {
+		error: string;
+		onRetry: () => void;
+		onClose: () => void;
+	} = $props();
 </script>
 
 <div class="error-toast" role="alert" aria-live="assertive">
@@ -16,10 +22,10 @@
 		<p class="error-message">{error}</p>
 	</div>
 	<div class="error-actions">
-		<button type="button" class="error-retry" on:click={onRetry}>
+		<button type="button" class="error-retry" onclick={onRetry}>
 			Retry
 		</button>
-		<button type="button" class="error-close" on:click={onClose} aria-label="Dismiss error">
+		<button type="button" class="error-close" onclick={onClose} aria-label="Dismiss error">
 			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<line x1="18" y1="6" x2="6" y2="18"/>
 				<line x1="6" y1="6" x2="18" y2="18"/>

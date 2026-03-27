@@ -11,9 +11,13 @@
 		TaskMemoryItem,
 		WorkCapsule,
 	} from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageProps } from './$types';
 
-	export let data: PageData;
+	let { data }: PageProps = $props();
+	const getData = () => data;
+	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
+	const initialResults = (getData().results ?? []) as ArtifactSummary[];
+	const initialWorkflows = (getData().workflows ?? []) as WorkCapsule[];
 
 	type KnowledgeTab = 'library' | 'memory';
 	type MemoryModal = 'persona' | 'focus' | null;
@@ -22,50 +26,52 @@
 	type FocusContinuityView = 'tasks' | 'across_chats';
 	const personaMemoryFilters: PersonaMemoryFilter[] = ['active', 'dormant', 'archived'];
 
-	let documents = (data.documents ?? []) as KnowledgeDocumentItem[];
-	let results = (data.results ?? []) as ArtifactSummary[];
-	let workflows = (data.workflows ?? []) as WorkCapsule[];
-	let personaMemories = [] as PersonaMemoryItem[];
-	let taskMemories = [] as TaskMemoryItem[];
-	let focusContinuities = [] as FocusContinuityItem[];
-	let memorySummary = {
+	let documents = $state<KnowledgeDocumentItem[]>(initialDocuments);
+	let results = $state<ArtifactSummary[]>(initialResults);
+	let workflows = $state<WorkCapsule[]>(initialWorkflows);
+	let personaMemories = $state<PersonaMemoryItem[]>([]);
+	let taskMemories = $state<TaskMemoryItem[]>([]);
+	let focusContinuities = $state<FocusContinuityItem[]>([]);
+	let memorySummary = $state({
 		personaCount: 0,
 		taskCount: 0,
 		focusContinuityCount: 0,
 		overview: null,
-	};
-	const honchoEnabled = data.honchoEnabled ?? false;
+	});
+	const honchoEnabled = getData().honchoEnabled ?? false;
 
-	let activeTab: KnowledgeTab = 'library';
-	let deletingArtifactIds = new Set<string>();
-	let pendingMemoryActionKey: string | null = null;
-	let pendingKnowledgeActionKey: string | null = null;
-	let manageError = '';
-	let memoryLoaded = false;
-	let memoryLoading = false;
-	let memoryLoadError = '';
-	let activeMemoryModal = null as MemoryModal;
-	let activeLibraryModal = null as LibraryModal;
-	let honchoOverviewHtml = '';
-	let selectedPersonaMemoryIds = [] as string[];
-	let personaMemoryFilter: PersonaMemoryFilter = 'active';
-	let selectedTaskMemoryIds = [] as string[];
-	let selectedFocusContinuityIds = [] as string[];
-	let focusContinuityView: FocusContinuityView = 'tasks';
-	const userDisplayName = data.userDisplayName?.trim() || 'You';
-	$: deletingArtifactCount = deletingArtifactIds.size;
-	$: filteredPersonaMemories = personaMemories.filter(
+	let activeTab = $state<KnowledgeTab>('library');
+	let deletingArtifactIds = $state(new Set<string>());
+	let pendingMemoryActionKey = $state<string | null>(null);
+	let pendingKnowledgeActionKey = $state<string | null>(null);
+	let manageError = $state('');
+	let memoryLoaded = $state(false);
+	let memoryLoading = $state(false);
+	let memoryLoadError = $state('');
+	let activeMemoryModal = $state<MemoryModal>(null);
+	let activeLibraryModal = $state<LibraryModal>(null);
+	let honchoOverviewHtml = $state('');
+	let selectedPersonaMemoryIds = $state<string[]>([]);
+	let personaMemoryFilter = $state<PersonaMemoryFilter>('active');
+	let selectedTaskMemoryIds = $state<string[]>([]);
+	let selectedFocusContinuityIds = $state<string[]>([]);
+	let focusContinuityView = $state<FocusContinuityView>('tasks');
+	const userDisplayName = getData().userDisplayName?.trim() || 'You';
+	let deletingArtifactCount = $derived(deletingArtifactIds.size);
+	let filteredPersonaMemories = $derived(personaMemories.filter(
 		(memory) => memory.state === personaMemoryFilter
-	);
-	$: personaMemoryStateCounts = {
+	));
+	let personaMemoryStateCounts = $derived.by(() => ({
 		active: personaMemories.filter((memory) => memory.state === 'active').length,
 		dormant: personaMemories.filter((memory) => memory.state === 'dormant').length,
 		archived: personaMemories.filter((memory) => memory.state === 'archived').length,
-	};
-	$: focusContinuityItemCount = taskMemories.length + focusContinuities.length;
+	}));
+	let focusContinuityItemCount = $derived(taskMemories.length + focusContinuities.length);
 
-	$: honchoOverview = memorySummary.overview?.trim() ?? '';
-	$: void renderHonchoOverview(honchoOverview, $isDark);
+	let honchoOverview = $derived(memorySummary.overview?.trim() ?? '');
+	$effect(() => {
+		void renderHonchoOverview(honchoOverview, $isDark);
+	});
 
 	let overviewRenderVersion = 0;
 
@@ -582,7 +588,7 @@
 	<title>Knowledge Base</title>
 </svelte:head>
 
-<svelte:window on:keydown={handleWindowKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-page px-4 py-6 md:px-8">
 	<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
@@ -605,7 +611,7 @@
 								? 'bg-surface-elevated text-text-primary shadow-sm'
 								: 'text-text-secondary hover:text-text-primary'
 						}`}
-						on:click={() => selectTab('library')}
+						onclick={() => selectTab('library')}
 						aria-pressed={activeTab === 'library'}
 					>
 						Library
@@ -617,7 +623,7 @@
 								? 'bg-surface-elevated text-text-primary shadow-sm'
 								: 'text-text-secondary hover:text-text-primary'
 						}`}
-						on:click={() => selectTab('memory')}
+						onclick={() => selectTab('memory')}
 						aria-pressed={activeTab === 'memory'}
 					>
 						Memory Profile
@@ -631,7 +637,7 @@
 					<button
 						type="button"
 						class="rounded-full border border-danger px-4 py-2 text-sm font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						on:click={() =>
+						onclick={() =>
 							runKnowledgeAction(
 								'forget_everything',
 								'forget-everything',
@@ -673,7 +679,7 @@
 						<button
 							type="button"
 							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							on:click={() => openLibraryModal('documents')}
+							onclick={() => openLibraryModal('documents')}
 						>
 							Manage documents
 						</button>
@@ -692,7 +698,7 @@
 						<button
 							type="button"
 							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							on:click={() => openLibraryModal('results')}
+							onclick={() => openLibraryModal('results')}
 						>
 							Manage results
 						</button>
@@ -711,7 +717,7 @@
 						<button
 							type="button"
 							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							on:click={() => openLibraryModal('workflows')}
+							onclick={() => openLibraryModal('workflows')}
 						>
 							Manage workflows
 						</button>
@@ -766,7 +772,7 @@
 						<button
 							type="button"
 							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
-							on:click={() => void ensureMemoryLoaded(true)}
+							onclick={() => void ensureMemoryLoaded(true)}
 						>
 							Try again
 						</button>
@@ -795,7 +801,7 @@
 								<button
 									type="button"
 									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									on:click={() => openMemoryModal('persona')}
+									onclick={() => openMemoryModal('persona')}
 									disabled={!honchoEnabled}
 								>
 									Manage persona memory
@@ -832,7 +838,7 @@
 								<button
 									type="button"
 									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									on:click={() => openMemoryModal('focus')}
+									onclick={() => openMemoryModal('focus')}
 								>
 									Manage focus continuity
 								</button>
@@ -870,13 +876,13 @@
 </div>
 
 {#if activeMemoryModal}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-[120] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-		on:click={closeMemoryModal}
+		role="presentation"
+		onclick={closeMemoryModal}
 	>
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div
 			role="dialog"
 			aria-modal="true"
@@ -887,7 +893,7 @@
 			}
 			tabindex={-1}
 			class="max-h-[88vh] w-full max-w-[1100px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
-			on:click|stopPropagation
+			onclick={(event) => event.stopPropagation()}
 		>
 			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
 				<div>
@@ -919,7 +925,7 @@
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={runBulkPersonaForget}
+							onclick={runBulkPersonaForget}
 							disabled={isMemoryActionPending('forget-selected-persona')}
 						>
 							Forget selected ({selectedPersonaMemoryIds.length})
@@ -929,7 +935,7 @@
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={runBulkTaskForget}
+							onclick={runBulkTaskForget}
 							disabled={isMemoryActionPending('forget-selected-task')}
 						>
 							Forget selected ({selectedTaskMemoryIds.length})
@@ -939,7 +945,7 @@
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={runBulkFocusContinuityForget}
+							onclick={runBulkFocusContinuityForget}
 							disabled={isMemoryActionPending('forget-selected-focus-continuity')}
 						>
 							Forget selected ({selectedFocusContinuityIds.length})
@@ -949,7 +955,7 @@
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={() =>
+							onclick={() =>
 								runMemoryAction(
 									{ action: 'forget_all_persona_memory' },
 									'forget-all-persona',
@@ -963,7 +969,7 @@
 					<button
 						type="button"
 						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-						on:click={closeMemoryModal}
+						onclick={closeMemoryModal}
 						aria-label="Close memory manager"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -1003,7 +1009,7 @@
 												? 'border-border bg-surface-elevated text-text-primary'
 												: 'border-border text-text-muted'
 										}`}
-										on:click={() => {
+										onclick={() => {
 											personaMemoryFilter = state;
 											selectedPersonaMemoryIds = [];
 										}}
@@ -1019,7 +1025,7 @@
 											<input
 												type="checkbox"
 												checked={filteredPersonaMemories.length > 0 && selectedPersonaMemoryIds.length === filteredPersonaMemories.length}
-												on:change={toggleAllPersonaSelections}
+												onchange={toggleAllPersonaSelections}
 												aria-label="Select all persona memories"
 											/>
 										</th>
@@ -1038,7 +1044,7 @@
 												<input
 													type="checkbox"
 													checked={selectedPersonaMemoryIds.includes(memory.id)}
-													on:change={() => togglePersonaSelection(memory.id)}
+													onchange={() => togglePersonaSelection(memory.id)}
 													aria-label={`Select ${memory.canonicalText}`}
 												/>
 											</td>
@@ -1086,7 +1092,7 @@
 												<button
 													type="button"
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() =>
+													onclick={() =>
 														runMemoryAction(
 															{ action: 'forget_persona_memory', clusterId: memory.id },
 															`persona-${memory.id}`,
@@ -1113,7 +1119,7 @@
 										? 'border-border bg-surface-elevated text-text-primary'
 										: 'border-border text-text-muted'
 								}`}
-								on:click={() => {
+								onclick={() => {
 									focusContinuityView = 'tasks';
 									selectedTaskMemoryIds = [];
 								}}
@@ -1127,7 +1133,7 @@
 										? 'border-border bg-surface-elevated text-text-primary'
 										: 'border-border text-text-muted'
 								}`}
-								on:click={() => {
+								onclick={() => {
 									focusContinuityView = 'across_chats';
 									selectedFocusContinuityIds = [];
 								}}
@@ -1151,7 +1157,7 @@
 												<input
 													type="checkbox"
 													checked={taskMemories.length > 0 && selectedTaskMemoryIds.length === taskMemories.length}
-													on:change={toggleAllTaskSelections}
+													onchange={toggleAllTaskSelections}
 													aria-label="Select all task continuity items"
 												/>
 											</th>
@@ -1170,7 +1176,7 @@
 													<input
 														type="checkbox"
 														checked={selectedTaskMemoryIds.includes(memory.taskId)}
-														on:change={() => toggleTaskSelection(memory.taskId)}
+														onchange={() => toggleTaskSelection(memory.taskId)}
 														aria-label={`Select ${memory.objective}`}
 													/>
 												</td>
@@ -1206,7 +1212,7 @@
 													<button
 														type="button"
 														class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-														on:click={() =>
+														onclick={() =>
 															runMemoryAction(
 																{ action: 'forget_task_memory', taskId: memory.taskId },
 																`task-${memory.taskId}`,
@@ -1236,7 +1242,7 @@
 											<input
 												type="checkbox"
 												checked={focusContinuities.length > 0 && selectedFocusContinuityIds.length === focusContinuities.length}
-												on:change={toggleAllFocusContinuitySelections}
+												onchange={toggleAllFocusContinuitySelections}
 												aria-label="Select all across-chat continuity items"
 											/>
 										</th>
@@ -1255,7 +1261,7 @@
 												<input
 													type="checkbox"
 													checked={selectedFocusContinuityIds.includes(memory.continuityId)}
-													on:change={() => toggleFocusContinuitySelection(memory.continuityId)}
+													onchange={() => toggleFocusContinuitySelection(memory.continuityId)}
 													aria-label={`Select ${memory.name}`}
 												/>
 											</td>
@@ -1289,7 +1295,7 @@
 												<button
 													type="button"
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() =>
+													onclick={() =>
 														runMemoryAction(
 															{ action: 'forget_focus_continuity', continuityId: memory.continuityId },
 															`focus-continuity-${memory.continuityId}`,
@@ -1313,19 +1319,19 @@
 {/if}
 
 {#if activeLibraryModal}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-[120] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-		on:click={closeLibraryModal}
+		role="presentation"
+		onclick={closeLibraryModal}
 	>
-		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div
 			role="dialog"
 			aria-modal="true"
 			tabindex={-1}
 			class="max-h-[88vh] w-full max-w-[1180px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
-			on:click|stopPropagation
+			onclick={(event) => event.stopPropagation()}
 		>
 			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
 				<div>
@@ -1349,7 +1355,7 @@
 						<button
 							type="button"
 							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							on:click={() =>
+							onclick={() =>
 								runKnowledgeAction(
 									getLibraryBulkAction(activeLibraryModal),
 									getLibraryBulkKey(activeLibraryModal),
@@ -1365,7 +1371,7 @@
 					<button
 						type="button"
 						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-						on:click={closeLibraryModal}
+						onclick={closeLibraryModal}
 						aria-label="Close library manager"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -1431,7 +1437,7 @@
 												<button
 													type="button"
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() => removeArtifact(artifact.id, artifact.name)}
+													onclick={() => removeArtifact(artifact.id, artifact.name)}
 													disabled={isDeletingArtifact(artifact.id)}
 													aria-busy={isDeletingArtifact(artifact.id)}
 												>
@@ -1478,7 +1484,7 @@
 												<button
 													type="button"
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() => removeArtifact(artifact.id, artifact.name)}
+													onclick={() => removeArtifact(artifact.id, artifact.name)}
 													disabled={isDeletingArtifact(artifact.id)}
 													aria-busy={isDeletingArtifact(artifact.id)}
 												>
@@ -1533,7 +1539,7 @@
 												<button
 													type="button"
 													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													on:click={() => removeArtifact(capsule.artifact.id, capsule.artifact.name)}
+													onclick={() => removeArtifact(capsule.artifact.id, capsule.artifact.name)}
 													disabled={isDeletingArtifact(capsule.artifact.id)}
 													aria-busy={isDeletingArtifact(capsule.artifact.id)}
 												>

@@ -27,7 +27,7 @@
 		TaskState,
 		TaskSteeringPayload,
 	} from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageProps } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
 	import {
@@ -36,35 +36,68 @@
 		upsertConversationLocal
 	} from '$lib/stores/conversations';
 
-	export let data: PageData;
+	let { data }: PageProps = $props();
+	const getData = () => data;
+	const initialMessages = getData().messages ?? [];
+	const initialHasPersistedMessages = initialMessages.length > 0;
+	const initialContextStatus = getData().contextStatus ?? null;
+	const initialAttachedArtifacts = getData().attachedArtifacts ?? [];
+	const initialActiveWorkingSet = getData().activeWorkingSet ?? [];
+	const initialTaskState = getData().taskState ?? null;
+	const initialContextDebug = getData().contextDebug ?? null;
+	const initialConversationDraft = getData().draft ?? null;
+	const initialBootstrapMode = getData().bootstrap ?? false;
 
-	const messages = writable<ChatMessage[]>(data.messages ?? []);
+	type SendPayload = {
+		message: string;
+		attachmentIds: string[];
+		attachments: ArtifactSummary[];
+		conversationId?: string | null;
+	};
+
+	type MessageEditPayload = {
+		messageId: string;
+		newText: string;
+	};
+
+	type MessageRegeneratePayload = {
+		messageId: string;
+	};
+
+	type DraftChangePayload = {
+		conversationId: string | null;
+		draftText: string;
+		selectedAttachmentIds: string[];
+		selectedAttachments: PendingAttachment[];
+	};
+
+	const messages = writable<ChatMessage[]>(initialMessages);
 	const draftPersistence = createDraftPersistence();
-	let sendError: string | null = null;
-	let isSending = false;
-	let activeStream: StreamHandle | null = null;
+	let sendError = $state<string | null>(null);
+	let isSending = $state(false);
+	let activeStream = $state<StreamHandle | null>(null);
 	let titleGenerationTriggered = false;
 	let lastUserMessage = '';
 	let lastAssistantResponse = '';
 	let canRetry = false;
 	let prevConversationId: string | null = null;
-	let hasPersistedMessages = (data.messages?.length ?? 0) > 0;
-	let contextStatus: ConversationContextStatus | null = data.contextStatus ?? null;
-	let attachedArtifacts: ArtifactSummary[] = data.attachedArtifacts ?? [];
-	let activeWorkingSet: ArtifactSummary[] = data.activeWorkingSet ?? [];
-	let taskState: TaskState | null = data.taskState ?? null;
-	let contextDebug: ContextDebugState | null = data.contextDebug ?? null;
-	let conversationDraft: ConversationDraft | null = data.draft ?? null;
-	let evidenceManagerOpen = false;
-	let bootstrapMode = data.bootstrap ?? false;
+	let hasPersistedMessages = initialHasPersistedMessages;
+	let contextStatus = $state<ConversationContextStatus | null>(initialContextStatus);
+	let attachedArtifacts = $state<ArtifactSummary[]>(initialAttachedArtifacts);
+	let activeWorkingSet: ArtifactSummary[] = initialActiveWorkingSet;
+	let taskState = $state<TaskState | null>(initialTaskState);
+	let contextDebug = $state<ContextDebugState | null>(initialContextDebug);
+	let conversationDraft = $state<ConversationDraft | null>(initialConversationDraft);
+	let evidenceManagerOpen = $state(false);
+	let bootstrapMode = initialBootstrapMode;
 	let hydratingConversation = false;
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
 	const evidencePollControllers = new Map<string, AbortController>();
 
-	$: hasMessages = $messages.length > 0;
-	$: isThinkingActive = Boolean($messages[$messages.length - 1]?.isThinkingStreaming);
+	let hasMessages = $derived($messages.length > 0);
+	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
 
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
@@ -79,11 +112,7 @@
 		if (!pendingDraft.message.trim()) {
 			return;
 		}
-		handleSend(
-			new CustomEvent('send', {
-				detail: pendingDraft
-			})
-		);
+		handleSend(pendingDraft);
 	}
 
 	function resetState() {
@@ -120,12 +149,15 @@
 		}
 	}
 
-	$: if (data?.conversation?.id && !activeStream) {
+	$effect(() => {
+		if (!data?.conversation?.id || activeStream) {
+			return;
+		}
 		if (data.conversation.id !== prevConversationId) {
 			prevConversationId = data.conversation.id;
 			resetState();
 		}
-	}
+	});
 
 	const FRIENDLY_SEND_ERRORS = {
 		timeout: 'The response is taking too long. Please try again.',
@@ -288,13 +320,13 @@
 	}
 
 	function handleSend(
-		event: CustomEvent<{ message: string; attachmentIds: string[]; attachments: ArtifactSummary[] }>,
+		payload: SendPayload,
 		skipUserMessage = false,
 		skipPersistUserMessage = false
 	) {
-		const text = event.detail.message;
-		const attachmentIds = event.detail.attachmentIds ?? [];
-		const newAttachments = event.detail.attachments ?? [];
+		const text = payload.message;
+		const attachmentIds = payload.attachmentIds ?? [];
+		const newAttachments = payload.attachments ?? [];
 		if (!text.trim() || isSending) return;
 
 		sendError = null;
@@ -521,16 +553,13 @@
 	function handleRetry() {
 		if (canRetry && lastUserMessage) {
 			sendError = null;
-			const retryEvent = new CustomEvent('send', {
-				detail: { message: lastUserMessage, attachmentIds: [], attachments: [] }
-			});
-			handleSend(retryEvent);
+			handleSend({ message: lastUserMessage, attachmentIds: [], attachments: [] });
 		}
 	}
 
-	function handleRegenerate(event: CustomEvent<{ messageId: string }>) {
+	function handleRegenerate(payload: MessageRegeneratePayload) {
 		if (isSending) return;
-		const { messageId } = event.detail;
+		const { messageId } = payload;
 		const msgs = $messages;
 		const assistantIdx = msgs.findIndex((m) => m.id === messageId);
 		if (assistantIdx === -1) return;
@@ -554,15 +583,15 @@
 
 		sendError = null;
 		handleSend(
-			new CustomEvent('send', { detail: { message: userText, attachmentIds: [], attachments: [] } }),
+			{ message: userText, attachmentIds: [], attachments: [] },
 			true,
 			true
 		);
 	}
 
-	function handleEdit(event: CustomEvent<{ messageId: string; newText: string }>) {
+	function handleEdit(payload: MessageEditPayload) {
 		if (isSending) return;
-		const { messageId, newText } = event.detail;
+		const { messageId, newText } = payload;
 		const msgs = $messages;
 		const editIdx = msgs.findIndex((m) => m.id === messageId);
 		if (editIdx === -1) return;
@@ -580,7 +609,7 @@
 		}).catch(() => {});
 
 		sendError = null;
-		handleSend(new CustomEvent('send', { detail: { message: newText, attachmentIds: [], attachments: [] } }));
+		handleSend({ message: newText, attachmentIds: [], attachments: [] });
 	}
 
 	function handleStop() {
@@ -590,20 +619,20 @@
 		}
 	}
 
-	async function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
+	async function handleSteering(payload: TaskSteeringPayload) {
 		const response = await fetch(`/api/conversations/${data.conversation.id}/task-steering`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(event.detail),
+			body: JSON.stringify(payload),
 		});
 
 		if (!response.ok) {
 			return;
 		}
 
-		const payload = await response.json();
-		taskState = payload.taskState ?? taskState;
-		contextDebug = payload.contextDebug ?? contextDebug;
+		const result = await response.json();
+		taskState = result.taskState ?? taskState;
+		contextDebug = result.contextDebug ?? contextDebug;
 	}
 
 	function openEvidenceManager() {
@@ -618,25 +647,18 @@
 		sendError = null;
 	}
 
-	function handleDraftChange(
-		event: CustomEvent<{
-			conversationId: string | null;
-			draftText: string;
-			selectedAttachmentIds: string[];
-			selectedAttachments: PendingAttachment[];
-		}>
-	) {
-		const nextConversationId = event.detail.conversationId ?? data.conversation.id;
+	function handleDraftChange(payload: DraftChangePayload) {
+		const nextConversationId = payload.conversationId ?? data.conversation.id;
 		conversationDraft = createConversationDraftRecord({
 			conversationId: nextConversationId,
-			draftText: event.detail.draftText,
-			selectedAttachmentIds: event.detail.selectedAttachmentIds,
-			selectedAttachments: event.detail.selectedAttachments,
+			draftText: payload.draftText,
+			selectedAttachmentIds: payload.selectedAttachmentIds,
+			selectedAttachments: payload.selectedAttachments,
 		});
 		void draftPersistence.persist({
 			conversationId: nextConversationId,
-			draftText: event.detail.draftText,
-			selectedAttachmentIds: event.detail.selectedAttachmentIds,
+			draftText: payload.draftText,
+			selectedAttachmentIds: payload.selectedAttachmentIds,
 		});
 	}
 </script>
@@ -653,9 +675,9 @@
 				conversationId={data.conversation.id}
 				isThinkingActive={isThinkingActive}
 				{contextDebug}
-				on:regenerate={handleRegenerate}
-				on:edit={handleEdit}
-				on:steer={handleSteering}
+				onRegenerate={handleRegenerate}
+				onEdit={handleEdit}
+				onSteer={handleSteering}
 			/>
 		</div>
 
@@ -675,9 +697,9 @@
 				{/if}
 
 					<MessageInput
-						on:send={handleSend}
-						on:stop={handleStop}
-						on:draftchange={handleDraftChange}
+						onSend={handleSend}
+						onStop={handleStop}
+						onDraftChange={handleDraftChange}
 						disabled={isSending}
 						isGenerating={isSending}
 						maxLength={data.maxMessageLength}
@@ -690,8 +712,8 @@
 						draftAttachments={conversationDraft?.selectedAttachments ?? []}
 						draftVersion={conversationDraft?.updatedAt ?? 0}
 						attachmentsEnabled={true}
-						on:steer={handleSteering}
-						on:manageEvidence={openEvidenceManager}
+						onSteer={handleSteering}
+						onManageEvidence={openEvidenceManager}
 					/>
 			</div>
 		</div>
@@ -700,8 +722,8 @@
 	<EvidenceManager
 		open={evidenceManagerOpen}
 		{contextDebug}
-		on:close={closeEvidenceManager}
-		on:steer={handleSteering}
+		onClose={closeEvidenceManager}
+		onSteer={handleSteering}
 	/>
 </div>
 

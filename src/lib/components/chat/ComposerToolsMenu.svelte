@@ -1,25 +1,29 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import ModelSelector from './ModelSelector.svelte';
 	import { translationState, toggleTranslationState } from '$lib/stores/settings';
 
-	export let canAttach: boolean = false;
-	export let attachmentsEnabled: boolean = false;
+	let {
+		canAttach = false,
+		attachmentsEnabled = false,
+		onClose,
+		onAttach
+	}: {
+		canAttach?: boolean;
+		attachmentsEnabled?: boolean;
+		onClose?: () => void;
+		onAttach?: () => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		close: void;
-		attach: void;
-	}>();
-
-	let root: HTMLDivElement;
+	let root = $state<HTMLDivElement | undefined>(undefined);
 
 	function closeMenu() {
-		dispatch('close');
+		onClose?.();
 	}
 
 	function handleAttach() {
-		dispatch('attach');
-		dispatch('close');
+		onAttach?.();
+		onClose?.();
 	}
 
 	function handleTranslateToggle() {
@@ -29,13 +33,13 @@
 	onMount(() => {
 		const handlePointerDown = (event: MouseEvent | TouchEvent) => {
 			if (root && !root.contains(event.target as Node)) {
-				dispatch('close');
+				onClose?.();
 			}
 		};
 
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (event.key === 'Escape') {
-				dispatch('close');
+				onClose?.();
 			}
 		};
 
@@ -54,14 +58,14 @@
 <div bind:this={root} class="tools-menu" role="menu" aria-label="Composer tools">
 	<div class="menu-row menu-row--static">
 		<div class="menu-label">Model</div>
-		<ModelSelector on:select={closeMenu} />
+		<ModelSelector onSelect={closeMenu} />
 	</div>
 
 	<div class="menu-row">
 		<button
 			type="button"
 			class="menu-row menu-row--button"
-			on:click={handleTranslateToggle}
+			onclick={handleTranslateToggle}
 			aria-label={$translationState === 'enabled' ? 'Disable translation' : 'Enable translation'}
 			aria-checked={$translationState === 'enabled'}
 			role="menuitemcheckbox"
@@ -77,7 +81,7 @@
 		<button
 			type="button"
 			class="menu-row menu-row--button"
-			on:click={handleAttach}
+			onclick={handleAttach}
 			disabled={!canAttach}
 			title={attachmentsEnabled ? 'Attach file' : 'File uploads are unavailable'}
 			aria-label="Attach file"

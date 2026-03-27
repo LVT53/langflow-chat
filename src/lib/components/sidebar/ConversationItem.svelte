@@ -1,46 +1,60 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import type { ConversationListItem, Project } from '$lib/types';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 	import TypewriterText from '../ui/TypewriterText.svelte';
 
-	export let conversation: ConversationListItem;
-	export let active: boolean = false;
-	export let menuOpen: boolean = false;
-	export let projects: Project[] = [];
+	let {
+		conversation,
+		active = false,
+		menuOpen = false,
+		projects = [],
+		onSelect,
+		onRename,
+		onDelete,
+		onMoveToProject,
+		onMenuToggle,
+		onMenuClose
+	}: {
+		conversation: ConversationListItem;
+		active?: boolean;
+		menuOpen?: boolean;
+		projects?: Project[];
+		onSelect?: (payload: { id: string }) => void;
+		onRename?: (payload: { id: string; title: string }) => void;
+		onDelete?: (payload: { id: string }) => void;
+		onMoveToProject?: (payload: { id: string; projectId: string | null }) => void;
+		onMenuToggle?: (payload: { id: string; open: boolean }) => void;
+		onMenuClose?: (payload: { id: string }) => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		select: { id: string };
-		rename: { id: string; title: string };
-		delete: { id: string };
-		moveToProject: { id: string; projectId: string | null };
-		menuToggle: { id: string; open: boolean };
-		menuClose: { id: string };
-	}>();
-
-	let isEditing = false;
-	let editTitle = '';
-	let inputRef: HTMLInputElement;
-	let menuRef: HTMLDivElement;
-	let triggerRef: HTMLButtonElement;
-	let showDeleteConfirm = false;
-	let menuPositionStyle = '';
-	let menuBaseBackground = '';
-	let showProjectSubmenu = false;
-	let submenuRef: HTMLDivElement;
-	let submenuPositionStyle = '';
+	let isEditing = $state(false);
+	let editTitle = $state('');
+	let inputRef = $state<HTMLInputElement | undefined>(undefined);
+	let menuRef = $state<HTMLDivElement | undefined>(undefined);
+	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
+	let showDeleteConfirm = $state(false);
+	let menuPositionStyle = $state('');
+	let menuBaseBackground = $state('');
+	let showProjectSubmenu = $state(false);
+	let submenuRef = $state<HTMLDivElement | undefined>(undefined);
+	let submenuPositionStyle = $state('');
 
 	// Track title changes for animation
-	let previousTitle = conversation.title;
-	let isNewTitle = false;
+	let previousTitle = '';
+	let isNewTitle = $state(false);
 
-	$: {
+	$effect(() => {
+		if (!previousTitle) {
+			previousTitle = conversation.title;
+			return;
+		}
+
 		if (conversation.title !== previousTitle) {
-			// Check if this is a transition from "New Conversation" to a real title
 			isNewTitle = previousTitle === 'New Conversation' && conversation.title !== 'New Conversation';
 			previousTitle = conversation.title;
 		}
-	}
+	});
 
 	function setMenuBaseBackground() {
 		if (typeof document === 'undefined') return;
@@ -61,9 +75,9 @@
 		};
 	}
 
-	function handleSelect(e?: MouseEvent) {
+	function handleSelect() {
 		if (!isEditing && !menuOpen) {
-			dispatch('select', { id: conversation.id });
+			onSelect?.({ id: conversation.id });
 		}
 	}
 
@@ -72,7 +86,7 @@
 		isEditing = true;
 		editTitle = conversation.title;
 		showProjectSubmenu = false;
-		dispatch('menuClose', { id: conversation.id });
+		onMenuClose?.({ id: conversation.id });
 		setTimeout(() => {
 			if (inputRef) {
 				inputRef.focus();
@@ -86,7 +100,7 @@
 			isEditing = false;
 			const trimmedTitle = editTitle.trim();
 			if (trimmedTitle && trimmedTitle !== conversation.title) {
-				dispatch('rename', { id: conversation.id, title: trimmedTitle });
+				onRename?.({ id: conversation.id, title: trimmedTitle });
 			}
 		}
 	}
@@ -103,13 +117,13 @@
 	function handleDelete(e: MouseEvent) {
 		e.stopPropagation();
 		showProjectSubmenu = false;
-		dispatch('menuClose', { id: conversation.id });
+		onMenuClose?.({ id: conversation.id });
 		showDeleteConfirm = true;
 	}
 
 	function confirmDelete() {
 		showDeleteConfirm = false;
-		dispatch('delete', { id: conversation.id });
+		onDelete?.({ id: conversation.id });
 	}
 
 	function cancelDelete() {
@@ -122,7 +136,7 @@
 		if (!menuOpen) {
 			updateMenuPosition();
 		}
-		dispatch('menuToggle', { id: conversation.id, open: !menuOpen });
+		onMenuToggle?.({ id: conversation.id, open: !menuOpen });
 	}
 
 	function handleOutsideClick(e: MouseEvent) {
@@ -138,7 +152,7 @@
 			e.preventDefault();
 			e.stopPropagation();
 			showProjectSubmenu = false;
-			dispatch('menuClose', { id: conversation.id });
+			onMenuClose?.({ id: conversation.id });
 		}
 	}
 
@@ -181,13 +195,15 @@
 	function handleMoveToProject(e: MouseEvent, projectId: string | null) {
 		e.stopPropagation();
 		showProjectSubmenu = false;
-		dispatch('menuClose', { id: conversation.id });
-		dispatch('moveToProject', { id: conversation.id, projectId });
+		onMenuClose?.({ id: conversation.id });
+		onMoveToProject?.({ id: conversation.id, projectId });
 	}
 
-	$: if (menuOpen) {
-		updateMenuPosition();
-	}
+	$effect(() => {
+		if (menuOpen) {
+			updateMenuPosition();
+		}
+	});
 
 	onMount(() => {
 		const syncMenuPosition = () => {
@@ -206,7 +222,7 @@
 	});
 </script>
 
-<svelte:window on:click={handleOutsideClick} />
+<svelte:window onclick={handleOutsideClick} />
 
 <div
   data-testid="conversation-item"
@@ -215,8 +231,8 @@
   class:bg-surface-elevated={active}
   class:border-accent={active}
   class:shadow-sm={active}
-  on:click={(e) => handleSelect(e)}
-  on:keydown={(e) => e.key === 'Enter' && handleSelect()}
+  onclick={handleSelect}
+  onkeydown={(event) => event.key === 'Enter' && handleSelect()}
   role="button"
   tabindex="0"
 >
@@ -226,9 +242,9 @@
 				data-testid="title-input"
 				bind:this={inputRef}
 				bind:value={editTitle}
-				on:blur={saveRename}
-				on:keydown={handleKeydown}
-				on:click|stopPropagation
+				onblur={saveRename}
+				onkeydown={handleKeydown}
+				onclick={(event) => event.stopPropagation()}
 				class="min-h-[44px] w-full rounded-sm border border-border bg-surface-page px-2 py-1 text-sm font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
 			/>
 		{:else}
@@ -248,7 +264,7 @@
 			class="btn-icon-bare flex min-h-[28px] min-w-[28px] flex-shrink-0 items-center justify-center rounded-md text-icon-muted opacity-100 transition-colors duration-150 hover:bg-surface-page hover:text-icon-primary hover:opacity-100 focus-visible:bg-surface-page focus-visible:opacity-100 focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
 			class:opacity-100={menuOpen || active}
 			class:md:opacity-100={menuOpen || active}
-			on:click={toggleMenu}
+			onclick={toggleMenu}
 			aria-label="Conversation options"
 		>
 			<svg
@@ -278,7 +294,7 @@
 				<button
 					data-testid="rename-option"
 					class="conversation-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-					on:click={startRename}
+					onclick={startRename}
 				>
 					<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M12 20h9" />
@@ -291,7 +307,7 @@
 					<button
 						class="conversation-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 						class:conversation-option-active={showProjectSubmenu}
-						on:click={toggleProjectSubmenu}
+						onclick={toggleProjectSubmenu}
 					>
 						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -306,7 +322,7 @@
 				<button
 					data-testid="delete-option"
 					class="conversation-option conversation-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-					on:click={handleDelete}
+					onclick={handleDelete}
 				>
 					<svg class="conversation-option-icon conversation-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M3 6h18" />
@@ -332,7 +348,7 @@
 					<button
 						class="conversation-option flex min-h-[36px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 						class:conversation-option-current={conversation.projectId === proj.id}
-						on:click={(e) => handleMoveToProject(e, proj.id)}
+						onclick={(event) => handleMoveToProject(event, proj.id)}
 					>
 						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -349,7 +365,7 @@
 					<div class="my-[3px] border-t border-border-subtle mx-1"></div>
 					<button
 						class="conversation-option flex min-h-[36px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-muted transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-						on:click={(e) => handleMoveToProject(e, null)}
+						onclick={(event) => handleMoveToProject(event, null)}
 					>
 						<svg class="conversation-option-icon opacity-60" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
@@ -369,8 +385,8 @@
 		confirmText="Delete"
 		cancelText="Cancel"
 		confirmVariant="danger"
-		on:confirm={confirmDelete}
-		on:cancel={cancelDelete}
+		onConfirm={confirmDelete}
+		onCancel={cancelDelete}
 	/>
 {/if}
 

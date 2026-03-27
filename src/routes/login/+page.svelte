@@ -3,11 +3,13 @@
 
   let email = '';
   let password = '';
-  let error = null;
+  let error = '';
   let loading = false;
   let showPassword = false;
 
-  async function handleSubmit() {
+  async function handleSubmit(event: SubmitEvent) {
+    event.preventDefault();
+
     if (!email.trim() || !password.trim()) {
       error = 'Please fill in all fields.';
       return;
@@ -51,7 +53,7 @@
       <p class="text-sm text-text-muted">Welcome back. Please enter your details.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit} class="flex flex-col">
+    <form onsubmit={handleSubmit} class="flex flex-col">
       <div class="flex flex-col gap-md">
         <div class="space-y-2">
           <label for="email" class="block text-sm font-medium text-text-primary">
@@ -64,7 +66,7 @@
             autocomplete="email"
             bind:value={email}
             disabled={loading}
-            on:input={() => error = ''}
+            oninput={() => error = ''}
             class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="you@example.com"
           />
@@ -78,7 +80,7 @@
             <button
               type="button"
               class="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"
-              on:click={() => showPassword = !showPassword}
+              onclick={() => showPassword = !showPassword}
               tabindex="-1"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
@@ -103,7 +105,7 @@
             autocomplete="current-password"
             bind:value={password}
             disabled={loading}
-            on:input={() => error = ''}
+            oninput={() => error = ''}
             class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="••••••••"
           />

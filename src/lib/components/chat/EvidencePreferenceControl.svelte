@@ -1,18 +1,21 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import type { EvidencePreference, TaskSteeringPayload } from '$lib/types';
 
-	export let artifactId: string;
-	export let preference: EvidencePreference = 'auto';
-	export let label = 'Evidence preference';
-
-	const dispatch = createEventDispatcher<{
-		steer: TaskSteeringPayload;
-	}>();
+	let {
+		artifactId,
+		preference = 'auto',
+		label = 'Evidence preference',
+		onSteer
+	}: {
+		artifactId: string;
+		preference?: EvidencePreference;
+		label?: string;
+		onSteer?: (payload: TaskSteeringPayload) => void;
+	} = $props();
 
 	function handleChange(event: Event) {
 		const nextPreference = (event.currentTarget as HTMLSelectElement).value as EvidencePreference;
-		dispatch('steer', {
+		onSteer?.({
 			action: 'set_artifact_preference',
 			artifactId,
 			preference: nextPreference,
@@ -22,7 +25,7 @@
 
 <label class="preference-shell">
 	<span class="sr-only">{label}</span>
-	<select class="preference-select" value={preference} aria-label={label} on:change={handleChange}>
+	<select class="preference-select" value={preference} aria-label={label} onchange={handleChange}>
 		<option value="auto">Auto</option>
 		<option value="pinned">Pinned</option>
 		<option value="excluded">Excluded</option>

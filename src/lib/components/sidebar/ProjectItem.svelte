@@ -1,28 +1,36 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import type { Project } from '$lib/types';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 
-	export let project: Project;
-	export let expanded: boolean = true;
-	export let menuOpen: boolean = false;
+	let {
+		project,
+		expanded = true,
+		menuOpen = false,
+		onToggle,
+		onRename,
+		onDelete,
+		onMenuToggle,
+		onMenuClose
+	}: {
+		project: Project;
+		expanded?: boolean;
+		menuOpen?: boolean;
+		onToggle?: (payload: { id: string; expanded: boolean }) => void;
+		onRename?: (payload: { id: string; name: string }) => void;
+		onDelete?: (payload: { id: string }) => void;
+		onMenuToggle?: (payload: { id: string; open: boolean }) => void;
+		onMenuClose?: (payload: { id: string }) => void;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		toggle: { id: string; expanded: boolean };
-		rename: { id: string; name: string };
-		delete: { id: string };
-		menuToggle: { id: string; open: boolean };
-		menuClose: { id: string };
-	}>();
-
-	let isEditing = false;
-	let editName = '';
-	let inputRef: HTMLInputElement;
-	let menuRef: HTMLDivElement;
-	let triggerRef: HTMLButtonElement;
-	let showDeleteConfirm = false;
-	let menuPositionStyle = '';
-	let menuBaseBackground = '';
+	let isEditing = $state(false);
+	let editName = $state('');
+	let inputRef = $state<HTMLInputElement | undefined>(undefined);
+	let menuRef = $state<HTMLDivElement | undefined>(undefined);
+	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
+	let showDeleteConfirm = $state(false);
+	let menuPositionStyle = $state('');
+	let menuBaseBackground = $state('');
 
 	function setMenuBaseBackground() {
 		if (typeof document === 'undefined') return;
@@ -53,12 +61,16 @@
 		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
 	}
 
-	$: if (menuOpen) updateMenuPosition();
+	$effect(() => {
+		if (menuOpen) {
+			updateMenuPosition();
+		}
+	});
 
 	function toggleMenu(e: MouseEvent) {
 		e.stopPropagation();
 		if (!menuOpen) updateMenuPosition();
-		dispatch('menuToggle', { id: project.id, open: !menuOpen });
+		onMenuToggle?.({ id: project.id, open: !menuOpen });
 	}
 
 	function handleOutsideClick(e: MouseEvent) {
@@ -66,7 +78,7 @@
 		if (menuOpen && menuRef && triggerRef && !menuRef.contains(target) && !triggerRef.contains(target)) {
 			e.preventDefault();
 			e.stopPropagation();
-			dispatch('menuClose', { id: project.id });
+			onMenuClose?.({ id: project.id });
 		}
 	}
 
@@ -74,7 +86,7 @@
 		e.stopPropagation();
 		isEditing = true;
 		editName = project.name;
-		dispatch('menuClose', { id: project.id });
+		onMenuClose?.({ id: project.id });
 		setTimeout(() => {
 			if (inputRef) { inputRef.focus(); inputRef.select(); }
 		}, 0);
@@ -85,7 +97,7 @@
 			isEditing = false;
 			const trimmed = editName.trim();
 			if (trimmed && trimmed !== project.name) {
-				dispatch('rename', { id: project.id, name: trimmed });
+				onRename?.({ id: project.id, name: trimmed });
 			}
 		}
 	}
@@ -97,13 +109,13 @@
 
 	function handleDelete(e: MouseEvent) {
 		e.stopPropagation();
-		dispatch('menuClose', { id: project.id });
+		onMenuClose?.({ id: project.id });
 		showDeleteConfirm = true;
 	}
 
 	function confirmDelete() {
 		showDeleteConfirm = false;
-		dispatch('delete', { id: project.id });
+		onDelete?.({ id: project.id });
 	}
 
 	onMount(() => {
@@ -117,13 +129,13 @@
 	});
 </script>
 
-<svelte:window on:click={handleOutsideClick} />
+<svelte:window onclick={handleOutsideClick} />
 
 <!-- Project folder row -->
 <div
 	class="group flex min-h-[32px] cursor-pointer select-none items-center rounded-lg border border-transparent pr-0.5 pl-1 transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated"
-	on:click={() => dispatch('toggle', { id: project.id, expanded: !expanded })}
-	on:keydown={(e) => e.key === 'Enter' && dispatch('toggle', { id: project.id, expanded: !expanded })}
+	onclick={() => onToggle?.({ id: project.id, expanded: !expanded })}
+	onkeydown={(event) => event.key === 'Enter' && onToggle?.({ id: project.id, expanded: !expanded })}
 	role="button"
 	tabindex="0"
 >
@@ -157,9 +169,9 @@
 			<input
 				bind:this={inputRef}
 				bind:value={editName}
-				on:blur={saveRename}
-				on:keydown={handleKeydown}
-				on:click|stopPropagation
+				onblur={saveRename}
+				onkeydown={handleKeydown}
+				onclick={(event) => event.stopPropagation()}
 				class="w-full rounded-sm border border-border bg-surface-page px-1.5 py-0.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
 			/>
 		{:else}
@@ -172,7 +184,7 @@
 		bind:this={triggerRef}
 		class="btn-icon-bare ml-1 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-icon-muted opacity-100 transition-colors duration-150 hover:bg-surface-page hover:text-icon-primary focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
 		class:md:opacity-100={menuOpen}
-		on:click={toggleMenu}
+		onclick={toggleMenu}
 		aria-label="Project options"
 	>
 		<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -189,7 +201,7 @@
 		>
 			<button
 				class="project-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-				on:click={startRename}
+				onclick={startRename}
 			>
 				<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>
@@ -198,7 +210,7 @@
 			</button>
 			<button
 				class="project-option project-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-				on:click={handleDelete}
+				onclick={handleDelete}
 			>
 				<svg class="project-option-icon project-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
@@ -216,8 +228,8 @@
 		confirmText="Delete"
 		cancelText="Cancel"
 		confirmVariant="danger"
-		on:confirm={confirmDelete}
-		on:cancel={() => (showDeleteConfirm = false)}
+		onConfirm={confirmDelete}
+		onCancel={() => (showDeleteConfirm = false)}
 	/>
 {/if}
 

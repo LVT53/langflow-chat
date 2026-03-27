@@ -1,27 +1,32 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { createEventDispatcher } from 'svelte';
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
 	import type { EvidencePreference, MessageEvidenceSummary, TaskSteeringPayload } from '$lib/types';
 
-	export let evidenceSummary: MessageEvidenceSummary;
-	export let pinnedArtifactIds: string[] = [];
-	export let excludedArtifactIds: string[] = [];
+	let {
+		evidenceSummary,
+		pinnedArtifactIds = [],
+		excludedArtifactIds = [],
+		onSteer = undefined,
+	}: {
+		evidenceSummary: MessageEvidenceSummary;
+		pinnedArtifactIds?: string[];
+		excludedArtifactIds?: string[];
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	} = $props();
 
-	const dispatch = createEventDispatcher<{
-		steer: TaskSteeringPayload;
-	}>();
+	let expanded = $state(false);
+	let container = $state<HTMLDivElement | null>(null);
 
-	let expanded = false;
-	let container: HTMLDivElement;
-
-	$: totalItems = evidenceSummary.groups.reduce((count, group) => count + group.items.length, 0);
-	$: pinnedIds = new Set(pinnedArtifactIds);
-	$: excludedIds = new Set(excludedArtifactIds);
+	let totalItems = $derived(
+		evidenceSummary.groups.reduce((count, group) => count + group.items.length, 0)
+	);
+	let pinnedIds = $derived(new Set(pinnedArtifactIds));
+	let excludedIds = $derived(new Set(excludedArtifactIds));
 
 	function steer(payload: TaskSteeringPayload) {
-		dispatch('steer', payload);
+		onSteer?.(payload);
 	}
 
 	function preferenceFor(artifactId: string): EvidencePreference {
@@ -61,7 +66,7 @@
 		type="button"
 		class="evidence-toggle"
 		aria-expanded={expanded}
-		on:click={toggle}
+		onclick={toggle}
 	>
 		<span class="evidence-toggle-copy">
 			<span class="evidence-label">Evidence</span>
@@ -132,7 +137,7 @@
 										<EvidencePreferenceControl
 											artifactId={item.artifactId}
 											preference={preferenceFor(item.artifactId)}
-											on:steer={(event) => steer(event.detail)}
+											onSteer={steer}
 										/>
 									</div>
 								{/if}

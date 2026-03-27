@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { currentConversationId } from '$lib/stores/ui';
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
@@ -14,71 +14,117 @@
 		TaskSteeringPayload,
 	} from '$lib/types';
 
-	export let disabled: boolean = false;
-	export let maxLength: number = 10000;
-	export let isGenerating: boolean = false;
-	export let conversationId: string | null = null;
-	export let attachmentsEnabled: boolean = false;
-	export let ensureConversation: (() => Promise<string>) | null = null;
-	export let contextStatus: ConversationContextStatus | null = null;
-	export let attachedArtifacts: ArtifactSummary[] = [];
-	export let taskState: TaskState | null = null;
-	export let contextDebug: ContextDebugState | null = null;
-	export let draftText: string = '';
-	export let draftAttachments: PendingAttachment[] = [];
-	export let draftVersion: number = 0;
+	type SendPayload = {
+		message: string;
+		attachmentIds: string[];
+		attachments: ArtifactSummary[];
+		conversationId: string | null;
+	};
 
-	const dispatch = createEventDispatcher<{
-		send: { message: string; attachmentIds: string[]; attachments: ArtifactSummary[]; conversationId: string | null };
-		stop: void;
-		steer: TaskSteeringPayload;
-		manageEvidence: void;
-		draftchange: {
-			conversationId: string | null;
-			draftText: string;
-			selectedAttachmentIds: string[];
-			selectedAttachments: PendingAttachment[];
-		};
-	}>();
+	type DraftPayload = {
+		conversationId: string | null;
+		draftText: string;
+		selectedAttachmentIds: string[];
+		selectedAttachments: PendingAttachment[];
+	};
 
-	let textarea: HTMLTextAreaElement;
-	let fileInput: HTMLInputElement;
-	let message = '';
-	let pendingAttachments: PendingAttachment[] = [];
-	let uploadState: 'idle' | 'uploading' | 'preparing' = 'idle';
-	let attachmentError = '';
-	let resolvedConversationId: string | null = conversationId;
-	let showToolsMenu = false;
+	let {
+		disabled = false,
+		maxLength = 10000,
+		isGenerating = false,
+		conversationId = null,
+		attachmentsEnabled = false,
+		ensureConversation = null,
+		contextStatus = null,
+		attachedArtifacts = [],
+		taskState = null,
+		contextDebug = null,
+		draftText = '',
+		draftAttachments = [],
+		draftVersion = 0,
+		onSend = undefined,
+		onStop = undefined,
+		onSteer = undefined,
+		onManageEvidence = undefined,
+		onDraftChange = undefined,
+	}: {
+		disabled?: boolean;
+		maxLength?: number;
+		isGenerating?: boolean;
+		conversationId?: string | null;
+		attachmentsEnabled?: boolean;
+		ensureConversation?: (() => Promise<string>) | null;
+		contextStatus?: ConversationContextStatus | null;
+		attachedArtifacts?: ArtifactSummary[];
+		taskState?: TaskState | null;
+		contextDebug?: ContextDebugState | null;
+		draftText?: string;
+		draftAttachments?: PendingAttachment[];
+		draftVersion?: number;
+		onSend?: ((payload: SendPayload) => void) | undefined;
+		onStop?: (() => void) | undefined;
+		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+		onManageEvidence?: (() => void) | undefined;
+		onDraftChange?: ((payload: DraftPayload) => void) | undefined;
+	} = $props();
+
+	let textarea = $state<HTMLTextAreaElement | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
+	let message = $state('');
+	let pendingAttachments = $state<PendingAttachment[]>([]);
+	let uploadState = $state<'idle' | 'uploading' | 'preparing'>('idle');
+	let attachmentError = $state('');
+	let resolvedConversationId = $state<string | null>(null);
+	let showToolsMenu = $state(false);
 	let appliedDraftVersion = -1;
 	let lastEmittedDraftKey = '';
 	let ensureDraftConversationPromise: Promise<string> | null = null;
 	let draftEmissionVersion = 0;
 	
-	$: isEmpty = message.trim().length === 0;
-	$: isOverMaxLength = message.length > maxLength;
-	$: showCharCount = message.length > maxLength * 0.8;
-	$: charCountColor = isOverMaxLength ? 'text-danger' : 'text-text-muted';
-	$: isUploadingAttachment = uploadState !== 'idle';
-	$: pendingAttachmentArtifacts = pendingAttachments.map((attachment) => attachment.artifact);
-	$: hasUnreadyAttachment = pendingAttachments.some((attachment) => !attachment.promptReady);
-	$: attachmentReadinessErrors = pendingAttachments.filter((attachment) => Boolean(attachment.readinessError));
+	let isEmpty = $derived(message.trim().length === 0);
+	let isOverMaxLength = $derived(message.length > maxLength);
+	let showCharCount = $derived(message.length > maxLength * 0.8);
+	let charCountColor = $derived(isOverMaxLength ? 'text-danger' : 'text-text-muted');
+	let isUploadingAttachment = $derived(uploadState !== 'idle');
+	let pendingAttachmentArtifacts = $derived(
+		pendingAttachments.map((attachment) => attachment.artifact)
+	);
+	let hasUnreadyAttachment = $derived(
+		pendingAttachments.some((attachment) => !attachment.promptReady)
+	);
+	let attachmentReadinessErrors = $derived(
+		pendingAttachments.filter((attachment) => Boolean(attachment.readinessError))
+	);
 	
-	$: canSend = !isEmpty && !isOverMaxLength && !isUploadingAttachment && !hasUnreadyAttachment;
-	$: if (conversationId) {
-		resolvedConversationId = conversationId;
-	}
-	$: canAttach = attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !isUploadingAttachment;
-	$: composerArtifacts = Array.from(
+	let canSend = $derived(
+		!isEmpty && !isOverMaxLength && !isUploadingAttachment && !hasUnreadyAttachment
+	);
+	let canAttach = $derived(
+		attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !isUploadingAttachment
+	);
+	let composerArtifacts = $derived(
+		Array.from(
 		new Map(
 			[...attachedArtifacts, ...pendingAttachmentArtifacts].map((artifact) => [artifact.id, artifact])
 		).values()
+		)
 	);
-	$: if (draftVersion !== appliedDraftVersion) {
+
+	$effect(() => {
+		if (conversationId) {
+			resolvedConversationId = conversationId;
+		}
+	});
+
+	$effect(() => {
+		if (draftVersion === appliedDraftVersion) return;
+
 		const shouldApplyDraft =
 			appliedDraftVersion === -1 ||
 			draftVersion === 0 ||
 			(message.trim().length === 0 && pendingAttachments.length === 0);
 		appliedDraftVersion = draftVersion;
+
 		if (shouldApplyDraft) {
 			message = draftText;
 			pendingAttachments = draftAttachments.map((attachment) => ({ ...attachment }));
@@ -89,7 +135,7 @@
 			draftEmissionVersion += 1;
 			adjustHeight();
 		}
-	}
+	});
 
 	function isMobile(): boolean {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -99,9 +145,16 @@
 	}
 
 	let lastConversationId = '';
-	$: if ($currentConversationId && $currentConversationId !== lastConversationId && textarea) {
-		lastConversationId = $currentConversationId;
-		// Only clear if we actually switched conversations, not on initial load if it already has text
+
+	$effect(() => {
+		const activeConversationId = $currentConversationId;
+
+		if (!activeConversationId || activeConversationId === lastConversationId || !textarea) {
+			return;
+		}
+
+		lastConversationId = activeConversationId;
+		// Only clear if we actually switched conversations, not on initial load if it already has text.
 		if (!message) {
 			message = '';
 			pendingAttachments = [];
@@ -112,10 +165,10 @@
 			draftEmissionVersion += 1;
 			adjustHeight();
 			if (!isMobile()) {
-				setTimeout(() => textarea.focus(), 0);
+				setTimeout(() => textarea?.focus(), 0);
 			}
 		}
-	}
+	});
 
 	function adjustHeight() {
 		if (!textarea) return;
@@ -145,7 +198,7 @@
 
 	function send() {
 		if (!canSend) return;
-		dispatch('send', {
+		onSend?.({
 			message: message.trim(),
 			attachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
 			attachments: pendingAttachmentArtifacts,
@@ -166,7 +219,7 @@
 	}
 
 	function stop() {
-		dispatch('stop');
+		onStop?.();
 		showToolsMenu = false;
 		if (isMobile()) {
 			textarea.blur();
@@ -267,12 +320,12 @@
 		void emitDraftChange();
 	}
 
-	function handleSteering(event: CustomEvent<TaskSteeringPayload>) {
-		dispatch('steer', event.detail);
+	function handleSteering(payload: TaskSteeringPayload) {
+		onSteer?.(payload);
 	}
 
 	function handleManageEvidence() {
-		dispatch('manageEvidence');
+		onManageEvidence?.();
 	}
 
 	async function ensureDraftConversationId(): Promise<string | null> {
@@ -309,7 +362,7 @@
 		const key = JSON.stringify(payload);
 		if (!force && key === lastEmittedDraftKey) return;
 		lastEmittedDraftKey = key;
-		dispatch('draftchange', payload);
+		onDraftChange?.(payload);
 	}
 </script>
 
@@ -320,14 +373,14 @@
 			type="file"
 			class="hidden"
 			multiple
-			on:change={(event) => uploadFiles((event.currentTarget as HTMLInputElement).files)}
+			onchange={(event) => uploadFiles((event.currentTarget as HTMLInputElement).files)}
 		/>
 		<textarea
 			data-testid="message-input"
 			bind:this={textarea}
 			bind:value={message}
-			on:input={handleInput}
-			on:keydown={handleKeydown}
+			oninput={handleInput}
+			onkeydown={handleKeydown}
 			placeholder="Type a message..."
 			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[14px] md:text-[15px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
@@ -340,7 +393,7 @@
 						attachment={attachment.artifact}
 						variant="pending"
 						removable={true}
-						on:remove={(event) => removePendingAttachment(event.detail.id)}
+						onRemove={(payload) => removePendingAttachment(payload.id)}
 					/>
 				{/each}
 			</div>
@@ -352,7 +405,7 @@
 					<button
 						type="button"
 						class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted"
-						on:click={toggleToolsMenu}
+						onclick={toggleToolsMenu}
 						aria-label="Open composer tools"
 						aria-expanded={showToolsMenu}
 					>
@@ -366,8 +419,8 @@
 						<ComposerToolsMenu
 							{canAttach}
 							{attachmentsEnabled}
-							on:close={closeToolsMenu}
-							on:attach={openFilePicker}
+							onClose={closeToolsMenu}
+							onAttach={openFilePicker}
 						/>
 					{/if}
 				</div>
@@ -377,8 +430,8 @@
 					attachedArtifacts={composerArtifacts}
 					{taskState}
 					{contextDebug}
-					on:steer={handleSteering}
-					on:manageEvidence={handleManageEvidence}
+					onSteer={handleSteering}
+					onManageEvidence={handleManageEvidence}
 				/>
 			</div>
 
@@ -386,7 +439,7 @@
 				{#if isGenerating}
 					<button
 						type="button"
-						on:click={stop}
+						onclick={stop}
 						aria-label="Stop generation"
 						class="composer-stop-accent flex h-full w-full items-center justify-center rounded-[15px] shadow-sm animate-in"
 					>
@@ -398,7 +451,7 @@
 					<button
 						data-testid="send-button"
 						type="button"
-						on:click={send}
+						onclick={send}
 						disabled={!canSend || disabled}
 						aria-label="Send message"
 						class="btn-primary composer-send flex h-full w-full items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"

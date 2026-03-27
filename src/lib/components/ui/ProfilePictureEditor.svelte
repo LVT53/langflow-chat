@@ -1,43 +1,50 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
+	import { uploadAvatar } from '$lib/client/api/settings';
 
-	const dispatch = createEventDispatcher<{ close: void; uploaded: void }>();
+	let {
+		onClose = undefined,
+		onUploaded = undefined
+	}: {
+		onClose?: (() => void) | undefined;
+		onUploaded?: (() => void) | undefined;
+	} = $props();
 
 	// ── State ──────────────────────────────────────────────────────────────────
 	type Step = 'drop' | 'edit' | 'uploading';
-	let step: Step = 'drop';
+	let step = $state<Step>('drop');
 
-	let fileInput: HTMLInputElement;
-	let canvasEl: HTMLCanvasElement;
-	let dialogRef: HTMLDivElement;
+	let fileInput = $state<HTMLInputElement | null>(null);
+	let canvasEl = $state<HTMLCanvasElement | null>(null);
+	let dialogRef = $state<HTMLDivElement | null>(null);
 	let previousFocus: HTMLElement | null = null;
 
-	let isDraggingOver = false;
-	let uploadError = '';
+	let isDraggingOver = $state(false);
+	let uploadError = $state('');
 
 	// Image source
-	let img: HTMLImageElement | null = null;
+	let img = $state<HTMLImageElement | null>(null);
 
 	// Editor state
-	let rotation = 0; // 0–360 degrees, arbitrary precision
-	let zoom = 1.0;
-	let panX = 0;
-	let panY = 0;
+	let rotation = $state(0); // 0–360 degrees, arbitrary precision
+	let zoom = $state(1.0);
+	let panX = $state(0);
+	let panY = $state(0);
 
 	// Canvas dimensions (square crop area)
 	const CANVAS_SIZE = 320;
 	const PREVIEW_SIZE = 64;
 
 	// Drag tracking
-	let isDragging = false;
+	let isDragging = $state(false);
 	let dragStartX = 0;
 	let dragStartY = 0;
 	let dragStartPanX = 0;
 	let dragStartPanY = 0;
 
 	// Preview canvas
-	let previewCanvas: HTMLCanvasElement;
+	let previewCanvas = $state<HTMLCanvasElement | null>(null);
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
 	function loadFile(file: File) {
@@ -161,9 +168,17 @@
 		drawCanvas();
 	}
 
-	$: if (step === 'edit' && canvasEl && img) {
+	$effect(() => {
+		if (step !== 'edit' || !canvasEl || !img) return;
+
+		rotation;
+		zoom;
+		panX;
+		panY;
+		previewCanvas;
+
 		drawCanvas();
-	}
+	});
 
 	// ── Canvas drag (pan) ──────────────────────────────────────────────────────
 	function onMouseDown(e: MouseEvent) {
@@ -207,6 +222,20 @@
 		isDragging = false;
 	}
 
+	function nonPassiveTouchMove(node: HTMLCanvasElement) {
+		const handleTouchMove = (event: Event) => {
+			onTouchMove(event as TouchEvent);
+		};
+
+		node.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+		return {
+			destroy() {
+				node.removeEventListener('touchmove', handleTouchMove);
+			}
+		};
+	}
+
 	// ── Upload (with compression pipeline) ─────────────────────────────────────
 	async function handleUpload() {
 		if (!canvasEl || !img) return;
@@ -246,18 +275,10 @@
 					step = 'edit';
 					return;
 				}
-				const formData = new FormData();
-				formData.append('image', blob, 'avatar.webp');
-
 				try {
-					const res = await fetch('/api/settings/avatar', {
-						method: 'POST',
-						body: formData,
-					});
-					const json = await res.json();
-					if (!res.ok) throw new Error(json.error ?? 'Upload failed');
-					dispatch('uploaded');
-					dispatch('close');
+					await uploadAvatar(blob);
+					onUploaded?.();
+					onClose?.();
 				} catch (e: any) {
 					uploadError = e.message;
 					step = 'edit';
@@ -290,11 +311,36 @@
 		if (file) loadFile(file);
 	}
 
+	function handleBackdropClick() {
+		if (step !== 'uploading') {
+			onClose?.();
+		}
+	}
+
+	function openSelectedFile() {
+		fileInput?.click();
+	}
+
+	function handleDropZoneKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			openSelectedFile();
+		}
+	}
+
+	function chooseDifferentImage() {
+		step = 'drop';
+		img = null;
+		if (fileInput) {
+			fileInput.value = '';
+		}
+	}
+
 	// ── Keyboard & focus ───────────────────────────────────────────────────────
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
-			if (step !== 'uploading') dispatch('close');
+			if (step !== 'uploading') onClose?.();
 		} else if (e.key === 'Tab') {
 			const focusable = dialogRef?.querySelectorAll<HTMLElement>(
 				'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -327,19 +373,19 @@
 	});
 </script>
 
-<svelte:window on:keydown={handleKeydown} on:mouseup={onMouseUp} />
+<svelte:window onkeydown={handleKeydown} onmouseup={onMouseUp} />
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
 	class="fixed inset-0 z-50 flex items-center justify-center p-md"
 	transition:fade={{ duration: 150 }}
 >
 	<!-- Backdrop -->
-	<div
+	<button
+		type="button"
 		class="absolute inset-0 bg-surface-page opacity-80 backdrop-blur-sm"
-		on:click={() => { if (step !== 'uploading') dispatch('close'); }}
-	></div>
+		aria-label="Close profile photo editor"
+		onclick={handleBackdropClick}
+	></button>
 
 	<!-- Modal -->
 	<div
@@ -349,7 +395,6 @@
 		aria-labelledby="pic-editor-title"
 		tabindex="-1"
 		class="relative w-full max-w-[520px] rounded-lg border border-border bg-surface-page p-lg shadow-lg"
-		on:click|stopPropagation
 		transition:scale={{ duration: 150, start: 0.95 }}
 	>
 		<h2 id="pic-editor-title" class="mb-md text-xl font-semibold text-text-primary">
@@ -358,17 +403,16 @@
 
 		<!-- ── Step: Drop zone ───────────────────────────────────────────── -->
 		{#if step === 'drop'}
-			<!-- svelte-ignore a11y-click-events-have-key-events -->
 			<div
 				class="drop-zone flex cursor-pointer flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-border p-10 text-center transition-colors duration-150"
 				class:drop-zone-active={isDraggingOver}
-				on:dragover={onDragOver}
-				on:dragleave={onDragLeave}
-				on:drop={onDrop}
-				on:click={() => fileInput.click()}
+				ondragover={onDragOver}
+				ondragleave={onDragLeave}
+				ondrop={onDrop}
+				onclick={openSelectedFile}
 				role="button"
 				tabindex="0"
-				on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); }}
+				onkeydown={handleDropZoneKeydown}
 				aria-label="Upload photo drop zone"
 			>
 				<svg
@@ -396,7 +440,7 @@
 				type="file"
 				accept="image/*,.heic,.heif,.avif,.tiff,.tif,.bmp"
 				class="sr-only"
-				on:change={onFileInput}
+				onchange={onFileInput}
 			/>
 
 			{#if uploadError}
@@ -415,11 +459,11 @@
 						height={CANVAS_SIZE}
 						class="rounded-md"
 						style="cursor: {isDragging ? 'grabbing' : 'grab'};"
-						on:mousedown={onMouseDown}
-						on:mousemove={onMouseMove}
-						on:touchstart|passive={onTouchStart}
-						on:touchmove|preventDefault={onTouchMove}
-						on:touchend={onTouchEnd}
+						onmousedown={onMouseDown}
+						onmousemove={onMouseMove}
+						ontouchstart={onTouchStart}
+						ontouchend={onTouchEnd}
+						use:nonPassiveTouchMove
 					></canvas>
 
 					{#if step === 'uploading'}
@@ -451,7 +495,7 @@
 						<button
 							type="button"
 							class="btn-icon-bare flex-shrink-0"
-							on:click={rotateLeft}
+							onclick={rotateLeft}
 							disabled={step === 'uploading'}
 							title="Rotate left 90°"
 							aria-label="Rotate left 90°"
@@ -469,7 +513,7 @@
 							max="360"
 							step="0.5"
 							bind:value={rotation}
-							on:input={drawCanvas}
+							oninput={drawCanvas}
 							disabled={step === 'uploading'}
 							class="rotation-slider flex-1"
 							aria-label="Rotation"
@@ -479,7 +523,7 @@
 						<button
 							type="button"
 							class="btn-icon-bare flex-shrink-0"
-							on:click={rotateRight}
+							onclick={rotateRight}
 							disabled={step === 'uploading'}
 							title="Rotate right 90°"
 							aria-label="Rotate right 90°"
@@ -502,7 +546,7 @@
 						<button
 							type="button"
 							class="btn-icon-bare flex-shrink-0"
-							on:click={zoomOut}
+							onclick={zoomOut}
 							disabled={step === 'uploading' || zoom <= 0.5}
 							title="Zoom out"
 							aria-label="Zoom out"
@@ -521,7 +565,7 @@
 							max="3"
 							step="0.05"
 							bind:value={zoom}
-							on:input={drawCanvas}
+							oninput={drawCanvas}
 							disabled={step === 'uploading'}
 							class="zoom-slider flex-1"
 							aria-label="Zoom"
@@ -531,7 +575,7 @@
 						<button
 							type="button"
 							class="btn-icon-bare flex-shrink-0"
-							on:click={zoomIn}
+							onclick={zoomIn}
 							disabled={step === 'uploading' || zoom >= 3}
 							title="Zoom in"
 							aria-label="Zoom in"
@@ -568,7 +612,7 @@
 					<button
 						type="button"
 						class="btn-secondary text-xs"
-						on:click={() => { step = 'drop'; img = null; fileInput && (fileInput.value = ''); }}
+						onclick={chooseDifferentImage}
 					>
 						Choose a different image
 					</button>
@@ -585,13 +629,13 @@
 			<button
 				type="button"
 				class="btn-secondary"
-				on:click={() => dispatch('close')}
+				onclick={() => onClose?.()}
 				disabled={step === 'uploading'}
 			>
 				Cancel
 			</button>
 			{#if step === 'edit'}
-				<button type="button" class="btn-primary" on:click={handleUpload}>
+				<button type="button" class="btn-primary" onclick={handleUpload}>
 					Upload
 				</button>
 			{/if}

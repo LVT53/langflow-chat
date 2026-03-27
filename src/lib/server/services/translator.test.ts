@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../env', () => ({
+	getDatabasePath: () => './data/test.db',
 	config: {
 		translatorUrl: 'http://localhost:30002/v1',
 		translatorApiKey: '',

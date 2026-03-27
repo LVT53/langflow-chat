@@ -42,8 +42,12 @@ interface Config {
   memoryMaintenanceIntervalMinutes: number;
 }
 
+export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
+  return env.DATABASE_PATH || './data/chat.db';
+}
+
 // Read and validate environment variables
-const getConfig = (): Config => {
+function readConfig(): Config {
   // Required variables
   const langflowApiKey = process.env.LANGFLOW_API_KEY;
   if (!langflowApiKey) {
@@ -82,7 +86,7 @@ const getConfig = (): Config => {
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
     sessionSecret,
-    databasePath: process.env.DATABASE_PATH || './data/chat.db',
+    databasePath: getDatabasePath(),
     model1: {
       baseUrl: process.env.MODEL_1_BASEURL || 'http://localhost:30001/v1',
       apiKey: process.env.MODEL_1_API_KEY || '',
@@ -109,6 +113,31 @@ const getConfig = (): Config => {
       parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES || '0', 10) || 0
     ),
   };
-};
+}
 
-export const config = getConfig();
+let cachedConfig: Config | null = null;
+
+export function getConfig(): Config {
+  if (!cachedConfig) {
+    cachedConfig = readConfig();
+  }
+
+  return cachedConfig;
+}
+
+export const config: Config = new Proxy({} as Config, {
+  get(_target, prop) {
+    const resolved = getConfig() as Record<PropertyKey, unknown>;
+    return resolved[prop];
+  },
+  has(_target, prop) {
+    return prop in getConfig();
+  },
+  ownKeys() {
+    return Reflect.ownKeys(getConfig());
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    const descriptor = Object.getOwnPropertyDescriptor(getConfig(), prop);
+    return descriptor ? { ...descriptor, configurable: true } : undefined;
+  },
+});

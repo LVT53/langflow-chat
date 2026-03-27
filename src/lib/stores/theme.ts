@@ -1,4 +1,5 @@
 import { writable, get, derived } from 'svelte/store';
+import { updateUserPreferences } from '$lib/client/api/settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -52,11 +53,7 @@ export function setTheme(t: Theme) {
 export async function setThemeAndSync(t: Theme): Promise<void> {
 	setTheme(t);
 	try {
-		await fetch('/api/settings/preferences', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ theme: t }),
-		});
+		await updateUserPreferences({ theme: t });
 	} catch {
 		// Non-fatal: local theme already applied
 	}

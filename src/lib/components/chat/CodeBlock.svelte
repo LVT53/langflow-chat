@@ -2,13 +2,20 @@
 	import { slide } from 'svelte/transition';
 	import { tick } from 'svelte';
 
-	export let code: string = '';
-	export let language: string | undefined = undefined;
+	let {
+		code = '',
+		language = undefined,
+		contentHtml = ''
+	}: {
+		code?: string;
+		language?: string;
+		contentHtml?: string;
+	} = $props();
 
-	let copied = false;
-	let collapsed = false;
-	let container: HTMLDivElement;
-	let copyTimeout: ReturnType<typeof setTimeout>;
+	let copied = $state(false);
+	let collapsed = $state(false);
+	let container = $state<HTMLDivElement | undefined>(undefined);
+	let copyTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	async function toggleCollapse() {
 		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
@@ -39,12 +46,12 @@
 
 <div class="code-block relative my-md w-full font-mono text-[14px]" bind:this={container}>
 	<div class="code-header">
-		<button
-			type="button"
-			class="code-toggle"
-			on:click={toggleCollapse}
-			aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
-		>
+			<button
+				type="button"
+				class="code-toggle"
+				onclick={toggleCollapse}
+				aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
+			>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
 				width="14"
@@ -67,7 +74,7 @@
 			<button
 				type="button"
 				class="btn-icon-bare copy-button gap-1.5"
-				on:click={copyToClipboard}
+				onclick={copyToClipboard}
 				aria-label="Copy code"
 				title="Copy code"
 			>
@@ -96,7 +103,7 @@
 	{#if !collapsed}
 		<div class="code-body" transition:slide|local={{ duration: 200 }}>
 			<div class="code-content w-full overflow-x-auto p-md text-[14px] leading-[1.5]">
-				<slot></slot>
+				{@html contentHtml}
 			</div>
 		</div>
 	{/if}
