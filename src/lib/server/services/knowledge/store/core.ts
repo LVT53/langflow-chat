@@ -1,0 +1,336 @@
+import { createHash, randomUUID } from "crypto";
+import { basename, extname, join } from "path";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { db } from "$lib/server/db";
+import { artifactLinks, artifacts } from "$lib/server/db/schema";
+import type {
+  Artifact,
+  ArtifactLink,
+  ArtifactSummary,
+  ArtifactType,
+} from "$lib/types";
+import { parseJsonRecord } from "$lib/server/utils/json";
+import { syncArtifactChunks } from "../../task-state";
+
+export const MAX_MODEL_CONTEXT = 262_144;
+export const COMPACTION_UI_THRESHOLD = 209_715;
+export const TARGET_CONSTRUCTED_CONTEXT = 157_286;
+export const WORKING_SET_PROMPT_TOKEN_BUDGET = 12_000;
+export const WORKING_SET_DOCUMENT_TOKEN_BUDGET = 1_500;
+export const WORKING_SET_OUTPUT_TOKEN_BUDGET = 2_000;
+
+type ArtifactSummaryRow = Pick<
+  typeof artifacts.$inferSelect,
+  | "id"
+  | "type"
+  | "retrievalClass"
+  | "name"
+  | "mimeType"
+  | "sizeBytes"
+  | "conversationId"
+  | "summary"
+  | "createdAt"
+  | "updatedAt"
+>;
+
+export const knowledgeArtifactListSelection = {
+  id: artifacts.id,
+  type: artifacts.type,
+  retrievalClass: artifacts.retrievalClass,
+  name: artifacts.name,
+  mimeType: artifacts.mimeType,
+  sizeBytes: artifacts.sizeBytes,
+  conversationId: artifacts.conversationId,
+  summary: artifacts.summary,
+  metadataJson: artifacts.metadataJson,
+  createdAt: artifacts.createdAt,
+  updatedAt: artifacts.updatedAt,
+} as const;
+
+export function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
+  return {
+    id: row.id,
+    type: row.type as ArtifactType,
+    retrievalClass: (row.retrievalClass ??
+      "durable") as ArtifactSummary["retrievalClass"],
+    name: row.name,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes ?? null,
+    conversationId: row.conversationId ?? null,
+    summary: row.summary ?? null,
+    createdAt: row.createdAt.getTime(),
+    updatedAt: row.updatedAt.getTime(),
+  };
+}
+
+export function mapArtifact(row: typeof artifacts.$inferSelect): Artifact {
+  return {
+    ...mapArtifactSummary(row),
+    userId: row.userId,
+    extension: row.extension ?? null,
+    storagePath: row.storagePath ?? null,
+    contentText: row.contentText ?? null,
+    metadata: parseJsonRecord(row.metadataJson ?? null),
+  };
+}
+
+function mapArtifactLink(row: typeof artifactLinks.$inferSelect): ArtifactLink {
+  return {
+    id: row.id,
+    userId: row.userId,
+    artifactId: row.artifactId,
+    relatedArtifactId: row.relatedArtifactId ?? null,
+    conversationId: row.conversationId ?? null,
+    messageId: row.messageId ?? null,
+    linkType: row.linkType as ArtifactLink["linkType"],
+    createdAt: row.createdAt.getTime(),
+  };
+}
+
+export function fileExtension(name: string): string | null {
+  const ext = extname(name).toLowerCase();
+  return ext ? ext.slice(1) : null;
+}
+
+export function knowledgeUserDir(userId: string): string {
+  return join(process.cwd(), "data", "knowledge", userId);
+}
+
+export function guessSummary(text: string | null, fallback: string): string {
+  const trimmed = (text ?? "").replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed.slice(0, 240) : fallback.slice(0, 240);
+}
+
+export function safeStem(name: string): string {
+  const stem = basename(name, extname(name)).trim();
+  return stem.length > 0 ? stem : "artifact";
+}
+
+export function hashBinaryBuffer(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+export async function createArtifact(params: {
+  id?: string;
+  userId: string;
+  conversationId?: string | null;
+  type: ArtifactType;
+  retrievalClass?: Artifact["retrievalClass"];
+  name: string;
+  mimeType?: string | null;
+  extension?: string | null;
+  sizeBytes?: number | null;
+  binaryHash?: string | null;
+  storagePath?: string | null;
+  contentText?: string | null;
+  summary?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<Artifact> {
+  const id = params.id ?? randomUUID();
+  const [artifact] = await db
+    .insert(artifacts)
+    .values({
+      id,
+      userId: params.userId,
+      conversationId: params.conversationId ?? null,
+      type: params.type,
+      retrievalClass: params.retrievalClass ?? "durable",
+      name: params.name,
+      mimeType: params.mimeType ?? null,
+      extension: params.extension ?? null,
+      sizeBytes: params.sizeBytes ?? null,
+      binaryHash: params.binaryHash ?? null,
+      storagePath: params.storagePath ?? null,
+      contentText: params.contentText ?? null,
+      summary: params.summary ?? null,
+      metadataJson: params.metadata ? JSON.stringify(params.metadata) : null,
+      updatedAt: new Date(),
+    })
+    .returning();
+
+  const mapped = mapArtifact(artifact);
+  await syncArtifactChunks({
+    artifactId: mapped.id,
+    userId: mapped.userId,
+    conversationId: mapped.conversationId,
+    contentText: mapped.contentText,
+  });
+
+  return mapped;
+}
+
+export async function updateArtifactBinaryHash(
+  artifactId: string,
+  binaryHash: string,
+): Promise<void> {
+  await db
+    .update(artifacts)
+    .set({
+      binaryHash,
+      updatedAt: new Date(),
+    })
+    .where(eq(artifacts.id, artifactId));
+}
+
+export async function getNormalizedArtifactForSource(
+  userId: string,
+  sourceArtifactId: string,
+): Promise<Artifact | null> {
+  const rows = await db
+    .select({ artifact: artifacts })
+    .from(artifactLinks)
+    .innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+    .where(
+      and(
+        eq(artifactLinks.userId, userId),
+        eq(artifactLinks.relatedArtifactId, sourceArtifactId),
+        eq(artifactLinks.linkType, "derived_from"),
+        eq(artifacts.type, "normalized_document"),
+      ),
+    )
+    .orderBy(asc(artifactLinks.createdAt))
+    .limit(1);
+
+  return rows[0] ? mapArtifact(rows[0].artifact) : null;
+}
+
+export function withAttachmentDisplayName(
+  promptArtifact: Artifact,
+  displayArtifact: Artifact,
+): Artifact {
+  return {
+    ...promptArtifact,
+    name: displayArtifact.name,
+    mimeType: displayArtifact.mimeType ?? promptArtifact.mimeType,
+    sizeBytes: displayArtifact.sizeBytes ?? promptArtifact.sizeBytes,
+  };
+}
+
+export async function createArtifactLink(params: {
+  userId: string;
+  artifactId: string;
+  linkType: ArtifactLink["linkType"];
+  relatedArtifactId?: string | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+}): Promise<ArtifactLink> {
+  const [row] = await db
+    .insert(artifactLinks)
+    .values({
+      id: randomUUID(),
+      userId: params.userId,
+      artifactId: params.artifactId,
+      linkType: params.linkType,
+      relatedArtifactId: params.relatedArtifactId ?? null,
+      conversationId: params.conversationId ?? null,
+      messageId: params.messageId ?? null,
+    })
+    .returning();
+  return mapArtifactLink(row);
+}
+
+export async function getArtifactForUser(
+  userId: string,
+  artifactId: string,
+): Promise<Artifact | null> {
+  const [row] = await db
+    .select()
+    .from(artifacts)
+    .where(and(eq(artifacts.id, artifactId), eq(artifacts.userId, userId)));
+  return row ? mapArtifact(row) : null;
+}
+
+export async function listArtifactLinksForUser(
+  userId: string,
+  artifactId: string,
+): Promise<ArtifactLink[]> {
+  const rows = await db
+    .select()
+    .from(artifactLinks)
+    .where(
+      and(
+        eq(artifactLinks.userId, userId),
+        eq(artifactLinks.artifactId, artifactId),
+      ),
+    )
+    .orderBy(desc(artifactLinks.createdAt));
+  return rows.map(mapArtifactLink);
+}
+
+export async function getArtifactsForUser(
+  userId: string,
+  artifactIds: string[],
+): Promise<Artifact[]> {
+  if (artifactIds.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(artifacts)
+    .where(
+      and(eq(artifacts.userId, userId), inArray(artifacts.id, artifactIds)),
+    );
+  return rows.map(mapArtifact);
+}
+
+export async function listConversationOwnedArtifacts(
+  userId: string,
+  conversationId: string,
+): Promise<Artifact[]> {
+  const rows = await db
+    .select()
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.userId, userId),
+        eq(artifacts.conversationId, conversationId),
+      ),
+    )
+    .orderBy(desc(artifacts.updatedAt));
+
+  return rows.map(mapArtifact);
+}
+
+export async function getSourceArtifactIdForNormalizedArtifact(
+  userId: string,
+  normalizedArtifactId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ sourceArtifactId: artifactLinks.relatedArtifactId })
+    .from(artifactLinks)
+    .innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+    .where(
+      and(
+        eq(artifactLinks.userId, userId),
+        eq(artifactLinks.artifactId, normalizedArtifactId),
+        eq(artifactLinks.linkType, "derived_from"),
+        eq(artifacts.type, "normalized_document"),
+      ),
+    )
+    .limit(1);
+
+  return row?.sourceArtifactId ?? null;
+}
+
+export async function listConversationArtifacts(
+  userId: string,
+  conversationId: string,
+): Promise<ArtifactSummary[]> {
+  const rows = await db
+    .select({ artifact: artifacts })
+    .from(artifactLinks)
+    .innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+    .where(
+      and(
+        eq(artifactLinks.userId, userId),
+        eq(artifactLinks.conversationId, conversationId),
+        eq(artifactLinks.linkType, "attached_to_conversation"),
+        isNull(artifactLinks.messageId),
+      ),
+    )
+    .orderBy(desc(artifacts.updatedAt));
+
+  const unique = new Map<string, ArtifactSummary>();
+  for (const row of rows) {
+    unique.set(row.artifact.id, mapArtifactSummary(row.artifact));
+  }
+  return Array.from(unique.values());
+}

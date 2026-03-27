@@ -51,30 +51,32 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
   - Attaches the current user to `locals`.
   - Refreshes runtime config overrides.
   - Starts optional maintenance work.
-- [`src/routes/(app)/+layout.server.ts`](./src/routes/(app)/+layout.server.ts)
+- [`src/routes/(app)/+layout.server.ts`](<./src/routes/(app)/+layout.server.ts>)
   - Preloads conversations, projects, models, and user-facing config.
   - This is the main bridge between server state and the authenticated app shell.
 
 Do not:
+
 - duplicate session/bootstrap checks inside every child route unless the route truly has extra requirements
 - fetch the same layout data again in child pages unless the data is page-specific and cannot come from layout
 
 ### Client Shell And Page Boundaries
 
-- [`src/routes/(app)/+page.svelte`](./src/routes/(app)/+page.svelte)
+- [`src/routes/(app)/+page.svelte`](<./src/routes/(app)/+page.svelte>)
   - Landing page.
   - Prepares a draft conversation and stores the first pending message before navigation.
-- [`src/routes/(app)/chat/[conversationId]/+page.ts`](./src/routes/(app)/chat/[conversationId]/+page.ts)
+- [`src/routes/(app)/chat/[conversationId]/+page.ts`](<./src/routes/(app)/chat/[conversationId]/+page.ts>)
   - Lightweight page bootstrap for the chat detail route.
-- [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
+- [`src/routes/(app)/chat/[conversationId]/+page.svelte`](<./src/routes/(app)/chat/[conversationId]/+page.svelte>)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
-- [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
+- [`src/routes/(app)/knowledge/+page.svelte`](<./src/routes/(app)/knowledge/+page.svelte>)
   - Large page-specific knowledge UI.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
-- [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
+- [`src/routes/(app)/settings/+page.svelte`](<./src/routes/(app)/settings/+page.svelte>)
   - User settings and admin/runtime config UI surface.
 
 Do not:
+
 - move chat orchestration into shared visual components
 - make `MessageInput.svelte` own cross-page navigation or conversation bootstrap decisions
 - turn page files into long-lived business-logic modules when a store/service/helper boundary already exists
@@ -99,12 +101,14 @@ Do not:
   - [`src/lib/server/services/message-evidence.ts`](./src/lib/server/services/message-evidence.ts)
 
 Do:
+
 - put shared request parsing, attachment preflight, model normalization, stream framing, and finalization in `chat-turn/`
 - let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and `<preserve>` chunk handling
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 
 Do not:
+
 - duplicate turn logic between `send` and `stream`
 - add new SSE event shapes casually; this touches browser parsing and tests
 - hide persistence side effects inside route-local closures that only one endpoint can see
@@ -117,6 +121,10 @@ Do not:
   - [`src/lib/server/services/knowledge.ts`](./src/lib/server/services/knowledge.ts)
 - Internal modules:
   - [`src/lib/server/services/knowledge/store.ts`](./src/lib/server/services/knowledge/store.ts)
+  - [`src/lib/server/services/knowledge/store/core.ts`](./src/lib/server/services/knowledge/store/core.ts)
+  - [`src/lib/server/services/knowledge/store/attachments.ts`](./src/lib/server/services/knowledge/store/attachments.ts)
+  - [`src/lib/server/services/knowledge/store/documents.ts`](./src/lib/server/services/knowledge/store/documents.ts)
+  - [`src/lib/server/services/knowledge/store/cleanup.ts`](./src/lib/server/services/knowledge/store/cleanup.ts)
   - [`src/lib/server/services/knowledge/context.ts`](./src/lib/server/services/knowledge/context.ts)
   - [`src/lib/server/services/knowledge/capsules.ts`](./src/lib/server/services/knowledge/capsules.ts)
 - Related services:
@@ -126,10 +134,24 @@ Do not:
   - [`src/lib/server/services/knowledge-labels.ts`](./src/lib/server/services/knowledge-labels.ts)
 
 Responsibility split:
+
 - `store.ts`
+  - public facade for store internals
+- `store/core.ts`
   - artifact CRUD
-  - file storage and deletion
+  - artifact mapping and shared selection helpers
+- `store/attachments.ts`
+  - attachment readiness
+  - upload dedupe
   - attachment linking and listing
+- `store/documents.ts`
+  - normalized-document creation
+  - logical document listing
+  - artifact query matching
+- `store/cleanup.ts`
+  - artifact deletion
+  - cross-conversation reference checks
+  - bulk cleanup actions
 - `context.ts`
   - relevant-artifact lookup
   - working-set and context status operations
@@ -140,6 +162,7 @@ Responsibility split:
   - artifact-to-capsule mapping
 
 Do not:
+
 - dump new unrelated knowledge behavior back into `knowledge.ts`
 - mix file storage concerns with context-ranking heuristics in the same new helper
 - place large retrieval heuristics in route files
@@ -149,6 +172,11 @@ Do not:
 
 - Primary continuity/memory boundary:
   - [`src/lib/server/services/task-state.ts`](./src/lib/server/services/task-state.ts)
+- Task-state internal modules:
+  - [`src/lib/server/services/task-state/control-model.ts`](./src/lib/server/services/task-state/control-model.ts)
+  - [`src/lib/server/services/task-state/continuity.ts`](./src/lib/server/services/task-state/continuity.ts)
+  - [`src/lib/server/services/task-state/artifacts.ts`](./src/lib/server/services/task-state/artifacts.ts)
+  - [`src/lib/server/services/task-state/mappers.ts`](./src/lib/server/services/task-state/mappers.ts)
 - Honcho adapter:
   - [`src/lib/server/services/honcho.ts`](./src/lib/server/services/honcho.ts)
 - Persona support:
@@ -163,11 +191,23 @@ Do not:
   - [`src/lib/server/utils/prompt-context.ts`](./src/lib/server/utils/prompt-context.ts)
 
 Rules:
-- `task-state.ts` owns task continuity, checkpoints, evidence-context assembly, and related summarization logic.
+
+- `task-state.ts`
+  - public continuity facade
+  - task routing, checkpoints, evidence-context assembly, and related summarization entrypoints
+- `task-state/control-model.ts`
+  - context summarizer and control-model helpers used by task-state internals
+- `task-state/continuity.ts`
+  - task memory and project continuity internals
+- `task-state/artifacts.ts`
+  - artifact chunking, prompt snippet selection, and historical-context summarization helpers
+- `task-state/mappers.ts`
+  - task-state row mappers shared by task-state internals
 - `honcho.ts` should stay an integration adapter for Honcho sessions, peers, mirrored messages, and Honcho-specific context.
 - `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
 
 Do not:
+
 - create a new top-level continuity service when `task-state.ts` can own the behavior
 - copy `clip`, token estimation, JSON parsing, or prompt-compaction helpers into another service
 - move generic prompt-section rendering into `honcho.ts`
@@ -182,20 +222,23 @@ Do not:
 - Admin config route:
   - [`src/routes/api/admin/config/+server.ts`](./src/routes/api/admin/config/+server.ts)
 - Settings loaders:
-  - [`src/routes/(app)/settings/+page.server.ts`](./src/routes/(app)/settings/+page.server.ts)
+  - [`src/routes/(app)/settings/+page.server.ts`](<./src/routes/(app)/settings/+page.server.ts>)
   - [`src/routes/api/settings/+server.ts`](./src/routes/api/settings/+server.ts)
 
 Notes:
+
 - `env.ts` also owns `getDatabasePath()` for bootstrap-only DB path access.
 - `config-store.ts` remains the override-aware runtime config boundary. `getDatabasePath()` is for early DB/bootstrap code, not for general runtime settings reads.
 
 If you add a new runtime-configurable setting:
+
 1. add env parsing/default handling in `env.ts` if it is environment-backed
 2. add runtime normalization and override support in `config-store.ts`
 3. expose it to the relevant settings/admin loaders and routes
 4. update [README.md](./README.md) and [`.env.example`](./.env.example)
 
 Do not:
+
 - read directly from `process.env` or `env.ts` inside services that should respect admin overrides
 - read `process.env.DATABASE_PATH` directly outside `env.ts`
 - import override-aware runtime config into bootstrap code that only needs the DB file path
@@ -212,6 +255,7 @@ Do not:
   - [`scripts/prepare-db.ts`](./scripts/prepare-db.ts)
 
 Legacy/avoidance notes:
+
 - `src/lib/server/db/conversations.ts`
 - `src/lib/server/db/projects.ts`
 - `src/lib/server/db/sessions.ts`
@@ -220,6 +264,7 @@ Legacy/avoidance notes:
 Treat those `src/lib/server/db/*.ts` wrappers as legacy compatibility leftovers unless you verify a real active need. New persistence logic should normally live in the relevant service and use `db` plus `schema.ts` directly.
 
 Do not:
+
 - put schema mutation back into `db/index.ts`
 - create new mini repository layers for each table without a strong reason
 - spread one feature's persistence logic across route handlers, DB wrapper modules, and service files at the same time
@@ -245,6 +290,7 @@ Do not:
   - [`src/lib/client/conversation-session.ts`](./src/lib/client/conversation-session.ts)
 
 Rules:
+
 - `client/api/` owns reusable request/response parsing and shared HTTP behavior.
 - `src/lib/client/api/auth.ts` owns reusable browser auth calls such as login and logout.
 - `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
@@ -255,6 +301,7 @@ Rules:
 - `conversation-session.ts` owns landing draft IDs, pending first-message replay, previous-conversation markers, and draft cleanup rules.
 
 Do not:
+
 - put raw `fetch` + `res.ok` + JSON parsing boilerplate into stores
 - open-code reusable browser auth, model, conversation-detail, evidence, title, steering, or knowledge fetches in pages/components when they can live in `src/lib/client/api/`
 - open-code settings/admin/analytics browser fetches in `settings/+page.svelte` when they can live in `src/lib/client/api/settings.ts`
@@ -269,6 +316,7 @@ Do not:
 - Sidebar-specific pieces live under [`src/lib/components/sidebar/`](./src/lib/components/sidebar/).
 
 Important component boundaries:
+
 - [`src/lib/components/chat/MessageInput.svelte`](./src/lib/components/chat/MessageInput.svelte)
   - composer UI, attachments, local draft emission
   - not cross-page orchestration
@@ -280,6 +328,7 @@ Important component boundaries:
   - top-level app shell interactions
 
 Do not:
+
 - bury durable business logic inside a presentational component because it is "already open"
 - duplicate chat state transitions in both page files and chat components
 - use unused legacy-looking components as templates without checking whether they are actually live
@@ -297,18 +346,21 @@ Do not:
   - code uses the mono stack defined in `tailwind.config.ts`
 
 Rules:
+
 - prefer semantic CSS custom properties over hardcoded hex values when a token already exists
 - keep spacing on the existing 4px-derived scale exposed through the spacing tokens
 - preserve the reading-first visual direction: quiet UI chrome, generous spacing, and message content as the focal surface
 - if you change color, spacing, radius, or typography primitives, update both `src/app.css` and the Tailwind mapping when needed
 
 Scroll ownership contract:
+
 - `body` should not become the scrolling surface
 - the authenticated app shell contains layout overflow
 - the sidebar list owns sidebar scrolling
 - [`src/lib/components/chat/MessageArea.svelte`](./src/lib/components/chat/MessageArea.svelte) owns conversation scrolling
 
 Do not:
+
 - reintroduce body scrolling to solve a local layout bug
 - hardcode one-off colors in components when the token system can express the change
 - change typography choices in chat surfaces casually; those are part of the product identity
@@ -356,6 +408,7 @@ npm run build
 ```
 
 Run targeted Playwright coverage when changing:
+
 - chat send/stream behavior
   - `npx playwright test tests/e2e/chat.spec.ts tests/e2e/streaming.spec.ts tests/e2e/conversation.spec.ts`
 - landing/chat draft handoff or composer behavior
@@ -366,6 +419,7 @@ Run targeted Playwright coverage when changing:
   - `npx playwright test tests/e2e/login.test.ts tests/e2e/search-modal.spec.ts`
 
 Run these too when relevant:
+
 - deployment/config/docs changes:
   - `npm run db:prepare`
   - verify [`src/routes/api/health/+server.ts`](./src/routes/api/health/+server.ts) still matches docs and deploy expectations
