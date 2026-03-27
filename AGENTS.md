@@ -100,6 +100,7 @@ Do not:
 
 Do:
 - put shared request parsing, attachment preflight, model normalization, stream framing, and finalization in `chat-turn/`
+- let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and `<preserve>` chunk handling
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 
