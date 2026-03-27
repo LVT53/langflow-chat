@@ -5,6 +5,7 @@ import { config as envConfig, type ModelConfig } from './env';
 import { db } from './db';
 import { adminConfig } from './db/schema';
 import type { ModelId } from '$lib/types';
+import { getSystemPrompt, normalizeSystemPromptReference } from './prompts';
 
 export const ADMIN_CONFIG_KEYS = [
   'MAX_MESSAGE_LENGTH',
@@ -101,7 +102,7 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
     config.model1.displayName = value;
   },
   MODEL_1_SYSTEM_PROMPT: (config, value) => {
-    config.model1.systemPrompt = value;
+    config.model1.systemPrompt = normalizeSystemPromptReference(value) ?? 'default';
   },
   MODEL_1_FLOW_ID: (config, value) => {
     config.model1.flowId = value;
@@ -116,7 +117,7 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
     config.model2.displayName = value;
   },
   MODEL_2_SYSTEM_PROMPT: (config, value) => {
-    config.model2.systemPrompt = value;
+    config.model2.systemPrompt = normalizeSystemPromptReference(value) ?? 'default';
   },
   MODEL_2_FLOW_ID: (config, value) => {
     config.model2.flowId = value;
@@ -201,6 +202,34 @@ export function getAvailableModels(
   }
 
   return models;
+}
+
+export function getResolvedAdminConfigValues(
+  config: RuntimeConfig = runtimeConfig
+): Record<AdminConfigKey, string> {
+  return {
+    MAX_MESSAGE_LENGTH: String(config.maxMessageLength),
+    MODEL_1_BASEURL: config.model1.baseUrl,
+    MODEL_1_NAME: config.model1.modelName,
+    MODEL_1_DISPLAY_NAME: config.model1.displayName,
+    MODEL_1_SYSTEM_PROMPT: getSystemPrompt(config.model1.systemPrompt),
+    MODEL_1_FLOW_ID: config.model1.flowId,
+    MODEL_2_BASEURL: config.model2.baseUrl,
+    MODEL_2_NAME: config.model2.modelName,
+    MODEL_2_DISPLAY_NAME: config.model2.displayName,
+    MODEL_2_SYSTEM_PROMPT: getSystemPrompt(config.model2.systemPrompt),
+    MODEL_2_FLOW_ID: config.model2.flowId,
+    MODEL_2_ENABLED: String(config.model2Enabled),
+    TITLE_GEN_URL: config.titleGenUrl,
+    TITLE_GEN_MODEL: config.titleGenModel,
+    CONTEXT_SUMMARIZER_URL: config.contextSummarizerUrl,
+    CONTEXT_SUMMARIZER_MODEL: config.contextSummarizerModel,
+    TRANSLATOR_URL: config.translatorUrl,
+    TRANSLATOR_MODEL: config.translatorModel,
+    TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
+    TRANSLATION_TEMPERATURE: String(config.translationTemperature),
+    HONCHO_ENABLED: String(config.honchoEnabled),
+  };
 }
 
 // Returns the env-var default value for each admin config key (for UI display)

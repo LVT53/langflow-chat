@@ -252,4 +252,23 @@ describe('translator service', () => {
 
 		expect(result).toBe('Az Egyesült Államok egy föderális köztársaság, amely 50 államból áll.');
 	});
+
+	it('strips leaked translation meta instructions that mention code fences', async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				choices: [
+					{
+						text:
+							'Magyar válasz.\n\n(Outside the ```\nblock, this explanatory text will also be translated automatically if needed.)'
+					}
+				]
+			})
+		} as Response);
+
+		const { translateEnglishToHungarian } = await import('./translator');
+		const result = await translateEnglishToHungarian('Answer.');
+
+		expect(result).toBe('Magyar válasz.');
+	});
 });

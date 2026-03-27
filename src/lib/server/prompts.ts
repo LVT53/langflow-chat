@@ -7,6 +7,17 @@ export interface SystemPromptConfig {
   prompt: string;
 }
 
+const CURRENT_TRANSLATION_DELIVERABLE_RULE =
+  'When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write only the requested deliverable in English and wrap that deliverable in <preserve>...</preserve> tags.';
+const TRANSLATION_META_SILENCE_RULE =
+  'Do not mention the translation layer, <preserve> tags, or how translation works in the answer itself.';
+const CURRENT_ENGLISH_EXCEPTION_RULE =
+  'Exception: if the user asks for content in English specifically, still wrap only the requested deliverable in <preserve>...</preserve> tags. Do not explain why.';
+const LEGACY_TRANSLATION_DELIVERABLE_RULE =
+  'When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write it entirely in English and wrap it in <preserve>...</preserve> tags. The translation system will handle the conversion. Your explanatory text OUTSIDE the tags will also be translated automatically.';
+const LEGACY_ENGLISH_EXCEPTION_RULE =
+  'Exception: if the user asks for content in English specifically, still use <preserve>...</preserve> tags so the translation system knows not to translate it.';
+
 // AlfyAI prompt for Nemotron Super (Model 1)
 export const ALFYAI_NEMOTRON_PROMPT = `You are **AlfyAI**, a personal assistant powered by **NVIDIA Nemotron Super 120B**.
 If asked who or what you are, say you are AlfyAI, the user's personal assistant, powered by Nemotron Super 120B.
@@ -57,9 +68,10 @@ For time-sensitive questions: use the current date from the date/time tool. Do n
 You ALWAYS respond in English. Every word you write must be in English.
 Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to. You are not a multilingual model — the system has a dedicated translation layer that handles all language conversion automatically. If you try to write in another language yourself, the output will be garbled.
 
-When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write it entirely in English and wrap it in <preserve>...</preserve> tags. The translation system will handle the conversion. Your explanatory text OUTSIDE the tags will also be translated automatically.
+${CURRENT_TRANSLATION_DELIVERABLE_RULE}
+${TRANSLATION_META_SILENCE_RULE}
 
-Exception: if the user asks for content in English specifically, still use <preserve>...</preserve> tags so the translation system knows not to translate it.
+${CURRENT_ENGLISH_EXCEPTION_RULE}
 
 When including code, commands, file paths, or technical identifiers, always wrap them in markdown backticks (\` for inline, \`\`\` for blocks).
 
@@ -91,6 +103,11 @@ export const HERMES_THINKING_PROMPT = `You are a deep thinking AI, you may use e
 // Simple default prompt
 export const DEFAULT_PROMPT = `You are a helpful AI assistant.`;
 
+const LEGACY_ALFYAI_NEMOTRON_PROMPT = ALFYAI_NEMOTRON_PROMPT.replace(
+  `${CURRENT_TRANSLATION_DELIVERABLE_RULE}\n${TRANSLATION_META_SILENCE_RULE}\n\n${CURRENT_ENGLISH_EXCEPTION_RULE}`,
+  `${LEGACY_TRANSLATION_DELIVERABLE_RULE}\n\n${LEGACY_ENGLISH_EXCEPTION_RULE}`
+);
+
 // Map of prompt names to prompts
 export const SYSTEM_PROMPTS: Record<string, string> = {
   'alfyai-nemotron': ALFYAI_NEMOTRON_PROMPT,
@@ -98,9 +115,31 @@ export const SYSTEM_PROMPTS: Record<string, string> = {
   'default': DEFAULT_PROMPT
 };
 
+const SYSTEM_PROMPT_TEXT_TO_KEY = new Map<string, string>([
+  [normalizePromptText(ALFYAI_NEMOTRON_PROMPT), 'alfyai-nemotron'],
+  [normalizePromptText(LEGACY_ALFYAI_NEMOTRON_PROMPT), 'alfyai-nemotron'],
+  [normalizePromptText(HERMES_THINKING_PROMPT), 'hermes-thinking'],
+  [normalizePromptText(DEFAULT_PROMPT), 'default']
+]);
+
+function normalizePromptText(value: string): string {
+  return value.replace(/\r\n/g, '\n').trim();
+}
+
+export function normalizeSystemPromptReference(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed in SYSTEM_PROMPTS) return trimmed;
+
+  return SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ?? trimmed;
+}
+
 // Get system prompt by name, or return the value directly if it is not a
 // known key (i.e. the admin stored the full prompt text rather than a key).
 export function getSystemPrompt(name: string | undefined): string {
-  if (!name) return DEFAULT_PROMPT;
-  return SYSTEM_PROMPTS[name] ?? name;
+  const normalized = normalizeSystemPromptReference(name);
+  if (!normalized) return DEFAULT_PROMPT;
+  return SYSTEM_PROMPTS[normalized] ?? normalized;
 }

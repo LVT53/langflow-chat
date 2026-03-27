@@ -130,6 +130,12 @@ const META_PREFIX_PATTERNS = [
 	/^\s*transzláció\s*:\s*/i,
 	/^\s*fordítás\s*:\s*/i
 ];
+const META_INSTRUCTION_BLOCK_PATTERNS = [
+	/\(\s*outside the\s+```[\s\S]*?translated automatically(?: if needed)?\.?\s*\)/gi,
+	/\(\s*outside the\s+<preserve>[\s\S]*?translated automatically(?: if needed)?\.?\s*\)/gi,
+	/\(?\s*your explanatory text outside the tags will also be translated automatically\.?\s*\)?/gi,
+	/\(?\s*the translation system will handle the conversion\.?\s*\)?/gi,
+];
 const SHORT_ENGLISH_ARTIFACT = /^[A-Za-z][A-Za-z' -]{0,24}[.!?]$/;
 
 type PlaceholderMap = Record<string, string>;
@@ -403,6 +409,9 @@ function sanitizeTranslationOutput(text: string): string {
 	let sanitized = text;
 
 	for (const pattern of META_PREFIX_PATTERNS) {
+		sanitized = sanitized.replace(pattern, '');
+	}
+	for (const pattern of META_INSTRUCTION_BLOCK_PATTERNS) {
 		sanitized = sanitized.replace(pattern, '');
 	}
 

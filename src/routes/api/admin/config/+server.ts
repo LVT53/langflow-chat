@@ -4,8 +4,14 @@ import { requireAdmin } from '$lib/server/auth/hooks';
 import { db } from '$lib/server/db';
 import { adminConfig } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
-import { getConfig, refreshConfig, getEnvDefaults, ADMIN_CONFIG_KEYS, type AdminConfigKey } from '$lib/server/config-store';
-import { getSystemPrompt } from '$lib/server/prompts';
+import {
+  getResolvedAdminConfigValues,
+  refreshConfig,
+  getEnvDefaults,
+  ADMIN_CONFIG_KEYS,
+  type AdminConfigKey
+} from '$lib/server/config-store';
+import { normalizeSystemPromptReference } from '$lib/server/prompts';
 
 export const GET: RequestHandler = async (event) => {
   requireAdmin(event);
@@ -13,29 +19,7 @@ export const GET: RequestHandler = async (event) => {
   const rows = await db.select().from(adminConfig);
   const overrides: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const envDefaults = getEnvDefaults();
-  const runtime = getConfig();
-
-  const currentValues: Record<string, string> = {
-    MAX_MESSAGE_LENGTH: String(runtime.maxMessageLength),
-    MODEL_1_BASEURL: runtime.model1.baseUrl,
-    MODEL_1_NAME: runtime.model1.modelName,
-    MODEL_1_DISPLAY_NAME: runtime.model1.displayName,
-    MODEL_1_SYSTEM_PROMPT: getSystemPrompt(runtime.model1.systemPrompt),
-    MODEL_1_FLOW_ID: runtime.model1.flowId,
-    MODEL_2_BASEURL: runtime.model2.baseUrl,
-    MODEL_2_NAME: runtime.model2.modelName,
-    MODEL_2_DISPLAY_NAME: runtime.model2.displayName,
-    MODEL_2_SYSTEM_PROMPT: getSystemPrompt(runtime.model2.systemPrompt),
-    MODEL_2_FLOW_ID: runtime.model2.flowId,
-    MODEL_2_ENABLED: String(runtime.model2Enabled),
-    TITLE_GEN_URL: runtime.titleGenUrl,
-    TITLE_GEN_MODEL: runtime.titleGenModel,
-    TRANSLATOR_URL: runtime.translatorUrl,
-    TRANSLATOR_MODEL: runtime.translatorModel,
-    TRANSLATION_MAX_TOKENS: String(runtime.translationMaxTokens),
-    TRANSLATION_TEMPERATURE: String(runtime.translationTemperature),
-    HONCHO_ENABLED: String(runtime.honchoEnabled),
-  };
+  const currentValues = getResolvedAdminConfigValues();
 
   return json({ keys: ADMIN_CONFIG_KEYS, currentValues, overrides, envDefaults });
 };
@@ -55,7 +39,11 @@ export const PUT: RequestHandler = async (event) => {
 
   for (const key of ADMIN_CONFIG_KEYS) {
     if (body[key] !== undefined) {
-      const value = String(body[key]);
+      const rawValue = String(body[key]);
+      const value =
+        key === 'MODEL_1_SYSTEM_PROMPT' || key === 'MODEL_2_SYSTEM_PROMPT'
+          ? (normalizeSystemPromptReference(rawValue) ?? '')
+          : rawValue;
       if (value.trim() === '') {
         // Empty value = revert to env default (delete DB override)
         await db.delete(adminConfig).where(eq(adminConfig.key, key));
