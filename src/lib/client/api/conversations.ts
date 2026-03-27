@@ -1,7 +1,30 @@
-import type { ConversationListItem } from '$lib/types';
+import type {
+	ChatMessage,
+	ContextDebugState,
+	ConversationDetail,
+	ConversationListItem,
+	TaskState,
+	TaskSteeringPayload,
+} from '$lib/types';
 import { requestJson } from './http';
 
 type ConversationSummary = Pick<ConversationListItem, 'id' | 'title' | 'updatedAt' | 'projectId'>;
+type MessageEvidenceSummary = ChatMessage['evidenceSummary'];
+
+export type MessageEvidenceResult =
+	| { status: 'pending' }
+	| { status: 'none' }
+	| { status: 'missing' }
+	| { status: 'ready'; evidenceSummary?: MessageEvidenceSummary };
+
+interface TitleGenerationResponse {
+	title: string | null;
+}
+
+interface TaskSteeringResponse {
+	taskState?: TaskState | null;
+	contextDebug?: ContextDebugState | null;
+}
 
 export async function fetchConversations(): Promise<ConversationListItem[]> {
 	const payload = await requestJson<{ conversations?: ConversationListItem[] }>(
@@ -10,6 +33,19 @@ export async function fetchConversations(): Promise<ConversationListItem[]> {
 		'Failed to load conversations'
 	);
 	return Array.isArray(payload.conversations) ? payload.conversations : [];
+}
+
+export async function fetchConversationDetail(
+	id: string,
+	options?: { view?: 'bootstrap' }
+): Promise<ConversationDetail> {
+	const viewParam = options?.view ? `?view=${encodeURIComponent(options.view)}` : '';
+
+	return requestJson<ConversationDetail>(
+		`/api/conversations/${id}${viewParam}`,
+		undefined,
+		'Failed to load conversation'
+	);
 }
 
 export async function createConversation(title?: string): Promise<ConversationSummary> {
@@ -73,5 +109,96 @@ export async function deleteConversation(id: string): Promise<void> {
 			method: 'DELETE',
 		},
 		'Failed to delete conversation'
+	);
+}
+
+export async function fetchMessageEvidence(
+	conversationId: string,
+	messageId: string,
+	signal?: AbortSignal
+): Promise<MessageEvidenceResult> {
+	const response = await fetch(
+		`/api/conversations/${conversationId}/messages/${messageId}/evidence`,
+		{ signal }
+	);
+
+	if (response.status === 202) {
+		return { status: 'pending' };
+	}
+
+	if (response.status === 204) {
+		return { status: 'none' };
+	}
+
+	if (response.status === 404) {
+		return { status: 'missing' };
+	}
+
+	if (!response.ok) {
+		throw new Error('Failed to load message evidence');
+	}
+
+	const payload = (await response.json()) as {
+		evidenceSummary?: MessageEvidenceSummary;
+	};
+
+	return {
+		status: 'ready',
+		evidenceSummary: payload.evidenceSummary,
+	};
+}
+
+export async function generateConversationTitle(
+	conversationId: string,
+	params: { userMessage: string; assistantResponse: string }
+): Promise<string | null> {
+	const payload = await requestJson<TitleGenerationResponse>(
+		`/api/conversations/${conversationId}/title`,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(params),
+		},
+		'Failed to generate conversation title'
+	);
+
+	return typeof payload.title === 'string' && payload.title.trim().length > 0 ? payload.title : null;
+}
+
+export async function deleteConversationMessages(
+	conversationId: string,
+	messageIds: string[]
+): Promise<number> {
+	const payload = await requestJson<{ deleted?: number }>(
+		`/api/conversations/${conversationId}/messages`,
+		{
+			method: 'DELETE',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ messageIds }),
+		},
+		'Failed to delete messages'
+	);
+
+	return typeof payload.deleted === 'number' ? payload.deleted : 0;
+}
+
+export async function applyTaskSteering(
+	conversationId: string,
+	payload: TaskSteeringPayload
+): Promise<TaskSteeringResponse> {
+	return requestJson<TaskSteeringResponse>(
+		`/api/conversations/${conversationId}/task-steering`,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(payload),
+		},
+		'Failed to update task steering'
 	);
 }

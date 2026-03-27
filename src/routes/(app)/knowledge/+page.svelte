@@ -1,5 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import {
+		deleteKnowledgeArtifact,
+		fetchKnowledgeLibrary,
+		fetchKnowledgeMemory,
+		submitKnowledgeBulkAction,
+		submitKnowledgeMemoryAction,
+		type KnowledgeBulkAction,
+		type KnowledgeMemoryActionPayload,
+	} from '$lib/client/api/knowledge';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
 	import type {
@@ -138,12 +147,8 @@
 		memoryLoadError = '';
 
 		try {
-			const response = await fetch('/api/knowledge/memory');
-			const result = await response.json().catch(() => ({}));
-			if (!response.ok) {
-				throw new Error(result.error ?? 'Failed to load memory profile.');
-			}
-			applyMemoryPayload(result as KnowledgeMemoryPayload);
+			const result = await fetchKnowledgeMemory();
+			applyMemoryPayload(result);
 		} catch (error) {
 			memoryLoadError =
 				error instanceof Error ? error.message : 'Failed to load memory profile.';
@@ -317,45 +322,20 @@
 	}
 
 	async function refreshKnowledgeLibrary() {
-		const response = await fetch('/api/knowledge');
-		const result = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			throw new Error(result.error ?? 'Failed to refresh the Knowledge Base.');
-		}
+		const result = await fetchKnowledgeLibrary();
 		documents = result.documents ?? [];
 		results = result.results ?? [];
 		workflows = result.workflows ?? [];
 	}
 
 	async function submitMemoryAction(
-		payload:
-			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
-			| { action: 'forget_all_persona_memory' }
-			| { action: 'forget_task_memory'; taskId: string }
-			| { action: 'forget_focus_continuity'; continuityId: string }
-			| { action: 'forget_project_memory'; projectId: string }
+		payload: KnowledgeMemoryActionPayload
 	): Promise<KnowledgeMemoryPayload> {
-		const response = await fetch('/api/knowledge/memory/actions', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(payload),
-		});
-		const result = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			throw new Error(result.error ?? 'Failed to update memory profile.');
-		}
-		return result as KnowledgeMemoryPayload;
+		return submitKnowledgeMemoryAction(payload);
 	}
 
 	async function runMemoryAction(
-		payload:
-			| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
-			| { action: 'forget_all_persona_memory' }
-			| { action: 'forget_task_memory'; taskId: string }
-			| { action: 'forget_focus_continuity'; continuityId: string }
-			| { action: 'forget_project_memory'; projectId: string },
+		payload: KnowledgeMemoryActionPayload,
 		key: string,
 		confirmationMessage?: string
 	) {
@@ -498,7 +478,7 @@
 	}
 
 	async function runKnowledgeAction(
-		action: 'forget_all_documents' | 'forget_all_results' | 'forget_all_workflows' | 'forget_everything',
+		action: KnowledgeBulkAction,
 		key: string,
 		confirmationMessage: string
 	) {
@@ -509,15 +489,8 @@
 		pendingKnowledgeActionKey = key;
 
 		try {
-			const response = await fetch('/api/knowledge/actions', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ action }),
-			});
-			const result = await response.json().catch(() => ({}));
-			if (!response.ok || result.success === false) {
+			const result = await submitKnowledgeBulkAction(action);
+			if (result.success === false) {
 				throw new Error(result.error ?? result.message ?? 'Failed to update the Knowledge Base.');
 			}
 
@@ -545,14 +518,9 @@
 		deletingArtifactIds = new Set([...deletingArtifactIds, id]);
 
 		try {
-			const response = await fetch(`/api/knowledge/${id}`, {
-				method: 'DELETE',
-			});
-			const payload = await response.json().catch(() => ({}));
-			if (!response.ok || payload.success === false) {
-				throw new Error(
-					payload.message ?? payload.error ?? 'Failed to remove artifact.'
-				);
+			const payload = await deleteKnowledgeArtifact(id);
+			if (payload.success === false) {
+				throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
 			}
 			await refreshKnowledgeLibrary();
 		} catch (error) {

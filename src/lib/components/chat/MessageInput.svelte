@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
 	import { currentConversationId } from '$lib/stores/ui';
 	import ContextUsageRing from './ContextUsageRing.svelte';
 	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
@@ -8,7 +9,6 @@
 		ArtifactSummary,
 		ContextDebugState,
 		ConversationContextStatus,
-		KnowledgeUploadResponse,
 		PendingAttachment,
 		TaskState,
 		TaskSteeringPayload,
@@ -272,18 +272,7 @@
 				throw new Error('Unable to prepare a conversation for attachments.');
 			}
 			for (const file of Array.from(files)) {
-				const formData = new FormData();
-				formData.append('file', file);
-				formData.append('conversationId', targetConversationId);
-				const response = await fetch('/api/knowledge/upload', {
-					method: 'POST',
-					body: formData
-				});
-				if (!response.ok) {
-					const payload = await response.json().catch(() => ({}));
-					throw new Error(payload.error ?? 'Failed to upload attachment.');
-				}
-				const payload = (await response.json()) as Partial<KnowledgeUploadResponse>;
+				const payload = await uploadKnowledgeAttachment(file, targetConversationId);
 				if (payload?.artifact) {
 					const next = new Map(
 						pendingAttachments.map((attachment) => [attachment.artifact.id, attachment])
@@ -297,7 +286,7 @@
 							typeof payload.readinessError === 'string' && payload.readinessError.trim()
 								? payload.readinessError
 								: null,
-							});
+					});
 					pendingAttachments = Array.from(next.values());
 					draftEmissionVersion += 1;
 					void emitDraftChange();

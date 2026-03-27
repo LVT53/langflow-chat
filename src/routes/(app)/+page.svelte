@@ -9,13 +9,13 @@
 		setLandingDraftConversationId,
 		storePendingConversationMessage,
 	} from '$lib/client/conversation-session';
+	import { fetchConversationDetail } from '$lib/client/api/conversations';
 	import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import { onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
-		ConversationDetail,
 		ConversationDraft,
 		PendingAttachment,
 	} from '$lib/types';
@@ -109,13 +109,7 @@
 
 	async function loadPreparedDraft(conversationId: string) {
 		try {
-			const response = await fetch(`/api/conversations/${conversationId}`);
-			if (!response.ok) {
-				preparedConversationId = null;
-				setLandingDraftConversationId(null);
-				return;
-			}
-			const payload = (await response.json()) as ConversationDetail;
+			const payload = await fetchConversationDetail(conversationId);
 			conversationDraft = payload.draft ?? null;
 		} catch {
 			preparedConversationId = null;

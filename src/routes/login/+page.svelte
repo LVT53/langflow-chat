@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { login } from '$lib/client/api/auth';
 
   let email = '';
   let password = '';
@@ -19,23 +20,12 @@
     loading = true;
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      });
-
-      if (response.ok) {
-        // Success, redirect to the protected area
-        await goto('/');
-      } else {
-        const data = await response.json().catch(() => ({}));
-        error = data.error || 'Login failed. Please check your credentials.';
-      }
+      await login(email, password);
+      await goto('/');
     } catch (err) {
-      error = 'An unexpected error occurred. Please try again later.';
+      error = err instanceof Error
+        ? err.message
+        : 'An unexpected error occurred. Please try again later.';
     } finally {
       loading = false;
     }

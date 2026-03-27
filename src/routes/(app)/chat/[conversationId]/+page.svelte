@@ -10,6 +10,13 @@
 		createDraftPersistence,
 		hasMeaningfulDraft,
 	} from '$lib/client/conversation-session';
+	import {
+		applyTaskSteering,
+		deleteConversationMessages,
+		fetchConversationDetail,
+		fetchMessageEvidence,
+		generateConversationTitle,
+	} from '$lib/client/api/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
@@ -19,7 +26,6 @@
 	import type {
 		ArtifactSummary,
 		ChatMessage,
-		ConversationDetail,
 		ConversationDraft,
 		ContextDebugState,
 		ConversationContextStatus,
@@ -237,10 +243,7 @@
 		hydratingConversation = true;
 
 		try {
-			const response = await fetch(`/api/conversations/${conversationId}`);
-			if (!response.ok) return;
-
-			const payload = (await response.json()) as ConversationDetail;
+			const payload = await fetchConversationDetail(conversationId);
 			attachedArtifacts = payload.attachedArtifacts ?? attachedArtifacts;
 			activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
 			contextStatus = payload.contextStatus ?? contextStatus;
@@ -274,17 +277,18 @@
 			if (controller.signal.aborted) return;
 
 			try {
-				const response = await fetch(
-					`/api/conversations/${data.conversation.id}/messages/${messageId}/evidence`,
-					{ signal: controller.signal }
+				const result = await fetchMessageEvidence(
+					data.conversation.id,
+					messageId,
+					controller.signal
 				);
 
-				if (response.status === 202) {
+				if (result.status === 'pending') {
 					await new Promise((resolve) => setTimeout(resolve, attempt < 4 ? 250 : 500));
 					continue;
 				}
 
-				if (response.status === 204 || response.status === 404) {
+				if (result.status === 'none' || result.status === 'missing') {
 					patchMessage(messageId, (message) => ({
 						...message,
 						evidencePending: false,
@@ -292,16 +296,9 @@
 					return;
 				}
 
-				if (!response.ok) {
-					break;
-				}
-
-				const payload = (await response.json()) as {
-					evidenceSummary?: ChatMessage['evidenceSummary'];
-				};
 				patchMessage(messageId, (message) => ({
 					...message,
-					evidenceSummary: payload.evidenceSummary,
+					evidenceSummary: result.evidenceSummary,
 					evidencePending: false,
 				}));
 				return;
@@ -505,25 +502,18 @@
 					if (!titleGenerationTriggered && data.conversation.title === 'New Conversation') {
 						titleGenerationTriggered = true;
 						const conversationIdForTitle = data.conversation.id;
-						fetch(`/api/conversations/${conversationIdForTitle}/title`, {
-							method: 'POST',
-							headers: {
-								'Content-Type': 'application/json'
-							},
-							body: JSON.stringify({
-								userMessage: lastUserMessage,
-								assistantResponse: lastAssistantResponse
-							})
-						}).then(async (res) => {
-							if (res.ok) {
-								const result = await res.json();
-								if (typeof result.title === 'string' && result.title.trim().length > 0) {
-									updateConversationTitleLocal(conversationIdForTitle, result.title);
+						generateConversationTitle(conversationIdForTitle, {
+							userMessage: lastUserMessage,
+							assistantResponse: lastAssistantResponse,
+						})
+							.then((title) => {
+								if (title) {
+									updateConversationTitleLocal(conversationIdForTitle, title);
 								}
-							}
-						}).catch(() => {
-							// Ignore errors, title remains "New conversation"
-						});
+							})
+							.catch(() => {
+								// Ignore errors, title remains "New conversation"
+							});
 					}
 				},
 				onError(err) {
@@ -575,11 +565,7 @@
 		messages.update((m) => m.slice(0, assistantIdx));
 
 		// Delete from DB (fire-and-forget, non-critical)
-		fetch(`/api/conversations/${data.conversation.id}/messages`, {
-			method: 'DELETE',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ messageIds: idsToDelete })
-		}).catch(() => {});
+		void deleteConversationMessages(data.conversation.id, idsToDelete).catch(() => {});
 
 		sendError = null;
 		handleSend(
@@ -602,11 +588,7 @@
 		messages.update((m) => m.slice(0, editIdx));
 
 		// Delete from DB (fire-and-forget, non-critical)
-		fetch(`/api/conversations/${data.conversation.id}/messages`, {
-			method: 'DELETE',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ messageIds: idsToDelete })
-		}).catch(() => {});
+		void deleteConversationMessages(data.conversation.id, idsToDelete).catch(() => {});
 
 		sendError = null;
 		handleSend({ message: newText, attachmentIds: [], attachments: [] });
@@ -620,19 +602,13 @@
 	}
 
 	async function handleSteering(payload: TaskSteeringPayload) {
-		const response = await fetch(`/api/conversations/${data.conversation.id}/task-steering`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload),
-		});
-
-		if (!response.ok) {
+		try {
+			const result = await applyTaskSteering(data.conversation.id, payload);
+			taskState = result.taskState ?? taskState;
+			contextDebug = result.contextDebug ?? contextDebug;
+		} catch {
 			return;
 		}
-
-		const result = await response.json();
-		taskState = result.taskState ?? taskState;
-		contextDebug = result.contextDebug ?? contextDebug;
 	}
 
 	function openEvidenceManager() {

@@ -26,7 +26,7 @@ export async function requestJson<T>(
 	init: RequestInit | undefined,
 	errorMessage: string
 ): Promise<T> {
-	const response = await fetch(input, init);
+	const response = init === undefined ? await fetch(input) : await fetch(input, init);
 	if (!response.ok) {
 		throw new Error(await readErrorMessage(response, errorMessage));
 	}

@@ -224,8 +224,11 @@ Do not:
 ### Browser API, Stores, And Session Handoff
 
 - Shared browser API:
+  - [`src/lib/client/api/auth.ts`](./src/lib/client/api/auth.ts)
   - [`src/lib/client/api/http.ts`](./src/lib/client/api/http.ts)
   - [`src/lib/client/api/conversations.ts`](./src/lib/client/api/conversations.ts)
+  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts)
+  - [`src/lib/client/api/models.ts`](./src/lib/client/api/models.ts)
   - [`src/lib/client/api/projects.ts`](./src/lib/client/api/projects.ts)
   - [`src/lib/client/api/settings.ts`](./src/lib/client/api/settings.ts)
 - Stores:
@@ -240,12 +243,17 @@ Do not:
 
 Rules:
 - `client/api/` owns reusable request/response parsing and shared HTTP behavior.
+- `src/lib/client/api/auth.ts` owns reusable browser auth calls such as login and logout.
+- `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
+- `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, and memory browser calls.
+- `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
 - stores own browser state, optimistic updates, and UI-facing transitions.
 - `conversation-session.ts` owns landing draft IDs, pending first-message replay, previous-conversation markers, and draft cleanup rules.
 
 Do not:
 - put raw `fetch` + `res.ok` + JSON parsing boilerplate into stores
+- open-code reusable browser auth, model, conversation-detail, evidence, title, steering, or knowledge fetches in pages/components when they can live in `src/lib/client/api/`
 - open-code settings/admin/analytics browser fetches in `settings/+page.svelte` when they can live in `src/lib/client/api/settings.ts`
 - invent new `sessionStorage` keys in components or pages when the conversation-session helper should own them
 - make stores mutate unrelated domains because it feels convenient

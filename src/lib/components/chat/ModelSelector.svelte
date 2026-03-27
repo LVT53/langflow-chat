@@ -1,17 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
 	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
-
-	interface Model {
-		id: ModelId;
-		displayName: string;
-	}
 
 	let { onSelect }: {
 		onSelect?: (payload: { modelId: ModelId }) => void;
 	} = $props();
 
-	let models = $state<Model[]>([]);
+	let models = $state<AvailableModel[]>([]);
 	let isOpen = $state(false);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
@@ -19,12 +15,7 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch('/api/models');
-			if (!response.ok) {
-				throw new Error('Failed to fetch models');
-			}
-			const data = await response.json();
-			models = data.models;
+			models = await fetchAvailableModels();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load models';
 			// Fallback to default models if API fails
