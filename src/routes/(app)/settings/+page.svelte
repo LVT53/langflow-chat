@@ -1,8 +1,5 @@
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
-	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
 	import {
 		deleteAccount,
@@ -14,32 +11,41 @@
 		updateProfile,
 		updateUserPreferences,
 	} from '$lib/client/api/settings';
-	import { setThemeAndSync } from '$lib/stores/theme';
+	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
-	import { avatarState, setAvatarUploaded, setAvatarRemoved } from '$lib/stores/avatar';
+	import { setThemeAndSync } from '$lib/stores/theme';
+	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
+	import DeleteAccountModal from './_components/DeleteAccountModal.svelte';
+	import SettingsAdministrationTab from './_components/SettingsAdministrationTab.svelte';
+	import SettingsAnalyticsTab from './_components/SettingsAnalyticsTab.svelte';
+	import SettingsProfileTab from './_components/SettingsProfileTab.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 	const getData = () => data;
+
+	type Tab = 'profile' | 'analytics' | 'administration';
+
 	const initialUserSettings = getData().userSettings;
 	const initialPreferences = initialUserSettings.preferences;
 	const initialCurrentConfigValues = (getData() as any).currentConfigValues as
 		| Record<string, string>
 		| undefined;
-
-	// --- Tabs ---
-	type Tab = 'profile' | 'analytics' | 'administration';
-	let activeTab = $state<Tab>('profile');
 	const isAdmin = initialUserSettings.role === 'admin';
+	const modelNames = (getData() as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
+	const availableModels = ((getData() as any).availableModels ?? [
+		{ id: 'model1', displayName: modelNames.model1 },
+		{ id: 'model2', displayName: modelNames.model2 },
+	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
 
-	// --- Profile state ---
+	let activeTab = $state<Tab>('profile');
+
 	let name = $state(initialUserSettings.name ?? '');
 	let email = $state(initialUserSettings.email);
 	let profileSaving = $state(false);
 	let profileMessage = $state('');
 	let profileError = $state('');
 
-	// --- Password state ---
 	let currentPassword = $state('');
 	let newPassword = $state('');
 	let confirmPassword = $state('');
@@ -50,34 +56,24 @@
 	let showNewPw = $state(false);
 	let showConfirmPw = $state(false);
 
-	// --- Preferences state ---
 	let selectedModel = $state(initialPreferences.preferredModel);
 	let translationEnabled = $state(initialPreferences.translationEnabled);
 	let selectedTheme = $state(initialPreferences.theme);
 	let selectedAvatar = $state(initialPreferences.avatarId);
 
-	// Model display names
-	const modelNames = (getData() as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
-	const availableModels = ((getData() as any).availableModels ?? [
-		{ id: 'model1', displayName: modelNames.model1 },
-		{ id: 'model2', displayName: modelNames.model2 },
-	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
-	const adminModelNames = isAdmin ? ((getData() as any).modelNames ?? modelNames) : modelNames;
-
-	// --- Delete account modal ---
 	let showDeleteModal = $state(false);
 	let deletePassword = $state('');
 	let deleteError = $state('');
 	let deleteLoading = $state(false);
 	let showDeletePw = $state(false);
 
-	// --- Admin config state ---
-	let adminConfig = $state<Record<string, string>>(initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {});
+	let adminConfig = $state<Record<string, string>>(
+		initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {}
+	);
 	let adminSaving = $state(false);
 	let adminMessage = $state('');
 	let adminError = $state('');
 
-	// --- Honcho memory state ---
 	let honchoHealth = $state<{
 		enabled: boolean;
 		connected: boolean;
@@ -85,25 +81,24 @@
 	} | null>(null);
 	let honchoLoading = $state(false);
 
+	let analyticsData = $state<any>(null);
+	let analyticsLoading = $state(false);
+	let analyticsError = $state('');
+
+	let showAvatarPicker = $state(false);
+	let showPictureEditor = $state(false);
+	let removingPhoto = $state(false);
+
 	async function checkHonchoHealth() {
 		honchoLoading = true;
 		try {
 			honchoHealth = await fetchHonchoHealth();
 		} catch {
 			honchoHealth = { enabled: false, connected: false, workspace: null };
+		} finally {
+			honchoLoading = false;
 		}
-		honchoLoading = false;
 	}
-
-	// --- Analytics state ---
-	let analyticsData = $state<any>(null);
-	let analyticsLoading = $state(false);
-	let analyticsError = $state('');
-
-	// --- Avatar / profile picture state ---
-	let showAvatarPicker = $state(false);
-	let showPictureEditor = $state(false);
-	let removingPhoto = $state(false);
 
 	async function removePhoto() {
 		removingPhoto = true;
@@ -117,20 +112,6 @@
 		}
 	}
 
-	// --- Chart state ---
-	let modelChart: any = null;
-	let userChart: any = null;
-
-	const CHART_COLORS = [
-		'rgba(194, 166, 106, 0.88)',
-		'rgba(107, 149, 194, 0.88)',
-		'rgba(107, 194, 149, 0.88)',
-		'rgba(194, 107, 107, 0.88)',
-		'rgba(149, 107, 194, 0.88)',
-		'rgba(194, 172, 107, 0.88)',
-	];
-
-	// --- Helpers ---
 	async function saveProfile() {
 		profileSaving = true;
 		profileMessage = '';
@@ -138,8 +119,8 @@
 		try {
 			await updateProfile({ name: name.trim() || null, email });
 			profileMessage = 'Profile updated.';
-		} catch (e: any) {
-			profileError = e.message;
+		} catch (error: any) {
+			profileError = error.message;
 		} finally {
 			profileSaving = false;
 		}
@@ -163,16 +144,16 @@
 			currentPassword = '';
 			newPassword = '';
 			confirmPassword = '';
-		} catch (e: any) {
-			passwordError = e.message;
+		} catch (error: any) {
+			passwordError = error.message;
 		} finally {
 			passwordSaving = false;
 		}
 	}
 
-	async function selectAvatar(id: number) {
-		selectedAvatar = id;
-		await updateUserPreferences({ avatarId: id }).catch(() => {});
+	async function selectAvatar(avatarId: number) {
+		selectedAvatar = avatarId;
+		await updateUserPreferences({ avatarId }).catch(() => {});
 	}
 
 	async function changeModel(model: 'model1' | 'model2') {
@@ -185,9 +166,16 @@
 		await setTranslationAndSync(enabled);
 	}
 
-	async function changeTheme(t: 'system' | 'light' | 'dark') {
-		selectedTheme = t;
-		await setThemeAndSync(t);
+	async function changeTheme(theme: 'system' | 'light' | 'dark') {
+		selectedTheme = theme;
+		await setThemeAndSync(theme);
+	}
+
+	function closeDeleteModal() {
+		showDeleteModal = false;
+		deletePassword = '';
+		deleteError = '';
+		showDeletePw = false;
 	}
 
 	async function confirmDeleteAccount() {
@@ -196,8 +184,8 @@
 		try {
 			await deleteAccount(deletePassword);
 			goto('/login');
-		} catch (e: any) {
-			deleteError = e.message;
+		} catch (error: any) {
+			deleteError = error.message;
 		} finally {
 			deleteLoading = false;
 		}
@@ -210,125 +198,10 @@
 		try {
 			await updateAdminConfig(adminConfig);
 			adminMessage = 'Configuration saved.';
-		} catch (e: any) {
-			adminError = e.message;
+		} catch (error: any) {
+			adminError = error.message;
 		} finally {
 			adminSaving = false;
-		}
-	}
-
-	function destroyCharts() {
-		modelChart?.destroy();
-		modelChart = null;
-		userChart?.destroy();
-		userChart = null;
-	}
-
-	// Map internal model key → display name
-	function modelDisplayName(key: string): string {
-		if (key === 'model1') return modelNames.model1;
-		if (key === 'model2') return modelNames.model2;
-		return key;
-	}
-
-	async function initCharts() {
-		if (!analyticsData) return;
-		await tick();
-		destroyCharts();
-
-		// Dynamically import Chart.js only in the browser to avoid SSR issues
-		// chart.js/auto auto-registers all controllers, scales, and plugins
-		const { Chart } = await import('chart.js/auto');
-
-		// Use getElementById to avoid bind:this timing issues (binding may lag behind DOM insertion)
-		const modelChartCanvas = document.getElementById('model-chart-canvas') as HTMLCanvasElement | null;
-		const userChartCanvas = document.getElementById('user-chart-canvas') as HTMLCanvasElement | null;
-
-		// Defensively destroy any orphaned Chart.js instances (e.g. from HMR or eval tests)
-		if (modelChartCanvas) Chart.getChart(modelChartCanvas)?.destroy();
-		if (userChartCanvas) Chart.getChart(userChartCanvas)?.destroy();
-
-		// Personal model doughnut
-		if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
-			const byModel = analyticsData.personal.byModel;
-			modelChart = new Chart(modelChartCanvas, {
-				type: 'doughnut',
-				data: {
-					labels: byModel.map((r: any) => modelDisplayName(r.model)),
-					datasets: [{
-						data: byModel.map((r: any) => Number(r.msgCount)),
-						backgroundColor: CHART_COLORS.slice(0, byModel.length),
-						borderWidth: 2,
-						borderColor: 'transparent',
-						hoverBorderColor: 'rgba(255,255,255,0.6)',
-						hoverOffset: 10,
-					}],
-				},
-				options: {
-					cutout: '66%',
-					maintainAspectRatio: false,
-					animation: { animateRotate: true, duration: 700, easing: 'easeInOutQuart' },
-					plugins: {
-						legend: {
-							position: 'bottom',
-							labels: { padding: 18, font: { size: 12 }, color: 'rgba(128,128,128,0.9)' },
-						},
-						tooltip: {
-							callbacks: {
-								label: (ctx) => ` ${ctx.label}: ${ctx.raw} messages`,
-							},
-						},
-					},
-				},
-			});
-		}
-
-		// Admin: top users horizontal bar chart
-		if (isAdmin && userChartCanvas && analyticsData.perUser?.length > 0) {
-			const top10 = [...analyticsData.perUser]
-				.sort((a: any, b: any) => b.messageCount - a.messageCount)
-				.slice(0, 10);
-			userChart = new Chart(userChartCanvas, {
-				type: 'bar',
-				data: {
-					labels: top10.map((r: any) => r.displayName || r.email),
-					datasets: [
-						{
-							label: 'Messages',
-							data: top10.map((r: any) => r.messageCount),
-							backgroundColor: 'rgba(194, 166, 106, 0.8)',
-							borderRadius: 4,
-						},
-						{
-							label: 'Conversations',
-							data: top10.map((r: any) => r.conversationCount),
-							backgroundColor: 'rgba(107, 149, 194, 0.75)',
-							borderRadius: 4,
-						},
-					],
-				},
-				options: {
-					indexAxis: 'y',
-					maintainAspectRatio: false,
-					animation: { duration: 500 },
-					plugins: {
-						legend: {
-							position: 'top',
-							labels: { font: { size: 12 }, color: 'rgba(128,128,128,0.9)', padding: 16 },
-						},
-					},
-					scales: {
-						x: {
-							grid: { color: 'rgba(128,128,128,0.1)' },
-							ticks: { color: 'rgba(128,128,128,0.8)', font: { size: 11 } },
-						},
-						y: {
-							grid: { display: false },
-							ticks: { color: 'rgba(128,128,128,0.9)', font: { size: 12 } },
-						},
-					},
-				},
-			});
 		}
 	}
 
@@ -337,75 +210,25 @@
 		analyticsError = '';
 		try {
 			analyticsData = await fetchAnalytics(import.meta.env.DEV);
-			// Set loading false first so the canvas is rendered into the DOM before initCharts runs
-			analyticsLoading = false;
-			await initCharts();
-		} catch (e: any) {
-			analyticsError = e.message;
+		} catch (error: any) {
+			analyticsError = error.message;
+		} finally {
 			analyticsLoading = false;
 		}
 	}
 
 	async function handleTabChange(tab: Tab) {
 		activeTab = tab;
-		if (tab === 'analytics') {
-			if (!analyticsData && !analyticsLoading) {
-				await loadAnalytics();
-			} else if (analyticsData) {
-				await initCharts();
-			}
-		} else {
-			destroyCharts();
+		if (tab === 'analytics' && !analyticsData && !analyticsLoading) {
+			await loadAnalytics();
 		}
 	}
-
-	onDestroy(() => {
-		destroyCharts();
-	});
-
-	function formatMs(ms: number): string {
-		if (!ms) return '—';
-		return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
-	}
-
-	function formatNum(n: number): string {
-		if (!n) return '0';
-		return n.toLocaleString();
-	}
-
-	// Admin config field labels
-	const CONFIG_LABELS: Record<string, string> = {
-		MAX_MESSAGE_LENGTH: 'Max Message Length',
-		MODEL_1_BASEURL: 'Model 1 Base URL',
-		MODEL_1_NAME: 'Model 1 Name',
-		MODEL_1_DISPLAY_NAME: 'Model 1 Display Name',
-		MODEL_1_SYSTEM_PROMPT: 'Model 1 System Prompt',
-		MODEL_1_FLOW_ID: 'Model 1 Flow ID',
-		MODEL_2_BASEURL: 'Model 2 Base URL',
-		MODEL_2_NAME: 'Model 2 Name',
-		MODEL_2_DISPLAY_NAME: 'Model 2 Display Name',
-		MODEL_2_SYSTEM_PROMPT: 'Model 2 System Prompt',
-		MODEL_2_FLOW_ID: 'Model 2 Flow ID',
-		MODEL_2_ENABLED: 'Enable Model 2',
-		TITLE_GEN_URL: 'Title Generator URL',
-		TITLE_GEN_MODEL: 'Title Generator Model',
-		TRANSLATOR_URL: 'Translator URL',
-		TRANSLATOR_MODEL: 'Translator Model',
-		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
-		TRANSLATION_TEMPERATURE: 'Translation Temperature',
-	};
-
-	const TEXTAREA_KEYS = new Set(['MODEL_1_SYSTEM_PROMPT', 'MODEL_2_SYSTEM_PROMPT']);
-	const NUMBER_KEYS = new Set(['MAX_MESSAGE_LENGTH', 'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TEMPERATURE']);
 </script>
 
 <div class="flex h-full w-full flex-1 flex-col overflow-y-auto">
 	<div class="mx-auto w-full max-w-[672px] px-4 py-8">
-
-		<!-- Page header -->
 		<h1 class="mb-6 text-2xl font-semibold text-text-primary">Settings</h1>
 
-		<!-- Tab bar -->
 		<div class="mb-6 flex gap-1 rounded-lg border border-border bg-surface-overlay p-1">
 			<button
 				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
@@ -432,508 +255,75 @@
 			{/if}
 		</div>
 
-		<!-- ===================== PROFILE TAB ===================== -->
 		{#if activeTab === 'profile'}
-			<!-- Avatar picker -->
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Avatar</h2>
-				<div class="flex items-center gap-4">
-					<AvatarCircle
-						userId={data.userSettings.id}
-						name={data.userSettings.name ?? data.userSettings.email}
-						avatarId={selectedAvatar}
-						profilePicture={$avatarState.profilePicture}
-						cacheBuster={$avatarState.cacheBuster}
-						size={48}
-					/>
-					<div class="flex flex-wrap items-center gap-2">
-						<button
-							class="btn-secondary text-sm"
-							onclick={() => (showPictureEditor = true)}
-						>
-							Upload Photo
-						</button>
-						<button
-							class="btn-secondary text-sm"
-							onclick={() => (showAvatarPicker = !showAvatarPicker)}
-						>
-							{showAvatarPicker ? 'Done' : 'Change Color'}
-						</button>
-						{#if $avatarState.profilePicture}
-							<button
-								class="btn-ghost text-sm"
-								style="color: var(--color-danger);"
-								onclick={removePhoto}
-								disabled={removingPhoto}
-							>
-								{removingPhoto ? 'Removing…' : 'Remove Photo'}
-							</button>
-						{/if}
-					</div>
-				</div>
-				{#if showAvatarPicker}
-					<div class="mt-4 flex flex-wrap gap-3">
-						{#each Array.from({ length: AVATAR_COUNT }, (_, i) => i) as avatarIndex}
-							<button
-								class="avatar-swatch rounded-full focus:outline-none"
-								class:avatar-selected={selectedAvatar === avatarIndex}
-								style="background: {AVATAR_COLORS[avatarIndex]}; width: 44px; height: 44px;"
-								onclick={() => selectAvatar(avatarIndex)}
-								aria-label="Avatar {avatarIndex + 1}"
-								title="Avatar {avatarIndex + 1}"
-							>
-								<span class="block text-lg font-semibold text-white leading-none text-center">
-									{data.userSettings.name ? data.userSettings.name[0].toUpperCase() : (data.userSettings.email[0] ?? '?').toUpperCase()}
-								</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</section>
-
-			<!-- Profile info -->
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Profile Information</h2>
-				<div class="flex flex-col gap-3">
-					<div>
-						<label class="settings-label" for="name">Display Name</label>
-						<input
-							id="name"
-							type="text"
-							class="settings-input"
-							bind:value={name}
-							placeholder="Your name"
-						/>
-					</div>
-					<div>
-						<label class="settings-label" for="email">Email Address</label>
-						<input
-							id="email"
-							type="email"
-							class="settings-input"
-							bind:value={email}
-							placeholder="email@example.com"
-						/>
-					</div>
-					{#if profileMessage}
-						<p class="text-sm text-success">{profileMessage}</p>
-					{/if}
-					{#if profileError}
-						<p class="text-sm text-danger">{profileError}</p>
-					{/if}
-					<button
-						class="btn-primary self-start"
-						onclick={saveProfile}
-						disabled={profileSaving}
-					>
-						{profileSaving ? 'Saving…' : 'Save'}
-					</button>
-				</div>
-			</section>
-
-			<!-- Password -->
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Change Password</h2>
-				<div class="flex flex-col gap-3">
-					<div>
-						<div class="flex items-center justify-between mb-1">
-							<label class="settings-label !mb-0" for="current-pw">Current Password</label>
-							<button type="button" class="pw-toggle" onclick={() => showCurrentPw = !showCurrentPw} tabindex="-1" aria-label={showCurrentPw ? 'Hide password' : 'Show password'}>
-								{#if showCurrentPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
-							</button>
-						</div>
-						<input id="current-pw" type={showCurrentPw ? 'text' : 'password'} class="settings-input" bind:value={currentPassword} autocomplete="current-password" />
-					</div>
-					<div>
-						<div class="flex items-center justify-between mb-1">
-							<label class="settings-label !mb-0" for="new-pw">New Password</label>
-							<button type="button" class="pw-toggle" onclick={() => showNewPw = !showNewPw} tabindex="-1" aria-label={showNewPw ? 'Hide password' : 'Show password'}>
-								{#if showNewPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
-							</button>
-						</div>
-						<input id="new-pw" type={showNewPw ? 'text' : 'password'} class="settings-input" bind:value={newPassword} autocomplete="new-password" />
-					</div>
-					<div>
-						<div class="flex items-center justify-between mb-1">
-							<label class="settings-label !mb-0" for="confirm-pw">Confirm New Password</label>
-							<button type="button" class="pw-toggle" onclick={() => showConfirmPw = !showConfirmPw} tabindex="-1" aria-label={showConfirmPw ? 'Hide password' : 'Show password'}>
-								{#if showConfirmPw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-								{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
-							</button>
-						</div>
-						<input id="confirm-pw" type={showConfirmPw ? 'text' : 'password'} class="settings-input" bind:value={confirmPassword} autocomplete="new-password" />
-					</div>
-					{#if passwordMessage}
-						<p class="text-sm text-success">{passwordMessage}</p>
-					{/if}
-					{#if passwordError}
-						<p class="text-sm text-danger">{passwordError}</p>
-					{/if}
-					<button
-						class="btn-primary self-start"
-						onclick={savePassword}
-						disabled={passwordSaving}
-					>
-						{passwordSaving ? 'Saving…' : 'Change Password'}
-					</button>
-				</div>
-			</section>
-
-			<!-- Preferences -->
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Preferences</h2>
-				<div class="flex flex-col gap-5">
-					<!-- Default model -->
-					<div>
-						<p class="settings-label">Default Model</p>
-						<div class="flex gap-2">
-							{#each availableModels as model}
-								<button
-									class="pref-pill"
-									class:pref-pill-active={selectedModel === model.id}
-									onclick={() => changeModel(model.id)}
-								>
-									{model.displayName}
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					<!-- Translation -->
-					<div>
-						<p class="settings-label mb-0">Translation</p>
-						<p class="text-xs text-text-muted mt-0.5 mb-2">Auto-translate Hungarian ↔ English</p>
-						<button
-							class="toggle-btn"
-							class:toggle-on={translationEnabled}
-							onclick={() => changeTranslation(!translationEnabled)}
-							aria-label="Toggle translation"
-							role="switch"
-							aria-checked={translationEnabled}
-						>
-							<span class="toggle-thumb"></span>
-						</button>
-					</div>
-
-					<!-- Theme -->
-					<div>
-						<p class="settings-label">Theme</p>
-						<div class="flex gap-2">
-							{#each ['system', 'light', 'dark'] as t}
-								<button
-									class="pref-pill"
-									class:pref-pill-active={selectedTheme === t}
-									onclick={() => changeTheme(t as 'system' | 'light' | 'dark')}
-								>
-									{t.charAt(0).toUpperCase() + t.slice(1)}
-								</button>
-							{/each}
-						</div>
-					</div>
-				</div>
-			</section>
-
-			<!-- Danger Zone -->
-			<section class="settings-card settings-card-danger mb-4">
-				<h2 class="settings-section-title text-danger">Danger Zone</h2>
-				<p class="mb-4 text-sm text-text-secondary">
-					Permanently delete your account and all data including chat history. This cannot be undone.
-				</p>
-				<button class="btn-danger" onclick={() => (showDeleteModal = true)}>
-					Delete Account
-				</button>
-			</section>
+			<SettingsProfileTab
+				userId={data.userSettings.id}
+				userDisplayName={data.userSettings.name ?? data.userSettings.email}
+				userEmail={data.userSettings.email}
+				profilePicture={$avatarState.profilePicture}
+				cacheBuster={$avatarState.cacheBuster}
+				avatarColors={AVATAR_COLORS}
+				avatarCount={AVATAR_COUNT}
+				selectedAvatar={selectedAvatar}
+				bind:showAvatarPicker
+				{removingPhoto}
+				onOpenPictureEditor={() => (showPictureEditor = true)}
+				onRemovePhoto={removePhoto}
+				onSelectAvatar={selectAvatar}
+				bind:name
+				bind:email
+				{profileSaving}
+				{profileMessage}
+				{profileError}
+				onSaveProfile={saveProfile}
+				bind:currentPassword
+				bind:newPassword
+				bind:confirmPassword
+				bind:showCurrentPw
+				bind:showNewPw
+				bind:showConfirmPw
+				{passwordSaving}
+				{passwordMessage}
+				{passwordError}
+				onSavePassword={savePassword}
+				{availableModels}
+				{selectedModel}
+				{translationEnabled}
+				{selectedTheme}
+				onChangeModel={changeModel}
+				onChangeTranslation={changeTranslation}
+				onChangeTheme={changeTheme}
+				onOpenDeleteModal={() => (showDeleteModal = true)}
+			/>
 		{/if}
 
-		<!-- ===================== ANALYTICS TAB ===================== -->
 		{#if activeTab === 'analytics'}
-			{#if analyticsLoading}
-				<div class="flex items-center justify-center py-16 text-text-muted">Loading analytics…</div>
-			{:else if analyticsError}
-				<div class="settings-card">
-					<p class="text-danger text-sm">{analyticsError}</p>
-					<button class="btn-secondary mt-3" onclick={loadAnalytics}>Retry</button>
-				</div>
-			{:else if analyticsData}
-				<!-- Personal stats -->
-				<section class="settings-card mb-4">
-					<h2 class="settings-section-title">Your Activity</h2>
-					<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-						<div class="stat-card">
-							<div class="stat-value">{formatNum(analyticsData.personal.totalMessages)}</div>
-							<div class="stat-label">Messages sent</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{formatMs(analyticsData.personal.avgGenerationMs)}</div>
-							<div class="stat-label">Avg response time</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{formatNum(analyticsData.personal.totalTokens)}</div>
-							<div class="stat-label">Tokens used</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{formatNum(analyticsData.personal.reasoningTokens)}</div>
-							<div class="stat-label">Reasoning tokens</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{formatNum(analyticsData.personal.totalTokens + analyticsData.personal.reasoningTokens)}</div>
-							<div class="stat-label">Total incl. reasoning</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{analyticsData.personal.favoriteModel ? modelDisplayName(analyticsData.personal.favoriteModel) : '—'}</div>
-							<div class="stat-label">Favorite model</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{formatNum(analyticsData.personal.chatCount)}</div>
-							<div class="stat-label">Conversations</div>
-						</div>
-					</div>
-
-					{#if analyticsData.personal.byModel?.length > 0}
-						<div class="mt-5">
-							<p class="settings-label mb-3">Model usage</p>
-							<div style="max-width: 300px; height: 280px; margin: 0 auto; position: relative;">
-								<canvas id="model-chart-canvas" style="display: block; width: 100%; height: 100%;"></canvas>
-							</div>
-						</div>
-					{/if}
-				</section>
-
-				<!-- Admin: system-wide stats -->
-				{#if isAdmin && analyticsData.system}
-					<section class="settings-card mb-4">
-						<h2 class="settings-section-title">System Overview</h2>
-						<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.totalMessages)}</div>
-								<div class="stat-label">Total messages</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.totalUsers)}</div>
-								<div class="stat-label">Total users</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatMs(analyticsData.system.avgGenerationMs)}</div>
-								<div class="stat-label">Avg response time</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.totalTokens)}</div>
-								<div class="stat-label">Total tokens</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.reasoningTokens)}</div>
-								<div class="stat-label">Reasoning tokens</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.totalTokens + analyticsData.system.reasoningTokens)}</div>
-								<div class="stat-label">Total incl. reasoning</div>
-							</div>
-							<div class="stat-card">
-								<div class="stat-value">{formatNum(analyticsData.system.totalConversations ?? 0)}</div>
-								<div class="stat-label">Total conversations</div>
-							</div>
-						</div>
-
-					</section>
-
-
-					<!-- User activity chart -->
-					{#if analyticsData.perUser?.length > 0}
-						<section class="settings-card mb-4">
-							<h2 class="settings-section-title">User Activity</h2>
-							<div style="height: {Math.min(analyticsData.perUser.slice(0,10).length * 36 + 60, 420)}px; position: relative;">
-								<canvas id="user-chart-canvas"></canvas>
-							</div>
-						</section>
-					{/if}
-
-					<!-- Per-user table -->
-					{#if analyticsData.perUser?.length > 0}
-						<section class="settings-card mb-4 overflow-x-auto">
-							<h2 class="settings-section-title">Per-User Breakdown</h2>
-							<table class="analytics-table w-full text-sm">
-								<thead>
-									<tr class="border-b border-border text-left text-xs text-text-muted">
-										<th class="pb-2 pr-3 font-medium">User</th>
-										<th class="pb-2 pr-3 font-medium">Msgs</th>
-										<th class="pb-2 pr-3 font-medium">Avg Time</th>
-										<th class="pb-2 pr-3 font-medium">Tokens</th>
-										<th class="pb-2 pr-3 font-medium">Reasoning</th>
-										<th class="pb-2 pr-3 font-medium">Model</th>
-										<th class="pb-2 font-medium">Chats</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each analyticsData.perUser as row}
-										<tr class="border-b border-border last:border-0">
-											<td class="py-2 pr-3">
-												<div class="font-medium text-text-primary">{row.displayName}</div>
-												<div class="text-xs text-text-muted">{row.email}</div>
-											</td>
-											<td class="py-2 pr-3 text-text-secondary">{formatNum(row.messageCount)}</td>
-											<td class="py-2 pr-3 text-text-secondary">{formatMs(row.avgGenerationMs)}</td>
-											<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
-											<td class="py-2 pr-3 text-text-secondary">{formatNum(row.reasoningTokens)}</td>
-											<td class="py-2 pr-3 text-text-secondary">{row.favoriteModel ? modelDisplayName(row.favoriteModel) : '—'}</td>
-											<td class="py-2 text-text-secondary">{formatNum(row.conversationCount)}</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</section>
-					{/if}
-				{/if}
-			{:else}
-				<div class="settings-card text-center text-text-muted text-sm py-8">No analytics data yet.</div>
-			{/if}
+			<SettingsAnalyticsTab
+				{analyticsData}
+				{analyticsLoading}
+				{analyticsError}
+				{isAdmin}
+				{modelNames}
+				onRetry={loadAnalytics}
+			/>
 		{/if}
 
-		<!-- ===================== ADMINISTRATION TAB ===================== -->
 		{#if activeTab === 'administration' && isAdmin}
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Model 1</h2>
-				<div class="flex flex-col gap-3">
-					{#each ['MODEL_1_BASEURL', 'MODEL_1_NAME', 'MODEL_1_DISPLAY_NAME', 'MODEL_1_FLOW_ID'] as key}
-						<div>
-							<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-							<input id={key} type="text" class="settings-input" bind:value={adminConfig[key]} placeholder={(data as any).envDefaults?.[key] ?? ''} />
-						</div>
-					{/each}
-					<div>
-						<label class="settings-label" for="MODEL_1_SYSTEM_PROMPT">{CONFIG_LABELS['MODEL_1_SYSTEM_PROMPT']}</label>
-						<textarea id="MODEL_1_SYSTEM_PROMPT" class="settings-input min-h-[120px]" bind:value={adminConfig['MODEL_1_SYSTEM_PROMPT']} rows="5"></textarea>
-						<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
-					</div>
-				</div>
-			</section>
-
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Model 2</h2>
-				<div class="flex flex-col gap-3">
-					<div class="flex items-center justify-between">
-						<div>
-							<label class="settings-label mb-0" for="MODEL_2_ENABLED">{CONFIG_LABELS['MODEL_2_ENABLED']}</label>
-							<p class="text-xs text-text-tertiary">Hide model 2 from the app and force fallbacks to model 1</p>
-						</div>
-						<label class="relative inline-flex cursor-pointer items-center">
-							<input
-								id="MODEL_2_ENABLED"
-								type="checkbox"
-								class="peer sr-only"
-								checked={adminConfig['MODEL_2_ENABLED'] !== 'false'}
-								onchange={(e) => { adminConfig['MODEL_2_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
-							/>
-							<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-						</label>
-					</div>
-					{#each ['MODEL_2_BASEURL', 'MODEL_2_NAME', 'MODEL_2_DISPLAY_NAME', 'MODEL_2_FLOW_ID'] as key}
-						<div>
-							<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-							<input id={key} type="text" class="settings-input" bind:value={adminConfig[key]} placeholder={(data as any).envDefaults?.[key] ?? ''} />
-						</div>
-					{/each}
-					<div>
-						<label class="settings-label" for="MODEL_2_SYSTEM_PROMPT">{CONFIG_LABELS['MODEL_2_SYSTEM_PROMPT']}</label>
-						<textarea id="MODEL_2_SYSTEM_PROMPT" class="settings-input min-h-[120px]" bind:value={adminConfig['MODEL_2_SYSTEM_PROMPT']} rows="5"></textarea>
-						<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
-					</div>
-				</div>
-			</section>
-
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Title Generator</h2>
-				<div class="flex flex-col gap-3">
-					{#each ['TITLE_GEN_URL', 'TITLE_GEN_MODEL'] as key}
-						<div>
-							<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-							<input id={key} type="text" class="settings-input" bind:value={adminConfig[key]} placeholder={(data as any).envDefaults?.[key] ?? ''} />
-						</div>
-					{/each}
-				</div>
-			</section>
-
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Translator</h2>
-				<div class="flex flex-col gap-3">
-					{#each ['TRANSLATOR_URL', 'TRANSLATOR_MODEL', 'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TEMPERATURE'] as key}
-						<div>
-							<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-							<input
-								id={key}
-								type={NUMBER_KEYS.has(key) ? 'number' : 'text'}
-								class="settings-input"
-								bind:value={adminConfig[key]}
-								placeholder={(data as any).envDefaults?.[key] ?? ''}
-								step={key === 'TRANSLATION_TEMPERATURE' ? '0.01' : undefined}
-							/>
-						</div>
-					{/each}
-				</div>
-			</section>
-
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">Honcho Memory</h2>
-				<div class="flex items-center justify-between mb-3">
-					<div>
-						<label class="settings-label mb-0" for="HONCHO_ENABLED">Enable Honcho</label>
-						<p class="text-xs text-text-tertiary">Cross-conversation long-term memory via Honcho</p>
-					</div>
-					<label class="relative inline-flex cursor-pointer items-center">
-						<input
-							id="HONCHO_ENABLED"
-							type="checkbox"
-							class="peer sr-only"
-							checked={adminConfig['HONCHO_ENABLED'] === 'true'}
-							onchange={(e) => { adminConfig['HONCHO_ENABLED'] = e.currentTarget.checked ? 'true' : 'false'; }}
-						/>
-						<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-					</label>
-				</div>
-				<div class="flex items-center gap-2 text-xs text-text-secondary">
-					<button
-						class="text-accent hover:underline"
-						onclick={checkHonchoHealth}
-						disabled={honchoLoading}
-					>
-						{honchoLoading ? 'Checking...' : 'Check Connection'}
-					</button>
-					{#if honchoHealth}
-						<span class="inline-flex items-center gap-1">
-							<span class="inline-block h-2 w-2 rounded-full {honchoHealth.connected ? 'bg-success' : 'bg-danger'}"></span>
-							{honchoHealth.connected ? 'Connected' : 'Disconnected'}
-							{#if honchoHealth.workspace}
-								<span class="text-text-tertiary">({honchoHealth.workspace})</span>
-							{/if}
-						</span>
-					{/if}
-				</div>
-			</section>
-
-			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">General</h2>
-				<div>
-					<label class="settings-label" for="MAX_MESSAGE_LENGTH">{CONFIG_LABELS['MAX_MESSAGE_LENGTH']}</label>
-					<input id="MAX_MESSAGE_LENGTH" type="number" class="settings-input" bind:value={adminConfig['MAX_MESSAGE_LENGTH']} placeholder={(data as any).envDefaults?.['MAX_MESSAGE_LENGTH'] ?? ''} />
-				</div>
-			</section>
-
-			{#if adminMessage}
-				<p class="mb-3 text-sm text-success">{adminMessage}</p>
-			{/if}
-			{#if adminError}
-				<p class="mb-3 text-sm text-danger">{adminError}</p>
-			{/if}
-			<button class="btn-primary w-full mb-8" onclick={saveAdminConfig} disabled={adminSaving}>
-				{adminSaving ? 'Saving…' : 'Save Configuration'}
-			</button>
+			<SettingsAdministrationTab
+				bind:adminConfig
+				envDefaults={(data as any).envDefaults ?? {}}
+				{adminSaving}
+				{adminMessage}
+				{adminError}
+				{honchoHealth}
+				{honchoLoading}
+				onCheckHonchoHealth={checkHonchoHealth}
+				onSaveAdminConfig={saveAdminConfig}
+			/>
 		{/if}
-
 	</div>
 </div>
 
-<!-- Profile picture editor modal -->
 {#if showPictureEditor}
 	<ProfilePictureEditor
 		onClose={() => (showPictureEditor = false)}
@@ -944,98 +334,37 @@
 	/>
 {/if}
 
-<!-- Delete account modal -->
 {#if showDeleteModal}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-[9999] flex items-center justify-center bg-surface-overlay/60 backdrop-blur-sm"
-		role="presentation"
-		onclick={(event) => {
-			if (event.target !== event.currentTarget) return;
-			showDeleteModal = false;
-			deletePassword = '';
-			deleteError = '';
-			showDeletePw = false;
-		}}
-	>
-		<div class="mx-4 w-full max-w-sm rounded-xl border border-border bg-surface-page p-6 shadow-lg">
-			<h3 class="mb-2 text-lg font-semibold text-text-primary">Delete Account</h3>
-			<p class="mb-4 text-sm text-text-secondary">
-				This will permanently delete your account, all chats, and all data. This cannot be undone.
-			</p>
-			<div class="flex items-center justify-between mb-1">
-				<p class="text-sm font-medium text-text-primary">Enter your password to confirm:</p>
-				<button type="button" class="pw-toggle" onclick={() => showDeletePw = !showDeletePw} tabindex="-1" aria-label={showDeletePw ? 'Hide password' : 'Show password'}>
-					{#if showDeletePw}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-					{:else}<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{/if}
-				</button>
-			</div>
-			<input
-				type={showDeletePw ? 'text' : 'password'}
-				class="settings-input mb-4"
-				bind:value={deletePassword}
-				placeholder="Your password"
-				autocomplete="current-password"
-			/>
-			{#if deleteError}
-				<p class="mb-3 text-sm text-danger">{deleteError}</p>
-			{/if}
-			<div class="flex gap-2">
-				<button
-					class="btn-danger flex-1"
-					onclick={confirmDeleteAccount}
-					disabled={deleteLoading || !deletePassword}
-				>
-					{deleteLoading ? 'Deleting…' : 'Delete permanently'}
-				</button>
-				<button
-					class="btn-secondary"
-					onclick={() => { showDeleteModal = false; deletePassword = ''; deleteError = ''; showDeletePw = false; }}
-				>
-					Cancel
-				</button>
-			</div>
-		</div>
-	</div>
+	<DeleteAccountModal
+		bind:deletePassword
+		{deleteError}
+		{deleteLoading}
+		bind:showDeletePw
+		onConfirm={confirmDeleteAccount}
+		onCancel={closeDeleteModal}
+	/>
 {/if}
 
 <style>
-	.pw-toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		font-size: 0.75rem;
-		color: var(--text-muted);
-		background: none;
-		border: none;
-		cursor: pointer;
-		padding: 0;
-		font-family: inherit;
-		transition: color 150ms;
-	}
-	.pw-toggle:hover {
-		color: var(--text-primary);
-	}
-
-	.settings-card {
+	:global(.settings-card) {
 		background: var(--surface-overlay);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-lg);
 		padding: var(--space-lg);
 	}
 
-	.settings-card-danger {
+	:global(.settings-card-danger) {
 		border-color: var(--danger);
 	}
 
-	.settings-section-title {
+	:global(.settings-section-title) {
 		font-size: 0.9375rem;
 		font-weight: 600;
 		color: var(--text-primary);
 		margin-bottom: var(--space-md);
 	}
 
-	.settings-label {
+	:global(.settings-label) {
 		display: block;
 		font-size: 0.8125rem;
 		font-weight: 500;
@@ -1043,7 +372,7 @@
 		margin-bottom: 0.25rem;
 	}
 
-	.settings-input {
+	:global(.settings-input) {
 		width: 100%;
 		background: var(--surface-page);
 		border: 1px solid var(--border-default);
@@ -1055,7 +384,7 @@
 		resize: vertical;
 	}
 
-	.settings-input:focus {
+	:global(.settings-input:focus) {
 		outline: none;
 		border-color: var(--accent);
 	}
@@ -1079,7 +408,7 @@
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 	}
 
-	.pref-pill {
+	:global(.pref-pill) {
 		padding: 0.375rem 0.875rem;
 		border-radius: var(--radius-full);
 		border: 1px solid var(--border-default);
@@ -1090,20 +419,19 @@
 		transition: all var(--duration-standard);
 	}
 
-	.pref-pill:hover {
+	:global(.pref-pill:hover) {
 		border-color: var(--accent);
 		color: var(--text-primary);
 	}
 
-	.pref-pill-active {
+	:global(.pref-pill-active) {
 		border-color: var(--accent);
 		color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
 		font-weight: 500;
 	}
 
-	/* Toggle switch */
-	.toggle-btn {
+	:global(.toggle-btn) {
 		position: relative;
 		width: 44px;
 		height: 24px;
@@ -1115,11 +443,11 @@
 		flex-shrink: 0;
 	}
 
-	.toggle-btn.toggle-on {
+	:global(.toggle-btn.toggle-on) {
 		background: var(--accent);
 	}
 
-	.toggle-thumb {
+	:global(.toggle-thumb) {
 		position: absolute;
 		top: 2px;
 		left: 2px;
@@ -1131,12 +459,11 @@
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 	}
 
-	.toggle-on .toggle-thumb {
+	:global(.toggle-on .toggle-thumb) {
 		transform: translateX(20px);
 	}
 
-	/* Avatar swatch */
-	.avatar-swatch {
+	:global(.avatar-swatch) {
 		border: 2px solid transparent;
 		cursor: pointer;
 		transition: all var(--duration-standard);
@@ -1145,38 +472,37 @@
 		justify-content: center;
 	}
 
-	.avatar-swatch:hover {
+	:global(.avatar-swatch:hover) {
 		transform: scale(1.08);
 	}
 
-	.avatar-selected {
+	:global(.avatar-selected) {
 		border-color: var(--accent);
 		box-shadow: 0 0 0 2px var(--surface-page), 0 0 0 4px var(--accent);
 	}
 
-	/* Stat cards */
-	.stat-card {
+	:global(.stat-card) {
 		background: var(--surface-page);
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-md);
 		padding: 0.75rem;
 	}
 
-	.stat-value {
+	:global(.stat-value) {
 		font-size: 1.25rem;
 		font-weight: 600;
 		color: var(--text-primary);
 		line-height: 1.2;
 	}
 
-	.stat-label {
+	:global(.stat-label) {
 		font-size: 0.75rem;
 		color: var(--text-muted);
 		margin-top: 0.25rem;
 	}
 
-	.analytics-table th,
-	.analytics-table td {
+	:global(.analytics-table th),
+	:global(.analytics-table td) {
 		vertical-align: middle;
 	}
 </style>

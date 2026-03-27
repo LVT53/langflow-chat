@@ -11,6 +11,10 @@
 	} from '$lib/client/api/knowledge';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
+	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
+	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
+	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
+	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import type {
 		ArtifactSummary,
 		FocusContinuityItem,
@@ -20,6 +24,20 @@
 		TaskMemoryItem,
 		WorkCapsule,
 	} from '$lib/types';
+	import {
+		getDefaultPersonaMemoryFilter,
+		getFocusContinuityItemCount,
+		getLibraryBulkAction,
+		getLibraryBulkConfirmation,
+		getLibraryBulkKey,
+	} from './_helpers';
+	import type {
+		FocusContinuityView,
+		KnowledgeTab,
+		LibraryModal,
+		MemoryModal,
+		PersonaMemoryFilter,
+	} from './_helpers';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -27,13 +45,6 @@
 	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
 	const initialResults = (getData().results ?? []) as ArtifactSummary[];
 	const initialWorkflows = (getData().workflows ?? []) as WorkCapsule[];
-
-	type KnowledgeTab = 'library' | 'memory';
-	type MemoryModal = 'persona' | 'focus' | null;
-	type LibraryModal = 'documents' | 'results' | 'workflows' | null;
-	type PersonaMemoryFilter = 'active' | 'dormant' | 'archived';
-	type FocusContinuityView = 'tasks' | 'across_chats';
-	const personaMemoryFilters: PersonaMemoryFilter[] = ['active', 'dormant', 'archived'];
 
 	let documents = $state<KnowledgeDocumentItem[]>(initialDocuments);
 	let results = $state<ArtifactSummary[]>(initialResults);
@@ -75,7 +86,9 @@
 		dormant: personaMemories.filter((memory) => memory.state === 'dormant').length,
 		archived: personaMemories.filter((memory) => memory.state === 'archived').length,
 	}));
-	let focusContinuityItemCount = $derived(taskMemories.length + focusContinuities.length);
+	let focusContinuityItemCount = $derived(
+		getFocusContinuityItemCount({ taskMemories, focusContinuities })
+	);
 
 	let honchoOverview = $derived(memorySummary.overview?.trim() ?? '');
 	$effect(() => {
@@ -113,13 +126,6 @@
 
 	function isDeletingArtifact(id: string): boolean {
 		return deletingArtifactIds.has(id);
-	}
-
-	function getDefaultPersonaMemoryFilter(memories: PersonaMemoryItem[]): PersonaMemoryFilter {
-		if (memories.some((memory) => memory.state === 'active')) return 'active';
-		if (memories.some((memory) => memory.state === 'dormant')) return 'dormant';
-		if (memories.some((memory) => memory.state === 'archived')) return 'archived';
-		return 'active';
 	}
 
 	function applyMemoryPayload(payload: KnowledgeMemoryPayload) {
@@ -241,84 +247,18 @@
 				: focusContinuities.map((memory) => memory.continuityId);
 	}
 
-	function getPrimaryPersonaScope(memory: PersonaMemoryItem): 'self' | 'assistant_about_user' {
-		return memory.members[0]?.scope ?? 'self';
+	function setPersonaMemoryFilter(filter: PersonaMemoryFilter) {
+		personaMemoryFilter = filter;
+		selectedPersonaMemoryIds = [];
 	}
 
-	function formatPersonaActor(memory: PersonaMemoryItem): string {
-		return getPrimaryPersonaScope(memory) === 'assistant_about_user' ? 'AlfyAI' : userDisplayName;
-	}
-
-	function formatPersonaOrigin(memory: PersonaMemoryItem): string {
-		const scope = getPrimaryPersonaScope(memory);
-		const sourceLabel = scope === 'assistant_about_user' ? 'Assistant inference' : 'Direct memory';
-		return `${sourceLabel} · ${memory.sourceCount} source${memory.sourceCount === 1 ? '' : 's'}`;
-	}
-
-	function formatPersonaSource(memory: PersonaMemoryItem): string {
-		if (memory.conversationTitles.length > 0) {
-			return memory.conversationTitles.join(', ');
+	function setFocusContinuityView(view: FocusContinuityView) {
+		focusContinuityView = view;
+		if (view === 'tasks') {
+			selectedTaskMemoryIds = [];
+			return;
 		}
-		if (memory.members.some((member) => Boolean(member.sessionId))) {
-			return 'Conversation memory';
-		}
-		return 'General memory';
-	}
-
-	function formatPersonaClass(memoryClass: PersonaMemoryItem['memoryClass']): string {
-		return memoryClass.replace(/_/g, ' ');
-	}
-
-	function formatMemoryTimestamp(timestamp: number): string {
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: 'medium',
-			timeStyle: 'short',
-		}).format(timestamp);
-	}
-
-	function getPersonaRowKey(memory: PersonaMemoryItem, index: number): string {
-		return `${memory.state}:${memory.id}:${index}`;
-	}
-
-	function formatArtifactSize(sizeBytes: number | null | undefined): string {
-		if (!sizeBytes) return 'Unknown size';
-		return `${Math.ceil(sizeBytes / 1024)} KB`;
-	}
-
-	function formatDocumentKind(document: KnowledgeDocumentItem): string {
-		return document.normalizedAvailable ? 'Indexed document' : 'Source-only document';
-	}
-
-	function getLibraryBulkAction(kind: Exclude<LibraryModal, null>) {
-		if (kind === 'documents') return 'forget_all_documents' as const;
-		if (kind === 'results') return 'forget_all_results' as const;
-		return 'forget_all_workflows' as const;
-	}
-
-	function getLibraryBulkKey(kind: Exclude<LibraryModal, null>): string {
-		return `forget-all-${kind}`;
-	}
-
-	function getLibraryBulkLabel(kind: Exclude<LibraryModal, null>): string {
-		if (kind === 'documents') return 'Forget all documents';
-		if (kind === 'results') return 'Forget all results';
-		return 'Forget all workflows';
-	}
-
-	function getLibraryBulkConfirmation(kind: Exclude<LibraryModal, null>): string {
-		if (kind === 'documents') {
-			return 'Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.';
-		}
-		if (kind === 'results') {
-			return 'Forget all saved results from the Knowledge Base?';
-		}
-		return 'Forget all workflows from the Knowledge Base?';
-	}
-
-	function getLibraryItemCount(kind: Exclude<LibraryModal, null>): number {
-		if (kind === 'documents') return documents.length;
-		if (kind === 'results') return results.length;
-		return workflows.length;
+		selectedFocusContinuityIds = [];
 	}
 
 	async function refreshKnowledgeLibrary() {
@@ -532,6 +472,14 @@
 		}
 	}
 
+	function runLibraryBulkAction(kind: Exclude<LibraryModal, null>) {
+		return runKnowledgeAction(
+			getLibraryBulkAction(kind),
+			getLibraryBulkKey(kind),
+			getLibraryBulkConfirmation(kind)
+		);
+	}
+
 	onMount(() => {
 		if (memoryLoaded) return undefined;
 
@@ -558,7 +506,7 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-<div class="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-page px-4 py-6 md:px-8">
+<div class="knowledge-page flex h-full min-h-0 flex-col overflow-y-auto bg-surface-page px-4 py-6 md:px-8">
 	<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
 		<div class="rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="flex flex-col gap-5">
@@ -626,904 +574,78 @@
 		{/if}
 
 		{#if activeTab === 'library'}
-			<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-				<div class="space-y-2">
-					<h2 class="text-lg font-sans font-semibold text-text-primary">Library</h2>
-					<p class="max-w-[720px] text-sm font-sans leading-[1.6] text-text-secondary">
-						Documents, saved results, and workflow capsules now open in dedicated table views so larger libraries stay easy to scan.
-					</p>
-				</div>
-				<div class="mt-5 grid gap-4 lg:grid-cols-3">
-					<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-						<div class="flex items-center justify-between gap-3">
-							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Documents</div>
-							<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								{documents.length}
-							</span>
-						</div>
-						<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-							Uploaded files are managed as single logical documents, while their extracted text stays available behind the scenes for retrieval.
-						</p>
-						<button
-							type="button"
-							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							onclick={() => openLibraryModal('documents')}
-						>
-							Manage documents
-						</button>
-					</div>
-
-					<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-						<div class="flex items-center justify-between gap-3">
-							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
-							<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								{results.length}
-							</span>
-						</div>
-						<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-							Saved generated outputs that remain available for recall and later refinement.
-						</p>
-						<button
-							type="button"
-							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							onclick={() => openLibraryModal('results')}
-						>
-							Manage results
-						</button>
-					</div>
-
-					<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-						<div class="flex items-center justify-between gap-3">
-							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
-							<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-								{workflows.length}
-							</span>
-						</div>
-						<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-							Reusable workflow capsules summarizing patterns, source inputs, and output history.
-						</p>
-						<button
-							type="button"
-							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-							onclick={() => openLibraryModal('workflows')}
-						>
-							Manage workflows
-						</button>
-					</div>
-				</div>
-			</section>
+			<KnowledgeLibraryView
+				{documents}
+				{results}
+				{workflows}
+				onOpenLibraryModal={openLibraryModal}
+			/>
 		{:else}
-			{#if memoryLoading && !memoryLoaded}
-				<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-					<div class="grid gap-4 lg:grid-cols-[1.35fr_0.85fr]">
-						<div class="rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
-							<div class="h-3 w-28 rounded-full bg-surface-page animate-pulse"></div>
-							<div class="mt-5 h-8 w-52 rounded-full bg-surface-page animate-pulse"></div>
-							<div class="mt-5 space-y-3">
-								<div class="h-3 w-full rounded-full bg-surface-page animate-pulse"></div>
-								<div class="h-3 w-11/12 rounded-full bg-surface-page animate-pulse"></div>
-								<div class="h-3 w-9/12 rounded-full bg-surface-page animate-pulse"></div>
-							</div>
-						</div>
-						<div class="space-y-4">
-							<div class="grid grid-cols-2 gap-3">
-								<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-									<div class="h-3 w-20 rounded-full bg-surface-page animate-pulse"></div>
-									<div class="mt-3 h-7 w-12 rounded-full bg-surface-page animate-pulse"></div>
-								</div>
-								<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-									<div class="h-3 w-20 rounded-full bg-surface-page animate-pulse"></div>
-									<div class="mt-3 h-7 w-12 rounded-full bg-surface-page animate-pulse"></div>
-								</div>
-							</div>
-							<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-								<div class="h-3 w-28 rounded-full bg-surface-page animate-pulse"></div>
-								<div class="mt-4 space-y-3">
-									<div class="h-3 w-full rounded-full bg-surface-page animate-pulse"></div>
-									<div class="h-3 w-10/12 rounded-full bg-surface-page animate-pulse"></div>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<div class="mt-6 rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-						Loading memory profile…
-					</div>
-				</section>
-			{:else if memoryLoadError && !memoryLoaded}
-				<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-					<div class="rounded-[1.2rem] border border-danger bg-surface-page px-4 py-5">
-						<div class="text-sm font-sans font-medium text-danger">Memory Profile failed to load.</div>
-						<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">
-							{memoryLoadError}
-						</p>
-						<button
-							type="button"
-							class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
-							onclick={() => void ensureMemoryLoaded(true)}
-						>
-							Try again
-						</button>
-					</div>
-				</section>
-			{:else}
-				<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
-					<div class="grid gap-4 lg:grid-cols-2">
-						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-							<div class="flex items-center justify-between gap-3">
-								<div>
-									<h3 class="text-lg font-sans font-semibold text-text-primary">
-										Manage durable profile memories
-									</h3>
-								</div>
-								<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-									{personaMemories.length}
-								</span>
-							</div>
-
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-								Review and forget stored persona memories in a compact table instead of scanning long card stacks.
-							</p>
-
-							<div class="mt-4 flex flex-wrap items-center gap-3">
-								<button
-									type="button"
-									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									onclick={() => openMemoryModal('persona')}
-									disabled={!honchoEnabled}
-								>
-									Manage persona memory
-								</button>
-								{#if !honchoEnabled}
-									<span class="text-xs font-sans text-text-muted">
-										Unavailable while Honcho is disabled.
-									</span>
-								{:else if memoryLoaded && personaMemories.length === 0}
-									<span class="text-xs font-sans text-text-muted">
-										No stored persona memory yet.
-									</span>
-								{/if}
-							</div>
-						</div>
-
-						<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-							<div class="flex items-center justify-between gap-3">
-								<div>
-									<h3 class="text-lg font-sans font-semibold text-text-primary">
-										Manage focus continuity
-									</h3>
-								</div>
-								<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-									{focusContinuityItemCount}
-								</span>
-							</div>
-
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-								Focus continuity combines per-chat task checkpoints with across-chat continuity groups in one background system.
-							</p>
-
-							<div class="mt-4 flex flex-wrap items-center gap-3">
-								<button
-									type="button"
-									class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-									onclick={() => openMemoryModal('focus')}
-								>
-									Manage focus continuity
-								</button>
-								{#if memoryLoaded && focusContinuityItemCount === 0}
-									<span class="text-xs font-sans text-text-muted">
-										No focus continuity has been captured yet.
-									</span>
-								{/if}
-							</div>
-						</div>
-					</div>
-
-					<div class="mt-6 rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
-						<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
-							Memory Overview
-						</h2>
-						{#if honchoOverview}
-							<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">
-								{@html honchoOverviewHtml}
-							</div>
-						{:else if honchoEnabled}
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.
-							</p>
-						{:else}
-							<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-								Memory Profile is disabled in this deployment, so the live persona memory overview is not available.
-							</p>
-						{/if}
-					</div>
-				</section>
-			{/if}
+			<KnowledgeMemoryView
+				{memoryLoading}
+				{memoryLoaded}
+				{memoryLoadError}
+				personaMemoryCount={personaMemories.length}
+				{focusContinuityItemCount}
+				{honchoEnabled}
+				{honchoOverview}
+				{honchoOverviewHtml}
+				onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
+				onOpenMemoryModal={openMemoryModal}
+			/>
 		{/if}
 	</div>
 </div>
 
 {#if activeMemoryModal}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-[120] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-		role="presentation"
-		onclick={closeMemoryModal}
-	>
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby={
-				activeMemoryModal === 'persona'
-					? 'persona-memory-dialog-title'
-					: 'focus-memory-dialog-title'
-			}
-			tabindex={-1}
-			class="max-h-[88vh] w-full max-w-[1100px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
-			onclick={(event) => event.stopPropagation()}
-		>
-			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
-				<div>
-					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-						{activeMemoryModal === 'persona'
-							? 'Persona memory'
-							: 'Focus continuity'}
-					</div>
-					<h3
-						id={
-							activeMemoryModal === 'persona'
-								? 'persona-memory-dialog-title'
-								: 'focus-memory-dialog-title'
-						}
-						class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary"
-					>
-						{activeMemoryModal === 'persona'
-							? 'Manage stored persona memories'
-							: 'Manage focus continuity'}
-					</h3>
-					<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">
-						{activeMemoryModal === 'persona'
-							? 'Review memory items in a compact table and forget individual entries without scrolling through long cards.'
-							: 'Inspect both per-chat task continuity and across-chat continuity groups without treating long-horizon work as a separate project UI.'}
-					</p>
-				</div>
-				<div class="flex shrink-0 items-center gap-2">
-					{#if activeMemoryModal === 'persona' && selectedPersonaMemoryIds.length > 0}
-						<button
-							type="button"
-							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							onclick={runBulkPersonaForget}
-							disabled={isMemoryActionPending('forget-selected-persona')}
-						>
-							Forget selected ({selectedPersonaMemoryIds.length})
-						</button>
-					{/if}
-					{#if activeMemoryModal === 'focus' && focusContinuityView === 'tasks' && selectedTaskMemoryIds.length > 0}
-						<button
-							type="button"
-							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							onclick={runBulkTaskForget}
-							disabled={isMemoryActionPending('forget-selected-task')}
-						>
-							Forget selected ({selectedTaskMemoryIds.length})
-						</button>
-					{/if}
-					{#if activeMemoryModal === 'focus' && focusContinuityView === 'across_chats' && selectedFocusContinuityIds.length > 0}
-						<button
-							type="button"
-							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							onclick={runBulkFocusContinuityForget}
-							disabled={isMemoryActionPending('forget-selected-focus-continuity')}
-						>
-							Forget selected ({selectedFocusContinuityIds.length})
-						</button>
-					{/if}
-					{#if activeMemoryModal === 'persona' && honchoEnabled && personaMemories.length > 0}
-						<button
-							type="button"
-							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							onclick={() =>
-								runMemoryAction(
-									{ action: 'forget_all_persona_memory' },
-									'forget-all-persona',
-									'Forget all persona memory items? This clears the live memory profile about you.'
-								)}
-							disabled={isMemoryActionPending('forget-all-persona')}
-						>
-							Forget all
-						</button>
-					{/if}
-					<button
-						type="button"
-						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-						onclick={closeMemoryModal}
-						aria-label="Close memory manager"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18" />
-							<line x1="6" x2="18" y1="6" y2="18" />
-						</svg>
-					</button>
-				</div>
-			</div>
-
-			<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
-				{#if memoryLoading && !memoryLoaded}
-					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-						Loading memory profile…
-					</div>
-				{:else if memoryLoadError && !memoryLoaded}
-					<div class="rounded-[1.2rem] border border-danger bg-surface-page px-4 py-5 text-sm font-sans text-danger">
-						{memoryLoadError}
-					</div>
-				{:else if activeMemoryModal === 'persona'}
-					{#if !honchoEnabled}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-							Persona memory controls are unavailable because Honcho is disabled.
-						</div>
-					{:else if personaMemories.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-							No stored persona memory items yet.
-						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-								{#each personaMemoryFilters as state}
-									<button
-										type="button"
-										class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
-											personaMemoryFilter === state
-												? 'border-border bg-surface-elevated text-text-primary'
-												: 'border-border text-text-muted'
-										}`}
-										onclick={() => {
-											personaMemoryFilter = state;
-											selectedPersonaMemoryIds = [];
-										}}
-									>
-										{state} ({personaMemoryStateCounts[state]})
-									</button>
-								{/each}
-							</div>
-							<table class="min-w-[880px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-											<input
-												type="checkbox"
-												checked={filteredPersonaMemories.length > 0 && selectedPersonaMemoryIds.length === filteredPersonaMemories.length}
-												onchange={toggleAllPersonaSelections}
-												aria-label="Select all persona memories"
-											/>
-										</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Actor</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Memory</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Class</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Source</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Last seen</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each filteredPersonaMemories as memory, index (getPersonaRowKey(memory, index))}
-										<tr class="border-b border-border last:border-b-0">
-											<td class="px-4 py-3 align-top">
-												<input
-													type="checkbox"
-													checked={selectedPersonaMemoryIds.includes(memory.id)}
-													onchange={() => togglePersonaSelection(memory.id)}
-													aria-label={`Select ${memory.canonicalText}`}
-												/>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="text-sm font-sans font-medium text-text-primary">
-													{formatPersonaActor(memory)}
-												</div>
-												<div class="mt-1 text-xs font-sans text-text-muted">
-													{formatPersonaOrigin(memory)}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.canonicalText}>
-													{memory.canonicalText}
-												</div>
-												{#if memory.members.length > 1}
-													<details class="mt-2 text-xs font-sans text-text-muted">
-														<summary>Show raw memories ({memory.members.length})</summary>
-														<div class="mt-2 space-y-2">
-															{#each memory.members as member (`${memory.id}-${member.id}`)}
-																<div>
-																	<div>{member.content}</div>
-																	<div class="mt-1 text-[0.68rem] text-text-muted">
-																		{member.conversationTitle ?? 'Conversation memory'} · {formatMemoryTimestamp(member.createdAt)}
-																	</div>
-																</div>
-															{/each}
-														</div>
-													</details>
-												{/if}
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												<div>{formatPersonaClass(memory.memoryClass)}</div>
-												<div class="mt-1 text-xs text-text-muted">
-													Salience {memory.salienceScore}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatPersonaSource(memory)}
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatMemoryTimestamp(memory.lastSeenAt)}
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() =>
-														runMemoryAction(
-															{ action: 'forget_persona_memory', clusterId: memory.id },
-															`persona-${memory.id}`,
-															'Forget this persona memory item?'
-														)}
-													disabled={isMemoryActionPending(`persona-${memory.id}`)}
-												>
-													Forget
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{:else}
-					<div class="border-b border-border px-4 py-3">
-						<div class="flex flex-wrap items-center gap-2">
-							<button
-								type="button"
-								class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
-									focusContinuityView === 'tasks'
-										? 'border-border bg-surface-elevated text-text-primary'
-										: 'border-border text-text-muted'
-								}`}
-								onclick={() => {
-									focusContinuityView = 'tasks';
-									selectedTaskMemoryIds = [];
-								}}
-							>
-								Tasks ({taskMemories.length})
-							</button>
-							<button
-								type="button"
-								class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
-									focusContinuityView === 'across_chats'
-										? 'border-border bg-surface-elevated text-text-primary'
-										: 'border-border text-text-muted'
-								}`}
-								onclick={() => {
-									focusContinuityView = 'across_chats';
-									selectedFocusContinuityIds = [];
-								}}
-							>
-								Across chats ({focusContinuities.length})
-							</button>
-						</div>
-					</div>
-
-					{#if focusContinuityView === 'tasks'}
-						{#if taskMemories.length === 0}
-							<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-								No task-state continuity has been checkpointed yet.
-							</div>
-						{:else}
-							<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-								<table class="min-w-[980px] w-full border-collapse">
-									<thead>
-										<tr class="border-b border-border bg-surface-elevated/70 text-left">
-											<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-												<input
-													type="checkbox"
-													checked={taskMemories.length > 0 && selectedTaskMemoryIds.length === taskMemories.length}
-													onchange={toggleAllTaskSelections}
-													aria-label="Select all task continuity items"
-												/>
-											</th>
-											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Objective</th>
-											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Checkpoint</th>
-											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Conversation</th>
-											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
-											<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Updated</th>
-											<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each taskMemories as memory (memory.taskId)}
-											<tr class="border-b border-border last:border-b-0">
-												<td class="px-4 py-3 align-top">
-													<input
-														type="checkbox"
-														checked={selectedTaskMemoryIds.includes(memory.taskId)}
-														onchange={() => toggleTaskSelection(memory.taskId)}
-														aria-label={`Select ${memory.objective}`}
-													/>
-												</td>
-												<td class="px-4 py-3 align-top">
-													<div class="text-sm font-sans font-medium text-text-primary">
-														{memory.objective}
-													</div>
-												</td>
-												<td class="px-4 py-3 align-top">
-													<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.checkpointSummary ?? ''}>
-														{memory.checkpointSummary ?? 'No checkpoint summary stored yet.'}
-													</div>
-												</td>
-												<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-													{memory.conversationTitle ?? 'Conversation memory'}
-												</td>
-												<td class="px-4 py-3 align-top">
-													<div class="flex flex-wrap gap-2">
-														<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-															{memory.status}
-														</span>
-														{#if memory.locked}
-															<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-																Locked
-															</span>
-														{/if}
-													</div>
-												</td>
-												<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-													{formatMemoryTimestamp(memory.updatedAt)}
-												</td>
-												<td class="px-4 py-3 align-top text-right">
-													<button
-														type="button"
-														class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-														onclick={() =>
-															runMemoryAction(
-																{ action: 'forget_task_memory', taskId: memory.taskId },
-																`task-${memory.taskId}`,
-																'Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.'
-															)}
-														disabled={isMemoryActionPending(`task-${memory.taskId}`)}
-													>
-														Forget
-													</button>
-												</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-						{/if}
-					{:else if focusContinuities.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-							No across-chat continuity groups have been captured yet.
-						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<table class="min-w-[980px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="w-12 px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-											<input
-												type="checkbox"
-												checked={focusContinuities.length > 0 && selectedFocusContinuityIds.length === focusContinuities.length}
-												onchange={toggleAllFocusContinuitySelections}
-												aria-label="Select all across-chat continuity items"
-											/>
-										</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Continuity</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Status</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Linked chats</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Updated</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each focusContinuities as memory (memory.continuityId)}
-										<tr class="border-b border-border last:border-b-0">
-											<td class="px-4 py-3 align-top">
-												<input
-													type="checkbox"
-													checked={selectedFocusContinuityIds.includes(memory.continuityId)}
-													onchange={() => toggleFocusContinuitySelection(memory.continuityId)}
-													aria-label={`Select ${memory.name}`}
-												/>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="text-sm font-sans font-medium text-text-primary">
-													{memory.name}
-												</div>
-												<div class="mt-1 text-xs font-sans text-text-muted">
-													{memory.linkedTaskCount} linked task{memory.linkedTaskCount === 1 ? '' : 's'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary" title={memory.summary ?? ''}>
-													{memory.summary ?? 'No continuity summary stored yet.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<span class="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-													{memory.status}
-												</span>
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{memory.conversationTitles.length > 0
-													? memory.conversationTitles.join(', ')
-													: 'Conversation memory'}
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{formatMemoryTimestamp(memory.updatedAt)}
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() =>
-														runMemoryAction(
-															{ action: 'forget_focus_continuity', continuityId: memory.continuityId },
-															`focus-continuity-${memory.continuityId}`,
-															'Forget this across-chat continuity group? Conversation history will stay intact.'
-														)}
-													disabled={isMemoryActionPending(`focus-continuity-${memory.continuityId}`)}
-												>
-													Forget
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{/if}
-			</div>
-		</div>
-	</div>
+	<KnowledgeMemoryModal
+		activeMemoryModal={activeMemoryModal}
+		{memoryLoading}
+		{memoryLoaded}
+		{memoryLoadError}
+		{honchoEnabled}
+		{personaMemories}
+		{filteredPersonaMemories}
+		{personaMemoryFilter}
+		{personaMemoryStateCounts}
+		{selectedPersonaMemoryIds}
+		{taskMemories}
+		{selectedTaskMemoryIds}
+		{focusContinuities}
+		{selectedFocusContinuityIds}
+		{focusContinuityView}
+		{userDisplayName}
+		{isMemoryActionPending}
+		onClose={closeMemoryModal}
+		onSetPersonaMemoryFilter={setPersonaMemoryFilter}
+		onSetFocusContinuityView={setFocusContinuityView}
+		onTogglePersonaSelection={togglePersonaSelection}
+		onToggleAllPersonaSelections={toggleAllPersonaSelections}
+		onToggleTaskSelection={toggleTaskSelection}
+		onToggleAllTaskSelections={toggleAllTaskSelections}
+		onToggleFocusContinuitySelection={toggleFocusContinuitySelection}
+		onToggleAllFocusContinuitySelections={toggleAllFocusContinuitySelections}
+		onRunBulkPersonaForget={runBulkPersonaForget}
+		onRunBulkTaskForget={runBulkTaskForget}
+		onRunBulkFocusContinuityForget={runBulkFocusContinuityForget}
+		onRunMemoryAction={runMemoryAction}
+	/>
 {/if}
 
 {#if activeLibraryModal}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-[120] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-		role="presentation"
-		onclick={closeLibraryModal}
-	>
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div
-			role="dialog"
-			aria-modal="true"
-			tabindex={-1}
-			class="max-h-[88vh] w-full max-w-[1180px] overflow-hidden rounded-[1.6rem] border border-border bg-surface-elevated shadow-2xl"
-			onclick={(event) => event.stopPropagation()}
-		>
-			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
-				<div>
-					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-						{activeLibraryModal === 'documents'
-							? 'Documents'
-							: activeLibraryModal === 'results'
-								? 'Results'
-								: 'Workflows'}
-					</div>
-					<h3 class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary">
-						{activeLibraryModal === 'documents'
-							? 'Manage documents'
-							: activeLibraryModal === 'results'
-								? 'Manage saved results'
-								: 'Manage workflows'}
-					</h3>
-				</div>
-				<div class="flex shrink-0 items-center gap-2">
-					{#if activeLibraryModal && getLibraryItemCount(activeLibraryModal) > 0}
-						<button
-							type="button"
-							class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-							onclick={() =>
-								runKnowledgeAction(
-									getLibraryBulkAction(activeLibraryModal),
-									getLibraryBulkKey(activeLibraryModal),
-									getLibraryBulkConfirmation(activeLibraryModal)
-								)}
-							disabled={isKnowledgeActionPending(getLibraryBulkKey(activeLibraryModal))}
-						>
-							{isKnowledgeActionPending(getLibraryBulkKey(activeLibraryModal))
-								? 'Removing…'
-								: getLibraryBulkLabel(activeLibraryModal)}
-						</button>
-					{/if}
-					<button
-						type="button"
-						class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-						onclick={closeLibraryModal}
-						aria-label="Close library manager"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18" />
-							<line x1="6" x2="18" y1="6" y2="18" />
-						</svg>
-					</button>
-				</div>
-			</div>
-
-			<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
-				{#if pendingKnowledgeActionKey}
-					<div
-						class="mb-4 rounded-[1rem] border border-border bg-surface-page px-4 py-3 text-sm font-sans text-text-secondary shadow-sm"
-						role="status"
-						aria-live="polite"
-					>
-						Updating the Knowledge Base…
-					</div>
-				{/if}
-				{#if deletingArtifactCount > 0}
-					<div
-						class="mb-4 rounded-[1rem] border border-border bg-surface-page px-4 py-3 text-sm font-sans text-text-secondary shadow-sm"
-						role="status"
-						aria-live="polite"
-					>
-						Removing {deletingArtifactCount} item{deletingArtifactCount === 1 ? '' : 's'} from the Knowledge Base…
-					</div>
-				{/if}
-				{#if activeLibraryModal === 'documents'}
-					{#if documents.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-							No documents yet.
-						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<table class="min-w-[980px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Size</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each documents as artifact (artifact.id)}
-										<tr
-											class={`border-b border-border last:border-b-0 ${
-												isDeletingArtifact(artifact.id) ? 'opacity-60' : ''
-											}`}
-										>
-											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatDocumentKind(artifact)}</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-													{artifact.summary ?? 'No summary stored.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => removeArtifact(artifact.id, artifact.name)}
-													disabled={isDeletingArtifact(artifact.id)}
-													aria-busy={isDeletingArtifact(artifact.id)}
-												>
-													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{:else if activeLibraryModal === 'results'}
-					{#if results.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-							No saved results yet.
-						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<table class="min-w-[940px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each results as artifact (artifact.id)}
-										<tr
-											class={`border-b border-border last:border-b-0 ${
-												isDeletingArtifact(artifact.id) ? 'opacity-60' : ''
-											}`}
-										>
-											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{artifact.type}</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-													{artifact.summary ?? 'No summary stored.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => removeArtifact(artifact.id, artifact.name)}
-													disabled={isDeletingArtifact(artifact.id)}
-													aria-busy={isDeletingArtifact(artifact.id)}
-												>
-													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{:else}
-					{#if workflows.length === 0}
-						<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-							No workflow capsules yet.
-						</div>
-					{:else}
-						<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-							<table class="min-w-[1080px] w-full border-collapse">
-								<thead>
-									<tr class="border-b border-border bg-surface-elevated/70 text-left">
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Task summary</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflow summary</th>
-										<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Linked artifacts</th>
-										<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each workflows as capsule (capsule.artifact.id)}
-										<tr
-											class={`border-b border-border last:border-b-0 ${
-												isDeletingArtifact(capsule.artifact.id) ? 'opacity-60' : ''
-											}`}
-										>
-											<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{capsule.artifact.name}</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-													{capsule.taskSummary ?? 'No task summary stored.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top">
-												<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-													{capsule.workflowSummary ?? 'No workflow summary stored.'}
-												</div>
-											</td>
-											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-												{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
-											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => removeArtifact(capsule.artifact.id, capsule.artifact.name)}
-													disabled={isDeletingArtifact(capsule.artifact.id)}
-													aria-busy={isDeletingArtifact(capsule.artifact.id)}
-												>
-													{isDeletingArtifact(capsule.artifact.id) ? 'Removing…' : 'Remove'}
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				{/if}
-			</div>
-		</div>
-	</div>
+	<KnowledgeLibraryModal
+		activeLibraryModal={activeLibraryModal}
+		{documents}
+		{results}
+		{workflows}
+		{pendingKnowledgeActionKey}
+		{deletingArtifactCount}
+		{isKnowledgeActionPending}
+		{isDeletingArtifact}
+		onClose={closeLibraryModal}
+		onRunKnowledgeAction={runLibraryBulkAction}
+		onRemoveArtifact={removeArtifact}
+	/>
 {/if}
 
 <style>
@@ -1535,49 +657,49 @@
 		cursor: not-allowed;
 	}
 
-	input[type='checkbox'] {
+	:global(.knowledge-page input[type='checkbox']) {
 		cursor: pointer;
 	}
 
-	.memory-markdown :global(*:last-child) {
+	:global(.memory-markdown *:last-child) {
 		margin-bottom: 0;
 	}
 
-	.memory-markdown :global(p + p),
-	.memory-markdown :global(ul + p),
-	.memory-markdown :global(ol + p) {
+	:global(.memory-markdown p + p),
+	:global(.memory-markdown ul + p),
+	:global(.memory-markdown ol + p) {
 		margin-top: 0.85rem;
 	}
 
-	.memory-markdown :global(strong) {
+	:global(.memory-markdown strong) {
 		color: var(--text-primary);
 		font-weight: 600;
 	}
 
-	.memory-markdown :global(ul),
-	.memory-markdown :global(ol) {
+	:global(.memory-markdown ul),
+	:global(.memory-markdown ol) {
 		padding-left: 1.25rem;
 	}
 
-	.memory-markdown :global(pre) {
+	:global(.memory-markdown pre) {
 		background: var(--surface-code);
 		border-color: var(--border-default);
 	}
 
-	.memory-markdown :global(code) {
+	:global(.memory-markdown code) {
 		color: var(--text-primary);
 	}
 
-	.memory-markdown :global(:not(pre) > code) {
+	:global(.memory-markdown :not(pre) > code) {
 		background: color-mix(in srgb, var(--surface-code) 90%, transparent 10%);
 	}
 
-	.memory-markdown :global(pre code) {
+	:global(.memory-markdown pre code) {
 		background: transparent;
 		color: inherit;
 	}
 
-	.memory-preview {
+	:global(.memory-preview) {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 3;

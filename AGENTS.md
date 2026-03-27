@@ -62,18 +62,20 @@ Do not:
 
 ### Client Shell And Page Boundaries
 
-- [`src/routes/(app)/+page.svelte`](<./src/routes/(app)/+page.svelte>)
+- [`src/routes/(app)/+page.svelte`](./src/routes/(app)/+page.svelte)
   - Landing page.
   - Prepares a draft conversation and stores the first pending message before navigation.
-- [`src/routes/(app)/chat/[conversationId]/+page.ts`](<./src/routes/(app)/chat/[conversationId]/+page.ts>)
+- [`src/routes/(app)/chat/[conversationId]/+page.ts`](./src/routes/(app)/chat/[conversationId]/+page.ts)
   - Lightweight page bootstrap for the chat detail route.
-- [`src/routes/(app)/chat/[conversationId]/+page.svelte`](<./src/routes/(app)/chat/[conversationId]/+page.svelte>)
+- [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
-- [`src/routes/(app)/knowledge/+page.svelte`](<./src/routes/(app)/knowledge/+page.svelte>)
+  - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
+- [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
-- [`src/routes/(app)/settings/+page.svelte`](<./src/routes/(app)/settings/+page.svelte>)
+- [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
   - User settings and admin/runtime config UI surface.
+  - Route-local `_components/`, `*_helpers.ts`, or `*.svelte.ts` files next to the page are acceptable when splitting page-only UI/controller logic without creating a new shared boundary.
 
 Do not:
 

@@ -19,17 +19,13 @@
 	} from '$lib/client/api/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
-	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import EvidenceManager from '$lib/components/chat/EvidenceManager.svelte';
-	import MessageInput from '$lib/components/chat/MessageInput.svelte';
-	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import type {
 		ArtifactSummary,
 		ChatMessage,
 		ConversationDraft,
 		ContextDebugState,
 		ConversationContextStatus,
-		PendingAttachment,
 		TaskState,
 		TaskSteeringPayload,
 	} from '$lib/types';
@@ -41,6 +37,26 @@
 		updateConversationTitleLocal,
 		upsertConversationLocal
 	} from '$lib/stores/conversations';
+	import ChatComposerPanel from './_components/ChatComposerPanel.svelte';
+	import ChatMessagePane from './_components/ChatMessagePane.svelte';
+	import {
+		appendAssistantPlaceholder,
+		appendThinkingChunkToMessageList,
+		appendTokenChunkToMessageList,
+		appendUserMessageAndPlaceholder,
+		applyToolCallUpdateToMessageList,
+		createAssistantPlaceholder,
+		createUserMessage,
+		finalizeStreamingMessageList,
+		mergeAttachedArtifacts,
+		removeMessageById,
+		toFriendlySendError,
+		updateMessageById,
+		type DraftChangePayload,
+		type MessageEditPayload,
+		type MessageRegeneratePayload,
+		type SendPayload,
+	} from './_helpers';
 
 	let { data }: PageProps = $props();
 	const getData = () => data;
@@ -53,29 +69,6 @@
 	const initialContextDebug = getData().contextDebug ?? null;
 	const initialConversationDraft = getData().draft ?? null;
 	const initialBootstrapMode = getData().bootstrap ?? false;
-
-	type SendPayload = {
-		message: string;
-		attachmentIds: string[];
-		attachments: ArtifactSummary[];
-		conversationId?: string | null;
-	};
-
-	type MessageEditPayload = {
-		messageId: string;
-		newText: string;
-	};
-
-	type MessageRegeneratePayload = {
-		messageId: string;
-	};
-
-	type DraftChangePayload = {
-		conversationId: string | null;
-		draftText: string;
-		selectedAttachmentIds: string[];
-		selectedAttachments: PendingAttachment[];
-	};
 
 	const messages = writable<ChatMessage[]>(initialMessages);
 	const draftPersistence = createDraftPersistence();
@@ -165,38 +158,6 @@
 		}
 	});
 
-	const FRIENDLY_SEND_ERRORS = {
-		timeout: 'The response is taking too long. Please try again.',
-		network: 'We could not reach the chat service. Check your connection and try again.',
-		backend_failure: 'We hit a temporary issue generating a response. Please try again.'
-	} as const;
-
-	function toFriendlySendError(error: Error): string {
-		const errorWithCode = error as Error & { code?: unknown };
-		if (errorWithCode.code === 'attachment_not_ready') {
-			return error.message;
-		}
-		if (errorWithCode.code === 'timeout') return FRIENDLY_SEND_ERRORS.timeout;
-		if (errorWithCode.code === 'network') return FRIENDLY_SEND_ERRORS.network;
-		if (errorWithCode.code === 'backend_failure') return FRIENDLY_SEND_ERRORS.backend_failure;
-
-		const message = (error.message ?? '').toLowerCase();
-		if (message.includes('timeout') || message.includes('timed out')) {
-			return FRIENDLY_SEND_ERRORS.timeout;
-		}
-
-		if (
-			message.includes('network') ||
-			message.includes('failed to fetch') ||
-			message.includes('fetch') ||
-			message.includes('connection')
-		) {
-			return FRIENDLY_SEND_ERRORS.network;
-		}
-
-		return FRIENDLY_SEND_ERRORS.backend_failure;
-	}
-
 	function handleVisibilityChange() {
 		if (document.visibilityState === 'visible' && streamInterruptedByBackground) {
 			streamInterruptedByBackground = false;
@@ -263,10 +224,6 @@
 		}
 	}
 
-	function patchMessage(messageId: string, updater: (message: ChatMessage) => ChatMessage) {
-		messages.update((list) => list.map((message) => (message.id === messageId ? updater(message) : message)));
-	}
-
 	async function pollMessageEvidence(messageId: string) {
 		evidencePollControllers.get(messageId)?.abort();
 		const controller = new AbortController();
@@ -289,18 +246,22 @@
 				}
 
 				if (result.status === 'none' || result.status === 'missing') {
-					patchMessage(messageId, (message) => ({
-						...message,
-						evidencePending: false,
-					}));
+					messages.update((list) =>
+						updateMessageById(list, messageId, (message) => ({
+							...message,
+							evidencePending: false,
+						}))
+					);
 					return;
 				}
 
-				patchMessage(messageId, (message) => ({
-					...message,
-					evidenceSummary: result.evidenceSummary,
-					evidencePending: false,
-				}));
+				messages.update((list) =>
+					updateMessageById(list, messageId, (message) => ({
+						...message,
+						evidenceSummary: result.evidenceSummary,
+						evidencePending: false,
+					}))
+				);
 				return;
 			} catch (error) {
 				if ((error as Error).name === 'AbortError') {
@@ -310,10 +271,12 @@
 			}
 		}
 
-		patchMessage(messageId, (message) => ({
-			...message,
-			evidencePending: false,
-		}));
+		messages.update((list) =>
+			updateMessageById(list, messageId, (message) => ({
+				...message,
+				evidencePending: false,
+			}))
+		);
 	}
 
 	function handleSend(
@@ -333,51 +296,24 @@
 		hasPersistedMessages = true;
 		conversationDraft = null;
 		draftPersistence.clear();
-		if (newAttachments.length > 0) {
-			const merged = new Map(attachedArtifacts.map((artifact) => [artifact.id, artifact]));
-			for (const attachment of newAttachments) {
-				merged.set(attachment.id, attachment);
-			}
-			attachedArtifacts = Array.from(merged.values());
-		}
+		attachedArtifacts = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const placeholderId = crypto.randomUUID();
-		const placeholder: ChatMessage = {
-			id: placeholderId,
-			renderKey: placeholderId,
-			role: 'assistant',
-			content: '',
-			timestamp: Date.now(),
-			isStreaming: true
-		};
+		const placeholder = createAssistantPlaceholder(placeholderId);
 
 		let clientUserMsgId: string | null = null;
 		if (skipUserMessage) {
-			messages.update((msgs) => [...msgs, placeholder]);
+			messages.update((list) => appendAssistantPlaceholder(list, placeholder));
 		} else {
 			clientUserMsgId = crypto.randomUUID();
-			const userMsg: ChatMessage = {
+			const userMessage = createUserMessage({
 				id: clientUserMsgId,
-				renderKey: clientUserMsgId,
-				role: 'user',
-				content: text,
-				attachments: attachedArtifacts
-					.filter((artifact) => attachmentIds.includes(artifact.id))
-					.map((artifact) => ({
-						id: artifact.id,
-						artifactId: artifact.id,
-						name: artifact.name,
-						type: artifact.type,
-						mimeType: artifact.mimeType,
-						sizeBytes: artifact.sizeBytes,
-						conversationId: artifact.conversationId,
-						messageId: null,
-						createdAt: artifact.createdAt
-					})),
-				timestamp: Date.now()
-			};
-			messages.update((msgs) => [...msgs, userMsg, placeholder]);
+				text,
+				attachmentIds,
+				attachedArtifacts,
+			});
+			messages.update((list) => appendUserMessageAndPlaceholder(list, userMessage, placeholder));
 		}
 
 		activeStream = streamChat(
@@ -385,111 +321,36 @@
 			data.conversation.id,
 			{
 				onToken(chunk) {
-					messages.update((msgs) =>
-						msgs.map((m) =>
-							m.id === placeholderId
-								? {
-										...m,
-										content: m.content + chunk,
-										isThinkingStreaming: false
-									}
-								: m
-						)
-					);
+					messages.update((list) => appendTokenChunkToMessageList(list, placeholderId, chunk));
 				},
 				onThinking(chunk) {
-					messages.update((msgs) =>
-						msgs.map((m) => {
-							if (m.id !== placeholderId) return m;
-							const segs = m.thinkingSegments ?? [];
-							const last = segs[segs.length - 1];
-							const newSegs = last?.type === 'text'
-								? [...segs.slice(0, -1), { type: 'text' as const, content: last.content + chunk }]
-								: [...segs, { type: 'text' as const, content: chunk }];
-							return {
-								...m,
-								thinking: (m.thinking ?? '') + chunk,
-								thinkingSegments: newSegs,
-								isThinkingStreaming: true
-							};
-						})
-					);
+					messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 				},
 				onToolCall(name, input, status, details) {
-					messages.update((msgs) =>
-						msgs.map((m) => {
-							if (m.id !== placeholderId) return m;
-							const segs = m.thinkingSegments ?? [];
-							if (status === 'running') {
-								return {
-									...m,
-									thinkingSegments: [
-										...segs,
-										{ type: 'tool_call' as const, name, input, status: 'running' as const }
-									]
-								};
-							}
-							const updated = [...segs];
-							let lastRunningIdx = -1;
-							for (let i = updated.length - 1; i >= 0; i--) {
-								const s = updated[i];
-								if (s.type === 'tool_call' && s.name === name && s.status === 'running') {
-									lastRunningIdx = i;
-									break;
-								}
-							}
-							if (lastRunningIdx !== -1) {
-								// Preserve the original input stored at TOOL_START — the TOOL_END
-								// payload only carries the name, so `input` here is always {}.
-								updated[lastRunningIdx] = {
-									...updated[lastRunningIdx],
-									status: 'done' as const,
-									outputSummary: details?.outputSummary ?? null,
-									sourceType: details?.sourceType ?? null,
-									candidates: details?.candidates,
-								};
-							}
-							return { ...m, thinkingSegments: updated };
+					messages.update((list) =>
+						applyToolCallUpdateToMessageList(list, {
+							placeholderId,
+							name,
+							input,
+							status,
+							details,
 						})
 					);
 				},
-				onEnd(_fullText, metadata) {
-					lastAssistantResponse = _fullText;
+				onEnd(fullText, metadata) {
+					lastAssistantResponse = fullText;
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
 					const serverAssistantId = metadata?.assistantMessageId;
-					const serverUserMsgId = metadata?.userMessageId;
-					messages.update((msgs) => {
-						return msgs.map((m) => {
-							if (m.id === placeholderId) {
-								return {
-									...m,
-									renderKey: m.renderKey ?? placeholderId,
-									id: serverAssistantId ?? m.id,
-									content: metadata?.wasStopped ? m.content || 'Stopped' : m.content,
-									isStreaming: false,
-									thinking: metadata?.thinking ?? m.thinking,
-									isThinkingStreaming: false,
-									modelDisplayName: metadata?.modelDisplayName ?? m.modelDisplayName,
-									thinkingTokenCount: metadata?.thinkingTokenCount,
-									responseTokenCount: metadata?.responseTokenCount,
-									totalTokenCount: metadata?.totalTokenCount,
-									evidenceSummary: m.evidenceSummary,
-									evidencePending: Boolean(serverAssistantId),
-								};
-							}
-							if (clientUserMsgId && m.id === clientUserMsgId && serverUserMsgId) {
-								return {
-									...m,
-									renderKey: m.renderKey ?? clientUserMsgId,
-									id: serverUserMsgId,
-								};
-							}
-							return m;
-						});
-					});
+					messages.update((list) =>
+						finalizeStreamingMessageList(list, {
+							placeholderId,
+							clientUserMessageId: clientUserMsgId,
+							metadata,
+						})
+					);
 					conversationDraft = null;
 					isSending = false;
 					activeStream = null;
@@ -517,7 +378,7 @@
 					}
 				},
 				onError(err) {
-					messages.update((msgs) => msgs.filter((m) => m.id !== placeholderId));
+					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
 
@@ -644,55 +505,40 @@
 </svelte:head>
 
 <div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
-	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg" class:chat-stage-active={hasMessages}>
-		<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
-			<MessageArea
-				messages={$messages}
-				conversationId={data.conversation.id}
-				isThinkingActive={isThinkingActive}
-				{contextDebug}
-				onRegenerate={handleRegenerate}
-				onEdit={handleEdit}
-				onSteer={handleSteering}
-			/>
-		</div>
+	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
+		<ChatMessagePane
+			messages={$messages}
+			conversationId={data.conversation.id}
+			{isThinkingActive}
+			{contextDebug}
+			{hasMessages}
+			onRegenerate={handleRegenerate}
+			onEdit={handleEdit}
+			onSteer={handleSteering}
+		/>
 
-		<div class="composer-layer" class:composer-layer-active={hasMessages}>
-			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
-				<div class="intro-copy px-2 text-center" class:intro-copy-hidden={hasMessages}>
-					<h1
-						class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
-							style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
-						>
-						What can I help you with?
-					</h1>
-				</div>
-
-				{#if sendError}
-					<ErrorMessage error={sendError} onRetry={handleRetry} onClose={handleErrorClose} />
-				{/if}
-
-					<MessageInput
-						onSend={handleSend}
-						onStop={handleStop}
-						onDraftChange={handleDraftChange}
-						disabled={isSending}
-						isGenerating={isSending}
-						maxLength={data.maxMessageLength}
-						conversationId={data.conversation.id}
-						{contextStatus}
-						{attachedArtifacts}
-						{taskState}
-						{contextDebug}
-						draftText={conversationDraft?.draftText ?? ''}
-						draftAttachments={conversationDraft?.selectedAttachments ?? []}
-						draftVersion={conversationDraft?.updatedAt ?? 0}
-						attachmentsEnabled={true}
-						onSteer={handleSteering}
-						onManageEvidence={openEvidenceManager}
-					/>
-			</div>
-		</div>
+		<ChatComposerPanel
+			{hasMessages}
+			{sendError}
+			onRetry={handleRetry}
+			onErrorClose={handleErrorClose}
+			onSend={handleSend}
+			onStop={handleStop}
+			onDraftChange={handleDraftChange}
+			disabled={isSending}
+			isGenerating={isSending}
+			maxLength={data.maxMessageLength}
+			conversationId={data.conversation.id}
+			{contextStatus}
+			{attachedArtifacts}
+			{taskState}
+			{contextDebug}
+			draftText={conversationDraft?.draftText ?? ''}
+			draftAttachments={conversationDraft?.selectedAttachments ?? []}
+			draftVersion={conversationDraft?.updatedAt ?? 0}
+			onSteer={handleSteering}
+			onManageEvidence={openEvidenceManager}
+		/>
 	</div>
 
 	<EvidenceManager
@@ -702,56 +548,3 @@
 		onSteer={handleSteering}
 	/>
 </div>
-
-<style>
-	.message-layer {
-		opacity: 0;
-		transform: translateY(18px);
-		pointer-events: none;
-		transition:
-			opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.message-layer-active {
-		opacity: 1;
-		transform: translateY(0);
-		pointer-events: auto;
-	}
-
-	.composer-layer {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 50%;
-		transform: translateY(-50%);
-		transition:
-			top 320ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.composer-layer-active {
-		top: 100%;
-		transform: translateY(calc(-100% - max(1.5rem, env(safe-area-inset-bottom))));
-	}
-
-	.intro-copy {
-		max-height: 10rem;
-		opacity: 1;
-		transform: translateY(0);
-		transition:
-			opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
-			max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
-			margin 240ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.intro-copy-hidden {
-		max-height: 0;
-		margin: 0;
-		opacity: 0;
-		transform: translateY(-12px);
-		overflow: hidden;
-		pointer-events: none;
-	}
-</style>
