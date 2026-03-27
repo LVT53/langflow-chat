@@ -1015,9 +1015,7 @@ Where `charCountColor` is:
 </style>
 ```
 
-### 5.5 Theme Toggle Component
-
-**File:** `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/ThemeToggle.svelte`
+### 5.5 Theme Toggle Pattern
 
 **Structure (Exact Classes):**
 ```svelte
@@ -1296,9 +1294,7 @@ Where `charCountColor` is:
 </style>
 ```
 
-### 5.9 Message Loading Component
-
-**File:** `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MessageLoading.svelte`
+### 5.9 Message Loading Pattern
 
 **Structure (Exact Classes):**
 ```svelte
@@ -1404,9 +1400,7 @@ Where `charCountColor` is:
 </div>
 ```
 
-### 5.12 Toast Component
-
-**File:** `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/Toast.svelte`
+### 5.12 Toast Pattern
 
 **Structure (Exact Classes):**
 ```svelte
@@ -2323,16 +2317,12 @@ Used for:
 |-----------|------|
 | Sidebar | `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/Sidebar.svelte` |
 | Header | `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/Header.svelte` |
-| ThemeToggle | `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/ThemeToggle.svelte` |
-| Toast | `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/Toast.svelte` |
-| ChatArea | `/Users/lvt53/Desktop/langflow-design/src/lib/components/layout/ChatArea.svelte` |
 | MessageBubble | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MessageBubble.svelte` |
 | MessageInput | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MessageInput.svelte` |
 | MessageArea | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MessageArea.svelte` |
 | MarkdownRenderer | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MarkdownRenderer.svelte` |
 | CodeBlock | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/CodeBlock.svelte` |
 | LoadingIndicator | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/LoadingIndicator.svelte` |
-| MessageLoading | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/MessageLoading.svelte` |
 | ErrorMessage | `/Users/lvt53/Desktop/langflow-design/src/lib/components/chat/ErrorMessage.svelte` |
 | ConversationItem | `/Users/lvt53/Desktop/langflow-design/src/lib/components/sidebar/ConversationItem.svelte` |
 | ConversationList | `/Users/lvt53/Desktop/langflow-design/src/lib/components/sidebar/ConversationList.svelte` |
@@ -2352,7 +2342,6 @@ Used for:
 |-------|------|
 | Theme | `/Users/lvt53/Desktop/langflow-design/src/lib/stores/theme.ts` |
 | UI | `/Users/lvt53/Desktop/langflow-design/src/lib/stores/ui.ts` |
-| Toast | `/Users/lvt53/Desktop/langflow-design/src/lib/stores/toast.ts` |
 | Conversations | `/Users/lvt53/Desktop/langflow-design/src/lib/stores/conversations.ts` |
 
 ### 14.5 Service Files
@@ -2700,7 +2689,6 @@ This section provides step-by-step instructions for building new components that
 	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 	import { isDark, theme } from '$lib/stores/theme';
 	import { sidebarOpen, currentConversationId } from '$lib/stores/ui';
-	import { showToast } from '$lib/stores/toast';
 	import type { ConversationListItem } from '$lib/types';
 	
 	// 2. PROPS - Use export let with types and defaults
@@ -2818,7 +2806,6 @@ CSS variables auto-switch. For custom overrides:
 ```typescript
 import { isDark, setTheme } from '$lib/stores/theme';
 import { sidebarOpen, currentConversationId } from '$lib/stores/ui';
-import { showToast } from '$lib/stores/toast';
 ```
 
 **Template Usage ($ prefix):**

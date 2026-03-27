@@ -31,7 +31,7 @@ export default async function globalSetup() {
 
   try {
     execSync(
-      `npx tsx scripts/seed-user.ts --email=admin@local --password=admin123 --name="Admin User"`,
+      `npx tsx scripts/seed-admin.ts --email=admin@local --password=admin123 --name="Admin User" --admin`,
       {
         stdio: 'pipe',
         env: {
@@ -44,8 +44,8 @@ export default async function globalSetup() {
         }
       }
     );
-    console.log('[globalSetup] Test user seeded: admin@local');
+    console.log('[globalSetup] Test admin seeded: admin@local');
   } catch (err) {
-    console.warn('[globalSetup] Seed user failed (may already exist):', (err as Error).message?.slice(0, 200));
+    console.warn('[globalSetup] Seed admin failed:', (err as Error).message?.slice(0, 200));
   }
 }

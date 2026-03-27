@@ -148,15 +148,12 @@ This project is a **modern AI chat application** built with SvelteKit that provi
 ### Layout Components
 - **Sidebar**: Navigation drawer with conversation list, new chat button, user controls
 - **Header**: Top bar with menu toggle, theme switcher, new chat button
-- **ChatArea**: Main content area for messages
-- **ThemeToggle**: Light/dark mode switch
 
 ### Chat Components
 - **MessageArea**: Container for all messages in a conversation
 - **MessageBubble**: Individual message display (user vs assistant styles)
 - **MessageInput**: Text input with auto-resize and send button
 - **ThinkingBlock**: Collapsible AI reasoning display
-- **StreamingContent**: Real-time streaming text display
 - **MarkdownRenderer**: Safe markdown rendering with code highlighting
 - **CodeBlock**: Syntax-highlighted code with copy button
 - **LoadingIndicator**: Animated typing indicator
@@ -165,7 +162,6 @@ This project is a **modern AI chat application** built with SvelteKit that provi
 ### UI Components
 - **SearchModal**: Conversation search interface
 - **ConfirmDialog**: Confirmation dialogs for destructive actions
-- **Toast**: Notification system
 
 ---
 
