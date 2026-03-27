@@ -2,6 +2,14 @@
 
 This file is the canonical engineering map for AlfyAI. Read it before changing code. Public setup, deployment, and environment documentation live in [README.md](./README.md). Product and design notes in other docs are supplemental, not the source of truth for code placement.
 
+## Mandatory Docs Check
+
+- Before touching code, check current documentation through Context7 and the Svelte/SvelteKit MCP docs tools for the relevant framework or library surface.
+- This is especially required for Svelte, SvelteKit, Tailwind, Vitest, Playwright, Drizzle, and any fast-moving integration used by this app.
+- Do not write framework code purely from memory when an MCP-backed docs check can confirm the current API or recommended pattern.
+- The goal is to avoid stale code, deprecated patterns, and implementations that drift away from the real versions used in this repo.
+- If the Svelte MCP/docs tool is unavailable in the current session, use the best available official docs path before coding and call out that fallback explicitly.
+
 ## Purpose
 
 - Use the existing boundaries in this file before inventing new ones.

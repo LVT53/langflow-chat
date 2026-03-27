@@ -37,10 +37,14 @@ The deploy script performs these steps in order:
 2. `npm install`
 3. `npm run build`
 4. `npm run db:prepare`
+5. if `SYSTEMD_SERVICE_NAME` is set, activate restart drain mode
+6. wait for in-flight chat turns to finish
+7. restart the configured systemd unit
 
 Important caveat:
 
-- `scripts/deploy.sh` does **not** restart PM2, systemd, Docker, or any other running process. It prints `PM2_APP_NAME`, but that value is informational only. Restart your process manager separately after the script completes.
+- `scripts/deploy.sh` still does **not** restart PM2, Docker, or any other non-systemd supervisor. If `SYSTEMD_SERVICE_NAME` is unset, it also does not restart systemd. `PM2_APP_NAME` remains informational only.
+- When `SYSTEMD_SERVICE_NAME` is set, the script first puts the app into a temporary restart-drain mode so new chat turns are rejected, then waits for in-flight generations to finish before restarting the unit.
 
 Deploy-script environment variables:
 
@@ -48,6 +52,12 @@ Deploy-script environment variables:
 |---|---|---:|---|---|---|
 | `APP_DIR` | No | current working directory | Tells `scripts/deploy.sh` which checkout to deploy from | Set it when the script is invoked from outside the app directory | Script-only variable; not read by the app |
 | `PM2_APP_NAME` | No | `langflow-chat` | Printed by `scripts/deploy.sh` for operator context | Set it if your PM2 process uses a different name | Currently not used to restart or reload anything |
+| `SYSTEMD_SERVICE_NAME` | No | empty | Tells `scripts/deploy.sh` which systemd unit to restart after deploy | Set it when you want one-command deploy and restart for a systemd-managed app | If unset, the script stops after build and DB preparation |
+| `SYSTEMD_USE_SUDO` | No | `false` | Prefixes systemd commands with `sudo` | Set it when the deploy user needs `sudo` to restart or inspect the unit | The user must still have sudo rights configured |
+| `DEPLOY_CONTROL_TOKEN` | No | falls back to `SESSION_SECRET` | Bearer token used by the deploy script to activate restart drain mode | Set it when you want a dedicated control token instead of reusing the session secret | Must match on both the app process and the deploy shell |
+| `RESTART_CONTROL_URL` | No | `http://127.0.0.1:${PORT:-3000}/api/admin/runtime/restart` | Internal control URL used by the deploy script to drain chat traffic | Set it when the Node server is not reachable at the default local URL | Should point to the app directly, not a public edge URL |
+| `SAFE_RESTART_TIMEOUT_SECONDS` | No | `300` | Max time the deploy script waits for active chat turns to finish | Raise it if generations can legitimately run longer | Deploy fails if the timeout is reached |
+| `SAFE_RESTART_POLL_INTERVAL_SECONDS` | No | `2` | Poll interval while waiting for a safe restart window | Adjust it if you want more or less frequent status checks | Lower values generate more control traffic |
 
 ## Local Development
 
@@ -162,10 +172,17 @@ Notes before the tables:
 | `NODE_ENV` | No | environment dependent | Controls framework/runtime production behavior | Set it to `production` in real deployments | Also affects cookie security behavior |
 | `APP_DIR` | No | current working directory | Tells `scripts/deploy.sh` where the app checkout lives | Set it when deploying from outside the repo directory | Deploy-script only |
 | `PM2_APP_NAME` | No | `langflow-chat` | Printed by `scripts/deploy.sh` for operator context | Set it if you use PM2 with a custom process name | Not currently used for restart or reload logic |
+| `SYSTEMD_SERVICE_NAME` | No | empty | systemd unit name used by `scripts/deploy.sh` for post-deploy restart | Set it when the app is supervised by systemd and you want deploy-and-restart in one step | The script does nothing with systemd unless this is set |
+| `SYSTEMD_USE_SUDO` | No | `false` | Runs systemd restart/status commands through `sudo` | Set it when your deploy user does not have direct systemctl permissions | Requires working sudo configuration |
+| `DEPLOY_CONTROL_TOKEN` | No | falls back to `SESSION_SECRET` | Auth token for the internal restart-drain control endpoint | Set it if you want a dedicated deploy-control secret | Keep it secret; it can activate maintenance-style drain mode |
+| `RESTART_CONTROL_URL` | No | `http://127.0.0.1:${PORT:-3000}/api/admin/runtime/restart` | URL used by the deploy script to control drain mode | Set it when the app listens on a non-default local host or port | Intended for trusted internal use only |
+| `SAFE_RESTART_TIMEOUT_SECONDS` | No | `300` | Safe-restart wait timeout used by the deploy script | Raise it for long-running generations | Deploy aborts if active turns do not drain in time |
+| `SAFE_RESTART_POLL_INTERVAL_SECONDS` | No | `2` | Poll interval for safe-restart status checks | Tune it for your environment if desired | Smaller values poll more aggressively |
 
 ## Operational Caveats
 
 - If you bypass `scripts/deploy.sh`, run `npm run db:prepare` before starting the production server.
+- If you use deploy-time systemd restarts, the app now drains new chat turns before restart so active generations can finish first.
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
 - On Linux, document extraction quality improves if `poppler-utils`, `unzip`, and `binutils` are installed.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
