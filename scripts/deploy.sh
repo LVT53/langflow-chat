@@ -16,6 +16,15 @@ echo ""
 
 cd "$APP_DIR"
 
+if [ -f .env ]; then
+  echo -e "${YELLOW}Loading environment from .env...${NC}"
+  set -a
+  source .env
+  set +a
+  echo -e "${GREEN}✓ Environment loaded${NC}"
+  echo ""
+fi
+
 echo -e "${YELLOW}1. Pulling latest changes...${NC}"
 git pull origin main
 echo -e "${GREEN}✓ Git pull complete${NC}"
