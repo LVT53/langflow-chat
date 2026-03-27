@@ -76,6 +76,13 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
+### Interface And Content Characteristics
+
+- The product is intentionally reading-focused rather than dashboard-like: message content uses a serif text face, while the surrounding UI uses a sans-serif system for clearer navigation and controls.
+- Markdown responses are rendered with code highlighting and sanitization, so technical answers can mix prose, code blocks, and inline snippets safely.
+- The same app shell supports desktop, tablet, and mobile layouts, with the conversation view remaining the primary surface across breakpoints.
+- Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
+
 ## Configuration Reference
 
 Notes before the tables:
