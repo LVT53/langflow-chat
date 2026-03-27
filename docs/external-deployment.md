@@ -1,5 +1,7 @@
 # External Deployment
 
+This file is a supplemental runtime note. Start with the root [README.md](../README.md) for the main public setup and deployment path.
+
 This app now includes Honcho-backed context compaction, file ingestion, and a user-scoped knowledge base.
 
 ## Runtime Requirements
@@ -38,19 +40,20 @@ Set the usual application secrets plus the Honcho and Langflow configuration:
 
 ## Upload Body Size
 
-Adapter-node defaults request bodies to `512K`, which is too small for document uploads. This project now patches the production build so `npm run build` produces a server with a default `BODY_SIZE_LIMIT` of `32M`.
+Adapter-node defaults request bodies to `512K`, which is too small for document uploads. This project patches the production build so `npm run build` produces a server with a default `BODY_SIZE_LIMIT` of `50M`.
 
 You can still override that explicitly in deployment:
 
-- `BODY_SIZE_LIMIT=32M` or higher if you want more headroom
-- keep it above the app-level 25MB knowledge-upload limit so multipart overhead does not cause false failures
+- `BODY_SIZE_LIMIT=50M` to match the current default
+- a higher value if you want more headroom
+- keep it at or above the app-level 50MB upload cap so multipart overhead does not cause false failures
 
 ## Deploy Flow
 
 ```sh
-npm ci
-npm run build
-node build
+./scripts/deploy.sh
 ```
+
+If you manage the process outside the deploy script, restart your supervisor separately after the script completes.
 
 Mount or persist `data/` across deploys so conversations, artifacts, and knowledge files survive restarts.

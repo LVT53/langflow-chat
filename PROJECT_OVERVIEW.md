@@ -1,5 +1,7 @@
 # Project Overview: AlfyAI Chat Interface
 
+> Status: This file is now a supplemental deep-dive. Use [README.md](./README.md) for public setup and deployment, and [AGENTS.md](./AGENTS.md) for the canonical code-placement and implementation guide.
+
 ## Introduction
 
 This project is a **modern AI chat application** built with SvelteKit that provides a beautiful, warm, and focused interface for interacting with AI language models through Langflow. The design philosophy follows Anthropic's Claude interface principles: **warm minimalism** — calm, focused, and uncluttered.

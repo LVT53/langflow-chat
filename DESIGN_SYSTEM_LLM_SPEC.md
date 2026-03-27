@@ -1,5 +1,7 @@
 # AlfyAI Design System Specification (LLM Reference Document)
 
+> Status: This file is a supplemental design reference. Use [README.md](./README.md) for public setup and deployment, and [AGENTS.md](./AGENTS.md) for the canonical engineering and code-placement guide.
+
 ## Document Purpose
 
 This document provides a **deterministic, exhaustive specification** of the AlfyAI chat application's design system, intended for LLM consumption. Every value is exact—no approximations, no "around" values, no subjective descriptions. Use this document to generate code that matches the existing design system precisely.
