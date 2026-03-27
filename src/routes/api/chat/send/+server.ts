@@ -16,24 +16,10 @@ import {
 } from '$lib/server/services/chat-turn/finalize';
 import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
 import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
-import {
-	beginRestartSensitiveChatTurn,
-	isRestartDrainActive,
-} from '$lib/server/utils/restart-guard';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
-
-	if (isRestartDrainActive()) {
-		return json(
-			{
-				error: 'A server restart is in progress. Please wait a moment and try again.',
-				code: 'restart_in_progress',
-			},
-			{ status: 503 }
-		);
-	}
 
 	const parsedRequest = await parseChatTurnRequest(event.request, getConfig(), 'send');
 	if (!parsedRequest.ok) {
@@ -57,20 +43,6 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const turn = preflight.value;
-	const restartGuard = beginRestartSensitiveChatTurn({
-		mode: 'send',
-		userId: user.id,
-		conversationId: turn.conversationId,
-	});
-	if (!restartGuard) {
-		return json(
-			{
-				error: 'A server restart is in progress. Please wait a moment and try again.',
-				code: 'restart_in_progress',
-			},
-			{ status: 503 }
-		);
-	}
 
 	try {
 		const upstreamMessage = await buildUpstreamMessage(turn);
@@ -89,7 +61,6 @@ export const POST: RequestHandler = async (event) => {
 			translationEnabled: turn.translationEnabled,
 		});
 
-		restartGuard.markPersisting();
 		const userMessage = await createMessage(turn.conversationId, 'user', turn.normalizedMessage);
 		await persistUserTurnAttachments({
 			userId: user.id,
@@ -178,7 +149,5 @@ export const POST: RequestHandler = async (event) => {
 			{ error: 'Failed to get response from AI. Please try again.' },
 			{ status: 502 }
 		);
-	} finally {
-		restartGuard.finish();
 	}
 };

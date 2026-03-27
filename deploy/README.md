@@ -24,26 +24,8 @@ That script currently does exactly this:
 2. `npm install`
 3. `npm run build`
 4. `npm run db:prepare`
-5. if `SYSTEMD_SERVICE_NAME` is set, activate restart-drain mode
-6. wait for in-flight chat turns to finish
-7. restart the configured systemd unit
 
-It still does **not** restart PM2, Docker, or other non-systemd supervisors automatically.
-
-If `SYSTEMD_SERVICE_NAME` is configured, the deploy script will:
-
-- temporarily reject new chat turns
-- wait for active generations to finish and persist
-- restart the named systemd unit
-
-Useful script-side variables:
-
-- `SYSTEMD_SERVICE_NAME`
-- `SYSTEMD_USE_SUDO`
-- `DEPLOY_CONTROL_TOKEN`
-- `RESTART_CONTROL_URL`
-- `SAFE_RESTART_TIMEOUT_SECONDS`
-- `SAFE_RESTART_POLL_INTERVAL_SECONDS`
+It does **not** restart a running process manager automatically. If you use PM2, systemd, Docker, or another supervisor, restart or reload it yourself after the script completes.
 
 ## Optional Advanced Linux Setup
 

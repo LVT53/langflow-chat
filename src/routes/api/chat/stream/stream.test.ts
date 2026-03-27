@@ -82,14 +82,6 @@ vi.mock('$lib/server/env', () => ({
 	}
 }));
 
-vi.mock('$lib/server/utils/restart-guard', () => ({
-	beginRestartSensitiveChatTurn: vi.fn(() => ({
-		markPersisting: vi.fn(),
-		finish: vi.fn(),
-	})),
-	isRestartDrainActive: vi.fn(() => false),
-}));
-
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
@@ -98,10 +90,6 @@ import { createMessage } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import { translateHungarianToEnglish } from '$lib/server/services/translator';
-import {
-	beginRestartSensitiveChatTurn,
-	isRestartDrainActive,
-} from '$lib/server/utils/restart-guard';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
@@ -111,8 +99,6 @@ const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
-const mockBeginRestartSensitiveChatTurn = beginRestartSensitiveChatTurn as ReturnType<typeof vi.fn>;
-const mockIsRestartDrainActive = isRestartDrainActive as ReturnType<typeof vi.fn>;
 
 function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com', translationEnabled: false }) {
 	return {
@@ -172,23 +158,6 @@ describe('POST /api/chat/stream', () => {
 		mockDetectLanguage.mockReturnValue('en');
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
-		mockBeginRestartSensitiveChatTurn.mockReturnValue({
-			markPersisting: vi.fn(),
-			finish: vi.fn(),
-		});
-		mockIsRestartDrainActive.mockReturnValue(false);
-	});
-
-	it('returns 503 before streaming when restart drain is active', async () => {
-		mockIsRestartDrainActive.mockReturnValue(true);
-
-		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
-		const response = await POST(event);
-		const data = await response.json();
-
-		expect(response.status).toBe(503);
-		expect(data.code).toBe('restart_in_progress');
-		expect(mockSendMessageStream).not.toHaveBeenCalled();
 	});
 
 	it('returns text/event-stream content-type for valid request', async () => {

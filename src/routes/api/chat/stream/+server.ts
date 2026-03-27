@@ -28,10 +28,6 @@ import {
 	createStreamJsonErrorResponse,
 } from '$lib/server/services/chat-turn/stream';
 import type { WorkCapsuleSummary } from '$lib/server/services/chat-turn/types';
-import {
-	beginRestartSensitiveChatTurn,
-	isRestartDrainActive,
-} from '$lib/server/utils/restart-guard';
 import { estimateTokenCount } from '$lib/server/utils/tokens';
 
 const STREAM_TIMEOUT_MS = 120_000;
@@ -618,14 +614,6 @@ export const POST: RequestHandler = async (event) => {
 	const requestStartTime = Date.now();
 	const runtimeConfig = getConfig();
 
-	if (isRestartDrainActive()) {
-		return createStreamJsonErrorResponse({
-			status: 503,
-			error: 'A server restart is in progress. Please wait a moment and try again.',
-			code: 'restart_in_progress',
-		});
-	}
-
 	const parsedRequest = await parseChatTurnRequest(event.request, runtimeConfig, 'stream');
 	if (!parsedRequest.ok) {
 		return createStreamJsonErrorResponse(parsedRequest.error);
@@ -663,29 +651,9 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const restartGuard = beginRestartSensitiveChatTurn({
-		mode: 'stream',
-		userId: user.id,
-		conversationId,
-	});
-	if (!restartGuard) {
-		return createStreamJsonErrorResponse({
-			status: 503,
-			error: 'A server restart is in progress. Please wait a moment and try again.',
-			code: 'restart_in_progress',
-		});
-	}
-
 	const encoder = new TextEncoder();
 	const downstreamAbortSignal = event.request.signal;
 	let cancelStream = () => undefined;
-	let releasedRestartGuard = false;
-
-	const releaseRestartGuard = () => {
-		if (releasedRestartGuard) return;
-		releasedRestartGuard = true;
-		restartGuard.finish();
-	};
 
 	const stream = new ReadableStream({
 			async start(controller) {
@@ -714,7 +682,6 @@ export const POST: RequestHandler = async (event) => {
 			cancelStream = closeStream;
 
 			if (downstreamAbortSignal.aborted) {
-				releaseRestartGuard();
 				closeStream();
 				return;
 			}
@@ -1157,7 +1124,6 @@ export const POST: RequestHandler = async (event) => {
 				const genTimeMs = Date.now() - requestStartTime;
 				const analyticsModel = modelId ?? 'model1';
 				const persistUserMessage = !skipPersistUserMessage;
-				restartGuard.markPersisting();
 
 				const userMsgPromise = persistUserMessage
 					? createMessage(conversationId, 'user', normalizedMessage).catch(() => undefined)
@@ -1191,7 +1157,6 @@ export const POST: RequestHandler = async (event) => {
 						})}\n\n`
 					);
 					touchConversation(user.id, conversationId).catch(() => undefined);
-					releaseRestartGuard();
 					closeStream();
 				};
 
@@ -1285,7 +1250,6 @@ export const POST: RequestHandler = async (event) => {
 				if (ended || closed) return;
 				ended = true;
 				emitError(code);
-				releaseRestartGuard();
 				closeStream();
 			};
 
@@ -1525,9 +1489,6 @@ export const POST: RequestHandler = async (event) => {
 			} finally {
 				clearTimeout(timeoutId);
 				cancelStream = () => undefined;
-				if (!ended) {
-					releaseRestartGuard();
-				}
 			}
 		},
 		cancel() {
