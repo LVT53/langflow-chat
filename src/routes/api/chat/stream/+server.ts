@@ -1,4 +1,10 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import {
+	createInlineThinkingState,
+	flushInlineThinkingState,
+	getPartialTagPrefixLength,
+	processInlineThinkingChunk,
+} from '$lib/services/stream-protocol';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { touchConversation } from '$lib/server/services/conversations';
 import { sendMessageStream } from '$lib/server/services/langflow';
@@ -86,14 +92,6 @@ function processToolCallMarkers(
 
 	return result;
 }
-
-// Nemotron-style thinking tags
-const THINKING_OPEN_TAG = '<thinking>';
-const THINKING_CLOSE_TAG = '</thinking>';
-
-// Hermes 4-style thinking tags
-const HERMES_THINKING_OPEN_TAG = '<think>';
-const HERMES_THINKING_CLOSE_TAG = '</think>';
 
 type StreamErrorCode = 'timeout' | 'network' | 'backend_failure';
 
@@ -266,18 +264,6 @@ function parseEventBlock(block: string): UpstreamEvent | null {
 	return block.includes('event:') || block.includes('data:')
 		? parseSseBlock(block)
 		: parseJsonBlock(block);
-}
-
-function getPartialTagPrefixLength(value: string, tag: string): number {
-	const maxLength = Math.min(value.length, tag.length - 1);
-
-	for (let length = maxLength; length > 0; length -= 1) {
-		if (value.endsWith(tag.slice(0, length))) {
-			return length;
-		}
-	}
-
-	return 0;
 }
 
 async function* parseUpstreamEvents(
@@ -702,11 +688,10 @@ export const POST: RequestHandler = async (event) => {
 				}
 			};
 
-			let thinkingContent = '';
-			let inlineThinkingBuffer = '';
-			let insideInlineThinking = false;
-			let preserveBuffer = '';
-			let insidePreserve = false;
+				let thinkingContent = '';
+				const inlineThinkingState = createInlineThinkingState();
+				let preserveBuffer = '';
+				let insidePreserve = false;
 			// Full interleaved segments for DB persistence — mirrors exactly what the
 			// client builds in thinkingSegments so the expanded view is identical on reload.
 			type ServerSegment =
@@ -814,155 +799,17 @@ export const POST: RequestHandler = async (event) => {
 			};
 
 			const emitInlineToken = (chunk: string) => {
-				if (!chunk) {
-					return true;
-				}
-
-				inlineThinkingBuffer += chunk;
-
-				while (inlineThinkingBuffer) {
-					if (insideInlineThinking) {
-						// Check for both Nemotron and Hermes close tags
-						const nemotronCloseIndex = inlineThinkingBuffer.indexOf(THINKING_CLOSE_TAG);
-						const hermesCloseIndex = inlineThinkingBuffer.indexOf(HERMES_THINKING_CLOSE_TAG);
-						
-						let closeIndex = -1;
-						let closeTagLength = 0;
-						
-						if (nemotronCloseIndex !== -1 && hermesCloseIndex !== -1) {
-							// Both found, use the first one
-							if (nemotronCloseIndex < hermesCloseIndex) {
-								closeIndex = nemotronCloseIndex;
-								closeTagLength = THINKING_CLOSE_TAG.length;
-							} else {
-								closeIndex = hermesCloseIndex;
-								closeTagLength = HERMES_THINKING_CLOSE_TAG.length;
-							}
-						} else if (nemotronCloseIndex !== -1) {
-							closeIndex = nemotronCloseIndex;
-							closeTagLength = THINKING_CLOSE_TAG.length;
-						} else if (hermesCloseIndex !== -1) {
-							closeIndex = hermesCloseIndex;
-							closeTagLength = HERMES_THINKING_CLOSE_TAG.length;
-						}
-						
-						if (closeIndex !== -1) {
-							const thinkingChunk = inlineThinkingBuffer.slice(0, closeIndex);
-							if (thinkingChunk && !emitThinking(thinkingChunk)) {
-								return false;
-							}
-							inlineThinkingBuffer = inlineThinkingBuffer.slice(
-								closeIndex + closeTagLength
-							);
-							insideInlineThinking = false;
-							continue;
-						}
-
-						// Check for partial close tags (both formats)
-						const partialNemotronCloseLength = getPartialTagPrefixLength(
-							inlineThinkingBuffer,
-							THINKING_CLOSE_TAG
-						);
-						const partialHermesCloseLength = getPartialTagPrefixLength(
-							inlineThinkingBuffer,
-							HERMES_THINKING_CLOSE_TAG
-						);
-						const partialCloseLength = Math.max(partialNemotronCloseLength, partialHermesCloseLength);
-						
-						const flushLength = inlineThinkingBuffer.length - partialCloseLength;
-						if (flushLength > 0) {
-							const thinkingChunk = inlineThinkingBuffer.slice(0, flushLength);
-							if (!emitThinking(thinkingChunk)) {
-								return false;
-							}
-							inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
-						}
-						break;
-					}
-
-					// Check for both Nemotron and Hermes open tags
-					const nemotronOpenIndex = inlineThinkingBuffer.indexOf(THINKING_OPEN_TAG);
-					const hermesOpenIndex = inlineThinkingBuffer.indexOf(HERMES_THINKING_OPEN_TAG);
-					
-					let openIndex = -1;
-					let openTagLength = 0;
-					
-					if (nemotronOpenIndex !== -1 && hermesOpenIndex !== -1) {
-						// Both found, use the first one
-						if (nemotronOpenIndex < hermesOpenIndex) {
-							openIndex = nemotronOpenIndex;
-							openTagLength = THINKING_OPEN_TAG.length;
-						} else {
-							openIndex = hermesOpenIndex;
-							openTagLength = HERMES_THINKING_OPEN_TAG.length;
-						}
-					} else if (nemotronOpenIndex !== -1) {
-						openIndex = nemotronOpenIndex;
-						openTagLength = THINKING_OPEN_TAG.length;
-					} else if (hermesOpenIndex !== -1) {
-						openIndex = hermesOpenIndex;
-						openTagLength = HERMES_THINKING_OPEN_TAG.length;
-					}
-					
-					if (openIndex !== -1) {
-						const visibleChunk = inlineThinkingBuffer.slice(0, openIndex);
-						if (visibleChunk && !emitVisibleToken(visibleChunk)) {
-							return false;
-						}
-						inlineThinkingBuffer = inlineThinkingBuffer.slice(
-							openIndex + openTagLength
-						);
-						insideInlineThinking = true;
-						continue;
-					}
-
-					// Check for partial open tags (both formats)
-					const partialNemotronOpenLength = getPartialTagPrefixLength(
-						inlineThinkingBuffer,
-						THINKING_OPEN_TAG
-					);
-					const partialHermesOpenLength = getPartialTagPrefixLength(
-						inlineThinkingBuffer,
-						HERMES_THINKING_OPEN_TAG
-					);
-					const partialOpenLength = Math.max(partialNemotronOpenLength, partialHermesOpenLength);
-					
-					const flushLength = inlineThinkingBuffer.length - partialOpenLength;
-					if (flushLength > 0) {
-						const visibleChunk = inlineThinkingBuffer.slice(0, flushLength);
-						if (!emitVisibleToken(visibleChunk)) {
-							return false;
-						}
-						inlineThinkingBuffer = inlineThinkingBuffer.slice(flushLength);
-					}
-					break;
-				}
-
-				return true;
+				return processInlineThinkingChunk(inlineThinkingState, chunk, {
+					onVisible: emitVisibleToken,
+					onThinking: emitThinking,
+				});
 			};
 
 			const flushInlineThinkingBuffer = () => {
-				if (!inlineThinkingBuffer) {
-					return true;
-				}
-
-				const remainder = inlineThinkingBuffer;
-				inlineThinkingBuffer = '';
-
-				if (insideInlineThinking) {
-					insideInlineThinking = false;
-					return emitThinking(remainder);
-				}
-
-				// A partial open tag buffered at flush time (e.g. "<thinking" with no ">" yet)
-				// must be discarded rather than leaked as visible text. This can happen when the
-				// stream ends or an agent-loop iteration resets mid-tag.
-				const isPartialOpenTag =
-					THINKING_OPEN_TAG.startsWith(remainder) ||
-					HERMES_THINKING_OPEN_TAG.startsWith(remainder);
-				if (isPartialOpenTag) return true;
-
-				return emitVisibleToken(remainder);
+				return flushInlineThinkingState(inlineThinkingState, {
+					onVisible: emitVisibleToken,
+					onThinking: emitThinking,
+				});
 			};
 
 			const PRESERVE_OPEN_TAG = '<preserve>';

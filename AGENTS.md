@@ -38,6 +38,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
+- `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers. Do not duplicate inline thinking-tag parsing across `streaming.ts` and the chat stream route.
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
 
@@ -107,6 +108,7 @@ Do not:
 - add new SSE event shapes casually; this touches browser parsing and tests
 - hide persistence side effects inside route-local closures that only one endpoint can see
 - couple Langflow transport details directly into page components
+- duplicate stream-tag parsing or inline-thinking extraction between the browser stream consumer and `api/chat/stream/+server.ts`
 
 ### Knowledge And Context
 
