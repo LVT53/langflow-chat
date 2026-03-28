@@ -132,7 +132,7 @@
 <svelte:window onclick={handleOutsideClick} />
 
 <header
-	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
+	class="z-10 box-border flex h-[52px] w-full max-w-full flex-none items-center border-b border-border bg-surface-page pl-4 pr-4 pt-[max(0.35rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden"
 >
 	<div class="flex min-w-0 flex-1 items-center justify-start gap-md md:gap-lg">
 		<button
@@ -162,7 +162,7 @@
 
 	<div class="flex min-w-0 flex-1 items-center justify-end gap-2 md:gap-3 lg:gap-3">
 
-		<div class="hide-on-desktop-md">
+		<div class="hide-on-desktop-lg">
 			<button
 				bind:this={triggerRef}
 				class="btn-icon-bare mobile-user-trigger"
@@ -316,8 +316,8 @@
 		}
 	}
 
-	@media (min-width: 768px) {
-		.hide-on-desktop-md {
+	@media (min-width: 1024px) {
+		.hide-on-desktop-lg {
 			display: none !important;
 		}
 	}

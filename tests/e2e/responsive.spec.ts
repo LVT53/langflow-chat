@@ -51,15 +51,20 @@ test.describe('Responsive Layout', () => {
 
   test.describe('Tablet Layout', () => {
     test.use({
-      viewport: { width: 768, height: 1024 },
+      viewport: { width: 900, height: 1024 },
       hasTouch: true,
     });
 
-    test('sidebar behavior on tablet', async ({ page }) => {
+    test('header remains available until desktop sidebar takes over', async ({ page }) => {
+      const header = page.locator('header');
+      await expect(header).toBeVisible();
+
+      const hamburger = page.locator('button[aria-label="Toggle sidebar"]');
+      await expect(hamburger).toBeVisible();
+
       const sidebar = page.locator('aside');
       await expect(sidebar).toHaveClass(/.*-translate-x-\[105%\].*/);
 
-      const hamburger = page.locator('button[aria-label="Toggle sidebar"]');
       await hamburger.click();
       await expect(sidebar).toHaveClass(/.*translate-x-0.*/, { timeout: 5000 });
     });
@@ -81,13 +86,9 @@ test.describe('Responsive Layout', () => {
       await expect(hamburger).toBeHidden();
     });
 
-    test('header displays user info on desktop', async ({ page }) => {
+    test('desktop relies on the persistent sidebar instead of the mobile header', async ({ page }) => {
       const header = page.locator('header');
-      await expect(header).toBeVisible();
-
-      const logoutBtn = page.locator('[data-testid="logout-button"]');
-      await expect(logoutBtn).toBeVisible();
-      await expect(logoutBtn).toContainText('Logout');
+      await expect(header).toBeHidden();
     });
   });
 
