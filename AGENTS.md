@@ -112,6 +112,7 @@ Do:
 - let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and `<preserve>` chunk handling
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
+- treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 
 Do not:
 

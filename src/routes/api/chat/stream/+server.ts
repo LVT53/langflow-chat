@@ -35,6 +35,7 @@ import {
   getReasoningContent,
   isAbruptUpstreamTermination,
   isUrlListValidationError,
+  normalizeVisibleAssistantText,
   parseUpstreamEvents,
   processToolCallMarkers,
   streamErrorEvent,
@@ -507,6 +508,7 @@ export const POST: RequestHandler = async (event) => {
               continue;
             }
 
+            const previousEmittedAssistantText = emittedAssistantText;
             const incremental = toIncrementalChunk(
               eventType,
               rawChunk,
@@ -524,14 +526,16 @@ export const POST: RequestHandler = async (event) => {
             // 'message' event has only visible text (tags stripped by Langflow).
             // toIncrementalChunk can't match them, so we guard here using fullResponse
             // with trimmed comparison to handle trailing newline/space differences.
-            if (eventType !== "token" && chunkRuntime.fullResponse) {
-              const trimmedFull = chunkRuntime.fullResponse.trim();
-              const trimmedChunk = chunk.trim();
+            if (eventType !== "token" && previousEmittedAssistantText) {
+              const normalizedEmittedText = normalizeVisibleAssistantText(
+                previousEmittedAssistantText,
+              );
+              const normalizedChunk = normalizeVisibleAssistantText(chunk);
               if (
-                trimmedChunk &&
-                (trimmedChunk === trimmedFull ||
-                  trimmedFull.endsWith(trimmedChunk) ||
-                  trimmedChunk.endsWith(trimmedFull))
+                normalizedChunk &&
+                (normalizedChunk === normalizedEmittedText ||
+                  normalizedEmittedText.endsWith(normalizedChunk) ||
+                  normalizedChunk.endsWith(normalizedEmittedText))
               ) {
                 console.log("[STREAM] Suppressing duplicate final chunk", {
                   chunkLength: chunk.length,

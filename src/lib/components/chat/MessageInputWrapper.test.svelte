@@ -17,6 +17,7 @@
 		onQueue = () => {},
 		onSteer = () => {},
 		onEditQueuedMessage = () => {},
+		onDeleteQueuedMessage = () => {},
 		onDraftChange = () => {}
 	}: {
 		maxLength?: number;
@@ -33,6 +34,7 @@
 		onQueue?: (message: string) => void;
 		onSteer?: (payload: TaskSteeringPayload) => void;
 		onEditQueuedMessage?: () => void;
+		onDeleteQueuedMessage?: () => void;
 		onDraftChange?: (payload: {
 			conversationId: string | null;
 			draftText: string;
@@ -76,5 +78,6 @@
 	onQueue={handleQueue}
 	onSteer={handleSteer}
 	{onEditQueuedMessage}
+	{onDeleteQueuedMessage}
 	onDraftChange={handleDraftChange}
 />

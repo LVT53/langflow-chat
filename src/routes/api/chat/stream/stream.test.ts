@@ -62,6 +62,7 @@ vi.mock('$lib/server/services/translator', () => ({
 
 vi.mock('$lib/server/services/honcho', () => ({
 	capturePersonaMemorySnapshot: vi.fn(async () => new Set()),
+	listPersonaMemories: vi.fn(async () => []),
 	mirrorMessage: vi.fn(async () => undefined),
 	mirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
 	syncConversationPersonaMemoryAttributions: vi.fn(async () => 0),
@@ -440,6 +441,37 @@ describe('POST /api/chat/stream', () => {
 			'BeforeAfter',
 			'Need to reason carefully',
 			[{ type: 'text', content: 'Need to reason carefully' }],
+			{ evidenceStatus: 'pending' }
+		);
+	});
+
+	it('emits preserved prose once without wrapping it in code fences', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"text":"<preserve>The United States has a culture shaped by regional diversity, popular media, and civic traditions.</preserve>"}\n\n',
+				'event: add_message\ndata: {"text":"The United States has a culture shaped by regional diversity, popular media, and civic traditions."}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Write a short essay.', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain(
+			'"text":"The United States has a culture shaped by regional diversity, popular media, and civic traditions."'
+		);
+		expect(body.match(/event: token/g)?.length).toBe(1);
+		expect(body).not.toContain('```');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			'conv-1',
+			'assistant',
+			'The United States has a culture shaped by regional diversity, popular media, and civic traditions.',
+			undefined,
+			undefined,
 			{ evidenceStatus: 'pending' }
 		);
 	});

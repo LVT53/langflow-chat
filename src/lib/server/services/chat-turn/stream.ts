@@ -20,6 +20,9 @@ const SSE_HEADERS = {
 
 const TOOL_CALL_START_RE = /\x02TOOL_START\x1f([^\x03]*)\x03/g;
 const TOOL_CALL_END_RE = /\x02TOOL_END\x1f([^\x03]*)\x03/g;
+const PRESERVE_TAG_RE = /<\/?preserve>/gi;
+const THINKING_BLOCK_RE = /<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>/gi;
+const THINKING_TAG_RE = /<\/?thinking>|<\/?think>/gi;
 
 const FRIENDLY_STREAM_ERRORS = {
   timeout: "The response is taking too long. Please try again.",
@@ -221,18 +224,8 @@ export function createServerChunkRuntime({
         const closeIndex = preserveBuffer.indexOf(PRESERVE_CLOSE_TAG);
         if (closeIndex !== -1) {
           const content = preserveBuffer.slice(0, closeIndex);
-          const trimmedContent = content.trimStart();
-          const alreadyHasCodeFence = trimmedContent.startsWith("```");
-
-          if (alreadyHasCodeFence) {
-            if (!emitInlineToken(content)) {
-              return false;
-            }
-          } else {
-            const wrappedContent = `\`\`\`\n${content}\n\`\`\``;
-            if (!emitInlineToken(wrappedContent)) {
-              return false;
-            }
+          if (!emitInlineToken(content)) {
+            return false;
           }
           preserveBuffer = preserveBuffer.slice(
             closeIndex + PRESERVE_CLOSE_TAG.length,
@@ -292,15 +285,7 @@ export function createServerChunkRuntime({
 
     if (insidePreserve) {
       insidePreserve = false;
-      const trimmedRemainder = remainder.trimStart();
-      const alreadyHasCodeFence = trimmedRemainder.startsWith("```");
-
-      if (alreadyHasCodeFence) {
-        return emitInlineToken(remainder);
-      }
-
-      const wrappedContent = `\`\`\`\n${remainder}\n\`\`\``;
-      return emitInlineToken(wrappedContent);
+      return emitInlineToken(remainder);
     }
 
     const isPartialOpenTag = PRESERVE_OPEN_TAG.startsWith(remainder);
@@ -330,6 +315,14 @@ export function createServerChunkRuntime({
       return toolCallRecords;
     },
   };
+}
+
+export function normalizeVisibleAssistantText(value: string): string {
+  return value
+    .replace(THINKING_BLOCK_RE, "")
+    .replace(THINKING_TAG_RE, "")
+    .replace(PRESERVE_TAG_RE, "")
+    .trim();
 }
 
 export function processToolCallMarkers(

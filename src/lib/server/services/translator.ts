@@ -799,7 +799,7 @@ export class StreamingHungarianTranslator {
 				this.proseBuffer = this.proseBuffer.slice(endIndex + '</preserve>'.length);
 				this.insidePreserve = false;
 				const preservedContent = block.replaceAll('<preserve>', '').replaceAll('</preserve>', '');
-				outputs.push(`\`\`\`\n${preservedContent}\n\`\`\``);
+				outputs.push(preservedContent);
 				continue;
 			}
 

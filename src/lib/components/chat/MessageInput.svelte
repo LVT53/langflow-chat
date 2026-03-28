@@ -49,6 +49,7 @@
 		onSteer = undefined,
 		onManageEvidence = undefined,
 		onEditQueuedMessage = undefined,
+		onDeleteQueuedMessage = undefined,
 		hasQueuedMessage = false,
 		queuedMessagePreview = '',
 		onDraftChange = undefined,
@@ -72,6 +73,7 @@
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onManageEvidence?: (() => void) | undefined;
 		onEditQueuedMessage?: (() => void) | undefined;
+		onDeleteQueuedMessage?: (() => void) | undefined;
 		hasQueuedMessage?: boolean;
 		queuedMessagePreview?: string;
 		onDraftChange?: ((payload: DraftPayload) => void) | undefined;
@@ -353,6 +355,13 @@
 		}
 	}
 
+	function deleteQueuedMessage() {
+		onDeleteQueuedMessage?.();
+		if (!isMobile()) {
+			textarea?.focus();
+		}
+	}
+
 	async function ensureDraftConversationId(): Promise<string | null> {
 		if (resolvedConversationId) return resolvedConversationId;
 		if (!ensureConversation) return null;
@@ -437,14 +446,24 @@
 						{queuedMessagePreview || 'Next message queued.'}
 					</p>
 				</div>
-				<button
-					data-testid="edit-queued-button"
-					type="button"
-					class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-					onclick={editQueuedMessage}
-				>
-					Edit
-				</button>
+				<div class="flex items-center gap-2">
+					<button
+						data-testid="delete-queued-button"
+						type="button"
+						class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-muted transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+						onclick={deleteQueuedMessage}
+					>
+						Delete
+					</button>
+					<button
+						data-testid="edit-queued-button"
+						type="button"
+						class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+						onclick={editQueuedMessage}
+					>
+						Edit
+					</button>
+				</div>
 			</div>
 		{/if}
 

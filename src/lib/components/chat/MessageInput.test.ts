@@ -329,4 +329,17 @@ describe('MessageInput', () => {
 		expect(queueSpy).not.toHaveBeenCalled();
 		expect(input.value).toBe('Keep this draft');
 	});
+
+	it('allows deleting the queued message from the banner', async () => {
+		const deleteSpy = vi.fn();
+		const { getByTestId } = render(MessageInputWrapper, {
+			hasQueuedMessage: true,
+			queuedMessagePreview: 'Already queued',
+			onDeleteQueuedMessage: deleteSpy,
+		});
+
+		await fireEvent.click(getByTestId('delete-queued-button'));
+
+		expect(deleteSpy).toHaveBeenCalledTimes(1);
+	});
 });

@@ -162,6 +162,18 @@ describe('translator service', () => {
 		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 
+	it('passes through preserved streaming prose without turning it into a code block', async () => {
+		const { StreamingHungarianTranslator } = await import('./translator');
+		const translator = new StreamingHungarianTranslator();
+
+		const partial = await translator.addChunk('<preserve>The final essay should stay exactly as written.</preserve>');
+		const flushed = await translator.flush();
+
+		expect(partial).toEqual(['The final essay should stay exactly as written.']);
+		expect(flushed).toEqual([]);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
 	it('defers failed streaming sentence translation instead of leaking raw English', async () => {
 		vi.mocked(fetch)
 			.mockResolvedValueOnce({

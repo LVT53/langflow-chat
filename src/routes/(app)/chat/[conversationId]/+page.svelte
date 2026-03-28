@@ -269,6 +269,11 @@
 		sendError = null;
 	}
 
+	function clearQueuedTurn() {
+		queuedTurn = null;
+		sendError = null;
+	}
+
 	function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: string) {
 		if (titleGenerationTriggered || data.conversation.title !== 'New Conversation') {
 			return;
@@ -609,6 +614,7 @@
 			onStop={handleStop}
 			onDraftChange={handleDraftChange}
 			onEditQueuedMessage={editQueuedTurn}
+			onDeleteQueuedMessage={clearQueuedTurn}
 			disabled={isSending}
 			isGenerating={isSending}
 			hasQueuedMessage={Boolean(queuedTurn)}
