@@ -73,6 +73,24 @@ type DreamClassification = {
 	supersededBy?: string | null;
 };
 
+const EXPLICIT_TEMPORAL_CUE_PATTERN =
+	/\b(today|tonight|tomorrow|yesterday|now|this morning|this afternoon|this evening|this weekend|this week|next week|last week|this month|next month|last month|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/i;
+
+export const PERSONA_MEMORY_DREAM_SYSTEM_PROMPT =
+	'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, situational_context, stable_preference, identity_profile, long_term_context. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact. Do not infer or invent dates or times for events unless the raw memory text explicitly states them. If a memory mentions a date, meeting, appointment, trip, or other event without an explicit date/time, keep the timing unspecified instead of saying today, now, or adding a calendar date.';
+
+type DreamClusterPayload = {
+	rawMemories: Array<{
+		id: string;
+		content: string;
+		scope: HonchoPersonaMemoryRecord['scope'];
+		sessionId: string | null;
+	}>;
+	defaultCanonicalText: string;
+	defaultMemoryClass: PersonaMemoryClass;
+	defaultSalience: number;
+};
+
 type SemanticFingerprint = {
 	subject: string | null;
 	slot: string | null;
@@ -80,6 +98,50 @@ type SemanticFingerprint = {
 
 function normalizeMemoryText(value: string): string {
 	return normalizeWhitespace(value).toLowerCase();
+}
+
+export function hasExplicitTemporalCue(text: string): boolean {
+	return EXPLICIT_TEMPORAL_CUE_PATTERN.test(text);
+}
+
+function recordsHaveExplicitTemporalCue(records: HonchoPersonaMemoryRecord[]): boolean {
+	return records.some((record) => hasExplicitTemporalCue(record.content));
+}
+
+export function buildDreamClusterPayload(params: {
+	records: HonchoPersonaMemoryRecord[];
+	defaultCanonicalText: string;
+	defaultMemoryClass: PersonaMemoryClass;
+	defaultSalience: number;
+}): DreamClusterPayload {
+	return {
+		rawMemories: params.records.map((record) => ({
+			id: record.id,
+			content: record.content,
+			scope: record.scope,
+			sessionId: record.sessionId ?? null,
+		})),
+		defaultCanonicalText: params.defaultCanonicalText,
+		defaultMemoryClass: params.defaultMemoryClass,
+		defaultSalience: params.defaultSalience,
+	};
+}
+
+export function sanitizeDreamedCanonicalText(params: {
+	canonicalText: string | null | undefined;
+	defaultCanonicalText: string;
+	records: HonchoPersonaMemoryRecord[];
+}): string {
+	const candidate = normalizeWhitespace(params.canonicalText ?? '');
+	if (!candidate) {
+		return params.defaultCanonicalText;
+	}
+
+	if (!recordsHaveExplicitTemporalCue(params.records) && hasExplicitTemporalCue(candidate)) {
+		return params.defaultCanonicalText;
+	}
+
+	return candidate;
 }
 
 function hashKey(value: string): string {
@@ -591,23 +653,8 @@ async function dreamCluster(params: {
 
 	try {
 		const response = await requestStructuredControlModel<RawDreamResponse>({
-			system:
-				'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, situational_context, stable_preference, identity_profile, long_term_context. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact.',
-			user: JSON.stringify(
-				{
-					rawMemories: params.records.map((record) => ({
-						id: record.id,
-						content: record.content,
-						createdAt: record.createdAt,
-						scope: record.scope,
-					})),
-					defaultCanonicalText: params.defaultCanonicalText,
-					defaultMemoryClass: params.defaultMemoryClass,
-					defaultSalience: params.defaultSalience,
-				},
-				null,
-				2
-			),
+			system: PERSONA_MEMORY_DREAM_SYSTEM_PROMPT,
+			user: JSON.stringify(buildDreamClusterPayload(params), null, 2),
 			maxTokens: 260,
 			temperature: 0.0,
 		});
@@ -622,7 +669,14 @@ async function dreamCluster(params: {
 				: params.defaultMemoryClass;
 
 		return {
-			canonicalText: clip(response?.canonicalText ?? params.defaultCanonicalText, 320),
+			canonicalText: clip(
+				sanitizeDreamedCanonicalText({
+					canonicalText: response?.canonicalText,
+					defaultCanonicalText: params.defaultCanonicalText,
+					records: params.records,
+				}),
+				320
+			),
 			memoryClass: nextMemoryClass,
 			salienceScore:
 				typeof response?.salienceScore === 'number'
