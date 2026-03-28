@@ -24,6 +24,11 @@ import {
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import {
+  registerActiveChatStream,
+  unregisterActiveChatStream,
+  wasActiveChatStreamStopRequested,
+} from "$lib/server/services/chat-turn/active-streams";
+import {
   URL_LIST_TOOL_RECOVERY_APPENDIX,
   type StreamErrorCode,
   classifyStreamError,
@@ -73,6 +78,7 @@ export const POST: RequestHandler = async (event) => {
   const turn = preflight.value;
   const conversationId = turn.conversationId;
   const normalizedMessage = turn.normalizedMessage;
+  const streamId = turn.streamId;
   const modelId = turn.modelId;
   const modelDisplayName = turn.modelDisplayName;
   const skipPersistUserMessage = turn.skipPersistUserMessage;
@@ -100,6 +106,13 @@ export const POST: RequestHandler = async (event) => {
   const stream = new ReadableStream({
     async start(controller) {
       const upstreamAbortController = new AbortController();
+      if (streamId) {
+        registerActiveChatStream({
+          streamId,
+          userId: user.id,
+          controller: upstreamAbortController,
+        });
+      }
       const outputTranslator = shouldTranslateHungarian(turn)
         ? new StreamingHungarianTranslator()
         : null;
@@ -590,6 +603,15 @@ export const POST: RequestHandler = async (event) => {
       } catch (error) {
         if (!closed) {
           if (
+            wasActiveChatStreamStopRequested(streamId) &&
+            error instanceof Error &&
+            (error.name === "AbortError" ||
+              error.message.toLowerCase().includes("abort"))
+          ) {
+            completeSuccess(true);
+            return;
+          }
+          if (
             isAbruptUpstreamTermination(error) &&
             chunkRuntime.fullResponse.trim()
           ) {
@@ -623,6 +645,9 @@ export const POST: RequestHandler = async (event) => {
         }
       } finally {
         clearTimeout(timeoutId);
+        if (streamId) {
+          unregisterActiveChatStream(streamId, upstreamAbortController);
+        }
         cancelStream = () => undefined;
       }
     },

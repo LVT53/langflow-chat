@@ -373,11 +373,20 @@ describe('streamChat', () => {
 		const mockFetch = vi.mocked(fetch);
 
 		let abortReject!: (err: Error) => void;
-		mockFetch.mockReturnValue(
-			new Promise<Response>((_resolve, reject) => {
+		mockFetch.mockImplementation((input) => {
+			if (typeof input === 'string' && input === '/api/chat/stream/stop') {
+				return Promise.resolve(
+					new Response(JSON.stringify({ stopped: true }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			}
+
+			return new Promise<Response>((_resolve, reject) => {
 				abortReject = reject;
-			})
-		);
+			});
+		});
 
 		const cb = makeCallbacks();
 		const handle = streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
@@ -390,5 +399,21 @@ describe('streamChat', () => {
 		await new Promise((r) => setTimeout(r, 30));
 
 		expect(cb.onError).not.toHaveBeenCalled();
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+		expect(mockFetch).toHaveBeenNthCalledWith(
+			2,
+			'/api/chat/stream/stop',
+			expect.objectContaining({
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' }
+			})
+		);
+		const streamRequest = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+		const stopRequest = mockFetch.mock.calls[1]?.[1] as RequestInit | undefined;
+		expect(streamRequest?.body).toEqual(expect.any(String));
+		expect(stopRequest?.body).toEqual(expect.any(String));
+		expect(JSON.parse(String(stopRequest?.body)).streamId).toBe(
+			JSON.parse(String(streamRequest?.body)).streamId
+		);
 	});
 });

@@ -5,6 +5,15 @@ import { updateConversationTitle } from '$lib/server/services/conversations';
 
 export async function POST({ request, params, locals }: RequestEvent) {
   try {
+    if (process.env.PLAYWRIGHT_TEST === '1') {
+      return new Response(JSON.stringify({ title: null }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+    }
+
     const { userMessage, assistantResponse } = await request.json();
     const userId = locals.user?.id;
     

@@ -51,6 +51,18 @@ function toStreamError(message: string, code?: string): Error {
 	return error;
 }
 
+async function requestServerSideStreamStop(streamId: string): Promise<void> {
+	try {
+		await fetch('/api/chat/stream/stop', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ streamId })
+		});
+	} catch {
+		/* noop */
+	}
+}
+
 export function streamChat(
 	message: string,
 	conversationId: string,
@@ -60,6 +72,7 @@ export function streamChat(
 	attachmentIds?: string[]
 ): StreamHandle {
 	const controller = new AbortController();
+	const streamId = crypto.randomUUID();
 	let aborted = false;
 	let fullText = '';
 	const inlineThinkingState = createInlineThinkingState();
@@ -96,6 +109,7 @@ export function streamChat(
 				body: JSON.stringify({
 					message,
 					conversationId,
+					streamId,
 					model: modelId,
 					skipPersistUserMessage,
 					attachmentIds
@@ -249,7 +263,11 @@ export function streamChat(
 
 	return {
 		abort() {
+			if (aborted) {
+				return;
+			}
 			aborted = true;
+			void requestServerSideStreamStop(streamId);
 			controller.abort();
 		}
 	};

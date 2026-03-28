@@ -185,6 +185,8 @@ npm run build
 
 Playwright coverage is also available for critical browser flows such as login, chat streaming, conversations, and admin settings, but the root README intentionally keeps the testing section short.
 
+Playwright runs set `PLAYWRIGHT_TEST=1`, and the conversation-title endpoint returns `null` in that mode so browser tests do not depend on an external title-generation service.
+
 ## API Note
 
 AlfyAI ships with internal API families such as:

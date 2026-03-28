@@ -152,4 +152,43 @@ test.describe('Conversation CRUD operations', () => {
     const moveRequest = await moveRequestPromise;
     expect(moveRequest.postDataJSON()).toEqual({ projectId });
   });
+
+  test('keeps only one sidebar options menu open at a time', async ({ page }) => {
+    await createConversation(page, 'Single menu conversation');
+    await ensureSidebarExpanded(page);
+
+    const createProjectButton = page.getByRole('button', { name: 'Create new project' }).first();
+    await createProjectButton.click();
+
+    const projectName = 'Single Menu Project';
+    const projectInput = page.getByPlaceholder('Project name');
+    await expect(projectInput).toBeVisible();
+    await projectInput.fill(projectName);
+    await projectInput.press('Enter');
+
+    const conversationItem = page.getByTestId('conversation-item').first();
+    const projectTarget = page
+      .getByTestId('project-drop-target')
+      .filter({ hasText: projectName })
+      .first();
+    await conversationItem.hover();
+    await conversationItem.getByRole('button', { name: 'Conversation options' }).dispatchEvent('click');
+
+    const conversationMenu = page.locator('.conversation-menu').first();
+    const projectMenu = page.locator('.project-menu').first();
+
+    await expect(conversationMenu).toBeVisible();
+    await expect(projectMenu).not.toBeVisible();
+
+    await projectTarget.hover();
+    await projectTarget.getByRole('button', { name: 'Project options' }).click();
+
+    await expect(projectMenu).toBeVisible();
+    await expect(conversationMenu).not.toBeVisible();
+
+    await conversationItem.getByRole('button', { name: 'Conversation options' }).click();
+
+    await expect(conversationMenu).toBeVisible();
+    await expect(projectMenu).not.toBeVisible();
+  });
 });

@@ -13,6 +13,7 @@ type ParseResult =
 type RequestBody = {
 	message?: unknown;
 	conversationId?: unknown;
+	streamId?: unknown;
 	model?: unknown;
 	skipPersistUserMessage?: unknown;
 	attachmentIds?: unknown;
@@ -30,7 +31,7 @@ export async function parseChatTurnRequest(
 		return { ok: false, error: { status: 400, error: 'Invalid JSON body' } };
 	}
 
-	const { message, conversationId, model, skipPersistUserMessage, attachmentIds } = body;
+	const { message, conversationId, streamId, model, skipPersistUserMessage, attachmentIds } = body;
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return {
 			ok: false,
@@ -67,6 +68,10 @@ export async function parseChatTurnRequest(
 		value: {
 			conversationId,
 			normalizedMessage: message.trim(),
+			streamId:
+				typeof streamId === 'string' && streamId.trim().length > 0
+					? streamId.trim()
+					: undefined,
 			modelId,
 			modelDisplayName,
 			attachmentIds: safeAttachmentIds,

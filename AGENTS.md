@@ -91,11 +91,13 @@ Do not:
 - Route entrypoints:
   - [`src/routes/api/chat/send/+server.ts`](./src/routes/api/chat/send/+server.ts)
   - [`src/routes/api/chat/stream/+server.ts`](./src/routes/api/chat/stream/+server.ts)
+  - [`src/routes/api/chat/stream/stop/+server.ts`](./src/routes/api/chat/stream/stop/+server.ts)
 - Shared pipeline:
   - [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
   - [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
   - [`src/lib/server/services/chat-turn/execute.ts`](./src/lib/server/services/chat-turn/execute.ts)
   - [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
+  - [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
   - [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
   - [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
 - Upstream integrations:
@@ -110,6 +112,7 @@ Do:
 
 - put shared request parsing, attachment preflight, model normalization, stream framing, and finalization in `chat-turn/`
 - let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and `<preserve>` chunk handling
+- use `src/routes/api/chat/stream/stop/+server.ts` plus `chat-turn/active-streams.ts` for explicit user-requested aborts; do not overload passive disconnect handling for that purpose
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
@@ -430,6 +433,10 @@ Run targeted Playwright coverage when changing:
   - `npx playwright test tests/e2e/settings-admin.spec.ts tests/e2e/login.test.ts`
 - login/search/shell regressions
   - `npx playwright test tests/e2e/login.test.ts tests/e2e/search-modal.spec.ts`
+
+Playwright note:
+- E2E runs set `PLAYWRIGHT_TEST=1`.
+- In that mode, [`src/routes/api/conversations/[id]/title/+server.ts`](./src/routes/api/conversations/[id]/title/+server.ts) short-circuits and returns `title: null` so browser tests do not depend on a live title-generator service.
 
 Run these too when relevant:
 

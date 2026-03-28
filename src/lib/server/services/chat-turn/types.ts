@@ -18,6 +18,7 @@ export type ChatTurnRequestError = {
 export type ParsedChatTurnRequest = {
 	conversationId: string;
 	normalizedMessage: string;
+	streamId?: string;
 	modelId: ModelId | undefined;
 	modelDisplayName: string;
 	attachmentIds: string[];

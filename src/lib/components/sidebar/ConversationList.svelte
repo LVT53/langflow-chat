@@ -33,13 +33,16 @@
 	let supportsDragAndDrop = $state(true);
 	let draggedConversationId = $state<string | null>(null);
 	let dropTargetProjectId = $state<string | null>(null);
+	type OpenSidebarMenu =
+		| { kind: 'conversation'; id: string }
+		| { kind: 'project'; id: string }
+		| null;
 	onMount(() => {
 		projectsStore.set(initialProjects);
 		projectsStoreReady = true;
 	});
 
-	let openMenuId = $state<string | null>(null);
-	let openProjectMenuId = $state<string | null>(null);
+	let openSidebarMenu = $state<OpenSidebarMenu>(null);
 	// Map of projectId → expanded state (local only)
 	let expandedProjects = $state<Record<string, boolean>>({});
 	let isCreatingProject = $state(false);
@@ -83,11 +86,23 @@
 
 	// ── Conversation handlers ──────────────────────────────────────────────────
 
+	function closeAllMenus() {
+		openSidebarMenu = null;
+	}
+
+	function isConversationMenuOpen(id: string) {
+		return openSidebarMenu?.kind === 'conversation' && openSidebarMenu.id === id;
+	}
+
+	function isProjectMenuOpen(id: string) {
+		return openSidebarMenu?.kind === 'project' && openSidebarMenu.id === id;
+	}
+
 	async function handleSelect(payload: { id: string }) {
 		const id = payload.id;
 		if ($page.url.pathname === `/chat/${id}`) return;
 		const previousConversationId = $currentConversationId;
-		openMenuId = null;
+		closeAllMenus();
 		currentConversationId.set(id);
 		try {
 			await goto(`/chat/${id}`, { replaceState: false });
@@ -102,7 +117,7 @@
 
 	async function handleRename(payload: { id: string; title: string }) {
 		const { id, title } = payload;
-		openMenuId = null;
+		closeAllMenus();
 		try {
 			await renameConversation(id, title);
 		} catch (e) {
@@ -113,7 +128,7 @@
 
 	async function handleDelete(payload: { id: string }) {
 		const { id } = payload;
-		openMenuId = null;
+		closeAllMenus();
 		try {
 			await deleteConversationById(id);
 			if ($currentConversationId === id) {
@@ -128,7 +143,7 @@
 
 	async function handleMoveToProject(payload: { id: string; projectId: string | null }) {
 		const { id, projectId } = payload;
-		openMenuId = null;
+		closeAllMenus();
 		draggedConversationId = null;
 		dropTargetProjectId = null;
 		try {
@@ -141,19 +156,19 @@
 
 	function handleMenuToggle(payload: { id: string; open: boolean }) {
 		const { id, open } = payload;
-		openMenuId = open ? id : null;
+		openSidebarMenu = open ? { kind: 'conversation', id } : null;
 	}
 
 	function handleMenuClose(payload?: { id: string }) {
-		if (!payload || openMenuId === payload.id) {
-			openMenuId = null;
+		if (!payload || isConversationMenuOpen(payload.id)) {
+			closeAllMenus();
 		}
 	}
 
 	function handleConversationDragStart(payload: { id: string }) {
 		draggedConversationId = payload.id;
 		dropTargetProjectId = null;
-		openMenuId = null;
+		closeAllMenus();
 	}
 
 	function handleConversationDragEnd() {
@@ -213,7 +228,7 @@
 
 	async function handleProjectRename(payload: { id: string; name: string }) {
 		const { id, name } = payload;
-		openProjectMenuId = null;
+		closeAllMenus();
 		try {
 			await renameProject(id, name);
 		} catch (e) {
@@ -224,7 +239,7 @@
 
 	async function handleProjectDelete(payload: { id: string }) {
 		const { id } = payload;
-		openProjectMenuId = null;
+		closeAllMenus();
 		try {
 			clearProjectFromConversations(id);
 			await deleteProject(id);
@@ -236,12 +251,12 @@
 
 	function handleProjectMenuToggle(payload: { id: string; open: boolean }) {
 		const { id, open } = payload;
-		openProjectMenuId = open ? id : null;
+		openSidebarMenu = open ? { kind: 'project', id } : null;
 	}
 
 	function handleProjectMenuClose(payload?: { id: string }) {
-		if (!payload || openProjectMenuId === payload.id) {
-			openProjectMenuId = null;
+		if (!payload || isProjectMenuOpen(payload.id)) {
+			closeAllMenus();
 		}
 	}
 
@@ -314,7 +329,7 @@
 						<ProjectItem
 							{project}
 							expanded={expandedProjects[project.id] ?? false}
-							menuOpen={openProjectMenuId === project.id}
+							menuOpen={isProjectMenuOpen(project.id)}
 							dropActive={dropTargetProjectId === project.id}
 							onToggle={handleProjectToggle}
 							onRename={handleProjectRename}
@@ -333,7 +348,7 @@
 									<ConversationItem
 										{conversation}
 										active={$currentConversationId === conversation.id}
-										menuOpen={openMenuId === conversation.id}
+										menuOpen={isConversationMenuOpen(conversation.id)}
 										projects={allProjects}
 										dragEnabled={supportsDragAndDrop}
 										isDragging={draggedConversationId === conversation.id}
@@ -418,7 +433,7 @@
 				<ConversationItem
 					{conversation}
 					active={$currentConversationId === conversation.id}
-					menuOpen={openMenuId === conversation.id}
+					menuOpen={isConversationMenuOpen(conversation.id)}
 					projects={allProjects}
 					dragEnabled={supportsDragAndDrop}
 					isDragging={draggedConversationId === conversation.id}
