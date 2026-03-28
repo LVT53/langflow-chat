@@ -21,6 +21,7 @@ const {
   mockSessionAddPeers,
   mockPeerContext,
   mockBuildPersonaPromptContext,
+  mockListMessages,
 } = vi.hoisted(() => {
   const now = Date.now();
   const mockDisplayArtifact = {
@@ -103,6 +104,7 @@ const {
     mockSessionAddPeers: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
     mockBuildPersonaPromptContext: vi.fn(async () => ''),
+    mockListMessages: vi.fn(async () => []),
   };
 });
 
@@ -219,6 +221,10 @@ vi.mock('./task-state', () => ({
 
 vi.mock('./persona-memory', () => ({
   buildPersonaPromptContext: mockBuildPersonaPromptContext,
+}));
+
+vi.mock('./messages', () => ({
+  listMessages: mockListMessages,
 }));
 
 describe('Honcho Service', () => {
@@ -338,6 +344,37 @@ describe('Honcho Service', () => {
   });
 
   describe('buildConstructedContext', () => {
+    it('falls back to persisted conversation messages when Honcho is disabled', async () => {
+      mockListMessages.mockResolvedValueOnce([
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'First stored question',
+          timestamp: Date.parse('2026-03-26T10:00:00.000Z'),
+        },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'First stored answer',
+          timestamp: Date.parse('2026-03-26T10:00:01.000Z'),
+        },
+      ]);
+
+      const { buildConstructedContext } = await import('./honcho');
+
+      const result = await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-456',
+        message: 'Continue the discussion.',
+      });
+
+      expect(result.inputValue).toContain('## Recent Session Turns');
+      expect(result.inputValue).toContain('USER: First stored question');
+      expect(result.inputValue).toContain('ASSISTANT: First stored answer');
+      expect(mockSessionMessages).not.toHaveBeenCalled();
+      expect(mockSessionSearch).not.toHaveBeenCalled();
+    });
+
     it('keeps the current attachments section when historical reranking is effectively a no-op', async () => {
       const { buildConstructedContext } = await import('./honcho');
 
@@ -358,18 +395,16 @@ describe('Honcho Service', () => {
     });
 
     it('counts recent turns by user-led turns instead of raw message count', async () => {
-      mockSessionMessages.mockResolvedValueOnce({
-        toArray: async () => [
-          { content: 'Turn 1 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:00:00.000Z', peerId: 'user' },
-          { content: 'Turn 1 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:00:01.000Z', peerId: 'assistant' },
-          { content: 'Turn 2 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:01:00.000Z', peerId: 'user' },
-          { content: 'Turn 2 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:01:01.000Z', peerId: 'assistant' },
-          { content: 'Turn 3 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:02:00.000Z', peerId: 'user' },
-          { content: 'Turn 3 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:02:01.000Z', peerId: 'assistant' },
-          { content: 'Turn 4 question', metadata: { role: 'user' }, createdAt: '2026-03-26T10:03:00.000Z', peerId: 'user' },
-          { content: 'Turn 4 answer', metadata: { role: 'assistant' }, createdAt: '2026-03-26T10:03:01.000Z', peerId: 'assistant' },
-        ],
-      });
+      mockListMessages.mockResolvedValueOnce([
+        { id: 'msg-1', role: 'user', content: 'Turn 1 question', timestamp: Date.parse('2026-03-26T10:00:00.000Z') },
+        { id: 'msg-2', role: 'assistant', content: 'Turn 1 answer', timestamp: Date.parse('2026-03-26T10:00:01.000Z') },
+        { id: 'msg-3', role: 'user', content: 'Turn 2 question', timestamp: Date.parse('2026-03-26T10:01:00.000Z') },
+        { id: 'msg-4', role: 'assistant', content: 'Turn 2 answer', timestamp: Date.parse('2026-03-26T10:01:01.000Z') },
+        { id: 'msg-5', role: 'user', content: 'Turn 3 question', timestamp: Date.parse('2026-03-26T10:02:00.000Z') },
+        { id: 'msg-6', role: 'assistant', content: 'Turn 3 answer', timestamp: Date.parse('2026-03-26T10:02:01.000Z') },
+        { id: 'msg-7', role: 'user', content: 'Turn 4 question', timestamp: Date.parse('2026-03-26T10:03:00.000Z') },
+        { id: 'msg-8', role: 'assistant', content: 'Turn 4 answer', timestamp: Date.parse('2026-03-26T10:03:01.000Z') },
+      ]);
 
       const { buildConstructedContext } = await import('./honcho');
 

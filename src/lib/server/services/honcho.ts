@@ -41,6 +41,7 @@ import {
 } from './knowledge';
 import type {
 	Artifact,
+	ChatMessage,
 	ConversationContextStatus,
 	ContextDebugState,
 } from '$lib/types';
@@ -59,6 +60,7 @@ import {
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
 import { buildPersonaPromptContext } from './persona-memory';
+import { listMessages } from './messages';
 
 let client: Honcho | null = null;
 
@@ -683,6 +685,94 @@ async function getSessionMessages(session: Session): Promise<Message[]> {
 	return all.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
+type PromptContextMessage = {
+	role: 'user' | 'assistant';
+	content: string;
+	createdAt: number;
+};
+
+function mapHonchoMessagesToPromptContext(
+	messages: Message[],
+	userId: string
+): PromptContextMessage[] {
+	return messages
+		.map((message) => ({
+			role: roleForMessage(message, userId),
+			content: message.content,
+			createdAt: Date.parse(message.createdAt),
+		}))
+		.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function mapStoredMessagesToPromptContext(messages: ChatMessage[]): PromptContextMessage[] {
+	return messages
+		.map((message) => ({
+			role: message.role,
+			content: message.content,
+			createdAt: message.timestamp,
+		}))
+		.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+async function loadFallbackPromptContextMessages(
+	conversationId: string
+): Promise<PromptContextMessage[]> {
+	return mapStoredMessagesToPromptContext(await listMessages(conversationId));
+}
+
+async function loadSessionPromptContext(params: {
+	userId: string;
+	conversationId: string;
+	message: string;
+}): Promise<{
+	sessionMessages: PromptContextMessage[];
+	summaries: Awaited<ReturnType<Session['summaries']>> | null;
+	searchedMessages: PromptContextMessage[];
+	peerContext: string;
+}> {
+	if (!isHonchoEnabled()) {
+		return {
+			sessionMessages: await loadFallbackPromptContextMessages(params.conversationId).catch(
+				() => []
+			),
+			summaries: null,
+			searchedMessages: [],
+			peerContext: '',
+		};
+	}
+
+	try {
+		const session = await getSession(params.userId, params.conversationId);
+		const [sessionMessages, summaries, searchedMessages, peerContext] = await Promise.all([
+			getSessionMessages(session).catch(() => []),
+			session.summaries().catch(() => null),
+			session.search(params.message, { limit: 4 }).catch(() => []),
+			buildPersonaPromptContext(params.userId, params.message).catch(() => ''),
+		]);
+
+		return {
+			sessionMessages: mapHonchoMessagesToPromptContext(sessionMessages, params.userId),
+			summaries,
+			searchedMessages: mapHonchoMessagesToPromptContext(searchedMessages, params.userId),
+			peerContext,
+		};
+	} catch (error) {
+		console.warn('[CONTEXT] Honcho context unavailable, falling back to persisted messages', {
+			conversationId: params.conversationId,
+			userId: params.userId,
+			message: error instanceof Error ? error.message : String(error),
+		});
+		return {
+			sessionMessages: await loadFallbackPromptContextMessages(params.conversationId).catch(
+				() => []
+			),
+			summaries: null,
+			searchedMessages: [],
+			peerContext: '',
+		};
+	}
+}
+
 async function getPeerContextString(userId: string, query: string): Promise<string> {
 	const peer = await getUserPeer(userId);
 	const peerContext = await peer.context({
@@ -706,22 +796,19 @@ export async function buildConstructedContext(params: {
 	contextDebug: ContextDebugState | null;
 }> {
 	const attachmentIds = params.attachmentIds ?? [];
-	const session = await getSession(params.userId, params.conversationId);
 	const [
-		sessionMessages,
-		summaries,
-		searchedMessages,
-		peerContext,
+		sessionContext,
 		resolvedAttachments,
 		workingSetArtifacts,
 		relevantCapsules,
 		relevantArtifacts,
 	] =
 		await Promise.all([
-			getSessionMessages(session).catch(() => []),
-			session.summaries().catch(() => null),
-			session.search(params.message, { limit: 4 }).catch(() => []),
-			buildPersonaPromptContext(params.userId, params.message).catch(() => ''),
+			loadSessionPromptContext({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				message: params.message,
+			}),
 			resolvePromptAttachmentArtifacts(params.userId, attachmentIds),
 			selectWorkingSetArtifactsForPrompt(
 				params.userId,
@@ -732,6 +819,12 @@ export async function buildConstructedContext(params: {
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(params.userId, params.message, params.conversationId, 6).catch(() => []),
 		]);
+	const {
+		sessionMessages,
+		summaries,
+		searchedMessages,
+		peerContext,
+	} = sessionContext;
 	const currentAttachments = resolvedAttachments.promptArtifacts;
 	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
 	if (attachmentIds.length > 0) {
@@ -793,7 +886,7 @@ export async function buildConstructedContext(params: {
 
 	const recentTurns = selectRecentRoleTurns(
 		sessionMessages,
-		(message) => roleForMessage(message, params.userId),
+		(message) => message.role,
 		6
 	);
 	const recentTurnCount = recentTurns.length;
@@ -892,7 +985,7 @@ export async function buildConstructedContext(params: {
 			title: 'Recent Session Turns',
 			body: serializeRoleMessages(
 				recentTurnMessages,
-				(message) => roleForMessage(message, params.userId),
+				(message) => message.role,
 				(message) => message.content,
 				recentTurnMessages.length
 			),
@@ -917,7 +1010,7 @@ export async function buildConstructedContext(params: {
 			body: truncateToTokenBudget(
 				serializeRoleMessages(
 					searchedMessages,
-					(message) => roleForMessage(message, params.userId),
+					(message) => message.role,
 					(message) => message.content
 				),
 				1000
