@@ -1,5 +1,15 @@
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
+}
+
+function performRequest(
+	fetchImpl: FetchLike,
+	input: RequestInfo | URL,
+	init: RequestInit | undefined
+): Promise<Response> {
+	return init === undefined ? fetchImpl(input) : fetchImpl(input, init);
 }
 
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -24,9 +34,10 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 export async function requestJson<T>(
 	input: RequestInfo | URL,
 	init: RequestInit | undefined,
-	errorMessage: string
+	errorMessage: string,
+	fetchImpl: FetchLike = fetch
 ): Promise<T> {
-	const response = init === undefined ? await fetch(input) : await fetch(input, init);
+	const response = await performRequest(fetchImpl, input, init);
 	if (!response.ok) {
 		throw new Error(await readErrorMessage(response, errorMessage));
 	}
@@ -35,5 +46,17 @@ export async function requestJson<T>(
 		return (await response.json()) as T;
 	} catch {
 		throw new Error('Received an invalid response from the server. Please try again.');
+	}
+}
+
+export async function requestVoid(
+	input: RequestInfo | URL,
+	init: RequestInit | undefined,
+	errorMessage: string,
+	fetchImpl: FetchLike = fetch
+): Promise<void> {
+	const response = await performRequest(fetchImpl, input, init);
+	if (!response.ok) {
+		throw new Error(await readErrorMessage(response, errorMessage));
 	}
 }

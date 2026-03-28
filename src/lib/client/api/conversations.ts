@@ -6,7 +6,7 @@ import type {
 	TaskState,
 	TaskSteeringPayload,
 } from '$lib/types';
-import { requestJson } from './http';
+import { requestJson, requestVoid, type FetchLike } from './http';
 
 type ConversationSummary = Pick<ConversationListItem, 'id' | 'title' | 'updatedAt' | 'projectId'>;
 type MessageEvidenceSummary = ChatMessage['evidenceSummary'];
@@ -24,6 +24,11 @@ interface TitleGenerationResponse {
 interface TaskSteeringResponse {
 	taskState?: TaskState | null;
 	contextDebug?: ContextDebugState | null;
+}
+
+interface ConversationDraftPayload {
+	draftText: string;
+	selectedAttachmentIds: string[];
 }
 
 export async function fetchConversations(): Promise<ConversationListItem[]> {
@@ -103,12 +108,60 @@ export async function moveConversationToProject(
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-	await requestJson<{ success?: boolean }>(
+	await requestVoid(
 		`/api/conversations/${id}`,
 		{
 			method: 'DELETE',
 		},
 		'Failed to delete conversation'
+	);
+}
+
+export async function persistConversationDraft(
+	conversationId: string,
+	payload: ConversationDraftPayload,
+	fetchImpl: FetchLike = fetch
+): Promise<void> {
+	await requestVoid(
+		`/api/conversations/${conversationId}/draft`,
+		{
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(payload),
+		},
+		'Failed to save conversation draft',
+		fetchImpl
+	);
+}
+
+export async function deleteConversationDraft(
+	conversationId: string,
+	fetchImpl: FetchLike = fetch
+): Promise<void> {
+	await requestVoid(
+		`/api/conversations/${conversationId}/draft`,
+		{
+			method: 'DELETE',
+		},
+		'Failed to delete conversation draft',
+		fetchImpl
+	);
+}
+
+export async function deletePreparedConversation(
+	conversationId: string,
+	options?: { keepalive?: boolean; fetchImpl?: FetchLike }
+): Promise<void> {
+	await requestVoid(
+		`/api/conversations/${conversationId}`,
+		{
+			method: 'DELETE',
+			...(options?.keepalive ? { keepalive: true } : {}),
+		},
+		'Failed to delete conversation',
+		options?.fetchImpl
 	);
 }
 

@@ -35,3 +35,7 @@ data/chat.db
 data/chat.db-shm
 data/chat.db-wal
 data/chat.db.bak
+data/test.db
+data/test.db-shm
+data/test.db-wal
+data/test.db.bak

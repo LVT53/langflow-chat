@@ -1,4 +1,10 @@
 import type { ArtifactSummary, ConversationDraft, PendingAttachment } from '$lib/types';
+import {
+	deleteConversationDraft,
+	deletePreparedConversation,
+	persistConversationDraft,
+} from '$lib/client/api/conversations';
+import type { FetchLike } from '$lib/client/api/http';
 
 const PREVIOUS_CONVERSATION_KEY = 'previous-conversation-id';
 const LANDING_DRAFT_CONVERSATION_KEY = 'landing-draft-conversation-id';
@@ -9,8 +15,6 @@ export type PendingConversationMessage = {
 	attachmentIds: string[];
 	attachments: ArtifactSummary[];
 };
-
-type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 function getSessionStorage(): Storage | null {
 	if (typeof window === 'undefined') return null;
@@ -154,20 +158,18 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 	}): Promise<void> {
 		try {
 			if (!hasMeaningfulDraft(request.draftText, request.selectedAttachmentIds)) {
-				await fetchImpl(`/api/conversations/${request.conversationId}/draft`, {
-					method: 'DELETE',
-				});
+				await deleteConversationDraft(request.conversationId, fetchImpl);
 				return;
 			}
 
-			await fetchImpl(`/api/conversations/${request.conversationId}/draft`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
+			await persistConversationDraft(
+				request.conversationId,
+				{
 					draftText: request.draftText,
 					selectedAttachmentIds: request.selectedAttachmentIds,
-				}),
-			});
+				},
+				fetchImpl
+			);
 		} catch {
 			// Ignore transient persistence failures in the composer.
 		}
@@ -243,8 +245,8 @@ export function cleanupPreparedConversation(params: {
 	fetchImpl?: FetchLike;
 }): void {
 	params.removeLocal?.(params.conversationId);
-	void (params.fetchImpl ?? fetch)(`/api/conversations/${params.conversationId}`, {
-		method: 'DELETE',
+	void deletePreparedConversation(params.conversationId, {
+		fetchImpl: params.fetchImpl,
 		keepalive: true,
 	}).catch(() => {
 		// Ignore cleanup failures; draft conversations are filtered from the sidebar anyway.

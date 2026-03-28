@@ -296,6 +296,7 @@ Rules:
 - `client/api/` owns reusable request/response parsing and shared HTTP behavior.
 - `src/lib/client/api/auth.ts` owns reusable browser auth calls such as login and logout.
 - `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
+- `src/lib/client/api/conversations.ts` also owns browser-side draft persistence and prepared-conversation deletion transport used by `conversation-session.ts`.
 - `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, and memory browser calls.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
