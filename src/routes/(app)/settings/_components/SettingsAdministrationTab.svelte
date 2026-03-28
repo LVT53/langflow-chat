@@ -1,5 +1,21 @@
 <script lang="ts">
+	import type { UserRole } from '$lib/types';
+	import {
+		createAdminUser,
+		deleteAdminUser,
+		fetchAdminUsers,
+		revokeAdminUserSessions,
+		updateAdminUserRole,
+	} from '$lib/client/api/settings';
+	import CreateUserModal from './CreateUserModal.svelte';
+	import SettingsAdminSystemPane from './SettingsAdminSystemPane.svelte';
+	import SettingsAdminUsersPane from './SettingsAdminUsersPane.svelte';
+
+	type AdminPane = 'system' | 'users';
+
 	let {
+		currentUserId,
+		modelNames,
 		adminConfig = $bindable(),
 		envDefaults = {},
 		adminSaving = false,
@@ -10,6 +26,8 @@
 		onCheckHonchoHealth,
 		onSaveAdminConfig,
 	}: {
+		currentUserId: string;
+		modelNames: Record<string, string>;
 		adminConfig: Record<string, string>;
 		envDefaults?: Record<string, string>;
 		adminSaving?: boolean;
@@ -25,205 +43,231 @@
 		onSaveAdminConfig: () => void | Promise<void>;
 	} = $props();
 
-	const CONFIG_LABELS: Record<string, string> = {
-		MAX_MESSAGE_LENGTH: 'Max Message Length',
-		MODEL_1_BASEURL: 'Model 1 Base URL',
-		MODEL_1_NAME: 'Model 1 Name',
-		MODEL_1_DISPLAY_NAME: 'Model 1 Display Name',
-		MODEL_1_SYSTEM_PROMPT: 'Model 1 System Prompt',
-		MODEL_1_FLOW_ID: 'Model 1 Flow ID',
-		MODEL_2_BASEURL: 'Model 2 Base URL',
-		MODEL_2_NAME: 'Model 2 Name',
-		MODEL_2_DISPLAY_NAME: 'Model 2 Display Name',
-		MODEL_2_SYSTEM_PROMPT: 'Model 2 System Prompt',
-		MODEL_2_FLOW_ID: 'Model 2 Flow ID',
-		MODEL_2_ENABLED: 'Enable Model 2',
-		TITLE_GEN_URL: 'Title Generator URL',
-		TITLE_GEN_MODEL: 'Title Generator Model',
-		TRANSLATOR_URL: 'Translator URL',
-		TRANSLATOR_MODEL: 'Translator Model',
-		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
-		TRANSLATION_TEMPERATURE: 'Translation Temperature',
-	};
+	let activePane = $state<AdminPane>('system');
+	let adminUsers = $state(awaitedEmptyUsers());
+	let usersLoaded = $state(false);
+	let usersLoading = $state(false);
+	let usersError = $state('');
+	let usersMessage = $state('');
+	let selectedUserId = $state<string | null>(null);
+	let actionUserId = $state<string | null>(null);
 
-	const NUMBER_KEYS = new Set([
-		'MAX_MESSAGE_LENGTH',
-		'TRANSLATION_MAX_TOKENS',
-		'TRANSLATION_TEMPERATURE',
-	]);
+	let showCreateUserModal = $state(false);
+	let createName = $state('');
+	let createEmail = $state('');
+	let createPassword = $state('');
+	let createRole = $state<UserRole>('user');
+	let showCreatePassword = $state(false);
+	let createLoading = $state(false);
+	let createError = $state('');
 
-	function placeholderFor(key: string): string {
-		return envDefaults[key] ?? '';
+	function awaitedEmptyUsers() {
+		return [] as Awaited<ReturnType<typeof fetchAdminUsers>>;
+	}
+
+	function closeCreateUserModal() {
+		showCreateUserModal = false;
+		createName = '';
+		createEmail = '';
+		createPassword = '';
+		createRole = 'user';
+		showCreatePassword = false;
+		createError = '';
+	}
+
+	function syncSelectedUser(nextUsers: Awaited<ReturnType<typeof fetchAdminUsers>>, preferredId = selectedUserId) {
+		selectedUserId =
+			(preferredId && nextUsers.some((user) => user.id === preferredId) ? preferredId : null) ??
+			nextUsers[0]?.id ??
+			null;
+	}
+
+	async function loadUsers(force = false, preferredId: string | null = selectedUserId) {
+		if (usersLoaded && !force) return;
+
+		usersLoading = true;
+		usersError = '';
+		try {
+			const nextUsers = await fetchAdminUsers();
+			adminUsers = nextUsers;
+			usersLoaded = true;
+			syncSelectedUser(nextUsers, preferredId);
+		} catch (error: any) {
+			usersError = error.message ?? 'Failed to load users.';
+		} finally {
+			usersLoading = false;
+		}
+	}
+
+	async function openPane(nextPane: AdminPane) {
+		activePane = nextPane;
+		if (nextPane === 'users') {
+			await loadUsers();
+		}
+	}
+
+	async function refreshUsers(preferredId: string | null = selectedUserId) {
+		await loadUsers(true, preferredId);
+	}
+
+	async function handleCreateUser() {
+		createLoading = true;
+		createError = '';
+		usersMessage = '';
+		usersError = '';
+		try {
+			const created = await createAdminUser({
+				name: createName.trim() || null,
+				email: createEmail,
+				password: createPassword,
+				role: createRole,
+			});
+			closeCreateUserModal();
+			usersMessage = `Created ${created.email}.`;
+			await refreshUsers(created.id);
+		} catch (error: any) {
+			createError = error.message ?? 'Failed to create user.';
+		} finally {
+			createLoading = false;
+		}
+	}
+
+	async function runUserAction(
+		userId: string,
+		action: () => Promise<unknown>,
+		successMessage: string,
+		preferredId: string | null = userId
+	) {
+		actionUserId = userId;
+		usersMessage = '';
+		usersError = '';
+		try {
+			await action();
+			usersMessage = successMessage;
+			await refreshUsers(preferredId);
+		} catch (error: any) {
+			usersError = error.message ?? 'User action failed.';
+		} finally {
+			actionUserId = null;
+		}
+	}
+
+	async function handlePromoteUser(userId: string) {
+		await runUserAction(
+			userId,
+			() => updateAdminUserRole(userId, 'admin'),
+			'Admin access granted.'
+		);
+	}
+
+	async function handleDemoteUser(userId: string) {
+		await runUserAction(
+			userId,
+			() => updateAdminUserRole(userId, 'user'),
+			'Admin access removed.'
+		);
+	}
+
+	async function handleRevokeSessions(userId: string) {
+		await runUserAction(
+			userId,
+			() => revokeAdminUserSessions(userId),
+			'Active sessions revoked.'
+		);
+	}
+
+	async function handleDeleteUser(userId: string) {
+		await runUserAction(
+			userId,
+			() => deleteAdminUser(userId),
+			'User deleted.',
+			selectedUserId === userId ? null : selectedUserId
+		);
 	}
 </script>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Model 1</h2>
-	<div class="flex flex-col gap-3">
-		{#each ['MODEL_1_BASEURL', 'MODEL_1_NAME', 'MODEL_1_DISPLAY_NAME', 'MODEL_1_FLOW_ID'] as key}
-			<div>
-				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-				<input
-					id={key}
-					type="text"
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-				/>
-			</div>
-		{/each}
-		<div>
-			<label class="settings-label" for="MODEL_1_SYSTEM_PROMPT">{CONFIG_LABELS.MODEL_1_SYSTEM_PROMPT}</label>
-			<textarea
-				id="MODEL_1_SYSTEM_PROMPT"
-				class="settings-input min-h-[120px]"
-				bind:value={adminConfig.MODEL_1_SYSTEM_PROMPT}
-				rows="5"
-			></textarea>
-			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
-		</div>
-	</div>
-</section>
+<div class="mb-4 flex gap-1 rounded-lg border border-border bg-surface-overlay p-1">
+	<button
+		class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
+		class:tab-active={activePane === 'system'}
+		onclick={() => openPane('system')}
+	>
+		System
+	</button>
+	<button
+		class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
+		class:tab-active={activePane === 'users'}
+		onclick={() => openPane('users')}
+	>
+		Users
+	</button>
+</div>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Model 2</h2>
-	<div class="flex flex-col gap-3">
-		<div class="flex items-center justify-between">
-			<div>
-				<label class="settings-label mb-0" for="MODEL_2_ENABLED">{CONFIG_LABELS.MODEL_2_ENABLED}</label>
-				<p class="text-xs text-text-tertiary">Hide model 2 from the app and force fallbacks to model 1</p>
-			</div>
-			<label class="relative inline-flex cursor-pointer items-center">
-				<input
-					id="MODEL_2_ENABLED"
-					type="checkbox"
-					class="peer sr-only"
-					checked={adminConfig.MODEL_2_ENABLED !== 'false'}
-					onchange={(event) => {
-						adminConfig.MODEL_2_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-					}}
-				/>
-				<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-			</label>
-		</div>
-		{#each ['MODEL_2_BASEURL', 'MODEL_2_NAME', 'MODEL_2_DISPLAY_NAME', 'MODEL_2_FLOW_ID'] as key}
-			<div>
-				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-				<input
-					id={key}
-					type="text"
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-				/>
-			</div>
-		{/each}
-		<div>
-			<label class="settings-label" for="MODEL_2_SYSTEM_PROMPT">{CONFIG_LABELS.MODEL_2_SYSTEM_PROMPT}</label>
-			<textarea
-				id="MODEL_2_SYSTEM_PROMPT"
-				class="settings-input min-h-[120px]"
-				bind:value={adminConfig.MODEL_2_SYSTEM_PROMPT}
-				rows="5"
-			></textarea>
-			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
-		</div>
-	</div>
-</section>
-
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Title Generator</h2>
-	<div class="flex flex-col gap-3">
-		{#each ['TITLE_GEN_URL', 'TITLE_GEN_MODEL'] as key}
-			<div>
-				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-				<input
-					id={key}
-					type="text"
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-				/>
-			</div>
-		{/each}
-	</div>
-</section>
-
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Translator</h2>
-	<div class="flex flex-col gap-3">
-		{#each ['TRANSLATOR_URL', 'TRANSLATOR_MODEL', 'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TEMPERATURE'] as key}
-			<div>
-				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-				<input
-					id={key}
-					type={NUMBER_KEYS.has(key) ? 'number' : 'text'}
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-					step={key === 'TRANSLATION_TEMPERATURE' ? '0.01' : undefined}
-				/>
-			</div>
-		{/each}
-	</div>
-</section>
-
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Honcho Memory</h2>
-	<div class="mb-3 flex items-center justify-between">
-		<div>
-			<label class="settings-label mb-0" for="HONCHO_ENABLED">Enable Honcho</label>
-			<p class="text-xs text-text-tertiary">Cross-conversation long-term memory via Honcho</p>
-		</div>
-		<label class="relative inline-flex cursor-pointer items-center">
-			<input
-				id="HONCHO_ENABLED"
-				type="checkbox"
-				class="peer sr-only"
-				checked={adminConfig.HONCHO_ENABLED === 'true'}
-				onchange={(event) => {
-					adminConfig.HONCHO_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-				}}
-			/>
-			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-		</label>
-	</div>
-	<div class="flex items-center gap-2 text-xs text-text-secondary">
-		<button class="text-accent hover:underline" onclick={onCheckHonchoHealth} disabled={honchoLoading}>
-			{honchoLoading ? 'Checking...' : 'Check Connection'}
-		</button>
-		{#if honchoHealth}
-			<span class="inline-flex items-center gap-1">
-				<span class={`inline-block h-2 w-2 rounded-full ${honchoHealth.connected ? 'bg-success' : 'bg-danger'}`}></span>
-				{honchoHealth.connected ? 'Connected' : 'Disconnected'}
-				{#if honchoHealth.workspace}
-					<span class="text-text-tertiary">({honchoHealth.workspace})</span>
-				{/if}
-			</span>
-		{/if}
-	</div>
-</section>
-
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">General</h2>
-	<div>
-		<label class="settings-label" for="MAX_MESSAGE_LENGTH">{CONFIG_LABELS.MAX_MESSAGE_LENGTH}</label>
-		<input
-			id="MAX_MESSAGE_LENGTH"
-			type="number"
-			class="settings-input"
-			bind:value={adminConfig.MAX_MESSAGE_LENGTH}
-			placeholder={placeholderFor('MAX_MESSAGE_LENGTH')}
-		/>
-	</div>
-</section>
-
-{#if adminMessage}
-	<p class="mb-3 text-sm text-success">{adminMessage}</p>
+{#if activePane === 'system'}
+	<SettingsAdminSystemPane
+		bind:adminConfig
+		{envDefaults}
+		{adminSaving}
+		{adminMessage}
+		{adminError}
+		{honchoHealth}
+		{honchoLoading}
+		{onCheckHonchoHealth}
+		{onSaveAdminConfig}
+	/>
+{:else}
+	<SettingsAdminUsersPane
+		{currentUserId}
+		{modelNames}
+		users={adminUsers}
+		{usersLoading}
+		{usersError}
+		{usersMessage}
+		bind:selectedUserId
+		{actionUserId}
+		onReload={() => refreshUsers()}
+		onOpenCreateUser={() => {
+			createError = '';
+			showCreateUserModal = true;
+		}}
+		onPromoteUser={handlePromoteUser}
+		onDemoteUser={handleDemoteUser}
+		onDeleteUser={handleDeleteUser}
+		onRevokeSessions={handleRevokeSessions}
+	/>
 {/if}
-{#if adminError}
-	<p class="mb-3 text-sm text-danger">{adminError}</p>
+
+{#if showCreateUserModal}
+	<CreateUserModal
+		bind:name={createName}
+		bind:email={createEmail}
+		bind:password={createPassword}
+		bind:role={createRole}
+		bind:showPassword={showCreatePassword}
+		{createLoading}
+		{createError}
+		onConfirm={handleCreateUser}
+		onCancel={closeCreateUserModal}
+	/>
 {/if}
-<button class="btn-primary mb-8 w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
-	{adminSaving ? 'Saving…' : 'Save Configuration'}
-</button>
+
+<style>
+	.tab-btn {
+		color: var(--text-secondary);
+		background: transparent;
+		border: none;
+		cursor: pointer;
+	}
+
+	.tab-btn:hover {
+		color: var(--text-primary);
+		background: var(--surface-elevated);
+	}
+
+	.tab-active {
+		color: var(--text-primary) !important;
+		background: var(--surface-page) !important;
+		font-weight: 600;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+	}
+</style>

@@ -283,8 +283,9 @@
 							<th class="pb-2 pr-3 font-medium">User</th>
 							<th class="pb-2 pr-3 font-medium">Msgs</th>
 							<th class="pb-2 pr-3 font-medium">Avg Time</th>
-							<th class="pb-2 pr-3 font-medium">Tokens</th>
+							<th class="pb-2 pr-3 font-medium">Completion</th>
 							<th class="pb-2 pr-3 font-medium">Reasoning</th>
+							<th class="pb-2 pr-3 font-medium">Total Tokens</th>
 							<th class="pb-2 pr-3 font-medium">Model</th>
 							<th class="pb-2 font-medium">Chats</th>
 						</tr>
@@ -300,6 +301,9 @@
 								<td class="py-2 pr-3 text-text-secondary">{formatMs(row.avgGenerationMs)}</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.reasoningTokens)}</td>
+								<td class="py-2 pr-3 text-text-secondary">
+									{formatNum(row.totalTokens + row.reasoningTokens)}
+								</td>
 								<td class="py-2 pr-3 text-text-secondary">
 									{row.favoriteModel ? modelDisplayName(row.favoriteModel) : '—'}
 								</td>

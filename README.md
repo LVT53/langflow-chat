@@ -64,6 +64,26 @@ npm test
 npm run build
 ```
 
+## User Bootstrap And Ongoing Admin Management
+
+For the first local or freshly deployed instance, create an initial account from the CLI:
+
+```bash
+# default bootstrap account: admin@local / admin123
+npm run seed
+
+# explicit admin account
+npx tsx scripts/seed-admin.ts --email=admin@example.com --password=secret123 --name="Admin User" --admin
+```
+
+After you can sign in as an admin, ongoing account management belongs in the app UI:
+
+- `Settings` -> `Administration` -> `Users`
+- create users
+- promote or demote admin access
+- revoke active sessions
+- delete users
+
 ## Architecture Overview
 
 At a high level, AlfyAI runs as a single SvelteKit application with server routes, client UI, and persistence in the same repository.

@@ -22,6 +22,23 @@ export interface UserSettings {
   profilePicture: string | null;
 }
 
+export interface AdminManagedUserSummary {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  createdAt: number;
+  updatedAt: number;
+  conversationCount: number;
+  messageCount: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  totalTokenCount: number;
+  favoriteModel: string | null;
+  activeSessionCount: number;
+  lastActiveAt: number | null;
+}
+
 // User interface: id, email, displayName
 export interface User {
   id: string;

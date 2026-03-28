@@ -47,6 +47,14 @@ async function openAdministrationTab(page: Page) {
   await expect(page.locator('#MODEL_1_SYSTEM_PROMPT')).toBeVisible();
 }
 
+async function openAdministrationUsersPane(page: Page) {
+  await page.goto('/settings');
+  await page.waitForLoadState('networkidle');
+  await page.getByRole('button', { name: 'Administration' }).click();
+  await page.getByRole('button', { name: 'Users' }).click();
+  await expect(page.getByRole('button', { name: 'Create User' })).toBeVisible();
+}
+
 async function savePromptFromUi(page: Page, value: string) {
   const field = page.locator('#MODEL_1_SYSTEM_PROMPT');
   await field.fill(value);
@@ -123,5 +131,73 @@ test.describe('Admin prompt settings', () => {
 
     await reloadAdministrationTab(page);
     await expect(page.locator('#MODEL_1_SYSTEM_PROMPT')).toHaveValue(builtInPrompt);
+  });
+});
+
+test.describe('Admin user management', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('creates, promotes, demotes, and deletes a user from the Users pane', async ({ page }) => {
+    const uniqueEmail = `admin-users-${Date.now()}@local.test`;
+
+    await openAdministrationUsersPane(page);
+
+    await page.getByRole('button', { name: 'Create User' }).click();
+    await page.locator('#create-user-name').fill('Managed User');
+    await page.locator('#create-user-email').fill(uniqueEmail);
+    await page.locator('#create-user-password').fill('supersecret');
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/admin/users') &&
+          response.request().method() === 'POST' &&
+          response.status() === 201
+      ),
+      page.getByRole('button', { name: 'Create User' }).last().click(),
+    ]);
+
+    await expect(page.getByText(uniqueEmail)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Promote to Admin' })).toBeVisible();
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          /\/api\/admin\/users\/[^/]+$/.test(response.url()) &&
+          response.request().method() === 'PATCH' &&
+          response.status() === 200
+      ),
+      page.getByRole('button', { name: 'Promote to Admin' }).click(),
+    ]);
+
+    await expect(page.getByRole('button', { name: 'Demote to User' })).toBeVisible();
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          /\/api\/admin\/users\/[^/]+$/.test(response.url()) &&
+          response.request().method() === 'PATCH' &&
+          response.status() === 200
+      ),
+      page.getByRole('button', { name: 'Demote to User' }).click(),
+    ]);
+
+    await expect(page.getByRole('button', { name: 'Promote to Admin' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Delete User' }).click();
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          /\/api\/admin\/users\/[^/]+$/.test(response.url()) &&
+          response.request().method() === 'DELETE' &&
+          response.status() === 200
+      ),
+      page.getByTestId('confirm-delete').click(),
+    ]);
+
+    await expect(page.getByText(uniqueEmail)).not.toBeVisible();
   });
 });

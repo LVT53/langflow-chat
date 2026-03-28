@@ -57,6 +57,25 @@ export async function deleteUserAccountWithCleanup(
 	return { status: 'deleted' };
 }
 
+export async function deleteUserAccountAsAdminWithCleanup(userId: string): Promise<boolean> {
+	const [user] = await db.select().from(users).where(eq(users.id, userId));
+	if (!user) {
+		return false;
+	}
+
+	await deleteAllHonchoStateForUser(userId);
+	await rm(join(process.cwd(), 'data', 'knowledge', userId), {
+		recursive: true,
+		force: true,
+	});
+	await rm(join(process.cwd(), 'data', 'avatars', `${userId}.webp`), {
+		force: true,
+	});
+
+	await db.delete(users).where(eq(users.id, userId));
+	return true;
+}
+
 export async function deleteConversationWithCleanup(
 	userId: string,
 	conversationId: string

@@ -310,6 +310,8 @@
 
 		{#if activeTab === 'administration' && isAdmin}
 			<SettingsAdministrationTab
+				currentUserId={data.userSettings.id}
+				{modelNames}
 				bind:adminConfig
 				envDefaults={(data as any).envDefaults ?? {}}
 				{adminSaving}

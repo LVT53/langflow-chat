@@ -77,6 +77,7 @@ Do not:
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
 - [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
   - User settings and admin/runtime config UI surface.
+  - The Administration tab is split into `System` and `Users` panes.
   - Route-local `_components/`, `*_helpers.ts`, or `*.svelte.ts` files next to the page are acceptable when splitting page-only UI/controller logic without creating a new shared boundary.
 
 Do not:
@@ -234,6 +235,10 @@ Do not:
   - [`src/lib/server/config-store.ts`](./src/lib/server/config-store.ts)
 - Admin config route:
   - [`src/routes/api/admin/config/+server.ts`](./src/routes/api/admin/config/+server.ts)
+- Admin user-management routes:
+  - [`src/routes/api/admin/users/+server.ts`](./src/routes/api/admin/users/+server.ts)
+  - [`src/routes/api/admin/users/[id]/+server.ts`](./src/routes/api/admin/users/[id]/+server.ts)
+  - [`src/routes/api/admin/users/[id]/sessions/+server.ts`](./src/routes/api/admin/users/[id]/sessions/+server.ts)
 - Settings loaders:
   - [`src/routes/(app)/settings/+page.server.ts`](<./src/routes/(app)/settings/+page.server.ts>)
   - [`src/routes/api/settings/+server.ts`](./src/routes/api/settings/+server.ts)
@@ -311,6 +316,7 @@ Rules:
 - `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, and memory browser calls.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
+- `src/lib/client/api/settings.ts` also owns admin-side user list/create/promote/demote/delete/revoke-session browser calls.
 - stores own browser state, optimistic updates, and UI-facing transitions.
 - `conversation-session.ts` owns landing draft IDs, pending first-message replay, previous-conversation markers, and draft cleanup rules.
 
@@ -400,6 +406,8 @@ Do not:
   - `src/lib/server/services/chat-turn/`
 - New Langflow transport behavior:
   - `src/lib/server/services/langflow.ts`
+- New admin-managed user account behavior:
+  - `src/lib/server/services/user-admin.ts`
 - New knowledge artifact or context behavior:
   - `src/lib/server/services/knowledge/`
 - New continuity or evidence-context logic:
