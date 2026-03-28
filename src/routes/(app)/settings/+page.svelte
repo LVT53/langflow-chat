@@ -226,7 +226,7 @@
 </script>
 
 <div class="flex h-full w-full flex-1 flex-col overflow-y-auto">
-	<div class="mx-auto w-full max-w-[672px] px-4 py-8">
+	<div class="settings-shell mx-auto w-full px-4 py-8" class:settings-shell-admin={activeTab === 'administration' && isAdmin}>
 		<h1 class="mb-6 text-2xl font-semibold text-text-primary">Settings</h1>
 
 		<div class="mb-6 flex gap-1 rounded-lg border border-border bg-surface-overlay p-1">
@@ -506,5 +506,13 @@
 	:global(.analytics-table th),
 	:global(.analytics-table td) {
 		vertical-align: middle;
+	}
+
+	.settings-shell {
+		max-width: 672px;
+	}
+
+	.settings-shell-admin {
+		max-width: 1180px;
 	}
 </style>

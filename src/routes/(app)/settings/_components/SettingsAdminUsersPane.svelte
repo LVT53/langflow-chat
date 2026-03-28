@@ -93,36 +93,36 @@
 </script>
 
 <section class="settings-card mb-4">
-	<div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-		<div>
+	<div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+		<div class="max-w-2xl">
 			<h2 class="settings-section-title mb-1">Users</h2>
 			<p class="text-sm text-text-secondary">
 				Create accounts, manage admin access, revoke sessions, and remove users when needed.
 			</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<button class="btn-secondary" onclick={onReload} disabled={usersLoading}>
+		<div class="grid w-full gap-2 sm:grid-cols-2 xl:w-auto">
+			<button class="btn-secondary w-full whitespace-nowrap" onclick={onReload} disabled={usersLoading}>
 				{usersLoading ? 'Loading…' : 'Refresh'}
 			</button>
-			<button class="btn-primary" onclick={onOpenCreateUser}>Create User</button>
+			<button class="btn-primary w-full whitespace-nowrap" onclick={onOpenCreateUser}>Create User</button>
 		</div>
 	</div>
 
-	<div class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(300px,1fr)]">
-		<div class="rounded-xl border border-border bg-surface-page/70 p-3">
-			<div class="mb-3 flex flex-col gap-2 sm:flex-row">
+	<div class="mt-5 grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+		<div class="rounded-xl border border-border bg-surface-page/70 p-3 sm:p-4">
+			<div class="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_132px_156px]">
 				<input
 					type="text"
 					class="settings-input"
 					bind:value={search}
 					placeholder="Search by name or email"
 				/>
-				<select class="settings-input sm:max-w-[140px]" bind:value={roleFilter}>
+				<select class="settings-input" bind:value={roleFilter}>
 					<option value="all">All roles</option>
 					<option value="admin">Admins</option>
 					<option value="user">Users</option>
 				</select>
-				<select class="settings-input sm:max-w-[170px]" bind:value={sortKey}>
+				<select class="settings-input" bind:value={sortKey}>
 					<option value="recent">Most recent</option>
 					<option value="messages">Most messages</option>
 					<option value="conversations">Most chats</option>
@@ -146,7 +146,7 @@
 					No users match the current filters.
 				</div>
 			{:else}
-				<div class="space-y-2">
+				<div class="max-h-[min(65vh,40rem)] space-y-2 overflow-y-auto pr-1">
 					{#each filteredUsers as user}
 						<button
 							type="button"
@@ -158,28 +158,21 @@
 							data-testid={`admin-user-row-${user.id}`}
 							onclick={() => (selectedUserId = user.id)}
 						>
-							<div class="flex items-start justify-between gap-3">
+							<div class="flex flex-col items-start gap-2">
+								<div class="rounded-full border border-border px-2 py-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-text-muted">
+									{user.role}
+								</div>
 								<div class="min-w-0">
 									<div class="truncate font-medium text-text-primary">{userLabel(user)}</div>
 									<div class="truncate text-xs text-text-muted">{user.email}</div>
 								</div>
-								<div class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-text-muted">
-									{user.role}
-								</div>
 							</div>
-							<div class="mt-3 grid grid-cols-3 gap-2 text-xs text-text-secondary">
-								<div>
-									<div class="font-medium text-text-primary">{formatCount(user.messageCount)}</div>
-									<div>Messages</div>
-								</div>
-								<div>
-									<div class="font-medium text-text-primary">{formatCount(user.conversationCount)}</div>
-									<div>Chats</div>
-								</div>
-								<div>
-									<div class="font-medium text-text-primary">{formatCount(user.totalTokenCount)}</div>
-									<div>Total tokens</div>
-								</div>
+							<div class="mt-3 text-[0.72rem] text-text-muted">
+								{#if user.lastActiveAt}
+									Last active {formatDate(user.lastActiveAt)}
+								{:else}
+									Joined {formatDate(user.createdAt)}
+								{/if}
 							</div>
 						</button>
 					{/each}
@@ -187,9 +180,9 @@
 			{/if}
 		</div>
 
-		<div class="rounded-xl border border-border bg-surface-page/70 p-4">
+		<div class="rounded-xl border border-border bg-surface-page/70 p-4 sm:p-5">
 			{#if selectedUser}
-				<div class="flex items-start justify-between gap-3">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 					<div>
 						<h3 class="text-lg font-semibold text-text-primary">{userLabel(selectedUser)}</h3>
 						<p class="text-sm text-text-secondary">{selectedUser.email}</p>
@@ -199,7 +192,7 @@
 					</div>
 				</div>
 
-				<div class="mt-4 grid grid-cols-2 gap-3">
+				<div class="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
 					<div class="stat-card">
 						<div class="stat-value">{formatCount(selectedUser.conversationCount)}</div>
 						<div class="stat-label">Conversations</div>
@@ -226,24 +219,24 @@
 					</div>
 				</div>
 
-				<div class="mt-4 space-y-2 rounded-xl border border-border bg-surface-overlay p-4 text-sm text-text-secondary">
-					<div class="flex items-center justify-between gap-3">
+				<div class="mt-4 grid gap-3 rounded-xl border border-border bg-surface-overlay p-4 text-sm text-text-secondary sm:grid-cols-2 xl:grid-cols-3">
+					<div class="space-y-1">
 						<span>Favorite model</span>
-						<span class="text-right text-text-primary">{modelDisplayName(selectedUser.favoriteModel)}</span>
+						<div class="text-text-primary">{modelDisplayName(selectedUser.favoriteModel)}</div>
 					</div>
-					<div class="flex items-center justify-between gap-3">
+					<div class="space-y-1">
 						<span>Joined</span>
-						<span class="text-right text-text-primary">{formatDate(selectedUser.createdAt)}</span>
+						<div class="text-text-primary">{formatDate(selectedUser.createdAt)}</div>
 					</div>
-					<div class="flex items-center justify-between gap-3">
+					<div class="space-y-1">
 						<span>Last active</span>
-						<span class="text-right text-text-primary">{formatDate(selectedUser.lastActiveAt)}</span>
+						<div class="text-text-primary">{formatDate(selectedUser.lastActiveAt)}</div>
 					</div>
 				</div>
 
-				<div class="mt-4 flex flex-wrap gap-2">
+				<div class="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
 					<button
-						class="btn-secondary"
+						class="btn-secondary w-full whitespace-nowrap"
 						disabled={actionUserId === selectedUser.id || selectedUser.id === currentUserId}
 						onclick={() =>
 							selectedUser.role === 'admin'
@@ -259,14 +252,14 @@
 						{/if}
 					</button>
 					<button
-						class="btn-secondary"
+						class="btn-secondary w-full whitespace-nowrap"
 						disabled={actionUserId === selectedUser.id || selectedUser.id === currentUserId}
 						onclick={() => onRevokeSessions(selectedUser.id)}
 					>
 						{actionUserId === selectedUser.id ? 'Working…' : 'Revoke Sessions'}
 					</button>
 					<button
-						class="btn-danger"
+						class="btn-danger w-full whitespace-nowrap"
 						disabled={actionUserId === selectedUser.id || selectedUser.id === currentUserId}
 						onclick={() => (deleteCandidateId = selectedUser.id)}
 					>
