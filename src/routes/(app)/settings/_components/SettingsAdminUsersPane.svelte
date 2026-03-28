@@ -93,14 +93,14 @@
 </script>
 
 <section class="settings-card mb-4">
-	<div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-		<div class="max-w-2xl">
+	<div class="users-pane-header grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+		<div class="users-pane-copy min-w-0">
 			<h2 class="settings-section-title mb-1">Users</h2>
-			<p class="text-sm text-text-secondary">
+			<p class="users-pane-subtext text-sm leading-6 text-text-secondary">
 				Create accounts, manage admin access, revoke sessions, and remove users when needed.
 			</p>
 		</div>
-		<div class="grid w-full gap-2 sm:grid-cols-2 xl:w-auto">
+		<div class="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:justify-self-end">
 			<button class="btn-secondary w-full whitespace-nowrap" onclick={onReload} disabled={usersLoading}>
 				{usersLoading ? 'Loading…' : 'Refresh'}
 			</button>
@@ -110,24 +110,26 @@
 
 	<div class="mt-5 grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
 		<div class="rounded-xl border border-border bg-surface-page/70 p-3 sm:p-4">
-			<div class="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_132px_156px]">
+			<div class="mb-3 flex flex-col gap-2">
 				<input
 					type="text"
-					class="settings-input"
+					class="settings-input min-w-0"
 					bind:value={search}
 					placeholder="Search by name or email"
 				/>
-				<select class="settings-input" bind:value={roleFilter}>
-					<option value="all">All roles</option>
-					<option value="admin">Admins</option>
-					<option value="user">Users</option>
-				</select>
-				<select class="settings-input" bind:value={sortKey}>
-					<option value="recent">Most recent</option>
-					<option value="messages">Most messages</option>
-					<option value="conversations">Most chats</option>
-					<option value="tokens">Most tokens</option>
-				</select>
+				<div class="grid grid-cols-2 gap-2">
+					<select class="settings-input min-w-0" bind:value={roleFilter}>
+						<option value="all">All roles</option>
+						<option value="admin">Admins</option>
+						<option value="user">Users</option>
+					</select>
+					<select class="settings-input min-w-0" bind:value={sortKey}>
+						<option value="recent">Most recent</option>
+						<option value="messages">Most messages</option>
+						<option value="conversations">Most chats</option>
+						<option value="tokens">Most tokens</option>
+					</select>
+				</div>
 			</div>
 
 			{#if usersMessage}
@@ -298,3 +300,16 @@
 		}}
 	/>
 {/if}
+
+<style>
+	.users-pane-copy {
+		max-width: 42rem;
+	}
+
+	.users-pane-subtext {
+		width: 100%;
+		max-width: none;
+		white-space: normal;
+		overflow-wrap: break-word;
+	}
+</style>

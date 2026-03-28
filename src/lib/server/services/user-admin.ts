@@ -100,7 +100,7 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 			row.userId,
 			{
 				conversationCount: Number(row.conversationCount ?? 0),
-				lastActiveAt: row.lastActiveAt ? Number(row.lastActiveAt) : null,
+				lastActiveAt: row.lastActiveAt ? Number(row.lastActiveAt) * 1000 : null,
 			},
 		])
 	);

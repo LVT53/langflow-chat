@@ -144,7 +144,17 @@ test.describe('Admin user management', () => {
 
     await openAdministrationUsersPane(page);
 
+    const usersIntroWidth = await page
+      .getByText('Create accounts, manage admin access, revoke sessions, and remove users when needed.')
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(usersIntroWidth).toBeGreaterThan(220);
+    await expect(page.getByText('1970')).not.toBeVisible();
+
     await page.getByRole('button', { name: 'Create User' }).click();
+    const modalIntroWidth = await page
+      .getByText('Create a new local account and optionally grant it admin access immediately.')
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(modalIntroWidth).toBeGreaterThan(220);
     await page.locator('#create-user-name').fill('Managed User');
     await page.locator('#create-user-email').fill(uniqueEmail);
     await page.locator('#create-user-password').fill('supersecret');

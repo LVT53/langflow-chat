@@ -40,7 +40,7 @@
 			style="width: min(42rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem);"
 		>
 			<h3 class="mb-2 text-lg font-semibold text-text-primary">Create User</h3>
-			<p class="mb-5 max-w-2xl text-sm leading-6 text-text-secondary">
+			<p class="create-user-modal-subtext mb-5 text-sm leading-6 text-text-secondary">
 				Create a new local account and optionally grant it admin access immediately.
 			</p>
 
@@ -110,3 +110,12 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.create-user-modal-subtext {
+		width: 100%;
+		max-width: none;
+		white-space: normal;
+		overflow-wrap: break-word;
+	}
+</style>
