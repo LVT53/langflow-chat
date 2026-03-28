@@ -14,6 +14,13 @@ const URL_LIST_TOOL_ARGUMENT_GUARD = [
 	'- For a single link, use `["https://example.com"]`, never a bare string.',
 ].join('\n');
 
+const DATE_BEFORE_SEARCH_GUARD = [
+	'Time-sensitive search workflow:',
+	'- Before any web search, news search, or other freshness-sensitive search, first get the current date and time.',
+	'- Use that date/time to frame the search query and interpret freshness.',
+	'- Do not search first and check the date afterward.',
+].join('\n');
+
 function containsHttpUrl(value: string): boolean {
 	return /https?:\/\/[^\s)>\]]+/i.test(value);
 }
@@ -24,7 +31,7 @@ function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 }): string {
 	const basePrompt = params.basePrompt.trim();
-	const additions: string[] = [];
+	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD];
 
 	if (containsHttpUrl(params.inputValue)) {
 		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
@@ -39,7 +46,7 @@ function buildOutboundSystemPrompt(params: {
 	}
 
 	const uniqueAdditions = Array.from(new Set(additions));
-	return `${basePrompt}\n\n## Tool Argument Safety\n${uniqueAdditions.join('\n')}`;
+	return `${basePrompt}\n\n## Tool And Search Guidance\n${uniqueAdditions.join('\n\n')}`;
 }
 
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {

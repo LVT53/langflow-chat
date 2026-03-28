@@ -7,18 +7,26 @@
 		project,
 		expanded = true,
 		menuOpen = false,
+		dropActive = false,
 		onToggle,
 		onRename,
 		onDelete,
+		onDragOverProject,
+		onDragLeaveProject,
+		onDropConversation,
 		onMenuToggle,
 		onMenuClose
 	}: {
 		project: Project;
 		expanded?: boolean;
 		menuOpen?: boolean;
+		dropActive?: boolean;
 		onToggle?: (payload: { id: string; expanded: boolean }) => void;
 		onRename?: (payload: { id: string; name: string }) => void;
 		onDelete?: (payload: { id: string }) => void;
+		onDragOverProject?: (payload: { id: string }) => void;
+		onDragLeaveProject?: (payload: { id: string }) => void;
+		onDropConversation?: (payload: { projectId: string; conversationId?: string | null }) => void;
 		onMenuToggle?: (payload: { id: string; open: boolean }) => void;
 		onMenuClose?: (payload: { id: string }) => void;
 	} = $props();
@@ -118,6 +126,34 @@
 		onDelete?.({ id: project.id });
 	}
 
+	function handleDragOver(event: DragEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move';
+		}
+		onDragOverProject?.({ id: project.id });
+	}
+
+	function handleDragLeave(event: DragEvent) {
+		const currentTarget = event.currentTarget as HTMLElement | null;
+		const nextTarget = event.relatedTarget as Node | null;
+		if (currentTarget && nextTarget && currentTarget.contains(nextTarget)) {
+			return;
+		}
+		onDragLeaveProject?.({ id: project.id });
+	}
+
+	function handleDrop(event: DragEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		const conversationId =
+			event.dataTransfer?.getData('application/x-alfyai-conversation') ||
+			event.dataTransfer?.getData('text/plain') ||
+			null;
+		onDropConversation?.({ projectId: project.id, conversationId });
+	}
+
 	onMount(() => {
 		const sync = () => { if (menuOpen) updateMenuPosition(); };
 		window.addEventListener('resize', sync);
@@ -133,8 +169,15 @@
 
 <!-- Project folder row -->
 <div
+	data-testid="project-drop-target"
+	data-project-id={project.id}
 	class="group flex min-h-[32px] cursor-pointer select-none items-center rounded-lg border border-transparent pr-0.5 pl-1 transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated"
+	class:border-accent={dropActive}
+	class:bg-surface-elevated={dropActive}
 	onclick={() => onToggle?.({ id: project.id, expanded: !expanded })}
+	ondragover={handleDragOver}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
 	onkeydown={(event) => event.key === 'Enter' && onToggle?.({ id: project.id, expanded: !expanded })}
 	role="button"
 	tabindex="0"

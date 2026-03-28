@@ -75,6 +75,7 @@
 	let sendError = $state<string | null>(null);
 	let isSending = $state(false);
 	let activeStream = $state<StreamHandle | null>(null);
+	let queuedTurn = $state<SendPayload | null>(null);
 	let titleGenerationTriggered = false;
 	let lastUserMessage = '';
 	let lastAssistantResponse = '';
@@ -111,7 +112,7 @@
 		if (!pendingDraft.message.trim()) {
 			return;
 		}
-		handleSend(pendingDraft);
+		handleSend({ ...pendingDraft, pendingAttachments: [] });
 	}
 
 	function resetState() {
@@ -137,6 +138,7 @@
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
 		conversationDraft = data.draft ?? null;
+		queuedTurn = null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
 		evidenceManagerOpen = false;
@@ -224,6 +226,70 @@
 		}
 	}
 
+	function cloneSendPayload(payload: SendPayload): SendPayload {
+		return {
+			message: payload.message,
+			attachmentIds: [...(payload.attachmentIds ?? [])],
+			attachments: [...(payload.attachments ?? [])],
+			pendingAttachments: (payload.pendingAttachments ?? []).map((attachment) => ({
+				...attachment,
+			})),
+			conversationId: payload.conversationId ?? null,
+		};
+	}
+
+	function restorePayloadToDraft(payload: SendPayload) {
+		const nextConversationId = payload.conversationId ?? data.conversation.id;
+		conversationDraft = createConversationDraftRecord({
+			conversationId: nextConversationId,
+			fallbackConversationId: data.conversation.id,
+			draftText: payload.message,
+			selectedAttachmentIds: payload.attachmentIds,
+			selectedAttachments: payload.pendingAttachments ?? [],
+		});
+		void draftPersistence.persist(
+			{
+				conversationId: nextConversationId,
+				draftText: payload.message,
+				selectedAttachmentIds: payload.attachmentIds,
+			},
+			true
+		);
+	}
+
+	function restoreQueuedTurnToDraft() {
+		if (!queuedTurn) return;
+		const nextQueuedTurn = cloneSendPayload(queuedTurn);
+		queuedTurn = null;
+		restorePayloadToDraft(nextQueuedTurn);
+	}
+
+	function editQueuedTurn() {
+		restoreQueuedTurnToDraft();
+		sendError = null;
+	}
+
+	function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: string) {
+		if (titleGenerationTriggered || data.conversation.title !== 'New Conversation') {
+			return;
+		}
+
+		titleGenerationTriggered = true;
+		const conversationIdForTitle = data.conversation.id;
+		generateConversationTitle(conversationIdForTitle, {
+			userMessage,
+			assistantResponse,
+		})
+			.then((title) => {
+				if (title) {
+					updateConversationTitleLocal(conversationIdForTitle, title);
+				}
+			})
+			.catch(() => {
+				// Ignore errors, title remains "New conversation"
+			});
+	}
+
 	async function pollMessageEvidence(messageId: string) {
 		evidencePollControllers.get(messageId)?.abort();
 		const controller = new AbortController();
@@ -282,7 +348,8 @@
 	function handleSend(
 		payload: SendPayload,
 		skipUserMessage = false,
-		skipPersistUserMessage = false
+		skipPersistUserMessage = false,
+		clearDraft = true
 	) {
 		const text = payload.message;
 		const attachmentIds = payload.attachmentIds ?? [];
@@ -294,8 +361,10 @@
 		lastUserMessage = text;
 		canRetry = true;
 		hasPersistedMessages = true;
-		conversationDraft = null;
-		draftPersistence.clear();
+		if (clearDraft) {
+			conversationDraft = null;
+			draftPersistence.clear();
+		}
 		attachedArtifacts = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
@@ -338,6 +407,8 @@
 					);
 				},
 				onEnd(fullText, metadata) {
+					const completedUserMessage = lastUserMessage;
+					const completedAssistantResponse = fullText;
 					lastAssistantResponse = fullText;
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
@@ -351,7 +422,6 @@
 							metadata,
 						})
 					);
-					conversationDraft = null;
 					isSending = false;
 					activeStream = null;
 					canRetry = false;
@@ -359,28 +429,24 @@
 						void pollMessageEvidence(serverAssistantId);
 					}
 
-					// Trigger title generation for new conversations (fire-and-forget)
-					if (!titleGenerationTriggered && data.conversation.title === 'New Conversation') {
-						titleGenerationTriggered = true;
-						const conversationIdForTitle = data.conversation.id;
-						generateConversationTitle(conversationIdForTitle, {
-							userMessage: lastUserMessage,
-							assistantResponse: lastAssistantResponse,
-						})
-							.then((title) => {
-								if (title) {
-									updateConversationTitleLocal(conversationIdForTitle, title);
-								}
-							})
-							.catch(() => {
-								// Ignore errors, title remains "New conversation"
-							});
+					if (metadata?.wasStopped) {
+						restoreQueuedTurnToDraft();
+						return;
+					}
+
+					maybeTriggerTitleGeneration(completedUserMessage, completedAssistantResponse);
+
+					if (queuedTurn) {
+						const nextQueuedTurn = cloneSendPayload(queuedTurn);
+						queuedTurn = null;
+						handleSend(nextQueuedTurn, false, false, false);
 					}
 				},
 				onError(err) {
 					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
+					restoreQueuedTurnToDraft();
 
 					// Detect browser-initiated abort (mobile backgrounding / connection drop).
 					// The server continues generating and persists the result; reload on return.
@@ -404,7 +470,12 @@
 	function handleRetry() {
 		if (canRetry && lastUserMessage) {
 			sendError = null;
-			handleSend({ message: lastUserMessage, attachmentIds: [], attachments: [] });
+			handleSend({
+				message: lastUserMessage,
+				attachmentIds: [],
+				attachments: [],
+				pendingAttachments: [],
+			});
 		}
 	}
 
@@ -430,7 +501,7 @@
 
 		sendError = null;
 		handleSend(
-			{ message: userText, attachmentIds: [], attachments: [] },
+			{ message: userText, attachmentIds: [], attachments: [], pendingAttachments: [] },
 			true,
 			true
 		);
@@ -452,7 +523,7 @@
 		void deleteConversationMessages(data.conversation.id, idsToDelete).catch(() => {});
 
 		sendError = null;
-		handleSend({ message: newText, attachmentIds: [], attachments: [] });
+		handleSend({ message: newText, attachmentIds: [], attachments: [], pendingAttachments: [] });
 	}
 
 	function handleStop() {
@@ -460,6 +531,17 @@
 			activeStream.abort();
 			// The stream will trigger onEnd via the abort controller
 		}
+	}
+
+	function handleQueue(payload: SendPayload) {
+		if (!isSending || queuedTurn || !payload.message.trim()) {
+			return;
+		}
+
+		queuedTurn = cloneSendPayload(payload);
+		conversationDraft = null;
+		draftPersistence.clear();
+		sendError = null;
 	}
 
 	async function handleSteering(payload: TaskSteeringPayload) {
@@ -523,10 +605,14 @@
 			onRetry={handleRetry}
 			onErrorClose={handleErrorClose}
 			onSend={handleSend}
+			onQueue={handleQueue}
 			onStop={handleStop}
 			onDraftChange={handleDraftChange}
+			onEditQueuedMessage={editQueuedTurn}
 			disabled={isSending}
 			isGenerating={isSending}
+			hasQueuedMessage={Boolean(queuedTurn)}
+			queuedMessagePreview={queuedTurn?.message ?? ''}
 			maxLength={data.maxMessageLength}
 			conversationId={data.conversation.id}
 			{contextStatus}

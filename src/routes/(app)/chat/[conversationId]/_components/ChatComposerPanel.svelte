@@ -17,10 +17,14 @@
 		onRetry,
 		onErrorClose,
 		onSend,
+		onQueue,
 		onStop,
 		onDraftChange,
+		onEditQueuedMessage,
 		disabled,
 		isGenerating,
+		hasQueuedMessage,
+		queuedMessagePreview,
 		maxLength,
 		conversationId,
 		contextStatus,
@@ -38,10 +42,14 @@
 		onRetry: () => void;
 		onErrorClose: () => void;
 		onSend: (payload: SendPayload) => void;
+		onQueue: (payload: SendPayload) => void;
 		onStop: () => void;
 		onDraftChange: (payload: DraftChangePayload) => void;
+		onEditQueuedMessage: () => void;
 		disabled: boolean;
 		isGenerating: boolean;
+		hasQueuedMessage: boolean;
+		queuedMessagePreview: string;
 		maxLength: number;
 		conversationId: string;
 		contextStatus: ConversationContextStatus | null;
@@ -73,10 +81,14 @@
 
 		<MessageInput
 			{onSend}
+			{onQueue}
 			{onStop}
 			{onDraftChange}
+			{onEditQueuedMessage}
 			{disabled}
 			{isGenerating}
+			{hasQueuedMessage}
+			{queuedMessagePreview}
 			{maxLength}
 			{conversationId}
 			{contextStatus}

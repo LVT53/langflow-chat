@@ -18,6 +18,7 @@
 		message: string;
 		attachmentIds: string[];
 		attachments: ArtifactSummary[];
+		pendingAttachments: PendingAttachment[];
 		conversationId: string | null;
 	};
 
@@ -43,9 +44,13 @@
 		draftAttachments = [],
 		draftVersion = 0,
 		onSend = undefined,
+		onQueue = undefined,
 		onStop = undefined,
 		onSteer = undefined,
 		onManageEvidence = undefined,
+		onEditQueuedMessage = undefined,
+		hasQueuedMessage = false,
+		queuedMessagePreview = '',
 		onDraftChange = undefined,
 	}: {
 		disabled?: boolean;
@@ -62,9 +67,13 @@
 		draftAttachments?: PendingAttachment[];
 		draftVersion?: number;
 		onSend?: ((payload: SendPayload) => void) | undefined;
+		onQueue?: ((payload: SendPayload) => void) | undefined;
 		onStop?: (() => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onManageEvidence?: (() => void) | undefined;
+		onEditQueuedMessage?: (() => void) | undefined;
+		hasQueuedMessage?: boolean;
+		queuedMessagePreview?: string;
 		onDraftChange?: ((payload: DraftPayload) => void) | undefined;
 	} = $props();
 
@@ -99,6 +108,7 @@
 	let canSend = $derived(
 		!isEmpty && !isOverMaxLength && !isUploadingAttachment && !hasUnreadyAttachment
 	);
+	let canQueue = $derived(canSend && isGenerating && !hasQueuedMessage);
 	let canAttach = $derived(
 		attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !isUploadingAttachment
 	);
@@ -192,18 +202,25 @@
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey && !isMobile()) {
 			event.preventDefault();
+			if (isGenerating) {
+				queue();
+				return;
+			}
 			send();
 		}
 	}
 
-	function send() {
-		if (!canSend) return;
-		onSend?.({
+	function buildSendPayload(): SendPayload {
+		return {
 			message: message.trim(),
 			attachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
 			attachments: pendingAttachmentArtifacts,
+			pendingAttachments: pendingAttachments.map((attachment) => ({ ...attachment })),
 			conversationId: resolvedConversationId
-		});
+		};
+	}
+
+	function clearComposerAfterSubmit() {
 		message = '';
 		pendingAttachments = [];
 		attachmentError = '';
@@ -212,10 +229,22 @@
 		draftEmissionVersion += 1;
 		adjustHeight();
 		if (!isMobile()) {
-			textarea.focus();
+			textarea?.focus();
 		} else {
-			textarea.blur();
+			textarea?.blur();
 		}
+	}
+
+	function send() {
+		if (!canSend || isGenerating) return;
+		onSend?.(buildSendPayload());
+		clearComposerAfterSubmit();
+	}
+
+	function queue() {
+		if (!canQueue) return;
+		onQueue?.(buildSendPayload());
+		clearComposerAfterSubmit();
 	}
 
 	function stop() {
@@ -317,6 +346,13 @@
 		onManageEvidence?.();
 	}
 
+	function editQueuedMessage() {
+		onEditQueuedMessage?.();
+		if (!isMobile()) {
+			textarea?.focus();
+		}
+	}
+
 	async function ensureDraftConversationId(): Promise<string | null> {
 		if (resolvedConversationId) return resolvedConversationId;
 		if (!ensureConversation) return null;
@@ -388,6 +424,30 @@
 			</div>
 		{/if}
 
+		{#if hasQueuedMessage}
+			<div
+				data-testid="queued-message-banner"
+				class="mx-[16px] mb-2 flex items-center justify-between gap-3 rounded-[1rem] border border-border-subtle bg-surface-page px-3 py-2"
+			>
+				<div class="min-w-0">
+					<p class="text-[11px] font-sans font-medium uppercase tracking-[0.12em] text-text-muted">
+						Queued next
+					</p>
+					<p class="truncate text-[13px] font-sans text-text-primary">
+						{queuedMessagePreview || 'Next message queued.'}
+					</p>
+				</div>
+				<button
+					data-testid="edit-queued-button"
+					type="button"
+					class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+					onclick={editQueuedMessage}
+				>
+					Edit
+				</button>
+			</div>
+		{/if}
+
 		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
 			<div class="flex items-center gap-2">
 				<div class="relative flex items-center">
@@ -424,13 +484,25 @@
 				/>
 			</div>
 
-			<div class="action-button-container min-h-[50px] min-w-[50px] flex-shrink-0">
+			<div class="action-button-container flex min-h-[50px] items-center justify-end gap-2 flex-shrink-0">
 				{#if isGenerating}
+					{#if !hasQueuedMessage && canQueue}
+						<button
+							data-testid="queue-button"
+							type="button"
+							onclick={queue}
+							aria-label="Queue next message"
+							class="queue-button flex h-[50px] items-center justify-center rounded-[15px] border border-border bg-surface-page px-4 text-[13px] font-sans font-medium text-text-primary shadow-sm animate-in"
+						>
+							Queue
+						</button>
+					{/if}
 					<button
+						data-testid="stop-button"
 						type="button"
 						onclick={stop}
 						aria-label="Stop generation"
-						class="composer-stop-accent flex h-full w-full items-center justify-center rounded-[15px] shadow-sm animate-in"
+						class="composer-stop-accent flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
 							<rect x="6" y="6" width="12" height="12" rx="2" />
@@ -443,7 +515,7 @@
 						onclick={send}
 						disabled={!canSend || disabled}
 						aria-label="Send message"
-						class="btn-primary composer-send flex h-full w-full items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
+						class="btn-primary composer-send flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="22" x2="11" y1="2" y2="13" />
@@ -522,9 +594,7 @@
 	}
 
 	.action-button-container {
-		aspect-ratio: 1 / 1;
 		align-self: center;
-		overflow: hidden;
 	}
 
 	.composer-stop {
@@ -552,6 +622,14 @@
 	}
 
 	.composer-stop-accent:focus-visible {
+		box-shadow: 0 0 0 2px var(--focus-ring);
+	}
+
+	.queue-button:hover {
+		background: color-mix(in srgb, var(--surface-elevated) 82%, var(--surface-page) 18%);
+	}
+
+	.queue-button:focus-visible {
 		box-shadow: 0 0 0 2px var(--focus-ring);
 	}
 

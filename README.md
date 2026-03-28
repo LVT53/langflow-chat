@@ -71,8 +71,9 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Server hooks validate the session, attach the current user, load runtime config overrides, and start optional maintenance schedulers.
 - The app layout preloads conversations, projects, model availability, and user preferences before the main UI renders.
 - The landing page prepares a draft conversation, stores any pending first message, and navigates into the chat page once a conversation exists.
-- The chat page consumes any pending initial message and streams the assistant response over Server-Sent Events.
+- The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
+- Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
@@ -81,6 +82,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The product is intentionally reading-focused rather than dashboard-like: message content uses a serif text face, while the surrounding UI uses a sans-serif system for clearer navigation and controls.
 - Markdown responses are rendered with code highlighting and sanitization, so technical answers can mix prose, code blocks, and inline snippets safely.
 - The same app shell supports desktop, tablet, and mobile layouts, with the conversation view remaining the primary surface across breakpoints.
+- Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
 - Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
 
 ## Configuration Reference

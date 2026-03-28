@@ -108,4 +108,48 @@ test.describe('Conversation CRUD operations', () => {
 
     await expect(page.getByTestId('conversation-item')).toHaveCount(initialCount);
   });
+
+  test('drags a conversation into a project folder', async ({ page }) => {
+    await createConversation(page, 'Project drag conversation');
+    await ensureSidebarExpanded(page);
+
+    const createProjectButton = page.getByRole('button', { name: 'Create new project' }).first();
+    await createProjectButton.click();
+
+    const projectName = 'Project Drag Target';
+    const projectInput = page.getByPlaceholder('Project name');
+    await expect(projectInput).toBeVisible();
+    await projectInput.fill(projectName);
+    await projectInput.press('Enter');
+
+    const conversationItem = page.getByTestId('conversation-item').first();
+    const projectTarget = page.getByTestId('project-drop-target').filter({ hasText: projectName }).first();
+
+    await expect(projectTarget).toBeVisible({ timeout: 10000 });
+
+    const conversationId = await conversationItem.getAttribute('data-conversation-id');
+    const projectId = await projectTarget.getAttribute('data-project-id');
+
+    expect(conversationId).toBeTruthy();
+    expect(projectId).toBeTruthy();
+
+    const moveRequestPromise = page.waitForRequest((request) => {
+      return (
+        request.method() === 'PATCH' &&
+        request.url().includes(`/api/conversations/${conversationId}`)
+      );
+    });
+
+    const dataTransfer = await page.evaluateHandle(({ targetConversationId }) => {
+      const transfer = new DataTransfer();
+      transfer.setData('application/x-alfyai-conversation', targetConversationId);
+      transfer.setData('text/plain', targetConversationId);
+      return transfer;
+    }, { targetConversationId: conversationId });
+    await projectTarget.dispatchEvent('dragover', { dataTransfer });
+    await projectTarget.dispatchEvent('drop', { dataTransfer });
+
+    const moveRequest = await moveRequestPromise;
+    expect(moveRequest.postDataJSON()).toEqual({ projectId });
+  });
 });

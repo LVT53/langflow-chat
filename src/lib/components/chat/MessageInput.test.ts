@@ -295,4 +295,38 @@ describe('MessageInput', () => {
 
 		expect(draftSpy).not.toHaveBeenCalled();
 	});
+
+	it('queues the next message on Enter while generation is in progress', async () => {
+		const queueSpy = vi.fn();
+		const { getByPlaceholderText, queryByTestId } = render(MessageInputWrapper, {
+			isGenerating: true,
+			onQueue: queueSpy,
+		});
+
+		const input = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		await fireEvent.input(input, { target: { value: 'Queue this next' } });
+		await fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+
+		expect(queueSpy).toHaveBeenCalledTimes(1);
+		expect(queueSpy).toHaveBeenCalledWith('Queue this next');
+		expect(input.value).toBe('');
+		expect(queryByTestId('queue-button')).toBeNull();
+	});
+
+	it('does not clear the draft when the queue slot is already occupied', async () => {
+		const queueSpy = vi.fn();
+		const { getByPlaceholderText } = render(MessageInputWrapper, {
+			isGenerating: true,
+			hasQueuedMessage: true,
+			queuedMessagePreview: 'Already queued',
+			onQueue: queueSpy,
+		});
+
+		const input = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		await fireEvent.input(input, { target: { value: 'Keep this draft' } });
+		await fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+
+		expect(queueSpy).not.toHaveBeenCalled();
+		expect(input.value).toBe('Keep this draft');
+	});
 });

@@ -9,10 +9,14 @@
 		active = false,
 		menuOpen = false,
 		projects = [],
+		dragEnabled = false,
+		isDragging = false,
 		onSelect,
 		onRename,
 		onDelete,
 		onMoveToProject,
+		onDragStart,
+		onDragEnd,
 		onMenuToggle,
 		onMenuClose
 	}: {
@@ -20,10 +24,14 @@
 		active?: boolean;
 		menuOpen?: boolean;
 		projects?: Project[];
+		dragEnabled?: boolean;
+		isDragging?: boolean;
 		onSelect?: (payload: { id: string }) => void;
 		onRename?: (payload: { id: string; title: string }) => void;
 		onDelete?: (payload: { id: string }) => void;
 		onMoveToProject?: (payload: { id: string; projectId: string | null }) => void;
+		onDragStart?: (payload: { id: string }) => void;
+		onDragEnd?: (payload: { id: string }) => void;
 		onMenuToggle?: (payload: { id: string; open: boolean }) => void;
 		onMenuClose?: (payload: { id: string }) => void;
 	} = $props();
@@ -199,6 +207,26 @@
 		onMoveToProject?.({ id: conversation.id, projectId });
 	}
 
+	function handleDragStart(event: DragEvent) {
+		if (!dragEnabled || isEditing) {
+			event.preventDefault();
+			return;
+		}
+
+		showProjectSubmenu = false;
+		onMenuClose?.({ id: conversation.id });
+		event.dataTransfer?.setData('application/x-alfyai-conversation', conversation.id);
+		event.dataTransfer?.setData('text/plain', conversation.id);
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+		}
+		onDragStart?.({ id: conversation.id });
+	}
+
+	function handleDragEnd() {
+		onDragEnd?.({ id: conversation.id });
+	}
+
 	$effect(() => {
 		if (menuOpen) {
 			updateMenuPosition();
@@ -226,12 +254,17 @@
 
 <div
   data-testid="conversation-item"
+	data-conversation-id={conversation.id}
   class="group relative flex min-h-[32px] cursor-pointer items-center justify-between rounded-lg border border-transparent transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
 	style="padding: 0 2px 0 6px; pointer-events: auto;"
   class:bg-surface-elevated={active}
   class:border-accent={active}
   class:shadow-sm={active}
+	class:conversation-item-dragging={isDragging}
+	draggable={dragEnabled && !isEditing}
   onclick={handleSelect}
+	ondragstart={handleDragStart}
+	ondragend={handleDragEnd}
   onkeydown={(event) => event.key === 'Enter' && handleSelect()}
   role="button"
   tabindex="0"
@@ -460,5 +493,9 @@
 	:global(.dark) .conversation-option-icon,
 	:global(.dark) .conversation-option-icon-danger {
 		color: color-mix(in srgb, var(--surface-overlay) 62%, var(--text-primary) 38%);
+	}
+
+	.conversation-item-dragging {
+		opacity: 0.58;
 	}
 </style>

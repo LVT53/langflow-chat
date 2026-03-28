@@ -127,4 +127,105 @@ test.describe('SSE streaming verification', () => {
 
     await expect(page.getByTestId('assistant-message').first()).toContainText('Retry succeeded', { timeout: 15000 });
   });
+
+  test('queues the next message until the current stream completes', async ({ page }) => {
+    let callCount = 0;
+    const receivedMessages: string[] = [];
+
+    await page.route('**/api/chat/stream', async (route) => {
+      callCount += 1;
+      const body = route.request().postDataJSON() as { message?: string };
+      const message = body.message ?? '';
+      receivedMessages.push(message);
+
+      if (callCount === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        body: buildSseBody(`Reply to ${message}`),
+      });
+    });
+
+    await openConversationComposer(page);
+    await page.getByTestId('message-input').fill('First queued test');
+    await page.getByTestId('send-button').click();
+    await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId('message-input').fill('Second queued test');
+    await expect(page.getByTestId('queue-button')).toBeVisible();
+    await page.getByTestId('queue-button').click();
+
+    await expect(page.getByTestId('queued-message-banner')).toContainText('Second queued test');
+    await page.waitForTimeout(150);
+    expect(callCount).toBe(1);
+
+    await expect.poll(() => callCount, { timeout: 10000 }).toBe(2);
+    await expect(page.getByTestId('queued-message-banner')).toHaveCount(0);
+    await expect(page.getByTestId('user-message')).toHaveCount(2, { timeout: 10000 });
+    await expect(page.getByTestId('assistant-message')).toHaveCount(2, { timeout: 15000 });
+    expect(receivedMessages).toEqual(['First queued test', 'Second queued test']);
+  });
+
+  test('stopping a stream restores the queued message as a draft', async ({ page }) => {
+    let callCount = 0;
+
+    await page.route('**/api/chat/stream', async (route) => {
+      callCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        body: buildSseBody('This response should be stopped'),
+      });
+    });
+
+    await openConversationComposer(page);
+    await page.getByTestId('message-input').fill('Stop primary message');
+    await page.getByTestId('send-button').click();
+    await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId('message-input').fill('Queued after stop');
+    await expect(page.getByTestId('queue-button')).toBeVisible();
+    await page.getByTestId('queue-button').click();
+    await expect(page.getByTestId('queued-message-banner')).toContainText('Queued after stop');
+
+    await page.getByTestId('stop-button').click();
+
+    await expect(page.getByTestId('queued-message-banner')).toHaveCount(0);
+    await expect(page.getByTestId('message-input')).toHaveValue('Queued after stop');
+    await page.waitForTimeout(150);
+    expect(callCount).toBe(1);
+  });
+
+  test('stream errors restore the queued message instead of auto-sending it', async ({ page }) => {
+    let callCount = 0;
+
+    await page.route('**/api/chat/stream', async (route) => {
+      callCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await route.fulfill({
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Delayed failure' }),
+      });
+    });
+
+    await openConversationComposer(page);
+    await page.getByTestId('message-input').fill('Primary error message');
+    await page.getByTestId('send-button').click();
+    await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 5000 });
+
+    await page.getByTestId('message-input').fill('Queued after error');
+    await expect(page.getByTestId('queue-button')).toBeVisible();
+    await page.getByTestId('queue-button').click();
+    await expect(page.getByTestId('queued-message-banner')).toContainText('Queued after error');
+
+    await expect(page.getByRole('button', { name: /retry/i })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('queued-message-banner')).toHaveCount(0);
+    await expect(page.getByTestId('message-input')).toHaveValue('Queued after error');
+    expect(callCount).toBe(1);
+  });
 });

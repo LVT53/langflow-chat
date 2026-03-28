@@ -30,6 +30,9 @@
 	} = $props();
 
 	let projectsStoreReady = $state(false);
+	let supportsDragAndDrop = $state(true);
+	let draggedConversationId = $state<string | null>(null);
+	let dropTargetProjectId = $state<string | null>(null);
 	onMount(() => {
 		projectsStore.set(initialProjects);
 		projectsStoreReady = true;
@@ -126,6 +129,8 @@
 	async function handleMoveToProject(payload: { id: string; projectId: string | null }) {
 		const { id, projectId } = payload;
 		openMenuId = null;
+		draggedConversationId = null;
+		dropTargetProjectId = null;
 		try {
 			await moveConversationToProject(id, projectId);
 		} catch (e) {
@@ -142,6 +147,60 @@
 	function handleMenuClose(payload?: { id: string }) {
 		if (!payload || openMenuId === payload.id) {
 			openMenuId = null;
+		}
+	}
+
+	function handleConversationDragStart(payload: { id: string }) {
+		draggedConversationId = payload.id;
+		dropTargetProjectId = null;
+		openMenuId = null;
+	}
+
+	function handleConversationDragEnd() {
+		draggedConversationId = null;
+		dropTargetProjectId = null;
+	}
+
+	function handleProjectDragOver(payload: { id: string }) {
+		if (!draggedConversationId) return;
+		const draggedConversation = visibleConversations.find(
+			(conversation) => conversation.id === draggedConversationId
+		);
+		if (!draggedConversation || draggedConversation.projectId === payload.id) {
+			dropTargetProjectId = null;
+			return;
+		}
+		dropTargetProjectId = payload.id;
+	}
+
+	function handleProjectDragLeave(payload: { id: string }) {
+		if (dropTargetProjectId === payload.id) {
+			dropTargetProjectId = null;
+		}
+	}
+
+	async function handleProjectDropConversation(payload: {
+		projectId: string;
+		conversationId?: string | null;
+	}) {
+		const conversationId = payload.conversationId ?? draggedConversationId;
+		dropTargetProjectId = null;
+		draggedConversationId = null;
+		if (!conversationId) return;
+
+		const draggedConversation = visibleConversations.find(
+			(conversation) => conversation.id === conversationId
+		);
+		if (!draggedConversation || draggedConversation.projectId === payload.projectId) {
+			return;
+		}
+
+		try {
+			await moveConversationToProject(conversationId, payload.projectId);
+			expandedProjects = { ...expandedProjects, [payload.projectId]: true };
+		} catch (e) {
+			console.error('Drag to project failed', e);
+			alert('Failed to move conversation. Please try again.');
 		}
 	}
 
@@ -256,9 +315,13 @@
 							{project}
 							expanded={expandedProjects[project.id] ?? false}
 							menuOpen={openProjectMenuId === project.id}
+							dropActive={dropTargetProjectId === project.id}
 							onToggle={handleProjectToggle}
 							onRename={handleProjectRename}
 							onDelete={handleProjectDelete}
+							onDragOverProject={handleProjectDragOver}
+							onDragLeaveProject={handleProjectDragLeave}
+							onDropConversation={handleProjectDropConversation}
 							onMenuToggle={handleProjectMenuToggle}
 							onMenuClose={handleProjectMenuClose}
 						/>
@@ -272,10 +335,14 @@
 										active={$currentConversationId === conversation.id}
 										menuOpen={openMenuId === conversation.id}
 										projects={allProjects}
+										dragEnabled={supportsDragAndDrop}
+										isDragging={draggedConversationId === conversation.id}
 										onSelect={handleSelect}
 										onRename={handleRename}
 										onDelete={handleDelete}
 										onMoveToProject={handleMoveToProject}
+										onDragStart={handleConversationDragStart}
+										onDragEnd={handleConversationDragEnd}
 										onMenuToggle={handleMenuToggle}
 										onMenuClose={handleMenuClose}
 									/>
@@ -353,10 +420,14 @@
 					active={$currentConversationId === conversation.id}
 					menuOpen={openMenuId === conversation.id}
 					projects={allProjects}
+					dragEnabled={supportsDragAndDrop}
+					isDragging={draggedConversationId === conversation.id}
 					onSelect={handleSelect}
 					onRename={handleRename}
 					onDelete={handleDelete}
 					onMoveToProject={handleMoveToProject}
+					onDragStart={handleConversationDragStart}
+					onDragEnd={handleConversationDragEnd}
 					onMenuToggle={handleMenuToggle}
 					onMenuClose={handleMenuClose}
 				/>

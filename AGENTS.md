@@ -39,6 +39,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
 - `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers. Do not duplicate inline thinking-tag parsing across `streaming.ts` and the chat stream route.
+- `src/lib/server/services/langflow.ts` owns outbound system-prompt assembly, including always-on date-before-search guidance. Do not reintroduce route-local prompt guards for freshness-sensitive search behavior.
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
 
@@ -69,6 +70,7 @@ Do not:
   - Lightweight page bootstrap for the chat detail route.
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
+  - Owns the one-slot queued follow-up turn while a response is streaming.
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI.
@@ -81,6 +83,7 @@ Do not:
 
 - move chat orchestration into shared visual components
 - make `MessageInput.svelte` own cross-page navigation or conversation bootstrap decisions
+- make `MessageInput.svelte` own queued-turn orchestration; it may emit `onQueue`, but the chat page decides auto-send and restore behavior
 - turn page files into long-lived business-logic modules when a store/service/helper boundary already exists
 
 ### Chat Flow
@@ -96,7 +99,8 @@ Do not:
   - [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
   - [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
 - Upstream integrations:
-  - [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
+- [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
+  - Owns model-facing prompt assembly and outbound search/date guidance.
   - [`src/lib/server/services/translator.ts`](./src/lib/server/services/translator.ts)
   - [`src/lib/server/services/title-generator.ts`](./src/lib/server/services/title-generator.ts)
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)
@@ -116,6 +120,7 @@ Do not:
 - hide persistence side effects inside route-local closures that only one endpoint can see
 - couple Langflow transport details directly into page components
 - duplicate stream-tag parsing or inline-thinking extraction between the browser stream consumer and `api/chat/stream/+server.ts`
+- scatter freshness-sensitive search guards outside `langflow.ts`
 
 ### Knowledge And Context
 
@@ -329,11 +334,14 @@ Important component boundaries:
   - navigation shell and store-driven sidebar state
 - [`src/lib/components/layout/Header.svelte`](./src/lib/components/layout/Header.svelte)
   - top-level app shell interactions
+- [`src/lib/components/sidebar/ConversationList.svelte`](./src/lib/components/sidebar/ConversationList.svelte)
+  - owns sidebar drag/drop state and project-drop move orchestration through the existing conversations store path
 
 Do not:
 
 - bury durable business logic inside a presentational component because it is "already open"
 - duplicate chat state transitions in both page files and chat components
+- move project-folder drag/drop persistence into `ConversationItem.svelte` or `ProjectItem.svelte`; those components stay event emitters
 - use unused legacy-looking components as templates without checking whether they are actually live
 
 ### Visual System And Layout Guardrails

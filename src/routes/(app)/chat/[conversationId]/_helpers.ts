@@ -11,6 +11,7 @@ export type SendPayload = {
 	message: string;
 	attachmentIds: string[];
 	attachments: ArtifactSummary[];
+	pendingAttachments: PendingAttachment[];
 	conversationId?: string | null;
 };
 

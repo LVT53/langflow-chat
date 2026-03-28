@@ -168,19 +168,23 @@ describe('Langflow API Client Service', () => {
             'Content-Type': 'application/json',
             'x-api-key': 'test-api-key'
           },
-          body: JSON.stringify({
-            input_value: 'Hello',
-            input_type: 'chat',
-            output_type: 'chat',
-            session_id: 'test-session',
-            tweaks: {
-              model_name: 'model-1',
-              api_base: 'http://localhost:30001/v1',
-              system_prompt: 'You are a helpful AI assistant.'
-            }
-          })
         })
       );
+      const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+      const body = JSON.parse(String(request?.body));
+      expect(body).toMatchObject({
+        input_value: 'Hello',
+        input_type: 'chat',
+        output_type: 'chat',
+        session_id: 'test-session',
+        tweaks: {
+          model_name: 'model-1',
+          api_base: 'http://localhost:30001/v1',
+        },
+      });
+      expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
+      expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
+      expect(body.tweaks.system_prompt).toContain('first get the current date and time');
 
       expect(result).toEqual({
         text: 'AI response',
@@ -280,6 +284,7 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Tool argument safety');
       expect(body.tweaks.system_prompt).toContain('field is named `urls`');
       expect(body.tweaks.system_prompt).toContain('["https://example.com"]');
+      expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
     });
   });
 
@@ -303,19 +308,23 @@ describe('Langflow API Client Service', () => {
             'Content-Type': 'application/json',
             'x-api-key': 'test-api-key'
           },
-          body: JSON.stringify({
-            input_value: 'Hello',
-            input_type: 'chat',
-            output_type: 'chat',
-            session_id: 'test-session',
-            tweaks: {
-              model_name: 'model-1',
-              api_base: 'http://localhost:30001/v1',
-              system_prompt: 'You are a helpful AI assistant.'
-            }
-          })
         })
       );
+      const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+      const body = JSON.parse(String(request?.body));
+      expect(body).toMatchObject({
+        input_value: 'Hello',
+        input_type: 'chat',
+        output_type: 'chat',
+        session_id: 'test-session',
+        tweaks: {
+          model_name: 'model-1',
+          api_base: 'http://localhost:30001/v1',
+        },
+      });
+      expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
+      expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
+      expect(body.tweaks.system_prompt).toContain('first get the current date and time');
 
       expect(response.stream).toBeDefined();
     });
