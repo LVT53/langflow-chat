@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
+  mockConfig,
   mockDisplayArtifact,
   mockPromptArtifact,
   mockResolvePromptAttachmentArtifacts,
@@ -24,6 +25,12 @@ const {
   mockListMessages,
 } = vi.hoisted(() => {
   const now = Date.now();
+  const mockConfig = {
+    honchoApiKey: '',
+    honchoBaseUrl: 'http://localhost:8000',
+    honchoWorkspace: 'test-workspace',
+    honchoEnabled: false,
+  };
   const mockDisplayArtifact = {
     id: 'source-attachment-1',
     userId: 'user-123',
@@ -49,6 +56,7 @@ const {
   };
 
   return {
+    mockConfig,
     mockDisplayArtifact,
     mockPromptArtifact,
     mockResolvePromptAttachmentArtifacts: vi.fn(async () => ({
@@ -107,6 +115,10 @@ const {
     mockListMessages: vi.fn(async () => []),
   };
 });
+
+vi.mock('../config-store', () => ({
+  getConfig: () => mockConfig,
+}));
 
 vi.mock('@honcho-ai/sdk', () => {
   class Honcho {
@@ -233,6 +245,7 @@ describe('Honcho Service', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mockConfig.honchoEnabled = false;
   });
 
   describe('isHonchoEnabled', () => {
@@ -421,6 +434,73 @@ describe('Honcho Service', () => {
           recentTurnCount: 4,
         })
       );
+    });
+
+    it('skips empty Honcho session reads for a brand-new conversation', async () => {
+      mockConfig.honchoEnabled = true;
+      mockListMessages.mockResolvedValueOnce([]);
+      mockBuildPersonaPromptContext.mockResolvedValueOnce('- Prefers short answers');
+
+      const { buildConstructedContext } = await import('./honcho');
+
+      const result = await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-fresh',
+        message: 'Say exactly: fresh context ok.',
+      });
+
+      expect(result.inputValue).toContain('## Current User Message');
+      expect(result.inputValue).toContain('Say exactly: fresh context ok.');
+      expect(mockSessionAddPeers).not.toHaveBeenCalled();
+      expect(mockSessionMessages).not.toHaveBeenCalled();
+      expect(mockSessionSummaries).not.toHaveBeenCalled();
+      expect(mockSessionSearch).not.toHaveBeenCalled();
+      expect(mockBuildPersonaPromptContext).toHaveBeenCalledWith(
+        'user-123',
+        'Say exactly: fresh context ok.'
+      );
+    });
+
+    it('falls back to persisted messages when Honcho session bootstrap stalls', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockListMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: 'Stored question',
+            timestamp: Date.parse('2026-03-26T10:00:00.000Z'),
+          },
+          {
+            id: 'msg-2',
+            role: 'assistant',
+            content: 'Stored answer',
+            timestamp: Date.parse('2026-03-26T10:00:01.000Z'),
+          },
+        ]);
+        mockSessionAddPeers.mockImplementationOnce(
+          () => new Promise<void>(() => undefined)
+        );
+
+        const { buildConstructedContext } = await import('./honcho');
+
+        const resultPromise = buildConstructedContext({
+          userId: 'user-123',
+          conversationId: 'conv-timeout',
+          message: 'Continue from earlier.',
+        });
+
+        await vi.advanceTimersByTimeAsync(2_000);
+        const result = await resultPromise;
+
+        expect(result.inputValue).toContain('## Recent Session Turns');
+        expect(result.inputValue).toContain('USER: Stored question');
+        expect(result.inputValue).toContain('ASSISTANT: Stored answer');
+        expect(mockSessionSearch).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

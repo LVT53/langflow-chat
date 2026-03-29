@@ -69,6 +69,7 @@ const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
+const HONCHO_CONTEXT_TIMEOUT_MS = 1500;
 
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
@@ -360,6 +361,41 @@ type PersonaMemoryAttributionCandidate = Pick<
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeoutFallback<T>(
+	promise: Promise<T>,
+	params: {
+		timeoutMs?: number;
+		fallback: T;
+		label: string;
+		conversationId?: string;
+		userId?: string;
+	}
+): Promise<T> {
+	const timeoutMs = Math.max(1, params.timeoutMs ?? HONCHO_CONTEXT_TIMEOUT_MS);
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<T>((resolve) => {
+				timeoutId = setTimeout(() => {
+					console.warn('[CONTEXT] Timed out waiting for Honcho context', {
+						label: params.label,
+						conversationId: params.conversationId,
+						userId: params.userId,
+						timeoutMs,
+					});
+					resolve(params.fallback);
+				}, timeoutMs);
+			}),
+		]);
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+	}
 }
 
 export function selectPersonaMemoryAttributionCandidates(params: {
@@ -741,19 +777,80 @@ async function loadSessionPromptContext(params: {
 		};
 	}
 
+	const fallbackSessionMessages = await loadFallbackPromptContextMessages(
+		params.conversationId
+	).catch(() => []);
+	const loadPersonaContext = () =>
+		withTimeoutFallback(buildPersonaPromptContext(params.userId, params.message).catch(() => ''), {
+			fallback: '',
+			label: 'persona prompt context',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		});
+
+	// A brand-new conversation has no useful Honcho session history yet. Avoid blocking the
+	// first turn on empty-session reads and build from the current message plus durable memory.
+	if (fallbackSessionMessages.length === 0) {
+		return {
+			sessionMessages: [],
+			summaries: null,
+			searchedMessages: [],
+			peerContext: await loadPersonaContext(),
+		};
+	}
+
 	try {
-		const session = await getSession(params.userId, params.conversationId);
+		const session = await withTimeoutFallback(getSession(params.userId, params.conversationId), {
+			fallback: null,
+			label: 'Honcho session bootstrap',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		});
+		if (!session) {
+			return {
+				sessionMessages: fallbackSessionMessages,
+				summaries: null,
+				searchedMessages: [],
+				peerContext: await loadPersonaContext(),
+			};
+		}
 		const [sessionMessages, summaries, searchedMessages, peerContext] = await Promise.all([
-			getSessionMessages(session).catch(() => []),
-			session.summaries().catch(() => null),
-			session.search(params.message, { limit: 4 }).catch(() => []),
-			buildPersonaPromptContext(params.userId, params.message).catch(() => ''),
+			withTimeoutFallback(
+				getSessionMessages(session)
+					.then((messages) => mapHonchoMessagesToPromptContext(messages, params.userId))
+					.catch(() => fallbackSessionMessages),
+				{
+					fallback: fallbackSessionMessages,
+					label: 'Honcho session messages',
+					conversationId: params.conversationId,
+					userId: params.userId,
+				}
+			),
+			withTimeoutFallback(session.summaries().catch(() => null), {
+				fallback: null,
+				label: 'Honcho session summaries',
+				conversationId: params.conversationId,
+				userId: params.userId,
+			}),
+			withTimeoutFallback(
+				session
+					.search(params.message, { limit: 4 })
+					.then((messages) => mapHonchoMessagesToPromptContext(messages, params.userId))
+					.catch(() => []),
+				{
+					fallback: [],
+					label: 'Honcho session search',
+					conversationId: params.conversationId,
+					userId: params.userId,
+				}
+			),
+			loadPersonaContext(),
 		]);
 
 		return {
-			sessionMessages: mapHonchoMessagesToPromptContext(sessionMessages, params.userId),
+			sessionMessages,
 			summaries,
-			searchedMessages: mapHonchoMessagesToPromptContext(searchedMessages, params.userId),
+			searchedMessages,
 			peerContext,
 		};
 	} catch (error) {
@@ -763,12 +860,10 @@ async function loadSessionPromptContext(params: {
 			message: error instanceof Error ? error.message : String(error),
 		});
 		return {
-			sessionMessages: await loadFallbackPromptContextMessages(params.conversationId).catch(
-				() => []
-			),
+			sessionMessages: fallbackSessionMessages,
 			summaries: null,
 			searchedMessages: [],
-			peerContext: '',
+			peerContext: await loadPersonaContext(),
 		};
 	}
 }
