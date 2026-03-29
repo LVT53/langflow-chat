@@ -167,6 +167,7 @@ vi.mock('../env', () => ({
       displayName: 'Model 1',
       systemPrompt: 'default',
       flowId: 'test-flow-id',
+      componentId: '',
     },
     model2: {
       baseUrl: '',
@@ -175,6 +176,7 @@ vi.mock('../env', () => ({
       displayName: 'Model 2',
       systemPrompt: 'default',
       flowId: '',
+      componentId: '',
     },
     honchoApiKey: '',
     honchoBaseUrl: 'http://localhost:8000',

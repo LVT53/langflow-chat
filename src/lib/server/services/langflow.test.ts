@@ -1,5 +1,55 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { mockRuntimeConfig } = vi.hoisted(() => ({
+  mockRuntimeConfig: {
+    langflowApiUrl: 'http://localhost:7860',
+    langflowApiKey: 'test-api-key',
+    langflowFlowId: 'test-flow-id',
+    langflowWebhookSecret: '',
+    attachmentTraceDebug: false,
+    translatorUrl: 'http://localhost:30002/v1',
+    translatorApiKey: '',
+    translatorModel: 'translategemma',
+    translationMaxTokens: 256,
+    translationTemperature: 0.1,
+    titleGenUrl: 'http://localhost:30001/v1',
+    titleGenApiKey: '',
+    titleGenModel: 'nemotron-nano',
+    contextSummarizerUrl: '',
+    contextSummarizerApiKey: '',
+    contextSummarizerModel: '',
+    webhookPort: 8090,
+    requestTimeoutMs: 5000,
+    maxMessageLength: 10000,
+    sessionSecret: 'test-secret',
+    databasePath: './data/test.db',
+    model1: {
+      baseUrl: 'http://localhost:30001/v1',
+      apiKey: '',
+      modelName: 'model-1',
+      displayName: 'Model 1',
+      systemPrompt: 'default',
+      flowId: 'test-flow-id',
+      componentId: '',
+    },
+    model2: {
+      baseUrl: '',
+      apiKey: '',
+      modelName: '',
+      displayName: 'Model 2',
+      systemPrompt: 'default',
+      flowId: '',
+      componentId: '',
+    },
+    model2Enabled: true,
+    honchoApiKey: '',
+    honchoBaseUrl: 'http://localhost:8000',
+    honchoWorkspace: 'test-workspace',
+    honchoEnabled: false,
+    memoryMaintenanceIntervalMinutes: 0,
+  },
+}));
+
 vi.mock('../env', () => ({
   getDatabasePath: () => './data/test.db',
   config: {
@@ -30,6 +80,7 @@ vi.mock('../env', () => ({
       displayName: 'Model 1',
       systemPrompt: 'default',
       flowId: 'test-flow-id',
+      componentId: '',
     },
     model2: {
       baseUrl: '',
@@ -38,12 +89,17 @@ vi.mock('../env', () => ({
       displayName: 'Model 2',
       systemPrompt: 'default',
       flowId: '',
+      componentId: '',
     },
     honchoApiKey: '',
     honchoBaseUrl: 'http://localhost:8000',
     honchoWorkspace: 'test-workspace',
     honchoEnabled: false,
   },
+}));
+
+vi.mock('../config-store', () => ({
+  getConfig: () => mockRuntimeConfig,
 }));
 
 vi.stubGlobal('fetch', vi.fn());
@@ -82,6 +138,8 @@ vi.mock('./honcho', () => ({
 describe('Langflow API Client Service', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockRuntimeConfig.model1.componentId = '';
+    mockRuntimeConfig.model2.componentId = '';
   });
 
   describe('extractMessageText', () => {
@@ -203,6 +261,38 @@ describe('Langflow API Client Service', () => {
       });
     });
 
+    it('scopes tweaks under the configured Langflow component ID when present', async () => {
+      mockRuntimeConfig.model1.componentId = 'NemotronNode-123';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'AI response'
+                }
+              }
+            }]
+          }]
+        }),
+        ok: true
+      }));
+
+      const { sendMessage } = await import('./langflow');
+
+      await sendMessage('Hello', 'test-session');
+
+      const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+      const body = JSON.parse(String(request?.body));
+      expect(body.tweaks).toEqual({
+        'NemotronNode-123': {
+          model_name: 'model-1',
+          api_base: 'http://localhost:30001/v1',
+          system_prompt: expect.stringContaining('You are a helpful AI assistant.'),
+        },
+      });
+    });
+
     it('should throw error on non-200 response', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: false,
@@ -293,7 +383,10 @@ describe('Langflow API Client Service', () => {
       const mockBody = {} as ReadableStream<Uint8Array>;
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
-        body: mockBody
+        body: mockBody,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
       }));
 
       const { sendMessageStream } = await import('./langflow');
@@ -305,6 +398,8 @@ describe('Langflow API Client Service', () => {
         expect.objectContaining({
           method: 'POST',
           headers: {
+            Accept: 'text/event-stream',
+            'Cache-Control': 'no-cache',
             'Content-Type': 'application/json',
             'x-api-key': 'test-api-key'
           },
@@ -329,12 +424,39 @@ describe('Langflow API Client Service', () => {
       expect(response.stream).toBeDefined();
     });
 
+    it('scopes streaming tweaks under the configured Langflow component ID when present', async () => {
+      const mockBody = {} as ReadableStream<Uint8Array>;
+      mockRuntimeConfig.model1.componentId = 'NemotronNode-123';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: mockBody,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
+      }));
+
+      const { sendMessageStream } = await import('./langflow');
+
+      await sendMessageStream('Hello', 'test-session');
+
+      const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+      const body = JSON.parse(String(request?.body));
+      expect(body.tweaks).toEqual({
+        'NemotronNode-123': {
+          model_name: 'model-1',
+          api_base: 'http://localhost:30001/v1',
+          system_prompt: expect.stringContaining('You are a helpful AI assistant.'),
+        },
+      });
+    });
+
     it('should throw error on non-200 response for streaming', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
-        text: vi.fn().mockResolvedValue('')
+        text: vi.fn().mockResolvedValue(''),
+        headers: new Headers()
       }));
 
       const { sendMessageStream } = await import('./langflow');
@@ -347,7 +469,10 @@ describe('Langflow API Client Service', () => {
     it('should throw error if response body is empty', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
-        body: undefined
+        body: undefined,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
       }));
 
       const { sendMessageStream } = await import('./langflow');
@@ -364,7 +489,10 @@ describe('Langflow API Client Service', () => {
       const mockBody = {} as ReadableStream<Uint8Array>;
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
-        body: mockBody
+        body: mockBody,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
       }));
 
       vi.mocked(buildConstructedContext).mockResolvedValueOnce({
@@ -388,6 +516,43 @@ describe('Langflow API Client Service', () => {
           sessionId: 'test-session',
         })
       );
+    });
+
+    it('throws a specific connect-timeout error when stream headers never arrive', async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation((_: RequestInfo | URL, init?: RequestInit) => {
+          return new Promise<Response>((_resolve, reject) => {
+            const abortError = new Error('This operation was aborted');
+            abortError.name = 'AbortError';
+
+            if (init?.signal?.aborted) {
+              reject(abortError);
+              return;
+            }
+
+            init?.signal?.addEventListener('abort', () => reject(abortError), {
+              once: true,
+            });
+          });
+        })
+      );
+
+      const { sendMessageStream } = await import('./langflow');
+      const responsePromise = sendMessageStream('Hello', 'test-session', undefined, {
+        connectTimeoutMs: 1000,
+      });
+      const handledResponsePromise = responsePromise.catch((error) => error);
+
+      await vi.advanceTimersByTimeAsync(1100);
+
+      await expect(handledResponsePromise).resolves.toMatchObject({
+        name: 'LangflowStreamConnectTimeoutError',
+        code: 'langflow_stream_connect_timeout',
+      });
+
+      vi.useRealTimers();
     });
   });
 });

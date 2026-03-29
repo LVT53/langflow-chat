@@ -2,6 +2,7 @@
 import type { LangflowRunRequest, LangflowRunResponse, ModelId } from '$lib/types';
 import { getSystemPrompt } from '../prompts';
 import { getConfig } from '../config-store';
+import type { ModelConfig } from '../env';
 import { buildConstructedContext, buildEnhancedSystemPrompt } from './honcho';
 import {
 	logAttachmentTrace,
@@ -49,6 +50,26 @@ function buildOutboundSystemPrompt(params: {
 	return `${basePrompt}\n\n## Tool And Search Guidance\n${uniqueAdditions.join('\n\n')}`;
 }
 
+function buildLangflowTweaks(
+	modelConfig: ModelConfig,
+	systemPrompt: string,
+): Record<string, unknown> {
+	const componentId = modelConfig.componentId.trim();
+	const componentTweaks = {
+		model_name: modelConfig.modelName,
+		api_base: modelConfig.baseUrl,
+		system_prompt: systemPrompt,
+	};
+
+	if (!componentId) {
+		return componentTweaks;
+	}
+
+	return {
+		[componentId]: componentTweaks,
+	};
+}
+
 function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
 
@@ -91,6 +112,7 @@ export async function sendMessage(
   modelId?: ModelId,
   userId?: string,
   options?: {
+    signal?: AbortSignal;
     attachmentIds?: string[];
     attachmentTraceId?: string;
     systemPromptAppendix?: string;
@@ -105,6 +127,7 @@ export async function sendMessage(
   const config = getConfig();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+  const signal = mergeAbortSignals(options?.signal, controller.signal);
 
   try {
     const modelConfig = modelId ? config[modelId] : config.model1;
@@ -168,7 +191,8 @@ export async function sendMessage(
       modelId,
       modelName,
       baseUrl,
-      flowId
+      flowId,
+      componentId: modelConfig.componentId || null,
     });
 
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -176,11 +200,7 @@ export async function sendMessage(
       input_type: 'chat',
       output_type: 'chat',
       session_id: sessionId,
-      tweaks: {
-        model_name: modelName,
-        api_base: baseUrl,
-        system_prompt: systemPrompt
-      }
+      tweaks: buildLangflowTweaks(modelConfig, systemPrompt)
     };
 
     const response = await fetch(url, {
@@ -190,7 +210,7 @@ export async function sendMessage(
         'x-api-key': config.langflowApiKey
       },
       body: JSON.stringify(body),
-      signal: controller.signal
+      signal
     });
 
     if (!response.ok) {
@@ -220,6 +240,7 @@ export async function sendMessageStream(
   sessionId: string,
   modelId?: ModelId,
   options?: {
+    connectTimeoutMs?: number;
     signal?: AbortSignal;
     userId?: string;
     attachmentIds?: string[];
@@ -235,7 +256,21 @@ export async function sendMessageStream(
   const config = getConfig();
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), config.requestTimeoutMs);
-  const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
+  const connectTimeoutMs = Math.min(
+    config.requestTimeoutMs,
+    Math.max(1000, options?.connectTimeoutMs ?? config.requestTimeoutMs)
+  );
+  const connectTimeoutController = new AbortController();
+  let connectTimedOut = false;
+  const connectTimeoutId = setTimeout(() => {
+    connectTimedOut = true;
+    connectTimeoutController.abort();
+  }, connectTimeoutMs);
+  const signal = mergeAbortSignals(
+    options?.signal,
+    timeoutController.signal,
+    connectTimeoutController.signal
+  );
 
   try {
     const modelConfig = modelId ? config[modelId] : config.model1;
@@ -300,6 +335,7 @@ export async function sendMessageStream(
       modelName,
       baseUrl,
       flowId,
+      componentId: modelConfig.componentId || null,
       systemPromptLength: systemPrompt.length,
       systemPromptPreview: systemPrompt.slice(0, 80)
     });
@@ -309,21 +345,34 @@ export async function sendMessageStream(
       input_type: 'chat',
       output_type: 'chat',
       session_id: sessionId,
-      tweaks: {
-        model_name: modelName,
-        api_base: baseUrl,
-        system_prompt: systemPrompt
-      }
+      tweaks: buildLangflowTweaks(modelConfig, systemPrompt)
     };
 
+    console.log('[LANGFLOW] sendMessageStream dispatching fetch', {
+      url,
+      sessionId,
+      connectTimeoutMs,
+    });
     const response = await fetch(url, {
       method: 'POST',
       headers: {
+        Accept: 'text/event-stream',
+        'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
         'x-api-key': config.langflowApiKey,
       },
       body: JSON.stringify(body),
       signal
+    });
+    clearTimeout(connectTimeoutId);
+    console.log('[LANGFLOW] sendMessageStream response headers', {
+      url,
+      sessionId,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get('content-type'),
+      contentEncoding: response.headers.get('content-encoding'),
+      transferEncoding: response.headers.get('transfer-encoding'),
     });
 
     if (!response.ok) {
@@ -344,8 +393,17 @@ export async function sendMessageStream(
 
     return { stream: response.body as ReadableStream<Uint8Array>, contextStatus, taskState, contextDebug };
   } catch (error) {
+    if (connectTimedOut) {
+      const timeoutError = new Error(
+        `Timed out waiting ${connectTimeoutMs}ms for Langflow streaming response headers`
+      ) as Error & { code?: string };
+      timeoutError.name = 'LangflowStreamConnectTimeoutError';
+      timeoutError.code = 'langflow_stream_connect_timeout';
+      throw timeoutError;
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    clearTimeout(connectTimeoutId);
   }
 }

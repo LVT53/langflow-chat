@@ -142,12 +142,14 @@ Notes before the tables:
 | `MODEL_1_DISPLAY_NAME` | No | `Model 1` | Public label shown in the UI | Set it for clearer model names in the product | Cosmetic only |
 | `MODEL_1_SYSTEM_PROMPT` | No | `default` | Prompt key or full prompt text for model 1 | Set it when model 1 should use a specific system prompt | Built-in prompt keys are preferred over pasted prompt bodies |
 | `MODEL_1_FLOW_ID` | No | falls back to `LANGFLOW_FLOW_ID` | Model-specific Langflow flow override for model 1 | Set it when model 1 should route to a different flow | Overrides the global flow only for model 1 |
+| `MODEL_1_COMPONENT_ID` | No | empty | Langflow component/node ID that receives model 1 runtime tweaks | Set it when the flow requires component-scoped `tweaks` overrides | If unset, the app falls back to the older flat `tweaks` shape |
 | `MODEL_2_BASEURL` | No | empty | OpenAI-compatible base URL for the secondary model | Set it only if you want a second selectable model | If unset, model 2 is not useful even if enabled |
 | `MODEL_2_API_KEY` | No | empty | API key for model 2 | Set it when model 2 requires auth | Empty is valid for unauthenticated local servers |
 | `MODEL_2_NAME` | No | empty | Model identifier sent to model 2 | Set it to the exact served model name | Must match the upstream endpoint |
 | `MODEL_2_DISPLAY_NAME` | No | `Model 2` | Public label shown in the UI | Set it for a meaningful secondary model label | Cosmetic only |
 | `MODEL_2_SYSTEM_PROMPT` | No | `default` | Prompt key or full prompt text for model 2 | Set it when model 2 should use a specific system prompt | Built-in prompt keys are preferred |
 | `MODEL_2_FLOW_ID` | No | falls back to `LANGFLOW_FLOW_ID` | Model-specific Langflow flow override for model 2 | Set it when model 2 should route differently | Overrides the global flow only for model 2 |
+| `MODEL_2_COMPONENT_ID` | No | empty | Langflow component/node ID that receives model 2 runtime tweaks | Set it when the flow uses component-scoped `tweaks` overrides | If unset, the app falls back to the older flat `tweaks` shape |
 | `MODEL_2_ENABLED` | No | `true` | Enables model 2 as a selectable option | Set it to `false` to hide model 2 and force fallback to model 1 | Can also be overridden in admin config |
 
 ### Translation, Title Generation, And Summarization

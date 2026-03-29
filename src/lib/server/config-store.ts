@@ -14,11 +14,13 @@ export const ADMIN_CONFIG_KEYS = [
   'MODEL_1_DISPLAY_NAME',
   'MODEL_1_SYSTEM_PROMPT',
   'MODEL_1_FLOW_ID',
+  'MODEL_1_COMPONENT_ID',
   'MODEL_2_BASEURL',
   'MODEL_2_NAME',
   'MODEL_2_DISPLAY_NAME',
   'MODEL_2_SYSTEM_PROMPT',
   'MODEL_2_FLOW_ID',
+  'MODEL_2_COMPONENT_ID',
   'MODEL_2_ENABLED',
   'TITLE_GEN_URL',
   'TITLE_GEN_MODEL',
@@ -107,6 +109,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   MODEL_1_FLOW_ID: (config, value) => {
     config.model1.flowId = value;
   },
+  MODEL_1_COMPONENT_ID: (config, value) => {
+    config.model1.componentId = value;
+  },
   MODEL_2_BASEURL: (config, value) => {
     config.model2.baseUrl = value;
   },
@@ -121,6 +126,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   },
   MODEL_2_FLOW_ID: (config, value) => {
     config.model2.flowId = value;
+  },
+  MODEL_2_COMPONENT_ID: (config, value) => {
+    config.model2.componentId = value;
   },
   MODEL_2_ENABLED: (config, value) => {
     config.model2Enabled = value === 'true';
@@ -214,11 +222,13 @@ export function getResolvedAdminConfigValues(
     MODEL_1_DISPLAY_NAME: config.model1.displayName,
     MODEL_1_SYSTEM_PROMPT: getSystemPrompt(config.model1.systemPrompt),
     MODEL_1_FLOW_ID: config.model1.flowId,
+    MODEL_1_COMPONENT_ID: config.model1.componentId,
     MODEL_2_BASEURL: config.model2.baseUrl,
     MODEL_2_NAME: config.model2.modelName,
     MODEL_2_DISPLAY_NAME: config.model2.displayName,
     MODEL_2_SYSTEM_PROMPT: getSystemPrompt(config.model2.systemPrompt),
     MODEL_2_FLOW_ID: config.model2.flowId,
+    MODEL_2_COMPONENT_ID: config.model2.componentId,
     MODEL_2_ENABLED: String(config.model2Enabled),
     TITLE_GEN_URL: config.titleGenUrl,
     TITLE_GEN_MODEL: config.titleGenModel,
@@ -241,11 +251,13 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     MODEL_1_DISPLAY_NAME: envConfig.model1.displayName,
     MODEL_1_SYSTEM_PROMPT: envConfig.model1.systemPrompt,
     MODEL_1_FLOW_ID: envConfig.model1.flowId,
+    MODEL_1_COMPONENT_ID: envConfig.model1.componentId,
     MODEL_2_BASEURL: envConfig.model2.baseUrl,
     MODEL_2_NAME: envConfig.model2.modelName,
     MODEL_2_DISPLAY_NAME: envConfig.model2.displayName,
     MODEL_2_SYSTEM_PROMPT: envConfig.model2.systemPrompt,
     MODEL_2_FLOW_ID: envConfig.model2.flowId,
+    MODEL_2_COMPONENT_ID: envConfig.model2.componentId,
     MODEL_2_ENABLED: String(envConfig.model2Enabled),
     TITLE_GEN_URL: envConfig.titleGenUrl,
     TITLE_GEN_MODEL: envConfig.titleGenModel,

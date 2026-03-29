@@ -32,11 +32,13 @@
 		MODEL_1_DISPLAY_NAME: 'Model 1 Display Name',
 		MODEL_1_SYSTEM_PROMPT: 'Model 1 System Prompt',
 		MODEL_1_FLOW_ID: 'Model 1 Flow ID',
+		MODEL_1_COMPONENT_ID: 'Model 1 Component ID',
 		MODEL_2_BASEURL: 'Model 2 Base URL',
 		MODEL_2_NAME: 'Model 2 Name',
 		MODEL_2_DISPLAY_NAME: 'Model 2 Display Name',
 		MODEL_2_SYSTEM_PROMPT: 'Model 2 System Prompt',
 		MODEL_2_FLOW_ID: 'Model 2 Flow ID',
+		MODEL_2_COMPONENT_ID: 'Model 2 Component ID',
 		MODEL_2_ENABLED: 'Enable Model 2',
 		TITLE_GEN_URL: 'Title Generator URL',
 		TITLE_GEN_MODEL: 'Title Generator Model',
@@ -60,7 +62,7 @@
 <section class="settings-card mb-4">
 	<h2 class="settings-section-title">Model 1</h2>
 	<div class="flex flex-col gap-3">
-		{#each ['MODEL_1_BASEURL', 'MODEL_1_NAME', 'MODEL_1_DISPLAY_NAME', 'MODEL_1_FLOW_ID'] as key}
+		{#each ['MODEL_1_BASEURL', 'MODEL_1_NAME', 'MODEL_1_DISPLAY_NAME', 'MODEL_1_FLOW_ID', 'MODEL_1_COMPONENT_ID'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
 				<input
@@ -70,6 +72,11 @@
 					bind:value={adminConfig[key]}
 					placeholder={placeholderFor(key)}
 				/>
+				{#if key === 'MODEL_1_COMPONENT_ID'}
+					<p class="mt-1 text-xs text-text-muted">
+						Langflow node ID that should receive the `model_name`, `api_base`, and `system_prompt` tweaks. Leave empty to keep the legacy flat tweaks payload.
+					</p>
+				{/if}
 			</div>
 		{/each}
 		<div>
@@ -106,7 +113,7 @@
 				<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
 			</label>
 		</div>
-		{#each ['MODEL_2_BASEURL', 'MODEL_2_NAME', 'MODEL_2_DISPLAY_NAME', 'MODEL_2_FLOW_ID'] as key}
+		{#each ['MODEL_2_BASEURL', 'MODEL_2_NAME', 'MODEL_2_DISPLAY_NAME', 'MODEL_2_FLOW_ID', 'MODEL_2_COMPONENT_ID'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
 				<input
@@ -116,6 +123,11 @@
 					bind:value={adminConfig[key]}
 					placeholder={placeholderFor(key)}
 				/>
+				{#if key === 'MODEL_2_COMPONENT_ID'}
+					<p class="mt-1 text-xs text-text-muted">
+						Langflow node ID that should receive the `model_name`, `api_base`, and `system_prompt` tweaks. Leave empty to keep the legacy flat tweaks payload.
+					</p>
+				{/if}
 			</div>
 		{/each}
 		<div>

@@ -40,6 +40,23 @@ async function setPromptOverrideViaApi(page: Page, value: string) {
   expect(result.ok, `admin config save failed with status ${result.status}`).toBe(true);
 }
 
+async function setAdminOverrideViaApi(page: Page, key: string, value: string) {
+  const result = await page.evaluate(async ({ nextKey, nextValue }) => {
+    const response = await fetch('/api/admin/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [nextKey]: nextValue }),
+    });
+
+    return {
+      ok: response.ok,
+      status: response.status,
+    };
+  }, { nextKey: key, nextValue: value });
+
+  expect(result.ok, `admin config save failed with status ${result.status}`).toBe(true);
+}
+
 async function openAdministrationTab(page: Page) {
   await page.goto('/settings');
   await page.waitForLoadState('networkidle');
@@ -131,6 +148,39 @@ test.describe('Admin prompt settings', () => {
 
     await reloadAdministrationTab(page);
     await expect(page.locator('#MODEL_1_SYSTEM_PROMPT')).toHaveValue(builtInPrompt);
+  });
+});
+
+test.describe('Admin model routing settings', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await setAdminOverrideViaApi(page, 'MODEL_1_COMPONENT_ID', '');
+    await openAdministrationTab(page);
+  });
+
+  test.afterEach(async ({ page }) => {
+    await setAdminOverrideViaApi(page, 'MODEL_1_COMPONENT_ID', '');
+  });
+
+  test('saving the model 1 component ID persists the Langflow node override', async ({ page }) => {
+    const field = page.locator('#MODEL_1_COMPONENT_ID');
+    await field.fill('NemotronNode-123');
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/admin/config') &&
+          response.request().method() === 'PUT' &&
+          response.status() === 200
+      ),
+      page.getByRole('button', { name: 'Save Configuration' }).click(),
+    ]);
+
+    const savedConfig = await fetchAdminConfig(page);
+    expect(savedConfig.overrides.MODEL_1_COMPONENT_ID).toBe('NemotronNode-123');
+
+    await reloadAdministrationTab(page);
+    await expect(page.locator('#MODEL_1_COMPONENT_ID')).toHaveValue('NemotronNode-123');
   });
 });
 

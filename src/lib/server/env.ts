@@ -8,6 +8,7 @@ export interface ModelConfig {
   displayName: string;
   systemPrompt: string;
   flowId: string;
+  componentId: string;
 }
 
 interface Config {
@@ -94,6 +95,7 @@ function readConfig(): Config {
       displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
       systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || 'default',
       flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
+      componentId: process.env.MODEL_1_COMPONENT_ID || '',
     },
     model2: {
       baseUrl: process.env.MODEL_2_BASEURL || '',
@@ -102,6 +104,7 @@ function readConfig(): Config {
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
       systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
+      componentId: process.env.MODEL_2_COMPONENT_ID || '',
     },
     model2Enabled: process.env.MODEL_2_ENABLED !== 'false',
     honchoApiKey: process.env.HONCHO_API_KEY || '',
