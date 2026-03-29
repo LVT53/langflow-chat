@@ -528,25 +528,17 @@
 		}}
 	>
 		{#if allProjects.length > 0 || conversationsByProject.unorganized.length > 0 || canDropIntoUnorganized}
-			<div class="px-1 pb-1 pt-0.5">
-				<div class="flex items-center justify-between gap-2">
-					<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Unorganized</span>
-					{#if canDropIntoUnorganized}
-						<span class="text-[11px] text-text-muted">Drop here to remove from a project</span>
-					{/if}
+				<div class="px-1 pb-1 pt-0.5">
+					<div class="flex items-center justify-between gap-2">
+						<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Chats</span>
+					</div>
 				</div>
-			</div>
 		{/if}
 		{#if visibleConversations.length === 0}
 			<div class="flex h-20 items-center justify-center p-4 text-sm text-text-muted">
 				No conversations yet
 			</div>
 		{:else}
-			{#if conversationsByProject.unorganized.length === 0 && allProjects.length > 0}
-				<div class="px-2 py-3 text-[12px] text-text-muted">
-					Drop chats here to keep them outside project folders.
-				</div>
-			{/if}
 			{#each conversationsByProject.unorganized as conversation (conversation.id)}
 				<ConversationItem
 					{conversation}
