@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	createInlineThinkingState,
+	extractVisibleTextFromModelResponse,
 	flushInlineThinkingState,
 	processInlineThinkingChunk,
 } from './stream-protocol';
@@ -55,5 +56,13 @@ describe('stream-protocol', () => {
 
 		expect(onVisible).not.toHaveBeenCalled();
 		expect(onThinking.mock.calls).toEqual([['Unfinished']]);
+	});
+
+	it('extracts visible text and unwraps preserve tags from a completed model response', () => {
+		const result = extractVisibleTextFromModelResponse(
+			'<thinking>Reasoning</thinking>\n<preserve>Final answer</preserve>'
+		);
+
+		expect(result).toBe('\nFinal answer');
 	});
 });

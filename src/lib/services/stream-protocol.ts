@@ -159,3 +159,27 @@ export function flushInlineThinkingState(
 
 	return emitChunk(emitters.onVisible, remainder);
 }
+
+export function extractVisibleTextFromModelResponse(value: string): string {
+	const state = createInlineThinkingState();
+	let visibleText = '';
+
+	processInlineThinkingChunk(state, value, {
+		onVisible(chunk) {
+			visibleText += chunk;
+		},
+		onThinking() {
+			// Non-stream callers only need the user-visible text.
+		},
+	});
+	flushInlineThinkingState(state, {
+		onVisible(chunk) {
+			visibleText += chunk;
+		},
+		onThinking() {
+			// Non-stream callers only need the user-visible text.
+		},
+	});
+
+	return visibleText.replace(/<\/?preserve>/gi, '');
+}

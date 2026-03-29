@@ -2,6 +2,7 @@ import {
 	translateEnglishToHungarian,
 	translateHungarianToEnglish,
 } from '$lib/server/services/translator';
+import { extractVisibleTextFromModelResponse } from '$lib/services/stream-protocol';
 
 export function shouldTranslateHungarian(params: {
 	sourceLanguage: string;
@@ -27,9 +28,11 @@ export async function buildSendResponseText(params: {
 	sourceLanguage: string;
 	translationEnabled: boolean;
 }): Promise<string> {
+	const visibleResponseText = extractVisibleTextFromModelResponse(params.responseText);
+
 	if (!shouldTranslateHungarian(params)) {
-		return params.responseText;
+		return visibleResponseText;
 	}
 
-	return translateEnglishToHungarian(params.responseText);
+	return translateEnglishToHungarian(visibleResponseText);
 }
