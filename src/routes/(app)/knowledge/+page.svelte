@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		deleteKnowledgeArtifact,
 		fetchKnowledgeLibrary,
@@ -479,16 +478,6 @@
 			getLibraryBulkConfirmation(kind)
 		);
 	}
-
-	onMount(() => {
-		if (memoryLoaded) return undefined;
-
-		const timer = window.setTimeout(() => {
-			void ensureMemoryLoaded();
-		}, 250);
-
-		return () => window.clearTimeout(timer);
-	});
 
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && activeMemoryModal) {

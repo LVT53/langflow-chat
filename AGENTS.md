@@ -221,10 +221,11 @@ Rules:
 - Read-side Honcho session memory should prefer Honcho’s canonical `session.queueStatus()` plus `session.context(...)` flow over manual multi-call fanout.
 - Per-turn Honcho diagnostics and last-good Honcho snapshots belong in assistant-message metadata via `messages.ts`, not ad hoc route state.
 - `buildConstructedContext` must degrade gracefully when Honcho is disabled, unavailable, or slow. Core chat cannot block on Honcho connectivity or empty-session bootstrap, but the chosen Honcho source for each turn must remain measurable and source-attributed.
+- `getKnowledgeMemory` and other knowledge-memory reads should use the latest stored persona clusters immediately and treat Honcho overview generation as auxiliary. Do not block the entire Memory Profile on cluster refresh or a live `peer.chat(...)` summary.
 - `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger full cluster recomputation directly from routes or UI code.
 - `persona-memory.ts` cluster writes should remain idempotent under overlap. If maintenance or repair paths touch cluster persistence, keep conflict guards in place instead of assuming single-flight inserts.
 - `buildPersonaPromptContext` should read the latest stored persona clusters immediately and only trigger cluster refresh in the background. Do not put synchronous cluster regeneration back on the chat request path.
-- Keep Honcho latency knobs split by responsibility: `HONCHO_CONTEXT_WAIT_MS` is for live session bootstrap/queue/context reads, while `HONCHO_PERSONA_CONTEXT_WAIT_MS` is for persona prompt enrichment only.
+- Keep Honcho latency knobs split by responsibility: `HONCHO_CONTEXT_WAIT_MS` is for live session bootstrap/queue/context reads, while `HONCHO_PERSONA_CONTEXT_WAIT_MS` is for auxiliary persona/overview enrichment.
 - `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
 - Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
 

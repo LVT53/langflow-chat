@@ -120,7 +120,13 @@ export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string
 ): Promise<KnowledgeMemoryPayload> {
-	await ensurePersonaMemoryClustersReady(userId, 'knowledge_read');
+	void ensurePersonaMemoryClustersReady(userId, 'knowledge_read').catch((error) => {
+		console.warn('[KNOWLEDGE_MEMORY] Background persona cluster refresh failed', {
+			userId,
+			reason: 'knowledge_read',
+			error,
+		});
+	});
 
 	const [personaMemories, taskMemories, focusContinuities, overview] = await Promise.all([
 		enrichPersonaMemories(userId, userDisplayName),

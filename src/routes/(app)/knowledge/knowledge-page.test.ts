@@ -22,9 +22,11 @@ describe('Knowledge page', () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.useRealTimers();
 	});
 
-	it('renders the library immediately without blocking on memory fetch', () => {
+	it('renders the library immediately without prefetching the memory profile', async () => {
+		vi.useFakeTimers();
 		const fetchSpy = vi.spyOn(globalThis, 'fetch');
 		const { getByText, unmount } = render(KnowledgePage, {
 			data: {
@@ -37,6 +39,7 @@ describe('Knowledge page', () => {
 		});
 
 		expect(getByText('Knowledge Base')).toBeDefined();
+		await vi.advanceTimersByTimeAsync(500);
 		expect(fetchSpy).not.toHaveBeenCalled();
 		unmount();
 	});

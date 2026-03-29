@@ -20,6 +20,7 @@ const {
   mockSessionContext,
   mockSessionAddPeers,
   mockPeerContext,
+  mockPeerChat,
   mockBuildPersonaPromptContext,
   mockListMessages,
   mockGetLatestHonchoMetadata,
@@ -121,6 +122,7 @@ const {
     })),
     mockSessionAddPeers: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
+    mockPeerChat: vi.fn(async () => ''),
     mockBuildPersonaPromptContext: vi.fn(async () => ''),
     mockListMessages: vi.fn(async () => []),
     mockGetLatestHonchoMetadata: vi.fn(async () => ({
@@ -152,7 +154,7 @@ vi.mock('@honcho-ai/sdk', () => {
       return {
         id,
         context: mockPeerContext,
-        chat: vi.fn(async () => ''),
+        chat: mockPeerChat,
         message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
           content,
           metadata: options?.metadata ?? {},
@@ -790,6 +792,27 @@ describe('Honcho Service', () => {
       const { getPeerContext } = await import('./honcho');
       const result = await getPeerContext('user-123');
       expect(result).toBeNull();
+    });
+
+    it('times out the peer overview instead of waiting indefinitely', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockConfig.honchoPersonaContextWaitMs = 50;
+        mockPeerChat.mockImplementationOnce(() => new Promise(() => undefined));
+
+        const { getPeerContext } = await import('./honcho');
+
+        const resultPromise = getPeerContext('user-123', 'Test User');
+        await vi.advanceTimersByTimeAsync(60);
+        const result = await resultPromise;
+
+        expect(result).toBeNull();
+        expect(mockPeerChat).toHaveBeenCalledTimes(1);
+      } finally {
+        mockConfig.honchoPersonaContextWaitMs = 1500;
+        vi.useRealTimers();
+      }
     });
   });
 

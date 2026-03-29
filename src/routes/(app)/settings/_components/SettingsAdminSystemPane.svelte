@@ -241,7 +241,7 @@
 					</p>
 				{:else}
 					<p class="mt-1 text-xs text-text-muted">
-						Timeout for persona-memory prompt enrichment only. Lower values keep chat responsive because persona cluster refresh now happens in the background.
+						Timeout for auxiliary Honcho persona enrichment, including chat-side persona prompt context and the Knowledge Base memory overview. Lower values keep the UI responsive because persona cluster refresh now happens in the background.
 					</p>
 				{/if}
 			</div>

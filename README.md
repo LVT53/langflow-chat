@@ -178,7 +178,7 @@ Notes before the tables:
 | `HONCHO_WORKSPACE` | No | `alfyai-prod` | Workspace namespace used inside Honcho | Set it per environment or tenant | Keep production and test workspaces separate |
 | `HONCHO_CONTEXT_WAIT_MS` | No | `3000` | Maximum time the app waits for Honcho session bootstrap, queue settling, and `session.context(...)` before falling back | Raise it if you prefer richer live Honcho session context over faster first-byte time | Can also be overridden in admin config |
 | `HONCHO_CONTEXT_POLL_INTERVAL_MS` | No | `250` | Poll interval used while waiting for Honcho queue work to settle | Lower it if you want more responsive queue checks | Can also be overridden in admin config |
-| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for persona-memory prompt enrichment only | Lower it to keep chat responsive while persona clusters refresh in the background | Can also be overridden in admin config |
+| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for auxiliary Honcho persona enrichment, including chat-side persona prompt context and the Knowledge Base memory overview | Lower it to keep chat and the Memory Profile responsive while persona clusters refresh in the background | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 
 ### Deployment And Runtime Wrapper Variables
@@ -198,7 +198,8 @@ Notes before the tables:
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
-- Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns.
+- Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
+- The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
 

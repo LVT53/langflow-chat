@@ -1378,11 +1378,26 @@ export async function getPeerContext(
 	try {
 		const peer = await getUserPeer(userId);
 		const safeDisplayName = userDisplayName?.trim() || 'the user';
-		const response = await peer.chat(
-			`Summarize what you know about ${safeDisplayName}: preferences, interests, communication style, and important context. Be concise (under 200 words). Refer to them as "${safeDisplayName}" or "the user", never by internal IDs or peer IDs.`,
-			{ reasoningLevel: 'low' }
+		const response = await resolveWithTimeout(
+			peer.chat(
+				`Summarize what you know about ${safeDisplayName}: preferences, interests, communication style, and important context. Be concise (under 200 words). Refer to them as "${safeDisplayName}" or "the user", never by internal IDs or peer IDs.`,
+				{ reasoningLevel: 'low' }
+			),
+			{
+				timeoutMs: Math.max(1, getConfig().honchoPersonaContextWaitMs),
+				label: 'Honcho peer overview',
+				userId,
+			}
 		);
-		return response?.trim() || null;
+
+		if (typeof response.value === 'string') {
+			return response.value.trim() || null;
+		}
+
+		if (response.error) {
+			console.error('[HONCHO] getPeerContext failed:', response.error);
+		}
+		return null;
 	} catch (err) {
 		console.error('[HONCHO] getPeerContext failed:', err);
 		return null;
