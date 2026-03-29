@@ -56,8 +56,10 @@ describe('Knowledge page', () => {
 					taskCount: 2,
 					focusContinuityCount: 1,
 					overview: 'Knows the user prefers concise responses.',
-					overviewSource: 'honcho',
+					overviewSource: 'honcho_live',
 					overviewStatus: 'ready',
+					overviewUpdatedAt: Date.now(),
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 3,
 				},
 			}),
@@ -143,8 +145,10 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
-					overviewSource: 'honcho',
+					overviewSource: 'honcho_live',
 					overviewStatus: 'ready',
+					overviewUpdatedAt: Date.now(),
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 2,
 				},
 			}),
@@ -241,8 +245,10 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
-					overviewSource: 'honcho',
+					overviewSource: 'honcho_live',
 					overviewStatus: 'ready',
+					overviewUpdatedAt: Date.now(),
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 2,
 				},
 			}),
@@ -308,8 +314,10 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows past cooking context.',
-					overviewSource: 'honcho',
+					overviewSource: 'honcho_live',
 					overviewStatus: 'ready',
+					overviewUpdatedAt: Date.now(),
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 1,
 				},
 			}),
@@ -377,7 +385,9 @@ describe('Knowledge page', () => {
 					overview:
 						'### Stable Preferences\n- Prefers concise responses.\n\n### Long-Term Context\n- Builds AI chat tools with Langflow.',
 					overviewSource: 'persona_fallback',
-					overviewStatus: 'ready',
+					overviewStatus: 'refreshing',
+					overviewUpdatedAt: null,
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 2,
 				},
 			}),
@@ -404,6 +414,170 @@ describe('Knowledge page', () => {
 		unmount();
 	});
 
+	it('polls the overview-only endpoint until a live Honcho overview arrives', async () => {
+		vi.useFakeTimers();
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/knowledge/memory')) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						personaMemories: [],
+						taskMemories: [],
+						focusContinuities: [],
+						summary: {
+							personaCount: 2,
+							taskCount: 0,
+							focusContinuityCount: 0,
+							overview:
+								'### Stable Preferences\n- Prefers concise responses.\n\n### Long-Term Context\n- Builds AI chat tools with Langflow.',
+							overviewSource: 'persona_fallback',
+							overviewStatus: 'refreshing',
+							overviewUpdatedAt: null,
+							overviewLastAttemptAt: Date.now(),
+							durablePersonaCount: 2,
+						},
+					}),
+				} as Response);
+			}
+			if (url.endsWith('/api/knowledge/memory/overview')) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						summary: {
+							personaCount: 2,
+							taskCount: 0,
+							focusContinuityCount: 0,
+							overview: 'Live Honcho Overview',
+							overviewSource: 'honcho_live',
+							overviewStatus: 'ready',
+							overviewUpdatedAt: Date.now(),
+							overviewLastAttemptAt: Date.now(),
+							durablePersonaCount: 2,
+						},
+					}),
+				} as Response);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+		await waitFor(() => {
+			expect(getByText(/showing a local durable-memory fallback/i)).toBeDefined();
+		});
+
+		await vi.advanceTimersByTimeAsync(0);
+		await waitFor(() => {
+			expect(getByText('Live Honcho Overview')).toBeDefined();
+		});
+
+		await vi.advanceTimersByTimeAsync(25_000);
+		expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/api/knowledge/memory/overview'))).toHaveLength(1);
+		expect(queryByText(/showing a local durable-memory fallback/i)).toBeNull();
+		unmount();
+	});
+
+	it('uses the force overview endpoint when retrying the live overview', async () => {
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/knowledge/memory')) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						personaMemories: [],
+						taskMemories: [],
+						focusContinuities: [],
+						summary: {
+							personaCount: 205,
+							taskCount: 0,
+							focusContinuityCount: 0,
+							overview: null,
+							overviewSource: null,
+							overviewStatus: 'temporarily_unavailable',
+							overviewUpdatedAt: null,
+							overviewLastAttemptAt: Date.now(),
+							durablePersonaCount: 18,
+						},
+					}),
+				} as Response);
+			}
+			if (url.endsWith('/api/knowledge/memory/overview?force=1')) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						summary: {
+							personaCount: 205,
+							taskCount: 0,
+							focusContinuityCount: 0,
+							overview: 'Recovered live overview',
+							overviewSource: 'honcho_live',
+							overviewStatus: 'ready',
+							overviewUpdatedAt: Date.now(),
+							overviewLastAttemptAt: Date.now(),
+							durablePersonaCount: 18,
+						},
+					}),
+				} as Response);
+			}
+			if (url.endsWith('/api/knowledge/memory/overview')) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						summary: {
+							personaCount: 205,
+							taskCount: 0,
+							focusContinuityCount: 0,
+							overview: null,
+							overviewSource: null,
+							overviewStatus: 'temporarily_unavailable',
+							overviewUpdatedAt: null,
+							overviewLastAttemptAt: Date.now(),
+							durablePersonaCount: 18,
+						},
+					}),
+				} as Response);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const { getByRole, getByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+		await waitFor(() => {
+			expect(
+				getByText(/durable persona memory exists, but the live honcho overview is temporarily unavailable right now/i)
+			).toBeDefined();
+		});
+
+		await waitFor(() => {
+			expect(getByRole('button', { name: /retry live overview/i })).toBeEnabled();
+		});
+		await fireEvent.click(getByRole('button', { name: /retry live overview/i }));
+		await waitFor(() => {
+			expect(getByText('Recovered live overview')).toBeDefined();
+		});
+		expect(fetchSpy).toHaveBeenCalledWith('/api/knowledge/memory/overview?force=1');
+		unmount();
+	});
+
 	it('does not claim durable memory is missing when only the live overview is unavailable', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 			ok: true,
@@ -418,6 +592,8 @@ describe('Knowledge page', () => {
 					overview: null,
 					overviewSource: null,
 					overviewStatus: 'temporarily_unavailable',
+					overviewUpdatedAt: null,
+					overviewLastAttemptAt: Date.now(),
 					durablePersonaCount: 18,
 				},
 			}),
@@ -437,7 +613,7 @@ describe('Knowledge page', () => {
 
 		await waitFor(() => {
 			expect(
-				getByText(/durable persona memory exists, but the live overview is temporarily unavailable right now/i)
+				getByText(/durable persona memory exists, but the live honcho overview is temporarily unavailable right now/i)
 			).toBeDefined();
 		});
 		expect(

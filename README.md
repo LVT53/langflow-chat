@@ -178,7 +178,8 @@ Notes before the tables:
 | `HONCHO_WORKSPACE` | No | `alfyai-prod` | Workspace namespace used inside Honcho | Set it per environment or tenant | Keep production and test workspaces separate |
 | `HONCHO_CONTEXT_WAIT_MS` | No | `3000` | Maximum time the app waits for Honcho session bootstrap, queue settling, and `session.context(...)` before falling back | Raise it if you prefer richer live Honcho session context over faster first-byte time | Can also be overridden in admin config |
 | `HONCHO_CONTEXT_POLL_INTERVAL_MS` | No | `250` | Poll interval used while waiting for Honcho queue work to settle | Lower it if you want more responsive queue checks | Can also be overridden in admin config |
-| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for auxiliary Honcho persona enrichment, including chat-side persona prompt context and the Knowledge Base memory overview | Lower it to keep chat and the Memory Profile responsive while persona clusters refresh in the background | Can also be overridden in admin config |
+| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for auxiliary Honcho persona enrichment on chat turns, especially persona prompt context | Lower it to keep the prompt path responsive while persona clusters refresh in the background | Can also be overridden in admin config |
+| `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 
 ### Deployment And Runtime Wrapper Variables

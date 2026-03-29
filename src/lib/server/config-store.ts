@@ -34,6 +34,7 @@ export const ADMIN_CONFIG_KEYS = [
   'HONCHO_CONTEXT_WAIT_MS',
   'HONCHO_CONTEXT_POLL_INTERVAL_MS',
   'HONCHO_PERSONA_CONTEXT_WAIT_MS',
+  'HONCHO_OVERVIEW_WAIT_MS',
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -70,6 +71,7 @@ export interface RuntimeConfig {
   honchoContextWaitMs: number;
   honchoContextPollIntervalMs: number;
   honchoPersonaContextWaitMs: number;
+  honchoOverviewWaitMs: number;
   memoryMaintenanceIntervalMinutes: number;
 }
 
@@ -184,6 +186,12 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
       config.honchoPersonaContextWaitMs = Math.max(0, parsed);
     }
   },
+  HONCHO_OVERVIEW_WAIT_MS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.honchoOverviewWaitMs = Math.max(0, parsed);
+    }
+  },
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -264,6 +272,7 @@ export function getResolvedAdminConfigValues(
     HONCHO_CONTEXT_WAIT_MS: String(config.honchoContextWaitMs),
     HONCHO_CONTEXT_POLL_INTERVAL_MS: String(config.honchoContextPollIntervalMs),
     HONCHO_PERSONA_CONTEXT_WAIT_MS: String(config.honchoPersonaContextWaitMs),
+    HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
   };
 }
 
@@ -296,5 +305,6 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     HONCHO_CONTEXT_WAIT_MS: String(envConfig.honchoContextWaitMs),
     HONCHO_CONTEXT_POLL_INTERVAL_MS: String(envConfig.honchoContextPollIntervalMs),
     HONCHO_PERSONA_CONTEXT_WAIT_MS: String(envConfig.honchoPersonaContextWaitMs),
+    HONCHO_OVERVIEW_WAIT_MS: String(envConfig.honchoOverviewWaitMs),
   };
 }

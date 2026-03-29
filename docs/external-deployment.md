@@ -36,6 +36,7 @@ Set the usual application secrets plus the Honcho and Langflow configuration:
 - `HONCHO_ENABLED=true`
 - `HONCHO_BASE_URL`
 - `HONCHO_WORKSPACE`
+- optional `HONCHO_OVERVIEW_WAIT_MS=10000` if your live Memory Overview queries need a longer budget than chat-side persona enrichment
 - optional `HONCHO_API_KEY` for authenticated deployments
 
 If you self-host Honcho and its deriver/summary models hit your own GPU-backed inference server, start the Honcho deployment with `DERIVER_WORKERS=2` and scale upward gradually only if queue backlog remains high without saturating the model server.

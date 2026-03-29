@@ -1,10 +1,17 @@
-import { inArray } from 'drizzle-orm';
+import { createHash } from 'crypto';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations } from '$lib/server/db/schema';
+import {
+	conversations,
+	personaMemoryOverviews,
+} from '$lib/server/db/schema';
+import { getConfig } from '$lib/server/config-store';
 import type {
+	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryOverviewSource,
 	KnowledgeMemoryOverviewStatus,
 	KnowledgeMemoryPayload,
+	KnowledgeMemorySummary,
 	PersonaMemoryItem,
 } from '$lib/types';
 import {
@@ -33,6 +40,47 @@ const DAY_MS = 86_400_000;
 const OVERVIEW_MIN_DURABLE_ITEMS = 2;
 const OVERVIEW_RECENT_SITUATIONAL_MS = 21 * DAY_MS;
 const OVERVIEW_SECTION_ITEM_LIMIT = 3;
+const OVERVIEW_REFRESH_BACKOFF_MS = 30_000;
+
+type CachedKnowledgeOverview = {
+	userId: string;
+	overviewText: string;
+	sourceFingerprint: string;
+	generatedAt: number;
+	lastAttemptAt: number | null;
+	lastFailureAt: number | null;
+	lastError: string | null;
+	updatedAt: number;
+};
+
+type OverviewAttemptState = {
+	lastAttemptAt: number | null;
+	lastFailureAt: number | null;
+	lastError: string | null;
+};
+
+type DurableOverviewSelection = {
+	overview: string | null;
+	durablePersonaCount: number;
+	sourceFingerprint: string;
+};
+
+type KnowledgeOverviewSelection = {
+	overview: string | null;
+	overviewSource: KnowledgeMemoryOverviewSource;
+	overviewStatus: KnowledgeMemoryOverviewStatus;
+	overviewUpdatedAt: number | null;
+	overviewLastAttemptAt: number | null;
+	durablePersonaCount: number;
+};
+
+type ResolveOverviewOptions = {
+	awaitLive?: boolean;
+	force?: boolean;
+};
+
+const overviewRefreshInFlight = new Map<string, Promise<CachedKnowledgeOverview | null>>();
+const overviewAttemptStates = new Map<string, OverviewAttemptState>();
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
@@ -136,14 +184,34 @@ function buildOverviewSection(
 	return `### ${title}\n${items.join('\n')}`;
 }
 
-function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): {
-	overview: string | null;
-	durablePersonaCount: number;
-} {
+function createOverviewFingerprint(memories: PersonaMemoryItem[]): string {
+	const payload = memories
+		.slice()
+		.sort(
+			(left, right) =>
+				left.id.localeCompare(right.id) ||
+				left.lastSeenAt - right.lastSeenAt ||
+				left.salienceScore - right.salienceScore
+		)
+		.map((memory) => ({
+			id: memory.id,
+			canonicalText: memory.canonicalText.trim().toLowerCase(),
+			memoryClass: memory.memoryClass,
+			state: memory.state,
+			salienceScore: memory.salienceScore,
+			pinned: memory.pinned,
+			lastSeenAt: memory.lastSeenAt,
+		}));
+
+	return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): DurableOverviewSelection {
 	const durableMemories = personaMemories.filter((memory) => isDurableOverviewCandidate(memory));
 	const durablePersonaCount = durableMemories.length;
+	const sourceFingerprint = createOverviewFingerprint(durableMemories);
 	if (durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
-		return { overview: null, durablePersonaCount };
+		return { overview: null, durablePersonaCount, sourceFingerprint };
 	}
 
 	const sections = [
@@ -168,26 +236,324 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): {
 	return {
 		overview: sections.length > 0 ? sections.join('\n\n') : null,
 		durablePersonaCount,
+		sourceFingerprint,
 	};
 }
 
-function selectKnowledgeOverview(params: {
+function getOverviewAttemptState(
+	userId: string,
+	cachedOverview: CachedKnowledgeOverview | null
+): OverviewAttemptState {
+	const transient = overviewAttemptStates.get(userId) ?? {
+		lastAttemptAt: null,
+		lastFailureAt: null,
+		lastError: null,
+	};
+	if (!cachedOverview) return transient;
+
+	return {
+		lastAttemptAt: cachedOverview.lastAttemptAt ?? transient.lastAttemptAt,
+		lastFailureAt: cachedOverview.lastFailureAt ?? transient.lastFailureAt,
+		lastError: cachedOverview.lastError ?? transient.lastError,
+	};
+}
+
+function updateOverviewAttemptState(
+	userId: string,
+	state: Partial<OverviewAttemptState>
+): void {
+	const current = overviewAttemptStates.get(userId) ?? {
+		lastAttemptAt: null,
+		lastFailureAt: null,
+		lastError: null,
+	};
+	overviewAttemptStates.set(userId, {
+		lastAttemptAt: state.lastAttemptAt ?? current.lastAttemptAt,
+		lastFailureAt:
+			Object.prototype.hasOwnProperty.call(state, 'lastFailureAt')
+				? state.lastFailureAt ?? null
+				: current.lastFailureAt,
+		lastError:
+			Object.prototype.hasOwnProperty.call(state, 'lastError')
+				? state.lastError ?? null
+				: current.lastError,
+	});
+}
+
+async function getCachedKnowledgeOverview(userId: string): Promise<CachedKnowledgeOverview | null> {
+	const rows = await db
+		.select()
+		.from(personaMemoryOverviews)
+		.where(eq(personaMemoryOverviews.userId, userId));
+	const row = rows[0];
+	if (!row) return null;
+
+	return {
+		userId: row.userId,
+		overviewText: row.overviewText,
+		sourceFingerprint: row.sourceFingerprint,
+		generatedAt: row.generatedAt.getTime(),
+		lastAttemptAt: row.lastAttemptAt?.getTime() ?? null,
+		lastFailureAt: row.lastFailureAt?.getTime() ?? null,
+		lastError: row.lastError ?? null,
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+async function upsertCachedKnowledgeOverview(params: {
+	userId: string;
+	overviewText: string;
+	sourceFingerprint: string;
+	generatedAt: number;
+	lastAttemptAt: number;
+	lastFailureAt: number | null;
+	lastError: string | null;
+}): Promise<CachedKnowledgeOverview> {
+	const now = new Date();
+	await db
+		.insert(personaMemoryOverviews)
+		.values({
+			userId: params.userId,
+			overviewText: params.overviewText,
+			sourceFingerprint: params.sourceFingerprint,
+			generatedAt: new Date(params.generatedAt),
+			lastAttemptAt: new Date(params.lastAttemptAt),
+			lastFailureAt: params.lastFailureAt ? new Date(params.lastFailureAt) : null,
+			lastError: params.lastError,
+			updatedAt: now,
+		})
+		.onConflictDoUpdate({
+			target: personaMemoryOverviews.userId,
+			set: {
+				overviewText: params.overviewText,
+				sourceFingerprint: params.sourceFingerprint,
+				generatedAt: new Date(params.generatedAt),
+				lastAttemptAt: new Date(params.lastAttemptAt),
+				lastFailureAt: params.lastFailureAt ? new Date(params.lastFailureAt) : null,
+				lastError: params.lastError,
+				updatedAt: now,
+			},
+		});
+
+	return {
+		userId: params.userId,
+		overviewText: params.overviewText,
+		sourceFingerprint: params.sourceFingerprint,
+		generatedAt: params.generatedAt,
+		lastAttemptAt: params.lastAttemptAt,
+		lastFailureAt: params.lastFailureAt,
+		lastError: params.lastError,
+		updatedAt: now.getTime(),
+	};
+}
+
+async function recordKnowledgeOverviewFailure(params: {
+	userId: string;
+	lastAttemptAt: number;
+	errorMessage: string;
+	cachedOverview: CachedKnowledgeOverview | null;
+}): Promise<void> {
+	updateOverviewAttemptState(params.userId, {
+		lastAttemptAt: params.lastAttemptAt,
+		lastFailureAt: params.lastAttemptAt,
+		lastError: params.errorMessage,
+	});
+
+	if (!params.cachedOverview) return;
+
+	await db
+		.update(personaMemoryOverviews)
+		.set({
+			lastAttemptAt: new Date(params.lastAttemptAt),
+			lastFailureAt: new Date(params.lastAttemptAt),
+			lastError: params.errorMessage,
+			updatedAt: new Date(),
+		})
+		.where(eq(personaMemoryOverviews.userId, params.userId));
+}
+
+function startBackgroundPersonaRefresh(userId: string, reason: string): void {
+	void ensurePersonaMemoryClustersReady(userId, reason).catch((error) => {
+		console.warn('[KNOWLEDGE_MEMORY] Background persona cluster refresh failed', {
+			userId,
+			reason,
+			error,
+		});
+	});
+}
+
+function shouldStartOverviewRefresh(params: {
+	userId: string;
+	force?: boolean;
+	cachedOverview: CachedKnowledgeOverview | null;
+}): boolean {
+	if (!isHonchoEnabled()) return false;
+	if (overviewRefreshInFlight.has(params.userId)) return false;
+	if (params.force) return true;
+
+	const attemptState = getOverviewAttemptState(params.userId, params.cachedOverview);
+	const lastAttemptAt = attemptState.lastAttemptAt ?? 0;
+	return Date.now() - lastAttemptAt >= OVERVIEW_REFRESH_BACKOFF_MS;
+}
+
+async function refreshKnowledgeOverview(params: {
+	userId: string;
+	userDisplayName: string;
+	sourceFingerprint: string;
+	force?: boolean;
+}): Promise<CachedKnowledgeOverview | null> {
+	const existing = overviewRefreshInFlight.get(params.userId);
+	if (existing) return existing;
+
+	const refresh = (async () => {
+		const startedAt = Date.now();
+		const cachedOverview = await getCachedKnowledgeOverview(params.userId);
+		updateOverviewAttemptState(params.userId, {
+			lastAttemptAt: startedAt,
+			lastError: null,
+		});
+
+		try {
+			const liveOverview = await getPeerContext(params.userId, params.userDisplayName, {
+				timeoutMs: Math.max(1, getConfig().honchoOverviewWaitMs),
+			});
+			const normalizedOverview =
+				sanitizeMemoryText(liveOverview, params.userId, params.userDisplayName)?.trim() ?? '';
+
+			if (!normalizedOverview) {
+				await recordKnowledgeOverviewFailure({
+					userId: params.userId,
+					lastAttemptAt: startedAt,
+					errorMessage: 'empty_live_overview',
+					cachedOverview,
+				});
+				console.warn('[KNOWLEDGE_MEMORY] Live Honcho overview returned no text', {
+					userId: params.userId,
+					durationMs: Date.now() - startedAt,
+					sourceServed: cachedOverview ? 'cache' : 'fallback',
+				});
+				return null;
+			}
+
+			const nextCachedOverview = await upsertCachedKnowledgeOverview({
+				userId: params.userId,
+				overviewText: normalizedOverview,
+				sourceFingerprint: params.sourceFingerprint,
+				generatedAt: Date.now(),
+				lastAttemptAt: startedAt,
+				lastFailureAt: null,
+				lastError: null,
+			});
+			updateOverviewAttemptState(params.userId, {
+				lastAttemptAt: nextCachedOverview.lastAttemptAt,
+				lastFailureAt: null,
+				lastError: null,
+			});
+			console.info('[KNOWLEDGE_MEMORY] Refreshed live Honcho overview', {
+				userId: params.userId,
+				durationMs: Date.now() - startedAt,
+				sourceServed: 'live',
+				cacheAgeMs: 0,
+				fingerprintMatch: true,
+			});
+			return nextCachedOverview;
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : 'unknown_honcho_overview_error';
+			await recordKnowledgeOverviewFailure({
+				userId: params.userId,
+				lastAttemptAt: startedAt,
+				errorMessage,
+				cachedOverview,
+			});
+			console.warn('[KNOWLEDGE_MEMORY] Live Honcho overview refresh failed', {
+				userId: params.userId,
+				durationMs: Date.now() - startedAt,
+				error: errorMessage,
+				sourceServed: cachedOverview ? 'cache' : 'fallback',
+				cacheAgeMs: cachedOverview ? Date.now() - cachedOverview.generatedAt : null,
+				fingerprintMatch:
+					cachedOverview?.sourceFingerprint === params.sourceFingerprint,
+			});
+			return null;
+		}
+	})().finally(() => {
+		overviewRefreshInFlight.delete(params.userId);
+	});
+
+	overviewRefreshInFlight.set(params.userId, refresh);
+	return refresh;
+}
+
+async function selectKnowledgeOverview(params: {
+	userId: string;
+	userDisplayName: string;
 	personaMemories: PersonaMemoryItem[];
-	honchoOverview: string | null;
-	honchoEnabled: boolean;
-}): {
-	overview: string | null;
-	overviewSource: KnowledgeMemoryOverviewSource;
-	overviewStatus: KnowledgeMemoryOverviewStatus;
-	durablePersonaCount: number;
-} {
+	awaitLive?: boolean;
+	force?: boolean;
+}): Promise<KnowledgeOverviewSelection> {
+	const honchoEnabled = isHonchoEnabled();
 	const fallback = buildLocalPersonaOverview(params.personaMemories);
 
-	if (params.honchoOverview?.trim()) {
+	if (!honchoEnabled) {
 		return {
-			overview: params.honchoOverview.trim(),
-			overviewSource: 'honcho',
-			overviewStatus: 'ready',
+			overview: fallback.overview,
+			overviewSource: fallback.overview ? 'persona_fallback' : null,
+			overviewStatus: 'disabled',
+			overviewUpdatedAt: null,
+			overviewLastAttemptAt: null,
+			durablePersonaCount: fallback.durablePersonaCount,
+		};
+	}
+
+	let cachedOverview = await getCachedKnowledgeOverview(params.userId);
+	const hasMatchingCache = Boolean(
+		cachedOverview?.overviewText.trim() &&
+			cachedOverview.sourceFingerprint === fallback.sourceFingerprint
+	);
+	let refreshPromise: Promise<CachedKnowledgeOverview | null> | null = null;
+	const shouldRefresh = shouldStartOverviewRefresh({
+		userId: params.userId,
+		force: params.force,
+		cachedOverview,
+	});
+
+	if (shouldRefresh) {
+		refreshPromise = refreshKnowledgeOverview({
+			userId: params.userId,
+			userDisplayName: params.userDisplayName,
+			sourceFingerprint: fallback.sourceFingerprint,
+			force: params.force,
+		});
+	} else if (overviewRefreshInFlight.has(params.userId)) {
+		refreshPromise = overviewRefreshInFlight.get(params.userId) ?? null;
+	}
+
+	if (params.awaitLive && refreshPromise) {
+		const refreshedOverview = await refreshPromise;
+		if (refreshedOverview?.overviewText.trim()) {
+			cachedOverview = refreshedOverview;
+			if (refreshedOverview.sourceFingerprint === fallback.sourceFingerprint) {
+				return {
+					overview: refreshedOverview.overviewText,
+					overviewSource: 'honcho_live',
+					overviewStatus: 'ready',
+					overviewUpdatedAt: refreshedOverview.generatedAt,
+					overviewLastAttemptAt: refreshedOverview.lastAttemptAt,
+					durablePersonaCount: fallback.durablePersonaCount,
+				};
+			}
+		}
+	}
+
+	const attemptState = getOverviewAttemptState(params.userId, cachedOverview);
+	if (hasMatchingCache && cachedOverview) {
+		return {
+			overview: cachedOverview.overviewText,
+			overviewSource: 'honcho_cache',
+			overviewStatus: 'refreshing',
+			overviewUpdatedAt: cachedOverview.generatedAt,
+			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
 		};
 	}
@@ -196,16 +562,9 @@ function selectKnowledgeOverview(params: {
 		return {
 			overview: fallback.overview,
 			overviewSource: 'persona_fallback',
-			overviewStatus: 'ready',
-			durablePersonaCount: fallback.durablePersonaCount,
-		};
-	}
-
-	if (!params.honchoEnabled) {
-		return {
-			overview: null,
-			overviewSource: null,
-			overviewStatus: 'disabled',
+			overviewStatus: 'refreshing',
+			overviewUpdatedAt: null,
+			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
 		};
 	}
@@ -217,6 +576,8 @@ function selectKnowledgeOverview(params: {
 			fallback.durablePersonaCount >= OVERVIEW_MIN_DURABLE_ITEMS
 				? 'temporarily_unavailable'
 				: 'not_enough_durable_memory',
+		overviewUpdatedAt: null,
+		overviewLastAttemptAt: attemptState.lastAttemptAt,
 		durablePersonaCount: fallback.durablePersonaCount,
 	};
 }
@@ -258,33 +619,48 @@ async function enrichPersonaMemories(
 		members: record.members.map((member) => ({
 			...member,
 			content: sanitizeMemoryText(member.content, userId, userDisplayName) ?? member.content,
-			conversationTitle: member.sessionId ? titleMap.get(member.sessionId) ?? member.conversationTitle : member.conversationTitle,
+			conversationTitle: member.sessionId
+				? titleMap.get(member.sessionId) ?? member.conversationTitle
+				: member.conversationTitle,
 		})),
 	}));
+}
+
+function buildKnowledgeMemorySummary(
+	overview: KnowledgeOverviewSelection,
+	personaCount: number,
+	taskCount: number,
+	focusContinuityCount: number
+): KnowledgeMemorySummary {
+	return {
+		personaCount,
+		taskCount,
+		focusContinuityCount,
+		overview: overview.overview,
+		overviewSource: overview.overviewSource,
+		overviewStatus: overview.overviewStatus,
+		overviewUpdatedAt: overview.overviewUpdatedAt,
+		overviewLastAttemptAt: overview.overviewLastAttemptAt,
+		durablePersonaCount: overview.durablePersonaCount,
+	};
 }
 
 export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string
 ): Promise<KnowledgeMemoryPayload> {
-	void ensurePersonaMemoryClustersReady(userId, 'knowledge_read').catch((error) => {
-		console.warn('[KNOWLEDGE_MEMORY] Background persona cluster refresh failed', {
-			userId,
-			reason: 'knowledge_read',
-			error,
-		});
-	});
+	startBackgroundPersonaRefresh(userId, 'knowledge_read');
 
-	const [personaMemories, taskMemories, focusContinuities, overview] = await Promise.all([
+	const [personaMemories, taskMemories, focusContinuities] = await Promise.all([
 		enrichPersonaMemories(userId, userDisplayName),
 		listTaskMemoryItems(userId),
 		listFocusContinuityItems(userId),
-		getPeerContext(userId, userDisplayName),
 	]);
-	const overviewSummary = selectKnowledgeOverview({
+	const overviewSummary = await selectKnowledgeOverview({
+		userId,
+		userDisplayName,
 		personaMemories,
-		honchoOverview: sanitizeMemoryText(overview, userId, userDisplayName),
-		honchoEnabled: isHonchoEnabled(),
+		awaitLive: false,
 	});
 
 	return {
@@ -310,15 +686,32 @@ export async function getKnowledgeMemory(
 				(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
 			),
 		})),
-		summary: {
-			personaCount: personaMemories.length,
-			taskCount: taskMemories.length,
-			focusContinuityCount: focusContinuities.length,
-			overview: overviewSummary.overview,
-			overviewSource: overviewSummary.overviewSource,
-			overviewStatus: overviewSummary.overviewStatus,
-			durablePersonaCount: overviewSummary.durablePersonaCount,
-		},
+		summary: buildKnowledgeMemorySummary(
+			overviewSummary,
+			personaMemories.length,
+			taskMemories.length,
+			focusContinuities.length
+		),
+	};
+}
+
+export async function getKnowledgeMemoryOverview(
+	userId: string,
+	userDisplayName: string,
+	options: ResolveOverviewOptions = {}
+): Promise<KnowledgeMemoryOverviewPayload> {
+	startBackgroundPersonaRefresh(userId, 'knowledge_overview_read');
+	const personaMemories = await enrichPersonaMemories(userId, userDisplayName);
+	const overviewSummary = await selectKnowledgeOverview({
+		userId,
+		userDisplayName,
+		personaMemories,
+		awaitLive: options.awaitLive ?? true,
+		force: options.force ?? false,
+	});
+
+	return {
+		summary: buildKnowledgeMemorySummary(overviewSummary, personaMemories.length, 0, 0),
 	};
 }
 

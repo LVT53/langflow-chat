@@ -43,6 +43,13 @@
       "when": 1774567460032,
       "tag": "0005_flaky_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774799100000,
+      "tag": "0006_memory_overview_cache",
+      "breakpoints": true
     }
   ]
 }

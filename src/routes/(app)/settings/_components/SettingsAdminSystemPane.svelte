@@ -49,6 +49,7 @@
 		HONCHO_CONTEXT_WAIT_MS: 'Honcho Session Context Wait (ms)',
 		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
+		HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
 	};
 
 	const NUMBER_KEYS = new Set([
@@ -58,6 +59,7 @@
 		'HONCHO_CONTEXT_WAIT_MS',
 		'HONCHO_CONTEXT_POLL_INTERVAL_MS',
 		'HONCHO_PERSONA_CONTEXT_WAIT_MS',
+		'HONCHO_OVERVIEW_WAIT_MS',
 	]);
 
 	function placeholderFor(key: string): string {
@@ -221,7 +223,7 @@
 		{/if}
 	</div>
 	<div class="mt-4 flex flex-col gap-3">
-		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS', 'HONCHO_PERSONA_CONTEXT_WAIT_MS'] as key}
+		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS', 'HONCHO_PERSONA_CONTEXT_WAIT_MS', 'HONCHO_OVERVIEW_WAIT_MS'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
 				<input
@@ -239,9 +241,13 @@
 					<p class="mt-1 text-xs text-text-muted">
 						How often the app polls Honcho queue status while waiting for live session context to finish deriving.
 					</p>
+				{:else if key === 'HONCHO_PERSONA_CONTEXT_WAIT_MS'}
+					<p class="mt-1 text-xs text-text-muted">
+						Timeout for auxiliary Honcho persona enrichment during chat turns. Lower values keep the prompt path responsive because persona cluster refresh now happens in the background.
+					</p>
 				{:else}
 					<p class="mt-1 text-xs text-text-muted">
-						Timeout for auxiliary Honcho persona enrichment, including chat-side persona prompt context and the Knowledge Base memory overview. Lower values keep the UI responsive because persona cluster refresh now happens in the background.
+						Timeout for the Knowledge Base live Honcho overview refresh path. This can be longer than the chat-side persona enrichment timeout because the overview now has a cached fallback and a retry loop.
 					</p>
 				{/if}
 			</div>

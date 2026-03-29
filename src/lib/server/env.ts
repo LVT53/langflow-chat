@@ -43,6 +43,7 @@ interface Config {
   honchoContextWaitMs: number;
   honchoContextPollIntervalMs: number;
   honchoPersonaContextWaitMs: number;
+  honchoOverviewWaitMs: number;
   memoryMaintenanceIntervalMinutes: number;
 }
 
@@ -125,6 +126,10 @@ function readConfig(): Config {
     honchoPersonaContextWaitMs: Math.max(
       0,
       parseInt(process.env.HONCHO_PERSONA_CONTEXT_WAIT_MS || '1500', 10) || 1500
+    ),
+    honchoOverviewWaitMs: Math.max(
+      0,
+      parseInt(process.env.HONCHO_OVERVIEW_WAIT_MS || '10000', 10) || 10000
     ),
     memoryMaintenanceIntervalMinutes: Math.max(
       0,

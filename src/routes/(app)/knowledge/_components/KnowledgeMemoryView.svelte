@@ -15,8 +15,12 @@
 		honchoOverviewSource,
 		honchoOverviewStatus,
 		honchoOverviewHtml,
+		honchoOverviewUpdatedAt,
+		honchoOverviewLastAttemptAt,
 		durablePersonaCount,
+		liveOverviewRefreshing,
 		onRetryLoadMemory,
+		onRetryLiveOverview,
 		onOpenMemoryModal,
 	}: {
 		memoryLoading: boolean;
@@ -29,8 +33,12 @@
 		honchoOverviewSource: KnowledgeMemoryOverviewSource;
 		honchoOverviewStatus: KnowledgeMemoryOverviewStatus;
 		honchoOverviewHtml: string;
+		honchoOverviewUpdatedAt: number | null;
+		honchoOverviewLastAttemptAt: number | null;
 		durablePersonaCount: number;
+		liveOverviewRefreshing: boolean;
 		onRetryLoadMemory: () => void | Promise<void>;
+		onRetryLiveOverview: () => void | Promise<void>;
 		onOpenMemoryModal: (kind: 'persona' | 'focus') => void;
 	} = $props();
 </script>
@@ -160,11 +168,38 @@
 		</div>
 
 		<div class="mt-6 rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
-			<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
-				Memory Overview
-			</h2>
+			<div class="flex flex-wrap items-start justify-between gap-3">
+				<div>
+					<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
+						Memory Overview
+					</h2>
+					{#if honchoOverviewUpdatedAt}
+						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+							Last live overview {new Date(honchoOverviewUpdatedAt).toLocaleString()}
+						</p>
+					{:else if honchoOverviewLastAttemptAt}
+						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+							Last live attempt {new Date(honchoOverviewLastAttemptAt).toLocaleString()}
+						</p>
+					{/if}
+				</div>
+				{#if honchoEnabled && memoryLoaded}
+					<button
+						type="button"
+						class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+						onclick={onRetryLiveOverview}
+						disabled={liveOverviewRefreshing}
+					>
+						{liveOverviewRefreshing ? 'Refreshing…' : 'Retry live overview'}
+					</button>
+				{/if}
+			</div>
 			{#if honchoOverview}
-				{#if honchoOverviewSource === 'persona_fallback'}
+				{#if honchoOverviewSource === 'honcho_cache'}
+					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+						Showing the last successful Honcho overview while a refresh is in progress.
+					</p>
+				{:else if honchoOverviewSource === 'persona_fallback'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 						Showing a local durable-memory fallback while the live Honcho overview is unavailable.
 					</p>
@@ -174,7 +209,7 @@
 				</div>
 			{:else if honchoOverviewStatus === 'temporarily_unavailable'}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Durable persona memory exists, but the live overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
+					Durable persona memory exists, but the live Honcho overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
 				</p>
 			{:else if honchoEnabled}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">

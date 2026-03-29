@@ -98,8 +98,357 @@ type SemanticFingerprint = {
 	slot: string | null;
 };
 
+type PreferencePolarity = 'positive' | 'negative';
+
+type PreferenceSlotMetadata = {
+	preferenceDomain: string;
+	preferenceSlot: string;
+	preferenceValue: string;
+	preferencePolarity: PreferencePolarity;
+	preferenceConfidence: number;
+};
+
+const PREFERENCE_METADATA_KEYS = [
+	'preferenceDomain',
+	'preferenceSlot',
+	'preferenceValue',
+	'preferencePolarity',
+	'preferenceConfidence',
+];
+
+const FRAMEWORK_ALIASES: Record<string, string> = {
+	laravel: 'laravel',
+	symfony: 'symfony',
+	rails: 'rails',
+	'django': 'django',
+	'next.js': 'next.js',
+	nextjs: 'next.js',
+	'sveltekit': 'sveltekit',
+	express: 'express',
+	nestjs: 'nestjs',
+	'vue': 'vue',
+};
+
+const LANGUAGE_ALIASES: Record<string, string> = {
+	typescript: 'typescript',
+	javascript: 'javascript',
+	php: 'php',
+	python: 'python',
+	rust: 'rust',
+	go: 'go',
+	java: 'java',
+	'c#': 'c#',
+	csharp: 'c#',
+	ruby: 'ruby',
+	swift: 'swift',
+	kotlin: 'kotlin',
+};
+
+const EDITOR_ALIASES: Record<string, string> = {
+	neovim: 'neovim',
+	vim: 'vim',
+	'vs code': 'vs_code',
+	vscode: 'vs_code',
+	intellij: 'intellij',
+	'jetbrains': 'jetbrains',
+	emacs: 'emacs',
+	sublime: 'sublime_text',
+};
+
+const OPERATING_SYSTEM_ALIASES: Record<string, string> = {
+	macos: 'macos',
+	'os x': 'macos',
+	windows: 'windows',
+	linux: 'linux',
+	ubuntu: 'ubuntu',
+	arch: 'arch',
+	fedora: 'fedora',
+};
+
+const TOOL_ALIASES: Record<string, string> = {
+	figma: 'figma',
+	docker: 'docker',
+	git: 'git',
+	notion: 'notion',
+	slack: 'slack',
+	linear: 'linear',
+	photoshop: 'photoshop',
+};
+
+const STYLE_VALUE_ALIASES: Record<string, string> = {
+	concise: 'concise',
+	detailed: 'detailed',
+	direct: 'direct',
+	structured: 'structured',
+	formal: 'formal',
+	casual: 'casual',
+	gentle: 'gentle',
+	blunt: 'blunt',
+};
+
 function normalizeMemoryText(value: string): string {
 	return normalizeWhitespace(value).toLowerCase();
+}
+
+function stripTrailingPeriod(value: string): string {
+	return normalizeWhitespace(value).replace(/[.]+$/, '');
+}
+
+function canonicalizePreferenceValue(
+	value: string,
+	aliases: Record<string, string>
+): string | null {
+	const normalized = normalizeMemoryText(value);
+	for (const [alias, canonical] of Object.entries(aliases)) {
+		if (normalized === alias || normalized.includes(alias)) {
+			return canonical;
+		}
+	}
+	return null;
+}
+
+function detectPreferencePolarity(text: string): PreferencePolarity {
+	return /\b(dislikes|hates|avoids|does not like|doesn't like|disfavors)\b/i.test(text)
+		? 'negative'
+		: 'positive';
+}
+
+function buildPreferenceSlotMetadata(params: {
+	domain: string;
+	slot: string;
+	value: string;
+	polarity: PreferencePolarity;
+	confidence: number;
+}): PreferenceSlotMetadata {
+	return {
+		preferenceDomain: params.domain,
+		preferenceSlot: params.slot,
+		preferenceValue: params.value,
+		preferencePolarity: params.polarity,
+		preferenceConfidence: params.confidence,
+	};
+}
+
+function toRecordWithoutPreferenceMetadata(
+	metadata: Record<string, unknown>
+): Record<string, unknown> {
+	const next = { ...metadata };
+	for (const key of PREFERENCE_METADATA_KEYS) {
+		delete next[key];
+	}
+	return next;
+}
+
+export function extractPreferenceSlotMetadata(text: string): PreferenceSlotMetadata | null {
+	const normalized = stripTrailingPeriod(text);
+	const polarity = detectPreferencePolarity(normalized);
+
+	const communicationStyleMatch = normalized.match(
+		/\b(?:communication style|feedback style|tone)\b(?:\s+(?:is|should be|leans? toward|prefers?)\s+)(concise|detailed|direct|structured|formal|casual|gentle|blunt)\b/i
+	);
+	if (communicationStyleMatch) {
+		const value = canonicalizePreferenceValue(communicationStyleMatch[1], STYLE_VALUE_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'communication',
+				slot: 'communication_style',
+				value,
+				polarity,
+				confidence: 96,
+			});
+		}
+	}
+
+	const writingStyleMatch = normalized.match(
+		/\b(?:writing style|writing tone)\b(?:\s+(?:is|should be|leans? toward|prefers?)\s+)(concise|detailed|direct|structured|formal|casual)\b/i
+	);
+	if (writingStyleMatch) {
+		const value = canonicalizePreferenceValue(writingStyleMatch[1], STYLE_VALUE_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'writing',
+				slot: 'writing_style',
+				value,
+				polarity,
+				confidence: 96,
+			});
+		}
+	}
+
+	const responseStyleMatch = normalized.match(
+		/\bprefers?\s+(concise|detailed|direct|structured|formal|casual|gentle|blunt)\s+(?:answers|responses|feedback|communication|writing)\b/i
+	);
+	if (responseStyleMatch) {
+		const value = canonicalizePreferenceValue(responseStyleMatch[1], STYLE_VALUE_ALIASES);
+		if (value) {
+			const slot = /\bwriting\b/i.test(normalized) ? 'writing_style' : 'communication_style';
+			return buildPreferenceSlotMetadata({
+				domain: slot === 'writing_style' ? 'writing' : 'communication',
+				slot,
+				value,
+				polarity,
+				confidence: 90,
+			});
+		}
+	}
+
+	const frameworkMatch = normalized.match(
+		/\b(?:favorite|preferred|go-to)\s+(?:(php|javascript|typescript|frontend|backend)\s+)?framework\b(?:\s+(?:is|=)\s+)?(.+)$/i
+	);
+	if (frameworkMatch) {
+		const value = canonicalizePreferenceValue(frameworkMatch[2], FRAMEWORK_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: frameworkMatch[1] ? normalizeMemoryText(frameworkMatch[1]) : 'development',
+				slot: frameworkMatch[1]
+					? `framework:${normalizeMemoryText(frameworkMatch[1])}`
+					: 'framework',
+				value,
+				polarity,
+				confidence: 94,
+			});
+		}
+	}
+
+	const prefersFrameworkForWork = normalized.match(/\b(?:prefers?|likes|loves|dislikes|hates)\s+(.+?)\s+for\s+(php|javascript|typescript)\s+work\b/i);
+	if (prefersFrameworkForWork) {
+		const value = canonicalizePreferenceValue(prefersFrameworkForWork[1], FRAMEWORK_ALIASES);
+		if (value) {
+			const language = normalizeMemoryText(prefersFrameworkForWork[2]);
+			return buildPreferenceSlotMetadata({
+				domain: language,
+				slot: `framework:${language}`,
+				value,
+				polarity,
+				confidence: 92,
+			});
+		}
+	}
+
+	const languageMatch = normalized.match(
+		/\b(?:favorite|preferred)\s+language\b(?:\s+(?:is|=)\s+)?(.+)$/i
+	);
+	if (languageMatch) {
+		const value = canonicalizePreferenceValue(languageMatch[1], LANGUAGE_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'language',
+				value,
+				polarity,
+				confidence: 94,
+			});
+		}
+	}
+
+	const editorMatch = normalized.match(
+		/\b(?:favorite|preferred)\s+editor\b(?:\s+(?:is|=)\s+)?(.+)$/i
+	);
+	if (editorMatch) {
+		const value = canonicalizePreferenceValue(editorMatch[1], EDITOR_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'editor',
+				value,
+				polarity,
+				confidence: 94,
+			});
+		}
+	}
+
+	const operatingSystemMatch = normalized.match(
+		/\b(?:favorite|preferred)\s+(?:operating system|os)\b(?:\s+(?:is|=)\s+)?(.+)$/i
+	);
+	if (operatingSystemMatch) {
+		const value = canonicalizePreferenceValue(operatingSystemMatch[1], OPERATING_SYSTEM_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'operating_system',
+				value,
+				polarity,
+				confidence: 94,
+			});
+		}
+	}
+
+	const toolMatch = normalized.match(
+		/\b(?:favorite|preferred|go-to)\s+tool\b(?:\s+(?:is|=)\s+)?(.+)$/i
+	);
+	if (toolMatch) {
+		const value = canonicalizePreferenceValue(toolMatch[1], TOOL_ALIASES);
+		if (value) {
+			return buildPreferenceSlotMetadata({
+				domain: 'workflow',
+				slot: 'tool',
+				value,
+				polarity,
+				confidence: 90,
+			});
+		}
+	}
+
+	const genericToolPreference = normalized.match(/\b(?:prefers?|likes|loves|dislikes|hates)\s+(.+?)\b/i);
+	if (genericToolPreference) {
+		const entity = genericToolPreference[1];
+		const frameworkValue = canonicalizePreferenceValue(entity, FRAMEWORK_ALIASES);
+		if (frameworkValue) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'framework',
+				value: frameworkValue,
+				polarity,
+				confidence: 76,
+			});
+		}
+
+		const languageValue = canonicalizePreferenceValue(entity, LANGUAGE_ALIASES);
+		if (languageValue) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'language',
+				value: languageValue,
+				polarity,
+				confidence: 76,
+			});
+		}
+
+		const editorValue = canonicalizePreferenceValue(entity, EDITOR_ALIASES);
+		if (editorValue) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'editor',
+				value: editorValue,
+				polarity,
+				confidence: 76,
+			});
+		}
+
+		const operatingSystemValue = canonicalizePreferenceValue(entity, OPERATING_SYSTEM_ALIASES);
+		if (operatingSystemValue) {
+			return buildPreferenceSlotMetadata({
+				domain: 'development',
+				slot: 'operating_system',
+				value: operatingSystemValue,
+				polarity,
+				confidence: 76,
+			});
+		}
+
+		const toolValue = canonicalizePreferenceValue(entity, TOOL_ALIASES);
+		if (toolValue) {
+			return buildPreferenceSlotMetadata({
+				domain: 'workflow',
+				slot: 'tool',
+				value: toolValue,
+				polarity,
+				confidence: 72,
+			});
+		}
+	}
+
+	return null;
 }
 
 export function hasExplicitTemporalCue(text: string): boolean {
@@ -223,7 +572,7 @@ export function classifyMemoryTextDeterministically(text: string): PersonaMemory
 	}
 
 	if (
-		/\b(prefer|preference|likes|dislikes|favorite|usually|communication style|tone|writing style|framework|stack|toolchain|tooling)\b/.test(
+		/\b(prefers?|preferences?|likes|dislikes|favorite|usually|communication style|tone|writing style|framework|stack|toolchain|tooling)\b/.test(
 			normalized
 		)
 	) {
@@ -635,6 +984,100 @@ function markSupersededClusters(plans: ClusterPlan[]): void {
 	}
 }
 
+function getPreferenceSlotMetadata(plan: ClusterPlan): PreferenceSlotMetadata | null {
+	const metadata = plan.metadata;
+	if (
+		typeof metadata.preferenceDomain !== 'string' ||
+		typeof metadata.preferenceSlot !== 'string' ||
+		typeof metadata.preferenceValue !== 'string' ||
+		(metadata.preferencePolarity !== 'positive' && metadata.preferencePolarity !== 'negative')
+	) {
+		return null;
+	}
+
+	const confidence =
+		typeof metadata.preferenceConfidence === 'number'
+			? Math.max(0, Math.min(100, Math.round(metadata.preferenceConfidence)))
+			: 0;
+	if (confidence < 60) return null;
+
+	return {
+		preferenceDomain: metadata.preferenceDomain,
+		preferenceSlot: metadata.preferenceSlot,
+		preferenceValue: metadata.preferenceValue,
+		preferencePolarity: metadata.preferencePolarity,
+		preferenceConfidence: confidence,
+	};
+}
+
+function ensurePreferenceSlotMetadata(plan: ClusterPlan): PreferenceSlotMetadata | null {
+	const existing = getPreferenceSlotMetadata(plan);
+	if (existing) return existing;
+	if (plan.memoryClass !== 'stable_preference') return null;
+
+	const extracted = extractPreferenceSlotMetadata(plan.canonicalText);
+	if (!extracted) return null;
+
+	plan.metadata = {
+		...plan.metadata,
+		...extracted,
+	};
+	return extracted;
+}
+
+function applyDeterministicPreferenceSupersession(plans: ClusterPlan[]): void {
+	const grouped = new Map<string, ClusterPlan[]>();
+
+	for (const plan of plans) {
+		if (plan.memoryClass !== 'stable_preference' || plan.state === 'archived') continue;
+		const preference = ensurePreferenceSlotMetadata(plan);
+		if (!preference) continue;
+		const key = `${preference.preferenceSlot}`;
+		const items = grouped.get(key) ?? [];
+		items.push(plan);
+		grouped.set(key, items);
+	}
+
+	for (const items of grouped.values()) {
+		if (items.length <= 1) continue;
+		const ordered = items.slice().sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+
+		for (const primary of ordered) {
+			if (primary.state === 'archived') continue;
+			const primaryPreference = ensurePreferenceSlotMetadata(primary);
+			if (!primaryPreference) continue;
+
+			for (const candidate of ordered) {
+				if (candidate.clusterId === primary.clusterId || candidate.state === 'archived') continue;
+				if (candidate.lastSeenAt >= primary.lastSeenAt) continue;
+				const candidatePreference = ensurePreferenceSlotMetadata(candidate);
+				if (!candidatePreference) continue;
+
+				const sameSlot =
+					primaryPreference.preferenceSlot === candidatePreference.preferenceSlot;
+				const sameValue =
+					primaryPreference.preferenceValue === candidatePreference.preferenceValue;
+				const samePolarity =
+					primaryPreference.preferencePolarity === candidatePreference.preferencePolarity;
+
+				if (!sameSlot) continue;
+				if ((samePolarity && sameValue) || (!samePolarity && !sameValue)) {
+					continue;
+				}
+
+				candidate.metadata = {
+					...candidate.metadata,
+					supersededByClusterId: primary.clusterId,
+					supersessionReason: 'preference_slot',
+				};
+				candidate.state = 'archived';
+				candidate.decayAt = null;
+				candidate.archiveAt = Date.now();
+			}
+		}
+	}
+}
+
 async function dreamCluster(params: {
 	records: HonchoPersonaMemoryRecord[];
 	defaultCanonicalText: string;
@@ -961,12 +1404,17 @@ export async function syncPersonaMemoryClusters(params: {
 		const pinned = existing?.pinned ?? false;
 		const firstSeenAt = Math.min(...group.records.map((record) => record.createdAt));
 		const lastSeenAt = Math.max(...group.records.map((record) => record.createdAt));
+		const preferenceMetadata =
+			dream.memoryClass === 'stable_preference'
+				? extractPreferenceSlotMetadata(dream.canonicalText)
+				: null;
 		const metadata = {
-			...(existing?.metadata ?? {}),
+			...toRecordWithoutPreferenceMetadata(existing?.metadata ?? {}),
 			clusterKey: group.key,
 			conclusionIds: memberIds,
 			dreamReason: params.reason ?? 'manual',
 			supersededByClusterId: dream.supersededBy ?? null,
+			...(preferenceMetadata ?? {}),
 		};
 		const decay = deriveStateFromDecay({
 			memoryClass: dream.memoryClass,
@@ -999,6 +1447,7 @@ export async function syncPersonaMemoryClusters(params: {
 		});
 	}
 
+	applyDeterministicPreferenceSupersession(plans);
 	markSupersededClusters(plans);
 	await applyTargetedSemanticSupersession(plans);
 	markSupersededClusters(plans);

@@ -333,6 +333,19 @@ export const personaMemoryClusters = sqliteTable('persona_memory_clusters', {
   ),
 }));
 
+export const personaMemoryOverviews = sqliteTable('persona_memory_overviews', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  overviewText: text('overview_text').notNull(),
+  sourceFingerprint: text('source_fingerprint').notNull(),
+  generatedAt: integer('generated_at', { mode: 'timestamp' }).notNull(),
+  lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp' }),
+  lastFailureAt: integer('last_failure_at', { mode: 'timestamp' }),
+  lastError: text('last_error'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const personaMemoryClusterMembers = sqliteTable('persona_memory_cluster_members', {
   id: text('id').primaryKey(),
   clusterId: text('cluster_id')

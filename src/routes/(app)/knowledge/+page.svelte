@@ -3,6 +3,7 @@
 		deleteKnowledgeArtifact,
 		fetchKnowledgeLibrary,
 		fetchKnowledgeMemory,
+		fetchKnowledgeMemoryOverview,
 		submitKnowledgeBulkAction,
 		submitKnowledgeMemoryAction,
 		type KnowledgeBulkAction,
@@ -40,6 +41,9 @@
 	} from './_helpers';
 	import type { PageProps } from './$types';
 
+	const OVERVIEW_POLL_INTERVAL_MS = 20_000;
+	const OVERVIEW_POLL_MAX_ATTEMPTS = 15;
+
 	let { data }: PageProps = $props();
 	const getData = () => data;
 	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
@@ -59,6 +63,8 @@
 		overview: null,
 		overviewSource: null,
 		overviewStatus: 'disabled',
+		overviewUpdatedAt: null,
+		overviewLastAttemptAt: null,
 		durablePersonaCount: 0,
 	});
 	const honchoEnabled = getData().honchoEnabled ?? false;
@@ -71,6 +77,9 @@
 	let memoryLoaded = $state(false);
 	let memoryLoading = $state(false);
 	let memoryLoadError = $state('');
+	let liveOverviewRefreshing = $state(false);
+	let liveOverviewPollAttempts = $state(0);
+	let memoryTabVisible = $state(true);
 	let activeMemoryModal = $state<MemoryModal>(null);
 	let activeLibraryModal = $state<LibraryModal>(null);
 	let honchoOverviewHtml = $state('');
@@ -96,6 +105,8 @@
 	let honchoOverview = $derived(memorySummary.overview?.trim() ?? '');
 	let honchoOverviewSource = $derived(memorySummary.overviewSource);
 	let honchoOverviewStatus = $derived(memorySummary.overviewStatus);
+	let honchoOverviewUpdatedAt = $derived(memorySummary.overviewUpdatedAt);
+	let honchoOverviewLastAttemptAt = $derived(memorySummary.overviewLastAttemptAt);
 	let durablePersonaCount = $derived(memorySummary.durablePersonaCount);
 	$effect(() => {
 		void renderHonchoOverview(honchoOverview, $isDark);
@@ -147,6 +158,8 @@
 					overviewSource: payload.summary.overviewSource ?? null,
 					overviewStatus:
 						payload.summary.overviewStatus ?? (honchoEnabled ? 'not_enough_durable_memory' : 'disabled'),
+					overviewUpdatedAt: payload.summary.overviewUpdatedAt ?? null,
+					overviewLastAttemptAt: payload.summary.overviewLastAttemptAt ?? null,
 					durablePersonaCount: payload.summary.durablePersonaCount ?? 0,
 				}
 			: {
@@ -156,6 +169,8 @@
 			overview: null,
 			overviewSource: null,
 			overviewStatus: honchoEnabled ? 'not_enough_durable_memory' : 'disabled',
+			overviewUpdatedAt: null,
+			overviewLastAttemptAt: null,
 			durablePersonaCount: 0,
 		};
 		if (activeMemoryModal === 'persona') {
@@ -163,6 +178,20 @@
 		}
 		memoryLoaded = true;
 		memoryLoadError = '';
+	}
+
+	function applyMemoryOverviewSummary(summary: KnowledgeMemorySummary) {
+		memorySummary = {
+			...memorySummary,
+			personaCount: summary.personaCount || memorySummary.personaCount,
+			overview: summary.overview ?? null,
+			overviewSource: summary.overviewSource ?? null,
+			overviewStatus:
+				summary.overviewStatus ?? (honchoEnabled ? 'not_enough_durable_memory' : 'disabled'),
+			overviewUpdatedAt: summary.overviewUpdatedAt ?? null,
+			overviewLastAttemptAt: summary.overviewLastAttemptAt ?? null,
+			durablePersonaCount: summary.durablePersonaCount ?? memorySummary.durablePersonaCount,
+		};
 	}
 
 	async function ensureMemoryLoaded(force = false) {
@@ -180,6 +209,43 @@
 				error instanceof Error ? error.message : 'Failed to load memory profile.';
 		} finally {
 			memoryLoading = false;
+		}
+	}
+
+	function shouldPollLiveOverview(): boolean {
+		if (!honchoEnabled || !memoryLoaded || memoryLoading) return false;
+		if (activeTab !== 'memory' || !memoryTabVisible) return false;
+		if (honchoOverviewSource === 'honcho_live') return false;
+		if (
+			honchoOverviewStatus === 'disabled' ||
+			honchoOverviewStatus === 'not_enough_durable_memory'
+		) {
+			return false;
+		}
+		return true;
+	}
+
+	async function refreshLiveOverview(force = false) {
+		if (liveOverviewRefreshing || !honchoEnabled || !memoryLoaded) return;
+		if (!force && liveOverviewPollAttempts >= OVERVIEW_POLL_MAX_ATTEMPTS) return;
+
+		liveOverviewRefreshing = true;
+		if (!force) {
+			liveOverviewPollAttempts += 1;
+		}
+
+		try {
+			const payload = await fetchKnowledgeMemoryOverview({ force });
+			applyMemoryOverviewSummary(payload.summary);
+		} catch (error) {
+			if (force) {
+				manageError =
+					error instanceof Error
+						? error.message
+						: 'Failed to refresh the live memory overview.';
+			}
+		} finally {
+			liveOverviewRefreshing = false;
 		}
 	}
 
@@ -508,6 +574,53 @@
 			closeLibraryModal();
 		}
 	}
+
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		const handleVisibilityChange = () => {
+			memoryTabVisible = !document.hidden;
+		};
+		handleVisibilityChange();
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		return () => {
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+		};
+	});
+
+	$effect(() => {
+		if (!shouldPollLiveOverview()) {
+			liveOverviewPollAttempts = 0;
+			return;
+		}
+
+		let cancelled = false;
+		let intervalId: ReturnType<typeof window.setInterval> | null = null;
+
+		const startPolling = async () => {
+			await refreshLiveOverview(false);
+			if (cancelled || honchoOverviewSource === 'honcho_live') return;
+			intervalId = window.setInterval(() => {
+				if (cancelled || liveOverviewRefreshing) return;
+				if (liveOverviewPollAttempts >= OVERVIEW_POLL_MAX_ATTEMPTS) {
+					if (intervalId) {
+						window.clearInterval(intervalId);
+						intervalId = null;
+					}
+					return;
+				}
+				void refreshLiveOverview(false);
+			}, OVERVIEW_POLL_INTERVAL_MS);
+		};
+
+		void startPolling();
+
+		return () => {
+			cancelled = true;
+			if (intervalId) {
+				window.clearInterval(intervalId);
+			}
+		};
+	});
 </script>
 
 <svelte:head>
@@ -602,8 +715,12 @@
 				{honchoOverviewSource}
 				{honchoOverviewStatus}
 				{honchoOverviewHtml}
+				{honchoOverviewUpdatedAt}
+				{honchoOverviewLastAttemptAt}
 				{durablePersonaCount}
+				{liveOverviewRefreshing}
 				onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
+				onRetryLiveOverview={() => void refreshLiveOverview(true)}
 				onOpenMemoryModal={openMemoryModal}
 			/>
 		{/if}

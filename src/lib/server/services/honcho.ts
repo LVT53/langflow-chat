@@ -1371,7 +1371,8 @@ export async function buildConstructedContext(params: {
 
 export async function getPeerContext(
 	userId: string,
-	userDisplayName?: string | null
+	userDisplayName?: string | null,
+	options?: { timeoutMs?: number }
 ): Promise<string | null> {
 	if (!isHonchoEnabled()) return null;
 
@@ -1384,7 +1385,10 @@ export async function getPeerContext(
 				{ reasoningLevel: 'low' }
 			),
 			{
-				timeoutMs: Math.max(1, getConfig().honchoPersonaContextWaitMs),
+				timeoutMs: Math.max(
+					1,
+					options?.timeoutMs ?? getConfig().honchoPersonaContextWaitMs
+				),
 				label: 'Honcho peer overview',
 				userId,
 			}

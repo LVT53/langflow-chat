@@ -7,7 +7,7 @@ if (!process.env.DATABASE_PATH) {
 	process.env.DATABASE_PATH = './data/chat.db';
 }
 
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -53,6 +53,8 @@ const requiredExistingColumns = [
 	['users', 'avatar_id'],
 	['users', 'profile_picture'],
 ];
+
+const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -126,7 +128,25 @@ function ensureMigrationJournal(): void {
 	`);
 }
 
-function syncMigrationJournalToCurrentSchema(): number {
+function readMigrationJournalEntries(): {
+	entries: Array<{
+		idx: number;
+		when: number;
+		tag: string;
+		breakpoints: boolean;
+	}>;
+} {
+	return JSON.parse(readFileSync('./drizzle/meta/_journal.json', 'utf8')) as {
+		entries: Array<{
+			idx: number;
+			when: number;
+			tag: string;
+			breakpoints: boolean;
+		}>;
+	};
+}
+
+function syncMigrationJournalToBaselineSchema(): number {
 	const problems = validateExistingRuntimeSchema();
 	if (problems.length > 0) {
 		throw new Error(
@@ -135,7 +155,13 @@ function syncMigrationJournalToCurrentSchema(): number {
 	}
 
 	ensureMigrationJournal();
-	const migrations = readMigrationFiles({ migrationsFolder: './drizzle' });
+	const journal = readMigrationJournalEntries();
+	const baselineIndex = journal.entries.findIndex((entry) => entry.tag === ADOPTION_BASELINE_TAG);
+	if (baselineIndex === -1) {
+		throw new Error(`Cannot find baseline migration tag ${ADOPTION_BASELINE_TAG} in drizzle/meta/_journal.json`);
+	}
+
+	const migrations = readMigrationFiles({ migrationsFolder: './drizzle' }).slice(0, baselineIndex + 1);
 	const existingHashes = listMigrationHashes();
 	const insertMigration = sqlite.prepare(
 		'INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)'
@@ -158,27 +184,32 @@ function syncMigrationJournalToCurrentSchema(): number {
 try {
 	if (hasApplicationTables()) {
 		const schemaProblems = validateExistingRuntimeSchema();
-		if (schemaProblems.length === 0) {
-			const insertedCount = syncMigrationJournalToCurrentSchema();
-			if (insertedCount > 0) {
-				console.log(
-					`Backfilled ${insertedCount} Drizzle migration record(s) for ${databasePath}.`
-				);
-			} else {
-				console.log(`Database migrations are up to date for ${databasePath}.`);
-			}
-			process.exit(0);
-		}
-
-		if (countMigrationRows() > 0) {
+		const existingMigrationCount = countMigrationRows();
+		if (schemaProblems.length > 0 && existingMigrationCount > 0) {
 			throw new Error(
 				`Database ${databasePath} has migration records but is missing schema pieces: ${schemaProblems.join(', ')}`
 			);
 		}
 
-		throw new Error(
-			`Database ${databasePath} is missing required schema pieces: ${schemaProblems.join(', ')}`
-		);
+		if (schemaProblems.length > 0) {
+			throw new Error(
+				`Database ${databasePath} is missing required schema pieces: ${schemaProblems.join(', ')}`
+			);
+		}
+
+		if (existingMigrationCount === 0) {
+			const insertedCount = syncMigrationJournalToBaselineSchema();
+			if (insertedCount > 0) {
+				console.log(
+					`Backfilled ${insertedCount} baseline Drizzle migration record(s) for ${databasePath}.`
+				);
+			}
+		}
+
+		const db = drizzle(sqlite);
+		migrate(db, { migrationsFolder: './drizzle' });
+		console.log(`Database migrations are up to date for ${databasePath}.`);
+		process.exit(0);
 	}
 
 	const db = drizzle(sqlite);

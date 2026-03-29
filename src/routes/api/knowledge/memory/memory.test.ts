@@ -7,19 +7,23 @@ vi.mock('$lib/server/auth/hooks', () => ({
 vi.mock('$lib/server/services/memory', () => ({
 	applyKnowledgeMemoryAction: vi.fn(),
 	getKnowledgeMemory: vi.fn(),
+	getKnowledgeMemoryOverview: vi.fn(),
 }));
 
 import { GET as GET_MEMORY } from './+server';
+import { GET as GET_MEMORY_OVERVIEW } from './overview/+server';
 import { POST as POST_MEMORY_ACTION } from './actions/+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import {
 	applyKnowledgeMemoryAction,
 	getKnowledgeMemory,
+	getKnowledgeMemoryOverview,
 } from '$lib/server/services/memory';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockApplyKnowledgeMemoryAction = applyKnowledgeMemoryAction as ReturnType<typeof vi.fn>;
 const mockGetKnowledgeMemory = getKnowledgeMemory as ReturnType<typeof vi.fn>;
+const mockGetKnowledgeMemoryOverview = getKnowledgeMemoryOverview as ReturnType<typeof vi.fn>;
 
 const memoryPayload = {
 	personaMemories: [
@@ -63,8 +67,10 @@ const memoryPayload = {
 		taskCount: 1,
 		focusContinuityCount: 1,
 		overview: 'The user likes concise responses.',
-		overviewSource: 'honcho',
+		overviewSource: 'honcho_live',
 		overviewStatus: 'ready',
+		overviewUpdatedAt: Date.now(),
+		overviewLastAttemptAt: Date.now(),
 		durablePersonaCount: 1,
 	},
 };
@@ -76,6 +82,16 @@ function makeGetEvent() {
 		params: {},
 		url: new URL('http://localhost/api/knowledge/memory'),
 		route: { id: '/api/knowledge/memory' },
+	} as any;
+}
+
+function makeOverviewEvent(force = false) {
+	return {
+		request: new Request(`http://localhost/api/knowledge/memory/overview${force ? '?force=1' : ''}`),
+		locals: { user: { id: 'user-1', displayName: 'Test User' } },
+		params: {},
+		url: new URL(`http://localhost/api/knowledge/memory/overview${force ? '?force=1' : ''}`),
+		route: { id: '/api/knowledge/memory/overview' },
 	} as any;
 }
 
@@ -108,6 +124,22 @@ describe('knowledge memory routes', () => {
 		expect(response.status).toBe(200);
 		expect(data.summary.personaCount).toBe(1);
 		expect(mockGetKnowledgeMemory).toHaveBeenCalledWith('user-1', 'Test User');
+	});
+
+	it('loads the overview-only memory summary and supports force refresh', async () => {
+		mockGetKnowledgeMemoryOverview.mockResolvedValue({
+			summary: memoryPayload.summary,
+		});
+
+		const response = await GET_MEMORY_OVERVIEW(makeOverviewEvent(true));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.summary.overviewSource).toBe('honcho_live');
+		expect(mockGetKnowledgeMemoryOverview).toHaveBeenCalledWith('user-1', 'Test User', {
+			awaitLive: true,
+			force: true,
+		});
 	});
 
 	it('applies a memory action and returns the refreshed payload', async () => {

@@ -1,6 +1,7 @@
 import type {
 	ArtifactSummary,
 	KnowledgeDocumentItem,
+	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryPayload,
 	KnowledgeUploadResponse,
 	WorkCapsule,
@@ -59,6 +60,17 @@ export async function fetchKnowledgeMemory(): Promise<KnowledgeMemoryPayload> {
 		'/api/knowledge/memory',
 		undefined,
 		'Failed to load memory profile.'
+	);
+}
+
+export async function fetchKnowledgeMemoryOverview(
+	options: { force?: boolean } = {}
+): Promise<KnowledgeMemoryOverviewPayload> {
+	const query = options.force ? '?force=1' : '';
+	return requestJson<KnowledgeMemoryOverviewPayload>(
+		`/api/knowledge/memory/overview${query}`,
+		undefined,
+		'Failed to refresh the live memory overview.'
 	);
 }
 
