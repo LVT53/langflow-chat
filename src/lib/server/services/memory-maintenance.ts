@@ -15,9 +15,17 @@ import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './task-st
 const KEEP_MICRO_CHECKPOINTS = 6;
 const KEEP_STABLE_CHECKPOINTS = 3;
 const TASK_ARCHIVE_AFTER_DAYS = 30;
+const CHAT_MAINTENANCE_DEBOUNCE_MS = 10 * 60_000;
 
 let schedulerStarted = false;
 let schedulerHandle: ReturnType<typeof setInterval> | null = null;
+const userMaintenanceStates = new Map<string, {
+	inFlight: Promise<void> | null;
+	rerunRequested: boolean;
+	lastCompletedAt: number;
+	scheduledReason: string | null;
+	timer: ReturnType<typeof setTimeout> | null;
+}>();
 
 function taskIsStale(updatedAt: Date, now = Date.now()): boolean {
 	return now - updatedAt.getTime() >= TASK_ARCHIVE_AFTER_DAYS * 86_400_000;
@@ -110,10 +118,50 @@ async function archiveStaleTaskMemory(userId: string): Promise<void> {
 				eq(conversationTaskStates.userId, userId),
 				inArray(conversationTaskStates.taskId, staleIds)
 			)
-		);
+	);
 }
 
-export async function runUserMemoryMaintenance(
+function getUserMaintenanceState(userId: string) {
+	const existing = userMaintenanceStates.get(userId);
+	if (existing) return existing;
+
+	const created = {
+		inFlight: null as Promise<void> | null,
+		rerunRequested: false,
+		lastCompletedAt: 0,
+		scheduledReason: null as string | null,
+		timer: null as ReturnType<typeof setTimeout> | null,
+	};
+	userMaintenanceStates.set(userId, created);
+	return created;
+}
+
+function shouldDebounceMaintenanceReason(reason: string): boolean {
+	return reason === 'chat_send' || reason === 'chat_stream';
+}
+
+function clearScheduledMaintenance(state: ReturnType<typeof getUserMaintenanceState>): void {
+	if (state.timer) {
+		clearTimeout(state.timer);
+		state.timer = null;
+	}
+}
+
+function scheduleDeferredUserMaintenance(userId: string, reason: string, delayMs: number): void {
+	const state = getUserMaintenanceState(userId);
+	state.scheduledReason = reason;
+	if (state.timer) return;
+
+	state.timer = setTimeout(() => {
+		state.timer = null;
+		const scheduledReason = state.scheduledReason ?? reason;
+		state.scheduledReason = null;
+		void startUserMemoryMaintenance(userId, scheduledReason, { bypassDebounce: true });
+	}, Math.max(0, delayMs));
+	state.timer.unref?.();
+}
+
+async function performUserMemoryMaintenance(
 	userId: string,
 	reason = 'manual'
 ): Promise<void> {
@@ -133,6 +181,61 @@ export async function runUserMemoryMaintenance(
 	} catch (error) {
 		console.error('[MEMORY_MAINTENANCE] Failed', { userId, reason, error });
 	}
+}
+
+async function startUserMemoryMaintenance(
+	userId: string,
+	reason: string,
+	options?: { bypassDebounce?: boolean }
+): Promise<void> {
+	const state = getUserMaintenanceState(userId);
+	if (!options?.bypassDebounce) {
+		clearScheduledMaintenance(state);
+		state.scheduledReason = null;
+	}
+
+	const runPromise = performUserMemoryMaintenance(userId, reason).finally(() => {
+		state.inFlight = null;
+		state.lastCompletedAt = Date.now();
+
+		if (state.rerunRequested) {
+			const rerunReason = state.scheduledReason ?? reason;
+			state.rerunRequested = false;
+			state.scheduledReason = null;
+			void startUserMemoryMaintenance(userId, rerunReason, { bypassDebounce: true });
+		}
+	});
+
+	state.inFlight = runPromise;
+	await runPromise;
+}
+
+export async function runUserMemoryMaintenance(
+	userId: string,
+	reason = 'manual'
+): Promise<void> {
+	const state = getUserMaintenanceState(userId);
+	const debounceReason = shouldDebounceMaintenanceReason(reason);
+
+	if (state.inFlight) {
+		state.rerunRequested = true;
+		state.scheduledReason = reason;
+		return state.inFlight;
+	}
+
+	if (debounceReason && state.lastCompletedAt > 0) {
+		const elapsedMs = Date.now() - state.lastCompletedAt;
+		if (elapsedMs < CHAT_MAINTENANCE_DEBOUNCE_MS) {
+			scheduleDeferredUserMaintenance(
+				userId,
+				reason,
+				CHAT_MAINTENANCE_DEBOUNCE_MS - elapsedMs
+			);
+			return;
+		}
+	}
+
+	await startUserMemoryMaintenance(userId, reason);
 }
 
 export async function runAllUsersMemoryMaintenance(reason = 'scheduler'): Promise<void> {
@@ -161,4 +264,10 @@ export function stopMemoryMaintenanceScheduler(): void {
 		schedulerHandle = null;
 	}
 	schedulerStarted = false;
+	for (const state of userMaintenanceStates.values()) {
+		clearScheduledMaintenance(state);
+		state.scheduledReason = null;
+		state.rerunRequested = false;
+	}
+	userMaintenanceStates.clear();
 }

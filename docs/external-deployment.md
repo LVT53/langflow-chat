@@ -38,6 +38,8 @@ Set the usual application secrets plus the Honcho and Langflow configuration:
 - `HONCHO_WORKSPACE`
 - optional `HONCHO_API_KEY` for authenticated deployments
 
+If you self-host Honcho and its deriver/summary models hit your own GPU-backed inference server, start the Honcho deployment with `DERIVER_WORKERS=2` and scale upward gradually only if queue backlog remains high without saturating the model server.
+
 ## Upload Body Size
 
 Adapter-node defaults request bodies to `512K`, which is too small for document uploads. This project patches the production build so `npm run build` produces a server with a default `BODY_SIZE_LIMIT` of `50M`.

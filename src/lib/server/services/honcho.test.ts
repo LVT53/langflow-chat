@@ -32,6 +32,7 @@ const {
     honchoEnabled: false,
     honchoContextWaitMs: 3000,
     honchoContextPollIntervalMs: 250,
+    honchoPersonaContextWaitMs: 1500,
   };
   const mockDisplayArtifact = {
     id: 'source-attachment-1',
@@ -213,6 +214,7 @@ vi.mock('../env', () => ({
     honchoEnabled: false,
     honchoContextWaitMs: 3000,
     honchoContextPollIntervalMs: 250,
+    honchoPersonaContextWaitMs: 1500,
   },
 }));
 
@@ -268,6 +270,7 @@ describe('Honcho Service', () => {
     mockConfig.honchoEnabled = false;
     mockConfig.honchoContextWaitMs = 3000;
     mockConfig.honchoContextPollIntervalMs = 250;
+    mockConfig.honchoPersonaContextWaitMs = 1500;
   });
 
   describe('isHonchoEnabled', () => {
@@ -495,7 +498,7 @@ describe('Honcho Service', () => {
       expect(mockSessionContext).toHaveBeenCalledWith({
         summary: true,
         searchQuery: 'Continue from the live context.',
-        tokens: 3000,
+        tokens: 2000,
       });
       expect(result.inputValue).toContain('## Session Summary');
       expect(result.inputValue).toContain('Live Honcho summary');
@@ -564,6 +567,53 @@ describe('Honcho Service', () => {
       } finally {
         mockConfig.honchoContextWaitMs = 3000;
         mockConfig.honchoContextPollIntervalMs = 250;
+        mockConfig.honchoPersonaContextWaitMs = 1500;
+        vi.useRealTimers();
+      }
+    });
+
+    it('uses a shorter dedicated timeout for persona prompt context', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockConfig.honchoContextWaitMs = 500;
+        mockConfig.honchoPersonaContextWaitMs = 50;
+        mockSessionContext.mockResolvedValueOnce({
+          messages: [
+            {
+              peerId: 'user-123',
+              content: 'Live Honcho context is available',
+              createdAt: '2026-03-26T10:00:00.000Z',
+              metadata: { role: 'user' },
+            },
+          ],
+          summary: { content: 'Live Honcho summary' },
+          peerRepresentation: null,
+          peerCard: null,
+        });
+        mockBuildPersonaPromptContext.mockImplementationOnce(() => new Promise(() => undefined));
+
+        const { buildConstructedContext } = await import('./honcho');
+
+        const resultPromise = buildConstructedContext({
+          userId: 'user-123',
+          conversationId: 'conv-persona-timeout',
+          message: 'Use the live Honcho session context.',
+        });
+
+        await vi.advanceTimersByTimeAsync(60);
+        const result = await resultPromise;
+
+        expect(result.honchoContext).toMatchObject({
+          source: 'live',
+          fallbackReason: null,
+        });
+        expect(result.inputValue).toContain('Live Honcho summary');
+        expect(result.inputValue).not.toContain('## User Memory');
+      } finally {
+        mockConfig.honchoContextWaitMs = 3000;
+        mockConfig.honchoContextPollIntervalMs = 250;
+        mockConfig.honchoPersonaContextWaitMs = 1500;
         vi.useRealTimers();
       }
     });

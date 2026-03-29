@@ -46,8 +46,9 @@
 		TRANSLATOR_MODEL: 'Translator Model',
 		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
 		TRANSLATION_TEMPERATURE: 'Translation Temperature',
-		HONCHO_CONTEXT_WAIT_MS: 'Honcho Context Wait (ms)',
+		HONCHO_CONTEXT_WAIT_MS: 'Honcho Session Context Wait (ms)',
 		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
+		HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
 	};
 
 	const NUMBER_KEYS = new Set([
@@ -56,6 +57,7 @@
 		'TRANSLATION_TEMPERATURE',
 		'HONCHO_CONTEXT_WAIT_MS',
 		'HONCHO_CONTEXT_POLL_INTERVAL_MS',
+		'HONCHO_PERSONA_CONTEXT_WAIT_MS',
 	]);
 
 	function placeholderFor(key: string): string {
@@ -219,7 +221,7 @@
 		{/if}
 	</div>
 	<div class="mt-4 flex flex-col gap-3">
-		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS'] as key}
+		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS', 'HONCHO_PERSONA_CONTEXT_WAIT_MS'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
 				<input
@@ -231,11 +233,15 @@
 				/>
 				{#if key === 'HONCHO_CONTEXT_WAIT_MS'}
 					<p class="mt-1 text-xs text-text-muted">
-						How long chat waits for live Honcho context before falling back to the last good snapshot or persisted turns.
+						How long chat waits for live Honcho session bootstrap, queue settling, and `session.context(...)` before falling back to the last good snapshot or persisted turns.
+					</p>
+				{:else if key === 'HONCHO_CONTEXT_POLL_INTERVAL_MS'}
+					<p class="mt-1 text-xs text-text-muted">
+						How often the app polls Honcho queue status while waiting for live session context to finish deriving.
 					</p>
 				{:else}
 					<p class="mt-1 text-xs text-text-muted">
-						How often the app polls Honcho queue status while waiting for live session context to finish deriving.
+						Timeout for persona-memory prompt enrichment only. Lower values keep chat responsive because persona cluster refresh now happens in the background.
 					</p>
 				{/if}
 			</div>

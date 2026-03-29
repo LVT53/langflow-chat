@@ -48,6 +48,7 @@ const { mockRuntimeConfig } = vi.hoisted(() => ({
     honchoEnabled: false,
     honchoContextWaitMs: 3000,
     honchoContextPollIntervalMs: 250,
+    honchoPersonaContextWaitMs: 1500,
     memoryMaintenanceIntervalMinutes: 0,
   },
 }));
@@ -99,6 +100,7 @@ vi.mock('../env', () => ({
     honchoEnabled: false,
     honchoContextWaitMs: 3000,
     honchoContextPollIntervalMs: 250,
+    honchoPersonaContextWaitMs: 1500,
   },
 }));
 

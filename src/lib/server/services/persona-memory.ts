@@ -27,9 +27,11 @@ const FULL_SWEEP_INTERVAL_MS = 7 * DAY_MS;
 const ACTIVE_PROMPT_LIMIT = 8;
 const DORMANT_PROMPT_LIMIT = 2;
 const PROMPT_TEXT_BUDGET = 1600;
+const PROMPT_REFRESH_THROTTLE_MS = 60_000;
 const SEMANTIC_RECONCILE_MIN_CONFIDENCE = 72;
 const MAX_SEMANTIC_CANDIDATES = 4;
 const ensureClustersReadyInFlight = new Map<string, Promise<void>>();
+const promptRefreshTriggeredAt = new Map<string, number>();
 
 type ClusterPlan = {
 	clusterId: string;
@@ -999,41 +1001,54 @@ export async function syncPersonaMemoryClusters(params: {
 	await db.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, params.userId));
 
 	if (plans.length > 0) {
-		await db.insert(personaMemoryClusters).values(
-			plans.map((plan) => ({
-				clusterId: plan.clusterId,
-				userId: params.userId,
-				canonicalText: plan.canonicalText,
-				memoryClass: plan.memoryClass,
-				state: plan.state,
-				salienceScore: plan.salienceScore,
-				sourceCount: plan.records.length,
-				firstSeenAt: new Date(plan.firstSeenAt),
-				lastSeenAt: new Date(plan.lastSeenAt),
-				lastDreamedAt: new Date(plan.lastDreamedAt),
-				decayAt: plan.decayAt ? new Date(plan.decayAt) : null,
-				archiveAt: plan.archiveAt ? new Date(plan.archiveAt) : null,
-				pinned: plan.pinned ? 1 : 0,
-				metadataJson: JSON.stringify(plan.metadata),
-				updatedAt: new Date(),
-			}))
-		);
-
-		await db.insert(personaMemoryClusterMembers).values(
-			plans.flatMap((plan) =>
-				plan.records.map((record) => ({
-					id: randomUUID(),
+		await db
+			.insert(personaMemoryClusters)
+			.values(
+				plans.map((plan) => ({
 					clusterId: plan.clusterId,
 					userId: params.userId,
-					conclusionId: record.id,
-					content: record.content,
-					scope: record.scope,
-					sessionId: record.sessionId,
-					createdAt: new Date(record.createdAt),
+					canonicalText: plan.canonicalText,
+					memoryClass: plan.memoryClass,
+					state: plan.state,
+					salienceScore: plan.salienceScore,
+					sourceCount: plan.records.length,
+					firstSeenAt: new Date(plan.firstSeenAt),
+					lastSeenAt: new Date(plan.lastSeenAt),
+					lastDreamedAt: new Date(plan.lastDreamedAt),
+					decayAt: plan.decayAt ? new Date(plan.decayAt) : null,
+					archiveAt: plan.archiveAt ? new Date(plan.archiveAt) : null,
+					pinned: plan.pinned ? 1 : 0,
+					metadataJson: JSON.stringify(plan.metadata),
 					updatedAt: new Date(),
 				}))
 			)
-		);
+			.onConflictDoNothing({
+				target: personaMemoryClusters.clusterId,
+			});
+
+		await db
+			.insert(personaMemoryClusterMembers)
+			.values(
+				plans.flatMap((plan) =>
+					plan.records.map((record) => ({
+						id: randomUUID(),
+						clusterId: plan.clusterId,
+						userId: params.userId,
+						conclusionId: record.id,
+						content: record.content,
+						scope: record.scope,
+						sessionId: record.sessionId,
+						createdAt: new Date(record.createdAt),
+						updatedAt: new Date(),
+					}))
+				)
+			)
+			.onConflictDoNothing({
+				target: [
+					personaMemoryClusterMembers.userId,
+					personaMemoryClusterMembers.conclusionId,
+				],
+			});
 	}
 
 	return {
@@ -1128,7 +1143,21 @@ export async function buildPersonaPromptContext(
 	userId: string,
 	query: string
 ): Promise<string> {
-	await ensurePersonaMemoryClustersReady(userId, 'prompt_read');
+	const now = Date.now();
+	const lastRefreshAt = promptRefreshTriggeredAt.get(userId) ?? 0;
+	if (
+		!ensureClustersReadyInFlight.has(userId) &&
+		now - lastRefreshAt >= PROMPT_REFRESH_THROTTLE_MS
+	) {
+		promptRefreshTriggeredAt.set(userId, now);
+		void ensurePersonaMemoryClustersReady(userId, 'prompt_read').catch((error) => {
+			console.warn('[PERSONA_MEMORY] Background cluster refresh failed', {
+				userId,
+				reason: 'prompt_read',
+				error,
+			});
+		});
+	}
 
 	const items = (await listPersonaMemoryClusters(userId)).filter((item) => item.state !== 'archived');
 	if (items.length === 0) return '';

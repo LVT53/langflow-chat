@@ -1,16 +1,77 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockCanUseContextSummarizer = vi.fn(() => true);
-const mockRequestStructuredControlModel = vi.fn();
+const {
+	mockCanUseContextSummarizer,
+	mockRequestStructuredControlModel,
+	mockSelectQuery,
+	mockListPersonaMemories,
+} = vi.hoisted(() => ({
+	mockCanUseContextSummarizer: vi.fn(() => true),
+	mockRequestStructuredControlModel: vi.fn(),
+	mockSelectQuery: vi.fn(),
+	mockListPersonaMemories: vi.fn(async () => []),
+}));
+
+function createSelectChain(rows: unknown[]) {
+	const chain = {
+		from: () => chain,
+		leftJoin: () => chain,
+		where: () => chain,
+		orderBy: () => Promise.resolve(rows),
+		then: (onFulfilled: (value: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
+			Promise.resolve(rows).then(onFulfilled, onRejected),
+	};
+	return chain;
+}
 
 vi.mock('$lib/server/db', () => ({
-	db: {},
+	db: {
+		select: (...args: unknown[]) => mockSelectQuery(...args),
+		delete: () => ({ where: vi.fn(async () => undefined) }),
+		insert: () => ({
+			values: () => ({
+				onConflictDoNothing: vi.fn(async () => undefined),
+				returning: vi.fn(async () => []),
+			}),
+		}),
+		update: () => ({
+			set: () => ({
+				where: vi.fn(async () => undefined),
+			}),
+		}),
+	},
 }));
 
 vi.mock('$lib/server/db/schema', () => ({
-	conversations: {},
-	personaMemoryClusterMembers: {},
-	personaMemoryClusters: {},
+	conversations: {
+		title: Symbol('title'),
+		id: Symbol('conversation-id'),
+	},
+	personaMemoryClusterMembers: {
+		clusterId: Symbol('cluster-id'),
+		userId: Symbol('user-id'),
+		conclusionId: Symbol('conclusion-id'),
+		sessionId: Symbol('session-id'),
+		content: Symbol('content'),
+		createdAt: Symbol('created-at'),
+	},
+	personaMemoryClusters: {
+		clusterId: Symbol('cluster-id'),
+		userId: Symbol('user-id'),
+		canonicalText: Symbol('canonical-text'),
+		memoryClass: Symbol('memory-class'),
+		state: Symbol('state'),
+		salienceScore: Symbol('salience-score'),
+		sourceCount: Symbol('source-count'),
+		pinned: Symbol('pinned'),
+		firstSeenAt: Symbol('first-seen-at'),
+		lastSeenAt: Symbol('last-seen-at'),
+		createdAt: Symbol('created-at'),
+		updatedAt: Symbol('updated-at'),
+		metadataJson: Symbol('metadata-json'),
+		decayAt: Symbol('decay-at'),
+		archiveAt: Symbol('archive-at'),
+	},
 }));
 
 vi.mock('$lib/server/utils/json', () => ({
@@ -27,7 +88,7 @@ vi.mock('./evidence-family', () => ({
 }));
 
 vi.mock('./honcho', () => ({
-	listPersonaMemories: vi.fn(async () => []),
+	listPersonaMemories: mockListPersonaMemories,
 }));
 
 vi.mock('./task-state', () => ({
@@ -41,7 +102,10 @@ vi.mock('./working-set', () => ({
 
 describe('persona-memory temporal safeguards', () => {
 	beforeEach(() => {
+		vi.resetModules();
 		vi.clearAllMocks();
+		mockSelectQuery.mockImplementation(() => createSelectChain([]));
+		mockListPersonaMemories.mockResolvedValue([]);
 	});
 
 	it('detects explicit temporal cues in memory text', async () => {
@@ -116,5 +180,36 @@ describe('persona-memory temporal safeguards', () => {
 		});
 
 		expect(canonicalText).toBe('The user has a meeting on Tuesday.');
+	});
+
+	it('returns stored persona clusters without waiting for a background refresh', async () => {
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					cluster: {
+						clusterId: 'cluster-1',
+						canonicalText: 'The user prefers concise answers.',
+						memoryClass: 'stable_preference',
+						state: 'active',
+						salienceScore: 88,
+						sourceCount: 2,
+						pinned: 0,
+						firstSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+						lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+						createdAt: new Date('2026-03-20T10:00:00.000Z'),
+						updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+					},
+					member: null,
+					conversationTitle: null,
+				},
+			])
+		);
+		mockListPersonaMemories.mockImplementation(() => new Promise(() => undefined));
+
+		const { buildPersonaPromptContext } = await import('./persona-memory');
+
+		const prompt = await buildPersonaPromptContext('user-prompt-fast', 'Keep it concise.');
+
+		expect(prompt).toContain('The user prefers concise answers.');
 	});
 });

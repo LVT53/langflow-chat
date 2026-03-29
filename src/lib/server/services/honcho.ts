@@ -71,7 +71,7 @@ const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
-const HONCHO_LIVE_CONTEXT_TOKENS = 3000;
+const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
 
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
@@ -823,9 +823,11 @@ async function loadPersonaContext(params: {
 	conversationId: string;
 	message: string;
 }): Promise<string> {
+	const personaTimeoutMs = Math.max(0, getConfig().honchoPersonaContextWaitMs);
 	const result = await resolveWithTimeout(
 		buildPersonaPromptContext(params.userId, params.message),
 		{
+			timeoutMs: personaTimeoutMs,
 			label: 'persona prompt context',
 			conversationId: params.conversationId,
 			userId: params.userId,
