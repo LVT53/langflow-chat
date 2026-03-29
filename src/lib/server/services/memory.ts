@@ -1,13 +1,19 @@
 import { inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { conversations } from '$lib/server/db/schema';
-import type { KnowledgeMemoryPayload, PersonaMemoryItem } from '$lib/types';
+import type {
+	KnowledgeMemoryOverviewSource,
+	KnowledgeMemoryOverviewStatus,
+	KnowledgeMemoryPayload,
+	PersonaMemoryItem,
+} from '$lib/types';
 import {
 	forgetAllPersonaMemories,
 	forgetPersonaMemory,
 	getHonchoAssistantPeerId,
 	getHonchoUserPeerId,
 	getPeerContext,
+	isHonchoEnabled,
 } from './honcho';
 import { runUserMemoryMaintenance } from './memory-maintenance';
 import {
@@ -22,6 +28,11 @@ import {
 	listFocusContinuityItems,
 	listTaskMemoryItems,
 } from './task-state';
+
+const DAY_MS = 86_400_000;
+const OVERVIEW_MIN_DURABLE_ITEMS = 2;
+const OVERVIEW_RECENT_SITUATIONAL_MS = 21 * DAY_MS;
+const OVERVIEW_SECTION_ITEM_LIMIT = 3;
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
@@ -72,6 +83,142 @@ function sanitizeMemoryText(
 	sanitized = replaceAllCaseInsensitive(sanitized, userId, safeDisplayName);
 
 	return sanitized;
+}
+
+function normalizeOverviewSentence(text: string): string {
+	const normalized = text.replace(/\s+/g, ' ').trim();
+	if (!normalized) return '';
+	return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function isDurableOverviewCandidate(memory: PersonaMemoryItem, now = Date.now()): boolean {
+	if (memory.state === 'archived') return false;
+
+	switch (memory.memoryClass) {
+		case 'perishable_fact':
+			return false;
+		case 'situational_context':
+			return (
+				memory.state === 'active' &&
+				now - memory.lastSeenAt <= OVERVIEW_RECENT_SITUATIONAL_MS &&
+				memory.salienceScore >= 52
+			);
+		case 'long_term_context':
+			return memory.pinned || memory.state === 'active' || memory.salienceScore >= 58;
+		case 'stable_preference':
+		case 'identity_profile':
+			return true;
+	}
+}
+
+function sortOverviewMemories(left: PersonaMemoryItem, right: PersonaMemoryItem): number {
+	const stateRank = (state: PersonaMemoryItem['state']) =>
+		state === 'active' ? 0 : state === 'dormant' ? 1 : 2;
+	return (
+		stateRank(left.state) - stateRank(right.state) ||
+		Number(right.pinned) - Number(left.pinned) ||
+		right.salienceScore - left.salienceScore ||
+		right.lastSeenAt - left.lastSeenAt
+	);
+}
+
+function buildOverviewSection(
+	title: string,
+	memories: PersonaMemoryItem[]
+): string | null {
+	if (memories.length === 0) return null;
+	const items = memories
+		.slice()
+		.sort(sortOverviewMemories)
+		.slice(0, OVERVIEW_SECTION_ITEM_LIMIT)
+		.map((memory) => `- ${normalizeOverviewSentence(memory.canonicalText)}`);
+
+	return `### ${title}\n${items.join('\n')}`;
+}
+
+function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): {
+	overview: string | null;
+	durablePersonaCount: number;
+} {
+	const durableMemories = personaMemories.filter((memory) => isDurableOverviewCandidate(memory));
+	const durablePersonaCount = durableMemories.length;
+	if (durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
+		return { overview: null, durablePersonaCount };
+	}
+
+	const sections = [
+		buildOverviewSection(
+			'Stable Preferences',
+			durableMemories.filter((memory) => memory.memoryClass === 'stable_preference')
+		),
+		buildOverviewSection(
+			'Identity And Profile',
+			durableMemories.filter((memory) => memory.memoryClass === 'identity_profile')
+		),
+		buildOverviewSection(
+			'Long-Term Context',
+			durableMemories.filter((memory) => memory.memoryClass === 'long_term_context')
+		),
+		buildOverviewSection(
+			'Recent Situational Context',
+			durableMemories.filter((memory) => memory.memoryClass === 'situational_context')
+		),
+	].filter((section): section is string => Boolean(section));
+
+	return {
+		overview: sections.length > 0 ? sections.join('\n\n') : null,
+		durablePersonaCount,
+	};
+}
+
+function selectKnowledgeOverview(params: {
+	personaMemories: PersonaMemoryItem[];
+	honchoOverview: string | null;
+	honchoEnabled: boolean;
+}): {
+	overview: string | null;
+	overviewSource: KnowledgeMemoryOverviewSource;
+	overviewStatus: KnowledgeMemoryOverviewStatus;
+	durablePersonaCount: number;
+} {
+	const fallback = buildLocalPersonaOverview(params.personaMemories);
+
+	if (params.honchoOverview?.trim()) {
+		return {
+			overview: params.honchoOverview.trim(),
+			overviewSource: 'honcho',
+			overviewStatus: 'ready',
+			durablePersonaCount: fallback.durablePersonaCount,
+		};
+	}
+
+	if (fallback.overview) {
+		return {
+			overview: fallback.overview,
+			overviewSource: 'persona_fallback',
+			overviewStatus: 'ready',
+			durablePersonaCount: fallback.durablePersonaCount,
+		};
+	}
+
+	if (!params.honchoEnabled) {
+		return {
+			overview: null,
+			overviewSource: null,
+			overviewStatus: 'disabled',
+			durablePersonaCount: fallback.durablePersonaCount,
+		};
+	}
+
+	return {
+		overview: null,
+		overviewSource: null,
+		overviewStatus:
+			fallback.durablePersonaCount >= OVERVIEW_MIN_DURABLE_ITEMS
+				? 'temporarily_unavailable'
+				: 'not_enough_durable_memory',
+		durablePersonaCount: fallback.durablePersonaCount,
+	};
 }
 
 async function enrichPersonaMemories(
@@ -134,6 +281,11 @@ export async function getKnowledgeMemory(
 		listFocusContinuityItems(userId),
 		getPeerContext(userId, userDisplayName),
 	]);
+	const overviewSummary = selectKnowledgeOverview({
+		personaMemories,
+		honchoOverview: sanitizeMemoryText(overview, userId, userDisplayName),
+		honchoEnabled: isHonchoEnabled(),
+	});
 
 	return {
 		personaMemories,
@@ -162,7 +314,10 @@ export async function getKnowledgeMemory(
 			personaCount: personaMemories.length,
 			taskCount: taskMemories.length,
 			focusContinuityCount: focusContinuities.length,
-			overview: sanitizeMemoryText(overview, userId, userDisplayName),
+			overview: overviewSummary.overview,
+			overviewSource: overviewSummary.overviewSource,
+			overviewStatus: overviewSummary.overviewStatus,
+			durablePersonaCount: overviewSummary.durablePersonaCount,
 		},
 	};
 }

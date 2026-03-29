@@ -555,11 +555,22 @@ export interface TaskContinuitySummary {
   updatedAt: number;
 }
 
+export type KnowledgeMemoryOverviewSource = 'honcho' | 'persona_fallback' | null;
+
+export type KnowledgeMemoryOverviewStatus =
+  | 'ready'
+  | 'temporarily_unavailable'
+  | 'not_enough_durable_memory'
+  | 'disabled';
+
 export interface KnowledgeMemorySummary {
   personaCount: number;
   taskCount: number;
   focusContinuityCount: number;
   overview: string | null;
+  overviewSource: KnowledgeMemoryOverviewSource;
+  overviewStatus: KnowledgeMemoryOverviewStatus;
+  durablePersonaCount: number;
 }
 
 export interface KnowledgeMemoryPayload {

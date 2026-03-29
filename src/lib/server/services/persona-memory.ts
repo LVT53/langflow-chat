@@ -202,13 +202,14 @@ function buildInventoryCanonical(
 	return `${fingerprint.subject} had ${head}, and ${tail} available for ${fingerprint.context} on ${fingerprint.date}.`;
 }
 
-function classifyMemoryTextDeterministically(text: string): PersonaMemoryClass {
+export function classifyMemoryTextDeterministically(text: string): PersonaMemoryClass {
 	const normalized = normalizeMemoryText(text);
 
 	if (
-		/\b(fridge|pantry|freezer|available|today|tonight|this week|for dinner|in stock)\b/.test(
+		/\b(fridge|pantry|freezer|leftovers?|meal prep|grocery|groceries|available|today|tonight|this week|for dinner|for lunch|for breakfast|in stock|expir(?:e|es|ing))\b/.test(
 			normalized
-		)
+		) ||
+		/\b(have|has)\b.+\b(fridge|pantry|freezer|leftovers?)\b/.test(normalized)
 	) {
 		return 'perishable_fact';
 	}
@@ -222,7 +223,7 @@ function classifyMemoryTextDeterministically(text: string): PersonaMemoryClass {
 	}
 
 	if (
-		/\b(prefer|likes|dislikes|favorite|usually|communication style|tone|writing style)\b/.test(
+		/\b(prefer|preference|likes|dislikes|favorite|usually|communication style|tone|writing style|framework|stack|toolchain|tooling)\b/.test(
 			normalized
 		)
 	) {
@@ -261,10 +262,14 @@ function computeSalienceScore(params: {
 	const support = Math.min(12, Math.max(0, params.sourceCount - 1) * 4);
 	const decayPenalty =
 		params.memoryClass === 'perishable_fact'
-			? ageDays * 4
+			? ageDays * 6
 			: params.memoryClass === 'situational_context'
 				? ageDays * 2
-				: Math.floor(ageDays / 7);
+				: params.memoryClass === 'long_term_context'
+					? Math.floor(ageDays / 14)
+					: params.memoryClass === 'stable_preference'
+						? Math.floor(ageDays / 30)
+						: Math.floor(ageDays / 45);
 	return Math.max(6, Math.min(100, base + support - decayPenalty));
 }
 
@@ -274,19 +279,19 @@ function getDecayWindow(memoryClass: PersonaMemoryClass): {
 } {
 	switch (memoryClass) {
 		case 'perishable_fact':
-			return { dormantMs: 3 * DAY_MS, archiveMs: 21 * DAY_MS };
+			return { dormantMs: DAY_MS, archiveMs: 10 * DAY_MS };
 		case 'situational_context':
-			return { dormantMs: 14 * DAY_MS, archiveMs: 45 * DAY_MS };
+			return { dormantMs: 10 * DAY_MS, archiveMs: 30 * DAY_MS };
 		case 'long_term_context':
-			return { dormantMs: 30 * DAY_MS, archiveMs: 120 * DAY_MS };
+			return { dormantMs: 60 * DAY_MS, archiveMs: 365 * DAY_MS };
 		case 'stable_preference':
-			return { dormantMs: 180 * DAY_MS, archiveMs: 540 * DAY_MS };
+			return { dormantMs: 365 * DAY_MS, archiveMs: null };
 		case 'identity_profile':
 			return { dormantMs: null, archiveMs: null };
 	}
 }
 
-function deriveStateFromDecay(params: {
+export function deriveStateFromDecay(params: {
 	memoryClass: PersonaMemoryClass;
 	lastSeenAt: number;
 	pinned: boolean;

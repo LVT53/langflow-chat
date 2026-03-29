@@ -56,6 +56,9 @@ describe('Knowledge page', () => {
 					taskCount: 2,
 					focusContinuityCount: 1,
 					overview: 'Knows the user prefers concise responses.',
+					overviewSource: 'honcho',
+					overviewStatus: 'ready',
+					durablePersonaCount: 3,
 				},
 			}),
 		} as Response);
@@ -140,6 +143,9 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
+					overviewSource: 'honcho',
+					overviewStatus: 'ready',
+					durablePersonaCount: 2,
 				},
 			}),
 		} as Response);
@@ -235,6 +241,9 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows the user prefers concise responses.',
+					overviewSource: 'honcho',
+					overviewStatus: 'ready',
+					durablePersonaCount: 2,
 				},
 			}),
 		} as Response);
@@ -299,6 +308,9 @@ describe('Knowledge page', () => {
 					taskCount: 0,
 					focusContinuityCount: 0,
 					overview: 'Knows past cooking context.',
+					overviewSource: 'honcho',
+					overviewStatus: 'ready',
+					durablePersonaCount: 1,
 				},
 			}),
 		} as Response);
@@ -321,6 +333,116 @@ describe('Knowledge page', () => {
 
 		expect(await findByText('Used sourdough last month.')).toBeDefined();
 		expect(getByRole('button', { name: /dormant \(1\)/i })).toBeDefined();
+		unmount();
+	});
+
+	it('labels local overview fallbacks honestly when live Honcho text is unavailable', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				personaMemories: [
+					{
+						id: 'pref-1',
+						canonicalText: 'Prefers concise responses.',
+						memoryClass: 'stable_preference',
+						state: 'active',
+						salienceScore: 82,
+						sourceCount: 2,
+						conversationTitles: [],
+						firstSeenAt: Date.now() - 1_000,
+						lastSeenAt: Date.now(),
+						pinned: false,
+						members: [],
+					},
+					{
+						id: 'ctx-1',
+						canonicalText: 'Builds AI chat tools with Langflow.',
+						memoryClass: 'long_term_context',
+						state: 'active',
+						salienceScore: 74,
+						sourceCount: 2,
+						conversationTitles: [],
+						firstSeenAt: Date.now() - 2_000,
+						lastSeenAt: Date.now() - 500,
+						pinned: false,
+						members: [],
+					},
+				],
+				taskMemories: [],
+				focusContinuities: [],
+				summary: {
+					personaCount: 2,
+					taskCount: 0,
+					focusContinuityCount: 0,
+					overview:
+						'### Stable Preferences\n- Prefers concise responses.\n\n### Long-Term Context\n- Builds AI chat tools with Langflow.',
+					overviewSource: 'persona_fallback',
+					overviewStatus: 'ready',
+					durablePersonaCount: 2,
+				},
+			}),
+		} as Response);
+
+		const { getByRole, getByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+
+		await waitFor(() => {
+			expect(
+				getByText(/showing a local durable-memory fallback while the live honcho overview is unavailable/i)
+			).toBeDefined();
+			expect(getByText('Prefers concise responses.')).toBeDefined();
+		});
+		unmount();
+	});
+
+	it('does not claim durable memory is missing when only the live overview is unavailable', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				personaMemories: [],
+				taskMemories: [],
+				focusContinuities: [],
+				summary: {
+					personaCount: 205,
+					taskCount: 0,
+					focusContinuityCount: 0,
+					overview: null,
+					overviewSource: null,
+					overviewStatus: 'temporarily_unavailable',
+					durablePersonaCount: 18,
+				},
+			}),
+		} as Response);
+
+		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [],
+				workflows: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /memory profile/i }));
+
+		await waitFor(() => {
+			expect(
+				getByText(/durable persona memory exists, but the live overview is temporarily unavailable right now/i)
+			).toBeDefined();
+		});
+		expect(
+			queryByText(/not enough durable persona memory yet to render a useful overview/i)
+		).toBeNull();
 		unmount();
 	});
 

@@ -1,4 +1,9 @@
 <script lang="ts">
+	import type {
+		KnowledgeMemoryOverviewSource,
+		KnowledgeMemoryOverviewStatus,
+	} from '$lib/types';
+
 	let {
 		memoryLoading,
 		memoryLoaded,
@@ -7,7 +12,10 @@
 		focusContinuityItemCount,
 		honchoEnabled,
 		honchoOverview,
+		honchoOverviewSource,
+		honchoOverviewStatus,
 		honchoOverviewHtml,
+		durablePersonaCount,
 		onRetryLoadMemory,
 		onOpenMemoryModal,
 	}: {
@@ -18,7 +26,10 @@
 		focusContinuityItemCount: number;
 		honchoEnabled: boolean;
 		honchoOverview: string;
+		honchoOverviewSource: KnowledgeMemoryOverviewSource;
+		honchoOverviewStatus: KnowledgeMemoryOverviewStatus;
 		honchoOverviewHtml: string;
+		durablePersonaCount: number;
 		onRetryLoadMemory: () => void | Promise<void>;
 		onOpenMemoryModal: (kind: 'persona' | 'focus') => void;
 	} = $props();
@@ -153,9 +164,18 @@
 				Memory Overview
 			</h2>
 			{#if honchoOverview}
+				{#if honchoOverviewSource === 'persona_fallback'}
+					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+						Showing a local durable-memory fallback while the live Honcho overview is unavailable.
+					</p>
+				{/if}
 				<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">
 					{@html honchoOverviewHtml}
 				</div>
+			{:else if honchoOverviewStatus === 'temporarily_unavailable'}
+				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
+					Durable persona memory exists, but the live overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
+				</p>
 			{:else if honchoEnabled}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
 					Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.

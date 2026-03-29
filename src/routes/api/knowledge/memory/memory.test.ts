@@ -63,6 +63,9 @@ const memoryPayload = {
 		taskCount: 1,
 		focusContinuityCount: 1,
 		overview: 'The user likes concise responses.',
+		overviewSource: 'honcho',
+		overviewStatus: 'ready',
+		durablePersonaCount: 1,
 	},
 };
 

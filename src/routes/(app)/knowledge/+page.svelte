@@ -19,6 +19,7 @@
 		FocusContinuityItem,
 		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
+		KnowledgeMemorySummary,
 		PersonaMemoryItem,
 		TaskMemoryItem,
 		WorkCapsule,
@@ -51,11 +52,14 @@
 	let personaMemories = $state<PersonaMemoryItem[]>([]);
 	let taskMemories = $state<TaskMemoryItem[]>([]);
 	let focusContinuities = $state<FocusContinuityItem[]>([]);
-	let memorySummary = $state({
+	let memorySummary = $state<KnowledgeMemorySummary>({
 		personaCount: 0,
 		taskCount: 0,
 		focusContinuityCount: 0,
 		overview: null,
+		overviewSource: null,
+		overviewStatus: 'disabled',
+		durablePersonaCount: 0,
 	});
 	const honchoEnabled = getData().honchoEnabled ?? false;
 
@@ -90,6 +94,9 @@
 	);
 
 	let honchoOverview = $derived(memorySummary.overview?.trim() ?? '');
+	let honchoOverviewSource = $derived(memorySummary.overviewSource);
+	let honchoOverviewStatus = $derived(memorySummary.overviewStatus);
+	let durablePersonaCount = $derived(memorySummary.durablePersonaCount);
 	$effect(() => {
 		void renderHonchoOverview(honchoOverview, $isDark);
 	});
@@ -131,11 +138,25 @@
 		personaMemories = payload.personaMemories ?? [];
 		taskMemories = payload.taskMemories ?? [];
 		focusContinuities = payload.focusContinuities ?? [];
-		memorySummary = payload.summary ?? {
+		memorySummary = payload.summary
+			? {
+					personaCount: payload.summary.personaCount ?? 0,
+					taskCount: payload.summary.taskCount ?? 0,
+					focusContinuityCount: payload.summary.focusContinuityCount ?? 0,
+					overview: payload.summary.overview ?? null,
+					overviewSource: payload.summary.overviewSource ?? null,
+					overviewStatus:
+						payload.summary.overviewStatus ?? (honchoEnabled ? 'not_enough_durable_memory' : 'disabled'),
+					durablePersonaCount: payload.summary.durablePersonaCount ?? 0,
+				}
+			: {
 			personaCount: 0,
 			taskCount: 0,
 			focusContinuityCount: 0,
 			overview: null,
+			overviewSource: null,
+			overviewStatus: honchoEnabled ? 'not_enough_durable_memory' : 'disabled',
+			durablePersonaCount: 0,
 		};
 		if (activeMemoryModal === 'persona') {
 			personaMemoryFilter = getDefaultPersonaMemoryFilter(personaMemories);
@@ -578,7 +599,10 @@
 				{focusContinuityItemCount}
 				{honchoEnabled}
 				{honchoOverview}
+				{honchoOverviewSource}
+				{honchoOverviewStatus}
 				{honchoOverviewHtml}
+				{durablePersonaCount}
 				onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
 				onOpenMemoryModal={openMemoryModal}
 			/>

@@ -182,6 +182,30 @@ describe('persona-memory temporal safeguards', () => {
 		expect(canonicalText).toBe('The user has a meeting on Tuesday.');
 	});
 
+	it('classifies fridge inventory as a perishable fact', async () => {
+		const { classifyMemoryTextDeterministically } = await import('./persona-memory');
+
+		expect(classifyMemoryTextDeterministically('The user has pizza in the fridge tonight.')).toBe(
+			'perishable_fact'
+		);
+	});
+
+	it('does not automatically archive durable preferences just because they are old', async () => {
+		const { deriveStateFromDecay } = await import('./persona-memory');
+		const now = Date.UTC(2027, 2, 29);
+		const lastSeenAt = now - 400 * 86_400_000;
+
+		const result = deriveStateFromDecay({
+			memoryClass: 'stable_preference',
+			lastSeenAt,
+			pinned: false,
+			now,
+		});
+
+		expect(result.state).toBe('dormant');
+		expect(result.archiveAt).toBeNull();
+	});
+
 	it('returns stored persona clusters without waiting for a background refresh', async () => {
 		mockSelectQuery.mockImplementation(() =>
 			createSelectChain([
