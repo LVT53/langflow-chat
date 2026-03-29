@@ -32,7 +32,8 @@
 	let projectsStoreReady = $state(false);
 	let supportsDragAndDrop = $state(true);
 	let draggedConversationId = $state<string | null>(null);
-	let dropTargetProjectId = $state<string | null>(null);
+	type SidebarDropTarget = { kind: 'project'; projectId: string } | { kind: 'unorganized' } | null;
+	let dropTarget = $state<SidebarDropTarget>(null);
 	type OpenSidebarMenu =
 		| { kind: 'conversation'; id: string }
 		| { kind: 'project'; id: string }
@@ -54,6 +55,12 @@
 		: initialConversations);
 
 	const allProjects = $derived(projectsStoreReady ? $projectsStore : initialProjects);
+	const activeDraggedConversation = $derived.by(() =>
+		draggedConversationId
+			? visibleConversations.find((conversation) => conversation.id === draggedConversationId) ?? null
+			: null
+	);
+	const canDropIntoUnorganized = $derived(activeDraggedConversation?.projectId != null);
 
 	// Ensure newly loaded projects default to expanded
 	$effect(() => {
@@ -88,6 +95,38 @@
 
 	function closeAllMenus() {
 		openSidebarMenu = null;
+	}
+
+	function clearDragState() {
+		draggedConversationId = null;
+		dropTarget = null;
+	}
+
+	function getConversationById(id: string | null | undefined) {
+		if (!id) return null;
+		return visibleConversations.find((conversation) => conversation.id === id) ?? null;
+	}
+
+	function leftCurrentDropTarget(event: DragEvent) {
+		const currentTarget = event.currentTarget as HTMLElement | null;
+		const nextTarget = event.relatedTarget as Node | null;
+		return !(currentTarget && nextTarget && currentTarget.contains(nextTarget));
+	}
+
+	function getDraggedConversationId(event: DragEvent) {
+		return (
+			event.dataTransfer?.getData('application/x-alfyai-conversation') ||
+			event.dataTransfer?.getData('text/plain') ||
+			null
+		);
+	}
+
+	function setMoveDropEffect(event: DragEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'move';
+		}
 	}
 
 	function isConversationMenuOpen(id: string) {
@@ -144,8 +183,7 @@
 	async function handleMoveToProject(payload: { id: string; projectId: string | null }) {
 		const { id, projectId } = payload;
 		closeAllMenus();
-		draggedConversationId = null;
-		dropTargetProjectId = null;
+		clearDragState();
 		try {
 			await moveConversationToProject(id, projectId);
 		} catch (e) {
@@ -167,30 +205,27 @@
 
 	function handleConversationDragStart(payload: { id: string }) {
 		draggedConversationId = payload.id;
-		dropTargetProjectId = null;
+		dropTarget = null;
 		closeAllMenus();
 	}
 
 	function handleConversationDragEnd() {
-		draggedConversationId = null;
-		dropTargetProjectId = null;
+		clearDragState();
 	}
 
 	function handleProjectDragOver(payload: { id: string }) {
 		if (!draggedConversationId) return;
-		const draggedConversation = visibleConversations.find(
-			(conversation) => conversation.id === draggedConversationId
-		);
+		const draggedConversation = getConversationById(draggedConversationId);
 		if (!draggedConversation || draggedConversation.projectId === payload.id) {
-			dropTargetProjectId = null;
+			dropTarget = null;
 			return;
 		}
-		dropTargetProjectId = payload.id;
+		dropTarget = { kind: 'project', projectId: payload.id };
 	}
 
 	function handleProjectDragLeave(payload: { id: string }) {
-		if (dropTargetProjectId === payload.id) {
-			dropTargetProjectId = null;
+		if (dropTarget?.kind === 'project' && dropTarget.projectId === payload.id) {
+			dropTarget = null;
 		}
 	}
 
@@ -199,13 +234,10 @@
 		conversationId?: string | null;
 	}) {
 		const conversationId = payload.conversationId ?? draggedConversationId;
-		dropTargetProjectId = null;
-		draggedConversationId = null;
+		const draggedConversation = getConversationById(conversationId);
+		clearDragState();
 		if (!conversationId) return;
 
-		const draggedConversation = visibleConversations.find(
-			(conversation) => conversation.id === conversationId
-		);
 		if (!draggedConversation || draggedConversation.projectId === payload.projectId) {
 			return;
 		}
@@ -215,6 +247,37 @@
 			expandedProjects = { ...expandedProjects, [payload.projectId]: true };
 		} catch (e) {
 			console.error('Drag to project failed', e);
+			alert('Failed to move conversation. Please try again.');
+		}
+	}
+
+	function handleUnorganizedDragOver() {
+		if (!draggedConversationId) return;
+		if (!activeDraggedConversation || activeDraggedConversation.projectId == null) {
+			dropTarget = null;
+			return;
+		}
+		dropTarget = { kind: 'unorganized' };
+	}
+
+	function handleUnorganizedDragLeave() {
+		if (dropTarget?.kind === 'unorganized') {
+			dropTarget = null;
+		}
+	}
+
+	async function handleUnorganizedDropConversation(conversationId?: string | null) {
+		const resolvedConversationId = conversationId ?? draggedConversationId;
+		const draggedConversation = getConversationById(resolvedConversationId);
+		clearDragState();
+		if (!resolvedConversationId || !draggedConversation || draggedConversation.projectId == null) {
+			return;
+		}
+
+		try {
+			await moveConversationToProject(resolvedConversationId, null);
+		} catch (e) {
+			console.error('Drag to unorganized failed', e);
 			alert('Failed to move conversation. Please try again.');
 		}
 	}
@@ -325,12 +388,33 @@
 			<!-- Project list -->
 			<div class="flex flex-col gap-px px-1">
 				{#each allProjects as project (project.id)}
-					<div>
+					<div
+						class="project-drop-zone rounded-xl border border-transparent transition-colors duration-150"
+						class:project-drop-zone-active={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
+						role="group"
+						aria-label={`${project.name} project drop area`}
+						ondragover={(event) => {
+							setMoveDropEffect(event);
+							handleProjectDragOver({ id: project.id });
+						}}
+						ondragleave={(event) => {
+							if (leftCurrentDropTarget(event)) {
+								handleProjectDragLeave({ id: project.id });
+							}
+						}}
+						ondrop={(event) => {
+							setMoveDropEffect(event);
+							void handleProjectDropConversation({
+								projectId: project.id,
+								conversationId: getDraggedConversationId(event)
+							});
+						}}
+					>
 						<ProjectItem
 							{project}
 							expanded={expandedProjects[project.id] ?? false}
 							menuOpen={isProjectMenuOpen(project.id)}
-							dropActive={dropTargetProjectId === project.id}
+							dropActive={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
 							onToggle={handleProjectToggle}
 							onRename={handleProjectRename}
 							onDelete={handleProjectDelete}
@@ -423,12 +507,46 @@
 	{/if}
 
 	<!-- ── Unorganized conversations ─────────────────────────────────────── -->
-	<div class="flex flex-col gap-0.5 px-1">
+	<div
+		data-testid="unorganized-drop-target"
+		class="unorganized-drop-zone flex flex-col gap-0.5 rounded-xl border border-transparent px-1 transition-colors duration-150"
+		class:unorganized-drop-zone-active={dropTarget?.kind === 'unorganized'}
+		role="group"
+		aria-label="Unorganized conversations drop area"
+		ondragover={(event) => {
+			setMoveDropEffect(event);
+			handleUnorganizedDragOver();
+		}}
+		ondragleave={(event) => {
+			if (leftCurrentDropTarget(event)) {
+				handleUnorganizedDragLeave();
+			}
+		}}
+		ondrop={(event) => {
+			setMoveDropEffect(event);
+			void handleUnorganizedDropConversation(getDraggedConversationId(event));
+		}}
+	>
+		{#if allProjects.length > 0 || conversationsByProject.unorganized.length > 0 || canDropIntoUnorganized}
+			<div class="px-1 pb-1 pt-0.5">
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Unorganized</span>
+					{#if canDropIntoUnorganized}
+						<span class="text-[11px] text-text-muted">Drop here to remove from a project</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
 		{#if visibleConversations.length === 0}
 			<div class="flex h-20 items-center justify-center p-4 text-sm text-text-muted">
 				No conversations yet
 			</div>
 		{:else}
+			{#if conversationsByProject.unorganized.length === 0 && allProjects.length > 0}
+				<div class="px-2 py-3 text-[12px] text-text-muted">
+					Drop chats here to keep them outside project folders.
+				</div>
+			{/if}
 			{#each conversationsByProject.unorganized as conversation (conversation.id)}
 				<ConversationItem
 					{conversation}
@@ -452,6 +570,17 @@
 </div>
 
 <style>
+	.project-drop-zone-active,
+	.unorganized-drop-zone-active {
+		border-color: color-mix(in srgb, var(--accent) 72%, transparent 28%);
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in srgb, var(--accent) 12%, transparent 88%),
+				color-mix(in srgb, var(--surface-elevated) 78%, transparent 22%)
+			);
+	}
+
 	.empty-projects-btn {
 		border-color: color-mix(in srgb, var(--border-default) 50%, transparent 50%);
 	}

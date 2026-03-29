@@ -1,10 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import {
   login,
   createConversation,
   ensureSidebarExpanded,
   openConversationComposer,
 } from './helpers';
+
+async function createConversationTransfer(page: Page, conversationId: string) {
+  return page.evaluateHandle(({ targetConversationId }) => {
+    const transfer = new DataTransfer();
+    transfer.setData('application/x-alfyai-conversation', targetConversationId);
+    transfer.setData('text/plain', targetConversationId);
+    return transfer;
+  }, { targetConversationId: conversationId });
+}
 
 test.describe('Conversation CRUD operations', () => {
   test.beforeEach(async ({ page }) => {
@@ -110,27 +119,24 @@ test.describe('Conversation CRUD operations', () => {
   });
 
   test('drags a conversation into a project folder', async ({ page }) => {
-    await createConversation(page, 'Project drag conversation');
+    const conversationId = await createConversation(page, 'Project drag conversation');
     await ensureSidebarExpanded(page);
 
     const createProjectButton = page.getByRole('button', { name: 'Create new project' }).first();
     await createProjectButton.click();
 
-    const projectName = 'Project Drag Target';
+    const projectName = `Project Drag Target ${Date.now()}`;
     const projectInput = page.getByPlaceholder('Project name');
     await expect(projectInput).toBeVisible();
     await projectInput.fill(projectName);
     await projectInput.press('Enter');
 
-    const conversationItem = page.getByTestId('conversation-item').first();
+    const conversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
     const projectTarget = page.getByTestId('project-drop-target').filter({ hasText: projectName }).first();
 
     await expect(projectTarget).toBeVisible({ timeout: 10000 });
-
-    const conversationId = await conversationItem.getAttribute('data-conversation-id');
     const projectId = await projectTarget.getAttribute('data-project-id');
 
-    expect(conversationId).toBeTruthy();
     expect(projectId).toBeTruthy();
 
     const moveRequestPromise = page.waitForRequest((request) => {
@@ -140,17 +146,130 @@ test.describe('Conversation CRUD operations', () => {
       );
     });
 
-    const dataTransfer = await page.evaluateHandle(({ targetConversationId }) => {
-      const transfer = new DataTransfer();
-      transfer.setData('application/x-alfyai-conversation', targetConversationId);
-      transfer.setData('text/plain', targetConversationId);
-      return transfer;
-    }, { targetConversationId: conversationId });
+    const dataTransfer = await createConversationTransfer(page, conversationId!);
     await projectTarget.dispatchEvent('dragover', { dataTransfer });
     await projectTarget.dispatchEvent('drop', { dataTransfer });
 
     const moveRequest = await moveRequestPromise;
     expect(moveRequest.postDataJSON()).toEqual({ projectId });
+  });
+
+  test('moves a conversation from one project folder into another', async ({ page }) => {
+    const conversationId = await createConversation(page, 'Cross project drag conversation');
+    await ensureSidebarExpanded(page);
+
+    const createProjectButton = page.getByRole('button', { name: 'Create new project' }).first();
+    await createProjectButton.click();
+
+    const uniqueSuffix = Date.now();
+    const firstProjectName = `First Drag Project ${uniqueSuffix}`;
+    const projectInput = page.getByPlaceholder('Project name');
+    await expect(projectInput).toBeVisible();
+    await projectInput.fill(firstProjectName);
+    await projectInput.press('Enter');
+
+    await createProjectButton.click();
+    await expect(projectInput).toBeVisible();
+    const secondProjectName = `Second Drag Project ${uniqueSuffix}`;
+    await projectInput.fill(secondProjectName);
+    await projectInput.press('Enter');
+
+    const firstProjectTarget = page.getByTestId('project-drop-target').filter({ hasText: firstProjectName }).first();
+    const secondProjectTarget = page.getByTestId('project-drop-target').filter({ hasText: secondProjectName }).first();
+    const conversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
+
+    const firstProjectId = await firstProjectTarget.getAttribute('data-project-id');
+    const secondProjectId = await secondProjectTarget.getAttribute('data-project-id');
+
+    expect(firstProjectId).toBeTruthy();
+    expect(secondProjectId).toBeTruthy();
+
+    const firstMoveRequestPromise = page.waitForRequest((request) => {
+      return (
+        request.method() === 'PATCH' &&
+        request.url().includes(`/api/conversations/${conversationId}`)
+      );
+    });
+
+    const firstTransfer = await createConversationTransfer(page, conversationId!);
+    await firstProjectTarget.dispatchEvent('dragover', { dataTransfer: firstTransfer });
+    await firstProjectTarget.dispatchEvent('drop', { dataTransfer: firstTransfer });
+
+    const firstMoveRequest = await firstMoveRequestPromise;
+    expect(firstMoveRequest.postDataJSON()).toEqual({ projectId: firstProjectId });
+
+    const movedConversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
+
+    const secondMoveRequestPromise = page.waitForRequest((request) => {
+      return (
+        request.method() === 'PATCH' &&
+        request.url().includes(`/api/conversations/${conversationId}`)
+      );
+    });
+
+    const secondTransfer = await createConversationTransfer(page, conversationId!);
+    await movedConversationItem.dispatchEvent('dragstart', { dataTransfer: secondTransfer });
+    await secondProjectTarget.dispatchEvent('dragover', { dataTransfer: secondTransfer });
+    await secondProjectTarget.dispatchEvent('drop', { dataTransfer: secondTransfer });
+    await movedConversationItem.dispatchEvent('dragend', { dataTransfer: secondTransfer });
+
+    const secondMoveRequest = await secondMoveRequestPromise;
+    expect(secondMoveRequest.postDataJSON()).toEqual({ projectId: secondProjectId });
+  });
+
+  test('moves a conversation from a project back to unorganized', async ({ page }) => {
+    const conversationId = await createConversation(page, 'Return to unorganized conversation');
+    await ensureSidebarExpanded(page);
+
+    const createProjectButton = page.getByRole('button', { name: 'Create new project' }).first();
+    await createProjectButton.click();
+
+    const projectName = `Temporary Project ${Date.now()}`;
+    const projectInput = page.getByPlaceholder('Project name');
+    await expect(projectInput).toBeVisible();
+    await projectInput.fill(projectName);
+    await projectInput.press('Enter');
+
+    const projectTarget = page.getByTestId('project-drop-target').filter({ hasText: projectName }).first();
+    const unorganizedTarget = page.getByTestId('unorganized-drop-target');
+    const conversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
+
+    const projectId = await projectTarget.getAttribute('data-project-id');
+
+    expect(projectId).toBeTruthy();
+
+    const moveIntoProjectRequestPromise = page.waitForRequest((request) => {
+      return (
+        request.method() === 'PATCH' &&
+        request.url().includes(`/api/conversations/${conversationId}`)
+      );
+    });
+
+    const intoProjectTransfer = await createConversationTransfer(page, conversationId!);
+    await projectTarget.dispatchEvent('dragover', { dataTransfer: intoProjectTransfer });
+    await projectTarget.dispatchEvent('drop', { dataTransfer: intoProjectTransfer });
+
+    const moveIntoProjectRequest = await moveIntoProjectRequestPromise;
+    expect(moveIntoProjectRequest.postDataJSON()).toEqual({ projectId });
+
+    const movedConversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
+    await expect(unorganizedTarget).toContainText('Unorganized');
+
+    const moveBackRequestPromise = page.waitForRequest((request) => {
+      return (
+        request.method() === 'PATCH' &&
+        request.url().includes(`/api/conversations/${conversationId}`)
+      );
+    });
+
+    const backTransfer = await createConversationTransfer(page, conversationId!);
+    await movedConversationItem.dispatchEvent('dragstart', { dataTransfer: backTransfer });
+    await unorganizedTarget.dispatchEvent('dragover', { dataTransfer: backTransfer });
+    await unorganizedTarget.dispatchEvent('drop', { dataTransfer: backTransfer });
+    await movedConversationItem.dispatchEvent('dragend', { dataTransfer: backTransfer });
+
+    const moveBackRequest = await moveBackRequestPromise;
+    expect(moveBackRequest.postDataJSON()).toEqual({ projectId: null });
   });
 
   test('keeps only one sidebar options menu open at a time', async ({ page }) => {
