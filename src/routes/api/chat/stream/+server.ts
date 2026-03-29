@@ -234,6 +234,14 @@ export const POST: RequestHandler = async (event) => {
         | import("$lib/types").ContextDebugState
         | null
         | undefined;
+      let latestHonchoContext:
+        | import("$lib/types").HonchoContextInfo
+        | null
+        | undefined;
+      let latestHonchoSnapshot:
+        | import("$lib/types").HonchoContextSnapshot
+        | null
+        | undefined;
       let initialContextStatus:
         | import("$lib/types").ConversationContextStatus
         | undefined;
@@ -348,6 +356,8 @@ export const POST: RequestHandler = async (event) => {
                   generationTimeMs: genTimeMs,
                 },
                 continuitySource: "stream",
+                honchoContext: latestHonchoContext,
+                honchoSnapshot: latestHonchoSnapshot,
               }).then((turnState) => {
                 latestActiveWorkingSet = turnState.activeWorkingSet;
                 latestTaskState = turnState.taskState;
@@ -484,6 +494,8 @@ export const POST: RequestHandler = async (event) => {
             initialTaskState = latestTaskState;
             latestContextDebug = fallbackResponse.contextDebug ?? null;
             initialContextDebug = latestContextDebug;
+            latestHonchoContext = fallbackResponse.honchoContext ?? null;
+            latestHonchoSnapshot = fallbackResponse.honchoSnapshot ?? null;
 
             if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
               return null;
@@ -519,6 +531,8 @@ export const POST: RequestHandler = async (event) => {
             initialTaskState = latestTaskState;
             latestContextDebug = langflowResponse.contextDebug ?? null;
             initialContextDebug = latestContextDebug;
+            latestHonchoContext = langflowResponse.honchoContext ?? null;
+            latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
 
             if (!(await emitResolvedAssistantText(langflowResponse.text ?? ""))) {
               return;
@@ -562,6 +576,8 @@ export const POST: RequestHandler = async (event) => {
               () => null,
             ));
           initialContextDebug = latestContextDebug;
+          latestHonchoContext = langflowResponse.honchoContext ?? null;
+          latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
           console.log("[STREAM] Upstream stream connected", { conversationId });
           let upstreamEventCount = 0;
 

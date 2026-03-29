@@ -176,6 +176,8 @@ Notes before the tables:
 | `HONCHO_API_KEY` | No | empty | API key for the Honcho service | Set it if your Honcho deployment requires auth | Empty is valid for unauthenticated local deployments |
 | `HONCHO_BASE_URL` | No | `http://localhost:8000` | Base URL for the Honcho service | Set it when Honcho runs on another host or port | Must be reachable from the app server |
 | `HONCHO_WORKSPACE` | No | `alfyai-prod` | Workspace namespace used inside Honcho | Set it per environment or tenant | Keep production and test workspaces separate |
+| `HONCHO_CONTEXT_WAIT_MS` | No | `3000` | Maximum time the app waits for Honcho queue/context reads before falling back | Raise it if you prefer richer Honcho context over faster first-byte time | Can also be overridden in admin config |
+| `HONCHO_CONTEXT_POLL_INTERVAL_MS` | No | `250` | Poll interval used while waiting for Honcho queue work to settle | Lower it if you want more responsive queue checks | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 
 ### Deployment And Runtime Wrapper Variables
@@ -194,6 +196,7 @@ Notes before the tables:
 - On Linux, document extraction quality improves if `poppler-utils`, `unzip`, and `binutils` are installed.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
+- Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
 
 ## Testing And Verification

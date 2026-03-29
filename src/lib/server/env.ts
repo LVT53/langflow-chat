@@ -40,6 +40,8 @@ interface Config {
   honchoBaseUrl: string;
   honchoWorkspace: string;
   honchoEnabled: boolean;
+  honchoContextWaitMs: number;
+  honchoContextPollIntervalMs: number;
   memoryMaintenanceIntervalMinutes: number;
 }
 
@@ -111,6 +113,14 @@ function readConfig(): Config {
     honchoBaseUrl: process.env.HONCHO_BASE_URL || 'http://localhost:8000',
     honchoWorkspace: process.env.HONCHO_WORKSPACE || 'alfyai-prod',
     honchoEnabled: process.env.HONCHO_ENABLED === 'true',
+    honchoContextWaitMs: Math.max(
+      0,
+      parseInt(process.env.HONCHO_CONTEXT_WAIT_MS || '3000', 10) || 3000
+    ),
+    honchoContextPollIntervalMs: Math.max(
+      50,
+      parseInt(process.env.HONCHO_CONTEXT_POLL_INTERVAL_MS || '250', 10) || 250
+    ),
     memoryMaintenanceIntervalMinutes: Math.max(
       0,
       parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES || '0', 10) || 0

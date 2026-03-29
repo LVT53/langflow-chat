@@ -1,6 +1,8 @@
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
 	ModelId,
 	TaskState,
 	ToolCallEntry,
@@ -69,6 +71,8 @@ export type PersistAssistantTurnStateParams = {
 	contextStatus?: ConversationContextStatus | null;
 	initialTaskState?: TaskState | null;
 	initialContextDebug?: ContextDebugState | null;
+	honchoContext?: HonchoContextInfo | null;
+	honchoSnapshot?: HonchoContextSnapshot | null;
 	userMessageId?: string | null;
 	assistantMessageId: string;
 	analytics?: AssistantAnalytics | null;

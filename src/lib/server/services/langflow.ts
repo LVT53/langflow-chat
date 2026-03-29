@@ -123,6 +123,8 @@ export async function sendMessage(
   contextStatus?: import('$lib/types').ConversationContextStatus;
   taskState?: import('$lib/types').TaskState | null;
   contextDebug?: import('$lib/types').ContextDebugState | null;
+  honchoContext?: import('$lib/types').HonchoContextInfo | null;
+  honchoSnapshot?: import('$lib/types').HonchoContextSnapshot | null;
 }> {
   const config = getConfig();
   const controller = new AbortController();
@@ -140,6 +142,8 @@ export async function sendMessage(
     let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
     let taskState: import('$lib/types').TaskState | null | undefined;
     let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
+    let honchoContext: import('$lib/types').HonchoContextInfo | null | undefined;
+    let honchoSnapshot: import('$lib/types').HonchoContextSnapshot | null | undefined;
     if (userId) {
       const constructed = await buildConstructedContext({
         userId,
@@ -152,6 +156,8 @@ export async function sendMessage(
       contextStatus = constructed.contextStatus;
       taskState = constructed.taskState;
       contextDebug = constructed.contextDebug;
+      honchoContext = constructed.honchoContext;
+      honchoSnapshot = constructed.honchoSnapshot;
     }
 
     const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
@@ -227,7 +233,7 @@ export async function sendMessage(
     const rawResponse: LangflowRunResponse = await response.json();
     const text = extractMessageText(rawResponse);
 
-    return { text, rawResponse, contextStatus, taskState, contextDebug };
+    return { text, rawResponse, contextStatus, taskState, contextDebug, honchoContext, honchoSnapshot };
   } catch (error) {
     throw error;
   } finally {
@@ -254,6 +260,8 @@ export async function sendMessageStream(
   contextStatus?: import('$lib/types').ConversationContextStatus;
   taskState?: import('$lib/types').TaskState | null;
   contextDebug?: import('$lib/types').ContextDebugState | null;
+  honchoContext?: import('$lib/types').HonchoContextInfo | null;
+  honchoSnapshot?: import('$lib/types').HonchoContextSnapshot | null;
 }> {
   const config = getConfig();
   const timeoutController = new AbortController();
@@ -285,6 +293,8 @@ export async function sendMessageStream(
     let contextStatus: import('$lib/types').ConversationContextStatus | undefined;
     let taskState: import('$lib/types').TaskState | null | undefined;
     let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
+    let honchoContext: import('$lib/types').HonchoContextInfo | null | undefined;
+    let honchoSnapshot: import('$lib/types').HonchoContextSnapshot | null | undefined;
     if (options?.userId) {
       const constructed = await buildConstructedContext({
         userId: options.userId,
@@ -297,6 +307,8 @@ export async function sendMessageStream(
       contextStatus = constructed.contextStatus;
       taskState = constructed.taskState;
       contextDebug = constructed.contextDebug;
+      honchoContext = constructed.honchoContext;
+      honchoSnapshot = constructed.honchoSnapshot;
     }
 
     const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
@@ -398,7 +410,7 @@ export async function sendMessageStream(
         contentType,
         textLength: text.length,
       });
-      return { text, rawResponse, contextStatus, taskState, contextDebug };
+      return { text, rawResponse, contextStatus, taskState, contextDebug, honchoContext, honchoSnapshot };
     }
 
     if (!response.body) {
@@ -406,7 +418,14 @@ export async function sendMessageStream(
       throw new Error('Response body is empty');
     }
 
-    return { stream: response.body as ReadableStream<Uint8Array>, contextStatus, taskState, contextDebug };
+    return {
+      stream: response.body as ReadableStream<Uint8Array>,
+      contextStatus,
+      taskState,
+      contextDebug,
+      honchoContext,
+      honchoSnapshot,
+    };
   } catch (error) {
     if (connectTimedOut) {
       const timeoutError = new Error(

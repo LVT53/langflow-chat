@@ -42,6 +42,8 @@ import {
 import type {
 	Artifact,
 	ChatMessage,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
 	ConversationContextStatus,
 	ContextDebugState,
 } from '$lib/types';
@@ -60,7 +62,7 @@ import {
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
 import { buildPersonaPromptContext } from './persona-memory';
-import { listMessages } from './messages';
+import { getLatestHonchoMetadata, listMessages } from './messages';
 
 let client: Honcho | null = null;
 
@@ -69,7 +71,7 @@ const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
-const HONCHO_CONTEXT_TIMEOUT_MS = 1500;
+const HONCHO_LIVE_CONTEXT_TOKENS = 3000;
 
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
@@ -361,41 +363,6 @@ type PersonaMemoryAttributionCandidate = Pick<
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function withTimeoutFallback<T>(
-	promise: Promise<T>,
-	params: {
-		timeoutMs?: number;
-		fallback: T;
-		label: string;
-		conversationId?: string;
-		userId?: string;
-	}
-): Promise<T> {
-	const timeoutMs = Math.max(1, params.timeoutMs ?? HONCHO_CONTEXT_TIMEOUT_MS);
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<T>((resolve) => {
-				timeoutId = setTimeout(() => {
-					console.warn('[CONTEXT] Timed out waiting for Honcho context', {
-						label: params.label,
-						conversationId: params.conversationId,
-						userId: params.userId,
-						timeoutMs,
-					});
-					resolve(params.fallback);
-				}, timeoutMs);
-			}),
-		]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	}
 }
 
 export function selectPersonaMemoryAttributionCandidates(params: {
@@ -715,12 +682,6 @@ export async function deleteAllHonchoStateForUser(userId: string): Promise<void>
 	clearHonchoCaches({ userId });
 }
 
-async function getSessionMessages(session: Session): Promise<Message[]> {
-	const page = await session.messages();
-	const all = await page.toArray();
-	return all.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-}
-
 type PromptContextMessage = {
 	role: 'user' | 'assistant';
 	content: string;
@@ -756,116 +717,325 @@ async function loadFallbackPromptContextMessages(
 	return mapStoredMessagesToPromptContext(await listMessages(conversationId));
 }
 
+type TimedResolution<T> = {
+	value: T | null;
+	timedOut: boolean;
+	error: unknown | null;
+};
+
+type LoadedSessionPromptContext = {
+	sessionMessages: PromptContextMessage[];
+	summary: string | null;
+	peerContext: string;
+	honchoContext: HonchoContextInfo | null;
+	honchoSnapshot: HonchoContextSnapshot | null;
+};
+
+type HonchoQueueObservation = {
+	pendingWorkUnits: number;
+	inProgressWorkUnits: number;
+	waitedMs: number;
+	timedOut: boolean;
+};
+
+function mapSnapshotMessagesToPromptContext(
+	messages: HonchoContextSnapshot['messages']
+): PromptContextMessage[] {
+	return messages
+		.map((message) => ({
+			role: message.role,
+			content: message.content,
+			createdAt: message.createdAt,
+		}))
+		.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function createHonchoSnapshot(params: {
+	summary: string | null;
+	messages: PromptContextMessage[];
+}): HonchoContextSnapshot | null {
+	const normalizedMessages = params.messages
+		.filter((message) => message.content.trim())
+		.map((message) => ({
+			role: message.role,
+			content: message.content,
+			createdAt: message.createdAt,
+		}));
+	const summary = params.summary?.trim() ? params.summary.trim() : null;
+
+	if (normalizedMessages.length === 0 && !summary) {
+		return null;
+	}
+
+	return {
+		createdAt: Date.now(),
+		summary,
+		messages: normalizedMessages,
+	};
+}
+
+async function resolveWithTimeout<T>(
+	promise: Promise<T>,
+	params: {
+		timeoutMs?: number;
+		label: string;
+		conversationId?: string;
+		userId?: string;
+	}
+): Promise<TimedResolution<T>> {
+	const timeoutMs = Math.max(1, params.timeoutMs ?? getConfig().honchoContextWaitMs);
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+	try {
+		const outcome = await Promise.race([
+			promise
+				.then((value) => ({ kind: 'value' as const, value }))
+				.catch((error) => ({ kind: 'error' as const, error })),
+			new Promise<{ kind: 'timeout' }>((resolve) => {
+				timeoutId = setTimeout(() => resolve({ kind: 'timeout' }), timeoutMs);
+			}),
+		]);
+
+		if (outcome.kind === 'value') {
+			return { value: outcome.value, timedOut: false, error: null };
+		}
+
+		if (outcome.kind === 'error') {
+			return { value: null, timedOut: false, error: outcome.error };
+		}
+
+		console.warn('[CONTEXT] Timed out waiting for Honcho context', {
+			label: params.label,
+			conversationId: params.conversationId,
+			userId: params.userId,
+			timeoutMs,
+		});
+		return { value: null, timedOut: true, error: null };
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+	}
+}
+
+async function loadPersonaContext(params: {
+	userId: string;
+	conversationId: string;
+	message: string;
+}): Promise<string> {
+	const result = await resolveWithTimeout(
+		buildPersonaPromptContext(params.userId, params.message),
+		{
+			label: 'persona prompt context',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		}
+	);
+
+	return typeof result.value === 'string' ? result.value : '';
+}
+
+async function waitForHonchoQueue(params: {
+	session: Session;
+	conversationId: string;
+	userId: string;
+}): Promise<HonchoQueueObservation> {
+	const config = getConfig();
+	const waitBudgetMs = Math.max(0, config.honchoContextWaitMs);
+	const pollIntervalMs = Math.max(50, config.honchoContextPollIntervalMs);
+	const queueProbeTimeoutMs = Math.max(500, Math.min(waitBudgetMs || 500, pollIntervalMs * 2));
+	const startedAt = Date.now();
+	let pendingWorkUnits = 0;
+	let inProgressWorkUnits = 0;
+
+	if (waitBudgetMs === 0) {
+		return {
+			pendingWorkUnits,
+			inProgressWorkUnits,
+			waitedMs: 0,
+			timedOut: false,
+		};
+	}
+
+	while (true) {
+		const queueResult = await resolveWithTimeout(params.session.queueStatus(), {
+			timeoutMs: queueProbeTimeoutMs,
+			label: 'Honcho session queue status',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		});
+
+		if (!queueResult.value) {
+			return {
+				pendingWorkUnits,
+				inProgressWorkUnits,
+				waitedMs: Date.now() - startedAt,
+				timedOut: queueResult.timedOut,
+			};
+		}
+
+		pendingWorkUnits = queueResult.value.pendingWorkUnits ?? 0;
+		inProgressWorkUnits = queueResult.value.inProgressWorkUnits ?? 0;
+
+		if (pendingWorkUnits <= 0 && inProgressWorkUnits <= 0) {
+			return {
+				pendingWorkUnits,
+				inProgressWorkUnits,
+				waitedMs: Date.now() - startedAt,
+				timedOut: false,
+			};
+		}
+
+		const elapsedMs = Date.now() - startedAt;
+		if (elapsedMs >= waitBudgetMs) {
+			return {
+				pendingWorkUnits,
+				inProgressWorkUnits,
+				waitedMs: elapsedMs,
+				timedOut: true,
+			};
+		}
+
+		await sleep(Math.min(pollIntervalMs, waitBudgetMs - elapsedMs));
+	}
+}
+
 async function loadSessionPromptContext(params: {
 	userId: string;
 	conversationId: string;
 	message: string;
-}): Promise<{
-	sessionMessages: PromptContextMessage[];
-	summaries: Awaited<ReturnType<Session['summaries']>> | null;
-	searchedMessages: PromptContextMessage[];
-	peerContext: string;
-}> {
+}): Promise<LoadedSessionPromptContext> {
+	const [fallbackSessionMessages, latestHonchoMetadata] = await Promise.all([
+		loadFallbackPromptContextMessages(params.conversationId).catch(() => []),
+		getLatestHonchoMetadata(params.conversationId).catch(() => ({
+			honchoContext: null,
+			honchoSnapshot: null,
+		})),
+	]);
+
 	if (!isHonchoEnabled()) {
 		return {
-			sessionMessages: await loadFallbackPromptContextMessages(params.conversationId).catch(
-				() => []
-			),
-			summaries: null,
-			searchedMessages: [],
+			sessionMessages: fallbackSessionMessages,
+			summary: null,
 			peerContext: '',
+			honchoContext: null,
+			honchoSnapshot: latestHonchoMetadata.honchoSnapshot,
 		};
 	}
 
-	const fallbackSessionMessages = await loadFallbackPromptContextMessages(
-		params.conversationId
-	).catch(() => []);
-	const loadPersonaContext = () =>
-		withTimeoutFallback(buildPersonaPromptContext(params.userId, params.message).catch(() => ''), {
-			fallback: '',
-			label: 'persona prompt context',
-			conversationId: params.conversationId,
-			userId: params.userId,
-		});
-
-	// A brand-new conversation has no useful Honcho session history yet. Avoid blocking the
-	// first turn on empty-session reads and build from the current message plus durable memory.
-	if (fallbackSessionMessages.length === 0) {
-		return {
-			sessionMessages: [],
-			summaries: null,
-			searchedMessages: [],
-			peerContext: await loadPersonaContext(),
-		};
-	}
-
-	try {
-		const session = await withTimeoutFallback(getSession(params.userId, params.conversationId), {
-			fallback: null,
-			label: 'Honcho session bootstrap',
-			conversationId: params.conversationId,
-			userId: params.userId,
-		});
-		if (!session) {
-			return {
-				sessionMessages: fallbackSessionMessages,
-				summaries: null,
-				searchedMessages: [],
-				peerContext: await loadPersonaContext(),
-			};
-		}
-		const [sessionMessages, summaries, searchedMessages, peerContext] = await Promise.all([
-			withTimeoutFallback(
-				getSessionMessages(session)
-					.then((messages) => mapHonchoMessagesToPromptContext(messages, params.userId))
-					.catch(() => fallbackSessionMessages),
-				{
-					fallback: fallbackSessionMessages,
-					label: 'Honcho session messages',
-					conversationId: params.conversationId,
-					userId: params.userId,
-				}
-			),
-			withTimeoutFallback(session.summaries().catch(() => null), {
-				fallback: null,
-				label: 'Honcho session summaries',
-				conversationId: params.conversationId,
-				userId: params.userId,
-			}),
-			withTimeoutFallback(
-				session
-					.search(params.message, { limit: 4 })
-					.then((messages) => mapHonchoMessagesToPromptContext(messages, params.userId))
-					.catch(() => []),
-				{
-					fallback: [],
-					label: 'Honcho session search',
-					conversationId: params.conversationId,
-					userId: params.userId,
-				}
-			),
-			loadPersonaContext(),
-		]);
+	const startedAt = Date.now();
+	const fallbackToStoredContext = async (
+		source: HonchoContextInfo['source'],
+		fallbackReason: HonchoContextInfo['fallbackReason'],
+		queueObservation?: Partial<HonchoQueueObservation>
+	): Promise<LoadedSessionPromptContext> => {
+		const snapshot = latestHonchoMetadata.honchoSnapshot;
+		const sessionMessages = snapshot
+			? mapSnapshotMessagesToPromptContext(snapshot.messages)
+			: fallbackSessionMessages;
+		const summary = snapshot?.summary ?? null;
+		const peerContext = await loadPersonaContext(params);
+		const waitedMs = Date.now() - startedAt;
 
 		return {
 			sessionMessages,
-			summaries,
-			searchedMessages,
+			summary,
 			peerContext,
+			honchoContext: {
+				source,
+				waitedMs,
+				queuePendingWorkUnits: queueObservation?.pendingWorkUnits ?? 0,
+				queueInProgressWorkUnits: queueObservation?.inProgressWorkUnits ?? 0,
+				fallbackReason,
+				snapshotCreatedAt: snapshot?.createdAt ?? null,
+			},
+			honchoSnapshot: snapshot,
 		};
-	} catch (error) {
-		console.warn('[CONTEXT] Honcho context unavailable, falling back to persisted messages', {
+	};
+
+	const sessionResult = await resolveWithTimeout(
+		getSession(params.userId, params.conversationId),
+		{
+			label: 'Honcho session bootstrap',
 			conversationId: params.conversationId,
 			userId: params.userId,
-			message: error instanceof Error ? error.message : String(error),
-		});
-		return {
-			sessionMessages: fallbackSessionMessages,
-			summaries: null,
-			searchedMessages: [],
-			peerContext: await loadPersonaContext(),
-		};
+		}
+	);
+
+	if (!sessionResult.value) {
+		return fallbackToStoredContext(
+			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
+			sessionResult.timedOut ? 'timeout' : 'context_error'
+		);
 	}
+
+	const queueObservation = await waitForHonchoQueue({
+		session: sessionResult.value,
+		conversationId: params.conversationId,
+		userId: params.userId,
+	});
+
+	const liveContextResult = await resolveWithTimeout(
+		sessionResult.value.context({
+			summary: true,
+			searchQuery: params.message,
+			tokens: HONCHO_LIVE_CONTEXT_TOKENS,
+		}),
+		{
+			label: 'Honcho session context',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		}
+	);
+
+	if (!liveContextResult.value) {
+		return fallbackToStoredContext(
+			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
+			queueObservation.timedOut || liveContextResult.timedOut
+				? queueObservation.timedOut
+					? 'queue_timeout'
+					: 'timeout'
+				: 'context_error',
+			queueObservation
+		);
+	}
+
+	const sessionMessages = mapHonchoMessagesToPromptContext(
+		liveContextResult.value.messages,
+		params.userId
+	);
+	const summary = liveContextResult.value.summary?.content?.trim()
+		? liveContextResult.value.summary.content.trim()
+		: null;
+
+	if (sessionMessages.length === 0 && !summary) {
+		return fallbackToStoredContext(
+			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
+			'empty_live_context',
+			queueObservation
+		);
+	}
+
+	const peerContext = await loadPersonaContext(params);
+	const honchoSnapshot = createHonchoSnapshot({
+		summary,
+		messages: sessionMessages,
+	});
+
+	return {
+		sessionMessages,
+		summary,
+		peerContext,
+		honchoContext: {
+			source: 'live',
+			waitedMs: Date.now() - startedAt,
+			queuePendingWorkUnits: queueObservation.pendingWorkUnits,
+			queueInProgressWorkUnits: queueObservation.inProgressWorkUnits,
+			fallbackReason: null,
+			snapshotCreatedAt: honchoSnapshot?.createdAt ?? null,
+		},
+		honchoSnapshot,
+	};
 }
 
 async function getPeerContextString(userId: string, query: string): Promise<string> {
@@ -889,6 +1059,8 @@ export async function buildConstructedContext(params: {
 	contextStatus: ConversationContextStatus;
 	taskState: import('$lib/types').TaskState | null;
 	contextDebug: ContextDebugState | null;
+	honchoContext: HonchoContextInfo | null;
+	honchoSnapshot: HonchoContextSnapshot | null;
 }> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const [
@@ -916,9 +1088,10 @@ export async function buildConstructedContext(params: {
 		]);
 	const {
 		sessionMessages,
-		summaries,
-		searchedMessages,
+		summary: sessionSummary,
 		peerContext,
+		honchoContext,
+		honchoSnapshot,
 	} = sessionContext;
 	const currentAttachments = resolvedAttachments.promptArtifacts;
 	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
@@ -986,6 +1159,10 @@ export async function buildConstructedContext(params: {
 	);
 	const recentTurnCount = recentTurns.length;
 	const recentTurnMessages = recentTurns.flatMap((turn) => turn.messages);
+	const sessionContextMessages =
+		honchoContext?.source === 'persisted_fallback'
+			? recentTurnMessages
+			: sessionMessages;
 	const sections: PromptContextSection[] = [];
 
 	if (taskState) {
@@ -1065,24 +1242,23 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
-	const longSummary = summaries?.longSummary?.content ?? summaries?.shortSummary?.content ?? '';
-	if (longSummary.trim()) {
+	if (sessionSummary?.trim()) {
 		sections.push({
 			title: 'Session Summary',
-			body: truncateToTokenBudget(longSummary, 1600),
+			body: truncateToTokenBudget(sessionSummary, 1600),
 			layer: 'session',
 			llmCompactible: true,
 		});
 	}
 
-	if (sessionMessages.length > 0) {
+	if (sessionContextMessages.length > 0) {
 		sections.push({
-			title: 'Recent Session Turns',
+			title: 'Honcho Session Context',
 			body: serializeRoleMessages(
-				recentTurnMessages,
+				sessionContextMessages,
 				(message) => message.role,
 				(message) => message.content,
-				recentTurnMessages.length
+				sessionContextMessages.length
 			),
 			layer: 'session',
 			essential: true,
@@ -1094,22 +1270,6 @@ export async function buildConstructedContext(params: {
 		sections.push({
 			title: 'User Memory',
 			body: truncateToTokenBudget(peerContext, 1400),
-			layer: 'session',
-			llmCompactible: true,
-		});
-	}
-
-	if (searchedMessages.length > 0) {
-		sections.push({
-			title: 'Relevant Session Recalls',
-			body: truncateToTokenBudget(
-				serializeRoleMessages(
-					searchedMessages,
-					(message) => message.role,
-					(message) => message.content
-				),
-				1000
-			),
 			layer: 'session',
 			llmCompactible: true,
 		});
@@ -1194,7 +1354,7 @@ export async function buildConstructedContext(params: {
 		taskStateApplied: Boolean(taskState),
 		promptArtifactCount: promptArtifacts.size,
 		recentTurnCount,
-		summary: longSummary || null,
+		summary: sessionSummary || null,
 	});
 
 	return {
@@ -1202,6 +1362,8 @@ export async function buildConstructedContext(params: {
 		contextStatus: status,
 		taskState,
 		contextDebug: await getContextDebugState(params.userId, params.conversationId).catch(() => null),
+		honchoContext,
+		honchoSnapshot,
 	};
 }
 

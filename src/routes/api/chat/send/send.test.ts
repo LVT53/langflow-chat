@@ -16,6 +16,7 @@ vi.mock('$lib/server/services/langflow', () => ({
 vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn(),
 	updateMessageEvidence: vi.fn(async () => undefined),
+	updateMessageHonchoMetadata: vi.fn(async () => undefined),
 }));
 
 vi.mock('$lib/server/services/knowledge', () => ({
@@ -75,7 +76,7 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import { createMessage } from '$lib/server/services/messages';
+import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import {
@@ -88,6 +89,7 @@ const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
+const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
@@ -127,7 +129,38 @@ describe('POST /api/chat/send', () => {
 	it('returns AI response text for a valid request', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
-		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {}, contextStatus: undefined });
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'Hello', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg',
+				role: 'assistant',
+				content: 'Hello from AI!',
+				timestamp: Date.now(),
+			});
+		mockSendMessage.mockResolvedValue({
+			text: 'Hello from AI!',
+			rawResponse: {},
+			contextStatus: undefined,
+			honchoContext: {
+				source: 'live',
+				waitedMs: 25,
+				queuePendingWorkUnits: 0,
+				queueInProgressWorkUnits: 0,
+				fallbackReason: null,
+				snapshotCreatedAt: 123,
+			},
+			honchoSnapshot: {
+				createdAt: 123,
+				summary: 'Latest Honcho summary',
+				messages: [
+					{
+						role: 'assistant',
+						content: 'Hello from AI!',
+						createdAt: Date.now(),
+					},
+				],
+			},
+		});
 
 		const event = makeEvent({ message: 'Hello', conversationId: 'conv-1' });
 		const response = await POST(event);
@@ -138,6 +171,10 @@ describe('POST /api/chat/send', () => {
 		expect(data.conversationId).toBe('conv-1');
 		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1', undefined, 'user-1', {
 			attachmentIds: []
+		});
+		expect(mockUpdateMessageHonchoMetadata).toHaveBeenCalledWith('assistant-msg', {
+			honchoContext: expect.objectContaining({ source: 'live' }),
+			honchoSnapshot: expect.objectContaining({ summary: 'Latest Honcho summary' }),
 		});
 	});
 

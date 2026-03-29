@@ -46,6 +46,8 @@ const { mockRuntimeConfig } = vi.hoisted(() => ({
     honchoBaseUrl: 'http://localhost:8000',
     honchoWorkspace: 'test-workspace',
     honchoEnabled: false,
+    honchoContextWaitMs: 3000,
+    honchoContextPollIntervalMs: 250,
     memoryMaintenanceIntervalMinutes: 0,
   },
 }));
@@ -95,6 +97,8 @@ vi.mock('../env', () => ({
     honchoBaseUrl: 'http://localhost:8000',
     honchoWorkspace: 'test-workspace',
     honchoEnabled: false,
+    honchoContextWaitMs: 3000,
+    honchoContextPollIntervalMs: 250,
   },
 }));
 
@@ -131,6 +135,8 @@ vi.mock('./honcho', () => ({
     },
     taskState: null,
     contextDebug: null,
+    honchoContext: null,
+    honchoSnapshot: null,
   })),
   buildEnhancedSystemPrompt: vi.fn(async () => 'You are a helpful AI assistant.'),
 }));
@@ -244,9 +250,11 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         text: 'AI response',
         contextStatus: undefined,
+        honchoContext: undefined,
+        honchoSnapshot: undefined,
         rawResponse: {
           outputs: [{
             outputs: [{
@@ -332,6 +340,8 @@ describe('Langflow API Client Service', () => {
         contextStatus: null as any,
         taskState: null,
         contextDebug: null,
+        honchoContext: null,
+        honchoSnapshot: null,
       });
 
       const result = await sendMessage('Hello', 'test-session', undefined, 'user-1', {
@@ -528,6 +538,8 @@ describe('Langflow API Client Service', () => {
         contextStatus: null as any,
         taskState: null,
         contextDebug: null,
+        honchoContext: null,
+        honchoSnapshot: null,
       });
 
       const result = await sendMessageStream('Hello', 'test-session', undefined, {

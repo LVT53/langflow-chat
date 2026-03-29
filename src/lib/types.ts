@@ -186,6 +186,7 @@ export interface ChatMessage {
   modelDisplayName?: string;
   evidenceSummary?: MessageEvidenceSummary;
   evidencePending?: boolean;
+  honchoContext?: HonchoContextInfo;
 }
 
 export type ArtifactType =
@@ -442,6 +443,35 @@ export interface ContextDebugEvidenceSummaryItem {
   count: number;
 }
 
+export type HonchoContextSource = 'live' | 'snapshot' | 'persisted_fallback';
+
+export type HonchoFallbackReason =
+  | 'timeout'
+  | 'queue_timeout'
+  | 'context_error'
+  | 'empty_live_context';
+
+export interface HonchoContextInfo {
+  source: HonchoContextSource;
+  waitedMs: number;
+  queuePendingWorkUnits: number;
+  queueInProgressWorkUnits: number;
+  fallbackReason: HonchoFallbackReason | null;
+  snapshotCreatedAt: number | null;
+}
+
+export interface HonchoSnapshotMessage {
+  role: MessageRole;
+  content: string;
+  createdAt: number;
+}
+
+export interface HonchoContextSnapshot {
+  createdAt: number;
+  summary: string | null;
+  messages: HonchoSnapshotMessage[];
+}
+
 export interface ContextDebugState {
   activeTaskId: string | null;
   activeTaskObjective: string | null;
@@ -453,6 +483,7 @@ export interface ContextDebugState {
   selectedEvidenceBySource: ContextDebugEvidenceSummaryItem[];
   pinnedEvidence: ContextDebugEvidenceItem[];
   excludedEvidence: ContextDebugEvidenceItem[];
+  honcho?: HonchoContextInfo | null;
 }
 
 export type PersonaMemoryScope = 'self' | 'assistant_about_user';

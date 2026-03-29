@@ -46,12 +46,16 @@
 		TRANSLATOR_MODEL: 'Translator Model',
 		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
 		TRANSLATION_TEMPERATURE: 'Translation Temperature',
+		HONCHO_CONTEXT_WAIT_MS: 'Honcho Context Wait (ms)',
+		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
 	};
 
 	const NUMBER_KEYS = new Set([
 		'MAX_MESSAGE_LENGTH',
 		'TRANSLATION_MAX_TOKENS',
 		'TRANSLATION_TEMPERATURE',
+		'HONCHO_CONTEXT_WAIT_MS',
+		'HONCHO_CONTEXT_POLL_INTERVAL_MS',
 	]);
 
 	function placeholderFor(key: string): string {
@@ -213,6 +217,29 @@
 				{/if}
 			</span>
 		{/if}
+	</div>
+	<div class="mt-4 flex flex-col gap-3">
+		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS'] as key}
+			<div>
+				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
+				<input
+					id={key}
+					type="number"
+					class="settings-input"
+					bind:value={adminConfig[key]}
+					placeholder={placeholderFor(key)}
+				/>
+				{#if key === 'HONCHO_CONTEXT_WAIT_MS'}
+					<p class="mt-1 text-xs text-text-muted">
+						How long chat waits for live Honcho context before falling back to the last good snapshot or persisted turns.
+					</p>
+				{:else}
+					<p class="mt-1 text-xs text-text-muted">
+						How often the app polls Honcho queue status while waiting for live session context to finish deriving.
+					</p>
+				{/if}
+			</div>
+		{/each}
 	</div>
 </section>
 

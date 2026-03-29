@@ -51,6 +51,8 @@ export const POST: RequestHandler = async (event) => {
 			contextStatus,
 			taskState: initialTaskState,
 			contextDebug: initialContextDebug,
+			honchoContext,
+			honchoSnapshot,
 		} = await sendMessage(upstreamMessage, turn.conversationId, turn.modelId, user.id, {
 			attachmentIds: turn.attachmentIds,
 			attachmentTraceId: turn.attachmentTraceId,
@@ -90,6 +92,8 @@ export const POST: RequestHandler = async (event) => {
 			userMessageId: userMessage.id,
 			assistantMessageId: assistantMessage.id,
 			continuitySource: 'send',
+			honchoContext,
+			honchoSnapshot,
 		});
 		await touchConversation(user.id, turn.conversationId).catch(() => undefined);
 

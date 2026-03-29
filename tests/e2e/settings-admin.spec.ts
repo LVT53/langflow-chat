@@ -155,11 +155,13 @@ test.describe('Admin model routing settings', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setAdminOverrideViaApi(page, 'MODEL_1_COMPONENT_ID', '');
+    await setAdminOverrideViaApi(page, 'HONCHO_CONTEXT_WAIT_MS', '');
     await openAdministrationTab(page);
   });
 
   test.afterEach(async ({ page }) => {
     await setAdminOverrideViaApi(page, 'MODEL_1_COMPONENT_ID', '');
+    await setAdminOverrideViaApi(page, 'HONCHO_CONTEXT_WAIT_MS', '');
   });
 
   test('saving the model 1 component ID persists the Langflow node override', async ({ page }) => {
@@ -181,6 +183,27 @@ test.describe('Admin model routing settings', () => {
 
     await reloadAdministrationTab(page);
     await expect(page.locator('#MODEL_1_COMPONENT_ID')).toHaveValue('NemotronNode-123');
+  });
+
+  test('saving the Honcho context wait override persists the latency budget', async ({ page }) => {
+    const field = page.locator('#HONCHO_CONTEXT_WAIT_MS');
+    await field.fill('4500');
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/admin/config') &&
+          response.request().method() === 'PUT' &&
+          response.status() === 200
+      ),
+      page.getByRole('button', { name: 'Save Configuration' }).click(),
+    ]);
+
+    const savedConfig = await fetchAdminConfig(page);
+    expect(savedConfig.overrides.HONCHO_CONTEXT_WAIT_MS).toBe('4500');
+
+    await reloadAdministrationTab(page);
+    await expect(page.locator('#HONCHO_CONTEXT_WAIT_MS')).toHaveValue('4500');
   });
 });
 

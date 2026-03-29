@@ -17,6 +17,7 @@ vi.mock('$lib/server/services/langflow', () => ({
 vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn(),
 	updateMessageEvidence: vi.fn(async () => undefined),
+	updateMessageHonchoMetadata: vi.fn(async () => undefined),
 }));
 
 vi.mock('$lib/server/services/knowledge', () => ({
@@ -89,7 +90,7 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage, sendMessageStream } from '$lib/server/services/langflow';
-import { createMessage } from '$lib/server/services/messages';
+import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import { translateHungarianToEnglish } from '$lib/server/services/translator';
@@ -101,6 +102,7 @@ const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessageStream = sendMessageStream as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
+const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
@@ -131,9 +133,16 @@ function makeEvent(
 	} as any;
 }
 
-function buildSseStream(lines: string[]): ReadableStream<Uint8Array> {
+function buildSseStream(lines: string[]): {
+	stream: ReadableStream<Uint8Array>;
+	contextStatus: undefined;
+	taskState: null;
+	contextDebug: null;
+	honchoContext: null;
+	honchoSnapshot: null;
+} {
 	const encoder = new TextEncoder();
-	return new ReadableStream({
+	const stream = new ReadableStream({
 		start(controller) {
 			for (const line of lines) {
 				controller.enqueue(encoder.encode(line));
@@ -141,6 +150,14 @@ function buildSseStream(lines: string[]): ReadableStream<Uint8Array> {
 			controller.close();
 		}
 	});
+	return {
+		stream,
+		contextStatus: undefined,
+		taskState: null,
+		contextDebug: null,
+		honchoContext: null,
+		honchoSnapshot: null,
+	};
 }
 
 async function readSseResponse(response: Response): Promise<string> {
@@ -260,12 +277,41 @@ describe('POST /api/chat/stream', () => {
 	it('stream contains token events with text chunks', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'Hi', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg',
+				role: 'assistant',
+				content: 'Hello world',
+				timestamp: Date.now(),
+			});
 		mockSendMessageStream.mockResolvedValue(
-			buildSseStream([
-				'event: add_message\ndata: {"text":"Hello"}\n\n',
-				'event: add_message\ndata: {"text":" world"}\n\n',
-				'data: [DONE]\n\n'
-			])
+			{
+				...buildSseStream([
+					'event: add_message\ndata: {"text":"Hello"}\n\n',
+					'event: add_message\ndata: {"text":" world"}\n\n',
+					'data: [DONE]\n\n'
+				]),
+				honchoContext: {
+					source: 'live',
+					waitedMs: 40,
+					queuePendingWorkUnits: 0,
+					queueInProgressWorkUnits: 0,
+					fallbackReason: null,
+					snapshotCreatedAt: 999,
+				},
+				honchoSnapshot: {
+					createdAt: 999,
+					summary: 'Stream Honcho summary',
+					messages: [
+						{
+							role: 'assistant',
+							content: 'Hello world',
+							createdAt: Date.now(),
+						},
+					],
+				},
+			}
 		);
 
 		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
@@ -275,6 +321,10 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: token');
 		expect(body).toContain('"text":"Hello"');
 		expect(body).toContain('"text":" world"');
+		expect(mockUpdateMessageHonchoMetadata).toHaveBeenCalledWith('assistant-msg', {
+			honchoContext: expect.objectContaining({ source: 'live' }),
+			honchoSnapshot: expect.objectContaining({ summary: 'Stream Honcho summary' }),
+		});
 	});
 
 	it('continues processing upstream after the client disconnects during metadata loading', async () => {

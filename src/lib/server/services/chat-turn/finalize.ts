@@ -16,7 +16,10 @@ import {
 } from '$lib/server/services/knowledge';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
-import { updateMessageEvidence } from '$lib/server/services/messages';
+import {
+	updateMessageEvidence,
+	updateMessageHonchoMetadata,
+} from '$lib/server/services/messages';
 import {
 	attachContinuityToTaskState,
 	getContextDebugState,
@@ -129,6 +132,10 @@ export async function persistAssistantTurnState(
 	taskState = await attachContinuityToTaskState(params.userId, taskState ?? null).catch(
 		() => taskState ?? null
 	);
+	await updateMessageHonchoMetadata(params.assistantMessageId, {
+		honchoContext: params.honchoContext,
+		honchoSnapshot: params.honchoSnapshot,
+	}).catch(() => undefined);
 	const contextDebug = await getContextDebugState(params.userId, params.conversationId).catch(
 		() => null
 	);

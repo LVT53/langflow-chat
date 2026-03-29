@@ -16,13 +16,13 @@ const {
   mockPrepareTaskContext,
   mockRequestStructuredControlModel,
   mockSummarizeHistoricalContext,
-  mockSessionMessages,
-  mockSessionSummaries,
-  mockSessionSearch,
+  mockSessionQueueStatus,
+  mockSessionContext,
   mockSessionAddPeers,
   mockPeerContext,
   mockBuildPersonaPromptContext,
   mockListMessages,
+  mockGetLatestHonchoMetadata,
 } = vi.hoisted(() => {
   const now = Date.now();
   const mockConfig = {
@@ -30,6 +30,8 @@ const {
     honchoBaseUrl: 'http://localhost:8000',
     honchoWorkspace: 'test-workspace',
     honchoEnabled: false,
+    honchoContextWaitMs: 3000,
+    honchoContextPollIntervalMs: 250,
   };
   const mockDisplayArtifact = {
     id: 'source-attachment-1',
@@ -106,13 +108,24 @@ const {
     })),
     mockRequestStructuredControlModel: vi.fn(),
     mockSummarizeHistoricalContext: vi.fn(async () => null),
-    mockSessionMessages: vi.fn(async () => ({ toArray: async () => [] })),
-    mockSessionSummaries: vi.fn(async () => null),
-    mockSessionSearch: vi.fn(async () => []),
+    mockSessionQueueStatus: vi.fn(async () => ({
+      pendingWorkUnits: 0,
+      inProgressWorkUnits: 0,
+    })),
+    mockSessionContext: vi.fn(async () => ({
+      messages: [],
+      summary: null,
+      peerRepresentation: null,
+      peerCard: null,
+    })),
     mockSessionAddPeers: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
     mockBuildPersonaPromptContext: vi.fn(async () => ''),
     mockListMessages: vi.fn(async () => []),
+    mockGetLatestHonchoMetadata: vi.fn(async () => ({
+      honchoContext: null,
+      honchoSnapshot: null,
+    })),
   };
 });
 
@@ -126,9 +139,11 @@ vi.mock('@honcho-ai/sdk', () => {
       return {
         id,
         addPeers: mockSessionAddPeers,
-        messages: mockSessionMessages,
-        summaries: mockSessionSummaries,
-        search: mockSessionSearch,
+        queueStatus: mockSessionQueueStatus,
+        context: mockSessionContext,
+        addMessages: vi.fn(async () => []),
+        uploadFile: vi.fn(async () => undefined),
+        delete: vi.fn(async () => undefined),
       };
     }
 
@@ -136,10 +151,12 @@ vi.mock('@honcho-ai/sdk', () => {
       return {
         id,
         context: mockPeerContext,
+        chat: vi.fn(async () => ''),
         message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
           content,
           metadata: options?.metadata ?? {},
           peerId: id,
+          createdAt: new Date().toISOString(),
         }),
       };
     }
@@ -194,6 +211,8 @@ vi.mock('../env', () => ({
     honchoBaseUrl: 'http://localhost:8000',
     honchoWorkspace: 'test-workspace',
     honchoEnabled: false,
+    honchoContextWaitMs: 3000,
+    honchoContextPollIntervalMs: 250,
   },
 }));
 
@@ -239,6 +258,7 @@ vi.mock('./persona-memory', () => ({
 
 vi.mock('./messages', () => ({
   listMessages: mockListMessages,
+  getLatestHonchoMetadata: mockGetLatestHonchoMetadata,
 }));
 
 describe('Honcho Service', () => {
@@ -246,6 +266,8 @@ describe('Honcho Service', () => {
     vi.resetModules();
     vi.clearAllMocks();
     mockConfig.honchoEnabled = false;
+    mockConfig.honchoContextWaitMs = 3000;
+    mockConfig.honchoContextPollIntervalMs = 250;
   });
 
   describe('isHonchoEnabled', () => {
@@ -383,11 +405,12 @@ describe('Honcho Service', () => {
         message: 'Continue the discussion.',
       });
 
-      expect(result.inputValue).toContain('## Recent Session Turns');
+      expect(result.inputValue).toContain('## Honcho Session Context');
       expect(result.inputValue).toContain('USER: First stored question');
       expect(result.inputValue).toContain('ASSISTANT: First stored answer');
-      expect(mockSessionMessages).not.toHaveBeenCalled();
-      expect(mockSessionSearch).not.toHaveBeenCalled();
+      expect(mockSessionQueueStatus).not.toHaveBeenCalled();
+      expect(mockSessionContext).not.toHaveBeenCalled();
+      expect(result.honchoContext).toBeNull();
     });
 
     it('keeps the current attachments section when historical reranking is effectively a no-op', async () => {
@@ -436,69 +459,260 @@ describe('Honcho Service', () => {
       );
     });
 
-    it('skips empty Honcho session reads for a brand-new conversation', async () => {
+    it('uses live Honcho session context when the queue is clear', async () => {
       mockConfig.honchoEnabled = true;
-      mockListMessages.mockResolvedValueOnce([]);
+      mockSessionContext.mockResolvedValueOnce({
+        messages: [
+          {
+            peerId: 'user-123',
+            content: 'Prior user turn',
+            createdAt: '2026-03-26T10:00:00.000Z',
+            metadata: { role: 'user' },
+          },
+          {
+            peerId: 'assistant_user-123',
+            content: 'Prior assistant turn',
+            createdAt: '2026-03-26T10:00:01.000Z',
+            metadata: { role: 'assistant' },
+          },
+        ],
+        summary: { content: 'Live Honcho summary' },
+        peerRepresentation: null,
+        peerCard: null,
+      });
       mockBuildPersonaPromptContext.mockResolvedValueOnce('- Prefers short answers');
 
       const { buildConstructedContext } = await import('./honcho');
 
       const result = await buildConstructedContext({
         userId: 'user-123',
-        conversationId: 'conv-fresh',
-        message: 'Say exactly: fresh context ok.',
+        conversationId: 'conv-live',
+        message: 'Continue from the live context.',
       });
 
-      expect(result.inputValue).toContain('## Current User Message');
-      expect(result.inputValue).toContain('Say exactly: fresh context ok.');
-      expect(mockSessionAddPeers).not.toHaveBeenCalled();
-      expect(mockSessionMessages).not.toHaveBeenCalled();
-      expect(mockSessionSummaries).not.toHaveBeenCalled();
-      expect(mockSessionSearch).not.toHaveBeenCalled();
+      expect(mockSessionAddPeers).toHaveBeenCalled();
+      expect(mockSessionQueueStatus).toHaveBeenCalledTimes(1);
+      expect(mockSessionContext).toHaveBeenCalledWith({
+        summary: true,
+        searchQuery: 'Continue from the live context.',
+        tokens: 3000,
+      });
+      expect(result.inputValue).toContain('## Session Summary');
+      expect(result.inputValue).toContain('Live Honcho summary');
+      expect(result.inputValue).toContain('## Honcho Session Context');
+      expect(result.inputValue).toContain('USER: Prior user turn');
+      expect(result.inputValue).toContain('ASSISTANT: Prior assistant turn');
       expect(mockBuildPersonaPromptContext).toHaveBeenCalledWith(
         'user-123',
-        'Say exactly: fresh context ok.'
+        'Continue from the live context.'
       );
+      expect(result.honchoContext).toMatchObject({
+        source: 'live',
+        fallbackReason: null,
+      });
+      expect(result.honchoSnapshot).toMatchObject({
+        summary: 'Live Honcho summary',
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'user', content: 'Prior user turn' }),
+          expect.objectContaining({ role: 'assistant', content: 'Prior assistant turn' }),
+        ]),
+      });
     });
 
-    it('falls back to persisted messages when Honcho session bootstrap stalls', async () => {
+    it('polls queue status before building live Honcho context', async () => {
       vi.useFakeTimers();
       try {
         mockConfig.honchoEnabled = true;
-        mockListMessages.mockResolvedValueOnce([
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Stored question',
-            timestamp: Date.parse('2026-03-26T10:00:00.000Z'),
+        mockConfig.honchoContextWaitMs = 200;
+        mockConfig.honchoContextPollIntervalMs = 50;
+        mockSessionQueueStatus
+          .mockResolvedValueOnce({ pendingWorkUnits: 2, inProgressWorkUnits: 0 })
+          .mockResolvedValueOnce({ pendingWorkUnits: 0, inProgressWorkUnits: 0 });
+        mockSessionContext.mockResolvedValueOnce({
+          messages: [
+            {
+              peerId: 'user-123',
+              content: 'Queued user context',
+              createdAt: '2026-03-26T10:00:00.000Z',
+              metadata: { role: 'user' },
+            },
+          ],
+          summary: null,
+          peerRepresentation: null,
+          peerCard: null,
+        });
+
+        const { buildConstructedContext } = await import('./honcho');
+
+        const resultPromise = buildConstructedContext({
+          userId: 'user-123',
+          conversationId: 'conv-queued',
+          message: 'Continue once Honcho catches up.',
+        });
+
+        await vi.advanceTimersByTimeAsync(60);
+        const result = await resultPromise;
+
+        expect(mockSessionQueueStatus).toHaveBeenCalledTimes(2);
+        expect(mockSessionContext).toHaveBeenCalledTimes(1);
+        expect(result.honchoContext).toMatchObject({
+          source: 'live',
+          queuePendingWorkUnits: 0,
+          queueInProgressWorkUnits: 0,
+        });
+        expect(result.inputValue).toContain('Queued user context');
+      } finally {
+        mockConfig.honchoContextWaitMs = 3000;
+        mockConfig.honchoContextPollIntervalMs = 250;
+        vi.useRealTimers();
+      }
+    });
+
+    it('falls back to the latest stored Honcho snapshot when live Honcho times out', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockConfig.honchoContextWaitMs = 100;
+        mockConfig.honchoContextPollIntervalMs = 50;
+        mockGetLatestHonchoMetadata.mockResolvedValueOnce({
+          honchoContext: {
+            source: 'live',
+            waitedMs: 10,
+            queuePendingWorkUnits: 0,
+            queueInProgressWorkUnits: 0,
+            fallbackReason: null,
+            snapshotCreatedAt: 111,
           },
-          {
-            id: 'msg-2',
-            role: 'assistant',
-            content: 'Stored answer',
-            timestamp: Date.parse('2026-03-26T10:00:01.000Z'),
+          honchoSnapshot: {
+            createdAt: 111,
+            summary: 'Stored Honcho summary',
+            messages: [
+              {
+                role: 'user',
+                content: 'Stored snapshot question',
+                createdAt: Date.parse('2026-03-26T10:00:00.000Z'),
+              },
+              {
+                role: 'assistant',
+                content: 'Stored snapshot answer',
+                createdAt: Date.parse('2026-03-26T10:00:01.000Z'),
+              },
+            ],
           },
-        ]);
-        mockSessionAddPeers.mockImplementationOnce(
-          () => new Promise<void>(() => undefined)
+        });
+        mockSessionContext.mockImplementationOnce(
+          () => new Promise(() => undefined)
         );
 
         const { buildConstructedContext } = await import('./honcho');
 
         const resultPromise = buildConstructedContext({
           userId: 'user-123',
-          conversationId: 'conv-timeout',
-          message: 'Continue from earlier.',
+          conversationId: 'conv-snapshot',
+          message: 'Continue from the stored snapshot.',
         });
 
-        await vi.advanceTimersByTimeAsync(2_000);
+        await vi.advanceTimersByTimeAsync(120);
         const result = await resultPromise;
 
-        expect(result.inputValue).toContain('## Recent Session Turns');
-        expect(result.inputValue).toContain('USER: Stored question');
-        expect(result.inputValue).toContain('ASSISTANT: Stored answer');
-        expect(mockSessionSearch).not.toHaveBeenCalled();
+        expect(result.honchoContext).toMatchObject({
+          source: 'snapshot',
+          fallbackReason: 'timeout',
+          snapshotCreatedAt: 111,
+        });
+        expect(result.inputValue).toContain('Stored Honcho summary');
+        expect(result.inputValue).toContain('Stored snapshot question');
+        expect(result.inputValue).toContain('Stored snapshot answer');
       } finally {
+        mockConfig.honchoContextWaitMs = 3000;
+        mockConfig.honchoContextPollIntervalMs = 250;
+        vi.useRealTimers();
+      }
+    });
+
+    it('falls back to persisted conversation messages only when neither live Honcho nor snapshots are available', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockConfig.honchoContextWaitMs = 100;
+        mockConfig.honchoContextPollIntervalMs = 50;
+        mockListMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: 'Stored fallback question',
+            timestamp: Date.parse('2026-03-26T10:00:00.000Z'),
+          },
+          {
+            id: 'msg-2',
+            role: 'assistant',
+            content: 'Stored fallback answer',
+            timestamp: Date.parse('2026-03-26T10:00:01.000Z'),
+          },
+        ]);
+        mockSessionContext.mockImplementationOnce(
+          () => new Promise(() => undefined)
+        );
+
+        const { buildConstructedContext } = await import('./honcho');
+
+        const resultPromise = buildConstructedContext({
+          userId: 'user-123',
+          conversationId: 'conv-stored',
+          message: 'Continue from stored fallback context.',
+        });
+
+        await vi.advanceTimersByTimeAsync(120);
+        const result = await resultPromise;
+
+        expect(result.honchoContext).toMatchObject({
+          source: 'persisted_fallback',
+          fallbackReason: 'timeout',
+          snapshotCreatedAt: null,
+        });
+        expect(result.inputValue).toContain('Stored fallback question');
+        expect(result.inputValue).toContain('Stored fallback answer');
+      } finally {
+        mockConfig.honchoContextWaitMs = 3000;
+        mockConfig.honchoContextPollIntervalMs = 250;
+        vi.useRealTimers();
+      }
+    });
+
+    it('still attempts live Honcho on a fresh conversation before degrading', async () => {
+      vi.useFakeTimers();
+      try {
+        mockConfig.honchoEnabled = true;
+        mockConfig.honchoContextWaitMs = 100;
+        mockConfig.honchoContextPollIntervalMs = 50;
+        mockListMessages.mockResolvedValueOnce([]);
+        mockSessionContext.mockImplementationOnce(
+          () => new Promise(() => undefined)
+        );
+
+        const { buildConstructedContext } = await import('./honcho');
+
+        const resultPromise = buildConstructedContext({
+          userId: 'user-123',
+          conversationId: 'conv-fresh',
+          message: 'Say exactly: fresh context ok.',
+        });
+
+        await vi.advanceTimersByTimeAsync(120);
+        const result = await resultPromise;
+
+        expect(mockSessionAddPeers).toHaveBeenCalled();
+        expect(mockSessionQueueStatus).toHaveBeenCalled();
+        expect(mockSessionContext).toHaveBeenCalled();
+        expect(result.honchoContext).toMatchObject({
+          source: 'persisted_fallback',
+          fallbackReason: 'timeout',
+        });
+        expect(result.inputValue).toContain('## Current User Message');
+        expect(result.inputValue).toContain('Say exactly: fresh context ok.');
+      } finally {
+        mockConfig.honchoContextWaitMs = 3000;
+        mockConfig.honchoContextPollIntervalMs = 250;
         vi.useRealTimers();
       }
     });

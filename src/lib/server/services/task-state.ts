@@ -24,6 +24,7 @@ import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { collapseArtifactsByFamily } from "./evidence-family";
+import { getLatestHonchoMetadata } from "./messages";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import {
   canUseContextSummarizer,
@@ -1158,18 +1159,24 @@ export async function getContextDebugState(
   conversationId: string,
 ): Promise<ContextDebugState | null> {
   const taskState = await getConversationTaskState(userId, conversationId);
-  const [statusRow] = await db
-    .select()
-    .from(conversationContextStatus)
-    .where(
-      and(
-        eq(conversationContextStatus.userId, userId),
-        eq(conversationContextStatus.conversationId, conversationId),
-      ),
-    )
-    .limit(1);
+  const [[statusRow], latestHonchoMetadata] = await Promise.all([
+    db
+      .select()
+      .from(conversationContextStatus)
+      .where(
+        and(
+          eq(conversationContextStatus.userId, userId),
+          eq(conversationContextStatus.conversationId, conversationId),
+        ),
+      )
+      .limit(1),
+    getLatestHonchoMetadata(conversationId).catch(() => ({
+      honchoContext: null,
+      honchoSnapshot: null,
+    })),
+  ]);
 
-  if (!taskState && !statusRow) return null;
+  if (!taskState && !statusRow && !latestHonchoMetadata.honchoContext) return null;
 
   const links = taskState
     ? await db
@@ -1226,6 +1233,7 @@ export async function getContextDebugState(
     selectedEvidenceBySource,
     pinnedEvidence: toDebugItems("pinned"),
     excludedEvidence: toDebugItems("excluded"),
+    honcho: latestHonchoMetadata.honchoContext,
   };
 }
 

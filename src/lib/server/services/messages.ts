@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { conversations, messages, messageAnalytics } from '$lib/server/db/schema';
 import type {
 	ChatMessage,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
 	MessageEvidenceStatusState,
 	MessageEvidenceSummary,
 	MessageRole,
@@ -15,6 +17,8 @@ import { listMessageAttachments } from './knowledge';
 type PersistedMessageMetadata = {
 	evidenceSummary?: MessageEvidenceSummary | null;
 	evidenceStatus?: MessageEvidenceStatusState;
+	honchoContext?: HonchoContextInfo | null;
+	honchoSnapshot?: HonchoContextSnapshot | null;
 };
 
 function getModelDisplayName(modelId?: string | null): string | undefined {
@@ -62,6 +66,7 @@ function mapRowToChatMessage(
 		modelDisplayName: getModelDisplayName(modelId),
 		evidenceSummary,
 		evidencePending,
+		honchoContext: metadata?.honchoContext ?? undefined,
 	};
 }
 
@@ -187,6 +192,79 @@ export async function updateMessageEvidence(
 			metadataJson: JSON.stringify(next),
 		})
 		.where(eq(messages.id, messageId));
+}
+
+export async function updateMessageHonchoMetadata(
+	messageId: string,
+	params: {
+		honchoContext?: HonchoContextInfo | null;
+		honchoSnapshot?: HonchoContextSnapshot | null;
+	}
+): Promise<void> {
+	const [row] = await db
+		.select({ metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(eq(messages.id, messageId))
+		.limit(1);
+
+	if (!row) return;
+
+	const next = { ...(parseMetadata(row.metadataJson) ?? {}) };
+
+	if (params.honchoContext === undefined) {
+		// Leave existing value untouched.
+	} else if (params.honchoContext) {
+		next.honchoContext = params.honchoContext;
+	} else {
+		delete next.honchoContext;
+	}
+
+	if (params.honchoSnapshot === undefined) {
+		// Leave existing value untouched.
+	} else if (params.honchoSnapshot) {
+		next.honchoSnapshot = params.honchoSnapshot;
+	} else {
+		delete next.honchoSnapshot;
+	}
+
+	await db
+		.update(messages)
+		.set({
+			metadataJson: Object.keys(next).length > 0 ? JSON.stringify(next) : null,
+		})
+		.where(eq(messages.id, messageId));
+}
+
+export async function getLatestHonchoMetadata(conversationId: string): Promise<{
+	honchoContext: HonchoContextInfo | null;
+	honchoSnapshot: HonchoContextSnapshot | null;
+}> {
+	const rows = await db
+		.select({ metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(and(eq(messages.conversationId, conversationId), eq(messages.role, 'assistant')))
+		.orderBy(desc(messages.createdAt));
+
+	let honchoContext: HonchoContextInfo | null = null;
+	let honchoSnapshot: HonchoContextSnapshot | null = null;
+
+	for (const row of rows) {
+		const metadata = parseMetadata(row.metadataJson);
+		if (!metadata) continue;
+
+		if (!honchoContext && metadata.honchoContext) {
+			honchoContext = metadata.honchoContext;
+		}
+		if (!honchoSnapshot && metadata.honchoSnapshot) {
+			honchoSnapshot = metadata.honchoSnapshot;
+		}
+
+		if (honchoContext && honchoSnapshot) {
+			break;
+		}
+	}
+
+	return { honchoContext, honchoSnapshot };
 }
 
 export async function clearMessageEvidenceForUser(userId: string): Promise<void> {

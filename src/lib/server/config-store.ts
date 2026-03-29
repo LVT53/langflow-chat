@@ -31,6 +31,8 @@ export const ADMIN_CONFIG_KEYS = [
   'TRANSLATION_MAX_TOKENS',
   'TRANSLATION_TEMPERATURE',
   'HONCHO_ENABLED',
+  'HONCHO_CONTEXT_WAIT_MS',
+  'HONCHO_CONTEXT_POLL_INTERVAL_MS',
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -64,6 +66,8 @@ export interface RuntimeConfig {
   honchoBaseUrl: string;
   honchoWorkspace: string;
   honchoEnabled: boolean;
+  honchoContextWaitMs: number;
+  honchoContextPollIntervalMs: number;
   memoryMaintenanceIntervalMinutes: number;
 }
 
@@ -162,6 +166,16 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   HONCHO_ENABLED: (config, value) => {
     config.honchoEnabled = value === 'true';
   },
+  HONCHO_CONTEXT_WAIT_MS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.honchoContextWaitMs = Math.max(0, parsed);
+  },
+  HONCHO_CONTEXT_POLL_INTERVAL_MS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.honchoContextPollIntervalMs = Math.max(50, parsed);
+    }
+  },
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -239,6 +253,8 @@ export function getResolvedAdminConfigValues(
     TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
     TRANSLATION_TEMPERATURE: String(config.translationTemperature),
     HONCHO_ENABLED: String(config.honchoEnabled),
+    HONCHO_CONTEXT_WAIT_MS: String(config.honchoContextWaitMs),
+    HONCHO_CONTEXT_POLL_INTERVAL_MS: String(config.honchoContextPollIntervalMs),
   };
 }
 
@@ -268,5 +284,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
     TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
     HONCHO_ENABLED: String(envConfig.honchoEnabled),
+    HONCHO_CONTEXT_WAIT_MS: String(envConfig.honchoContextWaitMs),
+    HONCHO_CONTEXT_POLL_INTERVAL_MS: String(envConfig.honchoContextPollIntervalMs),
   };
 }
