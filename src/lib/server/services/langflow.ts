@@ -248,7 +248,9 @@ export async function sendMessageStream(
     systemPromptAppendix?: string;
   }
 ): Promise<{
-  stream: ReadableStream<Uint8Array>;
+  stream?: ReadableStream<Uint8Array>;
+  text?: string;
+  rawResponse?: LangflowRunResponse;
   contextStatus?: import('$lib/types').ConversationContextStatus;
   taskState?: import('$lib/types').TaskState | null;
   contextDebug?: import('$lib/types').ContextDebugState | null;
@@ -384,6 +386,19 @@ export async function sendMessageStream(
         bodyPreview: errorBody.slice(0, 1000)
       });
       throw new Error(`Langflow API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ''}`);
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('text/event-stream')) {
+      const rawResponse: LangflowRunResponse = await response.json();
+      const text = extractMessageText(rawResponse);
+      console.warn('[LANGFLOW] sendMessageStream received non-stream JSON response', {
+        url,
+        sessionId,
+        contentType,
+        textLength: text.length,
+      });
+      return { text, rawResponse, contextStatus, taskState, contextDebug };
     }
 
     if (!response.body) {

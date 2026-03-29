@@ -684,6 +684,28 @@ describe('POST /api/chat/stream', () => {
 		});
 	});
 
+	it('completes successfully when Langflow returns JSON instead of SSE for the stream request', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue({
+			text: 'Non-stream JSON answer',
+			rawResponse: {
+				outputs: [{ outputs: [{ results: { message: { text: 'Non-stream JSON answer' } } }] }],
+			},
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+		});
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Non-stream JSON answer"');
+		expect(body).toContain('event: end');
+	});
+
 	it('retries once with a stricter URL-list tool guard after the upstream urls validation error', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

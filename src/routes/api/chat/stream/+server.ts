@@ -502,38 +502,58 @@ export const POST: RequestHandler = async (event) => {
           if (!langflowResponse) {
             return;
           }
+          if (!langflowResponse.stream) {
+            latestContextStatus = langflowResponse.contextStatus;
+            initialContextStatus = latestContextStatus;
+            latestTaskState = await attachContinuityToTaskState(
+              user.id,
+              langflowResponse.taskState ?? null,
+            ).catch(() => langflowResponse.taskState ?? null);
+            initialTaskState = latestTaskState;
+            latestContextDebug = langflowResponse.contextDebug ?? null;
+            initialContextDebug = latestContextDebug;
+
+            if (!(await emitResolvedAssistantText(langflowResponse.text ?? ""))) {
+              return;
+            }
+
+            if (outputTranslator) {
+              for (const chunk of await outputTranslator.flush()) {
+                if (!emitInlineToken(chunk)) {
+                  return;
+                }
+              }
+            }
+            flushPendingThinking();
+            if (!flushInlineThinkingBuffer()) {
+              return;
+            }
+            if (!flushPreserveBuffer()) {
+              return;
+            }
+            completeSuccess();
+            return;
+          }
           const langflowStream =
-            langflowResponse instanceof ReadableStream
-              ? langflowResponse
-              : langflowResponse.stream;
+            langflowResponse.stream;
           latestContextStatus =
-            langflowResponse instanceof ReadableStream
-              ? undefined
-              : langflowResponse.contextStatus;
+            langflowResponse.contextStatus;
           initialContextStatus = latestContextStatus;
           latestTaskState =
-            langflowResponse instanceof ReadableStream
-              ? await getConversationTaskState(user.id, conversationId).catch(
-                  () => null,
-                )
-              : (langflowResponse.taskState ??
-                (await getConversationTaskState(user.id, conversationId).catch(
-                  () => null,
-                )));
+            langflowResponse.taskState ??
+            (await getConversationTaskState(user.id, conversationId).catch(
+              () => null,
+            ));
           latestTaskState = await attachContinuityToTaskState(
             user.id,
             latestTaskState ?? null,
           ).catch(() => latestTaskState ?? null);
           initialTaskState = latestTaskState;
           latestContextDebug =
-            langflowResponse instanceof ReadableStream
-              ? await getContextDebugState(user.id, conversationId).catch(
-                  () => null,
-                )
-              : (langflowResponse.contextDebug ??
-                (await getContextDebugState(user.id, conversationId).catch(
-                  () => null,
-                )));
+            langflowResponse.contextDebug ??
+            (await getContextDebugState(user.id, conversationId).catch(
+              () => null,
+            ));
           initialContextDebug = latestContextDebug;
           console.log("[STREAM] Upstream stream connected", { conversationId });
           let upstreamEventCount = 0;

@@ -14,8 +14,9 @@ import type { ChatTurnRequestError } from "./types";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
+  "Cache-Control": "no-cache, no-transform",
   Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
 };
 
 const TOOL_CALL_START_RE = /\x02TOOL_START\x1f([^\x03]*)\x03/g;

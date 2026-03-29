@@ -424,6 +424,34 @@ describe('Langflow API Client Service', () => {
       expect(response.stream).toBeDefined();
     });
 
+    it('returns extracted text when Langflow answers stream=true with JSON instead of SSE', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: undefined,
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'JSON fallback answer'
+                }
+              }
+            }]
+          }]
+        }),
+        headers: new Headers({ 'content-type': 'application/json' }),
+        status: 200,
+        statusText: 'OK',
+      }));
+
+      const { sendMessageStream } = await import('./langflow');
+
+      const response = await sendMessageStream('Hello', 'test-session');
+
+      expect(response.stream).toBeUndefined();
+      expect(response.text).toBe('JSON fallback answer');
+    });
+
     it('scopes streaming tweaks under the configured Langflow component ID when present', async () => {
       const mockBody = {} as ReadableStream<Uint8Array>;
       mockRuntimeConfig.model1.componentId = 'NemotronNode-123';
