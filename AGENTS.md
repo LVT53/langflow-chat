@@ -38,7 +38,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
-- `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers. Do not duplicate inline thinking-tag parsing across `streaming.ts` and the chat stream route.
+- `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
 - `src/lib/server/services/langflow.ts` owns outbound system-prompt assembly, including always-on date-before-search guidance. Do not reintroduce route-local prompt guards for freshness-sensitive search behavior.
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
@@ -113,6 +113,7 @@ Do:
 
 - put shared request parsing, attachment preflight, model normalization, stream framing, and finalization in `chat-turn/`
 - let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and `<preserve>` chunk handling
+- let `src/lib/server/services/chat-turn/execute.ts` normalize non-stream assistant text through the shared stream-protocol helpers so `/send` returns the same visible content shape that `/stream` would show
 - use `src/routes/api/chat/stream/stop/+server.ts` plus `chat-turn/active-streams.ts` for explicit user-requested aborts; do not overload passive disconnect handling for that purpose
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
@@ -216,7 +217,7 @@ Rules:
 - `task-state/mappers.ts`
   - task-state row mappers shared by task-state internals
 - `honcho.ts` should stay an integration adapter for Honcho sessions, peers, mirrored messages, and Honcho-specific context.
-- `buildConstructedContext` must degrade gracefully when Honcho is disabled or unavailable. Core chat cannot block on Honcho connectivity; fall back to persisted conversation turns when needed.
+- `buildConstructedContext` must degrade gracefully when Honcho is disabled, unavailable, or slow. Core chat cannot block on Honcho connectivity or empty-session bootstrap; first-turn requests must fall back to persisted conversation turns and minimal durable context when Honcho session reads are missing or stalled.
 - `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
 - Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
 
