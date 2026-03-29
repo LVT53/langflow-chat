@@ -10,6 +10,7 @@ vi.mock('$lib/server/services/conversations', () => ({
 }));
 
 vi.mock('$lib/server/services/langflow', () => ({
+	sendMessage: vi.fn(),
 	sendMessageStream: vi.fn()
 }));
 
@@ -87,7 +88,7 @@ vi.mock('$lib/server/env', () => ({
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
-import { sendMessageStream } from '$lib/server/services/langflow';
+import { sendMessage, sendMessageStream } from '$lib/server/services/langflow';
 import { createMessage } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
@@ -98,6 +99,7 @@ const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessageStream = sendMessageStream as ReturnType<typeof vi.fn>;
+const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
@@ -167,6 +169,7 @@ describe('POST /api/chat/stream', () => {
 		mockDetectLanguage.mockReturnValue('en');
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
+		mockSendMessage.mockReset();
 	});
 
 	it('returns text/event-stream content-type for valid request', async () => {
@@ -344,6 +347,43 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: token');
 		expect(body).toContain('"text":"Hello"');
 		expect(body).not.toContain('"text":"Hi"');
+	});
+
+	it('accepts assistant add_message events from the current Language Model sender label', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"Language Model","text":"Hello"}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Hello"');
+	});
+
+	it('extracts assistant output from Langflow content_blocks when text is empty', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'{"event":"add_message","data":{"sender":"Language Model","text":"","content_blocks":[{"title":"Agent Steps","contents":[{"type":"text","text":"Tell me a story","header":{"title":"Input","icon":"MessageSquare"}},{"type":"text","text":"Final answer from Langflow.","header":{"title":"Output","icon":"Bot"}}]}]}}\n\n',
+				'{"event":"end","data":{}}\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Final answer from Langflow."');
+		expect(body).not.toContain('"text":"Tell me a story"');
 	});
 
 	it('parses newline-delimited Langflow JSON events without blank separators', async () => {
@@ -611,6 +651,37 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: error');
 		expect(body).toContain('"code":"backend_failure"');
 		expect(body).toContain('temporary issue generating a response');
+	});
+
+	it('falls back to the non-stream Langflow run when the streaming handshake aborts', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		const abortError = new Error('This operation was aborted');
+		abortError.name = 'AbortError';
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockRejectedValue(abortError);
+		mockSendMessage.mockResolvedValue({
+			text: 'Recovered final answer',
+			rawResponse: {
+				outputs: [{ outputs: [{ results: { message: { text: 'Recovered final answer' } } }] }],
+			},
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+		});
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: token');
+		expect(body).toContain('"text":"Recovered final answer"');
+		expect(body).toContain('event: end');
+		expect(mockSendMessage).toHaveBeenCalledWith('Hi', 'conv-1', undefined, 'user-1', {
+			signal: expect.any(Object),
+			attachmentIds: [],
+			attachmentTraceId: undefined,
+			systemPromptAppendix: undefined,
+		});
 	});
 
 	it('retries once with a stricter URL-list tool guard after the upstream urls validation error', async () => {

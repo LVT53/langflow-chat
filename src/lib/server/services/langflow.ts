@@ -356,7 +356,7 @@ export async function sendMessageStream(
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        Accept: 'text/event-stream',
+        Accept: 'application/json',
         'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
         'x-api-key': config.langflowApiKey,

@@ -567,14 +567,23 @@ export function extractAssistantChunk(
 ): string {
   const data = parseMaybeJson(rawData);
   const sender = getSender(data);
+  const normalizedSender = sender ? normalizeSender(sender) : null;
 
-  if (sender && ["user", "human"].includes(sender)) {
+  if (normalizedSender && ["user", "human"].includes(normalizedSender)) {
     return "";
   }
 
   if (
-    sender &&
-    !["assistant", "ai", "machine", "model"].includes(sender) &&
+    normalizedSender &&
+    ![
+      "assistant",
+      "ai",
+      "machine",
+      "model",
+      "language model",
+      "agent",
+      "bot",
+    ].includes(normalizedSender) &&
     eventType !== "token"
   ) {
     return "";
@@ -852,6 +861,72 @@ function getSender(value: unknown): string | null {
   return null;
 }
 
+function normalizeSender(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, " ").trim();
+}
+
+function getTextFromContentBlocks(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+
+  const prioritized: Array<{ text: string; priority: number }> = [];
+
+  for (const block of value) {
+    const blockRecord = getNestedObject(block);
+    if (!blockRecord || !Array.isArray(blockRecord.contents)) {
+      continue;
+    }
+
+    for (const content of blockRecord.contents) {
+      const contentRecord = getNestedObject(content);
+      if (!contentRecord) {
+        continue;
+      }
+
+      const text =
+        typeof contentRecord.text === "string" ? contentRecord.text.trim() : "";
+      if (!text) {
+        continue;
+      }
+
+      const header = getNestedObject(contentRecord.header);
+      const headerTitle =
+        typeof header?.title === "string"
+          ? header.title.toLowerCase().trim()
+          : "";
+
+      if (headerTitle.includes("input")) {
+        continue;
+      }
+
+      const priority =
+        headerTitle.includes("output") ||
+        headerTitle.includes("answer") ||
+        headerTitle.includes("response")
+          ? 2
+          : 1;
+
+      prioritized.push({ text, priority });
+    }
+  }
+
+  if (prioritized.length === 0) {
+    return "";
+  }
+
+  const highestPriority = prioritized.reduce(
+    (best, entry) => Math.max(best, entry.priority),
+    0,
+  );
+
+  return prioritized
+    .filter((entry) => entry.priority === highestPriority)
+    .map((entry) => entry.text)
+    .join("\n")
+    .trim();
+}
+
 function getTextContent(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -876,6 +951,13 @@ function getTextContent(value: unknown): string {
     const candidate = payload[key];
     if (typeof candidate === "string" && candidate.length > 0) {
       return candidate;
+    }
+  }
+
+  if ("content_blocks" in payload) {
+    const contentBlocksText = getTextFromContentBlocks(payload.content_blocks);
+    if (contentBlocksText) {
+      return contentBlocksText;
     }
   }
 

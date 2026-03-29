@@ -1,7 +1,7 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
 import { touchConversation } from "$lib/server/services/conversations";
-import { sendMessageStream } from "$lib/server/services/langflow";
+import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
 import { getConfig } from "$lib/server/config-store";
 import { createMessage } from "$lib/server/services/messages";
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
@@ -50,6 +50,25 @@ import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 
 const STREAM_TIMEOUT_MS = 120_000;
+
+function shouldFallbackToNonStreaming(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    error.name === "AbortError" ||
+    error.name === "LangflowStreamConnectTimeoutError" ||
+    message.includes("abort") ||
+    message.includes("timed out") ||
+    message.includes("fetch failed") ||
+    message.includes("socket") ||
+    message.includes("connection") ||
+    message.includes("terminated")
+  );
+}
 
 export const POST: RequestHandler = async (event) => {
   requireAuth(event);
@@ -170,6 +189,23 @@ export const POST: RequestHandler = async (event) => {
 
       const emitError = (code: StreamErrorCode) =>
         enqueueChunk(streamErrorEvent(code));
+      const emitResolvedAssistantText = async (text: string): Promise<boolean> => {
+        if (!text) {
+          return true;
+        }
+
+        if (!outputTranslator) {
+          return emitChunkWithPreserveHandling(text);
+        }
+
+        for (const translatedChunk of await outputTranslator.addChunk(text)) {
+          if (!emitInlineToken(translatedChunk)) {
+            return false;
+          }
+        }
+
+        return true;
+      };
       let latestContextStatus:
         | import("$lib/types").ConversationContextStatus
         | undefined;
@@ -394,7 +430,78 @@ export const POST: RequestHandler = async (event) => {
                 ? URL_LIST_TOOL_RECOVERY_APPENDIX
                 : undefined,
             },
-          );
+          ).catch(async (error) => {
+            if (
+              wasActiveChatStreamStopRequested(streamId) ||
+              !shouldFallbackToNonStreaming(error) ||
+              chunkRuntime.fullResponse.trim() ||
+              chunkRuntime.thinkingContent.trim() ||
+              chunkRuntime.toolCallRecords.length > 0 ||
+              emittedAssistantText.trim()
+            ) {
+              throw error;
+            }
+
+            console.warn(
+              "[STREAM] Falling back to non-stream Langflow run after stream connect failure",
+              {
+                conversationId,
+                attempt,
+                errorName: error instanceof Error ? error.name : undefined,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
+              },
+            );
+
+            const fallbackResponse = await sendMessage(
+              upstreamMessage,
+              conversationId,
+              modelId,
+              user.id,
+              {
+                signal: upstreamAbortController.signal,
+                attachmentIds: safeAttachmentIds,
+                attachmentTraceId,
+                systemPromptAppendix: usedUrlListRecovery
+                  ? URL_LIST_TOOL_RECOVERY_APPENDIX
+                  : undefined,
+              },
+            );
+
+            latestContextStatus = fallbackResponse.contextStatus;
+            initialContextStatus = latestContextStatus;
+            latestTaskState = await attachContinuityToTaskState(
+              user.id,
+              fallbackResponse.taskState ?? null,
+            ).catch(() => fallbackResponse.taskState ?? null);
+            initialTaskState = latestTaskState;
+            latestContextDebug = fallbackResponse.contextDebug ?? null;
+            initialContextDebug = latestContextDebug;
+
+            if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
+              return null;
+            }
+
+            if (outputTranslator) {
+              for (const chunk of await outputTranslator.flush()) {
+                if (!emitInlineToken(chunk)) {
+                  return null;
+                }
+              }
+            }
+            flushPendingThinking();
+            if (!flushInlineThinkingBuffer()) {
+              return null;
+            }
+            if (!flushPreserveBuffer()) {
+              return null;
+            }
+            completeSuccess();
+            return null;
+          });
+          if (!langflowResponse) {
+            return;
+          }
           const langflowStream =
             langflowResponse instanceof ReadableStream
               ? langflowResponse
