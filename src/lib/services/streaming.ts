@@ -141,110 +141,159 @@ export function streamChat(
 			let buffer = '';
 			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | null = null;
 
+			const processLine = (rawLine: string): boolean => {
+				const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+
+				if (line.startsWith('event: token')) {
+					currentEvent = 'token';
+					return false;
+				}
+				if (line.startsWith('event: thinking')) {
+					currentEvent = 'thinking';
+					return false;
+				}
+				if (line.startsWith('event: tool_call')) {
+					currentEvent = 'tool_call';
+					return false;
+				}
+				if (line.startsWith('event: end')) {
+					currentEvent = 'end';
+					return false;
+				}
+				if (line.startsWith('event: error')) {
+					currentEvent = 'error';
+					return false;
+				}
+				if (line.startsWith('data: ')) {
+					const rawData = line.slice('data: '.length);
+
+					if (currentEvent === 'token') {
+						try {
+							const parsed = JSON.parse(rawData);
+							const chunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+							if (chunk) {
+								emitInlineChunk(chunk);
+							}
+						} catch {
+							/* noop */
+						}
+						return false;
+					}
+
+					if (currentEvent === 'thinking') {
+						try {
+							const parsed = JSON.parse(rawData);
+							const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+							if (thinkingChunk) {
+								callbacks.onThinking(thinkingChunk);
+							}
+						} catch {
+							/* noop */
+						}
+						return false;
+					}
+
+					if (currentEvent === 'tool_call') {
+						try {
+							const parsed = JSON.parse(rawData);
+							callbacks.onToolCall?.(parsed.name, parsed.input ?? {}, parsed.status, {
+								outputSummary: parsed.outputSummary,
+								sourceType: parsed.sourceType,
+								candidates: parsed.candidates,
+							});
+						} catch {
+							/* noop */
+						}
+						return false;
+					}
+
+					if (currentEvent === 'end') {
+						let metadata: StreamMetadata | undefined;
+						try {
+							const parsed = JSON.parse(rawData);
+							const nextMetadata: StreamMetadata = {
+								thinkingTokenCount: parsed.thinkingTokenCount,
+								responseTokenCount: parsed.responseTokenCount,
+								totalTokenCount: parsed.totalTokenCount,
+								thinking: parsed.thinking,
+								wasStopped: parsed.wasStopped,
+								userMessageId: parsed.userMessageId,
+								assistantMessageId: parsed.assistantMessageId,
+								modelDisplayName: parsed.modelDisplayName,
+								contextStatus: parsed.contextStatus,
+								activeWorkingSet: parsed.activeWorkingSet,
+								taskState: parsed.taskState,
+								contextDebug: parsed.contextDebug,
+								messageEvidence: parsed.messageEvidence
+							};
+							metadata = Object.values(nextMetadata).some((value) => value !== undefined)
+								? nextMetadata
+								: undefined;
+						} catch {
+							/* noop */
+						}
+						flushInlineBufferAtEnd();
+						callbacks.onEnd(fullText, metadata);
+						return true;
+					}
+
+					if (currentEvent === 'error') {
+						let errorMessage = 'Stream error';
+						let errorCode: string | undefined;
+						try {
+							const parsed = JSON.parse(rawData);
+							errorMessage = parsed.message ?? parsed.error ?? errorMessage;
+							errorCode = parsed.code;
+						} catch {
+							errorMessage = rawData || errorMessage;
+						}
+						callbacks.onError(toStreamError(errorMessage, errorCode));
+						return true;
+					}
+					return false;
+				}
+
+				if (line === '') {
+					currentEvent = null;
+				}
+
+				return false;
+			};
+
+			const drainBuffer = (isFinalChunk = false): boolean => {
+				const lines = buffer.split('\n');
+				buffer = isFinalChunk ? '' : (lines.pop() ?? '');
+
+				if (isFinalChunk && lines[lines.length - 1] !== '') {
+					lines.push('');
+				}
+
+				for (const line of lines) {
+					if (processLine(line)) {
+						return true;
+					}
+				}
+
+				return false;
+			};
+
 			try {
 				while (true) {
 					const { done, value } = await reader.read();
 
 					if (done) {
+						buffer += decoder.decode();
+						if (drainBuffer(true)) {
+							break;
+						}
 						flushInlineBufferAtEnd();
 						callbacks.onEnd(fullText);
 						break;
 					}
 
 					buffer += decoder.decode(value, { stream: true });
-
-					const lines = buffer.split('\n');
-					buffer = lines.pop() ?? '';
-
-					for (const line of lines) {
-						if (line.startsWith('event: token')) {
-							currentEvent = 'token';
-						} else if (line.startsWith('event: thinking')) {
-							currentEvent = 'thinking';
-						} else if (line.startsWith('event: tool_call')) {
-							currentEvent = 'tool_call';
-						} else if (line.startsWith('event: end')) {
-							currentEvent = 'end';
-						} else if (line.startsWith('event: error')) {
-							currentEvent = 'error';
-						} else if (line.startsWith('data: ')) {
-							const rawData = line.slice('data: '.length);
-
-							if (currentEvent === 'token') {
-								try {
-									const parsed = JSON.parse(rawData);
-									const chunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
-									if (chunk) {
-										emitInlineChunk(chunk);
-									}
-								} catch {
-									/* noop */
-								}
-							} else if (currentEvent === 'thinking') {
-								try {
-									const parsed = JSON.parse(rawData);
-									const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
-									if (thinkingChunk) {
-										callbacks.onThinking(thinkingChunk);
-									}
-								} catch {
-									/* noop */
-								}
-							} else if (currentEvent === 'tool_call') {
-								try {
-									const parsed = JSON.parse(rawData);
-									callbacks.onToolCall?.(parsed.name, parsed.input ?? {}, parsed.status, {
-										outputSummary: parsed.outputSummary,
-										sourceType: parsed.sourceType,
-										candidates: parsed.candidates,
-									});
-								} catch {
-									/* noop */
-								}
-							} else if (currentEvent === 'end') {
-								let metadata: StreamMetadata | undefined;
-								try {
-									const parsed = JSON.parse(rawData);
-									const nextMetadata: StreamMetadata = {
-										thinkingTokenCount: parsed.thinkingTokenCount,
-										responseTokenCount: parsed.responseTokenCount,
-										totalTokenCount: parsed.totalTokenCount,
-										thinking: parsed.thinking,
-										wasStopped: parsed.wasStopped,
-										userMessageId: parsed.userMessageId,
-										assistantMessageId: parsed.assistantMessageId,
-										modelDisplayName: parsed.modelDisplayName,
-										contextStatus: parsed.contextStatus,
-										activeWorkingSet: parsed.activeWorkingSet,
-										taskState: parsed.taskState,
-										contextDebug: parsed.contextDebug,
-										messageEvidence: parsed.messageEvidence
-									};
-									metadata = Object.values(nextMetadata).some((value) => value !== undefined)
-										? nextMetadata
-										: undefined;
-								} catch {
-									/* noop */
-								}
-								flushInlineBufferAtEnd();
-								callbacks.onEnd(fullText, metadata);
-								return;
-							} else if (currentEvent === 'error') {
-								let errorMessage = 'Stream error';
-								let errorCode: string | undefined;
-								try {
-									const parsed = JSON.parse(rawData);
-									errorMessage = parsed.message ?? parsed.error ?? errorMessage;
-									errorCode = parsed.code;
-								} catch {
-									errorMessage = rawData || errorMessage;
-								}
-								callbacks.onError(toStreamError(errorMessage, errorCode));
-								return;
-							}
-						} else if (line === '') {
-							currentEvent = null;
-						}
+					if (drainBuffer()) {
+						return;
 					}
 				}
 			} finally {

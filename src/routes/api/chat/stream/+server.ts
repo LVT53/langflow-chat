@@ -116,15 +116,15 @@ export const POST: RequestHandler = async (event) => {
       const outputTranslator = shouldTranslateHungarian(turn)
         ? new StreamingHungarianTranslator()
         : null;
-      let closed = false;
+      let downstreamClosed = false;
       let ended = false;
       let lastAssistantSnapshot = "";
       let emittedAssistantText = "";
 
-      const closeStream = () => {
-        if (closed) return;
-        closed = true;
-        downstreamAbortSignal.removeEventListener("abort", closeStream);
+      const closeDownstream = () => {
+        if (downstreamClosed) return;
+        downstreamClosed = true;
+        downstreamAbortSignal.removeEventListener("abort", closeDownstream);
         // Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
         // The client reloads persisted messages on visibility restore (mobile background fix).
         try {
@@ -134,29 +134,28 @@ export const POST: RequestHandler = async (event) => {
         }
       };
 
-      cancelStream = closeStream;
+      cancelStream = closeDownstream;
 
       if (downstreamAbortSignal.aborted) {
-        closeStream();
-        return;
+        closeDownstream();
+      } else {
+        downstreamAbortSignal.addEventListener("abort", closeDownstream, {
+          once: true,
+        });
       }
 
-      downstreamAbortSignal.addEventListener("abort", closeStream, {
-        once: true,
-      });
-
       const enqueueChunk = (chunk: string): boolean => {
-        if (closed) return false;
+        if (downstreamClosed) return true;
 
         try {
           controller.enqueue(encoder.encode(chunk));
-          return true;
         } catch {
-          closed = true;
           // Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
           // The client reloads persisted messages on visibility restore (mobile background fix).
-          return false;
+          closeDownstream();
         }
+
+        return true;
       };
 
       const chunkRuntime = createServerChunkRuntime({ enqueueChunk });
@@ -265,7 +264,7 @@ export const POST: RequestHandler = async (event) => {
             })}\n\n`,
           );
           touchConversation(user.id, conversationId).catch(() => undefined);
-          closeStream();
+          closeDownstream();
         };
 
         Promise.all([userMsgPromise, assistantMsgPromise])
@@ -358,10 +357,10 @@ export const POST: RequestHandler = async (event) => {
       };
 
       const failStream = (code: StreamErrorCode) => {
-        if (ended || closed) return;
+        if (ended) return;
         ended = true;
         emitError(code);
-        closeStream();
+        closeDownstream();
       };
 
       const timeoutId = setTimeout(() => {
@@ -430,14 +429,11 @@ export const POST: RequestHandler = async (event) => {
                 )));
           initialContextDebug = latestContextDebug;
           console.log("[STREAM] Upstream stream connected", { conversationId });
-          if (closed) return;
           let upstreamEventCount = 0;
 
           for await (const upstreamEvent of parseUpstreamEvents(
             langflowStream,
           )) {
-            if (closed) break;
-
             const { event: eventType, data } = upstreamEvent;
             upstreamEventCount += 1;
             if (upstreamEventCount <= 20 || eventType === "error") {
@@ -601,48 +597,46 @@ export const POST: RequestHandler = async (event) => {
           return;
         }
       } catch (error) {
-        if (!closed) {
-          if (
-            wasActiveChatStreamStopRequested(streamId) &&
-            error instanceof Error &&
-            (error.name === "AbortError" ||
-              error.message.toLowerCase().includes("abort"))
-          ) {
-            completeSuccess(true);
-            return;
-          }
-          if (
-            isAbruptUpstreamTermination(error) &&
-            chunkRuntime.fullResponse.trim()
-          ) {
-            completeSuccess();
-            return;
-          }
-          console.error("[STREAM] Chat stream error", {
-            conversationId,
-            userId: user.id,
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            cause:
-              error instanceof Error && "cause" in error
-                ? (error as Error & { cause?: unknown }).cause
-                : undefined,
-          });
-          if (attachmentTraceId) {
-            logAttachmentTrace("stream_failure", {
-              traceId: attachmentTraceId,
-              conversationId,
-              attachmentIds: safeAttachmentIds,
-              errorMessage:
-                error instanceof Error ? error.message : String(error),
-            });
-          }
-          failStream(
-            classifyStreamError(
-              error instanceof Error ? error.message : String(error),
-            ),
-          );
+        if (
+          wasActiveChatStreamStopRequested(streamId) &&
+          error instanceof Error &&
+          (error.name === "AbortError" ||
+            error.message.toLowerCase().includes("abort"))
+        ) {
+          completeSuccess(true);
+          return;
         }
+        if (
+          isAbruptUpstreamTermination(error) &&
+          chunkRuntime.fullResponse.trim()
+        ) {
+          completeSuccess();
+          return;
+        }
+        console.error("[STREAM] Chat stream error", {
+          conversationId,
+          userId: user.id,
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          cause:
+            error instanceof Error && "cause" in error
+              ? (error as Error & { cause?: unknown }).cause
+              : undefined,
+        });
+        if (attachmentTraceId) {
+          logAttachmentTrace("stream_failure", {
+            traceId: attachmentTraceId,
+            conversationId,
+            attachmentIds: safeAttachmentIds,
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+          });
+        }
+        failStream(
+          classifyStreamError(
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
       } finally {
         clearTimeout(timeoutId);
         if (streamId) {

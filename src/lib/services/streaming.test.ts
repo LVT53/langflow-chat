@@ -230,6 +230,29 @@ describe('streamChat', () => {
 		});
 	});
 
+	it('parses trailing end-event metadata when the stream closes without a final blank line', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: token\n',
+				'data: {"text":"Hello"}\n',
+				'\n',
+				'event: end\n',
+				'data: {"assistantMessageId":"assistant-1","wasStopped":false}'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onEnd).toHaveBeenCalledWith('Hello', {
+			assistantMessageId: 'assistant-1',
+			wasStopped: false
+		});
+	});
+
 	it('parses tool-call details and assistant evidence metadata', async () => {
 		const mockFetch = vi.mocked(fetch);
 		const onToolCall = vi.fn();

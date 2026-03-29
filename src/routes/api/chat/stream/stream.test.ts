@@ -92,6 +92,7 @@ import { createMessage } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import { translateHungarianToEnglish } from '$lib/server/services/translator';
+import { getConversationTaskState } from '$lib/server/services/task-state';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
@@ -101,13 +102,19 @@ const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
+const mockGetConversationTaskState = getConversationTaskState as ReturnType<typeof vi.fn>;
 
-function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com', translationEnabled: false }) {
+function makeEvent(
+	body: unknown,
+	user = { id: 'user-1', email: 'test@example.com', translationEnabled: false },
+	signal?: AbortSignal
+) {
 	return {
 		request: new Request('http://localhost/api/chat/stream', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
+			signal
 		}),
 		locals: {
 			user,
@@ -246,6 +253,56 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: token');
 		expect(body).toContain('"text":"Hello"');
 		expect(body).toContain('"text":" world"');
+	});
+
+	it('continues processing upstream after the client disconnects during metadata loading', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+
+		let taskStateRequested = false;
+		let resolveTaskState!: (value: null) => void;
+		const taskStateGate = new Promise<null>((resolve) => {
+			resolveTaskState = resolve;
+		});
+		mockGetConversationTaskState.mockImplementationOnce(async () => {
+			taskStateRequested = true;
+			return taskStateGate;
+		});
+
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream(['event: add_message\ndata: {"text":"Hello"}\n\n', 'data: [DONE]\n\n'])
+		);
+
+		const abortController = new AbortController();
+		const event = makeEvent(
+			{ message: 'Hi', conversationId: 'conv-1' },
+			undefined,
+			abortController.signal
+		);
+		const response = await POST(event);
+
+		while (!taskStateRequested) {
+			await Promise.resolve();
+		}
+
+		abortController.abort();
+		resolveTaskState(null);
+
+		const body = await readSseResponse(response);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(body).toBe('');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(1, 'conv-1', 'user', 'Hi');
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			'conv-1',
+			'assistant',
+			'Hello',
+			undefined,
+			undefined,
+			{ evidenceStatus: 'pending' }
+		);
+		expect(mockTouchConversation).toHaveBeenCalledWith('user-1', 'conv-1');
 	});
 
 	it('parses CRLF-delimited SSE blocks from Langflow', async () => {
