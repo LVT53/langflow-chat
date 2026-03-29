@@ -189,6 +189,25 @@ describe('POST /api/chat/stream', () => {
 		expect(response.headers.get('Content-Type')).toBe('text/event-stream');
 	});
 
+	it('starts SSE responses with an ignored prelude comment to flush browser-facing proxies', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: add_message\ndata: {"text":"Hello"}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body.startsWith(':')).toBe(true);
+		expect(body).toContain('event: token');
+		expect(body).toContain('event: end');
+	});
+
 	it('returns 422 before streaming when a same-turn attachment is not prompt-ready', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
@@ -294,7 +313,7 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		expect(body).toBe('');
+		expect(body.startsWith(':')).toBe(true);
 		expect(mockCreateMessage).toHaveBeenNthCalledWith(1, 'conv-1', 'user', 'Hi');
 		expect(mockCreateMessage).toHaveBeenNthCalledWith(
 			2,

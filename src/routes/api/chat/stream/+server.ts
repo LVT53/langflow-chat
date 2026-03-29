@@ -34,6 +34,8 @@ import {
   classifyStreamError,
   createServerChunkRuntime,
   createEventStreamResponse,
+  createSseHeartbeatComment,
+  createSsePreludeComment,
   createStreamJsonErrorResponse,
   extractAssistantChunk,
   extractErrorMessage,
@@ -186,6 +188,11 @@ export const POST: RequestHandler = async (event) => {
       const flushPendingThinking = chunkRuntime.flushPendingThinking;
       const flushInlineThinkingBuffer = chunkRuntime.flushInlineThinkingBuffer;
       const flushPreserveBuffer = chunkRuntime.flushPreserveBuffer;
+      const heartbeatIntervalId = setInterval(() => {
+        enqueueChunk(createSseHeartbeatComment());
+      }, 15000);
+
+      enqueueChunk(createSsePreludeComment());
 
       const emitError = (code: StreamErrorCode) =>
         enqueueChunk(streamErrorEvent(code));
@@ -765,6 +772,7 @@ export const POST: RequestHandler = async (event) => {
           ),
         );
       } finally {
+        clearInterval(heartbeatIntervalId);
         clearTimeout(timeoutId);
         if (streamId) {
           unregisterActiveChatStream(streamId, upstreamAbortController);

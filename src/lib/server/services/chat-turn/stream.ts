@@ -18,6 +18,8 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
   "X-Accel-Buffering": "no",
 };
+const SSE_PRELUDE_PADDING_BYTES = 4096;
+const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
 
 const TOOL_CALL_START_RE = /\x02TOOL_START\x1f([^\x03]*)\x03/g;
 const TOOL_CALL_END_RE = /\x02TOOL_END\x1f([^\x03]*)\x03/g;
@@ -83,6 +85,14 @@ export function createStreamJsonErrorResponse(
 
 export function createEventStreamResponse(stream: ReadableStream): Response {
   return new Response(stream, { headers: SSE_HEADERS });
+}
+
+export function createSsePreludeComment(): string {
+  return `:${" ".repeat(SSE_PRELUDE_PADDING_BYTES)}\n\n`;
+}
+
+export function createSseHeartbeatComment(): string {
+  return SSE_HEARTBEAT_COMMENT;
 }
 
 export function createServerChunkRuntime({
