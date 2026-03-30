@@ -12,6 +12,11 @@ import type {
 import { parseJsonRecord } from "$lib/server/utils/json";
 import { syncArtifactChunks } from "../../task-state";
 import { getConfig } from "../../../config-store";
+import {
+  getDocumentTokenBudget,
+  getWorkingSetPromptTokenBudget,
+  getSmallFileThreshold,
+} from "../../../config-store";
 
 export function getMaxModelContext(): number {
   return getConfig().maxModelContext;
@@ -25,9 +30,11 @@ export function getTargetConstructedContext(): number {
   return getConfig().targetConstructedContext;
 }
 
-export const WORKING_SET_PROMPT_TOKEN_BUDGET = 12_000;
-export const WORKING_SET_DOCUMENT_TOKEN_BUDGET = 1_500;
+export const WORKING_SET_PROMPT_TOKEN_BUDGET = 20_000;
+export const WORKING_SET_DOCUMENT_TOKEN_BUDGET = 4_000;
 export const WORKING_SET_OUTPUT_TOKEN_BUDGET = 2_000;
+
+export { getDocumentTokenBudget, getWorkingSetPromptTokenBudget, getSmallFileThreshold };
 
 type ArtifactSummaryRow = Pick<
   typeof artifacts.$inferSelect,

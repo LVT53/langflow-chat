@@ -12,6 +12,9 @@ export const ADMIN_CONFIG_KEYS = [
   'MAX_MODEL_CONTEXT',
   'COMPACTION_UI_THRESHOLD',
   'TARGET_CONSTRUCTED_CONTEXT',
+  'WORKING_SET_DOCUMENT_TOKEN_BUDGET',
+  'WORKING_SET_PROMPT_TOKEN_BUDGET',
+  'SMALL_FILE_THRESHOLD_CHARS',
   'MODEL_1_BASEURL',
   'MODEL_1_NAME',
   'MODEL_1_DISPLAY_NAME',
@@ -73,6 +76,9 @@ export interface RuntimeConfig {
   maxModelContext: number;
   compactionUiThreshold: number;
   targetConstructedContext: number;
+  workingSetDocumentTokenBudget: number;
+  workingSetPromptTokenBudget: number;
+  smallFileThresholdChars: number;
   sessionSecret: string;
   databasePath: string;
   model1: ModelConfig;
@@ -127,6 +133,18 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   TARGET_CONSTRUCTED_CONTEXT: (config, value) => {
     const parsed = parseIntOverride(value);
     if (parsed !== undefined) config.targetConstructedContext = parsed;
+  },
+  WORKING_SET_DOCUMENT_TOKEN_BUDGET: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.workingSetDocumentTokenBudget = Math.max(100, parsed);
+  },
+  WORKING_SET_PROMPT_TOKEN_BUDGET: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.workingSetPromptTokenBudget = Math.max(1000, parsed);
+  },
+  SMALL_FILE_THRESHOLD_CHARS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.smallFileThresholdChars = Math.max(100, parsed);
   },
   MODEL_1_BASEURL: (config, value) => {
     config.model1.baseUrl = value;
@@ -262,6 +280,18 @@ export function getConfig(): RuntimeConfig {
   return runtimeConfig;
 }
 
+export function getDocumentTokenBudget(): number {
+  return runtimeConfig.workingSetDocumentTokenBudget;
+}
+
+export function getWorkingSetPromptTokenBudget(): number {
+  return runtimeConfig.workingSetPromptTokenBudget;
+}
+
+export function getSmallFileThreshold(): number {
+  return runtimeConfig.smallFileThresholdChars;
+}
+
 export function isModelEnabled(modelId: ModelId, config: RuntimeConfig = runtimeConfig): boolean {
   if (modelId === 'model1') return true;
   return config.model2Enabled !== false;
@@ -299,6 +329,9 @@ export function getResolvedAdminConfigValues(
     MAX_MODEL_CONTEXT: String(config.maxModelContext),
     COMPACTION_UI_THRESHOLD: String(config.compactionUiThreshold),
     TARGET_CONSTRUCTED_CONTEXT: String(config.targetConstructedContext),
+    WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(config.workingSetDocumentTokenBudget),
+    WORKING_SET_PROMPT_TOKEN_BUDGET: String(config.workingSetPromptTokenBudget),
+    SMALL_FILE_THRESHOLD_CHARS: String(config.smallFileThresholdChars),
     MODEL_1_BASEURL: config.model1.baseUrl,
     MODEL_1_NAME: config.model1.modelName,
     MODEL_1_DISPLAY_NAME: config.model1.displayName,
@@ -339,6 +372,9 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     MAX_MODEL_CONTEXT: String(envConfig.maxModelContext),
     COMPACTION_UI_THRESHOLD: String(envConfig.compactionUiThreshold),
     TARGET_CONSTRUCTED_CONTEXT: String(envConfig.targetConstructedContext),
+    WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(envConfig.workingSetDocumentTokenBudget),
+    WORKING_SET_PROMPT_TOKEN_BUDGET: String(envConfig.workingSetPromptTokenBudget),
+    SMALL_FILE_THRESHOLD_CHARS: String(envConfig.smallFileThresholdChars),
     MODEL_1_BASEURL: envConfig.model1.baseUrl,
     MODEL_1_NAME: envConfig.model1.modelName,
     MODEL_1_DISPLAY_NAME: envConfig.model1.displayName,
