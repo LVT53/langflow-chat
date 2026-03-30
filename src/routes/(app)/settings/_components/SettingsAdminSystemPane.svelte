@@ -42,6 +42,7 @@
 		MODEL_2_ENABLED: 'Enable Model 2',
 		TITLE_GEN_URL: 'Title Generator URL',
 		TITLE_GEN_MODEL: 'Title Generator Model',
+		TITLE_GEN_SYSTEM_PROMPT: 'Title Generator System Prompt',
 		TRANSLATOR_URL: 'Translator URL',
 		TRANSLATOR_MODEL: 'Translator Model',
 		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
@@ -95,7 +96,7 @@
 				bind:value={adminConfig.MODEL_1_SYSTEM_PROMPT}
 				rows="5"
 			></textarea>
-			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
+			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use the env value.</p>
 		</div>
 	</div>
 </section>
@@ -146,7 +147,7 @@
 				bind:value={adminConfig.MODEL_2_SYSTEM_PROMPT}
 				rows="5"
 			></textarea>
-			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use env default.</p>
+			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to use the env value.</p>
 		</div>
 	</div>
 </section>
@@ -166,6 +167,16 @@
 				/>
 			</div>
 		{/each}
+		<div>
+			<label class="settings-label" for="TITLE_GEN_SYSTEM_PROMPT">{CONFIG_LABELS.TITLE_GEN_SYSTEM_PROMPT}</label>
+			<textarea
+				id="TITLE_GEN_SYSTEM_PROMPT"
+				class="settings-input min-h-[120px]"
+				bind:value={adminConfig.TITLE_GEN_SYSTEM_PROMPT}
+				rows="5"
+			></textarea>
+			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to send no title-specific system prompt.</p>
+		</div>
 	</div>
 </section>
 

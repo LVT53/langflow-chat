@@ -1413,10 +1413,9 @@ export async function buildEnhancedSystemPrompt(
 	_userId: string
 ): Promise<string> {
 	const basePrompt = getSystemPrompt(promptName);
-
-	return [
+	const sections = [
 		basePrompt,
-		'',
+		basePrompt ? '' : null,
 		'## Retrieved Context Discipline',
 		'Use any retrieved task state, recalled session details, documents, workflows, or evidence as supporting context only.',
 		'User profile and persona memory describe the human user, not you.',
@@ -1427,7 +1426,9 @@ export async function buildEnhancedSystemPrompt(
 		'Do not proactively pivot to old recalled documents, recipes, files, or workflows unless the latest user turn clearly asks for them or they are directly relevant to the active task.',
 		'If retrieved context conflicts with the current user intent, follow the current user intent and ignore the irrelevant retrieved material.',
 		'When prior evidence is relevant, use it naturally without over-explaining that it was retrieved.',
-	].join('\n');
+	];
+
+	return sections.filter((value): value is string => value !== null).join('\n');
 }
 
 export async function checkHealth(): Promise<{

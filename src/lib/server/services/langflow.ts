@@ -43,10 +43,14 @@ function buildOutboundSystemPrompt(params: {
 	}
 
 	if (additions.length === 0) {
-		return params.basePrompt;
+		return basePrompt;
 	}
 
 	const uniqueAdditions = Array.from(new Set(additions));
+	if (!basePrompt) {
+		return `## Tool And Search Guidance\n${uniqueAdditions.join('\n\n')}`;
+	}
+
 	return `${basePrompt}\n\n## Tool And Search Guidance\n${uniqueAdditions.join('\n\n')}`;
 }
 

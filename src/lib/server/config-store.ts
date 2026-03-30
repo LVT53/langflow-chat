@@ -24,6 +24,7 @@ export const ADMIN_CONFIG_KEYS = [
   'MODEL_2_ENABLED',
   'TITLE_GEN_URL',
   'TITLE_GEN_MODEL',
+  'TITLE_GEN_SYSTEM_PROMPT',
   'CONTEXT_SUMMARIZER_URL',
   'CONTEXT_SUMMARIZER_MODEL',
   'TRANSLATOR_URL',
@@ -53,6 +54,7 @@ export interface RuntimeConfig {
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
+  titleGenSystemPrompt: string;
   contextSummarizerUrl: string;
   contextSummarizerApiKey: string;
   contextSummarizerModel: string;
@@ -112,7 +114,7 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
     config.model1.displayName = value;
   },
   MODEL_1_SYSTEM_PROMPT: (config, value) => {
-    config.model1.systemPrompt = normalizeSystemPromptReference(value) ?? 'default';
+    config.model1.systemPrompt = normalizeSystemPromptReference(value) ?? '';
   },
   MODEL_1_FLOW_ID: (config, value) => {
     config.model1.flowId = value;
@@ -130,7 +132,7 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
     config.model2.displayName = value;
   },
   MODEL_2_SYSTEM_PROMPT: (config, value) => {
-    config.model2.systemPrompt = normalizeSystemPromptReference(value) ?? 'default';
+    config.model2.systemPrompt = normalizeSystemPromptReference(value) ?? '';
   },
   MODEL_2_FLOW_ID: (config, value) => {
     config.model2.flowId = value;
@@ -146,6 +148,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   },
   TITLE_GEN_MODEL: (config, value) => {
     config.titleGenModel = value;
+  },
+  TITLE_GEN_SYSTEM_PROMPT: (config, value) => {
+    config.titleGenSystemPrompt = value;
   },
   CONTEXT_SUMMARIZER_URL: (config, value) => {
     config.contextSummarizerUrl = value;
@@ -262,6 +267,7 @@ export function getResolvedAdminConfigValues(
     MODEL_2_ENABLED: String(config.model2Enabled),
     TITLE_GEN_URL: config.titleGenUrl,
     TITLE_GEN_MODEL: config.titleGenModel,
+    TITLE_GEN_SYSTEM_PROMPT: config.titleGenSystemPrompt,
     CONTEXT_SUMMARIZER_URL: config.contextSummarizerUrl,
     CONTEXT_SUMMARIZER_MODEL: config.contextSummarizerModel,
     TRANSLATOR_URL: config.translatorUrl,
@@ -295,6 +301,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     MODEL_2_ENABLED: String(envConfig.model2Enabled),
     TITLE_GEN_URL: envConfig.titleGenUrl,
     TITLE_GEN_MODEL: envConfig.titleGenModel,
+    TITLE_GEN_SYSTEM_PROMPT: envConfig.titleGenSystemPrompt,
     CONTEXT_SUMMARIZER_URL: envConfig.contextSummarizerUrl,
     CONTEXT_SUMMARIZER_MODEL: envConfig.contextSummarizerModel,
     TRANSLATOR_URL: envConfig.translatorUrl,

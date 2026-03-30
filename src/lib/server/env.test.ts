@@ -48,6 +48,7 @@ describe('Environment Configuration', () => {
     delete process.env.TITLE_GEN_URL
     delete process.env.TITLE_GEN_API_KEY
     delete process.env.TITLE_GEN_MODEL
+    delete process.env.TITLE_GEN_SYSTEM_PROMPT
     delete process.env.WEBHOOK_PORT
     delete process.env.REQUEST_TIMEOUT_MS
     delete process.env.MAX_MESSAGE_LENGTH
@@ -67,6 +68,7 @@ describe('Environment Configuration', () => {
     expect(config.titleGenUrl).toBe('http://localhost:30001/v1')
     expect(config.titleGenApiKey).toBe('')
     expect(config.titleGenModel).toBe('nemotron-nano')
+    expect(config.titleGenSystemPrompt).toBe('')
     expect(config.webhookPort).toBe(8090)
     expect(config.requestTimeoutMs).toBe(120000)
     expect(config.maxMessageLength).toBe(10000)
@@ -88,6 +90,7 @@ describe('Environment Configuration', () => {
     process.env.TITLE_GEN_URL = 'http://test-nemotron:9000/v1'
     process.env.TITLE_GEN_API_KEY = 'test-nemotron-key'
     process.env.TITLE_GEN_MODEL = 'test-model'
+    process.env.TITLE_GEN_SYSTEM_PROMPT = 'Write short titles only.'
     process.env.WEBHOOK_PORT = '3000'
     process.env.REQUEST_TIMEOUT_MS = '5000'
     process.env.MAX_MESSAGE_LENGTH = '5000'
@@ -108,6 +111,7 @@ describe('Environment Configuration', () => {
     expect(config.titleGenUrl).toBe('http://test-nemotron:9000/v1')
     expect(config.titleGenApiKey).toBe('test-nemotron-key')
     expect(config.titleGenModel).toBe('test-model')
+    expect(config.titleGenSystemPrompt).toBe('Write short titles only.')
     expect(config.webhookPort).toBe(3000)
     expect(config.requestTimeoutMs).toBe(5000)
     expect(config.maxMessageLength).toBe(5000)

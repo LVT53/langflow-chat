@@ -7,6 +7,11 @@ import {
 } from './prompts';
 
 describe('prompts', () => {
+  it('leaves an empty prompt unset', () => {
+    expect(getSystemPrompt(undefined)).toBe('');
+    expect(getSystemPrompt('')).toBe('');
+  });
+
   it('normalizes known prompt text back to its key', () => {
     expect(normalizeSystemPromptReference(ALFYAI_NEMOTRON_PROMPT)).toBe('alfyai-nemotron');
   });

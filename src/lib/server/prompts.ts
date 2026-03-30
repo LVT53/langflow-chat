@@ -136,10 +136,11 @@ export function normalizeSystemPromptReference(value: string | undefined): strin
   return SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ?? trimmed;
 }
 
-// Get system prompt by name, or return the value directly if it is not a
-// known key (i.e. the admin stored the full prompt text rather than a key).
+// Resolve legacy prompt keys or prompt bodies into concrete text.
+// Empty input now stays empty so the admin settings UI can be the default
+// place where prompts are set.
 export function getSystemPrompt(name: string | undefined): string {
   const normalized = normalizeSystemPromptReference(name);
-  if (!normalized) return DEFAULT_PROMPT;
+  if (!normalized) return '';
   return SYSTEM_PROMPTS[normalized] ?? normalized;
 }

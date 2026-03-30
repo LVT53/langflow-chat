@@ -9,6 +9,7 @@ vi.mock('../env', () => ({
     titleGenUrl: 'http://localhost:30001/v1',
     titleGenApiKey: '',
     titleGenModel: 'nemotron-nano',
+    titleGenSystemPrompt: '',
     webhookPort: 8090,
     requestTimeoutMs: 5000,
     maxMessageLength: 10000,
@@ -48,7 +49,7 @@ describe('generateTitle', () => {
     expect(title).toBe('A Great Conversation Title');
     const callArgs = mockFetch.mock.calls[0]?.[1];
     const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
-    expect(body.messages[0].content).toContain('Titles should be 4-7 targeted words long');
+    expect(body.messages.some((message: { role: string }) => message.role === 'system')).toBe(false);
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/chat/completions'),
       expect.objectContaining({
@@ -69,6 +70,7 @@ describe('generateTitle', () => {
         titleGenUrl: 'http://localhost:30001/v1',
         titleGenApiKey: 'secret-key',
         titleGenModel: 'nemotron-nano',
+        titleGenSystemPrompt: 'Write titles only.',
         webhookPort: 8090,
         requestTimeoutMs: 5000,
         maxMessageLength: 10000,
@@ -215,8 +217,7 @@ describe('generateTitle', () => {
 
     const callArgs = mockFetch.mock.calls[0]?.[1];
     const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
-    expect(body.messages[0].content).toContain('You are a conversation title generator');
-    expect(body.messages[0].content).not.toContain('Te egy beszélgetés cím generátor vagy');
+    expect(body.messages.some((message: { role: string }) => message.role === 'system')).toBe(false);
   });
 
   it('falls back to the user message when the model returns a title in the wrong language', async () => {
@@ -231,5 +232,44 @@ describe('generateTitle', () => {
     await expect(
       generateTitle('Please explain the attached deployment notes in English', 'Rendben.')
     ).resolves.toBe('Please explain the attached deployment notes in English');
+  });
+
+  it('uses the configured title generation system prompt when present', async () => {
+    vi.doMock('../env', () => ({
+      getDatabasePath: () => './data/test.db',
+      config: {
+        langflowApiUrl: 'http://localhost:7860',
+        langflowApiKey: 'test-api-key',
+        langflowFlowId: 'test-flow-id',
+        titleGenUrl: 'http://localhost:30001/v1',
+        titleGenApiKey: '',
+        titleGenModel: 'nemotron-nano',
+        titleGenSystemPrompt: 'Return terse, descriptive titles only.',
+        webhookPort: 8090,
+        requestTimeoutMs: 5000,
+        maxMessageLength: 10000,
+        sessionSecret: 'test-secret',
+        databasePath: './data/test.db',
+      },
+    }));
+
+    vi.resetModules();
+    const { generateTitle: generateTitleWithConfiguredPrompt } = await import('./title-generator');
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'Configured Prompt Title' } }]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+
+    await generateTitleWithConfiguredPrompt('User', 'Assistant');
+
+    const callArgs = mockFetch.mock.calls[0]?.[1];
+    const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
+    expect(body.messages[0]).toEqual({
+      role: 'system',
+      content: 'Return terse, descriptive titles only.'
+    });
   });
 });

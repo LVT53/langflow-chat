@@ -25,6 +25,7 @@ interface Config {
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
+  titleGenSystemPrompt: string;
   contextSummarizerUrl: string;
   contextSummarizerApiKey: string;
   contextSummarizerModel: string;
@@ -84,6 +85,7 @@ function readConfig(): Config {
     titleGenUrl: process.env.TITLE_GEN_URL || 'http://localhost:30001/v1',
     titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
     titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
+    titleGenSystemPrompt: process.env.TITLE_GEN_SYSTEM_PROMPT || '',
     contextSummarizerUrl: process.env.CONTEXT_SUMMARIZER_URL || process.env.TITLE_GEN_URL || '',
     contextSummarizerApiKey: process.env.CONTEXT_SUMMARIZER_API_KEY || process.env.TITLE_GEN_API_KEY || '',
     contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || '',
@@ -97,7 +99,7 @@ function readConfig(): Config {
       apiKey: process.env.MODEL_1_API_KEY || '',
       modelName: process.env.MODEL_1_NAME || 'model-1',
       displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
-      systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || 'default',
+      systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || '',
       flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
       componentId: process.env.MODEL_1_COMPONENT_ID || '',
     },
@@ -106,7 +108,7 @@ function readConfig(): Config {
       apiKey: process.env.MODEL_2_API_KEY || '',
       modelName: process.env.MODEL_2_NAME || '',
       displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
-      systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || 'default',
+      systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || '',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
       componentId: process.env.MODEL_2_COMPONENT_ID || '',
     },

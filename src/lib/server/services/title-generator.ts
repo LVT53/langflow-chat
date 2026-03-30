@@ -193,46 +193,6 @@ function fallbackTitle(userMessage: string): string {
 }
 
 /**
- * Build the system message for title generation
- * @param language The detected language ('en' or 'hu')
- * @param isCodeRelated Whether the conversation is code-related
- * @returns System message string
- */
-function buildSystemMessage(language: 'en' | 'hu', isCodeRelated: boolean): string {
-  const baseInstructions = language === 'hu'
-    ? 'Te egy beszélgetés cím generátor vagy. A feladatod, hogy rövid, tömör, informatív címeket készíts a beszélgetésekhez.'
-    : 'You are a conversation title generator. Your task is to create short, concise, informative titles for conversations.';
-
-  const rules = language === 'hu'
-    ? [
-        'A cím legyen 4-7 célzott szó hosszú',
-        'Használj cselekvő vagy tárgyas formát',
-        'Csak a címet add vissza, semmi mást',
-        'Ne használj idézőjeleket',
-        'Ne adj magyarázatot',
-        'Használj helyes helyesírást és nyelvtant',
-        'Csak szabványos magyar szavakat használj',
-      ]
-    : [
-        'Titles should be 4-7 targeted words long',
-        'Use action or noun phrase format',
-        'Return only the title, nothing else',
-        'Do not use quotes',
-        'Do not provide explanations',
-        'Use correct spelling and grammar',
-        'Use standard English words only',
-      ];
-
-  const codeInstruction = isCodeRelated
-    ? (language === 'hu'
-        ? 'Ez egy kódolási beszélgetés. A cím tartalmazzon programozási nyelvet vagy technológiát ha ismert.'
-        : 'This is a coding conversation. Include the programming language or technology in the title if known.')
-    : '';
-
-  return [baseInstructions, ...rules, codeInstruction].filter(Boolean).join('\n');
-}
-
-/**
  * Build few-shot examples for the prompt
  * @param language The detected language ('en' or 'hu')
  * @param isCodeRelated Whether the conversation is code-related
@@ -307,6 +267,29 @@ function buildFewShotExamples(language: 'en' | 'hu', isCodeRelated: boolean): Ar
   }
 }
 
+function buildTitleMessages(
+  systemPrompt: string,
+  language: 'en' | 'hu',
+  isCodeRelated: boolean,
+  userMessage: string,
+  assistantResponse: string
+): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+
+  if (systemPrompt.trim()) {
+    messages.push({ role: 'system', content: systemPrompt.trim() });
+  }
+
+  return [
+    ...messages,
+    ...buildFewShotExamples(language, isCodeRelated),
+    {
+      role: 'user',
+      content: `User: ${userMessage}\nAssistant: ${assistantResponse.slice(0, 200)}`
+    },
+  ];
+}
+
 /**
  * Internal function to generate title with specific temperature
  * @param userMessage The user's message
@@ -323,22 +306,13 @@ async function generateTitleWithTemperature(
   
   const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
-  
-  // Truncate assistantResponse to 200 chars
-  const truncatedResponse = assistantResponse.slice(0, 200);
-
-  // Build messages array with system message, few-shot examples, and the actual request
-  const systemMessage = buildSystemMessage(language, codeRelated);
-  const fewShotExamples = buildFewShotExamples(language, codeRelated);
-  
-  const messages = [
-    { role: 'system' as const, content: systemMessage },
-    ...fewShotExamples,
-    { 
-      role: 'user' as const, 
-      content: `User: ${userMessage}\nAssistant: ${truncatedResponse}` 
-    },
-  ];
+  const messages = buildTitleMessages(
+    config.titleGenSystemPrompt,
+    language,
+    codeRelated,
+    userMessage,
+    assistantResponse
+  );
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -421,16 +395,13 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   const config = getConfig();
   const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
-  const truncatedResponse = assistantResponse.slice(0, 200);
-
-  const systemMessage = buildSystemMessage(language, codeRelated);
-  const fewShotExamples = buildFewShotExamples(language, codeRelated);
-
-  const messages = [
-    { role: 'system', content: systemMessage },
-    ...fewShotExamples,
-    { role: 'user', content: `User: ${userMessage}\nAssistant: ${truncatedResponse}` },
-  ];
+  const messages = buildTitleMessages(
+    config.titleGenSystemPrompt,
+    language,
+    codeRelated,
+    userMessage,
+    assistantResponse
+  );
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (config.titleGenApiKey) headers.Authorization = `Bearer ${config.titleGenApiKey}`;
