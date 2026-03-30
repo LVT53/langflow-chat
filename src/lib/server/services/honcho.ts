@@ -1150,8 +1150,9 @@ export async function buildConstructedContext(params: {
 		userId: params.userId,
 		artifacts: Array.from(promptArtifacts.values()),
 		query: params.message,
-		perArtifactLimit: documentFocused ? 4 : 2,
-		perArtifactCharBudget: documentFocused ? 2200 : 1400,
+		perArtifactLimit: documentFocused ? 8 : 2,
+		perArtifactCharBudget: documentFocused ? 4000 : 1400,
+		useFullContent: true,
 	}).catch(() => new Map<string, string>());
 
 	const recentTurns = selectRecentRoleTurns(
