@@ -132,6 +132,9 @@ Notes before the tables:
 | `REQUEST_TIMEOUT_MS` | No | `120000` | Upstream request timeout for long-running model calls | Lower it for stricter failure windows or raise it for slower models | Affects perceived reliability on slow backends |
 | `MAX_MESSAGE_LENGTH` | No | `10000` | Maximum accepted user message length | Lower it for tighter limits or raise it for longer prompts | Can also be overridden in admin config |
 | `ATTACHMENT_TRACE_DEBUG` | No | `false` | Enables extra attachment tracing logs | Turn it on while debugging upload/readiness issues | Debug logging only; not a feature flag |
+| `MAX_MODEL_CONTEXT` | No | `262144` | Maximum tokens the model context window supports | Raise it for larger context windows or lower it for stricter limits | Can also be overridden in admin config |
+| `COMPACTION_UI_THRESHOLD` | No | `209715` | UI warning threshold at 80% of max | Adjust if you want earlier or later compaction warnings | Can also be overridden in admin config |
+| `TARGET_CONSTRUCTED_CONTEXT` | No | `157286` | Target context size at 60% of max | Adjust to control how aggressively context is compacted | Can also be overridden in admin config |
 
 ### Primary And Secondary Model Endpoints
 

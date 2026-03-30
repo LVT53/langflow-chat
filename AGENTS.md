@@ -261,6 +261,11 @@ Notes:
 - `env.ts` also owns `getDatabasePath()` for bootstrap-only DB path access.
 - Title-generator prompt variants flow through `env.ts`, `config-store.ts`, and the admin system settings UI. Keep English/Hungarian base prompts and code-only appendices aligned across those layers.
 - `config-store.ts` remains the override-aware runtime config boundary. `getDatabasePath()` is for early DB/bootstrap code, not for general runtime settings reads.
+- Context token limits are admin-configurable via `config-store.ts`:
+  - `MAX_MODEL_CONTEXT` (default: 262144) - Maximum tokens the model context window supports
+  - `COMPACTION_UI_THRESHOLD` (default: 209715) - UI warning threshold at 80% of max
+  - `TARGET_CONSTRUCTED_CONTEXT` (default: 157286) - Target context size at 60% of max
+  - Use getter functions in `config-store.ts` (e.g., `getMaxModelContext()`, `getCompactionUIThreshold()`, `getTargetConstructedContext()`) to read these values with admin overrides applied.
 
 If you add a new runtime-configurable setting:
 

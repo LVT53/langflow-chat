@@ -27,9 +27,9 @@ import {
 } from '../working-set';
 import { getConversationWorkCapsule } from './capsules';
 import {
-	COMPACTION_UI_THRESHOLD,
-	MAX_MODEL_CONTEXT,
-	TARGET_CONSTRUCTED_CONTEXT,
+	getCompactionUiThreshold,
+	getMaxModelContext,
+	getTargetConstructedContext,
 	findRelevantArtifactsByTypes,
 	getArtifactsForUser,
 	listConversationSourceArtifactIds,
@@ -351,9 +351,9 @@ export async function updateConversationContextStatus(params: {
 			conversationId: params.conversationId,
 			userId: params.userId,
 			estimatedTokens: params.estimatedTokens,
-			maxContextTokens: MAX_MODEL_CONTEXT,
-			thresholdTokens: COMPACTION_UI_THRESHOLD,
-			targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+			maxContextTokens: getMaxModelContext(),
+			thresholdTokens: getCompactionUiThreshold(),
+			targetTokens: getTargetConstructedContext(),
 			compactionApplied: params.compactionApplied ? 1 : 0,
 			compactionMode: params.compactionMode ?? 'none',
 			routingStage: params.routingStage ?? 'deterministic',
@@ -374,9 +374,9 @@ export async function updateConversationContextStatus(params: {
 			set: {
 				userId: params.userId,
 				estimatedTokens: params.estimatedTokens,
-				maxContextTokens: MAX_MODEL_CONTEXT,
-				thresholdTokens: COMPACTION_UI_THRESHOLD,
-				targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+				maxContextTokens: getMaxModelContext(),
+				thresholdTokens: getCompactionUiThreshold(),
+				targetTokens: getTargetConstructedContext(),
 				compactionApplied: params.compactionApplied ? 1 : 0,
 				compactionMode: params.compactionMode ?? 'none',
 				routingStage: params.routingStage ?? 'deterministic',

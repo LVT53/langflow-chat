@@ -52,9 +52,12 @@
 		TRANSLATION_TEMPERATURE: 'Translation Temperature',
 		HONCHO_CONTEXT_WAIT_MS: 'Honcho Session Context Wait (ms)',
 		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
-		HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
-		HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
-	};
+	HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
+	HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
+	MAX_MODEL_CONTEXT: 'Max Model Context (tokens)',
+	COMPACTION_UI_THRESHOLD: 'Compaction UI Threshold (tokens)',
+	TARGET_CONSTRUCTED_CONTEXT: 'Target Constructed Context (tokens)',
+};
 
 	const NUMBER_KEYS = new Set([
 		'MAX_MESSAGE_LENGTH',
@@ -64,6 +67,9 @@
 		'HONCHO_CONTEXT_POLL_INTERVAL_MS',
 		'HONCHO_PERSONA_CONTEXT_WAIT_MS',
 		'HONCHO_OVERVIEW_WAIT_MS',
+		'MAX_MODEL_CONTEXT',
+		'COMPACTION_UI_THRESHOLD',
+		'TARGET_CONSTRUCTED_CONTEXT',
 	]);
 
 	function placeholderFor(key: string): string {
@@ -291,6 +297,29 @@
 			bind:value={adminConfig.MAX_MESSAGE_LENGTH}
 			placeholder={placeholderFor('MAX_MESSAGE_LENGTH')}
 		/>
+	</div>
+</section>
+
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">Context Management</h2>
+	<div class="flex flex-col gap-3">
+		{#each ['MAX_MODEL_CONTEXT', 'COMPACTION_UI_THRESHOLD', 'TARGET_CONSTRUCTED_CONTEXT'] as key}
+			<div>
+				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
+				<input
+					id={key}
+					type="number"
+					class="settings-input"
+					bind:value={adminConfig[key]}
+					placeholder={placeholderFor(key)}
+					min="1000"
+				/>
+			</div>
+		{/each}
+		<p class="text-xs text-text-muted mt-2">
+			These values control context token limits. Must maintain: Target &lt; Threshold &lt; Max.
+			Current defaults: 157286 &lt; 209715 &lt; 262144.
+		</p>
 	</div>
 </section>
 

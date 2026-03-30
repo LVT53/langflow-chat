@@ -11,10 +11,20 @@ import type {
 } from "$lib/types";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import { syncArtifactChunks } from "../../task-state";
+import { getConfig } from "../../../config-store";
 
-export const MAX_MODEL_CONTEXT = 262_144;
-export const COMPACTION_UI_THRESHOLD = 209_715;
-export const TARGET_CONSTRUCTED_CONTEXT = 157_286;
+export function getMaxModelContext(): number {
+  return getConfig().maxModelContext;
+}
+
+export function getCompactionUiThreshold(): number {
+  return getConfig().compactionUiThreshold;
+}
+
+export function getTargetConstructedContext(): number {
+  return getConfig().targetConstructedContext;
+}
+
 export const WORKING_SET_PROMPT_TOKEN_BUDGET = 12_000;
 export const WORKING_SET_DOCUMENT_TOKEN_BUDGET = 1_500;
 export const WORKING_SET_OUTPUT_TOKEN_BUDGET = 2_000;

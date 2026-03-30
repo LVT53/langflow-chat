@@ -28,12 +28,12 @@ import {
 } from '$lib/server/utils/prompt-context';
 import {
 	AttachmentReadinessError,
-	COMPACTION_UI_THRESHOLD,
 	findRelevantKnowledgeArtifacts,
 	findRelevantWorkCapsules,
+	getCompactionUiThreshold,
+	getTargetConstructedContext,
 	resolvePromptAttachmentArtifacts,
 	selectWorkingSetArtifactsForPrompt,
-	TARGET_CONSTRUCTED_CONTEXT,
 	updateConversationContextStatus,
 	WORKING_SET_DOCUMENT_TOKEN_BUDGET,
 	WORKING_SET_OUTPUT_TOKEN_BUDGET,
@@ -1303,7 +1303,7 @@ export async function buildConstructedContext(params: {
 		estimateTokenCount(params.message) + 12
 	);
 	let compactionMode: ConversationContextStatus['compactionMode'] = 'none';
-	if (sectionTotalEstimate > TARGET_CONSTRUCTED_CONTEXT) {
+	if (sectionTotalEstimate > getTargetConstructedContext()) {
 		const compactibleSections = effectiveSections.filter(
 			(section) => section.llmCompactible && section.body.trim()
 		);
@@ -1314,7 +1314,7 @@ export async function buildConstructedContext(params: {
 				title: section.title,
 				body: section.body,
 			})),
-			targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+			targetTokens: getTargetConstructedContext(),
 		}).catch(() => null);
 		if (condensedHistorical) {
 			compactionMode = 'llm_fallback';
@@ -1333,7 +1333,7 @@ export async function buildConstructedContext(params: {
 		intro: 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.',
 		message: params.message,
 		sections: effectiveSections,
-		targetTokens: TARGET_CONSTRUCTED_CONTEXT,
+		targetTokens: getTargetConstructedContext(),
 		initialCompactionMode: compactionMode,
 	});
 
@@ -1344,7 +1344,7 @@ export async function buildConstructedContext(params: {
 		compactionApplied:
 			compacted.compactionApplied ||
 			compacted.compactionMode !== 'none' ||
-			compacted.estimatedTokens >= COMPACTION_UI_THRESHOLD,
+			compacted.estimatedTokens >= getCompactionUiThreshold(),
 		compactionMode: compacted.compactionMode,
 		routingStage: preparedContext.routingStage,
 		routingConfidence: preparedContext.routingConfidence,

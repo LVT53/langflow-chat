@@ -9,6 +9,9 @@ import { getSystemPrompt, normalizeSystemPromptReference } from './prompts';
 
 export const ADMIN_CONFIG_KEYS = [
   'MAX_MESSAGE_LENGTH',
+  'MAX_MODEL_CONTEXT',
+  'COMPACTION_UI_THRESHOLD',
+  'TARGET_CONSTRUCTED_CONTEXT',
   'MODEL_1_BASEURL',
   'MODEL_1_NAME',
   'MODEL_1_DISPLAY_NAME',
@@ -67,6 +70,9 @@ export interface RuntimeConfig {
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
+  maxModelContext: number;
+  compactionUiThreshold: number;
+  targetConstructedContext: number;
   sessionSecret: string;
   databasePath: string;
   model1: ModelConfig;
@@ -109,6 +115,18 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   MAX_MESSAGE_LENGTH: (config, value) => {
     const parsed = parseIntOverride(value);
     if (parsed !== undefined) config.maxMessageLength = parsed;
+  },
+  MAX_MODEL_CONTEXT: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.maxModelContext = parsed;
+  },
+  COMPACTION_UI_THRESHOLD: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.compactionUiThreshold = parsed;
+  },
+  TARGET_CONSTRUCTED_CONTEXT: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.targetConstructedContext = parsed;
   },
   MODEL_1_BASEURL: (config, value) => {
     config.model1.baseUrl = value;
@@ -227,6 +245,17 @@ export async function refreshConfig(): Promise<void> {
   }
 
   runtimeConfig = base;
+
+  // Cross-field validation: target < threshold < max
+  if (
+    runtimeConfig.targetConstructedContext >= runtimeConfig.compactionUiThreshold ||
+    runtimeConfig.compactionUiThreshold >= runtimeConfig.maxModelContext
+  ) {
+    // Revert to env defaults if invalid
+    runtimeConfig.targetConstructedContext = envConfig.targetConstructedContext;
+    runtimeConfig.compactionUiThreshold = envConfig.compactionUiThreshold;
+    runtimeConfig.maxModelContext = envConfig.maxModelContext;
+  }
 }
 
 export function getConfig(): RuntimeConfig {
@@ -267,6 +296,9 @@ export function getResolvedAdminConfigValues(
 ): Record<AdminConfigKey, string> {
   return {
     MAX_MESSAGE_LENGTH: String(config.maxMessageLength),
+    MAX_MODEL_CONTEXT: String(config.maxModelContext),
+    COMPACTION_UI_THRESHOLD: String(config.compactionUiThreshold),
+    TARGET_CONSTRUCTED_CONTEXT: String(config.targetConstructedContext),
     MODEL_1_BASEURL: config.model1.baseUrl,
     MODEL_1_NAME: config.model1.modelName,
     MODEL_1_DISPLAY_NAME: config.model1.displayName,
@@ -304,6 +336,9 @@ export function getResolvedAdminConfigValues(
 export function getEnvDefaults(): Record<AdminConfigKey, string> {
   return {
     MAX_MESSAGE_LENGTH: String(envConfig.maxMessageLength),
+    MAX_MODEL_CONTEXT: String(envConfig.maxModelContext),
+    COMPACTION_UI_THRESHOLD: String(envConfig.compactionUiThreshold),
+    TARGET_CONSTRUCTED_CONTEXT: String(envConfig.targetConstructedContext),
     MODEL_1_BASEURL: envConfig.model1.baseUrl,
     MODEL_1_NAME: envConfig.model1.modelName,
     MODEL_1_DISPLAY_NAME: envConfig.model1.displayName,

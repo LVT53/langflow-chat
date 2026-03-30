@@ -35,6 +35,9 @@ interface Config {
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
+  maxModelContext: number;
+  compactionUiThreshold: number;
+  targetConstructedContext: number;
   sessionSecret: string;
   databasePath: string;
   model1: ModelConfig;
@@ -98,6 +101,18 @@ function readConfig(): Config {
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
+    maxModelContext: Math.max(
+      1000,
+      parseInt(process.env.MAX_MODEL_CONTEXT || '262144', 10) || 262144
+    ),
+    compactionUiThreshold: Math.max(
+      1000,
+      parseInt(process.env.COMPACTION_UI_THRESHOLD || '209715', 10) || 209715
+    ),
+    targetConstructedContext: Math.max(
+      1000,
+      parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
+    ),
     sessionSecret,
     databasePath: getDatabasePath(),
     model1: {

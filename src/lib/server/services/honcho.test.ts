@@ -232,9 +232,9 @@ vi.mock('../db/schema', () => ({
 }));
 
 vi.mock('./knowledge', () => ({
-  COMPACTION_UI_THRESHOLD: 209715,
-  MAX_MODEL_CONTEXT: 262144,
-  TARGET_CONSTRUCTED_CONTEXT: 157286,
+  getCompactionUiThreshold: () => 209715,
+  getMaxModelContext: () => 262144,
+  getTargetConstructedContext: () => 157286,
   findRelevantKnowledgeArtifacts: mockFindRelevantKnowledgeArtifacts,
   findRelevantWorkCapsules: mockFindRelevantWorkCapsules,
   getArtifactsForUser: vi.fn(async () => []),
