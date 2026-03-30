@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { basename, extname, join } from "path";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { artifactLinks, artifacts } from "$lib/server/db/schema";
 import type {
