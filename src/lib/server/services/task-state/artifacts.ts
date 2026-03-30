@@ -203,7 +203,7 @@ export async function getPromptArtifactSnippets(params: {
       if (params.useFullContent && artifact.contentText) {
         const fullContent = await getFullArtifactContent(
           artifact.id,
-          perArtifactCharBudget,
+          FULL_CONTENT_MAX_CHARS,
         );
         if (fullContent) {
           snippets.set(artifact.id, fullContent);

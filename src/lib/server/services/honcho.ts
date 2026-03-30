@@ -1151,7 +1151,7 @@ export async function buildConstructedContext(params: {
 		artifacts: Array.from(promptArtifacts.values()),
 		query: params.message,
 		perArtifactLimit: documentFocused ? 8 : 2,
-		perArtifactCharBudget: documentFocused ? 4000 : 1400,
+		perArtifactCharBudget: documentFocused ? 12000 : 1400,
 		useFullContent: true,
 	}).catch(() => new Map<string, string>());
 
