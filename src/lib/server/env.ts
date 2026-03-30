@@ -25,7 +25,10 @@ interface Config {
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
-  titleGenSystemPrompt: string;
+  titleGenSystemPromptEn: string;
+  titleGenSystemPromptHu: string;
+  titleGenSystemPromptCodeAppendixEn: string;
+  titleGenSystemPromptCodeAppendixHu: string;
   contextSummarizerUrl: string;
   contextSummarizerApiKey: string;
   contextSummarizerModel: string;
@@ -85,7 +88,10 @@ function readConfig(): Config {
     titleGenUrl: process.env.TITLE_GEN_URL || 'http://localhost:30001/v1',
     titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
     titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
-    titleGenSystemPrompt: process.env.TITLE_GEN_SYSTEM_PROMPT || '',
+    titleGenSystemPromptEn: process.env.TITLE_GEN_SYSTEM_PROMPT_EN || '',
+    titleGenSystemPromptHu: process.env.TITLE_GEN_SYSTEM_PROMPT_HU || '',
+    titleGenSystemPromptCodeAppendixEn: process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN || '',
+    titleGenSystemPromptCodeAppendixHu: process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU || '',
     contextSummarizerUrl: process.env.CONTEXT_SUMMARIZER_URL || process.env.TITLE_GEN_URL || '',
     contextSummarizerApiKey: process.env.CONTEXT_SUMMARIZER_API_KEY || process.env.TITLE_GEN_API_KEY || '',
     contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || '',

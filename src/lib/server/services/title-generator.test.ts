@@ -9,7 +9,10 @@ vi.mock('../env', () => ({
     titleGenUrl: 'http://localhost:30001/v1',
     titleGenApiKey: '',
     titleGenModel: 'nemotron-nano',
-    titleGenSystemPrompt: '',
+    titleGenSystemPromptEn: '',
+    titleGenSystemPromptHu: '',
+    titleGenSystemPromptCodeAppendixEn: '',
+    titleGenSystemPromptCodeAppendixHu: '',
     webhookPort: 8090,
     requestTimeoutMs: 5000,
     maxMessageLength: 10000,
@@ -70,7 +73,10 @@ describe('generateTitle', () => {
         titleGenUrl: 'http://localhost:30001/v1',
         titleGenApiKey: 'secret-key',
         titleGenModel: 'nemotron-nano',
-        titleGenSystemPrompt: 'Write titles only.',
+        titleGenSystemPromptEn: 'Write titles only.',
+        titleGenSystemPromptHu: '',
+        titleGenSystemPromptCodeAppendixEn: '',
+        titleGenSystemPromptCodeAppendixHu: '',
         webhookPort: 8090,
         requestTimeoutMs: 5000,
         maxMessageLength: 10000,
@@ -234,7 +240,7 @@ describe('generateTitle', () => {
     ).resolves.toBe('Please explain the attached deployment notes in English');
   });
 
-  it('uses the configured title generation system prompt when present', async () => {
+  it('uses the configured language-specific title generation system prompt when present', async () => {
     vi.doMock('../env', () => ({
       getDatabasePath: () => './data/test.db',
       config: {
@@ -244,7 +250,10 @@ describe('generateTitle', () => {
         titleGenUrl: 'http://localhost:30001/v1',
         titleGenApiKey: '',
         titleGenModel: 'nemotron-nano',
-        titleGenSystemPrompt: 'Return terse, descriptive titles only.',
+        titleGenSystemPromptEn: 'Return terse, descriptive titles only.',
+        titleGenSystemPromptHu: 'Adj vissza rovid cimket.',
+        titleGenSystemPromptCodeAppendixEn: 'Mention the language or framework when known.',
+        titleGenSystemPromptCodeAppendixHu: 'Emlitsd a technológiát ha ismert.',
         webhookPort: 8090,
         requestTimeoutMs: 5000,
         maxMessageLength: 10000,
@@ -263,13 +272,13 @@ describe('generateTitle', () => {
       headers: { 'Content-Type': 'application/json' }
     }));
 
-    await generateTitleWithConfiguredPrompt('User', 'Assistant');
+    await generateTitleWithConfiguredPrompt('How do I fix this JavaScript error?', 'Assistant');
 
     const callArgs = mockFetch.mock.calls[0]?.[1];
     const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
     expect(body.messages[0]).toEqual({
       role: 'system',
-      content: 'Return terse, descriptive titles only.'
+      content: 'Return terse, descriptive titles only.\nMention the language or framework when known.'
     });
   });
 });

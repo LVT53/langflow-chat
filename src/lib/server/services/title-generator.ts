@@ -290,6 +290,23 @@ function buildTitleMessages(
   ];
 }
 
+function resolveConfiguredTitleSystemPrompt(
+  language: 'en' | 'hu',
+  isCodeRelated: boolean
+): string {
+  const config = getConfig();
+  const basePrompt =
+    language === 'hu' ? config.titleGenSystemPromptHu : config.titleGenSystemPromptEn;
+  const codeAppendix =
+    language === 'hu'
+      ? config.titleGenSystemPromptCodeAppendixHu
+      : config.titleGenSystemPromptCodeAppendixEn;
+
+  return [basePrompt.trim(), isCodeRelated ? codeAppendix.trim() : '']
+    .filter(Boolean)
+    .join('\n');
+}
+
 /**
  * Internal function to generate title with specific temperature
  * @param userMessage The user's message
@@ -307,7 +324,7 @@ async function generateTitleWithTemperature(
   const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   const messages = buildTitleMessages(
-    config.titleGenSystemPrompt,
+    resolveConfiguredTitleSystemPrompt(language, codeRelated),
     language,
     codeRelated,
     userMessage,
@@ -396,7 +413,7 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   const language = resolveTitleLanguage(userMessage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   const messages = buildTitleMessages(
-    config.titleGenSystemPrompt,
+    resolveConfiguredTitleSystemPrompt(language, codeRelated),
     language,
     codeRelated,
     userMessage,

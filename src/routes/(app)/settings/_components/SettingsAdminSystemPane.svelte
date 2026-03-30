@@ -42,7 +42,10 @@
 		MODEL_2_ENABLED: 'Enable Model 2',
 		TITLE_GEN_URL: 'Title Generator URL',
 		TITLE_GEN_MODEL: 'Title Generator Model',
-		TITLE_GEN_SYSTEM_PROMPT: 'Title Generator System Prompt',
+		TITLE_GEN_SYSTEM_PROMPT_EN: 'Title Generator Prompt (English)',
+		TITLE_GEN_SYSTEM_PROMPT_HU: 'Title Generator Prompt (Hungarian)',
+		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN: 'Title Generator Code Appendix (English)',
+		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU: 'Title Generator Code Appendix (Hungarian)',
 		TRANSLATOR_URL: 'Translator URL',
 		TRANSLATOR_MODEL: 'Translator Model',
 		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
@@ -167,16 +170,27 @@
 				/>
 			</div>
 		{/each}
-		<div>
-			<label class="settings-label" for="TITLE_GEN_SYSTEM_PROMPT">{CONFIG_LABELS.TITLE_GEN_SYSTEM_PROMPT}</label>
-			<textarea
-				id="TITLE_GEN_SYSTEM_PROMPT"
-				class="settings-input min-h-[120px]"
-				bind:value={adminConfig.TITLE_GEN_SYSTEM_PROMPT}
-				rows="5"
-			></textarea>
-			<p class="mt-1 text-xs text-text-muted">Full prompt text. Leave empty to send no title-specific system prompt.</p>
-		</div>
+		{#each [
+			'TITLE_GEN_SYSTEM_PROMPT_EN',
+			'TITLE_GEN_SYSTEM_PROMPT_HU',
+			'TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN',
+			'TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU',
+		] as key}
+			<div>
+				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
+				<textarea
+					id={key}
+					class="settings-input min-h-[120px]"
+					bind:value={adminConfig[key]}
+					rows="5"
+				></textarea>
+				{#if key === 'TITLE_GEN_SYSTEM_PROMPT_EN' || key === 'TITLE_GEN_SYSTEM_PROMPT_HU'}
+					<p class="mt-1 text-xs text-text-muted">Base prompt for that language. Leave empty to rely on few-shot examples only.</p>
+				{:else}
+					<p class="mt-1 text-xs text-text-muted">Optional extra lines appended only when the conversation looks code-related.</p>
+				{/if}
+			</div>
+		{/each}
 	</div>
 </section>
 

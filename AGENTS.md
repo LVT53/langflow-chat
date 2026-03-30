@@ -41,6 +41,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
 - `src/lib/server/services/messages.ts` owns persisted assistant-message metadata such as evidence summaries and Honcho diagnostics/snapshots. Do not invent route-local shadow storage for those fields.
 - `src/lib/server/services/langflow.ts` owns outbound system-prompt assembly, including always-on date-before-search guidance. Do not reintroduce route-local prompt guards for freshness-sensitive search behavior.
+- `src/lib/server/services/title-generator.ts` owns language-aware title prompt selection and code-specific title prompt appendices, while the prompt text itself flows through `src/lib/server/config-store.ts` and admin settings.
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
 
@@ -258,6 +259,7 @@ Do not:
 Notes:
 
 - `env.ts` also owns `getDatabasePath()` for bootstrap-only DB path access.
+- Title-generator prompt variants flow through `env.ts`, `config-store.ts`, and the admin system settings UI. Keep English/Hungarian base prompts and code-only appendices aligned across those layers.
 - `config-store.ts` remains the override-aware runtime config boundary. `getDatabasePath()` is for early DB/bootstrap code, not for general runtime settings reads.
 
 If you add a new runtime-configurable setting:
