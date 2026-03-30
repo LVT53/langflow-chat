@@ -6,6 +6,7 @@ import type { Artifact, ArtifactChunk, TaskState } from "$lib/types";
 import { clipText } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { scoreMatch } from "$lib/server/services/working-set";
+import { getSmallFileThreshold } from "$lib/server/services/knowledge/store/core";
 import {
   canUseContextSummarizer,
   requestContextSummarizer,
@@ -17,8 +18,19 @@ const CHUNK_CHAR_TARGET = 1400;
 const CHUNK_CHAR_OVERLAP = 220;
 const CHUNK_RERANK_CONFIDENCE_MIN = 64;
 
+/** Maximum characters for full content retrieval to prevent unbounded content */
+export const FULL_CONTENT_MAX_CHARS = 6000;
+
 function clip(text: string, maxLength: number): string {
   return clipText(text, maxLength);
+}
+
+/**
+ * Determines if a file should bypass chunking based on its content length.
+ * Small files (< threshold) are stored in full without chunking to save storage.
+ */
+function shouldBypassChunking(contentLength: number): boolean {
+  return contentLength < getSmallFileThreshold();
 }
 
 function splitIntoChunks(text: string): string[] {
@@ -85,11 +97,17 @@ export async function syncArtifactChunks(params: {
   conversationId?: string | null;
   contentText?: string | null;
 }): Promise<void> {
+  // Always delete existing chunks first
   await db
     .delete(artifactChunks)
     .where(eq(artifactChunks.artifactId, params.artifactId));
 
   if (!params.contentText?.trim()) return;
+
+  // Small file bypass: store full content without chunking
+  if (shouldBypassChunking(params.contentText.length)) {
+    return;
+  }
 
   const chunks = splitIntoChunks(params.contentText);
   if (chunks.length === 0) return;
@@ -127,12 +145,39 @@ export async function listArtifactChunksForArtifacts(
   return rows.map(mapArtifactChunk);
 }
 
+/**
+ * Retrieves full artifact content directly, bypassing chunk selection.
+ * Returns contentText truncated to maxChars (default FULL_CONTENT_MAX_CHARS).
+ * Appends truncation notice if content exceeds the limit.
+ */
+export async function getFullArtifactContent(
+  artifactId: string,
+  maxChars: number = FULL_CONTENT_MAX_CHARS,
+): Promise<string | null> {
+  const { artifacts } = await import("$lib/server/db/schema");
+  const row = await db
+    .select({ contentText: artifacts.contentText })
+    .from(artifacts)
+    .where(eq(artifacts.id, artifactId))
+    .limit(1)
+    .get();
+
+  if (!row?.contentText) return null;
+
+  if (row.contentText.length <= maxChars) {
+    return row.contentText;
+  }
+
+  return `${row.contentText.slice(0, maxChars).trim()}\n...[truncated]`;
+}
+
 export async function getPromptArtifactSnippets(params: {
   userId: string;
   artifacts: Artifact[];
   query: string;
   perArtifactLimit?: number;
   perArtifactCharBudget?: number;
+  useFullContent?: boolean;
 }): Promise<Map<string, string>> {
   const perArtifactLimit = params.perArtifactLimit ?? 2;
   const perArtifactCharBudget = params.perArtifactCharBudget ?? 1400;
@@ -153,7 +198,18 @@ export async function getPromptArtifactSnippets(params: {
 
   for (const artifact of params.artifacts) {
     const chunks = chunksByArtifactId.get(artifact.id) ?? [];
+    
     if (chunks.length === 0) {
+      if (params.useFullContent && artifact.contentText) {
+        const fullContent = await getFullArtifactContent(
+          artifact.id,
+          perArtifactCharBudget,
+        );
+        if (fullContent) {
+          snippets.set(artifact.id, fullContent);
+          continue;
+        }
+      }
       const fallback =
         artifact.contentText ?? artifact.summary ?? artifact.name;
       snippets.set(artifact.id, clip(fallback, perArtifactCharBudget));
