@@ -38,6 +38,9 @@ interface Config {
   maxModelContext: number;
   compactionUiThreshold: number;
   targetConstructedContext: number;
+  workingSetDocumentTokenBudget: number;
+  workingSetPromptTokenBudget: number;
+  smallFileThresholdChars: number;
   sessionSecret: string;
   databasePath: string;
   model1: ModelConfig;
@@ -112,6 +115,18 @@ function readConfig(): Config {
     targetConstructedContext: Math.max(
       1000,
       parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
+    ),
+    workingSetDocumentTokenBudget: Math.max(
+      100,
+      parseInt(process.env.WORKING_SET_DOCUMENT_TOKEN_BUDGET || '4000', 10) || 4000
+    ),
+    workingSetPromptTokenBudget: Math.max(
+      1000,
+      parseInt(process.env.WORKING_SET_PROMPT_TOKEN_BUDGET || '20000', 10) || 20000
+    ),
+    smallFileThresholdChars: Math.max(
+      100,
+      parseInt(process.env.SMALL_FILE_THRESHOLD_CHARS || '5000', 10) || 5000
     ),
     sessionSecret,
     databasePath: getDatabasePath(),
