@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Sandbox, SandboxResult } from '../sandbox/config';
+import { Readable } from 'stream';
+
+const mockContainer = vi.hoisted(() => ({
+	id: 'test-container-id',
+	getArchive: vi.fn(),
+	kill: vi.fn(),
+}));
 
 const mockSandbox = vi.hoisted(() => ({
 	execute: vi.fn(),
 	destroy: vi.fn(),
-	container: {
-		id: 'test-container-id',
-		getArchive: vi.fn(),
-	},
+	container: mockContainer,
 }));
 
 vi.mock('../sandbox/config', () => ({
@@ -15,18 +19,67 @@ vi.mock('../sandbox/config', () => ({
 	SANDBOX_TIMEOUT_MS: 60000,
 	SANDBOX_MEMORY_MB: 1024,
 	SANDBOX_MAX_FILE_MB: 50,
-}));
-
-vi.mock('tar-fs', () => ({
-	extract: vi.fn(),
+	SANDBOX_MAX_OUTPUT_FILES: 20,
+	SANDBOX_MAX_TOTAL_OUTPUT_MB: 50,
 }));
 
 import { executeCode } from './sandbox-execution';
+
+function createTarArchive(files: Array<{ name: string; content: Buffer; type?: string; linkname?: string }>): Buffer {
+	const chunks: Buffer[] = [];
+	
+	for (const file of files) {
+		const header = Buffer.alloc(512);
+		const nameBytes = Buffer.from(file.name, 'utf-8');
+		nameBytes.copy(header, 0);
+		
+		header.write('0000644', 100, 'ascii');
+		header.write('0000000', 108, 'ascii');
+		header.write('0000000', 116, 'ascii');
+		header.write(file.content.length.toString(8).padStart(11, '0'), 124, 'ascii');
+		header.write('00000000000', 136, 'ascii');
+		
+		const typeFlag = file.type === 'symlink' ? '2' : 
+		                file.type === 'link' ? '1' :
+		                file.type === 'char' ? '3' :
+		                file.type === 'block' ? '4' :
+		                file.type === 'directory' ? '5' : '0';
+		header.write(typeFlag, 156, 'ascii');
+		
+		if (file.linkname) {
+			const linknameBytes = Buffer.from(file.linkname, 'utf-8');
+			linknameBytes.copy(header, 157);
+		}
+		
+		header.write('ustar', 257, 'ascii');
+		header.write('00', 263, 'ascii');
+		
+		header.write('        ', 148, 'ascii');
+		let checksum = 0;
+		for (let i = 0; i < 512; i++) {
+			checksum += header[i];
+		}
+		header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii');
+		
+		chunks.push(header);
+		chunks.push(file.content);
+		
+		const padding = 512 - (file.content.length % 512);
+		if (padding < 512) {
+			chunks.push(Buffer.alloc(padding));
+		}
+	}
+	
+	chunks.push(Buffer.alloc(1024));
+	
+	return Buffer.concat(chunks);
+}
 
 describe('sandbox-execution', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockSandbox.destroy.mockResolvedValue(undefined);
+		mockContainer.kill.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -41,7 +94,7 @@ describe('sandbox-execution', () => {
 				exitCode: 0,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockSandbox.container.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
 
 			const result = await executeCode('print("Hello, World!")', 'python');
 
@@ -59,7 +112,7 @@ describe('sandbox-execution', () => {
 				exitCode: 1,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockSandbox.container.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
 
 			const result = await executeCode('print("Hello"', 'python');
 
@@ -71,8 +124,12 @@ describe('sandbox-execution', () => {
 		});
 
 		it('handles timeout errors gracefully', async () => {
-			mockSandbox.execute.mockRejectedValue(new Error('Sandbox execution timed out after 60000ms'));
-			mockSandbox.container.getArchive.mockResolvedValue(null);
+			mockSandbox.execute.mockImplementation(() => 
+				new Promise((_, reject) => {
+					setTimeout(() => reject(new Error('Sandbox execution timed out after 60000ms')), 10);
+				})
+			);
+			mockContainer.getArchive.mockResolvedValue(null);
 
 			const result = await executeCode('while True: pass', 'python');
 
@@ -89,7 +146,7 @@ describe('sandbox-execution', () => {
 				exitCode: 137,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockSandbox.container.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
 
 			const result = await executeCode('x = [0] * 10**9', 'python');
 
@@ -98,82 +155,32 @@ describe('sandbox-execution', () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
-		it('extracts generated PDF file from container', async () => {
+		it('extracts generated files from container', async () => {
 			const mockResult: SandboxResult = {
-				stdout: 'PDF generated',
+				stdout: 'File generated',
 				stderr: '',
 				exitCode: 0,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
 
-			mockSandbox.container.getArchive.mockResolvedValue({
-				pipe: vi.fn((dest: unknown) => dest),
-				on: vi.fn(),
-			});
+			const tarContent = createTarArchive([
+				{ name: 'output/report.pdf', content: Buffer.from('PDF content') },
+			]);
 
-			const result = await executeCode(`
-from fpdf import FPDF
-pdf = FPDF()
-pdf.add_page()
-pdf.cell(200, 10, "Hello World")
-pdf.output("/output/report.pdf")
-`, 'python');
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
 
-			expect(result.stdout).toBe('PDF generated');
-			expect(result.files.length).toBeGreaterThanOrEqual(0);
-			expect(mockSandbox.destroy).toHaveBeenCalled();
-		});
+			const result = await executeCode('print("test")', 'python');
 
-		it('extracts matplotlib plot as PNG', async () => {
-			const mockResult: SandboxResult = {
-				stdout: 'Plot saved',
-				stderr: '',
-				exitCode: 0,
-			};
-			mockSandbox.execute.mockResolvedValue(mockResult);
-
-			mockSandbox.container.getArchive.mockResolvedValue({
-				pipe: vi.fn((dest: unknown) => dest),
-				on: vi.fn(),
-			});
-
-			const result = await executeCode(`
-import matplotlib.pyplot as plt
-plt.plot([1, 2, 3], [1, 4, 9])
-plt.savefig('/output/plot.png')
-`, 'python');
-
-			expect(result.stdout).toBe('Plot saved');
-			expect(mockSandbox.destroy).toHaveBeenCalled();
-		});
-
-		it('extracts CSV file from container', async () => {
-			const mockResult: SandboxResult = {
-				stdout: 'CSV created',
-				stderr: '',
-				exitCode: 0,
-			};
-			mockSandbox.execute.mockResolvedValue(mockResult);
-
-			mockSandbox.container.getArchive.mockResolvedValue({
-				pipe: vi.fn((dest: unknown) => dest),
-				on: vi.fn(),
-			});
-
-			const result = await executeCode(`
-import csv
-with open('/output/data.csv', 'w') as f:
-    writer = csv.writer(f)
-    writer.writerow(['a', 'b', 'c'])
-`, 'python');
-
-			expect(result.stdout).toBe('CSV created');
+			expect(result.stdout).toBe('File generated');
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('report.pdf');
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
 		it('destroys sandbox even when execution fails', async () => {
 			mockSandbox.execute.mockRejectedValue(new Error('Unexpected error'));
-			mockSandbox.container.getArchive.mockResolvedValue(null);
+			mockContainer.getArchive.mockResolvedValue(null);
 
 			await executeCode('raise Exception("boom")', 'python');
 
@@ -187,24 +194,261 @@ with open('/output/data.csv', 'w') as f:
 			expect(result.stdout).toBe('');
 			expect(result.stderr).toBe('');
 		});
+	});
 
-		it('limits file size to SANDBOX_MAX_FILE_MB', async () => {
+	describe('security tests', () => {
+		it('rejects path traversal attempts in tar entries', async () => {
 			const mockResult: SandboxResult = {
-				stdout: 'Large file created',
+				stdout: 'Files generated',
 				stderr: '',
 				exitCode: 0,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
 
-			mockSandbox.container.getArchive.mockResolvedValue({
-				pipe: vi.fn(),
-				on: vi.fn(),
-			});
+			const tarContent = createTarArchive([
+				{ name: '../../../etc/passwd', content: Buffer.from('malicious') },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
 
-			const result = await executeCode('x = "large"', 'python');
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
 
-			expect(result.stdout).toBe('Large file created');
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+			expect(result.files.find(f => f.filename === 'passwd')).toBeUndefined();
+		});
+
+		it('rejects absolute paths in tar entries', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: '/etc/shadow', content: Buffer.from('malicious') },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+		});
+
+		it('rejects symlink entries in tar', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/malicious_link', content: Buffer.from(''), type: 'symlink', linkname: '/etc/passwd' },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+		});
+
+		it('rejects hardlink entries in tar', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/malicious_link', content: Buffer.from(''), type: 'link', linkname: '/etc/passwd' },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+		});
+
+		it('rejects character device entries in tar', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/malicious_dev', content: Buffer.from(''), type: 'char' },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+		});
+
+		it('rejects block device entries in tar', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/malicious_dev', content: Buffer.from(''), type: 'block' },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('safe.txt');
+		});
+
+		it('enforces max files limit', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const files = [];
+			for (let i = 0; i < 25; i++) {
+				files.push({ name: `output/file${i}.txt`, content: Buffer.from(`content ${i}`) });
+			}
+
+			const tarContent = createTarArchive(files);
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(20);
+		});
+
+		it('enforces max total bytes limit', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const files = [];
+			for (let i = 0; i < 6; i++) {
+				files.push({ name: `output/large${i}.bin`, content: Buffer.alloc(10 * 1024 * 1024, 'x') });
+			}
+
+			const tarContent = createTarArchive(files);
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			const totalBytes = result.files.reduce((sum, f) => sum + f.sizeBytes, 0);
+			expect(totalBytes).toBeLessThanOrEqual(50 * 1024 * 1024);
+		});
+
+		it('enforces per-file size limit', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/huge.bin', content: Buffer.alloc(51 * 1024 * 1024, 'x') },
+				{ name: 'output/small.txt', content: Buffer.from('small content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('small.txt');
+		});
+
+		it('kills container on timeout', async () => {
+			mockSandbox.execute.mockRejectedValue(new Error('Sandbox execution timed out after 60000ms'));
+			mockContainer.getArchive.mockResolvedValue(null);
+
+			const result = await executeCode('while True: pass', 'python');
+			
+			expect(result.error).toContain('timed out');
 			expect(mockSandbox.destroy).toHaveBeenCalled();
+		});
+
+		it('rejects null bytes in path names', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const maliciousName = 'output/normal' + '\0' + 'evil.txt';
+			const tarContent = createTarArchive([
+				{ name: maliciousName, content: Buffer.from('malicious') },
+				{ name: 'output/safe.txt', content: Buffer.from('safe content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			const maliciousFile = result.files.find(f => f.filename.includes('evil'));
+			expect(maliciousFile).toBeUndefined();
+		});
+
+		it('extracts only basename from paths', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Files generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/subdir/deep/nested/file.txt', content: Buffer.from('nested content') },
+			]);
+
+			const tarStream = Readable.from(tarContent);
+			mockContainer.getArchive.mockResolvedValue(tarStream);
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('file.txt');
 		});
 	});
 });

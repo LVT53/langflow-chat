@@ -4,6 +4,8 @@ import type { Container } from 'dockerode';
 export const SANDBOX_TIMEOUT_MS = 60000;
 export const SANDBOX_MEMORY_MB = 1024;
 export const SANDBOX_MAX_FILE_MB = 50;
+export const SANDBOX_MAX_OUTPUT_FILES = 20;
+export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;
 
 const SANDBOX_IMAGE = 'python:3.11-slim';
 
@@ -31,6 +33,8 @@ export async function createSandbox(): Promise<Sandbox> {
 		OpenStdin: true,
 		StdinOnce: false,
 		StopTimeout: SANDBOX_TIMEOUT_MS / 1000,
+		// SECURITY: Run as non-root user (UID 1000, GID 1000)
+		User: '1000:1000',
 		HostConfig: {
 			Memory: memoryBytes,
 			MemorySwap: memoryBytes,
@@ -39,6 +43,17 @@ export async function createSandbox(): Promise<Sandbox> {
 			AutoRemove: true,
 			ReadonlyRootfs: true,
 			SecurityOpt: ['no-new-privileges:true'],
+			// SECURITY: Drop all Linux capabilities
+			CapDrop: ['ALL'],
+			// SECURITY: Ensure container is not privileged
+			Privileged: false,
+			// SECURITY: Limit number of processes (fork bomb protection)
+			PidsLimit: 100,
+			// SECURITY: Writable tmpfs for output and temp (since rootfs is readonly and we run as non-root)
+			Tmpfs: {
+				'/output': 'rw,size=100m,mode=1777',
+				'/tmp': 'rw,size=50m,mode=1777',
+			},
 		},
 		Labels: {
 			'alfyai.sandbox': 'true',

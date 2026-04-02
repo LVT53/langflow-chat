@@ -1,8 +1,7 @@
-import { createSandbox, SANDBOX_MAX_FILE_MB } from '../sandbox/config';
-import tar from 'tar-fs';
-import { PassThrough } from 'stream';
-import { promisify } from 'util';
+import { createSandbox, SANDBOX_MAX_FILE_MB, SANDBOX_MAX_OUTPUT_FILES, SANDBOX_MAX_TOTAL_OUTPUT_MB, SANDBOX_TIMEOUT_MS } from '../sandbox/config';
+import tar from 'tar-stream';
 import path from 'path';
+import type { Container } from 'dockerode';
 
 export interface FileOutput {
 	filename: string;
@@ -39,62 +38,115 @@ function getMimeType(filename: string): string {
 	return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
-async function extractFilesFromContainer(container: { getArchive: (opts: { path: string }) => Promise<NodeJS.ReadableStream> }): Promise<FileOutput[]> {
+function isPathTraversalAttempt(name: string): boolean {
+	return (
+		name.includes('..') ||
+		path.isAbsolute(name) ||
+		name.includes('\0') ||
+		name.includes('\x00')
+	);
+}
+
+function isDangerousEntryType(header: tar.Headers): boolean {
+	return (
+		header.type === 'symlink' ||
+		header.type === 'link' ||
+		header.type === 'block-device' ||
+		header.type === 'character-device' ||
+		header.type === 'fifo'
+	);
+}
+
+async function extractFilesFromContainer(container: Container): Promise<FileOutput[]> {
 	const files: FileOutput[] = [];
 	const maxFileSizeBytes = SANDBOX_MAX_FILE_MB * 1024 * 1024;
+	const maxTotalBytes = SANDBOX_MAX_TOTAL_OUTPUT_MB * 1024 * 1024;
+	let totalBytes = 0;
 
 	try {
 		const archiveStream = await container.getArchive({ path: OUTPUT_DIR });
-		
+
 		return new Promise((resolve, reject) => {
-			const extractStream = tar.extract('/', {
-				mapStream: (fileStream, header) => {
-					const chunks: Buffer[] = [];
-					let totalSize = 0;
+			const extract = tar.extract();
 
-					fileStream.on('data', (chunk: Buffer) => {
-						totalSize += chunk.length;
-						if (totalSize <= maxFileSizeBytes) {
-							chunks.push(chunk);
-						}
+			extract.on('entry', (header, stream, next) => {
+				// SECURITY: Reject non-file entries (directories, symlinks, devices, etc.)
+				if (header.type !== 'file') {
+					stream.resume();
+					return next();
+				}
+
+				// SECURITY: Reject dangerous entry types (symlinks, hardlinks, devices)
+				if (isDangerousEntryType(header)) {
+					stream.resume();
+					return next();
+				}
+
+				const name = header.name;
+
+				// SECURITY: Reject path traversal attempts
+				if (isPathTraversalAttempt(name)) {
+					stream.resume();
+					return next();
+				}
+
+				// SECURITY: Check max files limit
+				if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
+					stream.resume();
+					return next();
+				}
+
+				// Read file into memory (not to disk)
+				const chunks: Buffer[] = [];
+				let fileSize = 0;
+
+				stream.on('data', (chunk: Buffer) => {
+					fileSize += chunk.length;
+					// SECURITY: Enforce per-file size limit during streaming
+					if (fileSize <= maxFileSizeBytes) {
+						chunks.push(chunk);
+					}
+				});
+
+				stream.on('end', () => {
+					// SECURITY: Skip files that exceed per-file size limit
+					if (fileSize > maxFileSizeBytes) {
+						return next();
+					}
+
+					const content = Buffer.concat(chunks);
+
+					// SECURITY: Check total output size limit
+					if (totalBytes + content.length > maxTotalBytes) {
+						return next();
+					}
+
+					totalBytes += content.length;
+
+					// Extract just the filename (basename) to avoid any path components
+					const filename = path.basename(name);
+
+					files.push({
+						filename,
+						mimeType: getMimeType(filename),
+						content,
+						sizeBytes: content.length,
 					});
 
-					fileStream.on('end', () => {
-						if (totalSize > maxFileSizeBytes) {
-							return;
-						}
+					next();
+				});
 
-						const name = header.name;
-						if (name && !name.endsWith('/')) {
-							const filename = path.basename(name);
-							const content = Buffer.concat(chunks);
-							
-							files.push({
-								filename,
-								mimeType: getMimeType(filename),
-								content,
-								sizeBytes: content.length,
-							});
-						}
-					});
-
-					return fileStream;
-				},
+				stream.on('error', () => {
+					// Skip files with read errors
+					next();
+				});
 			});
 
-			archiveStream.on('error', (err: Error) => {
-				reject(err);
-			});
+			extract.on('finish', () => resolve(files));
+			extract.on('error', (err: Error) => reject(err));
 
-			extractStream.on('error', (err: Error) => {
-				reject(err);
-			});
-
-			extractStream.on('finish', () => {
-				resolve(files);
-			});
-
-			archiveStream.pipe(extractStream);
+			archiveStream.on('error', (err: Error) => reject(err));
+			archiveStream.pipe(extract);
 		});
 	} catch {
 		return [];
@@ -141,12 +193,33 @@ os.makedirs('${OUTPUT_DIR}', exist_ok=True)
 ${code}
 `;
 
-		const result = await sandbox.execute(wrappedCode);
-		
+		const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+			const timeoutId = setTimeout(async () => {
+				// SECURITY: Kill the container on timeout, not just reject
+				try {
+					await sandbox.container.kill({ signal: 'SIGKILL' });
+				} catch {
+					// Container may already be stopped
+				}
+				reject(new Error(`Sandbox execution timed out after ${SANDBOX_TIMEOUT_MS}ms`));
+			}, SANDBOX_TIMEOUT_MS);
+
+			sandbox.execute(wrappedCode)
+				.then((res) => {
+					clearTimeout(timeoutId);
+					resolve(res);
+				})
+				.catch((err) => {
+					clearTimeout(timeoutId);
+					reject(err);
+				});
+		});
+
 		let files: FileOutput[] = [];
 		try {
 			files = await extractFilesFromContainer(sandbox.container);
 		} catch {
+			// File extraction failed, continue without files
 		}
 
 		const error = classifyError(result.stderr, result.exitCode);
@@ -160,7 +233,7 @@ ${code}
 		};
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
-		
+
 		if (errorMessage.includes('timed out')) {
 			return {
 				files: [],
