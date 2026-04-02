@@ -50,6 +50,7 @@ import {
 } from "$lib/server/services/chat-turn/stream";
 import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
+import { getChatFiles } from "$lib/server/services/chat-files";
 
 const STREAM_TIMEOUT_MS = 120_000;
 
@@ -286,6 +287,15 @@ export const POST: RequestHandler = async (event) => {
           userMsgId?: string,
           assistantMsgId?: string,
         ) => {
+          // Fetch generated files for this conversation
+          let generatedFiles: import("$lib/types").ChatGeneratedFile[] | undefined;
+          try {
+            const files = await getChatFiles(conversationId);
+            generatedFiles = files.length > 0 ? files : undefined;
+          } catch {
+            // Ignore errors fetching generated files
+          }
+
           enqueueChunk(
             `event: end\ndata: ${JSON.stringify({
               thinkingTokenCount,
@@ -300,6 +310,7 @@ export const POST: RequestHandler = async (event) => {
               activeWorkingSet: latestActiveWorkingSet,
               taskState: latestTaskState,
               contextDebug: latestContextDebug,
+              generatedFiles,
             })}\n\n`,
           );
           touchConversation(user.id, conversationId).catch(() => undefined);

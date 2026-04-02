@@ -8,6 +8,13 @@
 		submitKnowledgeMemoryAction,
 		type KnowledgeBulkAction,
 		type KnowledgeMemoryActionPayload,
+		fetchVaults,
+		createVault,
+		renameVault,
+		deleteVault,
+		fetchStorageQuota,
+		type Vault,
+		type StorageQuota,
 	} from '$lib/client/api/knowledge';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
@@ -15,6 +22,7 @@
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
+	import VaultSidebar from './_components/VaultSidebar.svelte';
 	import type {
 		ArtifactSummary,
 		FocusContinuityItem,
@@ -43,16 +51,21 @@
 
 	const OVERVIEW_POLL_INTERVAL_MS = 20_000;
 	const OVERVIEW_POLL_MAX_ATTEMPTS = 15;
+	const KNOWLEDGE_PAGE_CONTEXT = 'knowledge-vault-upload';
 
 	let { data }: PageProps = $props();
 	const getData = () => data;
 	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
 	const initialResults = (getData().results ?? []) as ArtifactSummary[];
 	const initialWorkflows = (getData().workflows ?? []) as WorkCapsule[];
+	const initialVaults = (getData().vaults ?? []) as Vault[];
 
 	let documents = $state<KnowledgeDocumentItem[]>(initialDocuments);
 	let results = $state<ArtifactSummary[]>(initialResults);
 	let workflows = $state<WorkCapsule[]>(initialWorkflows);
+	let vaults = $state<Vault[]>(initialVaults);
+	let activeVaultId = $state<string | null>(null);
+	let storageQuota = $state<StorageQuota | null>(null);
 	let personaMemories = $state<PersonaMemoryItem[]>([]);
 	let taskMemories = $state<TaskMemoryItem[]>([]);
 	let focusContinuities = $state<FocusContinuityItem[]>([]);
@@ -566,6 +579,55 @@
 		);
 	}
 
+	async function handleVaultSelect(payload: { id: string }) {
+		activeVaultId = payload.id;
+	}
+
+	async function handleVaultCreate(payload: { name: string; color: string }) {
+		try {
+			const vault = await createVault(payload.name, payload.color);
+			vaults = [...vaults, vault];
+			activeVaultId = vault.id;
+		} catch (error) {
+			manageError = error instanceof Error ? error.message : 'Failed to create vault.';
+		}
+	}
+
+	async function handleVaultRename(payload: { id: string; name: string }) {
+		try {
+			const updated = await renameVault(payload.id, payload.name);
+			vaults = vaults.map((v) => (v.id === payload.id ? updated : v));
+		} catch (error) {
+			manageError = error instanceof Error ? error.message : 'Failed to rename vault.';
+		}
+	}
+
+	async function handleVaultDelete(payload: { id: string }) {
+		try {
+			await deleteVault(payload.id);
+			vaults = vaults.filter((v) => v.id !== payload.id);
+			if (activeVaultId === payload.id) {
+				activeVaultId = null;
+			}
+			await refreshStorageQuota();
+		} catch (error) {
+			manageError = error instanceof Error ? error.message : 'Failed to delete vault.';
+		}
+	}
+
+	async function handleVaultUpload(payload: { vaultId: string; response: { artifact: { id: string; name: string } } }) {
+		await refreshStorageQuota();
+		await refreshKnowledgeLibrary();
+	}
+
+	async function refreshStorageQuota() {
+		try {
+			storageQuota = await fetchStorageQuota();
+		} catch (error) {
+			console.error('Failed to refresh storage quota:', error);
+		}
+	}
+
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && activeMemoryModal) {
 			closeMemoryModal();
@@ -621,6 +683,10 @@
 			}
 		};
 	});
+
+	$effect(() => {
+		void refreshStorageQuota();
+	});
 </script>
 
 <svelte:head>
@@ -629,8 +695,23 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-<div class="knowledge-page flex h-full min-h-0 flex-col overflow-y-auto bg-surface-page px-4 py-6 md:px-8">
-	<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
+<div class="knowledge-page flex h-full min-h-0 flex-row overflow-hidden bg-surface-page">
+	<aside class="vault-sidebar-container flex h-full w-56 shrink-0 flex-col border-r border-border-subtle bg-surface-page py-4">
+		<VaultSidebar
+			{vaults}
+			{activeVaultId}
+			conversationId={KNOWLEDGE_PAGE_CONTEXT}
+			quota={storageQuota}
+			onSelect={handleVaultSelect}
+			onCreate={handleVaultCreate}
+			onRename={handleVaultRename}
+			onDelete={handleVaultDelete}
+			onUpload={handleVaultUpload}
+		/>
+	</aside>
+
+	<div class="main-content flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
+		<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
 		<div class="rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="flex flex-col gap-5">
 			<div class="space-y-2">
@@ -724,6 +805,7 @@
 				onOpenMemoryModal={openMemoryModal}
 			/>
 		{/if}
+		</div>
 	</div>
 </div>
 

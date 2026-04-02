@@ -423,6 +423,9 @@
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
+					if (metadata?.generatedFiles) {
+						generatedFiles = metadata.generatedFiles;
+					}
 					const serverAssistantId = metadata?.assistantMessageId;
 					messages.update((list) =>
 						finalizeStreamingMessageList(list, {
@@ -519,6 +522,9 @@
 						activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 						taskState = metadata?.taskState ?? taskState;
 						contextDebug = metadata?.contextDebug ?? contextDebug;
+						if (metadata?.generatedFiles) {
+							generatedFiles = metadata.generatedFiles;
+						}
 						const serverAssistantId = metadata?.assistantMessageId;
 						messages.update((list) =>
 							finalizeStreamingMessageList(list, {

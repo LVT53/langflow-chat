@@ -18,6 +18,7 @@ export interface StreamMetadata {
 	taskState?: import('$lib/types').TaskState | null;
 	contextDebug?: import('$lib/types').ContextDebugState | null;
 	messageEvidence?: import('$lib/types').MessageEvidenceSummary | null;
+	generatedFiles?: import('$lib/types').ChatGeneratedFile[];
 }
 
 export interface StreamCallbacks {
@@ -234,7 +235,8 @@ export function streamChat(
 								activeWorkingSet: parsed.activeWorkingSet,
 								taskState: parsed.taskState,
 								contextDebug: parsed.contextDebug,
-								messageEvidence: parsed.messageEvidence
+								messageEvidence: parsed.messageEvidence,
+								generatedFiles: parsed.generatedFiles
 							};
 							metadata = Object.values(nextMetadata).some((value) => value !== undefined)
 								? nextMetadata
