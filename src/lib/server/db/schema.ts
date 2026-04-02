@@ -49,12 +49,27 @@ export const messages = sqliteTable('messages', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const knowledgeVaults = sqliteTable('knowledge_vaults', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  color: text('color'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  userIdx: index('knowledge_vaults_user_idx').on(table.userId, table.sortOrder),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+  vaultId: text('vault_id').references(() => knowledgeVaults.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
   retrievalClass: text('retrieval_class').notNull().default('durable'),
   name: text('name').notNull(),
@@ -71,6 +86,7 @@ export const artifacts = sqliteTable('artifacts', {
 }, (table) => ({
   userBinaryHashIdx: index('artifacts_user_binary_hash_idx').on(table.userId, table.binaryHash),
   userSizeIdx: index('artifacts_user_size_idx').on(table.userId, table.sizeBytes),
+  vaultIdx: index('artifacts_vault_idx').on(table.vaultId),
 }));
 
 export const artifactChunks = sqliteTable('artifact_chunks', {
@@ -406,13 +422,31 @@ export const projects = sqliteTable('projects', {
 });
 
 export const messageAnalytics = sqliteTable('message_analytics', {
-  id: text('id').primaryKey(),
-  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  model: text('model').notNull(),
-  promptTokens: integer('prompt_tokens'),
-  completionTokens: integer('completion_tokens'),
-  reasoningTokens: integer('reasoning_tokens'),
-  generationTimeMs: integer('generation_time_ms'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	id: text('id').primaryKey(),
+	messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+	userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+	model: text('model').notNull(),
+	promptTokens: integer('prompt_tokens'),
+	completionTokens: integer('completion_tokens'),
+	reasoningTokens: integer('reasoning_tokens'),
+	generationTimeMs: integer('generation_time_ms'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
+
+export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
+	id: text('id').primaryKey(),
+	conversationId: text('conversation_id')
+		.notNull()
+		.references(() => conversations.id, { onDelete: 'cascade' }),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	filename: text('filename').notNull(),
+	mimeType: text('mime_type'),
+	sizeBytes: integer('size_bytes').notNull().default(0),
+	storagePath: text('storage_path').notNull(),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	conversationIdx: index('chat_generated_files_conversation_idx').on(table.conversationId, table.createdAt),
+	userIdx: index('chat_generated_files_user_idx').on(table.userId, table.createdAt),
+}));
