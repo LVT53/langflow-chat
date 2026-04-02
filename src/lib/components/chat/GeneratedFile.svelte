@@ -36,7 +36,7 @@
 	let showVaultPicker = $state(false);
 	let isSaving = $state(false);
 	let saveError = $state<string | null>(null);
-	let currentSavedVaultName = $state<string | null>(savedVaultName);
+	let currentSavedVaultName = $derived(savedVaultName);
 
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 B';
