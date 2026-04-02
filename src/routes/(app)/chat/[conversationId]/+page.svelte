@@ -22,6 +22,7 @@
 	import EvidenceManager from '$lib/components/chat/EvidenceManager.svelte';
 	import type {
 		ArtifactSummary,
+		ChatGeneratedFile,
 		ChatMessage,
 		ConversationDraft,
 		ContextDebugState,
@@ -70,6 +71,7 @@
 	const initialContextDebug = getData().contextDebug ?? null;
 	const initialConversationDraft = getData().draft ?? null;
 	const initialBootstrapMode = getData().bootstrap ?? false;
+	const initialGeneratedFiles = getData().generatedFiles ?? [];
 
 	const messages = writable<ChatMessage[]>(initialMessages);
 	const draftPersistence = createDraftPersistence();
@@ -89,6 +91,7 @@
 	let taskState = $state<TaskState | null>(initialTaskState);
 	let contextDebug = $state<ContextDebugState | null>(initialContextDebug);
 	let conversationDraft = $state<ConversationDraft | null>(initialConversationDraft);
+	let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 	let evidenceManagerOpen = $state(false);
 	let bootstrapMode = initialBootstrapMode;
 	let hydratingConversation = false;
@@ -751,6 +754,7 @@
 			{isThinkingActive}
 			{contextDebug}
 			{hasMessages}
+			{generatedFiles}
 			onRegenerate={handleRegenerate}
 			onEdit={handleEdit}
 			onSteer={handleSteering}

@@ -64,6 +64,13 @@
       "when": 1775142000000,
       "tag": "0008_knowledge_vaults",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1775157367422,
+      "tag": "1775157367422_chat_generated_files",
+      "breakpoints": true
     }
   ]
 }

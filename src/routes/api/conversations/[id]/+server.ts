@@ -13,6 +13,7 @@ import {
 	getConversationContextStatus,
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
+import { getChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import {
 	attachContinuityToTaskState,
@@ -54,6 +55,7 @@ export const GET: RequestHandler = async (event) => {
 			taskState,
 			contextDebug,
 			draft,
+			generatedFiles,
 		] = await Promise.all([
 			listMessages(id),
 			listConversationArtifacts(user.id, id),
@@ -62,6 +64,7 @@ export const GET: RequestHandler = async (event) => {
 			getConversationTaskState(user.id, id),
 			getContextDebugState(user.id, id),
 			getConversationDraft(user.id, id),
+			getChatFiles(id),
 		]);
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
@@ -76,6 +79,7 @@ export const GET: RequestHandler = async (event) => {
 			taskState: taskStateWithContinuity,
 			contextDebug,
 			draft,
+			generatedFiles,
 			bootstrap: false,
 		});
 	} catch (err) {

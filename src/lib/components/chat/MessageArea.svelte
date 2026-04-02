@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
+	import type { ChatGeneratedFile, ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
+	import GeneratedFile from './GeneratedFile.svelte';
 
 	let {
 		messages = [],
 		conversationId = null,
 		isThinkingActive = false,
 		contextDebug = null,
+		generatedFiles = [],
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
@@ -16,6 +18,7 @@
 		conversationId?: string | null;
 		isThinkingActive?: boolean;
 		contextDebug?: ContextDebugState | null;
+		generatedFiles?: ChatGeneratedFile[];
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
@@ -128,6 +131,24 @@
 					{onSteer}
 				/>
 			{/each}
+			{#if generatedFiles.length > 0 && conversationId}
+				<div class="generated-files-section">
+					<div class="generated-files-header">Generated Files</div>
+					<div class="generated-files-list">
+						{#each generatedFiles as file (file.id)}
+							<GeneratedFile
+								fileId={file.id}
+								{conversationId}
+								filename={file.filename}
+								size={file.sizeBytes}
+								mimeType={file.mimeType ?? 'application/octet-stream'}
+								downloadUrl={`/api/chat/files/${file.id}/download`}
+								status="success"
+							/>
+						{/each}
+					</div>
+				</div>
+			{/if}
 			<div class="scroll-clearance" aria-hidden="true"></div>
 		{/if}
 	</div>
@@ -143,6 +164,28 @@
 	.scroll-clearance {
 		height: 9rem;
 		flex: 0 0 auto;
+	}
+
+	.generated-files-section {
+		margin-top: var(--space-lg);
+		padding-top: var(--space-lg);
+		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent 50%);
+	}
+
+	.generated-files-header {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: var(--space-md);
+	}
+
+	.generated-files-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md);
 	}
 
 	@media (min-width: 768px) {

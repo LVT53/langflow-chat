@@ -76,6 +76,16 @@ export interface Conversation {
   updatedAt: number; // Unix timestamp
 }
 
+// Generated file from chat (AI-generated files)
+export interface ChatGeneratedFile {
+  id: string;
+  conversationId: string;
+  filename: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  createdAt: number;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   messages: ChatMessage[];
@@ -86,6 +96,7 @@ export interface ConversationDetail {
   contextDebug?: ContextDebugState | null;
   draft?: ConversationDraft | null;
   bootstrap?: boolean;
+  generatedFiles?: ChatGeneratedFile[];
 }
 
 // ConversationListItem interface: id, title, updatedAt

@@ -382,7 +382,7 @@
 {#if deletingVault}
 	<DeleteVaultDialog
 		vaultName={deletingVault.name}
-		fileCount={0}
+		fileCount={getVaultFileCount(deletingVault.id)}
 		onConfirm={confirmDelete}
 		onCancel={cancelDelete}
 	/>

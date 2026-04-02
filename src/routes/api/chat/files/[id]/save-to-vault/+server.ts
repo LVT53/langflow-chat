@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getChatFile, readChatFileContent } from '$lib/server/services/chat-files';
+import { getChatFile, readChatFileContent, deleteChatFile } from '$lib/server/services/chat-files';
 import { getVault } from '$lib/server/services/knowledge/store/vaults';
 import { createArtifact, createArtifactLink, fileExtension, knowledgeUserDir } from '$lib/server/services/knowledge/store/core';
 import { mkdir, writeFile } from 'fs/promises';
@@ -122,6 +122,8 @@ export const POST: RequestHandler = async (event) => {
 		linkType: 'attached_to_conversation',
 		conversationId: conversationId,
 	});
+
+	await deleteChatFile(conversationId, fileId);
 
 	const response: SaveToVaultResponse = {
 		artifactId: artifact.id,

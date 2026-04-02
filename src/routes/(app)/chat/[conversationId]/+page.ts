@@ -35,5 +35,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		contextDebug: detail.contextDebug ?? null,
 		draft: detail.draft ?? null,
 		bootstrap: detail.bootstrap ?? false,
+		generatedFiles: detail.generatedFiles ?? [],
 	};
 };
