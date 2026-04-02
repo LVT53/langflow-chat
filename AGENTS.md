@@ -110,6 +110,13 @@ Do not:
   - [`src/lib/server/services/title-generator.ts`](./src/lib/server/services/title-generator.ts)
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)
   - [`src/lib/server/services/message-evidence.ts`](./src/lib/server/services/message-evidence.ts)
+  - Owns evidence channel types including 'vault' for vault-sourced artifacts
+- Chat-generated files:
+  - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
+  - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
+  - [`src/routes/api/chat/files/[id]/save-to-vault/+server.ts`](./src/routes/api/chat/files/[id]/save-to-vault/+server.ts)
+  - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
+  - [`src/lib/components/chat/VaultPickerModal.svelte`](./src/lib/components/chat/VaultPickerModal.svelte)
 
 Do:
 
@@ -120,6 +127,9 @@ Do:
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
+- use `GeneratedFile.svelte` for rendering AI-generated files in chat
+- use `VaultPickerModal.svelte` for saving generated files to vaults
+- save-to-vault endpoint deletes source file after successful copy
 
 Do not:
 
@@ -157,8 +167,13 @@ Responsibility split:
   - artifact mapping and shared selection helpers
 - `store/attachments.ts`
   - attachment readiness
-  - upload dedupe
+  - upload to vault (with vaultId parameter)
+  - auto-rename on file name conflicts
   - attachment linking and listing
+- `store/vaults.ts`
+  - vault CRUD operations
+  - vault ownership validation
+  - cascading delete with file cleanup
 - `store/documents.ts`
   - normalized-document creation
   - logical document listing
@@ -182,6 +197,48 @@ Do not:
 - mix file storage concerns with context-ranking heuristics in the same new helper
 - place large retrieval heuristics in route files
 - add a second parallel artifact service outside the `knowledge` boundary
+
+### Knowledge Vaults
+
+- Vault store:
+  - [`src/lib/server/services/knowledge/store/vaults.ts`](./src/lib/server/services/knowledge/store/vaults.ts)
+- Vault API:
+  - [`src/routes/api/knowledge/vaults/+server.ts`](./src/routes/api/knowledge/vaults/+server.ts)
+  - [`src/routes/api/knowledge/vaults/[id]/+server.ts`](./src/routes/api/knowledge/vaults/[id]/+server.ts)
+- Vault UI:
+  - [`src/routes/(app)/knowledge/_components/VaultSidebar.svelte`](./src/routes/(app)/knowledge/_components/VaultSidebar.svelte)
+  - [`src/routes/(app)/knowledge/_components/CreateVaultModal.svelte`](./src/routes/(app)/knowledge/_components/CreateVaultModal.svelte)
+  - [`src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte`](./src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte)
+  - [`src/routes/(app)/knowledge/_components/VaultFileUpload.svelte`](./src/routes/(app)/knowledge/_components/VaultFileUpload.svelte)
+- Import handler:
+  - [`src/lib/server/services/knowledge/import.ts`](./src/lib/server/services/knowledge/import.ts)
+  - [`src/routes/api/knowledge/import/+server.ts`](./src/routes/api/knowledge/import/+server.ts)
+- File preview:
+  - [`src/lib/components/knowledge/FilePreview.svelte`](./src/lib/components/knowledge/FilePreview.svelte)
+- Storage quota:
+  - [`src/routes/api/knowledge/storage-quota/+server.ts`](./src/routes/api/knowledge/storage-quota/+server.ts)
+
+Rules:
+
+- Vaults are single-level folders only - no nested folder support
+- Each vault belongs to a single user - no collaboration/sharing
+- File versioning is NOT supported - single version per file
+- Auto-rename on name conflicts (counter suffix) - no overwrite
+- Delete vault = delete all files inside (cascading delete)
+- Import from Obsidian/Notion flattens hierarchy, stores original path in metadata
+- File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
+- Storage quota is display-only - no enforcement
+
+Do not:
+
+- add nested folder support (parentId on vaults)
+- add vault collaboration/sharing features
+- add file versioning/history
+- add in-app file editing
+- allow AI to edit existing vault files (AI generates NEW files only)
+- add batch operations in v1
+- add file deduplication (allow duplicates with auto-rename)
+- use external hosted services for file preview
 
 ### Memory, Continuity, And Honcho
 
@@ -459,6 +516,11 @@ Do not:
   - `src/lib/server/services/user-admin.ts`
 - New knowledge artifact or context behavior:
   - `src/lib/server/services/knowledge/`
+- New vault behavior:
+  - `src/lib/server/services/knowledge/store/vaults.ts`
+- New chat-generated file behavior:
+  - `src/lib/server/services/chat-files.ts`
+  - `src/lib/server/services/sandbox-execution.ts`
 - New continuity or evidence-context logic:
   - `src/lib/server/services/task-state.ts`
 - New Honcho-specific behavior:
