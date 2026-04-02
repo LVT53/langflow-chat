@@ -132,21 +132,22 @@ export type ThinkingSegment =
 
 export type MessageEvidenceStatus = 'selected' | 'rejected' | 'reference';
 
-export type EvidenceChannel = 'attached' | 'retrieved' | 'tool' | 'web' | 'memory';
+export type EvidenceChannel = 'attached' | 'retrieved' | 'tool' | 'web' | 'memory' | 'vault';
 
 export interface MessageEvidenceItem {
-  id: string;
-  canonicalId?: string;
-  title: string;
-  sourceType: EvidenceSourceType;
-  status: MessageEvidenceStatus;
-  description?: string | null;
-  url?: string | null;
-  artifactId?: string | null;
-  confidence?: number | null;
-  reason?: string | null;
-  currentTurnAttachment?: boolean;
-  channels?: EvidenceChannel[];
+	id: string;
+	canonicalId?: string;
+	title: string;
+	sourceType: EvidenceSourceType;
+	status: MessageEvidenceStatus;
+	description?: string | null;
+	url?: string | null;
+	artifactId?: string | null;
+	confidence?: number | null;
+	reason?: string | null;
+	currentTurnAttachment?: boolean;
+	channels?: EvidenceChannel[];
+	vaultName?: string;
 }
 
 export interface MessageEvidenceGroup {
@@ -296,6 +297,10 @@ export interface KnowledgeUploadResponse {
   promptReady: boolean;
   promptArtifactId?: string | null;
   readinessError?: string | null;
+  renameInfo?: {
+    originalName: string;
+    wasRenamed: boolean;
+  };
 }
 
 export interface Artifact extends ArtifactSummary {

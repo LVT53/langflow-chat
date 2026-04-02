@@ -120,9 +120,13 @@ export const DELETE: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 	const vaultId = event.params.id;
 
-	const deleted = await deleteVault(user.id, vaultId);
+	const result = await deleteVault(user.id, vaultId);
 
-	if (!deleted) {
+	if (!result) {
+		return json({ error: 'Vault not found' }, { status: 404 });
+	}
+
+	if (!result.deleted) {
 		return json({ error: 'Vault not found' }, { status: 404 });
 	}
 

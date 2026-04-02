@@ -345,6 +345,118 @@ async function ensureConversationAttachmentLink(params: {
   });
 }
 
+async function findExistingArtifactByName(params: {
+  userId: string;
+  vaultId: string | null;
+  name: string;
+}): Promise<Artifact | null> {
+  const rows = await db
+    .select()
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.userId, params.userId),
+        params.vaultId
+          ? eq(artifacts.vaultId, params.vaultId)
+          : isNull(artifacts.vaultId),
+        eq(artifacts.name, params.name),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ? mapArtifact(rows[0]) : null;
+}
+
+function generateUniqueFilename(
+  originalName: string,
+  existingNames: Set<string>,
+): string {
+  if (!existingNames.has(originalName)) {
+    return originalName;
+  }
+
+  const extension = fileExtension(originalName);
+  const baseName = extension
+    ? originalName.slice(0, -(extension.length + 1))
+    : originalName;
+
+  let counter = 1;
+  let newName: string;
+
+  do {
+    const suffix = `_${counter}`;
+    newName = extension
+      ? `${baseName}${suffix}.${extension}`
+      : `${baseName}${suffix}`;
+    counter++;
+  } while (existingNames.has(newName));
+
+  return newName;
+}
+
+async function getAllArtifactNamesInVault(
+  userId: string,
+  vaultId: string | null,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ name: artifacts.name })
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.userId, userId),
+        vaultId ? eq(artifacts.vaultId, vaultId) : isNull(artifacts.vaultId),
+      ),
+    );
+
+  return new Set(rows.map((row) => row.name));
+}
+
+async function resolveArtifactNameWithAutoRename(params: {
+  userId: string;
+  vaultId: string | null;
+  originalName: string;
+}): Promise<{
+  finalName: string;
+  wasRenamed: boolean;
+  originalName: string;
+}> {
+  // If no vault specified, skip conflict detection (conversation-scoped uploads)
+  if (!params.vaultId) {
+    return {
+      finalName: params.originalName,
+      wasRenamed: false,
+      originalName: params.originalName,
+    };
+  }
+
+  const existing = await findExistingArtifactByName({
+    userId: params.userId,
+    vaultId: params.vaultId,
+    name: params.originalName,
+  });
+
+  if (!existing) {
+    return {
+      finalName: params.originalName,
+      wasRenamed: false,
+      originalName: params.originalName,
+    };
+  }
+
+  // Conflict detected - get all names and generate unique one
+  const allNames = await getAllArtifactNamesInVault(
+    params.userId,
+    params.vaultId,
+  );
+  const uniqueName = generateUniqueFilename(params.originalName, allNames);
+
+  return {
+    finalName: uniqueName,
+    wasRenamed: true,
+    originalName: params.originalName,
+  };
+}
+
 async function findDuplicateUploadedArtifact(params: {
   userId: string;
   binaryHash: string;
@@ -425,6 +537,10 @@ export async function saveUploadedArtifact(params: {
   artifact: Artifact;
   reusedExistingArtifact: boolean;
   normalizedArtifact: Artifact | null;
+  renameInfo?: {
+    originalName: string;
+    wasRenamed: boolean;
+  };
 }> {
   const extension = fileExtension(params.file.name);
   const userDir = knowledgeUserDir(params.userId);
@@ -451,6 +567,13 @@ export async function saveUploadedArtifact(params: {
     };
   }
 
+  // Resolve name conflicts for vault uploads
+  const nameResolution = await resolveArtifactNameWithAutoRename({
+    userId: params.userId,
+    vaultId: params.vaultId ?? null,
+    originalName: params.file.name,
+  });
+
   const finalArtifactId = randomUUID();
   await mkdir(userDir, { recursive: true });
 
@@ -467,15 +590,18 @@ export async function saveUploadedArtifact(params: {
     conversationId: params.conversationId,
     vaultId: params.vaultId ?? null,
     type: "source_document",
-    name: params.file.name,
+    name: nameResolution.finalName,
     mimeType: params.file.type || null,
     extension,
     sizeBytes: params.file.size,
     binaryHash,
     storagePath,
-    summary: params.file.name,
+    summary: nameResolution.finalName,
     metadata: {
       uploadSource: "chat",
+      ...(nameResolution.wasRenamed
+        ? { originalName: nameResolution.originalName, renamed: true }
+        : {}),
     },
   });
 
@@ -489,6 +615,14 @@ export async function saveUploadedArtifact(params: {
     artifact,
     reusedExistingArtifact: false,
     normalizedArtifact: null,
+    ...(nameResolution.wasRenamed
+      ? {
+          renameInfo: {
+            originalName: nameResolution.originalName,
+            wasRenamed: true,
+          },
+        }
+      : {}),
   };
 }
 

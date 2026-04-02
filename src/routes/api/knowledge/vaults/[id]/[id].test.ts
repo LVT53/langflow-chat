@@ -341,7 +341,7 @@ describe('DELETE /api/knowledge/vaults/[id]', () => {
 	});
 
 	it('deletes vault and returns 204', async () => {
-		mockDeleteVault.mockResolvedValue(true);
+		mockDeleteVault.mockResolvedValue({ deleted: true, fileCount: 0, deletedArtifactIds: [], deletedStoragePaths: [], failedStoragePaths: [] });
 
 		const event = createMockEvent('vault-1');
 		const response = await DELETE(event as any);
@@ -353,7 +353,7 @@ describe('DELETE /api/knowledge/vaults/[id]', () => {
 	});
 
 	it('returns 404 when vault not found', async () => {
-		mockDeleteVault.mockResolvedValue(false);
+		mockDeleteVault.mockResolvedValue(null);
 
 		const event = createMockEvent('vault-nonexistent');
 		const response = await DELETE(event as any);
@@ -365,7 +365,7 @@ describe('DELETE /api/knowledge/vaults/[id]', () => {
 	});
 
 	it('returns 404 for other user vault', async () => {
-		mockDeleteVault.mockResolvedValue(false);
+		mockDeleteVault.mockResolvedValue(null);
 
 		const event = createMockEvent('vault-other');
 		const response = await DELETE(event as any);

@@ -44,6 +44,7 @@
 		if (channel === 'retrieved') return 'Retrieved';
 		if (channel === 'web') return 'Web';
 		if (channel === 'memory') return 'Memory';
+		if (channel === 'vault') return 'Vault';
 		return 'Tool';
 	}
 
@@ -128,6 +129,12 @@
 											{#each item.channels as channel (`${item.id}-${channel}`)}
 												<span class="evidence-channel-chip">{formatChannel(channel)}</span>
 											{/each}
+										</div>
+									{/if}
+									{#if item.vaultName}
+										<div class="evidence-vault-row">
+											<span class="evidence-vault-indicator">📁</span>
+											<span class="evidence-vault-name">{item.vaultName}</span>
 										</div>
 									{/if}
 								</div>
@@ -336,6 +343,23 @@
 		font-size: 0.64rem;
 		font-family: 'Nimbus Sans L', sans-serif;
 		color: var(--text-muted);
+	}
+
+	.evidence-vault-row {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.3rem;
+	}
+
+	.evidence-vault-indicator {
+		font-size: 0.75rem;
+	}
+
+	.evidence-vault-name {
+		font-size: 0.72rem;
+		color: var(--text-secondary);
+		font-family: 'Nimbus Sans L', sans-serif;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock fs/promises for file deletion
+vi.mock(import('fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return {
+    ...actual,
+    unlink: vi.fn(() => Promise.resolve(undefined)),
+  };
+});
+
 const mockDb = {
   insert: vi.fn(() => ({
     values: vi.fn(() => ({
@@ -23,6 +32,13 @@ const mockDb = {
   })),
   delete: vi.fn(() => ({
     where: vi.fn(() => Promise.resolve({ changes: 0 })),
+  })),
+  transaction: vi.fn((fn) => fn({
+    delete: vi.fn(() => ({
+      where: vi.fn(() => ({
+        run: vi.fn(),
+      })),
+    })),
   })),
 };
 
@@ -363,32 +379,228 @@ describe('Vault Store CRUD', () => {
   });
 
   describe('deleteVault', () => {
-    it('removes vault from queries', async () => {
+    it('deletes vault with no artifacts', async () => {
+      // Mock: no artifacts in vault
+      const artifactWhereMock = vi.fn(() => Promise.resolve([]));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })  // First call: artifacts query
+        .mockReturnValueOnce({ from: vaultFromMock });    // Second call: vault check
+
       mockDb.delete.mockReturnValue({
-        where: vi.fn(() => Promise.resolve({ changes: 1 })),
+        where: deleteWhereMock,
       });
 
       const result = await deleteVault('user-1', 'vault-123');
 
-      expect(result).toBe(true);
+      expect(result).not.toBeNull();
+      expect(result?.deleted).toBe(true);
+      expect(result?.fileCount).toBe(0);
+      expect(result?.deletedArtifactIds).toEqual([]);
+      expect(result?.deletedStoragePaths).toEqual([]);
+      expect(result?.failedStoragePaths).toEqual([]);
     });
 
-    it('returns false when vault not found', async () => {
+    it('deletes vault and all its artifacts', async () => {
+      // Mock: artifacts in vault
+      const mockArtifacts = [
+        { id: 'artifact-1', storagePath: 'data/knowledge/user-1/artifact-1.pdf' },
+        { id: 'artifact-2', storagePath: 'data/knowledge/user-1/artifact-2.txt' },
+      ];
+      const artifactWhereMock = vi.fn(() => Promise.resolve(mockArtifacts));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
+
       mockDb.delete.mockReturnValue({
-        where: vi.fn(() => Promise.resolve({ changes: 0 })),
+        where: deleteWhereMock,
       });
+
+      const result = await deleteVault('user-1', 'vault-123');
+
+      expect(result).not.toBeNull();
+      expect(result?.deleted).toBe(true);
+      expect(result?.fileCount).toBe(2);
+      expect(result?.deletedArtifactIds).toEqual(['artifact-1', 'artifact-2']);
+      // Files don't exist so they go to failedStoragePaths
+      expect(result?.deletedStoragePaths).toEqual([]);
+      expect(result?.failedStoragePaths).toHaveLength(2);
+    });
+
+    it('handles file deletion failures gracefully', async () => {
+      // Mock: artifacts in vault
+      const mockArtifacts = [
+        { id: 'artifact-1', storagePath: 'data/knowledge/user-1/artifact-1.pdf' },
+        { id: 'artifact-2', storagePath: 'data/knowledge/user-1/missing-file.txt' },
+      ];
+      const artifactWhereMock = vi.fn(() => Promise.resolve(mockArtifacts));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
+
+      mockDb.delete.mockReturnValue({
+        where: deleteWhereMock,
+      });
+
+      const result = await deleteVault('user-1', 'vault-123');
+
+      expect(result).not.toBeNull();
+      expect(result?.deleted).toBe(true);
+      expect(result?.fileCount).toBe(2);
+      // Files don't exist so they go to failedStoragePaths
+      expect(result?.deletedStoragePaths).toEqual([]);
+      expect(result?.failedStoragePaths).toHaveLength(2);
+    });
+
+    it('handles artifacts without storage paths', async () => {
+      // Mock: artifacts with no storage paths (e.g., generated outputs without files)
+      const mockArtifacts = [
+        { id: 'artifact-1', storagePath: null },
+        { id: 'artifact-2', storagePath: 'data/knowledge/user-1/artifact-2.txt' },
+      ];
+      const artifactWhereMock = vi.fn(() => Promise.resolve(mockArtifacts));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
+
+      mockDb.delete.mockReturnValue({
+        where: deleteWhereMock,
+      });
+
+      const result = await deleteVault('user-1', 'vault-123');
+
+      expect(result).not.toBeNull();
+      expect(result?.deleted).toBe(true);
+      expect(result?.fileCount).toBe(2);
+      // One artifact has no storage path, so only one file fails to delete
+      expect(result?.deletedStoragePaths).toEqual([]);
+      expect(result?.failedStoragePaths).toHaveLength(1);
+    });
+
+    it('returns null when vault not found', async () => {
+      // Mock: no artifacts
+      const artifactWhereMock = vi.fn(() => Promise.resolve([]));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault does not exist
+      const vaultWhereMock = vi.fn(() => Promise.resolve([]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
 
       const result = await deleteVault('user-1', 'non-existent');
-      expect(result).toBe(false);
+
+      expect(result).toBeNull();
     });
 
-    it('returns false when vault belongs to different user', async () => {
-      mockDb.delete.mockReturnValue({
-        where: vi.fn(() => Promise.resolve({ changes: 0 })),
-      });
+    it('returns null when vault belongs to different user', async () => {
+      // Mock: no artifacts
+      const artifactWhereMock = vi.fn(() => Promise.resolve([]));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault does not exist for this user
+      const vaultWhereMock = vi.fn(() => Promise.resolve([]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
 
       const result = await deleteVault('user-2', 'vault-123');
-      expect(result).toBe(false);
+
+      expect(result).toBeNull();
+    });
+
+    it('runs transaction when artifacts exist', async () => {
+      // Mock: artifacts in vault
+      const mockArtifacts = [
+        { id: 'artifact-1', storagePath: 'data/knowledge/user-1/artifact-1.pdf' },
+      ];
+      const artifactWhereMock = vi.fn(() => Promise.resolve(mockArtifacts));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
+
+      mockDb.delete.mockReturnValue({
+        where: deleteWhereMock,
+      });
+
+      await deleteVault('user-1', 'vault-123');
+
+      // Transaction should be called when artifacts exist
+      expect(mockDb.transaction).toHaveBeenCalled();
+    });
+
+    it('does not run transaction when no artifacts exist', async () => {
+      // Mock: no artifacts
+      const artifactWhereMock = vi.fn(() => Promise.resolve([]));
+      const artifactFromMock = vi.fn(() => ({ where: artifactWhereMock }));
+      
+      // Mock: vault exists
+      const vaultWhereMock = vi.fn(() => Promise.resolve([{ id: 'vault-123' }]));
+      const vaultFromMock = vi.fn(() => ({ where: vaultWhereMock }));
+
+      // Mock: vault deletion succeeds
+      const deleteWhereMock = vi.fn(() => Promise.resolve({ changes: 1 }));
+
+      mockDb.select
+        .mockReturnValueOnce({ from: artifactFromMock })
+        .mockReturnValueOnce({ from: vaultFromMock });
+
+      mockDb.delete.mockReturnValue({
+        where: deleteWhereMock,
+      });
+
+      await deleteVault('user-1', 'vault-123');
+
+      // Transaction should NOT be called when no artifacts
+      expect(mockDb.transaction).not.toHaveBeenCalled();
     });
   });
 });

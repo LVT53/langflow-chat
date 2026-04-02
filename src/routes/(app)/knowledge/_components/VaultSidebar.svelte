@@ -5,10 +5,26 @@
 	import DeleteVaultDialog from './DeleteVaultDialog.svelte';
 	import VaultFileUpload from './VaultFileUpload.svelte';
 
+	interface StorageQuota {
+		totalStorageUsed: number;
+		totalFiles: number;
+		storageLimit: number;
+		usagePercent: number;
+		isWarning: boolean;
+		warningThreshold: number;
+		vaults: Array<{
+			vaultId: string;
+			vaultName: string;
+			fileCount: number;
+			storageUsed: number;
+		}>;
+	}
+
 	let {
 		vaults,
 		activeVaultId = null,
 		conversationId,
+		quota = null,
 		onSelect,
 		onCreate,
 		onRename,
@@ -18,6 +34,7 @@
 		vaults: Vault[];
 		activeVaultId?: string | null;
 		conversationId: string;
+		quota?: StorageQuota | null;
 		onSelect?: (payload: { id: string }) => void;
 		onCreate?: (payload: { name: string; color: string }) => void;
 		onRename?: (payload: { id: string; name: string }) => void;
@@ -30,16 +47,18 @@
 	let editName = $state('');
 	let editInputRef = $state<HTMLInputElement | undefined>(undefined);
 	let deletingVault = $state<Vault | null>(null);
+	let renameNotification = $state<{ finalName: string; originalName: string } | null>(null);
+	let renameNotificationTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
 	const PRESET_COLORS = [
-		'#C15F3C', // Accent/terracotta
-		'#3B82F6', // Blue
-		'#22C55E', // Green
-		'#EAB308', // Yellow
-		'#A855F7', // Purple
-		'#EC4899', // Pink
-		'#6B7280', // Gray
-		'#1A1A1A', // Dark
+		'#C15F3C',
+		'#3B82F6',
+		'#22C55E',
+		'#EAB308',
+		'#A855F7',
+		'#EC4899',
+		'#6B7280',
+		'#1A1A1A',
 	];
 
 	function handleSelect(vault: Vault) {
@@ -109,12 +128,46 @@
 	}
 
 	function handleUpload(vaultId: string, response: KnowledgeUploadResponse) {
+		if (response.renameInfo?.wasRenamed) {
+			if (renameNotificationTimeout) {
+				clearTimeout(renameNotificationTimeout);
+			}
+			renameNotification = {
+				finalName: response.artifact.name,
+				originalName: response.renameInfo.originalName,
+			};
+			renameNotificationTimeout = setTimeout(() => {
+				renameNotification = null;
+			}, 5000);
+		}
 		onUpload?.({ vaultId, response });
 	}
 
 	function getVaultColor(color: string | null): string {
-		return color ?? PRESET_COLORS[6]; // Default to gray
+		return color ?? PRESET_COLORS[6];
 	}
+
+	function formatStorage(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		const value = bytes / Math.pow(k, i);
+		return `${value.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+	}
+
+	function getVaultFileCount(vaultId: string): number {
+		if (!quota) return 0;
+		const vaultQuota = quota.vaults.find((v) => v.vaultId === vaultId);
+		return vaultQuota?.fileCount ?? 0;
+	}
+
+	const quotaDisplay = $derived(() => {
+		if (!quota) return null;
+		const used = formatStorage(quota.totalStorageUsed);
+		const limit = formatStorage(quota.storageLimit);
+		return { used, limit, percent: quota.usagePercent, isWarning: quota.isWarning };
+	});
 </script>
 
 <div class="vault-sidebar flex h-full flex-col gap-0">
@@ -230,6 +283,7 @@
 						>
 							{vault.name}
 						</span>
+						<span class="shrink-0 text-[11px] text-text-muted">({getVaultFileCount(vault.id)})</span>
 						{/if}
 					</div>
 
@@ -284,6 +338,37 @@
 			{/each}
 		{/if}
 	</div>
+
+	{#if renameNotification}
+		<div
+			class="mx-2 mt-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[11px] text-text-secondary"
+			role="status"
+			aria-live="polite"
+			data-testid="rename-notification"
+		>
+			<span class="font-medium text-text-primary">{renameNotification.finalName}</span>
+			<span class="text-text-muted">(renamed from {renameNotification.originalName})</span>
+		</div>
+	{/if}
+
+	{#if quota && quotaDisplay()}
+		{@const display = quotaDisplay()}
+		<div class="quota-section mt-auto border-t border-border-subtle px-3 py-3" data-testid="storage-quota">
+			<div class="flex items-center justify-between text-[11px]">
+				<span class="text-text-muted">Storage</span>
+				<span class={display?.isWarning ? 'text-danger font-medium' : 'text-text-secondary'}>
+					{display?.used} / {display?.limit}
+				</span>
+			</div>
+			<div class="quota-bar mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-elevated">
+				<div
+					class="quota-bar-fill h-full rounded-full transition-all duration-300"
+					class:quota-bar-warning={display?.isWarning}
+					style="width: {Math.min(display?.percent ?? 0, 100)}%;"
+				></div>
+			</div>
+		</div>
+	{/if}
 </div>
 
 {#if showCreateModal}
@@ -325,5 +410,13 @@
 
 	.vault-delete-btn {
 		cursor: pointer;
+	}
+
+	.quota-bar-fill {
+		background-color: var(--accent);
+	}
+
+	.quota-bar-warning {
+		background-color: var(--danger);
 	}
 </style>

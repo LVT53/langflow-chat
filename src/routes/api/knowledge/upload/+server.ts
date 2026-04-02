@@ -143,5 +143,6 @@ export const POST: RequestHandler = async (event) => {
 		promptReady,
 		promptArtifactId: promptReady ? resolvedItem?.promptArtifact?.id ?? null : null,
 		readinessError,
+		renameInfo: uploadResult.renameInfo,
 	});
 };

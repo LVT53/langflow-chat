@@ -12,6 +12,7 @@ import type {
 	ToolEvidenceCandidate,
 } from '$lib/types';
 import { getArtifactsForUser } from './knowledge';
+import { getVault } from './knowledge/store/vaults';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { resolveArtifactFamilyKeys } from './evidence-family';
 
@@ -147,6 +148,20 @@ async function buildArtifactGroups(params: {
 		params.userId && artifactRows.length > 0
 			? await resolveArtifactFamilyKeys(params.userId, artifactRows).catch(() => new Map<string, string>())
 			: new Map<string, string>();
+
+	const vaultIds = Array.from(
+		new Set(artifactRows.map((a) => a.vaultId).filter((id): id is string => Boolean(id)))
+	);
+	const vaultNames = new Map<string, string>();
+	if (params.userId && vaultIds.length > 0) {
+		await Promise.all(
+			vaultIds.map(async (vaultId) => {
+				const vault = await getVault(params.userId!, vaultId).catch(() => null);
+				vaultNames.set(vaultId, vault?.name ?? 'Unknown Vault');
+			})
+		);
+	}
+
 	const grouped = new Map<EvidenceSourceType, Map<string, MessageEvidenceItem>>();
 
 	const upsertItem = (item: MessageEvidenceItem) => {
@@ -175,12 +190,18 @@ async function buildArtifactGroups(params: {
 			reason: existing.reason ?? item.reason ?? null,
 			currentTurnAttachment: Boolean(existing.currentTurnAttachment && item.currentTurnAttachment),
 			channels: mergeChannels(existing.channels, item.channels),
+			vaultName: existing.vaultName ?? item.vaultName,
 		});
 	};
 
 	for (const attachment of currentAttachments) {
 		const artifact = artifactMap.get(attachment.id);
 		const canonicalId = familyKeys.get(attachment.id) ?? `document:${attachment.id}`;
+		const vaultName = artifact?.vaultId ? vaultNames.get(artifact.vaultId) : undefined;
+		const channels: EvidenceChannel[] = ['attached'];
+		if (artifact?.vaultId) {
+			channels.push('vault');
+		}
 		upsertItem({
 			id: attachment.id,
 			canonicalId,
@@ -192,7 +213,8 @@ async function buildArtifactGroups(params: {
 				? `Included automatically for this turn. ${clip(attachment.summary, 180)}`
 				: 'Included automatically for this turn.',
 			currentTurnAttachment: true,
-			channels: ['attached'],
+			channels,
+			vaultName,
 		});
 		if (artifact && !familyKeys.has(artifact.id)) {
 			familyKeys.set(artifact.id, canonicalId);
@@ -205,6 +227,18 @@ async function buildArtifactGroups(params: {
 			artifact && params.userId
 				? familyKeys.get(evidence.artifactId) ?? `${evidence.sourceType}:${evidence.artifactId}`
 				: `${evidence.sourceType}:${evidence.artifactId}`;
+		const vaultName = artifact?.vaultId ? vaultNames.get(artifact.vaultId) : undefined;
+		const baseChannels: EvidenceChannel[] =
+			evidence.sourceType === 'document'
+				? ['retrieved']
+				: evidence.sourceType === 'tool'
+					? ['tool']
+					: evidence.sourceType === 'web'
+						? ['web']
+						: ['memory'];
+		if (artifact?.vaultId) {
+			baseChannels.push('vault');
+		}
 		upsertItem({
 			id: evidence.artifactId,
 			canonicalId,
@@ -216,14 +250,8 @@ async function buildArtifactGroups(params: {
 			reason: evidence.reason,
 			description: evidence.reason,
 			currentTurnAttachment: false,
-			channels:
-				evidence.sourceType === 'document'
-					? ['retrieved']
-					: evidence.sourceType === 'tool'
-						? ['tool']
-						: evidence.sourceType === 'web'
-							? ['web']
-							: ['memory'],
+			channels: baseChannels,
+			vaultName,
 		});
 	}
 

@@ -1,23 +1,42 @@
 <script lang="ts">
+	import VaultPickerModal from './VaultPickerModal.svelte';
+
+	interface Vault {
+		id: string;
+		name: string;
+		color: string | null;
+	}
+
 	interface GeneratedFileProps {
 		fileId: string;
+		conversationId: string;
 		filename: string;
 		size: number;
 		mimeType: string;
 		downloadUrl: string;
 		status: 'generating' | 'success' | 'failed';
 		error?: string;
+		vaults?: Vault[];
+		savedVaultName?: string | null;
 	}
 
 	let {
 		fileId,
+		conversationId,
 		filename,
 		size,
 		mimeType,
 		downloadUrl,
 		status,
 		error,
+		vaults = [],
+		savedVaultName = null,
 	}: GeneratedFileProps = $props();
+
+	let showVaultPicker = $state(false);
+	let isSaving = $state(false);
+	let saveError = $state<string | null>(null);
+	let currentSavedVaultName = $state<string | null>(savedVaultName);
 
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 B';
@@ -51,7 +70,39 @@
 	}
 
 	function handleSaveToVault() {
-		alert(`Save to vault: ${filename} (placeholder)`);
+		if (currentSavedVaultName) return;
+		showVaultPicker = true;
+		saveError = null;
+	}
+
+	function handleVaultPickerCancel() {
+		showVaultPicker = false;
+	}
+
+	async function handleVaultPickerSave(vaultId: string) {
+		isSaving = true;
+		saveError = null;
+
+		try {
+			const response = await fetch(`/api/chat/files/${fileId}/save-to-vault`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ conversationId, vaultId }),
+			});
+
+			if (!response.ok) {
+				const data = await response.json();
+				throw new Error(data.error || 'Failed to save to vault');
+			}
+
+			const data = await response.json();
+			currentSavedVaultName = data.vaultName;
+			showVaultPicker = false;
+		} catch (err) {
+			saveError = err instanceof Error ? err.message : 'Failed to save to vault';
+		} finally {
+			isSaving = false;
+		}
 	}
 
 	function handlePreview() {
@@ -226,6 +277,15 @@
 	</svg>
 {/snippet}
 
+{#if showVaultPicker}
+	<VaultPickerModal
+		{vaults}
+		{filename}
+		onSave={handleVaultPickerSave}
+		onCancel={handleVaultPickerCancel}
+	/>
+{/if}
+
 <div class="generated-file-card" class:failed={status === 'failed'}>
 	<div class="file-header">
 		<div class="file-icon-wrapper" class:generating={status === 'generating'}>
@@ -235,6 +295,25 @@
 			<div class="filename" title={filename}>{filename}</div>
 			{#if status === 'success'}
 				<div class="file-size">{formatFileSize(size)}</div>
+				{#if currentSavedVaultName}
+					<div class="saved-status">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<polyline points="20 6 9 17 4 12" />
+						</svg>
+						<span>Saved to Vault: {currentSavedVaultName}</span>
+					</div>
+				{/if}
 			{:else if status === 'generating'}
 				<div class="generating-text">
 					{@render SpinnerIcon()}
@@ -242,6 +321,9 @@
 				</div>
 			{:else if status === 'failed'}
 				<div class="error-text">{error || 'File generation failed'}</div>
+			{/if}
+			{#if saveError}
+				<div class="save-error-text">{saveError}</div>
 			{/if}
 		</div>
 	</div>
@@ -276,24 +358,31 @@
 			<button
 				type="button"
 				class="btn-secondary action-button"
+				class:saved={currentSavedVaultName}
 				onclick={handleSaveToVault}
-				aria-label={`Save ${filename} to vault`}
+				disabled={isSaving || !!currentSavedVaultName}
+				aria-label={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />
-				</svg>
-				<span>Save to Vault</span>
+				{#if isSaving}
+					{@render SpinnerIcon()}
+					<span>Saving...</span>
+				{:else}
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />
+					</svg>
+					<span>{currentSavedVaultName ? 'Saved' : 'Save to Vault'}</span>
+				{/if}
 			</button>
 
 			<button
@@ -385,6 +474,16 @@
 		color: var(--text-muted);
 	}
 
+	.saved-status {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.75rem;
+		color: var(--success, #22c55e);
+		margin-top: 2px;
+	}
+
 	.generating-text {
 		display: flex;
 		align-items: center;
@@ -399,6 +498,14 @@
 		font-size: 0.75rem;
 		color: var(--danger);
 		word-break: break-word;
+	}
+
+	.save-error-text {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.75rem;
+		color: var(--danger);
+		word-break: break-word;
+		margin-top: 2px;
 	}
 
 	.file-actions {
@@ -417,6 +524,16 @@
 		padding: 0.25rem 0.6rem;
 		min-height: 32px;
 		text-decoration: none;
+	}
+
+	.action-button.saved {
+		color: var(--success, #22c55e);
+		cursor: default;
+	}
+
+	.action-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	.spinner {
