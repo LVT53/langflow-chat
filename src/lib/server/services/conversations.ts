@@ -79,6 +79,16 @@ export async function getConversation(userId: string, conversationId: string): P
 	};
 }
 
+export async function getConversationUserId(conversationId: string): Promise<string | null> {
+	const [conversation] = await db
+		.select({ userId: conversations.userId })
+		.from(conversations)
+		.where(eq(conversations.id, conversationId))
+		.limit(1);
+
+	return conversation?.userId ?? null;
+}
+
 export async function updateConversationTitle(userId: string, conversationId: string, title: string): Promise<Conversation | null> {
 	const [conversation] = await db
 		.update(conversations)

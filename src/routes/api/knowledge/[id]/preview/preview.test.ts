@@ -1,13 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
 
-const mockReadFile = vi.fn();
 const mockRequireAuth = vi.fn();
 const mockGetArtifactForUser = vi.fn();
-
-vi.mock('fs/promises', () => ({
-	default: {},
-	readFile: (...args: unknown[]) => mockReadFile(...args),
-}));
 
 vi.mock('$lib/server/auth/hooks', () => ({
 	requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
@@ -19,12 +15,25 @@ vi.mock('$lib/server/services/knowledge', () => ({
 
 import { GET } from './+server';
 
+async function writePreviewFile(storagePath: string, contents: Buffer | string) {
+	const absolutePath = join(process.cwd(), storagePath);
+	await mkdir(dirname(absolutePath), { recursive: true });
+	await writeFile(absolutePath, contents);
+}
+
 describe('GET /api/knowledge/[id]/preview', () => {
 	const mockUser = { id: 'user-123', email: 'test@example.com' };
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockImplementation(() => {});
+	});
+
+	afterEach(async () => {
+		await rm(join(process.cwd(), 'data', 'knowledge', mockUser.id), {
+			recursive: true,
+			force: true,
+		});
 	});
 
 	it('returns 404 when artifact not found', async () => {
@@ -65,7 +74,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('returns file content with correct headers for PDF', async () => {
 		const fileBuffer = Buffer.from('PDF content');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/document.pdf', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'document.pdf',
@@ -93,7 +102,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('returns file content with inferred mime type from extension', async () => {
 		const fileBuffer = Buffer.from('DOCX content');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/document.docx', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'document.docx',
@@ -116,7 +125,6 @@ describe('GET /api/knowledge/[id]/preview', () => {
 	});
 
 	it('returns 500 when file read fails', async () => {
-		mockReadFile.mockRejectedValue(new Error('File not found on disk'));
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'document.pdf',
@@ -139,7 +147,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('handles image files correctly', async () => {
 		const fileBuffer = Buffer.from('PNG image data');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/image.png', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'image.png',
@@ -161,7 +169,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('handles XLSX files correctly', async () => {
 		const fileBuffer = Buffer.from('XLSX spreadsheet data');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/spreadsheet.xlsx', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'spreadsheet.xlsx',
@@ -185,7 +193,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('handles PPTX files correctly', async () => {
 		const fileBuffer = Buffer.from('PPTX presentation data');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/presentation.pptx', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'presentation.pptx',
@@ -209,7 +217,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('handles text files correctly', async () => {
 		const fileBuffer = Buffer.from('Plain text content');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/notes.txt', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'notes.txt',
@@ -231,7 +239,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 	it('encodes filename in Content-Disposition header', async () => {
 		const fileBuffer = Buffer.from('PDF content');
-		mockReadFile.mockResolvedValue(fileBuffer);
+		await writePreviewFile('data/knowledge/user-123/document.pdf', fileBuffer);
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'document with spaces & special chars.pdf',

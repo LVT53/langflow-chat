@@ -18,10 +18,27 @@
 
 	let inputRef = $state<HTMLInputElement | undefined>(undefined);
 	let isUploading = $state(false);
-	let uploadProgress = $state(0);
 
 	function handleClick() {
 		inputRef?.click();
+	}
+
+	async function uploadFile(file: File, input?: HTMLInputElement) {
+		isUploading = true;
+		onUploadStart?.();
+
+		try {
+			const response = await uploadKnowledgeAttachment(file, conversationId, vaultId);
+			onUploadSuccess?.(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Upload failed';
+			onUploadError?.(message);
+		} finally {
+			isUploading = false;
+			if (input) {
+				input.value = '';
+			}
+		}
 	}
 
 	async function handleFileChange(event: Event) {
@@ -29,24 +46,7 @@
 		const file = input.files?.[0];
 		if (!file) return;
 
-		isUploading = true;
-		uploadProgress = 0;
-		onUploadStart?.();
-
-		try {
-			const response = await uploadKnowledgeAttachment(file, conversationId, vaultId);
-			uploadProgress = 100;
-			onUploadSuccess?.(response);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Upload failed';
-			onUploadError?.(message);
-		} finally {
-			isUploading = false;
-			uploadProgress = 0;
-			if (input) {
-				input.value = '';
-			}
-		}
+		await uploadFile(file, input);
 	}
 
 	async function handleDrop(event: DragEvent) {
@@ -56,21 +56,7 @@
 		const file = event.dataTransfer?.files?.[0];
 		if (!file) return;
 
-		isUploading = true;
-		uploadProgress = 0;
-		onUploadStart?.();
-
-		try {
-			const response = await uploadKnowledgeAttachment(file, conversationId, vaultId);
-			uploadProgress = 100;
-			onUploadSuccess?.(response);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Upload failed';
-			onUploadError?.(message);
-		} finally {
-			isUploading = false;
-			uploadProgress = 0;
-		}
+		await uploadFile(file);
 	}
 
 	function handleDragOver(event: DragEvent) {

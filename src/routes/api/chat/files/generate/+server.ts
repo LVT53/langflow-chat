@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireAuth } from '$lib/server/auth/hooks';
-import { getConversation } from '$lib/server/services/conversations';
+import { hasValidAlfyAiApiKey } from '$lib/server/auth/hooks';
+import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import { executeCode } from '$lib/server/services/sandbox-execution';
 import { storeGeneratedFile } from '$lib/server/services/chat-files';
 
@@ -55,13 +55,13 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 }
 
 export const POST: RequestHandler = async (event) => {
-	try {
-		requireAuth(event);
-	} catch {
+	const user = event.locals.user ?? null;
+	const isServiceRequest =
+		user === null && hasValidAlfyAiApiKey(event.request.headers.get('authorization'));
+
+	if (!user && !isServiceRequest) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
-
-	const user = event.locals.user!;
 
 	let body: unknown;
 	try {
@@ -77,10 +77,22 @@ export const POST: RequestHandler = async (event) => {
 
 	const { conversationId, code, filename: customFilename } = validation.value;
 
-	// Verify conversation exists and belongs to user
-	const conversation = await getConversation(user.id, conversationId);
-	if (!conversation) {
-		return json({ error: 'Conversation not found' }, { status: 404 });
+	let ownerUserId: string;
+	if (user) {
+		// Session-authenticated browser requests stay user-scoped.
+		const conversation = await getConversation(user.id, conversationId);
+		if (!conversation) {
+			return json({ error: 'Conversation not found' }, { status: 404 });
+		}
+		ownerUserId = user.id;
+	} else {
+		// Langflow tool calls authenticate with the shared bearer secret and resolve
+		// the conversation owner from the stored conversation record.
+		const conversationUserId = await getConversationUserId(conversationId);
+		if (!conversationUserId) {
+			return json({ error: 'Conversation not found' }, { status: 404 });
+		}
+		ownerUserId = conversationUserId;
 	}
 
 	// Execute code in sandbox (language is already validated as 'python')
@@ -106,7 +118,7 @@ export const POST: RequestHandler = async (event) => {
 	// Store generated files
 	const files: FileMetadata[] = [];
 	for (const file of executionResult.files) {
-		const storedFile = await storeGeneratedFile(conversationId, user.id, {
+		const storedFile = await storeGeneratedFile(conversationId, ownerUserId, {
 			filename: customFilename || file.filename,
 			mimeType: file.mimeType,
 			content: file.content,
@@ -115,7 +127,7 @@ export const POST: RequestHandler = async (event) => {
 		files.push({
 			id: storedFile.id,
 			filename: storedFile.filename,
-			downloadUrl: `/api/chat/files/${conversationId}/${storedFile.id}`,
+			downloadUrl: `/api/chat/files/${storedFile.id}/download`,
 			size: storedFile.sizeBytes,
 			mimeType: storedFile.mimeType || 'application/octet-stream',
 		});

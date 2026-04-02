@@ -18,7 +18,7 @@ Usage in Langflow:
 
 Environment Variables:
 - ALFYAI_API_URL: Base URL of the AlfyAI application (default: http://localhost:3000)
-- ALFYAI_API_KEY: Optional API key for authentication (if required)
+- ALFYAI_API_KEY: Optional bearer key for `/api/chat/files/generate`; set the same value on the AlfyAI server when calling outside a browser session
 
 Example code the model might generate:
 ```python
@@ -147,8 +147,8 @@ class FileGeneratorToolComponent(Component):
         headers = {
             "Content-Type": "application/json",
         }
-        
-        # Add API key if configured
+
+        # Add bearer auth when configured for out-of-browser Langflow calls.
         if self.alfyai_api_key:
             headers["Authorization"] = f"Bearer {self.alfyai_api_key}"
         
@@ -179,7 +179,7 @@ class FileGeneratorToolComponent(Component):
             elif response.status_code == 401:
                 return {
                     "success": False,
-                    "error": "Authentication failed. Check ALFYAI_API_KEY configuration.",
+                    "error": "Authentication failed. Check ALFYAI_API_KEY on both Langflow and AlfyAI.",
                 }
             elif response.status_code == 404:
                 return {

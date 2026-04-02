@@ -27,7 +27,28 @@ describe('Knowledge page', () => {
 
 	it('renders the library immediately without prefetching the memory profile', async () => {
 		vi.useFakeTimers();
-		const fetchSpy = vi.spyOn(globalThis, 'fetch');
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+			const url = String(input);
+			if (url === '/api/knowledge/storage-quota') {
+				return new Response(
+					JSON.stringify({
+						totalStorageUsed: 0,
+						totalFiles: 0,
+						storageLimit: 1073741824,
+						usagePercent: 0,
+						isWarning: false,
+						warningThreshold: 80,
+						vaults: [],
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
 		const { getByText, unmount } = render(KnowledgePage, {
 			data: {
 				documents: [],
@@ -40,7 +61,10 @@ describe('Knowledge page', () => {
 
 		expect(getByText('Knowledge Base')).toBeDefined();
 		await vi.advanceTimersByTimeAsync(500);
-		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(fetchSpy).toHaveBeenCalledWith('/api/knowledge/storage-quota');
+		expect(
+			fetchSpy.mock.calls.filter(([url]) => String(url).includes('/api/knowledge/memory'))
+		).toHaveLength(0);
 		unmount();
 	});
 

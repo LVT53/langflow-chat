@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('$lib/server/auth/hooks', () => ({
-	requireAuth: vi.fn()
+	hasValidAlfyAiApiKey: vi.fn()
 }));
 
 vi.mock('$lib/server/services/conversations', () => ({
-	getConversation: vi.fn()
+	getConversation: vi.fn(),
+	getConversationUserId: vi.fn(),
 }));
 
 vi.mock('$lib/server/services/sandbox-execution', () => ({
@@ -17,21 +18,29 @@ vi.mock('$lib/server/services/chat-files', () => ({
 }));
 
 import { POST } from './+server';
-import { requireAuth } from '$lib/server/auth/hooks';
-import { getConversation } from '$lib/server/services/conversations';
+import { hasValidAlfyAiApiKey } from '$lib/server/auth/hooks';
+import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import { executeCode } from '$lib/server/services/sandbox-execution';
 import { storeGeneratedFile } from '$lib/server/services/chat-files';
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockHasValidAlfyAiApiKey = hasValidAlfyAiApiKey as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
+const mockGetConversationUserId = getConversationUserId as ReturnType<typeof vi.fn>;
 const mockExecuteCode = executeCode as ReturnType<typeof vi.fn>;
 const mockStoreGeneratedFile = storeGeneratedFile as ReturnType<typeof vi.fn>;
 
-function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
+function makeEvent(
+	body: unknown,
+	user: { id: string; email?: string } | null = { id: 'user-1', email: 'test@example.com' },
+	authorization?: string
+) {
 	return {
 		request: new Request('http://localhost/api/chat/files/generate', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(authorization ? { Authorization: authorization } : {}),
+			},
 			body: JSON.stringify(body)
 		}),
 		locals: { user },
@@ -44,7 +53,7 @@ function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.co
 describe('POST /api/chat/files/generate', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockRequireAuth.mockReturnValue(undefined);
+		mockHasValidAlfyAiApiKey.mockReturnValue(false);
 	});
 
 	it('returns file metadata for a valid request', async () => {
@@ -87,7 +96,7 @@ describe('POST /api/chat/files/generate', () => {
 		expect(response.status).toBe(200);
 		expect(data.files).toHaveLength(1);
 		expect(data.files[0].filename).toBe('output.pdf');
-		expect(data.files[0].downloadUrl).toContain('/api/chat/files/conv-1/file-1');
+		expect(data.files[0].downloadUrl).toBe('/api/chat/files/file-1/download');
 		expect(data.files[0].size).toBe(17);
 		expect(data.files[0].mimeType).toBe('application/pdf');
 		expect(mockExecuteCode).toHaveBeenCalledWith('import pandas as pd\nprint("test")', 'python');
@@ -163,15 +172,11 @@ describe('POST /api/chat/files/generate', () => {
 	});
 
 	it('returns 401 for unauthorized request', async () => {
-		mockRequireAuth.mockImplementation(() => {
-			throw new Error('Unauthorized');
-		});
-
 		const event = makeEvent({
 			conversationId: 'conv-1',
 			code: 'test',
 			language: 'python'
-		});
+		}, null);
 		
 		const response = await POST(event);
 		const data = await response.json();
@@ -179,6 +184,59 @@ describe('POST /api/chat/files/generate', () => {
 		expect(response.status).toBe(401);
 		expect(data.error).toMatch(/unauthorized/i);
 		expect(mockExecuteCode).not.toHaveBeenCalled();
+	});
+
+	it('accepts a valid service API key outside a browser session', async () => {
+		mockHasValidAlfyAiApiKey.mockReturnValue(true);
+		mockGetConversationUserId.mockResolvedValue('user-9');
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'output.csv',
+					mimeType: 'text/csv',
+					content: Buffer.from('a,b\n1,2'),
+					sizeBytes: 7
+				}
+			],
+			stdout: 'Execution successful',
+			stderr: ''
+		});
+		mockStoreGeneratedFile.mockResolvedValue({
+			id: 'file-9',
+			conversationId: 'conv-service',
+			userId: 'user-9',
+			filename: 'output.csv',
+			mimeType: 'text/csv',
+			sizeBytes: 7,
+			storagePath: 'conv-service/file-9.csv',
+			createdAt: Date.now()
+		});
+
+		const response = await POST(
+			makeEvent(
+				{
+					conversationId: 'conv-service',
+					code: 'print("service request")',
+					language: 'python'
+				},
+				null,
+				'Bearer service-key'
+			)
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockHasValidAlfyAiApiKey).toHaveBeenCalledWith('Bearer service-key');
+		expect(mockGetConversationUserId).toHaveBeenCalledWith('conv-service');
+		expect(mockGetConversation).not.toHaveBeenCalled();
+		expect(mockStoreGeneratedFile).toHaveBeenCalledWith(
+			'conv-service',
+			'user-9',
+			expect.objectContaining({
+				filename: 'output.csv'
+			})
+		);
+		expect(data.files[0].downloadUrl).toBe('/api/chat/files/file-9/download');
 	});
 
 	it('returns 400 when conversationId is missing', async () => {

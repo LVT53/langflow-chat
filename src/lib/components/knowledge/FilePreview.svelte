@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import type { Artifact } from '$lib/types';
+	import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 	let {
 		open,
@@ -131,7 +130,7 @@
 			// Load PDF.js dynamically (avoids SSR issues)
 			if (!pdfjsLib) {
 				pdfjsLib = await import('pdfjs-dist');
-				pdfjsLib.GlobalWorkerOptions.workerSrc = '/node_modules/pdfjs-dist/build/pdf.worker.mjs';
+				pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 			}
 			
 			const arrayBuffer = await blob.arrayBuffer();

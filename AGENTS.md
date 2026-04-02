@@ -115,6 +115,7 @@ Do not:
   - Owns evidence channel types including 'vault' for vault-sourced artifacts
 - Chat-generated files:
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
+  - [`src/routes/api/chat/files/[id]/download/+server.ts`](./src/routes/api/chat/files/[id]/download/+server.ts)
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
   - [`src/routes/api/chat/files/[id]/save-to-vault/+server.ts`](./src/routes/api/chat/files/[id]/save-to-vault/+server.ts)
   - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
@@ -135,6 +136,8 @@ Do:
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
 - use `VaultPickerModal.svelte` for saving generated files to vaults
+- keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
+- `/api/chat/files/generate` may authenticate with either the signed-in session or the optional `ALFYAI_API_KEY` bearer secret used by the Langflow file-generator tool; keep that bearer path conversation-scoped and internal
 - save-to-vault endpoint deletes source file after successful copy
 
 Do not:

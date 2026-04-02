@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [sveltekit() as any],
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    exclude: ['tests/e2e/**'],
     globals: true,
     setupFiles: ['./src/vitest-setup.ts']
   },

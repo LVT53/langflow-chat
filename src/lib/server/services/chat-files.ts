@@ -124,6 +124,38 @@ export async function getChatFile(
 }
 
 /**
+ * Get a specific file by ID for a user, regardless of conversation.
+ * Used by routes that already authenticate the current user.
+ */
+export async function getChatFileByUser(
+	fileId: string,
+	userId: string
+): Promise<ChatFile | null> {
+	const [row] = await db
+		.select()
+		.from(chatGeneratedFiles)
+		.where(
+			and(
+				eq(chatGeneratedFiles.id, fileId),
+				eq(chatGeneratedFiles.userId, userId)
+			)
+		)
+		.limit(1);
+
+	return row ? mapRowToChatFile(row) : null;
+}
+
+async function readStoredChatFile(file: ChatFile): Promise<Buffer | null> {
+	const fullPath = join(getChatFilesDir(), file.storagePath);
+	try {
+		await access(fullPath);
+		return await readFile(fullPath);
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Read the actual file content from disk.
  * Returns null if file doesn't exist in database or on disk.
  */
@@ -134,13 +166,21 @@ export async function readChatFileContent(
 	const file = await getChatFile(conversationId, fileId);
 	if (!file) return null;
 
-	const fullPath = join(getChatFilesDir(), file.storagePath);
-	try {
-		await access(fullPath);
-		return await readFile(fullPath);
-	} catch {
-		return null;
-	}
+	return readStoredChatFile(file);
+}
+
+/**
+ * Read the actual file content from disk for a user-owned file.
+ * Returns null if the file doesn't exist in database or on disk.
+ */
+export async function readChatFileContentByUser(
+	fileId: string,
+	userId: string
+): Promise<Buffer | null> {
+	const file = await getChatFileByUser(fileId, userId);
+	if (!file) return null;
+
+	return readStoredChatFile(file);
 }
 
 /**

@@ -16,6 +16,7 @@ interface Config {
   langflowApiKey: string;
   langflowFlowId: string;
   langflowWebhookSecret: string;
+  alfyaiApiKey: string;
   attachmentTraceDebug: boolean;
   translatorUrl: string;
   translatorApiKey: string;
@@ -85,6 +86,7 @@ function readConfig(): Config {
     langflowApiKey,
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
+    alfyaiApiKey: process.env.ALFYAI_API_KEY || '',
     attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === 'true',
     translatorUrl: process.env.TRANSLATOR_URL || 'http://localhost:30002/v1',
     translatorApiKey: process.env.TRANSLATOR_API_KEY || '',

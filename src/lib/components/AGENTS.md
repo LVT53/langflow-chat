@@ -20,6 +20,7 @@ chat/
     ├── chat/FileAttachment.svelte       ← attachment chip (viewable prop, onView callback)
     └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
+    ├── chat/GeneratedFile.svelte       ← generated-file download + save-to-vault actions
     └── chat/MessageBubble.svelte       ← individual message (attachment viewing capability)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
           ├── chat/CodeBlock.svelte           ← fenced code block
@@ -96,6 +97,7 @@ ui/
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
 - `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
+- `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
 - `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` owns vault-targeted OS file drag/drop and may fall back to the active vault or first vault when the drop lands on sidebar chrome
 - `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` drag overlays are visual affordances only; they must not intercept pointer/drag events intended for vault rows
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped

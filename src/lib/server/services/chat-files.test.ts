@@ -78,8 +78,12 @@ vi.mock('$lib/server/db', () => ({
 					limit: vi.fn(async () => {
 						const conversationId = extractConversationId(condition);
 						const fileId = extractFileId(condition);
+						const userId = extractUserId(condition);
 						const rows = mockRows.filter(
-							(r) => r.conversationId === conversationId && (!fileId || r.id === fileId)
+							(r) =>
+								(!conversationId || r.conversationId === conversationId) &&
+								(!fileId || r.id === fileId) &&
+								(!userId || r.userId === userId)
 						);
 						return rows.slice(0, 1).map((r) => ({ ...r }));
 					}),
@@ -127,6 +131,18 @@ function extractFileId(condition: unknown): string | undefined {
 	if (Array.isArray(condition)) {
 		const idCondition = condition.find((c: { field: string }) => c.field === 'id');
 		if (idCondition) return idCondition.value;
+	}
+	return undefined;
+}
+
+function extractUserId(condition: unknown): string | undefined {
+	if (Array.isArray(condition)) {
+		const userCondition = condition.find((c: { field: string }) => c.field === 'userId');
+		if (userCondition) return userCondition.value;
+	}
+	if (typeof condition === 'object' && condition !== null && 'field' in condition) {
+		const c = condition as { field: string; value: string };
+		if (c.field === 'userId') return c.value;
 	}
 	return undefined;
 }
@@ -355,6 +371,50 @@ describe('chat-files service', () => {
 			});
 
 			const result = await getChatFile('conv-a', 'file-1');
+
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('getChatFileByUser', () => {
+		it('returns a file when the user owns it', async () => {
+			const { getChatFileByUser } = await import('./chat-files');
+
+			mockRows.push({
+				id: 'file-7',
+				conversationId: 'conv-a',
+				userId: 'user-7',
+				filename: 'owned.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 1234,
+				storagePath: 'conv-a/file-7.pdf',
+				createdAt: new Date('2026-01-01'),
+			});
+
+			const result = await getChatFileByUser('file-7', 'user-7');
+
+			expect(result).toMatchObject({
+				id: 'file-7',
+				userId: 'user-7',
+				filename: 'owned.pdf',
+			});
+		});
+
+		it('returns null when the file belongs to a different user', async () => {
+			const { getChatFileByUser } = await import('./chat-files');
+
+			mockRows.push({
+				id: 'file-8',
+				conversationId: 'conv-a',
+				userId: 'user-8',
+				filename: 'private.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 1234,
+				storagePath: 'conv-a/file-8.pdf',
+				createdAt: new Date('2026-01-01'),
+			});
+
+			const result = await getChatFileByUser('file-8', 'user-7');
 
 			expect(result).toBeNull();
 		});

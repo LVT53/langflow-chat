@@ -1,11 +1,6 @@
 <script lang="ts">
+	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
 	import VaultPickerModal from './VaultPickerModal.svelte';
-
-	interface Vault {
-		id: string;
-		name: string;
-		color: string | null;
-	}
 
 	interface GeneratedFileProps {
 		fileId: string;
@@ -35,8 +30,10 @@
 
 	let showVaultPicker = $state(false);
 	let isSaving = $state(false);
+	let isLoadingVaults = $state(false);
 	let saveError = $state<string | null>(null);
-	let currentSavedVaultName = $derived(savedVaultName);
+	let currentSavedVaultName = $state<string | null>(null);
+	let availableVaults = $state<Vault[]>([]);
 
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 B';
@@ -69,10 +66,32 @@
 		return GenericFileIcon;
 	}
 
-	function handleSaveToVault() {
+	$effect(() => {
+		if (currentSavedVaultName === null && savedVaultName) {
+			currentSavedVaultName = savedVaultName;
+		}
+		if (vaults.length > 0) {
+			availableVaults = vaults;
+		}
+	});
+
+	async function handleSaveToVault() {
 		if (currentSavedVaultName) return;
-		showVaultPicker = true;
 		saveError = null;
+
+		if (availableVaults.length === 0) {
+			isLoadingVaults = true;
+			try {
+				availableVaults = await fetchVaults();
+			} catch (err) {
+				saveError = err instanceof Error ? err.message : 'Failed to load vaults';
+				return;
+			} finally {
+				isLoadingVaults = false;
+			}
+		}
+
+		showVaultPicker = true;
 	}
 
 	function handleVaultPickerCancel() {
@@ -105,9 +124,6 @@
 		}
 	}
 
-	function handlePreview() {
-		alert(`Preview: ${filename} (placeholder)`);
-	}
 </script>
 
 {#snippet GenericFileIcon()}
@@ -279,7 +295,7 @@
 
 {#if showVaultPicker}
 	<VaultPickerModal
-		{vaults}
+		vaults={availableVaults}
 		{filename}
 		onSave={handleVaultPickerSave}
 		onCancel={handleVaultPickerCancel}
@@ -360,12 +376,12 @@
 				class="btn-secondary action-button"
 				class:saved={currentSavedVaultName}
 				onclick={handleSaveToVault}
-				disabled={isSaving || !!currentSavedVaultName}
+				disabled={isSaving || isLoadingVaults || !!currentSavedVaultName}
 				aria-label={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
 			>
-				{#if isSaving}
+				{#if isSaving || isLoadingVaults}
 					{@render SpinnerIcon()}
-					<span>Saving...</span>
+					<span>{isSaving ? 'Saving...' : 'Loading vaults...'}</span>
 				{:else}
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -383,30 +399,6 @@
 					</svg>
 					<span>{currentSavedVaultName ? 'Saved' : 'Save to Vault'}</span>
 				{/if}
-			</button>
-
-			<button
-				type="button"
-				class="btn-secondary action-button"
-				onclick={handlePreview}
-				aria-label={`Preview ${filename}`}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-					<circle cx="12" cy="12" r="3" />
-				</svg>
-				<span>Preview</span>
 			</button>
 		</div>
 	{/if}

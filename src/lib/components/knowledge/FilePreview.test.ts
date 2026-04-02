@@ -38,6 +38,26 @@ vi.mock('exceljs', () => ({
 	},
 }));
 
+vi.mock('pdfjs-dist', () => ({
+	GlobalWorkerOptions: {
+		workerSrc: '',
+	},
+	getDocument: vi.fn(() => ({
+		promise: Promise.resolve({
+			numPages: 1,
+			getPage: vi.fn(async () => ({
+				getViewport: vi.fn(({ scale }: { scale: number }) => ({
+					width: 640 * scale,
+					height: 480 * scale,
+				})),
+				render: vi.fn(() => ({
+					promise: Promise.resolve(),
+				})),
+			})),
+		}),
+	})),
+}));
+
 interface MockWorksheet {
 	name: string;
 	eachRow: (callback: (row: { eachCell: (cb: (cell: { value: unknown }) => void) => void }) => void) => void;
@@ -238,8 +258,9 @@ describe('FilePreview', () => {
 		});
 
 		await waitFor(() => {
-			const iframe = document.querySelector('iframe');
-			expect(iframe).toBeInTheDocument();
+			const canvas = document.querySelector('canvas');
+			expect(canvas).toBeInTheDocument();
+			expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
 		});
 	});
 
