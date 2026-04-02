@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import * as pdfjsLib from 'pdfjs-dist';
+	import { browser } from '$app/environment';
 	import type { Artifact } from '$lib/types';
 
 	let {
@@ -23,8 +23,9 @@
 	let htmlContent = $state<string | null>(null);
 	let fileType = $state<'pdf' | 'docx' | 'xlsx' | 'pptx' | 'image' | 'text' | 'unsupported'>('unsupported');
 
-	// PDF.js state
-	let pdfDoc = $state<pdfjsLib.PDFDocumentProxy | null>(null);
+	// PDF.js state (loaded dynamically to avoid SSR issues)
+	let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+	let pdfDoc = $state<any>(null);
 	let currentPage = $state(1);
 	let totalPages = $state(0);
 	let zoom = $state(1.0);
@@ -122,11 +123,16 @@
 	}
 
 	async function renderPdf(blob: Blob) {
+		if (!browser) return;
+		
 		try {
 			isRendering = true;
 			
-			// Configure PDF.js worker
-			pdfjsLib.GlobalWorkerOptions.workerSrc = '/node_modules/pdfjs-dist/build/pdf.worker.mjs';
+			// Load PDF.js dynamically (avoids SSR issues)
+			if (!pdfjsLib) {
+				pdfjsLib = await import('pdfjs-dist');
+				pdfjsLib.GlobalWorkerOptions.workerSrc = '/node_modules/pdfjs-dist/build/pdf.worker.mjs';
+			}
 			
 			const arrayBuffer = await blob.arrayBuffer();
 			pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
