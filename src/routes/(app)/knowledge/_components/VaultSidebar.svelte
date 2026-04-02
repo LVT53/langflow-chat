@@ -53,11 +53,11 @@
 
 	// Drag and drop state
 	let dragActive = $state(false);
-	let dragRejected = $state(false);
 	let dragEnterCount = $state(0);
 	let isUploading = $state(false);
 	let uploadError = $state<string | null>(null);
 	let uploadErrorTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+	let dropTargetVaultId = $state<string | null>(null);
 
 	const PRESET_COLORS = [
 		'#C15F3C',
@@ -190,15 +190,13 @@
 		event.preventDefault();
 		dragEnterCount += 1;
 		dragActive = true;
-		// Reject if no vault is selected
-		dragRejected = !activeVaultId;
 	}
 
 	function handleDragOver(event: DragEvent) {
 		if (!isOsFileDrop(event)) return;
 		event.preventDefault();
 		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = activeVaultId ? 'copy' : 'none';
+			event.dataTransfer.dropEffect = 'copy';
 		}
 	}
 
@@ -208,35 +206,37 @@
 		if (dragEnterCount <= 0) {
 			dragEnterCount = 0;
 			dragActive = false;
-			dragRejected = false;
+			dropTargetVaultId = null;
 		}
 	}
 
-	async function handleDrop(event: DragEvent) {
+	function handleVaultDragLeave(event: DragEvent) {
+		dropTargetVaultId = null;
+	}
+
+	async function handleDrop(event: DragEvent, targetVaultId: string) {
 		dragEnterCount = 0;
 		dragActive = false;
-		dragRejected = false;
 		if (!isOsFileDrop(event)) return;
 		event.preventDefault();
-
-		if (!activeVaultId) {
-			showUploadError('Please select a vault first');
-			return;
-		}
+		event.stopPropagation();
 
 		const files = event.dataTransfer?.files;
 		if (!files || files.length === 0) return;
 
-		// Upload all dropped files
+		// Auto-select the vault being dropped on
+		onSelect?.({ id: targetVaultId });
+
+		// Upload all dropped files to this vault
 		isUploading = true;
 		const uploadPromises: Promise<void>[] = [];
 
 		for (let i = 0; i < files.length; i++) {
 			const file = files[i];
 			uploadPromises.push(
-				uploadKnowledgeAttachment(file, conversationId, activeVaultId)
+				uploadKnowledgeAttachment(file, conversationId, targetVaultId)
 					.then((response) => {
-						handleUpload(activeVaultId!, response);
+						handleUpload(targetVaultId, response);
 					})
 					.catch((error) => {
 						const message = error instanceof Error ? error.message : `Failed to upload ${file.name}`;
@@ -247,6 +247,16 @@
 
 		await Promise.all(uploadPromises);
 		isUploading = false;
+	}
+
+	function handleVaultDragOver(event: DragEvent, vaultId: string) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		dropTargetVaultId = vaultId;
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
 	}
 
 	function showUploadError(message: string) {
@@ -265,55 +275,34 @@
 	role="region"
 	aria-label="Vault sidebar"
 	class:vault-sidebar-drag-active={dragActive}
-	class:vault-sidebar-drag-rejected={dragRejected}
 	ondragenter={handleDragEnter}
 	ondragover={handleDragOver}
 	ondragleave={handleDragLeave}
-	ondrop={handleDrop}
 >
 	{#if dragActive}
 		<div class="vault-drop-overlay" data-testid="vault-drop-overlay">
 			<div class="vault-drop-content">
-				{#if dragRejected}
-					<svg
-						class="vault-drop-icon vault-drop-icon-rejected"
-						xmlns="http://www.w3.org/2000/svg"
-						width="32"
-						height="32"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<circle cx="12" cy="12" r="10" />
-						<line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-					</svg>
-					<p class="vault-drop-text">Select a vault first</p>
-				{:else}
-					<svg
-						class="vault-drop-icon"
-						xmlns="http://www.w3.org/2000/svg"
-						width="32"
-						height="32"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-						<polyline points="17 8 12 3 7 8" />
-						<line x1="12" y1="3" x2="12" y2="15" />
-					</svg>
-					<p class="vault-drop-text">Drop files to upload</p>
-					{#if activeVaultId}
-						{@const vault = vaults.find((v) => v.id === activeVaultId)}
-						{#if vault}
-							<p class="vault-drop-target">to "{vault.name}"</p>
-						{/if}
+				<svg
+					class="vault-drop-icon"
+					xmlns="http://www.w3.org/2000/svg"
+					width="32"
+					height="32"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<polyline points="17 8 12 3 7 8" />
+					<line x1="12" y1="3" x2="12" y2="15" />
+				</svg>
+				<p class="vault-drop-text">Drop files to upload</p>
+				{#if dropTargetVaultId}
+					{@const vault = vaults.find((v) => v.id === dropTargetVaultId)}
+					{#if vault}
+						<p class="vault-drop-target">to "{vault.name}"</p>
 					{/if}
 				{/if}
 			</div>
@@ -409,9 +398,13 @@
 					data-active={activeVaultId === vault.id}
 					class="vault-item group relative flex min-h-[32px] cursor-pointer items-center justify-between rounded-lg border border-transparent transition-colors duration-150 hover:border-border-subtle hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
 					class:vault-item-active={activeVaultId === vault.id}
+					class:vault-item-drop-target={dropTargetVaultId === vault.id}
 					style="padding: 0 2px 0 6px;"
 					onclick={() => handleSelect(vault)}
 					onkeydown={(event) => event.key === 'Enter' && handleSelect(vault)}
+					ondragover={(event) => handleVaultDragOver(event, vault.id)}
+					ondragleave={handleVaultDragLeave}
+					ondrop={(event) => handleDrop(event, vault.id)}
 					role="button"
 					tabindex="0"
 					aria-pressed={activeVaultId === vault.id}
@@ -458,7 +451,7 @@
 					</div>
 
 					<!-- Action buttons -->
-					<div class="flex shrink-0 items-center gap-0.5" role="group">
+					<div class="flex shrink-0 items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100" role="group">
 						<!-- Upload button -->
 						<div
 							onclick={(event) => event.stopPropagation()}
@@ -599,9 +592,9 @@
 		outline-offset: -2px;
 	}
 
-	.vault-sidebar-drag-rejected {
-		outline: 2px dashed var(--danger);
-		outline-offset: -2px;
+	.vault-item-drop-target {
+		background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+		border-color: var(--accent);
 	}
 
 	.vault-drop-overlay {
@@ -627,10 +620,6 @@
 
 	.vault-drop-icon {
 		color: var(--accent);
-	}
-
-	.vault-drop-icon-rejected {
-		color: var(--danger);
 	}
 
 	.vault-drop-text {
