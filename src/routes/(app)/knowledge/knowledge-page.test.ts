@@ -54,6 +54,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -94,6 +95,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -183,6 +185,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -283,6 +286,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -352,6 +356,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -422,6 +427,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -485,11 +491,12 @@ describe('Knowledge page', () => {
 			throw new Error(`Unexpected fetch: ${url}`);
 		});
 
-		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+		const { getAllByRole, getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
 			data: {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -579,6 +586,7 @@ describe('Knowledge page', () => {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -623,11 +631,12 @@ describe('Knowledge page', () => {
 			}),
 		} as Response);
 
-		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+		const { getAllByRole, getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
 			data: {
 				documents: [],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
@@ -656,6 +665,25 @@ describe('Knowledge page', () => {
 					resolveDelete = resolve as (value: Response) => void;
 				});
 			}
+			if (url.endsWith('/api/knowledge/storage-quota')) {
+				return Promise.resolve(
+					new Response(
+						JSON.stringify({
+							totalStorageUsed: 0,
+							totalFiles: 0,
+							storageLimit: 1073741824,
+							usagePercent: 0,
+							isWarning: false,
+							warningThreshold: 80,
+							vaults: [],
+						}),
+						{
+							status: 200,
+							headers: { 'Content-Type': 'application/json' },
+						}
+					)
+				);
+			}
 			if (url.endsWith('/api/knowledge')) {
 				return Promise.resolve(
 					{
@@ -680,23 +708,25 @@ describe('Knowledge page', () => {
 			mimeType: 'application/pdf',
 			sizeBytes: 1024,
 			conversationId: 'conv-1',
+			vaultId: null,
 			summary: 'Dinner recipe',
 			normalizedAvailable: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		};
 
-		const { getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
+		const { getAllByRole, getByRole, getByText, queryByText, unmount } = render(KnowledgePage, {
 			data: {
 				documents: [document],
 				results: [],
 				workflows: [],
+				vaults: [],
 				honchoEnabled: true,
 				userDisplayName: 'Test User',
 			},
 		});
 
-		await fireEvent.click(getByRole('button', { name: /manage documents/i }));
+		await fireEvent.click(getAllByRole('button', { name: /manage documents/i })[0]);
 		await fireEvent.click(getByRole('button', { name: 'Remove' }));
 
 		await waitFor(() => {

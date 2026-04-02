@@ -7,6 +7,7 @@ import type {
   ArtifactSummary,
   ArtifactType,
   KnowledgeDocumentItem,
+  KnowledgeVaultSearchResult,
 } from "$lib/types";
 import { extractDocumentText } from "../../document-extraction";
 import { scoreMatch } from "../../working-set";
@@ -18,6 +19,7 @@ import {
   mapArtifact,
   mapArtifactSummary,
 } from "./core";
+import { getVaults } from "./vaults";
 
 function mapLogicalDocumentItem(params: {
   displayArtifact: ArtifactSummary;
@@ -36,6 +38,7 @@ function mapLogicalDocumentItem(params: {
     mimeType: params.displayArtifact.mimeType,
     sizeBytes: params.displayArtifact.sizeBytes,
     conversationId: params.displayArtifact.conversationId,
+    vaultId: params.displayArtifact.vaultId,
     summary: params.summary,
     normalizedAvailable: params.normalizedAvailable,
     createdAt: params.displayArtifact.createdAt,
@@ -227,4 +230,123 @@ export async function findRelevantArtifactsByTypes(params: {
     .sort((left, right) => right.score - left.score)
     .slice(0, params.limit)
     .map((entry) => entry.artifact);
+}
+
+function buildSearchSnippet(
+  query: string,
+  contentText: string | null,
+  fallback: string | null,
+): string | null {
+  const source = (contentText ?? fallback ?? "").replace(/\s+/g, " ").trim();
+  if (!source) return null;
+
+  if (!query) {
+    return source.slice(0, 180);
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  const normalizedSource = source.toLowerCase();
+  const matchIndex = normalizedSource.indexOf(normalizedQuery);
+
+  if (matchIndex === -1) {
+    return source.slice(0, 180);
+  }
+
+  const start = Math.max(0, matchIndex - 60);
+  const end = Math.min(source.length, matchIndex + Math.max(query.length, 40) + 70);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < source.length ? "…" : "";
+
+  return `${prefix}${source.slice(start, end).trim()}${suffix}`;
+}
+
+function mapVaultSearchResult(params: {
+  document: KnowledgeDocumentItem & { vaultId: string };
+  vaultName: string;
+  snippet: string | null;
+}): KnowledgeVaultSearchResult {
+  return {
+    id: params.document.id,
+    displayArtifactId: params.document.displayArtifactId,
+    promptArtifactId: params.document.promptArtifactId,
+    name: params.document.name,
+    mimeType: params.document.mimeType,
+    vaultId: params.document.vaultId,
+    vaultName: params.vaultName,
+    summary: params.document.summary,
+    snippet: params.snippet,
+    normalizedAvailable: params.document.normalizedAvailable,
+    updatedAt: params.document.updatedAt,
+  };
+}
+
+export async function searchVaultDocuments(params: {
+  userId: string;
+  query: string;
+  limit: number;
+}): Promise<KnowledgeVaultSearchResult[]> {
+  const trimmedQuery = params.query.trim();
+  const [logicalDocuments, vaults] = await Promise.all([
+    listLogicalDocuments(params.userId),
+    getVaults(params.userId),
+  ]);
+
+  const vaultDocuments = logicalDocuments.filter(
+    (document): document is KnowledgeDocumentItem & { vaultId: string } =>
+      typeof document.vaultId === "string" && document.vaultId.length > 0,
+  );
+
+  if (vaultDocuments.length === 0) {
+    return [];
+  }
+
+  const vaultNames = new Map(vaults.map((vault) => [vault.id, vault.name]));
+
+  if (!trimmedQuery) {
+    return vaultDocuments.slice(0, params.limit).map((document) =>
+      mapVaultSearchResult({
+        document,
+        vaultName: vaultNames.get(document.vaultId) ?? "Vault",
+        snippet: document.summary,
+      }),
+    );
+  }
+
+  const familyToDocument = new Map<string, KnowledgeDocumentItem & { vaultId: string }>();
+  for (const document of vaultDocuments) {
+    for (const artifactId of document.familyArtifactIds) {
+      familyToDocument.set(artifactId, document);
+    }
+  }
+
+  const matches = await findRelevantArtifactsByTypes({
+    userId: params.userId,
+    query: trimmedQuery,
+    types: ["source_document", "normalized_document"],
+    limit: Math.max(params.limit * 4, 24),
+  });
+
+  const results = new Map<string, KnowledgeVaultSearchResult>();
+
+  for (const artifact of matches) {
+    if (!artifact.vaultId) continue;
+
+    const document = familyToDocument.get(artifact.id);
+    if (!document || results.has(document.id)) continue;
+
+    results.set(
+      document.id,
+      mapVaultSearchResult({
+        document,
+        vaultName: vaultNames.get(document.vaultId) ?? "Vault",
+        snippet: buildSearchSnippet(
+          trimmedQuery,
+          artifact.contentText,
+          artifact.summary ?? document.summary,
+        ),
+      }),
+    );
+  }
+
+  return Array.from(results.values()).slice(0, params.limit);
 }

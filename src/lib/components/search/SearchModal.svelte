@@ -4,9 +4,12 @@
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
+	import AttachmentContentModal from '$lib/components/chat/AttachmentContentModal.svelte';
+	import { searchVaultFiles } from '$lib/client/api/knowledge';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
+	import type { KnowledgeVaultSearchResult } from '$lib/types';
 
 	let { isOpen = false, onClose = () => {} }: {
 		isOpen?: boolean;
@@ -14,23 +17,31 @@
 	} = $props();
 
 	let searchQuery = $state('');
-	let searchLoading = $state(false);
+	let conversationLoading = $state(false);
+	let vaultLoading = $state(false);
+	let vaultSearchError = $state('');
+	let vaultResults = $state<KnowledgeVaultSearchResult[]>([]);
 	let modalRef = $state<HTMLDivElement | undefined>(undefined);
 	let searchInputRef = $state<HTMLInputElement | undefined>(undefined);
+	let previewArtifactId = $state<string | null>(null);
+	let previewFilename = $state('');
 	let previousFocus: HTMLElement | null = null;
 	let wasOpen = false;
+	let activeSearchRequestId = 0;
 
 	const focusableSelector =
 		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-	const normalizedSearchQuery = $derived(searchQuery.trim().toLowerCase());
+	const trimmedSearchQuery = $derived(searchQuery.trim());
+	const normalizedSearchQuery = $derived(trimmedSearchQuery.toLowerCase());
 	const searchableConversations = $derived($conversations);
 	const projectsMap = $derived(Object.fromEntries($projects.map((project) => [project.id, project.name])));
-	const searchResults = $derived(normalizedSearchQuery
+	const conversationResults = $derived(normalizedSearchQuery
 		? searchableConversations.filter((conversation) =>
 				conversation.title.toLowerCase().includes(normalizedSearchQuery)
 			)
 		: searchableConversations.slice(0, 6));
+	const hasSearchResults = $derived(conversationResults.length > 0 || vaultResults.length > 0);
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -62,18 +73,55 @@
 		});
 
 		if (get(conversations).length === 0) {
-			searchLoading = true;
+			conversationLoading = true;
 			void loadConversations().finally(() => {
-				searchLoading = false;
+				conversationLoading = false;
 			});
 		}
 
 		wasOpen = true;
 	});
 
+	$effect(() => {
+		if (!browser || !isOpen) return;
+
+		const requestId = ++activeSearchRequestId;
+		const delayMs = trimmedSearchQuery ? 140 : 0;
+		const timeoutId = window.setTimeout(() => {
+			vaultLoading = true;
+			vaultSearchError = '';
+			void searchVaultFiles(trimmedSearchQuery, 6)
+				.then((results) => {
+					if (requestId !== activeSearchRequestId) return;
+					vaultResults = results;
+				})
+				.catch((error) => {
+					if (requestId !== activeSearchRequestId) return;
+					vaultResults = [];
+					vaultSearchError =
+						error instanceof Error ? error.message : 'Failed to search vault files.';
+				})
+				.finally(() => {
+					if (requestId === activeSearchRequestId) {
+						vaultLoading = false;
+					}
+				});
+		}, delayMs);
+
+		return () => {
+			window.clearTimeout(timeoutId);
+		};
+	});
+
 	function handleClose() {
 		searchQuery = '';
-		searchLoading = false;
+		conversationLoading = false;
+		vaultLoading = false;
+		vaultSearchError = '';
+		vaultResults = [];
+		previewArtifactId = null;
+		previewFilename = '';
+		activeSearchRequestId += 1;
 		onClose();
 		previousFocus?.focus();
 		previousFocus = null;
@@ -90,6 +138,10 @@
 
 		if (event.key === 'Escape') {
 			event.preventDefault();
+			if (previewArtifactId) {
+				closeArtifactPreview();
+				return;
+			}
 			handleClose();
 			return;
 		}
@@ -118,6 +170,16 @@
 		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
 			sidebarOpen.set(false);
 		}
+	}
+
+	function openArtifactPreview(result: KnowledgeVaultSearchResult) {
+		previewArtifactId = result.promptArtifactId ?? result.displayArtifactId;
+		previewFilename = result.name;
+	}
+
+	function closeArtifactPreview() {
+		previewArtifactId = null;
+		previewFilename = '';
 	}
 
 	onDestroy(() => {
@@ -150,7 +212,7 @@
 				<div class="flex items-center justify-between gap-4">
 				<div class="flex items-center gap-3">
 					<h2 id="search-dialog-title" class="text-[20px] font-sans font-semibold text-text-primary">
-						Search conversations
+						Search
 					</h2>
 				</div>
 					<button
@@ -177,7 +239,7 @@
 						bind:this={searchInputRef}
 						bind:value={searchQuery}
 						type="text"
-						placeholder="Type to search..."
+						placeholder="Search conversations or vault files..."
 						class="h-10 w-full bg-transparent text-[16px] font-sans text-text-primary outline-none placeholder:text-text-muted"
 					/>
 					{#if searchQuery}
@@ -197,7 +259,7 @@
 			</div>
 
 			<div class="max-h-[423px] overflow-y-auto px-4 py-3">
-				{#if searchLoading}
+				{#if conversationLoading || (vaultLoading && !hasSearchResults)}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
 							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin text-icon-muted">
@@ -206,7 +268,7 @@
 						</div>
 						<h3 class="text-[16px] font-sans text-text-primary">Loading...</h3>
 					</div>
-				{:else if searchResults.length === 0}
+				{:else if !hasSearchResults && !vaultSearchError}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
 							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
@@ -214,49 +276,115 @@
 								<path d="m20 20-3.5-3.5"></path>
 							</svg>
 						</div>
-						<h3 class="text-[16px] font-sans text-text-primary">No conversations found</h3>
+						<h3 class="text-[16px] font-sans text-text-primary">No matches found</h3>
 						<p class="mt-1 text-[14px] font-sans text-text-muted">
 							Try a different search term
 						</p>
 					</div>
 				{:else}
-					<div class="space-y-1">
-						{#each searchResults as conversation (conversation.id)}
-							<button
-								type="button"
-								class="search-result-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
-								class:active={conversation.id === $currentConversationId}
-								onclick={() => handleSelection(conversation.id)}
-							>
-								<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
-									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
-										<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-									</svg>
+					<div class="space-y-5">
+						{#if vaultResults.length > 0 || vaultSearchError}
+							<section class="space-y-2">
+								<div class="px-2 text-[11px] font-sans font-medium uppercase tracking-[0.14em] text-text-muted">
+									{trimmedSearchQuery ? 'Vault files' : 'Recent vault files'}
 								</div>
-								<div class="min-w-0 flex-1">
-									<div class="truncate text-[15px] font-sans font-medium text-text-primary">
-										{conversation.title}
+								{#if vaultSearchError}
+									<div class="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-sans text-danger">
+										{vaultSearchError}
 									</div>
-									{#if conversation.id === $currentConversationId}
-										<div class="mt-0.5 text-[12px] font-sans text-accent">Current conversation</div>
-									{:else if conversation.projectId && projectsMap[conversation.projectId]}
-										<div class="mt-0.5 flex items-center gap-1 text-[12px] font-sans text-text-muted">
-											<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
-												<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-											</svg>
-											{projectsMap[conversation.projectId]}
-										</div>
-									{/if}
+								{:else}
+									<div class="space-y-1">
+										{#each vaultResults as result (result.id)}
+											<button
+												type="button"
+												class="search-result-item flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-elevated"
+												onclick={() => openArtifactPreview(result)}
+											>
+												<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
+													<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
+														<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+														<path d="M14 2v6h6"></path>
+														<path d="M9 15h6"></path>
+														<path d="M9 11h3"></path>
+													</svg>
+												</div>
+												<div class="min-w-0 flex-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<div class="truncate text-[15px] font-sans font-medium text-text-primary">
+															{result.name}
+														</div>
+														<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-sans uppercase tracking-[0.12em] text-text-muted">
+															{result.vaultName}
+														</span>
+														<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-sans uppercase tracking-[0.12em] text-text-muted">
+															{result.normalizedAvailable ? 'AI ready' : 'Source only'}
+														</span>
+													</div>
+													<p class="search-result-snippet mt-1 text-[13px] font-sans leading-[1.5] text-text-secondary">
+														{result.snippet ?? result.summary ?? 'Open to inspect the extracted text used for retrieval.'}
+													</p>
+												</div>
+												<div class="shrink-0 text-[12px] font-sans font-medium text-accent">
+													AI view
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+							</section>
+						{/if}
+
+						{#if conversationResults.length > 0}
+							<section class="space-y-2">
+								<div class="px-2 text-[11px] font-sans font-medium uppercase tracking-[0.14em] text-text-muted">
+									{trimmedSearchQuery ? 'Conversations' : 'Recent conversations'}
 								</div>
-								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
-									<path d="m9 18 6-6-6-6"></path>
-								</svg>
-							</button>
-						{/each}
+								<div class="space-y-1">
+									{#each conversationResults as conversation (conversation.id)}
+										<button
+											type="button"
+											class="search-result-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
+											class:active={conversation.id === $currentConversationId}
+											onclick={() => handleSelection(conversation.id)}
+										>
+											<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
+												<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
+													<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+												</svg>
+											</div>
+											<div class="min-w-0 flex-1">
+												<div class="truncate text-[15px] font-sans font-medium text-text-primary">
+													{conversation.title}
+												</div>
+												{#if conversation.id === $currentConversationId}
+													<div class="mt-0.5 text-[12px] font-sans text-accent">Current conversation</div>
+												{:else if conversation.projectId && projectsMap[conversation.projectId]}
+													<div class="mt-0.5 flex items-center gap-1 text-[12px] font-sans text-text-muted">
+														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+															<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+														</svg>
+														{projectsMap[conversation.projectId]}
+													</div>
+												{/if}
+											</div>
+											<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
+												<path d="m9 18 6-6-6-6"></path>
+											</svg>
+										</button>
+									{/each}
+								</div>
+							</section>
+						{/if}
 					</div>
 				{/if}
 			</div>
 
+			<AttachmentContentModal
+				open={Boolean(previewArtifactId)}
+				artifactId={previewArtifactId}
+				filename={previewFilename}
+				onClose={closeArtifactPreview}
+			/>
 
 		</div>
 	</div>
@@ -319,6 +447,13 @@
 	:global(.dark) .search-result-item.active {
 		background: color-mix(in srgb, var(--accent) 12%, var(--surface-overlay) 88%);
 		border-color: color-mix(in srgb, var(--accent) 40%, var(--border-default) 60%);
+	}
+
+	.search-result-snippet {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
 	}
 
 	/* Animation for backdrop */

@@ -92,6 +92,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The app layout preloads conversations, projects, model availability, and user preferences before the main UI renders.
 - The landing page prepares a draft conversation, stores any pending first message, and navigates into the chat page once a conversation exists.
 - The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
+- Chat-generated files are created through the sandboxed file-generator path only when the executed code writes the final file to `/output`; successful files then appear back in the chat UI for download or manual vault saving.
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
@@ -207,6 +208,8 @@ Notes before the tables:
 - On Linux, document extraction quality improves if `poppler-utils`, `unzip`, and `binutils` are installed.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
+- A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
+- Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
 - The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.

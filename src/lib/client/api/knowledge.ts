@@ -3,6 +3,7 @@ import type {
 	KnowledgeDocumentItem,
 	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryPayload,
+	KnowledgeVaultSearchResult,
 	KnowledgeUploadResponse,
 	WorkCapsule,
 } from '$lib/types';
@@ -218,4 +219,22 @@ export async function fetchStorageQuota(): Promise<StorageQuota> {
 		undefined,
 		'Failed to load storage quota.'
 	);
+}
+
+export async function searchVaultFiles(
+	query: string,
+	limit = 6
+): Promise<KnowledgeVaultSearchResult[]> {
+	const params = new URLSearchParams({
+		q: query.trim(),
+		limit: String(limit),
+	});
+
+	const payload = await requestJson<{ results: KnowledgeVaultSearchResult[] }>(
+		`/api/knowledge/search?${params.toString()}`,
+		undefined,
+		'Failed to search vault files.'
+	);
+
+	return payload.results ?? [];
 }

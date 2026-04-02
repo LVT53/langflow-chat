@@ -88,7 +88,11 @@ knowledge.ts (facade — re-exports from below)
 
 **Vault-only upload note**: knowledge-page vault uploads may pass `conversationId = null`; `saveUploadedArtifact()` must skip `attached_to_conversation` link creation in that case, while `/api/knowledge/upload` validates any provided conversation id before insert and keeps Honcho sync conversation-bound.
 
-**Chat-generated files note**: `chat-files.ts` is the single source of truth for generated-file storage, conversation-scoped listings, authenticated user lookups for `/api/chat/files/[id]/download`, and the post-save-to-vault cleanup path. Keep `/api/chat/files/generate` bearer-auth logic thin and let `chat-files.ts` own file retrieval semantics.
+**Vault search note**: `searchVaultDocuments()` in `knowledge/store/documents.ts` is the shared vault-file search path used by `/api/knowledge/search` and the shell search modal. Keep vault-file search ranking, logical-document mapping, and vault-name decoration there instead of duplicating it in routes or client components.
+
+**Chat-generated files note**: `chat-files.ts` is the single source of truth for generated-file storage, conversation-scoped listings, authenticated user lookups for `/api/chat/files/[id]/download`, and the post-save-to-vault cleanup path. Keep `/api/chat/files/generate` bearer-auth logic thin, reject zero-file sandbox runs there instead of returning silent success, and let `chat-files.ts` own file retrieval semantics.
+
+**Langflow prompt note**: file-generation workflow guidance belongs in `langflow.ts`. Keep its prompt contract aligned with the Langflow file-generator tool: generated code must write files to `/output`, successful files appear in chat, and vault saves remain a separate UI action unless a dedicated save tool is introduced.
 
 ## Task-State Submodule Flow
 

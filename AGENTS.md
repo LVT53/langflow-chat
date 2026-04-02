@@ -76,8 +76,8 @@ Do not:
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI with two-column layout.
-  - Left sidebar (224px): VaultSidebar for vault management.
-  - Main content: Library and Memory Profile tabs.
+  - Left sidebar (rail): VaultSidebar for vault selection and upload affordances.
+  - Main content: Vault Explorer plus Library and Memory Profile tabs.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
 - [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
   - User settings and admin/runtime config UI surface.
@@ -122,8 +122,9 @@ Do not:
   - [`src/lib/components/chat/VaultPickerModal.svelte`](./src/lib/components/chat/VaultPickerModal.svelte)
 - Generated files refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
-  - Stream end event includes `generatedFiles` fetched via `getChatFiles()`
+  - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
   - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata
+  - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
 
 Do:
 
@@ -138,6 +139,7 @@ Do:
 - use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
 - `/api/chat/files/generate` may authenticate with either the signed-in session or the optional `ALFYAI_API_KEY` bearer secret used by the Langflow file-generator tool; keep that bearer path conversation-scoped and internal
+- keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, generated files show up in chat, and vault saving is still a separate UI action unless a dedicated tool is added
 - save-to-vault endpoint deletes source file after successful copy
 
 Do not:
@@ -187,6 +189,7 @@ Responsibility split:
   - normalized-document creation
   - logical document listing
   - artifact query matching
+  - vault-document search result mapping
 - `store/cleanup.ts`
   - artifact deletion
   - cross-conversation reference checks
@@ -219,8 +222,11 @@ Do not:
   - [`src/routes/(app)/knowledge/_components/CreateVaultModal.svelte`](./src/routes/(app)/knowledge/_components/CreateVaultModal.svelte)
   - [`src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte`](./src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte)
   - [`src/routes/(app)/knowledge/_components/VaultFileUpload.svelte`](./src/routes/(app)/knowledge/_components/VaultFileUpload.svelte)
+  - [`src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte`](./src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte) — main-panel vault explorer
 - Vault client API:
-  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts) — `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`
+  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts) — `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`, `searchVaultFiles`
+- Vault search API:
+  - [`src/routes/api/knowledge/search/+server.ts`](./src/routes/api/knowledge/search/+server.ts)
 - Import handler:
   - [`src/lib/server/services/knowledge/import.ts`](./src/lib/server/services/knowledge/import.ts)
   - [`src/routes/api/knowledge/import/+server.ts`](./src/routes/api/knowledge/import/+server.ts)
@@ -241,6 +247,8 @@ Rules:
 - File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
 - Storage quota is display-only - no enforcement
 - `VaultSidebar.svelte` owns OS file drag/drop targeting for vault uploads, and its drag overlay must stay visual-only so hovered vault rows or the sidebar fallback can receive `dragover`/`drop`
+- Global shell search surfaces vault-file hits through `/api/knowledge/search`, and vault-file clicks should open the extracted AI-visible text path via `AttachmentContentModal.svelte`, not a separate ad hoc viewer
+- `KnowledgeLibraryView.svelte` is the primary place to browse vault files; `VaultSidebar.svelte` is for scope selection, creation, deletion, and upload, not the only vault-file discovery surface
 
 Do not:
 
@@ -433,7 +441,7 @@ Rules:
 - `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
 - `src/lib/client/api/conversations.ts` also owns browser-side draft persistence and prepared-conversation deletion transport used by `conversation-session.ts`.
 - `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, memory, and vault browser calls.
-- `src/lib/client/api/knowledge.ts` provides `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota` for vault management.
+- `src/lib/client/api/knowledge.ts` provides `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`, `searchVaultFiles` for vault management and search.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
 - `src/lib/client/api/settings.ts` also owns admin-side user list/create/promote/demote/delete/revoke-session browser calls.
@@ -462,6 +470,7 @@ Important component boundaries:
   - not cross-page orchestration
 - [`src/lib/components/chat/MessageArea.svelte`](./src/lib/components/chat/MessageArea.svelte)
   - message list rendering and viewport behavior
+  - generated-file reveal behavior at the bottom of the conversation scroll surface
 - [`src/lib/components/layout/Sidebar.svelte`](./src/lib/components/layout/Sidebar.svelte)
   - navigation shell and store-driven sidebar state
 - [`src/lib/components/layout/Header.svelte`](./src/lib/components/layout/Header.svelte)

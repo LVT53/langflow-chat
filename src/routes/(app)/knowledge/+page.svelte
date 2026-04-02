@@ -63,7 +63,7 @@
 	let results = $state<ArtifactSummary[]>(initialResults);
 	let workflows = $state<WorkCapsule[]>(initialWorkflows);
 	let vaults = $state<Vault[]>(initialVaults);
-	let activeVaultId = $state<string | null>(null);
+	let activeVaultId = $state<string | null>(initialVaults[0]?.id ?? null);
 	let storageQuota = $state<StorageQuota | null>(null);
 	let personaMemories = $state<PersonaMemoryItem[]>([]);
 	let taskMemories = $state<TaskMemoryItem[]>([]);
@@ -582,6 +582,10 @@
 		activeVaultId = payload.id;
 	}
 
+	function setActiveVault(vaultId: string | null) {
+		activeVaultId = vaultId;
+	}
+
 	async function handleVaultCreate(payload: { name: string; color: string }) {
 		try {
 			const vault = await createVault(payload.name, payload.color);
@@ -604,9 +608,10 @@
 	async function handleVaultDelete(payload: { id: string }) {
 		try {
 			await deleteVault(payload.id);
-			vaults = vaults.filter((v) => v.id !== payload.id);
+			const remainingVaults = vaults.filter((v) => v.id !== payload.id);
+			vaults = remainingVaults;
 			if (activeVaultId === payload.id) {
-				activeVaultId = null;
+				activeVaultId = remainingVaults[0]?.id ?? null;
 			}
 			await refreshStorageQuota();
 		} catch (error) {
@@ -695,21 +700,23 @@
 <svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="knowledge-page flex h-full min-h-0 flex-row overflow-hidden bg-surface-page">
-	<aside class="vault-sidebar-container flex h-full w-56 shrink-0 flex-col border-r border-border-subtle bg-surface-page py-4">
-		<VaultSidebar
-			{vaults}
-			{activeVaultId}
-			quota={storageQuota}
-			onSelect={handleVaultSelect}
-			onCreate={handleVaultCreate}
-			onRename={handleVaultRename}
-			onDelete={handleVaultDelete}
-			onUpload={handleVaultUpload}
-		/>
+	<aside class="vault-sidebar-container flex h-full w-[17.5rem] shrink-0 border-r border-border-subtle/70 bg-surface-page/80 px-3 py-6">
+		<div class="flex min-h-0 w-full flex-1 rounded-[1.6rem] border border-border bg-surface-elevated/90 p-3 shadow-sm">
+			<VaultSidebar
+				{vaults}
+				{activeVaultId}
+				quota={storageQuota}
+				onSelect={handleVaultSelect}
+				onCreate={handleVaultCreate}
+				onRename={handleVaultRename}
+				onDelete={handleVaultDelete}
+				onUpload={handleVaultUpload}
+			/>
+		</div>
 	</aside>
 
-	<div class="main-content flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
-		<div class="mx-auto flex w-full max-w-[920px] flex-col gap-8">
+	<div class="main-content flex flex-1 flex-col overflow-y-auto px-5 py-6 md:px-8">
+		<div class="mx-auto flex w-full max-w-[1040px] flex-col gap-8">
 		<div class="rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="flex flex-col gap-5">
 			<div class="space-y-2">
@@ -777,10 +784,14 @@
 
 		{#if activeTab === 'library'}
 			<KnowledgeLibraryView
+				{vaults}
+				{activeVaultId}
 				{documents}
 				{results}
 				{workflows}
+				quota={storageQuota}
 				onOpenLibraryModal={openLibraryModal}
+				onSelectVault={setActiveVault}
 			/>
 		{:else}
 			<KnowledgeMemoryView

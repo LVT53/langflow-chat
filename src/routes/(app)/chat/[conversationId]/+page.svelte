@@ -142,6 +142,7 @@
 		taskState = data.taskState ?? null;
 		contextDebug = data.contextDebug ?? null;
 		conversationDraft = data.draft ?? null;
+		generatedFiles = data.generatedFiles ?? [];
 		queuedTurn = null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
@@ -217,6 +218,7 @@
 			taskState = payload.taskState ?? taskState;
 			contextDebug = payload.contextDebug ?? contextDebug;
 			conversationDraft = payload.draft ?? conversationDraft;
+			generatedFiles = payload.generatedFiles ?? generatedFiles;
 			bootstrapMode = false;
 
 			if (!activeStream && $messages.length === 0 && (payload.messages?.length ?? 0) > 0) {
@@ -229,6 +231,12 @@
 			hydratingConversation = false;
 		}
 	}
+
+	$effect(() => {
+		data.conversation.id;
+		data.generatedFiles;
+		generatedFiles = data.generatedFiles ?? [];
+	});
 
 	function cloneSendPayload(payload: SendPayload): SendPayload {
 		return {

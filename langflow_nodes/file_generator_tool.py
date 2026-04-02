@@ -10,6 +10,8 @@ How it works:
 2. The tool sends the code to the AlfyAI sandbox endpoint
 3. The sandbox executes the code in an isolated Docker container
 4. Generated files are stored and returned as metadata
+5. Files only count as generated when the code writes them to /output
+6. After generation, the user can download the file from chat or click Save to Vault
 
 Usage in Langflow:
 1. Add this component to your flow
@@ -192,6 +194,19 @@ class FileGeneratorToolComponent(Component):
                     "success": False,
                     "error": error_data.get("error", "Sandbox execution failed"),
                 }
+            elif response.status_code == 422:
+                error_data = (
+                    response.json()
+                    if response.headers.get("content-type", "").startswith("application/json")
+                    else {}
+                )
+                return {
+                    "success": False,
+                    "error": error_data.get(
+                        "error",
+                        "No files were created. Write the final output file to /output.",
+                    ),
+                }
             else:
                 return {
                     "success": False,
@@ -328,7 +343,9 @@ class FileGeneratorToolComponent(Component):
                 "Use this tool when the user asks for a document, report, spreadsheet, chart, "
                 "or any file that needs to be created and downloaded. "
                 "The code runs in an isolated environment with no network access. "
-                "Write output files to /output directory. "
+                "Write output files to /output directory or no file will be created. "
+                "Generated files appear in the AlfyAI chat UI after the response completes. "
+                "Saving a generated file to a vault is a separate UI action in chat. "
                 "Common libraries available: pandas, matplotlib, reportlab, openpyxl, numpy, Pillow."
             ),
             func=lambda code, filename=None: self.generate_file(code, filename or ""),

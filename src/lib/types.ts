@@ -276,9 +276,24 @@ export interface KnowledgeDocumentItem {
   mimeType: string | null;
   sizeBytes: number | null;
   conversationId: string | null;
+  vaultId: string | null;
   summary: string | null;
   normalizedAvailable: boolean;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeVaultSearchResult {
+  id: string;
+  displayArtifactId: string;
+  promptArtifactId: string | null;
+  name: string;
+  mimeType: string | null;
+  vaultId: string;
+  vaultName: string;
+  summary: string | null;
+  snippet: string | null;
+  normalizedAvailable: boolean;
   updatedAt: number;
 }
 

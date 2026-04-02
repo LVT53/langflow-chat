@@ -288,10 +288,9 @@ export const POST: RequestHandler = async (event) => {
           assistantMsgId?: string,
         ) => {
           // Fetch generated files for this conversation
-          let generatedFiles: import("$lib/types").ChatGeneratedFile[] | undefined;
+          let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
-            const files = await getChatFiles(conversationId);
-            generatedFiles = files.length > 0 ? files : undefined;
+            generatedFiles = await getChatFiles(conversationId);
           } catch {
             // Ignore errors fetching generated files
           }

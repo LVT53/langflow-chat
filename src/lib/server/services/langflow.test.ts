@@ -251,6 +251,9 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
+      expect(body.tweaks.system_prompt).toContain('Generated file workflow');
+      expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
+      expect(body.tweaks.system_prompt).toContain('Save to Vault');
 
       expect(result).toMatchObject({
         text: 'AI response',
@@ -432,6 +435,7 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
+      expect(body.tweaks.system_prompt).toContain('Generated file workflow');
 
       expect(response.stream).toBeDefined();
     });

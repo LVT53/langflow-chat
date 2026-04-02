@@ -398,7 +398,7 @@ describe('POST /api/chat/files/generate', () => {
 		expect(data.error).toMatch(/failed to execute code/i);
 	});
 
-	it('returns empty files array when sandbox produces no output files', async () => {
+	it('returns 422 when sandbox produces no output files', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
 		
@@ -417,8 +417,8 @@ describe('POST /api/chat/files/generate', () => {
 		const response = await POST(event);
 		const data = await response.json();
 
-		expect(response.status).toBe(200);
-		expect(data.files).toHaveLength(0);
+		expect(response.status).toBe(422);
+		expect(data.error).toMatch(/write the final output file to \/output/i);
 		expect(mockStoreGeneratedFile).not.toHaveBeenCalled();
 	});
 

@@ -115,6 +115,16 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
+	if (executionResult.files.length === 0) {
+		return json(
+			{
+				error:
+					'The sandbox finished without creating a file. Write the final output file to /output so it can be stored and shown in chat.',
+			},
+			{ status: 422 }
+		);
+	}
+
 	// Store generated files
 	const files: FileMetadata[] = [];
 	for (const file of executionResult.files) {

@@ -27,6 +27,7 @@
 	let scrollContainer = $state<HTMLDivElement | null>(null);
 	let shouldAutoScroll = true;
 	let lastMessageCount = 0;
+	let lastGeneratedFileCount = 0;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
 
@@ -35,6 +36,7 @@
 			lastConversationId = conversationId;
 			shouldAutoScroll = true;
 			lastMessageCount = 0;
+			lastGeneratedFileCount = 0;
 			shouldJumpToConversationBottom = true;
 		}
 	});
@@ -55,6 +57,7 @@
 		messages;
 		scrollContainer;
 		isThinkingActive;
+		generatedFiles.length;
 
 		if (!scrollContainer) return;
 
@@ -64,10 +67,12 @@
 				shouldJumpToConversationBottom = false;
 			}
 			lastMessageCount = 0;
+			lastGeneratedFileCount = generatedFiles.length;
 			return;
 		}
 
 		const isNewMessage = hasNewMessage(messages);
+		const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
 
 		if (shouldJumpToConversationBottom) {
 			// Switching to another conversation should always reveal the latest response.
@@ -76,12 +81,16 @@
 		} else if (isNewMessage) {
 			// New message added: jump directly to the latest content.
 			void alignToBottomAfterRender();
+		} else if (hasNewGeneratedFiles && shouldAutoScroll) {
+			// Generated files render after the message list, so keep them visible when the user stayed near the bottom.
+			void alignToBottomAfterRender();
 		} else if (shouldAutoScroll && isThinkingActive) {
 			// Only follow during thinking phase; stop once content streaming begins.
 			instantScrollToBottom();
 		}
 
 		lastMessageCount = messages.length;
+		lastGeneratedFileCount = generatedFiles.length;
 	});
 
 	function instantScrollToBottom() {
@@ -134,6 +143,9 @@
 			{#if generatedFiles.length > 0 && conversationId}
 				<div class="generated-files-section">
 					<div class="generated-files-header">Generated Files</div>
+					<p class="generated-files-description">
+						Created in this chat. Download them here or move them into a vault.
+					</p>
 					<div class="generated-files-list">
 						{#each generatedFiles as file (file.id)}
 							<GeneratedFile
@@ -180,6 +192,13 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin-bottom: var(--space-md);
+	}
+
+	.generated-files-description {
+		margin: 0 0 var(--space-md);
+		font-size: 0.92rem;
+		line-height: 1.5;
+		color: var(--text-secondary);
 	}
 
 	.generated-files-list {

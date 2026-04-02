@@ -7,7 +7,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) defines component categories and boundar
 ```
 layout/
   Sidebar.svelte                    ← navigation shell, profile, new-chat button
-    ├── search/SearchModal.svelte   ← global conversation search (Ctrl+K)
+    ├── search/SearchModal.svelte   ← global conversation + vault-file search (Ctrl+K)
     └── sidebar/ConversationList.svelte  ← list with drag/drop, project folders
           ├── sidebar/ProjectItem.svelte      ← folder row (event emitter only)
           └── sidebar/ConversationItem.svelte  ← conversation row (event emitter only)
@@ -55,7 +55,7 @@ ui/
 | `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode), attachment viewing via `AttachmentContentModal` |
 | `ModelSelector.svelte` | `settings` | `selectedModel`, `setSelectedModel` |
 | `ComposerToolsMenu.svelte` | `settings` | `translationState`, `toggleTranslationState` |
-| `SearchModal.svelte` | `conversations` | `conversations` (search source) |
+| `SearchModal.svelte` | `conversations` | `conversations` (conversation search source) |
 | `SearchModal.svelte` | `projects` | `projects` (search source) |
 | `SearchModal.svelte` | `ui` | `currentConversationId`, `sidebarOpen` |
 
@@ -77,7 +77,7 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `KnowledgeLibrary`, `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultSidebar`, `VaultFileUpload`
+- Route-local `_components/` — `KnowledgeLibraryView` (main-panel vault explorer), `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultSidebar`, `VaultFileUpload`
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
@@ -92,15 +92,19 @@ ui/
 
 - `ConversationList.svelte` owns drag/drop state — `ConversationItem` and `ProjectItem` are **event emitters**, not persistence actors
 - `MessageArea.svelte` is the **sole scroll owner** for conversation content — do not add `overflow-y: auto` elsewhere
+- `MessageArea.svelte` must also keep newly appended generated-file cards visible when the user remained near the bottom of the chat
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
 - `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
+- `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and reuses `AttachmentContentModal.svelte` so shell search shows the same AI-visible text path as the knowledge page
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
+- `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
 - `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` owns vault-targeted OS file drag/drop and may fall back to the active vault or first vault when the drop lands on sidebar chrome
 - `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` drag overlays are visual affordances only; they must not intercept pointer/drag events intended for vault rows
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
+- `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the main vault-file browsing surface; keep vault browsing/search/filter state there instead of rebuilding a file browser inside `VaultSidebar.svelte`
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic
 

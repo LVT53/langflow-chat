@@ -22,6 +22,13 @@ const DATE_BEFORE_SEARCH_GUARD = [
 	'- Do not search first and check the date afterward.',
 ].join('\n');
 
+const FILE_GENERATION_GUARD = [
+	'Generated file workflow:',
+	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
+	'- Generated files appear in the chat UI after the response finishes.',
+	'- Do not claim you saved a generated file to a vault unless a dedicated save tool actually exists. Otherwise tell the user to use the chat UI `Save to Vault` action.',
+].join('\n');
+
 function containsHttpUrl(value: string): boolean {
 	return /https?:\/\/[^\s)>\]]+/i.test(value);
 }
@@ -32,7 +39,7 @@ function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 }): string {
 	const basePrompt = params.basePrompt.trim();
-	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD];
+	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD, FILE_GENERATION_GUARD];
 
 	if (containsHttpUrl(params.inputValue)) {
 		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);

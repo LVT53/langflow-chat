@@ -45,6 +45,7 @@ export {
   createNormalizedArtifact,
   findRelevantArtifactsByTypes,
   listLogicalDocuments,
+  searchVaultDocuments,
 } from "./store/documents";
 
 export {
