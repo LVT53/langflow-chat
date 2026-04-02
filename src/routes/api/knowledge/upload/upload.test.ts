@@ -19,6 +19,10 @@ vi.mock('$lib/server/services/attachment-trace', () => ({
 	logAttachmentTrace: vi.fn(),
 }));
 
+vi.mock('$lib/server/services/conversations', () => ({
+	getConversation: vi.fn(),
+}));
+
 vi.mock('$lib/server/services/knowledge/store/vaults', () => ({
 	getVault: vi.fn(),
 }));
@@ -31,6 +35,7 @@ import {
 	saveUploadedArtifact,
 } from '$lib/server/services/knowledge';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
+import { getConversation } from '$lib/server/services/conversations';
 import { getVault } from '$lib/server/services/knowledge/store/vaults';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
@@ -38,6 +43,7 @@ const mockCreateNormalizedArtifact = createNormalizedArtifact as ReturnType<type
 const mockResolvePromptAttachmentArtifacts = resolvePromptAttachmentArtifacts as ReturnType<typeof vi.fn>;
 const mockSaveUploadedArtifact = saveUploadedArtifact as ReturnType<typeof vi.fn>;
 const mockSyncArtifactToHoncho = syncArtifactToHoncho as ReturnType<typeof vi.fn>;
+const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockGetVault = getVault as ReturnType<typeof vi.fn>;
 
 function makeEventWithFormData(formData: FormData) {
@@ -66,6 +72,13 @@ describe('POST /api/knowledge/upload', () => {
 			promptArtifacts: [],
 			items: [],
 			unresolvedItems: [],
+		});
+		mockGetConversation.mockResolvedValue({
+			id: 'conv-1',
+			title: 'Test Conversation',
+			projectId: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
 		});
 		mockGetVault.mockResolvedValue(null);
 	});
@@ -351,6 +364,96 @@ describe('POST /api/knowledge/upload', () => {
 		expect(mockGetVault).not.toHaveBeenCalled();
 	});
 
+	it('uploads to a vault without a conversation id', async () => {
+		const artifact = {
+			id: 'artifact-vault-only',
+			type: 'source_document',
+			retrievalClass: 'durable',
+			name: 'vault-doc.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: null,
+			vaultId: 'vault-1',
+			storagePath: 'data/knowledge/user-1/artifact-vault-only.pdf',
+			summary: 'Vault doc',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		const normalizedArtifact = {
+			id: 'normalized-vault-only',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: 'vault-doc.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 256,
+			conversationId: null,
+			summary: 'Vault text',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		mockGetVault.mockResolvedValue({
+			id: 'vault-1',
+			userId: 'user-1',
+			name: 'My Vault',
+			color: '#C15F3C',
+			sortOrder: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		mockSaveUploadedArtifact.mockResolvedValue({
+			artifact,
+			reusedExistingArtifact: false,
+			normalizedArtifact: null,
+		});
+		mockCreateNormalizedArtifact.mockResolvedValue(normalizedArtifact);
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [artifact],
+			promptArtifacts: [normalizedArtifact],
+			items: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: normalizedArtifact,
+					promptReady: true,
+					readinessError: null,
+					contentLength: 256,
+					contentPreview: 'Vault text',
+					contentHash: 'hash-vault',
+					chunkCount: 1,
+				},
+			],
+			unresolvedItems: [],
+		});
+
+		const formData = new FormData();
+		formData.append('file', new File(['doc'], 'vault-doc.pdf', { type: 'application/pdf' }));
+		formData.append('vaultId', 'vault-1');
+
+		const response = await POST(makeEventWithFormData(formData));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.promptReady).toBe(true);
+		expect(mockGetConversation).not.toHaveBeenCalled();
+		expect(mockGetVault).toHaveBeenCalledWith('user-1', 'vault-1');
+		expect(mockSaveUploadedArtifact).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				conversationId: null,
+				vaultId: 'vault-1',
+			})
+		);
+		expect(mockCreateNormalizedArtifact).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				conversationId: null,
+				sourceArtifactId: artifact.id,
+			})
+		);
+		expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
+	});
+
 	it('uploads with vaultId sets vaultId on artifact', async () => {
 		const artifact = {
 			id: 'artifact-2',
@@ -446,6 +549,21 @@ describe('POST /api/knowledge/upload', () => {
 
 		expect(response.status).toBe(400);
 		expect(data.error).toMatch(/vault not found/i);
+		expect(mockSaveUploadedArtifact).not.toHaveBeenCalled();
+	});
+
+	it('returns 400 when conversationId does not exist', async () => {
+		mockGetConversation.mockResolvedValue(null);
+
+		const formData = new FormData();
+		formData.append('file', new File(['doc'], 'doc.pdf', { type: 'application/pdf' }));
+		formData.append('conversationId', 'missing-conv');
+
+		const response = await POST(makeEventWithFormData(formData));
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.error).toMatch(/conversation not found/i);
 		expect(mockSaveUploadedArtifact).not.toHaveBeenCalled();
 	});
 });

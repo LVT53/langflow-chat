@@ -51,7 +51,6 @@
 
 	const OVERVIEW_POLL_INTERVAL_MS = 20_000;
 	const OVERVIEW_POLL_MAX_ATTEMPTS = 15;
-	const KNOWLEDGE_PAGE_CONTEXT = 'knowledge-vault-upload';
 
 	let { data }: PageProps = $props();
 	const getData = () => data;
@@ -700,7 +699,6 @@
 		<VaultSidebar
 			{vaults}
 			{activeVaultId}
-			conversationId={KNOWLEDGE_PAGE_CONTEXT}
 			quota={storageQuota}
 			onSelect={handleVaultSelect}
 			onCreate={handleVaultCreate}

@@ -10,7 +10,7 @@
 		onUploadError,
 	}: {
 		vaultId: string;
-		conversationId: string;
+		conversationId?: string | null;
 		onUploadStart?: () => void;
 		onUploadSuccess?: (response: KnowledgeUploadResponse) => void;
 		onUploadError?: (error: string) => void;

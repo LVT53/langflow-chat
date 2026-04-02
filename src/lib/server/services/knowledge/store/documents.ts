@@ -45,7 +45,7 @@ function mapLogicalDocumentItem(params: {
 
 export async function createNormalizedArtifact(params: {
   userId: string;
-  conversationId: string;
+  conversationId?: string | null;
   sourceArtifactId: string;
   sourceStoragePath: string;
   sourceName: string;

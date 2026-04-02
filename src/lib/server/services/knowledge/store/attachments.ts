@@ -458,7 +458,7 @@ async function resolveArtifactNameWithAutoRename(params: {
 
 export async function saveUploadedArtifact(params: {
   userId: string;
-  conversationId: string;
+  conversationId?: string | null;
   vaultId?: string | null;
   file: File;
 }): Promise<{
@@ -512,11 +512,13 @@ export async function saveUploadedArtifact(params: {
     },
   });
 
-  await ensureConversationAttachmentLink({
-    userId: params.userId,
-    artifactId: artifact.id,
-    conversationId: params.conversationId,
-  });
+  if (params.conversationId) {
+    await ensureConversationAttachmentLink({
+      userId: params.userId,
+      artifactId: artifact.id,
+      conversationId: params.conversationId,
+    });
+  }
 
   return {
     artifact,

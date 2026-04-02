@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import VaultSidebar from './VaultSidebar.svelte';
 import type { Vault } from '$lib/server/services/knowledge/store';
+import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
 
 // Mock Svelte transitions for jsdom
 vi.mock('svelte/transition', () => ({
@@ -23,7 +24,12 @@ vi.mock('$lib/server/services/knowledge/store', () => ({
   VaultUpdates: {} as any,
 }));
 
+vi.mock('$lib/client/api/knowledge', () => ({
+	uploadKnowledgeAttachment: vi.fn(),
+}));
+
 describe('VaultSidebar', () => {
+  const mockUploadKnowledgeAttachment = uploadKnowledgeAttachment as ReturnType<typeof vi.fn>;
   const mockVaults: Vault[] = [
     {
       id: 'vault-1',
@@ -57,6 +63,7 @@ describe('VaultSidebar', () => {
   const defaultProps = {
     vaults: mockVaults,
     activeVaultId: null as string | null,
+    conversationId: null as string | null,
     onSelect: vi.fn(),
     onCreate: vi.fn(),
     onRename: vi.fn(),
@@ -65,7 +72,20 @@ describe('VaultSidebar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUploadKnowledgeAttachment.mockResolvedValue({
+      artifact: { id: 'artifact-1', name: 'doc.pdf' },
+    });
   });
+
+  function createFileDrop(files: File[]) {
+    return {
+      dataTransfer: {
+        types: ['Files'],
+        files,
+        dropEffect: 'copy',
+      },
+    };
+  }
 
   describe('Rendering', () => {
     it('renders vault list with all vaults', () => {
@@ -365,6 +385,70 @@ describe('VaultSidebar', () => {
       await waitFor(() => {
         expect(screen.queryByTestId('delete-vault-dialog')).not.toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Drag And Drop Upload', () => {
+    it('shows the drag overlay during OS file drags', async () => {
+      render(VaultSidebar, { props: defaultProps });
+
+      const sidebar = screen.getByLabelText('Vault sidebar');
+      await fireEvent.dragEnter(
+        sidebar,
+        createFileDrop([new File(['doc'], 'doc.pdf', { type: 'application/pdf' })])
+      );
+
+      expect(screen.getByTestId('vault-drop-overlay')).toBeInTheDocument();
+    });
+
+    it('uploads dropped files to the hovered vault from the sidebar drop target', async () => {
+      const onSelect = vi.fn();
+      render(VaultSidebar, {
+        props: { ...defaultProps, onSelect },
+      });
+
+      const file = new File(['doc'], 'doc.pdf', { type: 'application/pdf' });
+      const sidebar = screen.getByLabelText('Vault sidebar');
+      const vaultItem = screen.getByTestId('vault-item-vault-2');
+
+      await fireEvent.dragEnter(sidebar, createFileDrop([file]));
+      await fireEvent.drop(vaultItem, createFileDrop([file]));
+
+      await waitFor(() => {
+        expect(mockUploadKnowledgeAttachment).toHaveBeenCalledWith(file, null, 'vault-2');
+      });
+      expect(onSelect).toHaveBeenCalledWith({ id: 'vault-2' });
+    });
+
+    it('falls back to the active vault when files are dropped on the sidebar chrome', async () => {
+      render(VaultSidebar, {
+        props: { ...defaultProps, activeVaultId: 'vault-1' },
+      });
+
+      const file = new File(['doc'], 'doc.pdf', { type: 'application/pdf' });
+      const sidebar = screen.getByLabelText('Vault sidebar');
+
+      await fireEvent.dragEnter(sidebar, createFileDrop([file]));
+      await fireEvent.drop(sidebar, createFileDrop([file]));
+
+      await waitFor(() => {
+        expect(mockUploadKnowledgeAttachment).toHaveBeenCalledWith(file, null, 'vault-1');
+      });
+    });
+
+    it('shows a helpful error when files are dropped without any vaults', async () => {
+      render(VaultSidebar, {
+        props: { ...defaultProps, vaults: [] },
+      });
+
+      const file = new File(['doc'], 'doc.pdf', { type: 'application/pdf' });
+      const sidebar = screen.getByLabelText('Vault sidebar');
+
+      await fireEvent.dragEnter(sidebar, createFileDrop([file]));
+      await fireEvent.drop(sidebar, createFileDrop([file]));
+
+      expect(mockUploadKnowledgeAttachment).not.toHaveBeenCalled();
+      expect(screen.getByTestId('upload-error')).toHaveTextContent(/create a vault before dropping files/i);
     });
   });
 

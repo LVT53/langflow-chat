@@ -86,6 +86,8 @@ knowledge.ts (facade — re-exports from below)
 
 **Call chain for attachment upload**: `saveUploadedArtifact()` → `document-extraction.ts` → `store/core.ts createArtifact()` → `store/core.ts syncArtifactChunks()` (delegates to `task-state/artifacts.ts`)
 
+**Vault-only upload note**: knowledge-page vault uploads may pass `conversationId = null`; `saveUploadedArtifact()` must skip `attached_to_conversation` link creation in that case, while `/api/knowledge/upload` validates any provided conversation id before insert and keeps Honcho sync conversation-bound.
+
 ## Task-State Submodule Flow
 
 ```

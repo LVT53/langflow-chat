@@ -177,15 +177,25 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						})),
 					};
 				}
-				// Second query: getAllArtifactNamesInVault
+				if (callCount === 2) {
+					// Second query: getAllArtifactNamesInVault
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() =>
+								Promise.resolve([
+									{ name: 'report.pdf' },
+									{ name: 'other.pdf' },
+								])
+							),
+						})),
+					};
+				}
+				// Third query: ensureConversationAttachmentLink
 				return {
 					from: vi.fn(() => ({
-						where: vi.fn(() =>
-							Promise.resolve([
-								{ name: 'report.pdf' },
-								{ name: 'other.pdf' },
-							])
-						),
+						where: vi.fn(() => ({
+							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+						})),
 					})),
 				};
 			});
@@ -268,15 +278,24 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						})),
 					};
 				}
+				if (callCount === 2) {
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() =>
+								Promise.resolve([
+									{ name: 'report.pdf' },
+									{ name: 'report_1.pdf' },
+									{ name: 'report_2.pdf' },
+								])
+							),
+						})),
+					};
+				}
 				return {
 					from: vi.fn(() => ({
-						where: vi.fn(() =>
-							Promise.resolve([
-								{ name: 'report.pdf' },
-								{ name: 'report_1.pdf' },
-								{ name: 'report_2.pdf' },
-							])
-						),
+						where: vi.fn(() => ({
+							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+						})),
 					})),
 				};
 			});
@@ -358,9 +377,18 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						})),
 					};
 				}
+				if (callCount === 2) {
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() => Promise.resolve([{ name: 'document.docx' }])),
+						})),
+					};
+				}
 				return {
 					from: vi.fn(() => ({
-						where: vi.fn(() => Promise.resolve([{ name: 'document.docx' }])),
+						where: vi.fn(() => ({
+							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+						})),
 					})),
 				};
 			});
@@ -470,6 +498,61 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			expect(result.renameInfo).toBeUndefined();
 		});
 
+		it('should skip conversation linking for vault uploads without a conversation id', async () => {
+			const mockFile = {
+				name: 'vault.pdf',
+				size: 1024,
+				type: 'application/pdf',
+				arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(1024))),
+			} as unknown as File;
+
+			mockDb.select.mockReturnValue({
+				from: vi.fn(() => ({
+					where: vi.fn(() => ({
+						limit: vi.fn(() => Promise.resolve([])),
+					})),
+				})),
+			});
+
+			mockDb.insert.mockReturnValue({
+				values: vi.fn(() => ({
+					returning: vi.fn(() =>
+						Promise.resolve([
+							{
+								id: 'artifact-uuid-123',
+								userId: 'user-1',
+								conversationId: null,
+								vaultId: 'vault-1',
+								type: 'source_document',
+								name: 'vault.pdf',
+								mimeType: 'application/pdf',
+								extension: 'pdf',
+								sizeBytes: 1024,
+								binaryHash: 'mock-hash-123',
+								storagePath: 'data/knowledge/user-1/artifact-uuid-123.pdf',
+								contentText: null,
+								summary: 'vault.pdf',
+								metadataJson: JSON.stringify({ uploadSource: 'chat' }),
+								retrievalClass: 'durable',
+								createdAt: new Date('2024-01-01'),
+								updatedAt: new Date('2024-01-01'),
+							},
+						])
+					),
+				})),
+			});
+
+			const result = await saveUploadedArtifact({
+				userId: 'user-1',
+				conversationId: null,
+				vaultId: 'vault-1',
+				file: mockFile,
+			});
+
+			expect(result.artifact.conversationId).toBeNull();
+			expect(mockDb.insert).toHaveBeenCalledTimes(1);
+		});
+
 		it('should handle files without extension', async () => {
 			const mockFile = {
 				name: 'README',
@@ -503,9 +586,18 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						})),
 					};
 				}
+				if (callCount === 2) {
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() => Promise.resolve([{ name: 'README' }])),
+						})),
+					};
+				}
 				return {
 					from: vi.fn(() => ({
-						where: vi.fn(() => Promise.resolve([{ name: 'README' }])),
+						where: vi.fn(() => ({
+							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+						})),
 					})),
 				};
 			});

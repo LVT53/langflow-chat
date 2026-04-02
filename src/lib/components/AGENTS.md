@@ -76,7 +76,7 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `KnowledgeLibrary`, `KnowledgeMemoryModal`, `KnowledgeUploadView`
+- Route-local `_components/` — `KnowledgeLibrary`, `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultSidebar`, `VaultFileUpload`
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
@@ -96,6 +96,9 @@ ui/
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
 - `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
+- `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` owns vault-targeted OS file drag/drop and may fall back to the active vault or first vault when the drop lands on sidebar chrome
+- `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` drag overlays are visual affordances only; they must not intercept pointer/drag events intended for vault rows
+- `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic
 

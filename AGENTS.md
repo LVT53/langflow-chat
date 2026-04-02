@@ -230,12 +230,14 @@ Rules:
 
 - Vaults are single-level folders only - no nested folder support
 - Each vault belongs to a single user - no collaboration/sharing
+- Direct vault uploads through `/api/knowledge/upload` may omit `conversationId`; when present, the route must validate that the conversation belongs to the user before any artifact insert or link write
 - File versioning is NOT supported - single version per file
 - Auto-rename on name conflicts (counter suffix) - no overwrite
 - Delete vault = delete all files inside (cascading delete)
 - Import from Obsidian/Notion flattens hierarchy, stores original path in metadata
 - File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
 - Storage quota is display-only - no enforcement
+- `VaultSidebar.svelte` owns OS file drag/drop targeting for vault uploads, and its drag overlay must stay visual-only so hovered vault rows or the sidebar fallback can receive `dragover`/`drop`
 
 Do not:
 

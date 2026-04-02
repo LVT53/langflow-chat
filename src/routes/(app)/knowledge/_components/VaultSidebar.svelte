@@ -34,7 +34,7 @@
 	}: {
 		vaults: Vault[];
 		activeVaultId?: string | null;
-		conversationId: string;
+		conversationId?: string | null;
 		quota?: StorageQuota | null;
 		onSelect?: (payload: { id: string }) => void;
 		onCreate?: (payload: { name: string; color: string }) => void;
@@ -202,6 +202,11 @@
 
 	function handleDragLeave(event: DragEvent) {
 		if (!isOsFileDrop(event)) return;
+		const currentTarget = event.currentTarget;
+		const relatedTarget = event.relatedTarget;
+		if (currentTarget instanceof HTMLElement && relatedTarget instanceof Node) {
+			if (currentTarget.contains(relatedTarget)) return;
+		}
 		dragEnterCount -= 1;
 		if (dragEnterCount <= 0) {
 			dragEnterCount = 0;
@@ -210,24 +215,38 @@
 		}
 	}
 
-	function handleVaultDragLeave(event: DragEvent) {
-		dropTargetVaultId = null;
-	}
-
-	async function handleDrop(event: DragEvent, targetVaultId: string) {
-		dragEnterCount = 0;
-		dragActive = false;
+	function handleVaultDragEnter(event: DragEvent, vaultId: string) {
 		if (!isOsFileDrop(event)) return;
 		event.preventDefault();
 		event.stopPropagation();
+		dropTargetVaultId = vaultId;
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
+	}
 
-		const files = event.dataTransfer?.files;
-		if (!files || files.length === 0) return;
+	function handleVaultDragLeave(event: DragEvent) {
+		const currentTarget = event.currentTarget;
+		const relatedTarget = event.relatedTarget;
+		if (currentTarget instanceof HTMLElement && relatedTarget instanceof Node) {
+			if (currentTarget.contains(relatedTarget)) return;
+		}
+		dropTargetVaultId = null;
+	}
 
-		// Auto-select the vault being dropped on
+	function resetDragState() {
+		dragEnterCount = 0;
+		dragActive = false;
+		dropTargetVaultId = null;
+	}
+
+	function resolveDropTargetVaultId(explicitVaultId?: string): string | null {
+		return explicitVaultId ?? dropTargetVaultId ?? activeVaultId ?? vaults[0]?.id ?? null;
+	}
+
+	async function uploadFilesToVault(files: FileList | File[], targetVaultId: string) {
 		onSelect?.({ id: targetVaultId });
 
-		// Upload all dropped files to this vault
 		isUploading = true;
 		const uploadPromises: Promise<void>[] = [];
 
@@ -249,14 +268,31 @@
 		isUploading = false;
 	}
 
-	function handleVaultDragOver(event: DragEvent, vaultId: string) {
+	async function handleDrop(event: DragEvent, explicitVaultId?: string) {
 		if (!isOsFileDrop(event)) return;
 		event.preventDefault();
 		event.stopPropagation();
-		dropTargetVaultId = vaultId;
-		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = 'copy';
+		resetDragState();
+
+		const files = event.dataTransfer?.files;
+		if (!files || files.length === 0) return;
+
+		const targetVaultId = resolveDropTargetVaultId(explicitVaultId);
+		if (!targetVaultId) {
+			showUploadError(
+				vaults.length === 0
+					? 'Create a vault before dropping files.'
+					: 'Select a vault or drop directly on a vault row.'
+			);
+			return;
 		}
+
+		await uploadFilesToVault(files, targetVaultId);
+	}
+
+	function handleVaultDragOver(event: DragEvent, vaultId: string) {
+		if (!isOsFileDrop(event)) return;
+		handleVaultDragEnter(event, vaultId);
 	}
 
 	function showUploadError(message: string) {
@@ -278,6 +314,7 @@
 	ondragenter={handleDragEnter}
 	ondragover={handleDragOver}
 	ondragleave={handleDragLeave}
+	ondrop={(event) => handleDrop(event)}
 >
 	{#if dragActive}
 		<div class="vault-drop-overlay" data-testid="vault-drop-overlay">
@@ -402,6 +439,7 @@
 					style="padding: 0 2px 0 6px;"
 					onclick={() => handleSelect(vault)}
 					onkeydown={(event) => event.key === 'Enter' && handleSelect(vault)}
+					ondragenter={(event) => handleVaultDragEnter(event, vault.id)}
 					ondragover={(event) => handleVaultDragOver(event, vault.id)}
 					ondragleave={handleVaultDragLeave}
 					ondrop={(event) => handleDrop(event, vault.id)}
@@ -601,6 +639,7 @@
 		position: absolute;
 		inset: 0;
 		z-index: 50;
+		pointer-events: none;
 		display: flex;
 		align-items: center;
 		justify-content: center;

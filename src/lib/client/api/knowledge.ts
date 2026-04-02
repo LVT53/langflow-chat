@@ -118,12 +118,14 @@ export async function deleteKnowledgeArtifact(id: string): Promise<KnowledgeDele
 
 export async function uploadKnowledgeAttachment(
 	file: File,
-	conversationId: string,
+	conversationId?: string | null,
 	vaultId?: string | null
 ): Promise<KnowledgeUploadResponse> {
 	const formData = new FormData();
 	formData.append('file', file);
-	formData.append('conversationId', conversationId);
+	if (conversationId) {
+		formData.append('conversationId', conversationId);
+	}
 	if (vaultId) {
 		formData.append('vaultId', vaultId);
 	}
