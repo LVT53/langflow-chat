@@ -6,20 +6,42 @@ vi.mock('mammoth', () => ({
 	convertToHtml: vi.fn().mockResolvedValue({ value: '<p>Mock DOCX content</p>' }),
 }));
 
-vi.mock('xlsx', () => ({
-	read: vi.fn().mockReturnValue({
-		SheetNames: ['Sheet1'],
-		Sheets: {
-			Sheet1: {},
-		},
-	}),
-	utils: {
-		sheet_to_json: vi.fn().mockReturnValue([
-			['Header1', 'Header2'],
-			['Value1', 'Value2'],
-		]),
+vi.mock('exceljs', () => ({
+	Workbook: class MockWorkbook {
+		SheetNames = ['Sheet1'];
+		Sheets = { Sheet1: {} };
+		xlsx = {
+			load: vi.fn().mockResolvedValue(undefined),
+		};
+		eachSheet(callback: (worksheet: MockWorksheet, sheetId: number) => void) {
+			callback(
+				{
+					name: 'Sheet1',
+					eachRow: (cb: (row: { eachCell: (cb2: (cell: { value: unknown }) => void) => void }) => void) => {
+						cb({
+							eachCell: (cellCb: (cell: { value: unknown }) => void) => {
+								cellCb({ value: 'Header1' });
+								cellCb({ value: 'Header2' });
+							},
+						});
+						cb({
+							eachCell: (cellCb: (cell: { value: unknown }) => void) => {
+								cellCb({ value: 'Value1' });
+								cellCb({ value: 'Value2' });
+							},
+						});
+					},
+				},
+				1
+			);
+		}
 	},
 }));
+
+interface MockWorksheet {
+	name: string;
+	eachRow: (callback: (row: { eachCell: (cb: (cell: { value: unknown }) => void) => void }) => void) => void;
+}
 
 describe('FilePreview', () => {
 	const mockOnClose = vi.fn();

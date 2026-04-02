@@ -207,23 +207,25 @@
 
 	async function renderXlsx(blob: Blob) {
 		try {
-			const XLSX = await import('xlsx');
+			const ExcelJS = await import('exceljs');
 			const arrayBuffer = await blob.arrayBuffer();
-			const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+			const workbook = new ExcelJS.Workbook();
+			await workbook.xlsx.load(arrayBuffer);
 			
 			let html = '<div class="xlsx-container">';
-			workbook.SheetNames.forEach((sheetName) => {
-				const worksheet = workbook.Sheets[sheetName];
-				const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
-				
+			workbook.eachSheet((worksheet, sheetId) => {
+				const sheetName = worksheet.name || `Sheet ${sheetId}`;
 				html += `<div class="sheet"><h4>${sheetName}</h4><table class="xlsx-table">`;
-				data.forEach((row) => {
+				
+				worksheet.eachRow((row) => {
 					html += '<tr>';
-					(row as unknown[]).forEach((cell) => {
-						html += `<td>${cell ?? ''}</td>`;
+					row.eachCell((cell) => {
+						const value = cell.value ?? '';
+						html += `<td>${value}</td>`;
 					});
 					html += '</tr>';
 				});
+				
 				html += '</table></div>';
 			});
 			html += '</div>';
