@@ -14,17 +14,19 @@ layout/
   Header.svelte                     ← mobile header, sidebar toggle, user menu
 
 chat/
-  MessageInput.svelte               ← composer UI, attachments, local draft
+  MessageInput.svelte               ← composer UI, attachments, local draft, onUploadReady callback
     ├── chat/ContextUsageRing.svelte     ← context usage % ring
     ├── chat/ComposerToolsMenu.svelte    ← translation toggle
-    └── chat/FileAttachment.svelte       ← attachment chip
+    ├── chat/FileAttachment.svelte       ← attachment chip (viewable prop, onView callback)
+    └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
-    └── chat/MessageBubble.svelte       ← individual message
+    └── chat/MessageBubble.svelte       ← individual message (attachment viewing capability)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
           ├── chat/CodeBlock.svelte           ← fenced code block
           ├── chat/ThinkingBlock.svelte       ← <thinking> content
           ├── chat/FileAttachment.svelte      ← inline attachment display
-          └── chat/MessageEvidenceDetails.svelte  ← evidence summary panel
+          ├── chat/MessageEvidenceDetails.svelte  ← evidence summary panel
+          └── chat/AttachmentContentModal.svelte  ← modal for viewing extracted file text (contentText)
   ModelSelector.svelte              ← model dropdown
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
@@ -48,8 +50,8 @@ ui/
 | `ConversationList.svelte` | `conversations` | `conversations`, CRUD actions |
 | `ConversationList.svelte` | `projects` | `projects`, CRUD actions |
 | `ConversationList.svelte` | `ui` | `currentConversationId`, `sidebarOpen` |
-| `MessageInput.svelte` | `ui` | `currentConversationId` (draft clear on switch) |
-| `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode) |
+| `MessageInput.svelte` | `ui` | `currentConversationId` (draft clear on switch), `onUploadReady` callback |
+| `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode), attachment viewing via `AttachmentContentModal` |
 | `ModelSelector.svelte` | `settings` | `selectedModel`, `setSelectedModel` |
 | `ComposerToolsMenu.svelte` | `settings` | `translationState`, `toggleTranslationState` |
 | `SearchModal.svelte` | `conversations` | `conversations` (search source) |
@@ -68,6 +70,8 @@ ui/
 - `chat/ModelSelector.svelte` — model picker
 - `chat/EvidenceManager.svelte` — evidence panel
 - `chat/ContextUsageRing.svelte` — context indicator
+- `chat/DropZoneOverlay.svelte` — drag-and-drop file upload overlay
+- `chat/AttachmentContentModal.svelte` — attachment content viewer
 - Route-local `_components/` — `ChatComposerPanel`, `ChatMessagePane` (page scaffolding)
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
@@ -88,6 +92,10 @@ ui/
 - `ConversationList.svelte` owns drag/drop state — `ConversationItem` and `ProjectItem` are **event emitters**, not persistence actors
 - `MessageArea.svelte` is the **sole scroll owner** for conversation content — do not add `overflow-y: auto` elsewhere
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
+- `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
+- `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
+- `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
+- `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic
 

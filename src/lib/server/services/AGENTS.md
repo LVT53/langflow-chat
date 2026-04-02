@@ -16,6 +16,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 | 8 | `knowledge/store/core.ts` | 353 | Artifact CRUD, mapping, token-budget constants |
 | 9 | `task-state/artifacts.ts` | 358 | Chunking, prompt-snippet selection, historical summarization |
 | 10 | `knowledge/store/cleanup.ts` | 302 | Cross-reference-aware deletion, bulk cleanup |
+| 11 | `chat-turn/retry-cleanup.ts` | ~190 | Idempotent cleanup of failed turn data (evidence, checkpoints, work capsules, generated outputs) |
 
 ## Cross-Service Dependency Graph
 
@@ -39,7 +40,7 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
                    │       │        │            │
                    └───┬───┘        │            │
                        ▼            ▼            ▼
-                  persona-memory  utils/*    knowledge/store/*
+                  persona-memory  utils/*    knowledge/store/*  chat-turn/retry-cleanup.ts
 ```
 
 **Key insight**: `finalize.ts` is the fan-out point — after a turn completes, it dispatches to persistence, evidence, memory, and Honcho sync.
@@ -65,6 +66,9 @@ execute()  stream.ts          ← diverge here
 persistAssistantTurnState()   ← message, metadata, evidence
         │
 runPostTurnTasks()            ← Honcho sync, memory maintenance trigger
+        │
+retry-cleanup.ts              ← idempotent cleanup on turn failure (evidence links, checkpoints,
+                              generated_output artifacts, work capsules, assistant message)
 ```
 
 ## Knowledge Store Internal Chain
