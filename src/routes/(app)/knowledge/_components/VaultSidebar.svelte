@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Vault } from '$lib/server/services/knowledge/store';
 	import type { KnowledgeUploadResponse } from '$lib/types';
+	import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
 	import CreateVaultModal from './CreateVaultModal.svelte';
 	import DeleteVaultDialog from './DeleteVaultDialog.svelte';
 	import VaultFileUpload from './VaultFileUpload.svelte';
@@ -49,6 +50,14 @@
 	let deletingVault = $state<Vault | null>(null);
 	let renameNotification = $state<{ finalName: string; originalName: string } | null>(null);
 	let renameNotificationTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+
+	// Drag and drop state
+	let dragActive = $state(false);
+	let dragRejected = $state(false);
+	let dragEnterCount = $state(0);
+	let isUploading = $state(false);
+	let uploadError = $state<string | null>(null);
+	let uploadErrorTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
 	const PRESET_COLORS = [
 		'#C15F3C',
@@ -168,9 +177,170 @@
 		const limit = formatStorage(quota.storageLimit);
 		return { used, limit, percent: quota.usagePercent, isWarning: quota.isWarning };
 	});
+
+	// Drag and drop handlers
+	function isOsFileDrop(event: DragEvent): boolean {
+		const types = event.dataTransfer?.types;
+		if (!types) return false;
+		return types.includes('Files');
+	}
+
+	function handleDragEnter(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		dragEnterCount += 1;
+		dragActive = true;
+		// Reject if no vault is selected
+		dragRejected = !activeVaultId;
+	}
+
+	function handleDragOver(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = activeVaultId ? 'copy' : 'none';
+		}
+	}
+
+	function handleDragLeave(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		dragEnterCount -= 1;
+		if (dragEnterCount <= 0) {
+			dragEnterCount = 0;
+			dragActive = false;
+			dragRejected = false;
+		}
+	}
+
+	async function handleDrop(event: DragEvent) {
+		dragEnterCount = 0;
+		dragActive = false;
+		dragRejected = false;
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+
+		if (!activeVaultId) {
+			showUploadError('Please select a vault first');
+			return;
+		}
+
+		const files = event.dataTransfer?.files;
+		if (!files || files.length === 0) return;
+
+		// Upload all dropped files
+		isUploading = true;
+		const uploadPromises: Promise<void>[] = [];
+
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i];
+			uploadPromises.push(
+				uploadKnowledgeAttachment(file, conversationId, activeVaultId)
+					.then((response) => {
+						handleUpload(activeVaultId!, response);
+					})
+					.catch((error) => {
+						const message = error instanceof Error ? error.message : `Failed to upload ${file.name}`;
+						showUploadError(message);
+					})
+			);
+		}
+
+		await Promise.all(uploadPromises);
+		isUploading = false;
+	}
+
+	function showUploadError(message: string) {
+		if (uploadErrorTimeout) {
+			clearTimeout(uploadErrorTimeout);
+		}
+		uploadError = message;
+		uploadErrorTimeout = setTimeout(() => {
+			uploadError = null;
+		}, 5000);
+	}
 </script>
 
-<div class="vault-sidebar flex h-full flex-col gap-0">
+<div
+	class="vault-sidebar flex h-full flex-col gap-0 relative"
+	role="region"
+	aria-label="Vault sidebar"
+	class:vault-sidebar-drag-active={dragActive}
+	class:vault-sidebar-drag-rejected={dragRejected}
+	ondragenter={handleDragEnter}
+	ondragover={handleDragOver}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
+>
+	{#if dragActive}
+		<div class="vault-drop-overlay" data-testid="vault-drop-overlay">
+			<div class="vault-drop-content">
+				{#if dragRejected}
+					<svg
+						class="vault-drop-icon vault-drop-icon-rejected"
+						xmlns="http://www.w3.org/2000/svg"
+						width="32"
+						height="32"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<circle cx="12" cy="12" r="10" />
+						<line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+					</svg>
+					<p class="vault-drop-text">Select a vault first</p>
+				{:else}
+					<svg
+						class="vault-drop-icon"
+						xmlns="http://www.w3.org/2000/svg"
+						width="32"
+						height="32"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+						<polyline points="17 8 12 3 7 8" />
+						<line x1="12" y1="3" x2="12" y2="15" />
+					</svg>
+					<p class="vault-drop-text">Drop files to upload</p>
+					{#if activeVaultId}
+						{@const vault = vaults.find((v) => v.id === activeVaultId)}
+						{#if vault}
+							<p class="vault-drop-target">to "{vault.name}"</p>
+						{/if}
+					{/if}
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if isUploading}
+		<div class="vault-upload-overlay" data-testid="vault-upload-progress">
+			<div class="vault-upload-content">
+				<div class="vault-upload-spinner"></div>
+				<p class="vault-upload-text">Uploading...</p>
+			</div>
+		</div>
+	{/if}
+
+	{#if uploadError}
+		<div
+			class="mx-2 mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-text-secondary"
+			role="alert"
+			aria-live="polite"
+			data-testid="upload-error"
+		>
+			<span class="font-medium text-danger">Error:</span>
+			<span class="text-text-muted">{uploadError}</span>
+		</div>
+	{/if}
+
 	<!-- Header -->
 	<div class="group flex items-center justify-between px-2 py-1">
 		<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Vaults</span>
@@ -418,5 +588,102 @@
 
 	.quota-bar-warning {
 		background-color: var(--danger);
+	}
+
+	.vault-sidebar {
+		position: relative;
+	}
+
+	.vault-sidebar-drag-active {
+		outline: 2px dashed var(--accent);
+		outline-offset: -2px;
+	}
+
+	.vault-sidebar-drag-rejected {
+		outline: 2px dashed var(--danger);
+		outline-offset: -2px;
+	}
+
+	.vault-drop-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 50;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: color-mix(in srgb, var(--surface-overlay) 95%, transparent 5%);
+		backdrop-filter: blur(2px);
+		border-radius: inherit;
+	}
+
+	.vault-drop-content {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		padding: 16px;
+		text-align: center;
+	}
+
+	.vault-drop-icon {
+		color: var(--accent);
+	}
+
+	.vault-drop-icon-rejected {
+		color: var(--danger);
+	}
+
+	.vault-drop-text {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--text-primary);
+		margin: 0;
+	}
+
+	.vault-drop-target {
+		font-size: 11px;
+		color: var(--text-muted);
+		margin: 0;
+	}
+
+	.vault-upload-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: color-mix(in srgb, var(--surface-overlay) 90%, transparent 10%);
+		backdrop-filter: blur(2px);
+		border-radius: inherit;
+	}
+
+	.vault-upload-content {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		padding: 16px;
+	}
+
+	.vault-upload-spinner {
+		width: 24px;
+		height: 24px;
+		border: 2px solid var(--border-subtle);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.vault-upload-text {
+		font-size: 12px;
+		color: var(--text-secondary);
+		margin: 0;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>
