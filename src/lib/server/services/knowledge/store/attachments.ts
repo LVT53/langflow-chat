@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "$lib/server/db";
@@ -23,7 +23,6 @@ import {
   hashBinaryBuffer,
   knowledgeUserDir,
   mapArtifact,
-  updateArtifactBinaryHash,
   withAttachmentDisplayName,
 } from "./core";
 
@@ -457,77 +456,6 @@ async function resolveArtifactNameWithAutoRename(params: {
   };
 }
 
-async function findDuplicateUploadedArtifact(params: {
-  userId: string;
-  binaryHash: string;
-  sizeBytes: number;
-}): Promise<{
-  artifact: Artifact;
-  normalizedArtifact: Artifact | null;
-} | null> {
-  const exactRows = await db
-    .select()
-    .from(artifacts)
-    .where(
-      and(
-        eq(artifacts.userId, params.userId),
-        eq(artifacts.type, "source_document"),
-        eq(artifacts.binaryHash, params.binaryHash),
-      ),
-    )
-    .orderBy(asc(artifacts.createdAt))
-    .limit(1);
-
-  if (exactRows[0]) {
-    return {
-      artifact: mapArtifact(exactRows[0]),
-      normalizedArtifact: await getNormalizedArtifactForSource(
-        params.userId,
-        exactRows[0].id,
-      ),
-    };
-  }
-
-  const legacyCandidates = await db
-    .select()
-    .from(artifacts)
-    .where(
-      and(
-        eq(artifacts.userId, params.userId),
-        eq(artifacts.type, "source_document"),
-        isNull(artifacts.binaryHash),
-        eq(artifacts.sizeBytes, params.sizeBytes),
-      ),
-    )
-    .orderBy(asc(artifacts.createdAt))
-    .limit(24);
-
-  for (const candidate of legacyCandidates) {
-    if (!candidate.storagePath) continue;
-    try {
-      const buffer = await readFile(join(process.cwd(), candidate.storagePath));
-      const candidateHash = hashBinaryBuffer(buffer);
-      await updateArtifactBinaryHash(candidate.id, candidateHash);
-      if (candidateHash === params.binaryHash) {
-        return {
-          artifact: mapArtifact({ ...candidate, binaryHash: candidateHash }),
-          normalizedArtifact: await getNormalizedArtifactForSource(
-            params.userId,
-            candidate.id,
-          ),
-        };
-      }
-    } catch (error) {
-      console.error("[KNOWLEDGE] Failed to hydrate artifact hash for dedupe:", {
-        artifactId: candidate.id,
-        error,
-      });
-    }
-  }
-
-  return null;
-}
-
 export async function saveUploadedArtifact(params: {
   userId: string;
   conversationId: string;
@@ -535,7 +463,6 @@ export async function saveUploadedArtifact(params: {
   file: File;
 }): Promise<{
   artifact: Artifact;
-  reusedExistingArtifact: boolean;
   normalizedArtifact: Artifact | null;
   renameInfo?: {
     originalName: string;
@@ -546,26 +473,6 @@ export async function saveUploadedArtifact(params: {
   const userDir = knowledgeUserDir(params.userId);
   const buffer = Buffer.from(await params.file.arrayBuffer());
   const binaryHash = hashBinaryBuffer(buffer);
-
-  const duplicate = await findDuplicateUploadedArtifact({
-    userId: params.userId,
-    binaryHash,
-    sizeBytes: params.file.size,
-  });
-
-  if (duplicate) {
-    await ensureConversationAttachmentLink({
-      userId: params.userId,
-      artifactId: duplicate.artifact.id,
-      conversationId: params.conversationId,
-    });
-
-    return {
-      artifact: duplicate.artifact,
-      reusedExistingArtifact: true,
-      normalizedArtifact: duplicate.normalizedArtifact,
-    };
-  }
 
   // Resolve name conflicts for vault uploads
   const nameResolution = await resolveArtifactNameWithAutoRename({
@@ -613,7 +520,6 @@ export async function saveUploadedArtifact(params: {
 
   return {
     artifact,
-    reusedExistingArtifact: false,
     normalizedArtifact: null,
     ...(nameResolution.wasRenamed
       ? {

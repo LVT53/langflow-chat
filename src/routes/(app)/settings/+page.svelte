@@ -21,6 +21,27 @@
 	import SettingsProfileTab from './_components/SettingsProfileTab.svelte';
 	import type { PageProps } from './$types';
 
+	// Extended data interface for admin-specific properties
+	interface SettingsPageData {
+		userSettings: {
+			id: string;
+			email: string;
+			name: string | null;
+			role: 'user' | 'admin';
+			preferences: {
+				preferredModel: 'model1' | 'model2';
+				translationEnabled: boolean;
+				theme: 'system' | 'light' | 'dark';
+				avatarId: number | null;
+			};
+			profilePicture: string | null;
+		};
+		currentConfigValues?: Record<string, string>;
+		modelNames?: { model1: string; model2: string };
+		availableModels?: Array<{ id: 'model1' | 'model2'; displayName: string }>;
+		envDefaults?: Record<string, string>;
+	}
+
 	let { data }: PageProps = $props();
 	const getData = () => data;
 
@@ -28,12 +49,10 @@
 
 	const initialUserSettings = getData().userSettings;
 	const initialPreferences = initialUserSettings.preferences;
-	const initialCurrentConfigValues = (getData() as any).currentConfigValues as
-		| Record<string, string>
-		| undefined;
+	const initialCurrentConfigValues = (getData() as SettingsPageData).currentConfigValues;
 	const isAdmin = initialUserSettings.role === 'admin';
-	const modelNames = (getData() as any).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
-	const availableModels = ((getData() as any).availableModels ?? [
+	const modelNames = (getData() as SettingsPageData).modelNames ?? { model1: 'Model 1', model2: 'Model 2' };
+	const availableModels = ((getData() as SettingsPageData).availableModels ?? [
 		{ id: 'model1', displayName: modelNames.model1 },
 		{ id: 'model2', displayName: modelNames.model2 },
 	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
@@ -313,7 +332,7 @@
 				currentUserId={data.userSettings.id}
 				{modelNames}
 				bind:adminConfig
-				envDefaults={(data as any).envDefaults ?? {}}
+				envDefaults={(data as SettingsPageData).envDefaults ?? {}}
 				{adminSaving}
 				{adminMessage}
 				{adminError}

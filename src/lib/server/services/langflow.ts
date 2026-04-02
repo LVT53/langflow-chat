@@ -193,18 +193,6 @@ export async function sendMessage(
       systemPromptAppendix: options?.systemPromptAppendix,
     });
 
-    console.log('[LANGFLOW] sendMessage request', {
-      url,
-      sessionId,
-      messageLength: message.length,
-      inputValueLength: inputValue.length,
-      modelId,
-      modelName,
-      baseUrl,
-      flowId,
-      componentId: modelConfig.componentId || null,
-    });
-
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
       input_value: inputValue,
       input_type: 'chat',
@@ -344,20 +332,6 @@ export async function sendMessageStream(
       systemPromptAppendix: options?.systemPromptAppendix,
     });
 
-    console.log('[LANGFLOW] sendMessageStream request', {
-      url,
-      sessionId,
-      messageLength: message.length,
-      inputValueLength: inputValue.length,
-      modelId,
-      modelName,
-      baseUrl,
-      flowId,
-      componentId: modelConfig.componentId || null,
-      systemPromptLength: systemPrompt.length,
-      systemPromptPreview: systemPrompt.slice(0, 80)
-    });
-
     const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
       input_value: inputValue,
       input_type: 'chat',
@@ -366,11 +340,6 @@ export async function sendMessageStream(
       tweaks: buildLangflowTweaks(modelConfig, systemPrompt)
     };
 
-    console.log('[LANGFLOW] sendMessageStream dispatching fetch', {
-      url,
-      sessionId,
-      connectTimeoutMs,
-    });
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -383,15 +352,6 @@ export async function sendMessageStream(
       signal
     });
     clearTimeout(connectTimeoutId);
-    console.log('[LANGFLOW] sendMessageStream response headers', {
-      url,
-      sessionId,
-      status: response.status,
-      statusText: response.statusText,
-      contentType: response.headers.get('content-type'),
-      contentEncoding: response.headers.get('content-encoding'),
-      transferEncoding: response.headers.get('transfer-encoding'),
-    });
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');

@@ -49,7 +49,6 @@ export async function cleanupFailedTurn(params: {
 
 	const log = (label: string, ok: boolean, detail?: string) => {
 		steps.push({ label, ok, detail });
-		console.log(`[RETRY-CLEANUP] ${ok ? '✓' : '✗'} ${label}${detail ? ` — ${detail}` : ''}`);
 	};
 
 	const taskStateRow = await db
@@ -182,9 +181,6 @@ export async function cleanupFailedTurn(params: {
 	}
 
 	const allOk = steps.every((s) => s.ok);
-	console.log(
-		`[RETRY-CLEANUP] ${allOk ? 'COMPLETE' : 'PARTIAL'} for conversation=${conversationId}, assistantMessage=${assistantMessageId}`,
-	);
 
 	return { steps, warnings };
 }

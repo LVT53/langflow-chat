@@ -127,7 +127,6 @@ export const POST: RequestHandler = async (event) => {
 		conversationId,
 		sourceArtifactId: artifact.id,
 		normalizedArtifactId: normalizedArtifact?.id ?? null,
-		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
 		promptReady,
 		promptArtifactId: resolvedItem?.promptArtifact?.id ?? null,
 		extractionTextLength: resolvedItem?.contentLength ?? 0,
@@ -138,7 +137,6 @@ export const POST: RequestHandler = async (event) => {
 	return json({
 		artifact,
 		normalizedArtifact,
-		reusedExistingArtifact: uploadResult.reusedExistingArtifact,
 		honcho: syncResult,
 		promptReady,
 		promptArtifactId: promptReady ? resolvedItem?.promptArtifact?.id ?? null : null,

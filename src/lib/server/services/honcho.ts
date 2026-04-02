@@ -112,14 +112,13 @@ async function ensureClient(): Promise<Honcho> {
 	if (client) return client;
 
 	const config = getConfig();
-	client = new Honcho({
+  client = new Honcho({
 		apiKey: config.honchoApiKey || 'no-auth',
 		baseURL: config.honchoBaseUrl,
 		workspaceId: config.honchoWorkspace,
 	});
 
-	console.log('[HONCHO] Initialized — workspace:', config.honchoWorkspace);
-	return client;
+  return client;
 }
 
 async function getPeerById(peerId: string): Promise<Peer> {
@@ -151,7 +150,6 @@ async function getSession(userId: string, conversationId: string): Promise<Sessi
 
 	try {
 		await session.addPeers([userPeer, assistantPeer]);
-		console.log(`[HONCHO] Attached peers to session ${conversationId}`);
 	} catch (err) {
 		console.error('[HONCHO] Failed to attach peers to session:', err);
 	}
@@ -182,7 +180,6 @@ export async function mirrorMessage(
 	const msgs = await session.addMessages(
 		peer.message(content, { metadata: { role } })
 	);
-	console.log(`[HONCHO] Mirrored ${role} message to session ${conversationId} (${msgs.length} msgs created)`);
 }
 
 export async function syncArtifactToHoncho(params: {

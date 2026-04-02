@@ -345,24 +345,9 @@ export function processToolCallMarkers(
     details?: StreamToolCallDetails,
   ) => void,
 ): string {
-  if (
-    chunk.includes("\x02") ||
-    chunk.includes("TOOL_START") ||
-    chunk.includes("TOOL_END")
-  ) {
-    console.log(
-      "[TOOL_MARKER] Marker detected in chunk:",
-      JSON.stringify(chunk).slice(0, 300),
-    );
-  }
-
   let result = chunk;
 
   result = result.replace(TOOL_CALL_START_RE, (_, payload) => {
-    console.log(
-      "[TOOL_MARKER] TOOL_START matched, payload:",
-      payload.slice(0, 200),
-    );
     try {
       const parsed = JSON.parse(payload) as StreamToolCallPayload;
       emit(parsed.name ?? "tool", parsed.input ?? {}, "running");
@@ -373,10 +358,6 @@ export function processToolCallMarkers(
   });
 
   result = result.replace(TOOL_CALL_END_RE, (_, payload) => {
-    console.log(
-      "[TOOL_MARKER] TOOL_END matched, payload:",
-      payload.slice(0, 200),
-    );
     try {
       const parsed = JSON.parse(payload) as StreamToolCallPayload;
       emit(parsed.name ?? "tool", {}, "done", {

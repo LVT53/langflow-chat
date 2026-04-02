@@ -137,9 +137,8 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				file: mockFile,
 			});
 
-			expect(result.artifact.name).toBe('report.pdf');
-			expect(result.renameInfo).toBeUndefined();
-			expect(result.reusedExistingArtifact).toBe(false);
+		expect(result.artifact.name).toBe('report.pdf');
+		expect(result.renameInfo).toBeUndefined();
 		});
 
 		it('should auto-rename when filename conflict exists in vault', async () => {
@@ -230,11 +229,10 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				file: mockFile,
 			});
 
-			expect(result.artifact.name).toBe('report_1.pdf');
-			expect(result.renameInfo).toBeDefined();
-			expect(result.renameInfo?.wasRenamed).toBe(true);
-			expect(result.renameInfo?.originalName).toBe('report.pdf');
-			expect(result.reusedExistingArtifact).toBe(false);
+		expect(result.artifact.name).toBe('report_1.pdf');
+		expect(result.renameInfo).toBeDefined();
+		expect(result.renameInfo?.wasRenamed).toBe(true);
+		expect(result.renameInfo?.originalName).toBe('report.pdf');
 		});
 
 		it('should increment counter for multiple duplicates', async () => {

@@ -260,18 +260,6 @@ export const POST: RequestHandler = async (event) => {
           chunkRuntime.fullResponse,
         );
         const totalTokenCount = thinkingTokenCount + responseTokenCount;
-        console.log(
-          "[STREAM] End - thinkingTokenCount:",
-          thinkingTokenCount,
-          "responseTokenCount:",
-          responseTokenCount,
-          "totalTokenCount:",
-          totalTokenCount,
-          "thinkingLength:",
-          chunkRuntime.thinkingContent.length,
-          "wasStopped:",
-          wasStopped,
-        );
         const genTimeMs = Date.now() - requestStartTime;
         const analyticsModel = modelId ?? "model1";
         const persistUserMessage = !skipPersistUserMessage;
@@ -424,16 +412,6 @@ export const POST: RequestHandler = async (event) => {
         let usedUrlListRecovery = false;
 
         upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
-          console.log("[STREAM] Starting upstream request", {
-            userId: user.id,
-            conversationId,
-            sourceLanguage,
-            normalizedMessageLength: normalizedMessage.length,
-            upstreamMessageLength: upstreamMessage.length,
-            modelId,
-            attempt,
-            urlListRecovery: usedUrlListRecovery,
-          });
           const langflowResponse = await sendMessageStream(
             upstreamMessage,
             conversationId,
@@ -578,7 +556,6 @@ export const POST: RequestHandler = async (event) => {
           initialContextDebug = latestContextDebug;
           latestHonchoContext = langflowResponse.honchoContext ?? null;
           latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
-          console.log("[STREAM] Upstream stream connected", { conversationId });
           let upstreamEventCount = 0;
 
           for await (const upstreamEvent of parseUpstreamEvents(
@@ -586,17 +563,6 @@ export const POST: RequestHandler = async (event) => {
           )) {
             const { event: eventType, data } = upstreamEvent;
             upstreamEventCount += 1;
-            if (upstreamEventCount <= 20 || eventType === "error") {
-              const dataPreview =
-                typeof data === "string"
-                  ? data.slice(0, 500)
-                  : JSON.stringify(data).slice(0, 500);
-              console.log("[STREAM] Upstream event", {
-                index: upstreamEventCount,
-                eventType,
-                dataPreview,
-              });
-            }
             if (data === "[DONE]" || eventType === "end") {
               if (outputTranslator) {
                 for (const chunk of await outputTranslator.flush()) {
@@ -655,10 +621,6 @@ export const POST: RequestHandler = async (event) => {
             const rawChunk = extractAssistantChunk(eventType, data);
             const reasoningChunk = getReasoningContent(data);
             if (reasoningChunk) {
-              console.log(
-                "[STREAM] Thinking chunk extracted:",
-                reasoningChunk.slice(0, 100),
-              );
               if (!emitThinking(`${reasoningChunk}\n`)) {
                 return;
               }
@@ -696,9 +658,6 @@ export const POST: RequestHandler = async (event) => {
                   normalizedEmittedText.endsWith(normalizedChunk) ||
                   normalizedChunk.endsWith(normalizedEmittedText))
               ) {
-                console.log("[STREAM] Suppressing duplicate final chunk", {
-                  chunkLength: chunk.length,
-                });
                 continue;
               }
             }
@@ -708,8 +667,6 @@ export const POST: RequestHandler = async (event) => {
               chunk,
               emitToolCallEvent,
             );
-
-            console.log("[STREAM] Token chunk, length:", cleanedChunk.length);
 
             if (!cleanedChunk) continue;
 

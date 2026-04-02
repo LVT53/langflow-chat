@@ -336,17 +336,7 @@ export const POST: RequestHandler = async (event) => {
 				ended = true;
 				const thinkingTokenCount = estimateTokenCount(chunkRuntime.thinkingContent);
 				const responseTokenCount = estimateTokenCount(chunkRuntime.fullResponse);
-				const totalTokenCount = thinkingTokenCount + responseTokenCount;
-				console.log(
-					'[RETRY-STREAM] End - thinkingTokenCount:',
-					thinkingTokenCount,
-					'responseTokenCount:',
-					responseTokenCount,
-					'totalTokenCount:',
-					totalTokenCount,
-					'wasStopped:',
-					wasStopped,
-				);
+		const totalTokenCount = thinkingTokenCount + responseTokenCount;
 				const genTimeMs = Date.now() - requestStartTime;
 				const analyticsModel = modelId ?? 'model1';
 
@@ -471,14 +461,8 @@ export const POST: RequestHandler = async (event) => {
 			try {
 				let usedUrlListRecovery = false;
 
-				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
-					console.log('[RETRY-STREAM] Starting upstream request', {
-						userId: user.id,
-						conversationId,
-						modelId,
-						attempt,
-					});
-					const langflowResponse = await sendMessageStream(
+			upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
+				const langflowResponse = await sendMessageStream(
 						upstreamMessage,
 						conversationId,
 						modelId,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import * as pdfjsLib from 'pdfjs-dist';
 	import type { Artifact } from '$lib/types';
 
 	let {
@@ -21,6 +22,14 @@
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
 	let fileType = $state<'pdf' | 'docx' | 'xlsx' | 'pptx' | 'image' | 'text' | 'unsupported'>('unsupported');
+
+	// PDF.js state
+	let pdfDoc = $state<pdfjsLib.PDFDocumentProxy | null>(null);
+	let currentPage = $state(1);
+	let totalPages = $state(0);
+	let zoom = $state(1.0);
+	let canvasRef = $state<HTMLCanvasElement | null>(null);
+	let isRendering = $state(false);
 
 	const fileTypeIcons: Record<string, string> = {
 		pdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 13v-1a2 2 0 0 1 2-2h4"/><path d="M10 13v-1a2 2 0 0 0-2-2H4"/><line x1="10" y1="13" x2="10" y2="18"/></svg>`,
@@ -61,11 +70,29 @@
 		}
 	});
 
+	// PDF.js rendering effect
+	$effect(() => {
+		if (fileType === 'pdf' && content && canvasRef) {
+			renderPdf(content);
+		}
+	});
+
+	// Re-render when page or zoom changes
+	$effect(() => {
+		if (pdfDoc && canvasRef && !isRendering) {
+			renderPage(currentPage);
+		}
+	});
+
 	async function fetchFile(id: string) {
 		isLoading = true;
 		error = null;
 		content = null;
 		htmlContent = null;
+		pdfDoc = null;
+		currentPage = 1;
+		totalPages = 0;
+		zoom = 1.0;
 
 		try {
 			const response = await fetch(`/api/knowledge/${id}/preview`);
@@ -84,12 +111,87 @@
 				await renderDocx(blob);
 			} else if (fileType === 'xlsx') {
 				await renderXlsx(blob);
+			} else if (fileType === 'pptx') {
+				await renderPptx(blob);
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load file';
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	async function renderPdf(blob: Blob) {
+		try {
+			isRendering = true;
+			
+			// Configure PDF.js worker
+			pdfjsLib.GlobalWorkerOptions.workerSrc = '/node_modules/pdfjs-dist/build/pdf.worker.mjs';
+			
+			const arrayBuffer = await blob.arrayBuffer();
+			pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+			totalPages = pdfDoc.numPages;
+			currentPage = 1;
+			
+			await renderPage(1);
+		} catch (err) {
+			error = 'Failed to render PDF file';
+			console.error('PDF render error:', err);
+		} finally {
+			isRendering = false;
+		}
+	}
+
+	async function renderPage(pageNum: number) {
+		if (!pdfDoc || !canvasRef) return;
+		
+		try {
+			isRendering = true;
+			const page = await pdfDoc.getPage(pageNum);
+			
+			const viewport = page.getViewport({ scale: zoom });
+			const canvas = canvasRef;
+			const context = canvas.getContext('2d');
+			
+			if (!context) return;
+			
+			canvas.width = viewport.width;
+			canvas.height = viewport.height;
+			
+			await page.render({
+				canvasContext: context,
+				viewport: viewport,
+			}).promise;
+			
+			isRendering = false;
+		} catch (err) {
+			console.error('Page render error:', err);
+			isRendering = false;
+		}
+	}
+
+	function goToPrevPage() {
+		if (currentPage > 1) {
+			currentPage--;
+		}
+	}
+
+	function goToNextPage() {
+		if (currentPage < totalPages) {
+			currentPage++;
+		}
+	}
+
+	function zoomIn() {
+		zoom = Math.min(zoom + 0.25, 3.0);
+	}
+
+	function zoomOut() {
+		zoom = Math.max(zoom - 0.25, 0.5);
+	}
+
+	function resetZoom() {
+		zoom = 1.0;
 	}
 
 	async function renderDocx(blob: Blob) {
@@ -128,6 +230,49 @@
 			htmlContent = html;
 		} catch (err) {
 			error = 'Failed to render XLSX file';
+		}
+	}
+
+	async function renderPptx(blob: Blob) {
+		try {
+			const { PPTXViewer } = await import('pptxviewjs');
+			const arrayBuffer = await blob.arrayBuffer();
+			
+			// Create a temporary canvas for rendering slides
+			const canvas = document.createElement('canvas');
+			canvas.width = 1280;
+			canvas.height = 720;
+			
+			const viewer = new PPTXViewer({
+				canvas,
+				slideSizeMode: 'fit',
+				backgroundColor: '#ffffff'
+			});
+			
+			await viewer.loadFile(arrayBuffer);
+			
+			const slideCount = viewer.getSlideCount();
+			let html = '<div class="pptx-container">';
+			
+			// Render each slide and convert to image
+			for (let i = 0; i < slideCount; i++) {
+				await viewer.goToSlide(i);
+				await viewer.render();
+				const dataUrl = canvas.toDataURL('image/png');
+				html += `
+					<div class="pptx-slide">
+						<div class="pptx-slide-header">Slide ${i + 1} of ${slideCount}</div>
+						<img src="${dataUrl}" alt="Slide ${i + 1}" class="pptx-slide-image" />
+					</div>
+				`;
+			}
+			
+			html += '</div>';
+			htmlContent = html;
+			
+			viewer.destroy();
+		} catch (err) {
+			error = 'Failed to render PPTX file';
 		}
 	}
 
@@ -262,11 +407,77 @@
 					</div>
 				{:else if fileType === 'pdf'}
 					{#if content}
-						<iframe
-							src={getObjectUrl()}
-							title={filename}
-							class="w-full h-[70vh] border-0"
-						></iframe>
+						<div class="pdf-viewer">
+							<div class="pdf-toolbar">
+								<div class="pdf-nav">
+									<button
+										type="button"
+										class="btn-icon-bare h-8 w-8"
+										onclick={goToPrevPage}
+										disabled={currentPage <= 1 || isRendering}
+										aria-label="Previous page"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="15 18 9 12 15 6"/>
+										</svg>
+									</button>
+									<span class="pdf-page-info">
+										Page {currentPage} of {totalPages}
+									</span>
+									<button
+										type="button"
+										class="btn-icon-bare h-8 w-8"
+										onclick={goToNextPage}
+										disabled={currentPage >= totalPages || isRendering}
+										aria-label="Next page"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="9 18 15 12 9 6"/>
+										</svg>
+									</button>
+								</div>
+								<div class="pdf-zoom">
+									<button
+										type="button"
+										class="btn-icon-bare h-8 w-8"
+										onclick={zoomOut}
+										disabled={zoom <= 0.5}
+										aria-label="Zoom out"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>
+										</svg>
+									</button>
+									<button
+										type="button"
+										class="btn-zoom-reset"
+										onclick={resetZoom}
+										aria-label="Reset zoom"
+									>
+										{Math.round(zoom * 100)}%
+									</button>
+									<button
+										type="button"
+										class="btn-icon-bare h-8 w-8"
+										onclick={zoomIn}
+										disabled={zoom >= 3.0}
+										aria-label="Zoom in"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+										</svg>
+									</button>
+								</div>
+							</div>
+							<div class="pdf-canvas-container">
+								{#if isRendering}
+									<div class="pdf-rendering-overlay">
+										<div class="spinner-sm"></div>
+									</div>
+								{/if}
+								<canvas bind:this={canvasRef} class="pdf-canvas"></canvas>
+							</div>
+						</div>
 					{/if}
 				{:else if fileType === 'image'}
 					{#if content}
@@ -284,7 +495,7 @@
 							<pre class="rounded-[1rem] border border-border bg-surface-page p-4 font-mono text-sm text-text-primary overflow-x-auto whitespace-pre-wrap">{content ? (async () => { const text = await content.text(); return text; })() : ''}</pre>
 						</div>
 					{/if}
-				{:else if fileType === 'docx' || fileType === 'xlsx'}
+				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx'}
 					{#if htmlContent}
 						<div class="p-6 docx-preview">
 							{@html htmlContent}
@@ -387,9 +598,137 @@
 		background: color-mix(in srgb, var(--surface-page) 50%, transparent);
 	}
 
+	:global(.pptx-container) {
+		font-family: 'Nimbus Sans L', sans-serif;
+	}
+
+	:global(.pptx-slide) {
+		margin-bottom: 2rem;
+		background: var(--surface-elevated);
+		border-radius: 0.75rem;
+		border: 1px solid var(--border-default);
+		overflow: hidden;
+	}
+
+	:global(.pptx-slide-header) {
+		padding: 0.75rem 1rem;
+		background: var(--surface-overlay);
+		border-bottom: 1px solid var(--border-default);
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	:global(.pptx-slide-image) {
+		display: block;
+		width: 100%;
+		height: auto;
+		background: #ffffff;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.spinner {
 			animation: none;
 		}
+	}
+
+	/* PDF Viewer Styles */
+	.pdf-viewer {
+		display: flex;
+		flex-direction: column;
+		background: var(--surface-page);
+		min-height: 50vh;
+	}
+
+	.pdf-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 1rem;
+		background: var(--surface-elevated);
+		border-bottom: 1px solid var(--border-default);
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.pdf-nav {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.pdf-page-info {
+		font-size: 0.875rem;
+		color: var(--text-muted);
+		font-family: 'Nimbus Sans L', sans-serif;
+		min-width: 100px;
+		text-align: center;
+	}
+
+	.pdf-zoom {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.btn-zoom-reset {
+		padding: 0.25rem 0.75rem;
+		font-size: 0.875rem;
+		color: var(--text-muted);
+		background: transparent;
+		border: 1px solid var(--border-default);
+		border-radius: 0.375rem;
+		cursor: pointer;
+		font-family: 'Nimbus Sans L', sans-serif;
+		min-width: 60px;
+		text-align: center;
+	}
+
+	.btn-zoom-reset:hover {
+		background: var(--surface-overlay);
+		color: var(--text-primary);
+	}
+
+	.pdf-canvas-container {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1.5rem;
+		overflow: auto;
+		min-height: 50vh;
+		position: relative;
+	}
+
+	.pdf-canvas {
+		max-width: 100%;
+		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+		background: white;
+	}
+
+	.pdf-rendering-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.8);
+		z-index: 10;
+	}
+
+	.spinner-sm {
+		width: 24px;
+		height: 24px;
+		border: 2px solid color-mix(in srgb, var(--border-default) 50%, transparent);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	:global(.btn-icon-bare:disabled) {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 </style>
