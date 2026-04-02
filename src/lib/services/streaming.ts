@@ -63,14 +63,25 @@ async function requestServerSideStreamStop(streamId: string): Promise<void> {
 	}
 }
 
+export type StreamChatOptions = {
+	modelId?: ModelId;
+	skipPersistUserMessage?: boolean;
+	attachmentIds?: string[];
+	retryAssistantMessageId?: string;
+};
+
 export function streamChat(
 	message: string,
 	conversationId: string,
 	callbacks: StreamCallbacks,
-	modelId?: ModelId,
-	skipPersistUserMessage?: boolean,
-	attachmentIds?: string[]
+	options?: StreamChatOptions
 ): StreamHandle {
+	const {
+		modelId,
+		skipPersistUserMessage,
+		attachmentIds,
+		retryAssistantMessageId,
+	} = options ?? {};
 	const controller = new AbortController();
 	const streamId = crypto.randomUUID();
 	let aborted = false;
@@ -103,17 +114,16 @@ export function streamChat(
 
 	(async () => {
 		try {
-			const res = await fetch('/api/chat/stream', {
+			const url = retryAssistantMessageId
+				? '/api/chat/retry'
+				: '/api/chat/stream';
+			const body = retryAssistantMessageId
+				? JSON.stringify({ conversationId, assistantMessageId: retryAssistantMessageId, streamId })
+				: JSON.stringify({ message, conversationId, streamId, model: modelId, skipPersistUserMessage, attachmentIds });
+			const res = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					message,
-					conversationId,
-					streamId,
-					model: modelId,
-					skipPersistUserMessage,
-					attachmentIds
-				}),
+				body,
 				signal: controller.signal
 			});
 

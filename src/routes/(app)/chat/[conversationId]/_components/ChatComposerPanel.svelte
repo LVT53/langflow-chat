@@ -37,6 +37,7 @@
 		draftVersion,
 		onSteer,
 		onManageEvidence,
+		onUploadReady,
 	}: {
 		hasMessages: boolean;
 		sendError: string | null;
@@ -63,6 +64,7 @@
 		draftVersion: number;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
 		onManageEvidence: () => void;
+		onUploadReady?: ((uploadFn: (files: FileList | null) => Promise<void>) => void) | undefined;
 	} = $props();
 </script>
 
@@ -104,6 +106,7 @@
 			attachmentsEnabled={true}
 			{onSteer}
 			onManageEvidence={onManageEvidence}
+			{onUploadReady}
 		/>
 	</div>
 </div>

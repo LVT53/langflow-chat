@@ -5,16 +5,33 @@
 		attachment,
 		removable = false,
 		variant = 'compact',
-		onRemove
+		viewable = false,
+		onRemove,
+		onView,
 	}: {
 		attachment: ArtifactSummary;
 		removable?: boolean;
 		variant?: 'compact' | 'pending';
+		viewable?: boolean;
 		onRemove?: (payload: { id: string }) => void;
+		onView?: (payload: { id: string; name: string }) => void;
 	} = $props();
 
 	function handleRemove() {
 		onRemove?.({ id: attachment.id });
+	}
+
+	function handleClick() {
+		if (viewable && onView) {
+			onView({ id: attachment.id, name: attachment.name });
+		}
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (viewable && onView && (event.key === 'Enter' || event.key === ' ')) {
+			event.preventDefault();
+			onView({ id: attachment.id, name: attachment.name });
+		}
 	}
 </script>
 
@@ -22,7 +39,12 @@
 	class="file-attachment"
 	class:compact={variant === 'compact'}
 	class:pending={variant === 'pending'}
-	role="listitem"
+	class:viewable={viewable && onView}
+	role={viewable && onView ? 'button' : 'listitem'}
+	onclick={handleClick}
+	onkeydown={handleKeydown}
+	tabindex={viewable && onView ? 0 : undefined}
+	aria-label={viewable && onView ? `View ${attachment.name}` : undefined}
 >
 	<svg
 		class="file-icon"
@@ -93,6 +115,23 @@
 		box-shadow: var(--shadow-sm);
 		padding: var(--space-sm) var(--space-md);
 		animation: borderPulse 2s ease-in-out infinite;
+	}
+
+	.viewable {
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out);
+	}
+
+	.viewable:hover {
+		background-color: color-mix(in srgb, var(--surface-page) 70%, var(--surface-elevated) 30%);
+		border-color: var(--accent);
+	}
+
+	.viewable:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--focus-ring);
 	}
 
 	@keyframes borderPulse {

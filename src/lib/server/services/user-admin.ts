@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { and, count, eq, inArray, sql } from 'drizzle-orm';
+import { count, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { conversations, messageAnalytics, sessions, users } from '$lib/server/db/schema';
 import type { AdminManagedUserSummary, UserRole } from '$lib/types';
@@ -59,7 +59,6 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 		.select({
 			userId: conversations.userId,
 			conversationCount: count(conversations.id),
-			lastActiveAt: sql<number | null>`max(${conversations.updatedAt})`,
 		})
 		.from(conversations)
 		.where(inArray(conversations.userId, userIds))
@@ -100,7 +99,6 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 			row.userId,
 			{
 				conversationCount: Number(row.conversationCount ?? 0),
-				lastActiveAt: row.lastActiveAt ? Number(row.lastActiveAt) * 1000 : null,
 			},
 		])
 	);
@@ -150,14 +148,10 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 				totalTokenCount: completionTokens + reasoningTokens,
 				favoriteModel: favoriteModelByUser.get(row.id)?.model ?? null,
 				activeSessionCount: sessionsByUser.get(row.id) ?? 0,
-				lastActiveAt: conversation?.lastActiveAt ?? null,
+				lastActiveAt: row.lastSeenAt ? Number(row.lastSeenAt) : Number(row.createdAt),
 			} satisfies AdminManagedUserSummary;
 		})
-		.sort((left, right) => {
-			const rightLastActive = right.lastActiveAt ?? right.createdAt;
-			const leftLastActive = left.lastActiveAt ?? left.createdAt;
-			return rightLastActive - leftLastActive;
-		});
+		.sort((left, right) => right.lastActiveAt - left.lastActiveAt);
 }
 
 export async function createManagedUser(input: CreateManagedUserInput): Promise<AdminManagedUserSummary> {

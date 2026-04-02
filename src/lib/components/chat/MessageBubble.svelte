@@ -6,6 +6,7 @@
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
+	import AttachmentContentModal from './AttachmentContentModal.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
 
@@ -33,6 +34,9 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
+	let attachmentModalOpen = $state(false);
+	let selectedAttachmentId = $state<string | null>(null);
+	let selectedAttachmentName = $state('');
 
 	function estimateTokenCount(text: string) {
 		const trimmed = text.trim();
@@ -181,6 +185,18 @@
 			clearTimeout(copyTimeout);
 		}
 	});
+
+	function handleViewAttachment(payload: { id: string; name: string }) {
+		selectedAttachmentId = payload.id;
+		selectedAttachmentName = payload.name;
+		attachmentModalOpen = true;
+	}
+
+	function closeAttachmentModal() {
+		attachmentModalOpen = false;
+		selectedAttachmentId = null;
+		selectedAttachmentName = '';
+	}
 </script>
 
 <div class="group flex w-full flex-col {isUser && !isEditing ? 'items-end' : 'items-start'} gap-md py-md fade-in">
@@ -220,7 +236,7 @@
 				{#if hasAttachments}
 					<div class="mb-3 flex flex-wrap gap-2">
 						{#each message.attachments ?? [] as attachment (attachment.id)}
-							<FileAttachment {attachment} variant="compact" />
+							<FileAttachment {attachment} variant="compact" viewable={true} onView={handleViewAttachment} />
 						{/each}
 					</div>
 				{/if}
@@ -373,6 +389,13 @@
 			<LogoMark animated={isGenerating} size={42} />
 		</div>
 	{/if}
+
+	<AttachmentContentModal
+		open={attachmentModalOpen}
+		artifactId={selectedAttachmentId}
+		filename={selectedAttachmentName}
+		onClose={closeAttachmentModal}
+	/>
 </div>
 
 <style lang="postcss">
@@ -391,8 +414,8 @@
 	}
 
 	.prose-container :global(.prose) {
-		font-size: 14px;
-		line-height: 1.45;
+		font-size: 16px;
+		line-height: 1.5;
 	}
 	@media (min-width: 768px) {
 		.prose-container :global(.prose) {

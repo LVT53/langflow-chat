@@ -386,3 +386,123 @@ body {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Mobile font scale-up overrides (Task 2.1-2.6) */
+@media (max-width: 767px) {
+  /* Task 2.1: Message content - 16px minimum for readability */
+  .prose-container .prose,
+  .prose-container .prose p,
+  .prose-container .prose li,
+  .prose-container .prose blockquote {
+    font-size: 16px !important;
+    line-height: 1.5;
+  }
+
+  /* Task 2.2: Input/composer - 16px to prevent zoom on iOS */
+  .composer-textarea,
+  textarea.composer-textarea,
+  [data-testid="message-input"] {
+    font-size: 16px !important;
+  }
+
+  /* Task 2.3: Sidebar text - 14px minimum */
+  .sidebar-container,
+  .sidebar-container .conversation-item,
+  .sidebar-container .project-item,
+  .sidebar-container .nav-text {
+    font-size: 14px !important;
+  }
+
+  /* Task 2.4: Header text - 15px for better visibility */
+  .header-container,
+  .header-container .header-title,
+  .header-container .header-text {
+    font-size: 15px !important;
+  }
+
+  /* Task 2.5: Timestamps - 13px minimum */
+  .timestamp,
+  .message-timestamp,
+  time.timestamp,
+  .conversation-timestamp {
+    font-size: 13px !important;
+  }
+
+  /* Task 2.6: Code blocks - 14px minimum for readability */
+  .prose pre code,
+  .prose code,
+  pre code,
+  code {
+    font-size: 14px !important;
+  }
+
+  /* Task 2.9: Mobile touch targets - 48px for primary buttons */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .composer-send,
+  .composer-stop-accent,
+  .queue-button {
+    min-height: 48px !important;
+    min-width: 48px !important;
+  }
+
+  /* Ensure action buttons in composer meet 48px target */
+  .action-button-container button,
+  .composer-actions button {
+    min-height: 48px !important;
+    min-width: 48px !important;
+  }
+}
+
+/* Drop zone overlay for OS file drag-and-drop (Task 4) */
+.drop-zone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* below modals (z-[100]) but above content */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface-page) 85%, transparent);
+  backdrop-filter: blur(4px);
+  border: 3px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  margin: var(--space-sm);
+  pointer-events: auto;
+  animation: drop-zone-fade-in 150ms ease-out;
+}
+
+.drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.drop-zone-icon {
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.drop-zone-icon-rejected {
+  color: var(--danger);
+  opacity: 0.8;
+}
+
+.drop-zone-text {
+  font-family: 'Nimbus Sans L', sans-serif;
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.025em;
+  margin: 0;
+}
+
+@keyframes drop-zone-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

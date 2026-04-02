@@ -13,6 +13,7 @@
 	import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
+	import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
 	import { onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
@@ -45,6 +46,59 @@
 	let preparedConversationId = $state<string | null>(null);
 	let preparedConversationPromise: Promise<string> | null = null;
 	let conversationDraft = $state<ConversationDraft | null>(null);
+
+	const INTERNAL_MIME = 'application/x-alfyai-conversation';
+	let fileDragActive = $state(false);
+	let fileDragRejected = $state(false);
+	let dragEnterCount = 0;
+	let uploadFilesFn: ((files: FileList | null) => Promise<void>) | null = null;
+
+	function handleUploadReady(uploadFn: (files: FileList | null) => Promise<void>) {
+		uploadFilesFn = uploadFn;
+	}
+
+	function isOsFileDrop(event: DragEvent): boolean {
+		const types = event.dataTransfer?.types;
+		if (!types) return false;
+		return types.includes('Files') && !types.includes(INTERNAL_MIME);
+	}
+
+	function handleDragEnter(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		dragEnterCount += 1;
+		fileDragActive = true;
+		fileDragRejected = false;
+	}
+
+	function handleDragOver(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
+	}
+
+	function handleDragLeave(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		dragEnterCount -= 1;
+		if (dragEnterCount <= 0) {
+			dragEnterCount = 0;
+			fileDragActive = false;
+			fileDragRejected = false;
+		}
+	}
+
+	function handleDrop(event: DragEvent) {
+		dragEnterCount = 0;
+		fileDragActive = false;
+		fileDragRejected = false;
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		const files = event.dataTransfer?.files;
+		if (!files || files.length === 0) return;
+		uploadFilesFn?.(files);
+	}
 
 	onMount(() => {
 		const previousId = consumePreviousConversationId();
@@ -152,7 +206,16 @@
 	<title>Alfy AI</title>
 </svelte:head>
 
-<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
+<div
+	class="chat-page flex h-full min-w-0 flex-col bg-surface-page"
+	role="region"
+	aria-label="Landing page"
+	ondragenter={handleDragEnter}
+	ondragover={handleDragOver}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
+>
+	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
 		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-no-animate={!isFromChat}>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
@@ -195,6 +258,7 @@
 					draftVersion={conversationDraft?.updatedAt ?? 0}
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
+					onUploadReady={handleUploadReady}
 				/>
 			</div>
 		</div>

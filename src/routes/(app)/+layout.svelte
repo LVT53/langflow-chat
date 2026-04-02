@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { navigating } from '$app/stores';
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
-	import { conversations } from '$lib/stores/conversations';
+	import { conversations, loadConversations } from '$lib/stores/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { initSettings } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
@@ -14,6 +15,10 @@
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
+
+	// Debounce state for conversation list refresh
+	let lastRefreshTime = $state(0);
+	const REFRESH_DEBOUNCE_MS = 2000; // 2 seconds minimum between refreshes
 
 	$effect(() => {
 		conversations.set(data.conversations ?? []);
@@ -29,6 +34,57 @@
 		currentConversationId.set(match?.[1] ?? null);
 	});
 
+	/**
+	 * Refresh conversation list with debounce protection.
+	 * Preserves existing list on failure and handles deleted conversation edge case.
+	 */
+	async function refreshConversations() {
+		if (!browser) return;
+
+		const now = Date.now();
+		if (now - lastRefreshTime < REFRESH_DEBOUNCE_MS) {
+			return; // Skip if within debounce window
+		}
+
+		lastRefreshTime = now;
+
+		// Store current conversation ID before refresh
+		const currentId = $currentConversationId;
+
+		try {
+			await loadConversations();
+
+			// Edge case: if current conversation was deleted from another device,
+			// redirect to landing page
+			if (currentId) {
+				const stillExists = $conversations.some(c => c.id === currentId);
+				if (!stillExists) {
+					// Current conversation was deleted, redirect to landing
+					goto('/');
+				}
+			}
+		} catch (error) {
+			// Silently ignore errors - preserve existing list (stale data is better than empty)
+			console.warn('Failed to refresh conversation list:', error);
+		}
+	}
+
+	/**
+	 * Handle visibilitychange event - refresh when tab becomes visible
+	 */
+	function handleVisibilityChange() {
+		if (document.visibilityState === 'visible') {
+			refreshConversations();
+		}
+	}
+
+	/**
+	 * Handle focus event - fallback for mobile browsers
+	 */
+	function handleWindowFocus() {
+		refreshConversations();
+	}
+
 	onMount(() => {
 		initTheme(data.userTheme as 'system' | 'light' | 'dark');
 		initSettings({
@@ -36,6 +92,16 @@
 			translationEnabled: data.userTranslation,
 		});
 		initAvatar(data.user?.profilePicture ?? null);
+
+		// Add event listeners for conversation list refresh
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		window.addEventListener('focus', handleWindowFocus);
+	});
+
+	onDestroy(() => {
+		if (!browser) return;
+		document.removeEventListener('visibilitychange', handleVisibilityChange);
+		window.removeEventListener('focus', handleWindowFocus);
 	});
 </script>
 

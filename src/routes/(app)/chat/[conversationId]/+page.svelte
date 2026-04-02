@@ -39,6 +39,7 @@
 	} from '$lib/stores/conversations';
 	import ChatComposerPanel from './_components/ChatComposerPanel.svelte';
 	import ChatMessagePane from './_components/ChatMessagePane.svelte';
+	import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
 	import {
 		appendAssistantPlaceholder,
 		appendThinkingChunkToMessageList,
@@ -453,8 +454,6 @@
 					isSending = false;
 					restoreQueuedTurnToDraft();
 
-					// Detect browser-initiated abort (mobile backgrounding / connection drop).
-					// The server continues generating and persists the result; reload on return.
 					const isBrowserAbort =
 						err.name === 'AbortError' && browser && document.visibilityState === 'hidden';
 					if (isBrowserAbort) {
@@ -464,23 +463,108 @@
 
 					sendError = toFriendlySendError(err);
 					canRetry = true;
-				}
+				},
 			},
-			$selectedModel,
-			skipPersistUserMessage,
-			attachmentIds
+			{
+				modelId: $selectedModel,
+				skipPersistUserMessage,
+				attachmentIds,
+			}
 		);
 	}
 
 	function handleRetry() {
 		if (canRetry && lastUserMessage) {
 			sendError = null;
-			handleSend({
-				message: lastUserMessage,
-				attachmentIds: [],
-				attachments: [],
-				pendingAttachments: [],
-			});
+			isSending = true;
+			hasPersistedMessages = true;
+
+			const placeholderId = crypto.randomUUID();
+			const placeholder = createAssistantPlaceholder(placeholderId);
+			messages.update((list) => [...list, placeholder]);
+
+			const lastAssistantMsg = $messages.findLast((m) => m.role === 'assistant');
+			const retryAssistantMessageId = lastAssistantMsg?.id;
+			if (retryAssistantMessageId) {
+				messages.update((list) => removeMessageById(list, retryAssistantMessageId));
+			}
+
+			activeStream = streamChat(
+				lastUserMessage,
+				data.conversation.id,
+				{
+					onToken(chunk) {
+						messages.update((list) => appendTokenChunkToMessageList(list, placeholderId, chunk));
+					},
+					onThinking(chunk) {
+						messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
+					},
+					onToolCall(name, input, status, details) {
+						messages.update((list) =>
+							applyToolCallUpdateToMessageList(list, {
+								placeholderId,
+								name,
+								input,
+								status,
+								details,
+							})
+						);
+					},
+					onEnd(fullText, metadata) {
+						lastAssistantResponse = fullText;
+						contextStatus = metadata?.contextStatus ?? contextStatus;
+						activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
+						taskState = metadata?.taskState ?? taskState;
+						contextDebug = metadata?.contextDebug ?? contextDebug;
+						const serverAssistantId = metadata?.assistantMessageId;
+						messages.update((list) =>
+							finalizeStreamingMessageList(list, {
+								placeholderId,
+								clientUserMessageId: null,
+								metadata,
+							})
+						);
+						isSending = false;
+						activeStream = null;
+						canRetry = false;
+						if (serverAssistantId) {
+							void pollMessageEvidence(serverAssistantId);
+						}
+
+						if (metadata?.wasStopped) {
+							restoreQueuedTurnToDraft();
+							return;
+						}
+
+						maybeTriggerTitleGeneration(lastUserMessage, fullText);
+
+						if (queuedTurn) {
+							const nextQueuedTurn = cloneSendPayload(queuedTurn);
+							queuedTurn = null;
+							handleSend(nextQueuedTurn, false, false, false);
+						}
+					},
+					onError(err) {
+						messages.update((list) => removeMessageById(list, placeholderId));
+						activeStream = null;
+						isSending = false;
+						restoreQueuedTurnToDraft();
+
+						const isBrowserAbort =
+							err.name === 'AbortError' && browser && document.visibilityState === 'hidden';
+						if (isBrowserAbort) {
+							streamInterruptedByBackground = true;
+							return;
+						}
+
+						sendError = toFriendlySendError(err);
+						canRetry = true;
+					},
+				},
+				{
+					retryAssistantMessageId: retryAssistantMessageId ?? undefined,
+				}
+			);
 		}
 	}
 
@@ -585,13 +669,81 @@
 			selectedAttachmentIds: payload.selectedAttachmentIds,
 		});
 	}
+
+	const INTERNAL_MIME = 'application/x-alfyai-conversation';
+	let fileDragActive = $state(false);
+	let fileDragRejected = $state(false);
+	let dragEnterCount = 0;
+	let uploadFilesFn: ((files: FileList | null) => Promise<void>) | null = null;
+
+	function handleUploadReady(uploadFn: (files: FileList | null) => Promise<void>) {
+		uploadFilesFn = uploadFn;
+	}
+
+	function isOsFileDrop(event: DragEvent): boolean {
+		const types = event.dataTransfer?.types;
+		if (!types) return false;
+		// Must have Files type (OS file drop), not internal conversation DnD
+		return types.includes('Files') && !types.includes(INTERNAL_MIME);
+	}
+
+	function handleDragEnter(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		dragEnterCount += 1;
+		if (isSending) {
+			fileDragRejected = true;
+		} else {
+			fileDragRejected = false;
+		}
+		fileDragActive = true;
+	}
+
+	function handleDragOver(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = 'copy';
+		}
+	}
+
+	function handleDragLeave(event: DragEvent) {
+		if (!isOsFileDrop(event)) return;
+		dragEnterCount -= 1;
+		if (dragEnterCount <= 0) {
+			dragEnterCount = 0;
+			fileDragActive = false;
+			fileDragRejected = false;
+		}
+	}
+
+	function handleDrop(event: DragEvent) {
+		dragEnterCount = 0;
+		fileDragActive = false;
+		fileDragRejected = false;
+		if (!isOsFileDrop(event)) return;
+		event.preventDefault();
+		if (isSending) return;
+		const files = event.dataTransfer?.files;
+		if (!files || files.length === 0) return;
+		uploadFilesFn?.(files);
+	}
 </script>
 
 <svelte:head>
 	<title>{data.conversation.title}</title>
 </svelte:head>
 
-<div class="chat-page flex h-full min-w-0 flex-col bg-surface-page">
+<div
+	class="chat-page flex h-full min-w-0 flex-col bg-surface-page"
+	role="region"
+	aria-label="Chat page"
+	ondragenter={handleDragEnter}
+	ondragover={handleDragOver}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
+>
+	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
 		<ChatMessagePane
 			messages={$messages}
@@ -630,6 +782,7 @@
 			draftVersion={conversationDraft?.updatedAt ?? 0}
 			onSteer={handleSteering}
 			onManageEvidence={openEvidenceManager}
+			onUploadReady={handleUploadReady}
 		/>
 	</div>
 

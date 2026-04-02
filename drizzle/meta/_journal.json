@@ -50,6 +50,13 @@
       "when": 1774799100000,
       "tag": "0006_memory_overview_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1775141732384,
+      "tag": "0007_thankful_inertia",
+      "breakpoints": true
     }
   ]
 }

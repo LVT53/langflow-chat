@@ -53,6 +53,7 @@
 		hasQueuedMessage = false,
 		queuedMessagePreview = '',
 		onDraftChange = undefined,
+		onUploadReady = undefined,
 	}: {
 		disabled?: boolean;
 		maxLength?: number;
@@ -77,6 +78,7 @@
 		hasQueuedMessage?: boolean;
 		queuedMessagePreview?: string;
 		onDraftChange?: ((payload: DraftPayload) => void) | undefined;
+		onUploadReady?: ((uploadFn: (files: FileList | null) => Promise<void>) => void) | undefined;
 	} = $props();
 
 	let textarea = $state<HTMLTextAreaElement | null>(null);
@@ -265,6 +267,7 @@
 			adjustHeight();
 		}
 		window.addEventListener('resize', adjustHeight);
+		onUploadReady?.(uploadFiles);
 		return () => window.removeEventListener('resize', adjustHeight);
 	});
 

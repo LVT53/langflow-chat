@@ -1,0 +1,5 @@
+{
+  "agents": {
+    "multimodal-looker": { "model": "google/antigravity-gemini-3-flash" }
+  }
+}
