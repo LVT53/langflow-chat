@@ -39,3 +39,7 @@ data/test.db
 data/test.db-shm
 data/test.db-wal
 data/test.db.bak
+
+# Runtime data directories (generated files, knowledge uploads)
+data/chat-files/
+data/knowledge/
