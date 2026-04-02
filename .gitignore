@@ -43,3 +43,7 @@ data/test.db.bak
 # Runtime data directories (generated files, knowledge uploads)
 data/chat-files/
 data/knowledge/
+
+# Python
+__pycache__/
+*.pyc
