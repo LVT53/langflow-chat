@@ -1,3 +1,4 @@
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <script lang="ts">
 	import type { ArtifactSummary } from '$lib/types';
 
