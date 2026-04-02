@@ -43,6 +43,7 @@ type WorkCapsuleArtifactRow = Pick<
 	| 'mimeType'
 	| 'sizeBytes'
 	| 'conversationId'
+	| 'vaultId'
 	| 'summary'
 	| 'metadataJson'
 	| 'createdAt'
@@ -80,7 +81,19 @@ export function mapWorkCapsuleFromArtifactRow(row: WorkCapsuleArtifactRow): Work
 function mapWorkCapsuleFromArtifact(artifact: Artifact): WorkCapsule {
 	const metadata = parseWorkCapsuleMetadata(artifact.metadata ?? null);
 	return {
-		artifact: mapArtifactSummary(artifact),
+		artifact: {
+			id: artifact.id,
+			type: artifact.type,
+			retrievalClass: artifact.retrievalClass,
+			name: artifact.name,
+			mimeType: artifact.mimeType,
+			sizeBytes: artifact.sizeBytes,
+			conversationId: artifact.conversationId,
+			vaultId: artifact.vaultId,
+			summary: artifact.summary,
+			createdAt: artifact.createdAt,
+			updatedAt: artifact.updatedAt,
+		},
 		conversationId: artifact.conversationId ?? null,
 		...metadata,
 	};

@@ -419,6 +419,7 @@ async function findDuplicateUploadedArtifact(params: {
 export async function saveUploadedArtifact(params: {
   userId: string;
   conversationId: string;
+  vaultId?: string | null;
   file: File;
 }): Promise<{
   artifact: Artifact;
@@ -464,6 +465,7 @@ export async function saveUploadedArtifact(params: {
     id: finalArtifactId,
     userId: params.userId,
     conversationId: params.conversationId,
+    vaultId: params.vaultId ?? null,
     type: "source_document",
     name: params.file.name,
     mimeType: params.file.type || null,

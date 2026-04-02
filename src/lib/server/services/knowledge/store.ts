@@ -46,3 +46,12 @@ export {
   findRelevantArtifactsByTypes,
   listLogicalDocuments,
 } from "./store/documents";
+
+export {
+  createVault,
+  deleteVault,
+  getVault,
+  getVaults,
+  updateVault,
+} from "./store/vaults";
+export type { Vault, VaultUpdates } from "./store/vaults";

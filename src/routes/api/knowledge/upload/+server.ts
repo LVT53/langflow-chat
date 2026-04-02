@@ -11,6 +11,7 @@ import {
 	createAttachmentTraceId,
 	logAttachmentTrace,
 } from '$lib/server/services/attachment-trace';
+import { getVault } from '$lib/server/services/knowledge/store/vaults';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -45,6 +46,8 @@ export const POST: RequestHandler = async (event) => {
 
 	const file = formData.get('file');
 	const conversationId = formData.get('conversationId');
+	const vaultIdValue = formData.get('vaultId');
+	
 	if (!(file instanceof File)) {
 		return json({ error: 'No file provided' }, { status: 400 });
 	}
@@ -55,9 +58,21 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'File too large. Maximum size is 50MB.' }, { status: 400 });
 	}
 
+	// Validate vaultId if provided
+	let vaultId: string | null = null;
+	if (typeof vaultIdValue === 'string' && vaultIdValue.trim()) {
+		vaultId = vaultIdValue.trim();
+		// Verify vault ownership
+		const vault = await getVault(user.id, vaultId);
+		if (!vault) {
+			return json({ error: 'Vault not found or access denied' }, { status: 400 });
+		}
+	}
+
 	const uploadResult = await saveUploadedArtifact({
 		userId: user.id,
 		conversationId,
+		vaultId,
 		file,
 	});
 	const artifact = uploadResult.artifact;

@@ -249,6 +249,7 @@ export interface ArtifactSummary {
   mimeType: string | null;
   sizeBytes: number | null;
   conversationId: string | null;
+  vaultId: string | null;
   summary: string | null;
   createdAt: number;
   updatedAt: number;

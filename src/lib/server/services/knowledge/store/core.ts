@@ -45,6 +45,7 @@ type ArtifactSummaryRow = Pick<
   | "mimeType"
   | "sizeBytes"
   | "conversationId"
+  | "vaultId"
   | "summary"
   | "createdAt"
   | "updatedAt"
@@ -58,6 +59,7 @@ export const knowledgeArtifactListSelection = {
   mimeType: artifacts.mimeType,
   sizeBytes: artifacts.sizeBytes,
   conversationId: artifacts.conversationId,
+  vaultId: artifacts.vaultId,
   summary: artifacts.summary,
   metadataJson: artifacts.metadataJson,
   createdAt: artifacts.createdAt,
@@ -74,6 +76,7 @@ export function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes ?? null,
     conversationId: row.conversationId ?? null,
+    vaultId: row.vaultId ?? null,
     summary: row.summary ?? null,
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
@@ -131,6 +134,7 @@ export async function createArtifact(params: {
   id?: string;
   userId: string;
   conversationId?: string | null;
+  vaultId?: string | null;
   type: ArtifactType;
   retrievalClass?: Artifact["retrievalClass"];
   name: string;
@@ -150,6 +154,7 @@ export async function createArtifact(params: {
       id,
       userId: params.userId,
       conversationId: params.conversationId ?? null,
+      vaultId: params.vaultId ?? null,
       type: params.type,
       retrievalClass: params.retrievalClass ?? "durable",
       name: params.name,

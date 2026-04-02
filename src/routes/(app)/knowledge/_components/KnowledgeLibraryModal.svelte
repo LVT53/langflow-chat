@@ -1,12 +1,14 @@
 <script lang="ts">
 	import type { ArtifactSummary, KnowledgeDocumentItem, WorkCapsule } from '$lib/types';
 	import type { LibraryModal } from '../_helpers';
+	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
 	import {
 		formatArtifactSize,
 		formatDocumentKind,
 		getLibraryBulkKey,
 		getLibraryBulkLabel,
 		getLibraryItemCount,
+		isPreviewableFile,
 	} from '../_helpers';
 
 	let {
@@ -39,6 +41,25 @@
 		getLibraryItemCount(activeLibraryModal, { documents, results, workflows })
 	);
 	let bulkKey = $derived(getLibraryBulkKey(activeLibraryModal));
+
+	let previewArtifactId = $state<string | null>(null);
+	let previewFilename = $state('');
+	let previewMimeType = $state<string | null>(null);
+	let isPreviewOpen = $state(false);
+
+	function openPreview(artifact: KnowledgeDocumentItem | ArtifactSummary) {
+		previewArtifactId = artifact.id;
+		previewFilename = artifact.name;
+		previewMimeType = artifact.mimeType;
+		isPreviewOpen = true;
+	}
+
+	function closePreview() {
+		isPreviewOpen = false;
+		previewArtifactId = null;
+		previewFilename = '';
+		previewMimeType = null;
+	}
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -239,15 +260,27 @@
 											{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
 										</td>
 										<td class="px-4 py-3 align-top text-right">
-											<button
-												type="button"
-												class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-												onclick={() => onRemoveArtifact(capsule.artifact.id, capsule.artifact.name)}
-												disabled={isDeletingArtifact(capsule.artifact.id)}
-												aria-busy={isDeletingArtifact(capsule.artifact.id)}
-											>
-												{isDeletingArtifact(capsule.artifact.id) ? 'Removing…' : 'Remove'}
-											</button>
+											<div class="flex items-center justify-end gap-2">
+												{#if isPreviewableFile(artifact.mimeType, artifact.name)}
+													<button
+														type="button"
+														class="rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+														onclick={() => openPreview(artifact)}
+														disabled={isDeletingArtifact(artifact.id)}
+													>
+														Preview
+													</button>
+												{/if}
+												<button
+													type="button"
+													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+													onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
+													disabled={isDeletingArtifact(artifact.id)}
+													aria-busy={isDeletingArtifact(artifact.id)}
+												>
+													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
+												</button>
+											</div>
 										</td>
 									</tr>
 								{/each}
@@ -255,7 +288,15 @@
 						</table>
 					</div>
 				{/if}
-			{/if}
-		</div>
+		{/if}
 	</div>
+</div>
+
+<FilePreview
+	open={isPreviewOpen}
+	artifactId={previewArtifactId}
+	filename={previewFilename}
+	mimeType={previewMimeType}
+	onClose={closePreview}
+/>
 </div>
