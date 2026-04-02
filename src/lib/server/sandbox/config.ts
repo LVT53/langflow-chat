@@ -79,10 +79,6 @@ export async function createSandbox(): Promise<Sandbox> {
 		let stderr = '';
 
 		return new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				reject(new Error(`Sandbox execution timed out after ${SANDBOX_TIMEOUT_MS}ms`));
-			}, SANDBOX_TIMEOUT_MS);
-
 			stream.on('data', (chunk: Buffer) => {
 				const header = chunk[0];
 				const payload = chunk.slice(8).toString('utf-8');
@@ -95,7 +91,6 @@ export async function createSandbox(): Promise<Sandbox> {
 			});
 
 			stream.on('end', async () => {
-				clearTimeout(timeout);
 				try {
 					const inspect = await exec.inspect();
 					resolve({
@@ -109,7 +104,6 @@ export async function createSandbox(): Promise<Sandbox> {
 			});
 
 			stream.on('error', (error: Error) => {
-				clearTimeout(timeout);
 				reject(error);
 			});
 		});
