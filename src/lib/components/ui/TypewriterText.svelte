@@ -4,11 +4,13 @@
 	let {
 		text,
 		delay = 0,
-		speed = 6
+		speed = 6,
+		onComplete
 	}: {
 		text: string;
 		delay?: number;
 		speed?: number;
+		onComplete?: () => void;
 	} = $props();
 
 	let displayedChars = $state<string[]>([]);
@@ -42,6 +44,7 @@
 		timeoutIds.push(
 			setTimeout(() => {
 				isAnimating = false;
+				onComplete?.();
 			}, delay + text.length * speed + 200)
 		);
 

@@ -283,7 +283,7 @@
 		{:else}
 			<div class="truncate px-1.5 text-[13px] font-sans text-text-primary">
 				{#if isNewTitle && !isEditing}
-					<TypewriterText text={conversation.title} />
+					<TypewriterText text={conversation.title} onComplete={() => isNewTitle = false} />
 				{:else}
 					{conversation.title}
 				{/if}
