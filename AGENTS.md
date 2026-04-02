@@ -125,6 +125,7 @@ Do not:
   - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
   - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
+  - Generated-file debug tracing currently logs under `[FILE_GENERATE]`, `[CHAT_FILES]`, `[CHAT_STREAM]`, and `[CONVERSATION_DETAIL]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
 Do:
 

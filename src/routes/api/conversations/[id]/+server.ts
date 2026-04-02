@@ -69,6 +69,18 @@ export const GET: RequestHandler = async (event) => {
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
 		);
+		console.info('[CONVERSATION_DETAIL] Returning conversation payload', {
+			conversationId: id,
+			userId: user.id,
+			messageCount: messageHistory.length,
+			generatedFileCount: generatedFiles.length,
+			generatedFiles: generatedFiles.map((file) => ({
+				id: file.id,
+				filename: file.filename,
+				sizeBytes: file.sizeBytes,
+				mimeType: file.mimeType,
+			})),
+		});
 
 		return json({
 			conversation,

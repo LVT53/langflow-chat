@@ -175,6 +175,8 @@ async function readSseResponse(response: Response): Promise<string> {
 describe('POST /api/chat/stream', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.spyOn(console, 'info').mockImplementation(() => undefined);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
 		mockCreateMessage.mockImplementation(async () => ({

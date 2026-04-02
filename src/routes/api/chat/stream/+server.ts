@@ -183,6 +183,34 @@ export const POST: RequestHandler = async (event) => {
       const chunkRuntime = createServerChunkRuntime({ enqueueChunk });
       const emitThinking = chunkRuntime.emitThinking;
       const emitToolCallEvent = chunkRuntime.emitToolCallEvent;
+      const emitToolCallEventWithDebug = (
+        name: string,
+        input: Record<string, unknown>,
+        status: "running" | "done",
+        details?: {
+          outputSummary?: string | null;
+          sourceType?: import("$lib/types").EvidenceSourceType | null;
+          candidates?: import("$lib/types").ToolEvidenceCandidate[];
+        },
+      ) => {
+        if (name === "generate_file") {
+          const code = typeof input.code === "string" ? input.code : null;
+          console.info("[CHAT_STREAM] File-generation tool event", {
+            conversationId,
+            streamId,
+            status,
+            filename:
+              typeof input.filename === "string" && input.filename.trim()
+                ? input.filename
+                : null,
+            codeLength: code?.length ?? 0,
+            writesToOutput: code?.includes("/output") ?? false,
+            outputSummary: details?.outputSummary ?? null,
+          });
+        }
+
+        emitToolCallEvent(name, input, status, details);
+      };
       const emitInlineToken = chunkRuntime.emitInlineToken;
       const emitChunkWithPreserveHandling =
         chunkRuntime.emitChunkWithPreserveHandling;
@@ -291,8 +319,26 @@ export const POST: RequestHandler = async (event) => {
           let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
             generatedFiles = await getChatFiles(conversationId);
-          } catch {
-            // Ignore errors fetching generated files
+            console.info("[CHAT_STREAM] Prepared generated files for end event", {
+              conversationId,
+              streamId,
+              userMessageId: userMsgId ?? null,
+              assistantMessageId: assistantMsgId ?? null,
+              wasStopped,
+              count: generatedFiles.length,
+              files: generatedFiles.map((file) => ({
+                id: file.id,
+                filename: file.filename,
+                sizeBytes: file.sizeBytes,
+                mimeType: file.mimeType,
+              })),
+            });
+          } catch (error) {
+            console.error("[CHAT_STREAM] Failed to load generated files for end event", {
+              conversationId,
+              streamId,
+              error,
+            });
           }
 
           enqueueChunk(
@@ -675,7 +721,7 @@ export const POST: RequestHandler = async (event) => {
             // Strip tool call markers, emitting structured tool_call SSE events
             const cleanedChunk = processToolCallMarkers(
               chunk,
-              emitToolCallEvent,
+              emitToolCallEventWithDebug,
             );
 
             if (!cleanedChunk) continue;

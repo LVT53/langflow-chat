@@ -54,6 +54,9 @@ describe('POST /api/chat/files/generate', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockHasValidAlfyAiApiKey.mockReturnValue(false);
+		vi.spyOn(console, 'info').mockImplementation(() => undefined);
+		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	});
 
 	it('returns file metadata for a valid request', async () => {
@@ -108,6 +111,13 @@ describe('POST /api/chat/files/generate', () => {
 				mimeType: 'application/pdf',
 				content: expect.any(Buffer)
 			}
+		);
+		expect(console.info).toHaveBeenCalledWith(
+			'[FILE_GENERATE] Request succeeded',
+			expect.objectContaining({
+				conversationId: 'conv-1',
+				fileCount: 1,
+			})
 		);
 	});
 
@@ -420,6 +430,12 @@ describe('POST /api/chat/files/generate', () => {
 		expect(response.status).toBe(422);
 		expect(data.error).toMatch(/write the final output file to \/output/i);
 		expect(mockStoreGeneratedFile).not.toHaveBeenCalled();
+		expect(console.warn).toHaveBeenCalledWith(
+			'[FILE_GENERATE] Sandbox finished without files',
+			expect.objectContaining({
+				conversationId: 'conv-1',
+			})
+		);
 	});
 
 	it('returns 400 when request body is invalid JSON', async () => {

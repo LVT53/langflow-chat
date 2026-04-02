@@ -174,6 +174,8 @@ describe('chat-files service', () => {
 	beforeEach(() => {
 		mockRows.length = 0;
 		vi.clearAllMocks();
+		vi.spyOn(console, 'info').mockImplementation(() => undefined);
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	});
 
 	describe('storeGeneratedFile', () => {

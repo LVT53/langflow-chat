@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { randomUUID } from 'crypto';
 import type { RequestHandler } from './$types';
 import { hasValidAlfyAiApiKey } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
@@ -18,6 +19,23 @@ interface FileMetadata {
 	downloadUrl: string;
 	size: number;
 	mimeType: string;
+}
+
+function previewText(value: string | undefined, limit = 180): string | null {
+	if (!value) return null;
+	const normalized = value.replace(/\s+/g, ' ').trim();
+	if (!normalized) return null;
+	return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+}
+
+function summarizeExecutionFiles(
+	files: Array<{ filename: string; mimeType?: string; content: Buffer | Uint8Array }>
+) {
+	return files.map((file) => ({
+		filename: file.filename,
+		mimeType: file.mimeType ?? 'application/octet-stream',
+		sizeBytes: Buffer.isBuffer(file.content) ? file.content.length : Buffer.byteLength(file.content),
+	}));
 }
 
 function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | { ok: false; error: string; status: number } {
@@ -55,11 +73,13 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 }
 
 export const POST: RequestHandler = async (event) => {
+	const requestId = randomUUID().slice(0, 8);
 	const user = event.locals.user ?? null;
 	const isServiceRequest =
 		user === null && hasValidAlfyAiApiKey(event.request.headers.get('authorization'));
 
 	if (!user && !isServiceRequest) {
+		console.warn('[FILE_GENERATE] Unauthorized request', { requestId });
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
@@ -67,21 +87,43 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		body = await event.request.json();
 	} catch {
+		console.warn('[FILE_GENERATE] Invalid JSON body', { requestId });
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
 	const validation = validateRequest(body);
 	if (validation.ok === false) {
+		console.warn('[FILE_GENERATE] Request validation failed', {
+			requestId,
+			error: validation.error,
+			status: validation.status,
+		});
 		return json({ error: validation.error }, { status: validation.status });
 	}
 
 	const { conversationId, code, filename: customFilename } = validation.value;
+	console.info('[FILE_GENERATE] Request received', {
+		requestId,
+		conversationId,
+		authMode: user ? 'session' : 'service',
+		userId: user?.id ?? null,
+		language: validation.value.language,
+		customFilename: customFilename ?? null,
+		codeLength: code.length,
+		writesToOutput: code.includes('/output'),
+		codePreview: previewText(code),
+	});
 
 	let ownerUserId: string;
 	if (user) {
 		// Session-authenticated browser requests stay user-scoped.
 		const conversation = await getConversation(user.id, conversationId);
 		if (!conversation) {
+			console.warn('[FILE_GENERATE] Conversation not found for session request', {
+				requestId,
+				conversationId,
+				userId: user.id,
+			});
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 		ownerUserId = user.id;
@@ -90,6 +132,10 @@ export const POST: RequestHandler = async (event) => {
 		// the conversation owner from the stored conversation record.
 		const conversationUserId = await getConversationUserId(conversationId);
 		if (!conversationUserId) {
+			console.warn('[FILE_GENERATE] Conversation not found for service request', {
+				requestId,
+				conversationId,
+			});
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 		ownerUserId = conversationUserId;
@@ -100,15 +146,38 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		executionResult = await executeCode(code, 'python');
 	} catch (error) {
-		console.error('[FILE_GENERATE] Sandbox execution error:', error);
+		console.error('[FILE_GENERATE] Sandbox execution threw', {
+			requestId,
+			conversationId,
+			ownerUserId,
+			error,
+		});
 		return json(
 			{ error: 'Failed to execute code in sandbox' },
 			{ status: 500 }
 		);
 	}
 
+	console.info('[FILE_GENERATE] Sandbox execution completed', {
+		requestId,
+		conversationId,
+		ownerUserId,
+		fileCount: executionResult.files.length,
+		files: summarizeExecutionFiles(executionResult.files),
+		stdoutPreview: previewText(executionResult.stdout),
+		stderrPreview: previewText(executionResult.stderr),
+		error: executionResult.error ?? null,
+	});
+
 	// Check for execution errors
 	if (executionResult.error) {
+		console.warn('[FILE_GENERATE] Sandbox execution returned error', {
+			requestId,
+			conversationId,
+			error: executionResult.error,
+			stdoutPreview: previewText(executionResult.stdout),
+			stderrPreview: previewText(executionResult.stderr),
+		});
 		return json(
 			{ error: executionResult.error },
 			{ status: 500 }
@@ -116,6 +185,14 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	if (executionResult.files.length === 0) {
+		console.warn('[FILE_GENERATE] Sandbox finished without files', {
+			requestId,
+			conversationId,
+			ownerUserId,
+			writesToOutput: code.includes('/output'),
+			stdoutPreview: previewText(executionResult.stdout),
+			stderrPreview: previewText(executionResult.stderr),
+		});
 		return json(
 			{
 				error:
@@ -133,6 +210,16 @@ export const POST: RequestHandler = async (event) => {
 			mimeType: file.mimeType,
 			content: file.content,
 		});
+		console.info('[FILE_GENERATE] Stored generated file', {
+			requestId,
+			conversationId,
+			ownerUserId,
+			fileId: storedFile.id,
+			filename: storedFile.filename,
+			sizeBytes: storedFile.sizeBytes,
+			mimeType: storedFile.mimeType,
+			storagePath: storedFile.storagePath,
+		});
 
 		files.push({
 			id: storedFile.id,
@@ -142,6 +229,14 @@ export const POST: RequestHandler = async (event) => {
 			mimeType: storedFile.mimeType || 'application/octet-stream',
 		});
 	}
+
+	console.info('[FILE_GENERATE] Request succeeded', {
+		requestId,
+		conversationId,
+		ownerUserId,
+		fileCount: files.length,
+		files,
+	});
 
 	return json({ files });
 };

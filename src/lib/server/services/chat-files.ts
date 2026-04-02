@@ -61,30 +61,62 @@ export async function storeGeneratedFile(
 	const ext = getFileExtension(file.filename);
 	const storagePath = join(conversationId, `${id}.${ext}`);
 	const fullPath = join(getChatFilesDir(), storagePath);
-
-	// Ensure directory exists
-	const conversationDir = getConversationDir(conversationId);
-	await mkdir(conversationDir, { recursive: true });
-
-	// Write file to disk
 	const buffer = Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content);
-	await writeFile(fullPath, buffer);
 
-	// Create database record
-	const [row] = await db
-		.insert(chatGeneratedFiles)
-		.values({
-			id,
+	console.info('[CHAT_FILES] Storing generated file', {
+		conversationId,
+		userId,
+		fileId: id,
+		filename: file.filename,
+		mimeType: file.mimeType ?? null,
+		sizeBytes: buffer.length,
+		storagePath,
+	});
+
+	try {
+		// Ensure directory exists
+		const conversationDir = getConversationDir(conversationId);
+		await mkdir(conversationDir, { recursive: true });
+
+		// Write file to disk
+		await writeFile(fullPath, buffer);
+
+		// Create database record
+		const [row] = await db
+			.insert(chatGeneratedFiles)
+			.values({
+				id,
+				conversationId,
+				userId,
+				filename: file.filename,
+				mimeType: file.mimeType ?? null,
+				sizeBytes: buffer.length,
+				storagePath,
+			})
+			.returning();
+
+		const storedFile = mapRowToChatFile(row);
+		console.info('[CHAT_FILES] Stored generated file', {
 			conversationId,
 			userId,
-			filename: file.filename,
-			mimeType: file.mimeType ?? null,
-			sizeBytes: buffer.length,
-			storagePath,
-		})
-		.returning();
+			fileId: storedFile.id,
+			filename: storedFile.filename,
+			sizeBytes: storedFile.sizeBytes,
+			storagePath: storedFile.storagePath,
+		});
 
-	return mapRowToChatFile(row);
+		return storedFile;
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to store generated file', {
+			conversationId,
+			userId,
+			fileId: id,
+			filename: file.filename,
+			storagePath,
+			error,
+		});
+		throw error;
+	}
 }
 
 /**
@@ -92,13 +124,32 @@ export async function storeGeneratedFile(
  * Returns only files belonging to the specified conversation.
  */
 export async function getChatFiles(conversationId: string): Promise<ChatFile[]> {
-	const rows = await db
-		.select()
-		.from(chatGeneratedFiles)
-		.where(eq(chatGeneratedFiles.conversationId, conversationId))
-		.orderBy(desc(chatGeneratedFiles.createdAt));
+	try {
+		const rows = await db
+			.select()
+			.from(chatGeneratedFiles)
+			.where(eq(chatGeneratedFiles.conversationId, conversationId))
+			.orderBy(desc(chatGeneratedFiles.createdAt));
 
-	return rows.map(mapRowToChatFile);
+		const files = rows.map(mapRowToChatFile);
+		console.info('[CHAT_FILES] Listed generated files', {
+			conversationId,
+			count: files.length,
+			files: files.map((file) => ({
+				id: file.id,
+				filename: file.filename,
+				sizeBytes: file.sizeBytes,
+				mimeType: file.mimeType,
+			})),
+		});
+		return files;
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to list generated files', {
+			conversationId,
+			error,
+		});
+		throw error;
+	}
 }
 
 /**

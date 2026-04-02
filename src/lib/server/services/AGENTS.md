@@ -94,6 +94,8 @@ knowledge.ts (facade — re-exports from below)
 
 **Langflow prompt note**: file-generation workflow guidance belongs in `langflow.ts`. Keep its prompt contract aligned with the Langflow file-generator tool: generated code must write files to `/output`, successful files appear in chat, and vault saves remain a separate UI action unless a dedicated save tool is introduced.
 
+**Generated-file debug note**: when debugging missing chat files, the current server-side log prefixes are `[FILE_GENERATE]` for the sandbox endpoint, `[CHAT_FILES]` for persistence/listing, `[CHAT_STREAM]` for stream-end payloads and `generate_file` tool markers, and `[CONVERSATION_DETAIL]` for reload payloads. Extend those prefixes instead of inventing new one-off log tags.
+
 ## Task-State Submodule Flow
 
 ```
