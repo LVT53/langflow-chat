@@ -255,6 +255,7 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('call it instead of only describing the result in text');
       expect(body.tweaks.system_prompt).toContain('do not claim it is unavailable');
       expect(body.tweaks.system_prompt).toContain('Do not use generic code-execution tools such as `run_python_repl`');
+      expect(body.tweaks.system_prompt).toContain('exposes a `python_code` argument');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
       expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');
       expect(body.tweaks.system_prompt).toContain('Save to Vault');
@@ -442,6 +443,7 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Generated file workflow');
       expect(body.tweaks.system_prompt).toContain('do not claim it is unavailable');
       expect(body.tweaks.system_prompt).toContain('Do not use generic code-execution tools such as `run_python_repl`');
+      expect(body.tweaks.system_prompt).toContain('exposes a `python_code` argument');
 
       expect(response.stream).toBeDefined();
     });

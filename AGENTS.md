@@ -156,6 +156,7 @@ Do:
 - keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, generated files show up in chat, and vault saving is still a separate UI action unless a dedicated tool is added
 - keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
 - keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
+- keep the Langflow custom file-generator component's Python source input named `python_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
 - save-to-vault endpoint deletes source file after successful copy
 
 Do not:

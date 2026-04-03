@@ -95,10 +95,11 @@ class FileGeneratorToolComponent(Component):
             advanced=True,
         ),
         MultilineInput(
-            name="code",
+            name="python_code",
             display_name="Python Code",
             info="Python code to execute. Write output files to /output directory.",
             value="",
+            required=True,
             tool_mode=True,  # This enables the component as a tool
         ),
         StrInput(
@@ -119,6 +120,33 @@ class FileGeneratorToolComponent(Component):
             method="generate_file",
         ),
     ]
+
+    @staticmethod
+    def _looks_like_component_source(value: str) -> bool:
+        return (
+            "from langchain_core._api.deprecation import" in value
+            or "class FileGeneratorToolComponent(Component):" in value
+            or "from lfx.custom.custom_component.component import Component" in value
+        )
+
+    def _resolve_python_code(self) -> str | None:
+        python_code = str(getattr(self, "python_code", "") or "").strip()
+        if python_code:
+            return python_code
+
+        legacy_code = str(getattr(self, "code", "") or "").strip()
+        if not legacy_code:
+            return None
+
+        if self._looks_like_component_source(legacy_code):
+            logger.error(
+                "File Generator node is still resolving the reserved `code` field instead of the "
+                "`python_code` tool argument. Refresh or re-add the node in Langflow so it reloads "
+                "the updated schema."
+            )
+            return None
+
+        return legacy_code
 
     def _get_conversation_id(self) -> str | None:
         """Get the conversation ID from the Langflow session.
@@ -231,7 +259,7 @@ class FileGeneratorToolComponent(Component):
 
     def generate_file(self) -> Data:
         """Tool function called by the agent via Langflow tool mode."""
-        code = str(getattr(self, "code", "") or "")
+        code = self._resolve_python_code()
         filename = str(getattr(self, "filename", "") or "")
 
         # Get conversation ID from session
@@ -247,7 +275,10 @@ class FileGeneratorToolComponent(Component):
         if not code or not code.strip():
             return Data(data={
                 "success": False,
-                "error": "No code provided. Please provide Python code to generate the file.",
+                "error": (
+                    "No Python code provided. If you just updated this node, refresh or re-add it in "
+                    "Langflow so the tool sends the `python_code` argument."
+                ),
             })
         
         # Log the generation attempt

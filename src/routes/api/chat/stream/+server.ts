@@ -51,6 +51,10 @@ import {
 import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { getChatFiles } from "$lib/server/services/chat-files";
+import {
+  getGenerateFileToolCode,
+  getGenerateFileToolFilename,
+} from "$lib/utils/generate-file-tool";
 
 const STREAM_TIMEOUT_MS = 120_000;
 
@@ -194,15 +198,12 @@ export const POST: RequestHandler = async (event) => {
         },
       ) => {
         if (name === "generate_file") {
-          const code = typeof input.code === "string" ? input.code : null;
+          const code = getGenerateFileToolCode(input);
           console.info("[CHAT_STREAM] File-generation tool event", {
             conversationId,
             streamId,
             status,
-            filename:
-              typeof input.filename === "string" && input.filename.trim()
-                ? input.filename
-                : null,
+            filename: getGenerateFileToolFilename(input),
             codeLength: code?.length ?? 0,
             writesToOutput: code?.includes("/output") ?? false,
             outputSummary: details?.outputSummary ?? null,

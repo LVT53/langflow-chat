@@ -34,6 +34,7 @@
 	import type { PageProps } from './$types';
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
+	import { inferGeneratedFilenameFromToolInput } from '$lib/utils/generate-file-tool';
 	import {
 		removeConversationLocal,
 		updateConversationTitleLocal,
@@ -112,22 +113,7 @@
 	]);
 
 	function inferGeneratedFilename(input: Record<string, unknown>): string {
-		const explicitFilename =
-			typeof input.filename === 'string' && input.filename.trim().length > 0
-				? input.filename.trim()
-				: null;
-		if (explicitFilename) {
-			return explicitFilename;
-		}
-
-		const code = typeof input.code === 'string' ? input.code : '';
-		const match = code.match(/\/output\/([^\s"'`)\]}]+)/);
-		if (!match?.[1]) {
-			return 'Generated file';
-		}
-
-		const rawName = match[1].split('/').at(-1)?.trim();
-		return rawName && rawName.length > 0 ? rawName : 'Generated file';
+		return inferGeneratedFilenameFromToolInput(input);
 	}
 
 	function addPendingGeneratedFile(input: Record<string, unknown>) {
