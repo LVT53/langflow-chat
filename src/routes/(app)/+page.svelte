@@ -1,20 +1,23 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { fade, fly } from 'svelte/transition';
-	import {
-		cleanupPreparedConversation,
+import { goto } from '$app/navigation';
+import { fade, fly } from 'svelte/transition';
+import {
+	cleanupPreparedConversation,
 		consumePreviousConversationId,
 		createConversationDraftRecord,
 		getLandingDraftConversationId,
 		setLandingDraftConversationId,
-		storePendingConversationMessage,
-	} from '$lib/client/conversation-session';
-	import { fetchConversationDetail } from '$lib/client/api/conversations';
-	import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
-	import { currentConversationId } from '$lib/stores/ui';
-	import MessageInput from '$lib/components/chat/MessageInput.svelte';
-	import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
-	import { canReuseLandingPreparedConversation } from './landing-page-helpers';
+	storePendingConversationMessage,
+} from '$lib/client/conversation-session';
+import { fetchConversationDetail } from '$lib/client/api/conversations';
+import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
+import { currentConversationId } from '$lib/stores/ui';
+import MessageInput from '$lib/components/chat/MessageInput.svelte';
+import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
+import {
+	canReuseLandingPreparedConversation,
+	navigateToConversationFromLanding,
+} from './landing-page-helpers';
 	import { onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
@@ -162,7 +165,14 @@
 				attachmentIds: payload.attachmentIds,
 				attachments: payload.attachments,
 			});
-			await goto(`/chat/${id}`);
+			await navigateToConversationFromLanding({
+				conversationId: id,
+				goto: (href) => goto(href),
+				hardNavigate:
+					typeof window !== 'undefined'
+						? (href) => window.location.assign(href)
+						: null,
+			});
 		} catch {
 			error = 'Failed to create conversation. Please try again.';
 			hasStarted = false;

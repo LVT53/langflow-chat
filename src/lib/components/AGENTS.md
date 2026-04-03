@@ -97,6 +97,7 @@ ui/
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
 - `MessageInput.svelte` must mirror a cleared `conversationId` prop back into its local `resolvedConversationId`; do not keep stale landing-page conversation ids alive inside the component after the parent resets them
 - The chat page must treat route teardown/unmount as a local stream detach, not the same thing as the user pressing Stop. Only explicit stop UI should request `/api/chat/stream/stop`.
+- The landing page may force a full document navigation after the first send so the browser cannot remain on the home-screen visual state while the new chat route is already executing on the server
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
 - `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states

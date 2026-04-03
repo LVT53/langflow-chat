@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { canReuseLandingPreparedConversation } from './landing-page-helpers';
+import { describe, expect, it, vi } from 'vitest';
+import {
+	canReuseLandingPreparedConversation,
+	navigateToConversationFromLanding,
+} from './landing-page-helpers';
 
 describe('canReuseLandingPreparedConversation', () => {
 	it('reuses empty prepared conversations with the default title', () => {
@@ -60,5 +63,33 @@ describe('canReuseLandingPreparedConversation', () => {
 				generatedFiles: [],
 			})
 		).toBe(false);
+	});
+});
+
+describe('navigateToConversationFromLanding', () => {
+	it('prefers a full document navigation when available', async () => {
+		const goto = vi.fn(async () => undefined);
+		const hardNavigate = vi.fn();
+
+		await navigateToConversationFromLanding({
+			conversationId: 'conv-123',
+			goto,
+			hardNavigate,
+		});
+
+		expect(hardNavigate).toHaveBeenCalledWith('/chat/conv-123');
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('falls back to client-side goto when no hard navigation handler exists', async () => {
+		const goto = vi.fn(async () => undefined);
+
+		await navigateToConversationFromLanding({
+			conversationId: 'conv-123',
+			goto,
+			hardNavigate: null,
+		});
+
+		expect(goto).toHaveBeenCalledWith('/chat/conv-123');
 	});
 });
