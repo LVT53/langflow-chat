@@ -216,6 +216,45 @@ describe('sandbox config', () => {
 			expect(mockExecInspect).toHaveBeenCalledTimes(2);
 		});
 
+		it('does not treat a null exit code as completed exec state', async () => {
+			const mockExecInspect = vi
+				.fn()
+				.mockResolvedValueOnce({
+					ID: 'exec-1',
+					ContainerID: 'container-1',
+					ExitCode: null,
+					Running: false,
+				})
+				.mockResolvedValueOnce({
+					ID: 'exec-1',
+					ContainerID: 'container-1',
+					ExitCode: 0,
+					Running: false,
+				});
+
+			const mockStream = {
+				once: vi.fn().mockImplementation((event: string, handler: unknown) => {
+					if (event === 'end') {
+						setTimeout(() => (handler as () => void)(), 0);
+					}
+					return mockStream;
+				}),
+			};
+
+			const mockExec = {
+				start: vi.fn().mockResolvedValue(mockStream),
+				inspect: mockExecInspect,
+			};
+
+			mockContainer.exec.mockResolvedValue(mockExec);
+
+			const sandbox = await createSandbox();
+			const result = await sandbox.execute('print("Hello, World!")');
+
+			expect(result.exitCode).toBe(0);
+			expect(mockExecInspect).toHaveBeenCalledTimes(2);
+		});
+
 		it('should enforce timeout limit', async () => {
 			const sandbox = await createSandbox();
 			
