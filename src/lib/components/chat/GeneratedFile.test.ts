@@ -94,30 +94,23 @@ describe('GeneratedFile', () => {
 
 	it('opens the generated file preview modal', async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({
-					fileId: 'file-444',
-					filename: 'image.png',
-					mimeType: 'image/png',
-					contentText: 'preview text',
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			)
+			new Response('preview text', {
+				status: 200,
+				headers: { 'Content-Type': 'text/plain' },
+			})
 		);
 
 		renderGeneratedFile({
-			filename: 'image.png',
-			mimeType: 'image/png',
+			filename: 'preview.txt',
+			mimeType: 'text/plain',
 			downloadUrl: '/api/chat/files/file-444/download',
 		});
 
-		await fireEvent.click(screen.getByLabelText('Preview image.png'));
+		await fireEvent.click(screen.getByLabelText('Preview preview.txt'));
 
 		await waitFor(() => {
-			expect(screen.getByText('Generated file')).toBeInTheDocument();
+			expect(screen.getByText('File Preview')).toBeInTheDocument();
+			expect(screen.getByRole('dialog')).toBeInTheDocument();
 			expect(screen.getByText('preview text')).toBeInTheDocument();
 		});
 

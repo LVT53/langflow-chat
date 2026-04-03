@@ -159,7 +159,7 @@ Do:
 - keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
 - keep the Langflow custom file-generator component's Python source input named `python_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
 - save-to-vault preserves the original chat file and records vault-save state via artifact metadata so the row still appears after refresh
-- generated files may offer a lightweight authenticated preview via `/api/chat/files/[id]/preview`; keep chat-file preview behavior on the chat-files route family instead of routing it through knowledge-artifact ids
+- generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 
 Do not:
 

@@ -5,7 +5,6 @@ import { and, desc, eq, like } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles, knowledgeVaults } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
-import { extractDocumentText } from './document-extraction';
 
 export interface ChatFile {
 	id: string;
@@ -215,10 +214,6 @@ async function readStoredChatFile(file: ChatFile): Promise<Buffer | null> {
 	}
 }
 
-function getStoredChatFilePath(file: ChatFile): string {
-	return join(getChatFilesDir(), file.storagePath);
-}
-
 /**
  * Read the actual file content from disk.
  * Returns null if file doesn't exist in database or on disk.
@@ -245,31 +240,6 @@ export async function readChatFileContentByUser(
 	if (!file) return null;
 
 	return readStoredChatFile(file);
-}
-
-export async function previewChatFileContentByUser(
-	fileId: string,
-	userId: string
-): Promise<{ file: ChatFile; contentText: string | null } | null> {
-	const file = await getChatFileByUser(fileId, userId);
-	if (!file) return null;
-
-	try {
-		await access(getStoredChatFilePath(file));
-	} catch {
-		return null;
-	}
-
-	const extraction = await extractDocumentText(
-		getStoredChatFilePath(file),
-		file.mimeType,
-		file.filename
-	);
-
-	return {
-		file,
-		contentText: extraction.text,
-	};
 }
 
 export async function listSavedVaultsForChatFiles(

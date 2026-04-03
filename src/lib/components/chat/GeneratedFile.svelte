@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
-	import AttachmentContentModal from './AttachmentContentModal.svelte';
+	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
 	import VaultPickerModal from './VaultPickerModal.svelte';
 
 	interface GeneratedFileProps {
@@ -312,14 +312,12 @@
 	/>
 {/if}
 
-<AttachmentContentModal
+<FilePreview
 	open={showPreview}
 	artifactId={null}
-	contentUrl={`/api/chat/files/${fileId}/preview`}
+	previewUrl={`/api/chat/files/${fileId}/preview`}
 	filename={filename}
-	eyebrowLabel="Generated file"
-	emptyMessage="No extracted preview is available for this file."
-	errorMessage="Failed to load generated file preview."
+	{mimeType}
 	onClose={handlePreviewClose}
 />
 

@@ -5,20 +5,12 @@
 	let {
 		open,
 		artifactId,
-		contentUrl = null,
 		filename,
-		eyebrowLabel = 'Attachment',
-		emptyMessage = 'No extracted text available for this attachment.',
-		errorMessage = 'Failed to load attachment content.',
 		onClose,
 	}: {
 		open: boolean;
 		artifactId: string | null;
-		contentUrl?: string | null;
 		filename: string;
-		eyebrowLabel?: string;
-		emptyMessage?: string;
-		errorMessage?: string;
 		onClose: () => void;
 	} = $props();
 
@@ -28,8 +20,8 @@
 
 	// Fetch content when modal opens
 	$effect(() => {
-		if (open && (artifactId || contentUrl)) {
-			fetchContent();
+		if (open && artifactId) {
+			void fetchContent();
 		}
 	});
 
@@ -39,23 +31,15 @@
 		content = null;
 
 		try {
-			if (contentUrl) {
-				const payload = await requestJson<{ contentText: string | null }>(
-					contentUrl,
-					undefined,
-					errorMessage
-				);
-				content = payload.contentText;
-			} else if (artifactId) {
-				const payload = await requestJson<{ artifact: Artifact }>(
-					`/api/knowledge/${artifactId}`,
-					undefined,
-					errorMessage
-				);
-				content = payload.artifact.contentText;
-			}
+			if (!artifactId) return;
+			const payload = await requestJson<{ artifact: Artifact }>(
+				`/api/knowledge/${artifactId}`,
+				undefined,
+				'Failed to load attachment content.'
+			);
+			content = payload.artifact.contentText;
 		} catch (err) {
-			error = err instanceof Error ? err.message : errorMessage;
+			error = err instanceof Error ? err.message : 'Failed to load attachment content.';
 		} finally {
 			isLoading = false;
 		}
@@ -96,7 +80,7 @@
 			<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
 				<div>
 					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-						{eyebrowLabel}
+						Attachment
 					</div>
 					<h3 class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary">
 						{filename}
@@ -126,7 +110,7 @@
 					</div>
 				{:else if content === null}
 					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-						{emptyMessage}
+						No extracted text available for this attachment.
 					</div>
 				{:else}
 					<div class="rounded-[1.2rem] border border-border bg-surface-page p-4">

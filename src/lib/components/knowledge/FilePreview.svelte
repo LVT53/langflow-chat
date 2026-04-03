@@ -5,18 +5,21 @@
 	let {
 		open,
 		artifactId,
+		previewUrl = null,
 		filename,
 		mimeType,
 		onClose,
 	}: {
 		open: boolean;
 		artifactId: string | null;
+		previewUrl?: string | null;
 		filename: string;
 		mimeType: string | null;
 		onClose: () => void;
 	} = $props();
 
 	let content = $state<Blob | null>(null);
+	let textContent = $state<string | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
@@ -64,9 +67,9 @@
 	}
 
 	$effect(() => {
-		if (open && artifactId) {
+		if (open && (artifactId || previewUrl)) {
 			fileType = determineFileType(mimeType, filename);
-			fetchFile(artifactId);
+			void fetchFile();
 		}
 	});
 
@@ -84,10 +87,11 @@
 		}
 	});
 
-	async function fetchFile(id: string) {
+	async function fetchFile() {
 		isLoading = true;
 		error = null;
 		content = null;
+		textContent = null;
 		htmlContent = null;
 		pdfDoc = null;
 		currentPage = 1;
@@ -95,7 +99,12 @@
 		zoom = 1.0;
 
 		try {
-			const response = await fetch(`/api/knowledge/${id}/preview`);
+			const resolvedPreviewUrl =
+				previewUrl ?? (artifactId ? `/api/knowledge/${artifactId}/preview` : null);
+			if (!resolvedPreviewUrl) {
+				throw new Error('Preview not available');
+			}
+			const response = await fetch(resolvedPreviewUrl);
 			
 			if (!response.ok) {
 				if (response.status === 404) {
@@ -107,7 +116,9 @@
 			const blob = await response.blob();
 			content = blob;
 
-			if (fileType === 'docx') {
+			if (fileType === 'text') {
+				textContent = await blob.text();
+			} else if (fileType === 'docx') {
 				await renderDocx(blob);
 			} else if (fileType === 'xlsx') {
 				await renderXlsx(blob);
@@ -307,7 +318,7 @@
 	}
 
 	function downloadFile() {
-		if (!content || !artifactId) return;
+		if (!content) return;
 		const url = URL.createObjectURL(content);
 		const a = document.createElement('a');
 		a.href = url;
@@ -391,7 +402,7 @@
 						<button
 							type="button"
 							class="btn-secondary text-sm mt-2"
-							onclick={() => artifactId && fetchFile(artifactId)}
+							onclick={() => void fetchFile()}
 						>
 							Retry
 						</button>
@@ -500,7 +511,7 @@
 				{:else if fileType === 'text'}
 					{#if content}
 						<div class="p-6">
-							<pre class="rounded-[1rem] border border-border bg-surface-page p-4 font-mono text-sm text-text-primary overflow-x-auto whitespace-pre-wrap">{content ? (async () => { const text = await content.text(); return text; })() : ''}</pre>
+							<pre class="rounded-[1rem] border border-border bg-surface-page p-4 font-mono text-sm text-text-primary overflow-x-auto whitespace-pre-wrap">{textContent ?? ''}</pre>
 						</div>
 					{/if}
 				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx'}
