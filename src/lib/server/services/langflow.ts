@@ -25,6 +25,8 @@ const DATE_BEFORE_SEARCH_GUARD = [
 const FILE_GENERATION_GUARD = [
 	'Generated file workflow:',
 	'- If the user asks you to create a downloadable file, document, report, spreadsheet, chart, or image and a file-generation tool is available, call it instead of only describing the result in text.',
+	'- If a dedicated file-generation tool such as `generate_file` is available, do not claim it is unavailable.',
+	'- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when a dedicated file-generation tool is available.',
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
 	'- Only tell the user a file is ready after the tool succeeds.',
 	'- Generated files appear in the chat UI after the response finishes.',
