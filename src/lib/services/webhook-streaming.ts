@@ -70,10 +70,15 @@ export function streamWebhook(sessionId: string, callbacks: StreamCallbacks): St
 	}
 
 	return {
-		abort() {
+		stop() {
 			aborted = true;
 			clearTimeout(setupTimer);
 			cleanup();
-		}
+		},
+		detach() {
+			aborted = true;
+			clearTimeout(setupTimer);
+			cleanup();
+		},
 	};
 }

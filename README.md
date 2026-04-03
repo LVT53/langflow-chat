@@ -225,6 +225,7 @@ Notes before the tables:
 - Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
 - While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
+- Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
 - The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.

@@ -24,7 +24,7 @@ function makeCallbacks(): StreamCallbacks {
 	};
 }
 
-const fakeHandle = { abort: vi.fn() };
+const fakeHandle = { stop: vi.fn(), detach: vi.fn() };
 
 describe('streamUnified', () => {
 	beforeEach(() => {
@@ -86,18 +86,18 @@ describe('streamUnified', () => {
 			expect(cb.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'langflow error' }));
 		});
 
-		it('abort() calls the handle returned by streamChat', () => {
-			const abortFn = vi.fn();
-			mockStreamChat.mockReturnValue({ abort: abortFn });
+		it('stop() calls the handle returned by streamChat', () => {
+			const stopFn = vi.fn();
+			mockStreamChat.mockReturnValue({ stop: stopFn, detach: vi.fn() });
 
 			const cb = makeCallbacks();
 			const handle = streamUnified(
 				{ source: 'langflow', message: 'q', conversationId: 'c' },
 				cb
 			);
-			handle.abort();
+			handle.stop();
 
-			expect(abortFn).toHaveBeenCalledOnce();
+			expect(stopFn).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -147,15 +147,15 @@ describe('streamUnified', () => {
 			expect(cb.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'webhook error' }));
 		});
 
-		it('abort() calls the handle returned by streamWebhook', () => {
-			const abortFn = vi.fn();
-			mockStreamWebhook.mockReturnValue({ abort: abortFn });
+		it('stop() calls the handle returned by streamWebhook', () => {
+			const stopFn = vi.fn();
+			mockStreamWebhook.mockReturnValue({ stop: stopFn, detach: vi.fn() });
 
 			const cb = makeCallbacks();
 			const handle = streamUnified({ source: 'webhook', sessionId: 'sess-1' }, cb);
-			handle.abort();
+			handle.stop();
 
-			expect(abortFn).toHaveBeenCalledOnce();
+			expect(stopFn).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -184,7 +184,7 @@ describe('streamUnified', () => {
 			expect(cbWebhook.onEnd).toHaveBeenCalledWith('chunk');
 		});
 
-		it('both sources return a handle with abort()', () => {
+		it('both sources return stop() and detach() handles', () => {
 			const langflowHandle = streamUnified(
 				{ source: 'langflow', message: 'q', conversationId: 'c' },
 				makeCallbacks()
@@ -194,8 +194,10 @@ describe('streamUnified', () => {
 				makeCallbacks()
 			);
 
-			expect(typeof langflowHandle.abort).toBe('function');
-			expect(typeof webhookHandle.abort).toBe('function');
+			expect(typeof langflowHandle.stop).toBe('function');
+			expect(typeof langflowHandle.detach).toBe('function');
+			expect(typeof webhookHandle.stop).toBe('function');
+			expect(typeof webhookHandle.detach).toBe('function');
 		});
 	});
 });

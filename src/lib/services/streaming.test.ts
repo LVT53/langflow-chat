@@ -392,7 +392,7 @@ describe('streamChat', () => {
 		expect(cb.onEnd).toHaveBeenCalledWith('partial');
 	});
 
-	it('abort() stops the stream and does not call onError', async () => {
+	it('stop() requests a server stop and does not call onError', async () => {
 		const mockFetch = vi.mocked(fetch);
 
 		let abortReject!: (err: Error) => void;
@@ -415,7 +415,7 @@ describe('streamChat', () => {
 		const handle = streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
 
 		await new Promise((r) => setTimeout(r, 10));
-		handle.abort();
+		handle.stop();
 
 		abortReject(new DOMException('The user aborted a request.', 'AbortError'));
 
@@ -438,5 +438,30 @@ describe('streamChat', () => {
 		expect(JSON.parse(String(stopRequest?.body)).streamId).toBe(
 			JSON.parse(String(streamRequest?.body)).streamId
 		);
+	});
+
+	it('detach() aborts the local stream without requesting a server stop or emitting stop metadata', async () => {
+		const mockFetch = vi.mocked(fetch);
+
+		let abortReject!: (err: Error) => void;
+		mockFetch.mockImplementation(() =>
+			new Promise<Response>((_resolve, reject) => {
+				abortReject = reject;
+			})
+		);
+
+		const cb = makeCallbacks();
+		const handle = streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks);
+
+		await new Promise((r) => setTimeout(r, 10));
+		handle.detach();
+
+		abortReject(new DOMException('The user aborted a request.', 'AbortError'));
+
+		await new Promise((r) => setTimeout(r, 30));
+
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+		expect(cb.onEnd).not.toHaveBeenCalled();
+		expect(cb.onError).not.toHaveBeenCalled();
 	});
 });

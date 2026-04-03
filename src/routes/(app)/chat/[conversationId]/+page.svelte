@@ -173,7 +173,7 @@
 		}
 		evidencePollControllers.clear();
 		if (activeStream) {
-			activeStream.abort();
+			activeStream.detach();
 			activeStream = null;
 		}
 		messages.set(data.messages ?? []);
@@ -234,7 +234,7 @@
 		evidencePollControllers.clear();
 
 		if (activeStream) {
-			activeStream.abort();
+			activeStream.detach();
 			activeStream = null;
 		}
 
@@ -695,7 +695,7 @@
 
 	function handleStop() {
 		if (activeStream) {
-			activeStream.abort();
+			activeStream.stop();
 			// The stream will trigger onEnd via the abort controller
 		}
 	}

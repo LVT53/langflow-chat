@@ -41,7 +41,8 @@ export interface StreamCallbacks {
 export type ModelId = 'model1' | 'model2';
 
 export interface StreamHandle {
-	abort: () => void;
+	stop: () => void;
+	detach: () => void;
 }
 
 function toStreamError(message: string, code?: string): Error {
@@ -85,7 +86,8 @@ export function streamChat(
 	} = options ?? {};
 	const controller = new AbortController();
 	const streamId = crypto.randomUUID();
-	let aborted = false;
+	let stopRequested = false;
+	let detached = false;
 	let fullText = '';
 	const inlineThinkingState = createInlineThinkingState();
 
@@ -312,7 +314,10 @@ export function streamChat(
 				reader.releaseLock();
 			}
 		} catch (err) {
-			if (aborted) {
+			if (detached) {
+				return;
+			}
+			if (stopRequested) {
 				callbacks.onEnd(fullText, { wasStopped: true });
 			} else if (err instanceof Error) {
 				callbacks.onError(err);
@@ -323,13 +328,20 @@ export function streamChat(
 	})();
 
 	return {
-		abort() {
-			if (aborted) {
+		stop() {
+			if (stopRequested || detached) {
 				return;
 			}
-			aborted = true;
+			stopRequested = true;
 			void requestServerSideStreamStop(streamId);
 			controller.abort();
-		}
+		},
+		detach() {
+			if (stopRequested || detached) {
+				return;
+			}
+			detached = true;
+			controller.abort();
+		},
 	};
 }
