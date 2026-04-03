@@ -41,13 +41,14 @@ describe('GeneratedFile', () => {
 	});
 
 	it('renders the file card with download and save actions', () => {
-		const { getByText, getByLabelText } = renderGeneratedFile();
+		const { getByText, getByRole, getByLabelText, queryByText } = renderGeneratedFile();
 
 		expect(getByText('report.pdf')).toBeInTheDocument();
 		expect(getByText('1.0 MB')).toBeInTheDocument();
-		expect(getByLabelText('Preview report.pdf')).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Preview report.pdf' })).toBeInTheDocument();
 		expect(getByLabelText('Download report.pdf')).toBeInTheDocument();
 		expect(getByLabelText('Save report.pdf to vault')).toBeInTheDocument();
+		expect(queryByText('Preview')).toBeNull();
 	});
 
 	it('shows a failed state with the provided error', () => {
@@ -106,7 +107,7 @@ describe('GeneratedFile', () => {
 			downloadUrl: '/api/chat/files/file-444/download',
 		});
 
-		await fireEvent.click(screen.getByLabelText('Preview preview.txt'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Preview preview.txt' }));
 
 		await waitFor(() => {
 			expect(screen.getByText('File Preview')).toBeInTheDocument();

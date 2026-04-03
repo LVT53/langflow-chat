@@ -49,16 +49,38 @@
 	}
 
 	async function toggle() {
+		const willExpand = !expanded;
+		expanded = willExpand;
 		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
-		const blockTop = container?.getBoundingClientRect().top ?? 0;
-		expanded = !expanded;
-		if (scrollEl) {
-			await tick();
-			requestAnimationFrame(() => {
-				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
-				scrollEl.scrollTop += newBlockTop - blockTop;
-			});
-		}
+		if (!scrollEl || !container) return;
+
+		await tick();
+		requestAnimationFrame(() => {
+			if (!container) return;
+
+			const shellRect = container.getBoundingClientRect();
+			const scrollRect = scrollEl.getBoundingClientRect();
+			const topPadding = 20;
+			const bottomPadding = 168;
+
+			if (!willExpand) {
+				const topOverflow = scrollRect.top + topPadding - shellRect.top;
+				if (topOverflow > 0) {
+					scrollEl.scrollTop -= topOverflow;
+				}
+				return;
+			}
+
+			const bottomOverflow = shellRect.bottom - (scrollRect.bottom - bottomPadding);
+			if (bottomOverflow > 0) {
+				scrollEl.scrollTop += bottomOverflow;
+			}
+
+			const topOverflow = scrollRect.top + topPadding - shellRect.top;
+			if (topOverflow > 0) {
+				scrollEl.scrollTop -= topOverflow;
+			}
+		});
 	}
 </script>
 

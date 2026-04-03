@@ -147,7 +147,6 @@ describe('MessageArea', () => {
 		});
 
 		await waitFor(() => {
-			expect(getByText('Generated Files')).toBeInTheDocument();
 			expect(getByText('report.pdf')).toBeInTheDocument();
 			expect(scrollContainer.scrollTop).toBe(960);
 		});
@@ -182,10 +181,63 @@ describe('MessageArea', () => {
 			generatedFiles: [pendingGeneratedFile],
 		});
 
-		expect(getByText('Generated Files')).toBeInTheDocument();
 		expect(getByText('draft-report.pdf')).toBeInTheDocument();
 		expect(getByText('Generating...')).toBeInTheDocument();
 		expect(getByTestId('generating-progress')).toBeInTheDocument();
 		expect(queryByLabelText('Download draft-report.pdf')).toBeNull();
+	});
+
+	it('renders generated files above the evidence toggle inside the latest assistant response', () => {
+		const messageTimestamp = Date.now();
+		const evidenceItem = {
+			id: 'evidence-1',
+			title: 'Vault note',
+			sourceType: 'document' as const,
+			status: 'selected' as const,
+		};
+		const generatedFile: ChatGeneratedFileListItem = {
+			id: 'file-inline-1',
+			conversationId: 'conv-1',
+			filename: 'summary.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 128,
+			createdAt: messageTimestamp,
+			status: 'success',
+		};
+
+		const { getByText, getByRole } = render(MessageArea, {
+			messages: [
+				{
+					id: 'assistant-inline-1',
+					renderKey: 'assistant-inline-1',
+					role: 'assistant',
+					content: 'Here is the finished file.',
+					timestamp: messageTimestamp,
+					isStreaming: false,
+					isThinkingStreaming: false,
+					evidenceSummary: {
+						structuredWebSearch: false,
+						groups: [
+							{
+								sourceType: 'document',
+								label: 'Documents',
+								reranked: false,
+								items: [evidenceItem],
+							},
+						],
+					},
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [generatedFile],
+		});
+
+		const generatedFileName = getByText('summary.txt');
+		const evidenceToggle = getByRole('button', { name: /Evidence/i });
+		expect(
+			generatedFileName.compareDocumentPosition(evidenceToggle) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 	});
 });

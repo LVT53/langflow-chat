@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
-	import type { ChatMessage } from '$lib/types';
+	import type { ChatGeneratedFileListItem, ChatMessage } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
 	import AttachmentContentModal from './AttachmentContentModal.svelte';
+	import GeneratedFile from './GeneratedFile.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
 
@@ -15,6 +16,8 @@
 		isLast = false,
 		pinnedArtifactIds = [],
 		excludedArtifactIds = [],
+		generatedFiles = [],
+		conversationId = null,
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
@@ -23,6 +26,8 @@
 		isLast?: boolean;
 		pinnedArtifactIds?: string[];
 		excludedArtifactIds?: string[];
+		generatedFiles?: ChatGeneratedFileListItem[];
+		conversationId?: string | null;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
@@ -252,6 +257,23 @@
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
+			{#if generatedFiles.length > 0 && conversationId}
+				<div class="generated-files-inline" data-testid="message-generated-files">
+					{#each generatedFiles as file (file.id)}
+						<GeneratedFile
+							fileId={file.id}
+							{conversationId}
+							filename={file.filename}
+							size={file.sizeBytes}
+							mimeType={file.mimeType ?? 'application/octet-stream'}
+							downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
+							status={file.status}
+							error={file.error}
+							savedVaultName={file.savedVaultName ?? null}
+						/>
+					{/each}
+				</div>
+			{/if}
 			{#if message.evidenceSummary && message.evidenceSummary.groups.length > 0}
 				<MessageEvidenceDetails
 					evidenceSummary={message.evidenceSummary}
@@ -502,7 +524,14 @@
 		animation: fadeIn var(--duration-micro) var(--ease-out) forwards;
 	}
 	.copy-action-row {
-		margin-top: calc(var(--space-sm) * -1.5);
+		margin-top: var(--space-sm);
+	}
+
+	.generated-files-inline {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		margin-top: var(--space-md);
 	}
 
 	.evidence-pending {

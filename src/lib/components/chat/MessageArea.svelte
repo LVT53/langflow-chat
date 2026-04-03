@@ -30,6 +30,7 @@
 	let lastGeneratedFileCount = 0;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
+	let lastAssistantMessageIndex = $derived(messages.findLastIndex((message) => message.role === 'assistant'));
 
 	$effect(() => {
 		if (conversationId && conversationId !== lastConversationId) {
@@ -82,7 +83,7 @@
 			// New message added: jump directly to the latest content.
 			void alignToBottomAfterRender();
 		} else if (hasNewGeneratedFiles && shouldAutoScroll) {
-			// Generated files render after the message list, so keep them visible when the user stayed near the bottom.
+			// Generated files render inside the latest assistant message; keep that expanded area visible.
 			void alignToBottomAfterRender();
 		} else if (shouldAutoScroll && isThinkingActive) {
 			// Only follow during thinking phase; stop once content streaming begins.
@@ -140,12 +141,14 @@
 					isLast={i === messages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
+					generatedFiles={i === lastAssistantMessageIndex ? generatedFiles : []}
+					{conversationId}
 					{onRegenerate}
 					{onEdit}
 					{onSteer}
 				/>
 			{/each}
-			{#if generatedFiles.length > 0 && conversationId}
+			{#if generatedFiles.length > 0 && conversationId && lastAssistantMessageIndex === -1}
 				<div class="generated-files-section">
 					<div class="generated-files-header">Generated Files</div>
 					<div class="generated-files-list">

@@ -36,6 +36,7 @@
 	let saveError = $state<string | null>(null);
 	let currentSavedVaultName = $state<string | null>(null);
 	let availableVaults = $state<Vault[]>([]);
+	let canPreview = $derived(status === 'success');
 
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 B';
@@ -101,6 +102,7 @@
 	}
 
 	function handlePreviewOpen() {
+		if (!canPreview) return;
 		showPreview = true;
 	}
 
@@ -132,6 +134,10 @@
 		} finally {
 			isSaving = false;
 		}
+	}
+
+	function stopActionPropagation(event: MouseEvent) {
+		event.stopPropagation();
 	}
 
 </script>
@@ -321,7 +327,21 @@
 	onClose={handlePreviewClose}
 />
 
-<div class="generated-file-card" class:failed={status === 'failed'} class:generating={status === 'generating'}>
+<div
+	class="generated-file-card"
+	class:clickable={canPreview}
+	class:failed={status === 'failed'}
+	class:generating={status === 'generating'}
+	data-testid="generated-file-card"
+>
+	{#if canPreview}
+		<button
+			type="button"
+			class="preview-trigger"
+			aria-label={`Preview ${filename}`}
+			onclick={handlePreviewOpen}
+		></button>
+	{/if}
 	<div class="file-main">
 		<div class="file-icon-wrapper" class:generating={status === 'generating'}>
 			{@render getFileIcon()()}
@@ -367,35 +387,14 @@
 
 	{#if status === 'success'}
 		<div class="file-actions">
-			<button
-				type="button"
-				class="btn-secondary action-button"
-				onclick={handlePreviewOpen}
-				aria-label={`Preview ${filename}`}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-					<circle cx="12" cy="12" r="3" />
-				</svg>
-				<span>Preview</span>
-			</button>
-
 			<a
 				href={downloadUrl}
 				class="btn-secondary action-button"
+				class:action-button--download={true}
 				download={filename}
 				aria-label={`Download ${filename}`}
+				title={`Download ${filename}`}
+				onclick={stopActionPropagation}
 			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -413,20 +412,24 @@
 					<polyline points="7 10 12 15 17 10" />
 					<line x1="12" x2="12" y1="15" y2="3" />
 				</svg>
-				<span>Download</span>
 			</a>
 
 			<button
 				type="button"
 				class="btn-secondary action-button"
+				class:action-button--vault={true}
 				class:saved={currentSavedVaultName}
-				onclick={handleSaveToVault}
+				onclick={(event) => {
+					stopActionPropagation(event);
+					void handleSaveToVault();
+				}}
 				disabled={isSaving || isLoadingVaults || !!currentSavedVaultName}
 				aria-label={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
+				title={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
 			>
 				{#if isSaving || isLoadingVaults}
+					<span class="sr-only">{isSaving ? 'Saving...' : 'Loading vaults...'}</span>
 					{@render SpinnerIcon()}
-					<span>{isSaving ? 'Saving...' : 'Loading vaults...'}</span>
 				{:else}
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -442,7 +445,7 @@
 					>
 						<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />
 					</svg>
-					<span>{currentSavedVaultName ? 'Saved' : 'Save to Vault'}</span>
+					<span class="sr-only">{currentSavedVaultName ? 'Saved' : 'Save to Vault'}</span>
 				{/if}
 			</button>
 		</div>
@@ -464,6 +467,27 @@
 		background: color-mix(in srgb, var(--surface-elevated) 52%, transparent 48%);
 		max-width: 100%;
 		min-height: 3.5rem;
+	}
+
+	.generated-file-card.clickable {
+		cursor: pointer;
+		transition:
+			border-color var(--duration-standard) var(--ease-out),
+			background var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out);
+	}
+
+	.generated-file-card.clickable:hover {
+		border-color: color-mix(in srgb, var(--accent) 28%, var(--border-subtle) 72%);
+		background: color-mix(in srgb, var(--surface-elevated) 70%, var(--accent) 8%);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.generated-file-card.clickable:focus-visible {
+		outline: none;
+		box-shadow:
+			0 0 0 2px color-mix(in srgb, var(--focus-ring) 82%, transparent 18%),
+			var(--shadow-sm);
 	}
 
 	.generated-file-card.generating {
@@ -496,6 +520,9 @@
 		gap: var(--space-sm);
 		min-width: 0;
 		flex: 1 1 auto;
+		position: relative;
+		z-index: 1;
+		pointer-events: none;
 	}
 
 	.file-icon-wrapper {
@@ -607,27 +634,83 @@
 		justify-content: flex-end;
 		gap: 0.4rem;
 		flex: 0 0 auto;
+		position: relative;
+		z-index: 1;
+	}
+
+	.preview-trigger {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		border-radius: inherit;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.preview-trigger:focus-visible {
+		outline: none;
+		box-shadow:
+			0 0 0 2px color-mix(in srgb, var(--focus-ring) 82%, transparent 18%),
+			var(--shadow-sm);
 	}
 
 	.action-button {
 		display: inline-flex;
 		align-items: center;
-		gap: var(--space-xs);
-		font-size: 0.77rem;
-		padding: 0.2rem 0.55rem;
-		min-height: 28px;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border-radius: 9999px;
 		text-decoration: none;
-		white-space: nowrap;
+		color: var(--icon-secondary);
+		background: color-mix(in srgb, var(--surface-page) 64%, var(--surface-elevated) 36%);
+		border-color: color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
 	}
 
 	.action-button.saved {
 		color: var(--success, #22c55e);
-		cursor: default;
+		background: color-mix(in srgb, var(--success, #22c55e) 10%, var(--surface-page) 90%);
 	}
 
 	.action-button:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.action-button--download {
+		color: color-mix(in srgb, var(--accent) 64%, var(--text-primary) 36%);
+		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
+	}
+
+	.action-button--vault {
+		color: color-mix(in srgb, var(--text-primary) 82%, var(--accent) 18%);
+		background: color-mix(in srgb, var(--surface-page) 56%, var(--accent) 8%);
+	}
+
+	.action-button:not(:disabled):hover {
+		background: color-mix(in srgb, var(--surface-page) 42%, var(--surface-elevated) 58%);
+		border-color: color-mix(in srgb, var(--border-default) 78%, transparent 22%);
+	}
+
+	.action-button--download:not(:disabled):hover {
+		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
+	}
+
+	.action-button--vault:not(:disabled):hover {
+		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.spinner {
