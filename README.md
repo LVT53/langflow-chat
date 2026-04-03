@@ -99,6 +99,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Server hooks validate the session, attach the current user, load runtime config overrides, and start optional maintenance schedulers.
 - The app layout preloads conversations, projects, model availability, and user preferences before the main UI renders.
 - The landing page prepares a draft conversation, stores any pending first message, and navigates into the chat page once a conversation exists.
+- Landing-page draft reuse is guarded: only empty default-title prepared conversations are reused from session storage, which prevents new sends from silently reusing an older real chat.
 - The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
 - Chat-generated files are created through the sandboxed file-generator path only when the executed code writes the final file to `/output`; successful files then appear back in the chat UI for download or manual vault saving. On a fresh host, the first successful run may also pull the pinned sandbox image before execution starts.
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
@@ -225,6 +226,7 @@ Notes before the tables:
 - Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
 - While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
+- Langflow request/session correlation now logs under `[LANGFLOW]`, and chat-stream tool usage logs under `[CHAT_STREAM]`, so missing generated files can be traced by conversation id without needing live Langflow container logs.
 - Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.

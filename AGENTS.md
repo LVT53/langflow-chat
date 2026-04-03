@@ -69,6 +69,7 @@ Do not:
 - [`src/routes/(app)/+page.svelte`](./src/routes/(app)/+page.svelte)
   - Landing page.
   - Prepares a draft conversation and stores the first pending message before navigation.
+  - Must validate any stored landing draft conversation before reuse; only empty default-title prepared conversations are eligible for reuse from session state.
 - [`src/routes/(app)/chat/[conversationId]/+page.ts`](./src/routes/(app)/chat/[conversationId]/+page.ts)
   - Lightweight page bootstrap for the chat detail route.
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
@@ -90,6 +91,7 @@ Do not:
 - move chat orchestration into shared visual components
 - make `MessageInput.svelte` own cross-page navigation or conversation bootstrap decisions
 - make `MessageInput.svelte` own queued-turn orchestration; it may emit `onQueue`, but the chat page decides auto-send and restore behavior
+- let `MessageInput.svelte` retain a stale internal `conversationId` after the parent clears the prop; landing-page sends and uploads must fall back to the parent-owned prepared-conversation flow instead of silently targeting an old conversation
 - turn page files into long-lived business-logic modules when a store/service/helper boundary already exists
 
 ### Chat Flow
@@ -146,6 +148,7 @@ Do:
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
 - `/api/chat/files/generate` may authenticate with either the signed-in session or the optional `ALFYAI_API_KEY` bearer secret used by the Langflow file-generator tool; keep that bearer path conversation-scoped and internal
 - keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, generated files show up in chat, and vault saving is still a separate UI action unless a dedicated tool is added
+- keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
 - save-to-vault endpoint deletes source file after successful copy
 
 Do not:

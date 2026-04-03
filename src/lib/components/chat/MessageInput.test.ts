@@ -32,6 +32,31 @@ describe('MessageInput', () => {
 		expect(button.disabled).toBe(false);
 	});
 
+	it('clears stale conversation ids when the parent resets the prop to null', async () => {
+		const sendSpy = vi.fn();
+		const { getByPlaceholderText, getByLabelText, rerender } = render(MessageInput, {
+			conversationId: 'conv-stale',
+			onSend: sendSpy,
+		});
+		const input = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		const button = getByLabelText('Send message') as HTMLButtonElement;
+
+		await rerender({
+			conversationId: null,
+			onSend: sendSpy,
+		});
+
+		await fireEvent.input(input, { target: { value: 'Fresh message' } });
+		await fireEvent.click(button);
+
+		expect(sendSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: 'Fresh message',
+				conversationId: null,
+			})
+		);
+	});
+
 	it('dispatches send event and clears input on enter key', async () => {
 		const mockSend = vi.fn();
 		const { getByPlaceholderText } = render(MessageInputWrapper, { onSend: mockSend });

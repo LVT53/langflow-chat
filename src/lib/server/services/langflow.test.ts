@@ -252,7 +252,9 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
       expect(body.tweaks.system_prompt).toContain('Generated file workflow');
+      expect(body.tweaks.system_prompt).toContain('call it instead of only describing the result in text');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
+      expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');
       expect(body.tweaks.system_prompt).toContain('Save to Vault');
 
       expect(result).toMatchObject({

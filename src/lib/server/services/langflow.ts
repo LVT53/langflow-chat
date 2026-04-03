@@ -24,7 +24,9 @@ const DATE_BEFORE_SEARCH_GUARD = [
 
 const FILE_GENERATION_GUARD = [
 	'Generated file workflow:',
+	'- If the user asks you to create a downloadable file, document, report, spreadsheet, chart, or image and a file-generation tool is available, call it instead of only describing the result in text.',
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
+	'- Only tell the user a file is ready after the tool succeeds.',
 	'- Generated files appear in the chat UI after the response finishes.',
 	'- Do not claim you saved a generated file to a vault unless a dedicated save tool actually exists. Otherwise tell the user to use the chat UI `Save to Vault` action.',
 ].join('\n');
@@ -208,6 +210,17 @@ export async function sendMessage(
       tweaks: buildLangflowTweaks(modelConfig, systemPrompt)
     };
 
+    console.info('[LANGFLOW] Starting request', {
+      url,
+      flowId,
+      sessionId,
+      userId: userId ?? null,
+      modelId: modelId ?? 'model1',
+      modelName,
+      attachmentCount: options?.attachmentIds?.length ?? 0,
+      inputLength: inputValue.length,
+    });
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -346,6 +359,17 @@ export async function sendMessageStream(
       session_id: sessionId,
       tweaks: buildLangflowTweaks(modelConfig, systemPrompt)
     };
+
+    console.info('[LANGFLOW] Starting streaming request', {
+      url,
+      flowId,
+      sessionId,
+      userId: options?.userId ?? null,
+      modelId: modelId ?? 'model1',
+      modelName,
+      attachmentCount: options?.attachmentIds?.length ?? 0,
+      inputLength: inputValue.length,
+    });
 
     const response = await fetch(url, {
       method: 'POST',

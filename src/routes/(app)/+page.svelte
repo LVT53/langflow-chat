@@ -14,6 +14,7 @@
 	import { currentConversationId } from '$lib/stores/ui';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
+	import { canReuseLandingPreparedConversation } from './landing-page-helpers';
 	import { onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
@@ -45,6 +46,7 @@
 	let animateIn = $state(false);
 	let preparedConversationId = $state<string | null>(null);
 	let preparedConversationPromise: Promise<string> | null = null;
+	let preparedConversationValidationPromise: Promise<void> | null = null;
 	let conversationDraft = $state<ConversationDraft | null>(null);
 
 	const INTERNAL_MIME = 'application/x-alfyai-conversation';
@@ -114,11 +116,17 @@
 		const storedConversationId = getLandingDraftConversationId();
 		if (storedConversationId) {
 			preparedConversationId = storedConversationId;
-			void loadPreparedDraft(storedConversationId);
+			preparedConversationValidationPromise = restorePreparedConversation(storedConversationId)
+				.finally(() => {
+					preparedConversationValidationPromise = null;
+				});
 		}
 	});
 
 	async function ensurePreparedConversation(): Promise<string> {
+		if (preparedConversationValidationPromise) {
+			await preparedConversationValidationPromise;
+		}
 		if (preparedConversationId) {
 			return preparedConversationId;
 		}
@@ -161,12 +169,19 @@
 		}
 	}
 
-	async function loadPreparedDraft(conversationId: string) {
+	async function restorePreparedConversation(conversationId: string) {
 		try {
 			const payload = await fetchConversationDetail(conversationId);
+			if (!canReuseLandingPreparedConversation(payload)) {
+				preparedConversationId = null;
+				conversationDraft = null;
+				setLandingDraftConversationId(null);
+				return;
+			}
 			conversationDraft = payload.draft ?? null;
 		} catch {
 			preparedConversationId = null;
+			conversationDraft = null;
 			setLandingDraftConversationId(null);
 		}
 	}

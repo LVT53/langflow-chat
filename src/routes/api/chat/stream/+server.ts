@@ -292,6 +292,21 @@ export const POST: RequestHandler = async (event) => {
         const genTimeMs = Date.now() - requestStartTime;
         const analyticsModel = modelId ?? "model1";
         const persistUserMessage = !skipPersistUserMessage;
+        const toolCallSummary = chunkRuntime.toolCallRecords.map((record) => ({
+          name: record.name,
+          status: record.status,
+        }));
+
+        console.info("[CHAT_STREAM] Tool-call summary", {
+          conversationId,
+          streamId,
+          wasStopped,
+          toolCallCount: toolCallSummary.length,
+          generateFileCallCount: toolCallSummary.filter(
+            (record) => record.name === "generate_file",
+          ).length,
+          toolCalls: toolCallSummary,
+        });
 
         const userMsgPromise = persistUserMessage
           ? createMessage(conversationId, "user", normalizedMessage).catch(

@@ -125,8 +125,9 @@
 	);
 
 	$effect(() => {
-		if (conversationId) {
-			resolvedConversationId = conversationId;
+		resolvedConversationId = conversationId;
+		if (!conversationId) {
+			ensureDraftConversationPromise = null;
 		}
 	});
 
