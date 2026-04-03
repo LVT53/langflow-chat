@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { ChatGeneratedFile, ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
+	import type { ChatGeneratedFileListItem, ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
 	import GeneratedFile from './GeneratedFile.svelte';
 
@@ -18,7 +18,7 @@
 		conversationId?: string | null;
 		isThinkingActive?: boolean;
 		contextDebug?: ContextDebugState | null;
-		generatedFiles?: ChatGeneratedFile[];
+		generatedFiles?: ChatGeneratedFileListItem[];
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
@@ -154,8 +154,9 @@
 								filename={file.filename}
 								size={file.sizeBytes}
 								mimeType={file.mimeType ?? 'application/octet-stream'}
-								downloadUrl={`/api/chat/files/${file.id}/download`}
-								status="success"
+								downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
+								status={file.status}
+								error={file.error}
 							/>
 						{/each}
 					</div>

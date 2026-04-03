@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
-import type { Container } from 'dockerode';
+import type { Container, Exec, ExecInspectInfo } from 'dockerode';
+import { PassThrough } from 'stream';
 
 export const SANDBOX_TIMEOUT_MS = 60000;
 export const SANDBOX_MEMORY_MB = 1024;
@@ -8,8 +9,10 @@ export const SANDBOX_MAX_OUTPUT_FILES = 20;
 export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;
 
 const SANDBOX_IMAGE = 'python:3.11-slim';
+const SANDBOX_EXEC_POLL_MS = 25;
 let sandboxImageReady = false;
 let sandboxImagePullPromise: Promise<void> | null = null;
+let sandboxWarmupStarted = false;
 
 export interface Sandbox {
 	container: Container;
@@ -93,6 +96,63 @@ async function ensureSandboxImage(): Promise<void> {
 export function resetSandboxImageStateForTests(): void {
 	sandboxImageReady = false;
 	sandboxImagePullPromise = null;
+	sandboxWarmupStarted = false;
+}
+
+export function prewarmSandboxImageInBackground(): void {
+	if (sandboxImageReady || sandboxImagePullPromise || sandboxWarmupStarted) {
+		return;
+	}
+
+	sandboxWarmupStarted = true;
+	console.info('[FILE_GENERATE] Scheduling sandbox image warmup', {
+		image: SANDBOX_IMAGE,
+	});
+
+	void ensureSandboxImage()
+		.then(() => {
+			console.info('[FILE_GENERATE] Sandbox image warmup ready', {
+				image: SANDBOX_IMAGE,
+			});
+		})
+		.catch((error) => {
+			sandboxWarmupStarted = false;
+			console.warn('[FILE_GENERATE] Sandbox image warmup failed', {
+				image: SANDBOX_IMAGE,
+				error,
+			});
+		});
+}
+
+async function waitForExecToFinish(exec: Exec): Promise<ExecInspectInfo> {
+	while (true) {
+		const inspect = await exec.inspect();
+		if (inspect.Running === false) {
+			return inspect;
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, SANDBOX_EXEC_POLL_MS));
+	}
+}
+
+function waitForExecStream(stream: NodeJS.ReadableStream): Promise<void> {
+	return new Promise((resolve, reject) => {
+		let settled = false;
+
+		const finish = (error?: Error) => {
+			if (settled) return;
+			settled = true;
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve();
+		};
+
+		stream.once('end', () => finish());
+		stream.once('close', () => finish());
+		stream.once('error', (error: Error) => finish(error));
+	});
 }
 
 export async function createSandbox(): Promise<Sandbox> {
@@ -151,36 +211,35 @@ export async function createSandbox(): Promise<Sandbox> {
 
 		let stdout = '';
 		let stderr = '';
-
-		return new Promise((resolve, reject) => {
-			stream.on('data', (chunk: Buffer) => {
-				const header = chunk[0];
-				const payload = chunk.slice(8).toString('utf-8');
-				
-				if (header === 1) {
-					stdout += payload;
-				} else if (header === 2) {
-					stderr += payload;
-				}
-			});
-
-			stream.on('end', async () => {
-				try {
-					const inspect = await exec.inspect();
-					resolve({
-						stdout: stdout.trim(),
-						stderr: stderr.trim(),
-						exitCode: inspect.ExitCode ?? -1,
-					});
-				} catch (error) {
-					reject(error);
-				}
-			});
-
-			stream.on('error', (error: Error) => {
-				reject(error);
-			});
+		const stdoutStream = new PassThrough();
+		const stderrStream = new PassThrough();
+		stdoutStream.on('data', (chunk: Buffer | string) => {
+			stdout += chunk.toString('utf-8');
 		});
+		stderrStream.on('data', (chunk: Buffer | string) => {
+			stderr += chunk.toString('utf-8');
+		});
+
+		const modem = docker.modem as {
+			demuxStream: (
+				stream: NodeJS.ReadableStream,
+				stdout: NodeJS.WritableStream,
+				stderr: NodeJS.WritableStream
+			) => void;
+		};
+		modem.demuxStream(stream, stdoutStream, stderrStream);
+
+		try {
+			const [inspect] = await Promise.all([waitForExecToFinish(exec), waitForExecStream(stream)]);
+			return {
+				stdout: stdout.trim(),
+				stderr: stderr.trim(),
+				exitCode: inspect.ExitCode ?? -1,
+			};
+		} finally {
+			stdoutStream.end();
+			stderrStream.end();
+		}
 	}
 
 	async function destroy(): Promise<void> {
@@ -196,7 +255,7 @@ export async function createSandbox(): Promise<Sandbox> {
 
 export async function destroySandbox(container: Container): Promise<void> {
 	try {
-		await container.stop({ t: 10 });
+		await container.kill({ signal: 'SIGKILL' });
 	} catch {
 		// Container may already be stopped
 	}

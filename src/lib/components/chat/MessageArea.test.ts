@@ -1,7 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import MessageArea from './MessageArea.svelte';
-import type { ChatGeneratedFile, ChatMessage } from '$lib/types';
+import type { ChatGeneratedFileListItem, ChatMessage } from '$lib/types';
 
 Object.defineProperty(window, 'matchMedia', {
 	writable: true,
@@ -88,13 +88,14 @@ describe('MessageArea', () => {
 			isStreaming: false,
 			isThinkingStreaming: false,
 		};
-		const generatedFile: ChatGeneratedFile = {
+		const generatedFile: ChatGeneratedFileListItem = {
 			id: 'file-1',
 			conversationId: 'conv-1',
 			filename: 'report.pdf',
 			mimeType: 'application/pdf',
 			sizeBytes: 2048,
 			createdAt: Date.now(),
+			status: 'success',
 		};
 
 		const { container, getByText, rerender } = render(MessageArea, {
@@ -135,5 +136,41 @@ describe('MessageArea', () => {
 			expect(getByText('report.pdf')).toBeInTheDocument();
 			expect(scrollContainer.scrollTop).toBe(960);
 		});
+	});
+
+	it('renders a generating file card with the pending shimmer state', async () => {
+		const pendingGeneratedFile: ChatGeneratedFileListItem = {
+			id: 'pending-file-1',
+			conversationId: 'conv-1',
+			filename: 'draft-report.pdf',
+			mimeType: 'application/octet-stream',
+			sizeBytes: 0,
+			createdAt: Date.now(),
+			status: 'generating',
+		};
+
+		const { getByText, getByTestId, queryByLabelText } = render(MessageArea, {
+			messages: [
+				{
+					id: 'assistant-1',
+					renderKey: 'assistant-1',
+					role: 'assistant',
+					content: 'I am generating the file now.',
+					timestamp: Date.now(),
+					isStreaming: true,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [pendingGeneratedFile],
+		});
+
+		expect(getByText('Generated Files')).toBeInTheDocument();
+		expect(getByText('draft-report.pdf')).toBeInTheDocument();
+		expect(getByText('Generating...')).toBeInTheDocument();
+		expect(getByTestId('generating-progress')).toBeInTheDocument();
+		expect(queryByLabelText('Download draft-report.pdf')).toBeNull();
 	});
 });

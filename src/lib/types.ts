@@ -86,6 +86,17 @@ export interface ChatGeneratedFile {
   createdAt: number;
 }
 
+export interface ChatGeneratedFileListItem {
+  id: string;
+  conversationId: string;
+  filename: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  createdAt: number;
+  status: 'generating' | 'success' | 'failed';
+  error?: string;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   messages: ChatMessage[];

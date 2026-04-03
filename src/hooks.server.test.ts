@@ -4,6 +4,7 @@ import { redirect } from '@sveltejs/kit';
 const mockValidateSession = vi.fn();
 const mockRefreshConfig = vi.fn(async () => undefined);
 const mockEnsureMemoryMaintenanceScheduler = vi.fn();
+const mockPrewarmSandboxImageInBackground = vi.fn();
 
 vi.mock('$lib/server/services/auth', () => ({
 	validateSession: mockValidateSession,
@@ -19,6 +20,10 @@ vi.mock('$lib/server/config-store', () => ({
 
 vi.mock('$lib/server/services/memory-maintenance', () => ({
 	ensureMemoryMaintenanceScheduler: mockEnsureMemoryMaintenanceScheduler,
+}));
+
+vi.mock('$lib/server/sandbox/config', () => ({
+	prewarmSandboxImageInBackground: mockPrewarmSandboxImageInBackground,
 }));
 
 describe('hooks.server.ts', () => {
@@ -41,6 +46,7 @@ describe('hooks.server.ts', () => {
 		expect(resolve).toHaveBeenCalledOnce();
 		expect(event.locals.user).toBeNull();
 		expect(event.locals.webhookBuffer).toEqual({ id: 'test-buffer' });
+		expect(mockPrewarmSandboxImageInBackground).toHaveBeenCalledOnce();
 	});
 
 	it('allows the health check route without a session', async () => {

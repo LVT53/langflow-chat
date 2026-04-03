@@ -219,9 +219,12 @@ Notes before the tables:
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
-- The file-generation sandbox now auto-pulls `python:3.11-slim` on first use if the image is missing locally, so the app process needs both Docker socket access and permission to pull images.
+- The file-generation sandbox now warms `python:3.11-slim` in the background at app startup and auto-pulls it on first use if it is still missing locally, so the app process needs both Docker socket access and permission to pull images.
 - Sandbox output-archive read failures now surface as explicit backend errors with `[FILE_GENERATE]` archive-entry logs instead of masquerading as the same empty-output response used for real zero-file runs.
+- The sandbox waits for Docker exec inspection to report completion before reading `/output`, so file extraction no longer races an early-closed exec stream.
+- Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
+- While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
 - The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.

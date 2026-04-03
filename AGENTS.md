@@ -123,9 +123,10 @@ Do not:
 - Generated files refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
   - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
-  - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata
+  - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata and clears any temporary `generate_file` loading placeholders
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
-  - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the base sandbox image exists before container creation and will pull `python:3.11-slim` on first use when it is missing locally
+  - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the base sandbox image exists before container creation, warms it in the background at app startup, and will pull `python:3.11-slim` on first use when it is missing locally
+  - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) must wait for exec inspection to report `Running === false` before the archive reader inspects `/output`; do not treat an early stream close as proof that the sandbox command has finished
   - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts) must surface output-archive read failures as explicit execution errors instead of collapsing them into the same empty-file 422 path used for real zero-output runs
   - Generated-file debug tracing currently logs under `[FILE_GENERATE]`, `[CHAT_FILES]`, `[CHAT_STREAM]`, and `[CONVERSATION_DETAIL]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
@@ -139,6 +140,7 @@ Do:
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
+- use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
 - use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
 - `/api/chat/files/generate` may authenticate with either the signed-in session or the optional `ALFYAI_API_KEY` bearer secret used by the Langflow file-generator tool; keep that bearer path conversation-scoped and internal

@@ -4,6 +4,7 @@ import type { Container } from 'dockerode';
 // Mock dockerode
 const mockContainer = {
 	start: vi.fn().mockResolvedValue(undefined),
+	kill: vi.fn().mockResolvedValue(undefined),
 	stop: vi.fn().mockResolvedValue(undefined),
 	remove: vi.fn().mockResolvedValue(undefined),
 	exec: vi.fn().mockResolvedValue({
@@ -17,6 +18,7 @@ const mockPull = vi.fn().mockResolvedValue({ on: vi.fn() });
 const mockFollowProgress = vi.fn((_stream, onFinished: (err: Error | null, output?: unknown) => void) =>
 	onFinished(null, [])
 );
+const mockDemuxStream = vi.fn();
 
 const mockDocker = {
 	createContainer: vi.fn().mockResolvedValue(mockContainer),
@@ -27,6 +29,7 @@ const mockDocker = {
 	pull: mockPull,
 	modem: {
 		followProgress: mockFollowProgress,
+		demuxStream: mockDemuxStream,
 	},
 };
 
@@ -40,6 +43,7 @@ vi.mock('dockerode', () => ({
 const {
 	createSandbox,
 	destroySandbox,
+	prewarmSandboxImageInBackground,
 	resetSandboxImageStateForTests,
 	SANDBOX_TIMEOUT_MS,
 	SANDBOX_MEMORY_MB,
@@ -52,6 +56,8 @@ describe('sandbox config', () => {
 		resetSandboxImageStateForTests();
 		mockImageInspect.mockResolvedValue({ Id: 'image-1' });
 		mockPull.mockResolvedValue({ on: vi.fn() });
+		mockDemuxStream.mockImplementation(() => undefined);
+		mockContainer.kill.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -126,6 +132,16 @@ describe('sandbox config', () => {
 			expect(mockFollowProgress).toHaveBeenCalled();
 			expect(mockDocker.createContainer).toHaveBeenCalled();
 		});
+
+		it('warms the sandbox image in the background without duplicate work', async () => {
+			prewarmSandboxImageInBackground();
+			prewarmSandboxImageInBackground();
+			await Promise.resolve();
+
+			expect(mockDocker.getImage).toHaveBeenCalledWith('python:3.11-slim');
+			expect(mockImageInspect).toHaveBeenCalledTimes(1);
+			expect(mockPull).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('sandbox execution', () => {
@@ -136,7 +152,7 @@ describe('sandbox config', () => {
 			});
 
 			const mockStream = {
-				on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+				once: vi.fn().mockImplementation((event: string, handler: unknown) => {
 					if (event === 'end') {
 						setTimeout(() => (handler as () => void)(), 0);
 					}
@@ -162,6 +178,42 @@ describe('sandbox config', () => {
 				})
 			);
 			expect(result.exitCode).toBe(0);
+			expect(mockDemuxStream).toHaveBeenCalledWith(mockStream, expect.any(Object), expect.any(Object));
+		});
+
+		it('waits for exec inspection to report completion before resolving', async () => {
+			const mockExecInspect = vi
+				.fn()
+				.mockResolvedValueOnce({
+					ExitCode: null,
+					Running: true,
+				})
+				.mockResolvedValueOnce({
+					ExitCode: 0,
+					Running: false,
+				});
+
+			const mockStream = {
+				once: vi.fn().mockImplementation((event: string, handler: unknown) => {
+					if (event === 'end') {
+						setTimeout(() => (handler as () => void)(), 0);
+					}
+					return mockStream;
+				}),
+			};
+
+			const mockExec = {
+				start: vi.fn().mockResolvedValue(mockStream),
+				inspect: mockExecInspect,
+			};
+
+			mockContainer.exec.mockResolvedValue(mockExec);
+
+			const sandbox = await createSandbox();
+			const result = await sandbox.execute('print("Hello, World!")');
+
+			expect(result.exitCode).toBe(0);
+			expect(mockExecInspect).toHaveBeenCalledTimes(2);
 		});
 
 		it('should enforce timeout limit', async () => {
@@ -174,21 +226,21 @@ describe('sandbox config', () => {
 	});
 
 	describe('destroySandbox', () => {
-		it('should stop and remove container', async () => {
+		it('should kill and remove container', async () => {
 			const mockContainerInstance = {
-				stop: vi.fn().mockResolvedValue(undefined),
+				kill: vi.fn().mockResolvedValue(undefined),
 				remove: vi.fn().mockResolvedValue(undefined),
 			};
 
 			await destroySandbox(mockContainerInstance as unknown as Container);
 
-			expect(mockContainerInstance.stop).toHaveBeenCalled();
+			expect(mockContainerInstance.kill).toHaveBeenCalledWith({ signal: 'SIGKILL' });
 			expect(mockContainerInstance.remove).toHaveBeenCalled();
 		});
 
 		it('should handle already stopped containers gracefully', async () => {
 			const mockContainerInstance = {
-				stop: vi.fn().mockRejectedValue(new Error('Container already stopped')),
+				kill: vi.fn().mockRejectedValue(new Error('Container already stopped')),
 				remove: vi.fn().mockResolvedValue(undefined),
 			};
 
@@ -205,7 +257,7 @@ describe('sandbox config', () => {
 			expect(sandbox.container).toBeDefined();
 			
 			await sandbox.destroy();
-			expect(mockContainer.stop).toHaveBeenCalled();
+			expect(mockContainer.kill).toHaveBeenCalledWith({ signal: 'SIGKILL' });
 			expect(mockContainer.remove).toHaveBeenCalled();
 		});
 	});

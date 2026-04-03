@@ -92,14 +92,14 @@ ui/
 
 - `ConversationList.svelte` owns drag/drop state — `ConversationItem` and `ProjectItem` are **event emitters**, not persistence actors
 - `MessageArea.svelte` is the **sole scroll owner** for conversation content — do not add `overflow-y: auto` elsewhere
-- `MessageArea.svelte` must also keep newly appended generated-file cards visible when the user remained near the bottom of the chat
+- `MessageArea.svelte` must also keep newly appended generated-file cards, including temporary `generate_file` loading placeholders, visible when the user remained near the bottom of the chat
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
 - `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
 - `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and reuses `AttachmentContentModal.svelte` so shell search shows the same AI-visible text path as the knowledge page
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
-- `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
+- `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
 - `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the knowledge-page vault surface; keep vault browsing/search/filter state, drag/drop upload targeting, and vault CRUD affordances there instead of reintroducing a separate sidebar rail

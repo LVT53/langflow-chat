@@ -23,6 +23,7 @@
 	import type {
 		ArtifactSummary,
 		ChatGeneratedFile,
+		ChatGeneratedFileListItem,
 		ChatMessage,
 		ConversationDraft,
 		ContextDebugState,
@@ -92,6 +93,7 @@
 	let contextDebug = $state<ContextDebugState | null>(initialContextDebug);
 	let conversationDraft = $state<ConversationDraft | null>(initialConversationDraft);
 	let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
+	let pendingGeneratedFiles = $state<ChatGeneratedFileListItem[]>([]);
 	let evidenceManagerOpen = $state(false);
 	let bootstrapMode = initialBootstrapMode;
 	let hydratingConversation = false;
@@ -102,6 +104,52 @@
 
 	let hasMessages = $derived($messages.length > 0);
 	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
+	let generatedFileCards = $derived([
+		...generatedFiles.map((file) => ({
+			...file,
+			status: 'success',
+		}) satisfies ChatGeneratedFileListItem),
+		...pendingGeneratedFiles,
+	]);
+
+	function inferGeneratedFilename(input: Record<string, unknown>): string {
+		const explicitFilename =
+			typeof input.filename === 'string' && input.filename.trim().length > 0
+				? input.filename.trim()
+				: null;
+		if (explicitFilename) {
+			return explicitFilename;
+		}
+
+		const code = typeof input.code === 'string' ? input.code : '';
+		const match = code.match(/\/output\/([^\s"'`)\]}]+)/);
+		if (!match?.[1]) {
+			return 'Generated file';
+		}
+
+		const rawName = match[1].split('/').at(-1)?.trim();
+		return rawName && rawName.length > 0 ? rawName : 'Generated file';
+	}
+
+	function addPendingGeneratedFile(input: Record<string, unknown>) {
+		const filename = inferGeneratedFilename(input);
+		pendingGeneratedFiles = [
+			...pendingGeneratedFiles,
+			{
+				id: `pending-${crypto.randomUUID()}`,
+				conversationId: data.conversation.id,
+				filename,
+				mimeType: 'application/octet-stream',
+				sizeBytes: 0,
+				createdAt: Date.now(),
+				status: 'generating',
+			},
+		];
+	}
+
+	function resetPendingGeneratedFiles() {
+		pendingGeneratedFiles = [];
+	}
 
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
@@ -143,6 +191,7 @@
 		contextDebug = data.contextDebug ?? null;
 		conversationDraft = data.draft ?? null;
 		generatedFiles = data.generatedFiles ?? [];
+		resetPendingGeneratedFiles();
 		queuedTurn = null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
@@ -219,6 +268,7 @@
 			contextDebug = payload.contextDebug ?? contextDebug;
 			conversationDraft = payload.draft ?? conversationDraft;
 			generatedFiles = payload.generatedFiles ?? generatedFiles;
+			resetPendingGeneratedFiles();
 			bootstrapMode = false;
 
 			if (!activeStream && $messages.length === 0 && (payload.messages?.length ?? 0) > 0) {
@@ -236,6 +286,7 @@
 		data.conversation.id;
 		data.generatedFiles;
 		generatedFiles = data.generatedFiles ?? [];
+		resetPendingGeneratedFiles();
 	});
 
 	function cloneSendPayload(payload: SendPayload): SendPayload {
@@ -413,6 +464,9 @@
 					messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 				},
 				onToolCall(name, input, status, details) {
+					if (name === 'generate_file' && status === 'running') {
+						addPendingGeneratedFile(input);
+					}
 					messages.update((list) =>
 						applyToolCallUpdateToMessageList(list, {
 							placeholderId,
@@ -434,6 +488,7 @@
 					if (metadata?.generatedFiles) {
 						generatedFiles = metadata.generatedFiles;
 					}
+					resetPendingGeneratedFiles();
 					const serverAssistantId = metadata?.assistantMessageId;
 					messages.update((list) =>
 						finalizeStreamingMessageList(list, {
@@ -466,6 +521,7 @@
 					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
+					resetPendingGeneratedFiles();
 					restoreQueuedTurnToDraft();
 
 					const isBrowserAbort =
@@ -514,6 +570,9 @@
 						messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 					},
 					onToolCall(name, input, status, details) {
+						if (name === 'generate_file' && status === 'running') {
+							addPendingGeneratedFile(input);
+						}
 						messages.update((list) =>
 							applyToolCallUpdateToMessageList(list, {
 								placeholderId,
@@ -533,6 +592,7 @@
 						if (metadata?.generatedFiles) {
 							generatedFiles = metadata.generatedFiles;
 						}
+						resetPendingGeneratedFiles();
 						const serverAssistantId = metadata?.assistantMessageId;
 						messages.update((list) =>
 							finalizeStreamingMessageList(list, {
@@ -565,6 +625,7 @@
 						messages.update((list) => removeMessageById(list, placeholderId));
 						activeStream = null;
 						isSending = false;
+						resetPendingGeneratedFiles();
 						restoreQueuedTurnToDraft();
 
 						const isBrowserAbort =
@@ -768,7 +829,7 @@
 			{isThinkingActive}
 			{contextDebug}
 			{hasMessages}
-			{generatedFiles}
+			generatedFiles={generatedFileCards}
 			onRegenerate={handleRegenerate}
 			onEdit={handleEdit}
 			onSteer={handleSteering}

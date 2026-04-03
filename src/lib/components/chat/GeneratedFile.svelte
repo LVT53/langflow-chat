@@ -302,7 +302,7 @@
 	/>
 {/if}
 
-<div class="generated-file-card" class:failed={status === 'failed'}>
+<div class="generated-file-card" class:failed={status === 'failed'} class:generating={status === 'generating'}>
 	<div class="file-header">
 		<div class="file-icon-wrapper" class:generating={status === 'generating'}>
 			{@render getFileIcon()()}
@@ -335,6 +335,7 @@
 					{@render SpinnerIcon()}
 					<span>Generating...</span>
 				</div>
+				<div class="generating-progress" data-testid="generating-progress" aria-hidden="true"></div>
 			{:else if status === 'failed'}
 				<div class="error-text">{error || 'File generation failed'}</div>
 			{/if}
@@ -406,6 +407,7 @@
 
 <style lang="postcss">
 	.generated-file-card {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);
@@ -414,6 +416,25 @@
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--surface-elevated) 52%, transparent 48%);
 		max-width: 100%;
+	}
+
+	.generated-file-card.generating {
+		overflow: hidden;
+	}
+
+	.generated-file-card.generating::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			100deg,
+			transparent 0%,
+			color-mix(in srgb, var(--accent) 14%, transparent 86%) 42%,
+			transparent 72%
+		);
+		transform: translateX(-140%);
+		animation: generated-file-shimmer 1.6s ease-in-out infinite;
 	}
 
 	.generated-file-card.failed {
@@ -485,6 +506,29 @@
 		color: var(--accent);
 	}
 
+	.generating-progress {
+		position: relative;
+		margin-top: var(--space-xs);
+		height: 0.35rem;
+		border-radius: 999px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
+	}
+
+	.generating-progress::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			color-mix(in srgb, var(--accent) 72%, white 28%) 50%,
+			transparent 100%
+		);
+		transform: translateX(-100%);
+		animation: generated-file-shimmer 1.3s linear infinite;
+	}
+
 	.error-text {
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 0.75rem;
@@ -541,9 +585,25 @@
 		}
 	}
 
+	@keyframes generated-file-shimmer {
+		from {
+			transform: translateX(-120%);
+		}
+
+		to {
+			transform: translateX(120%);
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.spinner {
 			animation: none;
+		}
+
+		.generated-file-card.generating::after,
+		.generating-progress::after {
+			animation: none;
+			transform: none;
 		}
 	}
 </style>

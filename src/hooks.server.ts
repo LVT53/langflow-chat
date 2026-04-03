@@ -4,6 +4,7 @@ import { redirect } from '@sveltejs/kit';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 import { refreshConfig } from '$lib/server/config-store';
 import { ensureMemoryMaintenanceScheduler } from '$lib/server/services/memory-maintenance';
+import { prewarmSandboxImageInBackground } from '$lib/server/sandbox/config';
 import { db } from '$lib/server/db';
 import { users } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
@@ -11,6 +12,7 @@ import { eq } from 'drizzle-orm';
 // Load admin config overrides once at startup
 refreshConfig().catch((err) => console.error('Config refresh failed:', err));
 ensureMemoryMaintenanceScheduler();
+prewarmSandboxImageInBackground();
 
 const PUBLIC_PATHS = [
 	'/login',
