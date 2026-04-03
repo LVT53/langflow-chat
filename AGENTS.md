@@ -58,6 +58,9 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - [`src/routes/(app)/+layout.server.ts`](<./src/routes/(app)/+layout.server.ts>)
   - Preloads conversations, projects, models, and user-facing config.
   - This is the main bridge between server state and the authenticated app shell.
+- [`src/routes/(app)/+layout.svelte`](./src/routes/(app)/+layout.svelte)
+  - Owns client-side conversation-list refresh on focus/visibility.
+  - Missing-current-conversation redirects must verify the conversation detail endpoint before sending the user back to `/`; a brand-new bootstrap chat can exist before the sidebar list includes it.
 
 Do not:
 

@@ -8,6 +8,7 @@
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
+	import { conversationExists } from '$lib/client/api/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { initSettings } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
@@ -48,19 +49,23 @@
 
 		lastRefreshTime = now;
 
-		// Store current conversation ID before refresh
+		// Store current conversation state before refresh
 		const currentId = $currentConversationId;
+		const currentPath = $page.url.pathname;
 
 		try {
 			await loadConversations();
 
 			// Edge case: if current conversation was deleted from another device,
-			// redirect to landing page
-			if (currentId) {
+			// redirect to landing page. Do not rely solely on the sidebar list:
+			// brand-new bootstrap conversations can exist before the list chooses to show them.
+			if (currentId && currentPath === `/chat/${currentId}`) {
 				const stillExists = $conversations.some(c => c.id === currentId);
 				if (!stillExists) {
-					// Current conversation was deleted, redirect to landing
-					goto('/');
+					const exists = await conversationExists(currentId);
+					if (exists === false) {
+						goto('/');
+					}
 				}
 			}
 		} catch (error) {

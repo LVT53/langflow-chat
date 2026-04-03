@@ -121,3 +121,4 @@ These are **page-internal** — do not import them from other pages. If logic be
 
 Chat-route presentation rule:
 - `ChatComposerPanel` and `ChatMessagePane` are part of the chat-detail layout, not the landing-page hero. Keep the composer bottom-docked on the chat route and keep the message surface visible even when a brand-new conversation has no persisted messages yet.
+- The app shell must not infer "current conversation was deleted" purely from the sidebar list. Empty bootstrap chats may be real before they become list-visible.

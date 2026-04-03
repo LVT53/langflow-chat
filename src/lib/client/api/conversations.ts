@@ -53,6 +53,24 @@ export async function fetchConversationDetail(
 	);
 }
 
+export async function conversationExists(
+	id: string,
+	fetchImpl: FetchLike = fetch
+): Promise<boolean | null> {
+	try {
+		const response = await fetchImpl(`/api/conversations/${id}`);
+		if (response.status === 404) {
+			return false;
+		}
+		if (response.ok) {
+			return true;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export async function createConversation(title?: string): Promise<ConversationSummary> {
 	const payload = await requestJson<ConversationSummary>(
 		'/api/conversations',
