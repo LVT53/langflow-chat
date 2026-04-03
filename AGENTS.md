@@ -75,9 +75,9 @@ Do not:
   - Owns the one-slot queued follow-up turn while a response is streaming.
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
-  - Large page-specific knowledge UI with two-column layout.
-  - Left sidebar (rail): VaultSidebar for vault selection and upload affordances.
+  - Large page-specific knowledge UI with a single primary content column.
   - Main content: Vault Explorer plus Library and Memory Profile tabs.
+  - Vault scope selection, drag/drop uploads, and vault CRUD surface inside the main library panel instead of a separate sidebar rail.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
 - [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
   - User settings and admin/runtime config UI surface.
@@ -219,7 +219,6 @@ Do not:
   - [`src/routes/api/knowledge/vaults/+server.ts`](./src/routes/api/knowledge/vaults/+server.ts)
   - [`src/routes/api/knowledge/vaults/[id]/+server.ts`](./src/routes/api/knowledge/vaults/[id]/+server.ts)
 - Vault UI:
-  - [`src/routes/(app)/knowledge/_components/VaultSidebar.svelte`](./src/routes/(app)/knowledge/_components/VaultSidebar.svelte)
   - [`src/routes/(app)/knowledge/_components/CreateVaultModal.svelte`](./src/routes/(app)/knowledge/_components/CreateVaultModal.svelte)
   - [`src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte`](./src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte)
   - [`src/routes/(app)/knowledge/_components/VaultFileUpload.svelte`](./src/routes/(app)/knowledge/_components/VaultFileUpload.svelte)
@@ -247,9 +246,8 @@ Rules:
 - Import from Obsidian/Notion flattens hierarchy, stores original path in metadata
 - File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
 - Storage quota is display-only - no enforcement
-- `VaultSidebar.svelte` owns OS file drag/drop targeting for vault uploads, and its drag overlay must stay visual-only so hovered vault rows or the sidebar fallback can receive `dragover`/`drop`
 - Global shell search surfaces vault-file hits through `/api/knowledge/search`, and vault-file clicks should open the extracted AI-visible text path via `AttachmentContentModal.svelte`, not a separate ad hoc viewer
-- `KnowledgeLibraryView.svelte` is the primary place to browse vault files; `VaultSidebar.svelte` is for scope selection, creation, deletion, and upload, not the only vault-file discovery surface
+- `KnowledgeLibraryView.svelte` is the vault surface: keep vault scope selection, vault CRUD affordances, drag/drop upload targeting, and local vault-file search there instead of reintroducing a separate rail
 
 Do not:
 

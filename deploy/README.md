@@ -37,6 +37,10 @@ The files in this directory can still be used as examples for a more manual host
 
 Treat them as optional examples, not the canonical deployment path.
 
+For a host-managed setup where Dockerized sidecars such as Langflow must reach the app over the host bridge network, set `HOST=0.0.0.0` and `PORT=3001` in the environment file that systemd loads at `/opt/langflow-chat/.env` rather than hardcoding those values into the unit file itself.
+
+That keeps Apache reverse proxying to `127.0.0.1:3001` on the host while also allowing containers to reach the host at `http://172.17.0.1:3001` when the Docker bridge uses the default subnet.
+
 ## Runtime Expectations
 
 - Node.js 20+
@@ -50,13 +54,19 @@ Treat them as optional examples, not the canonical deployment path.
 The app exposes:
 
 ```bash
-curl -s http://localhost:3000/api/health
+curl -s http://localhost:3001/api/health
 ```
 
 Expected response:
 
 ```json
 {"status":"OK"}
+```
+
+When Langflow runs in Docker on the same host, this should also work from inside the container once the service is restarted with `HOST=0.0.0.0` in `/opt/langflow-chat/.env`:
+
+```bash
+curl -s http://172.17.0.1:3001/api/health
 ```
 
 ## Upload Body Size

@@ -22,7 +22,6 @@
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
-	import VaultSidebar from './_components/VaultSidebar.svelte';
 	import type {
 		ArtifactSummary,
 		FocusContinuityItem,
@@ -578,10 +577,6 @@
 		);
 	}
 
-	async function handleVaultSelect(payload: { id: string }) {
-		activeVaultId = payload.id;
-	}
-
 	function setActiveVault(vaultId: string | null) {
 		activeVaultId = vaultId;
 	}
@@ -699,22 +694,7 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-<div class="knowledge-page flex h-full min-h-0 flex-row overflow-hidden bg-surface-page">
-	<aside class="vault-sidebar-container flex h-full w-[17.5rem] shrink-0 border-r border-border-subtle/70 bg-surface-page/80 px-3 py-6">
-		<div class="flex min-h-0 w-full flex-1 rounded-[1.6rem] border border-border bg-surface-elevated/90 p-3 shadow-sm">
-			<VaultSidebar
-				{vaults}
-				{activeVaultId}
-				quota={storageQuota}
-				onSelect={handleVaultSelect}
-				onCreate={handleVaultCreate}
-				onRename={handleVaultRename}
-				onDelete={handleVaultDelete}
-				onUpload={handleVaultUpload}
-			/>
-		</div>
-	</aside>
-
+<div class="knowledge-page flex h-full min-h-0 flex-col overflow-hidden bg-surface-page">
 	<div class="main-content flex flex-1 flex-col overflow-y-auto px-5 py-6 md:px-8">
 		<div class="mx-auto flex w-full max-w-[1040px] flex-col gap-8">
 		<div class="rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
@@ -792,6 +772,10 @@
 				quota={storageQuota}
 				onOpenLibraryModal={openLibraryModal}
 				onSelectVault={setActiveVault}
+				onCreateVault={handleVaultCreate}
+				onRenameVault={handleVaultRename}
+				onDeleteVault={handleVaultDelete}
+				onUploadToVault={handleVaultUpload}
 			/>
 		{:else}
 			<KnowledgeMemoryView

@@ -42,6 +42,14 @@ Important caveat:
 
 - `scripts/deploy.sh` does **not** restart PM2, systemd, Docker, or any other running process. It prints `PM2_APP_NAME`, but that value is informational only. Restart your process manager separately after the script completes.
 
+For host-managed `adapter-node` deployments, the standard runtime entrypoint is:
+
+```bash
+npm start
+```
+
+That script runs `node build`. SvelteKit adapter-node uses the `HOST` and `PORT` environment variables for the listen address, so container-reachable host setups should use `HOST=0.0.0.0` instead of `127.0.0.1`.
+
 Deploy-script environment variables:
 
 | Variable | Required? | Default | What it does | When to set it | Caveats |
@@ -197,6 +205,8 @@ Notes before the tables:
 | Variable | Required? | Default | What it does | When to set it | Caveats |
 |---|---|---:|---|---|---|
 | `BODY_SIZE_LIMIT` | No | patched to `50M` in production builds | Controls the adapter-node request body size limit | Raise it if your deployment needs larger request bodies | Server/runtime setting, not an app feature toggle |
+| `HOST` | No | `0.0.0.0` in adapter-node, often overridden in deploy env files | Controls the adapter-node listen address | Set it to `0.0.0.0` when host-managed Docker sidecars such as Langflow must reach the app over the host bridge | If you set `127.0.0.1`, containers on the same host cannot reach the app directly |
+| `PORT` | No | `3000` in adapter-node | Controls the adapter-node listen port | Set it to match your reverse proxy or host-managed service expectations | Keep Apache/nginx/other proxy config aligned with the same port |
 | `NODE_ENV` | No | environment dependent | Controls framework/runtime production behavior | Set it to `production` in real deployments | Also affects cookie security behavior |
 | `APP_DIR` | No | current working directory | Tells `scripts/deploy.sh` where the app checkout lives | Set it when deploying from outside the repo directory | Deploy-script only |
 | `PM2_APP_NAME` | No | `langflow-chat` | Printed by `scripts/deploy.sh` for operator context | Set it if you use PM2 with a custom process name | Not currently used for restart or reload logic |

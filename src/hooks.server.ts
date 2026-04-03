@@ -12,7 +12,13 @@ import { eq } from 'drizzle-orm';
 refreshConfig().catch((err) => console.error('Config refresh failed:', err));
 ensureMemoryMaintenanceScheduler();
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/sentence', '/api/chat/files/generate'];
+const PUBLIC_PATHS = [
+	'/login',
+	'/api/auth/login',
+	'/api/webhook/sentence',
+	'/api/chat/files/generate',
+	'/api/health',
+];
 
 // Throttled lastSeenAt tracking: fire-and-forget writes with 5-minute TTL per user.
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;

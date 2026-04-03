@@ -77,7 +77,7 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `KnowledgeLibraryView` (main-panel vault explorer), `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultSidebar`, `VaultFileUpload`
+- Route-local `_components/` — `KnowledgeLibraryView` (main-panel vault explorer and vault manager), `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultFileUpload`
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
@@ -101,10 +101,8 @@ ui/
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
-- `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` owns vault-targeted OS file drag/drop and may fall back to the active vault or first vault when the drop lands on sidebar chrome
-- `src/routes/(app)/knowledge/_components/VaultSidebar.svelte` drag overlays are visual affordances only; they must not intercept pointer/drag events intended for vault rows
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
-- `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the main vault-file browsing surface; keep vault browsing/search/filter state there instead of rebuilding a file browser inside `VaultSidebar.svelte`
+- `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the knowledge-page vault surface; keep vault browsing/search/filter state, drag/drop upload targeting, and vault CRUD affordances there instead of reintroducing a separate sidebar rail
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic
 

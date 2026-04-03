@@ -68,11 +68,9 @@
 	});
 
 	function handleClick() {
-		if (mobile) {
-			isOpen = !isOpen;
-			if (!isOpen) {
-				resetNewTaskForm();
-			}
+		isOpen = !isOpen;
+		if (!isOpen) {
+			resetNewTaskForm();
 		}
 	}
 
@@ -231,9 +229,9 @@
 		class="ring-popover"
 		class:ring-popover--mobile={mobile}
 		class:ring-popover--mobile-visible={mobile && isOpen}
+		class:ring-popover--open={!mobile && isOpen}
 		role="dialog"
 		aria-label="Context focus panel"
-		aria-hidden={mobile ? !isOpen : undefined}
 	>
 		<div class="popover-section">
 			<div class="popover-label">Focus</div>
@@ -485,7 +483,8 @@
 
 	.ring-root:hover .ring-popover,
 	.ring-root:focus-within .ring-popover,
-	.ring-popover--mobile-visible {
+	.ring-popover--mobile-visible,
+	.ring-popover--open {
 		opacity: 1;
 		transform: translateY(0);
 		pointer-events: auto;

@@ -1,6 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import KnowledgeLibraryView from './KnowledgeLibraryView.svelte';
+import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
+
+vi.mock('$lib/client/api/knowledge', async () => {
+	const actual = await vi.importActual<typeof import('$lib/client/api/knowledge')>(
+		'$lib/client/api/knowledge'
+	);
+
+	return {
+		...actual,
+		uploadKnowledgeAttachment: vi.fn(),
+	};
+});
+
+const mockUploadKnowledgeAttachment = vi.mocked(uploadKnowledgeAttachment);
 
 const vaults = [
 	{
@@ -56,13 +70,29 @@ const documents = [
 	},
 ];
 
+const quota = {
+	totalStorageUsed: 3072,
+	totalFiles: 2,
+	storageLimit: 1073741824,
+	usagePercent: 0,
+	isWarning: false,
+	warningThreshold: 80,
+	vaults: [
+		{ vaultId: 'vault-1', vaultName: 'Research', fileCount: 1, storageUsed: 1024 },
+		{ vaultId: 'vault-2', vaultName: 'Ops', fileCount: 1, storageUsed: 2048 },
+	],
+};
+
 describe('KnowledgeLibraryView', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockUploadKnowledgeAttachment.mockResolvedValue({
+			artifact: { id: 'artifact-1', name: 'Budget.pdf' },
+		} as any);
 		global.fetch = vi.fn();
 	});
 
-	it('scopes the explorer to the active vault and allows clearing the scope', async () => {
+	it('renders the vault list inside the Vaults panel and allows clearing the scope', async () => {
 		const onSelectVault = vi.fn();
 
 		render(KnowledgeLibraryView, {
@@ -72,18 +102,91 @@ describe('KnowledgeLibraryView', () => {
 				documents,
 				results: [],
 				workflows: [],
-				quota: null,
+				quota,
 				onOpenLibraryModal: vi.fn(),
 				onSelectVault,
 			},
 		});
 
+		const vaultPanel = screen.getByRole('region', { name: /vaults/i });
+		expect(within(vaultPanel).getByText('Research')).toBeInTheDocument();
+		expect(within(vaultPanel).getByText('Ops')).toBeInTheDocument();
 		expect(screen.getByText('Budget.pdf')).toBeInTheDocument();
 		expect(screen.queryByText('Plan.docx')).toBeNull();
 
-		await fireEvent.click(screen.getByRole('button', { name: /show all vaults/i }));
+		await fireEvent.click(screen.getByRole('button', { name: /all vaults/i }));
 
 		expect(onSelectVault).toHaveBeenCalledWith(null);
+	});
+
+	it('renames a vault from the Vaults panel', async () => {
+		const onRenameVault = vi.fn();
+
+		render(KnowledgeLibraryView, {
+			props: {
+				vaults,
+				activeVaultId: 'vault-1',
+				documents,
+				results: [],
+				workflows: [],
+				quota,
+				onOpenLibraryModal: vi.fn(),
+				onSelectVault: vi.fn(),
+				onRenameVault,
+			},
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: /rename research vault/i }));
+
+		const input = screen.getByDisplayValue('Research');
+		await fireEvent.input(input, { target: { value: 'Research Notes' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		expect(onRenameVault).toHaveBeenCalledWith({
+			id: 'vault-1',
+			name: 'Research Notes',
+		});
+	});
+
+	it('uploads dropped files to the targeted vault row', async () => {
+		const onSelectVault = vi.fn();
+		const onUploadToVault = vi.fn();
+
+		render(KnowledgeLibraryView, {
+			props: {
+				vaults,
+				activeVaultId: 'vault-1',
+				documents,
+				results: [],
+				workflows: [],
+				quota,
+				onOpenLibraryModal: vi.fn(),
+				onSelectVault,
+				onUploadToVault,
+			},
+		});
+
+		const opsRow = screen.getByText('Ops').closest('[role="button"]');
+		const file = new File(['report'], 'report.txt', { type: 'text/plain' });
+
+		await fireEvent.drop(opsRow!, {
+			dataTransfer: {
+				types: ['Files'],
+				files: [file],
+				dropEffect: 'copy',
+			},
+		});
+
+		await waitFor(() => {
+			expect(mockUploadKnowledgeAttachment).toHaveBeenCalledWith(file, null, 'vault-2');
+		});
+		expect(onSelectVault).toHaveBeenCalledWith('vault-2');
+		expect(onUploadToVault).toHaveBeenCalledWith({
+			vaultId: 'vault-2',
+			response: {
+				artifact: { id: 'artifact-1', name: 'Budget.pdf' },
+			},
+		});
 	});
 
 	it('opens the AI view modal for a vault document', async () => {
@@ -108,7 +211,7 @@ describe('KnowledgeLibraryView', () => {
 				documents,
 				results: [],
 				workflows: [],
-				quota: null,
+				quota,
 				onOpenLibraryModal: vi.fn(),
 				onSelectVault: vi.fn(),
 			},

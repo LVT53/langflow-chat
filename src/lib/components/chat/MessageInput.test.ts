@@ -142,6 +142,52 @@ describe('MessageInput', () => {
 		});
 	});
 
+	it('opens the evidence controls from the context ring on click', async () => {
+		const manageEvidenceSpy = vi.fn();
+		const { getByLabelText, getByRole } = render(MessageInputWrapper, {
+			onManageEvidence: manageEvidenceSpy,
+			contextStatus: {
+				conversationId: 'conv-1',
+				userId: 'user-1',
+				estimatedTokens: 1200,
+				maxContextTokens: 262144,
+				thresholdTokens: 209715,
+				targetTokens: 157286,
+				compactionApplied: false,
+				compactionMode: 'none',
+				routingStage: 'deterministic',
+				routingConfidence: 0,
+				verificationStatus: 'skipped',
+				layersUsed: [],
+				workingSetCount: 0,
+				workingSetArtifactIds: [],
+				workingSetApplied: false,
+				taskStateApplied: false,
+				promptArtifactCount: 0,
+				recentTurnCount: 0,
+				summary: null,
+				updatedAt: Date.now(),
+			},
+			contextDebug: {
+				activeTaskId: null,
+				activeTaskObjective: 'Current task',
+				taskLocked: false,
+				routingStage: 'deterministic',
+				routingConfidence: 0,
+				verificationStatus: 'skipped',
+				selectedEvidence: [],
+				selectedEvidenceBySource: [],
+				pinnedEvidence: [],
+				excludedEvidence: [],
+			},
+		});
+
+		await fireEvent.click(getByLabelText(/prompt budget usage/i));
+		await fireEvent.click(getByRole('button', { name: 'Manage evidence' }));
+
+		expect(manageEvidenceSpy).toHaveBeenCalledTimes(1);
+	});
+
 	it('disables send while an attachment upload is still in progress', async () => {
 		let resolveUpload: ((value: unknown) => void) | null = null;
 		fetchMock.mockImplementation(

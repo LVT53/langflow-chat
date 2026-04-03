@@ -69,6 +69,80 @@ describe('Knowledge page', () => {
 		unmount();
 	});
 
+	it('shows vault scope controls in the main library panel instead of a separate sidebar', async () => {
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+			const url = String(input);
+			if (url === '/api/knowledge/storage-quota') {
+				return new Response(
+					JSON.stringify({
+						totalStorageUsed: 1024,
+						totalFiles: 1,
+						storageLimit: 1073741824,
+						usagePercent: 0,
+						isWarning: false,
+						warningThreshold: 80,
+						vaults: [
+							{
+								vaultId: 'vault-1',
+								vaultName: 'Research',
+								fileCount: 1,
+								storageUsed: 1024,
+							},
+						],
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const { getByRole, getByText, queryByLabelText, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [
+					{
+						id: 'doc-1',
+						displayArtifactId: 'source-1',
+						promptArtifactId: 'normalized-1',
+						familyArtifactIds: ['source-1', 'normalized-1'],
+						name: 'Budget.pdf',
+						mimeType: 'application/pdf',
+						sizeBytes: 1024,
+						conversationId: null,
+						vaultId: 'vault-1',
+						summary: 'Quarterly budget',
+						normalizedAvailable: true,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+				],
+				results: [],
+				workflows: [],
+				vaults: [
+					{
+						id: 'vault-1',
+						userId: 'user-1',
+						name: 'Research',
+						color: '#C15F3C',
+						sortOrder: 0,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+				],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		const vaultRegion = await waitFor(() => getByRole('region', { name: /vaults/i }));
+		expect(vaultRegion).toHaveTextContent('Research');
+		expect(queryByLabelText(/vault sidebar/i)).toBeNull();
+		unmount();
+	});
+
 	it('loads memory when the memory tab is opened', async () => {
 		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 			ok: true,

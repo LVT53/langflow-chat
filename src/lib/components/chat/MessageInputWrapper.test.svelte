@@ -16,6 +16,7 @@
 		onSend = () => {},
 		onQueue = () => {},
 		onSteer = () => {},
+		onManageEvidence = () => {},
 		onEditQueuedMessage = () => {},
 		onDeleteQueuedMessage = () => {},
 		onDraftChange = () => {}
@@ -33,6 +34,7 @@
 		onSend?: (message: string) => void;
 		onQueue?: (message: string) => void;
 		onSteer?: (payload: TaskSteeringPayload) => void;
+		onManageEvidence?: () => void;
 		onEditQueuedMessage?: () => void;
 		onDeleteQueuedMessage?: () => void;
 		onDraftChange?: (payload: {
@@ -77,6 +79,7 @@
 	onSend={handleSend}
 	onQueue={handleQueue}
 	onSteer={handleSteer}
+	{onManageEvidence}
 	{onEditQueuedMessage}
 	{onDeleteQueuedMessage}
 	onDraftChange={handleDraftChange}
