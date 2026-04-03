@@ -364,13 +364,14 @@
 					{#if content}
 						<button
 							type="button"
-							class="btn-secondary text-sm"
+							class="preview-download-button"
 							onclick={downloadFile}
+							aria-label={`Download ${filename}`}
+							title={`Download ${filename}`}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
 							</svg>
-							Download
 						</button>
 					{/if}
 					<button
@@ -645,6 +646,34 @@
 		width: 100%;
 		height: auto;
 		background: #ffffff;
+	}
+
+	.preview-download-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
+		border-radius: 9999px;
+		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
+		color: color-mix(in srgb, var(--accent) 64%, var(--text-primary) 36%);
+		cursor: pointer;
+		transition:
+			background var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out);
+	}
+
+	.preview-download-button:hover {
+		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
+		border-color: color-mix(in srgb, var(--border-default) 78%, transparent 22%);
+	}
+
+	.preview-download-button:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 82%, transparent 18%);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

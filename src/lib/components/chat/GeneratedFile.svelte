@@ -684,8 +684,8 @@
 	}
 
 	.action-button--vault {
-		color: color-mix(in srgb, var(--text-primary) 82%, var(--accent) 18%);
-		background: color-mix(in srgb, var(--surface-page) 56%, var(--accent) 8%);
+		color: color-mix(in srgb, var(--accent) 54%, var(--text-primary) 46%);
+		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
 	}
 
 	.action-button:not(:disabled):hover {
@@ -698,7 +698,7 @@
 	}
 
 	.action-button--vault:not(:disabled):hover {
-		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
+		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
 	}
 
 	.sr-only {

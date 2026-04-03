@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { slide } from 'svelte/transition';
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
 	import type { EvidencePreference, MessageEvidenceSummary, TaskSteeringPayload } from '$lib/types';
 
@@ -18,6 +17,7 @@
 
 	let expanded = $state(false);
 	let container = $state<HTMLDivElement | null>(null);
+	let groupsPanel = $state<HTMLDivElement | null>(null);
 
 	let totalItems = $derived(
 		evidenceSummary.groups.reduce((count, group) => count + group.items.length, 0)
@@ -48,39 +48,37 @@
 		return 'Tool';
 	}
 
-	async function toggle() {
-		const willExpand = !expanded;
-		expanded = willExpand;
+	async function revealExpandedContent() {
 		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
-		if (!scrollEl || !container) return;
+		if (!scrollEl || !container || !groupsPanel) return;
 
 		await tick();
 		requestAnimationFrame(() => {
-			if (!container) return;
+			requestAnimationFrame(() => {
+				if (!scrollEl || !container || !groupsPanel) return;
 
-			const shellRect = container.getBoundingClientRect();
-			const scrollRect = scrollEl.getBoundingClientRect();
-			const topPadding = 20;
-			const bottomPadding = 168;
+				const shellRect = container.getBoundingClientRect();
+				const groupsRect = groupsPanel.getBoundingClientRect();
+				const scrollRect = scrollEl.getBoundingClientRect();
+				const topPadding = 20;
+				const bottomPadding = 176;
 
-			if (!willExpand) {
-				const topOverflow = scrollRect.top + topPadding - shellRect.top;
-				if (topOverflow > 0) {
-					scrollEl.scrollTop -= topOverflow;
+				if (groupsRect.bottom > scrollRect.bottom - bottomPadding) {
+					scrollEl.scrollTop += groupsRect.bottom - (scrollRect.bottom - bottomPadding);
 				}
-				return;
-			}
 
-			const bottomOverflow = shellRect.bottom - (scrollRect.bottom - bottomPadding);
-			if (bottomOverflow > 0) {
-				scrollEl.scrollTop += bottomOverflow;
-			}
-
-			const topOverflow = scrollRect.top + topPadding - shellRect.top;
-			if (topOverflow > 0) {
-				scrollEl.scrollTop -= topOverflow;
-			}
+				if (shellRect.top < scrollRect.top + topPadding) {
+					scrollEl.scrollTop -= scrollRect.top + topPadding - shellRect.top;
+				}
+			});
 		});
+	}
+
+	function toggle() {
+		expanded = !expanded;
+		if (expanded) {
+			void revealExpandedContent();
+		}
 	}
 </script>
 
@@ -112,7 +110,7 @@
 	</button>
 
 	{#if expanded}
-		<div class="evidence-groups" transition:slide|local>
+		<div class="evidence-groups" bind:this={groupsPanel}>
 			{#each evidenceSummary.groups as group (`${group.sourceType}-${group.label}`)}
 				<div class="evidence-group">
 					<div class="evidence-group-header">
