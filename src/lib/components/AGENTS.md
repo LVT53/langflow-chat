@@ -20,7 +20,7 @@ chat/
     ├── chat/FileAttachment.svelte       ← attachment chip (viewable prop, onView callback)
     └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
-    ├── chat/GeneratedFile.svelte       ← generated-file download + save-to-vault actions
+    ├── chat/GeneratedFile.svelte       ← generated-file preview, download, and save-to-vault actions
     └── chat/MessageBubble.svelte       ← individual message (attachment viewing capability)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
           ├── chat/CodeBlock.svelte           ← fenced code block
@@ -100,11 +100,12 @@ ui/
 - The landing page may force a full document navigation after the first send so the browser cannot remain on the home-screen visual state while the new chat route is already executing on the server
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
-- `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display `contentText` with loading/error/empty states
+- `AttachmentContentModal.svelte` fetches either `/api/knowledge/{id}` or a direct `contentUrl` to display extracted text with loading/error/empty states
 - `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and reuses `AttachmentContentModal.svelte` so shell search shows the same AI-visible text path as the knowledge page
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
-- `GeneratedFile.svelte` owns generated-file download/save-to-vault UI and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`; do not leave placeholder preview actions in this component
+- `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download/save-to-vault UI, and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
+- Saved generated-file rows remain conversation-scoped after vault save; do not delete the underlying chat-file record just because a vault copy was created
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
 - `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the knowledge-page vault surface; keep vault browsing/search/filter state, drag/drop upload targeting, and vault CRUD affordances there instead of reintroducing a separate sidebar rail
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`

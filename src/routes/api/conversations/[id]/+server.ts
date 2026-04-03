@@ -13,7 +13,7 @@ import {
 	getConversationContextStatus,
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
-import { getChatFiles } from '$lib/server/services/chat-files';
+import { getChatFiles, listSavedVaultsForChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import {
 	attachContinuityToTaskState,
@@ -69,16 +69,29 @@ export const GET: RequestHandler = async (event) => {
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
 		);
+		const savedVaultsByFileId = await listSavedVaultsForChatFiles(
+			user.id,
+			generatedFiles.map((file) => file.id)
+		);
+		const generatedFilesWithVaultState = generatedFiles.map((file) => {
+			const savedVault = savedVaultsByFileId.get(file.id);
+			return {
+				...file,
+				savedVaultId: savedVault?.vaultId ?? null,
+				savedVaultName: savedVault?.vaultName ?? null,
+			};
+		});
 		console.info('[CONVERSATION_DETAIL] Returning conversation payload', {
 			conversationId: id,
 			userId: user.id,
 			messageCount: messageHistory.length,
-			generatedFileCount: generatedFiles.length,
-			generatedFiles: generatedFiles.map((file) => ({
+			generatedFileCount: generatedFilesWithVaultState.length,
+			generatedFiles: generatedFilesWithVaultState.map((file) => ({
 				id: file.id,
 				filename: file.filename,
 				sizeBytes: file.sizeBytes,
 				mimeType: file.mimeType,
+				savedVaultName: file.savedVaultName,
 			})),
 		});
 
@@ -91,7 +104,7 @@ export const GET: RequestHandler = async (event) => {
 			taskState: taskStateWithContinuity,
 			contextDebug,
 			draft,
-			generatedFiles,
+			generatedFiles: generatedFilesWithVaultState,
 			bootstrap: false,
 		});
 	} catch (err) {

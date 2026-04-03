@@ -84,6 +84,8 @@ export interface ChatGeneratedFile {
   mimeType: string | null;
   sizeBytes: number;
   createdAt: number;
+  savedVaultId?: string | null;
+  savedVaultName?: string | null;
 }
 
 export interface ChatGeneratedFileListItem {
@@ -95,6 +97,8 @@ export interface ChatGeneratedFileListItem {
   createdAt: number;
   status: 'generating' | 'success' | 'failed';
   error?: string;
+  savedVaultId?: string | null;
+  savedVaultName?: string | null;
 }
 
 export interface ConversationDetail {

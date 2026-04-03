@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, readFile, unlink, access } from 'fs/promises';
 import { join, extname } from 'path';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { chatGeneratedFiles } from '$lib/server/db/schema';
+import { artifacts, chatGeneratedFiles, knowledgeVaults } from '$lib/server/db/schema';
+import { parseJsonRecord } from '$lib/server/utils/json';
+import { extractDocumentText } from './document-extraction';
 
 export interface ChatFile {
 	id: string;
@@ -14,6 +16,13 @@ export interface ChatFile {
 	sizeBytes: number;
 	storagePath: string;
 	createdAt: number;
+}
+
+export interface ChatFileSavedVaultLink {
+	artifactId: string;
+	filename: string;
+	vaultId: string;
+	vaultName: string;
 }
 
 export interface FileInput {
@@ -206,6 +215,10 @@ async function readStoredChatFile(file: ChatFile): Promise<Buffer | null> {
 	}
 }
 
+function getStoredChatFilePath(file: ChatFile): string {
+	return join(getChatFilesDir(), file.storagePath);
+}
+
 /**
  * Read the actual file content from disk.
  * Returns null if file doesn't exist in database or on disk.
@@ -232,6 +245,92 @@ export async function readChatFileContentByUser(
 	if (!file) return null;
 
 	return readStoredChatFile(file);
+}
+
+export async function previewChatFileContentByUser(
+	fileId: string,
+	userId: string
+): Promise<{ file: ChatFile; contentText: string | null } | null> {
+	const file = await getChatFileByUser(fileId, userId);
+	if (!file) return null;
+
+	try {
+		await access(getStoredChatFilePath(file));
+	} catch {
+		return null;
+	}
+
+	const extraction = await extractDocumentText(
+		getStoredChatFilePath(file),
+		file.mimeType,
+		file.filename
+	);
+
+	return {
+		file,
+		contentText: extraction.text,
+	};
+}
+
+export async function listSavedVaultsForChatFiles(
+	userId: string,
+	fileIds: string[]
+): Promise<Map<string, ChatFileSavedVaultLink>> {
+	if (fileIds.length === 0) {
+		return new Map();
+	}
+
+	const fileIdSet = new Set(fileIds);
+	const rows = await db
+		.select({
+			artifactId: artifacts.id,
+			filename: artifacts.name,
+			vaultId: artifacts.vaultId,
+			vaultName: knowledgeVaults.name,
+			metadataJson: artifacts.metadataJson,
+		})
+		.from(artifacts)
+		.innerJoin(knowledgeVaults, eq(artifacts.vaultId, knowledgeVaults.id))
+		.where(
+			and(
+				eq(artifacts.userId, userId),
+				eq(artifacts.type, 'source_document'),
+				like(artifacts.metadataJson, '%"uploadSource":"chat_generated_file"%')
+			)
+		)
+		.orderBy(desc(artifacts.updatedAt));
+
+	const savedLinks = new Map<string, ChatFileSavedVaultLink>();
+
+	for (const row of rows) {
+		const metadata = parseJsonRecord(row.metadataJson ?? null);
+		const originalChatFileId =
+			typeof metadata?.originalChatFileId === 'string' ? metadata.originalChatFileId : null;
+		if (!originalChatFileId || !fileIdSet.has(originalChatFileId) || savedLinks.has(originalChatFileId)) {
+			continue;
+		}
+
+		if (!(row.vaultId && row.vaultName)) {
+			continue;
+		}
+
+		savedLinks.set(originalChatFileId, {
+			artifactId: row.artifactId,
+			filename: row.filename,
+			vaultId: row.vaultId,
+			vaultName: row.vaultName,
+		});
+	}
+
+	return savedLinks;
+}
+
+export async function getSavedVaultForChatFile(
+	userId: string,
+	fileId: string
+): Promise<ChatFileSavedVaultLink | null> {
+	const links = await listSavedVaultsForChatFiles(userId, [fileId]);
+	return links.get(fileId) ?? null;
 }
 
 /**

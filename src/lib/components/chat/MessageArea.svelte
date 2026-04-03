@@ -148,9 +148,6 @@
 			{#if generatedFiles.length > 0 && conversationId}
 				<div class="generated-files-section">
 					<div class="generated-files-header">Generated Files</div>
-					<p class="generated-files-description">
-						Created in this chat. Download them here or move them into a vault.
-					</p>
 					<div class="generated-files-list">
 						{#each generatedFiles as file (file.id)}
 							<GeneratedFile
@@ -162,6 +159,7 @@
 								downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
 								status={file.status}
 								error={file.error}
+								savedVaultName={file.savedVaultName ?? null}
 							/>
 						{/each}
 					</div>
@@ -185,8 +183,8 @@
 	}
 
 	.generated-files-section {
-		margin-top: var(--space-lg);
-		padding-top: var(--space-lg);
+		margin-top: var(--space-md);
+		padding-top: var(--space-md);
 		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent 50%);
 	}
 
@@ -197,20 +195,13 @@
 		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		margin-bottom: var(--space-md);
-	}
-
-	.generated-files-description {
-		margin: 0 0 var(--space-md);
-		font-size: 0.92rem;
-		line-height: 1.5;
-		color: var(--text-secondary);
+		margin-bottom: var(--space-sm);
 	}
 
 	.generated-files-list {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-md);
+		gap: var(--space-sm);
 	}
 
 	.conversation-empty-state {

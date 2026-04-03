@@ -461,6 +461,7 @@ export async function saveUploadedArtifact(params: {
   conversationId?: string | null;
   vaultId?: string | null;
   file: File;
+  metadata?: Record<string, unknown> | null;
 }): Promise<{
   artifact: Artifact;
   normalizedArtifact: Artifact | null;
@@ -506,6 +507,7 @@ export async function saveUploadedArtifact(params: {
     summary: nameResolution.finalName,
     metadata: {
       uploadSource: "chat",
+      ...(params.metadata ?? {}),
       ...(nameResolution.wasRenamed
         ? { originalName: nameResolution.originalName, renamed: true }
         : {}),

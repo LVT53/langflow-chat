@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
+	import AttachmentContentModal from './AttachmentContentModal.svelte';
 	import VaultPickerModal from './VaultPickerModal.svelte';
 
 	interface GeneratedFileProps {
@@ -29,6 +30,7 @@
 	}: GeneratedFileProps = $props();
 
 	let showVaultPicker = $state(false);
+	let showPreview = $state(false);
 	let isSaving = $state(false);
 	let isLoadingVaults = $state(false);
 	let saveError = $state<string | null>(null);
@@ -96,6 +98,14 @@
 
 	function handleVaultPickerCancel() {
 		showVaultPicker = false;
+	}
+
+	function handlePreviewOpen() {
+		showPreview = true;
+	}
+
+	function handlePreviewClose() {
+		showPreview = false;
 	}
 
 	async function handleVaultPickerSave(vaultId: string) {
@@ -302,51 +312,87 @@
 	/>
 {/if}
 
+<AttachmentContentModal
+	open={showPreview}
+	artifactId={null}
+	contentUrl={`/api/chat/files/${fileId}/preview`}
+	filename={filename}
+	eyebrowLabel="Generated file"
+	emptyMessage="No extracted preview is available for this file."
+	errorMessage="Failed to load generated file preview."
+	onClose={handlePreviewClose}
+/>
+
 <div class="generated-file-card" class:failed={status === 'failed'} class:generating={status === 'generating'}>
-	<div class="file-header">
+	<div class="file-main">
 		<div class="file-icon-wrapper" class:generating={status === 'generating'}>
 			{@render getFileIcon()()}
 		</div>
 		<div class="file-info">
 			<div class="filename" title={filename}>{filename}</div>
-			{#if status === 'success'}
-				<div class="file-size">{formatFileSize(size)}</div>
-				{#if currentSavedVaultName}
-					<div class="saved-status">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="12"
-							height="12"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<polyline points="20 6 9 17 4 12" />
-						</svg>
-						<span>Saved to Vault: {currentSavedVaultName}</span>
+			<div class="file-meta-row">
+				{#if status === 'success'}
+					<div class="file-size">{formatFileSize(size)}</div>
+					{#if currentSavedVaultName}
+						<div class="saved-status">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<polyline points="20 6 9 17 4 12" />
+							</svg>
+							<span>Saved to Vault: {currentSavedVaultName}</span>
+						</div>
+					{/if}
+				{:else if status === 'generating'}
+					<div class="generating-text">
+						{@render SpinnerIcon()}
+						<span>Generating...</span>
 					</div>
+				{:else if status === 'failed'}
+					<div class="error-text">{error || 'File generation failed'}</div>
 				{/if}
-			{:else if status === 'generating'}
-				<div class="generating-text">
-					{@render SpinnerIcon()}
-					<span>Generating...</span>
-				</div>
-				<div class="generating-progress" data-testid="generating-progress" aria-hidden="true"></div>
-			{:else if status === 'failed'}
-				<div class="error-text">{error || 'File generation failed'}</div>
-			{/if}
-			{#if saveError}
-				<div class="save-error-text">{saveError}</div>
-			{/if}
+				{#if saveError}
+					<div class="save-error-text">{saveError}</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
 	{#if status === 'success'}
 		<div class="file-actions">
+			<button
+				type="button"
+				class="btn-secondary action-button"
+				onclick={handlePreviewOpen}
+				aria-label={`Preview ${filename}`}
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+					<circle cx="12" cy="12" r="3" />
+				</svg>
+				<span>Preview</span>
+			</button>
+
 			<a
 				href={downloadUrl}
 				class="btn-secondary action-button"
@@ -402,6 +448,8 @@
 				{/if}
 			</button>
 		</div>
+	{:else if status === 'generating'}
+		<div class="generating-progress" data-testid="generating-progress" aria-hidden="true"></div>
 	{/if}
 </div>
 
@@ -409,13 +457,15 @@
 	.generated-file-card {
 		position: relative;
 		display: flex;
-		flex-direction: column;
+		align-items: center;
+		justify-content: space-between;
 		gap: var(--space-md);
-		padding: var(--space-md);
+		padding: 0.7rem 0.85rem;
 		border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--surface-elevated) 52%, transparent 48%);
 		max-width: 100%;
+		min-height: 3.5rem;
 	}
 
 	.generated-file-card.generating {
@@ -442,10 +492,12 @@
 		background: color-mix(in srgb, var(--danger) 5%, var(--surface-elevated) 95%);
 	}
 
-	.file-header {
+	.file-main {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		gap: var(--space-sm);
+		min-width: 0;
+		flex: 1 1 auto;
 	}
 
 	.file-icon-wrapper {
@@ -453,8 +505,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 40px;
-		height: 40px;
+		width: 34px;
+		height: 34px;
 		border-radius: var(--radius-sm);
 		background: color-mix(in srgb, var(--surface-page) 70%, var(--surface-elevated) 30%);
 		color: var(--icon-muted);
@@ -467,23 +519,31 @@
 	.file-info {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 0.15rem;
 		min-width: 0;
-		flex: 1;
+		flex: 1 1 auto;
 	}
 
 	.filename {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.9rem;
-		font-weight: 500;
+		font-size: 0.86rem;
+		font-weight: 600;
 		color: var(--text-primary);
-		word-break: break-word;
-		overflow-wrap: break-word;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.file-meta-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.35rem 0.5rem;
 	}
 
 	.file-size {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.75rem;
+		font-size: 0.72rem;
 		color: var(--text-muted);
 	}
 
@@ -494,7 +554,6 @@
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 0.75rem;
 		color: var(--success, #22c55e);
-		margin-top: 2px;
 	}
 
 	.generating-text {
@@ -507,9 +566,11 @@
 	}
 
 	.generating-progress {
-		position: relative;
-		margin-top: var(--space-xs);
-		height: 0.35rem;
+		position: absolute;
+		left: 0.85rem;
+		right: 0.85rem;
+		bottom: 0.45rem;
+		height: 0.18rem;
 		border-radius: 999px;
 		overflow: hidden;
 		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
@@ -531,35 +592,34 @@
 
 	.error-text {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.75rem;
+		font-size: 0.72rem;
 		color: var(--danger);
-		word-break: break-word;
 	}
 
 	.save-error-text {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.75rem;
+		font-size: 0.72rem;
 		color: var(--danger);
-		word-break: break-word;
-		margin-top: 2px;
 	}
 
 	.file-actions {
 		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-		padding-top: var(--space-sm);
-		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent 50%);
+		flex-wrap: nowrap;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.4rem;
+		flex: 0 0 auto;
 	}
 
 	.action-button {
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-xs);
-		font-size: 0.8rem;
-		padding: 0.25rem 0.6rem;
-		min-height: 32px;
+		font-size: 0.77rem;
+		padding: 0.2rem 0.55rem;
+		min-height: 28px;
 		text-decoration: none;
+		white-space: nowrap;
 	}
 
 	.action-button.saved {
@@ -604,6 +664,18 @@
 		.generating-progress::after {
 			animation: none;
 			transform: none;
+		}
+	}
+
+	@media (max-width: 720px) {
+		.generated-file-card {
+			flex-wrap: wrap;
+			align-items: flex-start;
+		}
+
+		.file-actions {
+			width: 100%;
+			justify-content: flex-start;
 		}
 	}
 </style>

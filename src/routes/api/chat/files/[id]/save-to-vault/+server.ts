@@ -1,12 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getChatFile, readChatFileContent, deleteChatFile } from '$lib/server/services/chat-files';
+import {
+	getChatFile,
+	getSavedVaultForChatFile,
+	readChatFileContent,
+} from '$lib/server/services/chat-files';
 import { getVault } from '$lib/server/services/knowledge/store/vaults';
-import { createArtifact, createArtifactLink, fileExtension, knowledgeUserDir } from '$lib/server/services/knowledge/store/core';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
+import {
+	createNormalizedArtifact,
+	saveUploadedArtifact,
+} from '$lib/server/services/knowledge';
 
 interface SaveToVaultRequest {
 	conversationId: string;
@@ -82,54 +86,54 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'Vault not found' }, { status: 404 });
 	}
 
+	const existingSavedVault = await getSavedVaultForChatFile(user.id, fileId);
+	if (existingSavedVault) {
+		const response: SaveToVaultResponse = {
+			artifactId: existingSavedVault.artifactId,
+			vaultId: existingSavedVault.vaultId,
+			vaultName: existingSavedVault.vaultName,
+			filename: existingSavedVault.filename,
+		};
+
+		return json(response);
+	}
+
 	const fileContent = await readChatFileContent(conversationId, fileId);
 	if (!fileContent) {
 		return json({ error: 'Failed to read file content' }, { status: 500 });
 	}
 
-	const extension = fileExtension(chatFile.filename);
-	const artifactId = randomUUID();
-	const userDir = knowledgeUserDir(user.id);
-	await mkdir(userDir, { recursive: true });
-
-	const fileName = extension ? `${artifactId}.${extension}` : artifactId;
-	const storagePath = join('data', 'knowledge', user.id, fileName);
-	const absolutePath = join(process.cwd(), storagePath);
-	await writeFile(absolutePath, fileContent);
-
-	const artifact = await createArtifact({
-		id: artifactId,
+	const uploadResult = await saveUploadedArtifact({
 		userId: user.id,
-		conversationId: conversationId,
-		vaultId: vaultId,
-		type: 'generated_output',
-		name: chatFile.filename,
-		mimeType: chatFile.mimeType,
-		extension,
-		sizeBytes: chatFile.sizeBytes,
-		storagePath,
-		summary: `Generated file saved from chat: ${chatFile.filename}`,
+		conversationId,
+		vaultId,
+		file: new File([fileContent], chatFile.filename, {
+			type: chatFile.mimeType ?? 'application/octet-stream',
+		}),
 		metadata: {
-			source: 'chat_generated_file',
-			originalFileId: fileId,
-			conversationId,
+			uploadSource: 'chat_generated_file',
+			originalChatFileId: fileId,
+			originalConversationId: conversationId,
 		},
 	});
 
-	await createArtifactLink({
-		userId: user.id,
-		artifactId: artifact.id,
-		linkType: 'attached_to_conversation',
-		conversationId: conversationId,
-	});
-
-	await deleteChatFile(conversationId, fileId);
+	const artifact = uploadResult.artifact;
+	if (!uploadResult.normalizedArtifact && artifact.storagePath) {
+		await createNormalizedArtifact({
+			userId: user.id,
+			conversationId,
+			sourceArtifactId: artifact.id,
+			sourceStoragePath: artifact.storagePath,
+			sourceName: artifact.name,
+			sourceMimeType: artifact.mimeType,
+		});
+	}
 
 	const response: SaveToVaultResponse = {
 		artifactId: artifact.id,
 		vaultId: vault.id,
 		vaultName: vault.name,
-		filename: chatFile.filename,
+		filename: artifact.name,
 	};
 
 	return json(response);

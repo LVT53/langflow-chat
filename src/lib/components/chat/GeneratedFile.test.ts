@@ -45,6 +45,7 @@ describe('GeneratedFile', () => {
 
 		expect(getByText('report.pdf')).toBeInTheDocument();
 		expect(getByText('1.0 MB')).toBeInTheDocument();
+		expect(getByLabelText('Preview report.pdf')).toBeInTheDocument();
 		expect(getByLabelText('Download report.pdf')).toBeInTheDocument();
 		expect(getByLabelText('Save report.pdf to vault')).toBeInTheDocument();
 	});
@@ -91,14 +92,36 @@ describe('GeneratedFile', () => {
 		expect(getByText('512 B')).toBeInTheDocument();
 	});
 
-	it('does not render the old placeholder preview action', () => {
-		const { queryByLabelText } = renderGeneratedFile({
+	it('opens the generated file preview modal', async () => {
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					fileId: 'file-444',
+					filename: 'image.png',
+					mimeType: 'image/png',
+					contentText: 'preview text',
+				}),
+				{
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			)
+		);
+
+		renderGeneratedFile({
 			filename: 'image.png',
 			mimeType: 'image/png',
 			downloadUrl: '/api/chat/files/file-444/download',
 		});
 
-		expect(queryByLabelText('Preview image.png')).toBeNull();
+		await fireEvent.click(screen.getByLabelText('Preview image.png'));
+
+		await waitFor(() => {
+			expect(screen.getByText('Generated file')).toBeInTheDocument();
+			expect(screen.getByText('preview text')).toBeInTheDocument();
+		});
+
+		expect(global.fetch).toHaveBeenCalledWith('/api/chat/files/file-123/preview');
 	});
 
 	it('loads vaults on demand and opens the picker', async () => {
@@ -173,6 +196,15 @@ describe('GeneratedFile', () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ conversationId: 'conv-1', vaultId: 'vault-1' }),
 		});
+	});
+
+	it('shows persisted saved-to-vault state from props', () => {
+		renderGeneratedFile({
+			savedVaultName: 'Reports',
+		});
+
+		expect(screen.getByText('Saved to Vault: Reports')).toBeInTheDocument();
+		expect(screen.getByLabelText('Saved to Reports')).toBeDisabled();
 	});
 
 	it('preserves the download URL on the anchor', () => {
