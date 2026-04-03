@@ -12,9 +12,22 @@ const mockContainer = {
 	wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
 };
 
+const mockImageInspect = vi.fn().mockResolvedValue({ Id: 'image-1' });
+const mockPull = vi.fn().mockResolvedValue({ on: vi.fn() });
+const mockFollowProgress = vi.fn((_stream, onFinished: (err: Error | null, output?: unknown) => void) =>
+	onFinished(null, [])
+);
+
 const mockDocker = {
 	createContainer: vi.fn().mockResolvedValue(mockContainer),
 	getContainer: vi.fn().mockReturnValue(mockContainer),
+	getImage: vi.fn().mockReturnValue({
+		inspect: mockImageInspect,
+	}),
+	pull: mockPull,
+	modem: {
+		followProgress: mockFollowProgress,
+	},
 };
 
 vi.mock('dockerode', () => ({
@@ -24,11 +37,21 @@ vi.mock('dockerode', () => ({
 }));
 
 // Import after mocking
-const { createSandbox, destroySandbox, SANDBOX_TIMEOUT_MS, SANDBOX_MEMORY_MB, SANDBOX_MAX_FILE_MB } = await import('./config');
+const {
+	createSandbox,
+	destroySandbox,
+	resetSandboxImageStateForTests,
+	SANDBOX_TIMEOUT_MS,
+	SANDBOX_MEMORY_MB,
+	SANDBOX_MAX_FILE_MB,
+} = await import('./config');
 
 describe('sandbox config', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		resetSandboxImageStateForTests();
+		mockImageInspect.mockResolvedValue({ Id: 'image-1' });
+		mockPull.mockResolvedValue({ on: vi.fn() });
 	});
 
 	afterEach(() => {
@@ -53,6 +76,8 @@ describe('sandbox config', () => {
 		it('should create a sandbox container with Python runtime', async () => {
 			const sandbox = await createSandbox();
 
+			expect(mockDocker.getImage).toHaveBeenCalledWith('python:3.11-slim');
+			expect(mockImageInspect).toHaveBeenCalled();
 			expect(mockDocker.createContainer).toHaveBeenCalledWith(
 				expect.objectContaining({
 					Image: expect.stringContaining('python'),
@@ -87,6 +112,19 @@ describe('sandbox config', () => {
 
 			const createCall = mockDocker.createContainer.mock.calls[0][0];
 			expect(createCall.HostConfig.NetworkMode).toBe('none');
+		});
+
+		it('pulls the sandbox image when it is missing locally', async () => {
+			mockImageInspect.mockRejectedValueOnce({
+				statusCode: 404,
+				json: { message: 'No such image: python:3.11-slim' },
+			});
+
+			await createSandbox();
+
+			expect(mockPull).toHaveBeenCalledWith('python:3.11-slim');
+			expect(mockFollowProgress).toHaveBeenCalled();
+			expect(mockDocker.createContainer).toHaveBeenCalled();
 		});
 	});
 

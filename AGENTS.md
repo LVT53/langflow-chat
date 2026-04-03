@@ -125,6 +125,7 @@ Do not:
   - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
   - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
+  - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the base sandbox image exists before container creation and will pull `python:3.11-slim` on first use when it is missing locally
   - Generated-file debug tracing currently logs under `[FILE_GENERATE]`, `[CHAT_FILES]`, `[CHAT_STREAM]`, and `[CONVERSATION_DETAIL]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
 Do:
@@ -380,6 +381,7 @@ Security model:
 - **In-memory extraction**: Tar archives parsed in-memory, never written to host disk
 - **Path traversal protection**: Rejects `..`, absolute paths, null bytes, symlinks, devices
 - **Aggregate limits**: Max 20 output files, 50MB total output
+- **Image bootstrap**: The sandbox config auto-pulls the pinned base image on first use if it is missing, but the app process still needs working Docker daemon access and image-pull permission on the host
 
 Do not:
 

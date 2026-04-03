@@ -8,6 +8,8 @@ export const SANDBOX_MAX_OUTPUT_FILES = 20;
 export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;
 
 const SANDBOX_IMAGE = 'python:3.11-slim';
+let sandboxImageReady = false;
+let sandboxImagePullPromise: Promise<void> | null = null;
 
 export interface Sandbox {
 	container: Container;
@@ -23,7 +25,79 @@ export interface SandboxResult {
 
 const docker = new Docker();
 
+function isDockerodeStatusError(error: unknown): error is { statusCode?: number; json?: { message?: string } } {
+	return typeof error === 'object' && error !== null;
+}
+
+async function hasSandboxImage(): Promise<boolean> {
+	try {
+		await docker.getImage(SANDBOX_IMAGE).inspect();
+		return true;
+	} catch (error) {
+		if (isDockerodeStatusError(error) && error.statusCode === 404) {
+			return false;
+		}
+		throw error;
+	}
+}
+
+async function pullSandboxImage(): Promise<void> {
+	console.info('[FILE_GENERATE] Sandbox image missing locally; pulling base image', {
+		image: SANDBOX_IMAGE,
+	});
+	const stream = await docker.pull(SANDBOX_IMAGE);
+
+	await new Promise<void>((resolve, reject) => {
+		const modem = docker.modem as {
+			followProgress: (
+				stream: NodeJS.ReadableStream,
+				onFinished: (error: Error | null, output: unknown) => void
+			) => void;
+		};
+
+		modem.followProgress(stream, (error) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			console.info('[FILE_GENERATE] Sandbox image pull completed', {
+				image: SANDBOX_IMAGE,
+			});
+			resolve();
+		});
+	});
+}
+
+async function ensureSandboxImage(): Promise<void> {
+	if (sandboxImageReady) return;
+	if (sandboxImagePullPromise) {
+		await sandboxImagePullPromise;
+		return;
+	}
+
+	sandboxImagePullPromise = (async () => {
+		if (await hasSandboxImage()) {
+			sandboxImageReady = true;
+			return;
+		}
+
+		await pullSandboxImage();
+		sandboxImageReady = true;
+	})().finally(() => {
+		sandboxImagePullPromise = null;
+	});
+
+	await sandboxImagePullPromise;
+}
+
+export function resetSandboxImageStateForTests(): void {
+	sandboxImageReady = false;
+	sandboxImagePullPromise = null;
+}
+
 export async function createSandbox(): Promise<Sandbox> {
+	await ensureSandboxImage();
+
 	const memoryBytes = SANDBOX_MEMORY_MB * 1024 * 1024;
 
 	const container = await docker.createContainer({
