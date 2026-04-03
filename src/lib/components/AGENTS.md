@@ -93,6 +93,7 @@ ui/
 - `ConversationList.svelte` owns drag/drop state — `ConversationItem` and `ProjectItem` are **event emitters**, not persistence actors
 - `MessageArea.svelte` is the **sole scroll owner** for conversation content — do not add `overflow-y: auto` elsewhere
 - `MessageArea.svelte` must also keep newly appended generated-file cards, including temporary `generate_file` loading placeholders, visible when the user remained near the bottom of the chat
+- `MessageArea.svelte` also owns the quiet empty-conversation ready state for chat detail routes; do not reintroduce the landing-page hero copy inside the message pane
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
 - `MessageInput.svelte` must mirror a cleared `conversationId` prop back into its local `resolvedConversationId`; do not keep stale landing-page conversation ids alive inside the component after the parent resets them
 - The chat page must treat route teardown/unmount as a local stream detach, not the same thing as the user pressing Stop. Only explicit stop UI should request `/api/chat/stream/stop`.
@@ -116,3 +117,6 @@ Pages may have `_components/` directories for page-scoped UI:
 - `src/routes/(app)/settings/_components/` — tab components
 
 These are **page-internal** — do not import them from other pages. If logic becomes shared, move to `src/lib/components/` or `src/lib/client/api/`.
+
+Chat-route presentation rule:
+- `ChatComposerPanel` and `ChatMessagePane` are part of the chat-detail layout, not the landing-page hero. Keep the composer bottom-docked on the chat route and keep the message surface visible even when a brand-new conversation has no persisted messages yet.

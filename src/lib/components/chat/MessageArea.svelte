@@ -127,7 +127,12 @@
 >
 	<div class="mx-auto flex min-h-full min-w-0 w-full max-w-[760px] flex-col gap-lg">
 		{#if messages.length === 0}
-			<div class="h-full"></div>
+			<div class="conversation-empty-state">
+				<div class="conversation-empty-eyebrow">Conversation Ready</div>
+				<p class="conversation-empty-copy">
+					Your messages and generated files will appear here.
+				</p>
+			</div>
 		{:else}
 			{#each messages as message, i (message.renderKey ?? message.id)}
 				<MessageBubble
@@ -206,6 +211,34 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);
+	}
+
+	.conversation-empty-state {
+		display: flex;
+		min-height: 100%;
+		flex: 1 1 auto;
+		flex-direction: column;
+		justify-content: center;
+		gap: var(--space-sm);
+		padding: 0 var(--space-sm) 10rem;
+		text-align: center;
+	}
+
+	.conversation-empty-eyebrow {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.conversation-empty-copy {
+		margin: 0 auto;
+		max-width: 34rem;
+		font-size: 0.98rem;
+		line-height: 1.6;
+		color: var(--text-secondary);
 	}
 
 	@media (min-width: 768px) {

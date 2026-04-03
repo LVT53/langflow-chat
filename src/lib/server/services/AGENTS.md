@@ -96,6 +96,8 @@ knowledge.ts (facade — re-exports from below)
 
 **Generated-file debug note**: when debugging missing chat files, the current server-side log prefixes are `[LANGFLOW]` for outbound request/session correlation, `[FILE_GENERATE]` for the sandbox endpoint, `[CHAT_FILES]` for persistence/listing, `[CHAT_STREAM]` for tool-call summaries, `generate_file` tool markers, and stream-end payloads, and `[CONVERSATION_DETAIL]` for reload payloads. The sandbox layer now also logs startup image warmup, missing-image pulls, exec/output synchronization, output-archive entry handling, in-container `/output` inspection, and any in-container readback fallback under `[FILE_GENERATE]`, so extend those prefixes instead of inventing new one-off log tags.
 
+**Langflow custom-tool note**: for the file generator node, follow Langflow's tool-mode custom-component pattern directly. The agent must see the actual `generate_file` action as the tool; do not expose an intermediate builder method like `build_tool`, or the model may call that method without ever hitting `/api/chat/files/generate`.
+
 ## Task-State Submodule Flow
 
 ```

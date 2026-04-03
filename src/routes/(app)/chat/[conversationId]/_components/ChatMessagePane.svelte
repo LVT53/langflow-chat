@@ -8,7 +8,6 @@
 		conversationId,
 		isThinkingActive,
 		contextDebug,
-		hasMessages,
 		generatedFiles,
 		onRegenerate,
 		onEdit,
@@ -18,7 +17,6 @@
 		conversationId: string;
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
-		hasMessages: boolean;
 		generatedFiles: ChatGeneratedFileListItem[];
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
@@ -26,7 +24,7 @@
 	} = $props();
 </script>
 
-<div class="message-layer min-h-0 flex-1" class:message-layer-active={hasMessages}>
+<div class="message-layer message-layer-active min-h-0 flex-1">
 	<MessageArea
 		{messages}
 		{conversationId}

@@ -78,6 +78,21 @@ describe('MessageArea', () => {
 		expect(getByText(/step one\s+step two/)).toBeTruthy();
 	});
 
+	it('shows a ready state for empty conversations', () => {
+		const { getByText } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [],
+		});
+
+		expect(getByText('Conversation Ready')).toBeInTheDocument();
+		expect(
+			getByText('Your messages and generated files will appear here.')
+		).toBeInTheDocument();
+	});
+
 	it('scrolls to reveal generated files when they appear at the end of the chat', async () => {
 		const initialMessage: ChatMessage = {
 			id: 'assistant-1',

@@ -16,6 +16,13 @@ export async function POST({ request, params, locals }: RequestEvent) {
 
     const { userMessage, assistantResponse } = await request.json();
     const userId = locals.user?.id;
+    console.info('[TITLE_GENERATE] Request received', {
+      conversationId: params.id,
+      userId: userId ?? null,
+      userMessageLength: typeof userMessage === 'string' ? userMessage.length : 0,
+      assistantResponseLength:
+        typeof assistantResponse === 'string' ? assistantResponse.length : 0,
+    });
     
     if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -29,6 +36,11 @@ export async function POST({ request, params, locals }: RequestEvent) {
     const title = await generateTitle(userMessage, assistantResponse);
     
     await updateConversationTitle(userId, params.id, title);
+    console.info('[TITLE_GENERATE] Title stored', {
+      conversationId: params.id,
+      userId,
+      title,
+    });
     
     return new Response(JSON.stringify({ title }), {
       status: 200,
@@ -37,7 +49,10 @@ export async function POST({ request, params, locals }: RequestEvent) {
       },
     });
   } catch (error) {
-    console.error('Failed to generate title:', error);
+    console.error('[TITLE_GENERATE] Failed to generate title', {
+      conversationId: params.id,
+      error,
+    });
     return new Response(JSON.stringify({ title: null }), {
       status: 200,
       headers: {

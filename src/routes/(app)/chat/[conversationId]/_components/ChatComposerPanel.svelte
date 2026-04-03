@@ -12,7 +12,6 @@
 	import type { DraftChangePayload, SendPayload } from '../_helpers';
 
 	let {
-		hasMessages,
 		sendError,
 		onRetry,
 		onErrorClose,
@@ -39,7 +38,6 @@
 		onManageEvidence,
 		onUploadReady,
 	}: {
-		hasMessages: boolean;
 		sendError: string | null;
 		onRetry: () => void;
 		onErrorClose: () => void;
@@ -68,17 +66,8 @@
 	} = $props();
 </script>
 
-<div class="composer-layer" class:composer-layer-active={hasMessages}>
+<div class="composer-layer composer-layer-active">
 	<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
-		<div class="intro-copy px-2 text-center" class:intro-copy-hidden={hasMessages}>
-			<h1
-				class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
-				style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
-			>
-				What can I help you with?
-			</h1>
-		</div>
-
 		{#if sendError}
 			<ErrorMessage error={sendError} onRetry={onRetry} onClose={onErrorClose} />
 		{/if}
@@ -126,25 +115,5 @@
 	.composer-layer-active {
 		top: 100%;
 		transform: translateY(calc(-100% - max(1.5rem, env(safe-area-inset-bottom))));
-	}
-
-	.intro-copy {
-		max-height: 10rem;
-		opacity: 1;
-		transform: translateY(0);
-		transition:
-			opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
-			max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
-			margin 240ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.intro-copy-hidden {
-		max-height: 0;
-		margin: 0;
-		opacity: 0;
-		transform: translateY(-12px);
-		overflow: hidden;
-		pointer-events: none;
 	}
 </style>

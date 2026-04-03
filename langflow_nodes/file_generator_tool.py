@@ -56,7 +56,7 @@ from lfx.schema.data import Data
 
 class FileGeneratorToolComponent(Component):
     """Tool component for generating files via sandboxed Python execution.
-    
+
     This tool allows an AI agent to generate downloadable files by executing
     Python code in a secure sandbox environment. The sandbox has:
     - No network access
@@ -116,7 +116,7 @@ class FileGeneratorToolComponent(Component):
             display_name="Tool",
             name="tool_output",
             description="Tool output for agent use",
-            method="build_tool",
+            method="generate_file",
         ),
     ]
 
@@ -229,18 +229,11 @@ class FileGeneratorToolComponent(Component):
                 "error": f"Unexpected error: {type(e).__name__}: {str(e)}",
             }
 
-    def generate_file(self, code: str, filename: str = "") -> Data:
-        """Tool function called by the agent.
-        
-        This is the main entry point when the agent uses this tool.
-        
-        Args:
-            code: Python code to execute in the sandbox
-            filename: Optional custom filename for the output
-            
-        Returns:
-            Data object with success status and file information
-        """
+    def generate_file(self) -> Data:
+        """Tool function called by the agent via Langflow tool mode."""
+        code = str(getattr(self, "code", "") or "")
+        filename = str(getattr(self, "filename", "") or "")
+
         # Get conversation ID from session
         conversation_id = self._get_conversation_id()
         
@@ -258,7 +251,11 @@ class FileGeneratorToolComponent(Component):
             })
         
         # Log the generation attempt
-        logger.info(f"Generating file in conversation {conversation_id[:8]}...")
+        logger.info(
+            "Generating file in conversation %s via %s",
+            conversation_id[:8],
+            self.alfyai_api_url.rstrip("/"),
+        )
         
         # Execute the code
         result = self._execute_code(
@@ -291,6 +288,7 @@ class FileGeneratorToolComponent(Component):
                 "success": True,
                 "message": summary,
                 "files": file_info,
+                "conversationId": conversation_id,
             })
         else:
             error_msg = result.get("error", "Unknown error")
@@ -299,60 +297,8 @@ class FileGeneratorToolComponent(Component):
             return Data(data={
                 "success": False,
                 "error": error_msg,
+                "conversationId": conversation_id,
             })
-
-    async def build_tool(self) -> list:
-        """Build the tool for use by an agent.
-        
-        This method is called by Langflow to convert the component
-        into a tool that can be used by an Agent component.
-        
-        Returns:
-            List containing the StructuredTool for the agent
-        """
-        from langchain_core.tools import StructuredTool
-        from pydantic import BaseModel, Field
-        from typing import Optional
-        
-        # Define the input schema for the tool
-        class FileGeneratorInput(BaseModel):
-            """Input schema for the file generator tool."""
-            code: str = Field(
-                ...,
-                description=(
-                    "Python code to execute in the sandbox. "
-                    "Write output files to the /output directory. "
-                    "Available libraries: pandas, matplotlib, reportlab, openpyxl, numpy, etc. "
-                    "Example: "
-                    "import pandas as pd; "
-                    "df = pd.DataFrame({'a': [1, 2, 3]}); "
-                    "df.to_excel('/output/data.xlsx', index=False)"
-                ),
-            )
-            filename: Optional[str] = Field(
-                default=None,
-                description="Optional custom filename for the generated file (e.g., 'report.pdf')",
-            )
-        
-        # Create the tool
-        tool = StructuredTool(
-            name="generate_file",
-            description=(
-                "Generate downloadable files (PDFs, Excel spreadsheets, charts, images, CSVs) "
-                "by executing Python code in a secure sandbox. "
-                "Use this tool when the user asks for a document, report, spreadsheet, chart, "
-                "or any file that needs to be created and downloaded. "
-                "The code runs in an isolated environment with no network access. "
-                "Write output files to /output directory or no file will be created. "
-                "Generated files appear in the AlfyAI chat UI after the response completes. "
-                "Saving a generated file to a vault is a separate UI action in chat. "
-                "Common libraries available: pandas, matplotlib, reportlab, openpyxl, numpy, Pillow."
-            ),
-            func=lambda code, filename=None: self.generate_file(code, filename or ""),
-            args_schema=FileGeneratorInput,
-        )
-        
-        return [tool]
 
     def update_build_config(
         self,

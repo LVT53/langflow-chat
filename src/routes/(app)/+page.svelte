@@ -44,6 +44,7 @@
 	let error = $state<string | null>(null);
 	let isFromChat = $state(false);
 	let animateIn = $state(false);
+	let pendingMessagePreview = $state('');
 	let preparedConversationId = $state<string | null>(null);
 	let preparedConversationPromise: Promise<string> | null = null;
 	let preparedConversationValidationPromise: Promise<void> | null = null;
@@ -149,6 +150,7 @@
 		hasStarted = true;
 		creating = true;
 		error = null;
+		pendingMessagePreview = text;
 
 		try {
 			const id = payload.conversationId ?? await ensurePreparedConversation();
@@ -164,6 +166,7 @@
 		} catch {
 			error = 'Failed to create conversation. Please try again.';
 			hasStarted = false;
+			pendingMessagePreview = '';
 		} finally {
 			creating = false;
 		}
@@ -232,7 +235,12 @@
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<div class="composer-layer" class:composer-layer-animate={isFromChat && animateIn} class:composer-layer-no-animate={!isFromChat}>
+		<div
+			class="composer-layer"
+			class:composer-layer-animate={isFromChat && animateIn}
+			class:composer-layer-no-animate={!isFromChat}
+			class:composer-layer-handoff={hasStarted}
+		>
 			<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
 				{#if !hasStarted}
 					<div class="intro-copy px-2 text-center" in:fade={{ duration: isFromChat ? 400 : 0, delay: isFromChat ? 100 : 0 }}>
@@ -245,6 +253,13 @@
 					</div>
 				{/if}
 
+				{#if creating && pendingMessagePreview}
+					<div class="pending-message-preview" transition:fade={{ duration: 150 }}>
+						<div class="pending-message-label">Starting conversation</div>
+						<p class="pending-message-body">{pendingMessagePreview}</p>
+					</div>
+				{/if}
+
 				{#if error}
 					<div class="w-full rounded-md border border-danger bg-surface-page p-md text-sm font-serif text-danger shadow-sm" role="alert">
 						{error}
@@ -254,7 +269,7 @@
 				{#if creating}
 					<div class="creating-indicator" transition:fade={{ duration: 150 }}>
 						<div class="spinner"></div>
-						<span class="text-sm text-text-muted">Creating conversation...</span>
+						<span class="text-sm text-text-muted">Opening your new chat...</span>
 					</div>
 				{/if}
 
@@ -309,6 +324,16 @@
 		opacity: 1;
 	}
 
+	.composer-layer-handoff {
+		top: 100%;
+		transform: translateY(calc(-100% - max(1.5rem, env(safe-area-inset-bottom))));
+		opacity: 1;
+		transition:
+			top 320ms cubic-bezier(0.22, 1, 0.36, 1),
+			transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+			opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
 	/* On mobile the header (52px) shifts the available area down, making top:50%
 	   land 26px below the true screen center. Compensate by nudging up. */
 	@media (max-width: 767px) {
@@ -328,6 +353,35 @@
 		justify-content: center;
 		gap: var(--space-sm);
 		padding: var(--space-md);
+	}
+
+	.pending-message-preview {
+		align-self: flex-end;
+		max-width: min(100%, 44rem);
+		border: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent 45%);
+		background:
+			linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, white 8%), var(--surface-elevated));
+		border-radius: calc(var(--radius-lg) + 2px);
+		padding: var(--space-md) var(--space-lg);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.pending-message-label {
+		margin-bottom: var(--space-xs);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.pending-message-body {
+		margin: 0;
+		font-size: 1rem;
+		line-height: 1.55;
+		color: var(--text-primary);
+		word-break: break-word;
 	}
 
 	.spinner {

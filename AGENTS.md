@@ -70,11 +70,13 @@ Do not:
   - Landing page.
   - Prepares a draft conversation and stores the first pending message before navigation.
   - Must validate any stored landing draft conversation before reuse; only empty default-title prepared conversations are eligible for reuse from session state.
+  - Owns the landing-to-chat visual handoff: once the first message is sent, the landing composer should transition into a bottom-docked "opening chat" state instead of staying centered like the idle hero surface.
 - [`src/routes/(app)/chat/[conversationId]/+page.ts`](./src/routes/(app)/chat/[conversationId]/+page.ts)
   - Lightweight page bootstrap for the chat detail route.
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
   - Owns the one-slot queued follow-up turn while a response is streaming.
+  - The chat detail route should stay visually distinct from the landing page: the composer remains bottom-docked and the message surface stays visible even before the first persisted messages arrive.
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI with a single primary content column.
@@ -149,6 +151,7 @@ Do:
 - `/api/chat/files/generate` may authenticate with either the signed-in session or the optional `ALFYAI_API_KEY` bearer secret used by the Langflow file-generator tool; keep that bearer path conversation-scoped and internal
 - keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, generated files show up in chat, and vault saving is still a separate UI action unless a dedicated tool is added
 - keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
+- keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
 - save-to-vault endpoint deletes source file after successful copy
 
 Do not:

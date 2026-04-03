@@ -102,7 +102,6 @@
 	let streamInterruptedByBackground = false;
 	const evidencePollControllers = new Map<string, AbortController>();
 
-	let hasMessages = $derived($messages.length > 0);
 	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
 	let generatedFileCards = $derived([
 		...generatedFiles.map((file) => ({
@@ -828,7 +827,6 @@
 			conversationId={data.conversation.id}
 			{isThinkingActive}
 			{contextDebug}
-			{hasMessages}
 			generatedFiles={generatedFileCards}
 			onRegenerate={handleRegenerate}
 			onEdit={handleEdit}
@@ -836,7 +834,6 @@
 		/>
 
 		<ChatComposerPanel
-			{hasMessages}
 			{sendError}
 			onRetry={handleRetry}
 			onErrorClose={handleErrorClose}
