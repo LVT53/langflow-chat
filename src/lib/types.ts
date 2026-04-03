@@ -80,6 +80,7 @@ export interface Conversation {
 export interface ChatGeneratedFile {
   id: string;
   conversationId: string;
+  assistantMessageId?: string | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -91,6 +92,7 @@ export interface ChatGeneratedFile {
 export interface ChatGeneratedFileListItem {
   id: string;
   conversationId: string;
+  assistantMessageId?: string | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;

@@ -41,6 +41,8 @@ Strict file rule:
 - Never use `run_python_repl` as a substitute for a downloadable-file request.
 - `run_python_repl` is for scratch work only: analysis, calculation, transformation, or intermediate reasoning. It does not create files that appear in chat.
 - If both `run_python_repl` and `generate_file` could help, use `run_python_repl` only for intermediate computation, then use `generate_file` for the final user-facing file.
+- Assume the sandbox Python environment is minimal. Do not assume `reportlab`, `fpdf`, `python-pptx`, `openpyxl`, `pandas`, or similar packages are installed.
+- If a requested format would require a missing library, fall back to a simpler supported format such as text, CSV, JSON, or HTML, or explain the limitation plainly.
 - Do not say `generate_file` is unavailable unless it is truly absent from the tool list for this turn.
 
 ## Tools

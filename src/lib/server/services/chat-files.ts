@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, readFile, unlink, access } from 'fs/promises';
 import { join, extname } from 'path';
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, inArray, like } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles, knowledgeVaults } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
@@ -9,6 +9,7 @@ import { parseJsonRecord } from '$lib/server/utils/json';
 export interface ChatFile {
 	id: string;
 	conversationId: string;
+	assistantMessageId: string | null;
 	userId: string;
 	filename: string;
 	mimeType: string | null;
@@ -28,12 +29,14 @@ export interface FileInput {
 	filename: string;
 	mimeType?: string;
 	content: Buffer | Uint8Array;
+	assistantMessageId?: string | null;
 }
 
 function mapRowToChatFile(row: typeof chatGeneratedFiles.$inferSelect): ChatFile {
 	return {
 		id: row.id,
 		conversationId: row.conversationId,
+		assistantMessageId: row.assistantMessageId ?? null,
 		userId: row.userId,
 		filename: row.filename,
 		mimeType: row.mimeType ?? null,
@@ -95,6 +98,7 @@ export async function storeGeneratedFile(
 			.values({
 				id,
 				conversationId,
+				assistantMessageId: file.assistantMessageId ?? null,
 				userId,
 				filename: file.filename,
 				mimeType: file.mimeType ?? null,
@@ -158,6 +162,65 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 		});
 		throw error;
 	}
+}
+
+export async function getChatFilesForAssistantMessage(
+	conversationId: string,
+	assistantMessageId: string
+): Promise<ChatFile[]> {
+	try {
+		const rows = await db
+			.select()
+			.from(chatGeneratedFiles)
+			.where(
+				and(
+					eq(chatGeneratedFiles.conversationId, conversationId),
+					eq(chatGeneratedFiles.assistantMessageId, assistantMessageId)
+				)
+			)
+			.orderBy(desc(chatGeneratedFiles.createdAt));
+
+		const files = rows.map(mapRowToChatFile);
+		console.info('[CHAT_FILES] Listed assistant-scoped generated files', {
+			conversationId,
+			assistantMessageId,
+			count: files.length,
+			files: files.map((file) => ({
+				id: file.id,
+				filename: file.filename,
+				sizeBytes: file.sizeBytes,
+				mimeType: file.mimeType,
+			})),
+		});
+		return files;
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to list assistant-scoped generated files', {
+			conversationId,
+			assistantMessageId,
+			error,
+		});
+		throw error;
+	}
+}
+
+export async function assignGeneratedFilesToAssistantMessage(
+	conversationId: string,
+	assistantMessageId: string,
+	fileIds: string[]
+): Promise<void> {
+	if (fileIds.length === 0) {
+		return;
+	}
+
+	await db
+		.update(chatGeneratedFiles)
+		.set({ assistantMessageId })
+		.where(
+			and(
+				eq(chatGeneratedFiles.conversationId, conversationId),
+				inArray(chatGeneratedFiles.id, fileIds)
+			)
+		);
 }
 
 /**

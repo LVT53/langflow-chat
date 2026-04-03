@@ -4,6 +4,7 @@ import type { ChatFile, FileInput } from './chat-files';
 type ChatFileRow = {
 	id: string;
 	conversationId: string;
+	assistantMessageId: string | null;
 	userId: string;
 	filename: string;
 	mimeType: string | null;
@@ -12,7 +13,17 @@ type ChatFileRow = {
 	createdAt: Date;
 };
 
-const { mockRows, mockInsertValues, mockSelectWhere, mockDeleteWhere, mockUnlink, mockMkdir, mockWriteFile, mockReadFile, mockAccess } = vi.hoisted(() => {
+const {
+	mockRows,
+	mockInsertValues,
+	mockSelectWhere,
+	mockDeleteWhere,
+	mockUnlink,
+	mockMkdir,
+	mockWriteFile,
+	mockReadFile,
+	mockAccess,
+} = vi.hoisted(() => {
 	const mockRows: ChatFileRow[] = [];
 
 	const mockInsertValues = vi.fn(async (values: ChatFileRow | ChatFileRow[]) => {
@@ -73,17 +84,25 @@ vi.mock('$lib/server/db', () => ({
 				where: vi.fn((condition: unknown) => ({
 					orderBy: vi.fn(async () => {
 						const conversationId = extractConversationId(condition);
-						return mockSelectWhere(conversationId);
+						const assistantMessageId = extractAssistantMessageId(condition);
+						return mockSelectWhere(conversationId).then((rows) =>
+							rows.filter(
+								(row) =>
+									!assistantMessageId || row.assistantMessageId === assistantMessageId
+							)
+						);
 					}),
 					limit: vi.fn(async () => {
 						const conversationId = extractConversationId(condition);
 						const fileId = extractFileId(condition);
 						const userId = extractUserId(condition);
+						const assistantMessageId = extractAssistantMessageId(condition);
 						const rows = mockRows.filter(
 							(r) =>
 								(!conversationId || r.conversationId === conversationId) &&
 								(!fileId || r.id === fileId) &&
-								(!userId || r.userId === userId)
+								(!userId || r.userId === userId) &&
+								(!assistantMessageId || r.assistantMessageId === assistantMessageId)
 						);
 						return rows.slice(0, 1).map((r) => ({ ...r }));
 					}),
@@ -103,6 +122,26 @@ vi.mock('$lib/server/db', () => ({
 					returning: vi.fn(() => Promise.resolve(itemsWithDate.map((item) => ({ ...item })))),
 				};
 			}),
+		})),
+		update: vi.fn(() => ({
+			set: vi.fn((values: { assistantMessageId?: string | null }) => ({
+				where: vi.fn((condition: unknown) => {
+					const conversationId = extractConversationId(condition);
+					const fileIds = extractFileIds(condition);
+					mockRows.forEach((row) => {
+						if (
+							(!conversationId || row.conversationId === conversationId) &&
+							(fileIds.length === 0 || fileIds.includes(row.id))
+						) {
+							row.assistantMessageId =
+								typeof values.assistantMessageId === 'string'
+									? values.assistantMessageId
+									: row.assistantMessageId;
+						}
+					});
+					return Promise.resolve(undefined);
+				}),
+			})),
 		})),
 		delete: vi.fn(() => ({
 			where: vi.fn((condition: unknown) => {
@@ -135,6 +174,14 @@ function extractFileId(condition: unknown): string | undefined {
 	return undefined;
 }
 
+function extractFileIds(condition: unknown): string[] {
+	if (Array.isArray(condition)) {
+		const idCondition = condition.find((c: { field: string; value: string[] }) => c.field === 'id');
+		if (idCondition && Array.isArray(idCondition.value)) return idCondition.value;
+	}
+	return [];
+}
+
 function extractUserId(condition: unknown): string | undefined {
 	if (Array.isArray(condition)) {
 		const userCondition = condition.find((c: { field: string }) => c.field === 'userId');
@@ -147,10 +194,25 @@ function extractUserId(condition: unknown): string | undefined {
 	return undefined;
 }
 
+function extractAssistantMessageId(condition: unknown): string | undefined {
+	if (Array.isArray(condition)) {
+		const assistantCondition = condition.find(
+			(c: { field: string }) => c.field === 'assistantMessageId'
+		);
+		if (assistantCondition) return assistantCondition.value;
+	}
+	if (typeof condition === 'object' && condition !== null && 'field' in condition) {
+		const c = condition as { field: string; value: string };
+		if (c.field === 'assistantMessageId') return c.value;
+	}
+	return undefined;
+}
+
 vi.mock('$lib/server/db/schema', () => ({
 	chatGeneratedFiles: {
 		id: { name: 'id' },
 		conversationId: { name: 'conversationId' },
+		assistantMessageId: { name: 'assistantMessageId' },
 		userId: { name: 'userId' },
 		filename: { name: 'filename' },
 		mimeType: { name: 'mimeType' },
@@ -167,6 +229,7 @@ vi.mock('drizzle-orm', () => ({
 		typeof c === 'object' && c !== null && 'field' in c && 'value' in c
 	)),
 	desc: vi.fn(() => 'desc'),
+	inArray: vi.fn((field: { name: string }, values: string[]) => ({ field: field.name, value: values })),
 	eq: vi.fn((field: { name: string }, value: string) => ({ field: field.name, value })),
 }));
 
@@ -192,6 +255,7 @@ describe('chat-files service', () => {
 
 			expect(result).toMatchObject({
 				conversationId: 'conv-123',
+				assistantMessageId: null,
 				userId: 'user-456',
 				filename: 'test-document.pdf',
 				mimeType: 'application/pdf',
@@ -204,6 +268,7 @@ describe('chat-files service', () => {
 			expect(mockRows).toHaveLength(1);
 			expect(mockRows[0]).toMatchObject({
 				conversationId: 'conv-123',
+				assistantMessageId: null,
 				userId: 'user-456',
 				filename: 'test-document.pdf',
 				mimeType: 'application/pdf',
@@ -248,6 +313,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-1',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'doc1.pdf',
 					mimeType: 'application/pdf',
@@ -258,6 +324,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-2',
 					conversationId: 'conv-b',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'doc2.pdf',
 					mimeType: 'application/pdf',
@@ -268,6 +335,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-3',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'doc3.pdf',
 					mimeType: 'application/pdf',
@@ -300,6 +368,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-1',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'oldest.pdf',
 					mimeType: 'application/pdf',
@@ -310,6 +379,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-2',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'newest.pdf',
 					mimeType: 'application/pdf',
@@ -324,6 +394,77 @@ describe('chat-files service', () => {
 			expect(result[0].filename).toBe('newest.pdf');
 			expect(result[1].filename).toBe('oldest.pdf');
 		});
+
+		it('returns only files for the specified assistant message when requested', async () => {
+			const { getChatFilesForAssistantMessage } = await import('./chat-files');
+
+			mockRows.push(
+				{
+					id: 'file-1',
+					conversationId: 'conv-a',
+					assistantMessageId: 'assistant-a',
+					userId: 'user-1',
+					filename: 'oldest.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 1000,
+					storagePath: 'conv-a/file-1.pdf',
+					createdAt: new Date('2026-01-01'),
+				},
+				{
+					id: 'file-2',
+					conversationId: 'conv-a',
+					assistantMessageId: 'assistant-b',
+					userId: 'user-1',
+					filename: 'newest.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 2000,
+					storagePath: 'conv-a/file-2.pdf',
+					createdAt: new Date('2026-01-03'),
+				}
+			);
+
+			const result = await getChatFilesForAssistantMessage('conv-a', 'assistant-b');
+
+			expect(result).toHaveLength(1);
+			expect(result[0].id).toBe('file-2');
+			expect(result[0].assistantMessageId).toBe('assistant-b');
+		});
+	});
+
+	describe('assignGeneratedFilesToAssistantMessage', () => {
+		it('updates only matching files in a conversation', async () => {
+			const { assignGeneratedFilesToAssistantMessage } = await import('./chat-files');
+
+			mockRows.push(
+				{
+					id: 'file-1',
+					conversationId: 'conv-a',
+					assistantMessageId: null,
+					userId: 'user-1',
+					filename: 'doc1.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 1000,
+					storagePath: 'conv-a/file-1.pdf',
+					createdAt: new Date('2026-01-01'),
+				},
+				{
+					id: 'file-2',
+					conversationId: 'conv-b',
+					assistantMessageId: null,
+					userId: 'user-1',
+					filename: 'doc2.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 2000,
+					storagePath: 'conv-b/file-2.pdf',
+					createdAt: new Date('2026-01-02'),
+				}
+			);
+
+			await assignGeneratedFilesToAssistantMessage('conv-a', 'assistant-a', ['file-1']);
+
+			expect(mockRows[0].assistantMessageId).toBe('assistant-a');
+			expect(mockRows[1].assistantMessageId).toBeNull();
+		});
 	});
 
 	describe('getChatFile', () => {
@@ -333,6 +474,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-1',
 				conversationId: 'conv-a',
+				assistantMessageId: null,
 				userId: 'user-1',
 				filename: 'document.pdf',
 				mimeType: 'application/pdf',
@@ -364,6 +506,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-1',
 				conversationId: 'conv-b',
+				assistantMessageId: null,
 				userId: 'user-1',
 				filename: 'document.pdf',
 				mimeType: 'application/pdf',
@@ -385,6 +528,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-7',
 				conversationId: 'conv-a',
+				assistantMessageId: null,
 				userId: 'user-7',
 				filename: 'owned.pdf',
 				mimeType: 'application/pdf',
@@ -408,6 +552,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-8',
 				conversationId: 'conv-a',
+				assistantMessageId: null,
 				userId: 'user-8',
 				filename: 'private.pdf',
 				mimeType: 'application/pdf',
@@ -429,6 +574,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-1',
 				conversationId: 'conv-a',
+				assistantMessageId: null,
 				userId: 'user-1',
 				filename: 'document.pdf',
 				mimeType: 'application/pdf',
@@ -457,6 +603,7 @@ describe('chat-files service', () => {
 			mockRows.push({
 				id: 'file-1',
 				conversationId: 'conv-b',
+				assistantMessageId: null,
 				userId: 'user-1',
 				filename: 'document.pdf',
 				mimeType: 'application/pdf',
@@ -480,6 +627,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-1',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'doc1.pdf',
 					mimeType: 'application/pdf',
@@ -490,6 +638,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-2',
 					conversationId: 'conv-a',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'doc2.pdf',
 					mimeType: 'application/pdf',
@@ -500,6 +649,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-3',
 					conversationId: 'conv-b',
+					assistantMessageId: null,
 					userId: 'user-1',
 					filename: 'other.pdf',
 					mimeType: 'application/pdf',

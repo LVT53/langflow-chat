@@ -50,7 +50,11 @@ import {
 } from "$lib/server/services/chat-turn/stream";
 import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
-import { getChatFiles } from "$lib/server/services/chat-files";
+import {
+  assignGeneratedFilesToAssistantMessage,
+  getChatFiles,
+  getChatFilesForAssistantMessage,
+} from "$lib/server/services/chat-files";
 import {
   getGenerateFileToolCode,
   getGenerateFileToolFilename,
@@ -223,6 +227,18 @@ export const POST: RequestHandler = async (event) => {
       }, 15000);
 
       enqueueChunk(createSsePreludeComment());
+      let generatedFileIdsAtStart = new Set<string>();
+      try {
+        generatedFileIdsAtStart = new Set(
+          (await getChatFiles(conversationId)).map((file) => file.id),
+        );
+      } catch (error) {
+        console.warn("[CHAT_STREAM] Failed to snapshot generated files at stream start", {
+          conversationId,
+          streamId,
+          error,
+        });
+      }
 
       const emitError = (code: StreamErrorCode) =>
         enqueueChunk(streamErrorEvent(code));
@@ -331,10 +347,25 @@ export const POST: RequestHandler = async (event) => {
           userMsgId?: string,
           assistantMsgId?: string,
         ) => {
-          // Fetch generated files for this conversation
           let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
-            generatedFiles = await getChatFiles(conversationId);
+            const allGeneratedFiles = await getChatFiles(conversationId);
+            const newGeneratedFileIds = allGeneratedFiles
+              .filter((file) => !generatedFileIdsAtStart.has(file.id))
+              .map((file) => file.id);
+
+            if (assistantMsgId && newGeneratedFileIds.length > 0) {
+              await assignGeneratedFilesToAssistantMessage(
+                conversationId,
+                assistantMsgId,
+                newGeneratedFileIds,
+              );
+            }
+
+            if (assistantMsgId) {
+              generatedFiles = await getChatFilesForAssistantMessage(conversationId, assistantMsgId);
+            }
+
             console.info("[CHAT_STREAM] Prepared generated files for end event", {
               conversationId,
               streamId,
@@ -342,6 +373,7 @@ export const POST: RequestHandler = async (event) => {
               assistantMessageId: assistantMsgId ?? null,
               wasStopped,
               count: generatedFiles.length,
+              assignedCount: newGeneratedFileIds.length,
               files: generatedFiles.map((file) => ({
                 id: file.id,
                 filename: file.filename,

@@ -116,13 +116,14 @@
 		return inferGeneratedFilenameFromToolInput(input);
 	}
 
-	function addPendingGeneratedFile(input: Record<string, unknown>) {
+	function addPendingGeneratedFile(input: Record<string, unknown>, assistantMessageId: string) {
 		const filename = inferGeneratedFilename(input);
 		pendingGeneratedFiles = [
 			...pendingGeneratedFiles,
 			{
 				id: `pending-${crypto.randomUUID()}`,
 				conversationId: data.conversation.id,
+				assistantMessageId,
 				filename,
 				mimeType: 'application/octet-stream',
 				sizeBytes: 0,
@@ -450,7 +451,7 @@
 				},
 				onToolCall(name, input, status, details) {
 					if (name === 'generate_file' && status === 'running') {
-						addPendingGeneratedFile(input);
+						addPendingGeneratedFile(input, placeholderId);
 					}
 					messages.update((list) =>
 						applyToolCallUpdateToMessageList(list, {
@@ -554,10 +555,10 @@
 					onThinking(chunk) {
 						messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 					},
-					onToolCall(name, input, status, details) {
-						if (name === 'generate_file' && status === 'running') {
-							addPendingGeneratedFile(input);
-						}
+				onToolCall(name, input, status, details) {
+					if (name === 'generate_file' && status === 'running') {
+						addPendingGeneratedFile(input, placeholderId);
+					}
 						messages.update((list) =>
 							applyToolCallUpdateToMessageList(list, {
 								placeholderId,

@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { ChatGeneratedFileListItem, ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
+	import type {
+		ChatGeneratedFileListItem,
+		ChatMessage,
+		ContextDebugState,
+		TaskSteeringPayload,
+	} from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
-	import GeneratedFile from './GeneratedFile.svelte';
 
 	let {
 		messages = [],
@@ -30,7 +34,6 @@
 	let lastGeneratedFileCount = 0;
 	let lastConversationId: string | null = null;
 	let shouldJumpToConversationBottom = false;
-	let lastAssistantMessageIndex = $derived(messages.findLastIndex((message) => message.role === 'assistant'));
 
 	$effect(() => {
 		if (conversationId && conversationId !== lastConversationId) {
@@ -52,6 +55,10 @@
 	// Detect if a new message was added (not just content updates or ID reconciliation on stream end)
 	function hasNewMessage(currentMessages: ChatMessage[]): boolean {
 		return currentMessages.length > lastMessageCount;
+	}
+
+	function getGeneratedFilesForMessage(messageId: string): ChatGeneratedFileListItem[] {
+		return generatedFiles.filter((file) => file.assistantMessageId === messageId);
 	}
 
 	$effect.pre(() => {
@@ -141,33 +148,13 @@
 					isLast={i === messages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					generatedFiles={i === lastAssistantMessageIndex ? generatedFiles : []}
+					generatedFiles={getGeneratedFilesForMessage(message.id)}
 					{conversationId}
 					{onRegenerate}
 					{onEdit}
 					{onSteer}
 				/>
 			{/each}
-			{#if generatedFiles.length > 0 && conversationId && lastAssistantMessageIndex === -1}
-				<div class="generated-files-section">
-					<div class="generated-files-header">Generated Files</div>
-					<div class="generated-files-list">
-						{#each generatedFiles as file (file.id)}
-							<GeneratedFile
-								fileId={file.id}
-								{conversationId}
-								filename={file.filename}
-								size={file.sizeBytes}
-								mimeType={file.mimeType ?? 'application/octet-stream'}
-								downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
-								status={file.status}
-								error={file.error}
-								savedVaultName={file.savedVaultName ?? null}
-							/>
-						{/each}
-					</div>
-				</div>
-			{/if}
 			<div class="scroll-clearance" aria-hidden="true"></div>
 		{/if}
 	</div>
@@ -183,27 +170,6 @@
 	.scroll-clearance {
 		height: 9rem;
 		flex: 0 0 auto;
-	}
-
-	.generated-files-section {
-		margin-top: var(--space-md);
-		padding-top: var(--space-md);
-		border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent 50%);
-	}
-
-	.generated-files-header {
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.76rem;
-		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		margin-bottom: var(--space-sm);
-	}
-
-	.generated-files-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm);
 	}
 
 	.conversation-empty-state {

@@ -438,6 +438,8 @@ export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	conversationId: text('conversation_id')
 		.notNull()
 		.references(() => conversations.id, { onDelete: 'cascade' }),
+	assistantMessageId: text('assistant_message_id')
+		.references(() => messages.id, { onDelete: 'cascade' }),
 	userId: text('user_id')
 		.notNull()
 		.references(() => users.id, { onDelete: 'cascade' }),
@@ -447,6 +449,7 @@ export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	storagePath: text('storage_path').notNull(),
 	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (table) => ({
+	assistantMessageIdx: index('chat_generated_files_assistant_message_idx').on(table.assistantMessageId, table.createdAt),
 	conversationIdx: index('chat_generated_files_conversation_idx').on(table.conversationId, table.createdAt),
 	userIdx: index('chat_generated_files_user_idx').on(table.userId, table.createdAt),
 }));

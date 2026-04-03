@@ -106,6 +106,7 @@ describe('MessageArea', () => {
 		const generatedFile: ChatGeneratedFileListItem = {
 			id: 'file-1',
 			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
 			filename: 'report.pdf',
 			mimeType: 'application/pdf',
 			sizeBytes: 2048,
@@ -156,6 +157,7 @@ describe('MessageArea', () => {
 		const pendingGeneratedFile: ChatGeneratedFileListItem = {
 			id: 'pending-file-1',
 			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
 			filename: 'draft-report.pdf',
 			mimeType: 'application/octet-stream',
 			sizeBytes: 0,
@@ -198,6 +200,7 @@ describe('MessageArea', () => {
 		const generatedFile: ChatGeneratedFileListItem = {
 			id: 'file-inline-1',
 			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-inline-1',
 			filename: 'summary.txt',
 			mimeType: 'text/plain',
 			sizeBytes: 128,
@@ -239,5 +242,83 @@ describe('MessageArea', () => {
 		expect(
 			generatedFileName.compareDocumentPosition(evidenceToggle) & Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
+	});
+
+	it('keeps generated files attached to the assistant response that created them', () => {
+		const firstAssistantId = 'assistant-created-file';
+		const secondAssistantId = 'assistant-follow-up';
+		const generatedFile: ChatGeneratedFileListItem = {
+			id: 'file-scoped-1',
+			conversationId: 'conv-1',
+			assistantMessageId: firstAssistantId,
+			filename: 'scope.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 32,
+			createdAt: Date.now(),
+			status: 'success',
+		};
+
+		const { container, getByText, rerender } = render(MessageArea, {
+			messages: [
+				{
+					id: firstAssistantId,
+					renderKey: firstAssistantId,
+					role: 'assistant',
+					content: 'First response',
+					timestamp: Date.now(),
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+				{
+					id: secondAssistantId,
+					renderKey: secondAssistantId,
+					role: 'assistant',
+					content: 'Second response',
+					timestamp: Date.now() + 1,
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [generatedFile],
+		});
+
+		const assistantMessages = container.querySelectorAll('[data-testid="assistant-message"]');
+		expect(getByText('scope.txt')).toBeInTheDocument();
+		expect(assistantMessages[0]).toHaveTextContent('scope.txt');
+		expect(assistantMessages[1]).not.toHaveTextContent('scope.txt');
+
+		void rerender({
+			messages: [
+				{
+					id: firstAssistantId,
+					renderKey: firstAssistantId,
+					role: 'assistant',
+					content: 'First response',
+					timestamp: Date.now(),
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+				{
+					id: secondAssistantId,
+					renderKey: secondAssistantId,
+					role: 'assistant',
+					content: 'Second response',
+					timestamp: Date.now() + 1,
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [generatedFile],
+		});
+
+		expect(getByText('scope.txt')).toBeInTheDocument();
+		expect(assistantMessages[0]).toHaveTextContent('scope.txt');
+		expect(assistantMessages[1]).not.toHaveTextContent('scope.txt');
 	});
 });
