@@ -220,6 +220,7 @@ Notes before the tables:
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
 - The file-generation sandbox now auto-pulls `python:3.11-slim` on first use if the image is missing locally, so the app process needs both Docker socket access and permission to pull images.
+- Sandbox output-archive read failures now surface as explicit backend errors with `[FILE_GENERATE]` archive-entry logs instead of masquerading as the same empty-output response used for real zero-file runs.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.

@@ -25,6 +25,12 @@ vi.mock('../sandbox/config', () => ({
 
 import { executeCode } from './sandbox-execution';
 
+function createEmptyOutputArchive(): Readable {
+	return Readable.from(
+		createTarArchive([{ name: 'output/', content: Buffer.alloc(0), type: 'directory' }])
+	);
+}
+
 function createTarArchive(files: Array<{ name: string; content: Buffer; type?: string; linkname?: string }>): Buffer {
 	const chunks: Buffer[] = [];
 	
@@ -94,7 +100,7 @@ describe('sandbox-execution', () => {
 				exitCode: 0,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
 
 			const result = await executeCode('print("Hello, World!")', 'python');
 
@@ -112,7 +118,7 @@ describe('sandbox-execution', () => {
 				exitCode: 1,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
 
 			const result = await executeCode('print("Hello"', 'python');
 
@@ -146,7 +152,7 @@ describe('sandbox-execution', () => {
 				exitCode: 137,
 			};
 			mockSandbox.execute.mockResolvedValue(mockResult);
-			mockContainer.getArchive.mockRejectedValue(new Error('No files'));
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
 
 			const result = await executeCode('x = [0] * 10**9', 'python');
 
@@ -176,6 +182,43 @@ describe('sandbox-execution', () => {
 			expect(result.files.length).toBe(1);
 			expect(result.files[0].filename).toBe('report.pdf');
 			expect(mockSandbox.destroy).toHaveBeenCalled();
+		});
+
+		it('extracts generated files after a leading directory entry', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'File generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{ name: 'output/', content: Buffer.alloc(0), type: 'directory' },
+				{ name: 'output/report.pdf', content: Buffer.from('PDF content') },
+			]);
+
+			mockContainer.getArchive.mockResolvedValue(Readable.from(tarContent));
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files.length).toBe(1);
+			expect(result.files[0].filename).toBe('report.pdf');
+		});
+
+		it('surfaces archive extraction failures instead of silently returning no files', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'File generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockRejectedValue(new Error('Archive read failed'));
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files).toEqual([]);
+			expect(result.error).toContain('Failed to collect generated files');
+			expect(result.error).toContain('Archive read failed');
 		});
 
 		it('destroys sandbox even when execution fails', async () => {

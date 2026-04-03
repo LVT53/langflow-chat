@@ -126,6 +126,7 @@ Do not:
   - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the base sandbox image exists before container creation and will pull `python:3.11-slim` on first use when it is missing locally
+  - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts) must surface output-archive read failures as explicit execution errors instead of collapsing them into the same empty-file 422 path used for real zero-output runs
   - Generated-file debug tracing currently logs under `[FILE_GENERATE]`, `[CHAT_FILES]`, `[CHAT_STREAM]`, and `[CONVERSATION_DETAIL]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
 Do:
