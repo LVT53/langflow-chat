@@ -193,11 +193,10 @@
 
 	.generated-files-header {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.8rem;
-		font-weight: 600;
+		font-size: 0.76rem;
 		color: var(--text-muted);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.03em;
 		margin-bottom: var(--space-sm);
 	}
 
