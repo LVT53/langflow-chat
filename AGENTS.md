@@ -381,7 +381,7 @@ Security model:
 - **Capability dropping**: All Linux capabilities dropped (`CapDrop: ['ALL']`, `Privileged: false`)
 - **Resource limits**: 60s timeout, 1GB memory, 50MB max file size, 100 process limit
 - **Readonly rootfs**: Container filesystem is readonly; writable tmpfs for `/output` and `/tmp`
-- **In-memory extraction**: Tar archives parsed in-memory, never written to host disk
+- **In-memory extraction**: Generated files are collected in-memory only. Prefer the Docker archive path first, but keep the in-container `/output` inspection and controlled readback fallback available when archive reads miss tmpfs-backed outputs. Never write sandbox contents to host disk.
 - **Path traversal protection**: Rejects `..`, absolute paths, null bytes, symlinks, devices
 - **Aggregate limits**: Max 20 output files, 50MB total output
 - **Image bootstrap**: The sandbox config auto-pulls the pinned base image on first use if it is missing, but the app process still needs working Docker daemon access and image-pull permission on the host

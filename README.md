@@ -220,7 +220,7 @@ Notes before the tables:
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
 - The file-generation sandbox now warms `python:3.11-slim` in the background at app startup and auto-pulls it on first use if it is still missing locally, so the app process needs both Docker socket access and permission to pull images.
-- Sandbox output-archive read failures now surface as explicit backend errors with `[FILE_GENERATE]` archive-entry logs instead of masquerading as the same empty-output response used for real zero-file runs.
+- Sandbox output collection now inspects `/output` from inside the container as well as the Docker archive path. If Docker's archive API misses tmpfs-backed output files, the server falls back to an in-container readback path and logs that under `[FILE_GENERATE]` instead of returning the same misleading empty-output response.
 - The sandbox waits for Docker exec inspection to report completion before reading `/output`, so file extraction no longer races an early-closed exec stream.
 - Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.

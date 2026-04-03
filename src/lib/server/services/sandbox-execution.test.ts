@@ -16,6 +16,7 @@ const mockSandbox = vi.hoisted(() => ({
 
 vi.mock('../sandbox/config', () => ({
 	createSandbox: vi.fn().mockResolvedValue(mockSandbox),
+	executeSandboxCommand: vi.fn(),
 	SANDBOX_TIMEOUT_MS: 60000,
 	SANDBOX_MEMORY_MB: 1024,
 	SANDBOX_MAX_FILE_MB: 50,
@@ -24,6 +25,9 @@ vi.mock('../sandbox/config', () => ({
 }));
 
 import { executeCode } from './sandbox-execution';
+import { executeSandboxCommand } from '../sandbox/config';
+
+const mockExecuteSandboxCommand = executeSandboxCommand as ReturnType<typeof vi.fn>;
 
 function createEmptyOutputArchive(): Readable {
 	return Readable.from(
@@ -86,6 +90,16 @@ describe('sandbox-execution', () => {
 		vi.clearAllMocks();
 		mockSandbox.destroy.mockResolvedValue(undefined);
 		mockContainer.kill.mockResolvedValue(undefined);
+		mockExecuteSandboxCommand.mockResolvedValue({
+			stdout: JSON.stringify({
+				exists: true,
+				isDir: true,
+				directories: ['.'],
+				files: [],
+			}),
+			stderr: '',
+			exitCode: 0,
+		});
 	});
 
 	afterEach(() => {
@@ -219,6 +233,92 @@ describe('sandbox-execution', () => {
 			expect(result.files).toEqual([]);
 			expect(result.error).toContain('Failed to collect generated files');
 			expect(result.error).toContain('Archive read failed');
+		});
+
+		it('falls back to in-container file reads when archive extraction misses visible files', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'File generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+			mockExecuteSandboxCommand
+				.mockResolvedValueOnce({
+					stdout: JSON.stringify({
+						exists: true,
+						isDir: true,
+						directories: ['.'],
+						files: [
+							{
+								path: '/output/test.txt',
+								relativePath: 'test.txt',
+								sizeBytes: 5,
+							},
+						],
+					}),
+					stderr: '',
+					exitCode: 0,
+				})
+				.mockResolvedValueOnce({
+					stdout: JSON.stringify({
+						files: [
+							{
+								path: '/output/test.txt',
+								filename: 'test.txt',
+								sizeBytes: 5,
+								contentBase64: Buffer.from('hello').toString('base64'),
+							},
+						],
+					}),
+					stderr: '',
+					exitCode: 0,
+				});
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.error).toBeUndefined();
+			expect(result.files).toHaveLength(1);
+			expect(result.files[0].filename).toBe('test.txt');
+			expect(result.files[0].content.toString('utf-8')).toBe('hello');
+		});
+
+		it('returns an explicit backend collection error when files exist but fallback read still fails', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'File generated',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+			mockExecuteSandboxCommand
+				.mockResolvedValueOnce({
+					stdout: JSON.stringify({
+						exists: true,
+						isDir: true,
+						directories: ['.'],
+						files: [
+							{
+								path: '/output/test.txt',
+								relativePath: 'test.txt',
+								sizeBytes: 5,
+							},
+						],
+					}),
+					stderr: '',
+					exitCode: 0,
+				})
+				.mockResolvedValueOnce({
+					stdout: '',
+					stderr: 'read failed',
+					exitCode: 1,
+				});
+
+			const result = await executeCode('print("test")', 'python');
+
+			expect(result.files).toEqual([]);
+			expect(result.error).toContain('Failed to collect generated files');
+			expect(result.error).toContain('read failed');
 		});
 
 		it('destroys sandbox even when execution fails', async () => {

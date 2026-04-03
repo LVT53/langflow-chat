@@ -160,6 +160,51 @@ function waitForExecStream(stream: NodeJS.ReadableStream): Promise<void> {
 	});
 }
 
+export async function executeSandboxCommand(container: Container, cmd: string[]): Promise<SandboxResult> {
+	const exec = await container.exec({
+		Cmd: cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	});
+
+	const stream = await exec.start({
+		hijack: false,
+		stdin: false,
+	});
+
+	let stdout = '';
+	let stderr = '';
+	const stdoutStream = new PassThrough();
+	const stderrStream = new PassThrough();
+	stdoutStream.on('data', (chunk: Buffer | string) => {
+		stdout += chunk.toString('utf-8');
+	});
+	stderrStream.on('data', (chunk: Buffer | string) => {
+		stderr += chunk.toString('utf-8');
+	});
+
+	const modem = (container.modem ?? docker.modem) as {
+		demuxStream: (
+			stream: NodeJS.ReadableStream,
+			stdout: NodeJS.WritableStream,
+			stderr: NodeJS.WritableStream
+		) => void;
+	};
+	modem.demuxStream(stream, stdoutStream, stderrStream);
+
+	try {
+		const [inspect] = await Promise.all([waitForExecToFinish(exec), waitForExecStream(stream)]);
+		return {
+			stdout: stdout.trim(),
+			stderr: stderr.trim(),
+			exitCode: inspect.ExitCode ?? -1,
+		};
+	} finally {
+		stdoutStream.end();
+		stderrStream.end();
+	}
+}
+
 export async function createSandbox(): Promise<Sandbox> {
 	await ensureSandboxImage();
 
@@ -203,48 +248,7 @@ export async function createSandbox(): Promise<Sandbox> {
 	await container.start();
 
 	async function execute(code: string): Promise<SandboxResult> {
-		const exec = await container.exec({
-			Cmd: ['python3', '-c', code],
-			AttachStdout: true,
-			AttachStderr: true,
-		});
-
-		const stream = await exec.start({
-			hijack: false,
-			stdin: false,
-		});
-
-		let stdout = '';
-		let stderr = '';
-		const stdoutStream = new PassThrough();
-		const stderrStream = new PassThrough();
-		stdoutStream.on('data', (chunk: Buffer | string) => {
-			stdout += chunk.toString('utf-8');
-		});
-		stderrStream.on('data', (chunk: Buffer | string) => {
-			stderr += chunk.toString('utf-8');
-		});
-
-		const modem = docker.modem as {
-			demuxStream: (
-				stream: NodeJS.ReadableStream,
-				stdout: NodeJS.WritableStream,
-				stderr: NodeJS.WritableStream
-			) => void;
-		};
-		modem.demuxStream(stream, stdoutStream, stderrStream);
-
-		try {
-			const [inspect] = await Promise.all([waitForExecToFinish(exec), waitForExecStream(stream)]);
-			return {
-				stdout: stdout.trim(),
-				stderr: stderr.trim(),
-				exitCode: inspect.ExitCode ?? -1,
-			};
-		} finally {
-			stdoutStream.end();
-			stderrStream.end();
-		}
+		return executeSandboxCommand(container, ['python3', '-c', code]);
 	}
 
 	async function destroy(): Promise<void> {
