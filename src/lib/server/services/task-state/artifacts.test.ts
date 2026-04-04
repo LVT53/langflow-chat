@@ -34,7 +34,11 @@ vi.mock('$lib/server/services/working-set', () => ({
 vi.mock('./control-model', () => ({
   canUseContextSummarizer: vi.fn(() => false),
   requestContextSummarizer: vi.fn(),
-  requestStructuredControlModel: vi.fn(),
+}));
+
+vi.mock('../tei-reranker', () => ({
+  canUseTeiReranker: vi.fn(() => false),
+  rerankItems: vi.fn(),
 }));
 
 vi.mock('./mappers', () => ({

@@ -46,6 +46,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/services/title-generator.ts` owns language-aware title prompt selection and code-specific title prompt appendices, while the prompt text itself flows through `src/lib/server/config-store.ts` and admin settings.
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
+- `src/lib/server/services/task-state/control-model.ts` is still for structured control-model work such as routing, verification, and semantic JSON tasks. Do not route TEI reranking back through that chat-completions path.
 
 ## App Map
 
@@ -238,6 +239,7 @@ Responsibility split:
 - `tei-embedder.ts` / `tei-reranker.ts`
   - thin Hugging Face Text Embeddings Inference clients only
   - semantic shortlist/rerank helpers should flow through higher-level retrieval services; these clients should not become a second ranking authority
+  - rerank-shaped evidence/chunk/historical/tool call sites should prefer `tei-reranker.ts` over `task-state/control-model.ts`
 - `capsules.ts`
   - work capsules
   - generated outputs

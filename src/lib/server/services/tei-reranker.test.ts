@@ -117,4 +117,36 @@ describe('tei-reranker service', () => {
       { index: 2, score: 0.1 },
     ]);
   });
+
+  it('maps reranked results back onto the original items with confidence', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            { index: 1, score: 0.92 },
+            { index: 0, score: 0.44 },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+
+    const { rerankItems } = await import('./tei-reranker');
+    const result = await rerankItems({
+      query: 'best item',
+      items: [{ id: 'a', text: 'alpha' }, { id: 'b', text: 'beta' }],
+      getText: (item) => item.text,
+    });
+
+    expect(result).toEqual({
+      items: [
+        { item: { id: 'b', text: 'beta' }, index: 1, score: 0.92 },
+        { item: { id: 'a', text: 'alpha' }, index: 0, score: 0.44 },
+      ],
+      confidence: 92,
+    });
+  });
 });

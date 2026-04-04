@@ -7,10 +7,10 @@ import { clipText } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { scoreMatch } from "$lib/server/services/working-set";
 import { getSmallFileThreshold } from "$lib/server/services/knowledge/store/core";
+import { canUseTeiReranker, rerankItems } from "../tei-reranker";
 import {
   canUseContextSummarizer,
   requestContextSummarizer,
-  requestStructuredControlModel,
 } from "./control-model";
 import { mapArtifactChunk } from "./mappers";
 
@@ -242,58 +242,33 @@ export async function getPromptArtifactSnippets(params: {
       .filter((entry) => entry.score > 0)
       .slice(0, Math.max(perArtifactLimit, Math.min(6, ranked.length)));
     if (
-      canUseContextSummarizer() &&
+      canUseTeiReranker() &&
       params.query.trim() &&
       rerankCandidates.length > 2
     ) {
-      type ChunkRerankPayload = {
-        selectedChunkIndexes?: number[];
-        confidence?: number;
-      };
-
       try {
-        const reranked =
-          await requestStructuredControlModel<ChunkRerankPayload>({
-            system:
-              "Select the most relevant document chunks for the current user request. Return strict JSON with selectedChunkIndexes and confidence. Favor chunks that directly answer the request and avoid duplicate or weakly related chunks.",
-            user: [
+        const reranked = await rerankItems({
+          query: params.query,
+          items: rerankCandidates,
+          getText: (entry) =>
+            [
               `Artifact: ${artifact.name}`,
-              artifact.summary
-                ? `Artifact summary: ${clip(artifact.summary, 220)}`
-                : null,
-              `User message: ${params.query}`,
-              `Candidate chunks: ${JSON.stringify(
-                rerankCandidates.map((entry) => ({
-                  chunkIndex: entry.chunk.chunkIndex,
-                  score: entry.score,
-                  content: clip(entry.chunk.contentText, 320),
-                })),
-                null,
-                2,
-              )}`,
+              artifact.summary ? `Artifact summary: ${clip(artifact.summary, 220)}` : null,
+              clip(entry.chunk.contentText, 500),
             ]
               .filter((value): value is string => Boolean(value))
               .join("\n\n"),
-            maxTokens: 220,
-            temperature: 0.0,
-          });
+          maxTexts: Math.max(perArtifactLimit, Math.min(6, ranked.length)),
+        });
+
         if (
           reranked &&
-          typeof reranked.confidence === "number" &&
+          reranked.items.length > 0 &&
           reranked.confidence >= CHUNK_RERANK_CONFIDENCE_MIN
         ) {
-          const selectedIndexes = new Set(
-            (Array.isArray(reranked.selectedChunkIndexes)
-              ? reranked.selectedChunkIndexes
-              : []
-            ).filter((value): value is number => typeof value === "number"),
-          );
-          const rerankedSelection = rerankCandidates.filter((entry) =>
-            selectedIndexes.has(entry.chunk.chunkIndex),
-          );
-          if (rerankedSelection.length > 0) {
-            chosen = rerankedSelection.slice(0, perArtifactLimit);
-          }
+          chosen = reranked.items
+            .slice(0, perArtifactLimit)
+            .map(({ item }) => item);
         }
       } catch (error) {
         console.error("[TASK_STATE] Chunk reranker failed:", error);

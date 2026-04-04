@@ -48,14 +48,13 @@ import type {
 	ContextDebugState,
 } from '$lib/types';
 import {
-	canUseContextSummarizer,
 	formatTaskStateForPrompt,
 	getContextDebugState,
 	getPromptArtifactSnippets,
 	prepareTaskContext,
-	requestStructuredControlModel,
 	summarizeHistoricalContext,
 } from './task-state';
+import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import {
 	hasMeaningfulAttachmentText,
 	logAttachmentTrace,
@@ -1317,11 +1316,36 @@ export async function buildConstructedContext(params: {
 
 	let effectiveSections = [
 		...(await rerankHistoricalSections({
-			enabled: canUseContextSummarizer(),
+			enabled: canUseTeiReranker(),
 			message: params.message,
 			taskObjective: taskState?.objective ?? null,
 			sections,
-			requestStructuredModel: requestStructuredControlModel,
+			rerankSections: async ({ query, candidates }) => {
+				const reranked = await rerankItems({
+					query,
+					items: candidates,
+					getText: (section) =>
+						[
+							section.title,
+							section.layer ? `Layer: ${section.layer}` : null,
+							truncateToTokenBudget(section.body, 240),
+						]
+							.filter((value): value is string => Boolean(value))
+							.join('\n\n'),
+					maxTexts: Math.min(6, candidates.length),
+				});
+				if (!reranked || reranked.items.length === 0) {
+					return null;
+				}
+
+				const keepCount = Math.max(2, Math.min(4, Math.ceil(candidates.length / 2)));
+				return {
+					selectedTitles: reranked.items
+						.slice(0, keepCount)
+						.map(({ item }) => item.title),
+					confidence: reranked.confidence,
+				};
+			},
 			logPrefix: '[HONCHO]',
 		}).catch(() => sections)),
 	];

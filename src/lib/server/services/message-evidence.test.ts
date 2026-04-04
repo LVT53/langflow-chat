@@ -20,6 +20,8 @@ vi.mock('$lib/server/config-store', () => ({
 const mockGetArtifactsForUser = vi.hoisted(() => vi.fn());
 const mockResolveArtifactFamilyKeys = vi.hoisted(() => vi.fn());
 const mockGetVault = vi.hoisted(() => vi.fn());
+const mockCanUseTeiReranker = vi.hoisted(() => vi.fn(() => false));
+const mockRerankItems = vi.hoisted(() => vi.fn());
 
 vi.mock('./knowledge.js', () => ({
 	getArtifactsForUser: mockGetArtifactsForUser,
@@ -31,6 +33,11 @@ vi.mock('./evidence-family.js', () => ({
 
 vi.mock('./knowledge/store/vaults.js', () => ({
 	getVault: mockGetVault,
+}));
+
+vi.mock('./tei-reranker.js', () => ({
+	canUseTeiReranker: mockCanUseTeiReranker,
+	rerankItems: mockRerankItems,
 }));
 
 describe('message-evidence vault integration', () => {

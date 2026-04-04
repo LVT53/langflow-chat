@@ -133,6 +133,7 @@ knowledge.ts (facade — re-exports from below)
 **Prompt-selection note**: `selectWorkingSetArtifactsForPrompt(...)` must rederive turn-scoped document reason codes from the current active-state before calling generated-document prompt eligibility. Persisted DB reason codes describe the last turn, not the current one.
 **Retrieval note**: generated-document retrieval in `knowledge/context.ts` should also follow the shared active-state contract. Keep a preferred/recently refined family active on generic refinement turns, but do not drag in unrelated generated-document families unless the query explicitly matches them, and let reset/move-on phrasing suppress that carryover.
 **TEI note**: semantic retrieval work should layer on top of those same contracts. Use `tei-embedder.ts` for shortlist generation and `tei-reranker.ts` for top-N refinement, but keep deterministic filters, document-family authority, active-state resets, and historical-family penalties above the TEI scores.
+**Reranker cutover note**: current evidence rerank in `task-state.ts`, chunk rerank in `task-state/artifacts.ts`, historical section rerank in `prompt-context.ts`/`honcho.ts`, and tool/web evidence rerank in `message-evidence.ts` should all stay on the shared TEI reranker path. Do not route those back through the generic control-model chat-completions client.
 **Preview-performance note**: keep heavy preview dependencies off the idle shell path. `DocumentWorkspace.svelte`, `GeneratedFile.svelte`, and `knowledge/FilePreview.svelte` now lazy-load the rich preview component, markdown renderer, and PDF worker URL; do not revert those paths back to eager imports unless you re-measure the client bundle cost.
 **Transport note**: preserve `activeDocumentArtifactId` end-to-end through `streaming.ts`, `/api/chat/stream`, `/api/chat/retry`, and `langflow.ts`. The server-side active-state and retrieval helpers cannot recover a workspace-focused document if the browser/request layer drops that id.
 **Repair-loop note**: Wave 5 repair work should reuse the existing generated-output duplicate classifier in `evidence-family.ts` and run it from `memory-maintenance.ts`. Do not invent a parallel “document cleanup” service when retrieval-class repair already compresses low-value duplicate drafts deterministically. The same repair surface now also owns dormant generated-document family downgrades to shared `documentFamilyStatus: "historical"` metadata.
@@ -143,7 +144,8 @@ knowledge.ts (facade — re-exports from below)
 ```
 task-state.ts (facade — 1,535 lines)
   │
-  ├── control-model.ts    ← context summarizer API client
+  ├── control-model.ts    ← context summarizer API client for routing/verification/JSON tasks
+  ├── tei-reranker.ts     ← retrieval/evidence reranker client
   ├── continuity.ts       ← project memory, focus items, task-project linking
   ├── artifacts.ts        ← chunk sync, prompt snippets, historical context
   └── mappers.ts          ← row-to-type mappers (shared by above)

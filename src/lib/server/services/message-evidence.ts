@@ -13,7 +13,7 @@ import type {
 } from '$lib/types';
 import { getArtifactsForUser } from './knowledge';
 import { getVault } from './knowledge/store/vaults';
-import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
+import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { resolveArtifactFamilyKeys } from './evidence-family';
 
 const GROUP_LABELS: Record<EvidenceSourceType, string> = {
@@ -339,48 +339,30 @@ async function buildRerankedToolGroup(params: {
 	let confidence = 0;
 	let reranked = false;
 
-	if (canUseContextSummarizer()) {
-		type ToolRerankPayload = {
-			selectedIds?: string[];
-			rejectedIds?: string[];
-			confidence?: number;
-		};
-
+	if (canUseTeiReranker()) {
 		try {
-			const rerankedResponse = await requestStructuredControlModel<ToolRerankPayload>({
-				system:
-					params.sourceType === 'web'
-						? 'Select the web sources that best support the current user turn. Return strict JSON with selectedIds, rejectedIds, confidence. Favor the most relevant and authoritative sources.'
-						: 'Select the tool-derived evidence that best supports the current user turn. Return strict JSON with selectedIds, rejectedIds, confidence. Favor directly useful outputs and avoid duplicates.',
-				user: [
+			const rerankedResponse = await rerankItems({
+				query: [
 					params.taskState ? `Current task: ${params.taskState.objective}` : null,
 					`User message: ${params.message}`,
-					`Candidates: ${JSON.stringify(
-						candidateItems.map((candidate) => ({
-							id: candidate.id,
-							title: candidate.title,
-							description: candidate.description,
-							url: candidate.url,
-						})),
-						null,
-						2
-					)}`,
 				]
 					.filter((value): value is string => Boolean(value))
 					.join('\n\n'),
-				maxTokens: 240,
-				temperature: 0.0,
+				items: candidateItems,
+				getText: (candidate) =>
+					[
+						candidate.title,
+						candidate.description ?? null,
+						candidate.url ?? null,
+					]
+						.filter((value): value is string => Boolean(value))
+						.join('\n'),
+				maxTexts: 6,
 			});
 
-			if (
-				rerankedResponse &&
-				typeof rerankedResponse.confidence === 'number' &&
-				rerankedResponse.confidence >= 64
-			) {
+			if (rerankedResponse && rerankedResponse.items.length > 0 && rerankedResponse.confidence >= 64) {
 				const nextSelectedIds = new Set(
-					(Array.isArray(rerankedResponse.selectedIds) ? rerankedResponse.selectedIds : []).filter(
-						(value): value is string => typeof value === 'string'
-					)
+					rerankedResponse.items.slice(0, 3).map(({ item }) => item.id)
 				);
 				if (nextSelectedIds.size > 0) {
 					selectedIds = nextSelectedIds;

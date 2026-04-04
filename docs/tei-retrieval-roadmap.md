@@ -9,6 +9,12 @@ Current intended models:
 
 The design goal is to make retrieval smarter and faster without changing authority boundaries. Deterministic app rules still decide active document focus, temporal truth, pinned/excluded evidence, working-document lineage, and memory deletion. TEI adds semantic shortlist generation and top-N reranking on top of those rules.
 
+Current status:
+
+- Wave 1 complete: runtime config and thin TEI clients are live
+- Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
+- Embedding persistence and semantic shortlist waves are still pending
+
 ## Authority Order
 
 1. Deterministic app rules
@@ -52,6 +58,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
   - `prompt-context.ts`
   - `message-evidence.ts`
 - Preserve deterministic protection rules and existing fallback behavior
+- Current status: complete for these four call sites. The generic control-model path remains in place for routing, verification, dream/semantic JSON tasks, and other non-rerank responsibilities.
 
 ### Wave 5: Semantic Retrieval for Knowledge and Working Documents
 

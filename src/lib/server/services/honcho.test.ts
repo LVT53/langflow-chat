@@ -10,11 +10,13 @@ const {
   mockFindRelevantWorkCapsules,
   mockUpdateConversationContextStatus,
   mockCanUseContextSummarizer,
+  mockCanUseTeiReranker,
   mockFormatTaskStateForPrompt,
   mockGetContextDebugState,
   mockGetPromptArtifactSnippets,
   mockPrepareTaskContext,
   mockRequestStructuredControlModel,
+  mockRerankItems,
   mockSummarizeHistoricalContext,
   mockSessionQueueStatus,
   mockSessionContext,
@@ -95,6 +97,7 @@ const {
       updatedAt: now,
     })),
     mockCanUseContextSummarizer: vi.fn(() => false),
+    mockCanUseTeiReranker: vi.fn(() => false),
     mockFormatTaskStateForPrompt: vi.fn((taskState: { objective: string }) => `Objective: ${taskState.objective}`),
     mockGetContextDebugState: vi.fn(async () => null),
     mockGetPromptArtifactSnippets: vi.fn(async ({ artifacts }: { artifacts: Array<{ id: string; contentText: string | null }> }) =>
@@ -110,6 +113,7 @@ const {
       excludedArtifactIds: [],
     })),
     mockRequestStructuredControlModel: vi.fn(),
+    mockRerankItems: vi.fn(),
     mockSummarizeHistoricalContext: vi.fn(async () => null),
     mockSessionQueueStatus: vi.fn(async () => ({
       pendingWorkUnits: 0,
@@ -293,6 +297,11 @@ vi.mock('./task-state', () => ({
   summarizeHistoricalContext: mockSummarizeHistoricalContext,
 }));
 
+vi.mock('./tei-reranker', () => ({
+  canUseTeiReranker: mockCanUseTeiReranker,
+  rerankItems: mockRerankItems,
+}));
+
 vi.mock('./persona-memory', () => ({
   buildPersonaPromptContext: mockBuildPersonaPromptContext,
 }));
@@ -314,6 +323,7 @@ describe('Honcho Service', () => {
     mockConfig.honchoContextWaitMs = 3000;
     mockConfig.honchoContextPollIntervalMs = 250;
     mockConfig.honchoPersonaContextWaitMs = 1500;
+    mockCanUseTeiReranker.mockReturnValue(false);
   });
 
   describe('isHonchoEnabled', () => {

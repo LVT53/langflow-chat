@@ -27,6 +27,7 @@ import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
 import { getLatestHonchoMetadata } from "./messages";
+import { canUseTeiReranker, rerankItems } from "./tei-reranker";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
 import {
@@ -833,70 +834,53 @@ async function maybeRerankEvidence(params: {
   pinnedIds: Set<string>;
   excludedIds: Set<string>;
   protectedIds?: Set<string>;
+  selectedLimit: number;
 }): Promise<{
   artifacts: Artifact[];
   usedModel: boolean;
   confidence: number;
 }> {
-  if (!canUseContextSummarizer() || params.candidates.length <= 2) {
+  if (!canUseTeiReranker() || params.candidates.length <= 2) {
     return { artifacts: params.candidates, usedModel: false, confidence: 0 };
   }
 
-  type RerankPayload = {
-    selectedArtifactIds?: string[];
-    rejectedArtifactIds?: string[];
-    confidence?: number;
-  };
-
   try {
-    const reranked = await requestStructuredControlModel<RerankPayload>({
-      system:
-        "Select the most relevant evidence artifacts for the current turn. Return strict JSON with selectedArtifactIds, rejectedArtifactIds, confidence. Favor the current user turn and current task. Never select irrelevant stale evidence.",
-      user: [
-        `Current task: ${params.taskState ? params.taskState.objective : "none"}`,
+    const reranked = await rerankItems({
+      query: [
+        params.taskState ? `Current task: ${params.taskState.objective}` : null,
         `User message: ${params.message}`,
-        `Pinned artifact ids: ${JSON.stringify(Array.from(params.pinnedIds))}`,
-        `Excluded artifact ids: ${JSON.stringify(Array.from(params.excludedIds))}`,
-        `Candidates: ${JSON.stringify(
-          params.candidates.slice(0, MAX_RERANK_CANDIDATES).map((artifact) => ({
-            id: artifact.id,
-            name: artifact.name,
-            type: artifact.type,
-            summary: clip(
-              artifact.summary ?? artifact.contentText ?? artifact.name,
-              220,
-            ),
-          })),
-          null,
-          2,
-        )}`,
-      ].join("\n\n"),
-      maxTokens: 260,
-      temperature: 0.0,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join("\n\n"),
+      items: params.candidates.slice(0, MAX_RERANK_CANDIDATES),
+      getText: (artifact) =>
+        [
+          artifact.name,
+          artifact.type,
+          clip(artifact.summary ?? artifact.contentText ?? artifact.name, 320),
+        ].join("\n"),
+      maxTexts: MAX_RERANK_CANDIDATES,
     });
 
-    if (
-      reranked &&
-      typeof reranked.confidence === "number" &&
-      reranked.confidence >= RERANK_CONFIDENCE_MIN
-    ) {
+    if (reranked && reranked.items.length > 0) {
       const selectedIds = new Set(
-        (Array.isArray(reranked.selectedArtifactIds)
-          ? reranked.selectedArtifactIds
-          : []
-        ).filter((value): value is string => typeof value === "string"),
+        reranked.items
+          .slice(0, params.selectedLimit)
+          .map(({ item }) => item.id),
       );
-      const artifacts = params.candidates.filter(
-        (artifact) =>
-          params.pinnedIds.has(artifact.id) ||
-          (params.protectedIds?.has(artifact.id) ?? false) ||
-          selectedIds.has(artifact.id),
-      );
+      const artifacts = dedupeById([
+        ...params.candidates.filter(
+          (artifact) =>
+            params.pinnedIds.has(artifact.id) ||
+            (params.protectedIds?.has(artifact.id) ?? false),
+        ),
+        ...params.candidates.filter((artifact) => selectedIds.has(artifact.id)),
+      ]);
       if (artifacts.length > 0) {
         return {
           artifacts,
           usedModel: true,
-          confidence: Math.round(reranked.confidence),
+          confidence: Math.max(RERANK_CONFIDENCE_MIN, reranked.confidence),
         };
       }
     }
@@ -1136,6 +1120,7 @@ export async function prepareTaskContext(params: {
     ]),
     pinnedIds,
     excludedIds,
+    selectedLimit: selectedEvidenceLimit,
     protectedIds: new Set([
       ...currentAttachmentIds,
       ...activeDocumentIds,

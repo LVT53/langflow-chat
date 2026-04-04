@@ -14,12 +14,13 @@ export type PromptContextSection = {
 	llmCompactible?: boolean;
 };
 
-type StructuredModelRequester = <T extends Record<string, unknown>>(params: {
-	system: string;
-	user: string;
-	maxTokens: number;
-	temperature: number;
-}) => Promise<T | null>;
+type HistoricalSectionReranker = (params: {
+	query: string;
+	candidates: PromptContextSection[];
+}) => Promise<{
+	selectedTitles: string[];
+	confidence: number;
+} | null>;
 
 export function truncateToTokenBudget(text: string, maxTokens: number): string {
 	if (estimateTokenCount(text) <= maxTokens) return text;
@@ -177,7 +178,7 @@ export async function rerankHistoricalSections(params: {
 	taskObjective?: string | null;
 	sections: PromptContextSection[];
 	enabled: boolean;
-	requestStructuredModel: StructuredModelRequester;
+	rerankSections: HistoricalSectionReranker;
 	logPrefix?: string;
 }): Promise<PromptContextSection[]> {
 	if (!params.enabled) return params.sections;
@@ -194,32 +195,15 @@ export async function rerankHistoricalSections(params: {
 		return params.sections;
 	}
 
-	type SectionRerankPayload = {
-		selectedTitles?: string[];
-		confidence?: number;
-	};
-
 	try {
-		const reranked = await params.requestStructuredModel<SectionRerankPayload>({
-			system:
-				'Select the historical support sections that are most useful for the current turn. Return strict JSON with selectedTitles and confidence. Favor current intent and avoid stale or weakly related memory.',
-			user: [
+		const reranked = await params.rerankSections({
+			query: [
 				params.taskObjective ? `Current task: ${params.taskObjective}` : null,
 				`User message: ${params.message}`,
-				`Candidate sections: ${JSON.stringify(
-					candidateSections.map((section) => ({
-						title: section.title,
-						layer: section.layer ?? null,
-						preview: truncateToTokenBudget(section.body, 180),
-					})),
-					null,
-					2
-				)}`,
 			]
 				.filter((value): value is string => Boolean(value))
 				.join('\n\n'),
-			maxTokens: 220,
-			temperature: 0.0,
+			candidates: candidateSections,
 		});
 
 		if (!(reranked && typeof reranked.confidence === 'number' && reranked.confidence >= 64)) {
