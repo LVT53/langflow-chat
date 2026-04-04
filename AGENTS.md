@@ -41,6 +41,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/services/semantic-embedding-refresh.ts` owns async embedding refresh/backfill orchestration. Mutation boundaries may queue refresh work there, and maintenance may run the slower backfill sweep there, but routes should not open-code subject hashing, TEI embedding calls, or per-domain refresh loops.
 - `src/lib/server/services/semantic-ranking.ts` owns generic embedding-based shortlist math. Domain services such as `knowledge/store/documents.ts` may compose it with their own deterministic filters and rerank rules, but they should not each reimplement vector similarity from scratch.
 - `src/lib/server/services/persona-memory.ts` may use semantic shortlist and rerank signals for query-time prompt recall, but freshness, supersession, correction penalties, and active-truth filtering still remain deterministic there.
+- `src/lib/server/services/task-state.ts` may use semantic shortlist and rerank signals when routing the current turn onto an existing task, but active/revived/candidate truth and project continuity state still remain deterministic there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
 - `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
@@ -339,10 +340,12 @@ Rules:
 - `task-state.ts`
   - public continuity facade
   - task routing, checkpoints, evidence-context assembly, and related summarization entrypoints
+  - semantic shortlist/rerank assisted task revival/routing over the persisted `task_state` embeddings
 - `task-state/control-model.ts`
   - context summarizer and control-model helpers used by task-state internals
 - `task-state/continuity.ts`
   - task memory and project continuity internals
+  - keep project continuity status/event truth deterministic even when task routing gets smarter semantically
 - `task-state/artifacts.ts`
   - artifact chunking, prompt snippet selection, and historical-context summarization helpers
 - `task-state/mappers.ts`

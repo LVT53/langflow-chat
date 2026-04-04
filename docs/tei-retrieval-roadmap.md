@@ -16,6 +16,7 @@ Current status:
 - Wave 3 complete: artifact/task/persona writes now queue async embedding refreshes, and `memory-maintenance.ts` runs lazy user-scoped embedding backfill
 - Wave 5 complete for knowledge/documents: artifact retrieval now uses stored-embedding shortlist plus TEI rerank before the higher-level working-document resolver applies family/focus/history authority
 - Wave 6 complete for persona prompt recall: surviving persona clusters now get semantic shortlist plus bounded rerank scoring when building query-time persona prompt context
+- Wave 7 complete for task routing: task selection now uses stored task-state embeddings plus bounded rerank scoring before the deterministic task-status and continuity rules apply
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
 - Semantic shortlist retrieval waves are still pending
 
@@ -87,6 +88,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
 - Add semantic shortlist selection for task/objective retrieval
 - Keep project continuity transitions and active/inactive task truth deterministic
 - Use embeddings to find relevant older tasks; do not let embeddings rewrite continuity state
+- Current status: complete for task routing and revival. `task-state.ts` now uses stored task-state embeddings and bounded rerank scores when matching the current turn to prior tasks, while locked-task precedence, archived/revived state transitions, and project continuity truth remain deterministic.
 
 ### Wave 8: Observability and Evaluation
 

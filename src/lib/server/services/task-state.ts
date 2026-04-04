@@ -28,6 +28,7 @@ import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
 import { getLatestHonchoMetadata } from "./messages";
 import { queueTaskStateSemanticEmbeddingRefresh } from "./semantic-embedding-refresh";
+import { shortlistSemanticMatchesBySubject } from "./semantic-ranking";
 import { canUseTeiReranker, rerankItems } from "./tei-reranker";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
@@ -93,6 +94,8 @@ const ROUTER_CONFIDENCE_MIN = 68;
 const RERANK_CONFIDENCE_MIN = 64;
 const VERIFY_CONFIDENCE_MIN = 64;
 const MAX_RERANK_CANDIDATES = 8;
+const TASK_SEMANTIC_SHORTLIST_LIMIT = 8;
+const TASK_ROUTER_RERANK_LIMIT = 6;
 const MAX_SELECTED_EVIDENCE = 5;
 const MAX_DOCUMENT_FOCUSED_EVIDENCE = 3;
 const MAX_SELECTED_LINKS = 12;
@@ -147,12 +150,16 @@ function scoreTaskState(
   task: TaskState,
   message: string,
   attachmentIds: string[],
+  semanticScore = 0,
+  rerankScore = 0,
 ): number {
   let score = scoreMatch(message, getTaskSearchBody(task)) * 10;
   const attachmentOverlap = attachmentIds.filter((id) =>
     task.activeArtifactIds.includes(id),
   ).length;
   score += attachmentOverlap * 18;
+  score += Math.min(18, semanticScore * 18);
+  score += Math.min(24, rerankScore * 24);
 
   if (task.status === "active") {
     score += 4;
@@ -166,6 +173,61 @@ function scoreTaskState(
   else if (ageMinutes <= 180) score += 2;
 
   return score;
+}
+
+async function buildTaskRoutingScoreMaps(params: {
+  userId: string;
+  message: string;
+  states: TaskState[];
+}): Promise<{
+  semanticScoreByTaskId: Map<string, number>;
+  rerankScoreByTaskId: Map<string, number>;
+}> {
+  const trimmedMessage = params.message.trim();
+  if (!trimmedMessage || params.states.length === 0) {
+    return {
+      semanticScoreByTaskId: new Map(),
+      rerankScoreByTaskId: new Map(),
+    };
+  }
+
+  const semanticMatches =
+    (await shortlistSemanticMatchesBySubject({
+      userId: params.userId,
+      subjectType: "task_state",
+      query: trimmedMessage,
+      items: params.states,
+      getSubjectId: (state) => state.taskId,
+      limit: TASK_SEMANTIC_SHORTLIST_LIMIT,
+    })) ?? [];
+  const semanticScoreByTaskId = new Map(
+    semanticMatches.map((match) => [match.subjectId, match.semanticScore]),
+  );
+
+  let rerankScoreByTaskId = new Map<string, number>();
+  if (canUseTeiReranker() && semanticMatches.length > 1) {
+    try {
+      const reranked = await rerankItems({
+        query: trimmedMessage,
+        items: semanticMatches.map((match) => match.item),
+        getText: (state) => getTaskSearchBody(state),
+        maxTexts: TASK_ROUTER_RERANK_LIMIT,
+      });
+
+      if (reranked && reranked.items.length > 0) {
+        rerankScoreByTaskId = new Map(
+          reranked.items.map((entry) => [entry.item.taskId, entry.score]),
+        );
+      }
+    } catch (error) {
+      console.error("[TASK_STATE] Task semantic reranker failed:", error);
+    }
+  }
+
+  return {
+    semanticScoreByTaskId,
+    rerankScoreByTaskId,
+  };
 }
 
 function extractQuestionCandidate(text: string): string | null {
@@ -564,10 +626,23 @@ async function routeTaskStateForTurn(params: {
     };
   }
 
+  const { semanticScoreByTaskId, rerankScoreByTaskId } =
+    await buildTaskRoutingScoreMaps({
+      userId: params.userId,
+      message: params.message,
+      states,
+    });
+
   const ranked = states
     .map((state) => ({
       state,
-      score: scoreTaskState(state, params.message, attachmentIds),
+      score: scoreTaskState(
+        state,
+        params.message,
+        attachmentIds,
+        semanticScoreByTaskId.get(state.taskId) ?? 0,
+        rerankScoreByTaskId.get(state.taskId) ?? 0,
+      ),
     }))
     .sort((a, b) => b.score - a.score);
 
