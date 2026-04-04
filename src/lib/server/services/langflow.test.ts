@@ -262,6 +262,9 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('`.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`');
       expect(body.tweaks.system_prompt).toContain('use `require(...)`, not top-level `import` statements');
       expect(body.tweaks.system_prompt).toContain('create the PDF bytes with `await pdfDoc.save()`');
+      expect(body.tweaks.system_prompt).toContain('const { PDFDocument, StandardFonts, rgb } = require("pdf-lib")');
+      expect(body.tweaks.system_prompt).toContain('const pdfDoc = await PDFDocument.create()');
+      expect(body.tweaks.system_prompt).toContain('Do not use incorrect `pdf-lib` patterns such as `const { pdfDoc } = require("pdf-lib")`');
       expect(body.tweaks.system_prompt).toContain('Node-compatible file writes');
       expect(body.tweaks.system_prompt).toContain('Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs`');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');

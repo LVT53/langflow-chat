@@ -36,6 +36,8 @@ const FILE_GENERATION_GUARD = [
 	'- Do not claim `.xlsx`, `.pdf`, `.pptx`, `.docx`, or `.odt` generation is unavailable when `generate_file` is available. Choose the appropriate runtime and use the installed libraries directly.',
 	'- For `.xlsx`, prefer `exceljs`. For `.pdf`, prefer `pdf-lib`. For `.pptx`, prefer `pptxgenjs`. For `.docx`, prefer `docx`. For `.odt`, prefer `jszip` with a valid OpenDocument structure.',
 	'- For `.pdf` with `pdf-lib`, create the PDF bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.',
+	'- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer this exact shape: `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const pdfDoc = await PDFDocument.create();` then add pages, draw text, `const pdfBytes = await pdfDoc.save()`, and write the bytes to `/output/...`.',
+	'- Do not use incorrect `pdf-lib` patterns such as `const { pdfDoc } = require("pdf-lib")`, `await pdfDoc.create()`, or calling `.create()` on an undefined/destructured instance.',
 	'- For `.pdf` generation in JavaScript, use Node-compatible file writes such as `require("fs").writeFileSync("/output/file.pdf", pdfBytes)` or `await require("fs").promises.writeFile(...)`.',
 	'- Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs` when generating files. They are for previewing, not file creation.',
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',

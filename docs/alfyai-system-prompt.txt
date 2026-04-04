@@ -91,6 +91,8 @@ You have access to the following tools. Use them proactively when they materiall
 - For `.xlsx`, prefer `exceljs`.
 - For `.pdf`, prefer `pdf-lib`.
 - For `.pdf` with `pdf-lib`, create the bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.
+- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer this exact shape: `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const pdfDoc = await PDFDocument.create();` then add pages, draw text, `const pdfBytes = await pdfDoc.save()`, and write the bytes to `/output/...`.
+- Do not use incorrect `pdf-lib` patterns such as `const { pdfDoc } = require("pdf-lib")`, `await pdfDoc.create()`, or calling `.create()` on an undefined/destructured instance.
 - For JavaScript PDF scripts, use Node-compatible file writes such as `require("fs").writeFileSync("/output/file.pdf", pdfBytes)` or `await require("fs").promises.writeFile(...)`.
 - For `.pptx`, prefer `pptxgenjs`.
 - For `.docx`, prefer `docx`.

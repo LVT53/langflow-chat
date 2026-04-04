@@ -49,6 +49,9 @@ const fs = require("fs");
   fs.writeFileSync("/output/example.pdf", pdfBytes);
 })();
 ```
+
+For PDF generation with `pdf-lib`, prefer the exact CommonJS pattern above.
+Do not use incorrect forms such as `const { pdfDoc } = require("pdf-lib")` or `await pdfDoc.create()`.
 """
 
 from __future__ import annotations
@@ -80,6 +83,7 @@ class FileGeneratorToolComponent(Component):
     - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
     - JavaScript: xlsx via exceljs, pdf via pdf-lib, pptx via pptxgenjs, docx via docx, odt via jszip packaging
     - JavaScript runs under Node with CommonJS `require(...)`; write final files to `/output`
+    - For pdf-lib specifically, use `const { PDFDocument } = require("pdf-lib")` and `await PDFDocument.create()`
     """
 
     display_name = "File Generator"

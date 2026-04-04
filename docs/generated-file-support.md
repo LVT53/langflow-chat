@@ -33,4 +33,6 @@ This is the current target support matrix for AlfyAI generated files.
 - Use `language: "javascript"` for `.xlsx`, `.pdf`, `.pptx`, and `.docx`.
 - Use `language: "javascript"` plus `jszip` when building `.odt`.
 - For `.pdf` with `pdf-lib`, generate bytes with `await pdfDoc.save()` and write them to `/output/your-file.pdf` using a Node file write.
+- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const pdfDoc = await PDFDocument.create();`.
+- Avoid incorrect patterns such as `const { pdfDoc } = require("pdf-lib")` or `await pdfDoc.create()`.
 - Preview libraries such as `pdfjs-dist` and `pptxviewjs` are for viewing files in the UI, not generating them.
