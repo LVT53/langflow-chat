@@ -94,3 +94,241 @@ Any future memory feature should answer three things clearly:
 3. How does it expire, supersede, or get repaired?
 
 If those answers are not clear, the feature should not be added yet.
+
+## Implementation Waves
+
+The current codebase already implements part of the temporal-memory upgrade:
+
+- temporal metadata for relative constraints
+- freshness-aware overview/prompt filtering
+- historical phrasing for expired temporal memories
+- local temporal truth overriding stale Honcho overview text
+- partial splitting of `situational_context`
+
+The remaining work should land in deliberate waves so the system gets smarter without creating another overlapping memory stack.
+
+### Wave 1: Finish Structured Domain Boundaries
+
+Goal:
+
+- make persona, task, document, temporal, and preference memory authorities explicit in code
+
+Changes:
+
+- add a small authority map doc block to the public memory/task-state surfaces
+- finish routing document-origin material away from persona paths everywhere, not just current persona clustering
+- separate active-constraint selection from broad persona summarization on the read path
+- make preference supersession metadata consistent with temporal supersession metadata
+
+Primary files:
+
+- `src/lib/server/services/persona-memory.ts`
+- `src/lib/server/services/memory.ts`
+- `src/lib/server/services/task-state.ts`
+- `src/lib/server/services/honcho.ts`
+- `src/lib/types.ts`
+
+Acceptance:
+
+- no document-origin content appears in persona summaries unless explicitly transformed into user-preference or user-profile facts
+- active constraints can be rendered independently from broader persona memory
+- one source-of-truth note exists for each memory domain
+
+Verification:
+
+- persona-memory tests for domain filtering
+- memory overview tests for separate active-constraint rendering
+- Honcho adapter tests for attribution/origin filtering
+
+### Wave 2: Event-Sourced Memory Updates
+
+Goal:
+
+- move important state changes from “best-effort inferred snapshot” toward explicit memory events
+
+Changes:
+
+- add normalized event shapes such as:
+  - `deadline_set`
+  - `deadline_extended`
+  - `deadline_completed`
+  - `project_started`
+  - `project_paused`
+  - `project_resumed`
+  - `preference_updated`
+  - `document_superseded`
+- derive current state from the newest relevant event plus supporting memory records
+- thread event creation through existing turn finalization or maintenance paths rather than adding a parallel queue
+
+Primary files:
+
+- `src/lib/server/services/persona-memory.ts`
+- `src/lib/server/services/memory-maintenance.ts`
+- `src/lib/server/services/task-state/continuity.ts`
+- `src/lib/server/services/chat-turn/finalize.ts`
+- `src/lib/server/db/schema.ts`
+
+Acceptance:
+
+- a newer deadline extension displaces older deadline truth deterministically
+- project pause/resume language updates active-state without waiting for a full dream sweep
+- document supersession can be represented as an event as well as artifact metadata
+
+Verification:
+
+- temporal supersession regression tests
+- task continuity tests for pause/resume
+- schema/backfill tests if event rows are persisted
+
+### Wave 3: Cross-Domain Contradiction Handling
+
+Goal:
+
+- generalize supersession beyond temporal constraints
+
+Changes:
+
+- add contradiction resolution rules for:
+  - preferences
+  - active projects
+  - preferred document versions
+  - role/location/availability-like situational facts
+- unify “superseded by” metadata semantics across persona and task continuity
+- teach overview generation to suppress contradicted items without deleting them
+
+Primary files:
+
+- `src/lib/server/services/persona-memory.ts`
+- `src/lib/server/services/memory.ts`
+- `src/lib/server/services/task-state/continuity.ts`
+- `src/lib/server/services/document-resolution.ts`
+
+Acceptance:
+
+- older contradicted items remain auditable but no longer appear as active truth
+- version preferences and project state follow the newest supported signal
+
+Verification:
+
+- overview tests for contradicted-memory suppression
+- resolver tests for preferred-version supersession
+- continuity tests for project-state replacement
+
+### Wave 4: Better Active-State Inference
+
+Goal:
+
+- make “what matters now” come from structured live signals, not only semantic similarity
+
+Changes:
+
+- add an `active_state` assembly layer that combines:
+  - current chat intent
+  - active workspace document
+  - most recently refined document family
+  - recent generated outputs
+  - recent user corrections
+  - explicit pause/complete language
+- expose that layer to prompt construction without duplicating working-set heuristics
+- ensure it can degrade cleanly when a signal is absent
+
+Primary files:
+
+- `src/lib/server/services/working-set.ts`
+- `src/lib/server/services/knowledge/context.ts`
+- `src/lib/server/services/document-resolution.ts`
+- `src/lib/server/services/task-state.ts`
+- `src/routes/(app)/chat/[conversationId]/+page.svelte`
+
+Acceptance:
+
+- prompt context reflects the active document/task even when semantic match is weak
+- old active topics fall back naturally when newer live signals win
+
+Verification:
+
+- working-set ranking tests
+- document-resolution tests
+- end-to-end chat refinement tests around active workspace focus
+
+### Wave 5: Maintenance And Repair Loops
+
+Goal:
+
+- keep memory quality stable over time without manual cleanup
+
+Changes:
+
+- add periodic repair actions that:
+  - dedupe clusters
+  - compress low-value overlap
+  - downgrade stale but unsuperseded items
+  - mark dormant document families as historical
+  - identify low-confidence memories for reduced salience
+- keep repairs idempotent and serialized through existing maintenance scheduling
+
+Primary files:
+
+- `src/lib/server/services/memory-maintenance.ts`
+- `src/lib/server/services/persona-memory.ts`
+- `src/lib/server/services/task-state/continuity.ts`
+- `src/lib/server/services/chat-files.ts`
+
+Acceptance:
+
+- repeated maintenance runs do not duplicate or oscillate memory state
+- dormant/stale items shrink without deleting useful history
+
+Verification:
+
+- maintenance idempotency tests
+- duplicate-cluster cleanup tests
+- generated-document historical downgrade tests
+
+### Wave 6: Retrieval That Learns From Behavior
+
+Goal:
+
+- let salience update based on how the user actually works
+
+Changes:
+
+- track signals such as:
+  - reopened document versions
+  - repeated refinements on the same family
+  - user corrections to memory statements
+  - ignored suggested artifacts
+- convert those signals into bounded salience adjustments rather than opaque permanent boosts
+- use those adjustments in working-set and memory overview ranking
+
+Primary files:
+
+- `src/lib/server/services/working-set.ts`
+- `src/lib/server/services/document-resolution.ts`
+- `src/lib/server/services/memory.ts`
+- `src/lib/server/db/schema.ts`
+
+Acceptance:
+
+- frequently reopened/refined documents rise in relevance
+- corrected memories become less assertive until reaffirmed
+- ignored stale items gradually lose rank
+
+Verification:
+
+- ranking tests with behavior-signal fixtures
+- correction/salience regression tests
+- migration tests if new interaction-signal tables are added
+
+## Delivery Order
+
+Recommended implementation order:
+
+1. Wave 1
+2. Wave 2
+3. Wave 3
+4. Wave 4
+5. Wave 5
+6. Wave 6
+
+This order keeps the foundational authority and event model in place before behavior learning and long-tail maintenance are added.

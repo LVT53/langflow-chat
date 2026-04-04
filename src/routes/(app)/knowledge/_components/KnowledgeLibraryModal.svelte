@@ -12,8 +12,8 @@
 		getLibraryBulkKey,
 		getLibraryBulkLabel,
 		getLibraryItemCount,
-		isPreviewableFile,
 	} from '../_helpers';
+	import { isPreviewableFile } from '$lib/utils/file-preview';
 
 	let {
 		activeLibraryModal,

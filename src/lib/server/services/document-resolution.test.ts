@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isGeneratedDocumentPromptEligible,
   resolveCurrentGeneratedDocumentSelection,
   resolveRelevantGeneratedDocumentSelection,
   resolveRelevantGeneratedDocumentArtifacts,
@@ -298,5 +299,55 @@ describe("document resolution", () => {
 
     expect(selection.primaryArtifactId).toBe("artifact-slides");
     expect(selection.primaryReasonCodes).toEqual(["current_generated_document"]);
+  });
+
+  it("treats active/current generated documents as prompt-eligible even when ephemeral", () => {
+    const artifact = makeArtifact({
+      id: "artifact-1",
+      name: "brief-v2.pdf",
+      conversationId: "conv-1",
+      updatedAt: 2,
+      metadata: {
+        documentFamilyId: "family-brief",
+        documentLabel: "Project brief",
+        versionNumber: 2,
+      },
+    });
+    artifact.retrievalClass = "ephemeral";
+
+    expect(
+      isGeneratedDocumentPromptEligible({
+        artifact,
+        conversationId: "conv-1",
+        reasonCodes: ["current_generated_document"],
+        messageMatchScore: 0,
+        explicitlyRequested: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps unrelated ephemeral generated outputs out of prompt selection", () => {
+    const artifact = makeArtifact({
+      id: "artifact-1",
+      name: "brief-v2.pdf",
+      conversationId: "conv-1",
+      updatedAt: 2,
+      metadata: {
+        documentFamilyId: "family-brief",
+        documentLabel: "Project brief",
+        versionNumber: 2,
+      },
+    });
+    artifact.retrievalClass = "ephemeral";
+
+    expect(
+      isGeneratedDocumentPromptEligible({
+        artifact,
+        conversationId: "conv-1",
+        reasonCodes: [],
+        messageMatchScore: 0,
+        explicitlyRequested: false,
+      }),
+    ).toBe(false);
   });
 });

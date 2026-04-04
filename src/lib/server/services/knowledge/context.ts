@@ -19,6 +19,7 @@ import type {
 import { parseJsonStringArray } from '$lib/server/utils/json';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
+	isGeneratedDocumentPromptEligible,
 	resolveCurrentGeneratedDocumentSelection,
 	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
@@ -159,22 +160,13 @@ export async function selectWorkingSetArtifactsForPrompt(
 			const explicitlyRequested =
 				scoreMatch(message, row.artifact.name) > 0 ||
 				scoreMatch(message, row.artifact.summary ?? '') > 1;
-			const retrievalClass = (row.artifact.retrievalClass ?? 'durable') as Artifact['retrievalClass'];
-			const allowEphemeralOutput =
-				artifact.type === 'generated_output' &&
-				(reasonCodes.includes('active_document_focus') ||
-					reasonCodes.includes('current_generated_document') ||
-					(artifact.conversationId === conversationId &&
-						reasonCodes.includes('latest_generated_output')));
-			const promptEligible =
-				(artifact.type !== 'generated_output' || retrievalClass === 'durable' || allowEphemeralOutput) &&
-				(reasonCodes.includes('attached_this_turn') ||
-					reasonCodes.includes('active_document_focus') ||
-					reasonCodes.includes('current_generated_document') ||
-					messageMatchScore >= 2 ||
-					explicitlyRequested ||
-					(reasonCodes.includes('latest_generated_output') && messageMatchScore >= 1) ||
-					(reasonCodes.includes('recently_used_in_output') && messageMatchScore >= 1));
+			const promptEligible = isGeneratedDocumentPromptEligible({
+				artifact,
+				conversationId,
+				reasonCodes,
+				messageMatchScore,
+				explicitlyRequested,
+			});
 
 			return {
 				artifact,

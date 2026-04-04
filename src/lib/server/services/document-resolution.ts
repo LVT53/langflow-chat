@@ -26,6 +26,12 @@ export interface RelevantGeneratedDocumentSelection {
   resolutions: GeneratedDocumentResolution[];
 }
 
+type GeneratedArtifactMatchParams = {
+  artifacts: Artifact[];
+  query: string;
+  currentConversationId?: string | null;
+};
+
 function includesNormalized(haystack: string, needle: string): boolean {
   const normalizedHaystack = haystack.trim().toLowerCase();
   const normalizedNeedle = needle.trim().toLowerCase();
@@ -97,14 +103,9 @@ function scoreGeneratedDocumentArtifact(params: {
   };
 }
 
-export function resolveRelevantGeneratedDocumentArtifacts(params: {
-  artifacts: Artifact[];
-  query: string;
-  limit: number;
-  currentConversationId?: string | null;
-}): GeneratedDocumentResolution[] {
-  const latestPerFamily = selectLatestGeneratedDocumentCandidatesByFamily(
-    params.artifacts.map((artifact) => ({
+function getLatestGeneratedArtifacts(artifacts: Artifact[]): Artifact[] {
+  return selectLatestGeneratedDocumentCandidatesByFamily(
+    artifacts.map((artifact) => ({
       artifactId: artifact.id,
       artifactName: artifact.name,
       updatedAt: artifact.updatedAt,
@@ -112,8 +113,12 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
       artifact,
     })),
   ).map((candidate) => candidate.artifact);
+}
 
-  return latestPerFamily
+function rankLatestGeneratedDocumentArtifacts(
+  params: GeneratedArtifactMatchParams,
+): GeneratedDocumentResolution[] {
+  return getLatestGeneratedArtifacts(params.artifacts)
     .map((artifact) =>
       scoreGeneratedDocumentArtifact({
         artifact,
@@ -125,8 +130,58 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return right.artifact.updatedAt - left.artifact.updatedAt;
-    })
-    .slice(0, params.limit);
+    });
+}
+
+export function isGeneratedDocumentPromptEligible(params: {
+  artifact: Artifact;
+  conversationId: string;
+  reasonCodes: WorkingSetReasonCode[];
+  messageMatchScore: number;
+  explicitlyRequested: boolean;
+}): boolean {
+  if (params.artifact.type !== "generated_output") {
+    return true;
+  }
+
+  const allowEphemeralOutput =
+    params.reasonCodes.includes("active_document_focus") ||
+    params.reasonCodes.includes("current_generated_document") ||
+    (params.artifact.conversationId === params.conversationId &&
+      params.reasonCodes.includes("latest_generated_output"));
+
+  if (params.artifact.retrievalClass === "durable") {
+    return true;
+  }
+
+  if (!allowEphemeralOutput) {
+    return false;
+  }
+
+  return (
+    params.reasonCodes.includes("attached_this_turn") ||
+    params.reasonCodes.includes("active_document_focus") ||
+    params.reasonCodes.includes("current_generated_document") ||
+    params.messageMatchScore >= 2 ||
+    params.explicitlyRequested ||
+    (params.reasonCodes.includes("latest_generated_output") &&
+      params.messageMatchScore >= 1) ||
+    (params.reasonCodes.includes("recently_used_in_output") &&
+      params.messageMatchScore >= 1)
+  );
+}
+
+export function resolveRelevantGeneratedDocumentArtifacts(params: {
+  artifacts: Artifact[];
+  query: string;
+  limit: number;
+  currentConversationId?: string | null;
+}): GeneratedDocumentResolution[] {
+  return rankLatestGeneratedDocumentArtifacts({
+    artifacts: params.artifacts,
+    query: params.query,
+    currentConversationId: params.currentConversationId,
+  }).slice(0, params.limit);
 }
 
 export function resolveRelevantGeneratedDocumentSelection(params: {
@@ -189,15 +244,7 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
   );
-  const latestArtifacts = selectLatestGeneratedDocumentCandidatesByFamily(
-    generatedArtifacts.map((artifact) => ({
-        artifactId: artifact.id,
-        artifactName: artifact.name,
-        updatedAt: artifact.updatedAt,
-        metadata: artifact.metadata,
-        artifact,
-      })),
-  ).map((candidate) => candidate.artifact);
+  const latestArtifacts = getLatestGeneratedArtifacts(generatedArtifacts);
 
   const latestArtifactIds = latestArtifacts.map((artifact) => artifact.id);
   const preferredArtifact = params.preferredArtifactId
@@ -216,19 +263,11 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
 
   const normalizedQuery = params.query?.trim() ?? "";
   if (normalizedQuery) {
-    const rankedArtifacts = latestArtifacts
-      .map((artifact) =>
-        scoreGeneratedDocumentArtifact({
-          artifact,
-          query: normalizedQuery,
-          currentConversationId: params.currentConversationId,
-        }),
-      )
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => {
-        if (right.score !== left.score) return right.score - left.score;
-        return right.artifact.updatedAt - left.artifact.updatedAt;
-      });
+    const rankedArtifacts = rankLatestGeneratedDocumentArtifacts({
+      artifacts: generatedArtifacts,
+      query: normalizedQuery,
+      currentConversationId: params.currentConversationId,
+    });
     const primaryMatch = rankedArtifacts[0] ?? null;
 
     if (primaryMatch) {

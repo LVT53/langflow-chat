@@ -3,21 +3,7 @@ export function getGenerateFileToolCode(input: Record<string, unknown>): string 
 		typeof input.source_code === 'string' && input.source_code.trim().length > 0
 			? input.source_code
 			: null;
-	if (sourceCode) {
-		return sourceCode;
-	}
-
-	const pythonCode =
-		typeof input.python_code === 'string' && input.python_code.trim().length > 0
-			? input.python_code
-			: null;
-	if (pythonCode) {
-		return pythonCode;
-	}
-
-	const code =
-		typeof input.code === 'string' && input.code.trim().length > 0 ? input.code : null;
-	return code;
+	return sourceCode;
 }
 
 export function getGenerateFileToolLanguage(input: Record<string, unknown>): 'python' | 'javascript' {

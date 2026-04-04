@@ -8,34 +8,23 @@ import {
 } from './generate-file-tool';
 
 describe('generate-file-tool helpers', () => {
-	it('prefers source_code over python_code and code', () => {
+	it('reads source_code when present', () => {
 		const input = {
 			source_code: 'const fs = require("fs"); fs.writeFileSync("/output/new.xlsx", "x")',
-			python_code: 'with open("/output/old.txt", "w") as f: f.write("old")',
-			code: 'legacy',
 		};
 
 		expect(getGenerateFileToolCode(input)).toContain('/output/new.xlsx');
 		expect(inferGeneratedFilenameFromToolInput(input)).toBe('new.xlsx');
 	});
 
-	it('prefers python_code over code', () => {
+	it('returns null when legacy code fields are passed without source_code', () => {
 		const input = {
 			python_code: 'with open("/output/new.txt", "w") as f: f.write("new")',
 			code: 'with open("/output/old.txt", "w") as f: f.write("old")',
 		};
 
-		expect(getGenerateFileToolCode(input)).toContain('/output/new.txt');
-		expect(inferGeneratedFilenameFromToolInput(input)).toBe('new.txt');
-	});
-
-	it('falls back to the legacy code field', () => {
-		const input = {
-			code: 'with open("/output/legacy.txt", "w") as f: f.write("legacy")',
-		};
-
-		expect(getGenerateFileToolCode(input)).toContain('/output/legacy.txt');
-		expect(inferGeneratedFilenameFromToolInput(input)).toBe('legacy.txt');
+		expect(getGenerateFileToolCode(input)).toBeNull();
+		expect(inferGeneratedFilenameFromToolInput(input)).toBe('Generated file');
 	});
 
 	it('uses the explicit filename when present', () => {

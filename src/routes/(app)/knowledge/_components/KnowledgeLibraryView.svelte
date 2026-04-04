@@ -809,7 +809,7 @@
 	<div class="space-y-2">
 		<h2 class="text-lg font-sans font-semibold text-text-primary">Collections</h2>
 		<p class="max-w-[720px] text-sm font-sans leading-[1.6] text-text-secondary">
-			Documents, saved results, and workflow capsules still open in dedicated table views for bulk maintenance.
+			Documents, saved results, and workflow capsules open through the shared workspace while their table views remain available for bulk maintenance.
 		</p>
 	</div>
 	<div class="mt-5 grid gap-4 lg:grid-cols-3">

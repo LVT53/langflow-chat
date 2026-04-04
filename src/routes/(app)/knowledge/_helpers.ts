@@ -7,7 +7,6 @@ import type {
 	WorkCapsule,
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
-import { isPreviewableFile as isPreviewableGeneratedFile } from '$lib/utils/file-preview';
 
 export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
@@ -119,8 +118,4 @@ export function getFocusContinuityItemCount(params: {
 	focusContinuities: FocusContinuityItem[];
 }): number {
 	return params.taskMemories.length + params.focusContinuities.length;
-}
-
-export function isPreviewableFile(mimeType: string | null, filename: string): boolean {
-	return isPreviewableGeneratedFile(mimeType, filename);
 }
