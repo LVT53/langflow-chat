@@ -5,15 +5,19 @@
 	let {
 		open = false,
 		documents = [],
+		availableDocuments = [],
 		activeDocumentId = null,
 		onSelectDocument,
+		onOpenDocument = undefined,
 		onCloseDocument,
 		onCloseWorkspace,
 	}: {
 		open?: boolean;
 		documents?: DocumentWorkspaceItem[];
+		availableDocuments?: DocumentWorkspaceItem[];
 		activeDocumentId?: string | null;
 		onSelectDocument: (documentId: string) => void;
+		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onCloseDocument: (documentId: string) => void;
 		onCloseWorkspace: () => void;
 	} = $props();
@@ -48,6 +52,42 @@
 		const roleLabel = formatRoleLabel(document.documentRole);
 		const versionLabel = getDocumentVersionLabel(document);
 		return [roleLabel, versionLabel].filter(Boolean).join(' • ') || null;
+	}
+
+	let familyDocuments = $derived.by(() => {
+		if (!activeDocument?.documentFamilyId) return [];
+
+		const mergedById = new Map<string, DocumentWorkspaceItem>();
+		for (const document of [...availableDocuments, ...documents]) {
+			if (document.documentFamilyId !== activeDocument.documentFamilyId) continue;
+			const existing = mergedById.get(document.id);
+			mergedById.set(document.id, existing ? { ...existing, ...document } : document);
+		}
+
+		return Array.from(mergedById.values()).sort((left, right) => {
+			const leftVersion = left.versionNumber ?? 0;
+			const rightVersion = right.versionNumber ?? 0;
+			if (rightVersion !== leftVersion) return rightVersion - leftVersion;
+			if (left.id === activeDocument.id) return -1;
+			if (right.id === activeDocument.id) return 1;
+			return getDocumentTitle(left).localeCompare(getDocumentTitle(right));
+		});
+	});
+
+	function isCurrentFamilyDocument(document: DocumentWorkspaceItem): boolean {
+		return document.id === activeDocument?.id;
+	}
+
+	function isLatestFamilyDocument(document: DocumentWorkspaceItem): boolean {
+		return familyDocuments[0]?.id === document.id;
+	}
+
+	function handleFamilyDocumentOpen(document: DocumentWorkspaceItem) {
+		if (documents.some((entry) => entry.id === document.id)) {
+			onSelectDocument(document.id);
+			return;
+		}
+		onOpenDocument?.(document);
 	}
 
 </script>
@@ -113,6 +153,35 @@
 							</button>
 						</div>
 					{/each}
+				</div>
+			{/if}
+
+			{#if familyDocuments.length > 1}
+				<div class="workspace-history" aria-label="Document version history">
+					<div class="workspace-history-label">Version History</div>
+					<div class="workspace-history-list">
+						{#each familyDocuments as document (document.id)}
+							<button
+								type="button"
+								class="workspace-history-item"
+								class:workspace-history-item-current={isCurrentFamilyDocument(document)}
+								onclick={() => handleFamilyDocumentOpen(document)}
+							>
+								<div class="workspace-history-topline">
+									<span class="workspace-history-version">
+										{getDocumentVersionLabel(document) ?? 'Version'}
+									</span>
+									{#if isLatestFamilyDocument(document)}
+										<span class="workspace-history-badge">Latest</span>
+									{/if}
+									{#if isCurrentFamilyDocument(document)}
+										<span class="workspace-history-badge workspace-history-badge-current">Current</span>
+									{/if}
+								</div>
+								<div class="workspace-history-title">{getDocumentTitle(document)}</div>
+							</button>
+						{/each}
+					</div>
 				</div>
 			{/if}
 
@@ -184,6 +253,35 @@
 						</button>
 					</div>
 				{/each}
+			</div>
+		{/if}
+
+		{#if familyDocuments.length > 1}
+			<div class="workspace-history" aria-label="Document version history">
+				<div class="workspace-history-label">Version History</div>
+				<div class="workspace-history-list">
+					{#each familyDocuments as document (document.id)}
+						<button
+							type="button"
+							class="workspace-history-item"
+							class:workspace-history-item-current={isCurrentFamilyDocument(document)}
+							onclick={() => handleFamilyDocumentOpen(document)}
+						>
+							<div class="workspace-history-topline">
+								<span class="workspace-history-version">
+									{getDocumentVersionLabel(document) ?? 'Version'}
+								</span>
+								{#if isLatestFamilyDocument(document)}
+									<span class="workspace-history-badge">Latest</span>
+								{/if}
+								{#if isCurrentFamilyDocument(document)}
+									<span class="workspace-history-badge workspace-history-badge-current">Current</span>
+								{/if}
+							</div>
+							<div class="workspace-history-title">{getDocumentTitle(document)}</div>
+						</button>
+					{/each}
+				</div>
 			</div>
 		{/if}
 
@@ -367,6 +465,114 @@
 		flex: 1 1 auto;
 		min-height: 0;
 		min-width: 0;
+	}
+
+	.workspace-history {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		padding: 0.75rem 1rem 0.85rem;
+		border-left: 1px solid var(--border-default);
+		border-bottom: 1px solid var(--border-default);
+		background: color-mix(in srgb, var(--surface-page) 94%, transparent 6%);
+	}
+
+	.workspace-shell-mobile .workspace-history {
+		border-left: none;
+	}
+
+	.workspace-history-label {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.workspace-history-list {
+		display: flex;
+		gap: 0.55rem;
+		overflow-x: auto;
+	}
+
+	.workspace-history-item {
+		display: flex;
+		min-width: 10.5rem;
+		max-width: 13rem;
+		flex-direction: column;
+		gap: 0.35rem;
+		padding: 0.7rem 0.85rem;
+		border: 1px solid var(--border-default);
+		border-radius: 0.95rem;
+		background: var(--surface-elevated);
+		text-align: left;
+		color: var(--text-secondary);
+		transition:
+			border-color var(--duration-fast) ease,
+			background-color var(--duration-fast) ease,
+			color var(--duration-fast) ease,
+			transform var(--duration-fast) ease;
+	}
+
+	.workspace-history-item:hover {
+		border-color: var(--border-strong);
+		background: color-mix(in srgb, var(--surface-elevated) 86%, var(--surface-page) 14%);
+		color: var(--text-primary);
+		transform: translateY(-1px);
+	}
+
+	.workspace-history-item-current {
+		border-color: color-mix(in srgb, var(--text-primary) 18%, var(--border-default) 82%);
+		background: color-mix(in srgb, var(--surface-elevated) 78%, var(--surface-page) 22%);
+		color: var(--text-primary);
+	}
+
+	.workspace-history-topline {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.workspace-history-version,
+	.workspace-history-badge {
+		display: inline-flex;
+		align-items: center;
+		border-radius: 999px;
+		padding: 0.12rem 0.42rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.64rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.workspace-history-version {
+		border: 1px solid var(--border-default);
+		color: var(--text-secondary);
+		background: var(--surface-page);
+	}
+
+	.workspace-history-badge {
+		color: var(--text-muted);
+		background: color-mix(in srgb, var(--surface-page) 85%, transparent 15%);
+	}
+
+	.workspace-history-badge-current {
+		color: var(--text-primary);
+		background: color-mix(in srgb, var(--surface-page) 70%, var(--surface-elevated) 30%);
+	}
+
+	.workspace-history-title {
+		font-family: 'Libre Baskerville', serif;
+		font-size: 0.88rem;
+		line-height: 1.35;
+		color: inherit;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
 	}
 
 	@media (min-width: 768px) {

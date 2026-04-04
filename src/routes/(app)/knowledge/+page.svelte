@@ -136,6 +136,25 @@
 
 	let overviewRenderVersion = 0;
 
+	let availableWorkspaceDocuments = $derived(
+		documents.map((document) => {
+			const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+			return {
+				id: `artifact:${artifactId}`,
+				source: 'knowledge_artifact' as const,
+				filename: document.name,
+				title: document.documentLabel ?? document.name,
+				documentFamilyId: document.documentFamilyId ?? null,
+				documentLabel: document.documentLabel ?? null,
+				documentRole: document.documentRole ?? null,
+				versionNumber: document.versionNumber ?? null,
+				mimeType: document.mimeType,
+				artifactId,
+				conversationId: document.conversationId,
+			};
+		})
+	);
+
 	function getWorkspaceMetadataForArtifact(artifactId: string): Pick<
 		DocumentWorkspaceItem,
 		'documentFamilyId' | 'documentLabel' | 'documentRole' | 'versionNumber' | 'title'
@@ -868,8 +887,10 @@
 				<DocumentWorkspace
 					open={workspaceOpen}
 					documents={workspaceDocuments}
+					availableDocuments={availableWorkspaceDocuments}
 					activeDocumentId={activeWorkspaceDocumentId}
 					onSelectDocument={selectWorkspaceDocument}
+					onOpenDocument={openWorkspaceDocument}
 					onCloseDocument={closeWorkspaceDocument}
 					onCloseWorkspace={closeWorkspace}
 				/>

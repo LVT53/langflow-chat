@@ -116,6 +116,24 @@
 		}) satisfies ChatGeneratedFileListItem),
 		...pendingGeneratedFiles,
 	]);
+	let availableWorkspaceDocuments = $derived(
+		generatedFiles.map((file) => ({
+			id: file.id,
+			source: 'chat_generated_file' as const,
+			filename: file.filename,
+			title: file.documentLabel ?? file.filename,
+			documentFamilyId: file.documentFamilyId ?? null,
+			documentLabel: file.documentLabel ?? null,
+			documentRole: file.documentRole ?? null,
+			versionNumber: file.versionNumber ?? null,
+			mimeType: file.mimeType,
+			previewUrl: `/api/chat/files/${file.id}/preview`,
+			artifactId: file.artifactId ?? null,
+			conversationId: file.conversationId,
+			downloadUrl: `/api/chat/files/${file.id}/download`,
+			savedVaultName: file.savedVaultName ?? null,
+		}))
+	);
 
 	function inferGeneratedFilename(input: Record<string, unknown>): string {
 		return inferGeneratedFilenameFromToolInput(input);
@@ -881,8 +899,10 @@
 			<DocumentWorkspace
 				open={workspaceOpen}
 				documents={workspaceDocuments}
+				availableDocuments={availableWorkspaceDocuments}
 				activeDocumentId={activeWorkspaceDocumentId}
 				onSelectDocument={selectWorkspaceDocument}
+				onOpenDocument={openWorkspaceDocument}
 				onCloseDocument={closeWorkspaceDocument}
 				onCloseWorkspace={closeWorkspace}
 			/>
