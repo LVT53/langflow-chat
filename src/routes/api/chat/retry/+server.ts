@@ -391,6 +391,7 @@ export const POST: RequestHandler = async (event) => {
 								normalizedMessage,
 								assistantResponse: chunkRuntime.fullResponse,
 								attachmentIds: safeAttachmentIds,
+								activeDocumentArtifactId: activeDocumentFocusId,
 								contextStatus: latestContextStatus,
 								initialTaskState,
 								initialContextDebug,

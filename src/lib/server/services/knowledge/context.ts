@@ -163,11 +163,13 @@ export async function selectWorkingSetArtifactsForPrompt(
 			const retrievalClass = (row.artifact.retrievalClass ?? 'durable') as Artifact['retrievalClass'];
 			const allowEphemeralOutput =
 				artifact.type === 'generated_output' &&
-				artifact.conversationId === conversationId &&
-				reasonCodes.includes('latest_generated_output');
+				(reasonCodes.includes('active_document_focus') ||
+					(artifact.conversationId === conversationId &&
+						reasonCodes.includes('latest_generated_output')));
 			const promptEligible =
 				(artifact.type !== 'generated_output' || retrievalClass === 'durable' || allowEphemeralOutput) &&
 				(reasonCodes.includes('attached_this_turn') ||
+					reasonCodes.includes('active_document_focus') ||
 					messageMatchScore >= 2 ||
 					explicitlyRequested ||
 					(reasonCodes.includes('latest_generated_output') && messageMatchScore >= 1) ||
@@ -191,6 +193,7 @@ export async function refreshConversationWorkingSet(params: {
 	conversationId: string;
 	message?: string;
 	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
 	latestOutputArtifactId?: string | null;
 }): Promise<ArtifactSummary[]> {
 	const attachmentIds = params.attachmentIds ?? [];
@@ -238,6 +241,7 @@ export async function refreshConversationWorkingSet(params: {
 		...attachmentIds,
 		...sourceArtifactIds,
 		...latestOutputArtifactIds,
+		...(params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : []),
 	]);
 
 	if (candidateIds.size === 0) {
@@ -260,6 +264,7 @@ export async function refreshConversationWorkingSet(params: {
 			previousScore: existingByArtifactId.get(artifact.id)?.score,
 			previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
+			isActiveDocumentFocus: params.activeDocumentArtifactId === artifact.id,
 			isLatestGeneratedOutput: latestOutputArtifactId === artifact.id,
 			isLinkedToLatestOutput: sourceIdsLinkedToLatestOutput.includes(artifact.id),
 			messageMatchScore: message
@@ -275,6 +280,7 @@ export async function refreshConversationWorkingSet(params: {
 		const existing = existingByArtifactId.get(candidate.artifactId);
 		const shouldTouchUsage =
 			candidate.reasonCodes.includes('attached_this_turn') ||
+			candidate.reasonCodes.includes('active_document_focus') ||
 			candidate.reasonCodes.includes('matched_current_turn') ||
 			candidate.reasonCodes.includes('latest_generated_output') ||
 			candidate.reasonCodes.includes('recently_used_in_output');

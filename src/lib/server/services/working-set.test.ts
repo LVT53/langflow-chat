@@ -29,6 +29,36 @@ describe('working-set ranking', () => {
 		expect(ranked[0]?.artifactId).toBe('doc-1');
 	});
 
+	it('treats the active workspace document as stronger than generic latest-output recency', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-focused',
+				artifactType: 'generated_output',
+				name: 'Focused brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isActiveDocumentFocus: true,
+			},
+			{
+				artifactId: 'out-latest',
+				artifactType: 'generated_output',
+				name: 'Latest output',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isLatestGeneratedOutput: true,
+			},
+		]);
+
+		expect(ranked[0]).toMatchObject({
+			artifactId: 'out-focused',
+			selected: true,
+			reasonCodes: expect.arrayContaining(['active_document_focus']),
+		});
+		expect(ranked[1]?.artifactId).toBe('out-latest');
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{

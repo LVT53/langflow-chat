@@ -104,6 +104,7 @@ export async function persistAssistantTurnState(
 		userId: params.userId,
 		conversationId: params.conversationId,
 		message: params.normalizedMessage,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		latestOutputArtifactId: outputArtifact?.id ?? null,
 	}).catch(async () => getConversationWorkingSet(params.userId, params.conversationId));
 	let taskState = await updateTaskStateCheckpoint({

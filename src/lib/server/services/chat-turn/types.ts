@@ -69,6 +69,7 @@ export type PersistAssistantTurnStateParams = {
 	normalizedMessage: string;
 	assistantResponse: string;
 	attachmentIds: string[];
+	activeDocumentArtifactId?: string;
 	contextStatus?: ConversationContextStatus | null;
 	initialTaskState?: TaskState | null;
 	initialContextDebug?: ContextDebugState | null;

@@ -19,6 +19,7 @@ export interface WorkingSetCandidate {
 	previousScore?: number;
 	previousState?: WorkingSetState | null;
 	isAttachedThisTurn?: boolean;
+	isActiveDocumentFocus?: boolean;
 	isLatestGeneratedOutput?: boolean;
 	isLinkedToLatestOutput?: boolean;
 	messageMatchScore?: number;
@@ -60,6 +61,11 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	if (candidate.isAttachedThisTurn) {
 		score += 100;
 		reasonCodes.push('attached_this_turn');
+	}
+
+	if (candidate.isActiveDocumentFocus) {
+		score += 92;
+		reasonCodes.push('active_document_focus');
 	}
 
 	if (candidate.isLatestGeneratedOutput) {

@@ -87,6 +87,7 @@ export const POST: RequestHandler = async (event) => {
 			normalizedMessage: turn.normalizedMessage,
 			assistantResponse: responseText,
 			attachmentIds: turn.attachmentIds,
+			activeDocumentArtifactId: turn.activeDocumentArtifactId,
 			contextStatus,
 			initialTaskState,
 			initialContextDebug,

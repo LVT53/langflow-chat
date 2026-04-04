@@ -269,6 +269,7 @@ export type WorkingSetState = 'active' | 'cooling';
 
 export type WorkingSetReasonCode =
   | 'attached_this_turn'
+  | 'active_document_focus'
   | 'recently_used_in_output'
   | 'latest_generated_output'
   | 'matched_current_turn'
