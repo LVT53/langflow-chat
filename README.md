@@ -106,6 +106,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
+- Persona-memory clustering now resolves relative time into structured freshness metadata, distinguishes short-term constraints from broader active project context, archives expired temporal memories as historical facts, and prevents stale Honcho overview text from overriding fresher local temporal truth.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
 ### Interface And Content Characteristics
@@ -231,6 +232,7 @@ Notes before the tables:
 - Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
 - Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
+- Time-sensitive persona memory is freshness-aware: relative constraints such as `in two days` are resolved against the original observation time, expired items become historical context instead of active truth, and the Knowledge Base overview rejects stale Honcho summaries that still present expired constraints as current.
 - The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.

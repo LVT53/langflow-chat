@@ -178,6 +178,66 @@ function makeDurablePersonaMemories() {
 	];
 }
 
+function makeExpiredConstraintMemory() {
+	return {
+		id: 'deadline-1',
+		canonicalText:
+			'As of 2026-03-27, The user is time-constrained, working on assessment documentation due in two days.',
+		rawCanonicalText:
+			'The user is time-constrained, working on assessment documentation due in two days.',
+		memoryClass: 'short_term_constraint',
+		state: 'archived',
+		salienceScore: 80,
+		sourceCount: 1,
+		conversationTitles: [],
+		firstSeenAt: Date.UTC(2026, 2, 27, 10),
+		lastSeenAt: Date.UTC(2026, 2, 27, 10),
+		pinned: false,
+		temporal: {
+			kind: 'deadline',
+			freshness: 'expired',
+			observedAt: Date.UTC(2026, 2, 27, 10),
+			effectiveAt: Date.UTC(2026, 2, 27, 10),
+			expiresAt: Date.UTC(2026, 2, 29, 10),
+			relative: true,
+			resolved: false,
+		},
+		activeConstraint: false,
+		topicKey: 'assessment documentation',
+		topicStatus: 'historical',
+		members: [],
+	};
+}
+
+function makeActiveConstraintMemory() {
+	return {
+		id: 'deadline-active',
+		canonicalText: 'The user has one week left to finish assessment documentation.',
+		rawCanonicalText: 'The user has one week left to finish assessment documentation.',
+		memoryClass: 'short_term_constraint',
+		state: 'active',
+		salienceScore: 86,
+		sourceCount: 1,
+		conversationTitles: [],
+		firstSeenAt: Date.now() - 10_000,
+		lastSeenAt: Date.now() - 10_000,
+		pinned: false,
+		temporal: {
+			kind: 'deadline',
+			freshness: 'active',
+			observedAt: Date.now() - 10_000,
+			effectiveAt: Date.now() - 10_000,
+			expiresAt: Date.now() + 5 * 86_400_000,
+			relative: true,
+			resolved: false,
+		},
+		activeConstraint: true,
+		topicKey: 'assessment documentation',
+		topicStatus: 'active',
+		members: [],
+	};
+}
+
 describe('knowledge memory service', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -262,6 +322,47 @@ describe('knowledge memory service', () => {
 		expect(payload.summary.durablePersonaCount).toBe(2);
 		expect(payload.summary.overview).toContain('Stable Preferences');
 		expect(payload.summary.overview).toContain('Prefers Laravel for PHP work.');
+	});
+
+	it('shows active constraints in the local overview and suppresses expired ones', async () => {
+		mockListPersonaMemoryClusters.mockResolvedValue([
+			makeExpiredConstraintMemory(),
+			makeActiveConstraintMemory(),
+			...makeDurablePersonaMemories(),
+		]);
+		mockGetPeerContext.mockResolvedValue('');
+
+		const { getKnowledgeMemory } = await import('./memory');
+
+		const payload = await getKnowledgeMemory('user-1', 'Test User');
+
+		expect(payload.summary.overviewSource).toBe('persona_fallback');
+		expect(payload.summary.overview).toContain('Active Constraints');
+		expect(payload.summary.overview).toContain(
+			'The user has one week left to finish assessment documentation.'
+		);
+		expect(payload.summary.overview).not.toContain('due in two days');
+	});
+
+	it('rejects a live Honcho overview that repeats expired temporal memory as current truth', async () => {
+		mockListPersonaMemoryClusters.mockResolvedValue([
+			makeExpiredConstraintMemory(),
+			...makeDurablePersonaMemories(),
+		]);
+		mockGetPeerContext.mockResolvedValue(
+			'Currently, he is time-constrained, working on assessment documentation due in two days.'
+		);
+
+		const { getKnowledgeMemoryOverview } = await import('./memory');
+
+		const payload = await getKnowledgeMemoryOverview('user-1', 'Test User', {
+			awaitLive: true,
+			force: true,
+		});
+
+		expect(payload.summary.overviewSource).toBe('persona_fallback');
+		expect(payload.summary.overview).toContain('Stable Preferences');
+		expect(payload.summary.overview).not.toContain('due in two days');
 	});
 
 	it('does not start duplicate live overview refreshes for concurrent requests', async () => {

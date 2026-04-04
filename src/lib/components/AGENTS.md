@@ -109,6 +109,7 @@ ui/
 - Saved generated-file rows remain conversation-scoped after vault save; do not delete the underlying chat-file record just because a vault copy was created
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
 - `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the knowledge-page vault surface; keep vault browsing/search/filter state, drag/drop upload targeting, and vault CRUD affordances there instead of reintroducing a separate sidebar rail
+- Knowledge-memory UI should render server-derived persona classes and historical temporal phrasing as-is. Do not re-derive deadline freshness or topic lifecycle rules in Svelte components.
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic
 

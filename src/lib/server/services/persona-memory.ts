@@ -11,6 +11,10 @@ import type {
 	PersonaMemoryItem,
 	PersonaMemoryMemberItem,
 	PersonaMemoryState,
+	PersonaMemoryTemporalInfo,
+	PersonaMemoryTemporalKind,
+	PersonaMemoryTemporalFreshness,
+	PersonaMemoryTopicStatus,
 } from '$lib/types';
 import { parseJsonRecord as parseJsonRecordOrNull } from '$lib/server/utils/json';
 import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
@@ -79,7 +83,7 @@ const EXPLICIT_TEMPORAL_CUE_PATTERN =
 	/\b(today|tonight|tomorrow|yesterday|now|this morning|this afternoon|this evening|this weekend|this week|next week|last week|this month|next month|last month|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/i;
 
 export const PERSONA_MEMORY_DREAM_SYSTEM_PROMPT =
-	'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, situational_context, stable_preference, identity_profile, long_term_context. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact. Do not infer or invent dates or times for events unless the raw memory text explicitly states them. If a memory mentions a date, meeting, appointment, trip, or other event without an explicit date/time, keep the timing unspecified instead of saying today, now, or adding a calendar date.';
+	'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, short_term_constraint, active_project_context, situational_context, stable_preference, identity_profile, long_term_context. Use short_term_constraint for deadlines, short-lived time pressure, or temporary availability constraints. Use active_project_context for currently active work that matters across near-future chats but is not just a durable preference. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact. Do not infer or invent dates or times for events unless the raw memory text explicitly states them. If a memory mentions a date, meeting, appointment, trip, or other event without an explicit date/time, keep the timing unspecified instead of saying today, now, or adding a calendar date.';
 
 type DreamClusterPayload = {
 	rawMemories: Array<{
@@ -185,6 +189,73 @@ const STYLE_VALUE_ALIASES: Record<string, string> = {
 	gentle: 'gentle',
 	blunt: 'blunt',
 };
+
+const NUMBER_WORDS: Record<string, number> = {
+	one: 1,
+	two: 2,
+	three: 3,
+	four: 4,
+	five: 5,
+	six: 6,
+	seven: 7,
+	eight: 8,
+	nine: 9,
+	ten: 10,
+	eleven: 11,
+	twelve: 12,
+	couple: 2,
+};
+
+const TOPIC_STOP_WORDS = new Set([
+	'the',
+	'a',
+	'an',
+	'and',
+	'or',
+	'to',
+	'for',
+	'of',
+	'on',
+	'in',
+	'with',
+	'by',
+	'from',
+	'this',
+	'that',
+	'these',
+	'those',
+	'currently',
+	'right',
+	'now',
+	'temporary',
+	'temporarily',
+	'working',
+	'work',
+	'project',
+	'due',
+	'deadline',
+	'days',
+	'day',
+	'weeks',
+	'week',
+	'hours',
+	'hour',
+	'time',
+	'constrained',
+	'constraint',
+	'only',
+	'have',
+	'has',
+	'had',
+	'within',
+	'finish',
+	'complete',
+	'completing',
+	'preparing',
+	'building',
+	'writing',
+	'applying',
+]);
 
 function normalizeMemoryText(value: string): string {
 	return normalizeWhitespace(value).toLowerCase();
@@ -511,6 +582,245 @@ function parseJsonRecord(value: string | null): Record<string, unknown> {
 	return parseJsonRecordOrNull(value) ?? {};
 }
 
+type TemporalMetadata = {
+	kind: PersonaMemoryTemporalKind;
+	freshness: PersonaMemoryTemporalFreshness;
+	observedAt: number;
+	effectiveAt: number | null;
+	expiresAt: number | null;
+	relative: boolean;
+	resolved: boolean;
+};
+
+function parseNumberToken(value: string | undefined): number | null {
+	if (!value) return null;
+	const normalized = normalizeMemoryText(value);
+	if (/^\d+$/.test(normalized)) {
+		return Number(normalized);
+	}
+	return NUMBER_WORDS[normalized] ?? null;
+}
+
+function addDurationMs(base: number, amount: number, unit: string): number {
+	const normalized = normalizeMemoryText(unit);
+	if (normalized.startsWith('hour')) return base + amount * 60 * 60 * 1000;
+	if (normalized.startsWith('week')) return base + amount * 7 * DAY_MS;
+	if (normalized.startsWith('month')) return base + amount * 30 * DAY_MS;
+	return base + amount * DAY_MS;
+}
+
+function formatIsoDate(timestamp: number): string {
+	return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function stripTrailingPunctuation(value: string): string {
+	return normalizeWhitespace(value).replace(/[.!?]+$/, '');
+}
+
+function deriveTopicKey(text: string): string | null {
+	const normalized = stripTrailingPunctuation(text);
+	const explicitMatch = normalized.match(
+		/\b(?:working on|preparing|building|writing|drafting|finishing|completing|submitting|applying for|finish|complete|submit)\s+(.+?)(?:\s+(?:due|by|within|in|before|after)\b|[.;]|$)/i
+	);
+	if (explicitMatch?.[1]) {
+		const candidate = normalizeWhitespace(explicitMatch[1])
+			.toLowerCase()
+			.replace(/[^a-z0-9\s-]/g, ' ')
+			.split(/\s+/)
+			.filter((token) => token && !TOPIC_STOP_WORDS.has(token))
+			.slice(0, 4)
+			.join(' ');
+		if (candidate) return candidate;
+	}
+
+	const fallback = normalized
+		.toLowerCase()
+		.replace(/[^a-z0-9\s-]/g, ' ')
+		.split(/\s+/)
+		.filter((token) => token.length > 2 && !TOPIC_STOP_WORDS.has(token))
+		.slice(0, 4)
+		.join(' ');
+	return fallback || null;
+}
+
+function hasShortTermConstraintCue(text: string): boolean {
+	const normalized = normalizeMemoryText(text);
+	return (
+		/\b(deadline|due|time[- ]constrained|only have|time pressure|urgent|due date|must finish|need to finish|need to submit|submission)\b/.test(
+			normalized
+		) ||
+		(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple)(?:\s+more)?\s+(hours?|days?|weeks?|months?)\b/.test(
+			normalized
+		) &&
+			/\b(in|within|left|remaining|have|got|more|another)\b/.test(normalized))
+	);
+}
+
+function hasActiveProjectCue(text: string): boolean {
+	const normalized = normalizeMemoryText(text);
+	return /\b(currently|right now|working on|building|preparing|writing|drafting|applying|shipping|finishing|completing)\b/.test(
+		normalized
+	);
+}
+
+function hasResolvedTemporalCue(text: string): boolean {
+	const normalized = normalizeMemoryText(text);
+	return /\b(deadline passed|passed the deadline|finished|completed|submitted|done with|wrapped up|no longer|not time[- ]constrained anymore|got an extension|was extended)\b/.test(
+		normalized
+	);
+}
+
+function resolveRelativeExpiryFromText(text: string, referenceTime: number): {
+	expiresAt: number | null;
+	relative: boolean;
+} {
+	const normalized = normalizeMemoryText(text);
+	const durationMatch = normalized.match(
+		/\b(?:in|within|for|next|only have|have|got|another)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple)(?:\s+more)?\s+(hours?|days?|weeks?|months?)\b/
+	);
+	if (durationMatch) {
+		const amount = parseNumberToken(durationMatch[1]);
+		if (amount) {
+			return {
+				expiresAt: addDurationMs(referenceTime, amount, durationMatch[2]),
+				relative: true,
+			};
+		}
+	}
+
+	const remainingMatch = normalized.match(
+		/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple)\s+(hours?|days?|weeks?|months?)\s+(?:left|remaining)\b/
+	);
+	if (remainingMatch) {
+		const amount = parseNumberToken(remainingMatch[1]);
+		if (amount) {
+			return {
+				expiresAt: addDurationMs(referenceTime, amount, remainingMatch[2]),
+				relative: true,
+			};
+		}
+	}
+
+	if (/\btoday|tonight\b/.test(normalized)) {
+		return { expiresAt: referenceTime + DAY_MS, relative: true };
+	}
+	if (/\btomorrow\b/.test(normalized)) {
+		return { expiresAt: referenceTime + 2 * DAY_MS, relative: true };
+	}
+	if (/\bthis week\b/.test(normalized)) {
+		return { expiresAt: referenceTime + 7 * DAY_MS, relative: true };
+	}
+	if (/\bnext week\b/.test(normalized)) {
+		return { expiresAt: referenceTime + 14 * DAY_MS, relative: true };
+	}
+
+	return { expiresAt: null, relative: false };
+}
+
+function getTemporalFreshness(params: {
+	expiresAt: number | null;
+	resolved: boolean;
+	now?: number;
+}): PersonaMemoryTemporalFreshness {
+	const now = params.now ?? Date.now();
+	if (params.resolved) return 'historical';
+	if (!params.expiresAt) return 'unknown';
+	if (now >= params.expiresAt) return 'expired';
+	if (params.expiresAt - now <= 2 * DAY_MS) return 'stale';
+	return 'active';
+}
+
+function buildHistoricalTemporalText(text: string, observedAt: number): string {
+	return `As of ${formatIsoDate(observedAt)}, ${stripTrailingPunctuation(text)}.`;
+}
+
+function deriveTopicStatus(params: {
+	memoryClass: PersonaMemoryClass;
+	state: PersonaMemoryState;
+	temporal: TemporalMetadata | null;
+}): PersonaMemoryTopicStatus | null {
+	if (
+		params.temporal?.freshness === 'expired' ||
+		params.temporal?.freshness === 'historical' ||
+		params.state === 'archived'
+	) {
+		return 'historical';
+	}
+	if (
+		params.memoryClass === 'short_term_constraint' ||
+		params.memoryClass === 'active_project_context' ||
+		params.memoryClass === 'situational_context'
+	) {
+		return params.state === 'dormant' ? 'dormant' : 'active';
+	}
+	return null;
+}
+
+function deriveTemporalMetadata(params: {
+	canonicalText: string;
+	records: HonchoPersonaMemoryRecord[];
+	memoryClass: PersonaMemoryClass;
+	now?: number;
+}): TemporalMetadata | null {
+	const now = params.now ?? Date.now();
+	const latestRecordAt = Math.max(...params.records.map((record) => record.createdAt));
+	const text = stripTrailingPunctuation(params.canonicalText);
+	const resolved = hasResolvedTemporalCue(text);
+
+	let kind: PersonaMemoryTemporalKind | null = null;
+	if (params.memoryClass === 'short_term_constraint') {
+		kind = 'deadline';
+	} else if (params.memoryClass === 'active_project_context' || params.memoryClass === 'situational_context') {
+		kind = 'project_window';
+	} else if (params.memoryClass === 'perishable_fact') {
+		kind = 'availability';
+	}
+
+	if (!kind) return null;
+
+	const { expiresAt, relative } = resolveRelativeExpiryFromText(text, latestRecordAt);
+	const freshness = getTemporalFreshness({ expiresAt, resolved, now });
+	return {
+		kind,
+		freshness,
+		observedAt: latestRecordAt,
+		effectiveAt: latestRecordAt,
+		expiresAt,
+		relative,
+		resolved,
+	};
+}
+
+function temporalMetadataFromRecord(
+	metadata: Record<string, unknown> | null
+): TemporalMetadata | null {
+	if (!metadata) return null;
+	const temporal = metadata.temporal;
+	if (!temporal || typeof temporal !== 'object' || Array.isArray(temporal)) return null;
+	const record = temporal as Record<string, unknown>;
+	if (
+		typeof record.kind !== 'string' ||
+		typeof record.freshness !== 'string' ||
+		typeof record.observedAt !== 'number' ||
+		typeof record.relative !== 'boolean' ||
+		typeof record.resolved !== 'boolean'
+	) {
+		return null;
+	}
+	return {
+		kind: record.kind as PersonaMemoryTemporalKind,
+		freshness: getTemporalFreshness({
+			expiresAt: typeof record.expiresAt === 'number' ? record.expiresAt : null,
+			resolved: record.resolved,
+		}),
+		observedAt: record.observedAt,
+		effectiveAt: typeof record.effectiveAt === 'number' ? record.effectiveAt : null,
+		expiresAt: typeof record.expiresAt === 'number' ? record.expiresAt : null,
+		relative: record.relative,
+		resolved: record.resolved,
+	};
+}
+
 function parseInventoryFingerprint(text: string): InventoryFingerprint | null {
 	const normalized = normalizeWhitespace(text).replace(/[.]+$/, '');
 	const match = normalized.match(/^(.+?) has (.+?) available for (.+?) on (.+)$/i);
@@ -563,6 +873,14 @@ export function classifyMemoryTextDeterministically(text: string): PersonaMemory
 		return 'perishable_fact';
 	}
 
+	if (hasShortTermConstraintCue(normalized)) {
+		return 'short_term_constraint';
+	}
+
+	if (hasActiveProjectCue(normalized)) {
+		return 'active_project_context';
+	}
+
 	if (
 		/\b(plan|planning|currently|right now|this month|this week|temporary|working on|applying|preparing)\b/.test(
 			normalized
@@ -590,6 +908,16 @@ export function classifyMemoryTextDeterministically(text: string): PersonaMemory
 	return 'long_term_context';
 }
 
+function normalizeDreamMemoryClass(
+	canonicalText: string,
+	memoryClass: PersonaMemoryClass
+): PersonaMemoryClass {
+	if (memoryClass !== 'situational_context') return memoryClass;
+	if (hasShortTermConstraintCue(canonicalText)) return 'short_term_constraint';
+	if (hasActiveProjectCue(canonicalText)) return 'active_project_context';
+	return memoryClass;
+}
+
 function computeSalienceScore(params: {
 	memoryClass: PersonaMemoryClass;
 	sourceCount: number;
@@ -605,13 +933,21 @@ function computeSalienceScore(params: {
 				? 76
 				: params.memoryClass === 'long_term_context'
 					? 66
-					: params.memoryClass === 'situational_context'
-						? 54
-						: 42;
+					: params.memoryClass === 'short_term_constraint'
+						? 64
+						: params.memoryClass === 'active_project_context'
+							? 60
+						: params.memoryClass === 'situational_context'
+							? 54
+							: 42;
 	const support = Math.min(12, Math.max(0, params.sourceCount - 1) * 4);
 	const decayPenalty =
 		params.memoryClass === 'perishable_fact'
 			? ageDays * 6
+			: params.memoryClass === 'short_term_constraint'
+				? ageDays * 5
+				: params.memoryClass === 'active_project_context'
+					? ageDays * 3
 			: params.memoryClass === 'situational_context'
 				? ageDays * 2
 				: params.memoryClass === 'long_term_context'
@@ -629,6 +965,10 @@ function getDecayWindow(memoryClass: PersonaMemoryClass): {
 	switch (memoryClass) {
 		case 'perishable_fact':
 			return { dormantMs: DAY_MS, archiveMs: 10 * DAY_MS };
+		case 'short_term_constraint':
+			return { dormantMs: 2 * DAY_MS, archiveMs: 14 * DAY_MS };
+		case 'active_project_context':
+			return { dormantMs: 14 * DAY_MS, archiveMs: 45 * DAY_MS };
 		case 'situational_context':
 			return { dormantMs: 10 * DAY_MS, archiveMs: 30 * DAY_MS };
 		case 'long_term_context':
@@ -659,6 +999,15 @@ export function deriveStateFromDecay(params: {
 			state: 'archived',
 			decayAt: null,
 			archiveAt: now,
+		};
+	}
+
+	const temporal = temporalMetadataFromRecord(params.metadata ?? null);
+	if (temporal?.freshness === 'expired' || temporal?.freshness === 'historical') {
+		return {
+			state: 'archived',
+			decayAt: temporal.expiresAt,
+			archiveAt: temporal.expiresAt ?? now,
 		};
 	}
 
@@ -819,6 +1168,8 @@ function isSemanticMemoryClass(memoryClass: PersonaMemoryClass): boolean {
 	return (
 		memoryClass === 'identity_profile' ||
 		memoryClass === 'stable_preference' ||
+		memoryClass === 'short_term_constraint' ||
+		memoryClass === 'active_project_context' ||
 		memoryClass === 'situational_context' ||
 		memoryClass === 'long_term_context'
 	);
@@ -984,6 +1335,52 @@ function markSupersededClusters(plans: ClusterPlan[]): void {
 	}
 }
 
+function applyTemporalSupersession(plans: ClusterPlan[]): void {
+	const grouped = new Map<string, ClusterPlan[]>();
+
+	for (const plan of plans) {
+		const temporal = temporalMetadataFromRecord(plan.metadata);
+		if (!temporal) continue;
+		const topicKey =
+			typeof plan.metadata.topicKey === 'string' && plan.metadata.topicKey.trim()
+				? String(plan.metadata.topicKey)
+				: null;
+		if (!topicKey) continue;
+		const key = `${temporal.kind}:${topicKey}`;
+		const items = grouped.get(key) ?? [];
+		items.push(plan);
+		grouped.set(key, items);
+	}
+
+	for (const items of grouped.values()) {
+		if (items.length <= 1) continue;
+		const ordered = items.slice().sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+		const newest =
+			ordered.find((plan) => {
+				const temporal = temporalMetadataFromRecord(plan.metadata);
+				return (
+					plan.state !== 'archived' &&
+					temporal?.freshness !== 'expired' &&
+					temporal?.freshness !== 'historical'
+				);
+			}) ?? ordered[0];
+		const newestTemporal = temporalMetadataFromRecord(newest.metadata);
+		if (!newestTemporal) continue;
+
+		for (const older of ordered.slice(1)) {
+			if (older.clusterId === newest.clusterId) continue;
+			older.metadata = {
+				...older.metadata,
+				supersededByClusterId: newest.clusterId,
+				supersessionReason: 'temporal_update',
+			};
+			older.state = 'archived';
+			older.decayAt = newestTemporal.expiresAt;
+			older.archiveAt = Date.now();
+		}
+	}
+}
+
 function getPreferenceSlotMetadata(plan: ClusterPlan): PreferenceSlotMetadata | null {
 	const metadata = plan.metadata;
 	if (
@@ -1111,6 +1508,8 @@ async function dreamCluster(params: {
 
 		const nextMemoryClass =
 			response?.memoryClass === 'perishable_fact' ||
+			response?.memoryClass === 'short_term_constraint' ||
+			response?.memoryClass === 'active_project_context' ||
 			response?.memoryClass === 'situational_context' ||
 			response?.memoryClass === 'stable_preference' ||
 			response?.memoryClass === 'identity_profile' ||
@@ -1400,24 +1799,42 @@ export async function syncPersonaMemoryClusters(params: {
 							? String(existing.metadata.supersededByClusterId)
 							: null,
 				};
+		const normalizedMemoryClass = normalizeDreamMemoryClass(
+			dream.canonicalText,
+			dream.memoryClass
+		);
 
 		const pinned = existing?.pinned ?? false;
 		const firstSeenAt = Math.min(...group.records.map((record) => record.createdAt));
 		const lastSeenAt = Math.max(...group.records.map((record) => record.createdAt));
 		const preferenceMetadata =
-			dream.memoryClass === 'stable_preference'
+			normalizedMemoryClass === 'stable_preference'
 				? extractPreferenceSlotMetadata(dream.canonicalText)
 				: null;
+		const temporalMetadata = deriveTemporalMetadata({
+			canonicalText: dream.canonicalText,
+			records: group.records,
+			memoryClass: normalizedMemoryClass,
+			now,
+		});
+		const topicKey = deriveTopicKey(dream.canonicalText);
 		const metadata = {
 			...toRecordWithoutPreferenceMetadata(existing?.metadata ?? {}),
 			clusterKey: group.key,
 			conclusionIds: memberIds,
 			dreamReason: params.reason ?? 'manual',
 			supersededByClusterId: dream.supersededBy ?? null,
+			temporal: temporalMetadata,
+			activeConstraint:
+				(normalizedMemoryClass === 'short_term_constraint' ||
+					temporalMetadata?.kind === 'deadline') &&
+				temporalMetadata?.freshness !== 'expired' &&
+				temporalMetadata?.freshness !== 'historical',
+			topicKey,
 			...(preferenceMetadata ?? {}),
 		};
 		const decay = deriveStateFromDecay({
-			memoryClass: dream.memoryClass,
+			memoryClass: normalizedMemoryClass,
 			lastSeenAt,
 			pinned,
 			stateHint: dream.stateHint,
@@ -1429,9 +1846,9 @@ export async function syncPersonaMemoryClusters(params: {
 			clusterId,
 			records: group.records,
 			canonicalText: dream.canonicalText,
-			memoryClass: dream.memoryClass,
+			memoryClass: normalizedMemoryClass,
 			salienceScore: computeSalienceScore({
-				memoryClass: dream.memoryClass,
+				memoryClass: normalizedMemoryClass,
 				sourceCount: group.records.length,
 				lastSeenAt,
 				now,
@@ -1448,6 +1865,7 @@ export async function syncPersonaMemoryClusters(params: {
 	}
 
 	applyDeterministicPreferenceSupersession(plans);
+	applyTemporalSupersession(plans);
 	markSupersededClusters(plans);
 	await applyTargetedSemanticSupersession(plans);
 	markSupersededClusters(plans);
@@ -1530,17 +1948,46 @@ export async function listPersonaMemoryClusters(userId: string): Promise<Persona
 
 	const grouped = new Map<string, PersonaMemoryItem>();
 	for (const row of rows) {
+		const metadata = parseJsonRecord(row.cluster.metadataJson);
+		const rawCanonicalText = row.cluster.canonicalText;
+		const temporal = temporalMetadataFromRecord(metadata);
+		const derivedState = deriveStateFromDecay({
+			memoryClass: row.cluster.memoryClass as PersonaMemoryClass,
+			lastSeenAt: row.cluster.lastSeenAt?.getTime() ?? row.cluster.updatedAt.getTime(),
+			pinned: row.cluster.pinned === 1,
+			metadata,
+		});
+		const topicKey =
+			typeof metadata.topicKey === 'string' && metadata.topicKey.trim()
+				? metadata.topicKey
+				: null;
 		const existing = grouped.get(row.cluster.clusterId) ?? {
 			id: row.cluster.clusterId,
-			canonicalText: row.cluster.canonicalText,
+			canonicalText:
+				temporal?.freshness === 'expired' || temporal?.freshness === 'historical'
+					? buildHistoricalTemporalText(rawCanonicalText, temporal.observedAt)
+					: rawCanonicalText,
+			rawCanonicalText,
 			memoryClass: row.cluster.memoryClass as PersonaMemoryClass,
-			state: row.cluster.state as PersonaMemoryState,
+			state: derivedState.state,
 			salienceScore: row.cluster.salienceScore,
 			sourceCount: row.cluster.sourceCount,
 			conversationTitles: [],
 			firstSeenAt: row.cluster.firstSeenAt?.getTime() ?? row.cluster.createdAt.getTime(),
 			lastSeenAt: row.cluster.lastSeenAt?.getTime() ?? row.cluster.updatedAt.getTime(),
 			pinned: row.cluster.pinned === 1,
+			temporal,
+			activeConstraint:
+				metadata.activeConstraint === true ||
+				((row.cluster.memoryClass as PersonaMemoryClass) === 'short_term_constraint' &&
+					temporal?.freshness !== 'expired' &&
+					temporal?.freshness !== 'historical'),
+			topicKey,
+			topicStatus: deriveTopicStatus({
+				memoryClass: row.cluster.memoryClass as PersonaMemoryClass,
+				state: derivedState.state,
+				temporal,
+			}),
 			members: [] as PersonaMemoryMemberItem[],
 		};
 
@@ -1613,25 +2060,63 @@ export async function buildPersonaPromptContext(
 		});
 	}
 
-	const items = (await listPersonaMemoryClusters(userId)).filter((item) => item.state !== 'archived');
+	const items = (await listPersonaMemoryClusters(userId)).filter((item) => {
+		if (item.state === 'archived') return false;
+		if (item.topicStatus === 'historical') return false;
+		if (item.temporal?.freshness === 'expired' || item.temporal?.freshness === 'historical') {
+			return false;
+		}
+		return true;
+	});
 	if (items.length === 0) return '';
 
 	const active = items
 		.filter((item) => item.state === 'active')
-		.sort((left, right) => right.salienceScore - left.salienceScore)
+		.map((item) => ({
+			item,
+			matchScore: Math.max(
+				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
+				item.topicKey ? scoreMatch(query, item.topicKey) : 0
+			),
+			constraintRank:
+				item.activeConstraint && item.temporal?.freshness === 'active'
+					? 2
+					: item.activeConstraint && item.temporal?.freshness === 'stale'
+						? 1
+						: 0,
+		}))
+		.sort(
+			(left, right) =>
+				right.constraintRank - left.constraintRank ||
+				right.matchScore - left.matchScore ||
+				right.item.salienceScore - left.item.salienceScore ||
+				right.item.lastSeenAt - left.item.lastSeenAt
+		)
 		.slice(0, ACTIVE_PROMPT_LIMIT);
 	const dormant = items
 		.filter((item) => item.state === 'dormant')
 		.map((item) => ({
 			item,
-			matchScore: scoreMatch(query, item.canonicalText),
+			matchScore: Math.max(
+				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
+				item.topicKey ? scoreMatch(query, item.topicKey) : 0
+			),
 		}))
 		.filter((entry) => entry.matchScore >= 0.1)
-		.sort((left, right) => right.matchScore - left.matchScore || right.item.salienceScore - left.item.salienceScore)
+		.sort(
+			(left, right) =>
+				right.matchScore - left.matchScore ||
+				Number(right.item.activeConstraint) - Number(left.item.activeConstraint) ||
+				right.item.salienceScore - left.item.salienceScore
+		)
 		.slice(0, DORMANT_PROMPT_LIMIT)
 		.map((entry) => entry.item);
 
-	const selected = Array.from(new Map([...active, ...dormant].map((item) => [item.id, item])).values());
+	const selected = Array.from(
+		new Map(
+			[...active.map((entry) => entry.item), ...dormant].map((item) => [item.id, item])
+		).values()
+	);
 	if (selected.length === 0) return '';
 
 	const lines: string[] = [];

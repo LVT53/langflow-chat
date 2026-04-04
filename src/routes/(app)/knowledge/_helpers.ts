@@ -49,6 +49,8 @@ export function formatPersonaSource(memory: PersonaMemoryItem): string {
 }
 
 export function formatPersonaClass(memoryClass: PersonaMemoryItem['memoryClass']): string {
+	if (memoryClass === 'short_term_constraint') return 'short-term constraint';
+	if (memoryClass === 'active_project_context') return 'active project context';
 	return memoryClass.replace(/_/g, ' ');
 }
 

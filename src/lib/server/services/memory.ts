@@ -139,12 +139,70 @@ function normalizeOverviewSentence(text: string): string {
 	return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
 }
 
+function normalizeForTemporalMatch(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/\s+/g, ' ')
+		.replace(/[.!?]+$/g, '')
+		.trim();
+}
+
+function withoutLeadingActor(text: string): string {
+	return text.replace(/^(?:the user|user|he|she|they)\s+(?:is|was|has|had)\s+/i, '').trim();
+}
+
+function mentionsExpiredTemporalMemory(
+	overviewText: string,
+	personaMemories: PersonaMemoryItem[]
+): boolean {
+	const normalizedOverview = normalizeForTemporalMatch(overviewText);
+	if (!normalizedOverview) return false;
+
+	return personaMemories.some((memory) => {
+		if (
+			memory.temporal?.freshness !== 'expired' &&
+			memory.temporal?.freshness !== 'historical'
+		) {
+			return false;
+		}
+
+		const candidates = [
+			memory.rawCanonicalText,
+			memory.canonicalText,
+		]
+			.filter((value): value is string => Boolean(value))
+			.flatMap((value) => {
+				const normalized = normalizeForTemporalMatch(value);
+				const actorless = normalizeForTemporalMatch(withoutLeadingActor(value));
+				return actorless && actorless !== normalized
+					? [normalized, actorless]
+					: [normalized];
+			})
+			.filter((value) => value.length >= 12);
+
+		return candidates.some((candidate) => normalizedOverview.includes(candidate));
+	});
+}
+
 function isDurableOverviewCandidate(memory: PersonaMemoryItem, now = Date.now()): boolean {
 	if (memory.state === 'archived') return false;
+	if (memory.topicStatus === 'historical') return false;
+	if (memory.temporal?.freshness === 'expired' || memory.temporal?.freshness === 'historical') {
+		return false;
+	}
 
 	switch (memory.memoryClass) {
 		case 'perishable_fact':
 			return false;
+		case 'short_term_constraint':
+			return memory.state === 'active' && Boolean(memory.activeConstraint);
+		case 'active_project_context':
+			return (
+				memory.state === 'active' ||
+				(memory.state === 'dormant' &&
+					now - memory.lastSeenAt <= OVERVIEW_RECENT_SITUATIONAL_MS &&
+					memory.salienceScore >= 54)
+			);
 		case 'situational_context':
 			return (
 				memory.state === 'active' &&
@@ -216,6 +274,18 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): Durabl
 
 	const sections = [
 		buildOverviewSection(
+			'Active Constraints',
+			durableMemories.filter((memory) => memory.memoryClass === 'short_term_constraint')
+		),
+		buildOverviewSection(
+			'Current Project Context',
+			durableMemories.filter(
+				(memory) =>
+					memory.memoryClass === 'active_project_context' ||
+					memory.memoryClass === 'situational_context'
+			)
+		),
+		buildOverviewSection(
 			'Stable Preferences',
 			durableMemories.filter((memory) => memory.memoryClass === 'stable_preference')
 		),
@@ -226,10 +296,6 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): Durabl
 		buildOverviewSection(
 			'Long-Term Context',
 			durableMemories.filter((memory) => memory.memoryClass === 'long_term_context')
-		),
-		buildOverviewSection(
-			'Recent Situational Context',
-			durableMemories.filter((memory) => memory.memoryClass === 'situational_context')
 		),
 	].filter((section): section is string => Boolean(section));
 
@@ -400,6 +466,7 @@ async function refreshKnowledgeOverview(params: {
 	userId: string;
 	userDisplayName: string;
 	sourceFingerprint: string;
+	personaMemories: PersonaMemoryItem[];
 	force?: boolean;
 }): Promise<CachedKnowledgeOverview | null> {
 	const existing = overviewRefreshInFlight.get(params.userId);
@@ -431,6 +498,19 @@ async function refreshKnowledgeOverview(params: {
 					userId: params.userId,
 					durationMs: Date.now() - startedAt,
 					sourceServed: cachedOverview ? 'cache' : 'fallback',
+				});
+				return null;
+			}
+			if (mentionsExpiredTemporalMemory(normalizedOverview, params.personaMemories)) {
+				await recordKnowledgeOverviewFailure({
+					userId: params.userId,
+					lastAttemptAt: startedAt,
+					errorMessage: 'stale_temporal_live_overview',
+					cachedOverview,
+				});
+				console.warn('[KNOWLEDGE_MEMORY] Rejected stale Honcho overview with expired temporal memory', {
+					userId: params.userId,
+					durationMs: Date.now() - startedAt,
 				});
 				return null;
 			}
@@ -523,6 +603,7 @@ async function selectKnowledgeOverview(params: {
 			userId: params.userId,
 			userDisplayName: params.userDisplayName,
 			sourceFingerprint: fallback.sourceFingerprint,
+			personaMemories: params.personaMemories,
 			force: params.force,
 		});
 	} else if (overviewRefreshInFlight.has(params.userId)) {
@@ -531,7 +612,10 @@ async function selectKnowledgeOverview(params: {
 
 	if (params.awaitLive && refreshPromise) {
 		const refreshedOverview = await refreshPromise;
-		if (refreshedOverview?.overviewText.trim()) {
+		if (
+			refreshedOverview?.overviewText.trim() &&
+			!mentionsExpiredTemporalMemory(refreshedOverview.overviewText, params.personaMemories)
+		) {
 			cachedOverview = refreshedOverview;
 			if (refreshedOverview.sourceFingerprint === fallback.sourceFingerprint) {
 				return {
@@ -547,7 +631,11 @@ async function selectKnowledgeOverview(params: {
 	}
 
 	const attemptState = getOverviewAttemptState(params.userId, cachedOverview);
-	if (hasMatchingCache && cachedOverview) {
+	if (
+		hasMatchingCache &&
+		cachedOverview &&
+		!mentionsExpiredTemporalMemory(cachedOverview.overviewText, params.personaMemories)
+	) {
 		return {
 			overview: cachedOverview.overviewText,
 			overviewSource: 'honcho_cache',
@@ -613,6 +701,10 @@ async function enrichPersonaMemories(
 		...record,
 		canonicalText:
 			sanitizeMemoryText(record.canonicalText, userId, userDisplayName) ?? record.canonicalText,
+		rawCanonicalText: record.rawCanonicalText
+			? sanitizeMemoryText(record.rawCanonicalText, userId, userDisplayName) ??
+				record.rawCanonicalText
+			: record.rawCanonicalText,
 		conversationTitles: record.conversationTitles.map(
 			(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
 		),

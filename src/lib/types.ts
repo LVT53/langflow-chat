@@ -539,12 +539,32 @@ export type PersonaMemoryScope = 'self' | 'assistant_about_user';
 
 export type PersonaMemoryClass =
   | 'perishable_fact'
+  | 'short_term_constraint'
+  | 'active_project_context'
   | 'situational_context'
   | 'stable_preference'
   | 'identity_profile'
   | 'long_term_context';
 
 export type PersonaMemoryState = 'active' | 'dormant' | 'archived';
+export type PersonaMemoryTemporalKind =
+  | 'deadline'
+  | 'availability'
+  | 'appointment'
+  | 'project_window'
+  | 'short_term_constraint';
+export type PersonaMemoryTemporalFreshness = 'active' | 'stale' | 'expired' | 'historical' | 'unknown';
+export type PersonaMemoryTopicStatus = 'active' | 'dormant' | 'historical';
+
+export interface PersonaMemoryTemporalInfo {
+  kind: PersonaMemoryTemporalKind;
+  freshness: PersonaMemoryTemporalFreshness;
+  observedAt: number;
+  effectiveAt: number | null;
+  expiresAt: number | null;
+  relative: boolean;
+  resolved: boolean;
+}
 
 export interface PersonaMemoryMemberItem {
   id: string;
@@ -558,6 +578,7 @@ export interface PersonaMemoryMemberItem {
 export interface PersonaMemoryItem {
   id: string;
   canonicalText: string;
+  rawCanonicalText?: string;
   memoryClass: PersonaMemoryClass;
   state: PersonaMemoryState;
   salienceScore: number;
@@ -566,6 +587,10 @@ export interface PersonaMemoryItem {
   firstSeenAt: number;
   lastSeenAt: number;
   pinned: boolean;
+  temporal?: PersonaMemoryTemporalInfo | null;
+  activeConstraint?: boolean;
+  topicKey?: string | null;
+  topicStatus?: PersonaMemoryTopicStatus | null;
   members: PersonaMemoryMemberItem[];
 }
 

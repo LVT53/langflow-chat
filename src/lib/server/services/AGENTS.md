@@ -98,6 +98,10 @@ knowledge.ts (facade — re-exports from below)
 
 **Langflow custom-tool note**: for the file generator node, follow Langflow's tool-mode custom-component pattern directly. The agent must see the actual `generate_file` action as the tool; do not expose an intermediate builder method like `build_tool`, or the model may call that method without ever hitting `/api/chat/files/generate`. Keep the source input named `source_code`, not `code`, because Langflow component internals already use `code` and the node can end up posting its own component source instead of the tool argument.
 
+**Persona-memory note**: `persona-memory.ts` now resolves relative-time phrasing such as `in two days` into temporal metadata stored in cluster `metadataJson`, derives `short_term_constraint` and `active_project_context` classes, converts expired temporal memories into historical phrasing on the read path, and performs same-topic temporal supersession before semantic reconcile. Keep those behaviors in the existing cluster pipeline rather than creating a second temporal-memory subsystem.
+
+**Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary. Local persona clusters remain the authority for temporal freshness, so live/cached Honcho overviews that repeat expired temporal memories must be rejected in favor of the local fallback overview.
+
 ## Task-State Submodule Flow
 
 ```

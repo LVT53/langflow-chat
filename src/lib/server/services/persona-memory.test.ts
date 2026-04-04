@@ -89,7 +89,14 @@ vi.mock('$lib/server/db/schema', () => ({
 }));
 
 vi.mock('$lib/server/utils/json', () => ({
-	parseJsonRecord: vi.fn(() => null),
+	parseJsonRecord: vi.fn((value: string | null) => {
+		if (!value) return null;
+		try {
+			return JSON.parse(value);
+		} catch {
+			return null;
+		}
+	}),
 }));
 
 vi.mock('$lib/server/utils/text', () => ({
@@ -206,6 +213,21 @@ describe('persona-memory temporal safeguards', () => {
 		);
 	});
 
+	it('classifies short deadlines and current work with the refined temporal classes', async () => {
+		const { classifyMemoryTextDeterministically } = await import('./persona-memory');
+
+		expect(
+			classifyMemoryTextDeterministically(
+				'The user is time-constrained to finish assessment documentation in two days.'
+			)
+		).toBe('short_term_constraint');
+		expect(
+			classifyMemoryTextDeterministically(
+				'The user is currently working on assessment documentation.'
+			)
+		).toBe('active_project_context');
+	});
+
 	it('does not automatically archive durable preferences just because they are old', async () => {
 		const { deriveStateFromDecay } = await import('./persona-memory');
 		const now = Date.UTC(2027, 2, 29);
@@ -310,5 +332,119 @@ describe('persona-memory temporal safeguards', () => {
 		const prompt = await buildPersonaPromptContext('user-prompt-fast', 'Keep it concise.');
 
 		expect(prompt).toContain('The user prefers concise answers.');
+	});
+
+	it('renders expired temporal memories as historical and excludes them from the prompt context', async () => {
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					cluster: {
+						clusterId: 'cluster-expired',
+						canonicalText:
+							'The user is time-constrained, working on assessment documentation due in two days.',
+						memoryClass: 'short_term_constraint',
+						state: 'active',
+						salienceScore: 80,
+						sourceCount: 1,
+						pinned: 0,
+						firstSeenAt: new Date('2026-03-27T10:00:00.000Z'),
+						lastSeenAt: new Date('2026-03-27T10:00:00.000Z'),
+						createdAt: new Date('2026-03-27T10:00:00.000Z'),
+						updatedAt: new Date('2026-03-27T10:00:00.000Z'),
+						metadataJson: JSON.stringify({
+							temporal: {
+								kind: 'deadline',
+								freshness: 'active',
+								observedAt: Date.UTC(2026, 2, 27, 10),
+								effectiveAt: Date.UTC(2026, 2, 27, 10),
+								expiresAt: Date.UTC(2026, 2, 29, 10),
+								relative: true,
+								resolved: false,
+							},
+							activeConstraint: true,
+							topicKey: 'assessment documentation',
+						}),
+					},
+					member: null,
+					conversationTitle: null,
+				},
+				{
+					cluster: {
+						clusterId: 'cluster-active',
+						canonicalText: 'The user prefers concise answers.',
+						memoryClass: 'stable_preference',
+						state: 'active',
+						salienceScore: 88,
+						sourceCount: 1,
+						pinned: 0,
+						firstSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+						lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+						createdAt: new Date('2026-03-28T10:00:00.000Z'),
+						updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+						metadataJson: JSON.stringify({}),
+					},
+					member: null,
+					conversationTitle: null,
+				},
+			])
+		);
+
+		const { listPersonaMemoryClusters, buildPersonaPromptContext } = await import(
+			'./persona-memory'
+		);
+
+		const clusters = await listPersonaMemoryClusters('user-expired');
+		const expired = clusters.find((cluster) => cluster.id === 'cluster-expired');
+		expect(expired?.state).toBe('archived');
+		expect(expired?.canonicalText).toContain('As of 2026-03-27');
+
+		const prompt = await buildPersonaPromptContext('user-expired', 'Keep it concise.');
+		expect(prompt).toContain('The user prefers concise answers.');
+		expect(prompt).not.toContain('assessment documentation due in two days');
+	});
+
+	it('supersedes older temporal memories for the same topic', async () => {
+		mockCanUseContextSummarizer.mockReturnValue(false);
+
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-temporal-supersession',
+			rawRecords: [
+				{
+					id: 'deadline-old',
+					content:
+						'The user is time-constrained, working on assessment documentation due in two days.',
+					createdAt: Date.UTC(2026, 2, 27, 10),
+					scope: 'self',
+					sessionId: 'conversation-1',
+				},
+				{
+					id: 'deadline-new',
+					content:
+						'The user got one more week to finish assessment documentation.',
+					createdAt: Date.UTC(2026, 2, 29, 10),
+					scope: 'self',
+					sessionId: 'conversation-2',
+				},
+			],
+			reason: 'test',
+			force: true,
+		});
+
+		expect(insertedClusterRows).toHaveLength(2);
+		const archivedCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('due in two days')
+		);
+		const activeCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('one more week')
+		);
+		expect(activeCluster?.memoryClass).toBe('short_term_constraint');
+		expect(archivedCluster?.state).toBe('archived');
+		expect(JSON.parse(String(archivedCluster?.metadataJson))).toMatchObject({
+			supersededByClusterId: activeCluster?.clusterId,
+			supersessionReason: 'temporal_update',
+			topicKey: 'assessment documentation',
+		});
 	});
 });
