@@ -75,6 +75,20 @@ type KnowledgeOverviewSelection = {
 	durablePersonaCount: number;
 };
 
+function logKnowledgeOverviewSelection(params: {
+	userId: string;
+	selection: KnowledgeOverviewSelection;
+}): void {
+	console.info('[KNOWLEDGE_MEMORY] Selected overview source', {
+		userId: params.userId,
+		overviewSource: params.selection.overviewSource,
+		overviewStatus: params.selection.overviewStatus,
+		durablePersonaCount: params.selection.durablePersonaCount,
+		overviewUpdatedAt: params.selection.overviewUpdatedAt,
+		overviewLastAttemptAt: params.selection.overviewLastAttemptAt,
+	});
+}
+
 // Memory authority map:
 // - persona-memory.ts owns persona/temporal/preference clustering and freshness
 // - task-state.ts owns task/workflow continuity
@@ -600,7 +614,7 @@ async function selectKnowledgeOverview(params: {
 	const fallback = buildLocalPersonaOverview(params.personaMemories);
 
 	if (!honchoEnabled) {
-		return {
+		const selection = {
 			overview: fallback.overview,
 			overviewSource: fallback.overview ? 'persona_fallback' : null,
 			overviewStatus: 'disabled',
@@ -608,6 +622,8 @@ async function selectKnowledgeOverview(params: {
 			overviewLastAttemptAt: null,
 			durablePersonaCount: fallback.durablePersonaCount,
 		};
+		logKnowledgeOverviewSelection({ userId: params.userId, selection });
+		return selection;
 	}
 
 	let cachedOverview = await getCachedKnowledgeOverview(params.userId);
@@ -642,7 +658,7 @@ async function selectKnowledgeOverview(params: {
 		) {
 			cachedOverview = refreshedOverview;
 			if (refreshedOverview.sourceFingerprint === fallback.sourceFingerprint) {
-				return {
+				const selection = {
 					overview: refreshedOverview.overviewText,
 					overviewSource: 'honcho_live',
 					overviewStatus: 'ready',
@@ -650,6 +666,8 @@ async function selectKnowledgeOverview(params: {
 					overviewLastAttemptAt: refreshedOverview.lastAttemptAt,
 					durablePersonaCount: fallback.durablePersonaCount,
 				};
+				logKnowledgeOverviewSelection({ userId: params.userId, selection });
+				return selection;
 			}
 		}
 	}
@@ -660,7 +678,7 @@ async function selectKnowledgeOverview(params: {
 		cachedOverview &&
 		!mentionsExpiredTemporalMemory(cachedOverview.overviewText, params.personaMemories)
 	) {
-		return {
+		const selection = {
 			overview: cachedOverview.overviewText,
 			overviewSource: 'honcho_cache',
 			overviewStatus: 'refreshing',
@@ -668,10 +686,12 @@ async function selectKnowledgeOverview(params: {
 			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
 		};
+		logKnowledgeOverviewSelection({ userId: params.userId, selection });
+		return selection;
 	}
 
 	if (fallback.overview) {
-		return {
+		const selection = {
 			overview: fallback.overview,
 			overviewSource: 'persona_fallback',
 			overviewStatus: 'refreshing',
@@ -679,9 +699,11 @@ async function selectKnowledgeOverview(params: {
 			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
 		};
+		logKnowledgeOverviewSelection({ userId: params.userId, selection });
+		return selection;
 	}
 
-	return {
+	const selection = {
 		overview: null,
 		overviewSource: null,
 		overviewStatus:
@@ -692,6 +714,8 @@ async function selectKnowledgeOverview(params: {
 		overviewLastAttemptAt: attemptState.lastAttemptAt,
 		durablePersonaCount: fallback.durablePersonaCount,
 	};
+	logKnowledgeOverviewSelection({ userId: params.userId, selection });
+	return selection;
 }
 
 async function enrichPersonaMemories(

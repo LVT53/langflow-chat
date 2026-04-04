@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
-	import { renderHighlightedText } from '$lib/services/markdown';
 	import {
 		determinePreviewFileType,
 		getPreviewLanguage,
 	} from '$lib/utils/file-preview';
 	import { summarizeTextComparison } from '$lib/utils/text-compare';
 	import type { DocumentWorkspaceItem } from '$lib/types';
+
+	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
+	type MarkdownModule = typeof import('$lib/services/markdown');
 
 	let {
 		open = false,
@@ -42,6 +43,8 @@
 	let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(null);
 	let compareLoading = $state(false);
 	let compareError = $state<string | null>(null);
+	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
+	let markdownModulePromise: Promise<MarkdownModule> | null = null;
 
 	function formatRoleLabel(role: string | null | undefined): string | null {
 		if (!role) return null;
@@ -169,6 +172,27 @@
 		return text;
 	}
 
+	async function ensureFilePreviewModule() {
+		if (!filePreviewModulePromise) {
+			filePreviewModulePromise = import('$lib/components/knowledge/FilePreview.svelte');
+		}
+
+		return filePreviewModulePromise;
+	}
+
+	async function renderHighlightedCompareText(document: DocumentWorkspaceItem, text: string) {
+		if (!markdownModulePromise) {
+			markdownModulePromise = import('$lib/services/markdown');
+		}
+
+		const { renderHighlightedText } = await markdownModulePromise;
+		return renderHighlightedText(
+			text,
+			getPreviewLanguage(document.mimeType, document.filename),
+			browser ? globalThis.document?.documentElement?.classList.contains('dark') ?? false : false
+		);
+	}
+
 	$effect(() => {
 		if (!(browser && compareMode && activeDocument && comparedDocument && canCompareActiveDocument)) {
 			compareCurrentTextHtml = null;
@@ -193,16 +217,8 @@
 					loadComparePreview(comparedDocument),
 				]);
 				const [currentHtml, otherHtml] = await Promise.all([
-					renderHighlightedText(
-						currentText,
-						getPreviewLanguage(activeDocument.mimeType, activeDocument.filename),
-						browser ? document.documentElement.classList.contains('dark') : false
-					),
-					renderHighlightedText(
-						otherText,
-						getPreviewLanguage(comparedDocument.mimeType, comparedDocument.filename),
-						browser ? document.documentElement.classList.contains('dark') : false
-					),
+					renderHighlightedCompareText(activeDocument, currentText),
+					renderHighlightedCompareText(comparedDocument, otherText),
 				]);
 
 				if (cancelled) return;
@@ -419,16 +435,22 @@
 						{/if}
 					</div>
 				{:else}
-					<FilePreview
-						open={true}
-						variant="embedded"
-						showHeader={false}
-						artifactId={activeDocument.artifactId ?? null}
-						previewUrl={activeDocument.previewUrl ?? null}
-						filename={activeDocument.filename}
-						mimeType={activeDocument.mimeType}
-						onClose={onCloseWorkspace}
-					/>
+					{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
+						<FilePreviewComponent
+							open={true}
+							variant="embedded"
+							showHeader={false}
+							artifactId={activeDocument.artifactId ?? null}
+							previewUrl={activeDocument.previewUrl ?? null}
+							filename={activeDocument.filename}
+							mimeType={activeDocument.mimeType}
+							onClose={onCloseWorkspace}
+						/>
+					{:catch}
+						<div class="workspace-compare-state workspace-compare-state-error">
+							Failed to load document preview.
+						</div>
+					{/await}
 				{/if}
 			</div>
 		</section>
@@ -615,16 +637,22 @@
 					{/if}
 				</div>
 			{:else}
-				<FilePreview
-					open={true}
-					variant="embedded"
-					showHeader={false}
-					artifactId={activeDocument.artifactId ?? null}
-					previewUrl={activeDocument.previewUrl ?? null}
-					filename={activeDocument.filename}
-					mimeType={activeDocument.mimeType}
-					onClose={onCloseWorkspace}
-				/>
+				{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
+					<FilePreviewComponent
+						open={true}
+						variant="embedded"
+						showHeader={false}
+						artifactId={activeDocument.artifactId ?? null}
+						previewUrl={activeDocument.previewUrl ?? null}
+						filename={activeDocument.filename}
+						mimeType={activeDocument.mimeType}
+						onClose={onCloseWorkspace}
+					/>
+				{:catch}
+					<div class="workspace-compare-state workspace-compare-state-error">
+						Failed to load document preview.
+					</div>
+				{/await}
 			{/if}
 		</div>
 	</aside>

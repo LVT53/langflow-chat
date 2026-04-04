@@ -155,6 +155,7 @@ Do:
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
 - use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
 - use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, vault/library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
+- keep the shared rich-preview stack lazy-loaded from `DocumentWorkspace.svelte`, `GeneratedFile.svelte`, and `knowledge/FilePreview.svelte`; do not static-import the heavy preview path back into the idle chat or knowledge shell
 - use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
 - use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
@@ -168,6 +169,7 @@ Do:
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 - vault save is an organization action, not the switch that determines whether the AI remembers a generated document. Working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
 - working-document continuity should prefer the shared resolver’s “current generated document” signal over generic latest-output heuristics. If a generated document is selected because of active focus or a query match, do not layer a second recency-only boost on top.
+- keep document-selection observability compact and authority-scoped. Extend the `[CONTEXT] Working document selection` summary in `knowledge/context.ts` instead of reintroducing noisy per-artifact debug logs across routes.
 
 Do not:
 
@@ -349,6 +351,7 @@ Rules:
 - `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger full cluster recomputation directly from routes or UI code.
 - Generated-output duplicate repair should also run through `memory-maintenance.ts`, not as a separate ad hoc sweep. Reuse `evidence-family.ts` retrieval-class repair so low-value near-duplicate drafts stay compressed out of broad retrieval while document history still remains available through the working-document system.
 - Generated-document lifecycle state should stay on the existing working-document metadata contract. If a generated-document family becomes dormant, let `memory-maintenance.ts` and `evidence-family.ts` mark the latest family representative as `historical`; do not create a second document-lifecycle table or route-local stale-document cache for that purpose.
+- keep Knowledge Memory observability on the existing overview boundary. `memory.ts` now logs a single `[KNOWLEDGE_MEMORY] Selected overview source` summary; do not add route-local overview-source logging when the source decision already happened there.
 - `persona-memory.ts` cluster writes should remain idempotent under overlap. If maintenance or repair paths touch cluster persistence, keep conflict guards in place instead of assuming single-flight inserts.
 - Low-confidence or weakly supported persona memories should be downranked through the existing `persona-memory.ts` cluster refresh path. Recompute repaired `salienceScore` from stored cluster metadata and support counts there; do not bolt on a second maintenance-only persona salience cache.
 - `buildPersonaPromptContext` should read the latest stored persona clusters immediately and only trigger cluster refresh in the background. Do not put synchronous cluster regeneration back on the chat request path.

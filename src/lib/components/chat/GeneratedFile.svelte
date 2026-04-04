@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
-	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
 	import type { DocumentWorkspaceItem } from '$lib/types';
 	import VaultPickerModal from './VaultPickerModal.svelte';
+
+	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
 
 	interface GeneratedFileProps {
 		fileId: string;
@@ -58,6 +59,7 @@
 	let currentSavedVaultName = $state<string | null>(null);
 	let availableVaults = $state<Vault[]>([]);
 	let canPreview = $derived(status === 'success');
+	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
 
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 B';
@@ -152,6 +154,14 @@
 
 	function handlePreviewClose() {
 		showPreview = false;
+	}
+
+	async function ensureFilePreviewModule() {
+		if (!filePreviewModulePromise) {
+			filePreviewModulePromise = import('$lib/components/knowledge/FilePreview.svelte');
+		}
+
+		return filePreviewModulePromise;
 	}
 
 	async function handleVaultPickerSave(vaultId: string) {
@@ -362,14 +372,20 @@
 	/>
 {/if}
 
-<FilePreview
-	open={showPreview}
-	artifactId={null}
-	previewUrl={`/api/chat/files/${fileId}/preview`}
-	filename={filename}
-	{mimeType}
-	onClose={handlePreviewClose}
-/>
+{#if showPreview}
+	{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
+		<FilePreviewComponent
+			open={showPreview}
+			artifactId={null}
+			previewUrl={`/api/chat/files/${fileId}/preview`}
+			filename={filename}
+			{mimeType}
+			onClose={handlePreviewClose}
+		/>
+	{:catch}
+		<div class="save-error-text">Failed to load preview.</div>
+	{/await}
+{/if}
 
 <div
 	class="generated-file-card"
