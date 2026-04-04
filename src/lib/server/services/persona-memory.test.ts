@@ -21,7 +21,8 @@ function createSelectChain(rows: unknown[]) {
 		from: () => chain,
 		leftJoin: () => chain,
 		where: () => chain,
-		orderBy: () => Promise.resolve(rows),
+		orderBy: () => chain,
+		limit: () => Promise.resolve(rows),
 		then: (onFulfilled: (value: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
 			Promise.resolve(rows).then(onFulfilled, onRejected),
 	};
@@ -55,6 +56,17 @@ vi.mock('$lib/server/db', () => ({
 }));
 
 vi.mock('$lib/server/db/schema', () => ({
+	artifacts: {
+		__name: 'artifacts',
+		id: Symbol('artifact-id'),
+		userId: Symbol('artifact-user-id'),
+		type: Symbol('artifact-type'),
+		name: Symbol('artifact-name'),
+		summary: Symbol('artifact-summary'),
+		contentText: Symbol('artifact-content-text'),
+		metadataJson: Symbol('artifact-metadata-json'),
+		updatedAt: Symbol('artifact-updated-at'),
+	},
 	conversations: {
 		title: Symbol('title'),
 		id: Symbol('conversation-id'),
@@ -301,6 +313,60 @@ describe('persona-memory temporal safeguards', () => {
 			supersededByClusterId: activeCluster?.clusterId,
 			supersessionReason: 'preference_slot',
 		});
+	});
+
+	it('filters artifact-derived Honcho memories before persona clustering', async () => {
+		mockCanUseContextSummarizer.mockReturnValue(false);
+		mockSelectQuery
+			.mockImplementationOnce(() =>
+				createSelectChain([
+					{
+						id: 'artifact-identity-pdf',
+						type: 'generated_output',
+						name: 'AlfyAI_Identity.pdf generated file',
+						summary: 'Identity PDF draft for AlfyAI.',
+						contentText:
+							'AlfyAI is a personal assistant powered by Qwen 3.5 122B.',
+						metadataJson: JSON.stringify({
+							documentFamilyId: 'family-identity-pdf',
+							documentLabel: 'AlfyAI_Identity.pdf',
+							versionNumber: 2,
+						}),
+						updatedAt: new Date('2026-03-28T12:00:00.000Z'),
+					},
+				])
+			)
+			.mockImplementation(() => createSelectChain([]));
+
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-doc-filter',
+			rawRecords: [
+				{
+					id: 'doc-memory',
+					content:
+						'The user created an AlfyAI_Identity.pdf document describing AlfyAI as a personal assistant powered by Qwen 3.5 122B.',
+					createdAt: Date.UTC(2026, 2, 28, 12),
+					scope: 'self',
+					sessionId: 'conversation-doc',
+				},
+				{
+					id: 'persona-memory',
+					content: 'The user prefers concise answers.',
+					createdAt: Date.UTC(2026, 2, 28, 12, 5),
+					scope: 'self',
+					sessionId: 'conversation-doc',
+				},
+			],
+			reason: 'test',
+			force: true,
+		});
+
+		expect(insertedClusterRows).toHaveLength(1);
+		expect(String(insertedClusterRows[0]?.canonicalText)).toContain('prefers concise answers');
+		expect(insertedMemberRows).toHaveLength(1);
+		expect(insertedMemberRows[0]?.conclusionId).toBe('persona-memory');
 	});
 
 	it('returns stored persona clusters without waiting for a background refresh', async () => {

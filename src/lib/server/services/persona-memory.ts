@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
+	artifacts,
 	conversations,
 	personaMemoryClusterMembers,
 	personaMemoryClusters,
@@ -20,6 +21,10 @@ import type {
 import { parseJsonRecord as parseJsonRecordOrNull } from '$lib/server/utils/json';
 import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
+import {
+	parseWorkingDocumentMetadata,
+	selectLatestGeneratedDocumentCandidatesByFamily,
+} from './knowledge/store';
 import { listPersonaMemories } from './honcho';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { scoreMatch } from './working-set';
@@ -82,6 +87,10 @@ type DreamClassification = {
 
 const EXPLICIT_TEMPORAL_CUE_PATTERN =
 	/\b(today|tonight|tomorrow|yesterday|now|this morning|this afternoon|this evening|this weekend|this week|next week|last week|this month|next month|last month|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/i;
+const DOCUMENT_MEMORY_DIRECT_CUE_PATTERN =
+	/\b(generated file|generated document|chat file id:|generated file version:|assistant response context:|extracted file content:)\b/i;
+const DOCUMENT_MEMORY_REFERENCE_PATTERN =
+	/\b(file|document|draft|report|brief|proposal|slides|presentation|spreadsheet|worksheet|pdf|docx|xlsx|pptx|odt|rtf|xml|svg)\b/i;
 
 export const PERSONA_MEMORY_DREAM_SYSTEM_PROMPT =
 	'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, short_term_constraint, active_project_context, situational_context, stable_preference, identity_profile, long_term_context. Use short_term_constraint for deadlines, short-lived time pressure, or temporary availability constraints. Use active_project_context for currently active work that matters across near-future chats but is not just a durable preference. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact. Do not infer or invent dates or times for events unless the raw memory text explicitly states them. If a memory mentions a date, meeting, appointment, trip, or other event without an explicit date/time, keep the timing unspecified instead of saying today, now, or adding a calendar date.';
@@ -101,6 +110,16 @@ type DreamClusterPayload = {
 type SemanticFingerprint = {
 	subject: string | null;
 	slot: string | null;
+};
+
+type PersonaDocumentMemoryCandidate = {
+	id: string;
+	type: 'source_document' | 'normalized_document' | 'generated_output';
+	name: string;
+	label: string;
+	summary: string | null;
+	contentText: string | null;
+	updatedAt: number;
 };
 
 type PreferencePolarity = 'positive' | 'negative';
@@ -529,6 +548,162 @@ export function hasExplicitTemporalCue(text: string): boolean {
 
 function recordsHaveExplicitTemporalCue(records: HonchoPersonaMemoryRecord[]): boolean {
 	return records.some((record) => hasExplicitTemporalCue(record.content));
+}
+
+function normalizeDocumentMemoryMatchText(text: string): string {
+	return normalizeWhitespace(text).toLowerCase();
+}
+
+function trimGeneratedDocumentLabel(label: string): string[] {
+	const variants = new Set<string>();
+	const trimmed = label.trim();
+	if (!trimmed) return [];
+	variants.add(trimmed);
+	variants.add(trimmed.replace(/\s+generated file$/i, '').trim());
+	variants.add(trimmed.replace(/\.[a-z0-9]{1,8}$/i, '').trim());
+	variants.add(trimmed.replace(/\s+generated file$/i, '').replace(/\.[a-z0-9]{1,8}$/i, '').trim());
+	return Array.from(variants).filter((value) => value.length >= 4);
+}
+
+function hasStrongDocumentTextOverlap(recordText: string, candidateText: string | null): boolean {
+	if (!candidateText) return false;
+	const normalizedRecord = normalizeDocumentMemoryMatchText(recordText);
+	const normalizedCandidate = normalizeDocumentMemoryMatchText(candidateText);
+	if (!normalizedRecord || !normalizedCandidate) return false;
+	if (normalizedRecord.length >= 80 && normalizedCandidate.includes(normalizedRecord)) return true;
+	if (normalizedCandidate.length >= 80 && normalizedRecord.includes(normalizedCandidate)) return true;
+	return areNearDuplicateArtifactTexts(normalizedRecord, normalizedCandidate);
+}
+
+function recordReferencesDocumentCandidate(
+	recordText: string,
+	candidate: Pick<PersonaDocumentMemoryCandidate, 'label' | 'name'>
+): boolean {
+	if (!DOCUMENT_MEMORY_REFERENCE_PATTERN.test(recordText)) return false;
+	const normalizedRecord = normalizeDocumentMemoryMatchText(recordText);
+	return trimGeneratedDocumentLabel(candidate.label)
+		.concat(trimGeneratedDocumentLabel(candidate.name))
+		.some((label) => {
+			const normalizedLabel = normalizeDocumentMemoryMatchText(label);
+			return normalizedLabel.length >= 4 && normalizedRecord.includes(normalizedLabel);
+		});
+}
+
+function isArtifactDerivedPersonaRecord(params: {
+	record: HonchoPersonaMemoryRecord;
+	candidates: PersonaDocumentMemoryCandidate[];
+}): boolean {
+	const content = params.record.content?.trim();
+	if (!content) return false;
+	if (DOCUMENT_MEMORY_DIRECT_CUE_PATTERN.test(content)) return true;
+
+	for (const candidate of params.candidates) {
+		if (
+			hasStrongDocumentTextOverlap(content, candidate.summary) ||
+			hasStrongDocumentTextOverlap(content, candidate.contentText)
+		) {
+			return true;
+		}
+		if (recordReferencesDocumentCandidate(content, candidate)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+async function listPersonaDocumentMemoryCandidates(
+	userId: string
+): Promise<PersonaDocumentMemoryCandidate[]> {
+	const rows = await db
+		.select({
+			id: artifacts.id,
+			type: artifacts.type,
+			name: artifacts.name,
+			summary: artifacts.summary,
+			contentText: artifacts.contentText,
+			metadataJson: artifacts.metadataJson,
+			updatedAt: artifacts.updatedAt,
+		})
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.userId, userId),
+				inArray(artifacts.type, ['source_document', 'normalized_document', 'generated_output'])
+			)
+		)
+		.orderBy(desc(artifacts.updatedAt))
+		.limit(120);
+
+	const parsedCandidates = rows
+		.map((row) => {
+			if (
+				typeof row.id !== 'string' ||
+				(row.type !== 'source_document' &&
+					row.type !== 'normalized_document' &&
+					row.type !== 'generated_output') ||
+				typeof row.name !== 'string' ||
+				!(row.updatedAt instanceof Date)
+			) {
+				return null;
+			}
+			const metadata = parseJsonRecordOrNull(row.metadataJson ?? null);
+			const documentMetadata = parseWorkingDocumentMetadata(metadata);
+			const label = documentMetadata.documentLabel ?? row.name;
+
+			return {
+				id: row.id,
+				type: row.type,
+				name: row.name,
+				label,
+				summary: typeof row.summary === 'string' ? clipText(row.summary, 4_000) : null,
+				contentText:
+					typeof row.contentText === 'string' ? clipText(row.contentText, 8_000) : null,
+				updatedAt: row.updatedAt.getTime(),
+				metadata,
+			};
+		})
+		.filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+
+	const latestGeneratedIds = new Set(
+		selectLatestGeneratedDocumentCandidatesByFamily(
+			parsedCandidates
+				.filter((candidate) => candidate.type === 'generated_output')
+				.map((candidate) => ({
+					artifactId: candidate.id,
+					artifactName: candidate.name,
+					updatedAt: candidate.updatedAt,
+					metadata: candidate.metadata,
+				}))
+		).map((candidate) => candidate.artifactId)
+	);
+
+	return parsedCandidates
+		.filter((candidate) => {
+			if (candidate.type !== 'generated_output') return true;
+			return latestGeneratedIds.has(candidate.id);
+		})
+		.map(({ metadata: _metadata, ...candidate }) => candidate);
+}
+
+export async function filterArtifactDerivedPersonaRecords(params: {
+	userId: string;
+	records: HonchoPersonaMemoryRecord[];
+}): Promise<HonchoPersonaMemoryRecord[]> {
+	if (params.records.length === 0) return params.records;
+
+	const candidates = await listPersonaDocumentMemoryCandidates(params.userId).catch(() => []);
+	if (candidates.length === 0) {
+		return params.records.filter((record) => !DOCUMENT_MEMORY_DIRECT_CUE_PATTERN.test(record.content));
+	}
+
+	return params.records.filter(
+		(record) =>
+			!isArtifactDerivedPersonaRecord({
+				record,
+				candidates,
+			})
+	);
 }
 
 export function buildDreamClusterPayload(params: {
@@ -1686,10 +1861,14 @@ export async function ensurePersonaMemoryClustersReady(
 	}
 
 	const pending = (async () => {
-		const [rawRecords, existingSnapshots] = await Promise.all([
+		const [unfilteredRawRecords, existingSnapshots] = await Promise.all([
 			listPersonaMemories(userId).catch(() => []),
 			loadExistingClusterSnapshots(userId),
 		]);
+		const rawRecords = await filterArtifactDerivedPersonaRecords({
+			userId,
+			records: unfilteredRawRecords,
+		});
 		const rawNewestAt = rawRecords.reduce(
 			(max, record) => Math.max(max, record.createdAt),
 			0
@@ -1719,6 +1898,7 @@ export async function ensurePersonaMemoryClustersReady(
 				userId,
 				rawRecords,
 				reason,
+				artifactFilterApplied: true,
 				force,
 			});
 			return;
@@ -1740,10 +1920,17 @@ export async function syncPersonaMemoryClusters(params: {
 	rawRecords: HonchoPersonaMemoryRecord[];
 	reason?: string;
 	force?: boolean;
+	artifactFilterApplied?: boolean;
 }): Promise<{ dreamed: boolean; fullSweep: boolean; clusterCount: number }> {
+	const filteredRawRecords = params.artifactFilterApplied
+		? params.rawRecords
+		: await filterArtifactDerivedPersonaRecords({
+				userId: params.userId,
+				records: params.rawRecords,
+			});
 	const existingSnapshots = await loadExistingClusterSnapshots(params.userId);
 	const gate = computeDreamGate({
-		rawRecords: params.rawRecords,
+		rawRecords: filteredRawRecords,
 		existingSnapshots,
 		force: params.force,
 	});
@@ -1757,7 +1944,7 @@ export async function syncPersonaMemoryClusters(params: {
 		};
 	}
 
-	const groups = buildClusterGroups(params.rawRecords);
+	const groups = buildClusterGroups(filteredRawRecords);
 	const now = Date.now();
 	const plans: ClusterPlan[] = [];
 
