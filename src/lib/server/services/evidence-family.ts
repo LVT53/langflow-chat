@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifactLinks, artifacts, taskStateEvidenceLinks } from '$lib/server/db/schema';
 import type { Artifact, ArtifactRetrievalClass } from '$lib/types';
+import { parseJsonRecord } from '$lib/server/utils/json';
 import { getGeneratedOutputFamilyKey } from '$lib/server/services/knowledge/store';
 
 const generatedOutputBackfillDone = new Set<string>();
@@ -64,6 +65,8 @@ async function loadFamilyContext(params: {
 }): Promise<{
 	derivedMap: Map<string, string>;
 	usedByArtifactId: Map<string, string[]>;
+	capsuleMembersByArtifactId: Map<string, string[]>;
+	relatedArtifactInfoById: Map<string, { type: Artifact['type']; metadata: Artifact['metadata'] }>;
 }> {
 	const metadataSourceIds = params.artifacts.flatMap((artifact) => {
 		const sourceIds = Array.isArray(artifact.metadata?.sourceArtifactIds)
@@ -77,7 +80,12 @@ async function loadFamilyContext(params: {
 
 	const initialIds = uniqueStrings([...params.artifacts.map((artifact) => artifact.id), ...metadataSourceIds]);
 	if (initialIds.length === 0) {
-		return { derivedMap: new Map(), usedByArtifactId: new Map() };
+		return {
+			derivedMap: new Map(),
+			usedByArtifactId: new Map(),
+			capsuleMembersByArtifactId: new Map(),
+			relatedArtifactInfoById: new Map(),
+		};
 	}
 
 	const usedRows = await db
@@ -93,6 +101,32 @@ async function loadFamilyContext(params: {
 				eq(artifactLinks.linkType, 'used_in_output')
 			)
 		);
+
+	const capsuleRows = await db
+		.select({
+			artifactId: artifactLinks.artifactId,
+			relatedArtifactId: artifactLinks.relatedArtifactId,
+		})
+		.from(artifactLinks)
+		.where(
+			and(
+				eq(artifactLinks.userId, params.userId),
+				inArray(artifactLinks.artifactId, initialIds),
+				eq(artifactLinks.linkType, 'captured_by_capsule')
+			)
+		);
+	const relatedArtifactIds = uniqueStrings(capsuleRows.map((row) => row.relatedArtifactId ?? null));
+	const relatedArtifactRows =
+		relatedArtifactIds.length === 0
+			? []
+			: await db
+					.select({
+						id: artifacts.id,
+						type: artifacts.type,
+						metadataJson: artifacts.metadataJson,
+					})
+					.from(artifacts)
+					.where(and(eq(artifacts.userId, params.userId), inArray(artifacts.id, relatedArtifactIds)));
 
 	const idsForDerived = uniqueStrings([
 		...initialIds,
@@ -130,7 +164,26 @@ async function loadFamilyContext(params: {
 		usedByArtifactId.set(row.artifactId, values);
 	}
 
-	return { derivedMap, usedByArtifactId };
+	const capsuleMembersByArtifactId = new Map<string, string[]>();
+	for (const row of capsuleRows) {
+		if (!row.relatedArtifactId) continue;
+		const values = capsuleMembersByArtifactId.get(row.artifactId) ?? [];
+		values.push(row.relatedArtifactId);
+		capsuleMembersByArtifactId.set(row.artifactId, values);
+	}
+
+	const relatedArtifactInfoById = new Map<
+		string,
+		{ type: Artifact['type']; metadata: Artifact['metadata'] }
+	>();
+	for (const row of relatedArtifactRows) {
+		relatedArtifactInfoById.set(row.id, {
+			type: row.type as Artifact['type'],
+			metadata: parseJsonRecord(row.metadataJson ?? null),
+		});
+	}
+
+	return { derivedMap, usedByArtifactId, capsuleMembersByArtifactId, relatedArtifactInfoById };
 }
 
 function baseArtifactId(artifactId: string, derivedMap: Map<string, string>): string {
@@ -153,7 +206,11 @@ export async function resolveArtifactFamilyKeys(
 	userId: string,
 	artifactList: Artifact[]
 ): Promise<Map<string, string>> {
-	const { derivedMap, usedByArtifactId } = await loadFamilyContext({ userId, artifacts: artifactList });
+	const { derivedMap, usedByArtifactId, capsuleMembersByArtifactId, relatedArtifactInfoById } =
+		await loadFamilyContext({
+			userId,
+			artifacts: artifactList,
+		});
 	const keys = new Map<string, string>();
 
 	for (const artifact of artifactList) {
@@ -168,18 +225,30 @@ export async function resolveArtifactFamilyKeys(
 				getGeneratedOutputFamilyKey(artifact) ??
 				`output:${resolveGeneratedOutputMembers(artifact.id, usedByArtifactId, derivedMap).join('|')}`;
 		} else if (artifact.type === 'work_capsule') {
-			const sourceIds = Array.isArray(artifact.metadata?.sourceArtifactIds)
-				? artifact.metadata.sourceArtifactIds.filter((value): value is string => typeof value === 'string')
-				: [];
-			const outputIds = Array.isArray(artifact.metadata?.outputArtifactIds)
-				? artifact.metadata.outputArtifactIds.filter((value): value is string => typeof value === 'string')
-				: [];
-			const members = uniqueStrings([
-				...sourceIds.map((value) => baseArtifactId(value, derivedMap)),
-				...outputIds.flatMap((value) =>
-					resolveGeneratedOutputMembers(value, usedByArtifactId, derivedMap)
-				),
-			]).sort();
+			const members = uniqueStrings(
+				(capsuleMembersByArtifactId.get(artifact.id) ?? []).flatMap((value) => {
+					const relatedArtifact =
+						artifactList.find((candidate) => candidate.id === value) ??
+						(relatedArtifactInfoById.has(value)
+							? {
+									id: value,
+									type: relatedArtifactInfoById.get(value)?.type ?? 'source_document',
+									metadata: relatedArtifactInfoById.get(value)?.metadata ?? null,
+								}
+							: null);
+					if (relatedArtifact?.type === 'generated_output') {
+						const familyKey = getGeneratedOutputFamilyKey({
+							id: value,
+							metadata: relatedArtifact.metadata,
+						});
+						if (familyKey) {
+							return [familyKey];
+						}
+						return resolveGeneratedOutputMembers(value, usedByArtifactId, derivedMap);
+					}
+					return [baseArtifactId(value, derivedMap)];
+				})
+			).sort();
 			key = members.length > 0 ? `capsule:${members.join('|')}` : `capsule:${artifact.conversationId ?? artifact.id}`;
 		}
 

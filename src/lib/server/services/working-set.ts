@@ -21,7 +21,6 @@ export interface WorkingSetCandidate {
 	isAttachedThisTurn?: boolean;
 	isLatestGeneratedOutput?: boolean;
 	isLinkedToLatestOutput?: boolean;
-	isLinkedFromWorkCapsule?: boolean;
 	messageMatchScore?: number;
 }
 
@@ -71,11 +70,6 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	if (candidate.isLinkedToLatestOutput) {
 		score += 34;
 		reasonCodes.push('recently_used_in_output');
-	}
-
-	if (candidate.isLinkedFromWorkCapsule) {
-		score += 10;
-		reasonCodes.push('linked_from_work_capsule');
 	}
 
 	const matchBoost = clamp((candidate.messageMatchScore ?? 0) * 15, 0, 60);

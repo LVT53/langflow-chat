@@ -257,7 +257,7 @@
 											</div>
 										</td>
 										<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-											{capsule.sourceArtifactIds.length} docs / {capsule.outputArtifactIds.length} outputs
+											{capsule.sourceArtifactCount} docs / {capsule.outputArtifactCount} outputs
 										</td>
 										<td class="px-4 py-3 align-top text-right">
 											<div class="flex items-center justify-end gap-2">

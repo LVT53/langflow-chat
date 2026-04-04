@@ -270,8 +270,7 @@ export type WorkingSetReasonCode =
   | 'recently_used_in_output'
   | 'latest_generated_output'
   | 'matched_current_turn'
-  | 'persisted_from_previous_turn'
-  | 'linked_from_work_capsule';
+  | 'persisted_from_previous_turn';
 
 export interface ChatAttachment {
   id: string;
@@ -444,8 +443,8 @@ export interface WorkCapsule {
   workflowSummary: string | null;
   keyConclusions: string[];
   reusablePatterns: string[];
-  sourceArtifactIds: string[];
-  outputArtifactIds: string[];
+  sourceArtifactCount: number;
+  outputArtifactCount: number;
 }
 
 export interface ConversationWorkingSetItem {

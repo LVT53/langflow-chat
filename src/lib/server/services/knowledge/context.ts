@@ -29,7 +29,6 @@ import {
 	WORKING_SET_PROMPT_LIMIT,
 	type WorkingSetCandidate,
 } from '../working-set';
-import { getConversationWorkCapsule } from './capsules';
 import {
 	getCompactionUiThreshold,
 	getMaxModelContext,
@@ -195,7 +194,6 @@ export async function refreshConversationWorkingSet(params: {
 }): Promise<ArtifactSummary[]> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const existingItems = await listConversationWorkingSetItems(params.userId, params.conversationId);
-	const workCapsule = await getConversationWorkCapsule(params.userId, params.conversationId);
 	const sourceArtifactIds = await listConversationSourceArtifactIds(params.userId, params.conversationId);
 	const outputArtifacts = await db
 		.select()
@@ -239,8 +237,6 @@ export async function refreshConversationWorkingSet(params: {
 		...attachmentIds,
 		...sourceArtifactIds,
 		...latestOutputArtifactIds,
-		...(workCapsule?.sourceArtifactIds ?? []),
-		...(workCapsule?.outputArtifactIds ?? []),
 	]);
 
 	if (candidateIds.size === 0) {
@@ -265,9 +261,6 @@ export async function refreshConversationWorkingSet(params: {
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
 			isLatestGeneratedOutput: latestOutputArtifactId === artifact.id,
 			isLinkedToLatestOutput: sourceIdsLinkedToLatestOutput.includes(artifact.id),
-			isLinkedFromWorkCapsule:
-				(workCapsule?.sourceArtifactIds ?? []).includes(artifact.id) ||
-				(workCapsule?.outputArtifactIds ?? []).includes(artifact.id),
 			messageMatchScore: message
 				? scoreMatch(message, `${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`)
 				: 0,

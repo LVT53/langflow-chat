@@ -29,8 +29,8 @@ type WorkCapsuleMetadata = {
 	workflowSummary: string | null;
 	keyConclusions: string[];
 	reusablePatterns: string[];
-	sourceArtifactIds: string[];
-	outputArtifactIds: string[];
+	sourceArtifactCount: number;
+	outputArtifactCount: number;
 };
 
 type WorkCapsuleArtifactRow = Pick<
@@ -51,6 +51,13 @@ type WorkCapsuleArtifactRow = Pick<
 >;
 
 function parseWorkCapsuleMetadata(metadata: Record<string, unknown> | null): WorkCapsuleMetadata {
+	const legacySourceArtifactIds = Array.isArray(metadata?.sourceArtifactIds)
+		? metadata.sourceArtifactIds.filter((item): item is string => typeof item === 'string')
+		: [];
+	const legacyOutputArtifactIds = Array.isArray(metadata?.outputArtifactIds)
+		? metadata.outputArtifactIds.filter((item): item is string => typeof item === 'string')
+		: [];
+
 	return {
 		taskSummary: typeof metadata?.taskSummary === 'string' ? metadata.taskSummary : null,
 		workflowSummary: typeof metadata?.workflowSummary === 'string' ? metadata.workflowSummary : null,
@@ -60,12 +67,14 @@ function parseWorkCapsuleMetadata(metadata: Record<string, unknown> | null): Wor
 		reusablePatterns: Array.isArray(metadata?.reusablePatterns)
 			? metadata.reusablePatterns.filter((item): item is string => typeof item === 'string')
 			: [],
-		sourceArtifactIds: Array.isArray(metadata?.sourceArtifactIds)
-			? metadata.sourceArtifactIds.filter((item): item is string => typeof item === 'string')
-			: [],
-		outputArtifactIds: Array.isArray(metadata?.outputArtifactIds)
-			? metadata.outputArtifactIds.filter((item): item is string => typeof item === 'string')
-			: [],
+		sourceArtifactCount:
+			typeof metadata?.sourceArtifactCount === 'number' && Number.isFinite(metadata.sourceArtifactCount)
+				? Math.max(0, Math.trunc(metadata.sourceArtifactCount))
+				: legacySourceArtifactIds.length,
+		outputArtifactCount:
+			typeof metadata?.outputArtifactCount === 'number' && Number.isFinite(metadata.outputArtifactCount)
+				? Math.max(0, Math.trunc(metadata.outputArtifactCount))
+				: legacyOutputArtifactIds.length,
 	};
 }
 
@@ -242,8 +251,8 @@ export async function upsertWorkCapsule(params: {
 		workflowSummary: workflowSummary || 'Conversation generated reusable knowledge.',
 		keyConclusions,
 		reusablePatterns,
-		sourceArtifactIds,
-		outputArtifactIds: outputArtifacts.map((artifact) => artifact.id),
+		sourceArtifactCount: sourceArtifactIds.length,
+		outputArtifactCount: outputArtifacts.length,
 	};
 	const contentText = [
 		`Task: ${metadata.taskSummary}`,
