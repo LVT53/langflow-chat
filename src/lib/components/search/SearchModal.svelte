@@ -4,7 +4,7 @@
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import AttachmentContentModal from '$lib/components/chat/AttachmentContentModal.svelte';
+	import { buildKnowledgeWorkspaceHrefFromSearchResult } from '$lib/client/document-workspace-navigation';
 	import { searchVaultFiles } from '$lib/client/api/knowledge';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
 	import { projects } from '$lib/stores/projects';
@@ -23,8 +23,6 @@
 	let vaultResults = $state<KnowledgeVaultSearchResult[]>([]);
 	let modalRef = $state<HTMLDivElement | undefined>(undefined);
 	let searchInputRef = $state<HTMLInputElement | undefined>(undefined);
-	let previewArtifactId = $state<string | null>(null);
-	let previewFilename = $state('');
 	let previousFocus: HTMLElement | null = null;
 	let wasOpen = false;
 	let activeSearchRequestId = 0;
@@ -119,8 +117,6 @@
 		vaultLoading = false;
 		vaultSearchError = '';
 		vaultResults = [];
-		previewArtifactId = null;
-		previewFilename = '';
 		activeSearchRequestId += 1;
 		onClose();
 		previousFocus?.focus();
@@ -138,10 +134,6 @@
 
 		if (event.key === 'Escape') {
 			event.preventDefault();
-			if (previewArtifactId) {
-				closeArtifactPreview();
-				return;
-			}
 			handleClose();
 			return;
 		}
@@ -172,14 +164,12 @@
 		}
 	}
 
-	function openArtifactPreview(result: KnowledgeVaultSearchResult) {
-		previewArtifactId = result.promptArtifactId ?? result.displayArtifactId;
-		previewFilename = result.name;
-	}
-
-	function closeArtifactPreview() {
-		previewArtifactId = null;
-		previewFilename = '';
+	async function handleVaultSelection(result: KnowledgeVaultSearchResult) {
+		handleClose();
+		await goto(buildKnowledgeWorkspaceHrefFromSearchResult(result));
+		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
+			sidebarOpen.set(false);
+		}
 	}
 
 	onDestroy(() => {
@@ -298,7 +288,7 @@
 											<button
 												type="button"
 												class="search-result-item flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-elevated"
-												onclick={() => openArtifactPreview(result)}
+												onclick={() => handleVaultSelection(result)}
 											>
 												<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
 													<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
@@ -378,13 +368,6 @@
 					</div>
 				{/if}
 			</div>
-
-			<AttachmentContentModal
-				open={Boolean(previewArtifactId)}
-				artifactId={previewArtifactId}
-				filename={previewFilename}
-				onClose={closeArtifactPreview}
-			/>
 
 		</div>
 	</div>

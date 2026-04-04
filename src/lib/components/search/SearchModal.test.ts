@@ -5,6 +5,7 @@ import { conversations } from '$lib/stores/conversations';
 import { projects } from '$lib/stores/projects';
 import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
 import { searchVaultFiles } from '$lib/client/api/knowledge';
+import { goto } from '$app/navigation';
 
 vi.mock('svelte/transition', () => ({
 	fade: () => ({
@@ -64,10 +65,9 @@ describe('SearchModal', () => {
 		]);
 		currentConversationId.set('conv-1');
 		sidebarOpen.set(true);
-		global.fetch = vi.fn();
 	});
 
-	it('shows vault file results alongside conversations and opens the AI view modal', async () => {
+	it('shows vault file results alongside conversations and routes vault AI view into knowledge workspace', async () => {
 		mockSearchVaultFiles.mockResolvedValue([
 			{
 				id: 'doc-1',
@@ -83,24 +83,12 @@ describe('SearchModal', () => {
 				updatedAt: Date.now(),
 			},
 		]);
-		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-			new Response(
-				JSON.stringify({
-					artifact: {
-						contentText: 'Normalized vault content',
-					},
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			)
-		);
+		const onClose = vi.fn();
 
 		render(SearchModal, {
 			props: {
 				isOpen: true,
-				onClose: vi.fn(),
+				onClose,
 			},
 		});
 
@@ -114,11 +102,10 @@ describe('SearchModal', () => {
 
 		await fireEvent.click(vaultResult!);
 
-		await waitFor(() => {
-			expect(screen.getByText('Normalized vault content')).toBeInTheDocument();
-		});
-
+		expect(goto).toHaveBeenCalledWith(
+			'/knowledge?open_artifact=normalized-1&open_filename=Vault+brief.txt&open_mime=text%2Fplain'
+		);
+		expect(onClose).toHaveBeenCalled();
 		expect(mockSearchVaultFiles).toHaveBeenCalledWith('', 6);
-		expect(global.fetch).toHaveBeenCalledWith('/api/knowledge/normalized-1');
 	});
 });

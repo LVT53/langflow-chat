@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import {
 		deleteKnowledgeArtifact,
 		fetchKnowledgeLibrary,
@@ -18,6 +20,10 @@
 	} from '$lib/client/api/knowledge';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
+	import {
+		clearKnowledgeWorkspaceParams,
+		getKnowledgeWorkspaceDocumentFromUrl,
+	} from '$lib/client/document-workspace-navigation';
 	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
@@ -129,6 +135,15 @@
 	});
 
 	let overviewRenderVersion = 0;
+
+	$effect(() => {
+		const handoffDocument = getKnowledgeWorkspaceDocumentFromUrl(page.url);
+		if (!handoffDocument) return;
+
+		activeTab = 'library';
+		openWorkspaceDocument(handoffDocument);
+		replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+	});
 
 	function openWorkspaceDocument(document: DocumentWorkspaceItem) {
 		const alreadyOpen = workspaceDocuments.some((entry) => entry.id === document.id);
