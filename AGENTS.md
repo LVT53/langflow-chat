@@ -158,7 +158,7 @@ Do:
 - keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
 - keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
 - keep the Langflow custom file-generator component's source input named `source_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
-- keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, and `.pptx` via `pptxgenjs`
+- keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, `.pptx` via `pptxgenjs`, `.docx` via `docx`, and `.odt` via `jszip` packaging
 - save-to-vault preserves the original chat file and records vault-save state via artifact metadata so the row still appears after refresh
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 
@@ -604,6 +604,7 @@ Run these too when relevant:
 
 - deployment/config/docs changes:
   - `npm run db:prepare`
+  - keep `scripts/deploy.sh` aligned with the current DB migration story; deploys through that script should apply schema changes automatically when pulled commits touch Drizzle migrations or schema files
   - verify [`src/routes/api/health/+server.ts`](./src/routes/api/health/+server.ts) still matches docs and deploy expectations
 - knowledge upload or extraction changes:
   - verify upload size expectations remain aligned with [README.md](./README.md) and deployment docs

@@ -36,11 +36,12 @@ The deploy script performs these steps in order:
 1. `git pull origin main`
 2. `npm install`
 3. `npm run build`
-4. `npm run db:prepare`
+4. automatically run `npm run db:prepare` only when the pulled changes include DB schema or migration files
 
 Important caveat:
 
 - `scripts/deploy.sh` does **not** restart PM2, systemd, Docker, or any other running process. It prints `PM2_APP_NAME`, but that value is informational only. Restart your process manager separately after the script completes.
+- If you deploy through `scripts/deploy.sh`, you should not need a separate manual DB migration step after pulls. The script detects DB-related changes and applies them automatically.
 
 For host-managed `adapter-node` deployments, the standard runtime entrypoint is:
 
