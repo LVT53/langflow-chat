@@ -21,6 +21,7 @@ export interface ChatFile {
 	assistantMessageId: string | null;
 	artifactId: string | null;
 	documentFamilyId?: string | null;
+	documentFamilyStatus?: 'active' | 'historical' | null;
 	documentLabel?: string | null;
 	documentRole?: string | null;
 	versionNumber?: number | null;
@@ -57,6 +58,7 @@ interface GeneratedFileVersionRecord {
 	contentText: string | null;
 	conversationId: string | null;
 	documentFamilyId: string | null;
+	documentFamilyStatus: 'active' | 'historical' | null;
 	documentLabel: string | null;
 	documentRole: string | null;
 }
@@ -204,6 +206,7 @@ async function listRecentGeneratedFileVersions(
 			contentText: row.contentText ?? null,
 			conversationId: row.conversationId ?? null,
 			documentFamilyId: documentMetadata.documentFamilyId ?? null,
+			documentFamilyStatus: documentMetadata.documentFamilyStatus ?? null,
 			documentLabel: documentMetadata.documentLabel ?? null,
 			documentRole: documentMetadata.documentRole ?? null,
 		};
@@ -233,6 +236,7 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 		{
 			artifactId: string;
 			documentFamilyId: string | null;
+			documentFamilyStatus: 'active' | 'historical' | null;
 			documentLabel: string | null;
 			documentRole: string | null;
 			versionNumber: number | null;
@@ -261,6 +265,7 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 		{
 			artifactId: string;
 			documentFamilyId: string | null;
+			documentFamilyStatus: 'active' | 'historical' | null;
 			documentLabel: string | null;
 			documentRole: string | null;
 			versionNumber: number | null;
@@ -282,6 +287,7 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 		artifactIdsByChatFile.set(chatFileId, {
 			artifactId: row.id,
 			documentFamilyId: documentMetadata.documentFamilyId ?? null,
+			documentFamilyStatus: documentMetadata.documentFamilyStatus ?? null,
 			documentLabel: documentMetadata.documentLabel ?? null,
 			documentRole: documentMetadata.documentRole ?? null,
 			versionNumber:
@@ -383,6 +389,7 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 			...mapRowToChatFile(row),
 			artifactId: artifactIdsByChatFile.get(row.id)?.artifactId ?? null,
 			documentFamilyId: artifactIdsByChatFile.get(row.id)?.documentFamilyId ?? null,
+			documentFamilyStatus: artifactIdsByChatFile.get(row.id)?.documentFamilyStatus ?? null,
 			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
 			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
 			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
@@ -423,6 +430,7 @@ export async function getChatFilesForAssistantMessage(
 			...mapRowToChatFile(row),
 			artifactId: artifactIdsByChatFile.get(row.id)?.artifactId ?? null,
 			documentFamilyId: artifactIdsByChatFile.get(row.id)?.documentFamilyId ?? null,
+			documentFamilyStatus: artifactIdsByChatFile.get(row.id)?.documentFamilyStatus ?? null,
 			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
 			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
 			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
@@ -511,6 +519,7 @@ export async function syncGeneratedFilesToMemory(params: {
 			const documentRole = previousVersion?.documentRole ?? null;
 			const workingDocumentMetadata = buildGeneratedOutputDocumentMetadata({
 				familyId: documentFamilyId,
+				familyStatus: 'active',
 				label: documentLabel,
 				role: documentRole,
 				versionNumber,

@@ -3,7 +3,11 @@ import { db } from '$lib/server/db';
 import { artifactLinks, artifacts, taskStateEvidenceLinks } from '$lib/server/db/schema';
 import type { Artifact, ArtifactRetrievalClass } from '$lib/types';
 import { parseJsonRecord } from '$lib/server/utils/json';
-import { getGeneratedOutputFamilyKey } from '$lib/server/services/knowledge/store';
+import {
+	getGeneratedOutputFamilyKey,
+	parseWorkingDocumentMetadata,
+	resolveGeneratedDocumentFamilyStatus,
+} from '$lib/server/services/knowledge/store';
 
 const generatedOutputBackfillDone = new Set<string>();
 const generatedOutputBackfillInFlight = new Map<string, Promise<void>>();
@@ -356,6 +360,27 @@ async function setArtifactRetrievalClass(
 		.where(eq(artifacts.id, artifactId));
 }
 
+async function setGeneratedDocumentFamilyStatus(params: {
+	artifactId: string;
+	metadata: Record<string, unknown> | null;
+	status: 'active' | 'historical';
+}): Promise<void> {
+	const currentMetadata = params.metadata ?? {};
+	if (currentMetadata.documentFamilyStatus === params.status) {
+		return;
+	}
+
+	await db
+		.update(artifacts)
+		.set({
+			metadataJson: JSON.stringify({
+				...currentMetadata,
+				documentFamilyStatus: params.status,
+			}),
+		})
+		.where(eq(artifacts.id, params.artifactId));
+}
+
 async function backfillGeneratedOutputRetrievalClasses(userId: string): Promise<void> {
 	const rows = await db
 		.select()
@@ -439,11 +464,90 @@ async function backfillGeneratedOutputRetrievalClasses(userId: string): Promise<
 	}
 }
 
+async function backfillGeneratedOutputFamilyStatuses(userId: string): Promise<void> {
+	const rows = await db
+		.select()
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), eq(artifacts.type, 'generated_output')))
+		.orderBy(desc(artifacts.updatedAt));
+
+	const outputs = rows.map((row) => {
+		const metadata = parseJsonRecord(row.metadataJson ?? null);
+		return {
+			...row,
+			metadata,
+		};
+	});
+	if (outputs.length === 0) return;
+
+	const artifactObjects = outputs.map((row) => ({
+		id: row.id,
+		userId: row.userId,
+		conversationId: row.conversationId ?? null,
+		vaultId: row.vaultId ?? null,
+		type: row.type as Artifact['type'],
+		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
+		name: row.name,
+		mimeType: row.mimeType ?? null,
+		sizeBytes: row.sizeBytes ?? null,
+		extension: row.extension ?? null,
+		storagePath: row.storagePath ?? null,
+		contentText: row.contentText ?? null,
+		summary: row.summary ?? null,
+		metadata: row.metadata,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	})) satisfies Artifact[];
+
+	const familyKeys = await resolveArtifactFamilyKeys(userId, artifactObjects);
+	const latestByFamily = new Map<
+		string,
+		{
+			artifactId: string;
+			updatedAt: number;
+			metadata: Record<string, unknown> | null;
+		}
+	>();
+
+	for (const output of outputs) {
+		const familyKey = familyKeys.get(output.id) ?? output.id;
+		const existing = latestByFamily.get(familyKey);
+		if (!existing || output.updatedAt.getTime() > existing.updatedAt) {
+			latestByFamily.set(familyKey, {
+				artifactId: output.id,
+				updatedAt: output.updatedAt.getTime(),
+				metadata: output.metadata,
+			});
+		}
+	}
+
+	for (const latest of latestByFamily.values()) {
+		const workingDocumentMetadata = parseWorkingDocumentMetadata(latest.metadata);
+		if (!workingDocumentMetadata.documentFamilyId) {
+			continue;
+		}
+
+		const nextStatus = resolveGeneratedDocumentFamilyStatus({
+			updatedAt: latest.updatedAt,
+		});
+
+		await setGeneratedDocumentFamilyStatus({
+			artifactId: latest.artifactId,
+			metadata: latest.metadata,
+			status: nextStatus,
+		});
+	}
+}
+
 export async function repairGeneratedOutputRetrievalClasses(
 	userId: string,
 ): Promise<void> {
 	await backfillGeneratedOutputRetrievalClasses(userId);
 	generatedOutputBackfillDone.add(userId);
+}
+
+export async function repairGeneratedOutputFamilyStatuses(userId: string): Promise<void> {
+	await backfillGeneratedOutputFamilyStatuses(userId);
 }
 
 export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Promise<void> {

@@ -74,6 +74,10 @@ export function formatDocumentKind(document: KnowledgeDocumentItem): string {
 	return document.normalizedAvailable ? 'Indexed document' : 'Source-only document';
 }
 
+export function formatDocumentLifecycleStatus(document: KnowledgeDocumentItem): string | null {
+	return document.documentFamilyStatus === 'historical' ? 'Historical' : null;
+}
+
 export function getLibraryBulkAction(kind: Exclude<LibraryModal, null>): KnowledgeBulkAction {
 	if (kind === 'documents') return 'forget_all_documents';
 	if (kind === 'results') return 'forget_all_results';

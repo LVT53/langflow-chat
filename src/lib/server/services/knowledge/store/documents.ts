@@ -35,6 +35,7 @@ function mapLogicalDocumentItem(params: {
   updatedAt: number;
   documentOrigin?: KnowledgeDocumentItem["documentOrigin"];
   documentFamilyId?: string | null;
+  documentFamilyStatus?: KnowledgeDocumentItem["documentFamilyStatus"];
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -56,6 +57,7 @@ function mapLogicalDocumentItem(params: {
     normalizedAvailable: params.normalizedAvailable,
     documentOrigin: params.documentOrigin,
     documentFamilyId: params.documentFamilyId ?? null,
+    documentFamilyStatus: params.documentFamilyStatus ?? null,
     documentLabel: params.documentLabel ?? null,
     documentRole: params.documentRole ?? null,
     versionNumber: params.versionNumber ?? null,
@@ -271,6 +273,7 @@ export async function listLogicalDocuments(
           updatedAt: group.latest.updatedAt,
           documentOrigin: "generated",
           documentFamilyId: familyId,
+          documentFamilyStatus: group.metadata.documentFamilyStatus ?? null,
           documentLabel: group.metadata.documentLabel ?? group.latest.name,
           documentRole: group.metadata.documentRole ?? null,
           versionNumber,

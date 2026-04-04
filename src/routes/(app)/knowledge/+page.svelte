@@ -150,6 +150,7 @@
 				filename: document.name,
 				title: document.documentLabel ?? document.name,
 				documentFamilyId: document.documentFamilyId ?? null,
+				documentFamilyStatus: document.documentFamilyStatus ?? null,
 				documentLabel: document.documentLabel ?? null,
 				documentRole: document.documentRole ?? null,
 				versionNumber: document.versionNumber ?? null,
@@ -165,7 +166,12 @@
 
 	function getWorkspaceMetadataForArtifact(artifactId: string): Pick<
 		DocumentWorkspaceItem,
-		'documentFamilyId' | 'documentLabel' | 'documentRole' | 'versionNumber' | 'title'
+		| 'documentFamilyId'
+		| 'documentFamilyStatus'
+		| 'documentLabel'
+		| 'documentRole'
+		| 'versionNumber'
+		| 'title'
 	> | null {
 		const matchingDocument =
 			documents.find(
@@ -179,6 +185,7 @@
 		return {
 			title: matchingDocument.documentLabel ?? matchingDocument.name,
 			documentFamilyId: matchingDocument.documentFamilyId ?? null,
+			documentFamilyStatus: matchingDocument.documentFamilyStatus ?? null,
 			documentLabel: matchingDocument.documentLabel ?? null,
 			documentRole: matchingDocument.documentRole ?? null,
 			versionNumber: matchingDocument.versionNumber ?? null,

@@ -9,6 +9,7 @@
 		conversationId: string;
 		artifactId?: string | null;
 		documentFamilyId?: string | null;
+		documentFamilyStatus?: 'active' | 'historical' | null;
 		documentLabel?: string | null;
 		documentRole?: string | null;
 		versionNumber?: number | null;
@@ -31,6 +32,7 @@
 		conversationId,
 		artifactId = null,
 		documentFamilyId = null,
+		documentFamilyStatus = null,
 		documentLabel = null,
 		documentRole = null,
 		versionNumber = null,
@@ -129,6 +131,7 @@
 				filename,
 				title: documentLabel ?? filename,
 				documentFamilyId,
+				documentFamilyStatus,
 				documentLabel,
 				documentRole,
 				versionNumber,

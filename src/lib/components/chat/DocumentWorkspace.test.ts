@@ -26,6 +26,7 @@ describe('DocumentWorkspace', () => {
 						filename: 'brief-v2.pdf',
 						title: 'Client Brief',
 						documentFamilyId: 'family-brief',
+						documentFamilyStatus: 'historical',
 						documentLabel: 'Client Brief',
 						documentRole: 'brief',
 						versionNumber: 2,
@@ -57,6 +58,7 @@ describe('DocumentWorkspace', () => {
 		const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
 		expect(within(desktopWorkspace).getByText('Version History')).toBeInTheDocument();
 		expect(within(desktopWorkspace).getByText('Brief • v2')).toBeInTheDocument();
+		expect(within(desktopWorkspace).getByText('Historical')).toBeInTheDocument();
 		expect(within(desktopWorkspace).getByText('Latest')).toBeInTheDocument();
 		expect(within(desktopWorkspace).getByText('Current')).toBeInTheDocument();
 

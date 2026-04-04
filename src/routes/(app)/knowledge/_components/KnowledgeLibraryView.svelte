@@ -17,6 +17,7 @@
 	import {
 		formatArtifactSize,
 		formatDocumentKind,
+		formatDocumentLifecycleStatus,
 		formatMemoryTimestamp,
 	} from '../_helpers';
 
@@ -116,6 +117,7 @@
 			filename: document.name,
 			title: document.documentLabel ?? document.name,
 			documentFamilyId: document.documentFamilyId ?? null,
+			documentFamilyStatus: document.documentFamilyStatus ?? null,
 			documentLabel: document.documentLabel ?? null,
 			documentRole: document.documentRole ?? null,
 			versionNumber: document.versionNumber ?? null,
@@ -758,6 +760,9 @@
 								<div class="text-sm font-sans font-medium text-text-primary">{document.name}</div>
 								<div class="mt-1 text-xs font-sans text-text-muted">
 									{formatDocumentKind(document)} · {formatArtifactSize(document.sizeBytes)}
+									{#if formatDocumentLifecycleStatus(document)}
+										· {formatDocumentLifecycleStatus(document)}
+									{/if}
 								</div>
 							</td>
 							<td class="px-4 py-3 align-top">

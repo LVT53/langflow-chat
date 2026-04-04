@@ -116,6 +116,7 @@ describe('Knowledge page', () => {
 						summary: 'Quarterly budget',
 						normalizedAvailable: true,
 						documentFamilyId: 'family-budget',
+						documentFamilyStatus: 'historical',
 						documentLabel: 'Quarterly Budget',
 						documentRole: 'report',
 						versionNumber: 2,
@@ -201,6 +202,7 @@ describe('Knowledge page', () => {
 						summary: 'Quarterly budget',
 						normalizedAvailable: true,
 						documentFamilyId: 'family-budget',
+						documentFamilyStatus: 'historical',
 						documentLabel: 'Quarterly Budget',
 						documentRole: 'report',
 						versionNumber: 2,
@@ -234,6 +236,7 @@ describe('Knowledge page', () => {
 			expect(within(workspace).getByText('Working Document')).toBeDefined();
 			expect(within(workspace).getByText('Quarterly Budget')).toBeDefined();
 			expect(within(workspace).getByText('Report • v2')).toBeDefined();
+			expect(within(workspace).getByText('Historical')).toBeDefined();
 		});
 
 		unmount();

@@ -51,6 +51,7 @@ const documents = [
 		summary: 'Quarterly budget',
 		normalizedAvailable: true,
 		documentFamilyId: 'family-budget',
+		documentFamilyStatus: 'historical',
 		documentLabel: 'Quarterly Budget',
 		documentRole: 'report',
 		versionNumber: 2,
@@ -115,6 +116,7 @@ describe('KnowledgeLibraryView', () => {
 		expect(within(vaultPanel).getByText('Research')).toBeInTheDocument();
 		expect(within(vaultPanel).getByText('Ops')).toBeInTheDocument();
 		expect(screen.getByText('Budget.pdf')).toBeInTheDocument();
+		expect(screen.getByText(/Historical/i)).toBeInTheDocument();
 		expect(screen.queryByText('Plan.docx')).toBeNull();
 
 		await fireEvent.click(screen.getByRole('button', { name: /all vaults/i }));
@@ -218,6 +220,7 @@ describe('KnowledgeLibraryView', () => {
 				filename: 'Budget.pdf',
 				title: 'Quarterly Budget',
 				documentFamilyId: 'family-budget',
+				documentFamilyStatus: 'historical',
 				documentLabel: 'Quarterly Budget',
 				documentRole: 'report',
 				versionNumber: 2,

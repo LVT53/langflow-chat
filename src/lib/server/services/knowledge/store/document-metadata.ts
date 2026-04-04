@@ -1,4 +1,9 @@
-import type { Artifact, ArtifactType, WorkingDocumentMetadata } from "$lib/types";
+import type {
+  Artifact,
+  ArtifactType,
+  WorkingDocumentFamilyStatus,
+  WorkingDocumentMetadata,
+} from "$lib/types";
 
 function readString(
   value: unknown,
@@ -14,6 +19,14 @@ function readPositiveInteger(
   return normalized > 0 ? normalized : null;
 }
 
+function readWorkingDocumentFamilyStatus(
+  value: unknown,
+): WorkingDocumentFamilyStatus | null {
+  return value === "active" || value === "historical" ? value : null;
+}
+
+const GENERATED_DOCUMENT_FAMILY_HISTORICAL_AFTER_DAYS = 30;
+
 export function parseWorkingDocumentMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): WorkingDocumentMetadata {
@@ -21,6 +34,7 @@ export function parseWorkingDocumentMetadata(
 
   return {
     documentFamilyId: readString(metadata.documentFamilyId),
+    documentFamilyStatus: readWorkingDocumentFamilyStatus(metadata.documentFamilyStatus),
     documentLabel: readString(metadata.documentLabel),
     documentRole: readString(metadata.documentRole),
     versionNumber: readPositiveInteger(metadata.versionNumber),
@@ -119,6 +133,7 @@ export function resolveGeneratedDocumentFamilyContext(params: {
 
 export function buildGeneratedOutputDocumentMetadata(params: {
   familyId: string;
+  familyStatus?: WorkingDocumentFamilyStatus | null;
   label: string;
   role?: string | null;
   versionNumber: number;
@@ -129,6 +144,7 @@ export function buildGeneratedOutputDocumentMetadata(params: {
 }): WorkingDocumentMetadata {
   return {
     documentFamilyId: params.familyId,
+    documentFamilyStatus: readWorkingDocumentFamilyStatus(params.familyStatus) ?? "active",
     documentLabel: params.label,
     documentRole: readString(params.role),
     versionNumber: params.versionNumber,
@@ -161,6 +177,19 @@ export function getGeneratedOutputFamilyKey(
 ): string | null {
   const metadata = parseWorkingDocumentMetadata(artifact.metadata);
   return metadata.documentFamilyId ? `output_family:${metadata.documentFamilyId}` : null;
+}
+
+export function resolveGeneratedDocumentFamilyStatus(params: {
+  updatedAt: number;
+  now?: number;
+  historicalAfterDays?: number;
+}): WorkingDocumentFamilyStatus {
+  const historicalAfterMs =
+    (params.historicalAfterDays ?? GENERATED_DOCUMENT_FAMILY_HISTORICAL_AFTER_DAYS) *
+    86_400_000;
+  return (params.now ?? Date.now()) - params.updatedAt >= historicalAfterMs
+    ? "historical"
+    : "active";
 }
 
 export function selectLatestGeneratedDocumentCandidatesByFamily<

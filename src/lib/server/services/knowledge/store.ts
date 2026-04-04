@@ -54,6 +54,7 @@ export {
   getArtifactDocumentOrigin,
   getGeneratedOutputFamilyKey,
   parseWorkingDocumentMetadata,
+  resolveGeneratedDocumentFamilyStatus,
   resolveGeneratedDocumentFamilyContext,
   selectLatestGeneratedDocumentCandidatesByFamily,
 } from "./store/document-metadata";

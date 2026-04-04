@@ -70,6 +70,10 @@
 		return [roleLabel, versionLabel].filter(Boolean).join(' • ') || null;
 	}
 
+	function getDocumentLifecycleLabel(document: DocumentWorkspaceItem): string | null {
+		return document.documentFamilyStatus === 'historical' ? 'Historical' : null;
+	}
+
 	let familyDocuments = $derived.by(() => {
 		if (!activeDocument?.documentFamilyId) return [];
 
@@ -239,6 +243,13 @@
 					<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
 					{#if getDocumentSubtitle(activeDocument)}
 						<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+					{/if}
+					{#if getDocumentLifecycleLabel(activeDocument)}
+						<div class="workspace-status-row">
+							<span class="workspace-status-badge">
+								{getDocumentLifecycleLabel(activeDocument)}
+							</span>
+						</div>
 					{/if}
 				</div>
 				<button
@@ -431,6 +442,13 @@
 				<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
 				{#if getDocumentSubtitle(activeDocument)}
 					<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+				{/if}
+				{#if getDocumentLifecycleLabel(activeDocument)}
+					<div class="workspace-status-row">
+						<span class="workspace-status-badge">
+							{getDocumentLifecycleLabel(activeDocument)}
+						</span>
+					</div>
 				{/if}
 			</div>
 			<button
@@ -694,6 +712,26 @@
 		font-size: 0.78rem;
 		font-weight: 500;
 		letter-spacing: 0.02em;
+		color: var(--text-secondary);
+	}
+
+	.workspace-status-row {
+		margin-top: 0.48rem;
+	}
+
+	.workspace-status-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.24rem 0.58rem;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--border-default) 76%, var(--accent) 24%);
+		background: color-mix(in srgb, var(--surface-elevated) 70%, var(--accent) 30%);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
 		color: var(--text-secondary);
 	}
 

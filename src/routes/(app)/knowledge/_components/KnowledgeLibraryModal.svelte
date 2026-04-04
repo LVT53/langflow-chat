@@ -65,6 +65,10 @@
 				isKnowledgeDocument
 					? (artifact.documentFamilyId ?? null)
 					: null,
+			documentFamilyStatus:
+				isKnowledgeDocument
+					? (artifact.documentFamilyStatus ?? null)
+					: null,
 			documentLabel:
 				isKnowledgeDocument
 					? (artifact.documentLabel ?? null)

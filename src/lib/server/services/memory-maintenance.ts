@@ -8,6 +8,7 @@ import {
 import { getConfig } from '$lib/server/config-store';
 import {
 	areNearDuplicateArtifactTexts,
+	repairGeneratedOutputFamilyStatuses,
 	repairGeneratedOutputRetrievalClasses,
 } from './evidence-family';
 import type { HonchoPersonaMemoryRecord } from './honcho';
@@ -177,6 +178,7 @@ async function performUserMemoryMaintenance(
 		});
 		await refreshPersonaClusterStates(userId);
 		await repairGeneratedOutputRetrievalClasses(userId);
+		await repairGeneratedOutputFamilyStatuses(userId);
 		await pruneTaskCheckpoints(userId);
 		await archiveStaleTaskMemory(userId);
 		await updateProjectMemoryStatuses(userId);

@@ -83,6 +83,7 @@ export interface ChatGeneratedFile {
   assistantMessageId?: string | null;
   artifactId?: string | null;
   documentFamilyId?: string | null;
+  documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -103,6 +104,7 @@ export interface ChatGeneratedFileListItem {
   assistantMessageId?: string | null;
   artifactId?: string | null;
   documentFamilyId?: string | null;
+  documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -127,6 +129,7 @@ export interface DocumentWorkspaceItem {
   filename: string;
   title: string;
   documentFamilyId?: string | null;
+  documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -339,6 +342,7 @@ export interface KnowledgeDocumentItem {
   normalizedAvailable: boolean;
   documentOrigin?: 'uploaded' | 'generated';
   documentFamilyId?: string | null;
+  documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -351,6 +355,7 @@ export interface KnowledgeDocumentItem {
 
 export interface WorkingDocumentMetadata {
   documentFamilyId?: string | null;
+  documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
@@ -373,6 +378,8 @@ export interface KnowledgeVaultSearchResult {
   normalizedAvailable: boolean;
   updatedAt: number;
 }
+
+export type WorkingDocumentFamilyStatus = 'active' | 'historical';
 
 export interface PendingAttachment {
   artifact: ArtifactSummary;

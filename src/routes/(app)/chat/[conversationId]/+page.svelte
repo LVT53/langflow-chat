@@ -129,6 +129,7 @@
 			filename: file.filename,
 			title: file.documentLabel ?? file.filename,
 			documentFamilyId: file.documentFamilyId ?? null,
+			documentFamilyStatus: file.documentFamilyStatus ?? null,
 			documentLabel: file.documentLabel ?? null,
 			documentRole: file.documentRole ?? null,
 			versionNumber: file.versionNumber ?? null,

@@ -4,6 +4,7 @@ import {
   getArtifactDocumentOrigin,
   getGeneratedOutputFamilyKey,
   parseWorkingDocumentMetadata,
+  resolveGeneratedDocumentFamilyStatus,
   resolveGeneratedDocumentFamilyContext,
   selectLatestGeneratedDocumentCandidatesByFamily,
 } from "./document-metadata";
@@ -13,6 +14,7 @@ describe("document metadata helpers", () => {
     expect(
       parseWorkingDocumentMetadata({
         documentFamilyId: "family-1",
+        documentFamilyStatus: "historical",
         documentLabel: "Project brief",
         documentRole: "brief",
         versionNumber: 3,
@@ -23,6 +25,7 @@ describe("document metadata helpers", () => {
       }),
     ).toEqual({
       documentFamilyId: "family-1",
+      documentFamilyStatus: "historical",
       documentLabel: "Project brief",
       documentRole: "brief",
       versionNumber: 3,
@@ -37,6 +40,7 @@ describe("document metadata helpers", () => {
     expect(
       buildGeneratedOutputDocumentMetadata({
         familyId: "family-1",
+        familyStatus: "active",
         label: "Project brief",
         role: "brief",
         versionNumber: 2,
@@ -47,6 +51,7 @@ describe("document metadata helpers", () => {
       }),
     ).toEqual({
       documentFamilyId: "family-1",
+      documentFamilyStatus: "active",
       documentLabel: "Project brief",
       documentRole: "brief",
       versionNumber: 2,
@@ -112,6 +117,22 @@ describe("document metadata helpers", () => {
         },
       }),
     ).toBe("output_family:family-1");
+  });
+
+  it("marks dormant generated-document families as historical after the configured age window", () => {
+    const now = Date.UTC(2026, 3, 4);
+    expect(
+      resolveGeneratedDocumentFamilyStatus({
+        updatedAt: now - 10 * 86_400_000,
+        now,
+      }),
+    ).toBe("active");
+    expect(
+      resolveGeneratedDocumentFamilyStatus({
+        updatedAt: now - 35 * 86_400_000,
+        now,
+      }),
+    ).toBe("historical");
   });
 
   it("keeps only the latest artifact per generated-document family for retrieval paths", () => {
