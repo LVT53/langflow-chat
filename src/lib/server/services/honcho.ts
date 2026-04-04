@@ -323,6 +323,24 @@ async function deleteScopeConclusions(
 	}
 }
 
+async function clearPeerCard(peer: Peer, target?: string | Peer): Promise<void> {
+	try {
+		await peer.setCard([], target);
+	} catch (error) {
+		if (isHonchoMissingError(error)) return;
+		throw error;
+	}
+}
+
+async function clearAllPeerCards(userPeer: Peer, assistantPeer: Peer): Promise<void> {
+	await Promise.all([
+		clearPeerCard(userPeer),
+		clearPeerCard(assistantPeer),
+		clearPeerCard(userPeer, assistantPeer),
+		clearPeerCard(assistantPeer, userPeer),
+	]);
+}
+
 async function deleteHonchoSession(sessionId: string): Promise<void> {
 	try {
 		const honcho = await ensureClient();
@@ -599,6 +617,7 @@ export async function forgetAllPersonaMemories(userId: string): Promise<number> 
 		deleteScopeConclusions(userPeer.conclusions, selfIds),
 		deleteScopeConclusions(assistantAboutUserScope, assistantIds),
 	]);
+	await clearAllPeerCards(userPeer, assistantPeer);
 	await deletePersonaMemoryAttributionsByConclusionIds(userId, records.map((item) => item.id));
 
 	return records.length;
@@ -692,6 +711,7 @@ export async function deleteAllHonchoStateForUser(userId: string): Promise<void>
 		await deleteHonchoSession(sessionId);
 	}
 
+	await clearAllPeerCards(userPeer, assistantPeer);
 	clearHonchoCaches({ userId });
 }
 

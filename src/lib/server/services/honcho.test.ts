@@ -21,8 +21,14 @@ const {
   mockSessionQueueStatus,
   mockSessionContext,
   mockSessionAddPeers,
+  mockSessionDelete,
   mockPeerContext,
   mockPeerChat,
+  mockPeerSetCard,
+  mockPeerSessions,
+  mockScopeList,
+  mockScopeDelete,
+  mockScopeCreate,
   mockBuildPersonaPromptContext,
   mockListMessages,
   mockGetLatestHonchoMetadata,
@@ -126,8 +132,14 @@ const {
       peerCard: null,
     })),
     mockSessionAddPeers: vi.fn(async () => undefined),
+    mockSessionDelete: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
     mockPeerChat: vi.fn(async () => ''),
+    mockPeerSetCard: vi.fn(async () => []),
+    mockPeerSessions: vi.fn(async () => ({ toArray: async () => [] })),
+    mockScopeList: vi.fn(async () => ({ toArray: async () => [] })),
+    mockScopeDelete: vi.fn(async () => undefined),
+    mockScopeCreate: vi.fn(async () => undefined),
     mockBuildPersonaPromptContext: vi.fn(async () => ''),
     mockListMessages: vi.fn(async () => []),
     mockGetLatestHonchoMetadata: vi.fn(async () => ({
@@ -178,6 +190,12 @@ vi.mock('../config-store', () => ({
 }));
 
 vi.mock('@honcho-ai/sdk', () => {
+  const makeScope = () => ({
+    list: mockScopeList,
+    delete: mockScopeDelete,
+    create: mockScopeCreate,
+  });
+
   class Honcho {
     async session(id: string) {
       return {
@@ -187,15 +205,20 @@ vi.mock('@honcho-ai/sdk', () => {
         context: mockSessionContext,
         addMessages: vi.fn(async () => []),
         uploadFile: vi.fn(async () => undefined),
-        delete: vi.fn(async () => undefined),
+        delete: mockSessionDelete,
       };
     }
 
     async peer(id: string) {
+      const conclusions = makeScope();
       return {
         id,
         context: mockPeerContext,
         chat: mockPeerChat,
+        setCard: mockPeerSetCard,
+        sessions: mockPeerSessions,
+        conclusions,
+        conclusionsOf: vi.fn(() => makeScope()),
         message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
           content,
           metadata: options?.metadata ?? {},
@@ -265,11 +288,19 @@ vi.mock('../env', () => ({
 vi.mock('../db', () => ({
   db: {
     select: () => ({ from: () => [] }),
+    delete: () => ({
+      where: vi.fn(async () => undefined),
+    }),
   },
 }));
 
 vi.mock('../db/schema', () => ({
   adminConfig: {},
+  personaMemoryAttributions: {
+    userId: { name: 'userId' },
+    conclusionId: { name: 'conclusionId' },
+    conversationId: { name: 'conversationId' },
+  },
 }));
 
 vi.mock('./knowledge', () => ({
@@ -423,6 +454,69 @@ describe('Honcho Service', () => {
       });
 
       expect(ids).toEqual(['session-bound-memory', 'promoted-memory']);
+    });
+  });
+
+  describe('memory clearing', () => {
+    it('clears Honcho peer cards when forgetting all persona memories', async () => {
+      mockConfig.honchoEnabled = true;
+      mockScopeList
+        .mockResolvedValueOnce({
+          toArray: async () => [
+            {
+              id: 'self-memory-1',
+              content: 'User likes concise responses.',
+              sessionId: null,
+              createdAt: '2026-04-04T10:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          toArray: async () => [
+            {
+              id: 'assistant-memory-1',
+              content: 'Assistant knows the user is a designer.',
+              sessionId: null,
+              createdAt: '2026-04-04T10:01:00.000Z',
+            },
+          ],
+        });
+
+      const { forgetAllPersonaMemories } = await import('./honcho');
+
+      const deletedCount = await forgetAllPersonaMemories('user-123');
+
+      expect(deletedCount).toBe(2);
+      expect(mockScopeDelete).toHaveBeenCalledWith('self-memory-1');
+      expect(mockScopeDelete).toHaveBeenCalledWith('assistant-memory-1');
+      expect(mockPeerSetCard).toHaveBeenCalledTimes(4);
+      expect(mockPeerSetCard).toHaveBeenNthCalledWith(1, [], undefined);
+      expect(mockPeerSetCard).toHaveBeenNthCalledWith(2, [], undefined);
+      expect(mockPeerSetCard).toHaveBeenNthCalledWith(3, [], expect.objectContaining({ id: 'assistant_user-123' }));
+      expect(mockPeerSetCard).toHaveBeenNthCalledWith(4, [], expect.objectContaining({ id: 'user-123' }));
+    });
+
+    it('clears peer cards and sessions when deleting all Honcho state for a user', async () => {
+      mockConfig.honchoEnabled = true;
+      mockScopeList
+        .mockResolvedValueOnce({ toArray: async () => [] })
+        .mockResolvedValueOnce({ toArray: async () => [] })
+        .mockResolvedValueOnce({ toArray: async () => [] })
+        .mockResolvedValueOnce({ toArray: async () => [] });
+      mockPeerSessions
+        .mockResolvedValueOnce({
+          toArray: async () => [{ id: 'session-a' }, { id: 'session-b' }],
+        })
+        .mockResolvedValueOnce({
+          toArray: async () => [{ id: 'session-b' }, { id: 'session-c' }],
+        });
+
+      const { deleteAllHonchoStateForUser } = await import('./honcho');
+
+      await deleteAllHonchoStateForUser('user-123');
+
+      expect(mockPeerSetCard).toHaveBeenCalledTimes(4);
+      expect(mockSessionDelete).toHaveBeenCalledTimes(3);
     });
   });
 

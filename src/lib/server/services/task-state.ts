@@ -482,7 +482,12 @@ async function setCurrentTask(
       status: nextStatus,
       updatedAt: new Date(),
     })
-    .where(eq(conversationTaskStates.taskId, taskId));
+    .where(
+      and(
+        eq(conversationTaskStates.userId, userId),
+        eq(conversationTaskStates.taskId, taskId),
+      ),
+    );
 }
 
 export async function listConversationTaskStates(
@@ -1510,7 +1515,12 @@ export async function applyTaskSteeringAction(params: {
             locked: params.action === "lock_task" ? 1 : 0,
             updatedAt: new Date(),
           })
-          .where(eq(conversationTaskStates.taskId, taskState.taskId));
+          .where(
+            and(
+              eq(conversationTaskStates.userId, params.userId),
+              eq(conversationTaskStates.taskId, taskState.taskId),
+            ),
+          );
       }
       break;
     case "start_new_task": {
@@ -1697,7 +1707,12 @@ export async function updateTaskStateCheckpoint(params: {
       lastCheckpointAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(conversationTaskStates.taskId, existing.taskId))
+    .where(
+      and(
+        eq(conversationTaskStates.userId, params.userId),
+        eq(conversationTaskStates.taskId, existing.taskId),
+      ),
+    )
     .returning();
 
   await setCurrentTask(

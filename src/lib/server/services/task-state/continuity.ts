@@ -897,7 +897,12 @@ export async function updateProjectMemoryStatuses(
         status: nextStatus,
         updatedAt: new Date(),
       })
-      .where(eq(memoryProjects.projectId, row.projectId));
+      .where(
+        and(
+          eq(memoryProjects.userId, userId),
+          eq(memoryProjects.projectId, row.projectId),
+        ),
+      );
     if (nextStatus !== "active" && latestEvent?.eventType !== "project_paused") {
       await recordMemoryEvent({
         eventKey: buildProjectEventKey([
