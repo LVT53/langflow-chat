@@ -15,7 +15,7 @@
 		variant?: 'compact' | 'pending';
 		viewable?: boolean;
 		onRemove?: (payload: { id: string }) => void;
-		onView?: (payload: { id: string; name: string }) => void;
+		onView?: (attachment: ArtifactSummary) => void;
 	} = $props();
 
 	function handleRemove() {
@@ -24,14 +24,14 @@
 
 	function handleClick() {
 		if (viewable && onView) {
-			onView({ id: attachment.id, name: attachment.name });
+			onView(attachment);
 		}
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (viewable && onView && (event.key === 'Enter' || event.key === ' ')) {
 			event.preventDefault();
-			onView({ id: attachment.id, name: attachment.name });
+			onView(attachment);
 		}
 	}
 </script>

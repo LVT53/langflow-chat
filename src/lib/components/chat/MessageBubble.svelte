@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
-	import type { ChatGeneratedFileListItem, ChatMessage, DocumentWorkspaceItem } from '$lib/types';
+	import type {
+		ArtifactSummary,
+		ChatGeneratedFileListItem,
+		ChatMessage,
+		DocumentWorkspaceItem,
+	} from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
-	import AttachmentContentModal from './AttachmentContentModal.svelte';
 	import GeneratedFile from './GeneratedFile.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
@@ -21,7 +25,7 @@
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
-		onOpenGeneratedFile = undefined,
+		onOpenDocument = undefined,
 	}: {
 		message: ChatMessage;
 		isLast?: boolean;
@@ -32,7 +36,7 @@
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
-		onOpenGeneratedFile?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	} = $props();
 
 	let copied = $state(false);
@@ -41,9 +45,6 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
-	let attachmentModalOpen = $state(false);
-	let selectedAttachmentId = $state<string | null>(null);
-	let selectedAttachmentName = $state('');
 
 	function estimateTokenCount(text: string) {
 		const trimmed = text.trim();
@@ -193,16 +194,17 @@
 		}
 	});
 
-	function handleViewAttachment(payload: { id: string; name: string }) {
-		selectedAttachmentId = payload.id;
-		selectedAttachmentName = payload.name;
-		attachmentModalOpen = true;
-	}
-
-	function closeAttachmentModal() {
-		attachmentModalOpen = false;
-		selectedAttachmentId = null;
-		selectedAttachmentName = '';
+	function handleViewAttachment(attachment: ArtifactSummary) {
+		if (!onOpenDocument) return;
+		onOpenDocument({
+			id: `artifact:${attachment.id}`,
+			source: 'knowledge_artifact',
+			filename: attachment.name,
+			title: attachment.name,
+			mimeType: attachment.mimeType,
+			artifactId: attachment.id,
+			conversationId: attachment.conversationId,
+		});
 	}
 </script>
 
@@ -243,7 +245,12 @@
 				{#if hasAttachments}
 					<div class="mb-3 flex flex-wrap gap-2">
 						{#each message.attachments ?? [] as attachment (attachment.id)}
-							<FileAttachment {attachment} variant="compact" viewable={true} onView={handleViewAttachment} />
+							<FileAttachment
+								{attachment}
+								variant="compact"
+								viewable={Boolean(onOpenDocument)}
+								onView={handleViewAttachment}
+							/>
 						{/each}
 					</div>
 				{/if}
@@ -272,7 +279,7 @@
 							status={file.status}
 							error={file.error}
 							savedVaultName={file.savedVaultName ?? null}
-							onOpen={onOpenGeneratedFile}
+							onOpen={onOpenDocument}
 						/>
 					{/each}
 				</div>
@@ -414,13 +421,6 @@
 			<LogoMark animated={isGenerating} size={42} />
 		</div>
 	{/if}
-
-	<AttachmentContentModal
-		open={attachmentModalOpen}
-		artifactId={selectedAttachmentId}
-		filename={selectedAttachmentName}
-		onClose={closeAttachmentModal}
-	/>
 </div>
 
 <style lang="postcss">

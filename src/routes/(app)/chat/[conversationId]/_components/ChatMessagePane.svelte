@@ -15,7 +15,7 @@
 		isThinkingActive,
 		contextDebug,
 		generatedFiles,
-		onOpenGeneratedFile,
+		onOpenDocument,
 		onRegenerate,
 		onEdit,
 		onSteer,
@@ -25,7 +25,7 @@
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
 		generatedFiles: ChatGeneratedFileListItem[];
-		onOpenGeneratedFile: (document: DocumentWorkspaceItem) => void;
+		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
@@ -39,7 +39,7 @@
 		{isThinkingActive}
 		{contextDebug}
 		{generatedFiles}
-		{onOpenGeneratedFile}
+		{onOpenDocument}
 		{onRegenerate}
 		{onEdit}
 		{onSteer}

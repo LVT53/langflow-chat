@@ -872,7 +872,7 @@
 				{isThinkingActive}
 				{contextDebug}
 				generatedFiles={generatedFileCards}
-				onOpenGeneratedFile={openWorkspaceDocument}
+				onOpenDocument={openWorkspaceDocument}
 				onRegenerate={handleRegenerate}
 				onEdit={handleEdit}
 				onSteer={handleSteering}
