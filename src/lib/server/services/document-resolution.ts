@@ -32,6 +32,14 @@ type GeneratedArtifactMatchParams = {
   currentConversationId?: string | null;
 };
 
+const GENERATED_QUERY_MATCH_REASONS = new Set([
+  "matched_query",
+  "matched_document_label",
+  "matched_artifact_name",
+  "matched_generated_filename",
+  "matched_document_role",
+]);
+
 function includesNormalized(haystack: string, needle: string): boolean {
   const normalizedHaystack = haystack.trim().toLowerCase();
   const normalizedNeedle = needle.trim().toLowerCase();
@@ -115,6 +123,20 @@ function getLatestGeneratedArtifacts(artifacts: Artifact[]): Artifact[] {
   ).map((candidate) => candidate.artifact);
 }
 
+function getLatestArtifactForGeneratedFamily(
+  artifacts: Artifact[],
+  familyId: string,
+): Artifact | null {
+  return (
+    getLatestGeneratedArtifacts(
+      artifacts.filter((artifact) => {
+        const metadata = parseWorkingDocumentMetadata(artifact.metadata);
+        return metadata.documentFamilyId === familyId;
+      }),
+    )[0] ?? null
+  );
+}
+
 function rankLatestGeneratedDocumentArtifacts(
   params: GeneratedArtifactMatchParams,
 ): GeneratedDocumentResolution[] {
@@ -133,6 +155,15 @@ function rankLatestGeneratedDocumentArtifacts(
     });
 }
 
+function hasExplicitGeneratedDocumentQueryMatch(
+  resolution: GeneratedDocumentResolution | null | undefined,
+): boolean {
+  if (!resolution) return false;
+  return resolution.reasonCodes.some((code) =>
+    GENERATED_QUERY_MATCH_REASONS.has(code),
+  );
+}
+
 export function isGeneratedDocumentPromptEligible(params: {
   artifact: Artifact;
   conversationId: string;
@@ -147,6 +178,7 @@ export function isGeneratedDocumentPromptEligible(params: {
   const allowEphemeralOutput =
     params.reasonCodes.includes("active_document_focus") ||
     params.reasonCodes.includes("recent_user_correction") ||
+    params.reasonCodes.includes("recently_refined_document_family") ||
     params.reasonCodes.includes("current_generated_document") ||
     (params.artifact.conversationId === params.conversationId &&
       params.reasonCodes.includes("latest_generated_output"));
@@ -163,6 +195,7 @@ export function isGeneratedDocumentPromptEligible(params: {
     params.reasonCodes.includes("attached_this_turn") ||
     params.reasonCodes.includes("active_document_focus") ||
     params.reasonCodes.includes("recent_user_correction") ||
+    params.reasonCodes.includes("recently_refined_document_family") ||
     params.reasonCodes.includes("current_generated_document") ||
     params.messageMatchScore >= 2 ||
     params.explicitlyRequested ||
@@ -240,6 +273,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
 export function resolveCurrentGeneratedDocumentSelection(params: {
   artifacts: Artifact[];
   preferredArtifactId?: string | null;
+  preferredFamilyId?: string | null;
   query?: string;
   currentConversationId?: string | null;
 }): CurrentGeneratedDocumentSelection {
@@ -272,12 +306,27 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
     });
     const primaryMatch = rankedArtifacts[0] ?? null;
 
-    if (primaryMatch) {
+    if (hasExplicitGeneratedDocumentQueryMatch(primaryMatch)) {
       return {
         primaryArtifactId: primaryMatch.artifact.id,
         latestArtifactIds,
         latestArtifacts,
         primaryReasonCodes: primaryMatch.reasonCodes,
+      };
+    }
+  }
+
+  if (params.preferredFamilyId) {
+    const preferredFamilyArtifact = getLatestArtifactForGeneratedFamily(
+      generatedArtifacts,
+      params.preferredFamilyId,
+    );
+    if (preferredFamilyArtifact) {
+      return {
+        primaryArtifactId: preferredFamilyArtifact.id,
+        latestArtifactIds,
+        latestArtifacts,
+        primaryReasonCodes: ["recently_refined_document_family"],
       };
     }
   }

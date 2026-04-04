@@ -88,6 +88,35 @@ describe('working-set ranking', () => {
 		});
 	});
 
+	it('keeps the most recently refined document family above generic generated-output recency', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-refined-family',
+				artifactType: 'generated_output',
+				name: 'Refined brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isRecentlyRefinedDocumentFamily: true,
+			},
+			{
+				artifactId: 'out-latest',
+				artifactType: 'generated_output',
+				name: 'Latest generated document',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isCurrentGeneratedDocument: true,
+			},
+		]);
+
+		expect(ranked[0]).toMatchObject({
+			artifactId: 'out-refined-family',
+			selected: true,
+			reasonCodes: expect.arrayContaining(['recently_refined_document_family']),
+		});
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{

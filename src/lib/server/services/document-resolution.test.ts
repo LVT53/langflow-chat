@@ -301,6 +301,40 @@ describe("document resolution", () => {
     expect(selection.primaryReasonCodes).toEqual(["current_generated_document"]);
   });
 
+  it("prefers the most recently refined family over raw recency for generic follow-up turns", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      query: "Please make it shorter.",
+      preferredFamilyId: "family-brief",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-slides",
+          name: "slides-v3.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 3,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.primaryArtifactId).toBe("artifact-brief");
+    expect(selection.primaryReasonCodes).toEqual([
+      "recently_refined_document_family",
+    ]);
+  });
+
   it("treats active/current generated documents as prompt-eligible even when ephemeral", () => {
     const artifact = makeArtifact({
       id: "artifact-1",
@@ -345,6 +379,31 @@ describe("document resolution", () => {
         artifact,
         conversationId: "conv-1",
         reasonCodes: ["recent_user_correction"],
+        messageMatchScore: 0,
+        explicitlyRequested: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("treats a recently refined generated document family as prompt-eligible even when ephemeral", () => {
+    const artifact = makeArtifact({
+      id: "artifact-1",
+      name: "brief-v2.pdf",
+      conversationId: "conv-1",
+      updatedAt: 2,
+      metadata: {
+        documentFamilyId: "family-brief",
+        documentLabel: "Project brief",
+        versionNumber: 2,
+      },
+    });
+    artifact.retrievalClass = "ephemeral";
+
+    expect(
+      isGeneratedDocumentPromptEligible({
+        artifact,
+        conversationId: "conv-1",
+        reasonCodes: ["recently_refined_document_family"],
         messageMatchScore: 0,
         explicitlyRequested: false,
       }),

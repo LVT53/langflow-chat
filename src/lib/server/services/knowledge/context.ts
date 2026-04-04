@@ -264,6 +264,9 @@ export async function refreshConversationWorkingSet(params: {
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
 			isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
 			isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
+			isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
+				artifact.id
+			),
 			isCurrentGeneratedDocument:
 				currentGeneratedArtifactId === artifact.id &&
 				currentGeneratedReasonCodes.has('current_generated_document'),
@@ -285,6 +288,7 @@ export async function refreshConversationWorkingSet(params: {
 		const shouldTouchUsage =
 			candidate.reasonCodes.includes('attached_this_turn') ||
 			candidate.reasonCodes.includes('active_document_focus') ||
+			candidate.reasonCodes.includes('recently_refined_document_family') ||
 			candidate.reasonCodes.includes('matched_current_turn') ||
 			candidate.reasonCodes.includes('latest_generated_output') ||
 			candidate.reasonCodes.includes('recently_used_in_output');

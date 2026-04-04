@@ -86,4 +86,65 @@ describe("active-state signals", () => {
     ]);
     expect(state.currentGeneratedArtifactId).toBe("brief-v1");
   });
+
+  it("keeps the most recently refined document family active across generic follow-up turns", () => {
+    const state = buildActiveDocumentState({
+      message: "Please make it shorter.",
+      currentConversationId: "conv-1",
+      artifacts: [
+        {
+          id: "brief-v2",
+          userId: "user-1",
+          type: "generated_output",
+          retrievalClass: "durable",
+          name: "brief-v2.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 100,
+          conversationId: "conv-1",
+          vaultId: null,
+          summary: null,
+          createdAt: 2,
+          updatedAt: 2,
+          extension: "pdf",
+          storagePath: null,
+          contentText: null,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+            supersedesArtifactId: "brief-v1",
+          },
+        },
+        {
+          id: "slides-v1",
+          userId: "user-1",
+          type: "generated_output",
+          retrievalClass: "durable",
+          name: "slides-v1.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 100,
+          conversationId: "conv-1",
+          vaultId: null,
+          summary: null,
+          createdAt: 3,
+          updatedAt: 3,
+          extension: "pdf",
+          storagePath: null,
+          contentText: null,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 1,
+          },
+        },
+      ],
+    });
+
+    expect(state.recentlyRefinedFamilyId).toBe("family-brief");
+    expect(Array.from(state.recentlyRefinedArtifactIds)).toEqual(["brief-v2"]);
+    expect(state.currentGeneratedArtifactId).toBe("brief-v2");
+    expect(Array.from(state.currentGeneratedReasonCodes)).toContain(
+      "recently_refined_document_family",
+    );
+  });
 });

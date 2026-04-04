@@ -788,6 +788,7 @@ function computeEvidenceScore(params: {
   excludedIds: Set<string>;
   activeDocumentIds: Set<string>;
   correctionTargetIds: Set<string>;
+  recentlyRefinedArtifactIds: Set<string>;
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
   currentGeneratedOutputIds: Set<string>;
@@ -814,6 +815,7 @@ function computeEvidenceScore(params: {
   ) {
     score += 36;
   }
+  if (params.recentlyRefinedArtifactIds.has(params.artifact.id)) score += 28;
   if (params.currentAttachmentIds.has(params.artifact.id)) score += 100;
   if (params.workingSetIds.has(params.artifact.id)) score += 10;
   if (params.pinnedIds.has(params.artifact.id)) score += 120;
@@ -1095,6 +1097,7 @@ export async function prepareTaskContext(params: {
         excludedIds,
         activeDocumentIds,
         correctionTargetIds: activeDocumentState.correctionTargetIds,
+        recentlyRefinedArtifactIds: activeDocumentState.recentlyRefinedArtifactIds,
         currentAttachmentIds,
         workingSetIds,
         currentGeneratedOutputIds,
@@ -1111,6 +1114,7 @@ export async function prepareTaskContext(params: {
           pinnedIds.has(entry.artifact.id) ||
           activeDocumentIds.has(entry.artifact.id) ||
           activeDocumentState.correctionTargetIds.has(entry.artifact.id) ||
+          activeDocumentState.recentlyRefinedArtifactIds.has(entry.artifact.id) ||
           currentAttachmentIds.has(entry.artifact.id),
       )
       .map((entry) => entry.artifact),
@@ -1136,6 +1140,7 @@ export async function prepareTaskContext(params: {
       ...currentAttachmentIds,
       ...activeDocumentIds,
       ...activeDocumentState.correctionTargetIds,
+      ...activeDocumentState.recentlyRefinedArtifactIds,
     ]),
   });
   if (reranked.usedModel) {
