@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
 	mockListPersonaMemories,
 	mockForgetPersonaMemory,
+	mockRepairGeneratedOutputRetrievalClasses,
 	mockSyncPersonaMemoryClusters,
 	mockRefreshPersonaClusterStates,
 	mockUpdateProjectMemoryStatuses,
@@ -10,6 +11,7 @@ const {
 } = vi.hoisted(() => ({
 	mockListPersonaMemories: vi.fn(async () => []),
 	mockForgetPersonaMemory: vi.fn(async () => undefined),
+	mockRepairGeneratedOutputRetrievalClasses: vi.fn(async () => undefined),
 	mockSyncPersonaMemoryClusters: vi.fn(async () => ({
 		dreamed: true,
 		fullSweep: false,
@@ -56,6 +58,7 @@ vi.mock('$lib/server/config-store', () => ({
 
 vi.mock('./evidence-family', () => ({
 	areNearDuplicateArtifactTexts: vi.fn(() => false),
+	repairGeneratedOutputRetrievalClasses: mockRepairGeneratedOutputRetrievalClasses,
 }));
 
 vi.mock('./honcho', () => ({
@@ -121,6 +124,15 @@ describe('memory-maintenance scheduling', () => {
 		await Promise.resolve();
 
 		expect(mockSyncPersonaMemoryClusters).toHaveBeenCalledTimes(2);
+	});
+
+	it('repairs generated-output retrieval classes during maintenance', async () => {
+		const { runUserMemoryMaintenance } = await import('./memory-maintenance');
+
+		await runUserMemoryMaintenance('user-1', 'manual');
+
+		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledTimes(1);
+		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledWith('user-1');
 	});
 
 	it('debounces consecutive chat-triggered maintenance runs after the last completed pass', async () => {

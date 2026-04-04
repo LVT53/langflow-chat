@@ -6,7 +6,10 @@ import {
 	users,
 } from '$lib/server/db/schema';
 import { getConfig } from '$lib/server/config-store';
-import { areNearDuplicateArtifactTexts } from './evidence-family';
+import {
+	areNearDuplicateArtifactTexts,
+	repairGeneratedOutputRetrievalClasses,
+} from './evidence-family';
 import type { HonchoPersonaMemoryRecord } from './honcho';
 import { forgetPersonaMemory, listPersonaMemories } from './honcho';
 import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
@@ -173,6 +176,7 @@ async function performUserMemoryMaintenance(
 			reason,
 		});
 		await refreshPersonaClusterStates(userId);
+		await repairGeneratedOutputRetrievalClasses(userId);
 		await pruneTaskCheckpoints(userId);
 		await archiveStaleTaskMemory(userId);
 		await updateProjectMemoryStatuses(userId);

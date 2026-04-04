@@ -302,6 +302,10 @@ Verification:
 - duplicate-cluster cleanup tests
 - generated-document historical downgrade tests
 
+Current progress:
+
+- per-user memory maintenance now also reruns generated-output retrieval-class repair through the existing `evidence-family.ts` duplicate classifier, so low-value duplicate drafts stay compressed out of broad retrieval without adding a second repair subsystem
+
 ### Wave 6: Retrieval That Learns From Behavior
 
 Goal:

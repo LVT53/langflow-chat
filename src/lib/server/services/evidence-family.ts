@@ -439,6 +439,13 @@ async function backfillGeneratedOutputRetrievalClasses(userId: string): Promise<
 	}
 }
 
+export async function repairGeneratedOutputRetrievalClasses(
+	userId: string,
+): Promise<void> {
+	await backfillGeneratedOutputRetrievalClasses(userId);
+	generatedOutputBackfillDone.add(userId);
+}
+
 export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Promise<void> {
 	if (generatedOutputBackfillDone.has(userId)) return;
 	const running = generatedOutputBackfillInFlight.get(userId);
@@ -447,7 +454,7 @@ export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Pr
 		return;
 	}
 
-	const promise = backfillGeneratedOutputRetrievalClasses(userId)
+	const promise = repairGeneratedOutputRetrievalClasses(userId)
 		.then(() => {
 			generatedOutputBackfillDone.add(userId);
 		})
