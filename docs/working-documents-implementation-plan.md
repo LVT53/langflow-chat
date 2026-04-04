@@ -12,6 +12,8 @@ It is intentionally operational. It answers:
 
 This plan assumes the current artifact backbone, workspace foundation, and Honcho integration already exist.
 
+The longer-term follow-up ideas beyond this refactor wave are tracked in [Memory Evolution Roadmap](./memory-evolution-roadmap.md).
+
 ## Outcome We Want
 
 After this refactor wave, the system should behave like one coherent document product:

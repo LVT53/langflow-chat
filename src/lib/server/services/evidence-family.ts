@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifactLinks, artifacts, taskStateEvidenceLinks } from '$lib/server/db/schema';
 import type { Artifact, ArtifactRetrievalClass } from '$lib/types';
+import { getGeneratedOutputFamilyKey } from '$lib/server/services/knowledge/store';
 
 const generatedOutputBackfillDone = new Set<string>();
 const generatedOutputBackfillInFlight = new Map<string, Promise<void>>();
@@ -163,7 +164,9 @@ export async function resolveArtifactFamilyKeys(
 		} else if (artifact.type === 'normalized_document') {
 			key = `source:${baseArtifactId(artifact.id, derivedMap)}`;
 		} else if (artifact.type === 'generated_output') {
-			key = `output:${resolveGeneratedOutputMembers(artifact.id, usedByArtifactId, derivedMap).join('|')}`;
+			key =
+				getGeneratedOutputFamilyKey(artifact) ??
+				`output:${resolveGeneratedOutputMembers(artifact.id, usedByArtifactId, derivedMap).join('|')}`;
 		} else if (artifact.type === 'work_capsule') {
 			const sourceIds = Array.isArray(artifact.metadata?.sourceArtifactIds)
 				? artifact.metadata.sourceArtifactIds.filter((value): value is string => typeof value === 'string')

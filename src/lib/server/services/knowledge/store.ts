@@ -49,6 +49,16 @@ export {
 } from "./store/documents";
 
 export {
+  buildGeneratedOutputDocumentMetadata,
+  getArtifactDocumentLabel,
+  getArtifactDocumentOrigin,
+  getGeneratedOutputFamilyKey,
+  parseWorkingDocumentMetadata,
+  resolveGeneratedDocumentFamilyContext,
+  selectLatestGeneratedDocumentCandidatesByFamily,
+} from "./store/document-metadata";
+
+export {
   createVault,
   deleteVault,
   getVault,

@@ -257,6 +257,29 @@ function extractAssistantMessageId(condition: unknown): string | undefined {
 }
 
 vi.mock('$lib/server/db/schema', () => ({
+	artifacts: {
+		id: { name: 'id' },
+		userId: { name: 'userId' },
+		type: { name: 'type' },
+		retrievalClass: { name: 'retrievalClass' },
+		name: { name: 'name' },
+		mimeType: { name: 'mimeType' },
+		sizeBytes: { name: 'sizeBytes' },
+		conversationId: { name: 'conversationId' },
+		vaultId: { name: 'vaultId' },
+		summary: { name: 'summary' },
+		metadataJson: { name: 'metadataJson' },
+		createdAt: { name: 'createdAt' },
+		updatedAt: { name: 'updatedAt' },
+		storagePath: { name: 'storagePath' },
+		contentText: { name: 'contentText' },
+	},
+	artifactLinks: {
+		artifactId: { name: 'artifactId' },
+		relatedArtifactId: { name: 'relatedArtifactId' },
+		userId: { name: 'userId' },
+		linkType: { name: 'linkType' },
+	},
 	chatGeneratedFiles: {
 		id: { name: 'id' },
 		conversationId: { name: 'conversationId' },
@@ -267,6 +290,11 @@ vi.mock('$lib/server/db/schema', () => ({
 		sizeBytes: { name: 'sizeBytes' },
 		storagePath: { name: 'storagePath' },
 		createdAt: { name: 'createdAt' },
+	},
+	knowledgeVaults: {
+		id: { name: 'id' },
+		name: { name: 'name' },
+		userId: { name: 'userId' },
 	},
 	conversations: { id: { name: 'id' } },
 	users: { id: { name: 'id' } },

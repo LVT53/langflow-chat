@@ -311,8 +311,24 @@ export interface KnowledgeDocumentItem {
   vaultId: string | null;
   summary: string | null;
   normalizedAvailable: boolean;
+  documentOrigin?: 'uploaded' | 'generated';
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface WorkingDocumentMetadata {
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
+  supersedesArtifactId?: string | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
 }
 
 export interface KnowledgeVaultSearchResult {

@@ -11,6 +11,11 @@ import type {
 } from "$lib/types";
 import { extractDocumentText } from "../../document-extraction";
 import { scoreMatch } from "../../working-set";
+import { parseJsonRecord } from "$lib/server/utils/json";
+import {
+  getArtifactDocumentOrigin,
+  parseWorkingDocumentMetadata,
+} from "./document-metadata";
 import {
   createArtifact,
   createArtifactLink,
@@ -28,6 +33,11 @@ function mapLogicalDocumentItem(params: {
   normalizedAvailable: boolean;
   summary: string | null;
   updatedAt: number;
+  documentOrigin?: KnowledgeDocumentItem["documentOrigin"];
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
 }): KnowledgeDocumentItem {
   return {
     id: params.displayArtifact.id,
@@ -41,6 +51,11 @@ function mapLogicalDocumentItem(params: {
     vaultId: params.displayArtifact.vaultId,
     summary: params.summary,
     normalizedAvailable: params.normalizedAvailable,
+    documentOrigin: params.documentOrigin,
+    documentFamilyId: params.documentFamilyId ?? null,
+    documentLabel: params.documentLabel ?? null,
+    documentRole: params.documentRole ?? null,
+    versionNumber: params.versionNumber ?? null,
     createdAt: params.displayArtifact.createdAt,
     updatedAt: params.updatedAt,
   };
@@ -93,14 +108,23 @@ export async function createNormalizedArtifact(params: {
 
 export async function listLogicalDocuments(
   userId: string,
+  options?: {
+    includeGeneratedOutputs?: boolean;
+  },
 ): Promise<KnowledgeDocumentItem[]> {
+  const includeGeneratedOutputs = options?.includeGeneratedOutputs ?? false;
   const rows = await db
     .select(knowledgeArtifactListSelection)
     .from(artifacts)
     .where(
       and(
         eq(artifacts.userId, userId),
-        inArray(artifacts.type, ["source_document", "normalized_document"]),
+        inArray(
+          artifacts.type,
+          includeGeneratedOutputs
+            ? ["source_document", "normalized_document", "generated_output"]
+            : ["source_document", "normalized_document"],
+        ),
       ),
     )
     .orderBy(desc(artifacts.updatedAt));
@@ -114,6 +138,15 @@ export async function listLogicalDocuments(
   );
   const normalizedArtifacts = summaries.filter(
     (item) => item.type === "normalized_document",
+  );
+  const generatedOutputArtifacts = summaries.filter(
+    (item) => item.type === "generated_output",
+  );
+  const metadataById = new Map(
+    rows.map((row) => [
+      row.id,
+      parseWorkingDocumentMetadata(parseJsonRecord(row.metadataJson ?? null)),
+    ]),
   );
 
   const derivedRows =
@@ -162,6 +195,7 @@ export async function listLogicalDocuments(
           source.updatedAt,
           normalized?.updatedAt ?? source.updatedAt,
         ),
+        documentOrigin: getArtifactDocumentOrigin(source.type) ?? undefined,
       }),
     );
   }
@@ -176,8 +210,67 @@ export async function listLogicalDocuments(
         normalizedAvailable: true,
         summary: normalized.summary,
         updatedAt: normalized.updatedAt,
+        documentOrigin: getArtifactDocumentOrigin(normalized.type) ?? undefined,
       }),
     );
+  }
+
+  if (includeGeneratedOutputs) {
+    const generatedByFamily = new Map<
+      string,
+      {
+        artifacts: ArtifactSummary[];
+        latest: ArtifactSummary;
+        metadata: ReturnType<typeof parseWorkingDocumentMetadata>;
+      }
+    >();
+
+    for (const artifact of generatedOutputArtifacts) {
+      const metadata = metadataById.get(artifact.id) ?? {};
+      const familyId = metadata.documentFamilyId ?? artifact.id;
+      const existing = generatedByFamily.get(familyId);
+
+      if (!existing) {
+        generatedByFamily.set(familyId, {
+          artifacts: [artifact],
+          latest: artifact,
+          metadata,
+        });
+        continue;
+      }
+
+      existing.artifacts.push(artifact);
+      const latest =
+        artifact.updatedAt > existing.latest.updatedAt ? artifact : existing.latest;
+      existing.latest = latest;
+      if (latest.id === artifact.id) {
+        existing.metadata = metadata;
+      }
+    }
+
+    for (const [familyId, group] of generatedByFamily) {
+      const versionCandidates = group.artifacts
+        .map((artifact) => metadataById.get(artifact.id)?.versionNumber)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      const versionNumber =
+        versionCandidates.length > 0 ? Math.max(...versionCandidates) : null;
+
+      documents.push(
+        mapLogicalDocumentItem({
+          displayArtifact: group.latest,
+          promptArtifactId: group.latest.id,
+          familyArtifactIds: group.artifacts.map((artifact) => artifact.id),
+          normalizedAvailable: true,
+          summary: group.latest.summary,
+          updatedAt: group.latest.updatedAt,
+          documentOrigin: "generated",
+          documentFamilyId: familyId,
+          documentLabel: group.metadata.documentLabel ?? group.latest.name,
+          documentRole: group.metadata.documentRole ?? null,
+          versionNumber,
+        }),
+      );
+    }
   }
 
   return documents.sort((left, right) => right.updatedAt - left.updatedAt);

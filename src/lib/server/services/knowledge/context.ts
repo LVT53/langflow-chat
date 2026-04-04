@@ -16,7 +16,7 @@ import type {
 	MemoryLayer,
 	WorkingSetReasonCode,
 } from '$lib/types';
-import { parseJsonStringArray } from '$lib/server/utils/json';
+import { parseJsonRecord, parseJsonStringArray } from '$lib/server/utils/json';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	rankWorkingSetCandidates,
@@ -35,6 +35,7 @@ import {
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
+	selectLatestGeneratedDocumentCandidatesByFamily,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -205,9 +206,18 @@ export async function refreshConversationWorkingSet(params: {
 		)
 		.orderBy(desc(artifacts.updatedAt))
 		.limit(8);
+	const latestOutputArtifactIds = selectLatestGeneratedDocumentCandidatesByFamily(
+		outputArtifacts.map((artifact) => ({
+			artifactId: artifact.id,
+			artifactName: artifact.name,
+			updatedAt: artifact.updatedAt.getTime(),
+			metadata: parseJsonRecord(artifact.metadataJson ?? null),
+		}))
+	).map((artifact) => artifact.artifactId);
 
 	const latestOutputArtifactId =
-		params.latestOutputArtifactId ?? (outputArtifacts.length > 0 ? outputArtifacts[0].id : null);
+		params.latestOutputArtifactId ??
+		(latestOutputArtifactIds.length > 0 ? latestOutputArtifactIds[0] : null);
 	const sourceIdsLinkedToLatestOutput = latestOutputArtifactId
 		? await db
 				.select({ relatedArtifactId: artifactLinks.relatedArtifactId })
@@ -231,7 +241,7 @@ export async function refreshConversationWorkingSet(params: {
 		...existingItems.map((item) => item.artifactId),
 		...attachmentIds,
 		...sourceArtifactIds,
-		...outputArtifacts.map((artifact) => artifact.id),
+		...latestOutputArtifactIds,
 		...(workCapsule?.sourceArtifactIds ?? []),
 		...(workCapsule?.outputArtifactIds ?? []),
 	]);

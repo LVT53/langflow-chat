@@ -6,6 +6,11 @@ import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles, knowledgeVaults } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
 import { createArtifactLink, createGeneratedOutputArtifact } from '$lib/server/services/knowledge';
+import {
+	buildGeneratedOutputDocumentMetadata,
+	parseWorkingDocumentMetadata,
+	resolveGeneratedDocumentFamilyContext,
+} from '$lib/server/services/knowledge/store';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
 import { extractDocumentText } from './document-extraction';
 
@@ -42,6 +47,9 @@ interface GeneratedFileVersionRecord {
 	summary: string | null;
 	contentText: string | null;
 	conversationId: string | null;
+	documentFamilyId: string | null;
+	documentLabel: string | null;
+	documentRole: string | null;
 }
 
 function previewText(value: string | null | undefined, limit = 1200): string | null {
@@ -129,27 +137,66 @@ async function listRecentGeneratedFileVersions(
 		.where(
 			and(
 				eq(artifacts.userId, userId),
-				eq(artifacts.type, 'generated_output'),
-				eq(artifacts.name, buildGeneratedFileArtifactName(filename))
+				eq(artifacts.type, 'generated_output')
 			)
 		)
 		.orderBy(desc(artifacts.updatedAt))
-		.limit(limit);
+		.limit(Math.max(limit * 12, 24));
 
-	return rows.map((row, index) => {
+	const parsedRows = rows.map((row) => {
 		const metadata = parseJsonRecord(row.metadataJson ?? null);
+		return {
+			row,
+			metadata,
+		};
+	});
+	const familyContext = resolveGeneratedDocumentFamilyContext({
+		filename,
+		candidates: parsedRows.map(({ row, metadata }) => ({
+			artifactId: row.id,
+			artifactName: row.name,
+			updatedAt: row.updatedAt.getTime(),
+			metadata,
+		})),
+	});
+
+	const matchingRows = parsedRows
+		.filter(({ row, metadata }) => {
+			if (familyContext.matchingArtifactIds.length > 0) {
+				return familyContext.matchingArtifactIds.includes(row.id);
+			}
+
+			const generatedFilename =
+				typeof metadata?.generatedFilename === 'string' ? metadata.generatedFilename.trim() : null;
+			const documentMetadata = parseWorkingDocumentMetadata(metadata);
+			return (
+				generatedFilename === filename ||
+				documentMetadata.documentLabel === filename ||
+				row.name === buildGeneratedFileArtifactName(filename)
+			);
+		})
+		.slice(0, limit);
+
+	return matchingRows.map(({ row, metadata }, index) => {
+		const documentMetadata = parseWorkingDocumentMetadata(metadata);
 		const storedVersion =
-			typeof metadata?.generatedFileVersion === 'number' && Number.isFinite(metadata.generatedFileVersion)
-				? Math.trunc(metadata.generatedFileVersion)
+			typeof documentMetadata.versionNumber === 'number' && Number.isFinite(documentMetadata.versionNumber)
+				? Math.trunc(documentMetadata.versionNumber)
+				: typeof metadata?.generatedFileVersion === 'number' &&
+					  Number.isFinite(metadata.generatedFileVersion)
+					? Math.trunc(metadata.generatedFileVersion)
 				: null;
 
 		return {
 			artifactId: row.id,
-			version: storedVersion && storedVersion > 0 ? storedVersion : rows.length - index,
+			version: storedVersion && storedVersion > 0 ? storedVersion : matchingRows.length - index,
 			updatedAt: row.updatedAt.getTime(),
 			summary: row.summary ?? null,
 			contentText: row.contentText ?? null,
 			conversationId: row.conversationId ?? null,
+			documentFamilyId: documentMetadata.documentFamilyId ?? null,
+			documentLabel: documentMetadata.documentLabel ?? null,
+			documentRole: documentMetadata.documentRole ?? null,
 		};
 	});
 }
@@ -348,6 +395,19 @@ export async function syncGeneratedFilesToMemory(params: {
 				.filter((version) => Number.isFinite(version) && version > 0);
 			const versionNumber =
 				previousVersionNumbers.length > 0 ? Math.max(...previousVersionNumbers) + 1 : 1;
+			const documentFamilyId = previousVersion?.documentFamilyId ?? randomUUID();
+			const documentLabel = previousVersion?.documentLabel ?? file.filename;
+			const documentRole = previousVersion?.documentRole ?? null;
+			const workingDocumentMetadata = buildGeneratedOutputDocumentMetadata({
+				familyId: documentFamilyId,
+				label: documentLabel,
+				role: documentRole,
+				versionNumber,
+				supersedesArtifactId: previousVersion?.artifactId ?? null,
+				originConversationId: params.conversationId,
+				originAssistantMessageId: params.assistantMessageId,
+				sourceChatFileId: file.id,
+			});
 
 			const memoryArtifact = await createGeneratedOutputArtifact({
 				userId: params.userId,
@@ -371,6 +431,7 @@ export async function syncGeneratedFilesToMemory(params: {
 					generatedFileVersion: versionNumber,
 					previousGeneratedArtifactId: previousVersion?.artifactId ?? null,
 					recentGeneratedVersionIds: recentVersions.map((version) => version.artifactId),
+					...workingDocumentMetadata,
 				},
 			});
 

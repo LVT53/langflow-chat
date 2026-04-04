@@ -71,6 +71,7 @@ export function formatArtifactSize(sizeBytes: number | null | undefined): string
 }
 
 export function formatDocumentKind(document: KnowledgeDocumentItem): string {
+	if (document.documentOrigin === 'generated') return 'Generated document';
 	return document.normalizedAvailable ? 'Indexed document' : 'Source-only document';
 }
 
