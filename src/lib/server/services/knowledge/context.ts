@@ -454,6 +454,8 @@ export async function findRelevantKnowledgeArtifacts(params: {
 	currentConversationId?: string;
 	limit?: number;
 	preferredArtifactId?: string;
+	preferredGeneratedFamilyId?: string | null;
+	suppressGeneratedCarryover?: boolean;
 }): Promise<Artifact[]> {
 	await ensureGeneratedOutputRetrievalBackfill(params.userId);
 	const limit = params.limit ?? 6;
@@ -486,7 +488,9 @@ export async function findRelevantKnowledgeArtifacts(params: {
 		query: params.query,
 		limit,
 		preferredArtifactId: params.preferredArtifactId,
+		preferredFamilyId: params.preferredGeneratedFamilyId ?? null,
 		currentConversationId: params.currentConversationId,
+		suppressCarryoverWhenUnfocused: params.suppressGeneratedCarryover ?? false,
 	});
 
 	const seen = new Set<string>();

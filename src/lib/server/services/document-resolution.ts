@@ -224,7 +224,9 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   query: string;
   limit: number;
   preferredArtifactId?: string | null;
+  preferredFamilyId?: string | null;
   currentConversationId?: string | null;
+  suppressCarryoverWhenUnfocused?: boolean;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
@@ -235,7 +237,11 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
     : null;
   const preferredFamilyId = preferredArtifact
     ? parseWorkingDocumentMetadata(preferredArtifact.metadata).documentFamilyId
-    : null;
+    : params.preferredFamilyId ?? null;
+  const preferredFamilyArtifact =
+    !preferredArtifact && preferredFamilyId
+      ? getLatestArtifactForGeneratedFamily(generatedArtifacts, preferredFamilyId)
+      : null;
   const resolutions = resolveRelevantGeneratedDocumentArtifacts({
     artifacts: generatedArtifacts,
     query: params.query,
@@ -244,10 +250,23 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   });
   const orderedArtifacts: Artifact[] = [];
   const seenArtifactIds = new Set<string>();
+  const primaryResolution = resolutions[0] ?? null;
+  const hasQueryMatchedFamily = hasExplicitGeneratedDocumentQueryMatch(
+    primaryResolution,
+  );
 
   if (preferredArtifact) {
     orderedArtifacts.push(preferredArtifact);
     seenArtifactIds.add(preferredArtifact.id);
+  } else if (preferredFamilyArtifact) {
+    orderedArtifacts.push(preferredFamilyArtifact);
+    seenArtifactIds.add(preferredFamilyArtifact.id);
+  } else if (!params.suppressCarryoverWhenUnfocused || hasQueryMatchedFamily) {
+    const primaryArtifact = primaryResolution?.artifact ?? null;
+    if (primaryArtifact) {
+      orderedArtifacts.push(primaryArtifact);
+      seenArtifactIds.add(primaryArtifact.id);
+    }
   }
 
   for (const resolution of resolutions) {
@@ -260,7 +279,9 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
 
   const primaryReasonCodes = preferredArtifact
     ? ["preferred_artifact"]
-    : (resolutions[0]?.reasonCodes ?? []);
+    : preferredFamilyArtifact
+      ? ["recently_refined_document_family"]
+      : (orderedArtifacts.length > 0 ? (primaryResolution?.reasonCodes ?? []) : []);
 
   return {
     orderedArtifacts,

@@ -1074,7 +1074,6 @@ export async function buildConstructedContext(params: {
 		resolvedAttachments,
 		workingSetArtifacts,
 		relevantCapsules,
-		relevantArtifacts,
 	] =
 		await Promise.all([
 			loadSessionPromptContext({
@@ -1091,16 +1090,6 @@ export async function buildConstructedContext(params: {
 				params.activeDocumentArtifactId
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
-			findRelevantKnowledgeArtifacts(
-				{
-					userId: params.userId,
-					query: params.message,
-					excludeConversationId: params.conversationId,
-					currentConversationId: params.conversationId,
-					limit: 6,
-					preferredArtifactId: params.activeDocumentArtifactId,
-				}
-			).catch(() => []),
 		]);
 	const {
 		sessionMessages,
@@ -1128,6 +1117,27 @@ export async function buildConstructedContext(params: {
 			resolvedAttachments.unresolvedItems.map((item) => item.requestedArtifactId)
 		);
 	}
+	const retrievalActiveDocumentState = buildActiveDocumentState({
+		artifacts: dedupeById([...currentAttachments, ...workingSetArtifacts]),
+		message: params.message,
+		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		currentConversationId: params.conversationId,
+	});
+	const relevantArtifacts = await findRelevantKnowledgeArtifacts({
+		userId: params.userId,
+		query: params.message,
+		excludeConversationId: params.conversationId,
+		currentConversationId: params.conversationId,
+		limit: 6,
+		preferredArtifactId:
+			retrievalActiveDocumentState.currentGeneratedArtifactId ??
+			params.activeDocumentArtifactId,
+		preferredGeneratedFamilyId:
+			retrievalActiveDocumentState.recentlyRefinedFamilyId ?? null,
+		suppressGeneratedCarryover:
+			retrievalActiveDocumentState.hasContextResetSignal,
+	}).catch(() => []);
 	const activeDocumentState = buildActiveDocumentState({
 		artifacts: dedupeById([...currentAttachments, ...workingSetArtifacts, ...relevantArtifacts]),
 		message: params.message,

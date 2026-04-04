@@ -495,6 +495,8 @@ describe('Honcho Service', () => {
         currentConversationId: 'conv-456',
         limit: 6,
         preferredArtifactId: 'generated-artifact-7',
+        preferredGeneratedFamilyId: null,
+        suppressGeneratedCarryover: false,
       });
       expect(mockPrepareTaskContext).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -517,6 +519,11 @@ describe('Honcho Service', () => {
         expect.objectContaining({
           perArtifactLimit: 2,
           perArtifactCharBudget: 1400,
+        })
+      );
+      expect(mockFindRelevantKnowledgeArtifacts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          suppressGeneratedCarryover: true,
         })
       );
     });

@@ -163,6 +163,98 @@ describe("document resolution", () => {
     expect(selection.primaryReasonCodes).toEqual(["preferred_artifact"]);
   });
 
+  it("keeps the latest artifact from a preferred family first without carrying unrelated families", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "please keep refining it",
+      limit: 4,
+      preferredFamilyId: "family-brief",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-1",
+          name: "brief-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 1,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-2",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-3",
+          name: "slides-v1.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 1,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
+      "artifact-2",
+    ]);
+    expect(selection.primaryReasonCodes).toEqual([
+      "recently_refined_document_family",
+    ]);
+  });
+
+  it("still returns explicit generated-document query matches outside the preferred family", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "compare it with the investor slides",
+      limit: 4,
+      preferredFamilyId: "family-brief",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-1",
+          name: "brief-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 1,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-2",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-3",
+          name: "slides-v1.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 1,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
+      "artifact-2",
+      "artifact-3",
+    ]);
+  });
+
   it("selects the latest artifact per generated document family for current-document context", () => {
     const selection = resolveCurrentGeneratedDocumentSelection({
       artifacts: [
@@ -358,6 +450,29 @@ describe("document resolution", () => {
         explicitlyRequested: false,
       }),
     ).toBe(true);
+  });
+
+  it("suppresses generic generated-document carryover when carryover is explicitly disabled", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "let's talk about something else",
+      limit: 4,
+      suppressCarryoverWhenUnfocused: true,
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts).toEqual([]);
+    expect(selection.primaryArtifactId).toBeNull();
   });
 
   it("treats a recently corrected generated document as prompt-eligible even when ephemeral", () => {
