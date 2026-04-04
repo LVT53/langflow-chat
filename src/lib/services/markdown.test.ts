@@ -24,6 +24,11 @@ describe('Markdown Rendering Service', () => {
     expect(typeof mod.renderMarkdown).toBe('function');
   });
 
+  it('renderHighlightedText is exported as a function', async () => {
+    const mod = await import('./markdown');
+    expect(typeof mod.renderHighlightedText).toBe('function');
+  });
+
   it('initHighlighter is exported as a function', async () => {
     const mod = await import('./markdown');
     expect(typeof mod.initHighlighter).toBe('function');

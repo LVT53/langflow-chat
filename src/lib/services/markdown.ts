@@ -146,6 +146,16 @@ async function prepareCodeHighlighting(content: string) {
   await Promise.all(languages.map((language) => ensureLanguageLoaded(language)));
 }
 
+async function renderHighlightedText(content: string, language: string | undefined, isDark: boolean): Promise<string> {
+  const normalized = language?.trim() ? normalizeLanguage(language) : undefined;
+
+  if (normalized && SUPPORTED_LANGUAGES.has(normalized)) {
+    await ensureLanguageLoaded(normalized);
+  }
+
+  return renderCodeBlock(content, normalized, isDark);
+}
+
 async function renderMarkdown(content: string, isDark: boolean): Promise<string> {
   await initMarkdownParser();
   if (content.includes('```')) {
@@ -227,4 +237,11 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, m => map[m]);
 }
 
-export { renderMarkdown, renderCodeBlock, initHighlighter, normalizeLanguage, prepareCodeHighlighting };
+export {
+  renderHighlightedText,
+  renderMarkdown,
+  renderCodeBlock,
+  initHighlighter,
+  normalizeLanguage,
+  prepareCodeHighlighting
+};

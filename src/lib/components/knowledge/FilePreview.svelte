@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { renderHighlightedText } from '$lib/services/markdown';
 	import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 	let {
@@ -20,6 +21,7 @@
 
 	let content = $state<Blob | null>(null);
 	let textContent = $state<string | null>(null);
+	let highlightedTextHtml = $state<string | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
@@ -72,6 +74,30 @@
 		return 'unsupported';
 	}
 
+	function getPreviewLanguage(mime: string | null, name: string): string | undefined {
+		const ext = name.split('.').pop()?.toLowerCase();
+
+		if (ext === 'py') return 'python';
+		if (ext === 'js') return 'javascript';
+		if (ext === 'ts') return 'typescript';
+		if (ext === 'json') return 'json';
+		if (ext === 'html') return 'html';
+		if (ext === 'css') return 'css';
+		if (ext === 'md') return 'markdown';
+		if (ext === 'xml' || ext === 'svg') return 'xml';
+		if (ext === 'yaml' || ext === 'yml') return 'yaml';
+		if (ext === 'sh' || ext === 'bash' || ext === 'zsh') return 'bash';
+
+		if (mime === 'application/json') return 'json';
+		if (mime === 'application/xml') return 'xml';
+		if (mime === 'text/html') return 'html';
+		if (mime === 'text/css') return 'css';
+		if (mime === 'application/javascript' || mime === 'text/javascript') return 'javascript';
+		if (mime === 'text/markdown') return 'markdown';
+
+		return undefined;
+	}
+
 	$effect(() => {
 		if (open && (artifactId || previewUrl)) {
 			fileType = determineFileType(mimeType, filename);
@@ -98,6 +124,7 @@
 		error = null;
 		content = null;
 		textContent = null;
+		highlightedTextHtml = null;
 		htmlContent = null;
 		pdfDoc = null;
 		currentPage = 1;
@@ -124,6 +151,11 @@
 
 			if (fileType === 'text') {
 				textContent = await blob.text();
+				highlightedTextHtml = await renderHighlightedText(
+					textContent,
+					getPreviewLanguage(mimeType, filename),
+					browser ? document.documentElement.classList.contains('dark') : false
+				);
 			} else if (fileType === 'docx') {
 				await renderDocx(blob);
 			} else if (fileType === 'xlsx') {
@@ -518,7 +550,9 @@
 				{:else if fileType === 'text'}
 					{#if content}
 						<div class="p-6">
-							<pre class="rounded-[1rem] border border-border bg-surface-page p-4 font-mono text-sm text-text-primary overflow-x-auto whitespace-pre-wrap">{textContent ?? ''}</pre>
+							<div class="file-text-preview">
+								{@html highlightedTextHtml ?? ''}
+							</div>
 						</div>
 					{/if}
 				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx'}
@@ -652,6 +686,22 @@
 		width: 100%;
 		height: auto;
 		background: #ffffff;
+	}
+
+	:global(.file-text-preview .shiki),
+	:global(.file-text-preview pre) {
+		margin: 0;
+		border: 1px solid var(--border-default);
+		border-radius: 1rem;
+		padding: 1rem;
+		overflow-x: auto;
+		font-size: 0.875rem;
+		line-height: 1.6;
+	}
+
+	:global(.file-text-preview code) {
+		font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+		white-space: pre;
 	}
 
 	.preview-download-button {

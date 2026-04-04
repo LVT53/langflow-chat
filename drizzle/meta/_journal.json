@@ -71,6 +71,13 @@
       "when": 1775157367422,
       "tag": "1775157367422_chat_generated_files",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775240400000,
+      "tag": "1775240400000_chat_generated_files_assistant_message",
+      "breakpoints": true
     }
   ]
 }

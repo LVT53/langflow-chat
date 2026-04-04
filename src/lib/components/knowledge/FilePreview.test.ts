@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import FilePreview from './FilePreview.svelte';
 
+vi.mock('$lib/services/markdown', () => ({
+	renderHighlightedText: vi.fn(async (content: string) => `<pre><code>${content}</code></pre>`),
+}));
+
 vi.mock('mammoth', () => ({
 	convertToHtml: vi.fn().mockResolvedValue({ value: '<p>Mock DOCX content</p>' }),
 }));
