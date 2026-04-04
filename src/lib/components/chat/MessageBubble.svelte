@@ -210,6 +210,8 @@
 
 <div class="group flex w-full flex-col {isUser && !isEditing ? 'items-end' : 'items-start'} gap-md py-md fade-in">
 	<div
+		id={`message-${message.id}`}
+		data-message-id={message.id}
 		data-testid={isUser ? 'user-message' : 'assistant-message'}
 		class="relative flex min-w-0 flex-col font-serif
 		{isUser && !isEditing

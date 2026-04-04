@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import {
 		deleteKnowledgeArtifact,
 		fetchKnowledgeLibrary,
@@ -21,6 +21,7 @@
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
 	import {
+		buildChatSourceMessageHref,
 		clearKnowledgeWorkspaceParams,
 		getKnowledgeWorkspaceDocumentFromUrl,
 	} from '$lib/client/document-workspace-navigation';
@@ -148,6 +149,9 @@
 				documentLabel: document.documentLabel ?? null,
 				documentRole: document.documentRole ?? null,
 				versionNumber: document.versionNumber ?? null,
+				originConversationId: document.originConversationId ?? null,
+				originAssistantMessageId: document.originAssistantMessageId ?? null,
+				sourceChatFileId: document.sourceChatFileId ?? null,
 				mimeType: document.mimeType,
 				artifactId,
 				conversationId: document.conversationId,
@@ -225,6 +229,19 @@
 
 	function closeWorkspace() {
 		workspaceOpen = false;
+	}
+
+	async function jumpToWorkspaceSource(document: DocumentWorkspaceItem) {
+		if (!(document.originConversationId && document.originAssistantMessageId)) {
+			return;
+		}
+
+		await goto(
+			buildChatSourceMessageHref({
+				conversationId: document.originConversationId,
+				assistantMessageId: document.originAssistantMessageId,
+			})
+		);
 	}
 
 	function escapeHtml(value: string): string {
@@ -891,6 +908,7 @@
 					activeDocumentId={activeWorkspaceDocumentId}
 					onSelectDocument={selectWorkspaceDocument}
 					onOpenDocument={openWorkspaceDocument}
+					onJumpToSource={jumpToWorkspaceSource}
 					onCloseDocument={closeWorkspaceDocument}
 					onCloseWorkspace={closeWorkspace}
 				/>

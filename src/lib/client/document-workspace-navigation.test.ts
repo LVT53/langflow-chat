@@ -1,12 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import {
+	buildChatSourceMessageHref,
 	buildKnowledgeWorkspaceHref,
 	buildKnowledgeWorkspaceHrefFromSearchResult,
+	clearChatFocusMessageParam,
 	clearKnowledgeWorkspaceParams,
+	getChatFocusMessageIdFromUrl,
 	getKnowledgeWorkspaceDocumentFromUrl,
 } from './document-workspace-navigation';
 
 describe('document workspace navigation', () => {
+	it('builds a chat source-message href with the expected params', () => {
+		expect(
+			buildChatSourceMessageHref({
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+			})
+		).toBe('/chat/conv-1?focus_message=assistant-1');
+	});
+
+	it('reads and clears chat source-message params', () => {
+		const url = new URL('http://localhost/chat/conv-1?focus_message=assistant-1&tab=keep');
+
+		expect(getChatFocusMessageIdFromUrl(url)).toBe('assistant-1');
+		expect(clearChatFocusMessageParam(url).pathname + clearChatFocusMessageParam(url).search).toBe(
+			'/chat/conv-1?tab=keep'
+		);
+	});
+
 	it('builds a knowledge workspace href with the expected params', () => {
 		expect(
 			buildKnowledgeWorkspaceHref({

@@ -19,6 +19,9 @@ type GeneratedFileTestProps = {
 	documentLabel?: string | null;
 	documentRole?: string | null;
 	versionNumber?: number | null;
+	originConversationId?: string | null;
+	originAssistantMessageId?: string | null;
+	sourceChatFileId?: string | null;
 	filename?: string;
 	size?: number;
 	mimeType?: string;
@@ -134,6 +137,9 @@ describe('GeneratedFile', () => {
 			documentLabel: 'Client Brief',
 			documentRole: 'proposal',
 			versionNumber: 3,
+			originConversationId: 'conv-origin',
+			originAssistantMessageId: 'assistant-origin',
+			sourceChatFileId: 'chat-file-origin',
 			onOpen,
 		});
 
@@ -149,6 +155,9 @@ describe('GeneratedFile', () => {
 				documentLabel: 'Client Brief',
 				documentRole: 'proposal',
 				versionNumber: 3,
+				originConversationId: 'conv-origin',
+				originAssistantMessageId: 'assistant-origin',
+				sourceChatFileId: 'chat-file-origin',
 				previewUrl: '/api/chat/files/file-123/preview',
 				downloadUrl: '/api/chat/files/file-123/download',
 			})

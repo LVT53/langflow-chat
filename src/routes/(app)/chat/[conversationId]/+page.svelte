@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { writable } from 'svelte/store';
-	import { onMount, onDestroy } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { page } from '$app/state';
+	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import {
 		cleanupPreparedConversation,
@@ -36,6 +37,11 @@
 	import { streamChat } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
 	import { inferGeneratedFilenameFromToolInput } from '$lib/utils/generate-file-tool';
+	import {
+		buildChatSourceMessageHref,
+		clearChatFocusMessageParam,
+		getChatFocusMessageIdFromUrl,
+	} from '$lib/client/document-workspace-navigation';
 	import {
 		removeConversationLocal,
 		updateConversationTitleLocal,
@@ -126,6 +132,9 @@
 			documentLabel: file.documentLabel ?? null,
 			documentRole: file.documentRole ?? null,
 			versionNumber: file.versionNumber ?? null,
+			originConversationId: file.originConversationId ?? null,
+			originAssistantMessageId: file.originAssistantMessageId ?? null,
+			sourceChatFileId: file.sourceChatFileId ?? null,
 			mimeType: file.mimeType,
 			previewUrl: `/api/chat/files/${file.id}/preview`,
 			artifactId: file.artifactId ?? null,
@@ -196,6 +205,32 @@
 		workspaceOpen = false;
 	}
 
+	async function focusMessage(messageId: string) {
+		await tick();
+		requestAnimationFrame(() => {
+			const target = document.getElementById(`message-${messageId}`);
+			target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		});
+	}
+
+	async function handleJumpToWorkspaceSource(document: DocumentWorkspaceItem) {
+		const conversationId = document.originConversationId;
+		const assistantMessageId = document.originAssistantMessageId;
+		if (!(conversationId && assistantMessageId)) return;
+
+		if (conversationId === data.conversation.id) {
+			await focusMessage(assistantMessageId);
+			return;
+		}
+
+		await goto(
+			buildChatSourceMessageHref({
+				conversationId,
+				assistantMessageId,
+			})
+		);
+	}
+
 	function getActiveWorkspaceArtifactId(): string | undefined {
 		if (!workspaceOpen || !activeWorkspaceDocumentId) {
 			return undefined;
@@ -261,6 +296,16 @@
 			void hydrateConversationDetail(data.conversation.id);
 		}
 	}
+
+	$effect(() => {
+		const focusMessageId = getChatFocusMessageIdFromUrl(page.url);
+		if (!focusMessageId || !$messages.some((message) => message.id === focusMessageId)) {
+			return;
+		}
+
+		void focusMessage(focusMessageId);
+		replaceState(clearChatFocusMessageParam(page.url), page.state);
+	});
 
 	$effect(() => {
 		if (!data?.conversation?.id || activeStream) {
@@ -903,6 +948,7 @@
 				activeDocumentId={activeWorkspaceDocumentId}
 				onSelectDocument={selectWorkspaceDocument}
 				onOpenDocument={openWorkspaceDocument}
+				onJumpToSource={handleJumpToWorkspaceSource}
 				onCloseDocument={closeWorkspaceDocument}
 				onCloseWorkspace={closeWorkspace}
 			/>

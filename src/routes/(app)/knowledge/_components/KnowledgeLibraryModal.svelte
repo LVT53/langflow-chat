@@ -77,6 +77,18 @@
 				isKnowledgeDocument
 					? (artifact.versionNumber ?? null)
 					: null,
+			originConversationId:
+				isKnowledgeDocument
+					? (artifact.originConversationId ?? null)
+					: null,
+			originAssistantMessageId:
+				isKnowledgeDocument
+					? (artifact.originAssistantMessageId ?? null)
+					: null,
+			sourceChatFileId:
+				isKnowledgeDocument
+					? (artifact.sourceChatFileId ?? null)
+					: null,
 			mimeType: artifact.mimeType,
 			artifactId,
 			conversationId: artifact.conversationId,

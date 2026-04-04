@@ -9,6 +9,7 @@
 		activeDocumentId = null,
 		onSelectDocument,
 		onOpenDocument = undefined,
+		onJumpToSource = undefined,
 		onCloseDocument,
 		onCloseWorkspace,
 	}: {
@@ -18,6 +19,7 @@
 		activeDocumentId?: string | null;
 		onSelectDocument: (documentId: string) => void;
 		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onCloseDocument: (documentId: string) => void;
 		onCloseWorkspace: () => void;
 	} = $props();
@@ -90,6 +92,10 @@
 		onOpenDocument?.(document);
 	}
 
+	function canJumpToSource(document: DocumentWorkspaceItem): boolean {
+		return Boolean(document.originConversationId && document.originAssistantMessageId);
+	}
+
 </script>
 
 {#if open && activeDocument}
@@ -122,6 +128,18 @@
 					</svg>
 				</button>
 			</div>
+
+			{#if canJumpToSource(activeDocument)}
+				<div class="workspace-actions">
+					<button
+						type="button"
+						class="workspace-source-button"
+						onclick={() => onJumpToSource?.(activeDocument)}
+					>
+						View source message
+					</button>
+				</div>
+			{/if}
 
 			{#if documents.length > 1}
 				<div class="workspace-tabs" role="tablist" aria-label="Open documents">
@@ -222,6 +240,18 @@
 				</svg>
 			</button>
 		</div>
+
+		{#if canJumpToSource(activeDocument)}
+			<div class="workspace-actions">
+				<button
+					type="button"
+					class="workspace-source-button"
+					onclick={() => onJumpToSource?.(activeDocument)}
+				>
+					View source message
+				</button>
+			</div>
+		{/if}
 
 		{#if documents.length > 1}
 			<div class="workspace-tabs" role="tablist" aria-label="Open documents">
@@ -401,6 +431,43 @@
 
 	.workspace-shell-mobile .workspace-tabs {
 		border-left: none;
+	}
+
+	.workspace-actions {
+		display: flex;
+		justify-content: flex-start;
+		padding: 0.7rem 1rem 0;
+		border-left: 1px solid var(--border-default);
+		background: color-mix(in srgb, var(--surface-page) 96%, transparent 4%);
+	}
+
+	.workspace-shell-mobile .workspace-actions {
+		border-left: none;
+	}
+
+	.workspace-source-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.46rem 0.82rem;
+		border: 1px solid var(--border-default);
+		border-radius: 999px;
+		background: var(--surface-elevated);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.76rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		color: var(--text-secondary);
+		transition:
+			border-color var(--duration-fast) ease,
+			background-color var(--duration-fast) ease,
+			color var(--duration-fast) ease;
+	}
+
+	.workspace-source-button:hover {
+		border-color: var(--border-strong);
+		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
+		color: var(--text-primary);
 	}
 
 	.workspace-tab-wrapper {

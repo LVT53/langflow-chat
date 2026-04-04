@@ -12,6 +12,9 @@
 		documentLabel?: string | null;
 		documentRole?: string | null;
 		versionNumber?: number | null;
+		originConversationId?: string | null;
+		originAssistantMessageId?: string | null;
+		sourceChatFileId?: string | null;
 		filename: string;
 		size: number;
 		mimeType: string;
@@ -31,6 +34,9 @@
 		documentLabel = null,
 		documentRole = null,
 		versionNumber = null,
+		originConversationId = null,
+		originAssistantMessageId = null,
+		sourceChatFileId = null,
 		filename,
 		size,
 		mimeType,
@@ -126,6 +132,9 @@
 				documentLabel,
 				documentRole,
 				versionNumber,
+				originConversationId,
+				originAssistantMessageId,
+				sourceChatFileId,
 				mimeType,
 				previewUrl: `/api/chat/files/${fileId}/preview`,
 				artifactId,

@@ -112,4 +112,50 @@ describe('DocumentWorkspace', () => {
 		);
 		expect(onSelectDocument).not.toHaveBeenCalled();
 	});
+
+	it('renders a source-message action for documents with origin metadata', async () => {
+		const onJumpToSource = vi.fn();
+
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents: [
+					{
+						id: 'doc-v2',
+						source: 'knowledge_artifact',
+						filename: 'brief-v2.pdf',
+						title: 'Client Brief',
+						documentFamilyId: 'family-brief',
+						documentLabel: 'Client Brief',
+						documentRole: 'brief',
+						versionNumber: 2,
+						originConversationId: 'conv-1',
+						originAssistantMessageId: 'assistant-1',
+						mimeType: 'application/pdf',
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: 'doc-v2',
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onJumpToSource,
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+		await fireEvent.click(
+			within(desktopWorkspace).getByRole('button', { name: /view source message/i })
+		);
+
+		expect(onJumpToSource).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'doc-v2',
+				originConversationId: 'conv-1',
+				originAssistantMessageId: 'assistant-1',
+			})
+		);
+	});
 });

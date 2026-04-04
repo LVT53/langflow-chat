@@ -38,6 +38,9 @@ function mapLogicalDocumentItem(params: {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
 }): KnowledgeDocumentItem {
   return {
     id: params.displayArtifact.id,
@@ -56,6 +59,9 @@ function mapLogicalDocumentItem(params: {
     documentLabel: params.documentLabel ?? null,
     documentRole: params.documentRole ?? null,
     versionNumber: params.versionNumber ?? null,
+    originConversationId: params.originConversationId ?? null,
+    originAssistantMessageId: params.originAssistantMessageId ?? null,
+    sourceChatFileId: params.sourceChatFileId ?? null,
     createdAt: params.displayArtifact.createdAt,
     updatedAt: params.updatedAt,
   };
@@ -268,6 +274,9 @@ export async function listLogicalDocuments(
           documentLabel: group.metadata.documentLabel ?? group.latest.name,
           documentRole: group.metadata.documentRole ?? null,
           versionNumber,
+          originConversationId: group.metadata.originConversationId ?? null,
+          originAssistantMessageId: group.metadata.originAssistantMessageId ?? null,
+          sourceChatFileId: group.metadata.sourceChatFileId ?? null,
         }),
       );
     }

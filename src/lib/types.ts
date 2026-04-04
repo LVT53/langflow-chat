@@ -86,6 +86,9 @@ export interface ChatGeneratedFile {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -103,6 +106,9 @@ export interface ChatGeneratedFileListItem {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -124,6 +130,9 @@ export interface DocumentWorkspaceItem {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
   mimeType: string | null;
   previewUrl?: string | null;
   artifactId?: string | null;
@@ -330,6 +339,9 @@ export interface KnowledgeDocumentItem {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  originConversationId?: string | null;
+  originAssistantMessageId?: string | null;
+  sourceChatFileId?: string | null;
   createdAt: number;
   updatedAt: number;
 }

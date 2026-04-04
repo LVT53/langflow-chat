@@ -23,6 +23,9 @@ export interface ChatFile {
 	documentLabel?: string | null;
 	documentRole?: string | null;
 	versionNumber?: number | null;
+	originConversationId?: string | null;
+	originAssistantMessageId?: string | null;
+	sourceChatFileId?: string | null;
 	userId: string;
 	filename: string;
 	mimeType: string | null;
@@ -232,6 +235,9 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 			documentLabel: string | null;
 			documentRole: string | null;
 			versionNumber: number | null;
+			originConversationId: string | null;
+			originAssistantMessageId: string | null;
+			sourceChatFileId: string | null;
 		}
 	>
 > {
@@ -257,6 +263,9 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 			documentLabel: string | null;
 			documentRole: string | null;
 			versionNumber: number | null;
+			originConversationId: string | null;
+			originAssistantMessageId: string | null;
+			sourceChatFileId: string | null;
 		}
 	>();
 	for (const row of rows) {
@@ -279,6 +288,9 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 				Number.isFinite(documentMetadata.versionNumber)
 					? Math.trunc(documentMetadata.versionNumber)
 					: null,
+			originConversationId: documentMetadata.originConversationId ?? null,
+			originAssistantMessageId: documentMetadata.originAssistantMessageId ?? null,
+			sourceChatFileId: documentMetadata.sourceChatFileId ?? null,
 		});
 	}
 
@@ -373,6 +385,10 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
 			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
 			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
+			originConversationId: artifactIdsByChatFile.get(row.id)?.originConversationId ?? null,
+			originAssistantMessageId:
+				artifactIdsByChatFile.get(row.id)?.originAssistantMessageId ?? null,
+			sourceChatFileId: artifactIdsByChatFile.get(row.id)?.sourceChatFileId ?? null,
 		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list generated files', {
@@ -409,6 +425,10 @@ export async function getChatFilesForAssistantMessage(
 			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
 			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
 			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
+			originConversationId: artifactIdsByChatFile.get(row.id)?.originConversationId ?? null,
+			originAssistantMessageId:
+				artifactIdsByChatFile.get(row.id)?.originAssistantMessageId ?? null,
+			sourceChatFileId: artifactIdsByChatFile.get(row.id)?.sourceChatFileId ?? null,
 		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list assistant-scoped generated files', {
