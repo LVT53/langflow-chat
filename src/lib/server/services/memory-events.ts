@@ -1,0 +1,124 @@
+import { randomUUID } from 'crypto';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { db } from '$lib/server/db';
+import { memoryEvents } from '$lib/server/db/schema';
+import type { MemoryEvent, MemoryEventDomain, MemoryEventType } from '$lib/types';
+import { parseJsonRecord } from '$lib/server/utils/json';
+
+type MemoryEventPayload = Record<string, unknown>;
+
+export interface MemoryEventInput {
+	eventKey: string;
+	userId: string;
+	domain: MemoryEventDomain;
+	eventType: MemoryEventType;
+	conversationId?: string | null;
+	messageId?: string | null;
+	subjectId?: string | null;
+	relatedId?: string | null;
+	observedAt?: number | Date;
+	payload?: MemoryEventPayload | null;
+}
+
+function normalizeObservedAt(value?: number | Date): Date {
+	if (value instanceof Date) {
+		return value;
+	}
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return new Date(value);
+	}
+	return new Date();
+}
+
+function mapMemoryEventRow(row: typeof memoryEvents.$inferSelect): MemoryEvent {
+	return {
+		id: row.id,
+		eventKey: row.eventKey,
+		userId: row.userId,
+		conversationId: row.conversationId ?? null,
+		messageId: row.messageId ?? null,
+		domain: row.domain as MemoryEventDomain,
+		eventType: row.eventType as MemoryEventType,
+		subjectId: row.subjectId ?? null,
+		relatedId: row.relatedId ?? null,
+		observedAt: row.observedAt.getTime(),
+		createdAt: row.createdAt.getTime(),
+		payload: parseJsonRecord(row.payloadJson) ?? null,
+	};
+}
+
+export async function recordMemoryEvent(params: MemoryEventInput): Promise<void> {
+	await db
+		.insert(memoryEvents)
+		.values({
+			id: randomUUID(),
+			eventKey: params.eventKey,
+			userId: params.userId,
+			conversationId: params.conversationId ?? null,
+			messageId: params.messageId ?? null,
+			domain: params.domain,
+			eventType: params.eventType,
+			subjectId: params.subjectId ?? null,
+			relatedId: params.relatedId ?? null,
+			observedAt: normalizeObservedAt(params.observedAt),
+			payloadJson: params.payload ? JSON.stringify(params.payload) : null,
+		})
+		.onConflictDoNothing({
+			target: memoryEvents.eventKey,
+		});
+}
+
+export async function recordMemoryEvents(params: MemoryEventInput[]): Promise<void> {
+	if (params.length === 0) {
+		return;
+	}
+
+	await db
+		.insert(memoryEvents)
+		.values(
+			params.map((event) => ({
+				id: randomUUID(),
+				eventKey: event.eventKey,
+				userId: event.userId,
+				conversationId: event.conversationId ?? null,
+				messageId: event.messageId ?? null,
+				domain: event.domain,
+				eventType: event.eventType,
+				subjectId: event.subjectId ?? null,
+				relatedId: event.relatedId ?? null,
+				observedAt: normalizeObservedAt(event.observedAt),
+				payloadJson: event.payload ? JSON.stringify(event.payload) : null,
+			}))
+		)
+		.onConflictDoNothing({
+			target: memoryEvents.eventKey,
+		});
+}
+
+export async function listMemoryEvents(params: {
+	userId: string;
+	domain?: MemoryEventDomain;
+	eventTypes?: MemoryEventType[];
+	subjectId?: string | null;
+	limit?: number;
+}): Promise<MemoryEvent[]> {
+	const conditions = [eq(memoryEvents.userId, params.userId)];
+	if (params.domain) {
+		conditions.push(eq(memoryEvents.domain, params.domain));
+	}
+	if (params.subjectId) {
+		conditions.push(eq(memoryEvents.subjectId, params.subjectId));
+	}
+	if (params.eventTypes && params.eventTypes.length > 0) {
+		conditions.push(inArray(memoryEvents.eventType, params.eventTypes));
+	}
+
+	const rows = await db
+		.select()
+		.from(memoryEvents)
+		.where(and(...conditions))
+		.orderBy(desc(memoryEvents.observedAt))
+		.limit(params.limit ?? 20);
+
+	return rows.map(mapMemoryEventRow);
+}

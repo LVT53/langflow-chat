@@ -614,6 +614,16 @@ export type PersonaMemoryTemporalKind =
 export type PersonaMemoryTemporalFreshness = 'active' | 'stale' | 'expired' | 'historical' | 'unknown';
 export type PersonaMemoryTopicStatus = 'active' | 'dormant' | 'historical';
 export type PersonaMemoryDomain = 'persona' | 'temporal' | 'preference';
+export type MemoryEventDomain = 'temporal' | 'preference' | 'task' | 'document';
+export type MemoryEventType =
+  | 'deadline_set'
+  | 'deadline_extended'
+  | 'deadline_completed'
+  | 'project_started'
+  | 'project_paused'
+  | 'project_resumed'
+  | 'preference_updated'
+  | 'document_superseded';
 
 export interface PersonaMemoryTemporalInfo {
   kind: PersonaMemoryTemporalKind;
@@ -654,6 +664,21 @@ export interface PersonaMemoryItem {
   supersededById?: string | null;
   supersessionReason?: string | null;
   members: PersonaMemoryMemberItem[];
+}
+
+export interface MemoryEvent {
+  id: string;
+  eventKey: string;
+  userId: string;
+  conversationId: string | null;
+  messageId: string | null;
+  domain: MemoryEventDomain;
+  eventType: MemoryEventType;
+  subjectId: string | null;
+  relatedId: string | null;
+  observedAt: number;
+  createdAt: number;
+  payload: Record<string, unknown> | null;
 }
 
 export interface TaskMemoryItem {

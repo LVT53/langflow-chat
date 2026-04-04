@@ -18,6 +18,14 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 | 10 | `knowledge/store/cleanup.ts` | 302 | Cross-reference-aware deletion, bulk cleanup |
 | 11 | `chat-turn/retry-cleanup.ts` | ~190 | Idempotent cleanup of failed turn data (evidence, checkpoints, work capsules, generated outputs) |
 
+## Memory Authority Snapshot
+
+- `persona-memory.ts` owns persona clustering, relative-time resolution, temporal freshness, and preference-slot supersession.
+- `task-state/continuity.ts` owns project continuity buckets and active-status transitions.
+- `chat-files.ts` plus artifact metadata own generated-document lineage.
+- `memory-events.ts` owns the normalized persisted event log for cross-domain state changes. Add new event types there instead of introducing side logs inside routes or unrelated services.
+- `honcho.ts` mirrors and enriches memory, but it is not the authority for local temporal truth, document lineage, or event history.
+
 ## Cross-Service Dependency Graph
 
 ```
@@ -107,6 +115,8 @@ knowledge.ts (facade — re-exports from below)
 **Persona-memory note**: `persona-memory.ts` now resolves relative-time phrasing such as `in two days` into temporal metadata stored in cluster `metadataJson`, derives `short_term_constraint` and `active_project_context` classes, converts expired temporal memories into historical phrasing on the read path, and performs same-topic temporal supersession before semantic reconcile. Keep those behaviors in the existing cluster pipeline rather than creating a second temporal-memory subsystem.
 
 **Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary. Local persona clusters remain the authority for temporal freshness, so live/cached Honcho overviews that repeat expired temporal memories must be rejected in favor of the local fallback overview.
+
+**Memory-events note**: Wave 2 now persists explicit `memory_events` rows for deadline changes, preference updates, project continuity transitions, and generated-document supersession. Use those rows for state-change history and later contradiction/repair work; do not fork that event history into capsule payloads, message metadata, or Honcho-only summaries.
 
 ## Task-State Submodule Flow
 

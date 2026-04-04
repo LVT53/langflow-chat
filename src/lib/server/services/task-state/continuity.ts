@@ -23,6 +23,7 @@ import {
   canUseContextSummarizer,
   requestStructuredControlModel,
 } from "./control-model";
+import { recordMemoryEvent } from "$lib/server/services/memory-events";
 import { mapTaskCheckpoint, mapTaskState } from "./mappers";
 
 const PROJECT_MATCH_MIN_SCORE = 16;
@@ -236,6 +237,10 @@ async function getLatestStableCheckpoint(
   return row?.content ?? null;
 }
 
+function buildProjectEventKey(parts: Array<string | number>): string {
+  return parts.join(":");
+}
+
 export async function listTaskMemoryItems(
   userId: string,
 ): Promise<TaskMemoryItem[]> {
@@ -373,6 +378,16 @@ export async function syncTaskContinuityFromTaskState(params: {
   }
 
   const now = new Date();
+  const previousProject =
+    projectId
+      ? candidates.find((candidate) => candidate.projectId === projectId) ?? null
+      : null;
+  let continuityEvent:
+    | {
+        eventType: "project_started" | "project_resumed";
+        eventKey: string;
+      }
+    | null = null;
 
   if (!projectId) {
     projectId = randomUUID();
@@ -385,6 +400,14 @@ export async function syncTaskContinuityFromTaskState(params: {
       lastActiveAt: now,
       updatedAt: now,
     });
+    continuityEvent = {
+      eventType: "project_started",
+      eventKey: buildProjectEventKey([
+        "project_started",
+        projectId,
+        params.taskState.taskId,
+      ]),
+    };
   } else {
     await db
       .update(memoryProjects)
@@ -401,6 +424,17 @@ export async function syncTaskContinuityFromTaskState(params: {
           eq(memoryProjects.projectId, projectId),
         ),
       );
+    if (previousProject && previousProject.status !== "active") {
+      continuityEvent = {
+        eventType: "project_resumed",
+        eventKey: buildProjectEventKey([
+          "project_resumed",
+          projectId,
+          params.taskState.taskId,
+          now.getTime(),
+        ]),
+      };
+    }
   }
 
   await db
@@ -428,6 +462,27 @@ export async function syncTaskContinuityFromTaskState(params: {
       updatedAt: now,
     })
     .where(eq(conversations.id, params.taskState.conversationId));
+
+  if (continuityEvent) {
+    await recordMemoryEvent({
+      eventKey: continuityEvent.eventKey,
+      userId: params.userId,
+      conversationId: params.taskState.conversationId,
+      domain: "task",
+      eventType: continuityEvent.eventType,
+      subjectId: projectId,
+      relatedId: params.taskState.taskId,
+      observedAt: now,
+      payload: {
+        projectId,
+        taskId: params.taskState.taskId,
+        objective: params.taskState.objective,
+        status: "active",
+      },
+    }).catch((error) =>
+      console.error("[PROJECT_MEMORY] Failed to record continuity event:", error),
+    );
+  }
 
   return projectId;
 }
@@ -644,6 +699,29 @@ export async function updateProjectMemoryStatuses(
         updatedAt: new Date(),
       })
       .where(eq(memoryProjects.projectId, row.projectId));
+    if (nextStatus !== "active") {
+      await recordMemoryEvent({
+        eventKey: buildProjectEventKey([
+          "project_paused",
+          row.projectId,
+          row.updatedAt.getTime(),
+          nextStatus,
+        ]),
+        userId,
+        domain: "task",
+        eventType: "project_paused",
+        subjectId: row.projectId,
+        observedAt: new Date(),
+        payload: {
+          projectId: row.projectId,
+          previousStatus: row.status,
+          nextStatus,
+          projectName: row.name,
+        },
+      }).catch((error) =>
+        console.error("[PROJECT_MEMORY] Failed to record status event:", error),
+      );
+    }
   }
 }
 

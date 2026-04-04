@@ -12,6 +12,7 @@ import {
 	resolveGeneratedDocumentFamilyContext,
 } from '$lib/server/services/knowledge/store';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
+import { recordMemoryEvent } from '$lib/server/services/memory-events';
 import { extractDocumentText } from './document-extraction';
 
 export interface ChatFile {
@@ -557,6 +558,25 @@ export async function syncGeneratedFilesToMemory(params: {
 					conversationId: params.conversationId,
 					messageId: params.assistantMessageId,
 					linkType: 'supersedes',
+				});
+
+				await recordMemoryEvent({
+					eventKey: `document_superseded:${previousVersion.artifactId}:${memoryArtifact.id}`,
+					userId: params.userId,
+					conversationId: params.conversationId,
+					messageId: params.assistantMessageId,
+					domain: 'document',
+					eventType: 'document_superseded',
+					subjectId: memoryArtifact.id,
+					relatedId: previousVersion.artifactId,
+					payload: {
+						documentFamilyId,
+						documentLabel,
+						documentRole,
+						versionNumber,
+						previousVersion: previousVersion.version,
+						currentFilename: file.filename,
+					},
 				});
 			}
 

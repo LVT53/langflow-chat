@@ -5,6 +5,7 @@ const {
 	mockRequestStructuredControlModel,
 	mockSelectQuery,
 	mockListPersonaMemories,
+	mockRecordMemoryEvents,
 	insertedClusterRows,
 	insertedMemberRows,
 } = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const {
 	mockRequestStructuredControlModel: vi.fn(),
 	mockSelectQuery: vi.fn(),
 	mockListPersonaMemories: vi.fn(async () => []),
+	mockRecordMemoryEvents: vi.fn(async () => undefined),
 	insertedClusterRows: [] as any[],
 	insertedMemberRows: [] as any[],
 }));
@@ -124,6 +126,10 @@ vi.mock('./honcho', () => ({
 	listPersonaMemories: mockListPersonaMemories,
 }));
 
+vi.mock('./memory-events', () => ({
+	recordMemoryEvents: mockRecordMemoryEvents,
+}));
+
 vi.mock('./task-state', () => ({
 	canUseContextSummarizer: mockCanUseContextSummarizer,
 	requestStructuredControlModel: mockRequestStructuredControlModel,
@@ -139,6 +145,7 @@ describe('persona-memory temporal safeguards', () => {
 		vi.clearAllMocks();
 		mockSelectQuery.mockImplementation(() => createSelectChain([]));
 		mockListPersonaMemories.mockResolvedValue([]);
+		mockRecordMemoryEvents.mockResolvedValue(undefined);
 		insertedClusterRows.splice(0, insertedClusterRows.length);
 		insertedMemberRows.splice(0, insertedMemberRows.length);
 	});
@@ -313,6 +320,46 @@ describe('persona-memory temporal safeguards', () => {
 			supersededByClusterId: activeCluster?.clusterId,
 			supersessionReason: 'preference_slot',
 		});
+		expect(mockRecordMemoryEvents).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({
+					domain: 'preference',
+					eventType: 'preference_updated',
+					subjectId: activeCluster?.clusterId,
+					relatedId: archivedCluster?.clusterId,
+				}),
+			])
+		);
+	});
+
+	it('records deadline events when a new active deadline cluster appears', async () => {
+		mockCanUseContextSummarizer.mockReturnValue(false);
+
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-deadline',
+			rawRecords: [
+				{
+					id: 'deadline-1',
+					content: 'The user is time-constrained to finish assessment documentation in two days.',
+					createdAt: Date.UTC(2026, 3, 4),
+					scope: 'self',
+					sessionId: 'conversation-1',
+				},
+			],
+			reason: 'test',
+			force: true,
+		});
+
+		expect(mockRecordMemoryEvents).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({
+					domain: 'temporal',
+					eventType: 'deadline_set',
+				}),
+			])
+		);
 	});
 
 	it('filters artifact-derived Honcho memories before persona clustering', async () => {

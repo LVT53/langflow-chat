@@ -78,6 +78,13 @@
       "when": 1775240400000,
       "tag": "1775240400000_chat_generated_files_assistant_message",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775326800000,
+      "tag": "1775326800000_memory_events",
+      "breakpoints": true
     }
   ]
 }

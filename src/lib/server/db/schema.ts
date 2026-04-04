@@ -301,6 +301,39 @@ export const memoryProjectTaskLinks = sqliteTable('memory_project_task_links', {
   ),
 }));
 
+export const memoryEvents = sqliteTable('memory_events', {
+  id: text('id').primaryKey(),
+  eventKey: text('event_key').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').references(() => conversations.id, {
+    onDelete: 'set null',
+  }),
+  messageId: text('message_id').references(() => messages.id, {
+    onDelete: 'set null',
+  }),
+  domain: text('domain').notNull(),
+  eventType: text('event_type').notNull(),
+  subjectId: text('subject_id'),
+  relatedId: text('related_id'),
+  observedAt: integer('observed_at', { mode: 'timestamp' }).notNull(),
+  payloadJson: text('payload_json'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  eventKeyIdx: uniqueIndex('memory_events_event_key_idx').on(table.eventKey),
+  userObservedIdx: index('memory_events_user_observed_idx').on(
+    table.userId,
+    table.domain,
+    table.observedAt
+  ),
+  userTypeIdx: index('memory_events_user_type_idx').on(
+    table.userId,
+    table.eventType,
+    table.observedAt
+  ),
+}));
+
 export const personaMemoryAttributions = sqliteTable('persona_memory_attributions', {
   id: text('id').primaryKey(),
   conclusionId: text('conclusion_id').notNull(),

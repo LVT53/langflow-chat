@@ -27,6 +27,7 @@ import {
 	selectLatestGeneratedDocumentCandidatesByFamily,
 } from './knowledge/store';
 import { listPersonaMemories } from './honcho';
+import { recordMemoryEvents } from './memory-events';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
@@ -68,6 +69,17 @@ type ExistingClusterSnapshot = {
 	metadata: Record<string, unknown>;
 	lastDreamedAt: number | null;
 	memberIds: string[];
+};
+
+type PendingMemoryEvent = {
+	eventKey: string;
+	userId: string;
+	domain: 'temporal' | 'preference';
+	eventType: 'deadline_set' | 'deadline_extended' | 'deadline_completed' | 'preference_updated';
+	subjectId: string | null;
+	relatedId: string | null;
+	observedAt: number;
+	payload: Record<string, unknown>;
 };
 
 type InventoryFingerprint = {
@@ -1711,6 +1723,129 @@ function applyDeterministicPreferenceSupersession(plans: ClusterPlan[]): void {
 	}
 }
 
+function collectPersonaMemoryEvents(params: {
+	userId: string;
+	plans: ClusterPlan[];
+	existingSnapshots: Map<string, ExistingClusterSnapshot>;
+}): PendingMemoryEvent[] {
+	const events: PendingMemoryEvent[] = [];
+	const seenEventKeys = new Set<string>();
+	const planById = new Map(params.plans.map((plan) => [plan.clusterId, plan]));
+	const existingDeadlinesByTopic = new Map<
+		string,
+		{
+			clusterId: string;
+			temporal: PersonaMemoryTemporalInfo;
+		}
+	>();
+
+	for (const [clusterId, snapshot] of params.existingSnapshots.entries()) {
+		const temporal = temporalMetadataFromRecord(snapshot.metadata);
+		const topicKey =
+			typeof snapshot.metadata.topicKey === 'string' && snapshot.metadata.topicKey.trim()
+				? snapshot.metadata.topicKey
+				: null;
+		if (!temporal || temporal.kind !== 'deadline' || !topicKey) {
+			continue;
+		}
+		existingDeadlinesByTopic.set(topicKey, {
+			clusterId,
+			temporal,
+		});
+	}
+
+	for (const plan of params.plans) {
+		const supersededById =
+			typeof plan.metadata.supersededByClusterId === 'string'
+				? plan.metadata.supersededByClusterId
+				: null;
+		const supersessionReason =
+			typeof plan.metadata.supersessionReason === 'string'
+				? plan.metadata.supersessionReason
+				: null;
+
+		if (plan.memoryClass === 'stable_preference' && supersededById && supersessionReason === 'preference_slot') {
+			const successor = planById.get(supersededById);
+			const preference = successor ? getPreferenceSlotMetadata(successor) : null;
+			const eventKey = `preference_updated:${plan.clusterId}:${supersededById}`;
+			if (!seenEventKeys.has(eventKey)) {
+				seenEventKeys.add(eventKey);
+				events.push({
+					eventKey,
+					userId: params.userId,
+					domain: 'preference',
+					eventType: 'preference_updated',
+					subjectId: supersededById,
+					relatedId: plan.clusterId,
+					observedAt: successor?.lastSeenAt ?? plan.lastSeenAt,
+					payload: {
+						preferenceSlot: preference?.preferenceSlot ?? null,
+						preferenceValue: preference?.preferenceValue ?? null,
+						preferencePolarity: preference?.preferencePolarity ?? null,
+						previousCanonicalText: plan.canonicalText,
+						currentCanonicalText: successor?.canonicalText ?? null,
+					},
+				});
+			}
+		}
+
+		const temporal = temporalMetadataFromRecord(plan.metadata);
+		const topicKey =
+			typeof plan.metadata.topicKey === 'string' && plan.metadata.topicKey.trim()
+				? String(plan.metadata.topicKey)
+				: null;
+		if (!temporal || temporal.kind !== 'deadline' || !topicKey || plan.state === 'archived') {
+			continue;
+		}
+
+		const previousDeadline = existingDeadlinesByTopic.get(topicKey) ?? null;
+		const previousExpiresAt = previousDeadline?.temporal.expiresAt ?? null;
+		const currentExpiresAt = temporal.expiresAt ?? null;
+		const eventType =
+			temporal.freshness === 'expired' || temporal.freshness === 'historical'
+				? previousDeadline
+					? 'deadline_completed'
+					: null
+				: !previousDeadline
+					? 'deadline_set'
+					: previousDeadline.clusterId !== plan.clusterId ||
+						  previousExpiresAt !== currentExpiresAt ||
+						  previousDeadline.temporal.freshness !== temporal.freshness
+						? 'deadline_extended'
+						: null;
+		if (!eventType) {
+			continue;
+		}
+
+		const eventKey =
+			eventType === 'deadline_set'
+				? `deadline_set:${plan.clusterId}`
+				: `${eventType}:${previousDeadline?.clusterId ?? 'none'}:${plan.clusterId}`;
+		if (seenEventKeys.has(eventKey)) {
+			continue;
+		}
+		seenEventKeys.add(eventKey);
+		events.push({
+			eventKey,
+			userId: params.userId,
+			domain: 'temporal',
+			eventType,
+			subjectId: plan.clusterId,
+			relatedId: previousDeadline?.clusterId ?? null,
+			observedAt: plan.lastSeenAt,
+			payload: {
+				topicKey,
+				canonicalText: plan.canonicalText,
+				expiresAt: currentExpiresAt,
+				previousExpiresAt,
+				freshness: temporal.freshness,
+			},
+		});
+	}
+
+	return events;
+}
+
 async function dreamCluster(params: {
 	records: HonchoPersonaMemoryRecord[];
 	defaultCanonicalText: string;
@@ -2117,6 +2252,11 @@ export async function syncPersonaMemoryClusters(params: {
 	markSupersededClusters(plans);
 	await applyTargetedSemanticSupersession(plans);
 	markSupersededClusters(plans);
+	const pendingMemoryEvents = collectPersonaMemoryEvents({
+		userId: params.userId,
+		plans,
+		existingSnapshots,
+	});
 	await db.delete(personaMemoryClusterMembers).where(eq(personaMemoryClusterMembers.userId, params.userId));
 	await db.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, params.userId));
 
@@ -2169,6 +2309,12 @@ export async function syncPersonaMemoryClusters(params: {
 					personaMemoryClusterMembers.conclusionId,
 				],
 			});
+	}
+
+	if (pendingMemoryEvents.length > 0) {
+		await recordMemoryEvents(pendingMemoryEvents).catch((error) =>
+			console.error('[PERSONA_MEMORY] Failed to record memory events:', error)
+		);
 	}
 
 	return {

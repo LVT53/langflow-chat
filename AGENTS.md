@@ -305,6 +305,8 @@ Do not:
   - [`src/lib/server/services/honcho.ts`](./src/lib/server/services/honcho.ts)
 - Persona support:
   - [`src/lib/server/services/persona-memory.ts`](./src/lib/server/services/persona-memory.ts)
+- Event log:
+  - [`src/lib/server/services/memory-events.ts`](./src/lib/server/services/memory-events.ts)
 - Maintenance/orchestration:
   - [`src/lib/server/services/memory.ts`](./src/lib/server/services/memory.ts)
   - [`src/lib/server/services/memory-maintenance.ts`](./src/lib/server/services/memory-maintenance.ts)
@@ -334,6 +336,7 @@ Rules:
 - `getKnowledgeMemory` and other knowledge-memory reads should use the latest stored persona clusters immediately and treat Honcho overview generation as auxiliary. Do not block the entire Memory Profile on cluster refresh or a live `peer.chat(...)` summary.
 - `memory.ts` owns Memory Profile overview source selection, cached Honcho overview reuse, and overview refresh backoff. Prefer a live Honcho overview when available, then a matching cached Honcho overview, then a local durable-persona summary before showing an empty-state message.
 - `memory.ts` must apply local temporal truth before trusting Honcho overview text. Expired short-term constraints and other historical temporal memories should not re-enter the Memory Profile just because Honcho returned stale summary prose.
+- `memory-events.ts` owns the persisted normalized event log for important state changes such as deadlines, preference updates, project continuity transitions, and document supersession. Add new event types there and emit them from the existing state-change boundaries; do not create ad hoc side logs or route-local event tables.
 - `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger full cluster recomputation directly from routes or UI code.
 - `persona-memory.ts` cluster writes should remain idempotent under overlap. If maintenance or repair paths touch cluster persistence, keep conflict guards in place instead of assuming single-flight inserts.
 - `buildPersonaPromptContext` should read the latest stored persona clusters immediately and only trigger cluster refresh in the background. Do not put synchronous cluster regeneration back on the chat request path.
@@ -341,6 +344,7 @@ Rules:
 - `persona-memory.ts` owns automatic persona-memory class and decay heuristics. Perishable facts should age out quickly and stay out of durable-profile summaries, while stable preferences should not auto-archive from age alone unless superseded.
 - `persona-memory.ts` also owns deterministic stable-preference slot extraction and same-slot supersession. Prefer explicit replacement of older durable preferences over age-based archival, and keep the metadata in existing cluster JSON rather than adding a parallel preference store.
 - `persona-memory.ts` also owns relative-time resolution, temporal freshness, same-topic deadline supersession, historical phrasing for expired temporal memories, and topic lifecycle metadata. Reuse cluster `metadataJson`; do not add a second temporal-memory store.
+- Wave-2 memory evolution now persists normalized events for deadline changes, preference updates, project continuity transitions, and generated-document supersession. Treat the event log as supporting state-change history for local memory authorities, not as a second persona/task/document storage stack.
 - `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
 - Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
 
