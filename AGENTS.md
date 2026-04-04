@@ -352,6 +352,7 @@ Rules:
 - `task-state/mappers.ts`
   - task-state row mappers shared by task-state internals
 - `honcho.ts` should stay an integration adapter for Honcho sessions, peers, mirrored messages, and Honcho-specific context.
+- Reset-grade cleanup that is meant to sever memory continuity must rotate the per-user Honcho peer identity, not just delete local rows or current Honcho sessions/conclusions. Reusing the same Honcho peer id after a reset is not a strong enough boundary.
 - Read-side Honcho session memory should prefer Honcho’s canonical `session.queueStatus()` plus `session.context(...)` flow over manual multi-call fanout.
 - Per-turn Honcho diagnostics and last-good Honcho snapshots belong in assistant-message metadata via `messages.ts`, not ad hoc route state.
 - `buildConstructedContext` must degrade gracefully when Honcho is disabled, unavailable, or slow. Core chat cannot block on Honcho connectivity or empty-session bootstrap, but the chosen Honcho source for each turn must remain measurable and source-attributed.

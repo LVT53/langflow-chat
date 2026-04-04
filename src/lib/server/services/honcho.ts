@@ -8,7 +8,7 @@ import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
 import type { Session } from '@honcho-ai/sdk/dist/session';
 import { getConfig } from '../config-store';
 import { db } from '../db';
-import { personaMemoryAttributions } from '../db/schema';
+import { personaMemoryAttributions, users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
 import { estimateTokenCount } from '$lib/server/utils/tokens';
 import {
@@ -69,6 +69,7 @@ let client: Honcho | null = null;
 const peerCache = new Map<string, Peer>();
 const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
+const honchoPeerVersionCache = new Map<string, number>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
@@ -92,12 +93,44 @@ function normalizePeerIdFragment(rawId: string): string {
 	return `h_${digest}`;
 }
 
-export function getHonchoUserPeerId(userId: string): string {
-	return normalizePeerIdFragment(userId);
+function buildHonchoPeerSeed(userId: string, version: number): string {
+	return version > 0 ? `${userId}_v${version}` : userId;
 }
 
-export function getHonchoAssistantPeerId(userId: string): string {
-	return `assistant_${normalizePeerIdFragment(userId)}`;
+function getCachedHonchoPeerVersion(userId: string): number {
+	return honchoPeerVersionCache.get(userId) ?? 0;
+}
+
+async function getHonchoPeerVersion(userId: string): Promise<number> {
+	const cached = honchoPeerVersionCache.get(userId);
+	if (typeof cached === 'number') {
+		return cached;
+	}
+
+	const [row] = await db
+		.select({ honchoPeerVersion: users.honchoPeerVersion })
+		.from(users)
+		.where(eq(users.id, userId))
+		.limit(1);
+	const version = row?.honchoPeerVersion ?? 0;
+	honchoPeerVersionCache.set(userId, version);
+	return version;
+}
+
+function deletePeerCacheEntries(userId: string, version: number): void {
+	peerCache.delete(getHonchoUserPeerId(userId, version));
+	peerCache.delete(getHonchoAssistantPeerId(userId, version));
+}
+
+export function getHonchoUserPeerId(userId: string, version = getCachedHonchoPeerVersion(userId)): string {
+	return normalizePeerIdFragment(buildHonchoPeerSeed(userId, version));
+}
+
+export function getHonchoAssistantPeerId(
+	userId: string,
+	version = getCachedHonchoPeerVersion(userId)
+): string {
+	return `assistant_${normalizePeerIdFragment(buildHonchoPeerSeed(userId, version))}`;
 }
 
 function roleForMessage(message: Message, userId: string): 'user' | 'assistant' {
@@ -137,11 +170,30 @@ async function getPeerById(peerId: string): Promise<Peer> {
 }
 
 export async function getUserPeer(userId: string): Promise<Peer> {
-	return getPeerById(getHonchoUserPeerId(userId));
+	return getPeerById(getHonchoUserPeerId(userId, await getHonchoPeerVersion(userId)));
 }
 
 export async function getAssistantPeer(userId: string): Promise<Peer> {
-	return getPeerById(getHonchoAssistantPeerId(userId));
+	return getPeerById(getHonchoAssistantPeerId(userId, await getHonchoPeerVersion(userId)));
+}
+
+export async function rotateHonchoPeerIdentity(userId: string): Promise<number> {
+	const currentVersion = await getHonchoPeerVersion(userId);
+	const nextVersion = currentVersion + 1;
+
+	await db
+		.update(users)
+		.set({
+			honchoPeerVersion: nextVersion,
+			updatedAt: new Date(),
+		})
+		.where(eq(users.id, userId));
+
+	deletePeerCacheEntries(userId, currentVersion);
+	deletePeerCacheEntries(userId, nextVersion);
+	honchoPeerVersionCache.set(userId, nextVersion);
+	clearHonchoCaches({ userId });
+	return nextVersion;
 }
 
 async function getSession(userId: string, conversationId: string): Promise<Session> {
@@ -358,8 +410,11 @@ async function deleteHonchoSession(sessionId: string): Promise<void> {
 
 export function clearHonchoCaches(params: { userId?: string; conversationId?: string }): void {
 	if (params.userId) {
-		peerCache.delete(getHonchoUserPeerId(params.userId));
-		peerCache.delete(getHonchoAssistantPeerId(params.userId));
+		const cachedVersion = honchoPeerVersionCache.get(params.userId);
+		deletePeerCacheEntries(params.userId, 0);
+		if (typeof cachedVersion === 'number' && cachedVersion !== 0) {
+			deletePeerCacheEntries(params.userId, cachedVersion);
+		}
 
 		for (const [sessionId, ownerUserId] of sessionOwnerCache.entries()) {
 			if (ownerUserId !== params.userId) continue;

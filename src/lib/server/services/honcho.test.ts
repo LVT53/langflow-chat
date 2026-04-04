@@ -285,9 +285,36 @@ vi.mock('../env', () => ({
 }));
 
 // Mock db (required by config-store)
+const mockHonchoPeerVersion = vi.hoisted(() => ({ value: 0 }));
+
 vi.mock('../db', () => ({
   db: {
-    select: () => ({ from: () => [] }),
+    select: () => {
+      let table: { __name?: string } | null = null;
+      return {
+        from(nextTable: { __name?: string }) {
+          table = nextTable;
+          return {
+            where: vi.fn(() => ({
+              limit: vi.fn(async () =>
+                table?.__name === 'users'
+                  ? [{ honchoPeerVersion: mockHonchoPeerVersion.value }]
+                  : []
+              ),
+            })),
+          };
+        },
+      };
+    },
+    update: () => ({
+      set: (values: { honchoPeerVersion?: number }) => ({
+        where: vi.fn(async () => {
+          if (typeof values.honchoPeerVersion === 'number') {
+            mockHonchoPeerVersion.value = values.honchoPeerVersion;
+          }
+        }),
+      }),
+    }),
     delete: () => ({
       where: vi.fn(async () => undefined),
     }),
@@ -300,6 +327,11 @@ vi.mock('../db/schema', () => ({
     userId: { name: 'userId' },
     conclusionId: { name: 'conclusionId' },
     conversationId: { name: 'conversationId' },
+  },
+  users: {
+    __name: 'users',
+    id: { name: 'id' },
+    honchoPeerVersion: { name: 'honchoPeerVersion' },
   },
 }));
 
@@ -350,6 +382,7 @@ describe('Honcho Service', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mockHonchoPeerVersion.value = 0;
     mockConfig.honchoEnabled = false;
     mockConfig.honchoContextWaitMs = 3000;
     mockConfig.honchoContextPollIntervalMs = 250;
@@ -385,6 +418,19 @@ describe('Honcho Service', () => {
       expect(assistantPeerId).toMatch(/^[a-zA-Z0-9_-]+$/);
       expect(assistantPeerId.startsWith('assistant_')).toBe(true);
       expect(assistantPeerId).not.toContain(':');
+    });
+
+    it('rotates Honcho peer ids after a reset version bump', async () => {
+      const { getHonchoUserPeerId, getHonchoAssistantPeerId, rotateHonchoPeerIdentity } =
+        await import('./honcho');
+
+      expect(getHonchoUserPeerId('user-123')).toBe('user-123');
+      expect(getHonchoAssistantPeerId('user-123')).toBe('assistant_user-123');
+
+      await rotateHonchoPeerIdentity('user-123');
+
+      expect(getHonchoUserPeerId('user-123')).toBe('user-123_v1');
+      expect(getHonchoAssistantPeerId('user-123')).toBe('assistant_user-123_v1');
     });
   });
 

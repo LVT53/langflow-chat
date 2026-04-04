@@ -7,6 +7,7 @@ const {
 	mockDeleteAllChatFilesForUser,
 	mockDeleteConversationHonchoState,
 	mockDeleteAllHonchoStateForUser,
+	mockRotateHonchoPeerIdentity,
 	mockDeleteAllPersonaMemoryStateForUser,
 	mockClearKnowledgeMemoryRuntimeStateForUser,
 	mockHardDeleteArtifactsForUser,
@@ -23,6 +24,7 @@ const {
 		mockDeleteAllChatFilesForUser: vi.fn(() => Promise.resolve(0)),
 		mockDeleteConversationHonchoState: vi.fn(() => Promise.resolve(undefined)),
 		mockDeleteAllHonchoStateForUser: vi.fn(() => Promise.resolve(undefined)),
+		mockRotateHonchoPeerIdentity: vi.fn(() => Promise.resolve(1)),
 		mockDeleteAllPersonaMemoryStateForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockClearKnowledgeMemoryRuntimeStateForUser: vi.fn(() => undefined),
 		mockHardDeleteArtifactsForUser: vi.fn(() => Promise.resolve(undefined)),
@@ -129,6 +131,7 @@ vi.mock('./knowledge', () => ({
 vi.mock('./honcho', () => ({
 	deleteAllHonchoStateForUser: mockDeleteAllHonchoStateForUser,
 	deleteConversationHonchoState: mockDeleteConversationHonchoState,
+	rotateHonchoPeerIdentity: mockRotateHonchoPeerIdentity,
 }));
 
 vi.mock('./chat-files', () => ({
@@ -187,6 +190,7 @@ describe('cleanup service', () => {
 
 		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockRotateHonchoPeerIdentity).toHaveBeenCalledWith('user-1');
 	});
 
 	it('resets account state without deleting the account itself', async () => {
@@ -201,6 +205,7 @@ describe('cleanup service', () => {
 		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllHonchoStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockRotateHonchoPeerIdentity).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllChatFilesForUser).toHaveBeenCalledWith('user-1');
 	});
 

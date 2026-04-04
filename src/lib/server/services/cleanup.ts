@@ -33,6 +33,7 @@ import {
 import {
 	deleteAllHonchoStateForUser,
 	deleteConversationHonchoState,
+	rotateHonchoPeerIdentity,
 } from './honcho';
 import { deleteAllChatFilesForConversation, deleteAllChatFilesForUser } from './chat-files';
 import { clearMessageEvidenceForUser } from './messages';
@@ -143,6 +144,7 @@ export async function resetUserAccountStateWithCleanup(
 	}
 
 	await purgeUserData(userId);
+	await rotateHonchoPeerIdentity(userId);
 
 	return { status: 'reset' };
 }
@@ -218,6 +220,7 @@ export async function resetKnowledgeBaseState(userId: string): Promise<{
 	clearKnowledgeMemoryRuntimeStateForUser(userId);
 	await deleteAllHonchoStateForUser(userId);
 	await deleteAllPersonaMemoryStateForUser(userId);
+	await rotateHonchoPeerIdentity(userId);
 
 	const artifactRows = await db
 		.select({ id: artifacts.id })

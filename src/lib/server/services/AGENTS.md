@@ -123,6 +123,8 @@ knowledge.ts (facade — re-exports from below)
 
 **Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary. Local persona clusters remain the authority for temporal freshness and minimum profile readiness, so live/cached Honcho overviews that repeat expired temporal memories or try to speak when there is not enough local durable persona memory must be rejected in favor of the local fallback or empty state.
 
+**Honcho reset note**: cleanup paths that promise a true memory reset must also rotate the per-user Honcho peer version. Deleting sessions, conclusions, cards, and local clusters is not enough if the next chat would still reuse the same Honcho peer id.
+
 **Memory-events note**: Wave 2 now persists explicit `memory_events` rows for deadline changes, preference updates, persona fact replacement, project continuity transitions, and generated-document supersession. Use those rows for state-change history and later contradiction/repair work; do not fork that event history into capsule payloads, message metadata, or Honcho-only summaries.
 **Behavior-learning note**: Wave 6 behavior signals should also flow through `memory_events`, not a separate analytics-only table. Focused working-document turns now record `document_refined` events, and retrieval may consume recent counts from those events as a bounded boost. Keep those boosts small and recent-windowed; explicit query/document matches still outrank passive behavior history.
 **Working-set behavior note**: if behavior learning influences prompt carryover, route it through `working-set.ts` with the same bounded event-derived scores used by retrieval. Do not add a second prompt-only behavior heuristic that can drift away from `document-resolution.ts`.

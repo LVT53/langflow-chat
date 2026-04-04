@@ -12,6 +12,7 @@ export const users = sqliteTable('users', {
   theme: text('theme').notNull().default('system'),
   avatarId: integer('avatar_id'),
   profilePicture: text('profile_picture'),
+  honchoPeerVersion: integer('honcho_peer_version').notNull().default(0),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
