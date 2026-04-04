@@ -30,6 +30,7 @@
 	} = $props();
 
 	let projectsStoreReady = $state(false);
+	let conversationsStoreReady = $state(false);
 	let supportsDragAndDrop = $state(true);
 	let draggedConversationId = $state<string | null>(null);
 	type SidebarDropTarget = { kind: 'project'; projectId: string } | { kind: 'unorganized' } | null;
@@ -41,6 +42,7 @@
 	onMount(() => {
 		projectsStore.set(initialProjects);
 		projectsStoreReady = true;
+		conversationsStoreReady = true;
 	});
 
 	let openSidebarMenu = $state<OpenSidebarMenu>(null);
@@ -50,9 +52,9 @@
 	let newProjectName = $state('');
 	let newProjectInputRef = $state<HTMLInputElement | undefined>(undefined);
 
-	const visibleConversations = $derived($conversations.length > 0 || $projectsStore.length > 0
-		? $conversations
-		: initialConversations);
+	const visibleConversations = $derived(
+		conversationsStoreReady ? $conversations : initialConversations
+	);
 
 	const allProjects = $derived(projectsStoreReady ? $projectsStore : initialProjects);
 	const activeDraggedConversation = $derived.by(() =>

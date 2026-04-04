@@ -6,7 +6,9 @@ import {
 	deleteConversationById,
 	loadConversations,
 	moveConversationToProject,
+	reconcileConversationSnapshot,
 	renameConversation,
+	upsertConversationLocal,
 } from './conversations';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -40,6 +42,32 @@ describe('conversations store', () => {
 		expect(get(conversations)).toEqual([
 			{ id: 'conv-1', title: 'One', updatedAt: 123, projectId: null },
 		]);
+	});
+
+	it('preserves optimistic local conversations when a stale snapshot arrives', () => {
+		conversations.set([]);
+		upsertConversationLocal('conv-local', 'Draft', 500);
+
+		reconcileConversationSnapshot([
+			{ id: 'conv-remote', title: 'Remote', updatedAt: 100, projectId: null },
+		]);
+
+		expect(get(conversations)).toEqual([
+			{ id: 'conv-local', title: 'Draft', updatedAt: 500 },
+			{ id: 'conv-remote', title: 'Remote', updatedAt: 100, projectId: null },
+		]);
+	});
+
+	it('does not reintroduce deleted conversations from a stale snapshot', async () => {
+		conversations.set([{ id: 'conv-1', title: 'Chat', updatedAt: 123, projectId: null }]);
+		vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ success: true }));
+
+		await deleteConversationById('conv-1');
+		reconcileConversationSnapshot([
+			{ id: 'conv-1', title: 'Chat', updatedAt: 124, projectId: null },
+		]);
+
+		expect(get(conversations)).toEqual([]);
 	});
 
 	it('creates a conversation through the API', async () => {

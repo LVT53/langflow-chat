@@ -102,6 +102,7 @@ type ResolveOverviewOptions = {
 
 const overviewRefreshInFlight = new Map<string, Promise<CachedKnowledgeOverview | null>>();
 const overviewAttemptStates = new Map<string, OverviewAttemptState>();
+const overviewRuntimeEpochByUser = new Map<string, number>();
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
@@ -109,6 +110,20 @@ export type KnowledgeMemoryAction =
 	| { action: 'forget_task_memory'; taskId: string }
 	| { action: 'forget_focus_continuity'; continuityId: string }
 	| { action: 'forget_project_memory'; projectId: string };
+
+function getOverviewRuntimeEpoch(userId: string): number {
+	return overviewRuntimeEpochByUser.get(userId) ?? 0;
+}
+
+function isOverviewRuntimeEpochCurrent(userId: string, epoch: number): boolean {
+	return getOverviewRuntimeEpoch(userId) === epoch;
+}
+
+export function clearKnowledgeMemoryRuntimeStateForUser(userId: string): void {
+	overviewRuntimeEpochByUser.set(userId, getOverviewRuntimeEpoch(userId) + 1);
+	overviewRefreshInFlight.delete(userId);
+	overviewAttemptStates.delete(userId);
+}
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -511,8 +526,12 @@ async function refreshKnowledgeOverview(params: {
 	if (existing) return existing;
 
 	const refresh = (async () => {
+		const runtimeEpoch = getOverviewRuntimeEpoch(params.userId);
 		const startedAt = Date.now();
 		const cachedOverview = await getCachedKnowledgeOverview(params.userId);
+		if (!isOverviewRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+			return null;
+		}
 		updateOverviewAttemptState(params.userId, {
 			lastAttemptAt: startedAt,
 			lastError: null,
@@ -552,6 +571,9 @@ async function refreshKnowledgeOverview(params: {
 				});
 				return null;
 			}
+			if (!isOverviewRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+				return null;
+			}
 
 			const nextCachedOverview = await upsertCachedKnowledgeOverview({
 				userId: params.userId,
@@ -576,6 +598,9 @@ async function refreshKnowledgeOverview(params: {
 			});
 			return nextCachedOverview;
 		} catch (error) {
+			if (!isOverviewRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+				return null;
+			}
 			const errorMessage =
 				error instanceof Error ? error.message : 'unknown_honcho_overview_error';
 			await recordKnowledgeOverviewFailure({
@@ -879,6 +904,7 @@ export async function applyKnowledgeMemoryAction(
 ): Promise<KnowledgeMemoryPayload> {
 	switch (payload.action) {
 		case 'forget_persona_memory':
+			clearKnowledgeMemoryRuntimeStateForUser(userId);
 			if (typeof payload.clusterId === 'string') {
 				const conclusionIds = await getPersonaMemoryClusterConclusionIds(userId, payload.clusterId);
 				for (const conclusionId of conclusionIds) {
@@ -891,6 +917,7 @@ export async function applyKnowledgeMemoryAction(
 			}
 			break;
 		case 'forget_all_persona_memory':
+			clearKnowledgeMemoryRuntimeStateForUser(userId);
 			await forgetAllPersonaMemories(userId);
 			await deleteAllPersonaMemoryStateForUser(userId);
 			break;

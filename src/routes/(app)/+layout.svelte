@@ -7,7 +7,11 @@
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
-	import { conversations, loadConversations } from '$lib/stores/conversations';
+	import {
+		conversations,
+		loadConversations,
+		reconcileConversationSnapshot,
+	} from '$lib/stores/conversations';
 	import { conversationExists } from '$lib/client/api/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { initSettings } from '$lib/stores/settings';
@@ -20,9 +24,13 @@
 	// Debounce state for conversation list refresh
 	let lastRefreshTime = $state(0);
 	const REFRESH_DEBOUNCE_MS = 2000; // 2 seconds minimum between refreshes
+	let previousConversationUserId = $state<string | null>(null);
 
 	$effect(() => {
-		conversations.set(data.conversations ?? []);
+		const nextUserId = data.user?.id ?? null;
+		const resetLocalState = previousConversationUserId !== null && previousConversationUserId !== nextUserId;
+		reconcileConversationSnapshot(data.conversations ?? [], { resetLocalState });
+		previousConversationUserId = nextUserId;
 	});
 
 	$effect(() => {

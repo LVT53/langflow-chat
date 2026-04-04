@@ -10,9 +10,44 @@ import {
 
 export const conversations = writable<ConversationListItem[]>([]);
 
+const optimisticConversationIds = new Set<string>();
+const deletedConversationIds = new Set<string>();
+
+export function reconcileConversationSnapshot(
+	items: ConversationListItem[],
+	options: { resetLocalState?: boolean } = {}
+): void {
+	const incoming = options.resetLocalState
+		? items
+		: items.filter((item) => !deletedConversationIds.has(item.id));
+
+	conversations.update((current) => {
+		if (options.resetLocalState) {
+			optimisticConversationIds.clear();
+			deletedConversationIds.clear();
+			return incoming;
+		}
+
+		const next = new Map(incoming.map((item) => [item.id, item]));
+		for (const item of current) {
+			if (deletedConversationIds.has(item.id)) continue;
+			if (!optimisticConversationIds.has(item.id)) continue;
+			if (!next.has(item.id)) {
+				next.set(item.id, item);
+			}
+		}
+
+		for (const item of incoming) {
+			optimisticConversationIds.delete(item.id);
+		}
+
+		return Array.from(next.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+	});
+}
+
 export async function loadConversations(): Promise<void> {
 	try {
-		conversations.set(await fetchConversations());
+		reconcileConversationSnapshot(await fetchConversations());
 	} catch (error) {
 		console.error('Error loading conversations:', error);
 	}
@@ -41,6 +76,8 @@ export async function createNewConversation(): Promise<string> {
 }
 
 export function upsertConversationLocal(id: string, title = 'New Conversation', updatedAt = Date.now() / 1000): void {
+	optimisticConversationIds.add(id);
+	deletedConversationIds.delete(id);
 	conversations.update((items) => {
 		const existingIndex = items.findIndex((item) => item.id === id);
 		if (existingIndex === -1) {
@@ -57,11 +94,15 @@ export function upsertConversationLocal(id: string, title = 'New Conversation', 
 }
 
 export function removeConversationLocal(id: string): void {
+	optimisticConversationIds.delete(id);
+	deletedConversationIds.add(id);
 	conversations.update((items) => items.filter((conversation) => conversation.id !== id));
 }
 
 export async function deleteConversationById(id: string): Promise<void> {
 	await deleteConversation(id);
+	optimisticConversationIds.delete(id);
+	deletedConversationIds.add(id);
 	conversations.update((items) => items.filter((conversation) => conversation.id !== id));
 }
 

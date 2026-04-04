@@ -55,6 +55,7 @@ const SEMANTIC_RECONCILE_MIN_CONFIDENCE = 72;
 const MAX_SEMANTIC_CANDIDATES = 4;
 const ensureClustersReadyInFlight = new Map<string, Promise<void>>();
 const promptRefreshTriggeredAt = new Map<string, number>();
+const personaRuntimeEpochByUser = new Map<string, number>();
 
 type ClusterPlan = {
 	clusterId: string;
@@ -71,6 +72,20 @@ type ClusterPlan = {
 	decayAt: number | null;
 	archiveAt: number | null;
 };
+
+function getPersonaRuntimeEpoch(userId: string): number {
+	return personaRuntimeEpochByUser.get(userId) ?? 0;
+}
+
+function isPersonaRuntimeEpochCurrent(userId: string, epoch: number): boolean {
+	return getPersonaRuntimeEpoch(userId) === epoch;
+}
+
+export function clearPersonaMemoryRuntimeStateForUser(userId: string): void {
+	personaRuntimeEpochByUser.set(userId, getPersonaRuntimeEpoch(userId) + 1);
+	ensureClustersReadyInFlight.delete(userId);
+	promptRefreshTriggeredAt.delete(userId);
+}
 
 type ExistingClusterSnapshot = {
 	canonicalText: string;
@@ -2372,10 +2387,14 @@ export async function ensurePersonaMemoryClustersReady(
 	}
 
 	const pending = (async () => {
+		const runtimeEpoch = getPersonaRuntimeEpoch(userId);
 		const [unfilteredRawRecords, existingSnapshots] = await Promise.all([
 			listPersonaMemories(userId).catch(() => []),
 			loadExistingClusterSnapshots(userId),
 		]);
+		if (!isPersonaRuntimeEpochCurrent(userId, runtimeEpoch)) {
+			return;
+		}
 		const rawRecords = await filterArtifactDerivedPersonaRecords({
 			userId,
 			records: unfilteredRawRecords,
@@ -2400,6 +2419,7 @@ export async function ensurePersonaMemoryClustersReady(
 				userId,
 				rawRecords,
 				reason,
+				runtimeEpoch,
 			});
 			return;
 		}
@@ -2411,11 +2431,15 @@ export async function ensurePersonaMemoryClustersReady(
 				reason,
 				artifactFilterApplied: true,
 				force,
+				runtimeEpoch,
 			});
 			return;
 		}
 
 		if (rawNewestAt <= latestDreamAt || rawRecords.length > 0) {
+			if (!isPersonaRuntimeEpochCurrent(userId, runtimeEpoch)) {
+				return;
+			}
 			await refreshPersonaClusterStates(userId);
 		}
 	})().finally(() => {
@@ -2432,7 +2456,16 @@ export async function syncPersonaMemoryClusters(params: {
 	reason?: string;
 	force?: boolean;
 	artifactFilterApplied?: boolean;
+	runtimeEpoch?: number;
 }): Promise<{ dreamed: boolean; fullSweep: boolean; clusterCount: number }> {
+	const runtimeEpoch = params.runtimeEpoch ?? getPersonaRuntimeEpoch(params.userId);
+	if (!isPersonaRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+		return {
+			dreamed: false,
+			fullSweep: false,
+			clusterCount: 0,
+		};
+	}
 	const filteredRawRecords = params.artifactFilterApplied
 		? params.rawRecords
 		: await filterArtifactDerivedPersonaRecords({
@@ -2447,6 +2480,13 @@ export async function syncPersonaMemoryClusters(params: {
 	});
 
 	if (!gate.shouldDream) {
+		if (!isPersonaRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+			return {
+				dreamed: false,
+				fullSweep: false,
+				clusterCount: 0,
+			};
+		}
 		await refreshPersonaClusterStates(params.userId);
 		return {
 			dreamed: false,
@@ -2573,6 +2613,13 @@ export async function syncPersonaMemoryClusters(params: {
 	applyDeterministicCorrectionSignals(plans);
 	for (const plan of plans) {
 		recomputePlanSalience(plan, now);
+	}
+	if (!isPersonaRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
+		return {
+			dreamed: false,
+			fullSweep: false,
+			clusterCount: 0,
+		};
 	}
 	const pendingMemoryEvents = collectPersonaMemoryEvents({
 		userId: params.userId,
@@ -3074,8 +3121,10 @@ export async function deletePersonaMemoryClustersForConclusionIds(
 }
 
 export async function deleteAllPersonaMemoryStateForUser(userId: string): Promise<void> {
+	clearPersonaMemoryRuntimeStateForUser(userId);
 	await db.transaction((tx) => {
 		tx.delete(personaMemoryOverviews).where(eq(personaMemoryOverviews.userId, userId)).run();
+		tx.delete(personaMemoryClusterMembers).where(eq(personaMemoryClusterMembers.userId, userId)).run();
 		tx.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, userId)).run();
 	});
 }

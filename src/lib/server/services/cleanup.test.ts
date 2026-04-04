@@ -6,6 +6,7 @@ const {
 	mockDeleteAllChatFilesForConversation,
 	mockDeleteConversationHonchoState,
 	mockDeleteAllPersonaMemoryStateForUser,
+	mockClearKnowledgeMemoryRuntimeStateForUser,
 	mockHardDeleteArtifactsForUser,
 	mockListConversationOwnedArtifacts,
 	mockArtifactHasReferencesOutsideConversation,
@@ -19,6 +20,7 @@ const {
 		mockDeleteAllChatFilesForConversation: vi.fn(() => Promise.resolve(0)),
 		mockDeleteConversationHonchoState: vi.fn(() => Promise.resolve(undefined)),
 		mockDeleteAllPersonaMemoryStateForUser: vi.fn(() => Promise.resolve(undefined)),
+		mockClearKnowledgeMemoryRuntimeStateForUser: vi.fn(() => undefined),
 		mockHardDeleteArtifactsForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockListConversationOwnedArtifacts: vi.fn(() => Promise.resolve([])),
 		mockArtifactHasReferencesOutsideConversation: vi.fn(() => Promise.resolve(false)),
@@ -83,8 +85,13 @@ vi.mock('$lib/server/db/schema', () => ({
 	conversationContextStatus: { userId: { name: 'userId' } },
 	conversationTaskStates: { userId: { name: 'userId' } },
 	conversationWorkingSetItems: { userId: { name: 'userId' } },
+	memoryEvents: { userId: { name: 'userId' } },
+	memoryProjectTaskLinks: { userId: { name: 'userId' } },
 	memoryProjects: { userId: { name: 'userId' } },
 	personaMemoryAttributions: { userId: { name: 'userId' } },
+	semanticEmbeddings: { userId: { name: 'userId' } },
+	taskCheckpoints: { userId: { name: 'userId' } },
+	taskStateEvidenceLinks: { userId: { name: 'userId' } },
 	users: {},
 }));
 
@@ -119,6 +126,10 @@ vi.mock('./messages', () => ({
 
 vi.mock('./persona-memory', () => ({
 	deleteAllPersonaMemoryStateForUser: mockDeleteAllPersonaMemoryStateForUser,
+}));
+
+vi.mock('./memory', () => ({
+	clearKnowledgeMemoryRuntimeStateForUser: mockClearKnowledgeMemoryRuntimeStateForUser,
 }));
 
 describe('cleanup service', () => {
@@ -158,6 +169,7 @@ describe('cleanup service', () => {
 
 		await resetKnowledgeBaseState('user-1');
 
+		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
 	});
 });

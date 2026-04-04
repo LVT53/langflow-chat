@@ -8,8 +8,13 @@ import {
 	conversationTaskStates,
 	conversationWorkingSetItems,
 	conversations,
+	memoryEvents,
+	memoryProjectTaskLinks,
 	memoryProjects,
 	personaMemoryAttributions,
+	semanticEmbeddings,
+	taskCheckpoints,
+	taskStateEvidenceLinks,
 	users,
 } from '$lib/server/db/schema';
 import { verifyPassword } from './auth';
@@ -26,6 +31,7 @@ import {
 import { deleteAllChatFilesForConversation } from './chat-files';
 import { clearMessageEvidenceForUser } from './messages';
 import { deleteAllPersonaMemoryStateForUser } from './persona-memory';
+import { clearKnowledgeMemoryRuntimeStateForUser } from './memory';
 
 export type DeleteUserAccountResult =
 	| { status: 'deleted' }
@@ -146,6 +152,7 @@ export async function deleteConversationWithCleanup(
 export async function resetKnowledgeBaseState(userId: string): Promise<{
 	deletedArtifactIds: string[];
 }> {
+	clearKnowledgeMemoryRuntimeStateForUser(userId);
 	await deleteAllHonchoStateForUser(userId);
 	await deleteAllPersonaMemoryStateForUser(userId);
 
@@ -160,9 +167,14 @@ export async function resetKnowledgeBaseState(userId: string): Promise<{
 	}
 
 	await db.transaction((tx) => {
+		tx.delete(taskStateEvidenceLinks).where(eq(taskStateEvidenceLinks.userId, userId));
+		tx.delete(taskCheckpoints).where(eq(taskCheckpoints.userId, userId));
+		tx.delete(memoryProjectTaskLinks).where(eq(memoryProjectTaskLinks.userId, userId));
 		tx.delete(conversationTaskStates).where(eq(conversationTaskStates.userId, userId));
 		tx.delete(memoryProjects).where(eq(memoryProjects.userId, userId));
+		tx.delete(memoryEvents).where(eq(memoryEvents.userId, userId));
 		tx.delete(personaMemoryAttributions).where(eq(personaMemoryAttributions.userId, userId));
+		tx.delete(semanticEmbeddings).where(eq(semanticEmbeddings.userId, userId));
 		tx.delete(conversationWorkingSetItems).where(eq(conversationWorkingSetItems.userId, userId));
 		tx.delete(conversationContextStatus).where(eq(conversationContextStatus.userId, userId));
 	});
