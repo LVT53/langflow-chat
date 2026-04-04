@@ -814,13 +814,15 @@
 			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
 				Uploaded files are managed as single logical documents, while their extracted text stays available behind the scenes for retrieval.
 			</p>
-			<button
-				type="button"
-				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-				onclick={() => onOpenLibraryModal('documents')}
-			>
-				Manage documents
-			</button>
+			<div class="mt-auto pt-4">
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+					onclick={() => onOpenLibraryModal('documents')}
+				>
+					Manage documents
+				</button>
+			</div>
 		</div>
 
 		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
@@ -833,13 +835,15 @@
 			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
 				Saved generated outputs that remain available for recall and later refinement.
 			</p>
-			<button
-				type="button"
-				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-				onclick={() => onOpenLibraryModal('results')}
-			>
-				Manage results
-			</button>
+			<div class="mt-auto pt-4">
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+					onclick={() => onOpenLibraryModal('results')}
+				>
+					Manage results
+				</button>
+			</div>
 		</div>
 
 		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
@@ -852,13 +856,15 @@
 			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
 				Reusable workflow capsules summarizing patterns, source inputs, and output history.
 			</p>
-			<button
-				type="button"
-				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-				onclick={() => onOpenLibraryModal('workflows')}
-			>
-				Manage workflows
-			</button>
+			<div class="mt-auto pt-4">
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+					onclick={() => onOpenLibraryModal('workflows')}
+				>
+					Manage workflows
+				</button>
+			</div>
 		</div>
 	</div>
 </section>
