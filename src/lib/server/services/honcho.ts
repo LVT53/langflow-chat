@@ -1087,7 +1087,8 @@ export async function buildConstructedContext(params: {
 				params.userId,
 				params.conversationId,
 				params.message,
-				attachmentIds
+				attachmentIds,
+				params.activeDocumentArtifactId
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(

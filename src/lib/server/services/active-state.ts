@@ -22,6 +22,16 @@ export interface ActiveDocumentState {
   currentGeneratedReasonCodes: Set<WorkingSetReasonCode>;
 }
 
+const LIVE_DOCUMENT_REASON_CODES: WorkingSetReasonCode[] = [
+  "attached_this_turn",
+  "active_document_focus",
+  "recent_user_correction",
+  "recently_refined_document_family",
+  "current_generated_document",
+  "latest_generated_output",
+  "matched_current_turn",
+];
+
 export function isDocumentFocusedTurn(
   message: string,
   attachmentIds: string[] = [],
@@ -41,6 +51,36 @@ export function hasActiveContextResetSignal(
 ): boolean {
   if (!message?.trim()) return false;
   return CONTEXT_RESET_RE.test(message);
+}
+
+export function deriveCurrentTurnReasonCodes(params: {
+  artifactId: string;
+  reasonCodes: WorkingSetReasonCode[];
+  activeDocumentState: ActiveDocumentState;
+}): WorkingSetReasonCode[] {
+  const nextReasonCodes = new Set(params.reasonCodes);
+  for (const code of LIVE_DOCUMENT_REASON_CODES) {
+    nextReasonCodes.delete(code);
+  }
+
+  if (params.activeDocumentState.activeDocumentIds.has(params.artifactId)) {
+    nextReasonCodes.add("active_document_focus");
+  }
+  if (params.activeDocumentState.correctionTargetIds.has(params.artifactId)) {
+    nextReasonCodes.add("recent_user_correction");
+  }
+  if (
+    params.activeDocumentState.recentlyRefinedArtifactIds.has(params.artifactId)
+  ) {
+    nextReasonCodes.add("recently_refined_document_family");
+  }
+  if (params.activeDocumentState.currentGeneratedArtifactId === params.artifactId) {
+    for (const code of params.activeDocumentState.currentGeneratedReasonCodes) {
+      nextReasonCodes.add(code);
+    }
+  }
+
+  return Array.from(nextReasonCodes);
 }
 
 function hasGeneratedDocumentRefinementMetadata(

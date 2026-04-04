@@ -123,6 +123,7 @@ knowledge.ts (facade — re-exports from below)
 **Document-preference note**: task-state evidence preference writes should stay document-family aware. If a user pins or excludes one artifact version inside a working-document family, clear sibling user preference links for that same family so one version remains current for the task.
 **Active-state note**: structured live signals such as active workspace focus, explicit user correction phrasing, the most recently refined document family, and explicit move-on/reset phrasing should stay first-class in working-set/prompt selection. Prefer those signals over ad hoc semantic-only rescoring when the user is clearly revising or explicitly leaving a current document.
 **Active-state assembly note**: use `active-state.ts` as the shared source for live document focus/correction/current-output/recently-refined-family/reset signals. Avoid rebuilding that logic independently inside `knowledge/context.ts`, `task-state.ts`, or `honcho.ts`, because drift there will make prompt selection and evidence selection disagree about the “current” document.
+**Prompt-selection note**: `selectWorkingSetArtifactsForPrompt(...)` must rederive turn-scoped document reason codes from the current active-state before calling generated-document prompt eligibility. Persisted DB reason codes describe the last turn, not the current one.
 
 ## Task-State Submodule Flow
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildActiveDocumentState,
+  deriveCurrentTurnReasonCodes,
   hasActiveContextResetSignal,
   hasRecentUserCorrectionSignal,
   isDocumentFocusedTurn,
@@ -195,5 +196,28 @@ describe("active-state signals", () => {
     expect(Array.from(state.activeDocumentIds)).toEqual([]);
     expect(Array.from(state.recentlyRefinedArtifactIds)).toEqual([]);
     expect(state.currentGeneratedArtifactId).toBe(null);
+  });
+
+  it("recomputes live document reason codes for the current turn instead of trusting stale working-set codes", () => {
+    const activeDocumentState = buildActiveDocumentState({
+      message: "We're done with that, let's talk about something else.",
+      currentConversationId: "conv-1",
+      artifacts: [],
+    });
+
+    const reasonCodes = deriveCurrentTurnReasonCodes({
+      artifactId: "brief-v2",
+      reasonCodes: [
+        "active_document_focus",
+        "recent_user_correction",
+        "recently_refined_document_family",
+        "current_generated_document",
+        "matched_current_turn",
+        "persisted_from_previous_turn",
+      ],
+      activeDocumentState,
+    });
+
+    expect(reasonCodes).toEqual(["persisted_from_previous_turn"]);
   });
 });

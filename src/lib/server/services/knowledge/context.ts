@@ -17,7 +17,7 @@ import type {
 	WorkingSetReasonCode,
 } from '$lib/types';
 import { parseJsonStringArray } from '$lib/server/utils/json';
-import { buildActiveDocumentState } from '../active-state';
+import { buildActiveDocumentState, deriveCurrentTurnReasonCodes } from '../active-state';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	isGeneratedDocumentPromptEligible,
@@ -129,7 +129,8 @@ export async function selectWorkingSetArtifactsForPrompt(
 	userId: string,
 	conversationId: string,
 	message: string,
-	excludeArtifactIds: string[] = []
+	excludeArtifactIds: string[] = [],
+	activeDocumentArtifactId?: string
 ): Promise<Artifact[]> {
 	await ensureGeneratedOutputRetrievalBackfill(userId);
 
@@ -149,17 +150,34 @@ export async function selectWorkingSetArtifactsForPrompt(
 			)
 		);
 
-	return rows
+	const mappedRows = rows.map((row) => ({
+		item: row.item,
+		artifact: mapArtifact(row.artifact),
+	}));
+	const activeDocumentState = buildActiveDocumentState({
+		artifacts: mappedRows.map((row) => row.artifact),
+		message,
+		attachmentIds: excludeArtifactIds,
+		activeDocumentArtifactId,
+		currentConversationId: conversationId,
+	});
+
+	return mappedRows
 		.map((row) => {
-			const artifact = mapArtifact(row.artifact);
+			const artifact = row.artifact;
 			const messageMatchScore = scoreMatch(
 				message,
-				`${row.artifact.name}\n${row.artifact.summary ?? ''}\n${row.artifact.contentText ?? ''}`
+				`${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`
 			);
-			const reasonCodes = parseJsonStringArray(row.item.reasonCodesJson) as WorkingSetReasonCode[];
+			const baseReasonCodes = parseJsonStringArray(row.item.reasonCodesJson) as WorkingSetReasonCode[];
+			const reasonCodes = deriveCurrentTurnReasonCodes({
+				artifactId: artifact.id,
+				reasonCodes: baseReasonCodes,
+				activeDocumentState,
+			});
 			const explicitlyRequested =
-				scoreMatch(message, row.artifact.name) > 0 ||
-				scoreMatch(message, row.artifact.summary ?? '') > 1;
+				scoreMatch(message, artifact.name) > 0 ||
+				scoreMatch(message, artifact.summary ?? '') > 1;
 			const promptEligible = isGeneratedDocumentPromptEligible({
 				artifact,
 				conversationId,
