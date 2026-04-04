@@ -9,6 +9,12 @@ import {
 	summarizeAttachmentSectionInInput,
 } from './attachment-trace';
 
+type AuthenticatedPromptUser = {
+	id: string;
+	displayName?: string | null;
+	email?: string | null;
+};
+
 const URL_LIST_TOOL_ARGUMENT_GUARD = [
 	'Tool argument safety for URL-processing tools:',
 	'- If a tool field is named `urls` or expects a list of URLs/links, always pass an array of strings.',
@@ -142,7 +148,7 @@ export async function sendMessage(
   message: string,
   sessionId: string,
   modelId?: ModelId,
-  userId?: string,
+  user?: AuthenticatedPromptUser,
   options?: {
     signal?: AbortSignal;
     attachmentIds?: string[];
@@ -177,9 +183,9 @@ export async function sendMessage(
     let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
     let honchoContext: import('$lib/types').HonchoContextInfo | null | undefined;
     let honchoSnapshot: import('$lib/types').HonchoContextSnapshot | null | undefined;
-    if (userId) {
+    if (user?.id) {
       const constructed = await buildConstructedContext({
-        userId,
+        userId: user.id,
         conversationId: sessionId,
         message,
         attachmentIds: options?.attachmentIds,
@@ -214,8 +220,12 @@ export async function sendMessage(
       }
     }
 
-    const baseSystemPrompt = userId
-      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, userId)
+    const baseSystemPrompt = user?.id
+      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, {
+          userId: user.id,
+          displayName: user.displayName,
+          email: user.email,
+        })
       : getSystemPrompt(modelConfig.systemPrompt);
     const systemPrompt = buildOutboundSystemPrompt({
       basePrompt: baseSystemPrompt,
@@ -235,7 +245,7 @@ export async function sendMessage(
       url,
       flowId,
       sessionId,
-      userId: userId ?? null,
+      userId: user?.id ?? null,
       modelId: modelId ?? 'model1',
       modelName,
       attachmentCount: options?.attachmentIds?.length ?? 0,
@@ -281,7 +291,7 @@ export async function sendMessageStream(
   options?: {
     connectTimeoutMs?: number;
     signal?: AbortSignal;
-    userId?: string;
+    user?: AuthenticatedPromptUser;
     attachmentIds?: string[];
     activeDocumentArtifactId?: string;
     attachmentTraceId?: string;
@@ -329,9 +339,9 @@ export async function sendMessageStream(
     let contextDebug: import('$lib/types').ContextDebugState | null | undefined;
     let honchoContext: import('$lib/types').HonchoContextInfo | null | undefined;
     let honchoSnapshot: import('$lib/types').HonchoContextSnapshot | null | undefined;
-    if (options?.userId) {
+    if (options?.user?.id) {
       const constructed = await buildConstructedContext({
-        userId: options.userId,
+        userId: options.user.id,
         conversationId: sessionId,
         message,
         attachmentIds: options.attachmentIds,
@@ -366,8 +376,12 @@ export async function sendMessageStream(
       }
     }
 
-    const baseSystemPrompt = options?.userId
-      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, options.userId)
+    const baseSystemPrompt = options?.user?.id
+      ? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, {
+          userId: options.user.id,
+          displayName: options.user.displayName,
+          email: options.user.email,
+        })
       : getSystemPrompt(modelConfig.systemPrompt);
     const systemPrompt = buildOutboundSystemPrompt({
       basePrompt: baseSystemPrompt,
@@ -387,7 +401,7 @@ export async function sendMessageStream(
       url,
       flowId,
       sessionId,
-      userId: options?.userId ?? null,
+      userId: options?.user?.id ?? null,
       modelId: modelId ?? 'model1',
       modelName,
       attachmentCount: options?.attachmentIds?.length ?? 0,

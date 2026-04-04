@@ -60,6 +60,7 @@ vi.mock('$lib/server/services/translator', () => ({
 
 vi.mock('$lib/server/services/honcho', () => ({
 	capturePersonaMemorySnapshot: vi.fn(async () => new Set()),
+	listPersonaMemories: vi.fn(async () => []),
 	mirrorMessage: vi.fn(async () => undefined),
 	mirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
 	syncConversationPersonaMemoryAttributions: vi.fn(async () => 0),
@@ -169,9 +170,19 @@ describe('POST /api/chat/send', () => {
 		expect(response.status).toBe(200);
 		expect(data.response.text).toBe('Hello from AI!');
 		expect(data.conversationId).toBe('conv-1');
-		expect(mockSendMessage).toHaveBeenCalledWith('Hello', 'conv-1', undefined, 'user-1', {
-			attachmentIds: []
-		});
+		expect(mockSendMessage).toHaveBeenCalledWith(
+			'Hello',
+			'conv-1',
+			undefined,
+			{
+				id: 'user-1',
+				displayName: undefined,
+				email: 'test@example.com',
+			},
+			expect.objectContaining({
+				attachmentIds: [],
+			})
+		);
 		expect(mockUpdateMessageHonchoMetadata).toHaveBeenCalledWith('assistant-msg', {
 			honchoContext: expect.objectContaining({ source: 'live' }),
 			honchoSnapshot: expect.objectContaining({ summary: 'Latest Honcho summary' }),
@@ -190,9 +201,19 @@ describe('POST /api/chat/send', () => {
 		const data = await response.json();
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-		expect(mockSendMessage).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, 'user-1', {
-			attachmentIds: []
-		});
+		expect(mockSendMessage).toHaveBeenCalledWith(
+			'EN:Szia',
+			'conv-1',
+			undefined,
+			{
+				id: 'user-1',
+				displayName: undefined,
+				email: 'test@example.com',
+			},
+			expect.objectContaining({
+				attachmentIds: [],
+			})
+		);
 		expect(mockTranslateEnglishToHungarian).toHaveBeenCalledWith('Hello from AI!');
 		expect(data.response.text).toBe('HU:Hello from AI!');
 	});

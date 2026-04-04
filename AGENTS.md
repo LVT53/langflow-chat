@@ -128,6 +128,7 @@ Do not:
 - Upstream integrations:
 - [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
   - Owns model-facing prompt assembly and outbound search/date guidance.
+  - Also owns authenticated account-level prompt personalization fields such as display name and email; pass them once at this boundary instead of rebuilding user identity text in routes or memory services.
   - [`src/lib/server/services/translator.ts`](./src/lib/server/services/translator.ts)
   - [`src/lib/server/services/title-generator.ts`](./src/lib/server/services/title-generator.ts)
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)

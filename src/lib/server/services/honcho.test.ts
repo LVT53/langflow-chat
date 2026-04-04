@@ -590,10 +590,17 @@ describe('Honcho Service', () => {
   });
 
   describe('buildEnhancedSystemPrompt', () => {
-    it('should return base prompt when Honcho is disabled', async () => {
+    it('adds the authenticated user profile to the prompt', async () => {
       const { buildEnhancedSystemPrompt } = await import('./honcho');
-      const result = await buildEnhancedSystemPrompt('default', 'user-123');
+      const result = await buildEnhancedSystemPrompt('default', {
+        userId: 'user-123',
+        displayName: 'Levi',
+        email: 'levi@example.com',
+      });
       expect(result).toContain('You are a helpful AI assistant.');
+      expect(result).toContain('## User Profile');
+      expect(result).toContain('Display Name: Levi');
+      expect(result).toContain('Email: levi@example.com');
       expect(result).toContain('Retrieved Context Discipline');
       expect(result).toContain('User profile and persona memory describe the human user, not you.');
     });

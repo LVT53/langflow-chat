@@ -368,7 +368,9 @@ describe('Langflow API Client Service', () => {
         honchoSnapshot: null,
       });
 
-      const result = await sendMessage('Hello', 'test-session', undefined, 'user-1', {
+      const result = await sendMessage('Hello', 'test-session', undefined, {
+        id: 'user-1',
+      }, {
         attachmentIds: ['artifact-1'],
         attachmentTraceId: 'trace-1',
       });
@@ -401,7 +403,9 @@ describe('Langflow API Client Service', () => {
         ok: true
       }));
 
-      await sendMessage('Continue refining this draft.', 'test-session', undefined, 'user-1', {
+      await sendMessage('Continue refining this draft.', 'test-session', undefined, {
+        id: 'user-1',
+      }, {
         activeDocumentArtifactId: 'artifact-focused-1',
       });
 
@@ -410,6 +414,37 @@ describe('Langflow API Client Service', () => {
           activeDocumentArtifactId: 'artifact-focused-1',
         })
       );
+    });
+
+    it('passes authenticated display name and email into enhanced system prompt assembly', async () => {
+      const { sendMessage } = await import('./langflow');
+      const { buildEnhancedSystemPrompt } = await import('./honcho');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'AI response'
+                }
+              }
+            }]
+          }]
+        }),
+        ok: true
+      }));
+
+      await sendMessage('Hello', 'test-session', undefined, {
+        id: 'user-1',
+        displayName: 'Levi',
+        email: 'levi@example.com',
+      });
+
+      expect(buildEnhancedSystemPrompt).toHaveBeenCalledWith('default', {
+        userId: 'user-1',
+        displayName: 'Levi',
+        email: 'levi@example.com',
+      });
     });
 
     it('adds a URL list guard when the outbound prompt contains a link', async () => {
@@ -600,7 +635,9 @@ describe('Langflow API Client Service', () => {
       });
 
       const result = await sendMessageStream('Hello', 'test-session', undefined, {
-        userId: 'user-1',
+        user: {
+          id: 'user-1',
+        },
         attachmentIds: ['artifact-1'],
         attachmentTraceId: 'trace-2',
       });
@@ -628,7 +665,9 @@ describe('Langflow API Client Service', () => {
       }));
 
       await sendMessageStream('Keep editing the open file.', 'test-session', undefined, {
-        userId: 'user-1',
+        user: {
+          id: 'user-1',
+        },
         activeDocumentArtifactId: 'artifact-focused-2',
       });
 
@@ -637,6 +676,33 @@ describe('Langflow API Client Service', () => {
           activeDocumentArtifactId: 'artifact-focused-2',
         })
       );
+    });
+
+    it('passes authenticated display name and email into streaming system prompt assembly', async () => {
+      const mockBody = {} as ReadableStream<Uint8Array>;
+      const { sendMessageStream } = await import('./langflow');
+      const { buildEnhancedSystemPrompt } = await import('./honcho');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: mockBody,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
+      }));
+
+      await sendMessageStream('Hello', 'test-session', undefined, {
+        user: {
+          id: 'user-1',
+          displayName: 'Levi',
+          email: 'levi@example.com',
+        },
+      });
+
+      expect(buildEnhancedSystemPrompt).toHaveBeenCalledWith('default', {
+        userId: 'user-1',
+        displayName: 'Levi',
+        email: 'levi@example.com',
+      });
     });
 
     it('throws a specific connect-timeout error when stream headers never arrive', async () => {

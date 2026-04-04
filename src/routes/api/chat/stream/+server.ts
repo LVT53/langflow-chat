@@ -536,7 +536,11 @@ export const POST: RequestHandler = async (event) => {
             modelId,
             {
               signal: upstreamAbortController.signal,
-              userId: user.id,
+              user: {
+                id: user.id,
+                displayName: user.displayName,
+                email: user.email,
+              },
               attachmentIds: safeAttachmentIds,
               activeDocumentArtifactId,
               attachmentTraceId,
@@ -571,7 +575,11 @@ export const POST: RequestHandler = async (event) => {
               upstreamMessage,
               conversationId,
               modelId,
-              user.id,
+              {
+                id: user.id,
+                displayName: user.displayName,
+                email: user.email,
+              },
               {
                 signal: upstreamAbortController.signal,
                 attachmentIds: safeAttachmentIds,

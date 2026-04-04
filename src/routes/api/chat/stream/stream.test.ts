@@ -381,15 +381,19 @@ describe('POST /api/chat/stream', () => {
 
 		expect(response.status).toBe(200);
 		expect(body).toContain('"text":"Refined"');
-		expect(mockSendMessageStream).toHaveBeenCalledWith(
-			'Refine it',
-			'conv-1',
-			undefined,
-			expect.objectContaining({
-				activeDocumentArtifactId: 'artifact-focused-1',
-				userId: 'user-1',
-			})
-		);
+			expect(mockSendMessageStream).toHaveBeenCalledWith(
+				'Refine it',
+				'conv-1',
+				undefined,
+				expect.objectContaining({
+					activeDocumentArtifactId: 'artifact-focused-1',
+					user: {
+						id: 'user-1',
+						displayName: undefined,
+						email: 'test@example.com',
+					},
+				})
+			);
 	});
 
 	it('continues processing upstream after the client disconnects during metadata loading', async () => {
@@ -796,11 +800,15 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-		expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, {
-			signal: expect.any(Object),
-			userId: 'user-1',
-			attachmentIds: []
-		});
+			expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, {
+				signal: expect.any(Object),
+				user: {
+					id: 'user-1',
+					displayName: undefined,
+					email: 'test@example.com',
+				},
+				attachmentIds: []
+			});
 		expect(body).toContain('"text":"HU:Final English answer."');
 	});
 
@@ -883,12 +891,22 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: token');
 		expect(body).toContain('"text":"Recovered final answer"');
 		expect(body).toContain('event: end');
-		expect(mockSendMessage).toHaveBeenCalledWith('Hi', 'conv-1', undefined, 'user-1', {
-			signal: expect.any(Object),
-			attachmentIds: [],
-			attachmentTraceId: undefined,
-			systemPromptAppendix: undefined,
-		});
+			expect(mockSendMessage).toHaveBeenCalledWith(
+				'Hi',
+				'conv-1',
+				undefined,
+				{
+					id: 'user-1',
+					displayName: undefined,
+					email: 'test@example.com',
+				},
+				expect.objectContaining({
+					signal: expect.any(Object),
+					attachmentIds: [],
+					attachmentTraceId: undefined,
+					systemPromptAppendix: undefined,
+				})
+			);
 	});
 
 	it('completes successfully when Langflow returns JSON instead of SSE for the stream request', async () => {
@@ -944,24 +962,32 @@ describe('POST /api/chat/stream', () => {
 			1,
 			'Check https://example.com',
 			'conv-1',
-			undefined,
-			expect.objectContaining({
-				signal: expect.any(Object),
-				userId: 'user-1',
-				attachmentIds: []
-			})
-		);
+				undefined,
+				expect.objectContaining({
+					signal: expect.any(Object),
+					user: {
+						id: 'user-1',
+						displayName: undefined,
+						email: 'test@example.com',
+					},
+					attachmentIds: []
+				})
+			);
 		expect(mockSendMessageStream).toHaveBeenNthCalledWith(
 			2,
 			'Check https://example.com',
 			'conv-1',
-			undefined,
-			expect.objectContaining({
-				signal: expect.any(Object),
-				userId: 'user-1',
-				attachmentIds: [],
-				systemPromptAppendix: expect.stringContaining('field named `urls`')
-			})
+				undefined,
+				expect.objectContaining({
+					signal: expect.any(Object),
+					user: {
+						id: 'user-1',
+						displayName: undefined,
+						email: 'test@example.com',
+					},
+					attachmentIds: [],
+					systemPromptAppendix: expect.stringContaining('field named `urls`')
+				})
 		);
 	});
 

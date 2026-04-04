@@ -1570,12 +1570,30 @@ export async function getPeerContext(
 
 export async function buildEnhancedSystemPrompt(
 	promptName: string | undefined,
-	_userId: string
+	params: {
+		userId: string;
+		displayName?: string | null;
+		email?: string | null;
+	}
 ): Promise<string> {
 	const basePrompt = getSystemPrompt(promptName);
+	const normalizedDisplayName = params.displayName?.trim() || null;
+	const normalizedEmail = params.email?.trim() || null;
 	const sections = [
 		basePrompt,
 		basePrompt ? '' : null,
+		normalizedDisplayName || normalizedEmail
+			? [
+					'## User Profile',
+					'The following account-level profile fields belong to the current human user.',
+					normalizedDisplayName ? `Display Name: ${normalizedDisplayName}` : null,
+					normalizedEmail ? `Email: ${normalizedEmail}` : null,
+					'Use them for respectful personalization and direct address when helpful, especially early in a conversation before other memory exists.',
+					'Do not infer extra biography, preferences, or private facts beyond these explicit fields.',
+				]
+					.filter((value): value is string => value !== null)
+					.join('\n')
+			: null,
 		'## Retrieved Context Discipline',
 		'Use any retrieved task state, recalled session details, documents, workflows, or evidence as supporting context only.',
 		'User profile and persona memory describe the human user, not you.',
