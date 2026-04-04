@@ -230,6 +230,79 @@ describe('Knowledge page', () => {
 		unmount();
 	});
 
+	it('opens saved results from the library manager in the shared document workspace', async () => {
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+			const url = String(input);
+			if (url === '/api/knowledge/storage-quota') {
+				return new Response(
+					JSON.stringify({
+						totalStorageUsed: 1024,
+						totalFiles: 1,
+						storageLimit: 1073741824,
+						usagePercent: 0,
+						isWarning: false,
+						warningThreshold: 80,
+						vaults: [],
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+
+			if (url === '/api/knowledge/result-1/preview') {
+				return new Response('Reusable result text', {
+					status: 200,
+					headers: { 'Content-Type': 'text/plain' },
+				});
+			}
+
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const { getByRole, queryByRole, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [],
+				results: [
+					{
+						id: 'result-1',
+						type: 'generated_output',
+						retrievalClass: 'saved_result',
+						name: 'Reusable result.md',
+						mimeType: 'text/markdown',
+						sizeBytes: 640,
+						conversationId: 'conversation-1',
+						vaultId: null,
+						summary: 'A reusable generated result.',
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+				],
+				workflows: [],
+				vaults: [],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /manage results/i }));
+		await waitFor(() => {
+			expect(getByRole('dialog')).toBeDefined();
+		});
+
+		await fireEvent.click(getByRole('button', { name: /preview/i }));
+
+		await waitFor(() => {
+			expect(queryByRole('dialog')).toBeNull();
+			const workspace = getByRole('complementary', { name: /document workspace/i });
+			expect(workspace).toBeDefined();
+			expect(within(workspace).getByText('Reusable result.md')).toBeDefined();
+		});
+
+		unmount();
+	});
+
 	it('loads memory when the memory tab is opened', async () => {
 		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 			ok: true,

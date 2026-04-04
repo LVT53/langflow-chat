@@ -903,6 +903,7 @@
 		{isKnowledgeActionPending}
 		{isDeletingArtifact}
 		onClose={closeLibraryModal}
+		onOpenDocument={openWorkspaceDocument}
 		onRunKnowledgeAction={runLibraryBulkAction}
 		onRemoveArtifact={removeArtifact}
 	/>
