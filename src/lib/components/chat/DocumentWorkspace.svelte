@@ -1,5 +1,12 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
+	import { renderHighlightedText } from '$lib/services/markdown';
+	import {
+		determinePreviewFileType,
+		getPreviewLanguage,
+	} from '$lib/utils/file-preview';
+	import { summarizeTextComparison } from '$lib/utils/text-compare';
 	import type { DocumentWorkspaceItem } from '$lib/types';
 
 	let {
@@ -28,6 +35,13 @@
 		if (documents.length === 0) return null;
 		return documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
 	});
+	let compareMode = $state(false);
+	let compareDocumentId = $state<string | null>(null);
+	let compareCurrentTextHtml = $state<string | null>(null);
+	let compareOtherTextHtml = $state<string | null>(null);
+	let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(null);
+	let compareLoading = $state(false);
+	let compareError = $state<string | null>(null);
 
 	function formatRoleLabel(role: string | null | undefined): string | null {
 		if (!role) return null;
@@ -96,6 +110,117 @@
 		return Boolean(document.originConversationId && document.originAssistantMessageId);
 	}
 
+	function isTextDocument(document: DocumentWorkspaceItem): boolean {
+		return determinePreviewFileType(document.mimeType, document.filename) === 'text';
+	}
+
+	function getDefaultCompareDocumentId(documentsInFamily: DocumentWorkspaceItem[]): string | null {
+		if (!(activeDocument && documentsInFamily.length > 1)) return null;
+		const currentIndex = documentsInFamily.findIndex((document) => document.id === activeDocument.id);
+		if (currentIndex === -1) return documentsInFamily[0]?.id ?? null;
+		if (currentIndex === 0) return documentsInFamily[1]?.id ?? null;
+		return documentsInFamily[currentIndex - 1]?.id ?? null;
+	}
+
+	let canCompareActiveDocument = $derived(
+		Boolean(activeDocument && isTextDocument(activeDocument) && familyDocuments.length > 1)
+	);
+	let comparedDocument = $derived(
+		compareDocumentId
+			? familyDocuments.find((document) => document.id === compareDocumentId) ?? null
+			: null
+	);
+
+	$effect(() => {
+		if (!canCompareActiveDocument) {
+			compareMode = false;
+			compareDocumentId = null;
+			return;
+		}
+
+		const nextCompareId = getDefaultCompareDocumentId(familyDocuments);
+		if (!compareDocumentId || !familyDocuments.some((document) => document.id === compareDocumentId)) {
+			compareDocumentId = nextCompareId;
+		}
+	});
+
+	function getDocumentPreviewUrl(document: DocumentWorkspaceItem): string | null {
+		if (document.previewUrl) return document.previewUrl;
+		if (document.artifactId) return `/api/knowledge/${document.artifactId}/preview`;
+		return null;
+	}
+
+	async function loadComparePreview(document: DocumentWorkspaceItem): Promise<string> {
+		const previewUrl = getDocumentPreviewUrl(document);
+		if (!previewUrl) {
+			throw new Error('Preview not available for comparison');
+		}
+
+		const response = await fetch(previewUrl);
+		if (!response.ok) {
+			throw new Error('Failed to load comparison preview');
+		}
+
+		const text = await response.text();
+		return text;
+	}
+
+	$effect(() => {
+		if (!(browser && compareMode && activeDocument && comparedDocument && canCompareActiveDocument)) {
+			compareCurrentTextHtml = null;
+			compareOtherTextHtml = null;
+			compareSummary = null;
+			compareLoading = false;
+			compareError = null;
+			return;
+		}
+
+		let cancelled = false;
+		compareLoading = true;
+		compareError = null;
+		compareCurrentTextHtml = null;
+		compareOtherTextHtml = null;
+		compareSummary = null;
+
+		void (async () => {
+			try {
+				const [currentText, otherText] = await Promise.all([
+					loadComparePreview(activeDocument),
+					loadComparePreview(comparedDocument),
+				]);
+				const [currentHtml, otherHtml] = await Promise.all([
+					renderHighlightedText(
+						currentText,
+						getPreviewLanguage(activeDocument.mimeType, activeDocument.filename),
+						browser ? document.documentElement.classList.contains('dark') : false
+					),
+					renderHighlightedText(
+						otherText,
+						getPreviewLanguage(comparedDocument.mimeType, comparedDocument.filename),
+						browser ? document.documentElement.classList.contains('dark') : false
+					),
+				]);
+
+				if (cancelled) return;
+				compareCurrentTextHtml = currentHtml;
+				compareOtherTextHtml = otherHtml;
+				compareSummary = summarizeTextComparison(currentText, otherText);
+			} catch (error) {
+				if (cancelled) return;
+				compareError =
+					error instanceof Error ? error.message : 'Failed to load comparison preview';
+			} finally {
+				if (!cancelled) {
+					compareLoading = false;
+				}
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
 </script>
 
 {#if open && activeDocument}
@@ -131,12 +256,37 @@
 
 			{#if canJumpToSource(activeDocument)}
 				<div class="workspace-actions">
+					{#if canCompareActiveDocument}
+						<button
+							type="button"
+							class="workspace-source-button"
+							onclick={() => {
+								compareMode = !compareMode;
+							}}
+						>
+							{compareMode ? 'Close compare' : 'Compare versions'}
+						</button>
+					{/if}
 					<button
 						type="button"
 						class="workspace-source-button"
 						onclick={() => onJumpToSource?.(activeDocument)}
 					>
 						View source message
+					</button>
+				</div>
+			{/if}
+
+			{#if !canJumpToSource(activeDocument) && canCompareActiveDocument}
+				<div class="workspace-actions">
+					<button
+						type="button"
+						class="workspace-source-button"
+						onclick={() => {
+							compareMode = !compareMode;
+						}}
+					>
+						{compareMode ? 'Close compare' : 'Compare versions'}
 					</button>
 				</div>
 			{/if}
@@ -204,16 +354,71 @@
 			{/if}
 
 			<div class="workspace-body">
-				<FilePreview
-					open={true}
-					variant="embedded"
-					showHeader={false}
-					artifactId={activeDocument.artifactId ?? null}
-					previewUrl={activeDocument.previewUrl ?? null}
-					filename={activeDocument.filename}
-					mimeType={activeDocument.mimeType}
-					onClose={onCloseWorkspace}
-				/>
+				{#if compareMode && comparedDocument}
+					<div class="workspace-compare">
+						<div class="workspace-compare-header">
+							<div>
+								<div class="workspace-compare-title">Compare Versions</div>
+								{#if compareSummary}
+									<div class="workspace-compare-summary">
+										{compareSummary.changedLines} changed • {compareSummary.addedLines} added • {compareSummary.removedLines} removed
+									</div>
+								{/if}
+							</div>
+							<label class="workspace-compare-select-wrap">
+								<span class="workspace-compare-select-label">Against</span>
+								<select
+									class="workspace-compare-select"
+									bind:value={compareDocumentId}
+								>
+									{#each familyDocuments.filter((document) => document.id !== activeDocument.id) as document (document.id)}
+										<option value={document.id}>
+											{getDocumentVersionLabel(document) ?? getDocumentTitle(document)}
+										</option>
+									{/each}
+								</select>
+							</label>
+						</div>
+
+						{#if compareLoading}
+							<div class="workspace-compare-state">Loading comparison…</div>
+						{:else if compareError}
+							<div class="workspace-compare-state workspace-compare-state-error">{compareError}</div>
+						{:else if compareCurrentTextHtml && compareOtherTextHtml}
+							<div class="workspace-compare-grid">
+								<section class="workspace-compare-panel">
+									<div class="workspace-compare-panel-head">
+										<span class="workspace-compare-panel-label">Current</span>
+										<span class="workspace-compare-panel-meta">{getDocumentTitle(activeDocument)} {getDocumentVersionLabel(activeDocument) ?? ''}</span>
+									</div>
+									<div class="workspace-compare-panel-body">
+										{@html compareCurrentTextHtml}
+									</div>
+								</section>
+								<section class="workspace-compare-panel">
+									<div class="workspace-compare-panel-head">
+										<span class="workspace-compare-panel-label">Compared</span>
+										<span class="workspace-compare-panel-meta">{getDocumentTitle(comparedDocument)} {getDocumentVersionLabel(comparedDocument) ?? ''}</span>
+									</div>
+									<div class="workspace-compare-panel-body">
+										{@html compareOtherTextHtml}
+									</div>
+								</section>
+							</div>
+						{/if}
+					</div>
+				{:else}
+					<FilePreview
+						open={true}
+						variant="embedded"
+						showHeader={false}
+						artifactId={activeDocument.artifactId ?? null}
+						previewUrl={activeDocument.previewUrl ?? null}
+						filename={activeDocument.filename}
+						mimeType={activeDocument.mimeType}
+						onClose={onCloseWorkspace}
+					/>
+				{/if}
 			</div>
 		</section>
 	</div>
@@ -243,12 +448,37 @@
 
 		{#if canJumpToSource(activeDocument)}
 			<div class="workspace-actions">
+				{#if canCompareActiveDocument}
+					<button
+						type="button"
+						class="workspace-source-button"
+						onclick={() => {
+							compareMode = !compareMode;
+						}}
+					>
+						{compareMode ? 'Close compare' : 'Compare versions'}
+					</button>
+				{/if}
 				<button
 					type="button"
 					class="workspace-source-button"
 					onclick={() => onJumpToSource?.(activeDocument)}
 				>
 					View source message
+				</button>
+			</div>
+		{/if}
+
+		{#if !canJumpToSource(activeDocument) && canCompareActiveDocument}
+			<div class="workspace-actions">
+				<button
+					type="button"
+					class="workspace-source-button"
+					onclick={() => {
+						compareMode = !compareMode;
+					}}
+				>
+					{compareMode ? 'Close compare' : 'Compare versions'}
 				</button>
 			</div>
 		{/if}
@@ -316,16 +546,68 @@
 		{/if}
 
 		<div class="workspace-body">
-			<FilePreview
-				open={true}
-				variant="embedded"
-				showHeader={false}
-				artifactId={activeDocument.artifactId ?? null}
-				previewUrl={activeDocument.previewUrl ?? null}
-				filename={activeDocument.filename}
-				mimeType={activeDocument.mimeType}
-				onClose={onCloseWorkspace}
-			/>
+			{#if compareMode && comparedDocument}
+				<div class="workspace-compare">
+					<div class="workspace-compare-header">
+						<div>
+							<div class="workspace-compare-title">Compare Versions</div>
+							{#if compareSummary}
+								<div class="workspace-compare-summary">
+									{compareSummary.changedLines} changed • {compareSummary.addedLines} added • {compareSummary.removedLines} removed
+								</div>
+							{/if}
+						</div>
+						<label class="workspace-compare-select-wrap">
+							<span class="workspace-compare-select-label">Against</span>
+							<select class="workspace-compare-select" bind:value={compareDocumentId}>
+								{#each familyDocuments.filter((document) => document.id !== activeDocument.id) as document (document.id)}
+									<option value={document.id}>
+										{getDocumentVersionLabel(document) ?? getDocumentTitle(document)}
+									</option>
+								{/each}
+							</select>
+						</label>
+					</div>
+
+					{#if compareLoading}
+						<div class="workspace-compare-state">Loading comparison…</div>
+					{:else if compareError}
+						<div class="workspace-compare-state workspace-compare-state-error">{compareError}</div>
+					{:else if compareCurrentTextHtml && compareOtherTextHtml}
+						<div class="workspace-compare-grid">
+							<section class="workspace-compare-panel">
+								<div class="workspace-compare-panel-head">
+									<span class="workspace-compare-panel-label">Current</span>
+									<span class="workspace-compare-panel-meta">{getDocumentTitle(activeDocument)} {getDocumentVersionLabel(activeDocument) ?? ''}</span>
+								</div>
+								<div class="workspace-compare-panel-body">
+									{@html compareCurrentTextHtml}
+								</div>
+							</section>
+							<section class="workspace-compare-panel">
+								<div class="workspace-compare-panel-head">
+									<span class="workspace-compare-panel-label">Compared</span>
+									<span class="workspace-compare-panel-meta">{getDocumentTitle(comparedDocument)} {getDocumentVersionLabel(comparedDocument) ?? ''}</span>
+								</div>
+								<div class="workspace-compare-panel-body">
+									{@html compareOtherTextHtml}
+								</div>
+							</section>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<FilePreview
+					open={true}
+					variant="embedded"
+					showHeader={false}
+					artifactId={activeDocument.artifactId ?? null}
+					previewUrl={activeDocument.previewUrl ?? null}
+					filename={activeDocument.filename}
+					mimeType={activeDocument.mimeType}
+					onClose={onCloseWorkspace}
+				/>
+			{/if}
 		</div>
 	</aside>
 {/if}
@@ -534,6 +816,127 @@
 		min-width: 0;
 	}
 
+	.workspace-compare {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+		flex-direction: column;
+		background: var(--surface-page);
+	}
+
+	.workspace-compare-header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: end;
+		justify-content: space-between;
+		gap: 0.9rem;
+		padding: 0.95rem 1rem 0.8rem;
+		border-bottom: 1px solid var(--border-default);
+		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
+	}
+
+	.workspace-compare-title {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: var(--text-primary);
+	}
+
+	.workspace-compare-summary {
+		margin-top: 0.2rem;
+		font-size: 0.76rem;
+		color: var(--text-secondary);
+	}
+
+	.workspace-compare-select-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 0.28rem;
+	}
+
+	.workspace-compare-select-label {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.workspace-compare-select {
+		min-width: 9rem;
+		padding: 0.45rem 0.72rem;
+		border: 1px solid var(--border-default);
+		border-radius: 0.75rem;
+		background: var(--surface-page);
+		font-size: 0.8rem;
+		color: var(--text-primary);
+	}
+
+	.workspace-compare-state {
+		padding: 1rem;
+		font-size: 0.86rem;
+		color: var(--text-secondary);
+	}
+
+	.workspace-compare-state-error {
+		color: var(--danger);
+	}
+
+	.workspace-compare-grid {
+		display: grid;
+		flex: 1 1 auto;
+		min-height: 0;
+		grid-template-columns: 1fr;
+	}
+
+	.workspace-compare-panel {
+		display: flex;
+		min-height: 0;
+		flex-direction: column;
+		border-bottom: 1px solid var(--border-default);
+	}
+
+	.workspace-compare-panel:last-child {
+		border-bottom: none;
+	}
+
+	.workspace-compare-panel-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.8rem 1rem;
+		border-bottom: 1px solid var(--border-subtle);
+		background: color-mix(in srgb, var(--surface-page) 90%, transparent 10%);
+	}
+
+	.workspace-compare-panel-label {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.workspace-compare-panel-meta {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.workspace-compare-panel-body {
+		min-height: 0;
+		flex: 1 1 auto;
+		overflow: auto;
+		padding: 1rem;
+	}
+
+	.workspace-compare-panel-body :global(pre) {
+		margin: 0;
+	}
+
 	.workspace-history {
 		display: flex;
 		flex-direction: column;
@@ -651,6 +1054,18 @@
 			flex: 0 0 auto;
 			border-left: 1px solid var(--border-subtle);
 			background: var(--surface-page);
+		}
+
+		.workspace-compare-grid {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		}
+
+		.workspace-compare-panel {
+			border-bottom: none;
+		}
+
+		.workspace-compare-panel + .workspace-compare-panel {
+			border-left: 1px solid var(--border-default);
 		}
 
 		.workspace-mobile-backdrop {
