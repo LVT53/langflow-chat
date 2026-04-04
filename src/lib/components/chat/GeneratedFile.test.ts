@@ -15,6 +15,10 @@ const baseProps = {
 type GeneratedFileTestProps = {
 	fileId?: string;
 	conversationId?: string;
+	documentFamilyId?: string | null;
+	documentLabel?: string | null;
+	documentRole?: string | null;
+	versionNumber?: number | null;
 	filename?: string;
 	size?: number;
 	mimeType?: string;
@@ -126,6 +130,10 @@ describe('GeneratedFile', () => {
 			filename: 'workspace.txt',
 			mimeType: 'text/plain',
 			downloadUrl: '/api/chat/files/file-123/download',
+			documentFamilyId: 'family-1',
+			documentLabel: 'Client Brief',
+			documentRole: 'proposal',
+			versionNumber: 3,
 			onOpen,
 		});
 
@@ -136,6 +144,11 @@ describe('GeneratedFile', () => {
 				id: 'file-123',
 				source: 'chat_generated_file',
 				filename: 'workspace.txt',
+				title: 'Client Brief',
+				documentFamilyId: 'family-1',
+				documentLabel: 'Client Brief',
+				documentRole: 'proposal',
+				versionNumber: 3,
 				previewUrl: '/api/chat/files/file-123/preview',
 				downloadUrl: '/api/chat/files/file-123/download',
 			})

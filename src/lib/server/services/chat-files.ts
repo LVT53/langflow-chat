@@ -19,6 +19,10 @@ export interface ChatFile {
 	conversationId: string;
 	assistantMessageId: string | null;
 	artifactId: string | null;
+	documentFamilyId?: string | null;
+	documentLabel?: string | null;
+	documentRole?: string | null;
+	versionNumber?: number | null;
 	userId: string;
 	filename: string;
 	mimeType: string | null;
@@ -219,7 +223,18 @@ function mapRowToChatFile(row: typeof chatGeneratedFiles.$inferSelect): ChatFile
 
 async function listGeneratedOutputArtifactIdsByChatFile(
 	conversationId: string
-): Promise<Map<string, string>> {
+): Promise<
+	Map<
+		string,
+		{
+			artifactId: string;
+			documentFamilyId: string | null;
+			documentLabel: string | null;
+			documentRole: string | null;
+			versionNumber: number | null;
+		}
+	>
+> {
 	const rows = await db
 		.select({
 			id: artifacts.id,
@@ -234,7 +249,16 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 		)
 		.orderBy(desc(artifacts.updatedAt));
 
-	const artifactIdsByChatFile = new Map<string, string>();
+	const artifactIdsByChatFile = new Map<
+		string,
+		{
+			artifactId: string;
+			documentFamilyId: string | null;
+			documentLabel: string | null;
+			documentRole: string | null;
+			versionNumber: number | null;
+		}
+	>();
 	for (const row of rows) {
 		const metadata = parseJsonRecord(row.metadataJson ?? null);
 		const chatFileId =
@@ -244,7 +268,18 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 		if (!chatFileId || artifactIdsByChatFile.has(chatFileId)) {
 			continue;
 		}
-		artifactIdsByChatFile.set(chatFileId, row.id);
+		const documentMetadata = parseWorkingDocumentMetadata(metadata);
+		artifactIdsByChatFile.set(chatFileId, {
+			artifactId: row.id,
+			documentFamilyId: documentMetadata.documentFamilyId ?? null,
+			documentLabel: documentMetadata.documentLabel ?? null,
+			documentRole: documentMetadata.documentRole ?? null,
+			versionNumber:
+				typeof documentMetadata.versionNumber === 'number' &&
+				Number.isFinite(documentMetadata.versionNumber)
+					? Math.trunc(documentMetadata.versionNumber)
+					: null,
+		});
 	}
 
 	return artifactIdsByChatFile;
@@ -333,7 +368,11 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 
 		return rows.map((row) => ({
 			...mapRowToChatFile(row),
-			artifactId: artifactIdsByChatFile.get(row.id) ?? null,
+			artifactId: artifactIdsByChatFile.get(row.id)?.artifactId ?? null,
+			documentFamilyId: artifactIdsByChatFile.get(row.id)?.documentFamilyId ?? null,
+			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
+			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
+			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
 		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list generated files', {
@@ -365,7 +404,11 @@ export async function getChatFilesForAssistantMessage(
 
 		return rows.map((row) => ({
 			...mapRowToChatFile(row),
-			artifactId: artifactIdsByChatFile.get(row.id) ?? null,
+			artifactId: artifactIdsByChatFile.get(row.id)?.artifactId ?? null,
+			documentFamilyId: artifactIdsByChatFile.get(row.id)?.documentFamilyId ?? null,
+			documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
+			documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
+			versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
 		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list assistant-scoped generated files', {

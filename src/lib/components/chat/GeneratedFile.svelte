@@ -8,6 +8,10 @@
 		fileId: string;
 		conversationId: string;
 		artifactId?: string | null;
+		documentFamilyId?: string | null;
+		documentLabel?: string | null;
+		documentRole?: string | null;
+		versionNumber?: number | null;
 		filename: string;
 		size: number;
 		mimeType: string;
@@ -23,6 +27,10 @@
 		fileId,
 		conversationId,
 		artifactId = null,
+		documentFamilyId = null,
+		documentLabel = null,
+		documentRole = null,
+		versionNumber = null,
 		filename,
 		size,
 		mimeType,
@@ -113,7 +121,11 @@
 				id: fileId,
 				source: 'chat_generated_file',
 				filename,
-				title: filename,
+				title: documentLabel ?? filename,
+				documentFamilyId,
+				documentLabel,
+				documentRole,
+				versionNumber,
 				mimeType,
 				previewUrl: `/api/chat/files/${fileId}/preview`,
 				artifactId,

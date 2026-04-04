@@ -23,6 +23,33 @@
 		return documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
 	});
 
+	function formatRoleLabel(role: string | null | undefined): string | null {
+		if (!role) return null;
+		const normalized = role.trim();
+		if (!normalized) return null;
+		return normalized
+			.split(/[_-\s]+/)
+			.filter(Boolean)
+			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+			.join(' ');
+	}
+
+	function getDocumentTitle(document: DocumentWorkspaceItem): string {
+		return document.documentLabel ?? document.title ?? document.filename;
+	}
+
+	function getDocumentVersionLabel(document: DocumentWorkspaceItem): string | null {
+		return document.versionNumber && document.versionNumber > 0
+			? `v${document.versionNumber}`
+			: null;
+	}
+
+	function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
+		const roleLabel = formatRoleLabel(document.documentRole);
+		const versionLabel = getDocumentVersionLabel(document);
+		return [roleLabel, versionLabel].filter(Boolean).join(' • ') || null;
+	}
+
 </script>
 
 {#if open && activeDocument}
@@ -38,7 +65,10 @@
 			<div class="workspace-header">
 				<div class="workspace-heading">
 					<div class="workspace-eyebrow">Working Document</div>
-					<div class="workspace-title">{activeDocument.title}</div>
+					<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
+					{#if getDocumentSubtitle(activeDocument)}
+						<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+					{/if}
 				</div>
 				<button
 					type="button"
@@ -65,13 +95,16 @@
 								aria-selected={document.id === activeDocument.id}
 								onclick={() => onSelectDocument(document.id)}
 							>
-								<span class="workspace-tab-label">{document.title}</span>
+								<span class="workspace-tab-label">{getDocumentTitle(document)}</span>
+								{#if getDocumentVersionLabel(document)}
+									<span class="workspace-tab-version">{getDocumentVersionLabel(document)}</span>
+								{/if}
 							</button>
 							<button
 								type="button"
 								class="btn-icon-bare workspace-tab-close"
 								onclick={() => onCloseDocument(document.id)}
-								aria-label={`Close ${document.title}`}
+								aria-label={`Close ${getDocumentTitle(document)}`}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 									<line x1="18" x2="6" y1="6" y2="18" />
@@ -103,7 +136,10 @@
 		<div class="workspace-header">
 			<div class="workspace-heading">
 				<div class="workspace-eyebrow">Working Document</div>
-				<div class="workspace-title">{activeDocument.title}</div>
+				<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
+				{#if getDocumentSubtitle(activeDocument)}
+					<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+				{/if}
 			</div>
 			<button
 				type="button"
@@ -130,13 +166,16 @@
 							aria-selected={document.id === activeDocument.id}
 							onclick={() => onSelectDocument(document.id)}
 						>
-							<span class="workspace-tab-label">{document.title}</span>
+							<span class="workspace-tab-label">{getDocumentTitle(document)}</span>
+							{#if getDocumentVersionLabel(document)}
+								<span class="workspace-tab-version">{getDocumentVersionLabel(document)}</span>
+							{/if}
 						</button>
 						<button
 							type="button"
 							class="btn-icon-bare workspace-tab-close"
 							onclick={() => onCloseDocument(document.id)}
-							aria-label={`Close ${document.title}`}
+							aria-label={`Close ${getDocumentTitle(document)}`}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 								<line x1="18" x2="6" y1="6" y2="18" />
@@ -239,6 +278,15 @@
 		text-overflow: ellipsis;
 	}
 
+	.workspace-subtitle {
+		margin-top: 0.3rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.78rem;
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		color: var(--text-secondary);
+	}
+
 	.workspace-close-button {
 		flex-shrink: 0;
 	}
@@ -270,6 +318,9 @@
 	}
 
 	.workspace-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
 		min-width: 0;
 		max-width: 100%;
 		padding: 0.48rem 0.78rem 0.48rem 0.85rem;
@@ -286,9 +337,23 @@
 
 	.workspace-tab-label {
 		display: block;
+		min-width: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.workspace-tab-version {
+		flex: 0 0 auto;
+		border: 1px solid var(--border-default);
+		border-radius: 999px;
+		padding: 0.08rem 0.38rem;
+		font-size: 0.66rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+		background: color-mix(in srgb, var(--surface-elevated) 82%, transparent 18%);
 	}
 
 	.workspace-tab-close {

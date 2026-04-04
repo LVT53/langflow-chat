@@ -136,12 +136,39 @@
 
 	let overviewRenderVersion = 0;
 
+	function getWorkspaceMetadataForArtifact(artifactId: string): Pick<
+		DocumentWorkspaceItem,
+		'documentFamilyId' | 'documentLabel' | 'documentRole' | 'versionNumber' | 'title'
+	> | null {
+		const matchingDocument =
+			documents.find(
+				(document) =>
+					document.promptArtifactId === artifactId || document.displayArtifactId === artifactId
+			) ?? null;
+		if (!matchingDocument) {
+			return null;
+		}
+
+		return {
+			title: matchingDocument.documentLabel ?? matchingDocument.name,
+			documentFamilyId: matchingDocument.documentFamilyId ?? null,
+			documentLabel: matchingDocument.documentLabel ?? null,
+			documentRole: matchingDocument.documentRole ?? null,
+			versionNumber: matchingDocument.versionNumber ?? null,
+		};
+	}
+
 	$effect(() => {
 		const handoffDocument = getKnowledgeWorkspaceDocumentFromUrl(page.url);
 		if (!handoffDocument) return;
 
 		activeTab = 'library';
-		openWorkspaceDocument(handoffDocument);
+		openWorkspaceDocument({
+			...handoffDocument,
+			...(handoffDocument.artifactId
+				? getWorkspaceMetadataForArtifact(handoffDocument.artifactId) ?? {}
+				: {}),
+		});
 		replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
 	});
 

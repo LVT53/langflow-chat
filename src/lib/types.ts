@@ -82,6 +82,10 @@ export interface ChatGeneratedFile {
   conversationId: string;
   assistantMessageId?: string | null;
   artifactId?: string | null;
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -95,6 +99,10 @@ export interface ChatGeneratedFileListItem {
   conversationId: string;
   assistantMessageId?: string | null;
   artifactId?: string | null;
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
   filename: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -112,6 +120,10 @@ export interface DocumentWorkspaceItem {
   source: DocumentWorkspaceSource;
   filename: string;
   title: string;
+  documentFamilyId?: string | null;
+  documentLabel?: string | null;
+  documentRole?: string | null;
+  versionNumber?: number | null;
   mimeType: string | null;
   previewUrl?: string | null;
   artifactId?: string | null;

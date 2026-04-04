@@ -49,13 +49,36 @@
 	let bulkKey = $derived(getLibraryBulkKey(activeLibraryModal));
 
 	function openPreview(artifact: KnowledgeDocumentItem | ArtifactSummary) {
+		const isKnowledgeDocument = 'displayArtifactId' in artifact;
+		const artifactId = isKnowledgeDocument
+			? artifact.promptArtifactId ?? artifact.displayArtifactId
+			: artifact.id;
 		onOpenDocument({
-			id: `artifact:${artifact.id}`,
+			id: `artifact:${artifactId}`,
 			source: 'knowledge_artifact',
 			filename: artifact.name,
-			title: artifact.name,
+			title:
+				isKnowledgeDocument
+					? (artifact.documentLabel ?? artifact.name)
+					: artifact.name,
+			documentFamilyId:
+				isKnowledgeDocument
+					? (artifact.documentFamilyId ?? null)
+					: null,
+			documentLabel:
+				isKnowledgeDocument
+					? (artifact.documentLabel ?? null)
+					: null,
+			documentRole:
+				isKnowledgeDocument
+					? (artifact.documentRole ?? null)
+					: null,
+			versionNumber:
+				isKnowledgeDocument
+					? (artifact.versionNumber ?? null)
+					: null,
 			mimeType: artifact.mimeType,
-			artifactId: artifact.id,
+			artifactId,
 			conversationId: artifact.conversationId,
 		});
 		onClose();

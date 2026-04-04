@@ -115,6 +115,10 @@ describe('Knowledge page', () => {
 						vaultId: 'vault-1',
 						summary: 'Quarterly budget',
 						normalizedAvailable: true,
+						documentFamilyId: 'family-budget',
+						documentLabel: 'Quarterly Budget',
+						documentRole: 'report',
+						versionNumber: 2,
 						createdAt: Date.now(),
 						updatedAt: Date.now(),
 					},
@@ -196,6 +200,10 @@ describe('Knowledge page', () => {
 						vaultId: 'vault-1',
 						summary: 'Quarterly budget',
 						normalizedAvailable: true,
+						documentFamilyId: 'family-budget',
+						documentLabel: 'Quarterly Budget',
+						documentRole: 'report',
+						versionNumber: 2,
 						createdAt: Date.now(),
 						updatedAt: Date.now(),
 					},
@@ -224,7 +232,8 @@ describe('Knowledge page', () => {
 			const workspace = getByRole('complementary', { name: /document workspace/i });
 			expect(workspace).toBeDefined();
 			expect(within(workspace).getByText('Working Document')).toBeDefined();
-			expect(within(workspace).getByText('Budget.pdf')).toBeDefined();
+			expect(within(workspace).getByText('Quarterly Budget')).toBeDefined();
+			expect(within(workspace).getByText('Report • v2')).toBeDefined();
 		});
 
 		unmount();
