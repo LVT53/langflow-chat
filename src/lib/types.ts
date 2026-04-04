@@ -435,6 +435,21 @@ export interface ArtifactChunk {
   updatedAt: number;
 }
 
+export type SemanticEmbeddingSubjectType = 'artifact' | 'persona_cluster' | 'task_state';
+
+export interface SemanticEmbedding {
+  id: string;
+  userId: string;
+  subjectType: SemanticEmbeddingSubjectType;
+  subjectId: string;
+  modelName: string;
+  sourceTextHash: string;
+  dimensions: number;
+  embedding: number[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface TaskEvidenceLink {
   id: string;
   taskId: string;

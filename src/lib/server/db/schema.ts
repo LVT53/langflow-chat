@@ -258,6 +258,33 @@ export const conversationWorkingSetItems = sqliteTable('conversation_working_set
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const semanticEmbeddings = sqliteTable('semantic_embeddings', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  modelName: text('model_name').notNull(),
+  sourceTextHash: text('source_text_hash').notNull(),
+  dimensions: integer('dimensions').notNull().default(0),
+  embeddingJson: text('embedding_json').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  subjectUniqueIdx: uniqueIndex('semantic_embeddings_subject_unique_idx').on(
+    table.userId,
+    table.subjectType,
+    table.subjectId,
+    table.modelName
+  ),
+  userSubjectIdx: index('semantic_embeddings_user_subject_idx').on(
+    table.userId,
+    table.subjectType,
+    table.updatedAt
+  ),
+}));
+
 export const memoryProjects = sqliteTable('memory_projects', {
   projectId: text('project_id').primaryKey(),
   userId: text('user_id')

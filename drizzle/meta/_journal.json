@@ -85,6 +85,13 @@
       "when": 1775326800000,
       "tag": "1775326800000_memory_events",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775413200000,
+      "tag": "1775413200000_semantic_embeddings",
+      "breakpoints": true
     }
   ]
 }

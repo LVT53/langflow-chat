@@ -12,8 +12,9 @@ The design goal is to make retrieval smarter and faster without changing authori
 Current status:
 
 - Wave 1 complete: runtime config and thin TEI clients are live
+- Wave 2 complete: unified local embedding persistence is live through `semantic_embeddings`
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
-- Embedding persistence and semantic shortlist waves are still pending
+- Semantic shortlist retrieval waves are still pending
 
 ## Authority Order
 
@@ -43,6 +44,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
   - task continuity/task-state rows
 - Persist source-text hashes so re-embedding stays idempotent
 - Keep storage local; do not introduce a second external vector service in this wave
+- Current status: complete, using one shared `semantic_embeddings` table keyed by `(userId, subjectType, subjectId, modelName)` rather than three separate embedding tables. This keeps the persistence substrate lighter while still supporting later artifact/persona/task retrieval waves.
 
 ### Wave 3: Embedding Refresh and Backfill
 

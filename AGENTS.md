@@ -37,6 +37,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - TEI embedder/reranker transport belongs in thin server services. Do not bury retrieval authority or semantic tie-break logic inside the raw TEI clients.
 - `src/lib/server/env.ts` owns environment parsing, including `getDatabasePath()` for DB bootstrap-only access. Do not read `DATABASE_PATH` directly anywhere else.
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
+- TEI embedding persistence belongs in the shared `semantic_embeddings` store, not in per-feature side tables. Keep artifact/persona/task semantic storage on the same substrate unless there is a measured reason to split it later.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
 - `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
@@ -47,6 +48,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
 - `src/lib/server/services/task-state/control-model.ts` is still for structured control-model work such as routing, verification, and semantic JSON tasks. Do not route TEI reranking back through that chat-completions path.
+- `src/lib/server/services/semantic-embeddings.ts` owns durable embedding persistence for artifacts, persona clusters, and task states. Do not hide embedding upserts or source-text hashing in route files or domain-specific side helpers.
 
 ## App Map
 
@@ -465,6 +467,8 @@ Do not:
   - [`src/lib/server/db/index.ts`](./src/lib/server/db/index.ts)
 - Schema:
   - [`src/lib/server/db/schema.ts`](./src/lib/server/db/schema.ts)
+- Shared semantic embedding store:
+  - [`src/lib/server/services/semantic-embeddings.ts`](./src/lib/server/services/semantic-embeddings.ts)
 - Explicit DB prep:
   - [`scripts/prepare-db.ts`](./scripts/prepare-db.ts)
 
