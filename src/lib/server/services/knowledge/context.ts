@@ -41,6 +41,7 @@ import {
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
+	parseWorkingDocumentMetadata,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -299,40 +300,49 @@ export async function refreshConversationWorkingSet(params: {
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
-		.map((artifact) => ({
-			artifactId: artifact.id,
-			artifactType: artifact.type as WorkingSetCandidate['artifactType'],
-			name: artifact.name,
-			summary: artifact.summary,
-			contentText: artifact.contentText,
-			updatedAt: artifact.updatedAt,
-			previousScore: existingByArtifactId.get(artifact.id)?.score,
-			previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
-			isAttachedThisTurn: attachmentIds.includes(artifact.id),
-			isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
-			isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
-			isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
-				artifact.id
-			),
-			recentRefinementBehaviorScore:
-				artifact.type === 'generated_output'
-					? behaviorScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
+		.map((artifact) => {
+			const documentMetadata = parseWorkingDocumentMetadata(artifact.metadata);
+			return {
+				artifactId: artifact.id,
+				artifactType: artifact.type as WorkingSetCandidate['artifactType'],
+				name: artifact.name,
+				summary: artifact.summary,
+				contentText: artifact.contentText,
+				updatedAt: artifact.updatedAt,
+				previousScore: existingByArtifactId.get(artifact.id)?.score,
+				previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
+				isAttachedThisTurn: attachmentIds.includes(artifact.id),
+				isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
+				isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
+				isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
+					artifact.id
+				),
+				recentRefinementBehaviorScore:
+					artifact.type === 'generated_output'
+						? behaviorScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
+						: 0,
+				recentDocumentOpenScore:
+					artifact.type === 'generated_output'
+						? reopenScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
+						: 0,
+				isHistoricalDocumentFamily:
+					artifact.type === 'generated_output' &&
+					documentMetadata.documentFamilyStatus === 'historical',
+				isCurrentGeneratedDocument:
+					currentGeneratedArtifactId === artifact.id &&
+					currentGeneratedReasonCodes.has('current_generated_document'),
+				isLatestGeneratedOutput:
+					currentGeneratedArtifactId === artifact.id &&
+					currentGeneratedReasonCodes.has('latest_generated_output'),
+				isLinkedToLatestOutput: sourceIdsLinkedToCurrentGenerated.includes(artifact.id),
+				messageMatchScore: message
+					? scoreMatch(
+							message,
+							`${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`
+						)
 					: 0,
-			recentDocumentOpenScore:
-				artifact.type === 'generated_output'
-					? reopenScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
-					: 0,
-			isCurrentGeneratedDocument:
-				currentGeneratedArtifactId === artifact.id &&
-				currentGeneratedReasonCodes.has('current_generated_document'),
-			isLatestGeneratedOutput:
-				currentGeneratedArtifactId === artifact.id &&
-				currentGeneratedReasonCodes.has('latest_generated_output'),
-			isLinkedToLatestOutput: sourceIdsLinkedToCurrentGenerated.includes(artifact.id),
-			messageMatchScore: message
-				? scoreMatch(message, `${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`)
-				: 0,
-		}));
+			};
+		});
 
 	const ranked = rankWorkingSetCandidates(candidates);
 	const now = new Date();

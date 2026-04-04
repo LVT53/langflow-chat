@@ -192,6 +192,32 @@ describe('working-set ranking', () => {
 		);
 	});
 
+	it('downranks historical generated-document families against equally weak active ones', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-historical',
+				artifactType: 'generated_output',
+				name: 'Historical brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isHistoricalDocumentFamily: true,
+			},
+			{
+				artifactId: 'out-active',
+				artifactType: 'generated_output',
+				name: 'Active brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+			},
+		]);
+
+		expect(ranked.findIndex((item) => item.artifactId === 'out-active')).toBeLessThan(
+			ranked.findIndex((item) => item.artifactId === 'out-historical')
+		);
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{

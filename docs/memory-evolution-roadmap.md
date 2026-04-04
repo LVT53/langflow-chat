@@ -345,6 +345,7 @@ Current progress:
 - generated-document retrieval ordering now consumes recent `document_refined` counts as a small bounded boost, which helps repeatedly refined families stay relevant on generic follow-up turns without replacing explicit query/document matching
 - working-set ranking now consumes those same recent `document_refined` counts as a smaller-than-focus, smaller-than-correction boost, so retrieval and prompt-side carryover share the same bounded behavior signal instead of learning from separate heuristics
 - shared document-workspace opens now emit bounded `document_opened` events keyed to the same working-document family/document subject ids, and retrieval plus working-set ranking consume those reopen counts as an even smaller signal than refinement so frequently revisited document families stay easier to recover without becoming a separate “recents” authority
+- maintenance-marked `historical` document families now also receive a soft ranking penalty, so stale ignored families gradually lose rank on weak/generic follow-up turns without being removed from explicit search, source navigation, or direct version-history access
 
 - ranking tests with behavior-signal fixtures
 - correction/salience regression tests

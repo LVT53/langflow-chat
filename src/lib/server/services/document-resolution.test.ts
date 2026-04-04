@@ -280,6 +280,40 @@ describe("document resolution", () => {
     expect(selection.resolutions[0]?.reasonCodes).toContain("recent_document_open");
   });
 
+  it("downranks historical document families for generic carryover retrieval", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "please update the draft",
+      limit: 4,
+      artifacts: [
+        makeArtifact({
+          id: "artifact-historical",
+          name: "old-draft.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project draft",
+            documentFamilyStatus: "historical",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-active",
+          name: "current-draft.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Current draft",
+            versionNumber: 3,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
+      "artifact-active",
+    ]);
+  });
+
   it("still returns explicit generated-document query matches outside the preferred family", () => {
     const selection = resolveRelevantGeneratedDocumentSelection({
       query: "compare it with the investor slides",

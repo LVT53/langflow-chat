@@ -127,6 +127,10 @@ function scoreGeneratedDocumentArtifact(params: {
     reasonCodes.push("recent_document_open");
   }
 
+  if (metadata.documentFamilyStatus === "historical") {
+    score -= 12;
+  }
+
   return {
     artifact: params.artifact,
     familyId: metadata.documentFamilyId ?? null,

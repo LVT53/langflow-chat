@@ -24,6 +24,7 @@ export interface WorkingSetCandidate {
 	isRecentlyRefinedDocumentFamily?: boolean;
 	recentRefinementBehaviorScore?: number;
 	recentDocumentOpenScore?: number;
+	isHistoricalDocumentFamily?: boolean;
 	isCurrentGeneratedDocument?: boolean;
 	isLatestGeneratedOutput?: boolean;
 	isLinkedToLatestOutput?: boolean;
@@ -91,6 +92,10 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	if ((candidate.recentDocumentOpenScore ?? 0) > 0) {
 		score += clamp((candidate.recentDocumentOpenScore ?? 0) * 2, 0, 8);
 		reasonCodes.push('recent_document_open');
+	}
+
+	if (candidate.isHistoricalDocumentFamily) {
+		score -= 12;
 	}
 
 	if (candidate.isCurrentGeneratedDocument) {
