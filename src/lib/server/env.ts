@@ -33,6 +33,15 @@ interface Config {
   contextSummarizerUrl: string;
   contextSummarizerApiKey: string;
   contextSummarizerModel: string;
+  teiEmbedderUrl: string;
+  teiEmbedderApiKey: string;
+  teiEmbedderModel: string;
+  teiEmbedderBatchSize: number;
+  teiRerankerUrl: string;
+  teiRerankerApiKey: string;
+  teiRerankerModel: string;
+  teiRerankerMaxTexts: number;
+  teiTimeoutMs: number;
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
@@ -103,6 +112,25 @@ function readConfig(): Config {
     contextSummarizerUrl: process.env.CONTEXT_SUMMARIZER_URL || process.env.TITLE_GEN_URL || '',
     contextSummarizerApiKey: process.env.CONTEXT_SUMMARIZER_API_KEY || process.env.TITLE_GEN_API_KEY || '',
     contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || '',
+    teiEmbedderUrl: process.env.TEI_EMBEDDER_URL || '',
+    teiEmbedderApiKey: process.env.TEI_EMBEDDER_API_KEY || '',
+    teiEmbedderModel: process.env.TEI_EMBEDDER_MODEL || '',
+    teiEmbedderBatchSize: Math.max(
+      1,
+      parseInt(process.env.TEI_EMBEDDER_BATCH_SIZE || '32', 10) || 32
+    ),
+    teiRerankerUrl: process.env.TEI_RERANKER_URL || '',
+    teiRerankerApiKey: process.env.TEI_RERANKER_API_KEY || '',
+    teiRerankerModel: process.env.TEI_RERANKER_MODEL || '',
+    teiRerankerMaxTexts: Math.max(
+      1,
+      parseInt(process.env.TEI_RERANKER_MAX_TEXTS || '32', 10) || 32
+    ),
+    teiTimeoutMs: Math.max(
+      100,
+      parseInt(process.env.TEI_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '120000', 10) ||
+        120000
+    ),
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),

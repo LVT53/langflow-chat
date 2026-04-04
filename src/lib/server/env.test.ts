@@ -52,6 +52,15 @@ describe('Environment Configuration', () => {
     delete process.env.TITLE_GEN_SYSTEM_PROMPT_HU
     delete process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN
     delete process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU
+    delete process.env.TEI_EMBEDDER_URL
+    delete process.env.TEI_EMBEDDER_API_KEY
+    delete process.env.TEI_EMBEDDER_MODEL
+    delete process.env.TEI_EMBEDDER_BATCH_SIZE
+    delete process.env.TEI_RERANKER_URL
+    delete process.env.TEI_RERANKER_API_KEY
+    delete process.env.TEI_RERANKER_MODEL
+    delete process.env.TEI_RERANKER_MAX_TEXTS
+    delete process.env.TEI_TIMEOUT_MS
     delete process.env.WEBHOOK_PORT
     delete process.env.REQUEST_TIMEOUT_MS
     delete process.env.MAX_MESSAGE_LENGTH
@@ -76,6 +85,15 @@ describe('Environment Configuration', () => {
     expect(config.titleGenSystemPromptHu).toBe('')
     expect(config.titleGenSystemPromptCodeAppendixEn).toBe('')
     expect(config.titleGenSystemPromptCodeAppendixHu).toBe('')
+    expect(config.teiEmbedderUrl).toBe('')
+    expect(config.teiEmbedderApiKey).toBe('')
+    expect(config.teiEmbedderModel).toBe('')
+    expect(config.teiEmbedderBatchSize).toBe(32)
+    expect(config.teiRerankerUrl).toBe('')
+    expect(config.teiRerankerApiKey).toBe('')
+    expect(config.teiRerankerModel).toBe('')
+    expect(config.teiRerankerMaxTexts).toBe(32)
+    expect(config.teiTimeoutMs).toBe(120000)
     expect(config.webhookPort).toBe(8090)
     expect(config.requestTimeoutMs).toBe(120000)
     expect(config.maxMessageLength).toBe(10000)
@@ -102,6 +120,15 @@ describe('Environment Configuration', () => {
     process.env.TITLE_GEN_SYSTEM_PROMPT_HU = 'Irj rovid cimeket.'
     process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN = 'Mention the language when known.'
     process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU = 'Emeld ki a technológiát ha ismert.'
+    process.env.TEI_EMBEDDER_URL = 'http://embedder:8081'
+    process.env.TEI_EMBEDDER_API_KEY = 'embed-key'
+    process.env.TEI_EMBEDDER_MODEL = 'bge-m3'
+    process.env.TEI_EMBEDDER_BATCH_SIZE = '24'
+    process.env.TEI_RERANKER_URL = 'http://reranker:8082'
+    process.env.TEI_RERANKER_API_KEY = 'rerank-key'
+    process.env.TEI_RERANKER_MODEL = 'bge-reranker-v2-m3'
+    process.env.TEI_RERANKER_MAX_TEXTS = '16'
+    process.env.TEI_TIMEOUT_MS = '4000'
     process.env.WEBHOOK_PORT = '3000'
     process.env.REQUEST_TIMEOUT_MS = '5000'
     process.env.MAX_MESSAGE_LENGTH = '5000'
@@ -127,6 +154,15 @@ describe('Environment Configuration', () => {
     expect(config.titleGenSystemPromptHu).toBe('Irj rovid cimeket.')
     expect(config.titleGenSystemPromptCodeAppendixEn).toBe('Mention the language when known.')
     expect(config.titleGenSystemPromptCodeAppendixHu).toBe('Emeld ki a technológiát ha ismert.')
+    expect(config.teiEmbedderUrl).toBe('http://embedder:8081')
+    expect(config.teiEmbedderApiKey).toBe('embed-key')
+    expect(config.teiEmbedderModel).toBe('bge-m3')
+    expect(config.teiEmbedderBatchSize).toBe(24)
+    expect(config.teiRerankerUrl).toBe('http://reranker:8082')
+    expect(config.teiRerankerApiKey).toBe('rerank-key')
+    expect(config.teiRerankerModel).toBe('bge-reranker-v2-m3')
+    expect(config.teiRerankerMaxTexts).toBe(16)
+    expect(config.teiTimeoutMs).toBe(4000)
     expect(config.webhookPort).toBe(3000)
     expect(config.requestTimeoutMs).toBe(5000)
     expect(config.maxMessageLength).toBe(5000)

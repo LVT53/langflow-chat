@@ -34,6 +34,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - Routes are adapters. Durable logic belongs in server services, client API modules, stores, or shared helpers.
 - Shared behavior should exist once. Do not copy logic between `send` and `stream`, between multiple stores, or between multiple services.
 - Runtime config flows through `src/lib/server/config-store.ts`. Do not bypass it in code that should respect admin overrides.
+- TEI embedder/reranker transport belongs in thin server services. Do not bury retrieval authority or semantic tie-break logic inside the raw TEI clients.
 - `src/lib/server/env.ts` owns environment parsing, including `getDatabasePath()` for DB bootstrap-only access. Do not read `DATABASE_PATH` directly anywhere else.
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
@@ -198,6 +199,8 @@ Do not:
   - [`src/lib/server/services/document-extraction.ts`](./src/lib/server/services/document-extraction.ts)
   - [`src/lib/server/services/evidence-family.ts`](./src/lib/server/services/evidence-family.ts)
   - [`src/lib/server/services/knowledge-labels.ts`](./src/lib/server/services/knowledge-labels.ts)
+  - [`src/lib/server/services/tei-embedder.ts`](./src/lib/server/services/tei-embedder.ts)
+  - [`src/lib/server/services/tei-reranker.ts`](./src/lib/server/services/tei-reranker.ts)
 
 Responsibility split:
 
@@ -232,6 +235,9 @@ Responsibility split:
 - `document-resolution.ts`
   - current/relevant generated-document family selection
   - shared query/focus-aware generated-document ordering
+- `tei-embedder.ts` / `tei-reranker.ts`
+  - thin Hugging Face Text Embeddings Inference clients only
+  - semantic shortlist/rerank helpers should flow through higher-level retrieval services; these clients should not become a second ranking authority
 - `capsules.ts`
   - work capsules
   - generated outputs
@@ -397,6 +403,7 @@ Notes:
 
 - `env.ts` also owns `getDatabasePath()` for bootstrap-only DB path access.
 - Title-generator prompt variants flow through `env.ts`, `config-store.ts`, and the admin system settings UI. Keep English/Hungarian base prompts and code-only appendices aligned across those layers.
+- TEI endpoint/model tuning also flows through `env.ts` plus `config-store.ts`. Keep API keys env-only, keep runtime overrides on the non-secret fields, and keep the rollout plan in [docs/tei-retrieval-roadmap.md](./docs/tei-retrieval-roadmap.md) aligned with the live config surface.
 - `config-store.ts` remains the override-aware runtime config boundary. `getDatabasePath()` is for early DB/bootstrap code, not for general runtime settings reads.
 - Context token limits are admin-configurable via `config-store.ts`:
   - `MAX_MODEL_CONTEXT` (default: 262144) - Maximum tokens the model context window supports

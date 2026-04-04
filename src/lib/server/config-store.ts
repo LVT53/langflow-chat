@@ -36,6 +36,12 @@ export const ADMIN_CONFIG_KEYS = [
   'TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU',
   'CONTEXT_SUMMARIZER_URL',
   'CONTEXT_SUMMARIZER_MODEL',
+  'TEI_EMBEDDER_URL',
+  'TEI_EMBEDDER_MODEL',
+  'TEI_EMBEDDER_BATCH_SIZE',
+  'TEI_RERANKER_URL',
+  'TEI_RERANKER_MODEL',
+  'TEI_RERANKER_MAX_TEXTS',
   'TRANSLATOR_URL',
   'TRANSLATOR_MODEL',
   'TRANSLATION_MAX_TOKENS',
@@ -70,6 +76,15 @@ export interface RuntimeConfig {
   contextSummarizerUrl: string;
   contextSummarizerApiKey: string;
   contextSummarizerModel: string;
+  teiEmbedderUrl: string;
+  teiEmbedderApiKey: string;
+  teiEmbedderModel: string;
+  teiEmbedderBatchSize: number;
+  teiRerankerUrl: string;
+  teiRerankerApiKey: string;
+  teiRerankerModel: string;
+  teiRerankerMaxTexts: number;
+  teiTimeoutMs: number;
   webhookPort: number;
   requestTimeoutMs: number;
   maxMessageLength: number;
@@ -208,6 +223,26 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   },
   CONTEXT_SUMMARIZER_MODEL: (config, value) => {
     config.contextSummarizerModel = value;
+  },
+  TEI_EMBEDDER_URL: (config, value) => {
+    config.teiEmbedderUrl = value;
+  },
+  TEI_EMBEDDER_MODEL: (config, value) => {
+    config.teiEmbedderModel = value;
+  },
+  TEI_EMBEDDER_BATCH_SIZE: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.teiEmbedderBatchSize = Math.max(1, parsed);
+  },
+  TEI_RERANKER_URL: (config, value) => {
+    config.teiRerankerUrl = value;
+  },
+  TEI_RERANKER_MODEL: (config, value) => {
+    config.teiRerankerModel = value;
+  },
+  TEI_RERANKER_MAX_TEXTS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) config.teiRerankerMaxTexts = Math.max(1, parsed);
   },
   TRANSLATOR_URL: (config, value) => {
     config.translatorUrl = value;
@@ -353,6 +388,12 @@ export function getResolvedAdminConfigValues(
     TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU: config.titleGenSystemPromptCodeAppendixHu,
     CONTEXT_SUMMARIZER_URL: config.contextSummarizerUrl,
     CONTEXT_SUMMARIZER_MODEL: config.contextSummarizerModel,
+    TEI_EMBEDDER_URL: config.teiEmbedderUrl,
+    TEI_EMBEDDER_MODEL: config.teiEmbedderModel,
+    TEI_EMBEDDER_BATCH_SIZE: String(config.teiEmbedderBatchSize),
+    TEI_RERANKER_URL: config.teiRerankerUrl,
+    TEI_RERANKER_MODEL: config.teiRerankerModel,
+    TEI_RERANKER_MAX_TEXTS: String(config.teiRerankerMaxTexts),
     TRANSLATOR_URL: config.translatorUrl,
     TRANSLATOR_MODEL: config.translatorModel,
     TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
@@ -396,6 +437,12 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU: envConfig.titleGenSystemPromptCodeAppendixHu,
     CONTEXT_SUMMARIZER_URL: envConfig.contextSummarizerUrl,
     CONTEXT_SUMMARIZER_MODEL: envConfig.contextSummarizerModel,
+    TEI_EMBEDDER_URL: envConfig.teiEmbedderUrl,
+    TEI_EMBEDDER_MODEL: envConfig.teiEmbedderModel,
+    TEI_EMBEDDER_BATCH_SIZE: String(envConfig.teiEmbedderBatchSize),
+    TEI_RERANKER_URL: envConfig.teiRerankerUrl,
+    TEI_RERANKER_MODEL: envConfig.teiRerankerModel,
+    TEI_RERANKER_MAX_TEXTS: String(envConfig.teiRerankerMaxTexts),
     TRANSLATOR_URL: envConfig.translatorUrl,
     TRANSLATOR_MODEL: envConfig.translatorModel,
     TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
