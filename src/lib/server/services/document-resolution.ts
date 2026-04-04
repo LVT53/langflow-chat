@@ -209,9 +209,7 @@ export function isGeneratedDocumentPromptEligible(params: {
     params.reasonCodes.includes("active_document_focus") ||
     params.reasonCodes.includes("recent_user_correction") ||
     params.reasonCodes.includes("recently_refined_document_family") ||
-    params.reasonCodes.includes("current_generated_document") ||
-    (params.artifact.conversationId === params.conversationId &&
-      params.reasonCodes.includes("latest_generated_output"));
+    params.reasonCodes.includes("current_generated_document");
 
   if (params.artifact.retrievalClass === "durable") {
     return true;
@@ -229,8 +227,6 @@ export function isGeneratedDocumentPromptEligible(params: {
     params.reasonCodes.includes("current_generated_document") ||
     params.messageMatchScore >= 2 ||
     params.explicitlyRequested ||
-    (params.reasonCodes.includes("latest_generated_output") &&
-      params.messageMatchScore >= 1) ||
     (params.reasonCodes.includes("recently_used_in_output") &&
       params.messageMatchScore >= 1)
   );

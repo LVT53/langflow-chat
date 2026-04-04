@@ -101,7 +101,7 @@ describe('GeneratedFile', () => {
 		expect(getByText('512 B')).toBeInTheDocument();
 	});
 
-	it('opens the generated file preview modal', async () => {
+	it('opens the generated file preview fallback dialog when no workspace callback is provided', async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
 			new Response('preview text', {
 				status: 200,

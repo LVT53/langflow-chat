@@ -236,7 +236,7 @@ Notes before the tables:
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
 - Vault save is only an organization action. Unsaved generated documents are still mirrored into artifact-backed document continuity and Honcho memory so the AI can recall and refine them across chats without requiring a manual vault save first.
 - While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
-- Current-document selection now prefers explicit workspace focus and query/document-family matches over a generic “latest output” fallback, which keeps refinement turns anchored to the right document version more reliably.
+- Current-document selection now prefers explicit workspace focus and query/document-family matches over a generic recency fallback, which keeps refinement turns anchored to the right document version more reliably.
 - Langflow request/session correlation now logs under `[LANGFLOW]`, and chat-stream tool usage logs under `[CHAT_STREAM]`, so missing generated files can be traced by conversation id without needing live Langflow container logs.
 - Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.

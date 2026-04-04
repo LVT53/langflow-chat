@@ -26,7 +26,6 @@ export interface WorkingSetCandidate {
 	recentDocumentOpenScore?: number;
 	isHistoricalDocumentFamily?: boolean;
 	isCurrentGeneratedDocument?: boolean;
-	isLatestGeneratedOutput?: boolean;
 	isLinkedToLatestOutput?: boolean;
 	messageMatchScore?: number;
 }
@@ -101,11 +100,6 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	if (candidate.isCurrentGeneratedDocument) {
 		score += 54;
 		reasonCodes.push('current_generated_document');
-	}
-
-	if (candidate.isLatestGeneratedOutput) {
-		score += 54;
-		reasonCodes.push('latest_generated_output');
 	}
 
 	if (candidate.isLinkedToLatestOutput) {

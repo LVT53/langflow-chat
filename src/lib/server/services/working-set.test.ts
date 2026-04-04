@@ -129,15 +129,6 @@ describe('working-set ranking', () => {
 				recentRefinementBehaviorScore: 3,
 			},
 			{
-				artifactId: 'out-latest',
-				artifactType: 'generated_output',
-				name: 'Latest generated document',
-				summary: null,
-				contentText: null,
-				updatedAt: Date.now(),
-				isLatestGeneratedOutput: true,
-			},
-			{
 				artifactId: 'out-plain',
 				artifactType: 'generated_output',
 				name: 'Plain generated document',

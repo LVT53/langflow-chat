@@ -331,9 +331,6 @@ export async function refreshConversationWorkingSet(params: {
 				isCurrentGeneratedDocument:
 					currentGeneratedArtifactId === artifact.id &&
 					currentGeneratedReasonCodes.has('current_generated_document'),
-				isLatestGeneratedOutput:
-					currentGeneratedArtifactId === artifact.id &&
-					currentGeneratedReasonCodes.has('latest_generated_output'),
 				isLinkedToLatestOutput: sourceIdsLinkedToCurrentGenerated.includes(artifact.id),
 				messageMatchScore: message
 					? scoreMatch(
@@ -355,7 +352,6 @@ export async function refreshConversationWorkingSet(params: {
 			candidate.reasonCodes.includes('active_document_focus') ||
 			candidate.reasonCodes.includes('recently_refined_document_family') ||
 			candidate.reasonCodes.includes('matched_current_turn') ||
-			candidate.reasonCodes.includes('latest_generated_output') ||
 			candidate.reasonCodes.includes('recently_used_in_output');
 
 		if (existing) {
