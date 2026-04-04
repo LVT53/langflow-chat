@@ -141,7 +141,7 @@ Do not:
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the sandbox runtime images exist before container creation, warms them in the background at app startup, and supports both the Python runtime (`python:3.11-slim`) and the JavaScript runtime (`node:22-bookworm-slim`)
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) must wait for exec inspection to report `Running === false` before the archive reader inspects `/output`; do not treat an early stream close as proof that the sandbox command has finished
   - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts) must surface output-archive read failures as explicit execution errors instead of collapsing them into the same empty-file 422 path used for real zero-output runs
-  - Generated-file debug tracing currently logs under `[FILE_GENERATE]`, `[CHAT_FILES]`, `[CHAT_STREAM]`, and `[CONVERSATION_DETAIL]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
+  - Generated-file/server tracing now mainly uses `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]`, `[LANGFLOW]`, `[HONCHO]`, and `[MEMORY_MAINTENANCE]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
 Do:
 
@@ -192,6 +192,7 @@ Do not:
   - [`src/lib/server/services/knowledge/capsules.ts`](./src/lib/server/services/knowledge/capsules.ts)
 - Related services:
   - [`src/lib/server/services/working-set.ts`](./src/lib/server/services/working-set.ts)
+  - [`src/lib/server/services/document-resolution.ts`](./src/lib/server/services/document-resolution.ts)
   - [`src/lib/server/services/document-extraction.ts`](./src/lib/server/services/document-extraction.ts)
   - [`src/lib/server/services/evidence-family.ts`](./src/lib/server/services/evidence-family.ts)
   - [`src/lib/server/services/knowledge-labels.ts`](./src/lib/server/services/knowledge-labels.ts)
@@ -226,10 +227,14 @@ Responsibility split:
   - relevant-artifact lookup
   - working-set and context status operations
   - context-related reads/writes used during chat
+- `document-resolution.ts`
+  - current/relevant generated-document family selection
+  - shared query/focus-aware generated-document ordering
 - `capsules.ts`
   - work capsules
   - generated outputs
   - artifact-to-capsule mapping
+  - workflow summary only, not document lineage authority
 
 Do not:
 
