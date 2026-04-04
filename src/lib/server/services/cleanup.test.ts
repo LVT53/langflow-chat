@@ -69,7 +69,9 @@ vi.mock('$lib/server/db', () => ({
 		transaction: vi.fn((callback: (tx: any) => void) => {
 			const tx = {
 				delete: vi.fn(() => ({
-					where: vi.fn(() => undefined),
+					where: vi.fn(() => ({
+						run: vi.fn(() => undefined),
+					})),
 				})),
 			};
 			callback(tx);
@@ -197,6 +199,20 @@ describe('cleanup service', () => {
 
 		expect(result).toEqual({ status: 'reset' });
 		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllHonchoStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllChatFilesForUser).toHaveBeenCalledWith('user-1');
+	});
+
+	it('fully deletes user-scoped files and memory before deleting the account', async () => {
+		const { deleteUserAccountWithCleanup } = await import('./cleanup');
+		const { verifyPassword } = await import('./auth');
+
+		(verifyPassword as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+		const result = await deleteUserAccountWithCleanup('user-1', 'secret');
+
+		expect(result).toEqual({ status: 'deleted' });
 		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllHonchoStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllChatFilesForUser).toHaveBeenCalledWith('user-1');

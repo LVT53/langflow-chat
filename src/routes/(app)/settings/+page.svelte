@@ -18,6 +18,7 @@
 	import { projects } from '$lib/stores/projects';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
 	import { setThemeAndSync } from '$lib/stores/theme';
+	import { currentConversationId } from '$lib/stores/ui';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import DeleteAccountModal from './_components/DeleteAccountModal.svelte';
 	import ResetAccountModal from './_components/ResetAccountModal.svelte';
@@ -234,6 +235,7 @@
 			await resetAccount(resetPassword);
 			reconcileConversationSnapshot([], { resetLocalState: true });
 			projects.set([]);
+			currentConversationId.set(null);
 			clearConversationSessionState();
 			analyticsData = null;
 			analyticsError = '';

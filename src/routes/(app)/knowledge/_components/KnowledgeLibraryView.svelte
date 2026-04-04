@@ -810,7 +810,7 @@
 	{/if}
 </section>
 
-<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
+<section class="mt-6 rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
 	<div class="space-y-2">
 		<h2 class="text-lg font-sans font-semibold text-text-primary">Collections</h2>
 		<p class="max-w-[720px] text-sm font-sans leading-[1.6] text-text-secondary">
