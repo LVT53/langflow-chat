@@ -205,7 +205,8 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && !event.shiftKey && !isMobile()) {
+		if (event.isComposing) return;
+		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			if (isGenerating) {
 				queue();

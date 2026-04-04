@@ -37,11 +37,20 @@ vi.mock('$lib/server/db', () => ({
 		}),
 		select: () => ({
 			from: () => ({
-				where: () => ({
+				where: (conditions: Array<{ field: string; value: string | string[] }>) => ({
 					orderBy: () => ({
 						limit: async (count: number) =>
 							rows
 								.slice()
+								.filter((row) =>
+									conditions.every((condition) => {
+										const rowValue = row[condition.field as keyof MemoryEventRow];
+										if (Array.isArray(condition.value)) {
+											return condition.value.includes(String(rowValue));
+										}
+										return String(rowValue) === String(condition.value);
+									})
+								)
 								.sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())
 								.slice(0, count),
 					}),
@@ -107,6 +116,33 @@ describe('memory-events service', () => {
 			subjectId: 'cluster-1',
 			payload: { topicKey: 'assessment' },
 		});
+	});
+
+	it('deduplicates event keys per user instead of globally', async () => {
+		const { recordMemoryEvent, listMemoryEvents } = await import('./memory-events');
+
+		await recordMemoryEvent({
+			eventKey: 'deadline_set:cluster-1',
+			userId: 'user-1',
+			domain: 'temporal',
+			eventType: 'deadline_set',
+			subjectId: 'cluster-1',
+		});
+		await recordMemoryEvent({
+			eventKey: 'deadline_set:cluster-1',
+			userId: 'user-2',
+			domain: 'temporal',
+			eventType: 'deadline_set',
+			subjectId: 'cluster-1',
+		});
+
+		const userOneEvents = await listMemoryEvents({ userId: 'user-1', limit: 10 });
+		const userTwoEvents = await listMemoryEvents({ userId: 'user-2', limit: 10 });
+
+		expect(userOneEvents).toHaveLength(1);
+		expect(userTwoEvents).toHaveLength(1);
+		expect(userOneEvents[0]?.eventKey).toBe('deadline_set:cluster-1');
+		expect(userTwoEvents[0]?.eventKey).toBe('deadline_set:cluster-1');
 	});
 
 	it('counts recent events by subject within the requested window', async () => {

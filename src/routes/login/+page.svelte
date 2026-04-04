@@ -2,11 +2,12 @@
   import { goto } from '$app/navigation';
   import { login } from '$lib/client/api/auth';
 
-  let email = '';
-  let password = '';
-  let error = '';
-  let loading = false;
-  let showPassword = false;
+  let email = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
+  let showPassword = $state(false);
+  let formRef = $state<HTMLFormElement | null>(null);
 
   async function handleSubmit(event: SubmitEvent) {
     event.preventDefault();
@@ -30,6 +31,18 @@
       loading = false;
     }
   }
+
+  function handleFormKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' || event.shiftKey || loading) return;
+
+    const target = event.target;
+    if (target instanceof HTMLButtonElement && target.type === 'button') {
+      return;
+    }
+
+    event.preventDefault();
+    formRef?.requestSubmit();
+  }
 </script>
 
 <svelte:head>
@@ -43,7 +56,7 @@
       <p class="text-sm text-text-muted">Welcome back. Please enter your details.</p>
     </div>
 
-    <form onsubmit={handleSubmit} class="flex flex-col">
+    <form bind:this={formRef} onsubmit={handleSubmit} class="flex flex-col">
       <div class="flex flex-col gap-md">
         <div class="space-y-2">
           <label for="email" class="block text-sm font-medium text-text-primary">
@@ -57,6 +70,7 @@
             bind:value={email}
             disabled={loading}
             oninput={() => error = ''}
+            onkeydown={handleFormKeydown}
             class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="you@example.com"
           />
@@ -96,6 +110,7 @@
             bind:value={password}
             disabled={loading}
             oninput={() => error = ''}
+            onkeydown={handleFormKeydown}
             class="box-border block w-full min-h-[44px] rounded-md border border-border bg-surface-page px-md py-sm font-serif text-base text-text-primary shadow-sm transition-shadow focus:border-focus-ring focus:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50"
             placeholder="••••••••"
           />

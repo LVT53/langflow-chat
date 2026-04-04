@@ -28,6 +28,9 @@
 		if (e.key === 'Escape') {
 			e.preventDefault();
 			handleCancel();
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			handleConfirm();
 		} else if (e.key === 'Tab') {
 			// Basic focus trap
 			const focusableElements = dialogRef?.querySelectorAll(

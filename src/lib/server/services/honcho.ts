@@ -146,7 +146,18 @@ export async function getAssistantPeer(userId: string): Promise<Peer> {
 
 async function getSession(userId: string, conversationId: string): Promise<Session> {
 	const cached = sessionCache.get(conversationId);
-	if (cached) return cached;
+	if (cached) {
+		const cachedOwner = sessionOwnerCache.get(conversationId);
+		if (!cachedOwner || cachedOwner === userId) {
+			if (!cachedOwner) {
+				sessionOwnerCache.set(conversationId, userId);
+			}
+			return cached;
+		}
+
+		sessionCache.delete(conversationId);
+		sessionOwnerCache.delete(conversationId);
+	}
 
 	const honcho = await ensureClient();
 	const session = await honcho.session(conversationId);

@@ -30,10 +30,21 @@ function normalizeObservedAt(value?: number | Date): Date {
 	return new Date();
 }
 
+function scopeEventKey(userId: string, eventKey: string): string {
+	return `u:${userId}:${eventKey}`;
+}
+
+function unscopeEventKey(userId: string, storedEventKey: string): string {
+	const prefix = `u:${userId}:`;
+	return storedEventKey.startsWith(prefix)
+		? storedEventKey.slice(prefix.length)
+		: storedEventKey;
+}
+
 function mapMemoryEventRow(row: typeof memoryEvents.$inferSelect): MemoryEvent {
 	return {
 		id: row.id,
-		eventKey: row.eventKey,
+		eventKey: unscopeEventKey(row.userId, row.eventKey),
 		userId: row.userId,
 		conversationId: row.conversationId ?? null,
 		messageId: row.messageId ?? null,
@@ -52,7 +63,7 @@ export async function recordMemoryEvent(params: MemoryEventInput): Promise<void>
 		.insert(memoryEvents)
 		.values({
 			id: randomUUID(),
-			eventKey: params.eventKey,
+			eventKey: scopeEventKey(params.userId, params.eventKey),
 			userId: params.userId,
 			conversationId: params.conversationId ?? null,
 			messageId: params.messageId ?? null,
@@ -78,7 +89,7 @@ export async function recordMemoryEvents(params: MemoryEventInput[]): Promise<vo
 		.values(
 			params.map((event) => ({
 				id: randomUUID(),
-				eventKey: event.eventKey,
+				eventKey: scopeEventKey(event.userId, event.eventKey),
 				userId: event.userId,
 				conversationId: event.conversationId ?? null,
 				messageId: event.messageId ?? null,
