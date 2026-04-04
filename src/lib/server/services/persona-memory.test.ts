@@ -280,6 +280,21 @@ describe('persona-memory temporal safeguards', () => {
 		});
 	});
 
+	it('extracts deterministic fact-slot metadata for location and role memories', async () => {
+		const { extractFactSlotMetadata } = await import('./persona-memory');
+
+		expect(extractFactSlotMetadata('The user lives in Budapest.')).toMatchObject({
+			factDomain: 'location',
+			factSlot: 'location:current',
+			factValue: 'budapest',
+		});
+		expect(extractFactSlotMetadata('The user works as a designer.')).toMatchObject({
+			factDomain: 'role',
+			factSlot: 'role:current',
+			factValue: 'a designer',
+		});
+	});
+
 	it('supersedes older same-slot preferences deterministically before semantic reconcile', async () => {
 		mockCanUseContextSummarizer.mockReturnValue(false);
 
@@ -357,6 +372,60 @@ describe('persona-memory temporal safeguards', () => {
 				expect.objectContaining({
 					domain: 'temporal',
 					eventType: 'deadline_set',
+				}),
+			])
+		);
+	});
+
+	it('supersedes older fact-slot memories deterministically and records a persona fact update', async () => {
+		mockCanUseContextSummarizer.mockReturnValue(false);
+
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-fact-slot',
+			rawRecords: [
+				{
+					id: 'fact-old',
+					content: 'The user lives in Budapest.',
+					createdAt: Date.UTC(2026, 2, 20),
+					scope: 'self',
+					sessionId: 'conversation-1',
+				},
+				{
+					id: 'fact-new',
+					content: 'The user moved to Vienna.',
+					createdAt: Date.UTC(2026, 2, 28),
+					scope: 'self',
+					sessionId: 'conversation-2',
+				},
+			],
+			reason: 'test',
+			force: true,
+		});
+
+		expect(insertedClusterRows).toHaveLength(2);
+		const archivedCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('Budapest')
+		);
+		const activeCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('Vienna')
+		);
+		expect(archivedCluster?.state).toBe('archived');
+		expect(JSON.parse(String(archivedCluster?.metadataJson))).toMatchObject({
+			factDomain: 'location',
+			factSlot: 'location:current',
+			factValue: 'budapest',
+			supersededByClusterId: activeCluster?.clusterId,
+			supersessionReason: 'fact_slot',
+		});
+		expect(mockRecordMemoryEvents).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({
+					domain: 'persona',
+					eventType: 'persona_fact_updated',
+					subjectId: activeCluster?.clusterId,
+					relatedId: archivedCluster?.clusterId,
 				}),
 			])
 		);

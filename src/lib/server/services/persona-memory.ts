@@ -74,8 +74,13 @@ type ExistingClusterSnapshot = {
 type PendingMemoryEvent = {
 	eventKey: string;
 	userId: string;
-	domain: 'temporal' | 'preference';
-	eventType: 'deadline_set' | 'deadline_extended' | 'deadline_completed' | 'preference_updated';
+	domain: 'persona' | 'temporal' | 'preference';
+	eventType:
+		| 'persona_fact_updated'
+		| 'deadline_set'
+		| 'deadline_extended'
+		| 'deadline_completed'
+		| 'preference_updated';
 	subjectId: string | null;
 	relatedId: string | null;
 	observedAt: number;
@@ -143,6 +148,13 @@ type PreferenceSlotMetadata = {
 	preferenceValue: string;
 	preferencePolarity: PreferencePolarity;
 	preferenceConfidence: number;
+};
+
+type FactSlotMetadata = {
+	factDomain: 'location' | 'role' | 'employer' | 'study' | 'availability';
+	factSubject: string;
+	factSlot: string;
+	factValue: string;
 };
 
 const PREFERENCE_METADATA_KEYS = [
@@ -1370,26 +1382,6 @@ function deriveCanonicalText(params: {
 	return clip(representative?.content ?? '', 320);
 }
 
-function deriveSupersessionSignature(text: string): string | null {
-	const normalized = normalizeWhitespace(text).replace(/[.]+$/, '');
-	const patterns = [
-		/^(.+?) (is|are) (.+)$/i,
-		/^(.+?) (likes|dislikes|loves|hates|prefers) (.+)$/i,
-		/^(.+?) lives in (.+)$/i,
-		/^(.+?) works as (.+)$/i,
-	];
-
-	for (const pattern of patterns) {
-		const match = normalized.match(pattern);
-		if (!match) continue;
-		const subject = normalizeMemoryText(match[1]);
-		const verb = normalizeMemoryText(match[2]);
-		return `${subject}:${verb}`;
-	}
-
-	return null;
-}
-
 function deriveSemanticFingerprint(text: string): SemanticFingerprint {
 	const normalized = normalizeWhitespace(text).replace(/[.]+$/, '');
 	const patterns = [
@@ -1410,6 +1402,41 @@ function deriveSemanticFingerprint(text: string): SemanticFingerprint {
 	}
 
 	return { subject: null, slot: null };
+}
+
+export function extractFactSlotMetadata(text: string): FactSlotMetadata | null {
+	const normalized = normalizeWhitespace(text).replace(/[.]+$/, '');
+	const patterns: Array<{
+		pattern: RegExp;
+		domain: FactSlotMetadata['factDomain'];
+		slot: string;
+	}> = [
+		{ pattern: /^(.+?) lives in (.+)$/i, domain: 'location', slot: 'location:current' },
+		{ pattern: /^(.+?) moved to (.+)$/i, domain: 'location', slot: 'location:current' },
+		{ pattern: /^(.+?) is based in (.+)$/i, domain: 'location', slot: 'location:current' },
+		{ pattern: /^(.+?) is located in (.+)$/i, domain: 'location', slot: 'location:current' },
+		{ pattern: /^(.+?) works as (.+)$/i, domain: 'role', slot: 'role:current' },
+		{ pattern: /^(.+?) works at (.+)$/i, domain: 'employer', slot: 'employer:current' },
+		{ pattern: /^(.+?) studies (.+)$/i, domain: 'study', slot: 'study:current' },
+		{ pattern: /^(.+?) is available (.+)$/i, domain: 'availability', slot: 'availability:current' },
+		{ pattern: /^(.+?) is unavailable (.+)$/i, domain: 'availability', slot: 'availability:current' },
+	];
+
+	for (const candidate of patterns) {
+		const match = normalized.match(candidate.pattern);
+		if (!match) continue;
+		const factSubject = normalizeMemoryText(match[1]);
+		const factValue = normalizeMemoryText(match[2]);
+		if (!factSubject || !factValue) continue;
+		return {
+			factDomain: candidate.domain,
+			factSubject,
+			factSlot: candidate.slot,
+			factValue,
+		};
+	}
+
+	return null;
 }
 
 function isSemanticMemoryClass(memoryClass: PersonaMemoryClass): boolean {
@@ -1539,6 +1566,7 @@ async function applyTargetedSemanticSupersession(plans: ClusterPlan[]): Promise<
 				candidate.metadata = {
 					...candidate.metadata,
 					supersededByClusterId: primary.clusterId,
+					supersessionReason: 'semantic_replace',
 					semanticSupersessionConfidence: confidence,
 					semanticSupersessionRationale:
 						typeof response?.rationale === 'string' ? clip(response.rationale, 220) : null,
@@ -1553,28 +1581,38 @@ async function applyTargetedSemanticSupersession(plans: ClusterPlan[]): Promise<
 	}
 }
 
-function markSupersededClusters(plans: ClusterPlan[]): void {
+function applyDeterministicFactSupersession(plans: ClusterPlan[]): void {
 	const grouped = new Map<string, ClusterPlan[]>();
 
 	for (const plan of plans) {
-		const signature = deriveSupersessionSignature(plan.canonicalText);
-		if (!signature) continue;
-		const items = grouped.get(signature) ?? [];
+		if (plan.state === 'archived') continue;
+		const fact = ensureFactSlotMetadata(plan);
+		if (!fact) continue;
+		const items = grouped.get(`${fact.factSubject}:${fact.factSlot}`) ?? [];
 		items.push(plan);
-		grouped.set(signature, items);
+		grouped.set(`${fact.factSubject}:${fact.factSlot}`, items);
 	}
 
 	for (const items of grouped.values()) {
 		if (items.length <= 1) continue;
 		const ordered = items.slice().sort((left, right) => right.lastSeenAt - left.lastSeenAt);
 		const newest = ordered[0];
+		const newestFact = ensureFactSlotMetadata(newest);
+		if (!newestFact) continue;
 		for (const older of ordered.slice(1)) {
-			if (normalizeMemoryText(older.canonicalText) === normalizeMemoryText(newest.canonicalText)) {
+			const olderFact = ensureFactSlotMetadata(older);
+			if (!olderFact) continue;
+			if (
+				olderFact.factValue === newestFact.factValue ||
+				normalizeMemoryText(older.canonicalText) === normalizeMemoryText(newest.canonicalText)
+			) {
 				continue;
 			}
 			older.metadata = {
 				...older.metadata,
+				...olderFact,
 				supersededByClusterId: newest.clusterId,
+				supersessionReason: 'fact_slot',
 			};
 			older.state = 'archived';
 			older.decayAt = null;
@@ -1661,6 +1699,56 @@ function ensurePreferenceSlotMetadata(plan: ClusterPlan): PreferenceSlotMetadata
 	if (plan.memoryClass !== 'stable_preference') return null;
 
 	const extracted = extractPreferenceSlotMetadata(plan.canonicalText);
+	if (!extracted) return null;
+
+	plan.metadata = {
+		...plan.metadata,
+		...extracted,
+	};
+	return extracted;
+}
+
+function getFactSlotMetadata(plan: ClusterPlan): FactSlotMetadata | null {
+	const metadata = plan.metadata;
+	if (
+		typeof metadata.factDomain !== 'string' ||
+		typeof metadata.factSubject !== 'string' ||
+		typeof metadata.factSlot !== 'string' ||
+		typeof metadata.factValue !== 'string'
+	) {
+		return null;
+	}
+
+	if (
+		metadata.factDomain !== 'location' &&
+		metadata.factDomain !== 'role' &&
+		metadata.factDomain !== 'employer' &&
+		metadata.factDomain !== 'study' &&
+		metadata.factDomain !== 'availability'
+	) {
+		return null;
+	}
+
+	return {
+		factDomain: metadata.factDomain,
+		factSubject: metadata.factSubject,
+		factSlot: metadata.factSlot,
+		factValue: metadata.factValue,
+	};
+}
+
+function ensureFactSlotMetadata(plan: ClusterPlan): FactSlotMetadata | null {
+	const existing = getFactSlotMetadata(plan);
+	if (existing) return existing;
+	if (
+		plan.memoryClass !== 'identity_profile' &&
+		plan.memoryClass !== 'situational_context' &&
+		plan.memoryClass !== 'long_term_context'
+	) {
+		return null;
+	}
+
+	const extracted = extractFactSlotMetadata(plan.canonicalText);
 	if (!extracted) return null;
 
 	plan.metadata = {
@@ -1782,6 +1870,37 @@ function collectPersonaMemoryEvents(params: {
 						preferenceSlot: preference?.preferenceSlot ?? null,
 						preferenceValue: preference?.preferenceValue ?? null,
 						preferencePolarity: preference?.preferencePolarity ?? null,
+						previousCanonicalText: plan.canonicalText,
+						currentCanonicalText: successor?.canonicalText ?? null,
+					},
+				});
+			}
+		}
+
+		if (
+			supersededById &&
+			supersessionReason === 'fact_slot' &&
+			(plan.memoryClass === 'identity_profile' ||
+				plan.memoryClass === 'situational_context' ||
+				plan.memoryClass === 'long_term_context')
+		) {
+			const successor = planById.get(supersededById);
+			const fact = successor ? getFactSlotMetadata(successor) : getFactSlotMetadata(plan);
+			const eventKey = `persona_fact_updated:${plan.clusterId}:${supersededById}`;
+			if (!seenEventKeys.has(eventKey)) {
+				seenEventKeys.add(eventKey);
+				events.push({
+					eventKey,
+					userId: params.userId,
+					domain: 'persona',
+					eventType: 'persona_fact_updated',
+					subjectId: supersededById,
+					relatedId: plan.clusterId,
+					observedAt: successor?.lastSeenAt ?? plan.lastSeenAt,
+					payload: {
+						factDomain: fact?.factDomain ?? null,
+						factSlot: fact?.factSlot ?? null,
+						factValue: fact?.factValue ?? null,
 						previousCanonicalText: plan.canonicalText,
 						currentCanonicalText: successor?.canonicalText ?? null,
 					},
@@ -2249,9 +2368,9 @@ export async function syncPersonaMemoryClusters(params: {
 
 	applyDeterministicPreferenceSupersession(plans);
 	applyTemporalSupersession(plans);
-	markSupersededClusters(plans);
+	applyDeterministicFactSupersession(plans);
 	await applyTargetedSemanticSupersession(plans);
-	markSupersededClusters(plans);
+	applyDeterministicFactSupersession(plans);
 	const pendingMemoryEvents = collectPersonaMemoryEvents({
 		userId: params.userId,
 		plans,

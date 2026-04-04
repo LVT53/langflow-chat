@@ -614,8 +614,9 @@ export type PersonaMemoryTemporalKind =
 export type PersonaMemoryTemporalFreshness = 'active' | 'stale' | 'expired' | 'historical' | 'unknown';
 export type PersonaMemoryTopicStatus = 'active' | 'dormant' | 'historical';
 export type PersonaMemoryDomain = 'persona' | 'temporal' | 'preference';
-export type MemoryEventDomain = 'temporal' | 'preference' | 'task' | 'document';
+export type MemoryEventDomain = 'persona' | 'temporal' | 'preference' | 'task' | 'document';
 export type MemoryEventType =
+  | 'persona_fact_updated'
   | 'deadline_set'
   | 'deadline_extended'
   | 'deadline_completed'

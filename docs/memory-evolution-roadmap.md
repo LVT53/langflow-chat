@@ -190,6 +190,7 @@ Current progress:
 
 - task continuity now consumes the newest project state event on the read path
 - explicit user pause/resume phrasing can update project continuity immediately instead of waiting for passive age-based decay
+- high-confidence persona facts such as current location/current role now supersede older contradictory facts deterministically and emit `persona_fact_updated` history
 
 Changes:
 
