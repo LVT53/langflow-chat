@@ -28,6 +28,7 @@ import {
 } from './knowledge/store';
 import { listPersonaMemories } from './honcho';
 import { recordMemoryEvents } from './memory-events';
+import { queuePersonaClusterSemanticEmbeddingRefresh } from './semantic-embedding-refresh';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
@@ -2625,6 +2626,18 @@ export async function syncPersonaMemoryClusters(params: {
 	if (pendingMemoryEvents.length > 0) {
 		await recordMemoryEvents(pendingMemoryEvents).catch((error) =>
 			console.error('[PERSONA_MEMORY] Failed to record memory events:', error)
+		);
+	}
+
+	if (plans.length > 0) {
+		queuePersonaClusterSemanticEmbeddingRefresh(
+			plans.map((plan) => ({
+				clusterId: plan.clusterId,
+				userId: params.userId,
+				canonicalText: plan.canonicalText,
+				memoryClass: plan.memoryClass,
+				state: plan.state,
+			}))
 		);
 	}
 

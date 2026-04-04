@@ -27,6 +27,7 @@ import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
 import { getLatestHonchoMetadata } from "./messages";
+import { queueTaskStateSemanticEmbeddingRefresh } from "./semantic-embedding-refresh";
 import { canUseTeiReranker, rerankItems } from "./tei-reranker";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
@@ -530,7 +531,9 @@ async function createTaskState(params: {
     })
     .returning();
 
-  return mapTaskState(created);
+  const mapped = mapTaskState(created);
+  queueTaskStateSemanticEmbeddingRefresh(mapped);
+  return mapped;
 }
 
 type RoutedTaskState = {
@@ -1616,5 +1619,6 @@ export async function updateTaskStateCheckpoint(params: {
     });
   }
 
+  queueTaskStateSemanticEmbeddingRefresh(current);
   return current;
 }

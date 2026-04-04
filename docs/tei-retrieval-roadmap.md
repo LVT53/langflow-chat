@@ -13,6 +13,7 @@ Current status:
 
 - Wave 1 complete: runtime config and thin TEI clients are live
 - Wave 2 complete: unified local embedding persistence is live through `semantic_embeddings`
+- Wave 3 complete: artifact/task/persona writes now queue async embedding refreshes, and `memory-maintenance.ts` runs lazy user-scoped embedding backfill
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
 - Semantic shortlist retrieval waves are still pending
 
@@ -51,6 +52,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
 - Recompute embeddings when canonical source text changes
 - Backfill missing embeddings lazily from maintenance paths instead of blocking request routes
 - Reuse existing maintenance orchestration rather than inventing a second scheduler
+- Current status: complete through `semantic-embedding-refresh.ts`, which queues async refreshes from artifact creation, task-state writes, and persona-cluster sync, while `memory-maintenance.ts` performs the slower per-user backfill sweep.
 
 ### Wave 4: Replace Existing Rerank-Shaped Control-Model Paths
 

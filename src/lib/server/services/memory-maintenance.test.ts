@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
 	mockListPersonaMemories,
 	mockForgetPersonaMemory,
+	mockBackfillSemanticEmbeddingsForUser,
 	mockRepairGeneratedOutputFamilyStatuses,
 	mockRepairGeneratedOutputRetrievalClasses,
 	mockSyncPersonaMemoryClusters,
@@ -12,6 +13,11 @@ const {
 } = vi.hoisted(() => ({
 	mockListPersonaMemories: vi.fn(async () => []),
 	mockForgetPersonaMemory: vi.fn(async () => undefined),
+	mockBackfillSemanticEmbeddingsForUser: vi.fn(async () => ({
+		artifactCount: 0,
+		personaClusterCount: 0,
+		taskStateCount: 0,
+	})),
 	mockRepairGeneratedOutputFamilyStatuses: vi.fn(async () => undefined),
 	mockRepairGeneratedOutputRetrievalClasses: vi.fn(async () => undefined),
 	mockSyncPersonaMemoryClusters: vi.fn(async () => ({
@@ -72,6 +78,10 @@ vi.mock('./honcho', () => ({
 vi.mock('./persona-memory', () => ({
 	syncPersonaMemoryClusters: mockSyncPersonaMemoryClusters,
 	refreshPersonaClusterStates: mockRefreshPersonaClusterStates,
+}));
+
+vi.mock('./semantic-embedding-refresh', () => ({
+	backfillSemanticEmbeddingsForUser: mockBackfillSemanticEmbeddingsForUser,
 }));
 
 vi.mock('./task-state', () => ({
@@ -138,6 +148,8 @@ describe('memory-maintenance scheduling', () => {
 		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledWith('user-1');
 		expect(mockRepairGeneratedOutputFamilyStatuses).toHaveBeenCalledTimes(1);
 		expect(mockRepairGeneratedOutputFamilyStatuses).toHaveBeenCalledWith('user-1');
+		expect(mockBackfillSemanticEmbeddingsForUser).toHaveBeenCalledTimes(1);
+		expect(mockBackfillSemanticEmbeddingsForUser).toHaveBeenCalledWith('user-1');
 	});
 
 	it('debounces consecutive chat-triggered maintenance runs after the last completed pass', async () => {

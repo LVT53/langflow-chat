@@ -11,6 +11,7 @@ import type {
 } from "$lib/types";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import { syncArtifactChunks } from "../../task-state";
+import { queueArtifactSemanticEmbeddingRefresh } from "../../semantic-embedding-refresh";
 import { getConfig } from "../../../config-store";
 import {
   getDocumentTokenBudget,
@@ -177,6 +178,7 @@ export async function createArtifact(params: {
     conversationId: mapped.conversationId,
     contentText: mapped.contentText,
   });
+  queueArtifactSemanticEmbeddingRefresh(mapped);
 
   return mapped;
 }

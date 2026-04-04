@@ -14,6 +14,7 @@ import {
 import type { HonchoPersonaMemoryRecord } from './honcho';
 import { forgetPersonaMemory, listPersonaMemories } from './honcho';
 import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
+import { backfillSemanticEmbeddingsForUser } from './semantic-embedding-refresh';
 import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './task-state';
 
 const KEEP_MICRO_CHECKPOINTS = 6;
@@ -179,11 +180,16 @@ async function performUserMemoryMaintenance(
 		await refreshPersonaClusterStates(userId);
 		await repairGeneratedOutputRetrievalClasses(userId);
 		await repairGeneratedOutputFamilyStatuses(userId);
+		const semanticEmbeddingBackfill = await backfillSemanticEmbeddingsForUser(userId);
 		await pruneTaskCheckpoints(userId);
 		await archiveStaleTaskMemory(userId);
 		await updateProjectMemoryStatuses(userId);
 		await pruneOrphanProjectMemory(userId);
-		console.info('[MEMORY_MAINTENANCE] Completed', { userId, reason });
+		console.info('[MEMORY_MAINTENANCE] Completed', {
+			userId,
+			reason,
+			semanticEmbeddingBackfill,
+		});
 	} catch (error) {
 		console.error('[MEMORY_MAINTENANCE] Failed', { userId, reason, error });
 	}
