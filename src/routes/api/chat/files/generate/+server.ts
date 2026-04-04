@@ -9,7 +9,7 @@ import { storeGeneratedFile } from '$lib/server/services/chat-files';
 interface GenerateRequest {
 	conversationId: string;
 	code: string;
-	language: string;
+	language: 'python' | 'javascript';
 	filename?: string;
 }
 
@@ -57,8 +57,12 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 		return { ok: false, error: 'language is required', status: 400 };
 	}
 
-	if (language !== 'python') {
-		return { ok: false, error: `Unsupported language: ${language}. Only 'python' is supported.`, status: 400 };
+	if (language !== 'python' && language !== 'javascript') {
+		return {
+			ok: false,
+			error: `Unsupported language: ${language}. Supported languages are 'python' and 'javascript'.`,
+			status: 400,
+		};
 	}
 
 	return {
@@ -66,7 +70,7 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 		value: {
 			conversationId: conversationId.trim(),
 			code: code.trim(),
-			language: language.trim(),
+			language: language.trim() as GenerateRequest['language'],
 			filename: typeof filename === 'string' ? filename.trim() : undefined,
 		},
 	};
@@ -101,13 +105,13 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: validation.error }, { status: validation.status });
 	}
 
-	const { conversationId, code, filename: customFilename } = validation.value;
+	const { conversationId, code, filename: customFilename, language } = validation.value;
 	console.info('[FILE_GENERATE] Request received', {
 		requestId,
 		conversationId,
 		authMode: user ? 'session' : 'service',
 		userId: user?.id ?? null,
-		language: validation.value.language,
+		language,
 		customFilename: customFilename ?? null,
 		codeLength: code.length,
 		writesToOutput: code.includes('/output'),
@@ -141,10 +145,10 @@ export const POST: RequestHandler = async (event) => {
 		ownerUserId = conversationUserId;
 	}
 
-	// Execute code in sandbox (language is already validated as 'python')
+	// Execute code in sandbox (language is already validated)
 	let executionResult;
 	try {
-		executionResult = await executeCode(code, 'python');
+		executionResult = await executeCode(code, language);
 	} catch (error) {
 		console.error('[FILE_GENERATE] Sandbox execution threw', {
 			requestId,

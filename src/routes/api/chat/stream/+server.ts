@@ -58,6 +58,7 @@ import {
 import {
   getGenerateFileToolCode,
   getGenerateFileToolFilename,
+  getGenerateFileToolLanguage,
 } from "$lib/utils/generate-file-tool";
 
 const STREAM_TIMEOUT_MS = 120_000;
@@ -207,6 +208,7 @@ export const POST: RequestHandler = async (event) => {
             conversationId,
             streamId,
             status,
+            language: getGenerateFileToolLanguage(input),
             filename: getGenerateFileToolFilename(input),
             codeLength: code?.length ?? 0,
             writesToOutput: code?.includes("/output") ?? false,

@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import type { Container, Exec, ExecInspectInfo } from 'dockerode';
 import { PassThrough } from 'stream';
+import path from 'path';
 
 export const SANDBOX_TIMEOUT_MS = 60000;
 export const SANDBOX_MEMORY_MB = 1024;
@@ -8,11 +9,53 @@ export const SANDBOX_MAX_FILE_MB = 50;
 export const SANDBOX_MAX_OUTPUT_FILES = 20;
 export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;
 
-const SANDBOX_IMAGE = 'python:3.11-slim';
 const SANDBOX_EXEC_POLL_MS = 25;
-let sandboxImageReady = false;
-let sandboxImagePullPromise: Promise<void> | null = null;
-let sandboxWarmupStarted = false;
+
+export type SandboxLanguage = 'python' | 'javascript';
+
+interface SandboxRuntimeConfig {
+	image: string;
+	idleCommand: string[];
+	execCommand: (code: string) => string[];
+	workingDir?: string;
+	binds?: string[];
+}
+
+const JAVASCRIPT_NODE_MODULES_DIR = path.join(process.cwd(), 'node_modules');
+
+const SANDBOX_RUNTIME_CONFIG: Record<SandboxLanguage, SandboxRuntimeConfig> = {
+	python: {
+		image: 'python:3.11-slim',
+		idleCommand: ['python3', '-c', 'import sys; sys.stdin.read()'],
+		execCommand: (code: string) => ['python3', '-c', code],
+	},
+	javascript: {
+		image: 'node:22-bookworm-slim',
+		idleCommand: ['node', '-e', 'process.stdin.resume()'],
+		execCommand: (code: string) => ['node', '-e', code],
+		workingDir: '/workspace',
+		binds: [`${JAVASCRIPT_NODE_MODULES_DIR}:/workspace/node_modules:ro`],
+	},
+};
+
+interface SandboxRuntimeState {
+	ready: boolean;
+	pullPromise: Promise<void> | null;
+	warmupStarted: boolean;
+}
+
+const sandboxRuntimeState: Record<SandboxLanguage, SandboxRuntimeState> = {
+	python: {
+		ready: false,
+		pullPromise: null,
+		warmupStarted: false,
+	},
+	javascript: {
+		ready: false,
+		pullPromise: null,
+		warmupStarted: false,
+	},
+};
 
 export interface Sandbox {
 	container: Container;
@@ -32,9 +75,19 @@ function isDockerodeStatusError(error: unknown): error is { statusCode?: number;
 	return typeof error === 'object' && error !== null;
 }
 
-async function hasSandboxImage(): Promise<boolean> {
+function getSandboxRuntime(language: SandboxLanguage): SandboxRuntimeConfig {
+	return SANDBOX_RUNTIME_CONFIG[language];
+}
+
+function getSandboxState(language: SandboxLanguage): SandboxRuntimeState {
+	return sandboxRuntimeState[language];
+}
+
+async function hasSandboxImage(language: SandboxLanguage): Promise<boolean> {
+	const runtime = getSandboxRuntime(language);
+
 	try {
-		await docker.getImage(SANDBOX_IMAGE).inspect();
+		await docker.getImage(runtime.image).inspect();
 		return true;
 	} catch (error) {
 		if (isDockerodeStatusError(error) && error.statusCode === 404) {
@@ -44,11 +97,14 @@ async function hasSandboxImage(): Promise<boolean> {
 	}
 }
 
-async function pullSandboxImage(): Promise<void> {
+async function pullSandboxImage(language: SandboxLanguage): Promise<void> {
+	const runtime = getSandboxRuntime(language);
+
 	console.info('[FILE_GENERATE] Sandbox image missing locally; pulling base image', {
-		image: SANDBOX_IMAGE,
+		runtime: language,
+		image: runtime.image,
 	});
-	const stream = await docker.pull(SANDBOX_IMAGE);
+	const stream = await docker.pull(runtime.image);
 
 	await new Promise<void>((resolve, reject) => {
 		const modem = docker.modem as {
@@ -64,64 +120,75 @@ async function pullSandboxImage(): Promise<void> {
 				return;
 			}
 			console.info('[FILE_GENERATE] Sandbox image pull completed', {
-				image: SANDBOX_IMAGE,
+				runtime: language,
+				image: runtime.image,
 			});
 			resolve();
 		});
 	});
 }
 
-async function ensureSandboxImage(): Promise<void> {
-	if (sandboxImageReady) return;
-	if (sandboxImagePullPromise) {
-		await sandboxImagePullPromise;
+async function ensureSandboxImage(language: SandboxLanguage): Promise<void> {
+	const state = getSandboxState(language);
+	if (state.ready) return;
+	if (state.pullPromise) {
+		await state.pullPromise;
 		return;
 	}
 
-	sandboxImagePullPromise = (async () => {
-		if (await hasSandboxImage()) {
-			sandboxImageReady = true;
+	state.pullPromise = (async () => {
+		if (await hasSandboxImage(language)) {
+			state.ready = true;
 			return;
 		}
 
-		await pullSandboxImage();
-		sandboxImageReady = true;
+		await pullSandboxImage(language);
+		state.ready = true;
 	})().finally(() => {
-		sandboxImagePullPromise = null;
+		state.pullPromise = null;
 	});
 
-	await sandboxImagePullPromise;
+	await state.pullPromise;
 }
 
 export function resetSandboxImageStateForTests(): void {
-	sandboxImageReady = false;
-	sandboxImagePullPromise = null;
-	sandboxWarmupStarted = false;
+	for (const state of Object.values(sandboxRuntimeState)) {
+		state.ready = false;
+		state.pullPromise = null;
+		state.warmupStarted = false;
+	}
 }
 
 export function prewarmSandboxImageInBackground(): void {
-	if (sandboxImageReady || sandboxImagePullPromise || sandboxWarmupStarted) {
-		return;
-	}
+	for (const language of Object.keys(SANDBOX_RUNTIME_CONFIG) as SandboxLanguage[]) {
+		const runtime = getSandboxRuntime(language);
+		const state = getSandboxState(language);
+		if (state.ready || state.pullPromise || state.warmupStarted) {
+			continue;
+		}
 
-	sandboxWarmupStarted = true;
-	console.info('[FILE_GENERATE] Scheduling sandbox image warmup', {
-		image: SANDBOX_IMAGE,
-	});
-
-	void ensureSandboxImage()
-		.then(() => {
-			console.info('[FILE_GENERATE] Sandbox image warmup ready', {
-				image: SANDBOX_IMAGE,
-			});
-		})
-		.catch((error) => {
-			sandboxWarmupStarted = false;
-			console.warn('[FILE_GENERATE] Sandbox image warmup failed', {
-				image: SANDBOX_IMAGE,
-				error,
-			});
+		state.warmupStarted = true;
+		console.info('[FILE_GENERATE] Scheduling sandbox image warmup', {
+			runtime: language,
+			image: runtime.image,
 		});
+
+		void ensureSandboxImage(language)
+			.then(() => {
+				console.info('[FILE_GENERATE] Sandbox image warmup ready', {
+					runtime: language,
+					image: runtime.image,
+				});
+			})
+			.catch((error) => {
+				state.warmupStarted = false;
+				console.warn('[FILE_GENERATE] Sandbox image warmup failed', {
+					runtime: language,
+					image: runtime.image,
+					error,
+				});
+			});
+	}
 }
 
 async function waitForExecToFinish(exec: Exec): Promise<ExecInspectInfo> {
@@ -205,18 +272,20 @@ export async function executeSandboxCommand(container: Container, cmd: string[])
 	}
 }
 
-export async function createSandbox(): Promise<Sandbox> {
-	await ensureSandboxImage();
+export async function createSandbox(language: SandboxLanguage = 'python'): Promise<Sandbox> {
+	const runtime = getSandboxRuntime(language);
+	await ensureSandboxImage(language);
 
 	const memoryBytes = SANDBOX_MEMORY_MB * 1024 * 1024;
 
 	const container = await docker.createContainer({
-		Image: SANDBOX_IMAGE,
-		Cmd: ['python3', '-c', 'import sys; sys.stdin.read()'],
+		Image: runtime.image,
+		Cmd: runtime.idleCommand,
 		Tty: false,
 		OpenStdin: true,
 		StdinOnce: false,
 		StopTimeout: SANDBOX_TIMEOUT_MS / 1000,
+		WorkingDir: runtime.workingDir,
 		// SECURITY: Run as non-root user (UID 1000, GID 1000)
 		User: '1000:1000',
 		HostConfig: {
@@ -233,6 +302,7 @@ export async function createSandbox(): Promise<Sandbox> {
 			Privileged: false,
 			// SECURITY: Limit number of processes (fork bomb protection)
 			PidsLimit: 100,
+			Binds: runtime.binds,
 			// SECURITY: Writable tmpfs for output and temp (since rootfs is readonly and we run as non-root)
 			Tmpfs: {
 				'/output': 'rw,size=100m,mode=1777',
@@ -248,7 +318,7 @@ export async function createSandbox(): Promise<Sandbox> {
 	await container.start();
 
 	async function execute(code: string): Promise<SandboxResult> {
-		return executeSandboxCommand(container, ['python3', '-c', code]);
+		return executeSandboxCommand(container, runtime.execCommand(code));
 	}
 
 	async function destroy(): Promise<void> {

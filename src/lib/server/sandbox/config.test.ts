@@ -139,8 +139,25 @@ describe('sandbox config', () => {
 			await Promise.resolve();
 
 			expect(mockDocker.getImage).toHaveBeenCalledWith('python:3.11-slim');
-			expect(mockImageInspect).toHaveBeenCalledTimes(1);
+			expect(mockDocker.getImage).toHaveBeenCalledWith('node:22-bookworm-slim');
+			expect(mockImageInspect).toHaveBeenCalledTimes(2);
 			expect(mockPull).not.toHaveBeenCalled();
+		});
+
+		it('should create a sandbox container with JavaScript runtime', async () => {
+			await createSandbox('javascript');
+
+			expect(mockDocker.getImage).toHaveBeenCalledWith('node:22-bookworm-slim');
+			expect(mockDocker.createContainer).toHaveBeenCalledWith(
+				expect.objectContaining({
+					Image: 'node:22-bookworm-slim',
+					Cmd: ['node', '-e', 'process.stdin.resume()'],
+					WorkingDir: '/workspace',
+					HostConfig: expect.objectContaining({
+						Binds: expect.arrayContaining([expect.stringContaining('/workspace/node_modules:ro')]),
+					}),
+				})
+			);
 		});
 	});
 
@@ -179,6 +196,41 @@ describe('sandbox config', () => {
 			);
 			expect(result.exitCode).toBe(0);
 			expect(mockDemuxStream).toHaveBeenCalledWith(mockStream, expect.any(Object), expect.any(Object));
+		});
+
+		it('should execute simple JavaScript code', async () => {
+			const mockExecInspect = vi.fn().mockResolvedValue({
+				ExitCode: 0,
+				Running: false,
+			});
+
+			const mockStream = {
+				once: vi.fn().mockImplementation((event: string, handler: unknown) => {
+					if (event === 'end') {
+						setTimeout(() => (handler as () => void)(), 0);
+					}
+					return mockStream;
+				}),
+			};
+
+			const mockExec = {
+				start: vi.fn().mockResolvedValue(mockStream),
+				inspect: mockExecInspect,
+			};
+
+			mockContainer.exec.mockResolvedValue(mockExec);
+
+			const sandbox = await createSandbox('javascript');
+			const result = await sandbox.execute('console.log("Hello from Node")');
+
+			expect(mockContainer.exec).toHaveBeenCalledWith(
+				expect.objectContaining({
+					Cmd: ['node', '-e', 'console.log("Hello from Node")'],
+					AttachStdout: true,
+					AttachStderr: true,
+				})
+			);
+			expect(result.exitCode).toBe(0);
 		});
 
 		it('waits for exec inspection to report completion before resolving', async () => {

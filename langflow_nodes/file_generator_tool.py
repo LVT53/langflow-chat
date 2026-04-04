@@ -48,7 +48,7 @@ from typing import Any
 import requests
 
 from lfx.custom.custom_component.component import Component
-from lfx.inputs.inputs import MultilineInput, StrInput
+from lfx.inputs.inputs import DropdownInput, MultilineInput, StrInput
 from lfx.io import Output
 from lfx.log.logger import logger
 from lfx.schema.data import Data
@@ -64,12 +64,9 @@ class FileGeneratorToolComponent(Component):
     - 1GB memory limit
     - Non-root execution
     
-    Supported output formats:
-    - PDF documents (reportlab, fpdf)
-    - Excel spreadsheets (pandas, openpyxl)
-    - Charts and images (matplotlib, plotly)
-    - CSV files
-    - Any format that can be written to /output in Python
+    Supported output formats depend on the selected runtime:
+    - Python: text, CSV, JSON, HTML, and other files that work with the Python stdlib
+    - JavaScript: XLSX via exceljs, PDF via pdf-lib, PPTX via pptxgenjs
     """
 
     display_name = "File Generator"
@@ -94,10 +91,18 @@ class FileGeneratorToolComponent(Component):
             value=os.getenv("ALFYAI_API_KEY", ""),
             advanced=True,
         ),
+        DropdownInput(
+            name="language",
+            display_name="Runtime Language",
+            info="Choose the sandbox runtime. Use JavaScript for XLSX, PDF, and PPTX generation.",
+            options=["python", "javascript"],
+            value="python",
+            tool_mode=True,
+        ),
         MultilineInput(
-            name="python_code",
-            display_name="Python Code",
-            info="Python code to execute. Write output files to /output directory.",
+            name="source_code",
+            display_name="Source Code",
+            info="Source code to execute. Write output files to /output directory.",
             value="",
             required=True,
             tool_mode=True,  # This enables the component as a tool
@@ -129,7 +134,11 @@ class FileGeneratorToolComponent(Component):
             or "from lfx.custom.custom_component.component import Component" in value
         )
 
-    def _resolve_python_code(self) -> str | None:
+    def _resolve_source_code(self) -> str | None:
+        source_code = str(getattr(self, "source_code", "") or "").strip()
+        if source_code:
+            return source_code
+
         python_code = str(getattr(self, "python_code", "") or "").strip()
         if python_code:
             return python_code
@@ -141,12 +150,18 @@ class FileGeneratorToolComponent(Component):
         if self._looks_like_component_source(legacy_code):
             logger.error(
                 "File Generator node is still resolving the reserved `code` field instead of the "
-                "`python_code` tool argument. Refresh or re-add the node in Langflow so it reloads "
+                "`source_code` tool argument. Refresh or re-add the node in Langflow so it reloads "
                 "the updated schema."
             )
             return None
 
         return legacy_code
+
+    def _resolve_language(self) -> str:
+        language = str(getattr(self, "language", "") or "").strip().lower()
+        if language in {"python", "javascript"}:
+            return language
+        return "python"
 
     def _get_conversation_id(self) -> str | None:
         """Get the conversation ID from the Langflow session.
@@ -161,7 +176,13 @@ class FileGeneratorToolComponent(Component):
             logger.warning(f"Could not get conversation ID: {e}")
         return None
 
-    def _execute_code(self, code: str, conversation_id: str, filename: str | None = None) -> dict[str, Any]:
+    def _execute_code(
+        self,
+        code: str,
+        conversation_id: str,
+        language: str,
+        filename: str | None = None,
+    ) -> dict[str, Any]:
         """Execute Python code in the sandbox and return the result.
         
         Args:
@@ -185,7 +206,7 @@ class FileGeneratorToolComponent(Component):
         payload = {
             "conversationId": conversation_id,
             "code": code,
-            "language": "python",
+            "language": language,
         }
         
         if filename:
@@ -259,7 +280,8 @@ class FileGeneratorToolComponent(Component):
 
     def generate_file(self) -> Data:
         """Tool function called by the agent via Langflow tool mode."""
-        code = self._resolve_python_code()
+        code = self._resolve_source_code()
+        language = self._resolve_language()
         filename = str(getattr(self, "filename", "") or "")
 
         # Get conversation ID from session
@@ -276,8 +298,8 @@ class FileGeneratorToolComponent(Component):
             return Data(data={
                 "success": False,
                 "error": (
-                    "No Python code provided. If you just updated this node, refresh or re-add it in "
-                    "Langflow so the tool sends the `python_code` argument."
+                    "No source code provided. If you just updated this node, refresh or re-add it in "
+                    "Langflow so the tool sends the `source_code` argument."
                 ),
             })
         
@@ -292,6 +314,7 @@ class FileGeneratorToolComponent(Component):
         result = self._execute_code(
             code=code,
             conversation_id=conversation_id,
+            language=language,
             filename=filename if filename else None,
         )
         

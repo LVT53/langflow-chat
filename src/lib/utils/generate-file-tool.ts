@@ -1,4 +1,12 @@
 export function getGenerateFileToolCode(input: Record<string, unknown>): string | null {
+	const sourceCode =
+		typeof input.source_code === 'string' && input.source_code.trim().length > 0
+			? input.source_code
+			: null;
+	if (sourceCode) {
+		return sourceCode;
+	}
+
 	const pythonCode =
 		typeof input.python_code === 'string' && input.python_code.trim().length > 0
 			? input.python_code
@@ -10,6 +18,10 @@ export function getGenerateFileToolCode(input: Record<string, unknown>): string 
 	const code =
 		typeof input.code === 'string' && input.code.trim().length > 0 ? input.code : null;
 	return code;
+}
+
+export function getGenerateFileToolLanguage(input: Record<string, unknown>): 'python' | 'javascript' {
+	return input.language === 'javascript' ? 'javascript' : 'python';
 }
 
 export function getGenerateFileToolFilename(input: Record<string, unknown>): string | null {

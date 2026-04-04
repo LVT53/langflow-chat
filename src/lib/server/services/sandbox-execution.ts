@@ -5,6 +5,7 @@ import {
 	SANDBOX_MAX_OUTPUT_FILES,
 	SANDBOX_MAX_TOTAL_OUTPUT_MB,
 	SANDBOX_TIMEOUT_MS,
+	type SandboxLanguage,
 } from '../sandbox/config';
 import tar from 'tar-stream';
 import path from 'path';
@@ -30,17 +31,21 @@ const MIME_TYPES: Record<string, string> = {
 	'.pdf': 'application/pdf',
 	'.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 	'.xls': 'application/vnd.ms-excel',
+	'.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+	'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 	'.png': 'image/png',
 	'.jpg': 'image/jpeg',
 	'.jpeg': 'image/jpeg',
 	'.csv': 'text/csv',
 	'.json': 'application/json',
 	'.txt': 'text/plain',
+	'.md': 'text/markdown',
+	'.svg': 'image/svg+xml',
 	'.html': 'text/html',
 };
 
 const OUTPUT_DIR = '/output';
-const OUTPUT_INSPECTION_SCRIPT = `
+const PYTHON_OUTPUT_INSPECTION_SCRIPT = `
 import json
 import os
 
@@ -70,6 +75,48 @@ print(json.dumps({
 }))
 `;
 
+const JAVASCRIPT_OUTPUT_INSPECTION_SCRIPT = `
+const fs = require('fs');
+const path = require('path');
+
+const root = ${JSON.stringify(OUTPUT_DIR)};
+const files = [];
+const directories = [];
+
+function walk(currentRoot) {
+	const relDir = path.relative(root, currentRoot).split(path.sep).join('/');
+	directories.push(relDir === '' ? '.' : relDir);
+
+	for (const entry of fs.readdirSync(currentRoot, { withFileTypes: true })) {
+		const fullPath = path.join(currentRoot, entry.name);
+		if (entry.isDirectory()) {
+			walk(fullPath);
+			continue;
+		}
+
+		if (!entry.isFile()) {
+			continue;
+		}
+
+		const stat = fs.statSync(fullPath);
+		const relPath = path.relative(root, fullPath).split(path.sep).join('/');
+		files.push({
+			path: fullPath,
+			relativePath: relPath,
+			sizeBytes: stat.size,
+		});
+	}
+}
+
+const exists = fs.existsSync(root);
+const isDir = exists ? fs.statSync(root).isDirectory() : false;
+if (isDir) {
+	walk(root);
+}
+
+console.log(JSON.stringify({ exists, isDir, directories, files }));
+`;
+
 interface OutputInspectionFile {
 	path: string;
 	relativePath: string;
@@ -88,6 +135,87 @@ interface OutputReadbackFile {
 	filename: string;
 	sizeBytes: number;
 	contentBase64: string;
+}
+
+function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
+	if (language === 'javascript') {
+		return `
+const fs = require('fs');
+
+(async () => {
+	fs.mkdirSync(${JSON.stringify(OUTPUT_DIR)}, { recursive: true });
+${code}
+})().catch((error) => {
+	console.error(error && error.stack ? error.stack : String(error));
+	process.exit(1);
+});
+`;
+	}
+
+	return `
+import os
+os.makedirs('${OUTPUT_DIR}', exist_ok=True)
+
+${code}
+`;
+}
+
+function buildInspectionCommand(language: SandboxLanguage): string[] {
+	if (language === 'javascript') {
+		return ['node', '-e', JAVASCRIPT_OUTPUT_INSPECTION_SCRIPT];
+	}
+
+	return ['python3', '-c', PYTHON_OUTPUT_INSPECTION_SCRIPT];
+}
+
+function buildReadbackCommand(
+	language: SandboxLanguage,
+	inspectionFiles: OutputInspectionFile[]
+): string[] {
+	if (language === 'javascript') {
+		const readbackScript = `
+const fs = require('fs');
+const path = require('path');
+
+const paths = JSON.parse(${JSON.stringify(JSON.stringify(inspectionFiles.map((file) => file.path)))});
+const files = paths.map((filePath) => {
+	const content = fs.readFileSync(filePath);
+	return {
+		path: filePath,
+		filename: path.basename(filePath),
+		sizeBytes: content.length,
+		contentBase64: content.toString('base64'),
+	};
+});
+
+console.log(JSON.stringify({ files }));
+`;
+
+		return ['node', '-e', readbackScript];
+	}
+
+	const readbackScript = `
+import base64
+import json
+import os
+
+paths = json.loads(${JSON.stringify(JSON.stringify(inspectionFiles.map((file) => file.path)))})
+files = []
+
+for path in paths:
+    with open(path, 'rb') as handle:
+        content = handle.read()
+    files.append({
+        "path": path,
+        "filename": os.path.basename(path),
+        "sizeBytes": len(content),
+        "contentBase64": base64.b64encode(content).decode('ascii'),
+    })
+
+print(json.dumps({"files": files}))
+`;
+
+	return ['python3', '-c', readbackScript];
 }
 
 function getMimeType(filename: string): string {
@@ -324,6 +452,10 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 		return `Import error: ${stderr}`;
 	}
 
+	if (stderr.includes('Cannot find module') || stderr.includes('ERR_MODULE_NOT_FOUND')) {
+		return `Import error: ${stderr}`;
+	}
+
 	if (exitCode !== 0 && exitCode !== undefined) {
 		return `Execution failed with exit code ${exitCode}`;
 	}
@@ -331,8 +463,11 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 	return undefined;
 }
 
-async function inspectOutputDirectory(container: Container): Promise<OutputInspectionResult | null> {
-	const inspection = await executeSandboxCommand(container, ['python3', '-c', OUTPUT_INSPECTION_SCRIPT]);
+async function inspectOutputDirectory(
+	container: Container,
+	language: SandboxLanguage
+): Promise<OutputInspectionResult | null> {
+	const inspection = await executeSandboxCommand(container, buildInspectionCommand(language));
 
 	if (inspection.exitCode !== 0) {
 		console.warn('[FILE_GENERATE] In-container output inspection failed', {
@@ -376,30 +511,10 @@ async function inspectOutputDirectory(container: Container): Promise<OutputInspe
 
 async function readFilesFromInsideContainer(
 	container: Container,
+	language: SandboxLanguage,
 	inspectionFiles: OutputInspectionFile[]
 ): Promise<FileOutput[]> {
-	const readbackScript = `
-import base64
-import json
-import os
-
-paths = json.loads(${JSON.stringify(JSON.stringify(inspectionFiles.map((file) => file.path)))})
-files = []
-
-for path in paths:
-    with open(path, 'rb') as handle:
-        content = handle.read()
-    files.append({
-        "path": path,
-        "filename": os.path.basename(path),
-        "sizeBytes": len(content),
-        "contentBase64": base64.b64encode(content).decode('ascii'),
-    })
-
-print(json.dumps({"files": files}))
-`;
-
-	const readback = await executeSandboxCommand(container, ['python3', '-c', readbackScript]);
+	const readback = await executeSandboxCommand(container, buildReadbackCommand(language, inspectionFiles));
 
 	if (readback.exitCode !== 0) {
 		throw new Error(readback.stderr || `In-container file read failed with exit code ${readback.exitCode}`);
@@ -493,25 +608,20 @@ print(json.dumps({"files": files}))
 	return files;
 }
 
-export async function executeCode(code: string, language: 'python'): Promise<ExecutionResult> {
-	if (language !== 'python') {
+export async function executeCode(code: string, language: SandboxLanguage): Promise<ExecutionResult> {
+	if (language !== 'python' && language !== 'javascript') {
 		return {
 			files: [],
 			stdout: '',
 			stderr: '',
-			error: `Unsupported language: ${language}. Only 'python' is supported.`,
+			error: `Unsupported language: ${language}. Supported languages are 'python' and 'javascript'.`,
 		};
 	}
 
-	const sandbox = await createSandbox();
+	const sandbox = await createSandbox(language);
 
 	try {
-		const wrappedCode = `
-import os
-os.makedirs('${OUTPUT_DIR}', exist_ok=True)
-
-${code}
-`;
+		const wrappedCode = buildSandboxBootstrapCode(code, language);
 
 		const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
 			const timeoutId = setTimeout(async () => {
@@ -535,7 +645,8 @@ ${code}
 				});
 		});
 
-		const outputInspection = result.exitCode === 0 ? await inspectOutputDirectory(sandbox.container) : null;
+		const outputInspection =
+			result.exitCode === 0 ? await inspectOutputDirectory(sandbox.container, language) : null;
 
 		let files: FileOutput[] = [];
 		let extractionError: string | undefined;
@@ -547,7 +658,11 @@ ${code}
 					fileCount: outputInspection?.files.length ?? 0,
 					files: outputInspection?.files ?? [],
 				});
-				files = await readFilesFromInsideContainer(sandbox.container, outputInspection?.files ?? []);
+				files = await readFilesFromInsideContainer(
+					sandbox.container,
+					language,
+					outputInspection?.files ?? []
+				);
 			}
 		} catch (error) {
 			extractionError = error instanceof Error ? error.message : String(error);

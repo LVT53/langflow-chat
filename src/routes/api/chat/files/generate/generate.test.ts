@@ -181,6 +181,49 @@ describe('POST /api/chat/files/generate', () => {
 		expect(data.files[1].filename).toBe('report.pdf');
 	});
 
+	it('accepts javascript execution for office-style file generation', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'deck.pptx',
+					mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+					content: Buffer.from('pptx content'),
+					sizeBytes: 12,
+				},
+			],
+			stdout: 'Generated PPTX',
+			stderr: '',
+		});
+		mockStoreGeneratedFile.mockResolvedValue({
+			id: 'file-js',
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			filename: 'deck.pptx',
+			mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+			sizeBytes: 12,
+			storagePath: 'conv-1/file-js.pptx',
+			createdAt: Date.now(),
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				code: 'const pptx = require("pptxgenjs");',
+				language: 'javascript',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.files[0].filename).toBe('deck.pptx');
+		expect(mockExecuteCode).toHaveBeenCalledWith(
+			'const pptx = require("pptxgenjs");',
+			'javascript'
+		);
+	});
+
 	it('returns 401 for unauthorized request', async () => {
 		const event = makeEvent({
 			conversationId: 'conv-1',
@@ -295,7 +338,7 @@ describe('POST /api/chat/files/generate', () => {
 		const event = makeEvent({
 			conversationId: 'conv-1',
 			code: 'test',
-			language: 'javascript'
+			language: 'ruby'
 		});
 		
 		const response = await POST(event);

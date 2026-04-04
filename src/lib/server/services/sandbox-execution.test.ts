@@ -25,8 +25,9 @@ vi.mock('../sandbox/config', () => ({
 }));
 
 import { executeCode } from './sandbox-execution';
-import { executeSandboxCommand } from '../sandbox/config';
+import { createSandbox, executeSandboxCommand } from '../sandbox/config';
 
+const mockCreateSandbox = createSandbox as ReturnType<typeof vi.fn>;
 const mockExecuteSandboxCommand = executeSandboxCommand as ReturnType<typeof vi.fn>;
 
 function createEmptyOutputArchive(): Readable {
@@ -330,8 +331,23 @@ describe('sandbox-execution', () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
-		it('only supports python language', async () => {
-			const result = await executeCode('console.log("hello")', 'javascript' as 'python');
+		it('supports javascript execution in the node sandbox', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'Hello from Node',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+
+			const result = await executeCode('console.log("Hello from Node")', 'javascript');
+
+			expect(result.stdout).toBe('Hello from Node');
+			expect(mockCreateSandbox).toHaveBeenCalledWith('javascript');
+		});
+
+		it('rejects unsupported languages', async () => {
+			const result = await executeCode('puts "hello"', 'ruby' as 'python');
 
 			expect(result.error).toContain('Unsupported language');
 			expect(result.stdout).toBe('');
