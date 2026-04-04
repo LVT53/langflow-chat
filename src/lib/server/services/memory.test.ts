@@ -310,6 +310,19 @@ describe('knowledge memory service', () => {
 		expect(mockEnsurePersonaMemoryClustersReady).toHaveBeenCalledWith('user-1', 'knowledge_read');
 	});
 
+	it('does not start a live Honcho overview refresh when local durable memory is empty', async () => {
+		mockGetPeerContext.mockResolvedValue('Stale Honcho profile that should stay hidden.');
+
+		const { getKnowledgeMemory } = await import('./memory');
+
+		const payload = await getKnowledgeMemory('user-1', 'Test User');
+		await Promise.resolve();
+
+		expect(payload.summary.overviewSource).toBeNull();
+		expect(payload.summary.overviewStatus).toBe('not_enough_durable_memory');
+		expect(mockGetPeerContext).not.toHaveBeenCalled();
+	});
+
 	it('returns a live Honcho overview through the overview endpoint when available', async () => {
 		mockListPersonaMemoryClusters.mockResolvedValue(makeDurablePersonaMemories());
 		mockGetPeerContext.mockResolvedValue('Test User prefers concise responses and Laravel.');
@@ -325,6 +338,22 @@ describe('knowledge memory service', () => {
 		expect(payload.summary.overview).toContain('Test User prefers concise responses');
 		expect(payload.summary.overviewUpdatedAt).not.toBeNull();
 		expect(overviewRows).toHaveLength(1);
+	});
+
+	it('refuses live Honcho overview text when there is not enough local durable memory', async () => {
+		mockGetPeerContext.mockResolvedValue('Stale Honcho profile that should stay hidden.');
+
+		const { getKnowledgeMemoryOverview } = await import('./memory');
+
+		const payload = await getKnowledgeMemoryOverview('user-1', 'Test User', {
+			awaitLive: true,
+			force: true,
+		});
+
+		expect(payload.summary.overviewSource).toBeNull();
+		expect(payload.summary.overviewStatus).toBe('not_enough_durable_memory');
+		expect(payload.summary.overview).toBeNull();
+		expect(mockGetPeerContext).not.toHaveBeenCalled();
 	});
 
 	it('returns a cached Honcho overview when live refresh fails and the fingerprint matches', async () => {

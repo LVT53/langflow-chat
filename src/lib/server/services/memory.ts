@@ -522,6 +522,11 @@ async function refreshKnowledgeOverview(params: {
 	personaMemories: PersonaMemoryItem[];
 	force?: boolean;
 }): Promise<CachedKnowledgeOverview | null> {
+	const durableOverview = buildLocalPersonaOverview(params.personaMemories);
+	if (durableOverview.durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
+		return null;
+	}
+
 	const existing = overviewRefreshInFlight.get(params.userId);
 	if (existing) return existing;
 
@@ -652,6 +657,20 @@ async function selectKnowledgeOverview(params: {
 	}
 
 	let cachedOverview = await getCachedKnowledgeOverview(params.userId);
+	const attemptState = getOverviewAttemptState(params.userId, cachedOverview);
+	if (fallback.durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
+		const selection = {
+			overview: null,
+			overviewSource: null,
+			overviewStatus: 'not_enough_durable_memory',
+			overviewUpdatedAt: null,
+			overviewLastAttemptAt: attemptState.lastAttemptAt,
+			durablePersonaCount: fallback.durablePersonaCount,
+		};
+		logKnowledgeOverviewSelection({ userId: params.userId, selection });
+		return selection;
+	}
+
 	const hasMatchingCache = Boolean(
 		cachedOverview?.overviewText.trim() &&
 			cachedOverview.sourceFingerprint === fallback.sourceFingerprint
@@ -697,7 +716,6 @@ async function selectKnowledgeOverview(params: {
 		}
 	}
 
-	const attemptState = getOverviewAttemptState(params.userId, cachedOverview);
 	if (
 		hasMatchingCache &&
 		cachedOverview &&
