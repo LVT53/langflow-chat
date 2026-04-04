@@ -4,7 +4,9 @@ const {
 	mockState,
 	mockDeletedConversations,
 	mockDeleteAllChatFilesForConversation,
+	mockDeleteAllChatFilesForUser,
 	mockDeleteConversationHonchoState,
+	mockDeleteAllHonchoStateForUser,
 	mockDeleteAllPersonaMemoryStateForUser,
 	mockClearKnowledgeMemoryRuntimeStateForUser,
 	mockHardDeleteArtifactsForUser,
@@ -18,7 +20,9 @@ const {
 		},
 		mockDeletedConversations: [] as string[],
 		mockDeleteAllChatFilesForConversation: vi.fn(() => Promise.resolve(0)),
+		mockDeleteAllChatFilesForUser: vi.fn(() => Promise.resolve(0)),
 		mockDeleteConversationHonchoState: vi.fn(() => Promise.resolve(undefined)),
+		mockDeleteAllHonchoStateForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockDeleteAllPersonaMemoryStateForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockClearKnowledgeMemoryRuntimeStateForUser: vi.fn(() => undefined),
 		mockHardDeleteArtifactsForUser: vi.fn(() => Promise.resolve(undefined)),
@@ -39,6 +43,9 @@ vi.mock('$lib/server/db', () => ({
 						where: vi.fn(() => {
 							if (tableName === 'artifacts') {
 								return Promise.resolve([]);
+							}
+							if (tableName === 'users') {
+								return Promise.resolve([{ id: 'user-1', passwordHash: 'hash' }]);
 							}
 							return {
 								limit: vi.fn(async () =>
@@ -83,16 +90,22 @@ vi.mock('$lib/server/db/schema', () => ({
 		userId: { name: 'userId' },
 	},
 	conversationContextStatus: { userId: { name: 'userId' } },
+	conversationDrafts: { userId: { name: 'userId' } },
 	conversationTaskStates: { userId: { name: 'userId' } },
 	conversationWorkingSetItems: { userId: { name: 'userId' } },
+	chatGeneratedFiles: { userId: { name: 'userId' } },
+	knowledgeVaults: { userId: { name: 'userId' } },
 	memoryEvents: { userId: { name: 'userId' } },
 	memoryProjectTaskLinks: { userId: { name: 'userId' } },
 	memoryProjects: { userId: { name: 'userId' } },
+	messageAnalytics: { userId: { name: 'userId' } },
 	personaMemoryAttributions: { userId: { name: 'userId' } },
+	projects: { userId: { name: 'userId' } },
 	semanticEmbeddings: { userId: { name: 'userId' } },
+	sessions: { userId: { name: 'userId' } },
 	taskCheckpoints: { userId: { name: 'userId' } },
 	taskStateEvidenceLinks: { userId: { name: 'userId' } },
-	users: {},
+	users: { __name: 'users', id: { name: 'id' } },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -112,12 +125,13 @@ vi.mock('./knowledge', () => ({
 }));
 
 vi.mock('./honcho', () => ({
-	deleteAllHonchoStateForUser: vi.fn(),
+	deleteAllHonchoStateForUser: mockDeleteAllHonchoStateForUser,
 	deleteConversationHonchoState: mockDeleteConversationHonchoState,
 }));
 
 vi.mock('./chat-files', () => ({
 	deleteAllChatFilesForConversation: mockDeleteAllChatFilesForConversation,
+	deleteAllChatFilesForUser: mockDeleteAllChatFilesForUser,
 }));
 
 vi.mock('./messages', () => ({
@@ -171,5 +185,20 @@ describe('cleanup service', () => {
 
 		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
+	});
+
+	it('resets account state without deleting the account itself', async () => {
+		const { resetUserAccountStateWithCleanup } = await import('./cleanup');
+		const { verifyPassword } = await import('./auth');
+
+		(verifyPassword as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+		const result = await resetUserAccountStateWithCleanup('user-1', 'secret');
+
+		expect(result).toEqual({ status: 'reset' });
+		expect(mockClearKnowledgeMemoryRuntimeStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllHonchoStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllChatFilesForUser).toHaveBeenCalledWith('user-1');
 	});
 });

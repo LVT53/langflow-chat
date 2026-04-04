@@ -826,3 +826,35 @@ export async function deleteAllChatFilesForConversation(conversationId: string):
 
 	return deletedCount;
 }
+
+export async function deleteAllChatFilesForUser(userId: string): Promise<number> {
+	const files = await db
+		.select()
+		.from(chatGeneratedFiles)
+		.where(eq(chatGeneratedFiles.userId, userId));
+
+	await db.delete(chatGeneratedFiles).where(eq(chatGeneratedFiles.userId, userId));
+
+	let deletedCount = 0;
+	const conversationIds = new Set<string>();
+	for (const file of files) {
+		conversationIds.add(file.conversationId);
+		const fullPath = join(getChatFilesDir(), file.storagePath);
+		try {
+			await unlink(fullPath);
+			deletedCount++;
+		} catch {
+			// File may not exist on disk
+		}
+	}
+
+	for (const conversationId of conversationIds) {
+		try {
+			await rm(getConversationDir(conversationId), { recursive: true, force: true });
+		} catch {
+			// Directory cleanup is best-effort
+		}
+	}
+
+	return deletedCount;
+}

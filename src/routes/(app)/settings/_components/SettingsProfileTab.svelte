@@ -42,6 +42,7 @@
 		onChangeModel,
 		onChangeTranslation,
 		onChangeTheme,
+		onOpenResetModal,
 		onOpenDeleteModal,
 	}: {
 		userId: string;
@@ -80,6 +81,7 @@
 		onChangeModel: (model: 'model1' | 'model2') => void | Promise<void>;
 		onChangeTranslation: (enabled: boolean) => void | Promise<void>;
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
+		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
 	} = $props();
 </script>
@@ -252,9 +254,15 @@
 <section class="settings-card settings-card-danger mb-4">
 	<h2 class="settings-section-title text-danger">Danger Zone</h2>
 	<p class="mb-4 text-sm text-text-secondary">
-		Permanently delete your account and all data including chat history. This cannot be undone.
+		Reset clears your chats, knowledge base, memories, analytics, and generated files while keeping
+		your login, profile preferences, and avatar. Delete permanently removes the account itself too.
 	</p>
-	<button class="btn-danger" onclick={onOpenDeleteModal}>
-		Delete Account
-	</button>
+	<div class="flex flex-wrap gap-2">
+		<button class="btn-secondary" onclick={onOpenResetModal}>
+			Reset Account
+		</button>
+		<button class="btn-danger" onclick={onOpenDeleteModal}>
+			Delete Account
+		</button>
+	</div>
 </section>

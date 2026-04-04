@@ -10,21 +10,27 @@ vi.mock('$lib/server/services/auth', () => ({
 
 vi.mock('$lib/server/services/cleanup', () => ({
 	deleteUserAccountWithCleanup: vi.fn(),
+	resetUserAccountStateWithCleanup: vi.fn(),
 }));
 
-import { DELETE } from './+server';
+import { DELETE, POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { clearSessionCookie } from '$lib/server/services/auth';
-import { deleteUserAccountWithCleanup } from '$lib/server/services/cleanup';
+import {
+	deleteUserAccountWithCleanup,
+	resetUserAccountStateWithCleanup,
+} from '$lib/server/services/cleanup';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockClearSessionCookie = clearSessionCookie as ReturnType<typeof vi.fn>;
 const mockDeleteUserAccountWithCleanup = deleteUserAccountWithCleanup as ReturnType<typeof vi.fn>;
+const mockResetUserAccountStateWithCleanup =
+	resetUserAccountStateWithCleanup as ReturnType<typeof vi.fn>;
 
-function makeEvent(body: unknown, user = { id: 'user-1' }) {
+function makeEvent(body: unknown, method: 'DELETE' | 'POST' = 'DELETE', user = { id: 'user-1' }) {
 	return {
 		request: new Request('http://localhost/api/settings/account', {
-			method: 'DELETE',
+			method,
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
 		}),
@@ -77,5 +83,45 @@ describe('DELETE /api/settings/account', () => {
 		expect(response.status).toBe(500);
 		expect(data.error).toMatch(/failed to fully delete account data/i);
 		expect(mockClearSessionCookie).not.toHaveBeenCalled();
+	});
+});
+
+describe('POST /api/settings/account', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockRequireAuth.mockReturnValue(undefined);
+	});
+
+	it('resets the user account state and preserves the session on success', async () => {
+		mockResetUserAccountStateWithCleanup.mockResolvedValue({ status: 'reset' });
+		const event = makeEvent({ password: 'secret' }, 'POST');
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.success).toBe(true);
+		expect(mockResetUserAccountStateWithCleanup).toHaveBeenCalledWith('user-1', 'secret');
+		expect(mockClearSessionCookie).toHaveBeenCalledWith(event.cookies);
+	});
+
+	it('returns 401 when the reset password is incorrect', async () => {
+		mockResetUserAccountStateWithCleanup.mockResolvedValue({ status: 'incorrect_password' });
+
+		const response = await POST(makeEvent({ password: 'wrong' }, 'POST'));
+		const data = await response.json();
+
+		expect(response.status).toBe(401);
+		expect(data.error).toMatch(/incorrect password/i);
+	});
+
+	it('returns 500 when reset cleanup fails', async () => {
+		mockResetUserAccountStateWithCleanup.mockRejectedValue(new Error('db locked'));
+
+		const response = await POST(makeEvent({ password: 'secret' }, 'POST'));
+		const data = await response.json();
+
+		expect(response.status).toBe(500);
+		expect(data.error).toMatch(/failed to fully reset account data/i);
 	});
 });

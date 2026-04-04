@@ -1,21 +1,26 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
+	import { clearConversationSessionState } from '$lib/client/conversation-session';
 	import {
 		deleteAccount,
 		deleteAvatar,
 		fetchAnalytics,
 		fetchHonchoHealth,
+		resetAccount,
 		updateAdminConfig,
 		updatePassword,
 		updateProfile,
 		updateUserPreferences,
 	} from '$lib/client/api/settings';
+	import { reconcileConversationSnapshot } from '$lib/stores/conversations';
 	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
+	import { projects } from '$lib/stores/projects';
 	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import DeleteAccountModal from './_components/DeleteAccountModal.svelte';
+	import ResetAccountModal from './_components/ResetAccountModal.svelte';
 	import SettingsAdministrationTab from './_components/SettingsAdministrationTab.svelte';
 	import SettingsAnalyticsTab from './_components/SettingsAnalyticsTab.svelte';
 	import SettingsProfileTab from './_components/SettingsProfileTab.svelte';
@@ -85,6 +90,11 @@
 	let deleteError = $state('');
 	let deleteLoading = $state(false);
 	let showDeletePw = $state(false);
+	let showResetModal = $state(false);
+	let resetPassword = $state('');
+	let resetError = $state('');
+	let resetLoading = $state(false);
+	let showResetPw = $state(false);
 
 	let adminConfig = $state<Record<string, string>>(
 		initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {}
@@ -197,6 +207,13 @@
 		showDeletePw = false;
 	}
 
+	function closeResetModal() {
+		showResetModal = false;
+		resetPassword = '';
+		resetError = '';
+		showResetPw = false;
+	}
+
 	async function confirmDeleteAccount() {
 		deleteError = '';
 		deleteLoading = true;
@@ -207,6 +224,25 @@
 			deleteError = error.message;
 		} finally {
 			deleteLoading = false;
+		}
+	}
+
+	async function confirmResetAccount() {
+		resetError = '';
+		resetLoading = true;
+		try {
+			await resetAccount(resetPassword);
+			reconcileConversationSnapshot([], { resetLocalState: true });
+			projects.set([]);
+			clearConversationSessionState();
+			analyticsData = null;
+			analyticsError = '';
+			closeResetModal();
+			await goto('/login');
+		} catch (error: any) {
+			resetError = error.message;
+		} finally {
+			resetLoading = false;
 		}
 	}
 
@@ -312,6 +348,7 @@
 				onChangeModel={changeModel}
 				onChangeTranslation={changeTranslation}
 				onChangeTheme={changeTheme}
+				onOpenResetModal={() => (showResetModal = true)}
 				onOpenDeleteModal={() => (showDeleteModal = true)}
 			/>
 		{/if}
@@ -363,6 +400,17 @@
 		bind:showDeletePw
 		onConfirm={confirmDeleteAccount}
 		onCancel={closeDeleteModal}
+	/>
+{/if}
+
+{#if showResetModal}
+	<ResetAccountModal
+		bind:resetPassword
+		{resetError}
+		{resetLoading}
+		bind:showResetPw
+		onConfirm={confirmResetAccount}
+		onCancel={closeResetModal}
 	/>
 {/if}
 

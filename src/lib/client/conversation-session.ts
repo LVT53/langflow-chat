@@ -252,3 +252,22 @@ export function cleanupPreparedConversation(params: {
 		// Ignore cleanup failures; draft conversations are filtered from the sidebar anyway.
 	});
 }
+
+export function clearConversationSessionState(): void {
+	const storage = getSessionStorage();
+	if (!storage) return;
+
+	const keysToRemove: string[] = [];
+	for (let index = 0; index < storage.length; index += 1) {
+		const key = storage.key(index);
+		if (!key) continue;
+		if (key.startsWith(PENDING_MESSAGE_PREFIX)) {
+			keysToRemove.push(key);
+		}
+	}
+
+	keysToRemove.push(PREVIOUS_CONVERSATION_KEY, LANDING_DRAFT_CONVERSATION_KEY);
+	for (const key of keysToRemove) {
+		storage.removeItem(key);
+	}
+}

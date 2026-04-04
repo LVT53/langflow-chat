@@ -158,6 +158,18 @@ export async function deleteAccount(password: string): Promise<void> {
 	);
 }
 
+export async function resetAccount(password: string): Promise<void> {
+	await requestJson<{ success?: boolean }>(
+		'/api/settings/account',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ password }),
+		},
+		'Failed to reset account'
+	);
+}
+
 export async function updateAdminConfig(config: Record<string, string>): Promise<void> {
 	await requestJson<{ success?: boolean }>(
 		'/api/admin/config',
