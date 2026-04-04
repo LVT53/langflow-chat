@@ -416,7 +416,7 @@ Goal:
 Changes:
 
 - remove stale filename-only fallback code once family-based lineage is proven
-- remove transitional preview/modal paths that duplicate the workspace
+- remove transitional preview/modal paths that duplicate the workspace, including attachment-only fallback viewers
 - add focused diagnostics around:
   - document family resolution
   - active document selection

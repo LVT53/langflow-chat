@@ -215,8 +215,7 @@ Deliverables:
   - generated files
   - chat attachments
   - vault documents
-- replace attachment-only modal openings with workspace openings where appropriate
-- keep `AttachmentContentModal` only as a temporary fallback until all supported file types are routed into the workspace
+- replace attachment-only modal openings with workspace openings across chat, knowledge, and search surfaces
 
 Outcome:
 
@@ -312,4 +311,4 @@ Minimum regression checks for the current phase:
 - generated-file row still downloads and saves correctly
 - generated-file click opens workspace instead of breaking preview access
 - workspace remains closed by default
-- modal preview paths outside the workspace still work where they remain in use
+- no parallel modal preview path remains for supported document opens

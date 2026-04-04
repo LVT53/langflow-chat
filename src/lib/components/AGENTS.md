@@ -27,8 +27,7 @@ chat/
           ├── chat/CodeBlock.svelte           ← fenced code block
           ├── chat/ThinkingBlock.svelte       ← <thinking> content
           ├── chat/FileAttachment.svelte      ← inline attachment display
-          ├── chat/MessageEvidenceDetails.svelte  ← evidence summary panel
-          └── chat/AttachmentContentModal.svelte  ← legacy extracted-text modal fallback
+          └── chat/MessageEvidenceDetails.svelte  ← evidence summary panel
   ModelSelector.svelte              ← model dropdown
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
@@ -101,7 +100,6 @@ ui/
 - The landing page may force a full document navigation after the first send so the browser cannot remain on the home-screen visual state while the new chat route is already executing on the server
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for document opening
-- `AttachmentContentModal.svelte` is legacy fallback UI. Do not route new document preview flows through it when the shared workspace can own the open state instead
 - `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and hands document opens off to the knowledge-page workspace instead of owning a parallel preview modal
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download/save-to-vault UI, and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`
