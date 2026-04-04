@@ -127,6 +127,7 @@ knowledge.ts (facade — re-exports from below)
 **Retrieval note**: generated-document retrieval in `knowledge/context.ts` should also follow the shared active-state contract. Keep a preferred/recently refined family active on generic refinement turns, but do not drag in unrelated generated-document families unless the query explicitly matches them, and let reset/move-on phrasing suppress that carryover.
 **Transport note**: preserve `activeDocumentArtifactId` end-to-end through `streaming.ts`, `/api/chat/stream`, `/api/chat/retry`, and `langflow.ts`. The server-side active-state and retrieval helpers cannot recover a workspace-focused document if the browser/request layer drops that id.
 **Repair-loop note**: Wave 5 repair work should reuse the existing generated-output duplicate classifier in `evidence-family.ts` and run it from `memory-maintenance.ts`. Do not invent a parallel “document cleanup” service when retrieval-class repair already compresses low-value duplicate drafts deterministically. The same repair surface now also owns dormant generated-document family downgrades to shared `documentFamilyStatus: "historical"` metadata.
+**Salience-repair note**: low-confidence or weakly supported persona memories should lose prominence through the existing `persona-memory.ts` cluster refresh path. Recompute repaired `salienceScore` from stored cluster metadata/support counts there; do not add a separate maintenance-only salience cache or a second persona-ranking subsystem.
 
 ## Task-State Submodule Flow
 

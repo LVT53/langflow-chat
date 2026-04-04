@@ -1218,6 +1218,68 @@ function computeSalienceScore(params: {
 	return Math.max(6, Math.min(100, base + support - decayPenalty));
 }
 
+function getExplicitMemoryConfidence(
+	metadata: Record<string, unknown> | null,
+	memoryClass: PersonaMemoryClass
+): number | null {
+	if (!metadata) return null;
+
+	if (memoryClass === 'stable_preference' && typeof metadata.preferenceConfidence === 'number') {
+		return Math.max(0, Math.min(100, Math.round(metadata.preferenceConfidence)));
+	}
+
+	return null;
+}
+
+function computeRepairedSalienceScore(params: {
+	memoryClass: PersonaMemoryClass;
+	sourceCount: number;
+	lastSeenAt: number;
+	state: PersonaMemoryState;
+	metadata?: Record<string, unknown> | null;
+	now?: number;
+}): number {
+	const base = computeSalienceScore({
+		memoryClass: params.memoryClass,
+		sourceCount: params.sourceCount,
+		lastSeenAt: params.lastSeenAt,
+		now: params.now,
+	});
+	const temporal = temporalMetadataFromRecord(params.metadata ?? null);
+	const topicStatus = deriveTopicStatus({
+		memoryClass: params.memoryClass,
+		state: params.state,
+		temporal,
+	});
+	const explicitConfidence = getExplicitMemoryConfidence(params.metadata ?? null, params.memoryClass);
+
+	let penalty = 0;
+
+	if (params.sourceCount <= 1 && params.memoryClass !== 'identity_profile') {
+		penalty += 6;
+	}
+
+	if (explicitConfidence !== null) {
+		if (explicitConfidence < 70) {
+			penalty += 8;
+		} else if (explicitConfidence < 82) {
+			penalty += 4;
+		}
+	}
+
+	if (params.state === 'dormant') {
+		penalty += params.memoryClass === 'stable_preference' ? 4 : 8;
+	}
+
+	if (topicStatus === 'historical') {
+		penalty += 10;
+	} else if (topicStatus === 'dormant') {
+		penalty += 4;
+	}
+
+	return Math.max(6, Math.min(100, base - penalty));
+}
+
 function getDecayWindow(memoryClass: PersonaMemoryClass): {
 	dormantMs: number | null;
 	archiveMs: number | null;
@@ -2116,6 +2178,7 @@ function applyStateOnlyRefresh(
 	state: PersonaMemoryState;
 	decayAt: Date | null;
 	archiveAt: Date | null;
+	salienceScore: number;
 } {
 	const metadata = parseJsonRecord(row.metadataJson);
 	const lastSeenAt = row.lastSeenAt ? row.lastSeenAt.getTime() : row.updatedAt.getTime();
@@ -2130,6 +2193,13 @@ function applyStateOnlyRefresh(
 		state: next.state,
 		decayAt: next.decayAt ? new Date(next.decayAt) : null,
 		archiveAt: next.archiveAt ? new Date(next.archiveAt) : null,
+		salienceScore: computeRepairedSalienceScore({
+			memoryClass: row.memoryClass as PersonaMemoryClass,
+			sourceCount: row.sourceCount,
+			lastSeenAt,
+			state: next.state,
+			metadata,
+		}),
 	};
 }
 
@@ -2144,7 +2214,8 @@ export async function refreshPersonaClusterStates(userId: string): Promise<void>
 		if (
 			next.state === row.state &&
 			(next.decayAt?.getTime() ?? null) === (row.decayAt?.getTime() ?? null) &&
-			(next.archiveAt?.getTime() ?? null) === (row.archiveAt?.getTime() ?? null)
+			(next.archiveAt?.getTime() ?? null) === (row.archiveAt?.getTime() ?? null) &&
+			next.salienceScore === row.salienceScore
 		) {
 			continue;
 		}
@@ -2152,6 +2223,7 @@ export async function refreshPersonaClusterStates(userId: string): Promise<void>
 			.update(personaMemoryClusters)
 			.set({
 				state: next.state,
+				salienceScore: next.salienceScore,
 				decayAt: next.decayAt,
 				archiveAt: next.archiveAt,
 				updatedAt: new Date(),
@@ -2349,10 +2421,12 @@ export async function syncPersonaMemoryClusters(params: {
 			records: group.records,
 			canonicalText: dream.canonicalText,
 			memoryClass: normalizedMemoryClass,
-			salienceScore: computeSalienceScore({
+			salienceScore: computeRepairedSalienceScore({
 				memoryClass: normalizedMemoryClass,
 				sourceCount: group.records.length,
 				lastSeenAt,
+				state: decay.state,
+				metadata,
 				now,
 			}),
 			pinned,

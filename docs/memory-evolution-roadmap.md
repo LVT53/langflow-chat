@@ -306,6 +306,7 @@ Current progress:
 
 - per-user memory maintenance now also reruns generated-output retrieval-class repair through the existing `evidence-family.ts` duplicate classifier, so low-value duplicate drafts stay compressed out of broad retrieval without adding a second repair subsystem
 - that same maintenance path now also marks dormant generated-document families as `historical` in the shared working-document metadata contract, and that lifecycle state now flows through logical document mapping plus the shared workspace/library UI instead of living in a side cache
+- persona-cluster refresh now also reapplies deterministic salience repair through the existing cluster pipeline, so weakly supported dormant memories and low-confidence preferences lose prominence without being deleted or moved into a second maintenance-only store
 
 ### Wave 6: Retrieval That Learns From Behavior
 

@@ -8,6 +8,7 @@ const {
 	mockRecordMemoryEvents,
 	insertedClusterRows,
 	insertedMemberRows,
+	updatedClusterRows,
 } = vi.hoisted(() => ({
 	mockCanUseContextSummarizer: vi.fn(() => true),
 	mockRequestStructuredControlModel: vi.fn(),
@@ -16,6 +17,7 @@ const {
 	mockRecordMemoryEvents: vi.fn(async () => undefined),
 	insertedClusterRows: [] as any[],
 	insertedMemberRows: [] as any[],
+	updatedClusterRows: [] as any[],
 }));
 
 function createSelectChain(rows: unknown[]) {
@@ -50,8 +52,10 @@ vi.mock('$lib/server/db', () => ({
 			},
 		}),
 		update: () => ({
-			set: () => ({
-				where: vi.fn(async () => undefined),
+			set: (values: any) => ({
+				where: vi.fn(async () => {
+					updatedClusterRows.push(values);
+				}),
 			}),
 		}),
 	},
@@ -148,6 +152,7 @@ describe('persona-memory temporal safeguards', () => {
 		mockRecordMemoryEvents.mockResolvedValue(undefined);
 		insertedClusterRows.splice(0, insertedClusterRows.length);
 		insertedMemberRows.splice(0, insertedMemberRows.length);
+		updatedClusterRows.splice(0, updatedClusterRows.length);
 	});
 
 	it('detects explicit temporal cues in memory text', async () => {
@@ -514,6 +519,87 @@ describe('persona-memory temporal safeguards', () => {
 		const prompt = await buildPersonaPromptContext('user-prompt-fast', 'Keep it concise.');
 
 		expect(prompt).toContain('The user prefers concise answers.');
+	});
+
+	it('downranks weakly supported dormant memories during refresh', async () => {
+		const staleTimestamp = Date.now() - 70 * 86_400_000;
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					clusterId: 'cluster-dormant',
+					userId: 'user-dormant',
+					canonicalText: 'The user is exploring a side initiative.',
+					memoryClass: 'long_term_context',
+					state: 'active',
+					salienceScore: 64,
+					sourceCount: 1,
+					pinned: 0,
+					firstSeenAt: new Date(staleTimestamp),
+					lastSeenAt: new Date(staleTimestamp),
+					createdAt: new Date(staleTimestamp),
+					updatedAt: new Date(staleTimestamp),
+					metadataJson: JSON.stringify({}),
+					decayAt: null,
+					archiveAt: null,
+				},
+			])
+		);
+
+		const { refreshPersonaClusterStates } = await import('./persona-memory');
+
+		await refreshPersonaClusterStates('user-dormant');
+
+		expect(updatedClusterRows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: 'dormant',
+					salienceScore: 47,
+				}),
+			])
+		);
+	});
+
+	it('downranks low-confidence preferences during refresh', async () => {
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					clusterId: 'cluster-low-confidence',
+					userId: 'user-low-confidence',
+					canonicalText: 'The user prefers direct responses.',
+					memoryClass: 'stable_preference',
+					state: 'active',
+					salienceScore: 76,
+					sourceCount: 1,
+					pinned: 0,
+					firstSeenAt: new Date(Date.now() - 3 * 86_400_000),
+					lastSeenAt: new Date(Date.now() - 3 * 86_400_000),
+					createdAt: new Date(Date.now() - 3 * 86_400_000),
+					updatedAt: new Date(Date.now() - 3 * 86_400_000),
+					metadataJson: JSON.stringify({
+						preferenceDomain: 'communication',
+						preferenceSlot: 'communication_style',
+						preferenceValue: 'direct',
+						preferencePolarity: 'positive',
+						preferenceConfidence: 72,
+					}),
+					decayAt: null,
+					archiveAt: null,
+				},
+			])
+		);
+
+		const { refreshPersonaClusterStates } = await import('./persona-memory');
+
+		await refreshPersonaClusterStates('user-low-confidence');
+
+		expect(updatedClusterRows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: 'active',
+					salienceScore: 66,
+				}),
+			])
+		);
 	});
 
 	it('renders expired temporal memories as historical and excludes them from the prompt context', async () => {
