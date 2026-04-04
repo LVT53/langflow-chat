@@ -24,12 +24,8 @@ import { parseJsonRecord } from "$lib/server/utils/json";
 import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
-import {
-  hasRecentUserCorrectionSignal,
-  isDocumentFocusedTurn,
-} from "./active-state";
+import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
-import { resolveCurrentGeneratedDocumentSelection } from "./document-resolution";
 import { getLatestHonchoMetadata } from "./messages";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
@@ -791,6 +787,7 @@ function computeEvidenceScore(params: {
   pinnedIds: Set<string>;
   excludedIds: Set<string>;
   activeDocumentIds: Set<string>;
+  correctionTargetIds: Set<string>;
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
   currentGeneratedOutputIds: Set<string>;
@@ -813,8 +810,7 @@ function computeEvidenceScore(params: {
   if (params.activeDocumentIds.has(params.artifact.id)) score += 140;
   if (
     params.hasCorrectionSignal &&
-    (params.activeDocumentIds.has(params.artifact.id) ||
-      params.currentGeneratedOutputIds.has(params.artifact.id))
+    params.correctionTargetIds.has(params.artifact.id)
   ) {
     score += 36;
   }
@@ -1050,10 +1046,6 @@ export async function prepareTaskContext(params: {
   const currentAttachmentIds = new Set(
     params.currentAttachments.map((artifact) => artifact.id),
   );
-  const activeDocumentIds = new Set(
-    params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : [],
-  );
-
   const candidateArtifacts = dedupeById([
     ...params.currentAttachments,
     ...params.workingSetArtifacts,
@@ -1074,19 +1066,21 @@ export async function prepareTaskContext(params: {
   const workingSetIds = new Set(
     params.workingSetArtifacts.map((artifact) => artifact.id),
   );
-  const currentGeneratedOutputSelection = resolveCurrentGeneratedDocumentSelection({
+  const activeDocumentState = buildActiveDocumentState({
     artifacts: candidateArtifacts,
-    preferredArtifactId: params.activeDocumentArtifactId,
-    query: params.message,
+    message: params.message,
+    attachmentIds,
+    activeDocumentArtifactId: params.activeDocumentArtifactId,
     currentConversationId: params.conversationId,
   });
   const currentGeneratedOutputIds = new Set(
-    currentGeneratedOutputSelection.primaryArtifactId
-      ? [currentGeneratedOutputSelection.primaryArtifactId]
+    activeDocumentState.currentGeneratedArtifactId
+      ? [activeDocumentState.currentGeneratedArtifactId]
       : [],
   );
-  const documentFocused = isDocumentFocusedTurn(params.message, attachmentIds);
-  const hasCorrectionSignal = hasRecentUserCorrectionSignal(params.message);
+  const documentFocused = activeDocumentState.documentFocused;
+  const hasCorrectionSignal = activeDocumentState.hasRecentUserCorrection;
+  const activeDocumentIds = activeDocumentState.activeDocumentIds;
   const selectedEvidenceLimit = documentFocused
     ? MAX_DOCUMENT_FOCUSED_EVIDENCE
     : MAX_SELECTED_EVIDENCE;
@@ -1100,6 +1094,7 @@ export async function prepareTaskContext(params: {
         pinnedIds,
         excludedIds,
         activeDocumentIds,
+        correctionTargetIds: activeDocumentState.correctionTargetIds,
         currentAttachmentIds,
         workingSetIds,
         currentGeneratedOutputIds,
@@ -1115,6 +1110,7 @@ export async function prepareTaskContext(params: {
         (entry) =>
           pinnedIds.has(entry.artifact.id) ||
           activeDocumentIds.has(entry.artifact.id) ||
+          activeDocumentState.correctionTargetIds.has(entry.artifact.id) ||
           currentAttachmentIds.has(entry.artifact.id),
       )
       .map((entry) => entry.artifact),
@@ -1136,7 +1132,11 @@ export async function prepareTaskContext(params: {
     ]),
     pinnedIds,
     excludedIds,
-    protectedIds: new Set([...currentAttachmentIds, ...activeDocumentIds]),
+    protectedIds: new Set([
+      ...currentAttachmentIds,
+      ...activeDocumentIds,
+      ...activeDocumentState.correctionTargetIds,
+    ]),
   });
   if (reranked.usedModel) {
     selectedArtifacts = dedupeById(reranked.artifacts);
@@ -1149,7 +1149,11 @@ export async function prepareTaskContext(params: {
     message: params.message,
     selectedArtifacts,
     pinnedIds,
-    protectedIds: new Set([...currentAttachmentIds, ...activeDocumentIds]),
+    protectedIds: new Set([
+      ...currentAttachmentIds,
+      ...activeDocumentIds,
+      ...activeDocumentState.correctionTargetIds,
+    ]),
     shouldVerify:
       routingStage !== "deterministic" ||
       excludedIds.size > 0 ||

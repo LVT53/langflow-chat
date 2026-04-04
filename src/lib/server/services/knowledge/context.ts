@@ -17,11 +17,10 @@ import type {
 	WorkingSetReasonCode,
 } from '$lib/types';
 import { parseJsonStringArray } from '$lib/server/utils/json';
-import { hasRecentUserCorrectionSignal } from '../active-state';
+import { buildActiveDocumentState } from '../active-state';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	isGeneratedDocumentPromptEligible,
-	resolveCurrentGeneratedDocumentSelection,
 	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
 import {
@@ -205,14 +204,16 @@ export async function refreshConversationWorkingSet(params: {
 		)
 		.orderBy(desc(artifacts.updatedAt))
 		.limit(8);
-	const currentOutputSelection = resolveCurrentGeneratedDocumentSelection({
+	const activeDocumentState = buildActiveDocumentState({
 		artifacts: outputArtifacts.map((artifact) => mapArtifact(artifact)),
-		preferredArtifactId: params.activeDocumentArtifactId ?? params.selectedGeneratedArtifactId,
-		query: params.message?.trim(),
+		message: params.message ?? '',
+		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		preferredGeneratedArtifactId: params.selectedGeneratedArtifactId,
 		currentConversationId: params.conversationId,
 	});
-	const latestGeneratedArtifactIds = currentOutputSelection.latestArtifactIds;
-	const currentGeneratedArtifactId = currentOutputSelection.primaryArtifactId;
+	const latestGeneratedArtifactIds = activeDocumentState.latestGeneratedArtifactIds;
+	const currentGeneratedArtifactId = activeDocumentState.currentGeneratedArtifactId;
 	const sourceIdsLinkedToCurrentGenerated = currentGeneratedArtifactId
 		? await db
 				.select({ relatedArtifactId: artifactLinks.relatedArtifactId })
@@ -247,8 +248,7 @@ export async function refreshConversationWorkingSet(params: {
 	const artifactRows = await getArtifactsForUser(params.userId, Array.from(candidateIds));
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
-	const currentGeneratedReasonCodes = new Set(currentOutputSelection.primaryReasonCodes);
-	const hasCorrectionSignal = hasRecentUserCorrectionSignal(message);
+	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
@@ -262,11 +262,8 @@ export async function refreshConversationWorkingSet(params: {
 			previousScore: existingByArtifactId.get(artifact.id)?.score,
 			previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
-			isActiveDocumentFocus: params.activeDocumentArtifactId === artifact.id,
-			isRecentUserCorrection:
-				hasCorrectionSignal &&
-				(params.activeDocumentArtifactId === artifact.id ||
-					currentGeneratedArtifactId === artifact.id),
+			isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
+			isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
 			isCurrentGeneratedDocument:
 				currentGeneratedArtifactId === artifact.id &&
 				currentGeneratedReasonCodes.has('current_generated_document'),

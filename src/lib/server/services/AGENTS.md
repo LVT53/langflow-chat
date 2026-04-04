@@ -122,6 +122,7 @@ knowledge.ts (facade — re-exports from below)
 **Persona-contradiction note**: `persona-memory.ts` now treats high-confidence fact slots such as current location or current role as deterministic contradiction candidates. Use slot metadata plus `supersessionReason`/`memory_events` there instead of broad “latest phrasing wins” heuristics.
 **Document-preference note**: task-state evidence preference writes should stay document-family aware. If a user pins or excludes one artifact version inside a working-document family, clear sibling user preference links for that same family so one version remains current for the task.
 **Active-state note**: structured live signals such as active workspace focus and explicit user correction phrasing should stay first-class in working-set/prompt selection. Prefer those signals over ad hoc semantic-only rescoring when the user is clearly revising a current document.
+**Active-state assembly note**: use `active-state.ts` as the shared source for live document focus/correction/current-output signals. Avoid rebuilding that logic independently inside `knowledge/context.ts` or `task-state.ts`, because drift there will make prompt selection and evidence selection disagree about the “current” document.
 
 ## Task-State Submodule Flow
 

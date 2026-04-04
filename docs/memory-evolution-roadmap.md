@@ -261,6 +261,7 @@ Verification:
 Current progress:
 
 - explicit user-correction/refinement phrasing now feeds working-set scoring and generated-document prompt eligibility as a structured live signal rather than only relying on semantic match
+- active workspace focus, current generated-document selection, and correction signals now flow through one shared active-state helper instead of being recomputed separately in working-set refresh and task evidence selection
 
 ### Wave 5: Maintenance And Repair Loops
 
