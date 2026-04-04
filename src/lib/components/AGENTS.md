@@ -21,6 +21,7 @@ chat/
     └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
     ├── chat/GeneratedFile.svelte       ← generated-file preview, download, and save-to-vault actions
+    ├── chat/DocumentWorkspace.svelte   ← route-driven working-document pane using shared preview
     └── chat/MessageBubble.svelte       ← individual message (attachment viewing capability)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
           ├── chat/CodeBlock.svelte           ← fenced code block
@@ -67,6 +68,7 @@ ui/
 
 ### Chat (`src/routes/(app)/chat/[conversationId]/+page.svelte`)
 - `chat/MessageArea.svelte` — message list
+- `chat/DocumentWorkspace.svelte` — default-closed working-document pane/layer
 - `chat/MessageInput.svelte` — composer with queued follow-up
 - `chat/ModelSelector.svelte` — model picker
 - `chat/EvidenceManager.svelte` — evidence panel
@@ -104,7 +106,9 @@ ui/
 - `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and reuses `AttachmentContentModal.svelte` so shell search shows the same AI-visible text path as the knowledge page
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download/save-to-vault UI, and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`
+- `GeneratedFile.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
 - Generated-file preview should reuse `knowledge/FilePreview.svelte` through the chat-file preview endpoint instead of maintaining a second lightweight preview modal
+- `DocumentWorkspace.svelte` is the chat-surface shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
 - Saved generated-file rows remain conversation-scoped after vault save; do not delete the underlying chat-file record just because a vault copy was created
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped

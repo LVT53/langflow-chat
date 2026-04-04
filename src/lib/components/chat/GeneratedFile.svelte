@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
 	import FilePreview from '$lib/components/knowledge/FilePreview.svelte';
+	import type { DocumentWorkspaceItem } from '$lib/types';
 	import VaultPickerModal from './VaultPickerModal.svelte';
 
 	interface GeneratedFileProps {
@@ -14,6 +15,7 @@
 		error?: string;
 		vaults?: Vault[];
 		savedVaultName?: string | null;
+		onOpen?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	}
 
 	let {
@@ -27,6 +29,7 @@
 		error,
 		vaults = [],
 		savedVaultName = null,
+		onOpen = undefined,
 	}: GeneratedFileProps = $props();
 
 	let showVaultPicker = $state(false);
@@ -103,6 +106,20 @@
 
 	function handlePreviewOpen() {
 		if (!canPreview) return;
+		if (onOpen) {
+			onOpen({
+				id: fileId,
+				source: 'chat_generated_file',
+				filename,
+				title: filename,
+				mimeType,
+				previewUrl: `/api/chat/files/${fileId}/preview`,
+				conversationId,
+				downloadUrl,
+				savedVaultName: currentSavedVaultName,
+			});
+			return;
+		}
 		showPreview = true;
 	}
 

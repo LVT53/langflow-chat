@@ -4,6 +4,7 @@
 		ChatGeneratedFileListItem,
 		ChatMessage,
 		ContextDebugState,
+		DocumentWorkspaceItem,
 		TaskSteeringPayload,
 	} from '$lib/types';
 	import MessageBubble from './MessageBubble.svelte';
@@ -17,6 +18,7 @@
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
+		onOpenGeneratedFile = undefined,
 	}: {
 		messages?: ChatMessage[];
 		conversationId?: string | null;
@@ -26,6 +28,7 @@
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+		onOpenGeneratedFile?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	} = $props();
 
 	let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -153,6 +156,7 @@
 					{onRegenerate}
 					{onEdit}
 					{onSteer}
+					{onOpenGeneratedFile}
 				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>

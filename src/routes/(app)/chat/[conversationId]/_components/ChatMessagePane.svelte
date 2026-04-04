@@ -1,6 +1,12 @@
 <script lang="ts">
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
-	import type { ChatGeneratedFileListItem, ChatMessage, ContextDebugState, TaskSteeringPayload } from '$lib/types';
+	import type {
+		ChatGeneratedFileListItem,
+		ChatMessage,
+		ContextDebugState,
+		DocumentWorkspaceItem,
+		TaskSteeringPayload
+	} from '$lib/types';
 	import type { MessageEditPayload, MessageRegeneratePayload } from '../_helpers';
 
 	let {
@@ -9,6 +15,7 @@
 		isThinkingActive,
 		contextDebug,
 		generatedFiles,
+		onOpenGeneratedFile,
 		onRegenerate,
 		onEdit,
 		onSteer,
@@ -18,6 +25,7 @@
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
 		generatedFiles: ChatGeneratedFileListItem[];
+		onOpenGeneratedFile: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
@@ -31,6 +39,7 @@
 		{isThinkingActive}
 		{contextDebug}
 		{generatedFiles}
+		{onOpenGeneratedFile}
 		{onRegenerate}
 		{onEdit}
 		{onSteer}

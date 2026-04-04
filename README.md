@@ -103,6 +103,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Landing-page draft reuse is guarded: only empty default-title prepared conversations are reused from session storage, which prevents new sends from silently reusing an older real chat.
 - The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
 - Chat-generated files are created through the sandboxed file-generator path only when the executed code writes the final file to `/output`; successful files then appear back in the chat UI for download or manual vault saving. The mirrored Langflow custom node should use a `python_code` tool argument rather than `code`, because `code` collides with Langflow component internals and can cause the node to send its own source instead of the requested script. On a fresh host, the first successful run may also pull the pinned sandbox image before execution starts.
+- The chat route now has a default-closed working-document workspace for generated files. It reuses the shared rich file previewer in an embedded pane on desktop and a full-screen layer on mobile instead of creating a second document viewer.
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
@@ -116,6 +117,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The same app shell supports desktop, tablet, and mobile layouts, with the conversation view remaining the primary surface across breakpoints.
 - Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
 - Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
+- Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md). The direction is to consolidate generated files, attachments, and vault files onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
 
 ## Configuration Reference
 

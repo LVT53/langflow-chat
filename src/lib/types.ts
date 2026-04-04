@@ -103,6 +103,21 @@ export interface ChatGeneratedFileListItem {
   savedVaultName?: string | null;
 }
 
+export type DocumentWorkspaceSource = 'chat_generated_file' | 'knowledge_artifact';
+
+export interface DocumentWorkspaceItem {
+  id: string;
+  source: DocumentWorkspaceSource;
+  filename: string;
+  title: string;
+  mimeType: string | null;
+  previewUrl?: string | null;
+  artifactId?: string | null;
+  conversationId?: string | null;
+  downloadUrl?: string | null;
+  savedVaultName?: string | null;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   messages: ChatMessage[];

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
-	import type { ChatGeneratedFileListItem, ChatMessage } from '$lib/types';
+	import type { ChatGeneratedFileListItem, ChatMessage, DocumentWorkspaceItem } from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
@@ -21,6 +21,7 @@
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
+		onOpenGeneratedFile = undefined,
 	}: {
 		message: ChatMessage;
 		isLast?: boolean;
@@ -31,6 +32,7 @@
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+		onOpenGeneratedFile?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	} = $props();
 
 	let copied = $state(false);
@@ -270,6 +272,7 @@
 							status={file.status}
 							error={file.error}
 							savedVaultName={file.savedVaultName ?? null}
+							onOpen={onOpenGeneratedFile}
 						/>
 					{/each}
 				</div>

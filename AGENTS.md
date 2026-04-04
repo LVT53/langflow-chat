@@ -80,6 +80,7 @@ Do not:
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
   - Owns the one-slot queued follow-up turn while a response is streaming.
+  - Owns route-level working-document workspace state. Which document is open, active, or closed belongs here, not inside file-row or preview components.
   - The chat detail route should stay visually distinct from the landing page: the composer remains bottom-docked and the message surface stays visible even before the first persisted messages arrive.
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
@@ -129,6 +130,7 @@ Do not:
 - [`src/routes/api/chat/files/[id]/save-to-vault/+server.ts`](./src/routes/api/chat/files/[id]/save-to-vault/+server.ts)
 - [`src/routes/api/chat/files/[id]/preview/+server.ts`](./src/routes/api/chat/files/[id]/preview/+server.ts)
 - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
+- [`src/lib/components/chat/DocumentWorkspace.svelte`](./src/lib/components/chat/DocumentWorkspace.svelte)
 - [`src/lib/components/chat/VaultPickerModal.svelte`](./src/lib/components/chat/VaultPickerModal.svelte)
 - Generated files refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
@@ -150,6 +152,7 @@ Do:
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
+- use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
 - use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
 - use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
@@ -161,6 +164,7 @@ Do:
 - keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, `.pptx` via `pptxgenjs`, `.docx` via `docx`, and `.odt` via `jszip` packaging
 - save-to-vault preserves the original chat file and records vault-save state via artifact metadata so the row still appears after refresh
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
+- vault save is an organization action, not the switch that determines whether the AI remembers a generated document. Working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
 
 Do not:
 
@@ -210,6 +214,7 @@ Responsibility split:
   - logical document listing
   - artifact query matching
   - vault-document search result mapping
+- generated chat files, uploaded attachments, and vault documents should converge on one working-document model built on the existing artifact backbone; do not create a parallel document persistence subsystem
 - `store/cleanup.ts`
   - artifact deletion
   - cross-conversation reference checks

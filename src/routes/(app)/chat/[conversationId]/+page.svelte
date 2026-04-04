@@ -28,6 +28,7 @@
 		ConversationDraft,
 		ContextDebugState,
 		ConversationContextStatus,
+		DocumentWorkspaceItem,
 		TaskState,
 		TaskSteeringPayload,
 	} from '$lib/types';
@@ -43,6 +44,7 @@
 	import ChatComposerPanel from './_components/ChatComposerPanel.svelte';
 	import ChatMessagePane from './_components/ChatMessagePane.svelte';
 	import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
+	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import {
 		appendAssistantPlaceholder,
 		appendThinkingChunkToMessageList,
@@ -95,6 +97,9 @@
 	let conversationDraft = $state<ConversationDraft | null>(initialConversationDraft);
 	let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 	let pendingGeneratedFiles = $state<ChatGeneratedFileListItem[]>([]);
+	let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
+	let activeWorkspaceDocumentId = $state<string | null>(null);
+	let workspaceOpen = $state(false);
 	let evidenceManagerOpen = $state(false);
 	let bootstrapMode = initialBootstrapMode;
 	let hydratingConversation = false;
@@ -137,6 +142,42 @@
 		pendingGeneratedFiles = [];
 	}
 
+	function openWorkspaceDocument(document: DocumentWorkspaceItem) {
+		const alreadyOpen = workspaceDocuments.some((entry) => entry.id === document.id);
+		if (alreadyOpen) {
+			workspaceDocuments = workspaceDocuments.map((entry) =>
+				entry.id === document.id ? { ...entry, ...document } : entry
+			);
+		} else {
+			workspaceDocuments = [...workspaceDocuments, document];
+		}
+
+		activeWorkspaceDocumentId = document.id;
+		workspaceOpen = true;
+	}
+
+	function selectWorkspaceDocument(documentId: string) {
+		activeWorkspaceDocumentId = documentId;
+		workspaceOpen = true;
+	}
+
+	function closeWorkspaceDocument(documentId: string) {
+		const remainingDocuments = workspaceDocuments.filter((document) => document.id !== documentId);
+		workspaceDocuments = remainingDocuments;
+
+		if (activeWorkspaceDocumentId === documentId) {
+			activeWorkspaceDocumentId = remainingDocuments.at(-1)?.id ?? null;
+		}
+
+		if (remainingDocuments.length === 0) {
+			workspaceOpen = false;
+		}
+	}
+
+	function closeWorkspace() {
+		workspaceOpen = false;
+	}
+
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
 			return;
@@ -177,6 +218,9 @@
 		contextDebug = data.contextDebug ?? null;
 		conversationDraft = data.draft ?? null;
 		generatedFiles = data.generatedFiles ?? [];
+		workspaceDocuments = [];
+		activeWorkspaceDocumentId = null;
+		workspaceOpen = false;
 		resetPendingGeneratedFiles();
 		queuedTurn = null;
 		bootstrapMode = data.bootstrap ?? false;
@@ -809,16 +853,28 @@
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<ChatMessagePane
-			messages={$messages}
-			conversationId={data.conversation.id}
-			{isThinkingActive}
-			{contextDebug}
-			generatedFiles={generatedFileCards}
-			onRegenerate={handleRegenerate}
-			onEdit={handleEdit}
-			onSteer={handleSteering}
-		/>
+		<div class="chat-content flex min-h-0 flex-1">
+			<ChatMessagePane
+				messages={$messages}
+				conversationId={data.conversation.id}
+				{isThinkingActive}
+				{contextDebug}
+				generatedFiles={generatedFileCards}
+				onOpenGeneratedFile={openWorkspaceDocument}
+				onRegenerate={handleRegenerate}
+				onEdit={handleEdit}
+				onSteer={handleSteering}
+			/>
+
+			<DocumentWorkspace
+				open={workspaceOpen}
+				documents={workspaceDocuments}
+				activeDocumentId={activeWorkspaceDocumentId}
+				onSelectDocument={selectWorkspaceDocument}
+				onCloseDocument={closeWorkspaceDocument}
+				onCloseWorkspace={closeWorkspace}
+			/>
+		</div>
 
 		<ChatComposerPanel
 			{sendError}
@@ -856,3 +912,9 @@
 		onSteer={handleSteering}
 	/>
 </div>
+
+<style>
+	.chat-content {
+		min-width: 0;
+	}
+</style>

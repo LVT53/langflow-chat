@@ -23,6 +23,7 @@ type GeneratedFileTestProps = {
 	error?: string;
 	savedVaultName?: string | null;
 	vaults?: Array<{ id: string; name: string; color: string | null }>;
+	onOpen?: (document: unknown) => void;
 };
 
 function renderGeneratedFile(props: GeneratedFileTestProps = {}) {
@@ -116,6 +117,30 @@ describe('GeneratedFile', () => {
 		});
 
 		expect(global.fetch).toHaveBeenCalledWith('/api/chat/files/file-123/preview');
+	});
+
+	it('delegates preview opening to the workspace callback when provided', async () => {
+		const onOpen = vi.fn();
+
+		renderGeneratedFile({
+			filename: 'workspace.txt',
+			mimeType: 'text/plain',
+			downloadUrl: '/api/chat/files/file-123/download',
+			onOpen,
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Preview workspace.txt' }));
+
+		expect(onOpen).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'file-123',
+				source: 'chat_generated_file',
+				filename: 'workspace.txt',
+				previewUrl: '/api/chat/files/file-123/preview',
+				downloadUrl: '/api/chat/files/file-123/download',
+			})
+		);
+		expect(global.fetch).not.toHaveBeenCalled();
 	});
 
 	it('loads vaults on demand and opens the picker', async () => {
