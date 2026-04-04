@@ -602,6 +602,118 @@ describe('persona-memory temporal safeguards', () => {
 		);
 	});
 
+	it('marks overlapping older persona memories as corrected when a newer explicit correction appears', async () => {
+		mockCanUseContextSummarizer.mockReturnValue(false);
+
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-correction-signal',
+			rawRecords: [
+				{
+					id: 'project-old',
+					content: 'The user is working on assessment documentation.',
+					createdAt: Date.UTC(2026, 3, 1),
+					scope: 'self',
+					sessionId: 'conversation-1',
+				},
+				{
+					id: 'project-correction',
+					content: 'Actually, the user is not working on assessment documentation anymore.',
+					createdAt: Date.UTC(2026, 3, 4),
+					scope: 'self',
+					sessionId: 'conversation-2',
+				},
+			],
+			reason: 'test',
+			force: true,
+		});
+
+		expect(insertedClusterRows).toHaveLength(2);
+		const correctedCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('working on assessment documentation.')
+		);
+		const correctionCluster = insertedClusterRows.find((row) =>
+			String(row.canonicalText).includes('not working on assessment documentation anymore')
+		);
+		expect(correctedCluster).toBeTruthy();
+		expect(correctionCluster).toBeTruthy();
+		expect(JSON.parse(String(correctedCluster?.metadataJson))).toMatchObject({
+			correctionCount: 1,
+			correctionReason: 'explicit_user_correction',
+			correctedByClusterId: correctionCluster?.clusterId,
+			correctionObservedAt: Date.UTC(2026, 3, 4),
+		});
+		expect(Number(correctedCluster?.salienceScore)).toBeLessThan(Number(correctionCluster?.salienceScore));
+	});
+
+	it('only keeps the correction penalty until the memory is reaffirmed later', async () => {
+		const now = Date.now();
+		const correctionObservedAt = now - 3 * 86_400_000;
+		const reaffirmedLastSeenAt = now - 86_400_000;
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					clusterId: 'cluster-corrected',
+					userId: 'user-corrected-refresh',
+					canonicalText: 'The user is currently focused on writing essays.',
+					memoryClass: 'active_project_context',
+					state: 'active',
+					salienceScore: 60,
+					sourceCount: 1,
+					pinned: 0,
+					firstSeenAt: new Date(reaffirmedLastSeenAt - 2 * 86_400_000),
+					lastSeenAt: new Date(reaffirmedLastSeenAt),
+					createdAt: new Date(reaffirmedLastSeenAt - 2 * 86_400_000),
+					updatedAt: new Date(reaffirmedLastSeenAt),
+					metadataJson: JSON.stringify({
+						correctionObservedAt,
+						correctionCount: 1,
+						correctionReason: 'explicit_user_correction',
+					}),
+					decayAt: null,
+					archiveAt: null,
+				},
+				{
+					clusterId: 'cluster-still-corrected',
+					userId: 'user-corrected-refresh',
+					canonicalText: 'The user is currently focused on drafting a report.',
+					memoryClass: 'active_project_context',
+					state: 'active',
+					salienceScore: 60,
+					sourceCount: 1,
+					pinned: 0,
+					firstSeenAt: new Date(correctionObservedAt - 2 * 86_400_000),
+					lastSeenAt: new Date(correctionObservedAt - 86_400_000),
+					createdAt: new Date(correctionObservedAt - 2 * 86_400_000),
+					updatedAt: new Date(correctionObservedAt - 86_400_000),
+					metadataJson: JSON.stringify({
+						correctionObservedAt,
+						correctionCount: 1,
+						correctionReason: 'explicit_user_correction',
+					}),
+					decayAt: null,
+					archiveAt: null,
+				},
+			])
+		);
+
+		const { refreshPersonaClusterStates } = await import('./persona-memory');
+
+		await refreshPersonaClusterStates('user-corrected-refresh');
+
+		expect(updatedClusterRows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					salienceScore: 51,
+				}),
+				expect.objectContaining({
+					salienceScore: 32,
+				}),
+			])
+		);
+	});
+
 	it('renders expired temporal memories as historical and excludes them from the prompt context', async () => {
 		mockSelectQuery.mockImplementation(() =>
 			createSelectChain([

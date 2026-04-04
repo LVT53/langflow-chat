@@ -109,6 +109,8 @@ const DOCUMENT_MEMORY_DIRECT_CUE_PATTERN =
 	/\b(generated file|generated document|chat file id:|generated file version:|assistant response context:|extracted file content:)\b/i;
 const DOCUMENT_MEMORY_REFERENCE_PATTERN =
 	/\b(file|document|draft|report|brief|proposal|slides|presentation|spreadsheet|worksheet|pdf|docx|xlsx|pptx|odt|rtf|xml|svg)\b/i;
+const EXPLICIT_MEMORY_CORRECTION_PATTERN =
+	/\b(actually|that's wrong|that is wrong|incorrect|not true|i never said|i didn't say|i did not say|not anymore|no longer|instead|rather than|correction)\b/i;
 
 export const PERSONA_MEMORY_DREAM_SYSTEM_PROMPT =
 	'You organize persona memories. Return strict JSON only with canonicalText, memoryClass, salienceScore, timeBound, stateHint, supersededBy. memoryClass must be one of perishable_fact, short_term_constraint, active_project_context, situational_context, stable_preference, identity_profile, long_term_context. Use short_term_constraint for deadlines, short-lived time pressure, or temporary availability constraints. Use active_project_context for currently active work that matters across near-future chats but is not just a durable preference. Prefer compact canonical wording and classify temporary inventory or availability as perishable_fact. Do not infer or invent dates or times for events unless the raw memory text explicitly states them. If a memory mentions a date, meeting, appointment, trip, or other event without an explicit date/time, keep the timing unspecified instead of saying today, now, or adding a calendar date.';
@@ -1277,7 +1279,30 @@ function computeRepairedSalienceScore(params: {
 		penalty += 4;
 	}
 
+	const correctionObservedAt =
+		typeof params.metadata?.correctionObservedAt === 'number'
+			? Math.round(params.metadata.correctionObservedAt)
+			: null;
+	const correctionCount =
+		typeof params.metadata?.correctionCount === 'number'
+			? Math.max(0, Math.round(params.metadata.correctionCount))
+			: 0;
+	if (correctionObservedAt !== null && params.lastSeenAt <= correctionObservedAt) {
+		penalty += 8 + Math.min(6, correctionCount * 2);
+	}
+
 	return Math.max(6, Math.min(100, base - penalty));
+}
+
+function recomputePlanSalience(plan: ClusterPlan, now?: number): void {
+	plan.salienceScore = computeRepairedSalienceScore({
+		memoryClass: plan.memoryClass,
+		sourceCount: plan.records.length,
+		lastSeenAt: plan.lastSeenAt,
+		state: plan.state,
+		metadata: plan.metadata,
+		now,
+	});
 }
 
 function getDecayWindow(memoryClass: PersonaMemoryClass): {
@@ -1679,6 +1704,95 @@ function applyDeterministicFactSupersession(plans: ClusterPlan[]): void {
 			older.state = 'archived';
 			older.decayAt = null;
 			older.archiveAt = Date.now();
+		}
+	}
+}
+
+function hasExplicitMemoryCorrectionCue(text: string): boolean {
+	return EXPLICIT_MEMORY_CORRECTION_PATTERN.test(text);
+}
+
+function computeCorrectionOverlap(primary: ClusterPlan, candidate: ClusterPlan): number {
+	const primaryText = normalizeWhitespace(
+		[primary.canonicalText, ...primary.records.map((record) => record.content)].join(' ')
+	);
+	const candidateText = normalizeWhitespace(
+		[candidate.canonicalText, ...candidate.records.map((record) => record.content)].join(' ')
+	);
+	const primaryTopicKey =
+		typeof primary.metadata.topicKey === 'string' && primary.metadata.topicKey.trim()
+			? String(primary.metadata.topicKey)
+			: null;
+	const candidateTopicKey =
+		typeof candidate.metadata.topicKey === 'string' && candidate.metadata.topicKey.trim()
+			? String(candidate.metadata.topicKey)
+			: null;
+
+	if (primaryTopicKey && candidateTopicKey && primaryTopicKey === candidateTopicKey) {
+		return 1;
+	}
+	if (
+		primaryTopicKey &&
+		candidateTopicKey &&
+		(primaryTopicKey.includes(candidateTopicKey) || candidateTopicKey.includes(primaryTopicKey))
+	) {
+		return 0.9;
+	}
+
+	const tokenize = (text: string): string[] =>
+		normalizeMemoryText(text)
+			.split(/\s+/)
+			.filter((token) => token.length > 2 && !TOPIC_STOP_WORDS.has(token));
+	const primaryTokens = tokenize(primaryText);
+	const candidateTokens = tokenize(candidateText);
+	if (primaryTokens.length > 0 && candidateTokens.length > 0) {
+		const candidateTokenSet = new Set(candidateTokens);
+		const sharedCount = primaryTokens.filter((token) => candidateTokenSet.has(token)).length;
+		const overlapRatio = sharedCount / Math.min(primaryTokens.length, candidateTokens.length);
+		if (overlapRatio >= 0.6) {
+			return overlapRatio;
+		}
+	}
+
+	const lexical = Math.max(
+		scoreMatch(primaryText, candidateText),
+		scoreMatch(primary.canonicalText, candidate.canonicalText)
+	);
+	return lexical;
+}
+
+function applyDeterministicCorrectionSignals(plans: ClusterPlan[]): void {
+	const correctionSources = plans
+		.filter((plan) =>
+			plan.records.some((record) => hasExplicitMemoryCorrectionCue(record.content))
+		)
+		.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+
+	for (const source of correctionSources) {
+		for (const candidate of plans) {
+			if (candidate.clusterId === source.clusterId) continue;
+			if (candidate.lastSeenAt >= source.lastSeenAt) continue;
+			if (candidate.state === 'archived') continue;
+
+			const overlap = computeCorrectionOverlap(source, candidate);
+			if (overlap < 0.42) continue;
+
+			const priorCorrectionCount =
+				typeof candidate.metadata.correctionCount === 'number'
+					? Math.max(0, Math.round(candidate.metadata.correctionCount))
+					: 0;
+			const priorCorrectionObservedAt =
+				typeof candidate.metadata.correctionObservedAt === 'number'
+					? Math.round(candidate.metadata.correctionObservedAt)
+					: 0;
+
+			candidate.metadata = {
+				...candidate.metadata,
+				correctionObservedAt: Math.max(priorCorrectionObservedAt, source.lastSeenAt),
+				correctionCount: priorCorrectionCount + 1,
+				correctedByClusterId: source.clusterId,
+				correctionReason: 'explicit_user_correction',
+			};
 		}
 	}
 }
@@ -2445,6 +2559,10 @@ export async function syncPersonaMemoryClusters(params: {
 	applyDeterministicFactSupersession(plans);
 	await applyTargetedSemanticSupersession(plans);
 	applyDeterministicFactSupersession(plans);
+	applyDeterministicCorrectionSignals(plans);
+	for (const plan of plans) {
+		recomputePlanSalience(plan, now);
+	}
 	const pendingMemoryEvents = collectPersonaMemoryEvents({
 		userId: params.userId,
 		plans,
