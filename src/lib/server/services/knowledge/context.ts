@@ -18,6 +18,7 @@ import type {
 } from '$lib/types';
 import { parseJsonRecord, parseJsonStringArray } from '$lib/server/utils/json';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
+import { resolveRelevantGeneratedDocumentArtifacts } from '../document-resolution';
 import {
 	rankWorkingSetCandidates,
 	scoreMatch,
@@ -432,11 +433,29 @@ export async function findRelevantKnowledgeArtifacts(
 ): Promise<Artifact[]> {
 	await ensureGeneratedOutputRetrievalBackfill(userId);
 
-	return findRelevantArtifactsByTypes({
-		userId,
+	const [documents, generatedOutputs] = await Promise.all([
+		findRelevantArtifactsByTypes({
+			userId,
+			query,
+			types: ['normalized_document'],
+			limit,
+			excludeConversationId,
+		}),
+		findRelevantArtifactsByTypes({
+			userId,
+			query,
+			types: ['generated_output'],
+			limit: Math.max(limit * 3, 12),
+			excludeConversationId,
+		}),
+	]);
+
+	const resolvedOutputs = resolveRelevantGeneratedDocumentArtifacts({
+		artifacts: generatedOutputs,
 		query,
-		types: ['normalized_document', 'generated_output'],
 		limit,
-		excludeConversationId,
-	});
+		currentConversationId: excludeConversationId ? null : undefined,
+	}).map((entry) => entry.artifact);
+
+	return [...documents, ...resolvedOutputs].slice(0, limit);
 }
