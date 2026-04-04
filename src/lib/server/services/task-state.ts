@@ -1061,10 +1061,16 @@ export async function prepareTaskContext(params: {
   const workingSetIds = new Set(
     params.workingSetArtifacts.map((artifact) => artifact.id),
   );
+  const currentGeneratedOutputSelection = resolveCurrentGeneratedDocumentSelection({
+    artifacts: candidateArtifacts,
+    preferredArtifactId: params.activeDocumentArtifactId,
+    query: params.message,
+    currentConversationId: params.conversationId,
+  });
   const currentGeneratedOutputIds = new Set(
-    resolveCurrentGeneratedDocumentSelection({
-      artifacts: candidateArtifacts,
-    }).latestArtifactIds,
+    currentGeneratedOutputSelection.primaryArtifactId
+      ? [currentGeneratedOutputSelection.primaryArtifactId]
+      : [],
   );
   const documentFocused = isDocumentFocusedTurn(params.message, attachmentIds);
   const selectedEvidenceLimit = documentFocused

@@ -186,5 +186,72 @@ describe("document resolution", () => {
 
     expect(selection.latestArtifactIds).toEqual(["artifact-2"]);
     expect(selection.primaryArtifactId).toBe("artifact-1");
+    expect(selection.primaryReasonCodes).toEqual(["preferred_artifact"]);
+  });
+
+  it("uses explicit query matches to choose the current generated document family over raw recency", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      query: "continue the project brief",
+      currentConversationId: "conv-1",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          conversationId: "conv-1",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-slides",
+          name: "slides-v3.pdf",
+          conversationId: "conv-1",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 3,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.latestArtifactIds).toEqual(["artifact-slides", "artifact-brief"]);
+    expect(selection.primaryArtifactId).toBe("artifact-brief");
+    expect(selection.primaryReasonCodes).toContain("matched_document_label");
+  });
+
+  it("falls back to recency when there is no preferred artifact or explicit query match", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      query: "please keep refining it",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-slides",
+          name: "slides-v3.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 3,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.primaryArtifactId).toBe("artifact-slides");
+    expect(selection.primaryReasonCodes).toEqual(["latest_generated_output"]);
   });
 });

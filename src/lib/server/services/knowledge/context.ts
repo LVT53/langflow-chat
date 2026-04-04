@@ -213,7 +213,9 @@ export async function refreshConversationWorkingSet(params: {
 		.limit(8);
 	const currentOutputSelection = resolveCurrentGeneratedDocumentSelection({
 		artifacts: outputArtifacts.map((artifact) => mapArtifact(artifact)),
-		preferredArtifactId: params.latestOutputArtifactId,
+		preferredArtifactId: params.activeDocumentArtifactId ?? params.latestOutputArtifactId,
+		query: params.message?.trim(),
+		currentConversationId: params.conversationId,
 	});
 	const latestOutputArtifactIds = currentOutputSelection.latestArtifactIds;
 	const latestOutputArtifactId = currentOutputSelection.primaryArtifactId;

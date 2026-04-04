@@ -16,6 +16,7 @@ export interface CurrentGeneratedDocumentSelection {
   primaryArtifactId: string | null;
   latestArtifactIds: string[];
   latestArtifacts: Artifact[];
+  primaryReasonCodes: string[];
 }
 
 function includesNormalized(haystack: string, needle: string): boolean {
@@ -124,11 +125,14 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
 export function resolveCurrentGeneratedDocumentSelection(params: {
   artifacts: Artifact[];
   preferredArtifactId?: string | null;
+  query?: string;
+  currentConversationId?: string | null;
 }): CurrentGeneratedDocumentSelection {
+  const generatedArtifacts = params.artifacts.filter(
+    (artifact) => artifact.type === "generated_output",
+  );
   const latestArtifacts = selectLatestGeneratedDocumentCandidatesByFamily(
-    params.artifacts
-      .filter((artifact) => artifact.type === "generated_output")
-      .map((artifact) => ({
+    generatedArtifacts.map((artifact) => ({
         artifactId: artifact.id,
         artifactName: artifact.name,
         updatedAt: artifact.updatedAt,
@@ -138,11 +142,51 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
   ).map((candidate) => candidate.artifact);
 
   const latestArtifactIds = latestArtifacts.map((artifact) => artifact.id);
+  const preferredArtifact = params.preferredArtifactId
+    ? generatedArtifacts.find((artifact) => artifact.id === params.preferredArtifactId) ??
+      null
+    : null;
+
+  if (preferredArtifact) {
+    return {
+      primaryArtifactId: preferredArtifact.id,
+      latestArtifactIds,
+      latestArtifacts,
+      primaryReasonCodes: ["preferred_artifact"],
+    };
+  }
+
+  const normalizedQuery = params.query?.trim() ?? "";
+  if (normalizedQuery) {
+    const rankedArtifacts = latestArtifacts
+      .map((artifact) =>
+        scoreGeneratedDocumentArtifact({
+          artifact,
+          query: normalizedQuery,
+          currentConversationId: params.currentConversationId,
+        }),
+      )
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        return right.artifact.updatedAt - left.artifact.updatedAt;
+      });
+    const primaryMatch = rankedArtifacts[0] ?? null;
+
+    if (primaryMatch) {
+      return {
+        primaryArtifactId: primaryMatch.artifact.id,
+        latestArtifactIds,
+        latestArtifacts,
+        primaryReasonCodes: primaryMatch.reasonCodes,
+      };
+    }
+  }
 
   return {
-    primaryArtifactId:
-      params.preferredArtifactId ?? (latestArtifactIds.length > 0 ? latestArtifactIds[0] : null),
+    primaryArtifactId: latestArtifactIds.length > 0 ? latestArtifactIds[0] : null,
     latestArtifactIds,
     latestArtifacts,
+    primaryReasonCodes: latestArtifactIds.length > 0 ? ["latest_generated_output"] : [],
   };
 }
