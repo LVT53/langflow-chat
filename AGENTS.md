@@ -80,13 +80,14 @@ Do not:
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
   - Owns the one-slot queued follow-up turn while a response is streaming.
-  - Owns route-level working-document workspace state. Which document is open, active, or closed belongs here, not inside file-row or preview components.
+  - Owns route-level working-document workspace state. Which document is open, active, compared, or closed belongs here, not inside file-row or preview components.
   - The chat detail route should stay visually distinct from the landing page: the composer remains bottom-docked and the message surface stays visible even before the first persisted messages arrive.
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI with a single primary content column.
   - Main content: Vault Explorer plus Library and Memory Profile tabs.
   - Vault scope selection, drag/drop uploads, and vault CRUD surface inside the main library panel instead of a separate sidebar rail.
+  - Also owns the knowledge-side working-document workspace shell and cross-route workspace handoff from global search.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
 - [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
   - User settings and admin/runtime config UI surface.
@@ -153,6 +154,7 @@ Do:
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
 - use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
+- use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, vault/library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
 - use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
 - use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
@@ -165,6 +167,7 @@ Do:
 - save-to-vault preserves the original chat file and records vault-save state via artifact metadata so the row still appears after refresh
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 - vault save is an organization action, not the switch that determines whether the AI remembers a generated document. Working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
+- working-document continuity should prefer the shared resolver’s “current generated document” signal over generic latest-output heuristics. If a generated document is selected because of active focus or a query match, do not layer a second recency-only boost on top.
 
 Do not:
 
@@ -270,7 +273,7 @@ Rules:
 - Import from Obsidian/Notion flattens hierarchy, stores original path in metadata
 - File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
 - Storage quota is display-only - no enforcement
-- Global shell search surfaces vault-file hits through `/api/knowledge/search`, and vault-file clicks should open the extracted AI-visible text path via `AttachmentContentModal.svelte`, not a separate ad hoc viewer
+- Global shell search surfaces vault-file hits through `/api/knowledge/search`, and vault-file clicks should hand off into the knowledge-page working-document workspace instead of opening a separate modal path
 - `KnowledgeLibraryView.svelte` is the vault surface: keep vault scope selection, vault CRUD affordances, drag/drop upload targeting, and local vault-file search there instead of reintroducing a separate rail
 
 Do not:

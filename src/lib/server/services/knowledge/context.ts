@@ -163,12 +163,14 @@ export async function selectWorkingSetArtifactsForPrompt(
 			const allowEphemeralOutput =
 				artifact.type === 'generated_output' &&
 				(reasonCodes.includes('active_document_focus') ||
+					reasonCodes.includes('current_generated_document') ||
 					(artifact.conversationId === conversationId &&
 						reasonCodes.includes('latest_generated_output')));
 			const promptEligible =
 				(artifact.type !== 'generated_output' || retrievalClass === 'durable' || allowEphemeralOutput) &&
 				(reasonCodes.includes('attached_this_turn') ||
 					reasonCodes.includes('active_document_focus') ||
+					reasonCodes.includes('current_generated_document') ||
 					messageMatchScore >= 2 ||
 					explicitlyRequested ||
 					(reasonCodes.includes('latest_generated_output') && messageMatchScore >= 1) ||
@@ -193,7 +195,7 @@ export async function refreshConversationWorkingSet(params: {
 	message?: string;
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
-	latestOutputArtifactId?: string | null;
+	selectedGeneratedArtifactId?: string | null;
 }): Promise<ArtifactSummary[]> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const existingItems = await listConversationWorkingSetItems(params.userId, params.conversationId);
@@ -212,13 +214,13 @@ export async function refreshConversationWorkingSet(params: {
 		.limit(8);
 	const currentOutputSelection = resolveCurrentGeneratedDocumentSelection({
 		artifacts: outputArtifacts.map((artifact) => mapArtifact(artifact)),
-		preferredArtifactId: params.activeDocumentArtifactId ?? params.latestOutputArtifactId,
+		preferredArtifactId: params.activeDocumentArtifactId ?? params.selectedGeneratedArtifactId,
 		query: params.message?.trim(),
 		currentConversationId: params.conversationId,
 	});
-	const latestOutputArtifactIds = currentOutputSelection.latestArtifactIds;
-	const latestOutputArtifactId = currentOutputSelection.primaryArtifactId;
-	const sourceIdsLinkedToLatestOutput = latestOutputArtifactId
+	const latestGeneratedArtifactIds = currentOutputSelection.latestArtifactIds;
+	const currentGeneratedArtifactId = currentOutputSelection.primaryArtifactId;
+	const sourceIdsLinkedToCurrentGenerated = currentGeneratedArtifactId
 		? await db
 				.select({ relatedArtifactId: artifactLinks.relatedArtifactId })
 				.from(artifactLinks)
@@ -227,7 +229,7 @@ export async function refreshConversationWorkingSet(params: {
 						eq(artifactLinks.userId, params.userId),
 						eq(artifactLinks.conversationId, params.conversationId),
 						eq(artifactLinks.linkType, 'used_in_output'),
-						eq(artifactLinks.artifactId, latestOutputArtifactId)
+						eq(artifactLinks.artifactId, currentGeneratedArtifactId)
 					)
 				)
 				.then((rows) =>
@@ -241,7 +243,7 @@ export async function refreshConversationWorkingSet(params: {
 		...existingItems.map((item) => item.artifactId),
 		...attachmentIds,
 		...sourceArtifactIds,
-		...latestOutputArtifactIds,
+		...latestGeneratedArtifactIds,
 		...(params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : []),
 	]);
 
@@ -252,6 +254,7 @@ export async function refreshConversationWorkingSet(params: {
 	const artifactRows = await getArtifactsForUser(params.userId, Array.from(candidateIds));
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
+	const currentGeneratedReasonCodes = new Set(currentOutputSelection.primaryReasonCodes);
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
@@ -266,8 +269,13 @@ export async function refreshConversationWorkingSet(params: {
 			previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
 			isActiveDocumentFocus: params.activeDocumentArtifactId === artifact.id,
-			isLatestGeneratedOutput: latestOutputArtifactId === artifact.id,
-			isLinkedToLatestOutput: sourceIdsLinkedToLatestOutput.includes(artifact.id),
+			isCurrentGeneratedDocument:
+				currentGeneratedArtifactId === artifact.id &&
+				currentGeneratedReasonCodes.has('current_generated_document'),
+			isLatestGeneratedOutput:
+				currentGeneratedArtifactId === artifact.id &&
+				currentGeneratedReasonCodes.has('latest_generated_output'),
+			isLinkedToLatestOutput: sourceIdsLinkedToCurrentGenerated.includes(artifact.id),
 			messageMatchScore: message
 				? scoreMatch(message, `${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`)
 				: 0,

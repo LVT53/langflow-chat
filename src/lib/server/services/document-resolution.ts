@@ -1,4 +1,4 @@
-import type { Artifact } from "$lib/types";
+import type { Artifact, WorkingSetReasonCode } from "$lib/types";
 import {
   parseWorkingDocumentMetadata,
   selectLatestGeneratedDocumentCandidatesByFamily,
@@ -16,7 +16,7 @@ export interface CurrentGeneratedDocumentSelection {
   primaryArtifactId: string | null;
   latestArtifactIds: string[];
   latestArtifacts: Artifact[];
-  primaryReasonCodes: string[];
+  primaryReasonCodes: WorkingSetReasonCode[];
 }
 
 export interface RelevantGeneratedDocumentSelection {
@@ -245,6 +245,6 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
     primaryArtifactId: latestArtifactIds.length > 0 ? latestArtifactIds[0] : null,
     latestArtifactIds,
     latestArtifacts,
-    primaryReasonCodes: latestArtifactIds.length > 0 ? ["latest_generated_output"] : [],
+    primaryReasonCodes: latestArtifactIds.length > 0 ? ["current_generated_document"] : [],
   };
 }

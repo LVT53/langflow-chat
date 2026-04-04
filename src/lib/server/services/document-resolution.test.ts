@@ -297,6 +297,6 @@ describe("document resolution", () => {
     });
 
     expect(selection.primaryArtifactId).toBe("artifact-slides");
-    expect(selection.primaryReasonCodes).toEqual(["latest_generated_output"]);
+    expect(selection.primaryReasonCodes).toEqual(["current_generated_document"]);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { rankWorkingSetCandidates } from './working-set';
 
 describe('working-set ranking', () => {
-	it('prioritizes newly attached documents and latest outputs', () => {
+	it('prioritizes newly attached documents and the current generated document', () => {
 		const ranked = rankWorkingSetCandidates([
 			{
 				artifactId: 'doc-1',
@@ -20,7 +20,7 @@ describe('working-set ranking', () => {
 				summary: null,
 				contentText: null,
 				updatedAt: Date.now(),
-				isLatestGeneratedOutput: true,
+				isCurrentGeneratedDocument: true,
 			},
 		]);
 
@@ -29,7 +29,7 @@ describe('working-set ranking', () => {
 		expect(ranked[0]?.artifactId).toBe('doc-1');
 	});
 
-	it('treats the active workspace document as stronger than generic latest-output recency', () => {
+	it('treats the active workspace document as stronger than generic current-document recency', () => {
 		const ranked = rankWorkingSetCandidates([
 			{
 				artifactId: 'out-focused',
@@ -43,11 +43,11 @@ describe('working-set ranking', () => {
 			{
 				artifactId: 'out-latest',
 				artifactType: 'generated_output',
-				name: 'Latest output',
+				name: 'Current generated document',
 				summary: null,
 				contentText: null,
 				updatedAt: Date.now(),
-				isLatestGeneratedOutput: true,
+				isCurrentGeneratedDocument: true,
 			},
 		]);
 
@@ -98,7 +98,7 @@ describe('working-set ranking', () => {
 				summary: null,
 				contentText: null,
 				updatedAt: Date.now(),
-				isLatestGeneratedOutput: index === 0,
+				isCurrentGeneratedDocument: index === 0,
 				isLinkedToLatestOutput: index === 1,
 				previousScore: 40,
 				previousState: 'active' as const,

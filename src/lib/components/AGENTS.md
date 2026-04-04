@@ -22,13 +22,13 @@ chat/
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
     ├── chat/GeneratedFile.svelte       ← generated-file preview, download, and save-to-vault actions
     ├── chat/DocumentWorkspace.svelte   ← route-driven working-document pane using shared preview
-    └── chat/MessageBubble.svelte       ← individual message (attachment viewing capability)
+    └── chat/MessageBubble.svelte       ← individual message (attachment open handoff)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
           ├── chat/CodeBlock.svelte           ← fenced code block
           ├── chat/ThinkingBlock.svelte       ← <thinking> content
           ├── chat/FileAttachment.svelte      ← inline attachment display
           ├── chat/MessageEvidenceDetails.svelte  ← evidence summary panel
-          └── chat/AttachmentContentModal.svelte  ← modal for viewing extracted file text (contentText)
+          └── chat/AttachmentContentModal.svelte  ← legacy extracted-text modal fallback
   ModelSelector.svelte              ← model dropdown
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
@@ -53,7 +53,7 @@ ui/
 | `ConversationList.svelte` | `projects` | `projects`, CRUD actions |
 | `ConversationList.svelte` | `ui` | `currentConversationId`, `sidebarOpen` |
 | `MessageInput.svelte` | `ui` | `currentConversationId` (draft clear on switch), `onUploadReady` callback |
-| `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode), attachment viewing via `AttachmentContentModal` |
+| `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode), attachment open handoff to the route-owned workspace |
 | `ModelSelector.svelte` | `settings` | `selectedModel`, `setSelectedModel` |
 | `ComposerToolsMenu.svelte` | `settings` | `translationState`, `toggleTranslationState` |
 | `SearchModal.svelte` | `conversations` | `conversations` (conversation search source) |
@@ -74,7 +74,6 @@ ui/
 - `chat/EvidenceManager.svelte` — evidence panel
 - `chat/ContextUsageRing.svelte` — context indicator
 - `chat/DropZoneOverlay.svelte` — drag-and-drop file upload overlay
-- `chat/AttachmentContentModal.svelte` — attachment content viewer
 - Route-local `_components/` — `ChatComposerPanel`, `ChatMessagePane` (page scaffolding)
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
@@ -101,14 +100,15 @@ ui/
 - The chat page must treat route teardown/unmount as a local stream detach, not the same thing as the user pressing Stop. Only explicit stop UI should request `/api/chat/stream/stop`.
 - The landing page may force a full document navigation after the first send so the browser cannot remain on the home-screen visual state while the new chat route is already executing on the server
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
-- `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for content preview
-- `AttachmentContentModal.svelte` fetches `/api/knowledge/{id}` to display extracted text with loading/error/empty states
-- `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and reuses `AttachmentContentModal.svelte` so shell search shows the same AI-visible text path as the knowledge page
+- `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for document opening
+- `AttachmentContentModal.svelte` is legacy fallback UI. Do not route new document preview flows through it when the shared workspace can own the open state instead
+- `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and hands document opens off to the knowledge-page workspace instead of owning a parallel preview modal
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download/save-to-vault UI, and the shimmer-style generating state, and may lazy-load vault options through `client/api/knowledge.ts`
 - `GeneratedFile.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
 - Generated-file preview should reuse `knowledge/FilePreview.svelte` through the chat-file preview endpoint instead of maintaining a second lightweight preview modal
-- `DocumentWorkspace.svelte` is the chat-surface shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
+- `DocumentWorkspace.svelte` is the shared shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
+- `DocumentWorkspace.svelte` now owns version-history tabs/strips, source-message jump affordances, and text-document compare mode. Keep those behaviors inside the shared workspace instead of rebuilding them in chat rows, search, or knowledge-page components
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
 - Saved generated-file rows remain conversation-scoped after vault save; do not delete the underlying chat-file record just because a vault copy was created
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped

@@ -103,7 +103,8 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Landing-page draft reuse is guarded: only empty default-title prepared conversations are reused from session storage, which prevents new sends from silently reusing an older real chat.
 - The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
 - Chat-generated files are created through the sandboxed file-generator path only when the executed code writes the final file to `/output`; successful files then appear back in the chat UI for download or manual vault saving. The mirrored Langflow custom node should use a `python_code` tool argument rather than `code`, because `code` collides with Langflow component internals and can cause the node to send its own source instead of the requested script. On a fresh host, the first successful run may also pull the pinned sandbox image before execution starts.
-- The chat route now has a default-closed working-document workspace for generated files. It reuses the shared rich file previewer in an embedded pane on desktop and a full-screen layer on mobile instead of creating a second document viewer.
+- The app now uses a default-closed working-document workspace instead of separate preview silos. Generated files, chat attachments, knowledge-library documents, and search-opened vault files all reuse the same shared rich previewer: embedded in a right-side pane on desktop and a full-screen layer on mobile.
+- The working-document workspace now carries document identity and continuity affordances directly in the shell: version history for document families, source-message jump for generated outputs, and compare mode for text-like versions.
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
@@ -117,7 +118,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The same app shell supports desktop, tablet, and mobile layouts, with the conversation view remaining the primary surface across breakpoints.
 - Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
 - Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
-- Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md). The direction is to consolidate generated files, attachments, and vault files onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
+- Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md) and [docs/working-documents-implementation-plan.md](./docs/working-documents-implementation-plan.md). The direction is to consolidate generated files, attachments, and vault files onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
 
 ## Configuration Reference
 
@@ -229,7 +230,9 @@ Notes before the tables:
 - The sandbox waits for Docker exec inspection to report completion before reading `/output`, so file extraction no longer races an early-closed exec stream.
 - Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
 - Generated files can be moved into a vault from the chat UI, but the current AI/file-generator contract does not directly perform that vault-save step on the model's behalf.
+- Vault save is only an organization action. Unsaved generated documents are still mirrored into artifact-backed document continuity and Honcho memory so the AI can recall and refine them across chats without requiring a manual vault save first.
 - While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
+- Current-document selection now prefers explicit workspace focus and query/document-family matches over a generic “latest output” fallback, which keeps refinement turns anchored to the right document version more reliably.
 - Langflow request/session correlation now logs under `[LANGFLOW]`, and chat-stream tool usage logs under `[CHAT_STREAM]`, so missing generated files can be traced by conversation id without needing live Langflow container logs.
 - Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
 - Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
