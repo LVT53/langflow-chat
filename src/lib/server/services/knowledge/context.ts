@@ -40,7 +40,7 @@ import {
 	getCompactionUiThreshold,
 	getMaxModelContext,
 	getTargetConstructedContext,
-	findRelevantArtifactsByTypes,
+	findRelevantArtifactsByTypesDetailed,
 	getArtifactsForUser,
 	listConversationSourceArtifactIds,
 	mapArtifact,
@@ -577,15 +577,15 @@ export async function findRelevantKnowledgeArtifacts(params: {
 	const limit = params.limit ?? 6;
 	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
 
-	const [documents, generatedOutputs, preferredArtifacts] = await Promise.all([
-		findRelevantArtifactsByTypes({
+	const [documentMatches, generatedOutputMatches, preferredArtifacts] = await Promise.all([
+		findRelevantArtifactsByTypesDetailed({
 			userId: params.userId,
 			query: params.query,
 			types: ['normalized_document'],
 			limit,
 			excludeConversationId: params.excludeConversationId,
 		}),
-		findRelevantArtifactsByTypes({
+		findRelevantArtifactsByTypesDetailed({
 			userId: params.userId,
 			query: params.query,
 			types: ['generated_output'],
@@ -596,6 +596,14 @@ export async function findRelevantKnowledgeArtifacts(params: {
 			? getArtifactsForUser(params.userId, [params.preferredArtifactId])
 			: Promise.resolve([]),
 	]);
+	const documents = documentMatches.map((entry) => entry.artifact);
+	const generatedOutputs = generatedOutputMatches.map((entry) => entry.artifact);
+	const generatedSemanticScoresByArtifactId = new Map(
+		generatedOutputMatches.map((entry) => [entry.artifact.id, entry.semanticScore])
+	);
+	const generatedRerankScoresByArtifactId = new Map(
+		generatedOutputMatches.map((entry) => [entry.artifact.id, entry.rerankScore])
+	);
 
 	const preferredRelevantArtifacts = preferredArtifacts.filter(
 		(artifact) => artifact.type !== 'generated_output'
@@ -636,6 +644,8 @@ export async function findRelevantKnowledgeArtifacts(params: {
 		suppressCarryoverWhenUnfocused: params.suppressGeneratedCarryover ?? false,
 		behaviorScoresByKey,
 		reopenScoresByKey,
+		semanticScoresByArtifactId: generatedSemanticScoresByArtifactId,
+		rerankScoresByArtifactId: generatedRerankScoresByArtifactId,
 	});
 
 	const seen = new Set<string>();

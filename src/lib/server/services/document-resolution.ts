@@ -32,6 +32,8 @@ type GeneratedArtifactMatchParams = {
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
   reopenScoresByKey?: Map<string, number>;
+  semanticScoresByArtifactId?: Map<string, number>;
+  rerankScoresByArtifactId?: Map<string, number>;
 };
 
 const GENERATED_QUERY_MATCH_REASONS = new Set([
@@ -62,6 +64,8 @@ function scoreGeneratedDocumentArtifact(params: {
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
   reopenScoresByKey?: Map<string, number>;
+  semanticScoresByArtifactId?: Map<string, number>;
+  rerankScoresByArtifactId?: Map<string, number>;
 }): GeneratedDocumentResolution {
   const metadata = parseWorkingDocumentMetadata(params.artifact.metadata);
   const behaviorKey = getDocumentBehaviorKey(params.artifact);
@@ -84,6 +88,8 @@ function scoreGeneratedDocumentArtifact(params: {
   const reasonCodes: string[] = [];
   const behaviorScore = params.behaviorScoresByKey?.get(behaviorKey) ?? 0;
   const reopenScore = params.reopenScoresByKey?.get(behaviorKey) ?? 0;
+  const semanticScore = params.semanticScoresByArtifactId?.get(params.artifact.id) ?? 0;
+  const rerankScore = params.rerankScoresByArtifactId?.get(params.artifact.id) ?? 0;
 
   if (score > 0) {
     reasonCodes.push("matched_query");
@@ -125,6 +131,16 @@ function scoreGeneratedDocumentArtifact(params: {
   if (reopenScore > 0) {
     score += Math.min(8, reopenScore * 2);
     reasonCodes.push("recent_document_open");
+  }
+
+  if (semanticScore > 0) {
+    score += Math.min(18, semanticScore * 18);
+    reasonCodes.push("semantic_document_match");
+  }
+
+  if (rerankScore > 0) {
+    score += Math.min(24, rerankScore * 24);
+    reasonCodes.push("reranked_document_match");
   }
 
   if (metadata.documentFamilyStatus === "historical") {
@@ -176,6 +192,8 @@ function rankLatestGeneratedDocumentArtifacts(
         currentConversationId: params.currentConversationId,
         behaviorScoresByKey: params.behaviorScoresByKey,
         reopenScoresByKey: params.reopenScoresByKey,
+        semanticScoresByArtifactId: params.semanticScoresByArtifactId,
+        rerankScoresByArtifactId: params.rerankScoresByArtifactId,
       }),
     )
     .filter((entry) => entry.score > 0)
@@ -239,6 +257,8 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
   reopenScoresByKey?: Map<string, number>;
+  semanticScoresByArtifactId?: Map<string, number>;
+  rerankScoresByArtifactId?: Map<string, number>;
 }): GeneratedDocumentResolution[] {
   return rankLatestGeneratedDocumentArtifacts({
     artifacts: params.artifacts,
@@ -246,6 +266,8 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
     currentConversationId: params.currentConversationId,
     behaviorScoresByKey: params.behaviorScoresByKey,
     reopenScoresByKey: params.reopenScoresByKey,
+    semanticScoresByArtifactId: params.semanticScoresByArtifactId,
+    rerankScoresByArtifactId: params.rerankScoresByArtifactId,
   }).slice(0, params.limit);
 }
 
@@ -259,6 +281,8 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   suppressCarryoverWhenUnfocused?: boolean;
   behaviorScoresByKey?: Map<string, number>;
   reopenScoresByKey?: Map<string, number>;
+  semanticScoresByArtifactId?: Map<string, number>;
+  rerankScoresByArtifactId?: Map<string, number>;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
@@ -281,6 +305,8 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
     currentConversationId: params.currentConversationId,
     behaviorScoresByKey: params.behaviorScoresByKey,
     reopenScoresByKey: params.reopenScoresByKey,
+    semanticScoresByArtifactId: params.semanticScoresByArtifactId,
+    rerankScoresByArtifactId: params.rerankScoresByArtifactId,
   });
   const orderedArtifacts: Artifact[] = [];
   const seenArtifactIds = new Set<string>();

@@ -1,14 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockRows, mockDerivedRows, mockSelect } = vi.hoisted(() => {
+const {
+  mockRows,
+  mockDerivedRows,
+  mockSelect,
+  mockShortlistSemanticMatchesBySubject,
+  mockCanUseTeiReranker,
+  mockRerankItems,
+} = vi.hoisted(() => {
   const mockRows: Array<Record<string, unknown>> = [];
   const mockDerivedRows: Array<Record<string, unknown>> = [];
   const mockSelect = vi.fn();
+  const mockShortlistSemanticMatchesBySubject = vi.fn(async () => []);
+  const mockCanUseTeiReranker = vi.fn(() => true);
+  const mockRerankItems = vi.fn(async () => null);
 
   return {
     mockRows,
     mockDerivedRows,
     mockSelect,
+    mockShortlistSemanticMatchesBySubject,
+    mockCanUseTeiReranker,
+    mockRerankItems,
   };
 });
 
@@ -54,11 +67,26 @@ vi.mock("drizzle-orm", () => ({
   sql: vi.fn(),
 }));
 
+vi.mock("../../semantic-ranking", () => ({
+  shortlistSemanticMatchesBySubject: mockShortlistSemanticMatchesBySubject,
+}));
+
+vi.mock("../../tei-reranker", () => ({
+  canUseTeiReranker: mockCanUseTeiReranker,
+  rerankItems: mockRerankItems,
+}));
+
 describe("knowledge documents store", () => {
   beforeEach(() => {
     mockRows.length = 0;
     mockDerivedRows.length = 0;
     mockSelect.mockReset();
+    mockShortlistSemanticMatchesBySubject.mockReset();
+    mockShortlistSemanticMatchesBySubject.mockResolvedValue([]);
+    mockCanUseTeiReranker.mockReset();
+    mockCanUseTeiReranker.mockReturnValue(true);
+    mockRerankItems.mockReset();
+    mockRerankItems.mockResolvedValue(null);
   });
 
   it("treats generated outputs as logical documents grouped by family metadata", async () => {
@@ -180,5 +208,104 @@ describe("knowledge documents store", () => {
     expect(generatedDocument?.familyArtifactIds).toEqual(
       expect.arrayContaining(["gen-1", "gen-2"]),
     );
+  });
+
+  it("prefers semantic and reranked artifact matches when lexical scores are weak", async () => {
+    mockRows.push(
+      {
+        id: "artifact-lexical",
+        userId: "user-1",
+        type: "normalized_document",
+        retrievalClass: "durable",
+        name: "Budget notes",
+        mimeType: "text/plain",
+        sizeBytes: 512,
+        conversationId: null,
+        vaultId: "vault-1",
+        summary: "Budget notes",
+        metadataJson: null,
+        contentText: "Budget notes and rough numbers",
+        createdAt: new Date("2026-04-01T10:00:00Z"),
+        updatedAt: new Date("2026-04-01T10:00:00Z"),
+        extension: "txt",
+        storagePath: null,
+        binaryHash: null,
+      },
+      {
+        id: "artifact-semantic",
+        userId: "user-1",
+        type: "normalized_document",
+        retrievalClass: "durable",
+        name: "Revenue outlook",
+        mimeType: "text/plain",
+        sizeBytes: 512,
+        conversationId: null,
+        vaultId: "vault-1",
+        summary: "Forecasted quarterly revenue",
+        metadataJson: null,
+        contentText: "Projected quarterly revenue and forecast assumptions",
+        createdAt: new Date("2026-04-02T10:00:00Z"),
+        updatedAt: new Date("2026-04-02T10:00:00Z"),
+        extension: "txt",
+        storagePath: null,
+        binaryHash: null,
+      },
+    );
+
+    mockSelect.mockImplementation(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          orderBy: vi.fn(() => ({
+            limit: vi.fn(async () => mockRows),
+          })),
+        })),
+      })),
+    }));
+
+    mockShortlistSemanticMatchesBySubject.mockImplementation(async ({ items }) => [
+      {
+        item: items.find((artifact: { id: string }) => artifact.id === "artifact-semantic"),
+        subjectId: "artifact-semantic",
+        semanticScore: 0.92,
+      },
+    ]);
+    mockRerankItems.mockResolvedValue({
+      items: [
+        {
+          item: {
+            id: "artifact-semantic",
+            userId: "user-1",
+            type: "normalized_document",
+            retrievalClass: "durable",
+            name: "Revenue outlook",
+            mimeType: "text/plain",
+            sizeBytes: 512,
+            conversationId: null,
+            vaultId: "vault-1",
+            summary: "Forecasted quarterly revenue",
+            createdAt: new Date("2026-04-02T10:00:00Z").getTime(),
+            updatedAt: new Date("2026-04-02T10:00:00Z").getTime(),
+            extension: "txt",
+            storagePath: null,
+            contentText: "Projected quarterly revenue and forecast assumptions",
+            metadata: null,
+          },
+          index: 0,
+          score: 0.88,
+        },
+      ],
+      confidence: 88,
+    });
+
+    const { findRelevantArtifactsByTypesDetailed } = await import("./documents");
+    const matches = await findRelevantArtifactsByTypesDetailed({
+      userId: "user-1",
+      query: "revenue forecast",
+      types: ["normalized_document"],
+      limit: 2,
+    });
+
+    expect(matches[0]?.artifact.id).toBe("artifact-semantic");
+    expect(matches[0]?.semanticScore).toBeGreaterThan(0);
   });
 });

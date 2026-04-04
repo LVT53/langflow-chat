@@ -280,6 +280,42 @@ describe("document resolution", () => {
     expect(selection.resolutions[0]?.reasonCodes).toContain("recent_document_open");
   });
 
+  it("incorporates semantic and rerank boosts for generated document families", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "continue the forecast",
+      limit: 4,
+      semanticScoresByArtifactId: new Map([["artifact-forecast", 0.91]]),
+      rerankScoresByArtifactId: new Map([["artifact-forecast", 0.83]]),
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-forecast",
+          name: "forecast-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-forecast",
+            documentLabel: "Revenue forecast",
+            versionNumber: 1,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts[0]?.id).toBe("artifact-forecast");
+    expect(selection.resolutions[0]?.reasonCodes).toEqual(
+      expect.arrayContaining(["semantic_document_match", "reranked_document_match"])
+    );
+  });
+
   it("downranks historical document families for generic carryover retrieval", () => {
     const selection = resolveRelevantGeneratedDocumentSelection({
       query: "please update the draft",

@@ -14,6 +14,7 @@ Current status:
 - Wave 1 complete: runtime config and thin TEI clients are live
 - Wave 2 complete: unified local embedding persistence is live through `semantic_embeddings`
 - Wave 3 complete: artifact/task/persona writes now queue async embedding refreshes, and `memory-maintenance.ts` runs lazy user-scoped embedding backfill
+- Wave 5 complete for knowledge/documents: artifact retrieval now uses stored-embedding shortlist plus TEI rerank before the higher-level working-document resolver applies family/focus/history authority
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
 - Semantic shortlist retrieval waves are still pending
 
@@ -71,6 +72,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
   - `knowledge/context.ts`
   - `document-resolution.ts`
 - Keep working-document focus, family/version continuity, historical-family penalties, and explicit query matches above semantic scoring
+- Current status: complete. `knowledge/store/documents.ts` now broadens user-scoped artifact candidates, scores them with stored artifact embeddings, reranks the shortlist through TEI when available, and passes those semantic/rerank boosts into `knowledge/context.ts` and `document-resolution.ts` without bypassing existing family/focus/history rules.
 
 ### Wave 6: Semantic Retrieval for Persona Memory
 

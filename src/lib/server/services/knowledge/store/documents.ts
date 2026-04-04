@@ -10,6 +10,8 @@ import type {
   KnowledgeVaultSearchResult,
 } from "$lib/types";
 import { extractDocumentText } from "../../document-extraction";
+import { shortlistSemanticMatchesBySubject } from "../../semantic-ranking";
+import { canUseTeiReranker, rerankItems } from "../../tei-reranker";
 import { scoreMatch } from "../../working-set";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import {
@@ -25,6 +27,17 @@ import {
   mapArtifactSummary,
 } from "./core";
 import { getVaults } from "./vaults";
+
+const SEMANTIC_ARTIFACT_CANDIDATE_LIMIT = 120;
+const SEMANTIC_ARTIFACT_SHORTLIST_LIMIT = 24;
+
+export interface RankedArtifactMatch {
+  artifact: Artifact;
+  lexicalScore: number;
+  semanticScore: number;
+  rerankScore: number;
+  finalScore: number;
+}
 
 function mapLogicalDocumentItem(params: {
   displayArtifact: ArtifactSummary;
@@ -288,6 +301,199 @@ export async function listLogicalDocuments(
   return documents.sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
+function buildArtifactSearchBody(artifact: Artifact): string {
+  return `${artifact.name}\n${artifact.summary ?? ""}\n${artifact.contentText ?? ""}`;
+}
+
+function tokenizeArtifactSearchQuery(query: string): string[] {
+  return Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[^a-z0-9]+/i)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2)
+        .slice(0, 8)
+    )
+  );
+}
+
+async function selectArtifactSearchCandidates(params: {
+  userId: string;
+  query: string;
+  types: ArtifactType[];
+  excludeConversationId?: string;
+  limit: number;
+  preferSemanticBreadth?: boolean;
+}): Promise<Artifact[]> {
+  const tokenFragments = tokenizeArtifactSearchQuery(params.query).map((token) => `%${token}%`);
+  const semanticBreadth = params.preferSemanticBreadth ?? false;
+  const baseConditions = [
+    eq(artifacts.userId, params.userId),
+    inArray(artifacts.type, params.types),
+    params.types.includes("generated_output")
+      ? or(ne(artifacts.type, "generated_output"), eq(artifacts.retrievalClass, "durable"))
+      : undefined,
+    params.excludeConversationId
+      ? sql`${artifacts.conversationId} IS NULL OR ${artifacts.conversationId} <> ${params.excludeConversationId}`
+      : undefined,
+  ];
+
+  if (!semanticBreadth && tokenFragments.length > 0) {
+    baseConditions.push(
+      or(
+        ...tokenFragments.flatMap((fragment) => [
+          like(artifacts.name, fragment),
+          like(artifacts.summary, fragment),
+          like(artifacts.contentText, fragment),
+        ])
+      )
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(artifacts)
+    .where(and(...baseConditions))
+    .orderBy(desc(artifacts.updatedAt))
+    .limit(params.limit);
+
+  return rows.map(mapArtifact);
+}
+
+async function rankArtifactMatches(params: {
+  userId: string;
+  query: string;
+  candidates: Artifact[];
+  limit: number;
+}): Promise<RankedArtifactMatch[]> {
+  if (params.candidates.length === 0) {
+    return [];
+  }
+
+  const lexicalMatches = params.candidates.map((artifact) => ({
+    artifact,
+    lexicalScore: scoreMatch(params.query, buildArtifactSearchBody(artifact)),
+  }));
+  const lexicalTop = lexicalMatches
+    .filter((entry) => entry.lexicalScore > 0)
+    .sort((left, right) => {
+      if (right.lexicalScore !== left.lexicalScore) return right.lexicalScore - left.lexicalScore;
+      return right.artifact.updatedAt - left.artifact.updatedAt;
+    })
+    .slice(0, Math.max(params.limit * 2, 12));
+
+  const semanticMatches =
+    (await shortlistSemanticMatchesBySubject({
+      userId: params.userId,
+      subjectType: "artifact",
+      query: params.query,
+      items: params.candidates,
+      getSubjectId: (artifact) => artifact.id,
+      limit: SEMANTIC_ARTIFACT_SHORTLIST_LIMIT,
+    })) ?? [];
+  const semanticScoreById = new Map(
+    semanticMatches.map((match) => [match.subjectId, match.semanticScore])
+  );
+
+  const candidateIds = new Set<string>();
+  const shortlistedArtifacts: Artifact[] = [];
+
+  for (const entry of lexicalTop) {
+    if (candidateIds.has(entry.artifact.id)) continue;
+    candidateIds.add(entry.artifact.id);
+    shortlistedArtifacts.push(entry.artifact);
+  }
+
+  for (const match of semanticMatches) {
+    if (candidateIds.has(match.subjectId)) continue;
+    candidateIds.add(match.subjectId);
+    shortlistedArtifacts.push(match.item);
+  }
+
+  if (shortlistedArtifacts.length === 0) {
+    shortlistedArtifacts.push(...params.candidates.slice(0, params.limit));
+  }
+
+  let rerankScoreById = new Map<string, number>();
+  if (canUseTeiReranker() && shortlistedArtifacts.length > 1) {
+    try {
+      const reranked = await rerankItems({
+        query: params.query,
+        items: shortlistedArtifacts,
+        getText: (artifact) => buildArtifactSearchBody(artifact),
+      });
+
+      if (reranked && reranked.items.length > 0) {
+        rerankScoreById = new Map(
+          reranked.items.map((entry) => [entry.item.id, entry.score])
+        );
+      }
+    } catch (error) {
+      console.error("[KNOWLEDGE] Artifact semantic reranker failed:", error);
+    }
+  }
+
+  return shortlistedArtifacts
+    .map((artifact) => {
+      const lexicalScore = lexicalMatches.find((entry) => entry.artifact.id === artifact.id)?.lexicalScore ?? 0;
+      const semanticScore = semanticScoreById.get(artifact.id) ?? 0;
+      const rerankScore = rerankScoreById.get(artifact.id) ?? 0;
+      return {
+        artifact,
+        lexicalScore,
+        semanticScore,
+        rerankScore,
+        finalScore:
+          lexicalScore * 10 +
+          semanticScore * 18 +
+          rerankScore * 24 +
+          (artifact.updatedAt / 1_000_000_000_000),
+      };
+    })
+    .filter((entry) => entry.lexicalScore > 0 || entry.semanticScore > 0 || entry.rerankScore > 0)
+    .sort((left, right) => {
+      if (right.finalScore !== left.finalScore) return right.finalScore - left.finalScore;
+      return right.artifact.updatedAt - left.artifact.updatedAt;
+    })
+    .slice(0, params.limit);
+}
+
+export async function findRelevantArtifactsByTypesDetailed(params: {
+  userId: string;
+  query: string;
+  types: ArtifactType[];
+  limit: number;
+  excludeConversationId?: string;
+}): Promise<RankedArtifactMatch[]> {
+  const semanticBreadth = params.query.trim().length > 0;
+  const candidates = await selectArtifactSearchCandidates({
+    userId: params.userId,
+    query: params.query,
+    types: params.types,
+    excludeConversationId: params.excludeConversationId,
+    limit: semanticBreadth ? SEMANTIC_ARTIFACT_CANDIDATE_LIMIT : Math.max(params.limit, 12),
+    preferSemanticBreadth: semanticBreadth,
+  });
+
+  if (params.query.trim().length === 0) {
+    return candidates.slice(0, params.limit).map((artifact) => ({
+      artifact,
+      lexicalScore: 0,
+      semanticScore: 0,
+      rerankScore: 0,
+      finalScore: artifact.updatedAt,
+    }));
+  }
+
+  return rankArtifactMatches({
+    userId: params.userId,
+    query: params.query,
+    candidates,
+    limit: params.limit,
+  });
+}
+
 export async function findRelevantArtifactsByTypes(params: {
   userId: string;
   query: string;
@@ -295,46 +501,8 @@ export async function findRelevantArtifactsByTypes(params: {
   limit: number;
   excludeConversationId?: string;
 }): Promise<Artifact[]> {
-  const queryFragment = `%${params.query.slice(0, 80)}%`;
-  const rows = await db
-    .select()
-    .from(artifacts)
-    .where(
-      and(
-        eq(artifacts.userId, params.userId),
-        inArray(artifacts.type, params.types),
-        params.types.includes("generated_output")
-          ? or(
-              ne(artifacts.type, "generated_output"),
-              eq(artifacts.retrievalClass, "durable"),
-            )
-          : undefined,
-        params.excludeConversationId
-          ? sql`${artifacts.conversationId} IS NULL OR ${artifacts.conversationId} <> ${params.excludeConversationId}`
-          : undefined,
-        or(
-          like(artifacts.name, queryFragment),
-          like(artifacts.summary, queryFragment),
-          like(artifacts.contentText, queryFragment),
-        ),
-      ),
-    )
-    .orderBy(desc(artifacts.updatedAt))
-    .limit(60);
-
-  return rows
-    .map(mapArtifact)
-    .map((artifact) => ({
-      artifact,
-      score: scoreMatch(
-        params.query,
-        `${artifact.name}\n${artifact.summary ?? ""}\n${artifact.contentText ?? ""}`,
-      ),
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, params.limit)
-    .map((entry) => entry.artifact);
+  const matches = await findRelevantArtifactsByTypesDetailed(params);
+  return matches.map((entry) => entry.artifact);
 }
 
 function buildSearchSnippet(

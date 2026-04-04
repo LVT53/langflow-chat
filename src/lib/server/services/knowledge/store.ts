@@ -43,6 +43,7 @@ export type { KnowledgeBulkAction } from "./store/cleanup";
 
 export {
   createNormalizedArtifact,
+  findRelevantArtifactsByTypesDetailed,
   findRelevantArtifactsByTypes,
   listLogicalDocuments,
   searchVaultDocuments,

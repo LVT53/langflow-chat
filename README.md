@@ -120,6 +120,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The rerank-shaped evidence-selection paths now use the TEI reranker directly instead of routing reranking through the generic context-summarizer chat model. The control model still owns structured routing, verification, and semantic JSON tasks; TEI now owns top-N evidence/chunk/historical/tool reranking.
 - Wave 2 TEI persistence is now in place through one local `semantic_embeddings` table keyed by user, subject type, subject id, and model name. That unified store is the shared substrate for later artifact, persona-cluster, and task-state semantic retrieval waves.
 - Wave 3 TEI refresh/backfill is now also in place. Artifact creation, task-state writes, and persona-cluster dreaming queue semantic refreshes asynchronously, while `memory-maintenance.ts` performs the slower user-scoped backfill sweep for missing or stale embeddings without blocking chat turns.
+- Wave 5 document retrieval is now semantic as well. `knowledge/store/documents.ts` broadens the user-scoped artifact candidate pool, scores it with stored artifact embeddings, optionally reranks the shortlist through TEI, and then hands those ranked candidates back to the existing document-family and active-focus authority paths.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
 ### Interface And Content Characteristics
