@@ -149,4 +149,42 @@ describe('tei-reranker service', () => {
       confidence: 92,
     });
   });
+
+  it('reports rerank diagnostics for limited inputs and confidence', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            { index: 0, score: 0.88 },
+            { index: 1, score: 0.25 },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+
+    const diagnostics = vi.fn();
+    const { rerankItems } = await import('./tei-reranker');
+    await rerankItems({
+      query: 'best item',
+      items: [{ text: 'alpha' }, { text: 'beta' }, { text: 'gamma' }, { text: 'delta' }],
+      getText: (item) => item.text,
+      maxTexts: 2,
+      onDiagnostics: diagnostics,
+    });
+
+    expect(diagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryLength: 'best item'.length,
+        inputCount: 4,
+        limitedCount: 2,
+        outputCount: 2,
+        fallbackReason: null,
+        confidence: 88,
+      })
+    );
+  });
 });

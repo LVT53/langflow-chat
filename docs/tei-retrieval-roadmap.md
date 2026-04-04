@@ -17,8 +17,9 @@ Current status:
 - Wave 5 complete for knowledge/documents: artifact retrieval now uses stored-embedding shortlist plus TEI rerank before the higher-level working-document resolver applies family/focus/history authority
 - Wave 6 complete for persona prompt recall: surviving persona clusters now get semantic shortlist plus bounded rerank scoring when building query-time persona prompt context
 - Wave 7 complete for task routing: task selection now uses stored task-state embeddings plus bounded rerank scoring before the deterministic task-status and continuity rules apply
+- Wave 8 complete: compact TEI diagnostics now report shortlist/rerank latency, fallback reasons, candidate counts, and winning retrieval mode at the document, persona-prompt, and task-routing boundaries
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
-- Semantic shortlist retrieval waves are still pending
+- Semantic shortlist retrieval waves are complete for documents, persona prompt recall, and task routing
 
 ## Authority Order
 
@@ -98,6 +99,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
   - candidate counts before/after rerank
   - which retrieval mode won
 - Add targeted fixtures for semantic-hit / lexical-miss cases
+- Current status: complete. `semantic-ranking.ts` and `tei-reranker.ts` now expose optional diagnostics hooks, while `knowledge/store/documents.ts`, `persona-memory.ts`, and `task-state.ts` emit one compact `[TEI] Retrieval summary` line per participating retrieval boundary. The semantic-hit/lexical-miss fixtures live in the document, persona, and task retrieval tests instead of a separate synthetic harness.
 
 ## Implementation Guardrails
 

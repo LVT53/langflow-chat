@@ -1,4 +1,5 @@
 import { getConfig } from '$lib/server/config-store';
+import type { TeiRerankDiagnostics } from './tei-observability';
 import { postToTei } from './tei-client';
 
 export interface TeiRerankResult {
@@ -70,9 +71,36 @@ export async function rerankTexts(params: {
   truncate?: boolean;
   returnText?: boolean;
   maxTexts?: number;
+  onDiagnostics?: (diagnostics: TeiRerankDiagnostics) => void;
 }): Promise<TeiRerankResult[] | null> {
-  if (params.texts.length === 0) return [];
-  if (!canUseTeiReranker()) return null;
+  const trimmedQuery = params.query.trim();
+  const startedAt = Date.now();
+  const report = (diagnostics: Omit<TeiRerankDiagnostics, 'queryLength' | 'inputCount' | 'latencyMs'>) =>
+    params.onDiagnostics?.({
+      queryLength: trimmedQuery.length,
+      inputCount: params.texts.length,
+      latencyMs: Date.now() - startedAt,
+      ...diagnostics,
+    });
+
+  if (params.texts.length === 0) {
+    report({
+      limitedCount: 0,
+      outputCount: 0,
+      fallbackReason: 'no_items',
+      confidence: 0,
+    });
+    return [];
+  }
+  if (!canUseTeiReranker()) {
+    report({
+      limitedCount: 0,
+      outputCount: 0,
+      fallbackReason: 'reranker_unavailable',
+      confidence: null,
+    });
+    return null;
+  }
 
   const config = getConfig();
   const maxTexts = Math.max(1, params.maxTexts ?? config.teiRerankerMaxTexts);
@@ -91,7 +119,14 @@ export async function rerankTexts(params: {
     },
   });
 
-  return normalizeRerankResponse(response);
+  const normalized = normalizeRerankResponse(response);
+  report({
+    limitedCount: texts.length,
+    outputCount: normalized.length,
+    fallbackReason: normalized.length === 0 ? 'empty_rerank_results' : null,
+    confidence: normalized.length > 0 ? scoreToConfidencePercent(normalized[0]?.score ?? 0) : 0,
+  });
+  return normalized;
 }
 
 export async function rerankItems<T>(params: {
@@ -100,17 +135,31 @@ export async function rerankItems<T>(params: {
   getText: (item: T) => string;
   maxTexts?: number;
   truncate?: boolean;
+  onDiagnostics?: (diagnostics: TeiRerankDiagnostics) => void;
 }): Promise<{ items: Array<RankedTeiItem<T>>; confidence: number } | null> {
   if (params.items.length === 0) {
+    params.onDiagnostics?.({
+      queryLength: params.query.trim().length,
+      inputCount: 0,
+      limitedCount: 0,
+      outputCount: 0,
+      latencyMs: 0,
+      fallbackReason: 'no_items',
+      confidence: 0,
+    });
     return { items: [], confidence: 0 };
   }
 
   const limitedItems = params.items.slice(0, params.maxTexts ?? getTeiRerankerMaxTexts());
+  let rerankDiagnostics: TeiRerankDiagnostics | null = null;
   const results = await rerankTexts({
     query: params.query,
     texts: limitedItems.map((item) => params.getText(item)),
     truncate: params.truncate,
     maxTexts: params.maxTexts,
+    onDiagnostics: (diagnostics) => {
+      rerankDiagnostics = diagnostics;
+    },
   });
 
   if (!results) return null;
@@ -126,6 +175,24 @@ export async function rerankItems<T>(params: {
       };
     })
     .filter((value): value is RankedTeiItem<T> => Boolean(value));
+
+  params.onDiagnostics?.(
+    rerankDiagnostics
+      ? {
+          ...rerankDiagnostics,
+          inputCount: params.items.length,
+          limitedCount: limitedItems.length,
+        }
+      : {
+          queryLength: params.query.trim().length,
+          inputCount: params.items.length,
+          limitedCount: limitedItems.length,
+          outputCount: rankedItems.length,
+          latencyMs: 0,
+          fallbackReason: null,
+          confidence: rankedItems.length > 0 ? scoreToConfidencePercent(rankedItems[0]?.score ?? 0) : 0,
+        }
+  );
 
   return {
     items: rankedItems,

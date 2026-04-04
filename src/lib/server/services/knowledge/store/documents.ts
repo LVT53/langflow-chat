@@ -12,6 +12,12 @@ import type {
 import { extractDocumentText } from "../../document-extraction";
 import { shortlistSemanticMatchesBySubject } from "../../semantic-ranking";
 import { canUseTeiReranker, rerankItems } from "../../tei-reranker";
+import {
+  determineTeiWinningMode,
+  logTeiRetrievalSummary,
+  type SemanticShortlistDiagnostics,
+  type TeiRerankDiagnostics,
+} from "../../tei-observability";
 import { scoreMatch } from "../../working-set";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import {
@@ -383,6 +389,7 @@ async function rankArtifactMatches(params: {
     })
     .slice(0, Math.max(params.limit * 2, 12));
 
+  let semanticDiagnostics: SemanticShortlistDiagnostics | null = null;
   const semanticMatches =
     (await shortlistSemanticMatchesBySubject({
       userId: params.userId,
@@ -391,6 +398,9 @@ async function rankArtifactMatches(params: {
       items: params.candidates,
       getSubjectId: (artifact) => artifact.id,
       limit: SEMANTIC_ARTIFACT_SHORTLIST_LIMIT,
+      onDiagnostics: (diagnostics) => {
+        semanticDiagnostics = diagnostics;
+      },
     })) ?? [];
   const semanticScoreById = new Map(
     semanticMatches.map((match) => [match.subjectId, match.semanticScore])
@@ -416,12 +426,16 @@ async function rankArtifactMatches(params: {
   }
 
   let rerankScoreById = new Map<string, number>();
+  let rerankDiagnostics: TeiRerankDiagnostics | null = null;
   if (canUseTeiReranker() && shortlistedArtifacts.length > 1) {
     try {
       const reranked = await rerankItems({
         query: params.query,
         items: shortlistedArtifacts,
         getText: (artifact) => buildArtifactSearchBody(artifact),
+        onDiagnostics: (diagnostics) => {
+          rerankDiagnostics = diagnostics;
+        },
       });
 
       if (reranked && reranked.items.length > 0) {
@@ -434,7 +448,7 @@ async function rankArtifactMatches(params: {
     }
   }
 
-  return shortlistedArtifacts
+  const rankedMatches = shortlistedArtifacts
     .map((artifact) => {
       const lexicalScore = lexicalMatches.find((entry) => entry.artifact.id === artifact.id)?.lexicalScore ?? 0;
       const semanticScore = semanticScoreById.get(artifact.id) ?? 0;
@@ -457,6 +471,28 @@ async function rankArtifactMatches(params: {
       return right.artifact.updatedAt - left.artifact.updatedAt;
     })
     .slice(0, params.limit);
+
+  const winner = rankedMatches[0] ?? null;
+  logTeiRetrievalSummary({
+    scope: 'documents',
+    queryLength: params.query.trim().length,
+    candidateCount: params.candidates.length,
+    semantic: semanticDiagnostics,
+    rerank: rerankDiagnostics,
+    winningMode: determineTeiWinningMode({
+      lexicalScore: winner?.lexicalScore,
+      semanticScore: winner?.semanticScore,
+      rerankScore: winner?.rerankScore,
+    }),
+    winnerId: winner?.artifact.id ?? null,
+    extra: {
+      shortlistedCount: shortlistedArtifacts.length,
+      lexicalTopCount: lexicalTop.length,
+      returnedCount: rankedMatches.length,
+    },
+  });
+
+  return rankedMatches;
 }
 
 export async function findRelevantArtifactsByTypesDetailed(params: {

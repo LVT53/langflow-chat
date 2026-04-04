@@ -31,6 +31,12 @@ import { recordMemoryEvents } from './memory-events';
 import { queuePersonaClusterSemanticEmbeddingRefresh } from './semantic-embedding-refresh';
 import { shortlistSemanticMatchesBySubject } from './semantic-ranking';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
+import {
+	determineTeiWinningMode,
+	logTeiRetrievalSummary,
+	type SemanticShortlistDiagnostics,
+	type TeiRerankDiagnostics,
+} from './tei-observability';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
@@ -2778,15 +2784,20 @@ async function buildPersonaQueryScoreMaps(params: {
 }): Promise<{
 	semanticScoreById: Map<string, number>;
 	rerankScoreById: Map<string, number>;
+	semanticDiagnostics: SemanticShortlistDiagnostics | null;
+	rerankDiagnostics: TeiRerankDiagnostics | null;
 }> {
 	const trimmedQuery = params.query.trim();
 	if (!trimmedQuery || params.items.length === 0) {
 		return {
 			semanticScoreById: new Map(),
 			rerankScoreById: new Map(),
+			semanticDiagnostics: null,
+			rerankDiagnostics: null,
 		};
 	}
 
+	let semanticDiagnostics: SemanticShortlistDiagnostics | null = null;
 	const semanticMatches =
 		(await shortlistSemanticMatchesBySubject({
 			userId: params.userId,
@@ -2795,12 +2806,16 @@ async function buildPersonaQueryScoreMaps(params: {
 			items: params.items,
 			getSubjectId: (item) => item.id,
 			limit: PERSONA_SEMANTIC_SHORTLIST_LIMIT,
+			onDiagnostics: (diagnostics) => {
+				semanticDiagnostics = diagnostics;
+			},
 		})) ?? [];
 	const semanticScoreById = new Map(
 		semanticMatches.map((match) => [match.subjectId, match.semanticScore])
 	);
 
 	let rerankScoreById = new Map<string, number>();
+	let rerankDiagnostics: TeiRerankDiagnostics | null = null;
 	if (canUseTeiReranker() && semanticMatches.length > 1) {
 		try {
 			const reranked = await rerankItems({
@@ -2808,6 +2823,9 @@ async function buildPersonaQueryScoreMaps(params: {
 				items: semanticMatches.map((match) => match.item),
 				getText: (item) => item.rawCanonicalText ?? item.canonicalText,
 				maxTexts: PERSONA_RERANK_LIMIT,
+				onDiagnostics: (diagnostics) => {
+					rerankDiagnostics = diagnostics;
+				},
 			});
 
 			if (reranked && reranked.items.length > 0) {
@@ -2826,7 +2844,16 @@ async function buildPersonaQueryScoreMaps(params: {
 	return {
 		semanticScoreById,
 		rerankScoreById,
+		semanticDiagnostics,
+		rerankDiagnostics,
 	};
+}
+
+function getPersonaLexicalMatchScore(item: PersonaMemoryItem, query: string): number {
+	return Math.max(
+		scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
+		item.topicKey ? scoreMatch(query, item.topicKey) : 0
+	);
 }
 
 function getPersonaQueryMatchScore(params: {
@@ -2835,10 +2862,7 @@ function getPersonaQueryMatchScore(params: {
 	semanticScoreById: Map<string, number>;
 	rerankScoreById: Map<string, number>;
 }): number {
-	const lexicalScore = Math.max(
-		scoreMatch(params.query, params.item.rawCanonicalText ?? params.item.canonicalText),
-		params.item.topicKey ? scoreMatch(params.query, params.item.topicKey) : 0
-	);
+	const lexicalScore = getPersonaLexicalMatchScore(params.item, params.query);
 	const semanticScore = params.semanticScoreById.get(params.item.id) ?? 0;
 	const rerankScore = params.rerankScoreById.get(params.item.id) ?? 0;
 
@@ -2875,7 +2899,8 @@ export async function buildPersonaPromptContext(
 	});
 	if (items.length === 0) return '';
 
-	const { semanticScoreById, rerankScoreById } = await buildPersonaQueryScoreMaps({
+	const { semanticScoreById, rerankScoreById, semanticDiagnostics, rerankDiagnostics } =
+		await buildPersonaQueryScoreMaps({
 		userId,
 		query,
 		items,
@@ -2955,6 +2980,57 @@ export async function buildPersonaPromptContext(
 		).values()
 	);
 	if (selected.length === 0) return '';
+
+	const winningCandidates = [
+		...activeConstraints.map((entry) => ({
+			item: entry.item,
+			matchScore: entry.matchScore,
+		})),
+		...active.map((entry) => ({
+			item: entry.item,
+			matchScore: entry.matchScore,
+		})),
+		...dormant.map((item) => ({
+			item,
+			matchScore: getPersonaQueryMatchScore({
+				item,
+				query,
+				semanticScoreById,
+				rerankScoreById,
+			}),
+		})),
+	].sort(
+		(left, right) =>
+			right.matchScore - left.matchScore ||
+			right.item.salienceScore - left.item.salienceScore ||
+			right.item.lastSeenAt - left.item.lastSeenAt
+	);
+	const winningCandidate = winningCandidates[0] ?? null;
+	logTeiRetrievalSummary({
+		scope: 'persona_prompt',
+		queryLength: query.trim().length,
+		candidateCount: items.length,
+		semantic: semanticDiagnostics,
+		rerank: rerankDiagnostics,
+		winningMode: determineTeiWinningMode({
+			lexicalScore: winningCandidate
+				? getPersonaLexicalMatchScore(winningCandidate.item, query)
+				: 0,
+			semanticScore: winningCandidate
+				? semanticScoreById.get(winningCandidate.item.id) ?? 0
+				: 0,
+			rerankScore: winningCandidate
+				? rerankScoreById.get(winningCandidate.item.id) ?? 0
+				: 0,
+		}),
+		winnerId: winningCandidate?.item.id ?? null,
+		extra: {
+			selectedCount: selected.length,
+			activeConstraintCount: activeConstraints.length,
+			activeCount: active.length,
+			dormantCount: dormant.length,
+		},
+	});
 
 	const lines: string[] = [];
 	let used = 0;

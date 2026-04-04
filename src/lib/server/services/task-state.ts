@@ -29,6 +29,12 @@ import { collapseArtifactsByFamily } from "./evidence-family";
 import { getLatestHonchoMetadata } from "./messages";
 import { queueTaskStateSemanticEmbeddingRefresh } from "./semantic-embedding-refresh";
 import { shortlistSemanticMatchesBySubject } from "./semantic-ranking";
+import {
+  determineTeiWinningMode,
+  logTeiRetrievalSummary,
+  type SemanticShortlistDiagnostics,
+  type TeiRerankDiagnostics,
+} from "./tei-observability";
 import { canUseTeiReranker, rerankItems } from "./tei-reranker";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
@@ -182,15 +188,20 @@ async function buildTaskRoutingScoreMaps(params: {
 }): Promise<{
   semanticScoreByTaskId: Map<string, number>;
   rerankScoreByTaskId: Map<string, number>;
+  semanticDiagnostics: SemanticShortlistDiagnostics | null;
+  rerankDiagnostics: TeiRerankDiagnostics | null;
 }> {
   const trimmedMessage = params.message.trim();
   if (!trimmedMessage || params.states.length === 0) {
     return {
       semanticScoreByTaskId: new Map(),
       rerankScoreByTaskId: new Map(),
+      semanticDiagnostics: null,
+      rerankDiagnostics: null,
     };
   }
 
+  let semanticDiagnostics: SemanticShortlistDiagnostics | null = null;
   const semanticMatches =
     (await shortlistSemanticMatchesBySubject({
       userId: params.userId,
@@ -199,12 +210,16 @@ async function buildTaskRoutingScoreMaps(params: {
       items: params.states,
       getSubjectId: (state) => state.taskId,
       limit: TASK_SEMANTIC_SHORTLIST_LIMIT,
+      onDiagnostics: (diagnostics) => {
+        semanticDiagnostics = diagnostics;
+      },
     })) ?? [];
   const semanticScoreByTaskId = new Map(
     semanticMatches.map((match) => [match.subjectId, match.semanticScore]),
   );
 
   let rerankScoreByTaskId = new Map<string, number>();
+  let rerankDiagnostics: TeiRerankDiagnostics | null = null;
   if (canUseTeiReranker() && semanticMatches.length > 1) {
     try {
       const reranked = await rerankItems({
@@ -212,6 +227,9 @@ async function buildTaskRoutingScoreMaps(params: {
         items: semanticMatches.map((match) => match.item),
         getText: (state) => getTaskSearchBody(state),
         maxTexts: TASK_ROUTER_RERANK_LIMIT,
+        onDiagnostics: (diagnostics) => {
+          rerankDiagnostics = diagnostics;
+        },
       });
 
       if (reranked && reranked.items.length > 0) {
@@ -227,6 +245,8 @@ async function buildTaskRoutingScoreMaps(params: {
   return {
     semanticScoreByTaskId,
     rerankScoreByTaskId,
+    semanticDiagnostics,
+    rerankDiagnostics,
   };
 }
 
@@ -626,7 +646,12 @@ async function routeTaskStateForTurn(params: {
     };
   }
 
-  const { semanticScoreByTaskId, rerankScoreByTaskId } =
+  const {
+    semanticScoreByTaskId,
+    rerankScoreByTaskId,
+    semanticDiagnostics,
+    rerankDiagnostics,
+  } =
     await buildTaskRoutingScoreMaps({
       userId: params.userId,
       message: params.message,
@@ -656,6 +681,28 @@ async function routeTaskStateForTurn(params: {
     canUseContextSummarizer() &&
     ranked.length > 0 &&
     (ambiguous || (best?.score ?? 0) < TASK_MATCH_MIN_SCORE);
+
+  logTeiRetrievalSummary({
+    scope: "task_routing",
+    conversationId: params.conversationId,
+    queryLength: params.message.trim().length,
+    candidateCount: states.length,
+    semantic: semanticDiagnostics,
+    rerank: rerankDiagnostics,
+    winningMode: determineTeiWinningMode({
+      deterministic: Boolean(currentTask?.locked),
+      lexicalScore: best ? scoreMatch(params.message, getTaskSearchBody(best.state)) : 0,
+      semanticScore: best ? semanticScoreByTaskId.get(best.state.taskId) ?? 0 : 0,
+      rerankScore: best ? rerankScoreByTaskId.get(best.state.taskId) ?? 0 : 0,
+    }),
+    winnerId: best?.state.taskId ?? null,
+    extra: {
+      rankedCount: ranked.length,
+      routedWithModel: shouldRouteWithModel,
+      ambiguous,
+      bestScore: best?.score ?? 0,
+    },
+  });
 
   if (shouldRouteWithModel) {
     type TaskRoutePayload = {

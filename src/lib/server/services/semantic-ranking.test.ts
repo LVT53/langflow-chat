@@ -62,4 +62,32 @@ describe('semantic-ranking', () => {
     expect(results?.map((entry) => entry.subjectId)).toEqual(['doc-1', 'doc-2']);
     expect(results?.[0]?.semanticScore).toBeGreaterThan(results?.[1]?.semanticScore ?? 0);
   });
+
+  it('reports semantic shortlist diagnostics for stored-embedding matches', async () => {
+    mockListSemanticEmbeddingsBySubject.mockResolvedValue(
+      new Map([['doc-1', { embedding: [1, 0] }]])
+    );
+
+    const diagnostics = vi.fn();
+    const { shortlistSemanticMatchesBySubject } = await import('./semantic-ranking');
+    await shortlistSemanticMatchesBySubject({
+      userId: 'user-1',
+      subjectType: 'artifact',
+      query: 'forecast',
+      items: [{ id: 'doc-1' }, { id: 'doc-2' }],
+      getSubjectId: (item) => item.id,
+      limit: 2,
+      onDiagnostics: diagnostics,
+    });
+
+    expect(diagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryLength: 'forecast'.length,
+        inputCount: 2,
+        storedEmbeddingCount: 1,
+        matchCount: 1,
+        fallbackReason: null,
+      })
+    );
+  });
 });
