@@ -4,6 +4,8 @@ This document defines the concrete upgrade path from the current mix of chat-gen
 
 It is grounded in the current codebase, not a greenfield rewrite.
 
+For the execution order, file ownership, migrations, and verification gates, see [Working Documents Implementation Plan](./working-documents-implementation-plan.md).
+
 ## Goals
 
 1. A user should be able to iteratively work on an AI-generated or user-uploaded document while still seeing the rest of the chat.
