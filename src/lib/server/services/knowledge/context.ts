@@ -41,7 +41,9 @@ import {
 	getMaxModelContext,
 	getTargetConstructedContext,
 	findRelevantArtifactsByTypesDetailed,
+	getArtifactOwnershipScope,
 	getArtifactsForUser,
+	isArtifactCanonicallyOwned,
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
@@ -155,6 +157,7 @@ export async function getConversationWorkingSet(
 	userId: string,
 	conversationId: string
 ): Promise<ArtifactSummary[]> {
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const rows = await db
 		.select({
 			item: conversationWorkingSetItems,
@@ -171,7 +174,15 @@ export async function getConversationWorkingSet(
 		)
 		.orderBy(desc(conversationWorkingSetItems.score), desc(conversationWorkingSetItems.updatedAt));
 
-	return rows.map((row) => mapArtifactSummary(row.artifact));
+	return rows
+		.filter((row) =>
+			isArtifactCanonicallyOwned({
+				userId,
+				ownershipScope,
+				artifact: row.artifact,
+			})
+		)
+		.map((row) => mapArtifactSummary(row.artifact));
 }
 
 export async function selectWorkingSetArtifactsForPrompt(
@@ -184,6 +195,7 @@ export async function selectWorkingSetArtifactsForPrompt(
 	await ensureGeneratedOutputRetrievalBackfill(userId);
 
 	const exclude = new Set(excludeArtifactIds);
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const rows = await db
 		.select({
 			item: conversationWorkingSetItems,
@@ -199,10 +211,18 @@ export async function selectWorkingSetArtifactsForPrompt(
 			)
 		);
 
-	const mappedRows = rows.map((row) => ({
-		item: row.item,
-		artifact: mapArtifact(row.artifact),
-	}));
+	const mappedRows = rows
+		.filter((row) =>
+			isArtifactCanonicallyOwned({
+				userId,
+				ownershipScope,
+				artifact: row.artifact,
+			})
+		)
+		.map((row) => ({
+			item: row.item,
+			artifact: mapArtifact(row.artifact),
+		}));
 	const activeDocumentState = buildActiveDocumentState({
 		artifacts: mappedRows.map((row) => row.artifact),
 		message,

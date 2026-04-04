@@ -25,7 +25,9 @@ import {
 } from '$lib/server/db/schema';
 import { verifyPassword } from './auth';
 import {
+	buildArtifactVisibilityCondition,
 	artifactHasReferencesOutsideConversation,
+	getArtifactOwnershipScope,
 	getSourceArtifactIdForNormalizedArtifact,
 	hardDeleteArtifactsForUser,
 	listConversationOwnedArtifacts,
@@ -56,10 +58,11 @@ async function purgeUserData(userId: string): Promise<void> {
 	await deleteAllHonchoStateForUser(userId);
 	await deleteAllChatFilesForUser(userId);
 
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const artifactRows = await db
 		.select({ id: artifacts.id })
 		.from(artifacts)
-		.where(eq(artifacts.userId, userId));
+		.where(buildArtifactVisibilityCondition({ userId, ownershipScope }));
 	const artifactIds = artifactRows.map((row) => row.id);
 	if (artifactIds.length > 0) {
 		await hardDeleteArtifactsForUser(userId, artifactIds);
@@ -222,10 +225,11 @@ export async function resetKnowledgeBaseState(userId: string): Promise<{
 	await deleteAllPersonaMemoryStateForUser(userId);
 	await rotateHonchoPeerIdentity(userId);
 
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const artifactRows = await db
 		.select({ id: artifacts.id })
 		.from(artifacts)
-		.where(eq(artifacts.userId, userId));
+		.where(buildArtifactVisibilityCondition({ userId, ownershipScope }));
 	const deletedArtifactIds = artifactRows.map((row) => row.id);
 
 	if (deletedArtifactIds.length > 0) {

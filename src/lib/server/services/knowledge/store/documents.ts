@@ -25,9 +25,12 @@ import {
   parseWorkingDocumentMetadata,
 } from "./document-metadata";
 import {
+  buildArtifactVisibilityCondition,
   createArtifact,
   createArtifactLink,
+  getArtifactOwnershipScope,
   guessSummary,
+  isArtifactCanonicallyOwned,
   knowledgeArtifactListSelection,
   mapArtifact,
   mapArtifactSummary,
@@ -140,12 +143,13 @@ export async function listLogicalDocuments(
   },
 ): Promise<KnowledgeDocumentItem[]> {
   const includeGeneratedOutputs = options?.includeGeneratedOutputs ?? false;
+  const ownershipScope = await getArtifactOwnershipScope(userId);
   const rows = await db
     .select(knowledgeArtifactListSelection)
     .from(artifacts)
     .where(
       and(
-        eq(artifacts.userId, userId),
+        buildArtifactVisibilityCondition({ userId, ownershipScope }),
         inArray(
           artifacts.type,
           includeGeneratedOutputs
@@ -156,9 +160,17 @@ export async function listLogicalDocuments(
     )
     .orderBy(desc(artifacts.updatedAt));
 
-  if (rows.length === 0) return [];
+  const scopedRows = rows.filter((row) =>
+    isArtifactCanonicallyOwned({
+      userId,
+      ownershipScope,
+      artifact: row,
+    }),
+  );
 
-  const summaries = rows.map(mapArtifactSummary);
+  if (scopedRows.length === 0) return [];
+
+  const summaries = scopedRows.map(mapArtifactSummary);
   const byId = new Map(summaries.map((item) => [item.id, item]));
   const sourceArtifacts = summaries.filter(
     (item) => item.type === "source_document",
@@ -170,7 +182,7 @@ export async function listLogicalDocuments(
     (item) => item.type === "generated_output",
   );
   const metadataById = new Map(
-    rows.map((row) => [
+    scopedRows.map((row) => [
       row.id,
       parseWorkingDocumentMetadata(parseJsonRecord(row.metadataJson ?? null)),
     ]),
@@ -332,10 +344,14 @@ async function selectArtifactSearchCandidates(params: {
   limit: number;
   preferSemanticBreadth?: boolean;
 }): Promise<Artifact[]> {
+  const ownershipScope = await getArtifactOwnershipScope(params.userId);
   const tokenFragments = tokenizeArtifactSearchQuery(params.query).map((token) => `%${token}%`);
   const semanticBreadth = params.preferSemanticBreadth ?? false;
   const baseConditions = [
-    eq(artifacts.userId, params.userId),
+    buildArtifactVisibilityCondition({
+      userId: params.userId,
+      ownershipScope,
+    }),
     inArray(artifacts.type, params.types),
     params.types.includes("generated_output")
       ? or(ne(artifacts.type, "generated_output"), eq(artifacts.retrievalClass, "durable"))
@@ -364,7 +380,15 @@ async function selectArtifactSearchCandidates(params: {
     .orderBy(desc(artifacts.updatedAt))
     .limit(params.limit);
 
-  return rows.map(mapArtifact);
+  return rows
+    .filter((row) =>
+      isArtifactCanonicallyOwned({
+        userId: params.userId,
+        ownershipScope,
+        artifact: row,
+      }),
+    )
+    .map(mapArtifact);
 }
 
 async function rankArtifactMatches(params: {
@@ -475,6 +499,7 @@ async function rankArtifactMatches(params: {
   const winner = rankedMatches[0] ?? null;
   logTeiRetrievalSummary({
     scope: 'documents',
+    userId: params.userId,
     queryLength: params.query.trim().length,
     candidateCount: params.candidates.length,
     semantic: semanticDiagnostics,
@@ -486,6 +511,7 @@ async function rankArtifactMatches(params: {
     }),
     winnerId: winner?.artifact.id ?? null,
     extra: {
+      winnerType: winner?.artifact.type ?? null,
       shortlistedCount: shortlistedArtifacts.length,
       lexicalTopCount: lexicalTop.length,
       returnedCount: rankedMatches.length,

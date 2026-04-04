@@ -162,11 +162,17 @@ describe('persona-memory temporal safeguards', () => {
 	beforeEach(() => {
 		vi.resetModules();
 		vi.clearAllMocks();
+		mockSelectQuery.mockReset();
 		mockSelectQuery.mockImplementation(() => createSelectChain([]));
+		mockListPersonaMemories.mockReset();
 		mockListPersonaMemories.mockResolvedValue([]);
+		mockRecordMemoryEvents.mockReset();
 		mockRecordMemoryEvents.mockResolvedValue(undefined);
+		mockShortlistSemanticMatchesBySubject.mockReset();
 		mockShortlistSemanticMatchesBySubject.mockResolvedValue([]);
+		mockCanUseTeiReranker.mockReset();
 		mockCanUseTeiReranker.mockReturnValue(false);
+		mockRerankItems.mockReset();
 		mockRerankItems.mockResolvedValue(null);
 		insertedClusterRows.splice(0, insertedClusterRows.length);
 		insertedMemberRows.splice(0, insertedMemberRows.length);
@@ -491,10 +497,15 @@ describe('persona-memory temporal safeguards', () => {
 	it('filters artifact-derived Honcho memories before persona clustering', async () => {
 		mockCanUseContextSummarizer.mockReturnValue(false);
 		mockSelectQuery
+			.mockImplementationOnce(() => createSelectChain([{ id: 'conversation-doc' }]))
+			.mockImplementationOnce(() => createSelectChain([]))
 			.mockImplementationOnce(() =>
 				createSelectChain([
 					{
 						id: 'artifact-identity-pdf',
+						userId: 'user-doc-filter',
+						conversationId: 'conversation-doc',
+						vaultId: null,
 						type: 'generated_output',
 						name: 'AlfyAI_Identity.pdf generated file',
 						summary: 'Identity PDF draft for AlfyAI.',
@@ -519,7 +530,7 @@ describe('persona-memory temporal safeguards', () => {
 				{
 					id: 'doc-memory',
 					content:
-						'The user created an AlfyAI_Identity.pdf document describing AlfyAI as a personal assistant powered by Qwen 3.5 122B.',
+						'The user created a generated file, AlfyAI_Identity.pdf, describing AlfyAI as a personal assistant powered by Qwen 3.5 122B.',
 					createdAt: Date.UTC(2026, 2, 28, 12),
 					scope: 'self',
 					sessionId: 'conversation-doc',
@@ -934,9 +945,18 @@ describe('persona-memory temporal safeguards', () => {
 				])
 			)
 			.mockImplementationOnce(() =>
+				createSelectChain([{ id: 'conversation-doc' }])
+			)
+			.mockImplementationOnce(() =>
+				createSelectChain([])
+			)
+			.mockImplementationOnce(() =>
 				createSelectChain([
 					{
 						id: 'artifact-1',
+						userId: 'user-doc-filter',
+						conversationId: 'conversation-doc',
+						vaultId: null,
 						type: 'generated_output',
 						name: 'Project brief v2.pdf',
 						summary: 'Updated project brief with revised sections.',

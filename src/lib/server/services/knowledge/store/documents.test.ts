@@ -32,6 +32,14 @@ vi.mock("$lib/server/db", () => ({
 }));
 
 vi.mock("$lib/server/db/schema", () => ({
+  conversations: {
+    id: { name: "id" },
+    userId: { name: "userId" },
+  },
+  knowledgeVaults: {
+    id: { name: "id" },
+    userId: { name: "userId" },
+  },
   artifacts: {
     id: { name: "id" },
     userId: { name: "userId" },
@@ -170,6 +178,22 @@ describe("knowledge documents store", () => {
       if (selectCall === 1) {
         return {
           from: vi.fn(() => ({
+            where: vi.fn(async () => [{ id: "conv-1" }, { id: "conv-2" }]),
+          })),
+        };
+      }
+
+      if (selectCall === 2) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => [{ id: "vault-1" }]),
+          })),
+        };
+      }
+
+      if (selectCall === 3) {
+        return {
+          from: vi.fn(() => ({
             where: vi.fn(() => ({
               orderBy: vi.fn(async () => mockRows),
             })),
@@ -252,15 +276,35 @@ describe("knowledge documents store", () => {
       },
     );
 
-    mockSelect.mockImplementation(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          orderBy: vi.fn(() => ({
-            limit: vi.fn(async () => mockRows),
+    let selectCall = 0;
+    mockSelect.mockImplementation(() => {
+      selectCall += 1;
+      if (selectCall === 1) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => []),
+          })),
+        };
+      }
+
+      if (selectCall === 2) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => [{ id: "vault-1" }]),
+          })),
+        };
+      }
+
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(async () => mockRows),
+            })),
           })),
         })),
-      })),
-    }));
+      };
+    });
 
     mockShortlistSemanticMatchesBySubject.mockImplementation(async ({ items }) => [
       {
@@ -307,5 +351,107 @@ describe("knowledge documents store", () => {
 
     expect(matches[0]?.artifact.id).toBe("artifact-semantic");
     expect(matches[0]?.semanticScore).toBeGreaterThan(0);
+  });
+
+  it("excludes foreign and orphaned generated outputs from retrieval", async () => {
+    mockRows.push(
+      {
+        id: "artifact-foreign",
+        userId: "user-1",
+        type: "generated_output",
+        retrievalClass: "durable",
+        name: "Foreign memory artifact",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        conversationId: "conv-foreign",
+        vaultId: null,
+        summary: "Should not leak",
+        metadataJson: null,
+        contentText: "budget memory from another account",
+        createdAt: new Date("2026-04-01T10:00:00Z"),
+        updatedAt: new Date("2026-04-01T10:00:00Z"),
+        extension: "md",
+        storagePath: null,
+        binaryHash: null,
+      },
+      {
+        id: "artifact-orphan",
+        userId: "user-1",
+        type: "generated_output",
+        retrievalClass: "durable",
+        name: "Orphan memory artifact",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        conversationId: null,
+        vaultId: null,
+        summary: "Should be ignored after reset",
+        metadataJson: null,
+        contentText: "budget memory from deleted conversation",
+        createdAt: new Date("2026-04-02T10:00:00Z"),
+        updatedAt: new Date("2026-04-02T10:00:00Z"),
+        extension: "md",
+        storagePath: null,
+        binaryHash: null,
+      },
+      {
+        id: "artifact-owned",
+        userId: "user-1",
+        type: "generated_output",
+        retrievalClass: "durable",
+        name: "Owned memory artifact",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        conversationId: "conv-owned",
+        vaultId: null,
+        summary: "Should remain visible",
+        metadataJson: null,
+        contentText: "budget memory for the current user",
+        createdAt: new Date("2026-04-03T10:00:00Z"),
+        updatedAt: new Date("2026-04-03T10:00:00Z"),
+        extension: "md",
+        storagePath: null,
+        binaryHash: null,
+      },
+    );
+
+    let selectCall = 0;
+    mockSelect.mockImplementation(() => {
+      selectCall += 1;
+      if (selectCall === 1) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => [{ id: "conv-owned" }]),
+          })),
+        };
+      }
+
+      if (selectCall === 2) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => []),
+          })),
+        };
+      }
+
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(async () => mockRows),
+            })),
+          })),
+        })),
+      };
+    });
+
+    const { findRelevantArtifactsByTypesDetailed } = await import("./documents");
+    const matches = await findRelevantArtifactsByTypesDetailed({
+      userId: "user-1",
+      query: "budget",
+      types: ["generated_output"],
+      limit: 4,
+    });
+
+    expect(matches.map((entry) => entry.artifact.id)).toEqual(["artifact-owned"]);
   });
 });

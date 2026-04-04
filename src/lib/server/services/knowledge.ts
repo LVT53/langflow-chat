@@ -5,6 +5,9 @@ import type { ArtifactSummary, KnowledgeDocumentItem, WorkCapsule } from '$lib/t
 import { ensureGeneratedOutputRetrievalBackfill } from './evidence-family';
 import { mapWorkCapsuleFromArtifactRow } from './knowledge/capsules';
 import {
+	buildArtifactVisibilityCondition,
+	getArtifactOwnershipScope,
+	isArtifactCanonicallyOwned,
 	knowledgeArtifactListSelection,
 	listLogicalDocuments,
 	mapArtifactSummary,
@@ -15,11 +18,13 @@ export {
 	assertPromptReadyAttachments,
 	artifactHasReferencesOutsideConversation,
 	attachArtifactsToMessage,
+	buildArtifactVisibilityCondition,
 	createArtifactLink,
 	createNormalizedArtifact,
 	deleteArtifactForUser,
 	deleteKnowledgeArtifactsByAction,
 	getArtifactForUser,
+	getArtifactOwnershipScope,
 	getArtifactsForUser,
 	getCompactionUiThreshold,
 	getMaxModelContext,
@@ -62,17 +67,25 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 	workflows: WorkCapsule[];
 }> {
 	await ensureGeneratedOutputRetrievalBackfill(userId);
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 
 	const rows = await db
 		.select(knowledgeArtifactListSelection)
 		.from(artifacts)
-		.where(eq(artifacts.userId, userId))
+		.where(buildArtifactVisibilityCondition({ userId, ownershipScope }))
 		.orderBy(desc(artifacts.updatedAt));
+	const scopedRows = rows.filter((row) =>
+		isArtifactCanonicallyOwned({
+			userId,
+			ownershipScope,
+			artifact: row,
+		})
+	);
 
 	const documents = await listLogicalDocuments(userId);
 
 	const latestGeneratedByConversation = new Map<string, (typeof rows)[number]>();
-	for (const row of rows) {
+	for (const row of scopedRows) {
 		if (row.type !== 'generated_output') continue;
 		const key = row.conversationId ?? row.id;
 		if (!latestGeneratedByConversation.has(key)) {
@@ -83,7 +96,7 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 	return {
 		documents,
 		results: Array.from(latestGeneratedByConversation.values()).map(mapArtifactSummary),
-		workflows: rows
+		workflows: scopedRows
 			.filter((row) => row.type === 'work_capsule')
 			.map((row) => mapWorkCapsuleFromArtifactRow(row)),
 	};

@@ -34,6 +34,7 @@ export function determineTeiWinningMode(params: {
 
 export function logTeiRetrievalSummary(params: {
 	scope: 'documents' | 'persona_prompt' | 'task_routing';
+	userId?: string;
 	conversationId?: string;
 	queryLength: number;
 	candidateCount: number;
@@ -56,6 +57,7 @@ export function logTeiRetrievalSummary(params: {
 
 	console.info('[TEI] Retrieval summary', {
 		scope: params.scope,
+		userId: params.userId ?? null,
 		conversationId: params.conversationId ?? null,
 		queryLength: params.queryLength,
 		candidateCount: params.candidateCount,

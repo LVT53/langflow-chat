@@ -388,6 +388,29 @@ describe('Honcho Service', () => {
     mockConfig.honchoContextPollIntervalMs = 250;
     mockConfig.honchoPersonaContextWaitMs = 1500;
     mockCanUseTeiReranker.mockReturnValue(false);
+    mockSessionQueueStatus.mockReset();
+    mockSessionQueueStatus.mockResolvedValue({
+      pendingWorkUnits: 0,
+      inProgressWorkUnits: 0,
+    });
+    mockSessionContext.mockReset();
+    mockSessionContext.mockResolvedValue({
+      messages: [],
+      summary: null,
+      peerRepresentation: null,
+      peerCard: null,
+    });
+    mockSessionAddPeers.mockReset();
+    mockSessionAddPeers.mockResolvedValue(undefined);
+    mockBuildPersonaPromptContext.mockReset();
+    mockBuildPersonaPromptContext.mockResolvedValue('');
+    mockListMessages.mockReset();
+    mockListMessages.mockResolvedValue([]);
+    mockGetLatestHonchoMetadata.mockReset();
+    mockGetLatestHonchoMetadata.mockResolvedValue({
+      honchoContext: null,
+      honchoSnapshot: null,
+    });
   });
 
   describe('isHonchoEnabled', () => {
@@ -707,6 +730,14 @@ describe('Honcho Service', () => {
 
     it('uses live Honcho session context when the queue is clear', async () => {
       mockConfig.honchoEnabled = true;
+      mockListMessages.mockResolvedValueOnce([
+        {
+          id: 'msg-live-1',
+          role: 'user',
+          content: 'Stored lead-in question',
+          timestamp: Date.parse('2026-03-26T09:59:00.000Z'),
+        },
+      ]);
       mockSessionContext.mockResolvedValueOnce({
         messages: [
           {
@@ -740,8 +771,8 @@ describe('Honcho Service', () => {
       expect(mockSessionQueueStatus).toHaveBeenCalledTimes(1);
       expect(mockSessionContext).toHaveBeenCalledWith({
         summary: true,
-        searchQuery: 'Continue from the live context.',
         tokens: 2000,
+        limitToSession: true,
       });
       expect(result.inputValue).toContain('## Session Summary');
       expect(result.inputValue).toContain('Live Honcho summary');
@@ -765,12 +796,46 @@ describe('Honcho Service', () => {
       });
     });
 
+    it('skips live Honcho session reads on an empty new session', async () => {
+      mockConfig.honchoEnabled = true;
+      mockListMessages.mockResolvedValueOnce([]);
+      mockGetLatestHonchoMetadata.mockResolvedValueOnce({
+        honchoContext: null,
+        honchoSnapshot: null,
+      });
+      mockBuildPersonaPromptContext.mockResolvedValueOnce('');
+
+      const { buildConstructedContext } = await import('./honcho');
+
+      const result = await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-empty',
+        message: 'What do you know about me?',
+      });
+
+      expect(mockSessionQueueStatus).not.toHaveBeenCalled();
+      expect(mockSessionContext).not.toHaveBeenCalled();
+      expect(result.inputValue).not.toContain('## Honcho Session Context');
+      expect(result.honchoContext).toMatchObject({
+        source: 'persisted_fallback',
+        fallbackReason: 'empty_live_context',
+      });
+    });
+
     it('polls queue status before building live Honcho context', async () => {
       vi.useFakeTimers();
       try {
         mockConfig.honchoEnabled = true;
         mockConfig.honchoContextWaitMs = 200;
         mockConfig.honchoContextPollIntervalMs = 50;
+        mockListMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-queued-1',
+            role: 'user',
+            content: 'Stored queued context',
+            timestamp: Date.parse('2026-03-26T09:59:00.000Z'),
+          },
+        ]);
         mockSessionQueueStatus
           .mockResolvedValueOnce({ pendingWorkUnits: 2, inProgressWorkUnits: 0 })
           .mockResolvedValueOnce({ pendingWorkUnits: 0, inProgressWorkUnits: 0 });
@@ -821,6 +886,14 @@ describe('Honcho Service', () => {
         mockConfig.honchoEnabled = true;
         mockConfig.honchoContextWaitMs = 500;
         mockConfig.honchoPersonaContextWaitMs = 50;
+        mockListMessages.mockResolvedValueOnce([
+          {
+            id: 'msg-timeout-1',
+            role: 'user',
+            content: 'Stored timeout context',
+            timestamp: Date.parse('2026-03-26T09:59:00.000Z'),
+          },
+        ]);
         mockSessionContext.mockResolvedValueOnce({
           messages: [
             {
@@ -972,7 +1045,7 @@ describe('Honcho Service', () => {
       }
     });
 
-    it('still attempts live Honcho on a fresh conversation before degrading', async () => {
+    it('skips live Honcho on a fresh conversation before degrading', async () => {
       vi.useFakeTimers();
       try {
         mockConfig.honchoEnabled = true;
@@ -994,12 +1067,12 @@ describe('Honcho Service', () => {
         await vi.advanceTimersByTimeAsync(120);
         const result = await resultPromise;
 
-        expect(mockSessionAddPeers).toHaveBeenCalled();
-        expect(mockSessionQueueStatus).toHaveBeenCalled();
-        expect(mockSessionContext).toHaveBeenCalled();
+        expect(mockSessionAddPeers).not.toHaveBeenCalled();
+        expect(mockSessionQueueStatus).not.toHaveBeenCalled();
+        expect(mockSessionContext).not.toHaveBeenCalled();
         expect(result.honchoContext).toMatchObject({
           source: 'persisted_fallback',
-          fallbackReason: 'timeout',
+          fallbackReason: 'empty_live_context',
         });
         expect(result.inputValue).toContain('## Current User Message');
         expect(result.inputValue).toContain('Say exactly: fresh context ok.');

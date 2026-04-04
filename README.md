@@ -135,6 +135,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
 - Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
 - Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md) and [docs/working-documents-implementation-plan.md](./docs/working-documents-implementation-plan.md). The direction is to consolidate generated files, attachments, and vault files onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
+- Chat-path Honcho context is now explicitly session-limited, empty/new sessions skip live Honcho session-context reads altogether, and artifact retrieval/cleanup treat linked conversation or vault ownership as stronger authority than `artifacts.user_id` alone. That keeps stale or inconsistent state from crossing the prompt boundary in multi-user deployments.
 
 ## Configuration Reference
 

@@ -9,7 +9,12 @@ import {
   messages,
   taskStateEvidenceLinks,
 } from "$lib/server/db/schema";
-import { getArtifactForUser } from "./core";
+import {
+  buildArtifactVisibilityCondition,
+  getArtifactForUser,
+  getArtifactOwnershipScope,
+  isArtifactCanonicallyOwned,
+} from "./core";
 import { listLogicalDocuments } from "./documents";
 
 export async function hardDeleteArtifactsForUser(
@@ -29,11 +34,24 @@ export async function hardDeleteArtifactsForUser(
     };
   }
 
+  const ownershipScope = await getArtifactOwnershipScope(userId);
   const artifactsToDelete = await db
     .select()
     .from(artifacts)
-    .where(and(eq(artifacts.userId, userId), inArray(artifacts.id, uniqueIds)));
-  const ids = artifactsToDelete.map((row) => row.id);
+    .where(
+      and(
+        inArray(artifacts.id, uniqueIds),
+        buildArtifactVisibilityCondition({ userId, ownershipScope }),
+      ),
+    );
+  const scopedArtifactsToDelete = artifactsToDelete.filter((row) =>
+    isArtifactCanonicallyOwned({
+      userId,
+      ownershipScope,
+      artifact: row,
+    }),
+  );
+  const ids = scopedArtifactsToDelete.map((row) => row.id);
 
   if (ids.length === 0) {
     return {
@@ -45,43 +63,28 @@ export async function hardDeleteArtifactsForUser(
 
   db.transaction((tx) => {
     tx.delete(conversationWorkingSetItems)
-      .where(
-        and(
-          eq(conversationWorkingSetItems.userId, userId),
-          inArray(conversationWorkingSetItems.artifactId, ids),
-        ),
-      )
+      .where(inArray(conversationWorkingSetItems.artifactId, ids))
       .run();
 
     tx.delete(taskStateEvidenceLinks)
-      .where(
-        and(
-          eq(taskStateEvidenceLinks.userId, userId),
-          inArray(taskStateEvidenceLinks.artifactId, ids),
-        ),
-      )
+      .where(inArray(taskStateEvidenceLinks.artifactId, ids))
       .run();
 
     tx.delete(artifactLinks)
       .where(
-        and(
-          eq(artifactLinks.userId, userId),
-          or(
-            inArray(artifactLinks.artifactId, ids),
-            inArray(artifactLinks.relatedArtifactId, ids),
-          ),
+        or(
+          inArray(artifactLinks.artifactId, ids),
+          inArray(artifactLinks.relatedArtifactId, ids),
         ),
       )
       .run();
 
-    tx.delete(artifacts)
-      .where(and(eq(artifacts.userId, userId), inArray(artifacts.id, ids)))
-      .run();
+    tx.delete(artifacts).where(inArray(artifacts.id, ids)).run();
   });
 
   const deletedStoragePaths: string[] = [];
   const failedStoragePaths: string[] = [];
-  for (const row of artifactsToDelete) {
+  for (const row of scopedArtifactsToDelete) {
     if (!row.storagePath) continue;
     try {
       await unlink(join(process.cwd(), row.storagePath));

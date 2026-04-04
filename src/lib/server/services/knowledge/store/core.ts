@@ -1,8 +1,13 @@
 import { createHash, randomUUID } from "crypto";
 import { basename, extname, join } from "path";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { artifactLinks, artifacts } from "$lib/server/db/schema";
+import {
+  artifactLinks,
+  artifacts,
+  conversations,
+  knowledgeVaults,
+} from "$lib/server/db/schema";
 import type {
   Artifact,
   ArtifactLink,
@@ -52,8 +57,19 @@ type ArtifactSummaryRow = Pick<
   | "updatedAt"
 >;
 
+export type ArtifactOwnershipScope = {
+  conversationIds: Set<string>;
+  vaultIds: Set<string>;
+};
+
+type ArtifactOwnershipCandidate = Pick<
+  typeof artifacts.$inferSelect,
+  "userId" | "type" | "conversationId" | "vaultId"
+>;
+
 export const knowledgeArtifactListSelection = {
   id: artifacts.id,
+  userId: artifacts.userId,
   type: artifacts.type,
   retrievalClass: artifacts.retrievalClass,
   name: artifacts.name,
@@ -66,6 +82,69 @@ export const knowledgeArtifactListSelection = {
   createdAt: artifacts.createdAt,
   updatedAt: artifacts.updatedAt,
 } as const;
+
+export async function getArtifactOwnershipScope(
+  userId: string,
+): Promise<ArtifactOwnershipScope> {
+  const [conversationRows, vaultRows] = await Promise.all([
+    db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.userId, userId)),
+    db
+      .select({ id: knowledgeVaults.id })
+      .from(knowledgeVaults)
+      .where(eq(knowledgeVaults.userId, userId)),
+  ]);
+
+  return {
+    conversationIds: new Set(conversationRows.map((row) => row.id)),
+    vaultIds: new Set(vaultRows.map((row) => row.id)),
+  };
+}
+
+export function buildArtifactVisibilityCondition(params: {
+  userId: string;
+  ownershipScope: ArtifactOwnershipScope;
+}) {
+  const conditions = [eq(artifacts.userId, params.userId)];
+  const conversationIds = Array.from(params.ownershipScope.conversationIds);
+  const vaultIds = Array.from(params.ownershipScope.vaultIds);
+
+  if (conversationIds.length > 0) {
+    conditions.push(inArray(artifacts.conversationId, conversationIds));
+  }
+  if (vaultIds.length > 0) {
+    conditions.push(inArray(artifacts.vaultId, vaultIds));
+  }
+
+  return or(...conditions);
+}
+
+export function isArtifactCanonicallyOwned(params: {
+  userId: string;
+  ownershipScope: ArtifactOwnershipScope;
+  artifact: ArtifactOwnershipCandidate;
+}): boolean {
+  const { artifact, ownershipScope, userId } = params;
+
+  if (artifact.type === "generated_output" || artifact.type === "work_capsule") {
+    return Boolean(
+      artifact.conversationId &&
+        ownershipScope.conversationIds.has(artifact.conversationId),
+    );
+  }
+
+  if (artifact.conversationId) {
+    return ownershipScope.conversationIds.has(artifact.conversationId);
+  }
+
+  if (artifact.vaultId) {
+    return ownershipScope.vaultIds.has(artifact.vaultId);
+  }
+
+  return artifact.userId === userId;
+}
 
 export function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
   return {
@@ -257,11 +336,27 @@ export async function getArtifactForUser(
   userId: string,
   artifactId: string,
 ): Promise<Artifact | null> {
+  const ownershipScope = await getArtifactOwnershipScope(userId);
   const [row] = await db
     .select()
     .from(artifacts)
-    .where(and(eq(artifacts.id, artifactId), eq(artifacts.userId, userId)));
-  return row ? mapArtifact(row) : null;
+    .where(
+      and(
+        eq(artifacts.id, artifactId),
+        buildArtifactVisibilityCondition({ userId, ownershipScope }),
+      ),
+    );
+  if (
+    !row ||
+    !isArtifactCanonicallyOwned({
+      userId,
+      ownershipScope,
+      artifact: row,
+    })
+  ) {
+    return null;
+  }
+  return mapArtifact(row);
 }
 
 export async function listArtifactLinksForUser(
@@ -286,13 +381,25 @@ export async function getArtifactsForUser(
   artifactIds: string[],
 ): Promise<Artifact[]> {
   if (artifactIds.length === 0) return [];
+  const ownershipScope = await getArtifactOwnershipScope(userId);
   const rows = await db
     .select()
     .from(artifacts)
     .where(
-      and(eq(artifacts.userId, userId), inArray(artifacts.id, artifactIds)),
+      and(
+        inArray(artifacts.id, artifactIds),
+        buildArtifactVisibilityCondition({ userId, ownershipScope }),
+      ),
     );
-  return rows.map(mapArtifact);
+  return rows
+    .filter((row) =>
+      isArtifactCanonicallyOwned({
+        userId,
+        ownershipScope,
+        artifact: row,
+      }),
+    )
+    .map(mapArtifact);
 }
 
 export async function listConversationOwnedArtifacts(

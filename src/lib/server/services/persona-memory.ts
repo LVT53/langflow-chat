@@ -23,6 +23,9 @@ import { parseJsonRecord as parseJsonRecordOrNull } from '$lib/server/utils/json
 import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
 import {
+	buildArtifactVisibilityCondition,
+	getArtifactOwnershipScope,
+	isArtifactCanonicallyOwned,
 	parseWorkingDocumentMetadata,
 	selectLatestGeneratedDocumentCandidatesByFamily,
 } from './knowledge/store';
@@ -705,9 +708,13 @@ function isArtifactDerivedPersonaItem(params: {
 async function listPersonaDocumentMemoryCandidates(
 	userId: string
 ): Promise<PersonaDocumentMemoryCandidate[]> {
+	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const rows = await db
 		.select({
 			id: artifacts.id,
+			userId: artifacts.userId,
+			conversationId: artifacts.conversationId,
+			vaultId: artifacts.vaultId,
 			type: artifacts.type,
 			name: artifacts.name,
 			summary: artifacts.summary,
@@ -718,7 +725,7 @@ async function listPersonaDocumentMemoryCandidates(
 		.from(artifacts)
 		.where(
 			and(
-				eq(artifacts.userId, userId),
+				buildArtifactVisibilityCondition({ userId, ownershipScope }),
 				inArray(artifacts.type, ['source_document', 'normalized_document', 'generated_output'])
 			)
 		)
@@ -726,6 +733,13 @@ async function listPersonaDocumentMemoryCandidates(
 		.limit(120);
 
 	const parsedCandidates = rows
+		.filter((row) =>
+			isArtifactCanonicallyOwned({
+				userId,
+				ownershipScope,
+				artifact: row,
+			})
+		)
 		.map((row) => {
 			if (
 				typeof row.id !== 'string' ||
@@ -3061,6 +3075,7 @@ export async function buildPersonaPromptContext(
 	const winningCandidate = winningCandidates[0] ?? null;
 	logTeiRetrievalSummary({
 		scope: 'persona_prompt',
+		userId,
 		queryLength: query.trim().length,
 		candidateCount: items.length,
 		semantic: semanticDiagnostics,

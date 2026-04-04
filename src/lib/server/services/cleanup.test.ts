@@ -13,11 +13,14 @@ const {
 	mockHardDeleteArtifactsForUser,
 	mockListConversationOwnedArtifacts,
 	mockArtifactHasReferencesOutsideConversation,
+	mockBuildArtifactVisibilityCondition,
+	mockGetArtifactOwnershipScope,
 	mockGetSourceArtifactIdForNormalizedArtifact,
 } = vi.hoisted(() => {
 	return {
 		mockState: {
 			conversationRow: { id: 'conv-1' } as { id: string } | null,
+			artifactRows: [] as Array<{ id: string }>,
 		},
 		mockDeletedConversations: [] as string[],
 		mockDeleteAllChatFilesForConversation: vi.fn(() => Promise.resolve(0)),
@@ -30,6 +33,10 @@ const {
 		mockHardDeleteArtifactsForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockListConversationOwnedArtifacts: vi.fn(() => Promise.resolve([])),
 		mockArtifactHasReferencesOutsideConversation: vi.fn(() => Promise.resolve(false)),
+		mockBuildArtifactVisibilityCondition: vi.fn(() => ({ field: 'visibility', value: 'user-1' })),
+		mockGetArtifactOwnershipScope: vi.fn(() =>
+			Promise.resolve({ conversationIds: new Set<string>(), vaultIds: new Set<string>() })
+		),
 		mockGetSourceArtifactIdForNormalizedArtifact: vi.fn(() => Promise.resolve(null)),
 	};
 });
@@ -44,7 +51,7 @@ vi.mock('$lib/server/db', () => ({
 					return {
 						where: vi.fn(() => {
 							if (tableName === 'artifacts') {
-								return Promise.resolve([]);
+								return Promise.resolve(mockState.artifactRows);
 							}
 							if (tableName === 'users') {
 								return Promise.resolve([{ id: 'user-1', passwordHash: 'hash' }]);
@@ -123,6 +130,8 @@ vi.mock('./auth', () => ({
 
 vi.mock('./knowledge', () => ({
 	artifactHasReferencesOutsideConversation: mockArtifactHasReferencesOutsideConversation,
+	buildArtifactVisibilityCondition: mockBuildArtifactVisibilityCondition,
+	getArtifactOwnershipScope: mockGetArtifactOwnershipScope,
 	getSourceArtifactIdForNormalizedArtifact: mockGetSourceArtifactIdForNormalizedArtifact,
 	hardDeleteArtifactsForUser: mockHardDeleteArtifactsForUser,
 	listConversationOwnedArtifacts: mockListConversationOwnedArtifacts,
@@ -154,6 +163,7 @@ vi.mock('./memory', () => ({
 describe('cleanup service', () => {
 	beforeEach(() => {
 		mockState.conversationRow = { id: 'conv-1' };
+		mockState.artifactRows = [];
 		mockDeletedConversations.length = 0;
 		vi.clearAllMocks();
 	});
@@ -207,6 +217,25 @@ describe('cleanup service', () => {
 		expect(mockDeleteAllHonchoStateForUser).toHaveBeenCalledWith('user-1');
 		expect(mockRotateHonchoPeerIdentity).toHaveBeenCalledWith('user-1');
 		expect(mockDeleteAllChatFilesForUser).toHaveBeenCalledWith('user-1');
+	});
+
+	it('removes artifacts linked through owned conversations even when artifact userId drifted', async () => {
+		const { resetUserAccountStateWithCleanup } = await import('./cleanup');
+		const { verifyPassword } = await import('./auth');
+
+		mockState.artifactRows = [{ id: 'artifact-user-owned' }, { id: 'artifact-conv-owned' }];
+		mockGetArtifactOwnershipScope.mockResolvedValue({
+			conversationIds: new Set(['conv-owned']),
+			vaultIds: new Set<string>(),
+		});
+		(verifyPassword as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+		await resetUserAccountStateWithCleanup('user-1', 'secret');
+
+		expect(mockHardDeleteArtifactsForUser).toHaveBeenCalledWith('user-1', [
+			'artifact-user-owned',
+			'artifact-conv-owned',
+		]);
 	});
 
 	it('fully deletes user-scoped files and memory before deleting the account', async () => {

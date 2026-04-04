@@ -1013,6 +1013,27 @@ async function loadSessionPromptContext(params: {
 		};
 	}
 
+	const hasStoredSessionContext =
+		fallbackSessionMessages.length > 0 ||
+		Boolean(latestHonchoMetadata.honchoSnapshot?.summary?.trim()) ||
+		Boolean(latestHonchoMetadata.honchoSnapshot?.messages?.length);
+	if (!hasStoredSessionContext) {
+		return {
+			sessionMessages: [],
+			summary: null,
+			peerContext: await loadPersonaContext(params),
+			honchoContext: {
+				source: 'persisted_fallback',
+				waitedMs: 0,
+				queuePendingWorkUnits: 0,
+				queueInProgressWorkUnits: 0,
+				fallbackReason: 'empty_live_context',
+				snapshotCreatedAt: null,
+			},
+			honchoSnapshot: latestHonchoMetadata.honchoSnapshot,
+		};
+	}
+
 	const startedAt = Date.now();
 	const fallbackToStoredContext = async (
 		source: HonchoContextInfo['source'],
@@ -1068,8 +1089,8 @@ async function loadSessionPromptContext(params: {
 	const liveContextResult = await resolveWithTimeout(
 		sessionResult.value.context({
 			summary: true,
-			searchQuery: params.message,
 			tokens: HONCHO_LIVE_CONTEXT_TOKENS,
+			limitToSession: true,
 		}),
 		{
 			label: 'Honcho session context',

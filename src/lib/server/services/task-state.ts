@@ -689,6 +689,7 @@ async function routeTaskStateForTurn(params: {
 
   logTeiRetrievalSummary({
     scope: "task_routing",
+    userId: params.userId,
     conversationId: params.conversationId,
     queryLength: params.message.trim().length,
     candidateCount: states.length,
