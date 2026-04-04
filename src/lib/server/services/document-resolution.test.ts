@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveRelevantGeneratedDocumentArtifacts } from "./document-resolution";
+import {
+  resolveCurrentGeneratedDocumentSelection,
+  resolveRelevantGeneratedDocumentArtifacts,
+} from "./document-resolution";
 import type { Artifact } from "$lib/types";
 
 function makeArtifact(params: {
@@ -112,5 +115,76 @@ describe("document resolution", () => {
 
     expect(resolved[0]?.artifact.id).toBe("artifact-2");
     expect(resolved[0]?.reasonCodes).toContain("same_conversation");
+  });
+
+  it("selects the latest artifact per generated document family for current-document context", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      artifacts: [
+        makeArtifact({
+          id: "artifact-1",
+          name: "brief-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 1,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-2",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-3",
+          name: "slides-v1.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 1,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.latestArtifactIds).toEqual(["artifact-3", "artifact-2"]);
+    expect(selection.primaryArtifactId).toBe("artifact-3");
+  });
+
+  it("preserves an explicitly preferred artifact id for current-document context", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      preferredArtifactId: "artifact-1",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-1",
+          name: "brief-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 1,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-2",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.latestArtifactIds).toEqual(["artifact-2"]);
+    expect(selection.primaryArtifactId).toBe("artifact-1");
   });
 });

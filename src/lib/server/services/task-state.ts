@@ -24,6 +24,7 @@ import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { collapseArtifactsByFamily } from "./evidence-family";
+import { resolveCurrentGeneratedDocumentSelection } from "./document-resolution";
 import { getLatestHonchoMetadata } from "./messages";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
 import {
@@ -786,6 +787,7 @@ function computeEvidenceScore(params: {
   excludedIds: Set<string>;
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
+  currentGeneratedOutputIds: Set<string>;
 }): number {
   if (params.excludedIds.has(params.artifact.id)) return -1000;
 
@@ -806,7 +808,7 @@ function computeEvidenceScore(params: {
   if (params.pinnedIds.has(params.artifact.id)) score += 120;
   if (params.artifact.conversationId === params.taskState?.conversationId)
     score += 4;
-  if (params.artifact.type === "generated_output") score += 3;
+  if (params.currentGeneratedOutputIds.has(params.artifact.id)) score += 8;
 
   return score;
 }
@@ -1053,6 +1055,11 @@ export async function prepareTaskContext(params: {
   const workingSetIds = new Set(
     params.workingSetArtifacts.map((artifact) => artifact.id),
   );
+  const currentGeneratedOutputIds = new Set(
+    resolveCurrentGeneratedDocumentSelection({
+      artifacts: candidateArtifacts,
+    }).latestArtifactIds,
+  );
   const documentFocused = isDocumentFocusedTurn(params.message, attachmentIds);
   const selectedEvidenceLimit = documentFocused
     ? MAX_DOCUMENT_FOCUSED_EVIDENCE
@@ -1068,6 +1075,7 @@ export async function prepareTaskContext(params: {
         excludedIds,
         currentAttachmentIds,
         workingSetIds,
+        currentGeneratedOutputIds,
       }),
     }))
     .filter((entry) => entry.score > 0)

@@ -16,9 +16,12 @@ import type {
 	MemoryLayer,
 	WorkingSetReasonCode,
 } from '$lib/types';
-import { parseJsonRecord, parseJsonStringArray } from '$lib/server/utils/json';
+import { parseJsonStringArray } from '$lib/server/utils/json';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
-import { resolveRelevantGeneratedDocumentArtifacts } from '../document-resolution';
+import {
+	resolveCurrentGeneratedDocumentSelection,
+	resolveRelevantGeneratedDocumentArtifacts,
+} from '../document-resolution';
 import {
 	rankWorkingSetCandidates,
 	scoreMatch,
@@ -36,7 +39,6 @@ import {
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
-	selectLatestGeneratedDocumentCandidatesByFamily,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -207,18 +209,12 @@ export async function refreshConversationWorkingSet(params: {
 		)
 		.orderBy(desc(artifacts.updatedAt))
 		.limit(8);
-	const latestOutputArtifactIds = selectLatestGeneratedDocumentCandidatesByFamily(
-		outputArtifacts.map((artifact) => ({
-			artifactId: artifact.id,
-			artifactName: artifact.name,
-			updatedAt: artifact.updatedAt.getTime(),
-			metadata: parseJsonRecord(artifact.metadataJson ?? null),
-		}))
-	).map((artifact) => artifact.artifactId);
-
-	const latestOutputArtifactId =
-		params.latestOutputArtifactId ??
-		(latestOutputArtifactIds.length > 0 ? latestOutputArtifactIds[0] : null);
+	const currentOutputSelection = resolveCurrentGeneratedDocumentSelection({
+		artifacts: outputArtifacts.map((artifact) => mapArtifact(artifact)),
+		preferredArtifactId: params.latestOutputArtifactId,
+	});
+	const latestOutputArtifactIds = currentOutputSelection.latestArtifactIds;
+	const latestOutputArtifactId = currentOutputSelection.primaryArtifactId;
 	const sourceIdsLinkedToLatestOutput = latestOutputArtifactId
 		? await db
 				.select({ relatedArtifactId: artifactLinks.relatedArtifactId })

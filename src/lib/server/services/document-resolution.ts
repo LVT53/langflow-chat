@@ -12,6 +12,12 @@ export interface GeneratedDocumentResolution {
   reasonCodes: string[];
 }
 
+export interface CurrentGeneratedDocumentSelection {
+  primaryArtifactId: string | null;
+  latestArtifactIds: string[];
+  latestArtifacts: Artifact[];
+}
+
 function includesNormalized(haystack: string, needle: string): boolean {
   const normalizedHaystack = haystack.trim().toLowerCase();
   const normalizedNeedle = needle.trim().toLowerCase();
@@ -113,4 +119,30 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
       return right.artifact.updatedAt - left.artifact.updatedAt;
     })
     .slice(0, params.limit);
+}
+
+export function resolveCurrentGeneratedDocumentSelection(params: {
+  artifacts: Artifact[];
+  preferredArtifactId?: string | null;
+}): CurrentGeneratedDocumentSelection {
+  const latestArtifacts = selectLatestGeneratedDocumentCandidatesByFamily(
+    params.artifacts
+      .filter((artifact) => artifact.type === "generated_output")
+      .map((artifact) => ({
+        artifactId: artifact.id,
+        artifactName: artifact.name,
+        updatedAt: artifact.updatedAt,
+        metadata: artifact.metadata,
+        artifact,
+      })),
+  ).map((candidate) => candidate.artifact);
+
+  const latestArtifactIds = latestArtifacts.map((artifact) => artifact.id);
+
+  return {
+    primaryArtifactId:
+      params.preferredArtifactId ?? (latestArtifactIds.length > 0 ? latestArtifactIds[0] : null),
+    latestArtifactIds,
+    latestArtifacts,
+  };
 }
