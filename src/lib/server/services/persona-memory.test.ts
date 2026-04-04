@@ -207,6 +207,40 @@ describe('persona-memory temporal safeguards', () => {
 		expect(payload.rawMemories[0]).not.toHaveProperty('createdAt');
 	});
 
+	it('uses user-scoped cluster ids for the same memory text across different accounts', async () => {
+		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+
+		const sharedRecords = [
+			{
+				id: 'memory-shared',
+				content: 'The user prefers concise responses.',
+				createdAt: Date.UTC(2026, 3, 4),
+				scope: 'self' as const,
+				sessionId: 'conversation-shared',
+			},
+		];
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-a',
+			rawRecords: sharedRecords,
+			reason: 'test',
+			force: true,
+		});
+		const firstClusterId = insertedClusterRows[0]?.clusterId;
+
+		await syncPersonaMemoryClusters({
+			userId: 'user-b',
+			rawRecords: sharedRecords,
+			reason: 'test',
+			force: true,
+		});
+		const secondClusterId = insertedClusterRows[0]?.clusterId;
+
+		expect(firstClusterId).toBeTruthy();
+		expect(secondClusterId).toBeTruthy();
+		expect(firstClusterId).not.toBe(secondClusterId);
+	});
+
 	it('falls back to the default canonical text when the dreamed text invents a date', async () => {
 		const { sanitizeDreamedCanonicalText } = await import('./persona-memory');
 

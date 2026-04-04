@@ -858,8 +858,8 @@ function hashKey(value: string): string {
 	return createHash('sha256').update(value).digest('hex').slice(0, 24);
 }
 
-function clusterIdForKey(key: string): string {
-	return `pmc_${hashKey(key)}`;
+function clusterIdForKey(userId: string, key: string): string {
+	return `pmc_${hashKey(`${userId}:${key}`)}`;
 }
 
 function clip(value: string, maxLength: number): string {
@@ -2250,7 +2250,10 @@ async function loadExistingClusterSnapshots(
 		.from(personaMemoryClusters)
 		.leftJoin(
 			personaMemoryClusterMembers,
-			eq(personaMemoryClusters.clusterId, personaMemoryClusterMembers.clusterId)
+			and(
+				eq(personaMemoryClusters.clusterId, personaMemoryClusterMembers.clusterId),
+				eq(personaMemoryClusters.userId, personaMemoryClusterMembers.userId)
+			)
 		)
 		.where(eq(personaMemoryClusters.userId, userId))
 		.orderBy(desc(personaMemoryClusters.updatedAt));
@@ -2500,7 +2503,7 @@ export async function syncPersonaMemoryClusters(params: {
 	const plans: ClusterPlan[] = [];
 
 	for (const group of groups) {
-		const clusterId = clusterIdForKey(group.key);
+		const clusterId = clusterIdForKey(params.userId, group.key);
 		const existing = existingSnapshots.get(clusterId);
 		const defaultCanonicalText = deriveCanonicalText({
 			records: group.records,
@@ -2715,7 +2718,10 @@ export async function listPersonaMemoryClusters(userId: string): Promise<Persona
 		.from(personaMemoryClusters)
 		.leftJoin(
 			personaMemoryClusterMembers,
-			eq(personaMemoryClusters.clusterId, personaMemoryClusterMembers.clusterId)
+			and(
+				eq(personaMemoryClusters.clusterId, personaMemoryClusterMembers.clusterId),
+				eq(personaMemoryClusters.userId, personaMemoryClusterMembers.userId)
+			)
 		)
 		.leftJoin(conversations, eq(personaMemoryClusterMembers.sessionId, conversations.id))
 		.where(eq(personaMemoryClusters.userId, userId))
