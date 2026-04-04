@@ -117,6 +117,50 @@ describe('working-set ranking', () => {
 		});
 	});
 
+	it('applies repeated document refinement behavior as a bounded ranking boost', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-behavior',
+				artifactType: 'generated_output',
+				name: 'Repeatedly refined brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				recentRefinementBehaviorScore: 3,
+			},
+			{
+				artifactId: 'out-latest',
+				artifactType: 'generated_output',
+				name: 'Latest generated document',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isLatestGeneratedOutput: true,
+			},
+			{
+				artifactId: 'out-plain',
+				artifactType: 'generated_output',
+				name: 'Plain generated document',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+			},
+		]);
+
+		expect(ranked.find((item) => item.artifactId === 'out-behavior')).toMatchObject({
+			artifactId: 'out-behavior',
+			selected: false,
+			reasonCodes: expect.arrayContaining(['recent_refinement_behavior']),
+		});
+		expect(ranked.findIndex((item) => item.artifactId === 'out-behavior')).toBeLessThan(
+			ranked.findIndex((item) => item.artifactId === 'out-plain')
+		);
+		expect(ranked.find((item) => item.artifactId === 'out-plain')).toMatchObject({
+			artifactId: 'out-plain',
+			selected: false,
+		});
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{

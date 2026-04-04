@@ -210,6 +210,7 @@ export async function refreshConversationWorkingSet(params: {
 	selectedGeneratedArtifactId?: string | null;
 }): Promise<ArtifactSummary[]> {
 	const attachmentIds = params.attachmentIds ?? [];
+	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
 	const existingItems = await listConversationWorkingSetItems(params.userId, params.conversationId);
 	const sourceArtifactIds = await listConversationSourceArtifactIds(params.userId, params.conversationId);
 	const outputArtifacts = await db
@@ -266,6 +267,23 @@ export async function refreshConversationWorkingSet(params: {
 	}
 
 	const artifactRows = await getArtifactsForUser(params.userId, Array.from(candidateIds));
+	const generatedBehaviorKeys = Array.from(
+		new Set(
+			artifactRows
+				.filter((artifact) => artifact.type === 'generated_output')
+				.map((artifact) => getGeneratedDocumentBehaviorKey(artifact))
+		)
+	);
+	const behaviorScoresByKey =
+		generatedBehaviorKeys.length > 0
+			? await countRecentMemoryEventsBySubject({
+					userId: params.userId,
+					domain: 'document',
+					eventTypes: ['document_refined'],
+					subjectIds: generatedBehaviorKeys,
+					since: recentBehaviorWindowStart,
+				}).catch(() => new Map<string, number>())
+			: new Map<string, number>();
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
 	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
@@ -287,6 +305,10 @@ export async function refreshConversationWorkingSet(params: {
 			isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
 				artifact.id
 			),
+			recentRefinementBehaviorScore:
+				artifact.type === 'generated_output'
+					? behaviorScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
+					: 0,
 			isCurrentGeneratedDocument:
 				currentGeneratedArtifactId === artifact.id &&
 				currentGeneratedReasonCodes.has('current_generated_document'),

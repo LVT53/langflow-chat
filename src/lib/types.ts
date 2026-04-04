@@ -296,6 +296,7 @@ export type WorkingSetReasonCode =
   | 'active_document_focus'
   | 'recent_user_correction'
   | 'recently_refined_document_family'
+  | 'recent_refinement_behavior'
   | 'current_generated_document'
   | 'recently_used_in_output'
   | 'latest_generated_output'
