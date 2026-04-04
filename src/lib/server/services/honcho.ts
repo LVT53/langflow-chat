@@ -73,6 +73,11 @@ const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
 
+// Authority note:
+// - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
+// - local persona-memory, task-state, and document-resolution remain authoritative for freshness-sensitive
+//   truth, task continuity, and working-document identity
+
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
 	if (

@@ -613,6 +613,7 @@ export type PersonaMemoryTemporalKind =
   | 'short_term_constraint';
 export type PersonaMemoryTemporalFreshness = 'active' | 'stale' | 'expired' | 'historical' | 'unknown';
 export type PersonaMemoryTopicStatus = 'active' | 'dormant' | 'historical';
+export type PersonaMemoryDomain = 'persona' | 'temporal' | 'preference';
 
 export interface PersonaMemoryTemporalInfo {
   kind: PersonaMemoryTemporalKind;
@@ -637,6 +638,7 @@ export interface PersonaMemoryItem {
   id: string;
   canonicalText: string;
   rawCanonicalText?: string;
+  domain?: PersonaMemoryDomain;
   memoryClass: PersonaMemoryClass;
   state: PersonaMemoryState;
   salienceScore: number;
@@ -649,6 +651,8 @@ export interface PersonaMemoryItem {
   activeConstraint?: boolean;
   topicKey?: string | null;
   topicStatus?: PersonaMemoryTopicStatus | null;
+  supersededById?: string | null;
+  supersessionReason?: string | null;
   members: PersonaMemoryMemberItem[];
 }
 
@@ -704,6 +708,8 @@ export interface KnowledgeMemorySummary {
   personaCount: number;
   taskCount: number;
   focusContinuityCount: number;
+  activeConstraintCount?: number;
+  currentProjectContextCount?: number;
   overview: string | null;
   overviewSource: KnowledgeMemoryOverviewSource;
   overviewStatus: KnowledgeMemoryOverviewStatus;
@@ -714,6 +720,8 @@ export interface KnowledgeMemorySummary {
 
 export interface KnowledgeMemoryPayload {
   personaMemories: PersonaMemoryItem[];
+  activeConstraints?: PersonaMemoryItem[];
+  currentProjectContext?: PersonaMemoryItem[];
   taskMemories: TaskMemoryItem[];
   focusContinuities: FocusContinuityItem[];
   summary: KnowledgeMemorySummary;

@@ -40,6 +40,12 @@ import {
 } from "./task-state/mappers";
 import { scoreMatch } from "./working-set";
 
+// Authority note:
+// - task-state owns task/workflow continuity and prompt-time task evidence assembly
+// - persona-memory owns persona/temporal/preference clustering
+// - document identity/version continuity belongs to artifact metadata plus document-resolution
+// - Honcho may enrich context, but it is not the authority for current task/document/temporal truth
+
 export {
   attachContinuityToTaskState,
   deleteAllProjectMemory,

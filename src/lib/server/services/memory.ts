@@ -75,6 +75,12 @@ type KnowledgeOverviewSelection = {
 	durablePersonaCount: number;
 };
 
+// Memory authority map:
+// - persona-memory.ts owns persona/temporal/preference clustering and freshness
+// - task-state.ts owns task/workflow continuity
+// - document continuity belongs to generated-output and knowledge artifacts, not persona summaries
+// - honcho.ts mirrors and enriches, but local memory state remains authoritative for freshness-sensitive truth
+
 type ResolveOverviewOptions = {
 	awaitLive?: boolean;
 	force?: boolean;
@@ -243,6 +249,31 @@ function buildOverviewSection(
 	return `### ${title}\n${items.join('\n')}`;
 }
 
+function selectActiveConstraintMemories(personaMemories: PersonaMemoryItem[]): PersonaMemoryItem[] {
+	return personaMemories.filter(
+		(memory) =>
+			memory.memoryClass === 'short_term_constraint' &&
+			memory.state === 'active' &&
+			Boolean(memory.activeConstraint) &&
+			memory.temporal?.freshness !== 'expired' &&
+			memory.temporal?.freshness !== 'historical'
+	);
+}
+
+function selectCurrentProjectContextMemories(personaMemories: PersonaMemoryItem[]): PersonaMemoryItem[] {
+	return personaMemories.filter((memory) => {
+		if (memory.temporal?.freshness === 'expired' || memory.temporal?.freshness === 'historical') {
+			return false;
+		}
+
+		if (memory.memoryClass === 'active_project_context') {
+			return memory.state === 'active' || memory.state === 'dormant';
+		}
+
+		return memory.memoryClass === 'situational_context' && memory.state === 'active';
+	});
+}
+
 function createOverviewFingerprint(memories: PersonaMemoryItem[]): string {
 	const payload = memories
 		.slice()
@@ -267,6 +298,8 @@ function createOverviewFingerprint(memories: PersonaMemoryItem[]): string {
 
 function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): DurableOverviewSelection {
 	const durableMemories = personaMemories.filter((memory) => isDurableOverviewCandidate(memory));
+	const activeConstraints = selectActiveConstraintMemories(durableMemories);
+	const currentProjectContext = selectCurrentProjectContextMemories(durableMemories);
 	const durablePersonaCount = durableMemories.length;
 	const sourceFingerprint = createOverviewFingerprint(durableMemories);
 	if (durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
@@ -274,18 +307,8 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): Durabl
 	}
 
 	const sections = [
-		buildOverviewSection(
-			'Active Constraints',
-			durableMemories.filter((memory) => memory.memoryClass === 'short_term_constraint')
-		),
-		buildOverviewSection(
-			'Current Project Context',
-			durableMemories.filter(
-				(memory) =>
-					memory.memoryClass === 'active_project_context' ||
-					memory.memoryClass === 'situational_context'
-			)
-		),
+		buildOverviewSection('Active Constraints', activeConstraints),
+		buildOverviewSection('Current Project Context', currentProjectContext),
 		buildOverviewSection(
 			'Stable Preferences',
 			durableMemories.filter((memory) => memory.memoryClass === 'stable_preference')
@@ -722,6 +745,8 @@ async function enrichPersonaMemories(
 function buildKnowledgeMemorySummary(
 	overview: KnowledgeOverviewSelection,
 	personaCount: number,
+	activeConstraintCount: number,
+	currentProjectContextCount: number,
 	taskCount: number,
 	focusContinuityCount: number
 ): KnowledgeMemorySummary {
@@ -729,6 +754,8 @@ function buildKnowledgeMemorySummary(
 		personaCount,
 		taskCount,
 		focusContinuityCount,
+		activeConstraintCount,
+		currentProjectContextCount,
 		overview: overview.overview,
 		overviewSource: overview.overviewSource,
 		overviewStatus: overview.overviewStatus,
@@ -755,9 +782,13 @@ export async function getKnowledgeMemory(
 		personaMemories,
 		awaitLive: false,
 	});
+	const activeConstraints = selectActiveConstraintMemories(personaMemories);
+	const currentProjectContext = selectCurrentProjectContextMemories(personaMemories);
 
 	return {
 		personaMemories,
+		activeConstraints,
+		currentProjectContext,
 		taskMemories: taskMemories.map((taskMemory) => ({
 			...taskMemory,
 			objective:
@@ -782,6 +813,8 @@ export async function getKnowledgeMemory(
 		summary: buildKnowledgeMemorySummary(
 			overviewSummary,
 			personaMemories.length,
+			activeConstraints.length,
+			currentProjectContext.length,
 			taskMemories.length,
 			focusContinuities.length
 		),
@@ -804,7 +837,14 @@ export async function getKnowledgeMemoryOverview(
 	});
 
 	return {
-		summary: buildKnowledgeMemorySummary(overviewSummary, personaMemories.length, 0, 0),
+		summary: buildKnowledgeMemorySummary(
+			overviewSummary,
+			personaMemories.length,
+			selectActiveConstraintMemories(personaMemories).length,
+			selectCurrentProjectContextMemories(personaMemories).length,
+			0,
+			0
+		),
 	};
 }
 

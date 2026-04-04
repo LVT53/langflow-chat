@@ -80,6 +80,8 @@
 		personaCount: 0,
 		taskCount: 0,
 		focusContinuityCount: 0,
+		activeConstraintCount: 0,
+		currentProjectContextCount: 0,
 		overview: null,
 		overviewSource: null,
 		overviewStatus: 'disabled',
@@ -131,6 +133,8 @@
 	let honchoOverviewUpdatedAt = $derived(memorySummary.overviewUpdatedAt);
 	let honchoOverviewLastAttemptAt = $derived(memorySummary.overviewLastAttemptAt);
 	let durablePersonaCount = $derived(memorySummary.durablePersonaCount);
+	let activeConstraintCount = $derived(memorySummary.activeConstraintCount ?? 0);
+	let currentProjectContextCount = $derived(memorySummary.currentProjectContextCount ?? 0);
 	$effect(() => {
 		void renderHonchoOverview(honchoOverview, $isDark);
 	});
@@ -284,6 +288,8 @@
 					personaCount: payload.summary.personaCount ?? 0,
 					taskCount: payload.summary.taskCount ?? 0,
 					focusContinuityCount: payload.summary.focusContinuityCount ?? 0,
+					activeConstraintCount: payload.summary.activeConstraintCount ?? 0,
+					currentProjectContextCount: payload.summary.currentProjectContextCount ?? 0,
 					overview: payload.summary.overview ?? null,
 					overviewSource: payload.summary.overviewSource ?? null,
 					overviewStatus:
@@ -296,6 +302,8 @@
 			personaCount: 0,
 			taskCount: 0,
 			focusContinuityCount: 0,
+			activeConstraintCount: 0,
+			currentProjectContextCount: 0,
 			overview: null,
 			overviewSource: null,
 			overviewStatus: honchoEnabled ? 'not_enough_durable_memory' : 'disabled',
@@ -314,6 +322,10 @@
 		memorySummary = {
 			...memorySummary,
 			personaCount: summary.personaCount || memorySummary.personaCount,
+			activeConstraintCount:
+				summary.activeConstraintCount ?? memorySummary.activeConstraintCount,
+			currentProjectContextCount:
+				summary.currentProjectContextCount ?? memorySummary.currentProjectContextCount,
 			overview: summary.overview ?? null,
 			overviewSource: summary.overviewSource ?? null,
 			overviewStatus:
@@ -928,6 +940,8 @@
 				{honchoOverviewUpdatedAt}
 				{honchoOverviewLastAttemptAt}
 				{durablePersonaCount}
+				{activeConstraintCount}
+				{currentProjectContextCount}
 				{liveOverviewRefreshing}
 				onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
 				onRetryLiveOverview={() => void refreshLiveOverview(true)}

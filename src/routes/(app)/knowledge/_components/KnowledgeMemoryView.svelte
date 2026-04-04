@@ -18,6 +18,8 @@
 		honchoOverviewUpdatedAt,
 		honchoOverviewLastAttemptAt,
 		durablePersonaCount,
+		activeConstraintCount,
+		currentProjectContextCount,
 		liveOverviewRefreshing,
 		onRetryLoadMemory,
 		onRetryLiveOverview,
@@ -36,6 +38,8 @@
 		honchoOverviewUpdatedAt: number | null;
 		honchoOverviewLastAttemptAt: number | null;
 		durablePersonaCount: number;
+		activeConstraintCount: number;
+		currentProjectContextCount: number;
 		liveOverviewRefreshing: boolean;
 		onRetryLoadMemory: () => void | Promise<void>;
 		onRetryLiveOverview: () => void | Promise<void>;
@@ -107,6 +111,18 @@
 					<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 						{personaMemoryCount}
 					</span>
+				</div>
+				<div class="mt-4 flex flex-wrap gap-2">
+					{#if activeConstraintCount > 0}
+						<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
+							{activeConstraintCount} active constraint{activeConstraintCount === 1 ? '' : 's'}
+						</span>
+					{/if}
+					{#if currentProjectContextCount > 0}
+						<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
+							{currentProjectContextCount} current project context item{currentProjectContextCount === 1 ? '' : 's'}
+						</span>
+					{/if}
 				</div>
 
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">

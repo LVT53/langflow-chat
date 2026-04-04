@@ -241,6 +241,35 @@ function makeActiveConstraintMemory() {
 	};
 }
 
+function makeActiveProjectContextMemory() {
+	return {
+		id: 'project-active',
+		canonicalText: 'The user is currently working on assessment documentation.',
+		rawCanonicalText: 'The user is currently working on assessment documentation.',
+		memoryClass: 'active_project_context',
+		state: 'active',
+		salienceScore: 74,
+		sourceCount: 1,
+		conversationTitles: [],
+		firstSeenAt: Date.now() - 8_000,
+		lastSeenAt: Date.now() - 8_000,
+		pinned: false,
+		temporal: {
+			kind: 'project_window',
+			freshness: 'active',
+			observedAt: Date.now() - 8_000,
+			effectiveAt: Date.now() - 8_000,
+			expiresAt: null,
+			relative: true,
+			resolved: true,
+		},
+		activeConstraint: false,
+		topicKey: 'assessment documentation',
+		topicStatus: 'active',
+		members: [],
+	};
+}
+
 describe('knowledge memory service', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -269,6 +298,8 @@ describe('knowledge memory service', () => {
 			personaCount: 0,
 			taskCount: 0,
 			focusContinuityCount: 0,
+			activeConstraintCount: 0,
+			currentProjectContextCount: 0,
 			overview: null,
 			overviewSource: null,
 			overviewStatus: 'not_enough_durable_memory',
@@ -345,6 +376,24 @@ describe('knowledge memory service', () => {
 			'The user has one week left to finish assessment documentation.'
 		);
 		expect(payload.summary.overview).not.toContain('due in two days');
+	});
+
+	it('returns active constraints and current project context as separate memory selections', async () => {
+		mockListPersonaMemoryClusters.mockResolvedValue([
+			...makeDurablePersonaMemories(),
+			makeActiveConstraintMemory(),
+			makeActiveProjectContextMemory(),
+		]);
+		mockGetPeerContext.mockResolvedValue('');
+
+		const { getKnowledgeMemory } = await import('./memory');
+
+		const payload = await getKnowledgeMemory('user-1', 'Test User');
+
+		expect(payload.activeConstraints?.map((memory) => memory.id)).toEqual(['deadline-active']);
+		expect(payload.currentProjectContext?.map((memory) => memory.id)).toEqual(['project-active']);
+		expect(payload.summary.activeConstraintCount).toBe(1);
+		expect(payload.summary.currentProjectContextCount).toBe(1);
 	});
 
 	it('rejects a live Honcho overview that repeats expired temporal memory as current truth', async () => {

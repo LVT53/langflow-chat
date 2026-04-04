@@ -10,6 +10,7 @@ import {
 } from '$lib/server/db/schema';
 import type {
 	PersonaMemoryClass,
+	PersonaMemoryDomain,
 	PersonaMemoryItem,
 	PersonaMemoryMemberItem,
 	PersonaMemoryState,
@@ -283,6 +284,19 @@ function normalizeMemoryText(value: string): string {
 
 function stripTrailingPeriod(value: string): string {
 	return normalizeWhitespace(value).replace(/[.]+$/, '');
+}
+
+function getPersonaMemoryDomain(memoryClass: PersonaMemoryClass): PersonaMemoryDomain {
+	if (memoryClass === 'stable_preference') return 'preference';
+	if (
+		memoryClass === 'short_term_constraint' ||
+		memoryClass === 'active_project_context' ||
+		memoryClass === 'situational_context' ||
+		memoryClass === 'perishable_fact'
+	) {
+		return 'temporal';
+	}
+	return 'persona';
 }
 
 function canonicalizePreferenceValue(
@@ -612,6 +626,30 @@ function isArtifactDerivedPersonaRecord(params: {
 	return false;
 }
 
+function isArtifactDerivedPersonaItem(params: {
+	item: PersonaMemoryItem;
+	candidates: PersonaDocumentMemoryCandidate[];
+}): boolean {
+	const texts = [
+		params.item.rawCanonicalText,
+		params.item.canonicalText,
+		...params.item.members.map((member) => member.content),
+	].filter((value): value is string => Boolean(value?.trim()));
+
+	return texts.some((content, index) =>
+		isArtifactDerivedPersonaRecord({
+			record: {
+				id: `${params.item.id}:${index}`,
+				content,
+				createdAt: params.item.lastSeenAt,
+				scope: 'self',
+				sessionId: params.item.members[0]?.sessionId ?? null,
+			},
+			candidates: params.candidates,
+		})
+	);
+}
+
 async function listPersonaDocumentMemoryCandidates(
 	userId: string
 ): Promise<PersonaDocumentMemoryCandidate[]> {
@@ -704,6 +742,28 @@ export async function filterArtifactDerivedPersonaRecords(params: {
 				candidates,
 			})
 	);
+}
+
+async function filterArtifactDerivedPersonaItems(
+	userId: string,
+	items: PersonaMemoryItem[]
+): Promise<PersonaMemoryItem[]> {
+	if (items.length === 0) return items;
+
+	const candidates = await listPersonaDocumentMemoryCandidates(userId).catch(() => []);
+	if (candidates.length === 0) {
+		return items.filter((item) => {
+			const sourceText = item.rawCanonicalText ?? item.canonicalText;
+			if (!DOCUMENT_MEMORY_DIRECT_CUE_PATTERN.test(sourceText)) return true;
+			return item.memoryClass === 'stable_preference' || item.memoryClass === 'identity_profile';
+		});
+	}
+
+	return items.filter((item) => {
+		const artifactDerived = isArtifactDerivedPersonaItem({ item, candidates });
+		if (!artifactDerived) return true;
+		return item.memoryClass === 'stable_preference' || item.memoryClass === 'identity_profile';
+	});
 }
 
 export function buildDreamClusterPayload(params: {
@@ -2156,6 +2216,7 @@ export async function listPersonaMemoryClusters(userId: string): Promise<Persona
 					? buildHistoricalTemporalText(rawCanonicalText, temporal.observedAt)
 					: rawCanonicalText,
 			rawCanonicalText,
+			domain: getPersonaMemoryDomain(row.cluster.memoryClass as PersonaMemoryClass),
 			memoryClass: row.cluster.memoryClass as PersonaMemoryClass,
 			state: derivedState.state,
 			salienceScore: row.cluster.salienceScore,
@@ -2176,6 +2237,12 @@ export async function listPersonaMemoryClusters(userId: string): Promise<Persona
 				state: derivedState.state,
 				temporal,
 			}),
+			supersededById:
+				typeof metadata.supersededByClusterId === 'string'
+					? metadata.supersededByClusterId
+					: null,
+			supersessionReason:
+				typeof metadata.supersessionReason === 'string' ? metadata.supersessionReason : null,
 			members: [] as PersonaMemoryMemberItem[],
 		};
 
@@ -2201,7 +2268,9 @@ export async function listPersonaMemoryClusters(userId: string): Promise<Persona
 		grouped.set(row.cluster.clusterId, existing);
 	}
 
-	return Array.from(grouped.values()).sort((left, right) => {
+	const filtered = await filterArtifactDerivedPersonaItems(userId, Array.from(grouped.values()));
+
+	return filtered.sort((left, right) => {
 		const stateRank = (state: PersonaMemoryState): number =>
 			state === 'active' ? 0 : state === 'dormant' ? 1 : 2;
 		const byState = stateRank(left.state) - stateRank(right.state);
@@ -2258,8 +2327,8 @@ export async function buildPersonaPromptContext(
 	});
 	if (items.length === 0) return '';
 
-	const active = items
-		.filter((item) => item.state === 'active')
+	const activeConstraints = items
+		.filter((item) => item.state === 'active' && item.activeConstraint)
 		.map((item) => ({
 			item,
 			matchScore: Math.max(
@@ -2281,8 +2350,24 @@ export async function buildPersonaPromptContext(
 				right.item.lastSeenAt - left.item.lastSeenAt
 		)
 		.slice(0, ACTIVE_PROMPT_LIMIT);
+	const active = items
+		.filter((item) => item.state === 'active' && !item.activeConstraint)
+		.map((item) => ({
+			item,
+			matchScore: Math.max(
+				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
+				item.topicKey ? scoreMatch(query, item.topicKey) : 0
+			),
+		}))
+		.sort(
+			(left, right) =>
+				right.matchScore - left.matchScore ||
+				right.item.salienceScore - left.item.salienceScore ||
+				right.item.lastSeenAt - left.item.lastSeenAt
+		)
+		.slice(0, ACTIVE_PROMPT_LIMIT);
 	const dormant = items
-		.filter((item) => item.state === 'dormant')
+		.filter((item) => item.state === 'dormant' && !item.activeConstraint)
 		.map((item) => ({
 			item,
 			matchScore: Math.max(
@@ -2302,7 +2387,11 @@ export async function buildPersonaPromptContext(
 
 	const selected = Array.from(
 		new Map(
-			[...active.map((entry) => entry.item), ...dormant].map((item) => [item.id, item])
+			[
+				...activeConstraints.map((entry) => entry.item),
+				...active.map((entry) => entry.item),
+				...dormant,
+			].map((item) => [item.id, item])
 		).values()
 	);
 	if (selected.length === 0) return '';

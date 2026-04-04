@@ -469,6 +469,73 @@ describe('persona-memory temporal safeguards', () => {
 		expect(prompt).not.toContain('assessment documentation due in two days');
 	});
 
+	it('filters artifact-derived persona clusters from the read path', async () => {
+		mockSelectQuery
+			.mockImplementationOnce(() =>
+				createSelectChain([
+					{
+						cluster: {
+							clusterId: 'cluster-doc',
+							canonicalText: 'Generated file version: Project brief v2 with updated sections.',
+							memoryClass: 'long_term_context',
+							state: 'active',
+							salienceScore: 90,
+							sourceCount: 1,
+							pinned: 0,
+							firstSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+							lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+							createdAt: new Date('2026-03-28T10:00:00.000Z'),
+							updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+							metadataJson: JSON.stringify({}),
+						},
+						member: null,
+						conversationTitle: null,
+					},
+					{
+						cluster: {
+							clusterId: 'cluster-pref',
+							canonicalText: 'The user prefers concise answers.',
+							memoryClass: 'stable_preference',
+							state: 'active',
+							salienceScore: 88,
+							sourceCount: 1,
+							pinned: 0,
+							firstSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+							lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+							createdAt: new Date('2026-03-28T10:00:00.000Z'),
+							updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+							metadataJson: JSON.stringify({}),
+						},
+						member: null,
+						conversationTitle: null,
+					},
+				])
+			)
+			.mockImplementationOnce(() =>
+				createSelectChain([
+					{
+						id: 'artifact-1',
+						type: 'generated_output',
+						name: 'Project brief v2.pdf',
+						summary: 'Updated project brief with revised sections.',
+						contentText: 'Project brief v2 with updated sections and refined summary.',
+						metadataJson: JSON.stringify({
+							documentFamilyId: 'family-brief',
+							documentLabel: 'Project brief',
+							versionNumber: 2,
+						}),
+						updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+					},
+				])
+			);
+
+		const { listPersonaMemoryClusters } = await import('./persona-memory');
+
+		const clusters = await listPersonaMemoryClusters('user-doc-filter');
+
+		expect(clusters.map((cluster) => cluster.id)).toEqual(['cluster-pref']);
+	});
+
 	it('supersedes older temporal memories for the same topic', async () => {
 		mockCanUseContextSummarizer.mockReturnValue(false);
 
