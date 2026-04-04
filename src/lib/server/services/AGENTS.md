@@ -125,6 +125,7 @@ knowledge.ts (facade — re-exports from below)
 **Active-state assembly note**: use `active-state.ts` as the shared source for live document focus/correction/current-output/recently-refined-family/reset signals. Avoid rebuilding that logic independently inside `knowledge/context.ts`, `task-state.ts`, or `honcho.ts`, because drift there will make prompt selection and evidence selection disagree about the “current” document.
 **Prompt-selection note**: `selectWorkingSetArtifactsForPrompt(...)` must rederive turn-scoped document reason codes from the current active-state before calling generated-document prompt eligibility. Persisted DB reason codes describe the last turn, not the current one.
 **Retrieval note**: generated-document retrieval in `knowledge/context.ts` should also follow the shared active-state contract. Keep a preferred/recently refined family active on generic refinement turns, but do not drag in unrelated generated-document families unless the query explicitly matches them, and let reset/move-on phrasing suppress that carryover.
+**Transport note**: preserve `activeDocumentArtifactId` end-to-end through `streaming.ts`, `/api/chat/stream`, `/api/chat/retry`, and `langflow.ts`. The server-side active-state and retrieval helpers cannot recover a workspace-focused document if the browser/request layer drops that id.
 
 ## Task-State Submodule Flow
 

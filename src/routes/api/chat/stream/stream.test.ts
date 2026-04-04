@@ -353,6 +353,45 @@ describe('POST /api/chat/stream', () => {
 		});
 	});
 
+	it('forwards the active workspace document id into Langflow streaming calls', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'Refine it', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg',
+				role: 'assistant',
+				content: 'Refined',
+				timestamp: Date.now(),
+			});
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: add_message\ndata: {"text":"Refined"}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({
+			message: 'Refine it',
+			conversationId: 'conv-1',
+			activeDocumentArtifactId: 'artifact-focused-1',
+		});
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(body).toContain('"text":"Refined"');
+		expect(mockSendMessageStream).toHaveBeenCalledWith(
+			'Refine it',
+			'conv-1',
+			undefined,
+			expect.objectContaining({
+				activeDocumentArtifactId: 'artifact-focused-1',
+				userId: 'user-1',
+			})
+		);
+	});
+
 	it('continues processing upstream after the client disconnects during metadata loading', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);

@@ -253,6 +253,69 @@ describe('streamChat', () => {
 		});
 	});
 
+	it('threads the active workspace document id into the streaming request body', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: end\n',
+				'data: {}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('test message', 'conv-1', cb as unknown as StreamCallbacks, {
+			activeDocumentArtifactId: 'artifact-focused-1',
+		});
+		await done;
+
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/chat/stream',
+			expect.objectContaining({
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: expect.any(String),
+			})
+		);
+		const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+		const parsedBody = JSON.parse(String(requestInit?.body));
+		expect(parsedBody.activeDocumentArtifactId).toBe('artifact-focused-1');
+		expect(parsedBody.conversationId).toBe('conv-1');
+	});
+
+	it('threads the active workspace document id into retry requests too', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: end\n',
+				'data: {}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('ignored', 'conv-1', cb as unknown as StreamCallbacks, {
+			retryAssistantMessageId: 'assistant-msg-1',
+			activeDocumentArtifactId: 'artifact-focused-2',
+		});
+		await done;
+
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/chat/retry',
+			expect.objectContaining({
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: expect.any(String),
+			})
+		);
+		const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+		const parsedBody = JSON.parse(String(requestInit?.body));
+		expect(parsedBody.assistantMessageId).toBe('assistant-msg-1');
+		expect(parsedBody.activeDocumentArtifactId).toBe('artifact-focused-2');
+	});
+
 	it('parses tool-call details and assistant evidence metadata', async () => {
 		const mockFetch = vi.mocked(fetch);
 		const onToolCall = vi.fn();

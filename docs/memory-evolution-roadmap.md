@@ -266,6 +266,7 @@ Current progress:
 - explicit move-on / completion phrasing now suppresses stale document carryover through that same helper, and Honcho prompt assembly uses the shared active-state path too instead of keeping a separate document-focus heuristic
 - prompt-time working-set selection now recomputes live document carryover from that helper as well, so stale reason codes persisted from the previous turn do not keep an old generated document alive by accident before the next working-set refresh runs
 - retrieval-side generated-document ordering now consumes the same family/reset signals, so a recently refined family can stay active on generic follow-up turns without also pulling unrelated generated-document families unless the query explicitly matches them
+- transport-path regression coverage now locks that active workspace document signal through the browser streaming client and chat stream route as well, so the focused document id is still present when Langflow context assembly runs
 
 ### Wave 5: Maintenance And Repair Loops
 
