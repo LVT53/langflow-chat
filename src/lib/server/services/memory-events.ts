@@ -154,3 +154,40 @@ export async function listLatestMemoryEventsBySubject(params: {
 
 	return latestBySubject;
 }
+
+export async function countRecentMemoryEventsBySubject(params: {
+	userId: string;
+	domain?: MemoryEventDomain;
+	eventTypes?: MemoryEventType[];
+	subjectIds: string[];
+	since?: number | Date;
+	limitPerSubject?: number;
+}): Promise<Map<string, number>> {
+	if (params.subjectIds.length === 0) {
+		return new Map();
+	}
+
+	const sinceTimestamp =
+		params.since instanceof Date
+			? params.since.getTime()
+			: typeof params.since === 'number' && Number.isFinite(params.since)
+				? params.since
+				: null;
+
+	const rows = await listMemoryEvents({
+		userId: params.userId,
+		domain: params.domain,
+		eventTypes: params.eventTypes,
+		subjectIds: params.subjectIds,
+		limit: Math.max(params.subjectIds.length * (params.limitPerSubject ?? 8), params.subjectIds.length),
+	});
+
+	const counts = new Map<string, number>();
+	for (const row of rows) {
+		if (!row.subjectId) continue;
+		if (sinceTimestamp !== null && row.observedAt < sinceTimestamp) continue;
+		counts.set(row.subjectId, (counts.get(row.subjectId) ?? 0) + 1);
+	}
+
+	return counts;
+}

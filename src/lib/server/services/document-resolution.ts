@@ -30,6 +30,7 @@ type GeneratedArtifactMatchParams = {
   artifacts: Artifact[];
   query: string;
   currentConversationId?: string | null;
+  behaviorScoresByKey?: Map<string, number>;
 };
 
 const GENERATED_QUERY_MATCH_REASONS = new Set([
@@ -47,12 +48,19 @@ function includesNormalized(haystack: string, needle: string): boolean {
   return normalizedHaystack.includes(normalizedNeedle);
 }
 
+export function getGeneratedDocumentBehaviorKey(artifact: Pick<Artifact, "id" | "metadata">): string {
+  const metadata = parseWorkingDocumentMetadata(artifact.metadata);
+  return metadata.documentFamilyId ?? artifact.id;
+}
+
 function scoreGeneratedDocumentArtifact(params: {
   artifact: Artifact;
   query: string;
   currentConversationId?: string | null;
+  behaviorScoresByKey?: Map<string, number>;
 }): GeneratedDocumentResolution {
   const metadata = parseWorkingDocumentMetadata(params.artifact.metadata);
+  const behaviorKey = metadata.documentFamilyId ?? params.artifact.id;
   const label = metadata.documentLabel ?? params.artifact.name;
   const role = metadata.documentRole ?? "";
   const generatedFilename =
@@ -70,6 +78,7 @@ function scoreGeneratedDocumentArtifact(params: {
 
   let score = scoreMatch(params.query, haystack) * 10;
   const reasonCodes: string[] = [];
+  const behaviorScore = params.behaviorScoresByKey?.get(behaviorKey) ?? 0;
 
   if (score > 0) {
     reasonCodes.push("matched_query");
@@ -101,6 +110,11 @@ function scoreGeneratedDocumentArtifact(params: {
   ) {
     score += 8;
     reasonCodes.push("same_conversation");
+  }
+
+  if (behaviorScore > 0) {
+    score += Math.min(16, behaviorScore * 4);
+    reasonCodes.push("recent_refinement_behavior");
   }
 
   return {
@@ -146,6 +160,7 @@ function rankLatestGeneratedDocumentArtifacts(
         artifact,
         query: params.query,
         currentConversationId: params.currentConversationId,
+        behaviorScoresByKey: params.behaviorScoresByKey,
       }),
     )
     .filter((entry) => entry.score > 0)
@@ -211,11 +226,13 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
   query: string;
   limit: number;
   currentConversationId?: string | null;
+  behaviorScoresByKey?: Map<string, number>;
 }): GeneratedDocumentResolution[] {
   return rankLatestGeneratedDocumentArtifacts({
     artifacts: params.artifacts,
     query: params.query,
     currentConversationId: params.currentConversationId,
+    behaviorScoresByKey: params.behaviorScoresByKey,
   }).slice(0, params.limit);
 }
 
@@ -227,6 +244,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   preferredFamilyId?: string | null;
   currentConversationId?: string | null;
   suppressCarryoverWhenUnfocused?: boolean;
+  behaviorScoresByKey?: Map<string, number>;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
@@ -247,6 +265,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
     query: params.query,
     limit: Math.max(params.limit, 1),
     currentConversationId: params.currentConversationId,
+    behaviorScoresByKey: params.behaviorScoresByKey,
   });
   const orderedArtifacts: Artifact[] = [];
   const seenArtifactIds = new Set<string>();

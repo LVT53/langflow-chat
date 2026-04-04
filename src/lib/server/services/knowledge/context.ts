@@ -20,9 +20,11 @@ import { parseJsonStringArray } from '$lib/server/utils/json';
 import { buildActiveDocumentState, deriveCurrentTurnReasonCodes } from '../active-state';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
+	getGeneratedDocumentBehaviorKey,
 	isGeneratedDocumentPromptEligible,
 	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
+import { countRecentMemoryEventsBySubject } from '../memory-events';
 import {
 	rankWorkingSetCandidates,
 	scoreMatch,
@@ -459,6 +461,7 @@ export async function findRelevantKnowledgeArtifacts(params: {
 }): Promise<Artifact[]> {
 	await ensureGeneratedOutputRetrievalBackfill(params.userId);
 	const limit = params.limit ?? 6;
+	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
 
 	const [documents, generatedOutputs, preferredArtifacts] = await Promise.all([
 		findRelevantArtifactsByTypes({
@@ -483,6 +486,23 @@ export async function findRelevantKnowledgeArtifacts(params: {
 	const preferredRelevantArtifacts = preferredArtifacts.filter(
 		(artifact) => artifact.type !== 'generated_output'
 	);
+	const generatedBehaviorKeys = Array.from(
+		new Set(
+			[...generatedOutputs, ...preferredArtifacts]
+				.filter((artifact) => artifact.type === 'generated_output')
+				.map((artifact) => getGeneratedDocumentBehaviorKey(artifact))
+		)
+	);
+	const behaviorScoresByKey =
+		generatedBehaviorKeys.length > 0
+			? await countRecentMemoryEventsBySubject({
+					userId: params.userId,
+					domain: 'document',
+					eventTypes: ['document_refined'],
+					subjectIds: generatedBehaviorKeys,
+					since: recentBehaviorWindowStart,
+				}).catch(() => new Map<string, number>())
+			: new Map<string, number>();
 	const generatedSelection = resolveRelevantGeneratedDocumentSelection({
 		artifacts: [...generatedOutputs, ...preferredArtifacts],
 		query: params.query,
@@ -491,6 +511,7 @@ export async function findRelevantKnowledgeArtifacts(params: {
 		preferredFamilyId: params.preferredGeneratedFamilyId ?? null,
 		currentConversationId: params.currentConversationId,
 		suppressCarryoverWhenUnfocused: params.suppressGeneratedCarryover ?? false,
+		behaviorScoresByKey,
 	});
 
 	const seen = new Set<string>();

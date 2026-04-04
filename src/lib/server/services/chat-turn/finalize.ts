@@ -1,5 +1,6 @@
 import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
+import { hasRecentUserCorrectionSignal } from '$lib/server/services/active-state';
 import {
 	mirrorMessage,
 	mirrorWorkCapsuleConclusion,
@@ -14,7 +15,9 @@ import {
 	refreshConversationWorkingSet,
 	upsertWorkCapsule,
 } from '$lib/server/services/knowledge';
+import { parseWorkingDocumentMetadata } from '$lib/server/services/knowledge/store';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { recordMemoryEvent } from '$lib/server/services/memory-events';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import {
 	updateMessageEvidence,
@@ -101,6 +104,9 @@ export async function persistAssistantTurnState(
 		userId: params.userId,
 		conversationId: params.conversationId,
 	})) as WorkCapsuleSummary;
+	const activeDocumentArtifact = params.activeDocumentArtifactId
+		? (await getArtifactsForUser(params.userId, [params.activeDocumentArtifactId]).catch(() => []))[0] ?? null
+		: null;
 	const activeWorkingSet = await refreshConversationWorkingSet({
 		userId: params.userId,
 		conversationId: params.conversationId,
@@ -144,6 +150,30 @@ export async function persistAssistantTurnState(
 	taskState = await attachContinuityToTaskState(params.userId, taskState ?? null).catch(
 		() => taskState ?? null
 	);
+	if (activeDocumentArtifact) {
+		const documentMetadata = parseWorkingDocumentMetadata(activeDocumentArtifact.metadata);
+		const behaviorSubjectId = documentMetadata.documentFamilyId ?? activeDocumentArtifact.id;
+		await recordMemoryEvent({
+			eventKey: `document_refined:${behaviorSubjectId}:${params.assistantMessageId}`,
+			userId: params.userId,
+			conversationId: params.conversationId,
+			messageId: params.assistantMessageId,
+			domain: 'document',
+			eventType: 'document_refined',
+			subjectId: behaviorSubjectId,
+			relatedId: activeDocumentArtifact.id,
+			payload: {
+				artifactId: activeDocumentArtifact.id,
+				documentFamilyId: documentMetadata.documentFamilyId ?? null,
+				documentLabel: documentMetadata.documentLabel ?? activeDocumentArtifact.name,
+				documentRole: documentMetadata.documentRole ?? null,
+				explicitCorrection: hasRecentUserCorrectionSignal(params.normalizedMessage),
+				generatedOutputArtifactId: outputArtifact?.id ?? null,
+			},
+		}).catch((error) =>
+			console.error('[MEMORY_EVENTS] Failed to record document refinement event:', error)
+		);
+	}
 	await updateMessageHonchoMetadata(params.assistantMessageId, {
 		honchoContext: params.honchoContext,
 		honchoSnapshot: params.honchoSnapshot,

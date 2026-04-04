@@ -633,6 +633,7 @@ export type MemoryEventType =
   | 'project_paused'
   | 'project_resumed'
   | 'preference_updated'
+  | 'document_refined'
   | 'document_superseded';
 
 export interface PersonaMemoryTemporalInfo {

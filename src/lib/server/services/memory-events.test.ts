@@ -108,4 +108,44 @@ describe('memory-events service', () => {
 			payload: { topicKey: 'assessment' },
 		});
 	});
+
+	it('counts recent events by subject within the requested window', async () => {
+		const { recordMemoryEvent, countRecentMemoryEventsBySubject } = await import('./memory-events');
+
+		await recordMemoryEvent({
+			eventKey: 'document_refined:family-brief:1',
+			userId: 'user-1',
+			domain: 'document',
+			eventType: 'document_refined',
+			subjectId: 'family-brief',
+			observedAt: Date.UTC(2026, 3, 2),
+		});
+		await recordMemoryEvent({
+			eventKey: 'document_refined:family-brief:2',
+			userId: 'user-1',
+			domain: 'document',
+			eventType: 'document_refined',
+			subjectId: 'family-brief',
+			observedAt: Date.UTC(2026, 3, 4),
+		});
+		await recordMemoryEvent({
+			eventKey: 'document_refined:family-slides:1',
+			userId: 'user-1',
+			domain: 'document',
+			eventType: 'document_refined',
+			subjectId: 'family-slides',
+			observedAt: Date.UTC(2026, 2, 10),
+		});
+
+		const counts = await countRecentMemoryEventsBySubject({
+			userId: 'user-1',
+			domain: 'document',
+			eventTypes: ['document_refined'],
+			subjectIds: ['family-brief', 'family-slides'],
+			since: Date.UTC(2026, 3, 1),
+		});
+
+		expect(counts.get('family-brief')).toBe(2);
+		expect(counts.has('family-slides')).toBe(false);
+	});
 });

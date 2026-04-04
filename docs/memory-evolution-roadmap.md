@@ -339,6 +339,11 @@ Acceptance:
 
 Verification:
 
+Current progress:
+
+- focused document turns now emit `document_refined` memory events keyed by working-document family when available, so repeated refinement behavior is recorded deterministically from the server-side turn pipeline instead of depending on browser-only telemetry
+- generated-document retrieval ordering now consumes recent `document_refined` counts as a small bounded boost, which helps repeatedly refined families stay relevant on generic follow-up turns without replacing explicit query/document matching
+
 - ranking tests with behavior-signal fixtures
 - correction/salience regression tests
 - migration tests if new interaction-signal tables are added
