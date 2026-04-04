@@ -20,7 +20,7 @@ import { parseJsonStringArray } from '$lib/server/utils/json';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	resolveCurrentGeneratedDocumentSelection,
-	resolveRelevantGeneratedDocumentArtifacts,
+	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
 import {
 	rankWorkingSetCandidates,
@@ -38,7 +38,6 @@ import {
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
-	parseWorkingDocumentMetadata,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -423,60 +422,53 @@ export async function getConversationContextStatus(
 	return row ? mapContextStatus(row) : null;
 }
 
-export async function findRelevantKnowledgeArtifacts(
-	userId: string,
-	query: string,
-	excludeConversationId?: string,
-	limit = 6,
-	preferredArtifactId?: string
-): Promise<Artifact[]> {
-	await ensureGeneratedOutputRetrievalBackfill(userId);
+export async function findRelevantKnowledgeArtifacts(params: {
+	userId: string;
+	query: string;
+	excludeConversationId?: string;
+	currentConversationId?: string;
+	limit?: number;
+	preferredArtifactId?: string;
+}): Promise<Artifact[]> {
+	await ensureGeneratedOutputRetrievalBackfill(params.userId);
+	const limit = params.limit ?? 6;
 
 	const [documents, generatedOutputs, preferredArtifacts] = await Promise.all([
 		findRelevantArtifactsByTypes({
-			userId,
-			query,
+			userId: params.userId,
+			query: params.query,
 			types: ['normalized_document'],
 			limit,
-			excludeConversationId,
+			excludeConversationId: params.excludeConversationId,
 		}),
 		findRelevantArtifactsByTypes({
-			userId,
-			query,
+			userId: params.userId,
+			query: params.query,
 			types: ['generated_output'],
 			limit: Math.max(limit * 3, 12),
-			excludeConversationId,
+			excludeConversationId: params.excludeConversationId,
 		}),
-		preferredArtifactId ? getArtifactsForUser(userId, [preferredArtifactId]) : Promise.resolve([]),
+		params.preferredArtifactId
+			? getArtifactsForUser(params.userId, [params.preferredArtifactId])
+			: Promise.resolve([]),
 	]);
 
-	const preferredGeneratedFamilies = new Set(
-		preferredArtifacts
-			.filter((artifact) => artifact.type === 'generated_output')
-			.map((artifact) => parseWorkingDocumentMetadata(artifact.metadata).documentFamilyId)
-			.filter((familyId): familyId is string => typeof familyId === 'string' && familyId.length > 0)
+	const preferredRelevantArtifacts = preferredArtifacts.filter(
+		(artifact) => artifact.type !== 'generated_output'
 	);
-	const resolvedOutputs = resolveRelevantGeneratedDocumentArtifacts({
-		artifacts: generatedOutputs,
-		query,
+	const generatedSelection = resolveRelevantGeneratedDocumentSelection({
+		artifacts: [...generatedOutputs, ...preferredArtifacts],
+		query: params.query,
 		limit,
-		currentConversationId: excludeConversationId ? null : undefined,
-	})
-		.map((entry) => entry.artifact)
-		.filter((artifact) => {
-			if (!preferredArtifacts.some((preferred) => preferred.id === artifact.id)) {
-				const familyId = parseWorkingDocumentMetadata(artifact.metadata).documentFamilyId;
-				return !familyId || !preferredGeneratedFamilies.has(familyId);
-			}
-			return false;
-		});
+		preferredArtifactId: params.preferredArtifactId,
+		currentConversationId: params.currentConversationId,
+	});
 
-	const preferredRelevantArtifacts = preferredArtifacts;
 	const seen = new Set<string>();
 	const ordered = [
 		...preferredRelevantArtifacts,
 		...documents,
-		...resolvedOutputs,
+		...generatedSelection.orderedArtifacts,
 	].filter((artifact) => {
 		if (seen.has(artifact.id)) return false;
 		seen.add(artifact.id);

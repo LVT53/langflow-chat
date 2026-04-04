@@ -447,13 +447,14 @@ describe('Honcho Service', () => {
         activeDocumentArtifactId: 'generated-artifact-7',
       });
 
-      expect(mockFindRelevantKnowledgeArtifacts).toHaveBeenCalledWith(
-        'user-123',
-        'Refine the open document.',
-        'conv-456',
-        6,
-        'generated-artifact-7'
-      );
+      expect(mockFindRelevantKnowledgeArtifacts).toHaveBeenCalledWith({
+        userId: 'user-123',
+        query: 'Refine the open document.',
+        excludeConversationId: 'conv-456',
+        currentConversationId: 'conv-456',
+        limit: 6,
+        preferredArtifactId: 'generated-artifact-7',
+      });
       expect(mockPrepareTaskContext).toHaveBeenCalledWith(
         expect.objectContaining({
           activeDocumentArtifactId: 'generated-artifact-7',

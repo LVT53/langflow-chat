@@ -1085,11 +1085,14 @@ export async function buildConstructedContext(params: {
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 			findRelevantKnowledgeArtifacts(
-				params.userId,
-				params.message,
-				params.conversationId,
-				6,
-				params.activeDocumentArtifactId
+				{
+					userId: params.userId,
+					query: params.message,
+					excludeConversationId: params.conversationId,
+					currentConversationId: params.conversationId,
+					limit: 6,
+					preferredArtifactId: params.activeDocumentArtifactId,
+				}
 			).catch(() => []),
 		]);
 	const {

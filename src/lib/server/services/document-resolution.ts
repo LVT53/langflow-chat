@@ -19,6 +19,13 @@ export interface CurrentGeneratedDocumentSelection {
   primaryReasonCodes: string[];
 }
 
+export interface RelevantGeneratedDocumentSelection {
+  orderedArtifacts: Artifact[];
+  primaryArtifactId: string | null;
+  primaryReasonCodes: string[];
+  resolutions: GeneratedDocumentResolution[];
+}
+
 function includesNormalized(haystack: string, needle: string): boolean {
   const normalizedHaystack = haystack.trim().toLowerCase();
   const normalizedNeedle = needle.trim().toLowerCase();
@@ -120,6 +127,57 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
       return right.artifact.updatedAt - left.artifact.updatedAt;
     })
     .slice(0, params.limit);
+}
+
+export function resolveRelevantGeneratedDocumentSelection(params: {
+  artifacts: Artifact[];
+  query: string;
+  limit: number;
+  preferredArtifactId?: string | null;
+  currentConversationId?: string | null;
+}): RelevantGeneratedDocumentSelection {
+  const generatedArtifacts = params.artifacts.filter(
+    (artifact) => artifact.type === "generated_output",
+  );
+  const preferredArtifact = params.preferredArtifactId
+    ? generatedArtifacts.find((artifact) => artifact.id === params.preferredArtifactId) ??
+      null
+    : null;
+  const preferredFamilyId = preferredArtifact
+    ? parseWorkingDocumentMetadata(preferredArtifact.metadata).documentFamilyId
+    : null;
+  const resolutions = resolveRelevantGeneratedDocumentArtifacts({
+    artifacts: generatedArtifacts,
+    query: params.query,
+    limit: Math.max(params.limit, 1),
+    currentConversationId: params.currentConversationId,
+  });
+  const orderedArtifacts: Artifact[] = [];
+  const seenArtifactIds = new Set<string>();
+
+  if (preferredArtifact) {
+    orderedArtifacts.push(preferredArtifact);
+    seenArtifactIds.add(preferredArtifact.id);
+  }
+
+  for (const resolution of resolutions) {
+    if (seenArtifactIds.has(resolution.artifact.id)) continue;
+    if (preferredFamilyId && resolution.familyId === preferredFamilyId) continue;
+    orderedArtifacts.push(resolution.artifact);
+    seenArtifactIds.add(resolution.artifact.id);
+    if (orderedArtifacts.length >= params.limit) break;
+  }
+
+  const primaryReasonCodes = preferredArtifact
+    ? ["preferred_artifact"]
+    : (resolutions[0]?.reasonCodes ?? []);
+
+  return {
+    orderedArtifacts,
+    primaryArtifactId: orderedArtifacts[0]?.id ?? null,
+    primaryReasonCodes,
+    resolutions,
+  };
 }
 
 export function resolveCurrentGeneratedDocumentSelection(params: {

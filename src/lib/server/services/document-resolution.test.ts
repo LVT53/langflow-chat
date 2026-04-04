@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveCurrentGeneratedDocumentSelection,
+  resolveRelevantGeneratedDocumentSelection,
   resolveRelevantGeneratedDocumentArtifacts,
 } from "./document-resolution";
 import type { Artifact } from "$lib/types";
@@ -115,6 +116,50 @@ describe("document resolution", () => {
 
     expect(resolved[0]?.artifact.id).toBe("artifact-2");
     expect(resolved[0]?.reasonCodes).toContain("same_conversation");
+  });
+
+  it("keeps the explicitly preferred generated artifact first without duplicating its family", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "continue the project brief",
+      limit: 4,
+      preferredArtifactId: "artifact-1",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-1",
+          name: "brief-v1.pdf",
+          updatedAt: 1,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 1,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-2",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-3",
+          name: "slides-v1.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 1,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual(["artifact-1"]);
+    expect(selection.primaryArtifactId).toBe("artifact-1");
+    expect(selection.primaryReasonCodes).toEqual(["preferred_artifact"]);
   });
 
   it("selects the latest artifact per generated document family for current-document context", () => {
