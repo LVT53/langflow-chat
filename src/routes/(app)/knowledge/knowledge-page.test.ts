@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import KnowledgePage from './+page.svelte';
 
 describe('Knowledge page', () => {
@@ -140,6 +140,93 @@ describe('Knowledge page', () => {
 		const vaultRegion = await waitFor(() => getByRole('region', { name: /vaults/i }));
 		expect(vaultRegion).toHaveTextContent('Research');
 		expect(queryByLabelText(/vault sidebar/i)).toBeNull();
+		unmount();
+	});
+
+	it('opens vault documents in the shared document workspace', async () => {
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+			const url = String(input);
+			if (url === '/api/knowledge/storage-quota') {
+				return new Response(
+					JSON.stringify({
+						totalStorageUsed: 1024,
+						totalFiles: 1,
+						storageLimit: 1073741824,
+						usagePercent: 0,
+						isWarning: false,
+						warningThreshold: 80,
+						vaults: [
+							{
+								vaultId: 'vault-1',
+								vaultName: 'Research',
+								fileCount: 1,
+								storageUsed: 1024,
+							},
+						],
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					}
+				);
+			}
+
+			if (url === '/api/knowledge/normalized-1/preview') {
+				return new Response('Budget model text', {
+					status: 200,
+					headers: { 'Content-Type': 'text/plain' },
+				});
+			}
+
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const { getByRole, unmount } = render(KnowledgePage, {
+			data: {
+				documents: [
+					{
+						id: 'doc-1',
+						displayArtifactId: 'source-1',
+						promptArtifactId: 'normalized-1',
+						familyArtifactIds: ['source-1', 'normalized-1'],
+						name: 'Budget.pdf',
+						mimeType: 'application/pdf',
+						sizeBytes: 1024,
+						conversationId: null,
+						vaultId: 'vault-1',
+						summary: 'Quarterly budget',
+						normalizedAvailable: true,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+				],
+				results: [],
+				workflows: [],
+				vaults: [
+					{
+						id: 'vault-1',
+						userId: 'user-1',
+						name: 'Research',
+						color: '#C15F3C',
+						sortOrder: 0,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+				],
+				honchoEnabled: true,
+				userDisplayName: 'Test User',
+			},
+		});
+
+		await fireEvent.click(getByRole('button', { name: /ai view/i }));
+
+		await waitFor(() => {
+			const workspace = getByRole('complementary', { name: /document workspace/i });
+			expect(workspace).toBeDefined();
+			expect(within(workspace).getByText('Working Document')).toBeDefined();
+			expect(within(workspace).getByText('Budget.pdf')).toBeDefined();
+		});
+
 		unmount();
 	});
 

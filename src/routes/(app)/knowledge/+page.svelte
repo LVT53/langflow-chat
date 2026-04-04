@@ -18,12 +18,14 @@
 	} from '$lib/client/api/knowledge';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
+	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import type {
 		ArtifactSummary,
+		DocumentWorkspaceItem,
 		FocusContinuityItem,
 		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
@@ -81,6 +83,9 @@
 	const honchoEnabled = getData().honchoEnabled ?? false;
 
 	let activeTab = $state<KnowledgeTab>('library');
+	let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
+	let activeWorkspaceDocumentId = $state<string | null>(null);
+	let workspaceOpen = $state(false);
 	let deletingArtifactIds = $state(new Set<string>());
 	let pendingMemoryActionKey = $state<string | null>(null);
 	let pendingKnowledgeActionKey = $state<string | null>(null);
@@ -124,6 +129,42 @@
 	});
 
 	let overviewRenderVersion = 0;
+
+	function openWorkspaceDocument(document: DocumentWorkspaceItem) {
+		const alreadyOpen = workspaceDocuments.some((entry) => entry.id === document.id);
+		if (alreadyOpen) {
+			workspaceDocuments = workspaceDocuments.map((entry) =>
+				entry.id === document.id ? { ...entry, ...document } : entry
+			);
+		} else {
+			workspaceDocuments = [...workspaceDocuments, document];
+		}
+
+		activeWorkspaceDocumentId = document.id;
+		workspaceOpen = true;
+	}
+
+	function selectWorkspaceDocument(documentId: string) {
+		activeWorkspaceDocumentId = documentId;
+		workspaceOpen = true;
+	}
+
+	function closeWorkspaceDocument(documentId: string) {
+		const remainingDocuments = workspaceDocuments.filter((document) => document.id !== documentId);
+		workspaceDocuments = remainingDocuments;
+
+		if (activeWorkspaceDocumentId === documentId) {
+			activeWorkspaceDocumentId = remainingDocuments.at(-1)?.id ?? null;
+		}
+
+		if (remainingDocuments.length === 0) {
+			workspaceOpen = false;
+		}
+	}
+
+	function closeWorkspace() {
+		workspaceOpen = false;
+	}
 
 	function escapeHtml(value: string): string {
 		return value
@@ -763,20 +804,34 @@
 		{/if}
 
 		{#if activeTab === 'library'}
-			<KnowledgeLibraryView
-				{vaults}
-				{activeVaultId}
-				{documents}
-				{results}
-				{workflows}
-				quota={storageQuota}
-				onOpenLibraryModal={openLibraryModal}
-				onSelectVault={setActiveVault}
-				onCreateVault={handleVaultCreate}
-				onRenameVault={handleVaultRename}
-				onDeleteVault={handleVaultDelete}
-				onUploadToVault={handleVaultUpload}
-			/>
+			<div class="knowledge-library-stage flex min-h-0 flex-col gap-6 lg:flex-row">
+				<div class="min-w-0 flex-1">
+					<KnowledgeLibraryView
+						{vaults}
+						{activeVaultId}
+						{documents}
+						{results}
+						{workflows}
+						quota={storageQuota}
+						onOpenLibraryModal={openLibraryModal}
+						onSelectVault={setActiveVault}
+						onCreateVault={handleVaultCreate}
+						onRenameVault={handleVaultRename}
+						onDeleteVault={handleVaultDelete}
+						onUploadToVault={handleVaultUpload}
+						onOpenDocument={openWorkspaceDocument}
+					/>
+				</div>
+
+				<DocumentWorkspace
+					open={workspaceOpen}
+					documents={workspaceDocuments}
+					activeDocumentId={activeWorkspaceDocumentId}
+					onSelectDocument={selectWorkspaceDocument}
+					onCloseDocument={closeWorkspaceDocument}
+					onCloseWorkspace={closeWorkspace}
+				/>
+			</div>
 		{:else}
 			<KnowledgeMemoryView
 				{memoryLoading}

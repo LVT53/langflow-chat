@@ -89,7 +89,6 @@ describe('KnowledgeLibraryView', () => {
 		mockUploadKnowledgeAttachment.mockResolvedValue({
 			artifact: { id: 'artifact-1', name: 'Budget.pdf' },
 		} as any);
-		global.fetch = vi.fn();
 	});
 
 	it('renders the vault list inside the Vaults panel and allows clearing the scope', async () => {
@@ -189,20 +188,8 @@ describe('KnowledgeLibraryView', () => {
 		});
 	});
 
-	it('opens the AI view modal for a vault document', async () => {
-		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-			new Response(
-				JSON.stringify({
-					artifact: {
-						contentText: 'Budget model text',
-					},
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			)
-		);
+	it('emits a workspace document when opening AI view for a vault document', async () => {
+		const onOpenDocument = vi.fn();
 
 		render(KnowledgeLibraryView, {
 			props: {
@@ -214,15 +201,22 @@ describe('KnowledgeLibraryView', () => {
 				quota,
 				onOpenLibraryModal: vi.fn(),
 				onSelectVault: vi.fn(),
+				onOpenDocument,
 			},
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: /ai view/i }));
 
 		await waitFor(() => {
-			expect(screen.getByText('Budget model text')).toBeInTheDocument();
+			expect(onOpenDocument).toHaveBeenCalledWith({
+				id: 'artifact:normalized-1',
+				source: 'knowledge_artifact',
+				filename: 'Budget.pdf',
+				title: 'Budget.pdf',
+				mimeType: 'application/pdf',
+				artifactId: 'normalized-1',
+				conversationId: null,
+			});
 		});
-
-		expect(global.fetch).toHaveBeenCalledWith('/api/knowledge/normalized-1');
 	});
 });

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import AttachmentContentModal from '$lib/components/chat/AttachmentContentModal.svelte';
 	import {
 		uploadKnowledgeAttachment,
 		type StorageQuota,
@@ -7,6 +6,7 @@
 	} from '$lib/client/api/knowledge';
 	import type {
 		ArtifactSummary,
+		DocumentWorkspaceItem,
 		KnowledgeDocumentItem,
 		KnowledgeUploadResponse,
 		WorkCapsule,
@@ -44,6 +44,7 @@
 		onRenameVault = () => {},
 		onDeleteVault = () => {},
 		onUploadToVault = () => {},
+		onOpenDocument = () => {},
 	}: {
 		vaults: Vault[];
 		activeVaultId?: string | null;
@@ -57,11 +58,10 @@
 		onRenameVault?: (payload: { id: string; name: string }) => void;
 		onDeleteVault?: (payload: { id: string }) => void;
 		onUploadToVault?: (payload: { vaultId: string; response: KnowledgeUploadResponse }) => void;
+		onOpenDocument?: (document: DocumentWorkspaceItem) => void;
 	} = $props();
 
 	let searchQuery = $state('');
-	let previewArtifactId = $state<string | null>(null);
-	let previewFilename = $state('');
 	let showCreateModal = $state(false);
 	let editingVaultId = $state<string | null>(null);
 	let editName = $state('');
@@ -110,13 +110,15 @@
 	);
 
 	function openAiView(document: KnowledgeDocumentItem) {
-		previewArtifactId = document.promptArtifactId ?? document.displayArtifactId;
-		previewFilename = document.name;
-	}
-
-	function closeAiView() {
-		previewArtifactId = null;
-		previewFilename = '';
+		onOpenDocument({
+			id: `artifact:${document.promptArtifactId ?? document.displayArtifactId}`,
+			source: 'knowledge_artifact',
+			filename: document.name,
+			title: document.documentLabel ?? document.name,
+			mimeType: document.mimeType,
+			artifactId: document.promptArtifactId ?? document.displayArtifactId,
+			conversationId: document.conversationId,
+		});
 	}
 
 	function getVaultColor(color: string | null): string {
@@ -868,13 +870,6 @@
 		</div>
 	</div>
 </section>
-
-<AttachmentContentModal
-	open={Boolean(previewArtifactId)}
-	artifactId={previewArtifactId}
-	filename={previewFilename}
-	onClose={closeAiView}
-/>
 
 {#if showCreateModal}
 	<CreateVaultModal
