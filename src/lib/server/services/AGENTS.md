@@ -118,6 +118,8 @@ knowledge.ts (facade — re-exports from below)
 
 **Memory-events note**: Wave 2 now persists explicit `memory_events` rows for deadline changes, preference updates, project continuity transitions, and generated-document supersession. Use those rows for state-change history and later contradiction/repair work; do not fork that event history into capsule payloads, message metadata, or Honcho-only summaries.
 
+**Project-continuity note**: `task-state/continuity.ts` now interprets the newest `project_started` / `project_paused` / `project_resumed` event when resolving current continuity state. Explicit pause/resume phrasing from the user may write those events during turn finalization, and continuity reads should trust them before an older still-active row.
+
 ## Task-State Submodule Flow
 
 ```

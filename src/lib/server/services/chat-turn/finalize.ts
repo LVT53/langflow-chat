@@ -21,6 +21,7 @@ import {
 	updateMessageHonchoMetadata,
 } from '$lib/server/services/messages';
 import {
+	applyProjectContinuitySignalFromMessage,
 	attachContinuityToTaskState,
 	getContextDebugState,
 	getConversationTaskState,
@@ -125,6 +126,16 @@ export async function persistAssistantTurnState(
 		}).catch((error) =>
 			console.error(
 				`[CONTINUITY] Failed to sync focus continuity from ${params.continuitySource}:`,
+				error
+			)
+		);
+		await applyProjectContinuitySignalFromMessage({
+			userId: params.userId,
+			taskState,
+			message: params.normalizedMessage,
+		}).catch((error) =>
+			console.error(
+				`[CONTINUITY] Failed to apply project continuity signal from ${params.continuitySource}:`,
 				error
 			)
 		);

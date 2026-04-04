@@ -100,6 +100,7 @@ export async function listMemoryEvents(params: {
 	domain?: MemoryEventDomain;
 	eventTypes?: MemoryEventType[];
 	subjectId?: string | null;
+	subjectIds?: string[];
 	limit?: number;
 }): Promise<MemoryEvent[]> {
 	const conditions = [eq(memoryEvents.userId, params.userId)];
@@ -108,6 +109,9 @@ export async function listMemoryEvents(params: {
 	}
 	if (params.subjectId) {
 		conditions.push(eq(memoryEvents.subjectId, params.subjectId));
+	}
+	if (params.subjectIds && params.subjectIds.length > 0) {
+		conditions.push(inArray(memoryEvents.subjectId, params.subjectIds));
 	}
 	if (params.eventTypes && params.eventTypes.length > 0) {
 		conditions.push(inArray(memoryEvents.eventType, params.eventTypes));
@@ -121,4 +125,32 @@ export async function listMemoryEvents(params: {
 		.limit(params.limit ?? 20);
 
 	return rows.map(mapMemoryEventRow);
+}
+
+export async function listLatestMemoryEventsBySubject(params: {
+	userId: string;
+	domain?: MemoryEventDomain;
+	eventTypes?: MemoryEventType[];
+	subjectIds: string[];
+	limitPerSubject?: number;
+}): Promise<Map<string, MemoryEvent>> {
+	if (params.subjectIds.length === 0) {
+		return new Map();
+	}
+
+	const rows = await listMemoryEvents({
+		userId: params.userId,
+		domain: params.domain,
+		eventTypes: params.eventTypes,
+		subjectIds: params.subjectIds,
+		limit: Math.max(params.subjectIds.length * (params.limitPerSubject ?? 4), params.subjectIds.length),
+	});
+
+	const latestBySubject = new Map<string, MemoryEvent>();
+	for (const row of rows) {
+		if (!row.subjectId || latestBySubject.has(row.subjectId)) continue;
+		latestBySubject.set(row.subjectId, row);
+	}
+
+	return latestBySubject;
 }

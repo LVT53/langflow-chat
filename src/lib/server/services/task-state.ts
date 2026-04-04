@@ -47,8 +47,10 @@ import { scoreMatch } from "./working-set";
 // - Honcho may enrich context, but it is not the authority for current task/document/temporal truth
 
 export {
+  applyProjectContinuitySignalFromMessage,
   attachContinuityToTaskState,
   deleteAllProjectMemory,
+  detectProjectContinuitySignal,
   forgetFocusContinuity,
   forgetProjectMemory,
   forgetTaskMemory,
@@ -57,6 +59,7 @@ export {
   listProjectMemoryItems,
   listTaskMemoryItems,
   pruneOrphanProjectMemory,
+  resolveProjectContinuityStatus,
   syncProjectMemoryFromTaskState,
   syncTaskContinuityFromTaskState,
   updateProjectMemoryStatuses,

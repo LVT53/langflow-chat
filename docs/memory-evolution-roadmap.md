@@ -186,6 +186,11 @@ Goal:
 
 - generalize supersession beyond temporal constraints
 
+Current progress:
+
+- task continuity now consumes the newest project state event on the read path
+- explicit user pause/resume phrasing can update project continuity immediately instead of waiting for passive age-based decay
+
 Changes:
 
 - add contradiction resolution rules for:

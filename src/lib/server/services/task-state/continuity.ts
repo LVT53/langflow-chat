@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
@@ -11,6 +11,7 @@ import {
 import type {
   FocusContinuityItem,
   FocusContinuityStatus,
+  MemoryEventType,
   TaskCheckpoint,
   TaskContinuitySummary,
   TaskMemoryItem,
@@ -23,13 +24,26 @@ import {
   canUseContextSummarizer,
   requestStructuredControlModel,
 } from "./control-model";
-import { recordMemoryEvent } from "$lib/server/services/memory-events";
+import {
+  listLatestMemoryEventsBySubject,
+  listMemoryEvents,
+  recordMemoryEvent,
+} from "$lib/server/services/memory-events";
 import { mapTaskCheckpoint, mapTaskState } from "./mappers";
 
 const PROJECT_MATCH_MIN_SCORE = 16;
 const PROJECT_AMBIGUITY_GAP = 6;
 const PROJECT_NAME_MAX = 120;
 const PROJECT_SUMMARY_MAX = 360;
+const PROJECT_PAUSE_SIGNAL_PATTERN =
+  /\b(pause|put (?:it|this|that)? ?on hold|hold off on|park|set aside|deprioriti[sz]e|stop working on|not working on)\b/i;
+const PROJECT_RESUME_SIGNAL_PATTERN =
+  /\b(resume|continue|pick (?:it|this|that)? back up|restart|return to|get back to)\b/i;
+const PROJECT_STATE_EVENT_TYPES: Array<
+  Extract<MemoryEventType, "project_started" | "project_paused" | "project_resumed">
+> = ["project_started", "project_paused", "project_resumed"];
+
+export type ProjectStateEventType = (typeof PROJECT_STATE_EVENT_TYPES)[number];
 
 function clipNullable(
   value: string | null | undefined,
@@ -66,6 +80,38 @@ function projectStatusForLastActive(
   if (ageDays >= 45) return "archived";
   if (ageDays >= 14) return "dormant";
   return "active";
+}
+
+export function resolveProjectContinuityStatus(params: {
+  storedStatus: FocusContinuityStatus;
+  lastActiveAt: number | null;
+  latestEventType?: ProjectStateEventType | null;
+  now?: number;
+}): FocusContinuityStatus {
+  const ageDerivedStatus = projectStatusForLastActive(params.lastActiveAt, params.now);
+  if (params.latestEventType === "project_paused") {
+    return ageDerivedStatus === "archived" ? "archived" : "dormant";
+  }
+  if (
+    params.latestEventType === "project_started" ||
+    params.latestEventType === "project_resumed"
+  ) {
+    return ageDerivedStatus;
+  }
+  if (params.storedStatus === "active" && ageDerivedStatus !== "active") {
+    return ageDerivedStatus;
+  }
+  return params.storedStatus;
+}
+
+export function detectProjectContinuitySignal(
+  message: string | null | undefined,
+): ProjectStateEventType | null {
+  const normalized = normalizeWhitespace(message ?? "");
+  if (!normalized) return null;
+  if (PROJECT_PAUSE_SIGNAL_PATTERN.test(normalized)) return "project_paused";
+  if (PROJECT_RESUME_SIGNAL_PATTERN.test(normalized)) return "project_resumed";
+  return null;
 }
 
 type ProjectCandidate = {
@@ -120,10 +166,25 @@ async function listProjectCandidates(
     grouped.set(projectId, existing);
   }
 
-  return Array.from(grouped.values()).map((project) => ({
-    ...project,
-    artifactIds: Array.from(new Set(project.artifactIds)),
-  }));
+  const latestStateEvents = await listLatestMemoryEventsBySubject({
+    userId,
+    domain: "task",
+    eventTypes: PROJECT_STATE_EVENT_TYPES,
+    subjectIds: Array.from(grouped.keys()),
+  }).catch(() => new Map<string, { eventType: ProjectStateEventType }>());
+
+  return Array.from(grouped.values()).map((project) => {
+    const latestEvent = latestStateEvents.get(project.projectId);
+    return {
+      ...project,
+      status: resolveProjectContinuityStatus({
+        storedStatus: project.status,
+        lastActiveAt: project.lastActiveAt,
+        latestEventType: (latestEvent?.eventType as ProjectStateEventType | undefined) ?? null,
+      }),
+      artifactIds: Array.from(new Set(project.artifactIds)),
+    };
+  });
 }
 
 async function chooseProjectCandidate(params: {
@@ -239,6 +300,13 @@ async function getLatestStableCheckpoint(
 
 function buildProjectEventKey(parts: Array<string | number>): string {
   return parts.join(":");
+}
+
+function hashProjectSignalMessage(message: string): string {
+  return createHash("sha1")
+    .update(normalizeWhitespace(message).toLowerCase())
+    .digest("hex")
+    .slice(0, 12);
 }
 
 export async function listTaskMemoryItems(
@@ -510,13 +578,27 @@ export async function listFocusContinuityItems(
 
   if (rows.length === 0) return [];
 
+  const latestStateEvents = await listLatestMemoryEventsBySubject({
+    userId,
+    domain: "task",
+    eventTypes: PROJECT_STATE_EVENT_TYPES,
+    subjectIds: Array.from(new Set(rows.map((row) => row.project.projectId))),
+  }).catch(() => new Map<string, { eventType: ProjectStateEventType }>());
+
   const grouped = new Map<string, FocusContinuityItem>();
   for (const row of rows) {
+    const latestEvent = latestStateEvents.get(row.project.projectId);
     const existing = grouped.get(row.project.projectId) ?? {
       continuityId: row.project.projectId,
       name: row.project.name,
       summary: row.project.summary ?? null,
-      status: row.project.status as FocusContinuityStatus,
+      status: resolveProjectContinuityStatus({
+        storedStatus: row.project.status as FocusContinuityStatus,
+        lastActiveAt: row.project.lastActiveAt
+          ? row.project.lastActiveAt.getTime()
+          : null,
+        latestEventType: (latestEvent?.eventType as ProjectStateEventType | undefined) ?? null,
+      }),
       lastActiveAt: row.project.lastActiveAt
         ? row.project.lastActiveAt.getTime()
         : null,
@@ -600,6 +682,14 @@ async function getContinuitySummaryForTask(params: {
   const project = projectRow[0];
   if (!project) return null;
 
+  const latestStateEvents = await listLatestMemoryEventsBySubject({
+    userId: params.userId,
+    domain: "task",
+    eventTypes: PROJECT_STATE_EVENT_TYPES,
+    subjectIds: [project.projectId],
+  }).catch(() => new Map<string, { eventType: ProjectStateEventType }>());
+  const latestEvent = latestStateEvents.get(project.projectId);
+
   const linkedTaskCount = linkedCountRow.filter(
     (row) => row.projectId === project.projectId,
   ).length;
@@ -608,7 +698,11 @@ async function getContinuitySummaryForTask(params: {
     continuityId: project.projectId,
     name: project.name,
     summary: project.summary ?? null,
-    status: project.status as FocusContinuityStatus,
+    status: resolveProjectContinuityStatus({
+      storedStatus: project.status as FocusContinuityStatus,
+      lastActiveAt: project.lastActiveAt ? project.lastActiveAt.getTime() : null,
+      latestEventType: (latestEvent?.eventType as ProjectStateEventType | undefined) ?? null,
+    }),
     linkedTaskCount,
     lastActiveAt: project.lastActiveAt ? project.lastActiveAt.getTime() : null,
     updatedAt: project.updatedAt.getTime(),
@@ -671,6 +765,101 @@ export async function forgetFocusContinuity(
   return true;
 }
 
+export async function applyProjectContinuitySignalFromMessage(params: {
+  userId: string;
+  taskState: TaskState;
+  message: string;
+}): Promise<string | null> {
+  const signal = detectProjectContinuitySignal(params.message);
+  if (!signal) return null;
+
+  const rows = await db
+    .select({
+      projectId: memoryProjects.projectId,
+      status: memoryProjects.status,
+      lastActiveAt: memoryProjects.lastActiveAt,
+    })
+    .from(memoryProjectTaskLinks)
+    .innerJoin(
+      memoryProjects,
+      eq(memoryProjectTaskLinks.projectId, memoryProjects.projectId),
+    )
+    .where(
+      and(
+        eq(memoryProjectTaskLinks.userId, params.userId),
+        eq(memoryProjectTaskLinks.taskId, params.taskState.taskId),
+      ),
+    )
+    .limit(1);
+
+  const project = rows[0];
+  if (!project?.projectId) return null;
+
+  const latestEvent = (
+    await listMemoryEvents({
+      userId: params.userId,
+      domain: "task",
+      eventTypes: PROJECT_STATE_EVENT_TYPES,
+      subjectId: project.projectId,
+      limit: 1,
+    }).catch(() => [])
+  )[0];
+
+  if (
+    latestEvent?.eventType === signal &&
+    ((signal === "project_paused" && project.status !== "active") ||
+      (signal === "project_resumed" && project.status === "active"))
+  ) {
+    return project.projectId;
+  }
+
+  const now = new Date();
+  const nextStatus: FocusContinuityStatus =
+    signal === "project_paused" ? "dormant" : "active";
+
+  await db
+    .update(memoryProjects)
+    .set({
+      status: nextStatus,
+      lastActiveAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(memoryProjects.userId, params.userId),
+        eq(memoryProjects.projectId, project.projectId),
+      ),
+    );
+
+  await recordMemoryEvent({
+    eventKey: buildProjectEventKey([
+      signal,
+      project.projectId,
+      params.taskState.taskId,
+      hashProjectSignalMessage(params.message),
+    ]),
+    userId: params.userId,
+    conversationId: params.taskState.conversationId,
+    domain: "task",
+    eventType: signal,
+    subjectId: project.projectId,
+    relatedId: params.taskState.taskId,
+    observedAt: now,
+    payload: {
+      projectId: project.projectId,
+      taskId: params.taskState.taskId,
+      objective: params.taskState.objective,
+      message: normalizeWhitespace(params.message),
+      status: nextStatus,
+      explicitSignal: true,
+    },
+  }).catch((error) =>
+    console.error("[PROJECT_MEMORY] Failed to record project signal event:", error),
+  );
+
+  return project.projectId;
+}
+
 export const syncProjectMemoryFromTaskState = syncTaskContinuityFromTaskState;
 export const listProjectMemoryItems = listFocusContinuityItems;
 export const forgetProjectMemory = forgetFocusContinuity;
@@ -687,10 +876,20 @@ export async function updateProjectMemoryStatuses(
     .from(memoryProjects)
     .where(eq(memoryProjects.userId, userId));
 
+  const latestStateEvents = await listLatestMemoryEventsBySubject({
+    userId,
+    domain: "task",
+    eventTypes: PROJECT_STATE_EVENT_TYPES,
+    subjectIds: rows.map((row) => row.projectId),
+  }).catch(() => new Map<string, { eventType: ProjectStateEventType }>());
+
   for (const row of rows) {
-    const nextStatus = projectStatusForLastActive(
-      row.lastActiveAt ? row.lastActiveAt.getTime() : null,
-    );
+    const latestEvent = latestStateEvents.get(row.projectId);
+    const nextStatus = resolveProjectContinuityStatus({
+      storedStatus: row.status as FocusContinuityStatus,
+      lastActiveAt: row.lastActiveAt ? row.lastActiveAt.getTime() : null,
+      latestEventType: (latestEvent?.eventType as ProjectStateEventType | undefined) ?? null,
+    });
     if (nextStatus === row.status) continue;
     await db
       .update(memoryProjects)
@@ -699,7 +898,7 @@ export async function updateProjectMemoryStatuses(
         updatedAt: new Date(),
       })
       .where(eq(memoryProjects.projectId, row.projectId));
-    if (nextStatus !== "active") {
+    if (nextStatus !== "active" && latestEvent?.eventType !== "project_paused") {
       await recordMemoryEvent({
         eventKey: buildProjectEventKey([
           "project_paused",

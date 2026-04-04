@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
 	mockRecordMemoryEvent,
+	mockListLatestMemoryEventsBySubject,
+	mockListMemoryEvents,
 	mockCanUseContextSummarizer,
 	insertedProjects,
 	projectRows,
 	linkRows,
 } = vi.hoisted(() => ({
 	mockRecordMemoryEvent: vi.fn(async () => undefined),
+	mockListLatestMemoryEventsBySubject: vi.fn(async () => new Map()),
+	mockListMemoryEvents: vi.fn(async () => []),
 	mockCanUseContextSummarizer: vi.fn(() => false),
 	insertedProjects: [] as Array<Record<string, unknown>>,
 	projectRows: [] as Array<Record<string, any>>,
@@ -123,6 +127,8 @@ vi.mock('drizzle-orm', () => ({
 
 vi.mock('$lib/server/services/memory-events', () => ({
 	recordMemoryEvent: mockRecordMemoryEvent,
+	listLatestMemoryEventsBySubject: mockListLatestMemoryEventsBySubject,
+	listMemoryEvents: mockListMemoryEvents,
 }));
 
 vi.mock('./control-model', () => ({
@@ -151,9 +157,23 @@ vi.mock('$lib/server/services/working-set', () => ({
 describe('task continuity memory events', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockListLatestMemoryEventsBySubject.mockResolvedValue(new Map());
+		mockListMemoryEvents.mockResolvedValue([]);
 		insertedProjects.splice(0, insertedProjects.length);
 		projectRows.splice(0, projectRows.length);
 		linkRows.splice(0, linkRows.length);
+	});
+
+	it('resolves paused project events as dormant even when the stored row still says active', async () => {
+		const { resolveProjectContinuityStatus } = await import('./continuity');
+
+		expect(
+			resolveProjectContinuityStatus({
+				storedStatus: 'active',
+				lastActiveAt: Date.now(),
+				latestEventType: 'project_paused',
+			})
+		).toBe('dormant');
 	});
 
 	it('records a project_started event when creating a new continuity bucket', async () => {
@@ -210,6 +230,54 @@ describe('task continuity memory events', () => {
 				domain: 'task',
 				eventType: 'project_paused',
 				subjectId: 'project-1',
+			})
+		);
+	});
+
+	it('records an explicit pause signal from the user message and updates continuity state', async () => {
+		linkRows.push({
+			projectId: 'project-2',
+			status: 'active',
+			lastActiveAt: new Date(),
+		});
+
+		const { applyProjectContinuitySignalFromMessage, detectProjectContinuitySignal } =
+			await import('./continuity');
+
+		expect(detectProjectContinuitySignal('Pause this project for now.')).toBe(
+			'project_paused'
+		);
+
+		await applyProjectContinuitySignalFromMessage({
+			userId: 'user-1',
+			taskState: {
+				taskId: 'task-2',
+				userId: 'user-1',
+				conversationId: 'conv-2',
+				status: 'active',
+				objective: 'Launch brief',
+				confidence: 75,
+				locked: false,
+				lastConfirmedTurnMessageId: null,
+				constraints: [],
+				factsToPreserve: [],
+				decisions: [],
+				openQuestions: [],
+				activeArtifactIds: [],
+				nextSteps: [],
+				lastCheckpointAt: null,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+			message: 'Pause this project for now.',
+		});
+
+		expect(mockRecordMemoryEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				domain: 'task',
+				eventType: 'project_paused',
+				subjectId: 'project-2',
+				relatedId: 'task-2',
 			})
 		);
 	});
