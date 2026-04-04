@@ -29,7 +29,9 @@ import {
 import { listPersonaMemories } from './honcho';
 import { recordMemoryEvents } from './memory-events';
 import { queuePersonaClusterSemanticEmbeddingRefresh } from './semantic-embedding-refresh';
+import { shortlistSemanticMatchesBySubject } from './semantic-ranking';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
+import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
 
@@ -41,6 +43,8 @@ const ACTIVE_PROMPT_LIMIT = 8;
 const DORMANT_PROMPT_LIMIT = 2;
 const PROMPT_TEXT_BUDGET = 1600;
 const PROMPT_REFRESH_THROTTLE_MS = 60_000;
+const PERSONA_SEMANTIC_SHORTLIST_LIMIT = 12;
+const PERSONA_RERANK_LIMIT = 8;
 const SEMANTIC_RECONCILE_MIN_CONFIDENCE = 72;
 const MAX_SEMANTIC_CANDIDATES = 4;
 const ensureClustersReadyInFlight = new Map<string, Promise<void>>();
@@ -2767,6 +2771,80 @@ export async function getPersonaMemoryClusterConclusionIds(
 	return rows.map((row) => row.conclusionId);
 }
 
+async function buildPersonaQueryScoreMaps(params: {
+	userId: string;
+	query: string;
+	items: PersonaMemoryItem[];
+}): Promise<{
+	semanticScoreById: Map<string, number>;
+	rerankScoreById: Map<string, number>;
+}> {
+	const trimmedQuery = params.query.trim();
+	if (!trimmedQuery || params.items.length === 0) {
+		return {
+			semanticScoreById: new Map(),
+			rerankScoreById: new Map(),
+		};
+	}
+
+	const semanticMatches =
+		(await shortlistSemanticMatchesBySubject({
+			userId: params.userId,
+			subjectType: 'persona_cluster',
+			query: trimmedQuery,
+			items: params.items,
+			getSubjectId: (item) => item.id,
+			limit: PERSONA_SEMANTIC_SHORTLIST_LIMIT,
+		})) ?? [];
+	const semanticScoreById = new Map(
+		semanticMatches.map((match) => [match.subjectId, match.semanticScore])
+	);
+
+	let rerankScoreById = new Map<string, number>();
+	if (canUseTeiReranker() && semanticMatches.length > 1) {
+		try {
+			const reranked = await rerankItems({
+				query: trimmedQuery,
+				items: semanticMatches.map((match) => match.item),
+				getText: (item) => item.rawCanonicalText ?? item.canonicalText,
+				maxTexts: PERSONA_RERANK_LIMIT,
+			});
+
+			if (reranked && reranked.items.length > 0) {
+				rerankScoreById = new Map(
+					reranked.items.map((entry) => [entry.item.id, entry.score])
+				);
+			}
+		} catch (error) {
+			console.error('[PERSONA_MEMORY] Semantic reranker failed:', {
+				userId: params.userId,
+				error,
+			});
+		}
+	}
+
+	return {
+		semanticScoreById,
+		rerankScoreById,
+	};
+}
+
+function getPersonaQueryMatchScore(params: {
+	item: PersonaMemoryItem;
+	query: string;
+	semanticScoreById: Map<string, number>;
+	rerankScoreById: Map<string, number>;
+}): number {
+	const lexicalScore = Math.max(
+		scoreMatch(params.query, params.item.rawCanonicalText ?? params.item.canonicalText),
+		params.item.topicKey ? scoreMatch(params.query, params.item.topicKey) : 0
+	);
+	const semanticScore = params.semanticScoreById.get(params.item.id) ?? 0;
+	const rerankScore = params.rerankScoreById.get(params.item.id) ?? 0;
+
+	return lexicalScore + semanticScore * 3 + rerankScore * 4;
+}
+
 export async function buildPersonaPromptContext(
 	userId: string,
 	query: string
@@ -2797,14 +2875,22 @@ export async function buildPersonaPromptContext(
 	});
 	if (items.length === 0) return '';
 
+	const { semanticScoreById, rerankScoreById } = await buildPersonaQueryScoreMaps({
+		userId,
+		query,
+		items,
+	});
+
 	const activeConstraints = items
 		.filter((item) => item.state === 'active' && item.activeConstraint)
 		.map((item) => ({
 			item,
-			matchScore: Math.max(
-				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
-				item.topicKey ? scoreMatch(query, item.topicKey) : 0
-			),
+			matchScore: getPersonaQueryMatchScore({
+				item,
+				query,
+				semanticScoreById,
+				rerankScoreById,
+			}),
 			constraintRank:
 				item.activeConstraint && item.temporal?.freshness === 'active'
 					? 2
@@ -2824,10 +2910,12 @@ export async function buildPersonaPromptContext(
 		.filter((item) => item.state === 'active' && !item.activeConstraint)
 		.map((item) => ({
 			item,
-			matchScore: Math.max(
-				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
-				item.topicKey ? scoreMatch(query, item.topicKey) : 0
-			),
+			matchScore: getPersonaQueryMatchScore({
+				item,
+				query,
+				semanticScoreById,
+				rerankScoreById,
+			}),
 		}))
 		.sort(
 			(left, right) =>
@@ -2840,10 +2928,12 @@ export async function buildPersonaPromptContext(
 		.filter((item) => item.state === 'dormant' && !item.activeConstraint)
 		.map((item) => ({
 			item,
-			matchScore: Math.max(
-				scoreMatch(query, item.rawCanonicalText ?? item.canonicalText),
-				item.topicKey ? scoreMatch(query, item.topicKey) : 0
-			),
+			matchScore: getPersonaQueryMatchScore({
+				item,
+				query,
+				semanticScoreById,
+				rerankScoreById,
+			}),
 		}))
 		.filter((entry) => entry.matchScore >= 0.1)
 		.sort(

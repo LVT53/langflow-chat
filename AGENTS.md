@@ -40,6 +40,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - TEI embedding persistence belongs in the shared `semantic_embeddings` store, not in per-feature side tables. Keep artifact/persona/task semantic storage on the same substrate unless there is a measured reason to split it later.
 - `src/lib/server/services/semantic-embedding-refresh.ts` owns async embedding refresh/backfill orchestration. Mutation boundaries may queue refresh work there, and maintenance may run the slower backfill sweep there, but routes should not open-code subject hashing, TEI embedding calls, or per-domain refresh loops.
 - `src/lib/server/services/semantic-ranking.ts` owns generic embedding-based shortlist math. Domain services such as `knowledge/store/documents.ts` may compose it with their own deterministic filters and rerank rules, but they should not each reimplement vector similarity from scratch.
+- `src/lib/server/services/persona-memory.ts` may use semantic shortlist and rerank signals for query-time prompt recall, but freshness, supersession, correction penalties, and active-truth filtering still remain deterministic there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
 - `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
@@ -384,6 +385,7 @@ Rules:
 - Historical working-document families are soft-deprioritized, not hidden. If maintenance has already marked a family `historical`, retrieval and prompt carryover may apply a bounded ranking penalty, but explicit query/document matches and direct source navigation must still work.
 - Project continuity contradiction handling should stay in the existing continuity boundary: explicit pause/resume language may record task-domain events and update continuity state immediately, but the authoritative current status still belongs to `task-state/continuity.ts`, not Honcho or a route-local heuristic.
 - `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
+- Prompt-time persona recall may blend lexical and semantic query scoring, but the Knowledge Memory Overview remains a deterministic classified summary of already-filtered persona items rather than an embedding-search result.
 - Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
 
 Do not:

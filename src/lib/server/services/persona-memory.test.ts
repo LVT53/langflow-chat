@@ -6,6 +6,9 @@ const {
 	mockSelectQuery,
 	mockListPersonaMemories,
 	mockRecordMemoryEvents,
+	mockShortlistSemanticMatchesBySubject,
+	mockCanUseTeiReranker,
+	mockRerankItems,
 	insertedClusterRows,
 	insertedMemberRows,
 	updatedClusterRows,
@@ -15,6 +18,9 @@ const {
 	mockSelectQuery: vi.fn(),
 	mockListPersonaMemories: vi.fn(async () => []),
 	mockRecordMemoryEvents: vi.fn(async () => undefined),
+	mockShortlistSemanticMatchesBySubject: vi.fn(async () => []),
+	mockCanUseTeiReranker: vi.fn(() => false),
+	mockRerankItems: vi.fn(async () => null),
 	insertedClusterRows: [] as any[],
 	insertedMemberRows: [] as any[],
 	updatedClusterRows: [] as any[],
@@ -134,9 +140,18 @@ vi.mock('./memory-events', () => ({
 	recordMemoryEvents: mockRecordMemoryEvents,
 }));
 
+vi.mock('./semantic-ranking', () => ({
+	shortlistSemanticMatchesBySubject: mockShortlistSemanticMatchesBySubject,
+}));
+
 vi.mock('./task-state', () => ({
 	canUseContextSummarizer: mockCanUseContextSummarizer,
 	requestStructuredControlModel: mockRequestStructuredControlModel,
+}));
+
+vi.mock('./tei-reranker', () => ({
+	canUseTeiReranker: mockCanUseTeiReranker,
+	rerankItems: mockRerankItems,
 }));
 
 vi.mock('./working-set', () => ({
@@ -150,6 +165,9 @@ describe('persona-memory temporal safeguards', () => {
 		mockSelectQuery.mockImplementation(() => createSelectChain([]));
 		mockListPersonaMemories.mockResolvedValue([]);
 		mockRecordMemoryEvents.mockResolvedValue(undefined);
+		mockShortlistSemanticMatchesBySubject.mockResolvedValue([]);
+		mockCanUseTeiReranker.mockReturnValue(false);
+		mockRerankItems.mockResolvedValue(null);
 		insertedClusterRows.splice(0, insertedClusterRows.length);
 		insertedMemberRows.splice(0, insertedMemberRows.length);
 		updatedClusterRows.splice(0, updatedClusterRows.length);
@@ -519,6 +537,62 @@ describe('persona-memory temporal safeguards', () => {
 		const prompt = await buildPersonaPromptContext('user-prompt-fast', 'Keep it concise.');
 
 		expect(prompt).toContain('The user prefers concise answers.');
+	});
+
+	it('uses semantic shortlist signals when building persona prompt context', async () => {
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					cluster: {
+						clusterId: 'cluster-forecast',
+						canonicalText: 'The user often works on quarterly revenue forecasting.',
+						memoryClass: 'long_term_context',
+						state: 'active',
+						salienceScore: 72,
+						sourceCount: 2,
+						pinned: 0,
+						firstSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+						lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+						createdAt: new Date('2026-03-20T10:00:00.000Z'),
+						updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+						metadataJson: JSON.stringify({}),
+					},
+					member: null,
+					conversationTitle: null,
+				},
+				{
+					cluster: {
+						clusterId: 'cluster-style',
+						canonicalText: 'The user prefers concise answers.',
+						memoryClass: 'stable_preference',
+						state: 'active',
+						salienceScore: 88,
+						sourceCount: 2,
+						pinned: 0,
+						firstSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+						lastSeenAt: new Date('2026-03-28T10:00:00.000Z'),
+						createdAt: new Date('2026-03-20T10:00:00.000Z'),
+						updatedAt: new Date('2026-03-28T10:00:00.000Z'),
+						metadataJson: JSON.stringify({}),
+					},
+					member: null,
+					conversationTitle: null,
+				},
+			])
+		);
+		mockShortlistSemanticMatchesBySubject.mockResolvedValue([
+			{
+				item: { id: 'cluster-forecast' },
+				subjectId: 'cluster-forecast',
+				semanticScore: 0.94,
+			},
+		]);
+
+		const { buildPersonaPromptContext } = await import('./persona-memory');
+		const prompt = await buildPersonaPromptContext('user-persona-semantic', 'revenue forecast');
+
+		expect(prompt).toContain('The user often works on quarterly revenue forecasting.');
+		expect(mockShortlistSemanticMatchesBySubject).toHaveBeenCalledTimes(1);
 	});
 
 	it('downranks weakly supported dormant memories during refresh', async () => {

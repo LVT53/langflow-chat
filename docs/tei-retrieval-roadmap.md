@@ -15,6 +15,7 @@ Current status:
 - Wave 2 complete: unified local embedding persistence is live through `semantic_embeddings`
 - Wave 3 complete: artifact/task/persona writes now queue async embedding refreshes, and `memory-maintenance.ts` runs lazy user-scoped embedding backfill
 - Wave 5 complete for knowledge/documents: artifact retrieval now uses stored-embedding shortlist plus TEI rerank before the higher-level working-document resolver applies family/focus/history authority
+- Wave 6 complete for persona prompt recall: surviving persona clusters now get semantic shortlist plus bounded rerank scoring when building query-time persona prompt context
 - Wave 4 started: rerank-shaped evidence/chunk/historical/tool paths now use the TEI reranker
 - Semantic shortlist retrieval waves are still pending
 
@@ -79,6 +80,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
 - Add semantic shortlist selection for persona-memory clusters and overview candidates
 - Keep freshness, supersession, correction penalties, and domain boundaries deterministic
 - Do not let semantic similarity revive expired temporal facts as active truth
+- Current status: complete for query-time prompt recall. `persona-memory.ts` now filters archived/historical/expired/corrected items deterministically, then blends lexical, stored-embedding, and bounded rerank signals when selecting prompt-time persona context. The Knowledge Memory overview remains deterministic and classified rather than semantic-search-driven.
 
 ### Wave 7: Semantic Retrieval for Task Continuity
 

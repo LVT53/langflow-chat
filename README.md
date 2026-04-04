@@ -121,6 +121,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Wave 2 TEI persistence is now in place through one local `semantic_embeddings` table keyed by user, subject type, subject id, and model name. That unified store is the shared substrate for later artifact, persona-cluster, and task-state semantic retrieval waves.
 - Wave 3 TEI refresh/backfill is now also in place. Artifact creation, task-state writes, and persona-cluster dreaming queue semantic refreshes asynchronously, while `memory-maintenance.ts` performs the slower user-scoped backfill sweep for missing or stale embeddings without blocking chat turns.
 - Wave 5 document retrieval is now semantic as well. `knowledge/store/documents.ts` broadens the user-scoped artifact candidate pool, scores it with stored artifact embeddings, optionally reranks the shortlist through TEI, and then hands those ranked candidates back to the existing document-family and active-focus authority paths.
+- Wave 6 persona retrieval is now semantic at prompt time. `persona-memory.ts` still filters archived, historical, expired, superseded, and corrected memories deterministically first, then uses stored persona-cluster embeddings and bounded rerank scores to choose which surviving memories are most relevant to the current query for prompt context.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
 ### Interface And Content Characteristics
