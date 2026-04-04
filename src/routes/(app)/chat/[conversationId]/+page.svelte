@@ -18,6 +18,7 @@
 		fetchMessageEvidence,
 		generateConversationTitle,
 	} from '$lib/client/api/conversations';
+	import { recordDocumentWorkspaceOpen } from '$lib/client/api/knowledge';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { selectedModel } from '$lib/stores/settings';
 	import EvidenceManager from '$lib/components/chat/EvidenceManager.svelte';
@@ -182,11 +183,18 @@
 
 		activeWorkspaceDocumentId = document.id;
 		workspaceOpen = true;
+		if (browser && document.artifactId) {
+			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
+		}
 	}
 
 	function selectWorkspaceDocument(documentId: string) {
 		activeWorkspaceDocumentId = documentId;
 		workspaceOpen = true;
+		const document = workspaceDocuments.find((entry) => entry.id === documentId) ?? null;
+		if (browser && document?.artifactId) {
+			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
+		}
 	}
 
 	function closeWorkspaceDocument(documentId: string) {

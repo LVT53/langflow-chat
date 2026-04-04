@@ -15,9 +15,11 @@
 		renameVault,
 		deleteVault,
 		fetchStorageQuota,
+		recordDocumentWorkspaceOpen,
 		type Vault,
 		type StorageQuota,
 	} from '$lib/client/api/knowledge';
+	import { browser } from '$app/environment';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
 	import {
@@ -218,11 +220,18 @@
 
 		activeWorkspaceDocumentId = document.id;
 		workspaceOpen = true;
+		if (browser && document.artifactId) {
+			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
+		}
 	}
 
 	function selectWorkspaceDocument(documentId: string) {
 		activeWorkspaceDocumentId = documentId;
 		workspaceOpen = true;
+		const document = workspaceDocuments.find((entry) => entry.id === documentId) ?? null;
+		if (browser && document?.artifactId) {
+			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
+		}
 	}
 
 	function closeWorkspaceDocument(documentId: string) {

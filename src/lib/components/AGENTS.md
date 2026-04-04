@@ -107,6 +107,7 @@ ui/
 - Generated-file preview should reuse `knowledge/FilePreview.svelte` through the chat-file preview endpoint instead of maintaining a second lightweight preview modal
 - `DocumentWorkspace.svelte` is the shared shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
 - `DocumentWorkspace.svelte` now owns version-history tabs/strips, source-message jump affordances, text-document compare mode, and the shared historical-status badge for dormant generated-document families. Keep those behaviors inside the shared workspace instead of rebuilding them in chat rows, search, or knowledge-page components
+- Workspace-open behavior tracking should stay in the route-owned open/select handlers, not inside `DocumentWorkspace.svelte` or row components. The shared workspace UI remains a pure callback consumer while document-open events flow through the existing browser API + `memory_events` rail.
 - `GeneratedFile.svelte` exposes a user-side save action only. The current model/tooling contract does not let the AI directly move a chat-generated file into a vault on its own
 - Saved generated-file rows remain conversation-scoped after vault save; do not delete the underlying chat-file record just because a vault copy was created
 - `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped

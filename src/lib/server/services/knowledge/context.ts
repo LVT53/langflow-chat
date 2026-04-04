@@ -274,16 +274,25 @@ export async function refreshConversationWorkingSet(params: {
 				.map((artifact) => getGeneratedDocumentBehaviorKey(artifact))
 		)
 	);
-	const behaviorScoresByKey =
+	const [behaviorScoresByKey, reopenScoresByKey] =
 		generatedBehaviorKeys.length > 0
-			? await countRecentMemoryEventsBySubject({
-					userId: params.userId,
-					domain: 'document',
-					eventTypes: ['document_refined'],
-					subjectIds: generatedBehaviorKeys,
-					since: recentBehaviorWindowStart,
-				}).catch(() => new Map<string, number>())
-			: new Map<string, number>();
+			? await Promise.all([
+					countRecentMemoryEventsBySubject({
+						userId: params.userId,
+						domain: 'document',
+						eventTypes: ['document_refined'],
+						subjectIds: generatedBehaviorKeys,
+						since: recentBehaviorWindowStart,
+					}).catch(() => new Map<string, number>()),
+					countRecentMemoryEventsBySubject({
+						userId: params.userId,
+						domain: 'document',
+						eventTypes: ['document_opened'],
+						subjectIds: generatedBehaviorKeys,
+						since: recentBehaviorWindowStart,
+					}).catch(() => new Map<string, number>()),
+				])
+			: [new Map<string, number>(), new Map<string, number>()];
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
 	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
@@ -308,6 +317,10 @@ export async function refreshConversationWorkingSet(params: {
 			recentRefinementBehaviorScore:
 				artifact.type === 'generated_output'
 					? behaviorScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
+					: 0,
+			recentDocumentOpenScore:
+				artifact.type === 'generated_output'
+					? reopenScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
 					: 0,
 			isCurrentGeneratedDocument:
 				currentGeneratedArtifactId === artifact.id &&
@@ -515,16 +528,25 @@ export async function findRelevantKnowledgeArtifacts(params: {
 				.map((artifact) => getGeneratedDocumentBehaviorKey(artifact))
 		)
 	);
-	const behaviorScoresByKey =
+	const [behaviorScoresByKey, reopenScoresByKey] =
 		generatedBehaviorKeys.length > 0
-			? await countRecentMemoryEventsBySubject({
-					userId: params.userId,
-					domain: 'document',
-					eventTypes: ['document_refined'],
-					subjectIds: generatedBehaviorKeys,
-					since: recentBehaviorWindowStart,
-				}).catch(() => new Map<string, number>())
-			: new Map<string, number>();
+			? await Promise.all([
+					countRecentMemoryEventsBySubject({
+						userId: params.userId,
+						domain: 'document',
+						eventTypes: ['document_refined'],
+						subjectIds: generatedBehaviorKeys,
+						since: recentBehaviorWindowStart,
+					}).catch(() => new Map<string, number>()),
+					countRecentMemoryEventsBySubject({
+						userId: params.userId,
+						domain: 'document',
+						eventTypes: ['document_opened'],
+						subjectIds: generatedBehaviorKeys,
+						since: recentBehaviorWindowStart,
+					}).catch(() => new Map<string, number>()),
+				])
+			: [new Map<string, number>(), new Map<string, number>()];
 	const generatedSelection = resolveRelevantGeneratedDocumentSelection({
 		artifacts: [...generatedOutputs, ...preferredArtifacts],
 		query: params.query,
@@ -534,6 +556,7 @@ export async function findRelevantKnowledgeArtifacts(params: {
 		currentConversationId: params.currentConversationId,
 		suppressCarryoverWhenUnfocused: params.suppressGeneratedCarryover ?? false,
 		behaviorScoresByKey,
+		reopenScoresByKey,
 	});
 
 	const seen = new Set<string>();

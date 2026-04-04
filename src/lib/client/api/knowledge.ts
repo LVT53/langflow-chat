@@ -7,7 +7,7 @@ import type {
 	KnowledgeUploadResponse,
 	WorkCapsule,
 } from '$lib/types';
-import { requestJson } from './http';
+import { requestJson, requestVoid } from './http';
 
 export type KnowledgeLibrary = {
 	documents: KnowledgeDocumentItem[];
@@ -237,4 +237,21 @@ export async function searchVaultFiles(
 	);
 
 	return payload.results ?? [];
+}
+
+export async function recordDocumentWorkspaceOpen(artifactId: string): Promise<void> {
+	await requestVoid(
+		'/api/knowledge/documents/behavior',
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'workspace_opened',
+				artifactId,
+			}),
+		},
+		'Failed to record document workspace behavior.'
+	);
 }

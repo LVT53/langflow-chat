@@ -297,6 +297,7 @@ export type WorkingSetReasonCode =
   | 'recent_user_correction'
   | 'recently_refined_document_family'
   | 'recent_refinement_behavior'
+  | 'recent_document_open'
   | 'current_generated_document'
   | 'recently_used_in_output'
   | 'latest_generated_output'
@@ -634,6 +635,7 @@ export type MemoryEventType =
   | 'project_paused'
   | 'project_resumed'
   | 'preference_updated'
+  | 'document_opened'
   | 'document_refined'
   | 'document_superseded';
 

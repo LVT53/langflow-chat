@@ -245,6 +245,41 @@ describe("document resolution", () => {
     expect(selection.resolutions[0]?.reasonCodes).toContain("recent_refinement_behavior");
   });
 
+  it("boosts recently reopened document families in retrieval ordering", () => {
+    const selection = resolveRelevantGeneratedDocumentSelection({
+      query: "open the draft again",
+      limit: 4,
+      reopenScoresByKey: new Map([["family-brief", 3]]),
+      artifacts: [
+        makeArtifact({
+          id: "artifact-brief",
+          name: "brief-v2.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+          },
+        }),
+        makeArtifact({
+          id: "artifact-slides",
+          name: "slides-v3.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-slides",
+            documentLabel: "Investor slides",
+            versionNumber: 3,
+          },
+        }),
+      ],
+    });
+
+    expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
+      "artifact-brief",
+    ]);
+    expect(selection.resolutions[0]?.reasonCodes).toContain("recent_document_open");
+  });
+
   it("still returns explicit generated-document query matches outside the preferred family", () => {
     const selection = resolveRelevantGeneratedDocumentSelection({
       query: "compare it with the investor slides",

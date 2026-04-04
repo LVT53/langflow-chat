@@ -31,6 +31,7 @@ type GeneratedArtifactMatchParams = {
   query: string;
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
+  reopenScoresByKey?: Map<string, number>;
 };
 
 const GENERATED_QUERY_MATCH_REASONS = new Set([
@@ -48,19 +49,22 @@ function includesNormalized(haystack: string, needle: string): boolean {
   return normalizedHaystack.includes(normalizedNeedle);
 }
 
-export function getGeneratedDocumentBehaviorKey(artifact: Pick<Artifact, "id" | "metadata">): string {
+export function getDocumentBehaviorKey(artifact: Pick<Artifact, "id" | "metadata">): string {
   const metadata = parseWorkingDocumentMetadata(artifact.metadata);
   return metadata.documentFamilyId ?? artifact.id;
 }
+
+export const getGeneratedDocumentBehaviorKey = getDocumentBehaviorKey;
 
 function scoreGeneratedDocumentArtifact(params: {
   artifact: Artifact;
   query: string;
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
+  reopenScoresByKey?: Map<string, number>;
 }): GeneratedDocumentResolution {
   const metadata = parseWorkingDocumentMetadata(params.artifact.metadata);
-  const behaviorKey = metadata.documentFamilyId ?? params.artifact.id;
+  const behaviorKey = getDocumentBehaviorKey(params.artifact);
   const label = metadata.documentLabel ?? params.artifact.name;
   const role = metadata.documentRole ?? "";
   const generatedFilename =
@@ -79,6 +83,7 @@ function scoreGeneratedDocumentArtifact(params: {
   let score = scoreMatch(params.query, haystack) * 10;
   const reasonCodes: string[] = [];
   const behaviorScore = params.behaviorScoresByKey?.get(behaviorKey) ?? 0;
+  const reopenScore = params.reopenScoresByKey?.get(behaviorKey) ?? 0;
 
   if (score > 0) {
     reasonCodes.push("matched_query");
@@ -115,6 +120,11 @@ function scoreGeneratedDocumentArtifact(params: {
   if (behaviorScore > 0) {
     score += Math.min(16, behaviorScore * 4);
     reasonCodes.push("recent_refinement_behavior");
+  }
+
+  if (reopenScore > 0) {
+    score += Math.min(8, reopenScore * 2);
+    reasonCodes.push("recent_document_open");
   }
 
   return {
@@ -161,6 +171,7 @@ function rankLatestGeneratedDocumentArtifacts(
         query: params.query,
         currentConversationId: params.currentConversationId,
         behaviorScoresByKey: params.behaviorScoresByKey,
+        reopenScoresByKey: params.reopenScoresByKey,
       }),
     )
     .filter((entry) => entry.score > 0)
@@ -227,12 +238,14 @@ export function resolveRelevantGeneratedDocumentArtifacts(params: {
   limit: number;
   currentConversationId?: string | null;
   behaviorScoresByKey?: Map<string, number>;
+  reopenScoresByKey?: Map<string, number>;
 }): GeneratedDocumentResolution[] {
   return rankLatestGeneratedDocumentArtifacts({
     artifacts: params.artifacts,
     query: params.query,
     currentConversationId: params.currentConversationId,
     behaviorScoresByKey: params.behaviorScoresByKey,
+    reopenScoresByKey: params.reopenScoresByKey,
   }).slice(0, params.limit);
 }
 
@@ -245,6 +258,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   currentConversationId?: string | null;
   suppressCarryoverWhenUnfocused?: boolean;
   behaviorScoresByKey?: Map<string, number>;
+  reopenScoresByKey?: Map<string, number>;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
@@ -266,6 +280,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
     limit: Math.max(params.limit, 1),
     currentConversationId: params.currentConversationId,
     behaviorScoresByKey: params.behaviorScoresByKey,
+    reopenScoresByKey: params.reopenScoresByKey,
   });
   const orderedArtifacts: Artifact[] = [];
   const seenArtifactIds = new Set<string>();

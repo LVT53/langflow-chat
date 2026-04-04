@@ -161,6 +161,37 @@ describe('working-set ranking', () => {
 		});
 	});
 
+	it('applies recent document opens as a smaller bounded ranking boost', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-opened',
+				artifactType: 'generated_output',
+				name: 'Recently reopened brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				recentDocumentOpenScore: 3,
+			},
+			{
+				artifactId: 'out-plain',
+				artifactType: 'generated_output',
+				name: 'Plain generated document',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+			},
+		]);
+
+		expect(ranked.find((item) => item.artifactId === 'out-opened')).toMatchObject({
+			artifactId: 'out-opened',
+			selected: false,
+			reasonCodes: expect.arrayContaining(['recent_document_open']),
+		});
+		expect(ranked.findIndex((item) => item.artifactId === 'out-opened')).toBeLessThan(
+			ranked.findIndex((item) => item.artifactId === 'out-plain')
+		);
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{
