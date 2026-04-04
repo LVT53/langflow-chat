@@ -36,8 +36,8 @@ The deploy script performs these steps in order:
 
 1. `git pull origin main`
 2. `npm install`
-3. `npm run build`
-4. `npm run db:prepare`
+3. `npm run db:prepare`
+4. `npm run build`
 
 Important caveat:
 
@@ -50,7 +50,7 @@ For host-managed `adapter-node` deployments, the standard runtime entrypoint is:
 npm start
 ```
 
-That script runs `node build`. SvelteKit adapter-node uses the `HOST` and `PORT` environment variables for the listen address, so container-reachable host setups should use `HOST=0.0.0.0` instead of `127.0.0.1`.
+That script now runs `npm run db:prepare && node build`, so the standard production entrypoint applies pending Drizzle migrations before serving the built app. SvelteKit adapter-node uses the `HOST` and `PORT` environment variables for the listen address, so container-reachable host setups should use `HOST=0.0.0.0` instead of `127.0.0.1`.
 
 Deploy-script environment variables:
 
@@ -236,6 +236,7 @@ Notes before the tables:
 ## Operational Caveats
 
 - If you bypass `scripts/deploy.sh`, run `npm run db:prepare` before starting the production server.
+- The runtime now also contains one bounded SQLite compatibility shim for `users.honcho_peer_version` in case a deploy starts new code against an old schema. That fallback exists only to prevent login lockouts; normal deploys should still rely on `npm run db:prepare`, not on app-start schema mutation.
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
 - On Linux, document extraction quality improves if `poppler-utils`, `unzip`, and `binutils` are installed.
 - `GET /api/health` exists and returns `{"status":"OK"}`.

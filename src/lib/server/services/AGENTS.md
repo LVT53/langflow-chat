@@ -25,6 +25,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 - `chat-files.ts` plus artifact metadata own generated-document lineage.
 - `memory-events.ts` owns the normalized persisted event log for cross-domain state changes. Add new event types there instead of introducing side logs inside routes or unrelated services.
 - `honcho.ts` mirrors and enriches memory, but it is not the authority for local temporal truth, document lineage, or event history.
+- `src/lib/server/db/compat.ts` is the only allowed place for narrowly scoped runtime SQLite compatibility shims when production safety demands them. It is an emergency additive fallback, not a replacement for `npm run db:prepare`.
 - `tei-embedder.ts` and `tei-reranker.ts` are transport adapters only. They may improve shortlist and rerank quality, but they are not allowed to become a second authority for document identity, active focus, or temporal truth.
 - `semantic-embeddings.ts` owns the durable embedding substrate for artifacts, persona clusters, and task states. Keep source-text hashing, upsert semantics, and readback there instead of reimplementing per-domain mini stores.
 - `semantic-embedding-refresh.ts` owns async refresh/backfill orchestration on top of that store. Artifact/task/persona writers may queue refreshes there, and `memory-maintenance.ts` may run user-scoped backfill there, but do not duplicate those loops in routes or domain-specific services.

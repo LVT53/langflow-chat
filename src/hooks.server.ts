@@ -1,11 +1,12 @@
 import { validateSession } from '$lib/server/services/auth';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 import { refreshConfig } from '$lib/server/config-store';
 import { ensureMemoryMaintenanceScheduler } from '$lib/server/services/memory-maintenance';
 import { prewarmSandboxImageInBackground } from '$lib/server/sandbox/config';
 import { db } from '$lib/server/db';
+import { ensureRuntimeSchemaCompatibility } from '$lib/server/db/compat';
 import { users } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -39,7 +40,13 @@ function touchLastSeenAt(userId: string): void {
     .catch((err) => console.error('lastSeenAt update failed:', err));
 }
 
+export const init: ServerInit = async () => {
+  await ensureRuntimeSchemaCompatibility();
+};
+
 export const handle: Handle = async ({ event, resolve }) => {
+  await ensureRuntimeSchemaCompatibility();
+
   try {
     const token = event.cookies.get('session');
      

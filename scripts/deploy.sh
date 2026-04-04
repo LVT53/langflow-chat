@@ -35,14 +35,14 @@ npm install
 echo -e "${GREEN}✓ Dependencies installed${NC}"
 echo ""
 
-echo -e "${YELLOW}3. Building application...${NC}"
-npm run build
-echo -e "${GREEN}✓ Build complete${NC}"
-echo ""
-
-echo -e "${YELLOW}4. Applying database migrations...${NC}"
+echo -e "${YELLOW}3. Applying database migrations...${NC}"
 npm run db:prepare
 echo -e "${GREEN}✓ Database migrations complete${NC}"
+echo ""
+
+echo -e "${YELLOW}4. Building application...${NC}"
+npm run build
+echo -e "${GREEN}✓ Build complete${NC}"
 echo ""
 
 echo -e "${GREEN}=== Deployment complete! ===${NC}"

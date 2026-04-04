@@ -671,7 +671,7 @@ Run these too when relevant:
 
 - deployment/config/docs changes:
   - `npm run db:prepare`
-  - keep `scripts/deploy.sh` aligned with the current DB migration story; deploys through that script should always run the idempotent `db:prepare` step so schema changes are applied even when the checkout was updated before the script started
+  - keep `scripts/deploy.sh` and `npm start` aligned with the current DB migration story; deploys through that script should always run the idempotent `db:prepare` step before serving new code, and the production start command must not skip pending migrations
   - verify [`src/routes/api/health/+server.ts`](./src/routes/api/health/+server.ts) still matches docs and deploy expectations
 - knowledge upload or extraction changes:
   - verify upload size expectations remain aligned with [README.md](./README.md) and deployment docs
@@ -683,7 +683,7 @@ Run these too when relevant:
 - No duplicated route-specific chat execution logic.
 - No new raw `sessionStorage` protocol outside `conversation-session.ts`.
 - No direct env reads in override-aware runtime services.
-- No runtime migrations in app bootstrap.
+- No general runtime migrations in app bootstrap. If production safety ever requires a bounded additive compatibility shim, keep it isolated in `src/lib/server/db/compat.ts`, document it in the README, and continue treating `npm run db:prepare` as the real migration path.
 - No duplicate DB repository wrappers.
 - No stores that also become API clients.
 - No monolithic catch-all service file that mixes unrelated concerns again.

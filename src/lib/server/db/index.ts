@@ -8,4 +8,5 @@ const sqlite = new Database(getDatabasePath());
 sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });
+export { sqlite };
 export type DatabaseInstance = typeof db;

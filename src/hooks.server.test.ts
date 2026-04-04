@@ -5,6 +5,7 @@ const mockValidateSession = vi.fn();
 const mockRefreshConfig = vi.fn(async () => undefined);
 const mockEnsureMemoryMaintenanceScheduler = vi.fn();
 const mockPrewarmSandboxImageInBackground = vi.fn();
+const mockEnsureRuntimeSchemaCompatibility = vi.fn(async () => undefined);
 
 vi.mock('$lib/server/services/auth', () => ({
 	validateSession: mockValidateSession,
@@ -24,6 +25,10 @@ vi.mock('$lib/server/services/memory-maintenance', () => ({
 
 vi.mock('$lib/server/sandbox/config', () => ({
 	prewarmSandboxImageInBackground: mockPrewarmSandboxImageInBackground,
+}));
+
+vi.mock('$lib/server/db/compat', () => ({
+	ensureRuntimeSchemaCompatibility: mockEnsureRuntimeSchemaCompatibility,
 }));
 
 describe('hooks.server.ts', () => {
@@ -47,6 +52,14 @@ describe('hooks.server.ts', () => {
 		expect(event.locals.user).toBeNull();
 		expect(event.locals.webhookBuffer).toEqual({ id: 'test-buffer' });
 		expect(mockPrewarmSandboxImageInBackground).toHaveBeenCalledOnce();
+	});
+
+	it('runs runtime schema compatibility during server init', async () => {
+		const { init } = await import('./hooks.server');
+
+		await init();
+
+		expect(mockEnsureRuntimeSchemaCompatibility).toHaveBeenCalledOnce();
 	});
 
 	it('allows the health check route without a session', async () => {
@@ -99,6 +112,10 @@ describe('hooks.server.ts', () => {
 
 		await handle({ event, resolve });
 
+		expect(mockEnsureRuntimeSchemaCompatibility).toHaveBeenCalledOnce();
+		expect(
+			mockEnsureRuntimeSchemaCompatibility.mock.invocationCallOrder[0]
+		).toBeLessThan(mockValidateSession.mock.invocationCallOrder[0]);
 		expect(mockValidateSession).toHaveBeenCalledWith('session-token');
 		expect(event.locals.user).toEqual(sessionUser);
 		expect(resolve).toHaveBeenCalledOnce();
