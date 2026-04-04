@@ -3,6 +3,7 @@ import { join } from 'path';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getArtifactForUser } from '$lib/server/services/knowledge';
+import { getPreviewContentType } from '$lib/utils/file-preview';
 
 /**
  * GET /api/knowledge/[id]/preview
@@ -41,7 +42,11 @@ export const GET: RequestHandler = async (event) => {
 		const fileBuffer = await readFile(filePath);
 
 		// Determine content type
-		const contentType = artifact.mimeType || getContentTypeFromExtension(artifact.extension);
+		const previewName =
+			artifact.name.includes('.') || !artifact.extension
+				? artifact.name
+				: `${artifact.name}.${artifact.extension}`;
+		const contentType = getPreviewContentType(previewName, artifact.mimeType);
 
 		// Return file with appropriate headers
 		return new Response(fileBuffer, {
@@ -70,40 +75,3 @@ export const GET: RequestHandler = async (event) => {
 		);
 	}
 };
-
-/**
- * Get content type from file extension
- */
-function getContentTypeFromExtension(extension: string | null): string {
-	if (!extension) return 'application/octet-stream';
-
-	const ext = extension.toLowerCase();
-	const mimeTypes: Record<string, string> = {
-		// Documents
-		pdf: 'application/pdf',
-		docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-		doc: 'application/msword',
-		xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-		xls: 'application/vnd.ms-excel',
-		pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-		ppt: 'application/vnd.ms-powerpoint',
-		// Images
-		jpg: 'image/jpeg',
-		jpeg: 'image/jpeg',
-		png: 'image/png',
-		gif: 'image/gif',
-		webp: 'image/webp',
-		svg: 'image/svg+xml',
-		// Text
-		txt: 'text/plain',
-		md: 'text/markdown',
-		html: 'text/html',
-		css: 'text/css',
-		js: 'application/javascript',
-		json: 'application/json',
-		// Archives
-		zip: 'application/zip',
-	};
-
-	return mimeTypes[ext] || 'application/octet-stream';
-}

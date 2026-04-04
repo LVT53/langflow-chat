@@ -215,6 +215,30 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		);
 	});
 
+	it('handles ODT files correctly', async () => {
+		const fileBuffer = Buffer.from('ODT document data');
+		await writePreviewFile('data/knowledge/user-123/document.odt', fileBuffer);
+		mockGetArtifactForUser.mockResolvedValue({
+			id: 'artifact-123',
+			name: 'document.odt',
+			storagePath: 'data/knowledge/user-123/document.odt',
+			mimeType: null,
+			extension: 'odt',
+		});
+
+		const event = {
+			locals: { user: mockUser },
+			params: { id: 'artifact-123' },
+		} as any;
+
+		const response = await GET(event);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe(
+			'application/vnd.oasis.opendocument.text'
+		);
+	});
+
 	it('handles text files correctly', async () => {
 		const fileBuffer = Buffer.from('Plain text content');
 		await writePreviewFile('data/knowledge/user-123/notes.txt', fileBuffer);

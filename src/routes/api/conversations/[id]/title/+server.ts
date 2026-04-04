@@ -16,14 +16,6 @@ export async function POST({ request, params, locals }: RequestEvent) {
 
     const { userMessage, assistantResponse } = await request.json();
     const userId = locals.user?.id;
-    console.info('[TITLE_GENERATE] Request received', {
-      conversationId: params.id,
-      userId: userId ?? null,
-      userMessageLength: typeof userMessage === 'string' ? userMessage.length : 0,
-      assistantResponseLength:
-        typeof assistantResponse === 'string' ? assistantResponse.length : 0,
-    });
-    
     if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
@@ -36,12 +28,6 @@ export async function POST({ request, params, locals }: RequestEvent) {
     const title = await generateTitle(userMessage, assistantResponse);
     
     await updateConversationTitle(userId, params.id, title);
-    console.info('[TITLE_GENERATE] Title stored', {
-      conversationId: params.id,
-      userId,
-      title,
-    });
-    
     return new Response(JSON.stringify({ title }), {
       status: 200,
       headers: {

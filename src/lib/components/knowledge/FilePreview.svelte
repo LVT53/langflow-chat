@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { renderHighlightedText } from '$lib/services/markdown';
+	import {
+		determinePreviewFileType,
+		getPreviewLanguage,
+		type PreviewFileType,
+	} from '$lib/utils/file-preview';
 	import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 	let {
@@ -25,7 +30,7 @@
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
-	let fileType = $state<'pdf' | 'docx' | 'xlsx' | 'pptx' | 'image' | 'text' | 'unsupported'>('unsupported');
+	let fileType = $state<PreviewFileType>('unsupported');
 
 	// PDF.js state (loaded dynamically to avoid SSR issues)
 	let pdfjsLib: typeof import('pdfjs-dist') | null = null;
@@ -41,66 +46,15 @@
 		docx: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
 		xlsx: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>`,
 		pptx: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><rect x="8" y="12" width="8" height="6" rx="1"/></svg>`,
+		odt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>`,
 		image: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`,
 		text: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
 		unsupported: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
 	};
 
-	function determineFileType(mime: string | null, name: string): typeof fileType {
-		if (!mime) {
-			const ext = name.split('.').pop()?.toLowerCase();
-			if (ext === 'pdf') return 'pdf';
-			if (ext === 'docx') return 'docx';
-			if (ext === 'xlsx') return 'xlsx';
-			if (ext === 'pptx') return 'pptx';
-			if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return 'image';
-			if (['txt', 'md', 'json', 'csv', 'xml', 'rtf', 'css', 'js', 'py'].includes(ext || '')) return 'text';
-			return 'unsupported';
-		}
-
-		if (mime.includes('pdf')) return 'pdf';
-		if (mime.includes('wordprocessingml')) return 'docx';
-		if (mime.includes('spreadsheetml')) return 'xlsx';
-		if (mime.includes('presentationml')) return 'pptx';
-		if (mime.startsWith('image/')) return 'image';
-		if (
-			mime.startsWith('text/') ||
-			mime === 'application/json' ||
-			mime === 'application/csv' ||
-			mime === 'application/xml' ||
-			mime === 'application/rtf'
-		) return 'text';
-		
-		return 'unsupported';
-	}
-
-	function getPreviewLanguage(mime: string | null, name: string): string | undefined {
-		const ext = name.split('.').pop()?.toLowerCase();
-
-		if (ext === 'py') return 'python';
-		if (ext === 'js') return 'javascript';
-		if (ext === 'ts') return 'typescript';
-		if (ext === 'json') return 'json';
-		if (ext === 'html') return 'html';
-		if (ext === 'css') return 'css';
-		if (ext === 'md') return 'markdown';
-		if (ext === 'xml' || ext === 'svg') return 'xml';
-		if (ext === 'yaml' || ext === 'yml') return 'yaml';
-		if (ext === 'sh' || ext === 'bash' || ext === 'zsh') return 'bash';
-
-		if (mime === 'application/json') return 'json';
-		if (mime === 'application/xml') return 'xml';
-		if (mime === 'text/html') return 'html';
-		if (mime === 'text/css') return 'css';
-		if (mime === 'application/javascript' || mime === 'text/javascript') return 'javascript';
-		if (mime === 'text/markdown') return 'markdown';
-
-		return undefined;
-	}
-
 	$effect(() => {
 		if (open && (artifactId || previewUrl)) {
-			fileType = determineFileType(mimeType, filename);
+			fileType = determinePreviewFileType(mimeType, filename);
 			void fetchFile();
 		}
 	});
@@ -116,7 +70,8 @@
 	// otherwise the effect will re-trigger itself on every render-state flip.
 	$effect(() => {
 		if (fileType === 'pdf' && pdfDoc && canvasRef) {
-			void renderPage(currentPage);
+			const activeZoom = zoom;
+			void renderPage(currentPage, activeZoom);
 		}
 	});
 
@@ -163,6 +118,8 @@
 				await renderXlsx(blob);
 			} else if (fileType === 'pptx') {
 				await renderPptx(blob);
+			} else if (fileType === 'odt') {
+				await renderOdt(blob);
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load file';
@@ -196,14 +153,14 @@
 		}
 	}
 
-	async function renderPage(pageNum: number) {
+	async function renderPage(pageNum: number, scale = zoom) {
 		if (!pdfDoc || !canvasRef) return;
 		
 		try {
 			isRendering = true;
 			const page = await pdfDoc.getPage(pageNum);
 			
-			const viewport = page.getViewport({ scale: zoom });
+			const viewport = page.getViewport({ scale });
 			const canvas = canvasRef;
 			const context = canvas.getContext('2d');
 			
@@ -329,6 +286,106 @@
 			viewer.destroy();
 		} catch (err) {
 			error = 'Failed to render PPTX file';
+		}
+	}
+
+	function escapeHtml(value: string): string {
+		return value
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+	}
+
+	function renderOdtTextNode(node: Node): string {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return escapeHtml(node.textContent ?? '');
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) {
+			return '';
+		}
+
+		const element = node as Element;
+		const children = Array.from(element.childNodes).map(renderOdtTextNode).join('');
+
+		switch (element.localName) {
+			case 's': {
+				const count = Number.parseInt(element.getAttribute('text:c') ?? '1', 10);
+				return '&nbsp;'.repeat(Number.isFinite(count) && count > 0 ? count : 1);
+			}
+			case 'tab':
+				return '&nbsp;&nbsp;&nbsp;&nbsp;';
+			case 'line-break':
+				return '<br />';
+			case 'span':
+				return children;
+			default:
+				return children;
+		}
+	}
+
+	function renderOdtBlock(node: Node): string {
+		if (node.nodeType !== Node.ELEMENT_NODE) {
+			return '';
+		}
+
+		const element = node as Element;
+		const children = Array.from(element.childNodes).map(renderOdtBlock).join('');
+		const textChildren = Array.from(element.childNodes).map(renderOdtTextNode).join('');
+
+		switch (element.localName) {
+			case 'h': {
+				const level = Math.min(
+					Math.max(Number.parseInt(element.getAttribute('text:outline-level') ?? '2', 10), 1),
+					6
+				);
+				return `<h${level}>${textChildren}</h${level}>`;
+			}
+			case 'p':
+				return `<p>${textChildren}</p>`;
+			case 'list':
+				return `<ul>${children}</ul>`;
+			case 'list-item':
+				return `<li>${children || textChildren}</li>`;
+			case 'table':
+				return `<table>${children}</table>`;
+			case 'table-row':
+				return `<tr>${children}</tr>`;
+			case 'table-cell':
+				return `<td>${children || textChildren}</td>`;
+			default:
+				return children;
+		}
+	}
+
+	async function renderOdt(blob: Blob) {
+		try {
+			const JSZip = (await import('jszip')).default;
+			const arrayBuffer = await blob.arrayBuffer();
+			const zip = await JSZip.loadAsync(arrayBuffer);
+			const contentEntry = zip.file('content.xml');
+			if (!contentEntry) {
+				throw new Error('Missing ODT content.xml');
+			}
+
+			const xml = await contentEntry.async('string');
+			const parsed = new DOMParser().parseFromString(xml, 'application/xml');
+			if (parsed.querySelector('parsererror')) {
+				throw new Error('Invalid ODT XML');
+			}
+
+			const officeNs = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+			const officeTextRoot =
+				parsed.getElementsByTagNameNS(officeNs, 'text')[0] ?? parsed.documentElement;
+			const html = Array.from(officeTextRoot.childNodes).map(renderOdtBlock).join('');
+			htmlContent =
+				html.trim().length > 0
+					? `<div class="odt-preview">${html}</div>`
+					: '<div class="odt-preview"><p>Preview available, but the document contains no readable text.</p></div>';
+		} catch (err) {
+			error = 'Failed to render ODT file';
 		}
 	}
 
@@ -555,7 +612,7 @@
 							</div>
 						</div>
 					{/if}
-				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx'}
+				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx' || fileType === 'odt'}
 					{#if htmlContent}
 						<div class="p-6 docx-preview">
 							{@html htmlContent}
@@ -604,6 +661,12 @@
 
 	:global(.docx-preview p) {
 		margin-bottom: 1em;
+	}
+
+	:global(.docx-preview ul) {
+		margin: 1em 0;
+		padding-left: 1.25rem;
+		list-style: disc;
 	}
 
 	:global(.docx-preview table) {
@@ -807,7 +870,10 @@
 	}
 
 	.pdf-canvas {
-		max-width: 100%;
+		display: block;
+		max-width: none;
+		width: auto;
+		height: auto;
 		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 		background: white;
 	}

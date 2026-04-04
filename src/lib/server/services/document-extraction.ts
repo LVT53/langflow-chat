@@ -157,7 +157,15 @@ export async function extractDocumentText(
 
 	if (
 		mimeType?.startsWith('text/') ||
-		['.txt', '.md', '.csv'].includes(extension)
+		mimeType === 'application/xml' ||
+		mimeType === 'application/rtf' ||
+		mimeType === 'application/javascript' ||
+		mimeType === 'text/javascript' ||
+		mimeType === 'text/x-python' ||
+		mimeType === 'application/typescript' ||
+		mimeType === 'application/yaml' ||
+		mimeType === 'image/svg+xml' ||
+		['.txt', '.md', '.csv', '.xml', '.rtf', '.css', '.js', '.py', '.ts', '.yaml', '.yml', '.svg'].includes(extension)
 	) {
 		const text = await readFile(filePath, 'utf8').catch(() => '');
 		return {
@@ -211,6 +219,20 @@ export async function extractDocumentText(
 		extension === '.xlsx'
 	) {
 		const text = await extractOfficeXml(filePath, ['xl/sharedStrings.xml', 'xl/worksheets/sheet']);
+		if (text) {
+			return {
+				text,
+				normalizedName,
+				mimeType: 'text/plain',
+			};
+		}
+	}
+
+	if (
+		mimeType === 'application/vnd.oasis.opendocument.text' ||
+		extension === '.odt'
+	) {
+		const text = await extractOfficeXml(filePath, ['content.xml']);
 		if (text) {
 			return {
 				text,

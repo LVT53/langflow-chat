@@ -54,6 +54,7 @@ import {
   assignGeneratedFilesToAssistantMessage,
   getChatFiles,
   getChatFilesForAssistantMessage,
+  syncGeneratedFilesToMemory,
 } from "$lib/server/services/chat-files";
 import {
   getGenerateFileToolCode,
@@ -362,27 +363,19 @@ export const POST: RequestHandler = async (event) => {
                 assistantMsgId,
                 newGeneratedFileIds,
               );
+              await syncGeneratedFilesToMemory({
+                userId: user.id,
+                conversationId,
+                assistantMessageId: assistantMsgId,
+                fileIds: newGeneratedFileIds,
+                assistantResponse: chunkRuntime.fullResponse,
+              });
             }
 
             if (assistantMsgId) {
               generatedFiles = await getChatFilesForAssistantMessage(conversationId, assistantMsgId);
             }
 
-            console.info("[CHAT_STREAM] Prepared generated files for end event", {
-              conversationId,
-              streamId,
-              userMessageId: userMsgId ?? null,
-              assistantMessageId: assistantMsgId ?? null,
-              wasStopped,
-              count: generatedFiles.length,
-              assignedCount: newGeneratedFileIds.length,
-              files: generatedFiles.map((file) => ({
-                id: file.id,
-                filename: file.filename,
-                sizeBytes: file.sizeBytes,
-                mimeType: file.mimeType,
-              })),
-            });
           } catch (error) {
             console.error("[CHAT_STREAM] Failed to load generated files for end event", {
               conversationId,

@@ -195,11 +195,6 @@ async function waitForExecToFinish(exec: Exec): Promise<ExecInspectInfo> {
 	while (true) {
 		const inspect = await exec.inspect();
 		if (inspect.Running === false && inspect.ExitCode !== null) {
-			console.info('[FILE_GENERATE] Sandbox exec completed', {
-				execId: inspect.ID,
-				containerId: inspect.ContainerID,
-				exitCode: inspect.ExitCode,
-			});
 			return inspect;
 		}
 

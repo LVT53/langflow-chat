@@ -7,6 +7,7 @@ import type {
 	WorkCapsule,
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
+import { isPreviewableFile as isPreviewableGeneratedFile } from '$lib/utils/file-preview';
 
 export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
@@ -118,18 +119,5 @@ export function getFocusContinuityItemCount(params: {
 }
 
 export function isPreviewableFile(mimeType: string | null, filename: string): boolean {
-	if (!mimeType) {
-		const ext = filename.split('.').pop()?.toLowerCase();
-		return ['pdf', 'docx', 'xlsx', 'pptx', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'txt', 'md', 'json', 'csv'].includes(ext || '');
-	}
-
-	if (mimeType.includes('pdf')) return true;
-	if (mimeType.includes('wordprocessingml')) return true;
-	if (mimeType.includes('spreadsheetml')) return true;
-	if (mimeType.includes('presentationml')) return true;
-	if (mimeType.startsWith('image/')) return true;
-	if (mimeType.startsWith('text/')) return true;
-	if (mimeType === 'application/json' || mimeType === 'application/csv') return true;
-
-	return false;
+	return isPreviewableGeneratedFile(mimeType, filename);
 }

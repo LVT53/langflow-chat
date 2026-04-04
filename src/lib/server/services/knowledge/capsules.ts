@@ -105,6 +105,8 @@ export async function createGeneratedOutputArtifact(params: {
 	messageId: string;
 	content: string;
 	sourceArtifactIds: string[];
+	nameOverride?: string;
+	metadata?: Record<string, unknown> | null;
 }): Promise<Artifact | null> {
 	await ensureGeneratedOutputRetrievalBackfill(params.userId);
 
@@ -133,7 +135,7 @@ export async function createGeneratedOutputArtifact(params: {
 		userId: params.userId,
 		conversationId: params.conversationId,
 		type: 'generated_output',
-		name: `${artifactBaseName} result`,
+		name: params.nameOverride?.trim() || `${artifactBaseName} result`,
 		mimeType: 'text/markdown',
 		extension: 'md',
 		sizeBytes: Buffer.byteLength(trimmed, 'utf8'),
@@ -141,6 +143,7 @@ export async function createGeneratedOutputArtifact(params: {
 		summary: guessSummary(trimmed, trimmed),
 		metadata: {
 			messageId: params.messageId,
+			...(params.metadata ?? {}),
 		},
 	});
 

@@ -38,13 +38,14 @@ await workbook.xlsx.writeFile("/output/report.xlsx");
 ```
 
 ```javascript
-const { PDFDocument } = require("pdf-lib");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const fs = require("fs");
 
 (async () => {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]);
-  page.drawText("Hello from AlfyAI", { x: 50, y: 780, size: 18 });
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  page.drawText("Hello from AlfyAI", { x: 50, y: 780, size: 18, font, color: rgb(0, 0, 0) });
   const pdfBytes = await pdfDoc.save();
   fs.writeFileSync("/output/example.pdf", pdfBytes);
 })();
@@ -52,6 +53,8 @@ const fs = require("fs");
 
 For PDF generation with `pdf-lib`, prefer the exact CommonJS pattern above.
 Do not use incorrect forms such as `const { pdfDoc } = require("pdf-lib")` or `await pdfDoc.create()`.
+Do not pass `StandardFonts.Helvetica` directly to `drawText`; embed it first and pass the returned `PDFFont`.
+Do not use invented APIs such as `pdfDoc.getStandardFont(...)`.
 """
 
 from __future__ import annotations
@@ -83,7 +86,7 @@ class FileGeneratorToolComponent(Component):
     - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
     - JavaScript: xlsx via exceljs, pdf via pdf-lib, pptx via pptxgenjs, docx via docx, odt via jszip packaging
     - JavaScript runs under Node with CommonJS `require(...)`; write final files to `/output`
-    - For pdf-lib specifically, use `const { PDFDocument } = require("pdf-lib")` and `await PDFDocument.create()`
+    - For pdf-lib specifically, use `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib")`, `await PDFDocument.create()`, `const font = await pdfDoc.embedFont(StandardFonts.Helvetica)`, then pass `font` to `drawText`
     """
 
     display_name = "File Generator"

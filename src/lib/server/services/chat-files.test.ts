@@ -24,6 +24,9 @@ const {
 	mockWriteFile,
 	mockReadFile,
 	mockAccess,
+	mockCreateGeneratedOutputArtifact,
+	mockSyncArtifactToHoncho,
+	mockExtractDocumentText,
 } = vi.hoisted(() => {
 	const mockRows: ChatFileRow[] = [];
 
@@ -63,6 +66,29 @@ const {
 	const mockWriteFile = vi.fn(() => Promise.resolve(undefined));
 	const mockReadFile = vi.fn(() => Promise.resolve(Buffer.from('test content')));
 	const mockAccess = vi.fn(() => Promise.resolve(undefined));
+	const mockCreateGeneratedOutputArtifact = vi.fn(async (params: { content: string; nameOverride?: string }) => ({
+		id: 'artifact-1',
+		userId: 'user-1',
+		conversationId: 'conv-a',
+		type: 'generated_output',
+		retrievalClass: 'durable',
+		name: params.nameOverride ?? 'result',
+		mimeType: 'text/markdown',
+		sizeBytes: params.content.length,
+		vaultId: null,
+		storagePath: null,
+		contentText: params.content,
+		summary: 'summary',
+		metadata: {},
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	}));
+	const mockSyncArtifactToHoncho = vi.fn(async () => ({ uploaded: true, mode: 'native' }));
+	const mockExtractDocumentText = vi.fn(async () => ({
+		text: 'Extracted generated file text',
+		normalizedName: 'generated.txt',
+		mimeType: 'text/plain',
+	}));
 
 	return {
 		mockRows,
@@ -75,6 +101,9 @@ const {
 		mockWriteFile,
 		mockReadFile,
 		mockAccess,
+		mockCreateGeneratedOutputArtifact,
+		mockSyncArtifactToHoncho,
+		mockExtractDocumentText,
 	};
 });
 
@@ -94,17 +123,22 @@ vi.mock(import('fs/promises'), async (importOriginal) => {
 vi.mock('$lib/server/db', () => ({
 	db: {
 		select: vi.fn(() => ({
-			from: vi.fn((table: { name: string }) => ({
+			from: vi.fn((table: { name?: string }) => ({
 				where: vi.fn((condition: unknown) => ({
-					orderBy: vi.fn(async () => {
+					orderBy: vi.fn(() => {
 						const conversationId = extractConversationId(condition);
 						const assistantMessageId = extractAssistantMessageId(condition);
-						return mockSelectWhere(conversationId).then((rows) =>
-							rows.filter(
+						const rows = mockRows
+							.filter((row) => row.conversationId === conversationId)
+							.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+							.filter(
 								(row) =>
 									!assistantMessageId || row.assistantMessageId === assistantMessageId
 							)
-						);
+							.map((row) => ({ ...row }));
+						return Object.assign(rows, {
+							limit: vi.fn(async (count: number) => rows.slice(0, count)),
+						});
 					}),
 					limit: vi.fn(async () => {
 						const conversationId = extractConversationId(condition);
@@ -245,6 +279,18 @@ vi.mock('drizzle-orm', () => ({
 	desc: vi.fn(() => 'desc'),
 	inArray: vi.fn((field: { name: string }, values: string[]) => ({ field: field.name, value: values })),
 	eq: vi.fn((field: { name: string }, value: string) => ({ field: field.name, value })),
+}));
+
+vi.mock('$lib/server/services/knowledge', () => ({
+	createGeneratedOutputArtifact: (...args: unknown[]) => mockCreateGeneratedOutputArtifact(...args),
+}));
+
+vi.mock('$lib/server/services/honcho', () => ({
+	syncArtifactToHoncho: (...args: unknown[]) => mockSyncArtifactToHoncho(...args),
+}));
+
+vi.mock('./document-extraction', () => ({
+	extractDocumentText: (...args: unknown[]) => mockExtractDocumentText(...args),
 }));
 
 describe('chat-files service', () => {

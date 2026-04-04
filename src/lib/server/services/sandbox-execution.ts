@@ -276,10 +276,6 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 
 	try {
 		const archiveStream = await container.getArchive({ path: OUTPUT_DIR });
-		console.info('[FILE_GENERATE] Reading sandbox output archive', {
-			containerId: container.id,
-			outputDir: OUTPUT_DIR,
-		});
 
 		return new Promise((resolve, reject) => {
 			const extract = tar.extract();
@@ -287,13 +283,6 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 			extract.on('entry', (header, stream, next) => {
 				const name = header.name;
 				const type = header.type ?? 'file';
-
-				console.info('[FILE_GENERATE] Sandbox archive entry', {
-					containerId: container.id,
-					name,
-					type,
-					sizeBytes: header.size ?? null,
-				});
 
 				// SECURITY: Reject dangerous entry types (symlinks, hardlinks, devices)
 				if (isDangerousEntryType(header)) {
@@ -309,12 +298,6 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 
 				// SECURITY: Reject non-file entries (directories, pax headers, long-path metadata, etc.)
 				if (!isExtractableFileEntry(header)) {
-					console.info('[FILE_GENERATE] Skipping sandbox archive entry', {
-						containerId: container.id,
-						name,
-						type,
-						reason: 'non-file-entry',
-					});
 					finishSkippedEntry(stream, next);
 					return;
 				}
@@ -397,14 +380,6 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 						content,
 						sizeBytes: content.length,
 					});
-
-					console.info('[FILE_GENERATE] Accepted sandbox archive file', {
-						containerId: container.id,
-						name,
-						filename,
-						sizeBytes: content.length,
-					});
-
 					next();
 				});
 
@@ -419,18 +394,7 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 				});
 			});
 
-			extract.on('finish', () => {
-				console.info('[FILE_GENERATE] Finished reading sandbox output archive', {
-					containerId: container.id,
-					fileCount: files.length,
-					files: files.map((file) => ({
-						filename: file.filename,
-						sizeBytes: file.sizeBytes,
-						mimeType: file.mimeType,
-					})),
-				});
-				resolve(files);
-			});
+			extract.on('finish', () => resolve(files));
 			extract.on('error', (err: Error) => reject(err));
 
 			archiveStream.on('error', (err: Error) => reject(err));
@@ -495,16 +459,7 @@ async function inspectOutputDirectory(
 	}
 
 	try {
-		const parsed = JSON.parse(inspection.stdout) as OutputInspectionResult;
-		console.info('[FILE_GENERATE] In-container output inspection completed', {
-			containerId: container.id,
-			exists: parsed.exists,
-			isDir: parsed.isDir,
-			directories: parsed.directories,
-			fileCount: parsed.files.length,
-			files: parsed.files,
-		});
-		return parsed;
+		return JSON.parse(inspection.stdout) as OutputInspectionResult;
 	} catch (error) {
 		console.warn('[FILE_GENERATE] In-container output inspection parse failed', {
 			containerId: container.id,
@@ -601,16 +556,6 @@ async function readFilesFromInsideContainer(
 			sizeBytes: content.length,
 		});
 	}
-
-	console.info('[FILE_GENERATE] In-container fallback file read completed', {
-		containerId: container.id,
-		fileCount: files.length,
-		files: files.map((file) => ({
-			filename: file.filename,
-			sizeBytes: file.sizeBytes,
-			mimeType: file.mimeType,
-		})),
-	});
 
 	return files;
 }

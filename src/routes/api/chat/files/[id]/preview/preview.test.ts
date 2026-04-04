@@ -101,4 +101,25 @@ describe('GET /api/chat/files/[id]/preview', () => {
 		expect(response.status).toBe(500);
 		expect(body.error).toBe('Failed to read file content');
 	});
+
+	it('infers ODT preview content type from the filename', async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: 'file-1',
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			filename: 'draft.odt',
+			mimeType: null,
+			sizeBytes: 9,
+			storagePath: 'conv-1/file-1.odt',
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from('odt bytes'));
+
+		const response = await GET(makeEvent());
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe(
+			'application/vnd.oasis.opendocument.text'
+		);
+	});
 });

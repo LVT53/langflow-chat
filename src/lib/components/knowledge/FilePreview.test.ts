@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import FilePreview from './FilePreview.svelte';
 
+const mockJsZipLoadAsync = vi.fn();
+
 vi.mock('$lib/services/markdown', () => ({
 	renderHighlightedText: vi.fn(async (content: string) => `<pre><code>${content}</code></pre>`),
 }));
@@ -39,6 +41,12 @@ vi.mock('exceljs', () => ({
 				1
 			);
 		}
+	},
+}));
+
+vi.mock('jszip', () => ({
+	default: {
+		loadAsync: mockJsZipLoadAsync,
 	},
 }));
 
@@ -297,6 +305,35 @@ describe('FilePreview', () => {
 		expect(mockPdfRender).toHaveBeenCalledTimes(1);
 	});
 
+	it('re-renders the PDF page when zoom changes', async () => {
+		const mockBlob = new Blob(['PDF content'], { type: 'application/pdf' });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-123',
+				filename: 'document.pdf',
+				mimeType: 'application/pdf',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+		});
+
+		const initialRenderCount = mockPdfRender.mock.calls.length;
+		await fireEvent.click(screen.getByLabelText('Zoom in'));
+
+		await waitFor(() => {
+			expect(mockPdfRender.mock.calls.length).toBeGreaterThan(initialRenderCount);
+		});
+	});
+
 	it('detects image file type correctly', async () => {
 		const mockBlob = new Blob(['image data'], { type: 'image/png' });
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -408,6 +445,53 @@ describe('FilePreview', () => {
 
 		await waitFor(() => {
 			expect(screen.getByText('{\\rtf1\\ansi Hello world}')).toBeInTheDocument();
+		});
+	});
+
+	it('renders ODT files as document preview content', async () => {
+		mockJsZipLoadAsync.mockResolvedValue({
+			file: vi.fn((name: string) =>
+				name === 'content.xml'
+					? {
+							async: vi.fn().mockResolvedValue(
+								`<?xml version="1.0" encoding="UTF-8"?>
+								<office:document-content
+									xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+									xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+									<office:body>
+										<office:text>
+											<text:h text:outline-level="1">ODT Title</text:h>
+											<text:p>Hello from ODT preview</text:p>
+										</office:text>
+									</office:body>
+								</office:document-content>`
+							),
+						}
+					: null
+			),
+		});
+
+		const mockBlob = new Blob(['odt content'], {
+			type: 'application/vnd.oasis.opendocument.text',
+		});
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-odt',
+				filename: 'document.odt',
+				mimeType: 'application/vnd.oasis.opendocument.text',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('ODT Title')).toBeInTheDocument();
+			expect(screen.getByText('Hello from ODT preview')).toBeInTheDocument();
 		});
 	});
 

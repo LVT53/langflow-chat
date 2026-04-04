@@ -214,16 +214,6 @@ export const POST: RequestHandler = async (event) => {
 			mimeType: file.mimeType,
 			content: file.content,
 		});
-		console.info('[FILE_GENERATE] Stored generated file', {
-			requestId,
-			conversationId,
-			ownerUserId,
-			fileId: storedFile.id,
-			filename: storedFile.filename,
-			sizeBytes: storedFile.sizeBytes,
-			mimeType: storedFile.mimeType,
-			storagePath: storedFile.storagePath,
-		});
 
 		files.push({
 			id: storedFile.id,

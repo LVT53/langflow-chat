@@ -81,20 +81,6 @@ export const GET: RequestHandler = async (event) => {
 				savedVaultName: savedVault?.vaultName ?? null,
 			};
 		});
-		console.info('[CONVERSATION_DETAIL] Returning conversation payload', {
-			conversationId: id,
-			userId: user.id,
-			messageCount: messageHistory.length,
-			generatedFileCount: generatedFilesWithVaultState.length,
-			generatedFiles: generatedFilesWithVaultState.map((file) => ({
-				id: file.id,
-				filename: file.filename,
-				sizeBytes: file.sizeBytes,
-				mimeType: file.mimeType,
-				savedVaultName: file.savedVaultName,
-			})),
-		});
-
 		return json({
 			conversation,
 			messages: messageHistory,

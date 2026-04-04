@@ -78,4 +78,58 @@ describe('document extraction', () => {
 			mimeType: 'text/plain',
 		});
 	});
+
+	it('treats SVG files as text-extractable content', async () => {
+		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-svg-'));
+		const svgPath = join(tempDir, 'diagram.svg');
+		await writeFile(svgPath, '<svg><text>Hello Diagram</text></svg>', 'utf8');
+
+		const { extractDocumentText } = await import('./document-extraction');
+
+		const result = await extractDocumentText(svgPath, 'image/svg+xml', 'diagram.svg');
+
+		expect(result).toEqual({
+			text: '<svg><text>Hello Diagram</text></svg>',
+			normalizedName: 'diagram.txt',
+			mimeType: 'text/plain',
+		});
+	});
+
+	it('extracts ODT text through the OpenDocument content.xml payload', async () => {
+		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-odt-'));
+		const unzipPath = join(tempDir, 'unzip');
+		await writeFile(
+			unzipPath,
+			`#!/bin/sh
+if [ "$1" = "-Z1" ]; then
+  echo "content.xml"
+  exit 0
+fi
+if [ "$1" = "-p" ] && [ "$3" = "content.xml" ]; then
+  echo '<office:document-content><office:body><office:text><text:p>Hello from ODT</text:p></office:text></office:body></office:document-content>'
+  exit 0
+fi
+exit 1
+`,
+			'utf8'
+		);
+		await chmod(unzipPath, 0o755);
+
+		process.env.PATH = tempDir;
+
+		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
+		resetDocumentExtractionExecutableCache();
+
+		const result = await extractDocumentText(
+			'/tmp/generated.odt',
+			'application/vnd.oasis.opendocument.text',
+			'generated.odt'
+		);
+
+		expect(result).toEqual({
+			text: 'Hello from ODT',
+			normalizedName: 'generated.txt',
+			mimeType: 'text/plain',
+		});
+	});
 });

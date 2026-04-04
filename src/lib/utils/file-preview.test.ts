@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest';
+import {
+	determinePreviewFileType,
+	getPreviewContentType,
+	getPreviewLanguage,
+	isPreviewableFile,
+} from './file-preview';
+
+describe('file-preview utils', () => {
+	it('classifies every generated previewable format correctly', () => {
+		expect(determinePreviewFileType('application/pdf', 'file.pdf')).toBe('pdf');
+		expect(
+			determinePreviewFileType(
+				'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+				'file.docx'
+			)
+		).toBe('docx');
+		expect(
+			determinePreviewFileType(
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+				'file.xlsx'
+			)
+		).toBe('xlsx');
+		expect(
+			determinePreviewFileType(
+				'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+				'file.pptx'
+			)
+		).toBe('pptx');
+		expect(
+			determinePreviewFileType('application/vnd.oasis.opendocument.text', 'file.odt')
+		).toBe('odt');
+		expect(determinePreviewFileType('image/svg+xml', 'file.svg')).toBe('image');
+		expect(determinePreviewFileType('application/xml', 'file.xml')).toBe('text');
+		expect(determinePreviewFileType('application/rtf', 'file.rtf')).toBe('text');
+		expect(determinePreviewFileType('text/css', 'file.css')).toBe('text');
+		expect(determinePreviewFileType('application/javascript', 'file.js')).toBe('text');
+		expect(determinePreviewFileType('text/x-python', 'file.py')).toBe('text');
+	});
+
+	it('infers content types for generated formats from filename when mime is absent', () => {
+		expect(getPreviewContentType('file.odt', null)).toBe(
+			'application/vnd.oasis.opendocument.text'
+		);
+		expect(getPreviewContentType('file.xml', null)).toBe('application/xml');
+		expect(getPreviewContentType('file.rtf', null)).toBe('application/rtf');
+		expect(getPreviewContentType('file.css', null)).toBe('text/css');
+		expect(getPreviewContentType('file.js', null)).toBe('application/javascript');
+		expect(getPreviewContentType('file.py', null)).toBe('text/x-python');
+	});
+
+	it('exposes syntax languages for code-like previewable formats', () => {
+		expect(getPreviewLanguage(null, 'script.py')).toBe('python');
+		expect(getPreviewLanguage(null, 'styles.css')).toBe('css');
+		expect(getPreviewLanguage(null, 'config.xml')).toBe('xml');
+		expect(getPreviewLanguage(null, 'doc.md')).toBe('markdown');
+		expect(getPreviewLanguage('application/javascript', 'script.bin')).toBe('javascript');
+	});
+
+	it('marks generated document and code formats as previewable', () => {
+		expect(isPreviewableFile('application/vnd.oasis.opendocument.text', 'draft.odt')).toBe(true);
+		expect(isPreviewableFile('application/xml', 'draft.xml')).toBe(true);
+		expect(isPreviewableFile('application/rtf', 'draft.rtf')).toBe(true);
+		expect(isPreviewableFile('text/css', 'draft.css')).toBe(true);
+		expect(isPreviewableFile('application/javascript', 'draft.js')).toBe(true);
+		expect(isPreviewableFile('text/x-python', 'draft.py')).toBe(true);
+		expect(isPreviewableFile('application/octet-stream', 'draft.bin')).toBe(false);
+	});
+});

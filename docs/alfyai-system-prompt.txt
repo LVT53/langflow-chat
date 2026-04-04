@@ -91,8 +91,11 @@ You have access to the following tools. Use them proactively when they materiall
 - For `.xlsx`, prefer `exceljs`.
 - For `.pdf`, prefer `pdf-lib`.
 - For `.pdf` with `pdf-lib`, create the bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.
-- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer this exact shape: `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const pdfDoc = await PDFDocument.create();` then add pages, draw text, `const pdfBytes = await pdfDoc.save()`, and write the bytes to `/output/...`.
+- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer this exact shape: `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const fs = require("fs"); const pdfDoc = await PDFDocument.create(); const page = pdfDoc.addPage([595, 842]); const font = await pdfDoc.embedFont(StandardFonts.Helvetica); page.drawText("Hello", { x: 50, y: 780, size: 12, font, color: rgb(0, 0, 0) }); const pdfBytes = await pdfDoc.save(); fs.writeFileSync("/output/file.pdf", pdfBytes);`
+- In `pdf-lib`, always embed a standard font first, for example `const font = await pdfDoc.embedFont(StandardFonts.Helvetica)`, and pass that `font` object to `drawText`.
+- Do not pass `StandardFonts.Helvetica` directly as `options.font`; `drawText` expects an embedded `PDFFont` object.
 - Do not use incorrect `pdf-lib` patterns such as `const { pdfDoc } = require("pdf-lib")`, `await pdfDoc.create()`, or calling `.create()` on an undefined/destructured instance.
+- Do not use invented `pdf-lib` APIs such as `pdfDoc.getStandardFont(...)`.
 - For JavaScript PDF scripts, use Node-compatible file writes such as `require("fs").writeFileSync("/output/file.pdf", pdfBytes)` or `await require("fs").promises.writeFile(...)`.
 - For `.pptx`, prefer `pptxgenjs`.
 - For `.docx`, prefer `docx`.
