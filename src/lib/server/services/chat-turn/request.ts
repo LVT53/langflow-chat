@@ -17,6 +17,7 @@ type RequestBody = {
 	model?: unknown;
 	skipPersistUserMessage?: unknown;
 	attachmentIds?: unknown;
+	activeDocumentArtifactId?: unknown;
 };
 
 export async function parseChatTurnRequest(
@@ -31,7 +32,15 @@ export async function parseChatTurnRequest(
 		return { ok: false, error: { status: 400, error: 'Invalid JSON body' } };
 	}
 
-	const { message, conversationId, streamId, model, skipPersistUserMessage, attachmentIds } = body;
+	const {
+		message,
+		conversationId,
+		streamId,
+		model,
+		skipPersistUserMessage,
+		attachmentIds,
+		activeDocumentArtifactId,
+	} = body;
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return {
 			ok: false,
@@ -75,6 +84,10 @@ export async function parseChatTurnRequest(
 			modelId,
 			modelDisplayName,
 			attachmentIds: safeAttachmentIds,
+			activeDocumentArtifactId:
+				typeof activeDocumentArtifactId === 'string' && activeDocumentArtifactId.trim().length > 0
+					? activeDocumentArtifactId.trim()
+					: undefined,
 			skipPersistUserMessage: skipPersistUserMessage === true,
 			attachmentTraceId:
 				safeAttachmentIds.length > 0 ? createAttachmentTraceId(route) : undefined,

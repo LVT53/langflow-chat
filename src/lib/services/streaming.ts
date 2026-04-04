@@ -69,6 +69,7 @@ export type StreamChatOptions = {
 	modelId?: ModelId;
 	skipPersistUserMessage?: boolean;
 	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
 	retryAssistantMessageId?: string;
 };
 
@@ -82,6 +83,7 @@ export function streamChat(
 		modelId,
 		skipPersistUserMessage,
 		attachmentIds,
+		activeDocumentArtifactId,
 		retryAssistantMessageId,
 	} = options ?? {};
 	const controller = new AbortController();
@@ -121,8 +123,21 @@ export function streamChat(
 				? '/api/chat/retry'
 				: '/api/chat/stream';
 			const body = retryAssistantMessageId
-				? JSON.stringify({ conversationId, assistantMessageId: retryAssistantMessageId, streamId })
-				: JSON.stringify({ message, conversationId, streamId, model: modelId, skipPersistUserMessage, attachmentIds });
+				? JSON.stringify({
+						conversationId,
+						assistantMessageId: retryAssistantMessageId,
+						streamId,
+						activeDocumentArtifactId,
+					})
+				: JSON.stringify({
+						message,
+						conversationId,
+						streamId,
+						model: modelId,
+						skipPersistUserMessage,
+						attachmentIds,
+						activeDocumentArtifactId,
+					});
 			const res = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },

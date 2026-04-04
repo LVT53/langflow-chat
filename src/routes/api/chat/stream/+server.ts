@@ -115,6 +115,7 @@ export const POST: RequestHandler = async (event) => {
   const modelDisplayName = turn.modelDisplayName;
   const skipPersistUserMessage = turn.skipPersistUserMessage;
   const safeAttachmentIds = turn.attachmentIds;
+  const activeDocumentArtifactId = turn.activeDocumentArtifactId;
   const attachmentTraceId = turn.attachmentTraceId;
   const sourceLanguage = turn.sourceLanguage;
   const isTranslationEnabled = turn.translationEnabled;
@@ -536,6 +537,7 @@ export const POST: RequestHandler = async (event) => {
               signal: upstreamAbortController.signal,
               userId: user.id,
               attachmentIds: safeAttachmentIds,
+              activeDocumentArtifactId,
               attachmentTraceId,
               systemPromptAppendix: usedUrlListRecovery
                 ? URL_LIST_TOOL_RECOVERY_APPENDIX
@@ -572,6 +574,7 @@ export const POST: RequestHandler = async (event) => {
               {
                 signal: upstreamAbortController.signal,
                 attachmentIds: safeAttachmentIds,
+                activeDocumentArtifactId,
                 attachmentTraceId,
                 systemPromptAppendix: usedUrlListRecovery
                   ? URL_LIST_TOOL_RECOVERY_APPENDIX

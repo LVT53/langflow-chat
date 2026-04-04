@@ -38,6 +38,7 @@ import {
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
+	parseWorkingDocumentMetadata,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -418,11 +419,12 @@ export async function findRelevantKnowledgeArtifacts(
 	userId: string,
 	query: string,
 	excludeConversationId?: string,
-	limit = 6
+	limit = 6,
+	preferredArtifactId?: string
 ): Promise<Artifact[]> {
 	await ensureGeneratedOutputRetrievalBackfill(userId);
 
-	const [documents, generatedOutputs] = await Promise.all([
+	const [documents, generatedOutputs, preferredArtifacts] = await Promise.all([
 		findRelevantArtifactsByTypes({
 			userId,
 			query,
@@ -437,14 +439,41 @@ export async function findRelevantKnowledgeArtifacts(
 			limit: Math.max(limit * 3, 12),
 			excludeConversationId,
 		}),
+		preferredArtifactId ? getArtifactsForUser(userId, [preferredArtifactId]) : Promise.resolve([]),
 	]);
 
+	const preferredGeneratedFamilies = new Set(
+		preferredArtifacts
+			.filter((artifact) => artifact.type === 'generated_output')
+			.map((artifact) => parseWorkingDocumentMetadata(artifact.metadata).documentFamilyId)
+			.filter((familyId): familyId is string => typeof familyId === 'string' && familyId.length > 0)
+	);
 	const resolvedOutputs = resolveRelevantGeneratedDocumentArtifacts({
 		artifacts: generatedOutputs,
 		query,
 		limit,
 		currentConversationId: excludeConversationId ? null : undefined,
-	}).map((entry) => entry.artifact);
+	})
+		.map((entry) => entry.artifact)
+		.filter((artifact) => {
+			if (!preferredArtifacts.some((preferred) => preferred.id === artifact.id)) {
+				const familyId = parseWorkingDocumentMetadata(artifact.metadata).documentFamilyId;
+				return !familyId || !preferredGeneratedFamilies.has(familyId);
+			}
+			return false;
+		});
 
-	return [...documents, ...resolvedOutputs].slice(0, limit);
+	const preferredRelevantArtifacts = preferredArtifacts;
+	const seen = new Set<string>();
+	const ordered = [
+		...preferredRelevantArtifacts,
+		...documents,
+		...resolvedOutputs,
+	].filter((artifact) => {
+		if (seen.has(artifact.id)) return false;
+		seen.add(artifact.id);
+		return true;
+	});
+
+	return ordered.slice(0, limit);
 }

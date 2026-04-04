@@ -79,6 +79,7 @@ export const POST: RequestHandler = async (event) => {
 	let body: {
 		conversationId?: unknown;
 		assistantMessageId?: unknown;
+		activeDocumentArtifactId?: unknown;
 	};
 	try {
 		body = await event.request.json();
@@ -89,7 +90,7 @@ export const POST: RequestHandler = async (event) => {
 		});
 	}
 
-	const { conversationId, assistantMessageId } = body;
+	const { conversationId, assistantMessageId, activeDocumentArtifactId } = body;
 	if (typeof conversationId !== 'string' || !conversationId.trim()) {
 		return new Response(JSON.stringify({ error: 'conversationId is required' }), {
 			status: 400,
@@ -179,6 +180,10 @@ export const POST: RequestHandler = async (event) => {
 		body: JSON.stringify({
 			message: userMsg.content,
 			conversationId,
+			activeDocumentArtifactId:
+				typeof activeDocumentArtifactId === 'string' && activeDocumentArtifactId.trim()
+					? activeDocumentArtifactId.trim()
+					: undefined,
 		}),
 	});
 
@@ -202,6 +207,7 @@ export const POST: RequestHandler = async (event) => {
 	const modelId = turn.modelId;
 	const modelDisplayName = turn.modelDisplayName;
 	const safeAttachmentIds = turn.attachmentIds;
+	const activeDocumentFocusId = turn.activeDocumentArtifactId;
 	const attachmentTraceId = turn.attachmentTraceId;
 	const sourceLanguage = turn.sourceLanguage;
 	const isTranslationEnabled = turn.translationEnabled;
@@ -470,6 +476,7 @@ export const POST: RequestHandler = async (event) => {
 							signal: upstreamAbortController.signal,
 							userId: user.id,
 							attachmentIds: safeAttachmentIds,
+							activeDocumentArtifactId: activeDocumentFocusId,
 							attachmentTraceId,
 							systemPromptAppendix: usedUrlListRecovery
 								? URL_LIST_TOOL_RECOVERY_APPENDIX
@@ -500,6 +507,7 @@ export const POST: RequestHandler = async (event) => {
 							{
 								signal: upstreamAbortController.signal,
 								attachmentIds: safeAttachmentIds,
+								activeDocumentArtifactId: activeDocumentFocusId,
 								attachmentTraceId,
 								systemPromptAppendix: usedUrlListRecovery
 									? URL_LIST_TOOL_RECOVERY_APPENDIX

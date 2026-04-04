@@ -1052,6 +1052,7 @@ export async function buildConstructedContext(params: {
 	conversationId: string;
 	message: string;
 	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
 	attachmentTraceId?: string;
 }): Promise<{
 	inputValue: string;
@@ -1083,7 +1084,13 @@ export async function buildConstructedContext(params: {
 				attachmentIds
 			).catch(() => []),
 			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
-			findRelevantKnowledgeArtifacts(params.userId, params.message, params.conversationId, 6).catch(() => []),
+			findRelevantKnowledgeArtifacts(
+				params.userId,
+				params.message,
+				params.conversationId,
+				6,
+				params.activeDocumentArtifactId
+			).catch(() => []),
 		]);
 	const {
 		sessionMessages,
@@ -1122,6 +1129,7 @@ export async function buildConstructedContext(params: {
 		conversationId: params.conversationId,
 		message: params.message,
 		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		currentAttachments,
 		workingSetArtifacts,
 		relevantArtifacts,

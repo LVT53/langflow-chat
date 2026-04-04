@@ -55,6 +55,7 @@ export const POST: RequestHandler = async (event) => {
 			honchoSnapshot,
 		} = await sendMessage(upstreamMessage, turn.conversationId, turn.modelId, user.id, {
 			attachmentIds: turn.attachmentIds,
+			activeDocumentArtifactId: turn.activeDocumentArtifactId,
 			attachmentTraceId: turn.attachmentTraceId,
 		});
 		const responseText = await buildSendResponseText({

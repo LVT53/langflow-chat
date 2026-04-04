@@ -178,6 +178,16 @@
 		workspaceOpen = false;
 	}
 
+	function getActiveWorkspaceArtifactId(): string | undefined {
+		if (!workspaceOpen || !activeWorkspaceDocumentId) {
+			return undefined;
+		}
+
+		const activeDocument =
+			workspaceDocuments.find((document) => document.id === activeWorkspaceDocumentId) ?? null;
+		return activeDocument?.artifactId ?? undefined;
+	}
+
 	function maybeSendPendingInitialMessage() {
 		if (typeof window === 'undefined' || isSending || (data.messages?.length ?? 0) > 0) {
 			return;
@@ -569,6 +579,7 @@
 				modelId: $selectedModel,
 				skipPersistUserMessage,
 				attachmentIds,
+				activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 			}
 		);
 	}
@@ -670,6 +681,7 @@
 					},
 				},
 				{
+					activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 					retryAssistantMessageId: retryAssistantMessageId ?? undefined,
 				}
 			);

@@ -18,6 +18,7 @@ export interface ChatFile {
 	id: string;
 	conversationId: string;
 	assistantMessageId: string | null;
+	artifactId: string | null;
 	userId: string;
 	filename: string;
 	mimeType: string | null;
@@ -206,6 +207,7 @@ function mapRowToChatFile(row: typeof chatGeneratedFiles.$inferSelect): ChatFile
 		id: row.id,
 		conversationId: row.conversationId,
 		assistantMessageId: row.assistantMessageId ?? null,
+		artifactId: null,
 		userId: row.userId,
 		filename: row.filename,
 		mimeType: row.mimeType ?? null,
@@ -213,6 +215,39 @@ function mapRowToChatFile(row: typeof chatGeneratedFiles.$inferSelect): ChatFile
 		storagePath: row.storagePath,
 		createdAt: row.createdAt.getTime(),
 	};
+}
+
+async function listGeneratedOutputArtifactIdsByChatFile(
+	conversationId: string
+): Promise<Map<string, string>> {
+	const rows = await db
+		.select({
+			id: artifacts.id,
+			metadataJson: artifacts.metadataJson,
+		})
+		.from(artifacts)
+		.where(
+			and(
+				eq(artifacts.conversationId, conversationId),
+				eq(artifacts.type, 'generated_output')
+			)
+		)
+		.orderBy(desc(artifacts.updatedAt));
+
+	const artifactIdsByChatFile = new Map<string, string>();
+	for (const row of rows) {
+		const metadata = parseJsonRecord(row.metadataJson ?? null);
+		const chatFileId =
+			typeof metadata?.originalChatFileId === 'string' && metadata.originalChatFileId.trim()
+				? metadata.originalChatFileId.trim()
+				: null;
+		if (!chatFileId || artifactIdsByChatFile.has(chatFileId)) {
+			continue;
+		}
+		artifactIdsByChatFile.set(chatFileId, row.id);
+	}
+
+	return artifactIdsByChatFile;
 }
 
 function getChatFilesDir(): string {
@@ -287,13 +322,19 @@ export async function storeGeneratedFile(
  */
 export async function getChatFiles(conversationId: string): Promise<ChatFile[]> {
 	try {
-		const rows = await db
-			.select()
-			.from(chatGeneratedFiles)
-			.where(eq(chatGeneratedFiles.conversationId, conversationId))
-			.orderBy(desc(chatGeneratedFiles.createdAt));
+		const [rows, artifactIdsByChatFile] = await Promise.all([
+			db
+				.select()
+				.from(chatGeneratedFiles)
+				.where(eq(chatGeneratedFiles.conversationId, conversationId))
+				.orderBy(desc(chatGeneratedFiles.createdAt)),
+			listGeneratedOutputArtifactIdsByChatFile(conversationId),
+		]);
 
-		return rows.map(mapRowToChatFile);
+		return rows.map((row) => ({
+			...mapRowToChatFile(row),
+			artifactId: artifactIdsByChatFile.get(row.id) ?? null,
+		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list generated files', {
 			conversationId,
@@ -308,18 +349,24 @@ export async function getChatFilesForAssistantMessage(
 	assistantMessageId: string
 ): Promise<ChatFile[]> {
 	try {
-		const rows = await db
-			.select()
-			.from(chatGeneratedFiles)
-			.where(
-				and(
-					eq(chatGeneratedFiles.conversationId, conversationId),
-					eq(chatGeneratedFiles.assistantMessageId, assistantMessageId)
+		const [rows, artifactIdsByChatFile] = await Promise.all([
+			db
+				.select()
+				.from(chatGeneratedFiles)
+				.where(
+					and(
+						eq(chatGeneratedFiles.conversationId, conversationId),
+						eq(chatGeneratedFiles.assistantMessageId, assistantMessageId)
+					)
 				)
-			)
-			.orderBy(desc(chatGeneratedFiles.createdAt));
+				.orderBy(desc(chatGeneratedFiles.createdAt)),
+			listGeneratedOutputArtifactIdsByChatFile(conversationId),
+		]);
 
-		return rows.map(mapRowToChatFile);
+		return rows.map((row) => ({
+			...mapRowToChatFile(row),
+			artifactId: artifactIdsByChatFile.get(row.id) ?? null,
+		}));
 	} catch (error) {
 		console.error('[CHAT_FILES] Failed to list assistant-scoped generated files', {
 			conversationId,

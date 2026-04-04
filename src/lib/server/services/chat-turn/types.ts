@@ -24,6 +24,7 @@ export type ParsedChatTurnRequest = {
 	modelId: ModelId | undefined;
 	modelDisplayName: string;
 	attachmentIds: string[];
+	activeDocumentArtifactId?: string;
 	skipPersistUserMessage: boolean;
 	attachmentTraceId?: string;
 };

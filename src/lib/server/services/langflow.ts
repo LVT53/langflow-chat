@@ -146,6 +146,7 @@ export async function sendMessage(
   options?: {
     signal?: AbortSignal;
     attachmentIds?: string[];
+    activeDocumentArtifactId?: string;
     attachmentTraceId?: string;
     systemPromptAppendix?: string;
   }
@@ -182,6 +183,7 @@ export async function sendMessage(
         conversationId: sessionId,
         message,
         attachmentIds: options?.attachmentIds,
+        activeDocumentArtifactId: options?.activeDocumentArtifactId,
         attachmentTraceId: options?.attachmentTraceId,
       });
       inputValue = constructed.inputValue;
@@ -281,6 +283,7 @@ export async function sendMessageStream(
     signal?: AbortSignal;
     userId?: string;
     attachmentIds?: string[];
+    activeDocumentArtifactId?: string;
     attachmentTraceId?: string;
     systemPromptAppendix?: string;
   }
@@ -332,6 +335,7 @@ export async function sendMessageStream(
         conversationId: sessionId,
         message,
         attachmentIds: options.attachmentIds,
+        activeDocumentArtifactId: options.activeDocumentArtifactId,
         attachmentTraceId: options.attachmentTraceId,
       });
       inputValue = constructed.inputValue;

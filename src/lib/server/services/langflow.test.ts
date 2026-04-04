@@ -383,6 +383,35 @@ describe('Langflow API Client Service', () => {
       );
     });
 
+    it('forwards the active workspace document to constructed-context assembly', async () => {
+      const { sendMessage } = await import('./langflow');
+      const { buildConstructedContext } = await import('./honcho');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue({
+          outputs: [{
+            outputs: [{
+              results: {
+                message: {
+                  text: 'AI response'
+                }
+              }
+            }]
+          }]
+        }),
+        ok: true
+      }));
+
+      await sendMessage('Continue refining this draft.', 'test-session', undefined, 'user-1', {
+        activeDocumentArtifactId: 'artifact-focused-1',
+      });
+
+      expect(buildConstructedContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activeDocumentArtifactId: 'artifact-focused-1',
+        })
+      );
+    });
+
     it('adds a URL list guard when the outbound prompt contains a link', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         json: vi.fn().mockResolvedValue({
@@ -582,6 +611,30 @@ describe('Langflow API Client Service', () => {
         '[LANGFLOW] Attachment marker missing from outgoing streaming bundle',
         expect.objectContaining({
           sessionId: 'test-session',
+        })
+      );
+    });
+
+    it('forwards the active workspace document for streaming context assembly', async () => {
+      const { sendMessageStream } = await import('./langflow');
+      const { buildConstructedContext } = await import('./honcho');
+      const mockBody = {} as ReadableStream<Uint8Array>;
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        body: mockBody,
+        headers: new Headers({ 'content-type': 'text/event-stream' }),
+        status: 200,
+        statusText: 'OK',
+      }));
+
+      await sendMessageStream('Keep editing the open file.', 'test-session', undefined, {
+        userId: 'user-1',
+        activeDocumentArtifactId: 'artifact-focused-2',
+      });
+
+      expect(buildConstructedContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activeDocumentArtifactId: 'artifact-focused-2',
         })
       );
     });

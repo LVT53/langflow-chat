@@ -785,6 +785,7 @@ function computeEvidenceScore(params: {
   taskState: TaskState | null;
   pinnedIds: Set<string>;
   excludedIds: Set<string>;
+  activeDocumentIds: Set<string>;
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
   currentGeneratedOutputIds: Set<string>;
@@ -803,6 +804,7 @@ function computeEvidenceScore(params: {
       score += 16;
     }
   }
+  if (params.activeDocumentIds.has(params.artifact.id)) score += 140;
   if (params.currentAttachmentIds.has(params.artifact.id)) score += 100;
   if (params.workingSetIds.has(params.artifact.id)) score += 10;
   if (params.pinnedIds.has(params.artifact.id)) score += 120;
@@ -994,6 +996,7 @@ export async function prepareTaskContext(params: {
   conversationId: string;
   message: string;
   attachmentIds?: string[];
+  activeDocumentArtifactId?: string;
   currentAttachments: Artifact[];
   workingSetArtifacts: Artifact[];
   relevantArtifacts: Artifact[];
@@ -1034,6 +1037,9 @@ export async function prepareTaskContext(params: {
   const currentAttachmentIds = new Set(
     params.currentAttachments.map((artifact) => artifact.id),
   );
+  const activeDocumentIds = new Set(
+    params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : [],
+  );
 
   const candidateArtifacts = dedupeById([
     ...params.currentAttachments,
@@ -1073,6 +1079,7 @@ export async function prepareTaskContext(params: {
         taskState,
         pinnedIds,
         excludedIds,
+        activeDocumentIds,
         currentAttachmentIds,
         workingSetIds,
         currentGeneratedOutputIds,
@@ -1086,6 +1093,7 @@ export async function prepareTaskContext(params: {
       .filter(
         (entry) =>
           pinnedIds.has(entry.artifact.id) ||
+          activeDocumentIds.has(entry.artifact.id) ||
           currentAttachmentIds.has(entry.artifact.id),
       )
       .map((entry) => entry.artifact),
@@ -1107,7 +1115,7 @@ export async function prepareTaskContext(params: {
     ]),
     pinnedIds,
     excludedIds,
-    protectedIds: currentAttachmentIds,
+    protectedIds: new Set([...currentAttachmentIds, ...activeDocumentIds]),
   });
   if (reranked.usedModel) {
     selectedArtifacts = dedupeById(reranked.artifacts);
@@ -1120,7 +1128,7 @@ export async function prepareTaskContext(params: {
     message: params.message,
     selectedArtifacts,
     pinnedIds,
-    protectedIds: currentAttachmentIds,
+    protectedIds: new Set([...currentAttachmentIds, ...activeDocumentIds]),
     shouldVerify:
       routingStage !== "deterministic" ||
       excludedIds.size > 0 ||

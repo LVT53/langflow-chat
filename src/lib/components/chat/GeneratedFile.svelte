@@ -7,6 +7,7 @@
 	interface GeneratedFileProps {
 		fileId: string;
 		conversationId: string;
+		artifactId?: string | null;
 		filename: string;
 		size: number;
 		mimeType: string;
@@ -21,6 +22,7 @@
 	let {
 		fileId,
 		conversationId,
+		artifactId = null,
 		filename,
 		size,
 		mimeType,
@@ -114,6 +116,7 @@
 				title: filename,
 				mimeType,
 				previewUrl: `/api/chat/files/${fileId}/preview`,
+				artifactId,
 				conversationId,
 				downloadUrl,
 				savedVaultName: currentSavedVaultName,

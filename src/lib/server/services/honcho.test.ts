@@ -437,6 +437,30 @@ describe('Honcho Service', () => {
       expect(mockResolvePromptAttachmentArtifacts).toHaveBeenCalledWith('user-123', [mockDisplayArtifact.id]);
     });
 
+    it('threads the active workspace document into retrieval and task preparation', async () => {
+      const { buildConstructedContext } = await import('./honcho');
+
+      await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-456',
+        message: 'Refine the open document.',
+        activeDocumentArtifactId: 'generated-artifact-7',
+      });
+
+      expect(mockFindRelevantKnowledgeArtifacts).toHaveBeenCalledWith(
+        'user-123',
+        'Refine the open document.',
+        'conv-456',
+        6,
+        'generated-artifact-7'
+      );
+      expect(mockPrepareTaskContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activeDocumentArtifactId: 'generated-artifact-7',
+        })
+      );
+    });
+
     it('counts recent turns by user-led turns instead of raw message count', async () => {
       mockListMessages.mockResolvedValueOnce([
         { id: 'msg-1', role: 'user', content: 'Turn 1 question', timestamp: Date.parse('2026-03-26T10:00:00.000Z') },
