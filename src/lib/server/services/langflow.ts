@@ -32,13 +32,17 @@ const FILE_GENERATION_GUARD = [
 	'- Use `language: "javascript"` for `.xlsx` files with `exceljs`, `.pdf` files with `pdf-lib`, `.pptx` files with `pptxgenjs`, and `.docx` files with `docx`.',
 	'- Use `language: "javascript"` plus `jszip` when building `.odt` files, because ODT is a packaged OpenDocument container.',
 	'- In the JavaScript runtime, write CommonJS-style scripts for `node -e`: use `require(...)`, not top-level `import` statements.',
+	'- In the JavaScript runtime, prefer the smallest direct script. Do not wrap the whole script in another framework or agent layer.',
 	'- Do not claim `.xlsx`, `.pdf`, `.pptx`, `.docx`, or `.odt` generation is unavailable when `generate_file` is available. Choose the appropriate runtime and use the installed libraries directly.',
 	'- For `.xlsx`, prefer `exceljs`. For `.pdf`, prefer `pdf-lib`. For `.pptx`, prefer `pptxgenjs`. For `.docx`, prefer `docx`. For `.odt`, prefer `jszip` with a valid OpenDocument structure.',
+	'- For `.pdf` with `pdf-lib`, create the PDF bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.',
+	'- For `.pdf` generation in JavaScript, use Node-compatible file writes such as `require("fs").writeFileSync("/output/file.pdf", pdfBytes)` or `await require("fs").promises.writeFile(...)`.',
 	'- Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs` when generating files. They are for previewing, not file creation.',
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
 	'- Only tell the user a file is ready after the tool succeeds.',
 	'- Generated files appear in the chat UI after the response finishes.',
 	'- Do not claim you saved a generated file to a vault unless a dedicated save tool actually exists. Otherwise tell the user to use the chat UI `Save to Vault` action.',
+	'- If `generate_file` fails, inspect the actual error, make one clear fix, and retry at most once.',
 ].join('\n');
 
 function containsHttpUrl(value: string): boolean {

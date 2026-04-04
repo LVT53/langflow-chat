@@ -42,6 +42,18 @@ vi.mock('exceljs', () => ({
 	},
 }));
 
+const mockPdfRender = vi.fn(() => ({
+	promise: Promise.resolve(),
+}));
+
+const mockPdfGetPage = vi.fn(async () => ({
+	getViewport: vi.fn(({ scale }: { scale: number }) => ({
+		width: 640 * scale,
+		height: 480 * scale,
+	})),
+	render: mockPdfRender,
+}));
+
 vi.mock('pdfjs-dist', () => ({
 	GlobalWorkerOptions: {
 		workerSrc: '',
@@ -49,15 +61,7 @@ vi.mock('pdfjs-dist', () => ({
 	getDocument: vi.fn(() => ({
 		promise: Promise.resolve({
 			numPages: 1,
-			getPage: vi.fn(async () => ({
-				getViewport: vi.fn(({ scale }: { scale: number }) => ({
-					width: 640 * scale,
-					height: 480 * scale,
-				})),
-				render: vi.fn(() => ({
-					promise: Promise.resolve(),
-				})),
-			})),
+			getPage: mockPdfGetPage,
 		}),
 	})),
 }));
@@ -240,7 +244,7 @@ describe('FilePreview', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText('Download')).toBeInTheDocument();
+			expect(screen.getByLabelText('Download test.pdf')).toBeInTheDocument();
 		});
 	});
 
@@ -266,6 +270,31 @@ describe('FilePreview', () => {
 			expect(canvas).toBeInTheDocument();
 			expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
 		});
+	});
+
+	it('renders a PDF page once after load instead of looping on render-state changes', async () => {
+		const mockBlob = new Blob(['PDF content'], { type: 'application/pdf' });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-123',
+				filename: 'document.pdf',
+				mimeType: 'application/pdf',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+		});
+
+		expect(mockPdfGetPage).toHaveBeenCalledTimes(1);
+		expect(mockPdfRender).toHaveBeenCalledTimes(1);
 	});
 
 	it('detects image file type correctly', async () => {
@@ -354,7 +383,9 @@ describe('FilePreview', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText('<root><item>Hello</item></root>')).toBeInTheDocument();
+			const code = document.querySelector('.file-text-preview code');
+			expect(code).toBeInTheDocument();
+			expect(code?.textContent).toContain('Hello');
 		});
 	});
 

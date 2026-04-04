@@ -36,6 +36,19 @@ sheet.addRow(["Name", "Value"]);
 sheet.addRow(["Alpha", 42]);
 await workbook.xlsx.writeFile("/output/report.xlsx");
 ```
+
+```javascript
+const { PDFDocument } = require("pdf-lib");
+const fs = require("fs");
+
+(async () => {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 842]);
+  page.drawText("Hello from AlfyAI", { x: 50, y: 780, size: 18 });
+  const pdfBytes = await pdfDoc.save();
+  fs.writeFileSync("/output/example.pdf", pdfBytes);
+})();
+```
 """
 
 from __future__ import annotations
@@ -66,6 +79,7 @@ class FileGeneratorToolComponent(Component):
     Supported output formats depend on the selected runtime:
     - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
     - JavaScript: xlsx via exceljs, pdf via pdf-lib, pptx via pptxgenjs, docx via docx, odt via jszip packaging
+    - JavaScript runs under Node with CommonJS `require(...)`; write final files to `/output`
     """
 
     display_name = "File Generator"

@@ -112,10 +112,11 @@
 		}
 	});
 
-	// Re-render when page or zoom changes
+	// Re-render when the visible PDF state changes. Avoid depending on `isRendering`,
+	// otherwise the effect will re-trigger itself on every render-state flip.
 	$effect(() => {
-		if (pdfDoc && canvasRef && !isRendering) {
-			renderPage(currentPage);
+		if (fileType === 'pdf' && pdfDoc && canvasRef) {
+			void renderPage(currentPage);
 		}
 	});
 
@@ -187,7 +188,6 @@
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
 			
-			await renderPage(1);
 		} catch (err) {
 			error = 'Failed to render PDF file';
 			console.error('PDF render error:', err);

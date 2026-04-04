@@ -261,6 +261,8 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('`.odt` files');
       expect(body.tweaks.system_prompt).toContain('`.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`');
       expect(body.tweaks.system_prompt).toContain('use `require(...)`, not top-level `import` statements');
+      expect(body.tweaks.system_prompt).toContain('create the PDF bytes with `await pdfDoc.save()`');
+      expect(body.tweaks.system_prompt).toContain('Node-compatible file writes');
       expect(body.tweaks.system_prompt).toContain('Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs`');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
       expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');

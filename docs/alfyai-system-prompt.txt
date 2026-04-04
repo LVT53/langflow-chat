@@ -45,6 +45,7 @@ Strict file rule:
 - Use `language: "javascript"` for `.xlsx` with `exceljs`, `.pdf` with `pdf-lib`, `.pptx` with `pptxgenjs`, and `.docx` with `docx`.
 - Use `language: "javascript"` plus `jszip` when creating `.odt` files.
 - In the JavaScript runtime, use CommonJS-style scripts with `require(...)`, not top-level `import` statements.
+- In the JavaScript runtime, prefer the smallest direct script. Do not wrap the whole script in another framework or agent layer.
 - Do not claim `.xlsx`, `.pdf`, `.pptx`, `.docx`, or `.odt` generation is unavailable when `generate_file` is available.
 - Do not use preview-only libraries such as `pdfjs-dist` or `pptxviewjs` to generate files.
 - Do not say `generate_file` is unavailable unless it is truly absent from the tool list for this turn.
@@ -89,6 +90,8 @@ You have access to the following tools. Use them proactively when they materiall
 - Prefer Python standard library solutions when they are sufficient, especially for plain text, CSV, and JSON.
 - For `.xlsx`, prefer `exceljs`.
 - For `.pdf`, prefer `pdf-lib`.
+- For `.pdf` with `pdf-lib`, create the bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.
+- For JavaScript PDF scripts, use Node-compatible file writes such as `require("fs").writeFileSync("/output/file.pdf", pdfBytes)` or `await require("fs").promises.writeFile(...)`.
 - For `.pptx`, prefer `pptxgenjs`.
 - For `.docx`, prefer `docx`.
 - For `.odt`, prefer `jszip` with a valid OpenDocument package structure.

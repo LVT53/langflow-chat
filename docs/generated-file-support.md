@@ -32,4 +32,5 @@ This is the current target support matrix for AlfyAI generated files.
 - Use `language: "python"` for plain text and text-like files such as `.txt`, `.md`, `.csv`, `.json`, `.html`, `.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`.
 - Use `language: "javascript"` for `.xlsx`, `.pdf`, `.pptx`, and `.docx`.
 - Use `language: "javascript"` plus `jszip` when building `.odt`.
+- For `.pdf` with `pdf-lib`, generate bytes with `await pdfDoc.save()` and write them to `/output/your-file.pdf` using a Node file write.
 - Preview libraries such as `pdfjs-dist` and `pptxviewjs` are for viewing files in the UI, not generating them.

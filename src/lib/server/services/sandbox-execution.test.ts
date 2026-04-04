@@ -199,6 +199,25 @@ describe('sandbox-execution', () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
+		it('wraps JavaScript code with sandbox helper names that do not collide with user fs variables', async () => {
+			const mockResult: SandboxResult = {
+				stdout: 'ok',
+				stderr: '',
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+
+			await executeCode('const fs = require("fs"); fs.writeFileSync("/output/test.txt", "ok");', 'javascript');
+
+			expect(mockSandbox.execute).toHaveBeenCalledWith(
+				expect.stringContaining('const sandboxFs = require(\'fs\');')
+			);
+			expect(mockSandbox.execute).toHaveBeenCalledWith(
+				expect.stringContaining('const fs = require("fs"); fs.writeFileSync("/output/test.txt", "ok");')
+			);
+		});
+
 		it('extracts generated files after a leading directory entry', async () => {
 			const mockResult: SandboxResult = {
 				stdout: 'File generated',

@@ -146,10 +146,11 @@ interface OutputReadbackFile {
 function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
 	if (language === 'javascript') {
 		return `
-const fs = require('fs');
+const sandboxFs = require('fs');
+const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
 
 (async () => {
-	fs.mkdirSync(${JSON.stringify(OUTPUT_DIR)}, { recursive: true });
+	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
 ${code}
 })().catch((error) => {
 	console.error(error && error.stack ? error.stack : String(error));
