@@ -20,6 +20,7 @@ import type {
   TaskSteeringAction,
   VerificationStatus,
 } from "$lib/types";
+import { parseJsonRecord } from "$lib/server/utils/json";
 import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
@@ -27,6 +28,7 @@ import { collapseArtifactsByFamily } from "./evidence-family";
 import { resolveCurrentGeneratedDocumentSelection } from "./document-resolution";
 import { getLatestHonchoMetadata } from "./messages";
 import { formatTaskStateForPrompt } from "./task-state/artifacts";
+import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
 import {
   canUseContextSummarizer,
   parseJsonFromModel,
@@ -1290,6 +1292,60 @@ async function upsertEvidenceRole(params: {
     );
 
   if (!params.enabled) return;
+
+  const targetArtifacts = await db
+    .select({ artifact: artifacts })
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.userId, params.userId),
+        eq(artifacts.id, params.artifactId),
+      ),
+    )
+    .limit(1);
+  const targetArtifact = targetArtifacts[0]?.artifact ?? null;
+  const targetFamilyId = targetArtifact
+    ? parseWorkingDocumentMetadata(parseJsonRecord(targetArtifact.metadataJson ?? null))
+        .documentFamilyId
+    : null;
+
+  if (targetFamilyId) {
+    const existingPreferenceRows = await db
+      .select({ link: taskStateEvidenceLinks, artifact: artifacts })
+      .from(taskStateEvidenceLinks)
+      .innerJoin(artifacts, eq(taskStateEvidenceLinks.artifactId, artifacts.id))
+      .where(
+        and(
+          eq(taskStateEvidenceLinks.userId, params.userId),
+          eq(taskStateEvidenceLinks.taskId, params.taskId),
+          eq(taskStateEvidenceLinks.origin, "user"),
+          inArray(taskStateEvidenceLinks.role, ["pinned", "excluded"]),
+        ),
+      );
+
+    const conflictingArtifactIds = findConflictingDocumentPreferenceArtifactIds({
+      entries: existingPreferenceRows.map((row) => ({
+        artifactId: row.link.artifactId,
+        metadata: parseJsonRecord(row.artifact.metadataJson ?? null),
+      })),
+      targetArtifactId: params.artifactId,
+      targetFamilyId,
+    });
+
+    if (conflictingArtifactIds.length > 0) {
+      await db
+        .delete(taskStateEvidenceLinks)
+        .where(
+          and(
+            eq(taskStateEvidenceLinks.userId, params.userId),
+            eq(taskStateEvidenceLinks.taskId, params.taskId),
+            eq(taskStateEvidenceLinks.origin, "user"),
+            inArray(taskStateEvidenceLinks.role, ["pinned", "excluded"]),
+            inArray(taskStateEvidenceLinks.artifactId, Array.from(new Set(conflictingArtifactIds))),
+          ),
+        );
+    }
+  }
 
   await db.insert(taskStateEvidenceLinks).values({
     id: randomUUID(),

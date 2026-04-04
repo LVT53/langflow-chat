@@ -120,6 +120,7 @@ knowledge.ts (facade — re-exports from below)
 
 **Project-continuity note**: `task-state/continuity.ts` now interprets the newest `project_started` / `project_paused` / `project_resumed` event when resolving current continuity state. Explicit pause/resume phrasing from the user may write those events during turn finalization, and continuity reads should trust them before an older still-active row.
 **Persona-contradiction note**: `persona-memory.ts` now treats high-confidence fact slots such as current location or current role as deterministic contradiction candidates. Use slot metadata plus `supersessionReason`/`memory_events` there instead of broad “latest phrasing wins” heuristics.
+**Document-preference note**: task-state evidence preference writes should stay document-family aware. If a user pins or excludes one artifact version inside a working-document family, clear sibling user preference links for that same family so one version remains current for the task.
 
 ## Task-State Submodule Flow
 
