@@ -59,6 +59,35 @@ describe('working-set ranking', () => {
 		expect(ranked[1]?.artifactId).toBe('out-latest');
 	});
 
+	it('boosts an actively corrected document above generic generated-output recency', () => {
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'out-corrected',
+				artifactType: 'generated_output',
+				name: 'Corrected brief',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isRecentUserCorrection: true,
+			},
+			{
+				artifactId: 'out-latest',
+				artifactType: 'generated_output',
+				name: 'Latest generated document',
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isCurrentGeneratedDocument: true,
+			},
+		]);
+
+		expect(ranked[0]).toMatchObject({
+			artifactId: 'out-corrected',
+			selected: true,
+			reasonCodes: expect.arrayContaining(['recent_user_correction']),
+		});
+	});
+
 	it('decays stale items that only persist from previous turns', () => {
 		const ranked = rankWorkingSetCandidates([
 			{

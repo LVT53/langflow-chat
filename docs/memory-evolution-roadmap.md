@@ -258,6 +258,10 @@ Verification:
 - document-resolution tests
 - end-to-end chat refinement tests around active workspace focus
 
+Current progress:
+
+- explicit user-correction/refinement phrasing now feeds working-set scoring and generated-document prompt eligibility as a structured live signal rather than only relying on semantic match
+
 ### Wave 5: Maintenance And Repair Loops
 
 Goal:

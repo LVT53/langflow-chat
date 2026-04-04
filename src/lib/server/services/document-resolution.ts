@@ -146,6 +146,7 @@ export function isGeneratedDocumentPromptEligible(params: {
 
   const allowEphemeralOutput =
     params.reasonCodes.includes("active_document_focus") ||
+    params.reasonCodes.includes("recent_user_correction") ||
     params.reasonCodes.includes("current_generated_document") ||
     (params.artifact.conversationId === params.conversationId &&
       params.reasonCodes.includes("latest_generated_output"));
@@ -161,6 +162,7 @@ export function isGeneratedDocumentPromptEligible(params: {
   return (
     params.reasonCodes.includes("attached_this_turn") ||
     params.reasonCodes.includes("active_document_focus") ||
+    params.reasonCodes.includes("recent_user_correction") ||
     params.reasonCodes.includes("current_generated_document") ||
     params.messageMatchScore >= 2 ||
     params.explicitlyRequested ||

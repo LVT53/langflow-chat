@@ -17,6 +17,7 @@ import type {
 	WorkingSetReasonCode,
 } from '$lib/types';
 import { parseJsonStringArray } from '$lib/server/utils/json';
+import { hasRecentUserCorrectionSignal } from '../active-state';
 import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	isGeneratedDocumentPromptEligible,
@@ -247,6 +248,7 @@ export async function refreshConversationWorkingSet(params: {
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
 	const currentGeneratedReasonCodes = new Set(currentOutputSelection.primaryReasonCodes);
+	const hasCorrectionSignal = hasRecentUserCorrectionSignal(message);
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
@@ -261,6 +263,10 @@ export async function refreshConversationWorkingSet(params: {
 			previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
 			isAttachedThisTurn: attachmentIds.includes(artifact.id),
 			isActiveDocumentFocus: params.activeDocumentArtifactId === artifact.id,
+			isRecentUserCorrection:
+				hasCorrectionSignal &&
+				(params.activeDocumentArtifactId === artifact.id ||
+					currentGeneratedArtifactId === artifact.id),
 			isCurrentGeneratedDocument:
 				currentGeneratedArtifactId === artifact.id &&
 				currentGeneratedReasonCodes.has('current_generated_document'),

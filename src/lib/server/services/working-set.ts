@@ -20,6 +20,7 @@ export interface WorkingSetCandidate {
 	previousState?: WorkingSetState | null;
 	isAttachedThisTurn?: boolean;
 	isActiveDocumentFocus?: boolean;
+	isRecentUserCorrection?: boolean;
 	isCurrentGeneratedDocument?: boolean;
 	isLatestGeneratedOutput?: boolean;
 	isLinkedToLatestOutput?: boolean;
@@ -67,6 +68,11 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	if (candidate.isActiveDocumentFocus) {
 		score += 92;
 		reasonCodes.push('active_document_focus');
+	}
+
+	if (candidate.isRecentUserCorrection) {
+		score += 62;
+		reasonCodes.push('recent_user_correction');
 	}
 
 	if (candidate.isCurrentGeneratedDocument) {

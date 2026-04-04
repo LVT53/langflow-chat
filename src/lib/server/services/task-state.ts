@@ -24,6 +24,10 @@ import { parseJsonRecord } from "$lib/server/utils/json";
 import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
+import {
+  hasRecentUserCorrectionSignal,
+  isDocumentFocusedTurn,
+} from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
 import { resolveCurrentGeneratedDocumentSelection } from "./document-resolution";
 import { getLatestHonchoMetadata } from "./messages";
@@ -94,9 +98,6 @@ const MAX_RERANK_CANDIDATES = 8;
 const MAX_SELECTED_EVIDENCE = 5;
 const MAX_DOCUMENT_FOCUSED_EVIDENCE = 3;
 const MAX_SELECTED_LINKS = 12;
-const DOCUMENT_FOCUS_RE =
-  /\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i;
-
 function toEvidenceSourceType(artifactType: ArtifactType): EvidenceSourceType {
   switch (artifactType) {
     case "source_document":
@@ -129,13 +130,6 @@ function uniqueCompact(
 
 function clip(text: string, maxLength: number): string {
   return clipText(text, maxLength);
-}
-
-function isDocumentFocusedTurn(
-  message: string,
-  attachmentIds: string[],
-): boolean {
-  return attachmentIds.length > 0 || DOCUMENT_FOCUS_RE.test(message);
 }
 
 export { estimateTokenCount };
@@ -800,6 +794,7 @@ function computeEvidenceScore(params: {
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
   currentGeneratedOutputIds: Set<string>;
+  hasCorrectionSignal?: boolean;
 }): number {
   if (params.excludedIds.has(params.artifact.id)) return -1000;
 
@@ -816,6 +811,13 @@ function computeEvidenceScore(params: {
     }
   }
   if (params.activeDocumentIds.has(params.artifact.id)) score += 140;
+  if (
+    params.hasCorrectionSignal &&
+    (params.activeDocumentIds.has(params.artifact.id) ||
+      params.currentGeneratedOutputIds.has(params.artifact.id))
+  ) {
+    score += 36;
+  }
   if (params.currentAttachmentIds.has(params.artifact.id)) score += 100;
   if (params.workingSetIds.has(params.artifact.id)) score += 10;
   if (params.pinnedIds.has(params.artifact.id)) score += 120;
@@ -1084,6 +1086,7 @@ export async function prepareTaskContext(params: {
       : [],
   );
   const documentFocused = isDocumentFocusedTurn(params.message, attachmentIds);
+  const hasCorrectionSignal = hasRecentUserCorrectionSignal(params.message);
   const selectedEvidenceLimit = documentFocused
     ? MAX_DOCUMENT_FOCUSED_EVIDENCE
     : MAX_SELECTED_EVIDENCE;
@@ -1100,6 +1103,7 @@ export async function prepareTaskContext(params: {
         currentAttachmentIds,
         workingSetIds,
         currentGeneratedOutputIds,
+        hasCorrectionSignal,
       }),
     }))
     .filter((entry) => entry.score > 0)

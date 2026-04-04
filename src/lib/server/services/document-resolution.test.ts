@@ -326,6 +326,31 @@ describe("document resolution", () => {
     ).toBe(true);
   });
 
+  it("treats a recently corrected generated document as prompt-eligible even when ephemeral", () => {
+    const artifact = makeArtifact({
+      id: "artifact-1",
+      name: "brief-v2.pdf",
+      conversationId: "conv-1",
+      updatedAt: 2,
+      metadata: {
+        documentFamilyId: "family-brief",
+        documentLabel: "Project brief",
+        versionNumber: 2,
+      },
+    });
+    artifact.retrievalClass = "ephemeral";
+
+    expect(
+      isGeneratedDocumentPromptEligible({
+        artifact,
+        conversationId: "conv-1",
+        reasonCodes: ["recent_user_correction"],
+        messageMatchScore: 0,
+        explicitlyRequested: false,
+      }),
+    ).toBe(true);
+  });
+
   it("keeps unrelated ephemeral generated outputs out of prompt selection", () => {
     const artifact = makeArtifact({
       id: "artifact-1",
