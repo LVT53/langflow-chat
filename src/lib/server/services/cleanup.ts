@@ -23,6 +23,7 @@ import {
 	deleteAllHonchoStateForUser,
 	deleteConversationHonchoState,
 } from './honcho';
+import { deleteAllChatFilesForConversation } from './chat-files';
 import { clearMessageEvidenceForUser } from './messages';
 
 export type DeleteUserAccountResult =
@@ -124,6 +125,7 @@ export async function deleteConversationWithCleanup(
 	}
 
 	await hardDeleteArtifactsForUser(userId, deletedArtifactIds);
+	await deleteAllChatFilesForConversation(conversationId);
 
 	await db
 		.delete(conversations)

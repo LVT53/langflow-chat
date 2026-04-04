@@ -19,6 +19,7 @@ const {
 	mockSelectWhere,
 	mockDeleteWhere,
 	mockUnlink,
+	mockRm,
 	mockMkdir,
 	mockWriteFile,
 	mockReadFile,
@@ -57,12 +58,24 @@ const {
 	});
 
 	const mockUnlink = vi.fn(() => Promise.resolve(undefined));
+	const mockRm = vi.fn(() => Promise.resolve(undefined));
 	const mockMkdir = vi.fn(() => Promise.resolve(undefined));
 	const mockWriteFile = vi.fn(() => Promise.resolve(undefined));
 	const mockReadFile = vi.fn(() => Promise.resolve(Buffer.from('test content')));
 	const mockAccess = vi.fn(() => Promise.resolve(undefined));
 
-	return { mockRows, mockInsertValues, mockSelectWhere, mockDeleteWhere, mockUnlink, mockMkdir, mockWriteFile, mockReadFile, mockAccess };
+	return {
+		mockRows,
+		mockInsertValues,
+		mockSelectWhere,
+		mockDeleteWhere,
+		mockUnlink,
+		mockRm,
+		mockMkdir,
+		mockWriteFile,
+		mockReadFile,
+		mockAccess,
+	};
 });
 
 vi.mock(import('fs/promises'), async (importOriginal) => {
@@ -73,6 +86,7 @@ vi.mock(import('fs/promises'), async (importOriginal) => {
 		writeFile: vi.fn(() => Promise.resolve(undefined)),
 		readFile: vi.fn(() => Promise.resolve(Buffer.from('test content'))),
 		unlink: vi.fn(() => Promise.resolve(undefined)),
+		rm: mockRm,
 		access: vi.fn(() => Promise.resolve(undefined)),
 	};
 });
@@ -237,6 +251,7 @@ describe('chat-files service', () => {
 	beforeEach(() => {
 		mockRows.length = 0;
 		vi.clearAllMocks();
+		mockRm.mockResolvedValue(undefined);
 		vi.spyOn(console, 'info').mockImplementation(() => undefined);
 		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	});

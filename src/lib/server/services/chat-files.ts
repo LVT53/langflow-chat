@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile, readFile, unlink, access } from 'fs/promises';
+import { mkdir, writeFile, readFile, unlink, access, rm } from 'fs/promises';
 import { join, extname } from 'path';
 import { and, desc, eq, inArray, like } from 'drizzle-orm';
 import { db } from '$lib/server/db';
@@ -420,6 +420,12 @@ export async function deleteAllChatFilesForConversation(conversationId: string):
 		} catch {
 			// File may not exist on disk
 		}
+	}
+
+	try {
+		await rm(getConversationDir(conversationId), { recursive: true, force: true });
+	} catch {
+		// Directory cleanup is best-effort
 	}
 
 	return deletedCount;
