@@ -61,6 +61,7 @@ import {
 	logAttachmentTrace,
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
+import { buildActiveDocumentState } from './active-state';
 import { buildPersonaPromptContext } from './persona-memory';
 import { getLatestHonchoMetadata, listMessages } from './messages';
 
@@ -1126,11 +1127,14 @@ export async function buildConstructedContext(params: {
 			resolvedAttachments.unresolvedItems.map((item) => item.requestedArtifactId)
 		);
 	}
-	const documentFocused =
-		attachmentIds.length > 0 ||
-		/\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i.test(
-			params.message
-		);
+	const activeDocumentState = buildActiveDocumentState({
+		artifacts: dedupeById([...currentAttachments, ...workingSetArtifacts, ...relevantArtifacts]),
+		message: params.message,
+		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		currentConversationId: params.conversationId,
+	});
+	const documentFocused = activeDocumentState.documentFocused;
 
 	const preparedContext = await prepareTaskContext({
 		userId: params.userId,

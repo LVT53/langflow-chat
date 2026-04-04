@@ -263,6 +263,7 @@ Current progress:
 - explicit user-correction/refinement phrasing now feeds working-set scoring and generated-document prompt eligibility as a structured live signal rather than only relying on semantic match
 - active workspace focus, current generated-document selection, and correction signals now flow through one shared active-state helper instead of being recomputed separately in working-set refresh and task evidence selection
 - the most recently refined working-document family now stays active through that shared helper as well, so generic follow-up turns can keep refining the right family without falling back to whichever unrelated generated output happened to be newest
+- explicit move-on / completion phrasing now suppresses stale document carryover through that same helper, and Honcho prompt assembly uses the shared active-state path too instead of keeping a separate document-focus heuristic
 
 ### Wave 5: Maintenance And Repair Loops
 

@@ -24,6 +24,7 @@ const {
   mockBuildPersonaPromptContext,
   mockListMessages,
   mockGetLatestHonchoMetadata,
+  mockBuildActiveDocumentState,
 } = vi.hoisted(() => {
   const now = Date.now();
   const mockConfig = {
@@ -129,6 +130,42 @@ const {
       honchoContext: null,
       honchoSnapshot: null,
     })),
+    mockBuildActiveDocumentState: vi.fn(
+      ({
+        attachmentIds,
+        activeDocumentArtifactId,
+        message,
+      }: {
+        attachmentIds?: string[];
+        activeDocumentArtifactId?: string;
+        message: string;
+      }) => {
+        const hasReset =
+          /\b(done with (?:that|this|it)|finished with (?:that|this|it)|finished (?:that|this|it)|completed (?:that|this|it)|that(?:'s| is) done|wrapped up|move on|switch topics|new topic|another topic|something else|let's talk about something else)\b/i.test(
+            message,
+          );
+        const documentFocused =
+          !hasReset &&
+          (Boolean(activeDocumentArtifactId) ||
+            (attachmentIds?.length ?? 0) > 0 ||
+            /\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i.test(
+              message,
+            ));
+
+        return {
+          documentFocused,
+          hasRecentUserCorrection: false,
+          hasContextResetSignal: hasReset,
+          activeDocumentIds: new Set<string>(),
+          correctionTargetIds: new Set<string>(),
+          recentlyRefinedFamilyId: null,
+          recentlyRefinedArtifactIds: new Set<string>(),
+          currentGeneratedArtifactId: null,
+          latestGeneratedArtifactIds: [],
+          currentGeneratedReasonCodes: new Set<string>(),
+        };
+      },
+    ),
   };
 });
 
@@ -258,6 +295,10 @@ vi.mock('./task-state', () => ({
 
 vi.mock('./persona-memory', () => ({
   buildPersonaPromptContext: mockBuildPersonaPromptContext,
+}));
+
+vi.mock('./active-state', () => ({
+  buildActiveDocumentState: mockBuildActiveDocumentState,
 }));
 
 vi.mock('./messages', () => ({
@@ -458,6 +499,24 @@ describe('Honcho Service', () => {
       expect(mockPrepareTaskContext).toHaveBeenCalledWith(
         expect.objectContaining({
           activeDocumentArtifactId: 'generated-artifact-7',
+        })
+      );
+    });
+
+    it('does not keep document-focused snippet budgets when the user explicitly moves on', async () => {
+      const { buildConstructedContext } = await import('./honcho');
+
+      await buildConstructedContext({
+        userId: 'user-123',
+        conversationId: 'conv-456',
+        message: "We're done with that document, let's talk about something else.",
+        activeDocumentArtifactId: 'generated-artifact-7',
+      });
+
+      expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+        expect.objectContaining({
+          perArtifactLimit: 2,
+          perArtifactCharBudget: 1400,
         })
       );
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildActiveDocumentState,
+  hasActiveContextResetSignal,
   hasRecentUserCorrectionSignal,
   isDocumentFocusedTurn,
 } from "./active-state";
@@ -21,6 +22,15 @@ describe("active-state signals", () => {
       hasRecentUserCorrectionSignal("Actually, use the previous version instead."),
     ).toBe(true);
     expect(hasRecentUserCorrectionSignal("Let's discuss another topic.")).toBe(
+      false,
+    );
+  });
+
+  it("detects explicit context-reset phrasing", () => {
+    expect(
+      hasActiveContextResetSignal("We are done with that now, let's talk about something else."),
+    ).toBe(true);
+    expect(hasActiveContextResetSignal("Please refine the same brief again.")).toBe(
       false,
     );
   });
@@ -146,5 +156,44 @@ describe("active-state signals", () => {
     expect(Array.from(state.currentGeneratedReasonCodes)).toContain(
       "recently_refined_document_family",
     );
+  });
+
+  it("suppresses document carryover when the user clearly moves on", () => {
+    const state = buildActiveDocumentState({
+      message: "We are done with that document, let's talk about something else.",
+      activeDocumentArtifactId: "brief-v2",
+      currentConversationId: "conv-1",
+      artifacts: [
+        {
+          id: "brief-v2",
+          userId: "user-1",
+          type: "generated_output",
+          retrievalClass: "durable",
+          name: "brief-v2.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 100,
+          conversationId: "conv-1",
+          vaultId: null,
+          summary: null,
+          createdAt: 2,
+          updatedAt: 2,
+          extension: "pdf",
+          storagePath: null,
+          contentText: null,
+          metadata: {
+            documentFamilyId: "family-brief",
+            documentLabel: "Project brief",
+            versionNumber: 2,
+            supersedesArtifactId: "brief-v1",
+          },
+        },
+      ],
+    });
+
+    expect(state.hasContextResetSignal).toBe(true);
+    expect(state.documentFocused).toBe(false);
+    expect(Array.from(state.activeDocumentIds)).toEqual([]);
+    expect(Array.from(state.recentlyRefinedArtifactIds)).toEqual([]);
+    expect(state.currentGeneratedArtifactId).toBe(null);
   });
 });

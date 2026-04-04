@@ -6,10 +6,13 @@ const DOCUMENT_FOCUS_RE =
   /\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i;
 const USER_CORRECTION_RE =
   /\b(actually|instead|rather than|use the previous|use the earlier|change it to|revise this|refine this|update this|fix this|correct this|replace that|not that one)\b/i;
+const CONTEXT_RESET_RE =
+  /\b(done with (?:that|this|it)|finished with (?:that|this|it)|finished (?:that|this|it)|completed (?:that|this|it)|that(?:'s| is) done|wrapped up|move on|switch topics|new topic|another topic|something else|let's talk about something else)\b/i;
 
 export interface ActiveDocumentState {
   documentFocused: boolean;
   hasRecentUserCorrection: boolean;
+  hasContextResetSignal: boolean;
   activeDocumentIds: Set<string>;
   correctionTargetIds: Set<string>;
   recentlyRefinedFamilyId: string | null;
@@ -31,6 +34,13 @@ export function hasRecentUserCorrectionSignal(
 ): boolean {
   if (!message?.trim()) return false;
   return USER_CORRECTION_RE.test(message);
+}
+
+export function hasActiveContextResetSignal(
+  message: string | null | undefined,
+): boolean {
+  if (!message?.trim()) return false;
+  return CONTEXT_RESET_RE.test(message);
 }
 
 function hasGeneratedDocumentRefinementMetadata(
@@ -130,29 +140,46 @@ export function buildActiveDocumentState(params: {
   preferredGeneratedArtifactId?: string | null;
   currentConversationId?: string | null;
 }): ActiveDocumentState {
-  const recentRefinedState = resolveRecentlyRefinedGeneratedFamily({
-    artifacts: params.artifacts,
-    preferredArtifactId:
-      params.activeDocumentArtifactId ?? params.preferredGeneratedArtifactId ?? null,
-    currentConversationId: params.currentConversationId ?? null,
-  });
-  const selection = resolveCurrentGeneratedDocumentSelection({
-    artifacts: params.artifacts,
-    preferredArtifactId:
-      params.activeDocumentArtifactId ?? params.preferredGeneratedArtifactId,
-    preferredFamilyId: recentRefinedState.familyId,
-    query: params.message.trim(),
-    currentConversationId: params.currentConversationId ?? null,
-  });
+  const hasContextResetSignal = hasActiveContextResetSignal(params.message);
+  const shouldContinueDocumentState = !hasContextResetSignal;
+  const recentRefinedState = shouldContinueDocumentState
+    ? resolveRecentlyRefinedGeneratedFamily({
+        artifacts: params.artifacts,
+        preferredArtifactId:
+          params.activeDocumentArtifactId ?? params.preferredGeneratedArtifactId ?? null,
+        currentConversationId: params.currentConversationId ?? null,
+      })
+    : {
+        familyId: null,
+        latestArtifactIds: [],
+      };
+  const selection = shouldContinueDocumentState
+    ? resolveCurrentGeneratedDocumentSelection({
+        artifacts: params.artifacts,
+        preferredArtifactId:
+          params.activeDocumentArtifactId ?? params.preferredGeneratedArtifactId,
+        preferredFamilyId: recentRefinedState.familyId,
+        query: params.message.trim(),
+        currentConversationId: params.currentConversationId ?? null,
+      })
+    : {
+        primaryArtifactId: null,
+        latestArtifactIds: [],
+        latestArtifacts: [],
+        primaryReasonCodes: [],
+      };
   const documentFocused =
-    Boolean(params.activeDocumentArtifactId) ||
-    isDocumentFocusedTurn(params.message, params.attachmentIds ?? []);
+    shouldContinueDocumentState &&
+    (Boolean(params.activeDocumentArtifactId) ||
+      isDocumentFocusedTurn(params.message, params.attachmentIds ?? []));
   const hasRecentUserCorrection = hasRecentUserCorrectionSignal(params.message);
   const activeDocumentIds = new Set(
-    params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : [],
+    shouldContinueDocumentState && params.activeDocumentArtifactId
+      ? [params.activeDocumentArtifactId]
+      : [],
   );
   const correctionTargetIds = new Set<string>();
-  if (hasRecentUserCorrection) {
+  if (shouldContinueDocumentState && hasRecentUserCorrection) {
     for (const artifactId of activeDocumentIds) {
       correctionTargetIds.add(artifactId);
     }
@@ -164,6 +191,7 @@ export function buildActiveDocumentState(params: {
   return {
     documentFocused,
     hasRecentUserCorrection,
+    hasContextResetSignal,
     activeDocumentIds,
     correctionTargetIds,
     recentlyRefinedFamilyId: recentRefinedState.familyId,
