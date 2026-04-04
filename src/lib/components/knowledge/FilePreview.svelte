@@ -52,7 +52,7 @@
 			if (ext === 'xlsx') return 'xlsx';
 			if (ext === 'pptx') return 'pptx';
 			if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return 'image';
-			if (['txt', 'md', 'json', 'csv'].includes(ext || '')) return 'text';
+			if (['txt', 'md', 'json', 'csv', 'xml', 'rtf', 'css', 'js', 'py'].includes(ext || '')) return 'text';
 			return 'unsupported';
 		}
 
@@ -61,7 +61,13 @@
 		if (mime.includes('spreadsheetml')) return 'xlsx';
 		if (mime.includes('presentationml')) return 'pptx';
 		if (mime.startsWith('image/')) return 'image';
-		if (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/csv') return 'text';
+		if (
+			mime.startsWith('text/') ||
+			mime === 'application/json' ||
+			mime === 'application/csv' ||
+			mime === 'application/xml' ||
+			mime === 'application/rtf'
+		) return 'text';
 		
 		return 'unsupported';
 	}

@@ -332,6 +332,50 @@ describe('FilePreview', () => {
 		});
 	});
 
+	it('treats XML as text preview content', async () => {
+		const mockBlob = new Blob(['<root><item>Hello</item></root>'], { type: 'application/xml' });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-xml',
+				filename: 'data.xml',
+				mimeType: 'application/xml',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('<root><item>Hello</item></root>')).toBeInTheDocument();
+		});
+	});
+
+	it('treats RTF as text preview content', async () => {
+		const mockBlob = new Blob(['{\\rtf1\\ansi Hello world}'], { type: 'application/rtf' });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-rtf',
+				filename: 'document.rtf',
+				mimeType: 'application/rtf',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('{\\rtf1\\ansi Hello world}')).toBeInTheDocument();
+		});
+	});
+
 	it('shows retry button on error', async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
 

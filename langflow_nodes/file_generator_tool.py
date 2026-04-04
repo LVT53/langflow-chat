@@ -24,18 +24,17 @@ Environment Variables:
 
 Example code the model might generate:
 ```python
-import pandas as pd
-import matplotlib.pyplot as plt
+with open("/output/example.txt", "w", encoding="utf-8") as handle:
+    handle.write("Hello from AlfyAI")
+```
 
-# Create a simple chart
-df = pd.DataFrame({'x': [1, 2, 3, 4, 5], 'y': [10, 20, 15, 25, 30]})
-plt.figure(figsize=(8, 6))
-plt.plot(df['x'], df['y'], marker='o')
-plt.title('Sample Chart')
-plt.xlabel('X Axis')
-plt.ylabel('Y Axis')
-plt.savefig('/output/chart.png')
-plt.close()
+```javascript
+const ExcelJS = require("exceljs");
+const workbook = new ExcelJS.Workbook();
+const sheet = workbook.addWorksheet("Report");
+sheet.addRow(["Name", "Value"]);
+sheet.addRow(["Alpha", 42]);
+await workbook.xlsx.writeFile("/output/report.xlsx");
 ```
 """
 
@@ -65,8 +64,8 @@ class FileGeneratorToolComponent(Component):
     - Non-root execution
     
     Supported output formats depend on the selected runtime:
-    - Python: text, CSV, JSON, HTML, and other files that work with the Python stdlib
-    - JavaScript: XLSX via exceljs, PDF via pdf-lib, PPTX via pptxgenjs
+    - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
+    - JavaScript: xlsx via exceljs, pdf via pdf-lib, pptx via pptxgenjs, docx via docx, odt via jszip packaging
     """
 
     display_name = "File Generator"
@@ -94,7 +93,7 @@ class FileGeneratorToolComponent(Component):
         DropdownInput(
             name="language",
             display_name="Runtime Language",
-            info="Choose the sandbox runtime. Use JavaScript for XLSX, PDF, and PPTX generation.",
+            info="Choose the sandbox runtime. Use JavaScript for XLSX, PDF, PPTX, DOCX, and ODT generation.",
             options=["python", "javascript"],
             value="python",
             tool_mode=True,
