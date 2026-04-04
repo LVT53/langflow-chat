@@ -604,7 +604,7 @@ Run these too when relevant:
 
 - deployment/config/docs changes:
   - `npm run db:prepare`
-  - keep `scripts/deploy.sh` aligned with the current DB migration story; deploys through that script should apply schema changes automatically when pulled commits touch Drizzle migrations or schema files
+  - keep `scripts/deploy.sh` aligned with the current DB migration story; deploys through that script should always run the idempotent `db:prepare` step so schema changes are applied even when the checkout was updated before the script started
   - verify [`src/routes/api/health/+server.ts`](./src/routes/api/health/+server.ts) still matches docs and deploy expectations
 - knowledge upload or extraction changes:
   - verify upload size expectations remain aligned with [README.md](./README.md) and deployment docs
