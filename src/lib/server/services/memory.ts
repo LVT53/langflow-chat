@@ -24,6 +24,7 @@ import {
 } from './honcho';
 import { runUserMemoryMaintenance } from './memory-maintenance';
 import {
+	deleteAllPersonaMemoryStateForUser,
 	deletePersonaMemoryClustersForConclusionIds,
 	ensurePersonaMemoryClustersReady,
 	getPersonaMemoryClusterConclusionIds,
@@ -827,6 +828,7 @@ export async function applyKnowledgeMemoryAction(
 			break;
 		case 'forget_all_persona_memory':
 			await forgetAllPersonaMemories(userId);
+			await deleteAllPersonaMemoryStateForUser(userId);
 			break;
 		case 'forget_task_memory':
 			await forgetTaskMemory(userId, payload.taskId);

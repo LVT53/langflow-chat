@@ -804,7 +804,7 @@
 		</p>
 	</div>
 	<div class="mt-5 grid gap-4 lg:grid-cols-3">
-		<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Documents</div>
 				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
@@ -816,14 +816,14 @@
 			</p>
 			<button
 				type="button"
-				class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 				onclick={() => onOpenLibraryModal('documents')}
 			>
 				Manage documents
 			</button>
 		</div>
 
-		<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
 				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
@@ -835,14 +835,14 @@
 			</p>
 			<button
 				type="button"
-				class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 				onclick={() => onOpenLibraryModal('results')}
 			>
 				Manage results
 			</button>
 		</div>
 
-		<div class="rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
 				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
@@ -854,7 +854,7 @@
 			</p>
 			<button
 				type="button"
-				class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+				class="mt-auto pt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 				onclick={() => onOpenLibraryModal('workflows')}
 			>
 				Manage workflows

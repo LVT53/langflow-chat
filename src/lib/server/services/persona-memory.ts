@@ -5,6 +5,7 @@ import {
 	conversations,
 	personaMemoryClusterMembers,
 	personaMemoryClusters,
+	personaMemoryOverviews,
 } from '$lib/server/db/schema';
 import type {
 	PersonaMemoryClass,
@@ -2158,4 +2159,11 @@ export async function deletePersonaMemoryClustersForConclusionIds(
 				inArray(personaMemoryClusters.clusterId, clusterIds)
 			)
 		);
+}
+
+export async function deleteAllPersonaMemoryStateForUser(userId: string): Promise<void> {
+	await db.transaction((tx) => {
+		tx.delete(personaMemoryOverviews).where(eq(personaMemoryOverviews.userId, userId)).run();
+		tx.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, userId)).run();
+	});
 }

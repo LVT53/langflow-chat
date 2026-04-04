@@ -316,6 +316,9 @@ export const POST: RequestHandler = async (event) => {
           name: record.name,
           status: record.status,
         }));
+        const hadGenerateFileToolCall = toolCallSummary.some(
+          (record) => record.name === "generate_file",
+        );
 
         console.info("[CHAT_STREAM] Tool-call summary", {
           conversationId,
@@ -352,30 +355,44 @@ export const POST: RequestHandler = async (event) => {
         ) => {
           let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
-            const allGeneratedFiles = await getChatFiles(conversationId);
-            const newGeneratedFileIds = allGeneratedFiles
-              .filter((file) => !generatedFileIdsAtStart.has(file.id))
-              .map((file) => file.id);
+            if (assistantMsgId && hadGenerateFileToolCall) {
+              const allGeneratedFiles = await getChatFiles(conversationId);
+              const newGeneratedFileIds = allGeneratedFiles
+                .filter((file) => !generatedFileIdsAtStart.has(file.id))
+                .map((file) => file.id);
 
-            if (assistantMsgId && newGeneratedFileIds.length > 0) {
-              await assignGeneratedFilesToAssistantMessage(
+              if (newGeneratedFileIds.length > 0) {
+                await assignGeneratedFilesToAssistantMessage(
+                  conversationId,
+                  assistantMsgId,
+                  newGeneratedFileIds,
+                );
+
+                void syncGeneratedFilesToMemory({
+                  userId: user.id,
+                  conversationId,
+                  assistantMessageId: assistantMsgId,
+                  fileIds: newGeneratedFileIds,
+                  assistantResponse: chunkRuntime.fullResponse,
+                }).catch((error) => {
+                  console.error(
+                    "[CHAT_STREAM] Background generated-file memory sync failed",
+                    {
+                      conversationId,
+                      streamId,
+                      assistantMessageId: assistantMsgId,
+                      fileIds: newGeneratedFileIds,
+                      error,
+                    },
+                  );
+                });
+              }
+
+              generatedFiles = await getChatFilesForAssistantMessage(
                 conversationId,
                 assistantMsgId,
-                newGeneratedFileIds,
               );
-              await syncGeneratedFilesToMemory({
-                userId: user.id,
-                conversationId,
-                assistantMessageId: assistantMsgId,
-                fileIds: newGeneratedFileIds,
-                assistantResponse: chunkRuntime.fullResponse,
-              });
             }
-
-            if (assistantMsgId) {
-              generatedFiles = await getChatFilesForAssistantMessage(conversationId, assistantMsgId);
-            }
-
           } catch (error) {
             console.error("[CHAT_STREAM] Failed to load generated files for end event", {
               conversationId,

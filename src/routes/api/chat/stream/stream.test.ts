@@ -70,6 +70,13 @@ vi.mock('$lib/server/services/honcho', () => ({
 	syncConversationPersonaMemoryAttributions: vi.fn(async () => 0),
 }));
 
+vi.mock('$lib/server/services/chat-files', () => ({
+	assignGeneratedFilesToAssistantMessage: vi.fn(async () => undefined),
+	getChatFiles: vi.fn(async () => []),
+	getChatFilesForAssistantMessage: vi.fn(async () => []),
+	syncGeneratedFilesToMemory: vi.fn(async () => undefined),
+}));
+
 vi.mock('$lib/server/env', () => ({
 	getDatabasePath: () => './data/test.db',
 	config: {
@@ -95,6 +102,12 @@ import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
 import { translateHungarianToEnglish } from '$lib/server/services/translator';
 import { getConversationTaskState } from '$lib/server/services/task-state';
+import {
+	assignGeneratedFilesToAssistantMessage,
+	getChatFiles,
+	getChatFilesForAssistantMessage,
+	syncGeneratedFilesToMemory,
+} from '$lib/server/services/chat-files';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
@@ -107,6 +120,13 @@ const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnT
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 const mockGetConversationTaskState = getConversationTaskState as ReturnType<typeof vi.fn>;
+const mockAssignGeneratedFilesToAssistantMessage =
+	assignGeneratedFilesToAssistantMessage as ReturnType<typeof vi.fn>;
+const mockGetChatFiles = getChatFiles as ReturnType<typeof vi.fn>;
+const mockGetChatFilesForAssistantMessage = getChatFilesForAssistantMessage as ReturnType<
+	typeof vi.fn
+>;
+const mockSyncGeneratedFilesToMemory = syncGeneratedFilesToMemory as ReturnType<typeof vi.fn>;
 
 function makeEvent(
 	body: unknown,
@@ -189,6 +209,10 @@ describe('POST /api/chat/stream', () => {
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 		mockSendMessage.mockReset();
+		mockAssignGeneratedFilesToAssistantMessage.mockResolvedValue(undefined);
+		mockGetChatFiles.mockResolvedValue([]);
+		mockGetChatFilesForAssistantMessage.mockResolvedValue([]);
+		mockSyncGeneratedFilesToMemory.mockResolvedValue(undefined);
 	});
 
 	it('returns text/event-stream content-type for valid request', async () => {
@@ -398,6 +422,79 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('"text":"Hello"');
 		expect(body).toContain('"text":" world"');
 		expect(body).toContain('event: end');
+	});
+
+	it('does not wait for generated-file memory sync before ending the stream', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'Make a file', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg',
+				role: 'assistant',
+				content: 'Done',
+				timestamp: Date.now(),
+			});
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				`event: token\ndata: {"text":"\\u0002TOOL_START\\u001f${JSON.stringify({
+					name: 'generate_file',
+					input: { filename: 'report.txt' },
+				}).replace(/"/g, '\\"')}\\u0003Done"}\n\n`,
+				'data: [DONE]\n\n',
+			]),
+		);
+		mockGetChatFiles
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([
+				{
+					id: 'file-1',
+					conversationId: 'conv-1',
+					assistantMessageId: null,
+					userId: 'user-1',
+					filename: 'report.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 12,
+					storagePath: 'conv-1/file-1.txt',
+					createdAt: Date.now(),
+				},
+			]);
+		mockGetChatFilesForAssistantMessage.mockResolvedValue([
+			{
+				id: 'file-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-msg',
+				userId: 'user-1',
+				filename: 'report.txt',
+				mimeType: 'text/plain',
+				sizeBytes: 12,
+				storagePath: 'conv-1/file-1.txt',
+				createdAt: Date.now(),
+			},
+		]);
+		mockSyncGeneratedFilesToMemory.mockImplementation(
+			() => new Promise(() => undefined),
+		);
+
+		const event = makeEvent({ message: 'Make a file', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: end');
+		expect(body).toContain('"assistantMessageId":"assistant-msg"');
+		expect(body).toContain('"generatedFiles":[{');
+		expect(mockAssignGeneratedFilesToAssistantMessage).toHaveBeenCalledWith(
+			'conv-1',
+			'assistant-msg',
+			['file-1'],
+		);
+		expect(mockSyncGeneratedFilesToMemory).toHaveBeenCalledWith(
+			expect.objectContaining({
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-msg',
+				fileIds: ['file-1'],
+			}),
+		);
 	});
 
 	it('parses Langflow JSON event blocks and ignores echoed user messages', async () => {

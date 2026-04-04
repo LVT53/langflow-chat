@@ -5,6 +5,7 @@ const {
 	mockDeletedConversations,
 	mockDeleteAllChatFilesForConversation,
 	mockDeleteConversationHonchoState,
+	mockDeleteAllPersonaMemoryStateForUser,
 	mockHardDeleteArtifactsForUser,
 	mockListConversationOwnedArtifacts,
 	mockArtifactHasReferencesOutsideConversation,
@@ -17,6 +18,7 @@ const {
 		mockDeletedConversations: [] as string[],
 		mockDeleteAllChatFilesForConversation: vi.fn(() => Promise.resolve(0)),
 		mockDeleteConversationHonchoState: vi.fn(() => Promise.resolve(undefined)),
+		mockDeleteAllPersonaMemoryStateForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockHardDeleteArtifactsForUser: vi.fn(() => Promise.resolve(undefined)),
 		mockListConversationOwnedArtifacts: vi.fn(() => Promise.resolve([])),
 		mockArtifactHasReferencesOutsideConversation: vi.fn(() => Promise.resolve(false)),
@@ -26,15 +28,26 @@ const {
 
 vi.mock('$lib/server/db', () => ({
 	db: {
-		select: vi.fn(() => ({
-			from: vi.fn(() => ({
-				where: vi.fn(() => ({
-					limit: vi.fn(async () =>
-						mockState.conversationRow ? [mockState.conversationRow] : []
-					),
-				})),
-			})),
-		})),
+		select: vi.fn(() => {
+			let tableName = '';
+			return {
+				from: vi.fn((table: { __name?: string }) => {
+					tableName = table.__name ?? '';
+					return {
+						where: vi.fn(() => {
+							if (tableName === 'artifacts') {
+								return Promise.resolve([]);
+							}
+							return {
+								limit: vi.fn(async () =>
+									mockState.conversationRow ? [mockState.conversationRow] : []
+								),
+							};
+						}),
+					};
+				}),
+			};
+		}),
 		delete: vi.fn(() => ({
 			where: vi.fn((condition: { value?: string }[] | { value?: string }) => {
 				const values = Array.isArray(condition) ? condition : [condition];
@@ -44,20 +57,34 @@ vi.mock('$lib/server/db', () => ({
 				return Promise.resolve(undefined);
 			}),
 		})),
+		transaction: vi.fn((callback: (tx: any) => void) => {
+			const tx = {
+				delete: vi.fn(() => ({
+					where: vi.fn(() => undefined),
+				})),
+			};
+			callback(tx);
+			return Promise.resolve(undefined);
+		}),
 	},
 }));
 
 vi.mock('$lib/server/db/schema', () => ({
 	conversations: {
+		__name: 'conversations',
 		id: { name: 'id' },
 		userId: { name: 'userId' },
 	},
-	artifacts: {},
-	conversationContextStatus: {},
-	conversationTaskStates: {},
-	conversationWorkingSetItems: {},
-	memoryProjects: {},
-	personaMemoryAttributions: {},
+	artifacts: {
+		__name: 'artifacts',
+		id: { name: 'id' },
+		userId: { name: 'userId' },
+	},
+	conversationContextStatus: { userId: { name: 'userId' } },
+	conversationTaskStates: { userId: { name: 'userId' } },
+	conversationWorkingSetItems: { userId: { name: 'userId' } },
+	memoryProjects: { userId: { name: 'userId' } },
+	personaMemoryAttributions: { userId: { name: 'userId' } },
 	users: {},
 }));
 
@@ -90,6 +117,10 @@ vi.mock('./messages', () => ({
 	clearMessageEvidenceForUser: vi.fn(),
 }));
 
+vi.mock('./persona-memory', () => ({
+	deleteAllPersonaMemoryStateForUser: mockDeleteAllPersonaMemoryStateForUser,
+}));
+
 describe('cleanup service', () => {
 	beforeEach(() => {
 		mockState.conversationRow = { id: 'conv-1' };
@@ -120,5 +151,13 @@ describe('cleanup service', () => {
 		expect(result).toBeNull();
 		expect(mockDeleteAllChatFilesForConversation).not.toHaveBeenCalled();
 		expect(mockDeleteConversationHonchoState).not.toHaveBeenCalled();
+	});
+
+	it('clears local persona memory state during a full knowledge reset', async () => {
+		const { resetKnowledgeBaseState } = await import('./cleanup');
+
+		await resetKnowledgeBaseState('user-1');
+
+		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
 	});
 });

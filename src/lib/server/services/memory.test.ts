@@ -9,6 +9,7 @@ const {
 	mockGetHonchoUserPeerId,
 	mockRunUserMemoryMaintenance,
 	mockDeletePersonaMemoryClustersForConclusionIds,
+	mockDeleteAllPersonaMemoryStateForUser,
 	mockEnsurePersonaMemoryClustersReady,
 	mockGetPersonaMemoryClusterConclusionIds,
 	mockListPersonaMemoryClusters,
@@ -26,6 +27,7 @@ const {
 	mockGetHonchoUserPeerId: vi.fn(() => 'user-1'),
 	mockRunUserMemoryMaintenance: vi.fn(async () => undefined),
 	mockDeletePersonaMemoryClustersForConclusionIds: vi.fn(async () => undefined),
+	mockDeleteAllPersonaMemoryStateForUser: vi.fn(async () => undefined),
 	mockEnsurePersonaMemoryClustersReady: vi.fn(async () => undefined),
 	mockGetPersonaMemoryClusterConclusionIds: vi.fn(async () => []),
 	mockListPersonaMemoryClusters: vi.fn(async () => []),
@@ -134,6 +136,7 @@ vi.mock('./memory-maintenance', () => ({
 }));
 
 vi.mock('./persona-memory', () => ({
+	deleteAllPersonaMemoryStateForUser: mockDeleteAllPersonaMemoryStateForUser,
 	deletePersonaMemoryClustersForConclusionIds: mockDeletePersonaMemoryClustersForConclusionIds,
 	ensurePersonaMemoryClustersReady: mockEnsurePersonaMemoryClustersReady,
 	getPersonaMemoryClusterConclusionIds: mockGetPersonaMemoryClusterConclusionIds,
@@ -420,5 +423,20 @@ describe('knowledge memory service', () => {
 		});
 		expect(mockGetPeerContext).toHaveBeenCalledTimes(1);
 		expect(forcedPayload.summary.overviewSource).toBe('honcho_live');
+	});
+
+	it('clears local persona memory state when forgetting all persona memory', async () => {
+		const { applyKnowledgeMemoryAction } = await import('./memory');
+
+		await applyKnowledgeMemoryAction('user-1', 'Test User', {
+			action: 'forget_all_persona_memory',
+		});
+
+		expect(mockForgetAllPersonaMemories).toHaveBeenCalledWith('user-1');
+		expect(mockDeleteAllPersonaMemoryStateForUser).toHaveBeenCalledWith('user-1');
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
+			'user-1',
+			'knowledge_memory:forget_all_persona_memory',
+		);
 	});
 });

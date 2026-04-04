@@ -25,6 +25,7 @@ import {
 } from './honcho';
 import { deleteAllChatFilesForConversation } from './chat-files';
 import { clearMessageEvidenceForUser } from './messages';
+import { deleteAllPersonaMemoryStateForUser } from './persona-memory';
 
 export type DeleteUserAccountResult =
 	| { status: 'deleted' }
@@ -146,6 +147,7 @@ export async function resetKnowledgeBaseState(userId: string): Promise<{
 	deletedArtifactIds: string[];
 }> {
 	await deleteAllHonchoStateForUser(userId);
+	await deleteAllPersonaMemoryStateForUser(userId);
 
 	const artifactRows = await db
 		.select({ id: artifacts.id })
