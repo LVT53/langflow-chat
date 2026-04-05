@@ -635,19 +635,18 @@
 			<p class="empty-hint">Upload or generate documents to see them here</p>
 		</div>
 	{:else}
-		<div class="search-controls">
-			<label class="documents-search-label" for="documents-search-input">Search documents</label>
-			<input
-				id="documents-search-input"
-				type="search"
-				class="documents-search-input"
-				placeholder="Search by name, title, role, or content"
-				bind:value={searchQuery}
-				aria-label="Search documents"
-			/>
-		</div>
-
 		<div class="filter-controls" role="radiogroup" aria-label="Document filter">
+			<div class="search-controls">
+				<input
+					id="documents-search-input"
+					type="search"
+					class="documents-search-input"
+					placeholder="Search by name, title, role, or content"
+					bind:value={searchQuery}
+					aria-label="Search documents"
+				/>
+			</div>
+
 			<div class="filter-group">
 				<label class="filter-option">
 					<input
@@ -1027,20 +1026,13 @@
 
 	.search-controls {
 		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.documents-search-label {
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--text-muted);
+		flex: 0 1 50%;
+		max-width: 50%;
+		min-width: 14rem;
 	}
 
 	.documents-search-input {
-		width: min(100%, 28rem);
+		width: 100%;
 		padding: 0.58rem 0.74rem;
 		border: 1px solid var(--border-default);
 		border-radius: 0.7rem;
@@ -1113,6 +1105,13 @@
 		cursor: pointer;
 		transition: all var(--duration-standard) var(--ease-out);
 		flex-shrink: 0;
+	}
+
+	@media (max-width: 900px) {
+		.search-controls {
+			flex-basis: 100%;
+			max-width: 100%;
+		}
 	}
 
 	.upload-btn:hover:not(:disabled) {
