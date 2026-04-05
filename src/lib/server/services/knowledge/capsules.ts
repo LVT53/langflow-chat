@@ -6,7 +6,6 @@ import type { Artifact, WorkCapsule } from '$lib/types';
 import { parseJsonRecord } from '$lib/server/utils/json';
 import {
 	classifyGeneratedOutputArtifact,
-	ensureGeneratedOutputRetrievalBackfill,
 } from '../evidence-family';
 import {
 	deriveConversationArtifactBaseName,
@@ -115,8 +114,6 @@ export async function createGeneratedOutputArtifact(params: {
 	nameOverride?: string;
 	metadata?: Record<string, unknown> | null;
 }): Promise<Artifact | null> {
-	await ensureGeneratedOutputRetrievalBackfill(params.userId);
-
 	const trimmed = params.content.trim();
 	if (!trimmed) return null;
 

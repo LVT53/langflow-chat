@@ -5,6 +5,7 @@
 		getPreviewLanguage,
 		type PreviewFileType,
 	} from '$lib/utils/file-preview';
+	import { sanitizeHtml } from '$lib/utils/html-sanitizer';
 
 	type MarkdownModule = typeof import('$lib/services/markdown');
 
@@ -544,18 +545,6 @@
 			.replaceAll('>', '&gt;')
 			.replaceAll('"', '&quot;')
 			.replaceAll("'", '&#39;');
-	}
-
-	/**
-	 * Basic HTML sanitization to prevent XSS from malicious documents.
-	 * Removes script tags and event handler attributes.
-	 */
-	function sanitizeHtml(html: string): string {
-		return html
-			.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-			.replace(/\s*on\w+="[^"]*"/gi, '')
-			.replace(/\s*on\w+='[^']*'/gi, '')
-			.replace(/\s*on\w+=[^\s>]*/gi, '');
 	}
 
 	function renderOdtTextNode(node: Node): string {

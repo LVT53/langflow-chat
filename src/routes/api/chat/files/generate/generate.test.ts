@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('$lib/server/auth/hooks', () => ({
-	hasValidAlfyAiApiKey: vi.fn()
+	verifyFileGenerateServiceAssertion: vi.fn()
 }));
 
 vi.mock('$lib/server/services/conversations', () => ({
@@ -18,16 +18,22 @@ vi.mock('$lib/server/services/chat-files', () => ({
 }));
 
 import { POST } from './+server';
-import { hasValidAlfyAiApiKey } from '$lib/server/auth/hooks';
+import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import { executeCode } from '$lib/server/services/sandbox-execution';
 import { storeGeneratedFile } from '$lib/server/services/chat-files';
+import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
 
-const mockHasValidAlfyAiApiKey = hasValidAlfyAiApiKey as ReturnType<typeof vi.fn>;
+vi.mock('$lib/server/services/memory-maintenance', () => ({
+	runUserMemoryMaintenance: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockVerifyFileGenerateServiceAssertion = verifyFileGenerateServiceAssertion as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockGetConversationUserId = getConversationUserId as ReturnType<typeof vi.fn>;
 const mockExecuteCode = executeCode as ReturnType<typeof vi.fn>;
 const mockStoreGeneratedFile = storeGeneratedFile as ReturnType<typeof vi.fn>;
+const mockRunUserMemoryMaintenance = runUserMemoryMaintenance as ReturnType<typeof vi.fn>;
 
 function makeEvent(
 	body: unknown,
@@ -53,7 +59,14 @@ function makeEvent(
 describe('POST /api/chat/files/generate', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockHasValidAlfyAiApiKey.mockReturnValue(false);
+		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
+			valid: true,
+			claims: {
+				conversationId: 'conv-service',
+				userId: 'user-9',
+				exp: Date.now() + 60_000,
+			},
+		});
 		vi.spyOn(console, 'info').mockImplementation(() => undefined);
 		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -239,8 +252,15 @@ describe('POST /api/chat/files/generate', () => {
 		expect(mockExecuteCode).not.toHaveBeenCalled();
 	});
 
-	it('accepts a valid service API key outside a browser session', async () => {
-		mockHasValidAlfyAiApiKey.mockReturnValue(true);
+	it('accepts a valid signed service assertion outside a browser session', async () => {
+		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
+			valid: true,
+			claims: {
+				conversationId: 'conv-service',
+				userId: 'user-9',
+				exp: Date.now() + 60_000,
+			},
+		});
 		mockGetConversationUserId.mockResolvedValue('user-9');
 		mockExecuteCode.mockResolvedValue({
 			files: [
@@ -279,7 +299,7 @@ describe('POST /api/chat/files/generate', () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(mockHasValidAlfyAiApiKey).toHaveBeenCalledWith('Bearer service-key');
+		expect(mockVerifyFileGenerateServiceAssertion).toHaveBeenCalledWith('Bearer service-key');
 		expect(mockGetConversationUserId).toHaveBeenCalledWith('conv-service');
 		expect(mockGetConversation).not.toHaveBeenCalled();
 		expect(mockStoreGeneratedFile).toHaveBeenCalledWith(
@@ -290,6 +310,80 @@ describe('POST /api/chat/files/generate', () => {
 			})
 		);
 		expect(data.files[0].downloadUrl).toBe('/api/chat/files/file-9/download');
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith('user-9', 'file_generate_service');
+	});
+
+	it('rejects invalid signed service assertions', async () => {
+		mockVerifyFileGenerateServiceAssertion.mockReturnValue({ valid: false, reason: 'invalid_signature' });
+
+		const response = await POST(
+			makeEvent(
+				{
+					conversationId: 'conv-service',
+					code: 'print("service request")',
+					language: 'python'
+				},
+				null,
+				'Bearer invalid-signature'
+			)
+		);
+
+		expect(response.status).toBe(401);
+		expect(mockGetConversationUserId).not.toHaveBeenCalled();
+		expect(mockExecuteCode).not.toHaveBeenCalled();
+	});
+
+	it('rejects service assertions whose conversation does not match request body', async () => {
+		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
+			valid: true,
+			claims: {
+				conversationId: 'other-conversation',
+				userId: 'user-9',
+				exp: Date.now() + 60_000,
+			},
+		});
+
+		const response = await POST(
+			makeEvent(
+				{
+					conversationId: 'conv-service',
+					code: 'print("service request")',
+					language: 'python'
+				},
+				null,
+				'Bearer service-key'
+			)
+		);
+
+		expect(response.status).toBe(404);
+		expect(mockGetConversationUserId).not.toHaveBeenCalled();
+	});
+
+	it('rejects service assertions when resolved conversation owner mismatches assertion user', async () => {
+		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
+			valid: true,
+			claims: {
+				conversationId: 'conv-service',
+				userId: 'user-9',
+				exp: Date.now() + 60_000,
+			},
+		});
+		mockGetConversationUserId.mockResolvedValue('different-user');
+
+		const response = await POST(
+			makeEvent(
+				{
+					conversationId: 'conv-service',
+					code: 'print("service request")',
+					language: 'python'
+				},
+				null,
+				'Bearer service-key'
+			)
+		);
+
+		expect(response.status).toBe(404);
+		expect(mockExecuteCode).not.toHaveBeenCalled();
 	});
 
 	it('returns 400 when conversationId is missing', async () => {

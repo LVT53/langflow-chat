@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts } from '$lib/server/db/schema';
 import type { ArtifactSummary, KnowledgeDocumentItem, WorkCapsule } from '$lib/types';
-import { ensureGeneratedOutputRetrievalBackfill } from './evidence-family';
+import { runUserMemoryMaintenance } from './memory-maintenance';
 import { mapWorkCapsuleFromArtifactRow } from './knowledge/capsules';
 import {
 	buildArtifactVisibilityCondition,
@@ -65,7 +65,10 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 	results: ArtifactSummary[];
 	workflows: WorkCapsule[];
 }> {
-	await ensureGeneratedOutputRetrievalBackfill(userId);
+	void runUserMemoryMaintenance(userId, 'knowledge_read').catch((error) => {
+		console.error('[KNOWLEDGE] Deferred maintenance failed', { userId, error });
+	});
+
 	const ownershipScope = await getArtifactOwnershipScope(userId);
 
 	const rows = await db

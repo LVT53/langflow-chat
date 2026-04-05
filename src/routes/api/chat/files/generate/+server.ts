@@ -1,10 +1,11 @@
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import type { RequestHandler } from './$types';
-import { hasValidAlfyAiApiKey } from '$lib/server/auth/hooks';
+import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import { executeCode } from '$lib/server/services/sandbox-execution';
 import { storeGeneratedFile } from '$lib/server/services/chat-files';
+import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
 
 interface GenerateRequest {
 	conversationId: string;
@@ -79,10 +80,8 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 export const POST: RequestHandler = async (event) => {
 	const requestId = randomUUID().slice(0, 8);
 	const user = event.locals.user ?? null;
-	const isServiceRequest =
-		user === null && hasValidAlfyAiApiKey(event.request.headers.get('authorization'));
 
-	if (!user && !isServiceRequest) {
+	if (!user && !event.request.headers.get('authorization')) {
 		console.warn('[FILE_GENERATE] Unauthorized request', { requestId });
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
@@ -106,6 +105,22 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const { conversationId, code, filename: customFilename, language } = validation.value;
+
+	const serviceAssertion =
+		user === null
+			? verifyFileGenerateServiceAssertion(event.request.headers.get('authorization'))
+			: null;
+	if (user === null && (!serviceAssertion || !serviceAssertion.valid)) {
+		const failureReason =
+			serviceAssertion && serviceAssertion.valid === false
+				? serviceAssertion.reason
+				: 'missing_assertion';
+		console.warn('[FILE_GENERATE] Invalid service assertion', {
+			requestId,
+			reason: failureReason,
+		});
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
 	console.info('[FILE_GENERATE] Request received', {
 		requestId,
 		conversationId,
@@ -132,18 +147,42 @@ export const POST: RequestHandler = async (event) => {
 		}
 		ownerUserId = user.id;
 	} else {
-		// Langflow tool calls authenticate with the shared bearer secret and resolve
-		// the conversation owner from the stored conversation record.
+		if (!serviceAssertion || !serviceAssertion.valid) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		const assertedConversationId = serviceAssertion.claims.conversationId;
+		const assertedUserId = serviceAssertion.claims.userId;
+		if (assertedConversationId !== conversationId) {
+			console.warn('[FILE_GENERATE] Service assertion conversation mismatch', {
+				requestId,
+				conversationId,
+				assertedConversationId,
+			});
+			return json({ error: 'Conversation not found' }, { status: 404 });
+		}
+
 		const conversationUserId = await getConversationUserId(conversationId);
-		if (!conversationUserId) {
+		if (!conversationUserId || conversationUserId !== assertedUserId) {
 			console.warn('[FILE_GENERATE] Conversation not found for service request', {
 				requestId,
 				conversationId,
+				assertedUserId,
+				conversationUserId,
 			});
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
 		ownerUserId = conversationUserId;
 	}
+
+	void runUserMemoryMaintenance(ownerUserId, 'file_generate_service').catch((error) => {
+		console.error('[FILE_GENERATE] Deferred maintenance failed', {
+			requestId,
+			conversationId,
+			ownerUserId,
+			error,
+		});
+	});
 
 	// Execute code in sandbox (language is already validated)
 	let executionResult;

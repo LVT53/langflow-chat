@@ -22,7 +22,6 @@ import {
 	deriveCurrentTurnReasonCodes,
 	type ActiveDocumentState,
 } from '../active-state';
-import { ensureGeneratedOutputRetrievalBackfill } from '../evidence-family';
 import {
 	getGeneratedDocumentBehaviorKey,
 	isGeneratedDocumentPromptEligible,
@@ -192,8 +191,6 @@ export async function selectWorkingSetArtifactsForPrompt(
 	excludeArtifactIds: string[] = [],
 	activeDocumentArtifactId?: string
 ): Promise<Artifact[]> {
-	await ensureGeneratedOutputRetrievalBackfill(userId);
-
 	const exclude = new Set(excludeArtifactIds);
 	const ownershipScope = await getArtifactOwnershipScope(userId);
 	const rows = await db
@@ -593,7 +590,6 @@ export async function findRelevantKnowledgeArtifacts(params: {
 	preferredGeneratedFamilyId?: string | null;
 	suppressGeneratedCarryover?: boolean;
 }): Promise<Artifact[]> {
-	await ensureGeneratedOutputRetrievalBackfill(params.userId);
 	const limit = params.limit ?? 6;
 	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
 

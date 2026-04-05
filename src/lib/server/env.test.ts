@@ -40,6 +40,7 @@ describe('Environment Configuration', () => {
     delete process.env.LANGFLOW_API_URL
     delete process.env.LANGFLOW_FLOW_ID
     delete process.env.LANGFLOW_WEBHOOK_SECRET
+    delete process.env.ALFYAI_API_SIGNING_KEY
     delete process.env.TRANSLATOR_URL
     delete process.env.TRANSLATOR_API_KEY
     delete process.env.TRANSLATOR_MODEL
@@ -73,6 +74,7 @@ describe('Environment Configuration', () => {
     expect(config.langflowFlowId).toBe('')
     expect(config.langflowWebhookSecret).toBe('')
     expect(config.alfyaiApiKey).toBe('')
+    expect(config.alfyaiApiSigningKey).toBe('')
     expect(config.translatorUrl).toBe('http://localhost:30002/v1')
     expect(config.translatorApiKey).toBe('')
     expect(config.translatorModel).toBe('translategemma')
@@ -108,6 +110,7 @@ describe('Environment Configuration', () => {
     process.env.LANGFLOW_FLOW_ID = 'test-flow-id'
     process.env.LANGFLOW_WEBHOOK_SECRET = 'test-webhook-secret'
     process.env.ALFYAI_API_KEY = 'test-alfyai-key'
+    process.env.ALFYAI_API_SIGNING_KEY = 'test-signing-key'
     process.env.TRANSLATOR_URL = 'http://test-translator:30002/v1'
     process.env.TRANSLATOR_API_KEY = 'test-translator-key'
     process.env.TRANSLATOR_MODEL = 'test-translator-model'
@@ -142,6 +145,7 @@ describe('Environment Configuration', () => {
     expect(config.langflowFlowId).toBe('test-flow-id')
     expect(config.langflowWebhookSecret).toBe('test-webhook-secret')
     expect(config.alfyaiApiKey).toBe('test-alfyai-key')
+    expect(config.alfyaiApiSigningKey).toBe('test-signing-key')
     expect(config.translatorUrl).toBe('http://test-translator:30002/v1')
     expect(config.translatorApiKey).toBe('test-translator-key')
     expect(config.translatorModel).toBe('test-translator-model')

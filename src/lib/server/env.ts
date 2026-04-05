@@ -17,6 +17,7 @@ interface Config {
   langflowFlowId: string;
   langflowWebhookSecret: string;
   alfyaiApiKey: string;
+  alfyaiApiSigningKey: string;
   attachmentTraceDebug: boolean;
   translatorUrl: string;
   translatorApiKey: string;
@@ -96,6 +97,7 @@ function readConfig(): Config {
     langflowFlowId: process.env.LANGFLOW_FLOW_ID || '',
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
     alfyaiApiKey: process.env.ALFYAI_API_KEY || '',
+    alfyaiApiSigningKey: process.env.ALFYAI_API_SIGNING_KEY || '',
     attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === 'true',
     translatorUrl: process.env.TRANSLATOR_URL || 'http://localhost:30002/v1',
     translatorApiKey: process.env.TRANSLATOR_API_KEY || '',
@@ -218,8 +220,8 @@ export function getConfig(): Config {
 
 export const config: Config = new Proxy({} as Config, {
   get(_target, prop) {
-    const resolved = getConfig() as Record<PropertyKey, unknown>;
-    return resolved[prop];
+	const resolved = getConfig() as unknown as Record<PropertyKey, unknown>;
+	return resolved[prop];
   },
   has(_target, prop) {
     return prop in getConfig();

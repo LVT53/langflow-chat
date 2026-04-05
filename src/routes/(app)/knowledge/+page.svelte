@@ -16,6 +16,7 @@
 	import { browser } from '$app/environment';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
+	import { sanitizeHtml } from '$lib/utils/html-sanitizer';
 	import {
 		buildChatSourceMessageHref,
 		clearKnowledgeWorkspaceParams,
@@ -427,7 +428,7 @@
 		try {
 			const overviewHtml = await renderMarkdown(source, isDarkMode);
 			if (renderVersion !== overviewRenderVersion) return;
-			honchoOverviewHtml = overviewHtml;
+			honchoOverviewHtml = sanitizeHtml(overviewHtml);
 		} catch {
 			if (renderVersion !== overviewRenderVersion) return;
 			honchoOverviewHtml = `<p>${escapeHtml(source)}</p>`;

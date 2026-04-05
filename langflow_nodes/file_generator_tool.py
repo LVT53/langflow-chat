@@ -21,6 +21,7 @@ Usage in Langflow:
 Environment Variables:
 - ALFYAI_API_URL: Base URL of the AlfyAI application (default: http://localhost:3000)
 - ALFYAI_API_KEY: Optional bearer key for `/api/chat/files/generate`; set the same value on the AlfyAI server when calling outside a browser session
+- ALFYAI_API_SIGNING_KEY: HMAC key for signed service assertions on `/api/chat/files/generate`
 
 Example code the model might generate:
 ```python
@@ -61,7 +62,11 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
+import hmac
+import hashlib
+import base64
 
 import requests
 
@@ -109,6 +114,13 @@ class FileGeneratorToolComponent(Component):
             display_name="AlfyAI API Key",
             info="Optional API key for authentication",
             value=os.getenv("ALFYAI_API_KEY", ""),
+            advanced=True,
+        ),
+        StrInput(
+            name="alfyai_api_signing_key",
+            display_name="AlfyAI API Signing Key",
+            info="HMAC key for scoped signed assertions on file-generation calls",
+            value=os.getenv("ALFYAI_API_SIGNING_KEY", ""),
             advanced=True,
         ),
         DropdownInput(
@@ -196,6 +208,30 @@ class FileGeneratorToolComponent(Component):
             logger.warning(f"Could not get conversation ID: {e}")
         return None
 
+    @staticmethod
+    def _base64url_encode(payload: bytes) -> str:
+        return base64.urlsafe_b64encode(payload).decode("utf-8").rstrip("=")
+
+    def _build_service_assertion(self, conversation_id: str) -> str | None:
+        signing_key = str(getattr(self, "alfyai_api_signing_key", "") or "").strip()
+        if not signing_key:
+            return None
+
+        payload = {
+            "conversationId": conversation_id,
+            "userId": str(getattr(self, "user_id", "") or "").strip() or "service",
+            "exp": int(time.time() * 1000) + 5 * 60 * 1000,
+        }
+        payload_json = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        payload_part = self._base64url_encode(payload_json)
+        signature = hmac.new(
+            signing_key.encode("utf-8"),
+            payload_part.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        signature_part = self._base64url_encode(signature)
+        return f"{payload_part}.{signature_part}"
+
     def _execute_code(
         self,
         code: str,
@@ -219,8 +255,10 @@ class FileGeneratorToolComponent(Component):
             "Content-Type": "application/json",
         }
 
-        # Add bearer auth when configured for out-of-browser Langflow calls.
-        if self.alfyai_api_key:
+        signed_assertion = self._build_service_assertion(conversation_id)
+        if signed_assertion:
+            headers["Authorization"] = f"Bearer {signed_assertion}"
+        elif self.alfyai_api_key:
             headers["Authorization"] = f"Bearer {self.alfyai_api_key}"
         
         payload = {
@@ -250,7 +288,7 @@ class FileGeneratorToolComponent(Component):
             elif response.status_code == 401:
                 return {
                     "success": False,
-                    "error": "Authentication failed. Check ALFYAI_API_KEY on both Langflow and AlfyAI.",
+                    "error": "Authentication failed. Check ALFYAI_API_SIGNING_KEY (or ALFYAI_API_KEY fallback) on both Langflow and AlfyAI.",
                 }
             elif response.status_code == 404:
                 return {

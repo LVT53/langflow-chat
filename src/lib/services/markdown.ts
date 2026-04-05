@@ -1,9 +1,9 @@
-type MarkedModule = typeof import('marked');
+import { sanitizeHtml } from '$lib/utils/html-sanitizer';
 
-type Highlighter = {
-  codeToHtml: (code: string, options: { lang: string; theme: string }) => string;
-  loadLanguage: (...langs: string[]) => Promise<void>;
-};
+type MarkedModule = typeof import('marked');
+type Highlighter = Awaited<
+	ReturnType<ReturnType<typeof import('shiki/core')['createBundledHighlighter']>>
+>;
 
 const HIGHLIGHT_LANGS = {
   javascript: () => import('@shikijs/langs/javascript'),
@@ -84,6 +84,7 @@ async function initHighlighter() {
       });
 
       highlighter = await createHighlighter({
+		langs: Object.keys(HIGHLIGHT_LANGS) as Array<keyof typeof HIGHLIGHT_LANGS>,
         themes: [...HIGHLIGHT_THEMES]
       });
     })();
@@ -212,16 +213,6 @@ function createMarkdownRenderer(isDark: boolean) {
   renderer.code = ({ text, lang = '' }) => renderCodeBlock(text, lang, isDark);
 
   return renderer;
-}
-
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+=(['"]).*?\1/gi, '')
-    .replace(/\son\w+=([^\s>]+)/gi, '')
-    .replace(/\s(?:href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, '')
-    .replace(/\sstyle\s*=\s*(['"])[\s\S]*?\1/gi, '');
 }
 
 // Helper function to escape HTML

@@ -569,6 +569,10 @@ export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Pr
 	await promise;
 }
 
+export function hasGeneratedOutputRetrievalBackfill(userId: string): boolean {
+	return generatedOutputBackfillDone.has(userId);
+}
+
 export async function classifyGeneratedOutputArtifact(params: {
 	userId: string;
 	artifact: Artifact;
