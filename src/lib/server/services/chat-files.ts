@@ -747,12 +747,30 @@ export async function deleteChatFile(
  * Used when a conversation is deleted.
  */
 export async function deleteAllChatFilesForConversation(conversationId: string): Promise<number> {
-	const files = await getChatFiles(conversationId);
+	let files: Array<typeof chatGeneratedFiles.$inferSelect> = [];
+	try {
+		files = await db
+			.select()
+			.from(chatGeneratedFiles)
+			.where(eq(chatGeneratedFiles.conversationId, conversationId))
+			.orderBy(desc(chatGeneratedFiles.createdAt));
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to list files for conversation cleanup', {
+			conversationId,
+			error,
+		});
+	}
 
-	// Delete from database
-	await db
-		.delete(chatGeneratedFiles)
-		.where(eq(chatGeneratedFiles.conversationId, conversationId));
+	try {
+		await db
+			.delete(chatGeneratedFiles)
+			.where(eq(chatGeneratedFiles.conversationId, conversationId));
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to delete file rows for conversation cleanup', {
+			conversationId,
+			error,
+		});
+	}
 
 	// Delete files from disk
 	let deletedCount = 0;
