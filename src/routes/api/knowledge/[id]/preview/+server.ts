@@ -59,6 +59,22 @@ export const GET: RequestHandler = async (event) => {
 		);
 	}
 
+	// Path traversal guard - prevent directory traversal attacks
+	if (artifact.storagePath.includes('..') || artifact.storagePath.startsWith('/')) {
+		console.error('[PREVIEW] Path traversal attempt blocked:', {
+			userId: user.id,
+			artifactId,
+			storagePath: artifact.storagePath,
+		});
+		return new Response(
+			JSON.stringify({ error: 'Invalid path' }),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
+
 	try {
 		// Read file from storage
 		const filePath = join(process.cwd(), artifact.storagePath);

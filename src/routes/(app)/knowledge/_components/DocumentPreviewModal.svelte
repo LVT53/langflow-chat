@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
+	import { browser } from '$app/environment';
 	import type { KnowledgeDocumentItem } from '$lib/types';
 
 	interface DocumentPreviewModalProps {
@@ -24,10 +24,14 @@
 	let content = $state<string | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
+	let abortController = $state<AbortController | null>(null);
 
 	function formatFileSize(bytes: number | null | undefined): string {
 		if (!bytes) return '0 B';
 		if (bytes === 0) return '0 B';
+		if (bytes >= 1024 ** 4) {
+			return `${(bytes / (1024 ** 4)).toFixed(1)} TB`;
+		}
 		const k = 1024;
 		const sizes = ['B', 'KB', 'MB', 'GB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -36,7 +40,10 @@
 		return `${formatted} ${sizes[i]}`;
 	}
 
-	function formatDate(timestamp: number): string {
+	function formatDate(timestamp: number | null | undefined): string {
+		if (timestamp == null || !isFinite(timestamp)) {
+			return '—';
+		}
 		return new Intl.DateTimeFormat(undefined, {
 			dateStyle: 'medium',
 			timeStyle: 'short',
@@ -57,7 +64,7 @@
 		return 'type-uploaded';
 	}
 
-	async function fetchDocumentContent() {
+	async function fetchDocumentContent(signal: AbortSignal) {
 		if (!document) return;
 
 		isLoading = true;
@@ -67,7 +74,7 @@
 		try {
 			// Use the prompt artifact ID if available (normalized content), otherwise display artifact
 			const artifactId = document.promptArtifactId ?? document.displayArtifactId;
-			const response = await fetch(`/api/knowledge/${artifactId}/preview`);
+			const response = await fetch(`/api/knowledge/${artifactId}/preview`, { signal });
 
 			if (!response.ok) {
 				if (response.status === 404) {
@@ -79,6 +86,10 @@
 			const text = await response.text();
 			content = text;
 		} catch (err) {
+			if (err instanceof Error && err.name === 'AbortError') {
+				// Request was cancelled, don't show error
+				return;
+			}
 			error = err instanceof Error ? err.message : 'Failed to load document content';
 		} finally {
 			isLoading = false;
@@ -137,24 +148,29 @@
 
 	$effect(() => {
 		if (open && document) {
-			void fetchDocumentContent();
+			// Abort any previous fetch
+			abortController?.abort();
+			abortController = new AbortController();
+			void fetchDocumentContent(abortController.signal);
 		}
 	});
 
-	onMount(() => {
-		const body = globalThis.document?.body;
+	// Scroll lock and focus management - only when modal is open
+	$effect(() => {
+		if (!browser || !open) return;
+
+		const body = document.body;
 		if (!body) return;
-		previousFocus = globalThis.document.activeElement as HTMLElement;
+
+		previousFocus = document.activeElement as HTMLElement;
 		body.style.overflow = 'hidden';
-	});
 
-	onDestroy(() => {
-		if (previousFocus) {
-			previousFocus.focus();
-		}
-		const body = globalThis.document?.body;
-		if (!body) return;
-		body.style.overflow = '';
+		return () => {
+			if (previousFocus) {
+				previousFocus.focus();
+			}
+			body.style.overflow = '';
+		};
 	});
 </script>
 
@@ -271,7 +287,11 @@
 						<button
 							type="button"
 							class="btn-secondary text-sm mt-2"
-							onclick={() => void fetchDocumentContent()}
+							onclick={() => {
+								abortController?.abort();
+								abortController = new AbortController();
+								void fetchDocumentContent(abortController.signal);
+							}}
 						>
 							Retry
 						</button>

@@ -9,6 +9,7 @@
 		submitKnowledgeBulkAction,
 		submitKnowledgeMemoryAction,
 		uploadKnowledgeAttachment,
+		recordDocumentWorkspaceOpen,
 		type KnowledgeBulkAction,
 		type KnowledgeMemoryActionPayload,
 	} from '$lib/client/api/knowledge';
@@ -28,6 +29,7 @@
 	import DocumentsList from './_components/DocumentsList.svelte';
 	import DocumentPreviewModal from './_components/DocumentPreviewModal.svelte';
 	import type {
+		FocusContinuityItem,
 		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
 		KnowledgeMemorySummary,
@@ -440,7 +442,7 @@
 	function applyMemoryOverviewSummary(summary: KnowledgeMemorySummary) {
 		memorySummary = {
 			...memorySummary,
-			personaCount: summary.personaCount || memorySummary.personaCount,
+			personaCount: summary.personaCount ?? memorySummary.personaCount,
 			activeConstraintCount:
 				summary.activeConstraintCount ?? memorySummary.activeConstraintCount,
 			currentProjectContextCount:

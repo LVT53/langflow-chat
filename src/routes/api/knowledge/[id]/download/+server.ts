@@ -43,6 +43,16 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: 'File not available for download' }, { status: 404 });
 	}
 
+	// Path traversal guard - prevent directory traversal attacks
+	if (artifact.storagePath.includes('..') || artifact.storagePath.startsWith('/')) {
+		console.error('[DOWNLOAD] Path traversal attempt blocked:', {
+			userId: user.id,
+			artifactId,
+			storagePath: artifact.storagePath,
+		});
+		return json({ error: 'Invalid path' }, { status: 400 });
+	}
+
 	try {
 		const filePath = join(process.cwd(), artifact.storagePath);
 		const fileBuffer = await readFile(filePath);

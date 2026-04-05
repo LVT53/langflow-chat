@@ -437,6 +437,18 @@
 			.replaceAll("'", '&#39;');
 	}
 
+	/**
+	 * Basic HTML sanitization to prevent XSS from malicious documents.
+	 * Removes script tags and event handler attributes.
+	 */
+	function sanitizeHtml(html: string): string {
+		return html
+			.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+			.replace(/\s*on\w+="[^"]*"/gi, '')
+			.replace(/\s*on\w+='[^']*'/gi, '')
+			.replace(/\s*on\w+=[^\s>]*/gi, '');
+	}
+
 	function renderOdtTextNode(node: Node): string {
 		if (node.nodeType === Node.TEXT_NODE) {
 			return escapeHtml(node.textContent ?? '');
@@ -740,7 +752,7 @@
 				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx' || fileType === 'odt'}
 					{#if htmlContent}
 						<div class="p-6 docx-preview">
-							{@html htmlContent}
+							{@html sanitizeHtml(htmlContent)}
 						</div>
 					{/if}
 				{:else}

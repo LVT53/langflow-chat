@@ -14,7 +14,7 @@
 		onPageChange?: (page: number) => void;
 		onSelect?: (document: KnowledgeDocumentItem) => void;
 		onDelete?: (documentId: string) => void;
-		onBulkDelete?: (documentIds: string[]) => void;
+		onBulkDelete?: (documentIds: string[]) => boolean | void | Promise<boolean | void>;
 		onDownload?: (documentId: string) => void;
 		onUpload?: (files: File[]) => void | Promise<void>;
 	}
@@ -56,6 +56,34 @@
 		return selectedOnPage > 0 && selectedOnPage < paginatedDocuments.length;
 	});
 	const hasSelection = $derived(selectedIds.size > 0);
+
+	// Clear selection when filter changes (selection shouldn't persist across different views)
+	$effect(() => {
+		// Track filter changes and clear selection
+		const currentFilter = filter;
+		// This effect runs when filter changes
+		return () => {
+			// Clear selection when filter is about to change
+			selectedIds = new Set();
+		};
+	});
+
+	// Clear selection when page changes (items on new page are different)
+	$effect(() => {
+		const currentPageValue = currentPage;
+		return () => {
+			selectedIds = new Set();
+		};
+	});
+
+	// Clamp currentPage to valid range when totalPages shrinks
+	$effect(() => {
+		if (totalPages > 0 && currentPage > totalPages) {
+			onPageChange?.(totalPages);
+		} else if (totalPages === 0 && currentPage > 1) {
+			onPageChange?.(1);
+		}
+	});
 
 	// Accepted file types for upload
 	const acceptedFileTypes = '.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm';
@@ -209,6 +237,9 @@
 	function formatFileSize(bytes: number | null | undefined): string {
 		if (!bytes) return '0 B';
 		if (bytes === 0) return '0 B';
+		if (bytes >= 1024 ** 4) {
+			return `${(bytes / (1024 ** 4)).toFixed(1)} TB`;
+		}
 		const k = 1024;
 		const sizes = ['B', 'KB', 'MB', 'GB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -217,7 +248,10 @@
 		return `${formatted} ${sizes[i]}`;
 	}
 
-	function formatDate(timestamp: number): string {
+	function formatDate(timestamp: number | null | undefined): string {
+		if (timestamp == null || !isFinite(timestamp)) {
+			return '—';
+		}
 		return new Intl.DateTimeFormat(undefined, {
 			dateStyle: 'medium',
 			timeStyle: 'short',
@@ -292,10 +326,18 @@
 		selectedIds = new Set();
 	}
 
-	function handleBulkDelete() {
+	async function handleBulkDelete() {
 		if (selectedIds.size === 0) return;
-		onBulkDelete?.(Array.from(selectedIds));
-		clearSelection();
+		const idsToDelete = Array.from(selectedIds);
+		try {
+			const result = await onBulkDelete?.(idsToDelete);
+			// Only clear selection if delete was successful (callback returns true or undefined)
+			if (result === true || result === undefined) {
+				clearSelection();
+			}
+		} catch {
+			// Keep selection on error so user can retry
+		}
 	}
 
 	// Icon components

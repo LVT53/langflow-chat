@@ -55,8 +55,10 @@
 		return value.toLocaleString();
 	}
 
-	function formatDate(timestamp: number | null): string {
-		if (!timestamp) return '—';
+	function formatDate(timestamp: number | null | undefined): string {
+		if (timestamp == null || !isFinite(timestamp)) {
+			return '—';
+		}
 		return new Date(timestamp).toLocaleString();
 	}
 
