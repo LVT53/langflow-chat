@@ -142,15 +142,19 @@
 	});
 
 	onMount(() => {
+		const body = globalThis.document?.body;
+		if (!body) return;
 		previousFocus = globalThis.document.activeElement as HTMLElement;
-		globalThis.document.body.style.overflow = 'hidden';
+		body.style.overflow = 'hidden';
 	});
 
 	onDestroy(() => {
 		if (previousFocus) {
 			previousFocus.focus();
 		}
-		globalThis.document.body.style.overflow = '';
+		const body = globalThis.document?.body;
+		if (!body) return;
+		body.style.overflow = '';
 	});
 </script>
 
