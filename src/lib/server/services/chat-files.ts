@@ -5,15 +5,26 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
-import { createArtifactLink, createGeneratedOutputArtifact } from '$lib/server/services/knowledge';
 import {
 	buildGeneratedOutputDocumentMetadata,
 	parseWorkingDocumentMetadata,
 	resolveGeneratedDocumentFamilyContext,
-} from '$lib/server/services/knowledge/store';
+} from '$lib/server/services/knowledge/store/document-metadata';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
 import { recordMemoryEvent } from '$lib/server/services/memory-events';
 import { extractDocumentText } from './document-extraction';
+
+const chatGeneratedFileSelection = {
+	id: chatGeneratedFiles.id,
+	conversationId: chatGeneratedFiles.conversationId,
+	assistantMessageId: chatGeneratedFiles.assistantMessageId,
+	userId: chatGeneratedFiles.userId,
+	filename: chatGeneratedFiles.filename,
+	mimeType: chatGeneratedFiles.mimeType,
+	sizeBytes: chatGeneratedFiles.sizeBytes,
+	storagePath: chatGeneratedFiles.storagePath,
+	createdAt: chatGeneratedFiles.createdAt,
+} as const;
 
 export interface ChatFile {
 	id: string;
@@ -131,6 +142,7 @@ async function listRecentGeneratedFileVersions(
 	const rows = await db
 		.select({
 			id: artifacts.id,
+			name: artifacts.name,
 			conversationId: artifacts.conversationId,
 			summary: artifacts.summary,
 			contentText: artifacts.contentText,
@@ -371,7 +383,7 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 	try {
 		const [rows, artifactIdsByChatFile] = await Promise.all([
 			db
-				.select()
+				.select(chatGeneratedFileSelection)
 				.from(chatGeneratedFiles)
 				.where(eq(chatGeneratedFiles.conversationId, conversationId))
 				.orderBy(desc(chatGeneratedFiles.createdAt)),
@@ -407,7 +419,7 @@ export async function getChatFilesForAssistantMessage(
 	try {
 		const [rows, artifactIdsByChatFile] = await Promise.all([
 			db
-				.select()
+				.select(chatGeneratedFileSelection)
 				.from(chatGeneratedFiles)
 				.where(
 					and(
@@ -472,6 +484,10 @@ export async function syncGeneratedFilesToMemory(params: {
 	if (params.fileIds.length === 0) {
 		return;
 	}
+
+	const { createArtifactLink, createGeneratedOutputArtifact } = await import(
+		'$lib/server/services/knowledge'
+	);
 
 	const uniqueFileIds = Array.from(new Set(params.fileIds));
 
@@ -582,7 +598,7 @@ export async function syncGeneratedFilesToMemory(params: {
 				});
 			}
 
-			const binaryFile = new File([content], file.filename, {
+			const binaryFile = new File([new Uint8Array(content)], file.filename, {
 				type: file.mimeType ?? 'application/octet-stream',
 			});
 
@@ -621,7 +637,7 @@ export async function getChatFile(
 	fileId: string
 ): Promise<ChatFile | null> {
 	const [row] = await db
-		.select()
+		.select(chatGeneratedFileSelection)
 		.from(chatGeneratedFiles)
 		.where(
 			and(
@@ -643,7 +659,7 @@ export async function getChatFileByUser(
 	userId: string
 ): Promise<ChatFile | null> {
 	const [row] = await db
-		.select()
+		.select(chatGeneratedFileSelection)
 		.from(chatGeneratedFiles)
 		.where(
 			and(
@@ -761,7 +777,7 @@ export async function deleteAllChatFilesForConversation(conversationId: string):
 
 export async function deleteAllChatFilesForUser(userId: string): Promise<number> {
 	const files = await db
-		.select()
+		.select(chatGeneratedFileSelection)
 		.from(chatGeneratedFiles)
 		.where(eq(chatGeneratedFiles.userId, userId));
 
