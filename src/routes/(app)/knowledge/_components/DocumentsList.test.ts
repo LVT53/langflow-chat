@@ -104,6 +104,42 @@ describe('DocumentsList', () => {
 		});
 	});
 
+	describe('Upload Interactions', () => {
+		it('supports drag and drop uploads when documents already exist', async () => {
+			const onUpload = vi.fn().mockResolvedValue(undefined);
+
+			render(DocumentsList, {
+				props: {
+					documents: [mockUploadedDocument],
+					onUpload,
+				},
+			});
+
+			const dropSurface = screen.getByRole('region', {
+				name: /documents list with drag and drop upload/i,
+			});
+			const file = new File(['hello'], 'new-upload.pdf', { type: 'application/pdf' });
+
+			await fireEvent.dragEnter(dropSurface, {
+				dataTransfer: {
+					types: ['Files'],
+				},
+			});
+
+			expect(screen.getByTestId('drop-zone-overlay')).toBeInTheDocument();
+
+			await fireEvent.drop(dropSurface, {
+				dataTransfer: {
+					files: [file],
+					types: ['Files'],
+				},
+			});
+
+			expect(onUpload).toHaveBeenCalledTimes(1);
+			expect(onUpload).toHaveBeenCalledWith([expect.objectContaining({ name: 'new-upload.pdf' })]);
+		});
+	});
+
 	describe('List Rendering', () => {
 		it('renders list of documents with correct columns', () => {
 			render(DocumentsList, {
