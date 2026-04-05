@@ -585,8 +585,12 @@
 			class="workspace-resize-handle" 
 			data-testid="resize-handle"
 			onmousedown={startResize}
-			role="separator"
+			role="slider"
 			aria-label="Resize workspace panel"
+			aria-valuemin={MIN_WIDTH}
+			aria-valuemax={typeof window !== 'undefined' ? Math.floor(window.innerWidth * MAX_WIDTH_RATIO) : 800}
+			aria-valuenow={workspaceWidth}
+			tabindex="0"
 		></div>
 		<div class="workspace-header">
 			<div class="workspace-heading">
@@ -1327,20 +1331,6 @@
 		.workspace-mobile-backdrop {
 			display: none;
 		}
-	}
-
-	.workspace-page-indicator {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-	}
-
-	.workspace-page-label {
-		color: var(--text-muted);
 	}
 
 	.workspace-page-input {

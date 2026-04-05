@@ -1045,14 +1045,6 @@
 />
 
 <style>
-	button {
-		cursor: pointer;
-	}
-
-	button:disabled {
-		cursor: not-allowed;
-	}
-
 	:global(.knowledge-page input[type='checkbox']) {
 		cursor: pointer;
 	}

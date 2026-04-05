@@ -330,13 +330,6 @@
 		border-color: color-mix(in srgb, var(--accent) 40%, var(--border-default) 60%);
 	}
 
-	.search-result-snippet {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		overflow: hidden;
-	}
-
 	/* Animation for backdrop */
 	@keyframes fadeIn {
 		from { opacity: 0; }
