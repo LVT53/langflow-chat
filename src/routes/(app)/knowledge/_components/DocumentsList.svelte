@@ -817,19 +817,19 @@
 		width: 32px;
 		height: 32px;
 		padding: 0;
-		border: 1px solid var(--border-default);
+		border: 1px solid var(--accent);
 		border-radius: var(--radius-md);
-		background: var(--surface-elevated);
-		color: var(--icon-muted);
+		background: var(--accent);
+		color: white;
 		cursor: pointer;
 		transition: all var(--duration-standard) var(--ease-out);
 		flex-shrink: 0;
 	}
 
 	.upload-btn:hover:not(:disabled) {
-		background: var(--surface-page);
-		color: var(--icon-primary);
-		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 85%, black);
+		border-color: color-mix(in srgb, var(--accent) 85%, black);
+		color: white;
 	}
 
 	.upload-btn:disabled {

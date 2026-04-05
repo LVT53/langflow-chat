@@ -66,7 +66,7 @@
 	} = $props();
 </script>
 
-<div class="composer-layer composer-layer-active">
+<div class="composer-layer">
 	<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
 		{#if sendError}
 			<ErrorMessage error={sendError} onRetry={onRetry} onClose={onErrorClose} />
@@ -102,18 +102,9 @@
 
 <style>
 	.composer-layer {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: 50%;
-		transform: translateY(-50%);
-		transition:
-			top 320ms cubic-bezier(0.22, 1, 0.36, 1),
-			transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.composer-layer-active {
-		top: 100%;
-		transform: translateY(calc(-100% - max(1.5rem, env(safe-area-inset-bottom))));
+		flex-shrink: 0;
+		padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+		background: var(--surface-page);
+		border-top: 1px solid var(--border-subtle);
 	}
 </style>

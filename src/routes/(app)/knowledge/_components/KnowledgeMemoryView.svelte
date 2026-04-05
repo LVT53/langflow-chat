@@ -99,7 +99,11 @@
 		</div>
 	</section>
 {:else}
-	<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
+	<section class="memory-section rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
+		<div class="mb-4">
+			<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">Memory Profile</h2>
+			<p class="text-sm text-text-secondary mt-1">View and manage your stored memories, persona data, and focus continuity</p>
+		</div>
 		<div class="grid gap-4 lg:grid-cols-2">
 			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 				<div class="flex items-center justify-between gap-3">

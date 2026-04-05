@@ -8,7 +8,8 @@ import { getPreviewContentType } from '$lib/utils/file-preview';
 /**
  * GET /api/knowledge/[id]/preview
  * 
- * Returns the binary file content for preview purposes.
+ * Returns the file content for preview purposes.
+ * Handles both storagePath-based files and contentText-based artifacts.
  * Authenticates the user and verifies artifact ownership.
  */
 export const GET: RequestHandler = async (event) => {
@@ -25,7 +26,28 @@ export const GET: RequestHandler = async (event) => {
 		});
 	}
 
-	// Check if artifact has a storage path
+	// Determine content type
+	const previewName =
+		artifact.name.includes('.') || !artifact.extension
+			? artifact.name
+			: `${artifact.name}.${artifact.extension}`;
+	const contentType = getPreviewContentType(previewName, artifact.mimeType);
+
+	// Handle contentText-based artifacts (normalized_document, generated_output)
+	if (artifact.contentText) {
+		const textBuffer = Buffer.from(artifact.contentText, 'utf-8');
+		return new Response(textBuffer, {
+			status: 200,
+			headers: {
+				'Content-Type': 'text/plain; charset=utf-8',
+				'Content-Length': textBuffer.length.toString(),
+				'Content-Disposition': `inline; filename="${encodeURIComponent(artifact.name)}"`,
+				'Cache-Control': 'private, max-age=3600',
+			},
+		});
+	}
+
+	// Handle storagePath-based artifacts (source_document)
 	if (!artifact.storagePath) {
 		return new Response(
 			JSON.stringify({ error: 'File not available for preview' }),
@@ -40,13 +62,6 @@ export const GET: RequestHandler = async (event) => {
 		// Read file from storage
 		const filePath = join(process.cwd(), artifact.storagePath);
 		const fileBuffer = await readFile(filePath);
-
-		// Determine content type
-		const previewName =
-			artifact.name.includes('.') || !artifact.extension
-				? artifact.name
-				: `${artifact.name}.${artifact.extension}`;
-		const contentType = getPreviewContentType(previewName, artifact.mimeType);
 
 		// Return file with appropriate headers
 		return new Response(fileBuffer, {

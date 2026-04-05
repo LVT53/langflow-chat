@@ -51,11 +51,12 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		expect(body.error).toBe('Artifact not found');
 	});
 
-	it('returns 404 when artifact has no storage path', async () => {
+	it('returns 404 when artifact has no storage path or content text', async () => {
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'test.txt',
 			storagePath: null,
+			contentText: null,
 			mimeType: 'text/plain',
 			extension: 'txt',
 		});
@@ -70,6 +71,58 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		expect(response.status).toBe(404);
 		const body = await response.json();
 		expect(body.error).toBe('File not available for preview');
+	});
+
+	it('returns content text for artifacts with contentText (normalized_document)', async () => {
+		const contentText = 'This is the normalized text content.';
+		mockGetArtifactForUser.mockResolvedValue({
+			id: 'artifact-123',
+			name: 'normalized-document.txt',
+			storagePath: null,
+			contentText,
+			mimeType: 'text/plain',
+			extension: 'txt',
+		});
+
+		const event = {
+			locals: { user: mockUser },
+			params: { id: 'artifact-123' },
+		} as any;
+
+		const response = await GET(event);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+		expect(response.headers.get('Content-Length')).toBe(Buffer.byteLength(contentText, 'utf-8').toString());
+		expect(response.headers.get('Content-Disposition')).toContain('normalized-document.txt');
+		expect(response.headers.get('Cache-Control')).toBe('private, max-age=3600');
+
+		const body = await response.text();
+		expect(body).toBe(contentText);
+	});
+
+	it('prefers contentText over storagePath when both exist', async () => {
+		await writePreviewFile('data/knowledge/user-123/document.pdf', Buffer.from('PDF binary content'));
+		mockGetArtifactForUser.mockResolvedValue({
+			id: 'artifact-123',
+			name: 'document.txt',
+			storagePath: 'data/knowledge/user-123/document.pdf',
+			contentText: 'Text content takes priority',
+			mimeType: 'text/plain',
+			extension: 'txt',
+		});
+
+		const event = {
+			locals: { user: mockUser },
+			params: { id: 'artifact-123' },
+		} as any;
+
+		const response = await GET(event);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+		const body = await response.text();
+		expect(body).toBe('Text content takes priority');
 	});
 
 	it('returns file content with correct headers for PDF', async () => {

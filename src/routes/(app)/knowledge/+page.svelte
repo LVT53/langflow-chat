@@ -916,31 +916,9 @@
 			</div>
 		{/if}
 
-		<div class="knowledge-library-stage flex min-h-0 flex-col gap-6 lg:flex-row">
-			<div class="min-w-0 flex-1">
-			<KnowledgeLibraryView
-				documents={documents}
-				onOpenLibraryModal={openLibraryModal}
-				onOpenDocument={openWorkspaceDocument}
-			/>
-			</div>
-
-			<DocumentWorkspace
-				open={workspaceOpen}
-				documents={workspaceDocuments}
-				availableDocuments={availableWorkspaceDocuments}
-				activeDocumentId={activeWorkspaceDocumentId}
-				onSelectDocument={selectWorkspaceDocument}
-				onOpenDocument={openWorkspaceDocument}
-				onJumpToSource={jumpToWorkspaceSource}
-				onCloseDocument={closeWorkspaceDocument}
-				onCloseWorkspace={closeWorkspace}
-			/>
-		</div>
-
 		<div class="documents-section rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="mb-4">
-				<h2 class="text-xl font-serif tracking-[-0.02em] text-text-primary">Documents</h2>
+				<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">Documents</h2>
 				<p class="text-sm text-text-secondary mt-1">Browse and manage your uploaded and generated documents</p>
 			</div>
 			<DocumentsList

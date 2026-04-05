@@ -155,6 +155,26 @@
 		isResizing = false;
 	}
 
+	$effect(() => {
+		if (!browser || !isResizing) return;
+
+		function onMouseMove(event: MouseEvent) {
+			handleResizeMove(event);
+		}
+
+		function onMouseUp() {
+			stopResize();
+		}
+
+		document.addEventListener('mousemove', onMouseMove);
+		document.addEventListener('mouseup', onMouseUp);
+
+		return () => {
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+	});
+
 	function formatRoleLabel(role: string | null | undefined): string | null {
 		if (!role) return null;
 		const normalized = role.trim();

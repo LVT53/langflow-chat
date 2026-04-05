@@ -32,6 +32,6 @@ describe('ChatComposerPanel', () => {
 		});
 
 		expect(queryByText('What can I help you with?')).toBeNull();
-		expect(container.querySelector('.composer-layer-active')).toBeTruthy();
+		expect(container.querySelector('.composer-layer')).toBeTruthy();
 	});
 });

@@ -937,58 +937,60 @@
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<div class="chat-content flex min-h-0 flex-1">
-			<ChatMessagePane
-				messages={$messages}
-				conversationId={data.conversation.id}
-				{isThinkingActive}
-				{contextDebug}
-				generatedFiles={generatedFileCards}
-				onOpenDocument={openWorkspaceDocument}
-				onRegenerate={handleRegenerate}
-				onEdit={handleEdit}
-				onSteer={handleSteering}
-			/>
+		<div class="chat-main flex min-h-0 flex-1 flex-col overflow-hidden">
+			<div class="chat-messages flex min-h-0 flex-1 overflow-hidden">
+				<ChatMessagePane
+					messages={$messages}
+					conversationId={data.conversation.id}
+					{isThinkingActive}
+					{contextDebug}
+					generatedFiles={generatedFileCards}
+					onOpenDocument={openWorkspaceDocument}
+					onRegenerate={handleRegenerate}
+					onEdit={handleEdit}
+					onSteer={handleSteering}
+				/>
+			</div>
 
-			<DocumentWorkspace
-				open={workspaceOpen}
-				documents={workspaceDocuments}
-				availableDocuments={availableWorkspaceDocuments}
-				activeDocumentId={activeWorkspaceDocumentId}
-				onSelectDocument={selectWorkspaceDocument}
-				onOpenDocument={openWorkspaceDocument}
-				onJumpToSource={handleJumpToWorkspaceSource}
-				onCloseDocument={closeWorkspaceDocument}
-				onCloseWorkspace={closeWorkspace}
+			<ChatComposerPanel
+				{sendError}
+				onRetry={handleRetry}
+				onErrorClose={handleErrorClose}
+				onSend={handleSend}
+				onQueue={handleQueue}
+				onStop={handleStop}
+				onDraftChange={handleDraftChange}
+				onEditQueuedMessage={editQueuedTurn}
+				onDeleteQueuedMessage={clearQueuedTurn}
+				disabled={isSending}
+				isGenerating={isSending}
+				hasQueuedMessage={Boolean(queuedTurn)}
+				queuedMessagePreview={queuedTurn?.message ?? ''}
+				maxLength={data.maxMessageLength}
+				conversationId={data.conversation.id}
+				{contextStatus}
+				{attachedArtifacts}
+				{taskState}
+				{contextDebug}
+				draftText={conversationDraft?.draftText ?? ''}
+				draftAttachments={conversationDraft?.selectedAttachments ?? []}
+				draftVersion={conversationDraft?.updatedAt ?? 0}
+				onSteer={handleSteering}
+				onManageEvidence={openEvidenceManager}
+				onUploadReady={handleUploadReady}
 			/>
 		</div>
 
-		<ChatComposerPanel
-			{sendError}
-			onRetry={handleRetry}
-			onErrorClose={handleErrorClose}
-			onSend={handleSend}
-			onQueue={handleQueue}
-			onStop={handleStop}
-			onDraftChange={handleDraftChange}
-			onEditQueuedMessage={editQueuedTurn}
-			onDeleteQueuedMessage={clearQueuedTurn}
-			disabled={isSending}
-			isGenerating={isSending}
-			hasQueuedMessage={Boolean(queuedTurn)}
-			queuedMessagePreview={queuedTurn?.message ?? ''}
-			maxLength={data.maxMessageLength}
-			conversationId={data.conversation.id}
-			{contextStatus}
-			{attachedArtifacts}
-			{taskState}
-			{contextDebug}
-			draftText={conversationDraft?.draftText ?? ''}
-			draftAttachments={conversationDraft?.selectedAttachments ?? []}
-			draftVersion={conversationDraft?.updatedAt ?? 0}
-			onSteer={handleSteering}
-			onManageEvidence={openEvidenceManager}
-			onUploadReady={handleUploadReady}
+		<DocumentWorkspace
+			open={workspaceOpen}
+			documents={workspaceDocuments}
+			availableDocuments={availableWorkspaceDocuments}
+			activeDocumentId={activeWorkspaceDocumentId}
+			onSelectDocument={selectWorkspaceDocument}
+			onOpenDocument={openWorkspaceDocument}
+			onJumpToSource={handleJumpToWorkspaceSource}
+			onCloseDocument={closeWorkspaceDocument}
+			onCloseWorkspace={closeWorkspace}
 		/>
 	</div>
 
@@ -1001,7 +1003,11 @@
 </div>
 
 <style>
-	.chat-content {
+	.chat-main {
+		min-width: 0;
+	}
+
+	.chat-messages {
 		min-width: 0;
 	}
 </style>

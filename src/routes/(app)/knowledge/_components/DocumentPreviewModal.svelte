@@ -102,12 +102,12 @@
 			const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
 
 			if (event.shiftKey) {
-				if (document.activeElement === firstElement) {
+				if (globalThis.document.activeElement === firstElement) {
 					lastElement.focus();
 					event.preventDefault();
 				}
 			} else {
-				if (document.activeElement === lastElement) {
+				if (globalThis.document.activeElement === lastElement) {
 					firstElement.focus();
 					event.preventDefault();
 				}
@@ -142,15 +142,15 @@
 	});
 
 	onMount(() => {
-		previousFocus = document.activeElement as HTMLElement;
-		document.body.style.overflow = 'hidden';
+		previousFocus = globalThis.document.activeElement as HTMLElement;
+		globalThis.document.body.style.overflow = 'hidden';
 	});
 
 	onDestroy(() => {
 		if (previousFocus) {
 			previousFocus.focus();
 		}
-		document.body.style.overflow = '';
+		globalThis.document.body.style.overflow = '';
 	});
 </script>
 
