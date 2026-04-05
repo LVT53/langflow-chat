@@ -72,6 +72,22 @@ describe('POST /api/webhook/sentence', () => {
 		expect(data.error).toMatch(/Unauthorized webhook request/);
 	});
 
+	it('returns 401 for invalid webhook secret value', async () => {
+		const payload: WebhookSentencePayload = {
+			session_id: 'session-1',
+			sentence: 'Hello world',
+			index: 0,
+			is_final: false
+		};
+
+		const event = makeEvent(payload, { secret: 'wrong-secret' });
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(401);
+		expect(data.error).toMatch(/Unauthorized webhook request/);
+	});
+
 	it('returns 200 OK for valid payload', async () => {
 		const payload: WebhookSentencePayload = {
 			session_id: 'session-1',
