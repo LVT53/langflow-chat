@@ -37,4 +37,18 @@ test.describe('Knowledge page', () => {
 		await expect(filterGroup.getByText('Uploaded')).toBeVisible();
 		await expect(filterGroup.getByText('Generated')).toBeVisible();
 	});
+
+	test('opening a knowledge document does not trigger runtime page errors', async ({ page }) => {
+		const pageErrors: string[] = [];
+		page.on('pageerror', (error) => {
+			pageErrors.push(error.message);
+		});
+
+		const firstDocumentRow = page.locator('tbody tr').first();
+		await expect(firstDocumentRow).toBeVisible();
+		await firstDocumentRow.click();
+		await page.waitForTimeout(400);
+
+		expect(pageErrors).toEqual([]);
+	});
 });

@@ -53,6 +53,7 @@
 	let pdfWorkerUrlPromise: Promise<string> | null = null;
 	let pageObserver: IntersectionObserver | null = null;
 	let isProgrammaticScroll = $state(false);
+	let programmaticScrollResetTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// PDF render concurrency tracking
 	let pdfRenderVersion = 0;
@@ -105,13 +106,18 @@
 			const targetPage = Math.max(1, Math.min(currentPage, totalPages));
 			const canvas = canvasRefs[targetPage - 1];
 			if (canvas && canvas.parentElement) {
+				if (programmaticScrollResetTimeout) {
+					clearTimeout(programmaticScrollResetTimeout);
+					programmaticScrollResetTimeout = null;
+				}
 				isProgrammaticScroll = true;
 				canvas.parentElement.scrollIntoView({ behavior: 'auto', block: 'start' });
 				lastObservedPage = targetPage;
-				// Clear guard after scroll completes (next tick)
-				setTimeout(() => {
+				// Keep guard active long enough for observer callbacks
+				programmaticScrollResetTimeout = setTimeout(() => {
 					isProgrammaticScroll = false;
-				}, 0);
+					programmaticScrollResetTimeout = null;
+				}, 120);
 			}
 		}
 	});
@@ -126,6 +132,11 @@
 				pageObserver.disconnect();
 				pageObserver = null;
 			}
+			if (programmaticScrollResetTimeout) {
+				clearTimeout(programmaticScrollResetTimeout);
+				programmaticScrollResetTimeout = null;
+			}
+			isProgrammaticScroll = false;
 		};
 	});
 

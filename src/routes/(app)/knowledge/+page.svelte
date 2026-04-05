@@ -80,6 +80,7 @@
 	let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 	let activeWorkspaceDocumentId = $state<string | null>(null);
 	let workspaceOpen = $state(false);
+	let lastHandledWorkspaceHandoffKey = $state<string | null>(null);
 	let deletingArtifactIds = $state(new Set<string>());
 	let pendingMemoryActionKey = $state<string | null>(null);
 	let pendingKnowledgeActionKey = $state<string | null>(null);
@@ -218,12 +219,19 @@
 		const handoffDocument = getKnowledgeWorkspaceDocumentFromUrl(page.url);
 		if (!handoffDocument) return;
 
+		const handoffKey = `${handoffDocument.artifactId ?? handoffDocument.id}|${handoffDocument.filename}`;
+		if (lastHandledWorkspaceHandoffKey === handoffKey) {
+			replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+			return;
+		}
+
 		openWorkspaceDocument({
 			...handoffDocument,
 			...(handoffDocument.artifactId
 				? getWorkspaceMetadataForArtifact(handoffDocument.artifactId) ?? {}
 				: {}),
 		});
+		lastHandledWorkspaceHandoffKey = handoffKey;
 		replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
 	});
 
