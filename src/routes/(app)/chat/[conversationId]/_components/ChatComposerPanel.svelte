@@ -67,7 +67,7 @@
 </script>
 
 <div class="composer-layer">
-	<div class="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
+	<div class="composer-shell mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1">
 		{#if sendError}
 			<ErrorMessage error={sendError} onRetry={onRetry} onClose={onErrorClose} />
 		{/if}
@@ -104,5 +104,15 @@
 	.composer-layer {
 		flex-shrink: 0;
 		padding: 0.75rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+		isolation: isolate;
+	}
+
+	.composer-shell {
+		background: transparent;
+		border: 0;
+		box-shadow: none;
 	}
 </style>

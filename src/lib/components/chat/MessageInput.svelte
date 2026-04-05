@@ -405,7 +405,7 @@
 	}
 </script>
 
-<div class="relative flex w-full flex-col">
+<div class="composer-root relative flex w-full flex-col">
 	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-0 transition-all duration-150 focus-within:border-focus-ring">
 		<input
 			bind:this={fileInput}
@@ -585,6 +585,12 @@
 			0 1px 0 color-mix(in srgb, var(--border-default) 88%, transparent 12%),
 			0 14px 30px color-mix(in srgb, var(--accent) 7%, transparent 93%),
 			var(--shadow-lg);
+	}
+
+	.composer-root {
+		background: transparent;
+		border: 0;
+		box-shadow: none;
 	}
 
 	:global(.dark) .message-composer {
