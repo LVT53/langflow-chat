@@ -1,6 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
+import { createJsonErrorResponse } from '$lib/server/api/responses';
 
 const POLL_INTERVAL_MS = 100;
 const STREAM_TIMEOUT_MS = 120_000;
@@ -11,10 +12,7 @@ export const GET: RequestHandler = async (event) => {
 	const sessionId = event.params['sessionId'] as string;
 
 	if (!sessionId || sessionId.trim().length === 0) {
-		return new Response(JSON.stringify({ error: 'sessionId is required' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' }
-		});
+		return createJsonErrorResponse('sessionId is required', 400);
 	}
 
 	const encoder = new TextEncoder();

@@ -2,48 +2,29 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { generateTitle } from '$lib/server/services/title-generator';
 import { updateConversationTitle } from '$lib/server/services/conversations';
+import { createJsonErrorResponse, createJsonResponse } from '$lib/server/api/responses';
 
-export async function POST({ request, params, locals }: RequestEvent) {
+	export async function POST({ request, params, locals }: RequestEvent) {
   try {
     if (process.env.PLAYWRIGHT_TEST === '1') {
-      return new Response(JSON.stringify({ title: null }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+		  return createJsonResponse({ title: null });
     }
 
     const { userMessage, assistantResponse } = await request.json();
     const userId = locals.user?.id;
     if (!userId) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+		  return createJsonErrorResponse('Unauthorized', 401);
     }
     
     const title = await generateTitle(userMessage, assistantResponse);
     
     await updateConversationTitle(userId, params.id, title);
-    return new Response(JSON.stringify({ title }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+		return createJsonResponse({ title });
   } catch (error) {
     console.error('[TITLE_GENERATE] Failed to generate title', {
       conversationId: params.id,
       error,
     });
-    return new Response(JSON.stringify({ title: null }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+		return createJsonResponse({ title: null });
   }
 }

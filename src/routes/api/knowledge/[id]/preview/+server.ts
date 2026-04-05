@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getArtifactForUser } from '$lib/server/services/knowledge';
 import { getPreviewContentType } from '$lib/utils/file-preview';
+import { createJsonErrorResponse } from '$lib/server/api/responses';
 
 /**
  * GET /api/knowledge/[id]/preview
@@ -20,10 +21,7 @@ export const GET: RequestHandler = async (event) => {
 	// Get artifact and verify ownership
 	const artifact = await getArtifactForUser(user.id, artifactId);
 	if (!artifact) {
-		return new Response(JSON.stringify({ error: 'Artifact not found' }), {
-			status: 404,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('Artifact not found', 404);
 	}
 
 	// Determine content type
@@ -50,13 +48,7 @@ export const GET: RequestHandler = async (event) => {
 
 	// Handle storagePath-based artifacts (source_document)
 	if (!artifact.storagePath) {
-		return new Response(
-			JSON.stringify({ error: 'File not available for preview' }),
-			{
-				status: 404,
-				headers: { 'Content-Type': 'application/json' },
-			}
-		);
+		return createJsonErrorResponse('File not available for preview', 404);
 	}
 
 	// Path traversal guard - prevent directory traversal attacks
@@ -99,21 +91,9 @@ export const GET: RequestHandler = async (event) => {
 		});
 
 		if (error.code === 'ENOENT') {
-			return new Response(
-				JSON.stringify({ error: 'File not found on disk' }),
-				{
-					status: 404,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			);
+			return createJsonErrorResponse('File not found on disk', 404);
 		}
 
-		return new Response(
-			JSON.stringify({ error: 'Failed to read file' }),
-			{
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			}
-		);
+		return createJsonErrorResponse('Failed to read file', 500);
 	}
 };

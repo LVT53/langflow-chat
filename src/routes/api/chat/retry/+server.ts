@@ -53,6 +53,7 @@ import {
 } from '$lib/server/services/chat-turn/stream';
 import type { WorkCapsuleSummary } from '$lib/server/services/chat-turn/types';
 import { estimateTokenCount } from '$lib/server/utils/tokens';
+import { createJsonErrorResponse } from '$lib/server/api/responses';
 
 const STREAM_TIMEOUT_MS = 120_000;
 
@@ -84,32 +85,20 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		body = await event.request.json();
 	} catch {
-		return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('Invalid JSON body', 400);
 	}
 
 	const { conversationId, assistantMessageId, activeDocumentArtifactId } = body;
 	if (typeof conversationId !== 'string' || !conversationId.trim()) {
-		return new Response(JSON.stringify({ error: 'conversationId is required' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('conversationId is required', 400);
 	}
 	if (typeof assistantMessageId !== 'string' || !assistantMessageId.trim()) {
-		return new Response(JSON.stringify({ error: 'assistantMessageId is required' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('assistantMessageId is required', 400);
 	}
 
 	const conversation = await getConversation(user.id, conversationId);
 	if (!conversation) {
-		return new Response(JSON.stringify({ error: 'Conversation not found' }), {
-			status: 404,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('Conversation not found', 404);
 	}
 
 	const [assistantMsg] = await db
@@ -124,10 +113,7 @@ export const POST: RequestHandler = async (event) => {
 		.limit(1);
 
 	if (!assistantMsg || assistantMsg.role !== 'assistant') {
-		return new Response(JSON.stringify({ error: 'Assistant message not found' }), {
-			status: 404,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('Assistant message not found', 404);
 	}
 
 	let cleanupResult;
@@ -168,10 +154,7 @@ export const POST: RequestHandler = async (event) => {
 		.limit(1);
 
 	if (!userMsg || !userMsg.content.trim()) {
-		return new Response(JSON.stringify({ error: 'No user message found to retry' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return createJsonErrorResponse('No user message found to retry', 400);
 	}
 
 	const syntheticBody = new Request('https://internal', {
@@ -188,7 +171,7 @@ export const POST: RequestHandler = async (event) => {
 	});
 
 	const parsedRequest = await parseChatTurnRequest(syntheticBody, runtimeConfig, 'stream');
-	if (!parsedRequest.ok) {
+	if ('error' in parsedRequest) {
 		return createStreamJsonErrorResponse(parsedRequest.error);
 	}
 
@@ -197,7 +180,7 @@ export const POST: RequestHandler = async (event) => {
 		translationEnabled: user.translationEnabled,
 		request: parsedRequest.value,
 	});
-	if (!preflight.ok) {
+	if ('error' in preflight) {
 		return createStreamJsonErrorResponse(preflight.error);
 	}
 

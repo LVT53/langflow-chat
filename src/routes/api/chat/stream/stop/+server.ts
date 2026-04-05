@@ -1,8 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { requestActiveChatStreamStop } from '$lib/server/services/chat-turn/active-streams';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
+import { createJsonErrorResponse, createJsonResponse } from '$lib/server/api/responses';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -11,10 +10,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		body = await event.request.json();
 	} catch {
-		return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-			status: 400,
-			headers: JSON_HEADERS,
-		});
+		return createJsonErrorResponse('Invalid JSON body', 400);
 	}
 
 	const streamId =
@@ -22,10 +18,7 @@ export const POST: RequestHandler = async (event) => {
 			? body.streamId.trim()
 			: '';
 	if (!streamId) {
-		return new Response(JSON.stringify({ error: 'streamId is required' }), {
-			status: 400,
-			headers: JSON_HEADERS,
-		});
+		return createJsonErrorResponse('streamId is required', 400);
 	}
 
 	const stopped = requestActiveChatStreamStop({
@@ -33,8 +26,5 @@ export const POST: RequestHandler = async (event) => {
 		userId: event.locals.user!.id,
 	});
 
-	return new Response(JSON.stringify({ stopped }), {
-		status: 200,
-		headers: JSON_HEADERS,
-	});
+	return createJsonResponse({ stopped });
 };
