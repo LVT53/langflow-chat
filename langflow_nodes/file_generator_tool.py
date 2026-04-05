@@ -20,7 +20,6 @@ Usage in Langflow:
 
 Environment Variables:
 - ALFYAI_API_URL: Base URL of the AlfyAI application (default: http://localhost:3000)
-- ALFYAI_API_KEY: Optional bearer key for `/api/chat/files/generate`; set the same value on the AlfyAI server when calling outside a browser session
 - ALFYAI_API_SIGNING_KEY: HMAC key for signed service assertions on `/api/chat/files/generate`
 
 Example code the model might generate:
@@ -107,13 +106,6 @@ class FileGeneratorToolComponent(Component):
             display_name="AlfyAI API URL",
             info="Base URL of the AlfyAI application (e.g., http://localhost:3000)",
             value=os.getenv("ALFYAI_API_URL", "http://localhost:3000"),
-            advanced=True,
-        ),
-        StrInput(
-            name="alfyai_api_key",
-            display_name="AlfyAI API Key",
-            info="Optional API key for authentication",
-            value=os.getenv("ALFYAI_API_KEY", ""),
             advanced=True,
         ),
         StrInput(
@@ -258,8 +250,6 @@ class FileGeneratorToolComponent(Component):
         signed_assertion = self._build_service_assertion(conversation_id)
         if signed_assertion:
             headers["Authorization"] = f"Bearer {signed_assertion}"
-        elif self.alfyai_api_key:
-            headers["Authorization"] = f"Bearer {self.alfyai_api_key}"
         
         payload = {
             "conversationId": conversation_id,
@@ -288,7 +278,7 @@ class FileGeneratorToolComponent(Component):
             elif response.status_code == 401:
                 return {
                     "success": False,
-                    "error": "Authentication failed. Check ALFYAI_API_SIGNING_KEY (or ALFYAI_API_KEY fallback) on both Langflow and AlfyAI.",
+                    "error": "Authentication failed. Check ALFYAI_API_SIGNING_KEY on both Langflow and AlfyAI.",
                 }
             elif response.status_code == 404:
                 return {

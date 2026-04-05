@@ -29,7 +29,6 @@ function signPayload(payload: Record<string, unknown>, signingKey: string): stri
 describe('auth hooks', () => {
 	beforeEach(() => {
 		getConfigMock.mockReturnValue({
-			alfyaiApiKey: 'legacy-api-key',
 			alfyaiApiSigningKey: 'test-signing-key',
 		});
 	});

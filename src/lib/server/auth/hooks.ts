@@ -16,21 +16,7 @@ export function getBearerToken(authorizationHeader: string | null): string | nul
   if (!scheme || !token) return null;
   if (scheme.toLowerCase() !== 'bearer') return null;
 
-  return token;
-}
-
-export function hasValidAlfyAiApiKey(authorizationHeader: string | null): boolean {
-  const expectedToken = config.alfyaiApiKey.trim();
-  const providedToken = getBearerToken(authorizationHeader);
-  if (!expectedToken || !providedToken) return false;
-
-  const expectedBuffer = Buffer.from(expectedToken);
-  const providedBuffer = Buffer.from(providedToken);
-  if (expectedBuffer.length !== providedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuffer, providedBuffer);
+	return token;
 }
 
 type ServiceFileGenerateClaims = {
