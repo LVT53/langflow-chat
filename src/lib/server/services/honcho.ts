@@ -262,7 +262,7 @@ export async function syncArtifactToHoncho(params: {
 	}
 
 	// Skip Honcho sync if no conversation is attached (e.g., vault-only uploads)
-	if (!params.conversationId) {
+	if (params.conversationId == null || params.conversationId.trim() === '') {
 		return { uploaded: false, mode: 'none' };
 	}
 
