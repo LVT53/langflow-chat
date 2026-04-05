@@ -13,6 +13,7 @@
 		updateProfile,
 		updateUserPreferences,
 	} from '$lib/client/api/settings';
+	import { submitKnowledgeBulkAction } from '$lib/client/api/knowledge';
 	import { reconcileConversationSnapshot } from '$lib/stores/conversations';
 	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
 	import { projects } from '$lib/stores/projects';
@@ -96,6 +97,9 @@
 	let resetError = $state('');
 	let resetLoading = $state(false);
 	let showResetPw = $state(false);
+
+	let forgetEverythingLoading = $state(false);
+	let forgetEverythingError = $state('');
 
 	let adminConfig = $state<Record<string, string>>(
 		initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {}
@@ -248,6 +252,27 @@
 		}
 	}
 
+	async function runForgetEverything() {
+		forgetEverythingError = '';
+		const confirmed = window.confirm(
+			'Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
+		);
+		if (!confirmed) return;
+
+		forgetEverythingLoading = true;
+		try {
+			const result = await submitKnowledgeBulkAction('forget_everything');
+			if (result.success === false) {
+				throw new Error(result.error ?? result.message ?? 'Failed to forget everything.');
+			}
+			forgetEverythingError = '';
+		} catch (error: any) {
+			forgetEverythingError = error.message;
+		} finally {
+			forgetEverythingLoading = false;
+		}
+	}
+
 	async function saveAdminConfig() {
 		adminSaving = true;
 		adminMessage = '';
@@ -352,6 +377,9 @@
 				onChangeTheme={changeTheme}
 				onOpenResetModal={() => (showResetModal = true)}
 				onOpenDeleteModal={() => (showDeleteModal = true)}
+				forgetEverythingLoading={forgetEverythingLoading}
+				forgetEverythingError={forgetEverythingError}
+				onForgetEverything={runForgetEverything}
 			/>
 		{/if}
 

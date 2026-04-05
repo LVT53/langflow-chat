@@ -855,51 +855,35 @@
 					</p>
 				</div>
 
-				<div class="inline-flex w-full rounded-full border border-border bg-surface-page p-1">
-					<button
-						type="button"
-						class={`flex-1 rounded-full px-4 py-2 text-sm font-sans transition ${
-							activeTab === 'library'
-								? 'bg-surface-elevated text-text-primary shadow-sm'
-								: 'text-text-secondary hover:text-text-primary'
-						}`}
-						onclick={() => selectTab('library')}
-						aria-pressed={activeTab === 'library'}
-					>
-						Library
-					</button>
-					<button
-						type="button"
-						class={`flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-sans transition ${
-							activeTab === 'memory'
-								? 'bg-surface-elevated text-text-primary shadow-sm'
-								: 'text-text-secondary hover:text-text-primary'
-						}`}
-						onclick={() => selectTab('memory')}
-						aria-pressed={activeTab === 'memory'}
-					>
-						Memory Profile
-						{#if memoryLoading && !memoryLoaded}
-							<span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse"></span>
-						{/if}
-					</button>
-				</div>
-
-				<div class="flex justify-end">
-					<button
-						type="button"
-						class="rounded-full border border-danger px-4 py-2 text-sm font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						onclick={() =>
-							runKnowledgeAction(
-								'forget_everything',
-								'forget-everything',
-								'Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
-							)}
-						disabled={isKnowledgeActionPending('forget-everything')}
-					>
-						{isKnowledgeActionPending('forget-everything') ? 'Resetting…' : 'Forget everything'}
-					</button>
-				</div>
+			<div class="inline-flex w-full rounded-full border border-border bg-surface-page p-1">
+				<button
+					type="button"
+					class={`flex-1 rounded-full px-4 py-2 text-sm font-sans transition ${
+						activeTab === 'library'
+							? 'bg-surface-elevated text-text-primary shadow-sm'
+							: 'text-text-secondary hover:text-text-primary'
+					}`}
+					onclick={() => selectTab('library')}
+					aria-pressed={activeTab === 'library'}
+				>
+					Library
+				</button>
+				<button
+					type="button"
+					class={`flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-sans transition ${
+						activeTab === 'memory'
+							? 'bg-surface-elevated text-text-primary shadow-sm'
+							: 'text-text-secondary hover:text-text-primary'
+					}`}
+					onclick={() => selectTab('memory')}
+					aria-pressed={activeTab === 'memory'}
+				>
+					Memory Profile
+					{#if memoryLoading && !memoryLoaded}
+						<span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse"></span>
+					{/if}
+				</button>
+			</div>
 			</div>
 		</div>
 

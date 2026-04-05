@@ -44,6 +44,9 @@
 		onChangeTheme,
 		onOpenResetModal,
 		onOpenDeleteModal,
+		onForgetEverything,
+		forgetEverythingLoading = false,
+		forgetEverythingError = '',
 	}: {
 		userId: string;
 		userDisplayName: string;
@@ -83,6 +86,9 @@
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
 		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
+		onForgetEverything: () => void | Promise<void>;
+		forgetEverythingLoading?: boolean;
+		forgetEverythingError?: string;
 	} = $props();
 </script>
 
@@ -257,12 +263,18 @@
 		Reset clears your chats, knowledge base, memories, analytics, and generated files while keeping
 		your login, profile preferences, and avatar. Delete permanently removes the account itself too.
 	</p>
+	{#if forgetEverythingError}
+		<p class="mb-3 text-sm text-danger">{forgetEverythingError}</p>
+	{/if}
 	<div class="flex flex-wrap gap-2">
 		<button class="btn-secondary" onclick={onOpenResetModal}>
 			Reset Account
 		</button>
 		<button class="btn-danger" onclick={onOpenDeleteModal}>
 			Delete Account
+		</button>
+		<button class="btn-secondary" style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
+			{forgetEverythingLoading ? 'Resetting…' : 'Forget everything'}
 		</button>
 	</div>
 </section>
