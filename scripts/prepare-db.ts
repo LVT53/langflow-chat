@@ -56,6 +56,7 @@ const requiredExistingColumns = [
 ];
 
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
+const HONCHO_PEER_VERSION_MIGRATION_TAG = '1775416800000_users_honcho_peer_version';
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -70,6 +71,11 @@ function listColumns(tableName: string): string[] {
 		.prepare(`PRAGMA table_info(${JSON.stringify(tableName)})`)
 		.all()
 		.map((row) => String((row as { name: unknown }).name));
+}
+
+function hasColumn(tableName: string, columnName: string): boolean {
+	if (!hasTable(tableName)) return false;
+	return listColumns(tableName).includes(columnName);
 }
 
 function countMigrationRows(): number {
@@ -182,6 +188,42 @@ function syncMigrationJournalToBaselineSchema(): number {
 	return insertedCount;
 }
 
+function backfillHonchoPeerVersionMigrationIfNeeded(): number {
+	if (!hasTable('users') || !hasColumn('users', 'honcho_peer_version')) {
+		return 0;
+	}
+
+	const journal = readMigrationJournalEntries();
+	const migrationIndex = journal.entries.findIndex(
+		(entry) => entry.tag === HONCHO_PEER_VERSION_MIGRATION_TAG
+	);
+	if (migrationIndex === -1) {
+		throw new Error(
+			`Cannot find migration tag ${HONCHO_PEER_VERSION_MIGRATION_TAG} in drizzle/meta/_journal.json`
+		);
+	}
+
+	const migrations = readMigrationFiles({ migrationsFolder: './drizzle' });
+	const migrationMeta = migrations[migrationIndex];
+	if (!migrationMeta) {
+		throw new Error(
+			`Cannot resolve migration metadata for tag ${HONCHO_PEER_VERSION_MIGRATION_TAG}`
+		);
+	}
+
+	const existingHashes = listMigrationHashes();
+	if (existingHashes.has(migrationMeta.hash)) {
+		return 0;
+	}
+
+	ensureMigrationJournal();
+	sqlite
+		.prepare('INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)')
+		.run(migrationMeta.hash, String(migrationMeta.folderMillis));
+
+	return 1;
+}
+
 try {
 	if (hasApplicationTables()) {
 		const schemaProblems = validateExistingRuntimeSchema();
@@ -205,6 +247,13 @@ try {
 					`Backfilled ${insertedCount} baseline Drizzle migration record(s) for ${databasePath}.`
 				);
 			}
+		}
+
+		const adoptedHonchoMigrationCount = backfillHonchoPeerVersionMigrationIfNeeded();
+		if (adoptedHonchoMigrationCount > 0) {
+			console.log(
+				`Backfilled ${adoptedHonchoMigrationCount} Drizzle migration record for existing users.honcho_peer_version column in ${databasePath}.`
+			);
 		}
 
 		const db = drizzle(sqlite);
