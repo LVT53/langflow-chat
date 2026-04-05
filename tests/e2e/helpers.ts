@@ -4,7 +4,7 @@ const TEST_EMAIL = process.env.E2E_EMAIL || 'admin@local';
 const TEST_PASSWORD = process.env.E2E_PASSWORD || 'admin123';
 
 export async function login(page: Page, email = TEST_EMAIL, password = TEST_PASSWORD) {
-  await page.goto('/login');
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   const result = await page.evaluate(
     async ({ email: nextEmail, password: nextPassword }) => {
       const response = await fetch('/api/auth/login', {
@@ -22,8 +22,8 @@ export async function login(page: Page, email = TEST_EMAIL, password = TEST_PASS
   );
 
   expect(result.ok, `Login failed with status ${result.status}`).toBe(true);
-  await page.goto('/');
-  await page.waitForURL('/', { timeout: 15000 });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('message-input')).toBeVisible({ timeout: 15000 });
 }
 
 export async function logout(page: Page) {

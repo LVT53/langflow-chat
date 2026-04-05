@@ -2,10 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Login Page', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to login page before each test and wait for Svelte hydration
-    await page.goto('/login');
-    await page.waitForLoadState('networkidle');
-    await page.waitForSelector('input[name="email"]', { state: 'visible' });
+    await page.goto('/login', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByLabel('Email address')).toBeVisible();
   });
 
   test('page loads with email and password fields', async ({ page }) => {
