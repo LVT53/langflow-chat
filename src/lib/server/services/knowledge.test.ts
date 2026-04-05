@@ -67,8 +67,9 @@ describe('knowledge service listKnowledgeArtifacts', () => {
 		]);
 
 		const result = await listKnowledgeArtifacts('user-1');
-
-		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith('user-1', 'knowledge_read');
+		await vi.waitFor(() => {
+			expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith('user-1', 'knowledge_read');
+		});
 		expect(result.documents).toHaveLength(1);
 		expect(result.results).toEqual([{ id: 'gen-1' }]);
 		expect(result.workflows).toEqual([{ artifact: { id: 'cap-1' } }]);

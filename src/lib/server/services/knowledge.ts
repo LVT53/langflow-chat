@@ -2,7 +2,6 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts } from '$lib/server/db/schema';
 import type { ArtifactSummary, KnowledgeDocumentItem, WorkCapsule } from '$lib/types';
-import { runUserMemoryMaintenance } from './memory-maintenance';
 import { mapWorkCapsuleFromArtifactRow } from './knowledge/capsules';
 import {
 	buildArtifactVisibilityCondition,
@@ -65,9 +64,11 @@ export async function listKnowledgeArtifacts(userId: string): Promise<{
 	results: ArtifactSummary[];
 	workflows: WorkCapsule[];
 }> {
-	void runUserMemoryMaintenance(userId, 'knowledge_read').catch((error) => {
-		console.error('[KNOWLEDGE] Deferred maintenance failed', { userId, error });
-	});
+	void import('./memory-maintenance')
+		.then(({ runUserMemoryMaintenance }) => runUserMemoryMaintenance(userId, 'knowledge_read'))
+		.catch((error) => {
+			console.error('[KNOWLEDGE] Deferred maintenance failed', { userId, error });
+		});
 
 	const ownershipScope = await getArtifactOwnershipScope(userId);
 
