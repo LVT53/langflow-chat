@@ -73,6 +73,23 @@ describe('DocumentsList', () => {
 			expect(screen.getByText(/upload or generate documents/i)).toBeInTheDocument();
 		});
 
+		it('opens file picker when clicking empty state', async () => {
+			render(DocumentsList, {
+				props: {
+					documents: [],
+					onUpload: vi.fn(),
+				},
+			});
+
+			const fileInput = screen.getByTestId('file-input') as HTMLInputElement;
+			const clickSpy = vi.spyOn(fileInput, 'click');
+
+			const emptyStateButton = screen.getByRole('button', { name: /upload documents/i });
+			await fireEvent.click(emptyStateButton);
+
+			expect(clickSpy).toHaveBeenCalledTimes(1);
+		});
+
 		it('renders empty state message when search has no matches', async () => {
 			render(DocumentsList, {
 				props: {

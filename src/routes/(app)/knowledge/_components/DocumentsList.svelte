@@ -139,6 +139,11 @@
 		fileInputRef?.click();
 	}
 
+	function handleEmptyStateClick() {
+		if (!onUpload || isUploading) return;
+		handleUploadClick();
+	}
+
 	async function handleFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const files = input.files;
@@ -582,17 +587,48 @@
 	{/if}
 
 	<div class="documents-list" class:loading>
+	{#if onUpload}
+		<input
+			type="file"
+			bind:this={fileInputRef}
+			onchange={handleFileSelect}
+			accept={acceptedFileTypes}
+			multiple
+			class="hidden-input"
+			aria-hidden="true"
+			data-testid="file-input"
+		/>
+	{/if}
 	{#if documents.length === 0}
-		<div class="empty-state">
-			<div class="empty-icon">
-				<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-					<polyline points="14 2 14 8 20 8"></polyline>
-				</svg>
+		{#if onUpload}
+			<button
+				type="button"
+				class="empty-state empty-state-upload-enabled"
+				onclick={handleEmptyStateClick}
+				disabled={isUploading}
+				aria-label="Upload documents"
+			>
+				<div class="empty-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+						<polyline points="14 2 14 8 20 8"></polyline>
+					</svg>
+				</div>
+				<p class="empty-title">No documents</p>
+				<p class="empty-hint">Upload or generate documents to see them here</p>
+			</button>
+		{:else}
+			<div class="empty-state">
+				<div class="empty-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+						<polyline points="14 2 14 8 20 8"></polyline>
+					</svg>
+				</div>
+				<p class="empty-title">No documents</p>
+				<p class="empty-hint">Upload or generate documents to see them here</p>
 			</div>
-			<p class="empty-title">No documents</p>
-			<p class="empty-hint">Upload or generate documents to see them here</p>
-		</div>
+		{/if}
 	{:else}
 		<div class="filter-controls">
 			<div class="search-controls">
@@ -607,17 +643,7 @@
 			</div>
 
 			{#if onUpload}
-			<input
-				type="file"
-				bind:this={fileInputRef}
-				onchange={handleFileSelect}
-				accept={acceptedFileTypes}
-				multiple
-				class="hidden-input"
-				aria-hidden="true"
-				data-testid="file-input"
-			/>
-			<button
+				<button
 				type="button"
 				class="upload-btn"
 				aria-label="Upload document"
@@ -627,11 +653,11 @@
 			>
 				{#if isUploading}
 					<span class="upload-spinner"></span>
-			{:else}
-				{@html UploadIcon()}
+				{:else}
+					{@html UploadIcon()}
+				{/if}
+				</button>
 			{/if}
-		</button>
-		{/if}
 	</div>
 
 				{#if sortedDocuments.length === 0}
@@ -922,6 +948,29 @@
 		border-radius: 1.2rem;
 		border: 1px dashed var(--border-default);
 		background: var(--surface-elevated);
+	}
+
+	.empty-state-upload-enabled {
+		width: 100%;
+		cursor: pointer;
+		transition:
+			border-color var(--duration-standard) var(--ease-out),
+			background var(--duration-standard) var(--ease-out);
+	}
+
+	.empty-state-upload-enabled:hover:not(:disabled) {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--surface-elevated) 92%, var(--accent) 8%);
+	}
+
+	.empty-state-upload-enabled:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
+
+	.empty-state-upload-enabled:disabled {
+		cursor: not-allowed;
+		opacity: 0.72;
 	}
 
 	.empty-icon {
