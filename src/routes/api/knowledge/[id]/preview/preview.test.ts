@@ -177,7 +177,7 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		);
 	});
 
-	it('returns 500 when file read fails', async () => {
+	it('returns 404 when file read fails with ENOENT', async () => {
 		mockGetArtifactForUser.mockResolvedValue({
 			id: 'artifact-123',
 			name: 'document.pdf',
@@ -193,9 +193,9 @@ describe('GET /api/knowledge/[id]/preview', () => {
 
 		const response = await GET(event);
 
-		expect(response.status).toBe(500);
+		expect(response.status).toBe(404);
 		const body = await response.json();
-		expect(body.error).toBe('Failed to read file');
+		expect(body.error).toBe('File not found on disk');
 	});
 
 	it('handles image files correctly', async () => {

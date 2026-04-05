@@ -28,9 +28,6 @@
 	import DocumentsList from './_components/DocumentsList.svelte';
 	import DocumentPreviewModal from './_components/DocumentPreviewModal.svelte';
 	import type {
-		ArtifactSummary,
-		DocumentWorkspaceItem,
-		FocusContinuityItem,
 		KnowledgeDocumentItem,
 		KnowledgeMemoryPayload,
 		KnowledgeMemorySummary,
@@ -57,12 +54,8 @@
 	let { data }: PageProps = $props();
 	const getData = () => data;
 	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
-	const initialResults = (getData().results ?? []) as ArtifactSummary[];
-	const initialWorkflows = (getData().workflows ?? []) as WorkCapsule[];
 
 	let documents = $state<KnowledgeDocumentItem[]>(initialDocuments);
-	let results = $state<ArtifactSummary[]>(initialResults);
-	let workflows = $state<WorkCapsule[]>(initialWorkflows);
 	let personaMemories = $state<PersonaMemoryItem[]>([]);
 	let taskMemories = $state<TaskMemoryItem[]>([]);
 	let focusContinuities = $state<FocusContinuityItem[]>([]);
@@ -611,8 +604,6 @@
 	async function refreshKnowledgeLibrary() {
 		const result = await fetchKnowledgeLibrary();
 		documents = result.documents ?? [];
-		results = result.results ?? [];
-		workflows = result.workflows ?? [];
 	}
 
 	async function submitMemoryAction(
@@ -1001,8 +992,6 @@
 	<KnowledgeLibraryModal
 		activeLibraryModal={activeLibraryModal}
 		{documents}
-		{results}
-		{workflows}
 		{pendingKnowledgeActionKey}
 		{deletingArtifactCount}
 		{isKnowledgeActionPending}

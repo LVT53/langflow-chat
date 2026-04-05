@@ -242,10 +242,7 @@ export async function deleteArtifactForUser(
   return result;
 }
 
-export type KnowledgeBulkAction =
-  | "forget_all_documents"
-  | "forget_all_results"
-  | "forget_all_workflows";
+export type KnowledgeBulkAction = "forget_all_documents";
 
 async function listDocumentRootArtifactIds(userId: string): Promise<string[]> {
   const documents = await listLogicalDocuments(userId);
@@ -260,19 +257,7 @@ export async function deleteKnowledgeArtifactsByAction(
   deletedStoragePaths: string[];
   failedStoragePaths: string[];
 }> {
-  let rootArtifactIds: string[] = [];
-
-  if (action === "forget_all_documents") {
-    rootArtifactIds = await listDocumentRootArtifactIds(userId);
-  } else {
-    const type =
-      action === "forget_all_results" ? "generated_output" : "work_capsule";
-    const rows = await db
-      .select({ id: artifacts.id })
-      .from(artifacts)
-      .where(and(eq(artifacts.userId, userId), eq(artifacts.type, type)));
-    rootArtifactIds = rows.map((row) => row.id);
-  }
+  const rootArtifactIds = await listDocumentRootArtifactIds(userId);
 
   if (rootArtifactIds.length === 0) {
     return {

@@ -14,8 +14,6 @@ type KnowledgeAction =
 function isValidAction(value: unknown): value is KnowledgeAction {
 	return (
 		value === 'forget_all_documents' ||
-		value === 'forget_all_results' ||
-		value === 'forget_all_workflows' ||
 		value === 'forget_everything'
 	);
 }
@@ -43,8 +41,6 @@ export const POST: RequestHandler = async (event) => {
 		const result = await deleteKnowledgeArtifactsByAction(user.id, action);
 		const labels: Record<KnowledgeBulkAction, string> = {
 			forget_all_documents: 'documents',
-			forget_all_results: 'results',
-			forget_all_workflows: 'workflows',
 		};
 		return json({
 			success: true,

@@ -27,10 +27,11 @@ export const GET: RequestHandler = async (event) => {
 	}
 
 	// Determine content type
+	const safeName = artifact.name || 'document';
 	const previewName =
-		artifact.name.includes('.') || !artifact.extension
-			? artifact.name
-			: `${artifact.name}.${artifact.extension}`;
+		safeName.includes('.') || !artifact.extension
+			? safeName
+			: `${safeName}.${artifact.extension}`;
 	const contentType = getPreviewContentType(previewName, artifact.mimeType);
 
 	// Handle contentText-based artifacts (normalized_document, generated_output)
@@ -41,7 +42,7 @@ export const GET: RequestHandler = async (event) => {
 			headers: {
 				'Content-Type': 'text/plain; charset=utf-8',
 				'Content-Length': textBuffer.length.toString(),
-				'Content-Disposition': `inline; filename="${encodeURIComponent(artifact.name)}"`,
+				'Content-Disposition': `inline; filename="${encodeURIComponent(safeName)}"`,
 				'Cache-Control': 'private, max-age=3600',
 			},
 		});
@@ -69,17 +70,27 @@ export const GET: RequestHandler = async (event) => {
 			headers: {
 				'Content-Type': contentType,
 				'Content-Length': fileBuffer.length.toString(),
-				'Content-Disposition': `inline; filename="${encodeURIComponent(artifact.name)}"`,
+				'Content-Disposition': `inline; filename="${encodeURIComponent(safeName)}"`,
 				'Cache-Control': 'private, max-age=3600',
 			},
 		});
-	} catch (error) {
+	} catch (error: any) {
 		console.error('[PREVIEW] Failed to read file:', {
 			userId: user.id,
 			artifactId,
 			storagePath: artifact.storagePath,
-			error,
+			error: error.message || error,
 		});
+
+		if (error.code === 'ENOENT') {
+			return new Response(
+				JSON.stringify({ error: 'File not found on disk' }),
+				{
+					status: 404,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
 
 		return new Response(
 			JSON.stringify({ error: 'Failed to read file' }),

@@ -1,16 +1,14 @@
 import type {
-	ArtifactSummary,
 	FocusContinuityItem,
 	KnowledgeDocumentItem,
 	PersonaMemoryItem,
 	TaskMemoryItem,
-	WorkCapsule,
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
 
 export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
-export type LibraryModal = 'documents' | 'results' | 'workflows' | null;
+export type LibraryModal = 'documents' | null;
 export type PersonaMemoryFilter = 'active' | 'dormant' | 'archived';
 export type FocusContinuityView = 'tasks' | 'across_chats';
 
@@ -78,43 +76,29 @@ export function formatDocumentLifecycleStatus(document: KnowledgeDocumentItem): 
 	return document.documentFamilyStatus === 'historical' ? 'Historical' : null;
 }
 
-export function getLibraryBulkAction(kind: Exclude<LibraryModal, null>): KnowledgeBulkAction {
-	if (kind === 'documents') return 'forget_all_documents';
-	if (kind === 'results') return 'forget_all_results';
-	return 'forget_all_workflows';
+export function getLibraryBulkAction(_kind: Exclude<LibraryModal, null>): KnowledgeBulkAction {
+	return 'forget_all_documents';
 }
 
-export function getLibraryBulkKey(kind: Exclude<LibraryModal, null>): string {
-	return `forget-all-${kind}`;
+export function getLibraryBulkKey(_kind: Exclude<LibraryModal, null>): string {
+	return 'forget-all-documents';
 }
 
-export function getLibraryBulkLabel(kind: Exclude<LibraryModal, null>): string {
-	if (kind === 'documents') return 'Forget all documents';
-	if (kind === 'results') return 'Forget all results';
-	return 'Forget all workflows';
+export function getLibraryBulkLabel(_kind: Exclude<LibraryModal, null>): string {
+	return 'Forget all documents';
 }
 
-export function getLibraryBulkConfirmation(kind: Exclude<LibraryModal, null>): string {
-	if (kind === 'documents') {
-		return 'Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.';
-	}
-	if (kind === 'results') {
-		return 'Forget all saved results from the Knowledge Base?';
-	}
-	return 'Forget all workflows from the Knowledge Base?';
+export function getLibraryBulkConfirmation(_kind: Exclude<LibraryModal, null>): string {
+	return 'Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.';
 }
 
 export function getLibraryItemCount(
-	kind: Exclude<LibraryModal, null>,
+	_kind: Exclude<LibraryModal, null>,
 	params: {
 		documents: KnowledgeDocumentItem[];
-		results: ArtifactSummary[];
-		workflows: WorkCapsule[];
 	}
 ): number {
-	if (kind === 'documents') return params.documents.length;
-	if (kind === 'results') return params.results.length;
-	return params.workflows.length;
+	return params.documents.length;
 }
 
 export function getFocusContinuityItemCount(params: {

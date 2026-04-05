@@ -7,7 +7,7 @@ export const load: ServerLoad = async (event) => {
 	const knowledge = await listKnowledgeArtifacts(user.id);
 
 	return {
-		...knowledge,
+		documents: knowledge.documents,
 		honchoEnabled: isHonchoEnabled(),
 		userDisplayName: user.displayName,
 	};

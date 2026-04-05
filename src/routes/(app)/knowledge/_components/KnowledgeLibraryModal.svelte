@@ -1,9 +1,7 @@
 <script lang="ts">
 	import type {
-		ArtifactSummary,
 		DocumentWorkspaceItem,
 		KnowledgeDocumentItem,
-		WorkCapsule,
 	} from '$lib/types';
 	import type { LibraryModal } from '../_helpers';
 	import {
@@ -18,8 +16,6 @@
 	let {
 		activeLibraryModal,
 		documents,
-		results,
-		workflows,
 		pendingKnowledgeActionKey,
 		deletingArtifactCount,
 		isKnowledgeActionPending,
@@ -31,8 +27,6 @@
 	}: {
 		activeLibraryModal: Exclude<LibraryModal, null>;
 		documents: KnowledgeDocumentItem[];
-		results: ArtifactSummary[];
-		workflows: WorkCapsule[];
 		pendingKnowledgeActionKey: string | null;
 		deletingArtifactCount: number;
 		isKnowledgeActionPending: (key: string) => boolean;
@@ -44,58 +38,28 @@
 	} = $props();
 
 	let itemCount = $derived(
-		getLibraryItemCount(activeLibraryModal, { documents, results, workflows })
+		getLibraryItemCount(activeLibraryModal, { documents })
 	);
 	let bulkKey = $derived(getLibraryBulkKey(activeLibraryModal));
 
-	function openPreview(artifact: KnowledgeDocumentItem | ArtifactSummary) {
-		const isKnowledgeDocument = 'displayArtifactId' in artifact;
-		const artifactId = isKnowledgeDocument
-			? artifact.promptArtifactId ?? artifact.displayArtifactId
-			: artifact.id;
+	function openPreview(document: KnowledgeDocumentItem) {
+		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
 		onOpenDocument({
 			id: `artifact:${artifactId}`,
 			source: 'knowledge_artifact',
-			filename: artifact.name,
-			title:
-				isKnowledgeDocument
-					? (artifact.documentLabel ?? artifact.name)
-					: artifact.name,
-			documentFamilyId:
-				isKnowledgeDocument
-					? (artifact.documentFamilyId ?? null)
-					: null,
-			documentFamilyStatus:
-				isKnowledgeDocument
-					? (artifact.documentFamilyStatus ?? null)
-					: null,
-			documentLabel:
-				isKnowledgeDocument
-					? (artifact.documentLabel ?? null)
-					: null,
-			documentRole:
-				isKnowledgeDocument
-					? (artifact.documentRole ?? null)
-					: null,
-			versionNumber:
-				isKnowledgeDocument
-					? (artifact.versionNumber ?? null)
-					: null,
-			originConversationId:
-				isKnowledgeDocument
-					? (artifact.originConversationId ?? null)
-					: null,
-			originAssistantMessageId:
-				isKnowledgeDocument
-					? (artifact.originAssistantMessageId ?? null)
-					: null,
-			sourceChatFileId:
-				isKnowledgeDocument
-					? (artifact.sourceChatFileId ?? null)
-					: null,
-			mimeType: artifact.mimeType,
+			filename: document.name,
+			title: document.documentLabel ?? document.name,
+			documentFamilyId: document.documentFamilyId ?? null,
+			documentFamilyStatus: document.documentFamilyStatus ?? null,
+			documentLabel: document.documentLabel ?? null,
+			documentRole: document.documentRole ?? null,
+			versionNumber: document.versionNumber ?? null,
+			originConversationId: document.originConversationId ?? null,
+			originAssistantMessageId: document.originAssistantMessageId ?? null,
+			sourceChatFileId: document.sourceChatFileId ?? null,
+			mimeType: document.mimeType,
 			artifactId,
-			conversationId: artifact.conversationId,
+			conversationId: document.conversationId,
 		});
 		onClose();
 	}
@@ -118,18 +82,10 @@
 		<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4 md:px-6">
 			<div>
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-					{activeLibraryModal === 'documents'
-						? 'Documents'
-						: activeLibraryModal === 'results'
-							? 'Results'
-							: 'Workflows'}
+					Documents
 				</div>
 				<h3 class="mt-2 text-xl font-serif tracking-[-0.03em] text-text-primary">
-					{activeLibraryModal === 'documents'
-						? 'Manage documents'
-						: activeLibraryModal === 'results'
-							? 'Manage saved results'
-							: 'Manage workflows'}
+					Manage documents
 				</h3>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
@@ -176,182 +132,62 @@
 					Removing {deletingArtifactCount} item{deletingArtifactCount === 1 ? '' : 's'} from the Knowledge Base…
 				</div>
 			{/if}
-			{#if activeLibraryModal === 'documents'}
-				{#if documents.length === 0}
-					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-						No documents yet.
-					</div>
-				{:else}
-					<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-						<table class="min-w-[980px] w-full border-collapse">
-							<thead>
-								<tr class="border-b border-border bg-surface-elevated/70 text-left">
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Size</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-									<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each documents as artifact (artifact.id)}
-									<tr class={`border-b border-border last:border-b-0 ${isDeletingArtifact(artifact.id) ? 'opacity-60' : ''}`}>
-										<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-										<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatDocumentKind(artifact)}</td>
-										<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
-										<td class="px-4 py-3 align-top">
-											<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-												{artifact.summary ?? 'No summary stored.'}
-											</div>
-										</td>
-										<td class="px-4 py-3 align-top text-right">
-											<div class="flex items-center justify-end gap-2">
-											{#if isPreviewableFile(artifact.mimeType, artifact.name)}
-												<button
-													type="button"
-													class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-													onclick={() => openPreview(artifact)}
-													disabled={isDeletingArtifact(artifact.id)}
-												>
-													Preview
-												</button>
-											{/if}
-											<button
-												type="button"
-												class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-												onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
-												disabled={isDeletingArtifact(artifact.id)}
-												aria-busy={isDeletingArtifact(artifact.id)}
-											>
-												{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
-											</button>
+			{#if documents.length === 0}
+				<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
+					No documents yet.
+				</div>
+			{:else}
+				<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
+					<table class="min-w-[980px] w-full border-collapse">
+						<thead>
+							<tr class="border-b border-border bg-surface-elevated/70 text-left">
+								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
+								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
+								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Size</th>
+								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
+								<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each documents as artifact (artifact.id)}
+								<tr class={`border-b border-border last:border-b-0 ${isDeletingArtifact(artifact.id) ? 'opacity-60' : ''}`}>
+									<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
+									<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatDocumentKind(artifact)}</td>
+									<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
+									<td class="px-4 py-3 align-top">
+										<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
+											{artifact.summary ?? 'No summary stored.'}
 										</div>
 									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{/if}
-		{:else if activeLibraryModal === 'results'}
-				{#if results.length === 0}
-					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-						No saved results yet.
-					</div>
-				{:else}
-					<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-						<table class="min-w-[940px] w-full border-collapse">
-							<thead>
-								<tr class="border-b border-border bg-surface-elevated/70 text-left">
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-									<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each results as artifact (artifact.id)}
-									<tr class={`border-b border-border last:border-b-0 ${isDeletingArtifact(artifact.id) ? 'opacity-60' : ''}`}>
-										<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-										<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{artifact.type}</td>
-										<td class="px-4 py-3 align-top">
-											<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-												{artifact.summary ?? 'No summary stored.'}
-											</div>
-										</td>
-										<td class="px-4 py-3 align-top text-right">
-											<div class="flex items-center justify-end gap-2">
-												{#if isPreviewableFile(artifact.mimeType, artifact.name)}
-													<button
-														type="button"
-														class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-														onclick={() => openPreview(artifact)}
-														disabled={isDeletingArtifact(artifact.id)}
-													>
-														Preview
-													</button>
-												{/if}
-												<button
-													type="button"
-													class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
-													disabled={isDeletingArtifact(artifact.id)}
-													aria-busy={isDeletingArtifact(artifact.id)}
-												>
-													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
-												</button>
-											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			{:else}
-				{#if workflows.length === 0}
-					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
-						No workflow capsules yet.
-					</div>
-				{:else}
-					<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-						<table class="min-w-[1080px] w-full border-collapse">
-							<thead>
-								<tr class="border-b border-border bg-surface-elevated/70 text-left">
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Task summary</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflow summary</th>
-									<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Linked artifacts</th>
-									<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each workflows as capsule (capsule.artifact.id)}
-									<tr class={`border-b border-border last:border-b-0 ${isDeletingArtifact(capsule.artifact.id) ? 'opacity-60' : ''}`}>
-										<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{capsule.artifact.name}</td>
-										<td class="px-4 py-3 align-top">
-											<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-												{capsule.taskSummary ?? 'No task summary stored.'}
-											</div>
-										</td>
-										<td class="px-4 py-3 align-top">
-											<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-												{capsule.workflowSummary ?? 'No workflow summary stored.'}
-											</div>
-										</td>
-										<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
-											{capsule.sourceArtifactCount} docs / {capsule.outputArtifactCount} outputs
-										</td>
-										<td class="px-4 py-3 align-top text-right">
-											<div class="flex items-center justify-end gap-2">
-												{#if isPreviewableFile(capsule.artifact.mimeType, capsule.artifact.name)}
-													<button
-														type="button"
-														class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-														onclick={() => openPreview(capsule.artifact)}
-														disabled={isDeletingArtifact(capsule.artifact.id)}
-													>
-														Preview
-													</button>
-												{/if}
-												<button
-													type="button"
-													class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => onRemoveArtifact(capsule.artifact.id, capsule.artifact.name)}
-													disabled={isDeletingArtifact(capsule.artifact.id)}
-													aria-busy={isDeletingArtifact(capsule.artifact.id)}
-												>
-													{isDeletingArtifact(capsule.artifact.id) ? 'Removing…' : 'Remove'}
-												</button>
-											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			{/if}
+									<td class="px-4 py-3 align-top text-right">
+										<div class="flex items-center justify-end gap-2">
+										{#if isPreviewableFile(artifact.mimeType, artifact.name)}
+											<button
+												type="button"
+												class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+												onclick={() => openPreview(artifact)}
+												disabled={isDeletingArtifact(artifact.id)}
+											>
+												Preview
+											</button>
+										{/if}
+										<button
+											type="button"
+											class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+											onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
+											disabled={isDeletingArtifact(artifact.id)}
+											aria-busy={isDeletingArtifact(artifact.id)}
+										>
+											{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
+										</button>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 	</div>
 </div>
 </div>

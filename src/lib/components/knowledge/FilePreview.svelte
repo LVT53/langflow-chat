@@ -17,6 +17,8 @@
 		variant = 'modal',
 		showHeader = true,
 		onClose,
+		currentPage = $bindable(1),
+		totalPages = $bindable(0),
 	}: {
 		open: boolean;
 		artifactId: string | null;
@@ -26,6 +28,8 @@
 		variant?: 'modal' | 'embedded';
 		showHeader?: boolean;
 		onClose: () => void;
+		currentPage?: number;
+		totalPages?: number;
 	} = $props();
 
 	let content = $state<Blob | null>(null);
@@ -39,8 +43,7 @@
 	// PDF.js state (loaded dynamically to avoid SSR issues)
 	let pdfjsLib: typeof import('pdfjs-dist') | null = null;
 	let pdfDoc = $state<any>(null);
-	let currentPage = $state(1);
-	let totalPages = $state(0);
+	let lastObservedPage = $state(1);
 	let zoom = $state(1.0);
 	let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
 	let scrollContainerRef = $state<HTMLDivElement | null>(null);
@@ -80,6 +83,18 @@
 		if (fileType === 'pdf' && pdfDoc && canvasRefs.length > 0) {
 			const activeZoom = zoom;
 			void renderAllPages(activeZoom);
+		}
+	});
+
+	// Scroll to page when currentPage changes externally
+	$effect(() => {
+		if (fileType === 'pdf' && canvasRefs.length > 0 && currentPage !== lastObservedPage && browser) {
+			const targetPage = Math.max(1, Math.min(currentPage, totalPages));
+			const canvas = canvasRefs[targetPage - 1];
+			if (canvas && canvas.parentElement) {
+				canvas.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				lastObservedPage = targetPage;
+			}
 		}
 	});
 
@@ -195,6 +210,17 @@
 			pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
+			lastObservedPage = 1;
+			
+			// Set zoom to "fit to width" based on container and first page
+			if (scrollContainerRef && totalPages > 0) {
+				const page = await pdfDoc.getPage(1);
+				const unscaledViewport = page.getViewport({ scale: 1.0 });
+				const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
+				if (containerWidth > 0 && unscaledViewport.width > 0) {
+					zoom = containerWidth / unscaledViewport.width;
+				}
+			}
 			
 			// Render all pages
 			await renderAllPages(zoom);
@@ -282,7 +308,10 @@
 				});
 				
 				if (maxVisibility > 0) {
-					currentPage = mostVisiblePage;
+					if (currentPage !== mostVisiblePage) {
+						lastObservedPage = mostVisiblePage;
+						currentPage = mostVisiblePage;
+					}
 				}
 			},
 			{

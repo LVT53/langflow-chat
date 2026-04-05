@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { writable } from 'svelte/store';
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -394,11 +394,24 @@
 		}
 	}
 
+	let initializedGeneratedFilesData = false;
+	let prevGeneratedFilesData: typeof data.generatedFiles;
 	$effect(() => {
-		data.conversation.id;
-		data.generatedFiles;
-		generatedFiles = data.generatedFiles ?? [];
-		resetPendingGeneratedFiles();
+		if (!initializedGeneratedFilesData) {
+			prevGeneratedFilesData = data.generatedFiles;
+			initializedGeneratedFilesData = true;
+			return;
+		}
+		if (data.generatedFiles !== prevGeneratedFilesData) {
+			prevGeneratedFilesData = data.generatedFiles;
+			if (data.generatedFiles) {
+				const currentFiles = untrack(() => generatedFiles);
+				const existingIds = new Set(currentFiles.map((f) => f.id));
+				const newFiles = data.generatedFiles.filter((f) => !existingIds.has(f.id));
+				generatedFiles = [...currentFiles, ...newFiles];
+			}
+			resetPendingGeneratedFiles();
+		}
 	});
 
 	function cloneSendPayload(payload: SendPayload): SendPayload {
@@ -598,7 +611,10 @@
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
 					if (metadata?.generatedFiles) {
-						generatedFiles = metadata.generatedFiles;
+						// Merge new files with existing, using ID to prevent duplicates
+						const existingIds = new Set(generatedFiles.map((f) => f.id));
+						const newFiles = metadata.generatedFiles.filter((f) => !existingIds.has(f.id));
+						generatedFiles = [...generatedFiles, ...newFiles];
 					}
 					resetPendingGeneratedFiles();
 					const serverAssistantId = metadata?.assistantMessageId;
@@ -703,7 +719,10 @@
 						taskState = metadata?.taskState ?? taskState;
 						contextDebug = metadata?.contextDebug ?? contextDebug;
 						if (metadata?.generatedFiles) {
-							generatedFiles = metadata.generatedFiles;
+							// Merge new files with existing, using ID to prevent duplicates
+							const existingIds = new Set(generatedFiles.map((f) => f.id));
+							const newFiles = metadata.generatedFiles.filter((f) => !existingIds.has(f.id));
+							generatedFiles = [...generatedFiles, ...newFiles];
 						}
 						resetPendingGeneratedFiles();
 						const serverAssistantId = metadata?.assistantMessageId;

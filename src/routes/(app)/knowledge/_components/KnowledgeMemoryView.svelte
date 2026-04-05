@@ -105,7 +105,7 @@
 			<p class="text-sm text-text-secondary mt-1">View and manage your stored memories, persona data, and focus continuity</p>
 		</div>
 		<div class="grid gap-4 lg:grid-cols-2">
-			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-elevated px-4 py-4">
 				<div class="flex items-center justify-between gap-3">
 					<div>
 						<h3 class="text-lg font-sans font-semibold text-text-primary">
@@ -118,12 +118,12 @@
 				</div>
 				<div class="mt-4 flex flex-wrap gap-2">
 					{#if activeConstraintCount > 0}
-						<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
+						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
 							{activeConstraintCount} active constraint{activeConstraintCount === 1 ? '' : 's'}
 						</span>
 					{/if}
 					{#if currentProjectContextCount > 0}
-						<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
+						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
 							{currentProjectContextCount} current project context item{currentProjectContextCount === 1 ? '' : 's'}
 						</span>
 					{/if}
@@ -136,7 +136,7 @@
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
 					<button
 						type="button"
-						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 						onclick={() => onOpenMemoryModal('persona')}
 						disabled={!honchoEnabled}
 					>
@@ -154,7 +154,7 @@
 				</div>
 			</div>
 
-			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-elevated px-4 py-4">
 				<div class="flex items-center justify-between gap-3">
 					<div>
 						<h3 class="text-lg font-sans font-semibold text-text-primary">
@@ -173,7 +173,7 @@
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
 					<button
 						type="button"
-						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 						onclick={() => onOpenMemoryModal('focus')}
 					>
 						Manage focus continuity
@@ -190,7 +190,7 @@
 		<div class="mt-6 rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<div>
-					<h2 class="text-[1.75rem] font-serif tracking-[-0.04em] text-text-primary">
+					<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">
 						Memory Overview
 					</h2>
 					{#if honchoOverviewUpdatedAt}

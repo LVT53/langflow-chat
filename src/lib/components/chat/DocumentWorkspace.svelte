@@ -55,6 +55,7 @@
 
 	// Page navigation state
 	let currentPage = $state(1);
+	let currentTotalPages = $state(1);
 	let pageInputValue = $state('1');
 	let pageInputError = $state<string | null>(null);
 	let lastDocumentId = $state<string | null>(null);
@@ -63,16 +64,35 @@
 	let isResizing = $state(false);
 	let resizeStartX = $state(0);
 	let resizeStartWidth = $state(400);
-	let workspaceWidth = $state(400);
 	const MIN_WIDTH = 320;
 	const MAX_WIDTH_RATIO = 0.42;
+	const WORKSPACE_WIDTH_STORAGE_KEY = 'document-workspace-width';
+
+	let workspaceWidth = $state(
+		browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
+			? Math.max(MIN_WIDTH, parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || '400')) || 400
+			: 400
+	);
+
+	// Persist workspace width when it changes
+	$effect(() => {
+		if (!browser) return;
+		localStorage.setItem(WORKSPACE_WIDTH_STORAGE_KEY, String(workspaceWidth));
+	});
 
 	$effect(() => {
 		if (activeDocument && activeDocument.id !== lastDocumentId) {
 			lastDocumentId = activeDocument.id;
 			currentPage = activeDocument.currentPage ?? 1;
+			currentTotalPages = activeDocument.totalPages ?? 1;
 			pageInputValue = String(currentPage);
 			pageInputError = null;
+		}
+	});
+
+	$effect(() => {
+		if (String(currentPage) !== pageInputValue && !pageInputError) {
+			pageInputValue = String(currentPage);
 		}
 	});
 
@@ -115,7 +135,7 @@
 	}
 
 	function validateAndJumpToPage() {
-		const totalPages = activeDocument?.totalPages ?? 1;
+		const totalPages = currentTotalPages;
 		const pageNum = parseInt(pageInputValue, 10);
 
 		if (isNaN(pageNum)) {
@@ -252,7 +272,7 @@
 
 	function isMultiPageDocument(document: DocumentWorkspaceItem | null): boolean {
 		if (!document) return false;
-		return (document.totalPages ?? 1) > 1;
+		return currentTotalPages > 1;
 	}
 
 	function getDefaultCompareDocumentId(documentsInFamily: DocumentWorkspaceItem[]): string | null {
@@ -579,6 +599,8 @@
 							filename={activeDocument.filename}
 							mimeType={activeDocument.mimeType}
 							onClose={onCloseWorkspace}
+							bind:currentPage={currentPage}
+							bind:totalPages={currentTotalPages}
 						/>
 					{:catch}
 						<div class="workspace-compare-state workspace-compare-state-error">
@@ -750,13 +772,13 @@
 							class="workspace-page-input"
 							class:workspace-page-input-error={pageInputError !== null}
 							bind:value={pageInputValue}
-							onchange={handlePageInputChange}
+							oninput={handlePageInputChange}
 							onkeydown={handlePageInputKeyDown}
 							data-testid="page-input"
 							aria-invalid={pageInputError !== null}
 							aria-describedby={pageInputError ? 'page-input-error-desktop' : undefined}
 						/>
-						<span class="workspace-page-total">of {activeDocument?.totalPages ?? 1}</span>
+						<span class="workspace-page-total">of {currentTotalPages}</span>
 					</div>
 					{#if pageInputError}
 						<span class="workspace-page-error" data-testid="page-input-error" id="page-input-error-desktop">
@@ -816,18 +838,20 @@
 					{/if}
 				</div>
 			{:else}
-				{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-					<FilePreviewComponent
-						open={true}
-						variant="embedded"
-						showHeader={false}
-						artifactId={activeDocument.artifactId ?? null}
-						previewUrl={activeDocument.previewUrl ?? null}
-						filename={activeDocument.filename}
-						mimeType={activeDocument.mimeType}
-						onClose={onCloseWorkspace}
-					/>
-				{:catch}
+					{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
+						<FilePreviewComponent
+							open={true}
+							variant="embedded"
+							showHeader={false}
+							artifactId={activeDocument.artifactId ?? null}
+							previewUrl={activeDocument.previewUrl ?? null}
+							filename={activeDocument.filename}
+							mimeType={activeDocument.mimeType}
+							onClose={onCloseWorkspace}
+							bind:currentPage={currentPage}
+							bind:totalPages={currentTotalPages}
+						/>
+					{:catch}
 					<div class="workspace-compare-state workspace-compare-state-error">
 						Failed to load document preview.
 					</div>
@@ -1023,7 +1047,7 @@
 		gap: 0.45rem;
 		min-width: 0;
 		max-width: 100%;
-		padding: 0.48rem 0.78rem 0.48rem 0.85rem;
+		padding: 0.6rem 0.78rem 0.6rem 0.85rem;
 		border: none;
 		background: transparent;
 		font-size: 0.82rem;

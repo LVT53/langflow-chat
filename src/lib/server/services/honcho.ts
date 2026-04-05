@@ -252,12 +252,17 @@ export async function mirrorMessage(
 
 export async function syncArtifactToHoncho(params: {
 	userId: string;
-	conversationId: string;
+	conversationId: string | null;
 	artifact: Artifact;
 	file?: File;
 	fallbackTextArtifact?: Artifact | null;
 }): Promise<{ uploaded: boolean; mode: 'native' | 'normalized' | 'none' }> {
 	if (!isHonchoEnabled()) {
+		return { uploaded: false, mode: 'none' };
+	}
+
+	// Skip Honcho sync if no conversation is attached (e.g., vault-only uploads)
+	if (!params.conversationId) {
 		return { uploaded: false, mode: 'none' };
 	}
 
