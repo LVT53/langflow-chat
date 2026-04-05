@@ -64,7 +64,7 @@ function previewText(value: string | null | undefined, limit = 1200): string | n
 }
 
 function buildGeneratedFileArtifactName(filename: string): string {
-	return `${filename} generated file`;
+  return filename;
 }
 
 function buildGeneratedFileVersionExcerpt(version: GeneratedFileVersionRecord): string | null {

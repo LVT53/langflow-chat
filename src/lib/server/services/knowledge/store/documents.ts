@@ -263,6 +263,12 @@ export async function listLogicalDocuments(
 
     for (const artifact of generatedOutputArtifacts) {
       const metadata = metadataById.get(artifact.id) ?? {};
+      // Only include generated outputs that represent actual generated files
+      // (those with sourceChatFileId in metadata). Exclude non-file AI/process outputs
+      // like workflow summaries, result text, and other process artifacts.
+      if (!metadata.sourceChatFileId) {
+        continue;
+      }
       const familyId = metadata.documentFamilyId ?? artifact.id;
       const existing = generatedByFamily.get(familyId);
 

@@ -190,16 +190,16 @@
 		<div class="mt-6 rounded-[1.3rem] border border-border bg-surface-page px-5 py-5">
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<div>
-					<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">
+					<h2 class="text-lg font-sans font-semibold text-text-primary">
 						Memory Overview
 					</h2>
 					{#if honchoOverviewUpdatedAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live overview {new Date(honchoOverviewUpdatedAt).toLocaleString()}
+							Last live overview {new Date(honchoOverviewUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
 						</p>
 					{:else if honchoOverviewLastAttemptAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live attempt {new Date(honchoOverviewLastAttemptAt).toLocaleString()}
+							Last live attempt {new Date(honchoOverviewLastAttemptAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
 						</p>
 					{/if}
 				</div>

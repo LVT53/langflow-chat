@@ -52,6 +52,7 @@
 	let markdownModulePromise: Promise<MarkdownModule> | null = null;
 	let pdfWorkerUrlPromise: Promise<string> | null = null;
 	let pageObserver: IntersectionObserver | null = null;
+	let isProgrammaticScroll = $state(false);
 
 	const fileTypeIcons: Record<string, string> = {
 		pdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 13v-1a2 2 0 0 1 2-2h4"/><path d="M10 13v-1a2 2 0 0 0-2-2H4"/><line x1="10" y1="13" x2="10" y2="18"/></svg>`,
@@ -92,8 +93,13 @@
 			const targetPage = Math.max(1, Math.min(currentPage, totalPages));
 			const canvas = canvasRefs[targetPage - 1];
 			if (canvas && canvas.parentElement) {
-				canvas.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+				isProgrammaticScroll = true;
+				canvas.parentElement.scrollIntoView({ behavior: 'auto', block: 'start' });
 				lastObservedPage = targetPage;
+				// Clear guard after scroll completes (next tick)
+				setTimeout(() => {
+					isProgrammaticScroll = false;
+				}, 0);
 			}
 		}
 	});
@@ -288,6 +294,9 @@
 		// Create new observer
 		pageObserver = new IntersectionObserver(
 			(entries) => {
+				// Skip observer updates during programmatic scroll to prevent loops
+				if (isProgrammaticScroll) return;
+
 				// Find the most visible page
 				let mostVisiblePage = 1;
 				let maxVisibility = 0;

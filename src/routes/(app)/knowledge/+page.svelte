@@ -21,6 +21,7 @@
 		clearKnowledgeWorkspaceParams,
 		getKnowledgeWorkspaceDocumentFromUrl,
 	} from '$lib/client/document-workspace-navigation';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
@@ -105,6 +106,9 @@
 	let documentCurrentPage = $state(1);
 	let selectedDocumentForPreview = $state<KnowledgeDocumentItem | null>(null);
 	let isPreviewModalOpen = $state(false);
+	let documentDeleteCandidateId = $state<string | null>(null);
+	let bulkDeleteCandidateIds = $state<string[] | null>(null);
+	let bulkDeleteSuccessVersion = $state(0);
 	let deletingArtifactCount = $derived(deletingArtifactIds.size);
 	let filteredPersonaMemories = $derived(personaMemories.filter(
 		(memory) => memory.state === personaMemoryFilter
@@ -280,22 +284,18 @@
 		const document = documents.find(d => d.id === documentId);
 		if (!document) return;
 		
-		// Use the existing removeArtifact function
+		// Open confirmation modal (preview stays open until deletion succeeds)
 		await removeArtifact(documentId, document.name);
-		
-		// Close preview modal if the deleted document was being previewed
-		if (selectedDocumentForPreview?.id === documentId) {
-			handleDocumentPreviewClose();
-		}
 	}
 
 	async function handleBulkDocumentDelete(documentIds: string[]) {
+		if (documentIds.length === 0) return false;
+		bulkDeleteCandidateIds = documentIds;
+		return false;
+	}
+
+	async function executeBulkDocumentDelete(documentIds: string[]) {
 		if (documentIds.length === 0) return;
-		
-		const confirmed = window.confirm(
-			`Delete ${documentIds.length} selected document${documentIds.length === 1 ? '' : 's'}?`
-		);
-		if (!confirmed) return;
 
 		manageError = '';
 		const failures: string[] = [];
@@ -330,6 +330,9 @@
 		if (failures.length > 0) {
 			manageError = `Failed to delete ${failures.length} document${failures.length === 1 ? '' : 's'}: ${failures.join(', ')}`;
 		}
+
+		// Increment success version to signal DocumentsList to clear selection
+		bulkDeleteSuccessVersion += 1;
 	}
 
 	async function jumpToWorkspaceSource(document: DocumentWorkspaceItem) {
@@ -792,7 +795,11 @@
 
 	async function removeArtifact(id: string, label: string) {
 		if (isDeletingArtifact(id)) return;
-		if (!window.confirm(`Remove "${label}" from the Knowledge Base?`)) return;
+		documentDeleteCandidateId = id;
+	}
+
+	async function executeRemoveArtifact(id: string) {
+		if (isDeletingArtifact(id)) return;
 
 		manageError = '';
 		deletingArtifactIds = new Set([...deletingArtifactIds, id]);
@@ -803,6 +810,10 @@
 				throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
 			}
 			await refreshKnowledgeLibrary();
+			// Close preview modal if the deleted document was being previewed
+			if (selectedDocumentForPreview?.id === id) {
+				handleDocumentPreviewClose();
+			}
 		} catch (error) {
 			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
 		} finally {
@@ -919,6 +930,7 @@
 				filter={documentFilter}
 				paginationLimit={documentPaginationLimit}
 				currentPage={documentCurrentPage}
+				bulkDeleteSuccessVersion={bulkDeleteSuccessVersion}
 				onFilterChange={handleDocumentFilterChange}
 				onPaginationLimitChange={handleDocumentPaginationLimitChange}
 				onPageChange={handleDocumentPageChange}
@@ -1012,6 +1024,40 @@
 	onDownload={handleDocumentDownload}
 	onDelete={handleDocumentDelete}
 />
+
+{#if documentDeleteCandidateId}
+	<ConfirmDialog
+		title="Delete Document"
+		message={`Remove "${documents.find(d => d.id === documentDeleteCandidateId)?.name ?? 'this document'}" from the Knowledge Base?`}
+		confirmText="Delete"
+		confirmVariant="danger"
+		onCancel={() => (documentDeleteCandidateId = null)}
+		onConfirm={() => {
+			const targetId = documentDeleteCandidateId;
+			documentDeleteCandidateId = null;
+			if (targetId) {
+				void executeRemoveArtifact(targetId);
+			}
+		}}
+	/>
+{/if}
+
+{#if bulkDeleteCandidateIds}
+	<ConfirmDialog
+		title="Delete Documents"
+		message={`Delete ${bulkDeleteCandidateIds.length} selected document${bulkDeleteCandidateIds.length === 1 ? '' : 's'}? This cannot be undone.`}
+		confirmText="Delete"
+		confirmVariant="danger"
+		onCancel={() => (bulkDeleteCandidateIds = null)}
+		onConfirm={() => {
+			const targetIds = bulkDeleteCandidateIds;
+			bulkDeleteCandidateIds = null;
+			if (targetIds) {
+				void executeBulkDocumentDelete(targetIds);
+			}
+		}}
+	/>
+{/if}
 
 <style>
 	:global(.knowledge-page input[type='checkbox']) {

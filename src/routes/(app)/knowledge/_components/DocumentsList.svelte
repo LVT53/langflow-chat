@@ -9,6 +9,7 @@
 		filter?: DocumentFilter;
 		paginationLimit?: 20 | 50 | 100;
 		currentPage?: number;
+		bulkDeleteSuccessVersion?: number;
 		onFilterChange?: (filter: DocumentFilter) => void;
 		onPaginationLimitChange?: (limit: number) => void;
 		onPageChange?: (page: number) => void;
@@ -25,6 +26,7 @@
 		filter = 'all',
 		paginationLimit = 20,
 		currentPage = 1,
+		bulkDeleteSuccessVersion = 0,
 		onFilterChange,
 		onPaginationLimitChange,
 		onPageChange,
@@ -82,6 +84,15 @@
 			onPageChange?.(totalPages);
 		} else if (totalPages === 0 && currentPage > 1) {
 			onPageChange?.(1);
+		}
+	});
+
+	// Clear selection when bulk delete succeeds (parent signals via version change)
+	$effect(() => {
+		// Track version changes and clear selection when parent signals success
+		const currentVersion = bulkDeleteSuccessVersion;
+		if (currentVersion > 0) {
+			selectedIds = new Set();
 		}
 	});
 

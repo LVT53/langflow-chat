@@ -134,6 +134,7 @@ describe("knowledge documents store", () => {
           documentLabel: "Project brief",
           documentRole: "brief",
           versionNumber: 1,
+          sourceChatFileId: "chat-file-1",
         }),
         createdAt: new Date("2026-04-02T10:00:00Z"),
         updatedAt: new Date("2026-04-02T10:00:00Z"),
@@ -152,6 +153,7 @@ describe("knowledge documents store", () => {
           documentLabel: "Project brief",
           documentRole: "brief",
           versionNumber: 2,
+          sourceChatFileId: "chat-file-2",
         }),
         createdAt: new Date("2026-04-03T10:00:00Z"),
         updatedAt: new Date("2026-04-03T10:00:00Z"),
@@ -215,6 +217,98 @@ describe("knowledge documents store", () => {
     expect(generatedDocument?.familyArtifactIds).toEqual(
       expect.arrayContaining(["gen-1", "gen-2"]),
     );
+  });
+
+  it("excludes generated outputs without sourceChatFileId from documents list", async () => {
+    mockRows.push(
+      {
+        id: "source-1",
+        type: "source_document",
+        retrievalClass: "durable",
+        name: "notes.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1024,
+        conversationId: null,
+        summary: "Uploaded notes",
+        metadataJson: null,
+        createdAt: new Date("2026-04-01T10:00:00Z"),
+        updatedAt: new Date("2026-04-01T10:00:00Z"),
+      },
+      {
+        id: "gen-file",
+        type: "generated_output",
+        retrievalClass: "durable",
+        name: "report.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sizeBytes: 2048,
+        conversationId: "conv-1",
+        summary: "Generated report file",
+        metadataJson: JSON.stringify({
+          documentFamilyId: "family-report",
+          documentLabel: "Report",
+          sourceChatFileId: "chat-file-1",
+        }),
+        createdAt: new Date("2026-04-02T10:00:00Z"),
+        updatedAt: new Date("2026-04-02T10:00:00Z"),
+      },
+      {
+        id: "gen-process",
+        type: "generated_output",
+        retrievalClass: "durable",
+        name: "workflow result",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        conversationId: "conv-1",
+        summary: "AI process output without file",
+        metadataJson: JSON.stringify({
+          documentFamilyId: "family-process",
+          documentLabel: "Process output",
+        }),
+        createdAt: new Date("2026-04-03T10:00:00Z"),
+        updatedAt: new Date("2026-04-03T10:00:00Z"),
+      },
+    );
+
+    let selectCall = 0;
+    mockSelect.mockImplementation(() => {
+      selectCall += 1;
+      if (selectCall === 1) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(async () => [{ id: "conv-1" }]),
+          })),
+        };
+      }
+
+      if (selectCall === 2) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              orderBy: vi.fn(async () => mockRows),
+            })),
+          })),
+        };
+      }
+
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(async () => []),
+        })),
+      };
+    });
+
+    const { listLogicalDocuments } = await import("./documents");
+    const documents = await listLogicalDocuments("user-1", {
+      includeGeneratedOutputs: true,
+    });
+
+    const generatedDocuments = documents.filter(
+      (document) => document.documentOrigin === "generated",
+    );
+
+    expect(generatedDocuments).toHaveLength(1);
+    expect(generatedDocuments[0]?.displayArtifactId).toBe("gen-file");
+    expect(generatedDocuments[0]?.sourceChatFileId).toBe("chat-file-1");
   });
 
   it("prefers semantic and reranked artifact matches when lexical scores are weak", async () => {
