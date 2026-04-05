@@ -9,14 +9,10 @@ test.describe('Knowledge page', () => {
 		await expect(page.getByRole('heading', { name: 'Knowledge Base' })).toBeVisible();
 	});
 
-	test('documents section is visible with filter controls', async ({ page }) => {
+	test('documents section is visible', async ({ page }) => {
 		await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
 		await expect(page.getByText('Browse and manage your uploaded and generated documents')).toBeVisible();
-
-		await expect(page.getByRole('radiogroup', { name: 'Document filter' })).toBeVisible();
-		await expect(page.getByLabel('Document filter').getByText('All')).toBeVisible();
-		await expect(page.getByLabel('Document filter').getByText('Uploaded')).toBeVisible();
-		await expect(page.getByLabel('Document filter').getByText('Generated')).toBeVisible();
+		await expect(page.getByRole('searchbox', { name: 'Search documents' })).toBeVisible();
 	});
 
 	test('memory profile section is visible', async ({ page }) => {
@@ -30,12 +26,10 @@ test.describe('Knowledge page', () => {
 		await expect(page.getByRole('button', { name: 'Manage persona memory' })).toBeVisible();
 	});
 
-	test('document filter control renders all options', async ({ page }) => {
-		const filterGroup = page.getByRole('radiogroup', { name: 'Document filter' });
-		await expect(filterGroup).toBeVisible();
-		await expect(filterGroup.getByText('All')).toBeVisible();
-		await expect(filterGroup.getByText('Uploaded')).toBeVisible();
-		await expect(filterGroup.getByText('Generated')).toBeVisible();
+	test('document list does not render filter pills', async ({ page }) => {
+		await expect(page.getByRole('radiogroup', { name: 'Document filter' })).toHaveCount(0);
+		const filterOptionInputs = page.locator('input[type="radio"][name="document-filter"]');
+		await expect(filterOptionInputs).toHaveCount(0);
 	});
 
 	test('opening a knowledge document does not trigger runtime page errors', async ({ page }) => {

@@ -73,18 +73,17 @@ describe('DocumentsList', () => {
 			expect(screen.getByText(/upload or generate documents/i)).toBeInTheDocument();
 		});
 
-		it('renders empty state message for filter with no matches', () => {
-			const onFilterChange = vi.fn();
-			const noMatchRender = render(DocumentsList, {
+		it('renders empty state message when search has no matches', async () => {
+			render(DocumentsList, {
 				props: {
 					documents: [mockGeneratedDocument],
-					filter: 'uploaded',
-					onFilterChange,
 				},
 			});
 
-			expect(screen.getByText(/no documents match the current filter/i)).toBeInTheDocument();
-			noMatchRender.unmount();
+			const searchInput = screen.getByRole('searchbox', { name: /search documents/i });
+			await fireEvent.input(searchInput, { target: { value: 'no-hit-query' } });
+
+			expect(screen.getByText(/no documents match your search/i)).toBeInTheDocument();
 		});
 	});
 
@@ -166,82 +165,6 @@ describe('DocumentsList', () => {
 
 			const icons = screen.getAllByTestId('file-icon');
 			expect(icons.length).toBe(mockDocuments.length);
-		});
-	});
-
-	describe('Filter Functionality', () => {
-		it('filter "All" shows both uploaded and generated documents', () => {
-			render(DocumentsList, {
-				props: {
-					documents: mockDocuments,
-					filter: 'all',
-				},
-			});
-
-			const allFilter = screen.getByRole('radio', { name: /all/i });
-			expect(allFilter).toBeChecked();
-
-			expect(screen.getByText('Budget.pdf')).toBeInTheDocument();
-			expect(screen.getByText('Report.docx')).toBeInTheDocument();
-			expect(screen.getByText('Analysis.xlsx')).toBeInTheDocument();
-			expect(screen.getByText('Summary.txt')).toBeInTheDocument();
-		});
-
-		it('filter "Uploaded" shows only source_document type documents', () => {
-			const onFilterChange = vi.fn();
-
-			render(DocumentsList, {
-				props: {
-					documents: mockDocuments,
-					filter: 'uploaded',
-					onFilterChange,
-				},
-			});
-
-			const uploadedFilter = screen.getByRole('radio', { name: /uploaded/i });
-			expect(uploadedFilter).toBeChecked();
-
-			expect(screen.getByText('Budget.pdf')).toBeInTheDocument();
-			expect(screen.getByText('Analysis.xlsx')).toBeInTheDocument();
-			expect(screen.queryByText('Report.docx')).toBeNull();
-			expect(screen.queryByText('Summary.txt')).toBeNull();
-		});
-
-		it('filter "Generated" shows only generated_output type documents', () => {
-			const onFilterChange = vi.fn();
-
-			render(DocumentsList, {
-				props: {
-					documents: mockDocuments,
-					filter: 'generated',
-					onFilterChange,
-				},
-			});
-
-			const generatedFilter = screen.getByRole('radio', { name: /generated/i });
-			expect(generatedFilter).toBeChecked();
-
-			expect(screen.getByText('Report.docx')).toBeInTheDocument();
-			expect(screen.getByText('Summary.txt')).toBeInTheDocument();
-			expect(screen.queryByText('Budget.pdf')).toBeNull();
-			expect(screen.queryByText('Analysis.xlsx')).toBeNull();
-		});
-
-		it('emits filter change event when filter is changed', async () => {
-			const onFilterChange = vi.fn();
-
-			render(DocumentsList, {
-				props: {
-					documents: mockDocuments,
-					filter: 'all',
-					onFilterChange,
-				},
-			});
-
-			const uploadedFilter = screen.getByRole('radio', { name: /uploaded/i });
-			await fireEvent.click(uploadedFilter);
-
-			expect(onFilterChange).toHaveBeenCalledWith('uploaded');
 		});
 	});
 
@@ -560,48 +483,21 @@ describe('DocumentsList', () => {
 	});
 
 	describe('Combined Interactions', () => {
-		it('handles filter change with pagination reset', async () => {
-			const onFilterChange = vi.fn();
-			const onPageChange = vi.fn();
-
-			render(DocumentsList, {
-				props: {
-					documents: manyDocuments,
-					filter: 'all',
-					paginationLimit: 20,
-					currentPage: 3,
-					onFilterChange,
-					onPageChange,
-				},
-			});
-
-			const uploadedFilter = screen.getByRole('radio', { name: /uploaded/i });
-			await fireEvent.click(uploadedFilter);
-
-			expect(onFilterChange).toHaveBeenCalledWith('uploaded');
-			expect(onPageChange).toHaveBeenCalledWith(1);
-		});
-
-		it('maintains filter when pagination limit changes', async () => {
+		it('maintains pagination change behavior', async () => {
 			const onPaginationLimitChange = vi.fn();
 
 			render(DocumentsList, {
 				props: {
 					documents: manyDocuments,
-					filter: 'generated',
 					paginationLimit: 20,
 					onPaginationLimitChange,
 				},
 			});
 
-			const generatedFilter = screen.getByRole('radio', { name: /generated/i });
-			expect(generatedFilter).toBeChecked();
-
 			const limitSelector = screen.getByRole('combobox', { name: /items per page/i });
 			await fireEvent.change(limitSelector, { target: { value: '50' } });
 
 			expect(onPaginationLimitChange).toHaveBeenCalledWith(50);
-			expect(generatedFilter).toBeChecked();
 		});
 	});
 });

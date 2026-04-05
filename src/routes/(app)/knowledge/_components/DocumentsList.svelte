@@ -1,18 +1,15 @@
 <script lang="ts">
 	import type { KnowledgeDocumentItem } from '$lib/types';
 
-	type DocumentFilter = 'all' | 'uploaded' | 'generated';
 	type DocumentSortKey = 'name' | 'size' | 'type' | 'date';
 	type SortDirection = 'asc' | 'desc';
 
 	interface DocumentsListProps {
 		documents: KnowledgeDocumentItem[];
 		loading?: boolean;
-		filter?: DocumentFilter;
 		paginationLimit?: 20 | 50 | 100;
 		currentPage?: number;
 		bulkDeleteSuccessVersion?: number;
-		onFilterChange?: (filter: DocumentFilter) => void;
 		onPaginationLimitChange?: (limit: number) => void;
 		onPageChange?: (page: number) => void;
 		onSelect?: (document: KnowledgeDocumentItem) => void;
@@ -25,11 +22,9 @@
 	let {
 		documents,
 		loading = false,
-		filter = 'all',
 		paginationLimit = 20,
 		currentPage = 1,
 		bulkDeleteSuccessVersion = 0,
-		onFilterChange,
 		onPaginationLimitChange,
 		onPageChange,
 		onSelect,
@@ -63,16 +58,6 @@
 		return selectedOnPage > 0 && selectedOnPage < paginatedDocuments.length;
 	});
 	const hasSelection = $derived(selectedIds.size > 0);
-
-	// Clear selection when filter changes (explicit, non-looping)
-	$effect(() => {
-		const currentFilter = filter;
-		return () => {
-			if (currentFilter !== filter) {
-				selectedIds = new Set();
-			}
-		};
-	});
 
 	// Clear selection when page changes (explicit, non-looping)
 	$effect(() => {
@@ -188,24 +173,6 @@
 		`;
 	}
 
-	// Filter documents based on type
-	const filteredDocuments = $derived.by(() => {
-		if (filter === 'uploaded') {
-			return documents.filter((doc) => 
-				doc.documentOrigin === 'uploaded' || 
-				doc.type === 'source_document' ||
-				(doc.documentOrigin === undefined && doc.type !== 'generated_output')
-			);
-		}
-		if (filter === 'generated') {
-			return documents.filter((doc) => 
-				doc.documentOrigin === 'generated' || 
-				doc.type === 'generated_output'
-			);
-		}
-		return documents;
-	});
-
 	function normalizeText(value: string | null | undefined): string {
 		return (value ?? '').toLowerCase().trim();
 	}
@@ -263,10 +230,10 @@
 	const searchedDocuments = $derived.by(() => {
 		const query = normalizeText(searchQuery);
 		if (!query) {
-			return filteredDocuments.map((document) => ({ document, score: 0 }));
+			return documents.map((document) => ({ document, score: 0 }));
 		}
 
-		return filteredDocuments
+		return documents
 			.map((document) => ({
 				document,
 				score: scoreDocumentForSearch(document, query),
@@ -439,14 +406,6 @@
 		}
 
 		return GenericFileIcon;
-	}
-
-	function handleFilterChange(newFilter: DocumentFilter) {
-		onFilterChange?.(newFilter);
-		// Reset to page 1 when filter changes
-		if (newFilter !== filter && onPageChange) {
-			onPageChange(1);
-		}
 	}
 
 	function handleRowClick(event: MouseEvent, document: KnowledgeDocumentItem) {
@@ -635,7 +594,7 @@
 			<p class="empty-hint">Upload or generate documents to see them here</p>
 		</div>
 	{:else}
-		<div class="filter-controls" role="radiogroup" aria-label="Document filter">
+		<div class="filter-controls">
 			<div class="search-controls">
 				<input
 					id="documents-search-input"
@@ -647,39 +606,7 @@
 				/>
 			</div>
 
-			<div class="filter-group">
-				<label class="filter-option">
-					<input
-						type="radio"
-						name="document-filter"
-						value="all"
-						checked={filter === 'all'}
-						onchange={() => handleFilterChange('all')}
-					/>
-					<span>All</span>
-				</label>
-				<label class="filter-option">
-					<input
-						type="radio"
-						name="document-filter"
-						value="uploaded"
-						checked={filter === 'uploaded'}
-						onchange={() => handleFilterChange('uploaded')}
-					/>
-					<span>Uploaded</span>
-				</label>
-				<label class="filter-option">
-					<input
-						type="radio"
-						name="document-filter"
-						value="generated"
-						checked={filter === 'generated'}
-						onchange={() => handleFilterChange('generated')}
-					/>
-					<span>Generated</span>
-				</label>
-			</div>
-		{#if onUpload}
+			{#if onUpload}
 			<input
 				type="file"
 				bind:this={fileInputRef}
@@ -707,12 +634,12 @@
 		{/if}
 	</div>
 
-	{#if sortedDocuments.length === 0}
+				{#if sortedDocuments.length === 0}
 			<div class="empty-state">
 				<p class="empty-title">
 					{searchQuery.trim().length > 0
 						? 'No documents match your search'
-						: 'No documents match the current filter'}
+						: 'No documents available'}
 				</p>
 			</div>
 		{:else}
@@ -1044,39 +971,6 @@
 	.documents-search-input:focus-visible {
 		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
-	}
-
-	.filter-group {
-		display: flex;
-		gap: var(--space-sm);
-		flex-wrap: wrap;
-	}
-
-	.filter-option {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		padding: var(--space-xs) var(--space-sm);
-		border-radius: var(--radius-full);
-		border: 1px solid var(--border-default);
-		background: var(--surface-elevated);
-		font-size: 0.8125rem;
-		color: var(--text-secondary);
-		cursor: pointer;
-		transition: all var(--duration-standard) var(--ease-out);
-	}
-
-	.filter-option:has(input:checked) {
-		background: var(--surface-page);
-		border-color: var(--accent);
-		color: var(--text-primary);
-	}
-
-	.filter-option input {
-		position: absolute;
-		opacity: 0;
-		width: 0;
-		height: 0;
 	}
 
 	.hidden-input {

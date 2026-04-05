@@ -130,7 +130,6 @@
 	const userDisplayName = getData().userDisplayName?.trim() || 'You';
 
 	// Documents section state
-	let documentFilter = $state<'all' | 'uploaded' | 'generated'>('all');
 	let documentPaginationLimit = $state<20 | 50 | 100>(20);
 	let documentCurrentPage = $state(1);
 	let selectedDocumentForPreview = $state<KnowledgeDocumentItem | null>(null);
@@ -280,11 +279,6 @@
 	}
 
 	// Documents section handlers
-	function handleDocumentFilterChange(filter: 'all' | 'uploaded' | 'generated') {
-		documentFilter = filter;
-		documentCurrentPage = 1;
-	}
-
 	function handleDocumentPaginationLimitChange(limit: number) {
 		documentPaginationLimit = limit as 20 | 50 | 100;
 	}
@@ -997,11 +991,9 @@
 			</div>
 			<DocumentsList
 				documents={documents}
-				filter={documentFilter}
 				paginationLimit={documentPaginationLimit}
 				currentPage={documentCurrentPage}
 				bulkDeleteSuccessVersion={bulkDeleteSuccessVersion}
-				onFilterChange={handleDocumentFilterChange}
 				onPaginationLimitChange={handleDocumentPaginationLimitChange}
 				onPageChange={handleDocumentPageChange}
 				onSelect={handleDocumentSelect}
