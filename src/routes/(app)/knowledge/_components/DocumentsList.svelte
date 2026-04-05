@@ -15,7 +15,7 @@
 		onPageChange?: (page: number) => void;
 		onSelect?: (document: KnowledgeDocumentItem) => void;
 		onDelete?: (documentId: string) => void;
-		onBulkDelete?: (documentIds: string[]) => boolean | void | Promise<boolean | void>;
+		onBulkDelete?: (documentIds: string[]) => Promise<boolean>;
 		onDownload?: (documentId: string) => void;
 		onUpload?: (files: File[]) => void | Promise<void>;
 	}
@@ -59,22 +59,23 @@
 	});
 	const hasSelection = $derived(selectedIds.size > 0);
 
-	// Clear selection when filter changes (selection shouldn't persist across different views)
+	// Clear selection when filter changes (explicit, non-looping)
 	$effect(() => {
-		// Track filter changes and clear selection
 		const currentFilter = filter;
-		// This effect runs when filter changes
 		return () => {
-			// Clear selection when filter is about to change
-			selectedIds = new Set();
+			if (currentFilter !== filter) {
+				selectedIds = new Set();
+			}
 		};
 	});
 
-	// Clear selection when page changes (items on new page are different)
+	// Clear selection when page changes (explicit, non-looping)
 	$effect(() => {
 		const currentPageValue = currentPage;
 		return () => {
-			selectedIds = new Set();
+			if (currentPageValue !== currentPage) {
+				selectedIds = new Set();
+			}
 		};
 	});
 
@@ -87,13 +88,14 @@
 		}
 	});
 
-	// Clear selection when bulk delete succeeds (parent signals via version change)
+	// Clear selection when bulk delete succeeds (parent signals via version increment)
 	$effect(() => {
-		// Track version changes and clear selection when parent signals success
 		const currentVersion = bulkDeleteSuccessVersion;
-		if (currentVersion > 0) {
-			selectedIds = new Set();
-		}
+		return () => {
+			if (currentVersion !== bulkDeleteSuccessVersion && bulkDeleteSuccessVersion > 0) {
+				selectedIds = new Set();
+			}
+		};
 	});
 
 	// Accepted file types for upload
@@ -337,17 +339,21 @@
 		selectedIds = new Set();
 	}
 
-	async function handleBulkDelete() {
-		if (selectedIds.size === 0) return;
+	async function handleBulkDelete(): Promise<boolean> {
+		if (selectedIds.size === 0) return false;
+		if (!onBulkDelete) return false;
+
 		const idsToDelete = Array.from(selectedIds);
 		try {
-			const result = await onBulkDelete?.(idsToDelete);
-			// Only clear selection if delete was successful (callback returns true or undefined)
-			if (result === true || result === undefined) {
+			const success = await onBulkDelete(idsToDelete);
+			// Only clear selection if delete was explicitly successful
+			if (success === true) {
 				clearSelection();
 			}
+			return success;
 		} catch {
 			// Keep selection on error so user can retry
+			return false;
 		}
 	}
 

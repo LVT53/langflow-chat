@@ -84,6 +84,33 @@
 	let pendingMemoryActionKey = $state<string | null>(null);
 	let pendingKnowledgeActionKey = $state<string | null>(null);
 	let manageError = $state('');
+
+	// Generic confirmation state machine for memory/library actions
+	type ConfirmationKind = 'memory_action' | 'bulk_persona_forget' | 'bulk_task_forget' | 'bulk_focus_continuity_forget' | 'knowledge_action';
+	interface PendingConfirmation {
+		kind: ConfirmationKind;
+		title: string;
+		message: string;
+		onConfirm: () => void;
+	}
+	let pendingConfirmation = $state<PendingConfirmation | null>(null);
+
+	function showConfirmation(kind: ConfirmationKind, title: string, message: string, onConfirm: () => void): boolean {
+		pendingConfirmation = { kind, title, message, onConfirm };
+		return false; // Return false to pause execution; onConfirm will be called if user confirms
+	}
+
+	function handleConfirmationConfirm() {
+		const confirmation = pendingConfirmation;
+		pendingConfirmation = null;
+		if (confirmation) {
+			confirmation.onConfirm();
+		}
+	}
+
+	function handleConfirmationCancel() {
+		pendingConfirmation = null;
+	}
 	let memoryLoaded = $state(false);
 	let memoryLoading = $state(false);
 	let memoryLoadError = $state('');
@@ -288,10 +315,10 @@
 		await removeArtifact(documentId, document.name);
 	}
 
-	async function handleBulkDocumentDelete(documentIds: string[]) {
+	async function handleBulkDocumentDelete(documentIds: string[]): Promise<boolean> {
 		if (documentIds.length === 0) return false;
 		bulkDeleteCandidateIds = documentIds;
-		return false;
+		return false; // Return false - actual deletion happens after confirmation
 	}
 
 	async function executeBulkDocumentDelete(documentIds: string[]) {
@@ -623,7 +650,22 @@
 		confirmationMessage?: string
 	) {
 		if (isMemoryActionPending(key)) return;
-		if (confirmationMessage && !window.confirm(confirmationMessage)) return;
+
+		if (confirmationMessage) {
+			showConfirmation('memory_action', 'Confirm Action', confirmationMessage, () => {
+				void executeMemoryAction(payload, key);
+			});
+			return;
+		}
+
+		await executeMemoryAction(payload, key);
+	}
+
+	async function executeMemoryAction(
+		payload: KnowledgeMemoryActionPayload,
+		key: string
+	) {
+		if (isMemoryActionPending(key)) return;
 
 		manageError = '';
 		pendingMemoryActionKey = key;
@@ -661,14 +703,16 @@
 
 	async function runBulkPersonaForget() {
 		if (selectedPersonaMemoryIds.length === 0) return;
-		if (
-			!window.confirm(
-				`Forget ${selectedPersonaMemoryIds.length} selected persona memory item${selectedPersonaMemoryIds.length === 1 ? '' : 's'}?`
-			)
-		) {
-			return;
-		}
 
+		showConfirmation(
+			'bulk_persona_forget',
+			'Forget Persona Memories',
+			`Forget ${selectedPersonaMemoryIds.length} selected persona memory item${selectedPersonaMemoryIds.length === 1 ? '' : 's'}?`,
+			() => void executeBulkPersonaForget()
+		);
+	}
+
+	async function executeBulkPersonaForget() {
 		manageError = '';
 		pendingMemoryActionKey = 'forget-selected-persona';
 
@@ -695,14 +739,16 @@
 
 	async function runBulkTaskForget() {
 		if (selectedTaskMemoryIds.length === 0) return;
-		if (
-			!window.confirm(
-				`Forget ${selectedTaskMemoryIds.length} selected task memory item${selectedTaskMemoryIds.length === 1 ? '' : 's'}?`
-			)
-		) {
-			return;
-		}
 
+		showConfirmation(
+			'bulk_task_forget',
+			'Forget Task Memories',
+			`Forget ${selectedTaskMemoryIds.length} selected task memory item${selectedTaskMemoryIds.length === 1 ? '' : 's'}?`,
+			() => void executeBulkTaskForget()
+		);
+	}
+
+	async function executeBulkTaskForget() {
 		manageError = '';
 		pendingMemoryActionKey = 'forget-selected-task';
 
@@ -725,14 +771,16 @@
 
 	async function runBulkFocusContinuityForget() {
 		if (selectedFocusContinuityIds.length === 0) return;
-		if (
-			!window.confirm(
-				`Forget ${selectedFocusContinuityIds.length} selected continuity item${selectedFocusContinuityIds.length === 1 ? '' : 's'} across chats?`
-			)
-		) {
-			return;
-		}
 
+		showConfirmation(
+			'bulk_focus_continuity_forget',
+			'Forget Focus Continuity',
+			`Forget ${selectedFocusContinuityIds.length} selected continuity item${selectedFocusContinuityIds.length === 1 ? '' : 's'} across chats?`,
+			() => void executeBulkFocusContinuityForget()
+		);
+	}
+
+	async function executeBulkFocusContinuityForget() {
 		manageError = '';
 		pendingMemoryActionKey = 'forget-selected-focus-continuity';
 
@@ -766,7 +814,20 @@
 		confirmationMessage: string
 	) {
 		if (isKnowledgeActionPending(key)) return;
-		if (!window.confirm(confirmationMessage)) return;
+
+		showConfirmation(
+			'knowledge_action',
+			'Confirm Action',
+			confirmationMessage,
+			() => void executeKnowledgeAction(action, key)
+		);
+	}
+
+	async function executeKnowledgeAction(
+		action: KnowledgeBulkAction,
+		key: string
+	) {
+		if (isKnowledgeActionPending(key)) return;
 
 		manageError = '';
 		pendingKnowledgeActionKey = key;
@@ -908,7 +969,7 @@
 					Knowledge Base
 				</h1>
 					<p class="max-w-[720px] text-sm font-sans leading-[1.5] text-text-secondary">
-						Persistent documents, saved results, workflow capsules, and a live memory view of what the system currently knows about you.
+						Persistent documents and a live memory view of what the system currently knows about you.
 					</p>
 				</div>
 			</div>
@@ -965,6 +1026,18 @@
 		/>
 		</div>
 	</div>
+
+	<DocumentWorkspace
+		open={workspaceOpen}
+		documents={workspaceDocuments}
+		availableDocuments={availableWorkspaceDocuments}
+		activeDocumentId={activeWorkspaceDocumentId}
+		onSelectDocument={selectWorkspaceDocument}
+		onOpenDocument={openWorkspaceDocument}
+		onJumpToSource={jumpToWorkspaceSource}
+		onCloseDocument={closeWorkspaceDocument}
+		onCloseWorkspace={closeWorkspace}
+	/>
 </div>
 
 {#if activeMemoryModal}
@@ -1056,6 +1129,17 @@
 				void executeBulkDocumentDelete(targetIds);
 			}
 		}}
+	/>
+{/if}
+
+{#if pendingConfirmation}
+	<ConfirmDialog
+		title={pendingConfirmation.title}
+		message={pendingConfirmation.message}
+		confirmText="Confirm"
+		confirmVariant="danger"
+		onCancel={handleConfirmationCancel}
+		onConfirm={handleConfirmationConfirm}
 	/>
 {/if}
 

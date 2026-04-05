@@ -159,10 +159,10 @@
 	$effect(() => {
 		if (!browser || !open) return;
 
-		const body = document.body;
+		const body = globalThis.document.body;
 		if (!body) return;
 
-		previousFocus = document.activeElement as HTMLElement;
+		previousFocus = globalThis.document.activeElement as HTMLElement;
 		body.style.overflow = 'hidden';
 
 		return () => {
