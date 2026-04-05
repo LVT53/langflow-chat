@@ -87,15 +87,15 @@
 {:else if memoryLoadError && !memoryLoaded}
 	<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
 		<div class="rounded-[1.2rem] border border-danger bg-surface-page px-4 py-5">
-			<div class="text-sm font-sans font-medium text-danger">Memory Profile failed to load.</div>
-			<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">{memoryLoadError}</p>
-			<button
-				type="button"
-				class="mt-4 rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
-				onclick={onRetryLoadMemory}
-			>
-				Try again
-			</button>
+				<div class="text-sm font-sans font-medium text-danger">Memory Profile failed to load.</div>
+				<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">{memoryLoadError}</p>
+				<button
+					type="button"
+					class="mt-4 cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
+					onclick={onRetryLoadMemory}
+				>
+					Try again
+				</button>
 		</div>
 	</section>
 {:else}
@@ -132,7 +132,7 @@
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
 					<button
 						type="button"
-						class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 						onclick={() => onOpenMemoryModal('persona')}
 						disabled={!honchoEnabled}
 					>
@@ -169,7 +169,7 @@
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
 					<button
 						type="button"
-						class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 						onclick={() => onOpenMemoryModal('focus')}
 					>
 						Manage focus continuity
@@ -202,7 +202,7 @@
 				{#if honchoEnabled && memoryLoaded}
 					<button
 						type="button"
-						class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
 						onclick={onRetryLiveOverview}
 						disabled={liveOverviewRefreshing}
 					>

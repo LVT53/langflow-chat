@@ -858,7 +858,7 @@
 			<div class="inline-flex w-full rounded-full border border-border bg-surface-page p-1">
 				<button
 					type="button"
-					class={`flex-1 rounded-full px-4 py-2 text-sm font-sans transition ${
+					class={`flex-1 cursor-pointer rounded-full px-4 py-2 text-sm font-sans transition ${
 						activeTab === 'library'
 							? 'bg-surface-elevated text-text-primary shadow-sm'
 							: 'text-text-secondary hover:text-text-primary'
@@ -870,7 +870,7 @@
 				</button>
 				<button
 					type="button"
-					class={`flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-sans transition ${
+					class={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-sans transition ${
 						activeTab === 'memory'
 							? 'bg-surface-elevated text-text-primary shadow-sm'
 							: 'text-text-secondary hover:text-text-primary'

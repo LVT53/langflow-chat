@@ -121,7 +121,7 @@
 			<button
 				type="button"
 				data-testid="delete-vault-cancel"
-				class="btn-secondary"
+				class="btn-secondary cursor-pointer"
 				onclick={handleCancel}
 			>
 				Cancel
@@ -130,7 +130,7 @@
 				type="button"
 				data-testid="delete-vault-confirm"
 				bind:this={confirmBtnRef}
-				class="btn-danger"
+				class="btn-danger cursor-pointer"
 				onclick={handleConfirm}
 			>
 				Delete

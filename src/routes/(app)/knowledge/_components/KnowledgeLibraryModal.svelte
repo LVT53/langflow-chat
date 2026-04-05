@@ -136,7 +136,7 @@
 				{#if itemCount > 0}
 					<button
 						type="button"
-						class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+						class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 						onclick={() => onRunKnowledgeAction(activeLibraryModal)}
 						disabled={isKnowledgeActionPending(bulkKey)}
 					>
@@ -145,7 +145,7 @@
 				{/if}
 				<button
 					type="button"
-					class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
+					class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 					onclick={onClose}
 					aria-label="Close library manager"
 				>
@@ -206,34 +206,34 @@
 										</td>
 										<td class="px-4 py-3 align-top text-right">
 											<div class="flex items-center justify-end gap-2">
-												{#if isPreviewableFile(artifact.mimeType, artifact.name)}
-													<button
-														type="button"
-														class="rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-														onclick={() => openPreview(artifact)}
-														disabled={isDeletingArtifact(artifact.id)}
-													>
-														Preview
-													</button>
-												{/if}
+											{#if isPreviewableFile(artifact.mimeType, artifact.name)}
 												<button
 													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
+													class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+													onclick={() => openPreview(artifact)}
 													disabled={isDeletingArtifact(artifact.id)}
-													aria-busy={isDeletingArtifact(artifact.id)}
 												>
-													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
+													Preview
 												</button>
-											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			{:else if activeLibraryModal === 'results'}
+											{/if}
+											<button
+												type="button"
+												class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+												onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
+												disabled={isDeletingArtifact(artifact.id)}
+												aria-busy={isDeletingArtifact(artifact.id)}
+											>
+												{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
+											</button>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		{:else if activeLibraryModal === 'results'}
 				{#if results.length === 0}
 					<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm text-text-muted">
 						No saved results yet.
@@ -264,7 +264,7 @@
 												{#if isPreviewableFile(artifact.mimeType, artifact.name)}
 													<button
 														type="button"
-														class="rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+														class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
 														onclick={() => openPreview(artifact)}
 														disabled={isDeletingArtifact(artifact.id)}
 													>
@@ -273,7 +273,7 @@
 												{/if}
 												<button
 													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+													class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 													onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
 													disabled={isDeletingArtifact(artifact.id)}
 													aria-busy={isDeletingArtifact(artifact.id)}
@@ -324,24 +324,24 @@
 										</td>
 										<td class="px-4 py-3 align-top text-right">
 											<div class="flex items-center justify-end gap-2">
-												{#if isPreviewableFile(artifact.mimeType, artifact.name)}
+												{#if isPreviewableFile(capsule.artifact.mimeType, capsule.artifact.name)}
 													<button
 														type="button"
-														class="rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-														onclick={() => openPreview(artifact)}
-														disabled={isDeletingArtifact(artifact.id)}
+														class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+														onclick={() => openPreview(capsule.artifact)}
+														disabled={isDeletingArtifact(capsule.artifact.id)}
 													>
 														Preview
 													</button>
 												{/if}
 												<button
 													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
-													disabled={isDeletingArtifact(artifact.id)}
-													aria-busy={isDeletingArtifact(artifact.id)}
+													class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+													onclick={() => onRemoveArtifact(capsule.artifact.id, capsule.artifact.name)}
+													disabled={isDeletingArtifact(capsule.artifact.id)}
+													aria-busy={isDeletingArtifact(capsule.artifact.id)}
 												>
-													{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
+													{isDeletingArtifact(capsule.artifact.id) ? 'Removing…' : 'Remove'}
 												</button>
 											</div>
 										</td>
@@ -351,7 +351,7 @@
 						</table>
 					</div>
 				{/if}
-		{/if}
+			{/if}
 	</div>
 </div>
 </div>

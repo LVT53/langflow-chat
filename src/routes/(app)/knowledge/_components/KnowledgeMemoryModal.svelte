@@ -119,57 +119,57 @@
 				</p>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
-				{#if activeMemoryModal === 'persona' && selectedPersonaMemoryIds.length > 0}
-					<button
-						type="button"
-						class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						onclick={onRunBulkPersonaForget}
-						disabled={isMemoryActionPending('forget-selected-persona')}
-					>
-						Forget selected ({selectedPersonaMemoryIds.length})
-					</button>
-				{/if}
-				{#if activeMemoryModal === 'focus' && focusContinuityView === 'tasks' && selectedTaskMemoryIds.length > 0}
-					<button
-						type="button"
-						class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						onclick={onRunBulkTaskForget}
-						disabled={isMemoryActionPending('forget-selected-task')}
-					>
-						Forget selected ({selectedTaskMemoryIds.length})
-					</button>
-				{/if}
-				{#if activeMemoryModal === 'focus' && focusContinuityView === 'across_chats' && selectedFocusContinuityIds.length > 0}
-					<button
-						type="button"
-						class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						onclick={onRunBulkFocusContinuityForget}
-						disabled={isMemoryActionPending('forget-selected-focus-continuity')}
-					>
-						Forget selected ({selectedFocusContinuityIds.length})
-					</button>
-				{/if}
-				{#if activeMemoryModal === 'persona' && honchoEnabled && personaMemories.length > 0}
-					<button
-						type="button"
-						class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-						onclick={() =>
-							onRunMemoryAction(
-								{ action: 'forget_all_persona_memory' },
-								'forget-all-persona',
-								'Forget all persona memory items? This clears the live memory profile about you.'
-							)}
-						disabled={isMemoryActionPending('forget-all-persona')}
-					>
-						Forget all
-					</button>
-				{/if}
+			{#if activeMemoryModal === 'persona' && selectedPersonaMemoryIds.length > 0}
 				<button
 					type="button"
-					class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-					onclick={onClose}
-					aria-label="Close memory manager"
+					class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+					onclick={onRunBulkPersonaForget}
+					disabled={isMemoryActionPending('forget-selected-persona')}
 				>
+					Forget selected ({selectedPersonaMemoryIds.length})
+				</button>
+			{/if}
+			{#if activeMemoryModal === 'focus' && focusContinuityView === 'tasks' && selectedTaskMemoryIds.length > 0}
+				<button
+					type="button"
+					class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+					onclick={onRunBulkTaskForget}
+					disabled={isMemoryActionPending('forget-selected-task')}
+				>
+					Forget selected ({selectedTaskMemoryIds.length})
+				</button>
+			{/if}
+			{#if activeMemoryModal === 'focus' && focusContinuityView === 'across_chats' && selectedFocusContinuityIds.length > 0}
+				<button
+					type="button"
+					class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+					onclick={onRunBulkFocusContinuityForget}
+					disabled={isMemoryActionPending('forget-selected-focus-continuity')}
+				>
+					Forget selected ({selectedFocusContinuityIds.length})
+				</button>
+			{/if}
+			{#if activeMemoryModal === 'persona' && honchoEnabled && personaMemories.length > 0}
+				<button
+					type="button"
+					class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+					onclick={() =>
+						onRunMemoryAction(
+							{ action: 'forget_all_persona_memory' },
+							'forget-all-persona',
+							'Forget all persona memory items? This clears the live memory profile about you.'
+							)}
+					disabled={isMemoryActionPending('forget-all-persona')}
+				>
+					Forget all
+				</button>
+			{/if}
+			<button
+				type="button"
+				class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+				onclick={onClose}
+				aria-label="Close memory manager"
+			>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 						<line x1="18" x2="6" y1="6" y2="18" />
 						<line x1="6" x2="18" y1="6" y2="18" />
@@ -202,7 +202,7 @@
 							{#each personaMemoryFilters as state}
 								<button
 									type="button"
-									class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+									class={`cursor-pointer rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
 										personaMemoryFilter === state
 											? 'border-border bg-surface-elevated text-text-primary'
 											: 'border-border text-text-muted'
@@ -286,7 +286,7 @@
 										<td class="px-4 py-3 align-top text-right">
 											<button
 												type="button"
-												class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+												class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 												onclick={() =>
 													onRunMemoryAction(
 														{ action: 'forget_persona_memory', clusterId: memory.id },
@@ -306,30 +306,30 @@
 				{/if}
 			{:else}
 				<div class="border-b border-border px-4 py-3">
-					<div class="flex flex-wrap items-center gap-2">
-						<button
-							type="button"
-							class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
-								focusContinuityView === 'tasks'
-									? 'border-border bg-surface-elevated text-text-primary'
-									: 'border-border text-text-muted'
-							}`}
-							onclick={() => onSetFocusContinuityView('tasks')}
-						>
-							Tasks ({taskMemories.length})
-						</button>
-						<button
-							type="button"
-							class={`rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
-								focusContinuityView === 'across_chats'
-									? 'border-border bg-surface-elevated text-text-primary'
-									: 'border-border text-text-muted'
-							}`}
-							onclick={() => onSetFocusContinuityView('across_chats')}
-						>
-							Across chats ({focusContinuities.length})
-						</button>
-					</div>
+				<div class="flex flex-wrap items-center gap-2">
+					<button
+						type="button"
+						class={`cursor-pointer rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+							focusContinuityView === 'tasks'
+								? 'border-border bg-surface-elevated text-text-primary'
+								: 'border-border text-text-muted'
+						}`}
+						onclick={() => onSetFocusContinuityView('tasks')}
+					>
+						Tasks ({taskMemories.length})
+					</button>
+					<button
+						type="button"
+						class={`cursor-pointer rounded-full border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] ${
+							focusContinuityView === 'across_chats'
+								? 'border-border bg-surface-elevated text-text-primary'
+								: 'border-border text-text-muted'
+						}`}
+						onclick={() => onSetFocusContinuityView('across_chats')}
+					>
+						Across chats ({focusContinuities.length})
+					</button>
+				</div>
 				</div>
 
 				{#if focusContinuityView === 'tasks'}
@@ -397,21 +397,21 @@
 											<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">
 												{formatMemoryTimestamp(memory.updatedAt)}
 											</td>
-											<td class="px-4 py-3 align-top text-right">
-												<button
-													type="button"
-													class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-													onclick={() =>
-														onRunMemoryAction(
-															{ action: 'forget_task_memory', taskId: memory.taskId },
-															`task-${memory.taskId}`,
-															'Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.'
-														)}
-													disabled={isMemoryActionPending(`task-${memory.taskId}`)}
-												>
-													Forget
-												</button>
-											</td>
+										<td class="px-4 py-3 align-top text-right">
+											<button
+												type="button"
+												class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+												onclick={() =>
+													onRunMemoryAction(
+														{ action: 'forget_task_memory', taskId: memory.taskId },
+														`task-${memory.taskId}`,
+														'Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.'
+													)}
+												disabled={isMemoryActionPending(`task-${memory.taskId}`)}
+											>
+												Forget
+											</button>
+										</td>
 										</tr>
 									{/each}
 								</tbody>
@@ -483,7 +483,7 @@
 										<td class="px-4 py-3 align-top text-right">
 											<button
 												type="button"
-												class="rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
+												class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
 												onclick={() =>
 													onRunMemoryAction(
 														{ action: 'forget_focus_continuity', continuityId: memory.continuityId },

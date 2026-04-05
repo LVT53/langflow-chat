@@ -360,14 +360,14 @@
 		<div class="flex flex-wrap items-center gap-2">
 			<button
 				type="button"
-				class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
+				class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 				onclick={startCreate}
 			>
 				New vault
 			</button>
 			<button
 				type="button"
-				class="rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
+				class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 				onclick={() => onOpenLibraryModal('documents')}
 			>
 				Manage documents
@@ -462,7 +462,7 @@
 			<div class="mt-4 space-y-2">
 				<button
 					type="button"
-					class={`vault-scope-btn ${
+					class={`vault-scope-btn cursor-pointer ${
 						activeVaultId === null ? 'vault-scope-btn-active' : ''
 					}`}
 					onclick={() => handleSelectVault(null)}
@@ -481,7 +481,7 @@
 				{#if vaults.length === 0}
 					<button
 						type="button"
-						class="empty-vault-btn flex w-full items-center gap-3 rounded-[1rem] border border-dashed px-4 py-4 text-left"
+						class="empty-vault-btn flex w-full cursor-pointer items-center gap-3 rounded-[1rem] border border-dashed px-4 py-4 text-left"
 						onclick={startCreate}
 					>
 						<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-elevated text-icon-muted">
@@ -562,7 +562,7 @@
 								>
 									<button
 										type="button"
-										class="vault-action-btn"
+										class="vault-action-btn cursor-pointer"
 										aria-label={`Rename ${vault.name} vault`}
 										onclick={(event) => {
 											event.stopPropagation();
@@ -597,7 +597,7 @@
 									</div>
 									<button
 										type="button"
-										class="vault-action-btn vault-action-btn-danger"
+										class="vault-action-btn vault-action-btn-danger cursor-pointer"
 										aria-label={`Delete ${vault.name} vault`}
 										onclick={(event) => {
 											event.stopPropagation();
@@ -656,12 +656,12 @@
 						class="h-9 w-full bg-transparent text-[15px] font-sans text-text-primary outline-none placeholder:text-text-muted"
 					/>
 					{#if searchQuery}
-						<button
-							type="button"
-							class="btn-icon-bare h-8 w-8 rounded-full text-icon-muted hover:text-icon-primary"
-							onclick={() => (searchQuery = '')}
-							aria-label="Clear vault filter"
-						>
+								<button
+									type="button"
+									class="btn-icon-bare h-8 w-8 cursor-pointer rounded-full text-icon-muted hover:text-icon-primary"
+									onclick={() => (searchQuery = '')}
+									aria-label="Clear vault filter"
+								>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
 								width="15"
@@ -768,7 +768,7 @@
 							<td class="px-4 py-3 align-top">
 								<button
 									type="button"
-									class="rounded-full border border-border px-3 py-1 text-xs font-sans text-text-secondary transition hover:bg-surface-elevated hover:text-text-primary"
+									class="cursor-pointer rounded-full border border-border px-3 py-1 text-xs font-sans text-text-secondary transition hover:bg-surface-elevated hover:text-text-primary"
 									onclick={() => onSelectVault(document.vaultId)}
 								>
 									{vaultNameById[document.vaultId] ?? 'Vault'}
@@ -796,7 +796,7 @@
 							<td class="px-4 py-3 align-top text-right">
 								<button
 									type="button"
-									class="rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+									class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
 									onclick={() => openAiView(document)}
 								>
 									AI view
@@ -828,58 +828,58 @@
 			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
 				Uploaded files are managed as single logical documents, while their extracted text stays available behind the scenes for retrieval.
 			</p>
-			<div class="mt-auto pt-4">
-				<button
-					type="button"
-					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-					onclick={() => onOpenLibraryModal('documents')}
-				>
-					Manage documents
-				</button>
+				<div class="mt-auto pt-4">
+					<button
+						type="button"
+						class="inline-flex cursor-pointer items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						onclick={() => onOpenLibraryModal('documents')}
+					>
+						Manage documents
+					</button>
+				</div>
 			</div>
-		</div>
 
-		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-			<div class="flex items-center justify-between gap-3">
-				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
-				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-					{results.length}
-				</span>
+			<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+				<div class="flex items-center justify-between gap-3">
+					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
+					<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+						{results.length}
+					</span>
+				</div>
+				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
+					Saved generated outputs that remain available for recall and later refinement.
+				</p>
+				<div class="mt-auto pt-4">
+					<button
+						type="button"
+						class="inline-flex cursor-pointer items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						onclick={() => onOpenLibraryModal('results')}
+					>
+						Manage results
+					</button>
+				</div>
 			</div>
-			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-				Saved generated outputs that remain available for recall and later refinement.
-			</p>
-			<div class="mt-auto pt-4">
-				<button
-					type="button"
-					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-					onclick={() => onOpenLibraryModal('results')}
-				>
-					Manage results
-				</button>
-			</div>
-		</div>
 
-		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
-			<div class="flex items-center justify-between gap-3">
-				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
-				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
-					{workflows.length}
-				</span>
+			<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
+				<div class="flex items-center justify-between gap-3">
+					<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
+					<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+						{workflows.length}
+					</span>
+				</div>
+				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
+					Reusable workflow capsules summarizing patterns, source inputs, and output history.
+				</p>
+				<div class="mt-auto pt-4">
+					<button
+						type="button"
+						class="inline-flex cursor-pointer items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
+						onclick={() => onOpenLibraryModal('workflows')}
+					>
+						Manage workflows
+					</button>
+				</div>
 			</div>
-			<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-				Reusable workflow capsules summarizing patterns, source inputs, and output history.
-			</p>
-			<div class="mt-auto pt-4">
-				<button
-					type="button"
-					class="inline-flex items-center justify-center rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated"
-					onclick={() => onOpenLibraryModal('workflows')}
-				>
-					Manage workflows
-				</button>
-			</div>
-		</div>
 	</div>
 </section>
 

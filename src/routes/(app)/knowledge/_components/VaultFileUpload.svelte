@@ -91,7 +91,7 @@
 	{:else}
 		<button
 			type="button"
-			class="upload-btn"
+			class="upload-btn cursor-pointer"
 			data-testid="vault-upload-btn"
 			aria-label="Upload file to vault"
 		>

@@ -156,7 +156,7 @@
 						<button
 							type="button"
 							data-testid="color-option"
-							class="h-8 w-8 rounded-full border-2 transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+							class="h-8 w-8 cursor-pointer rounded-full border-2 transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 							class:border-border={selectedColorIndex !== index || useCustomColor}
 							class:border-text-primary={selectedColorIndex === index && !useCustomColor}
 							class:ring-2={selectedColorIndex === index && !useCustomColor}
@@ -193,7 +193,7 @@
 				<button
 					type="button"
 					data-testid="create-vault-cancel"
-					class="btn-secondary"
+					class="btn-secondary cursor-pointer"
 					onclick={handleCancel}
 				>
 					Cancel
@@ -201,7 +201,7 @@
 				<button
 					type="submit"
 					data-testid="create-vault-submit"
-					class="btn-primary"
+					class="btn-primary cursor-pointer"
 					disabled={!canSubmit}
 				>
 					Create
