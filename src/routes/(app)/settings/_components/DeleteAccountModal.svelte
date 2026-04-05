@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import DialogShell from '$lib/components/ui/DialogShell.svelte';
 	import PasswordField from './PasswordField.svelte';
 
 	let {
@@ -24,53 +24,29 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+		if (event.key === 'Enter') {
 			event.preventDefault();
-			onCancel();
+			handleConfirm();
 		}
 	}
-
-	onMount(() => {
-		document.body.style.overflow = 'hidden';
-	});
-
-	onDestroy(() => {
-		document.body.style.overflow = '';
-	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div
-	class="fixed inset-0 z-[9999] overflow-y-auto p-4"
-	role="dialog"
-	aria-modal="true"
-	aria-labelledby="delete-account-title"
-	aria-describedby="delete-account-description"
+<DialogShell
+	title="Delete Account"
+	description="This will permanently delete your account, all chats, and all data. This cannot be undone."
+	onClose={onCancel}
+	maxWidthClass="max-w-[30rem]"
+	zIndexClass="z-[9999]"
 >
-	<button
-		type="button"
-		class="absolute inset-0 h-full w-full cursor-default bg-surface-overlay/60 backdrop-blur-sm"
-		aria-label="Cancel delete account"
-		onclick={onCancel}
-	></button>
-	<div class="relative flex min-h-full items-center justify-center">
-		<div
-			class="overflow-y-auto rounded-[1.25rem] border border-border bg-surface-page p-5 shadow-lg sm:p-6"
-			style="width: min(30rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem);"
-		>
+	<div class="max-h-[calc(100vh-2rem)] overflow-y-auto">
 			<form
 				onsubmit={(event) => {
 					event.preventDefault();
 					handleConfirm();
 				}}
 			>
-				<h3 id="delete-account-title" class="mb-2 text-lg font-semibold text-text-primary">
-					Delete Account
-				</h3>
-				<p id="delete-account-description" class="delete-account-modal-subtext mb-4 text-sm leading-6 text-text-secondary">
-					This will permanently delete your account, all chats, and all data. This cannot be undone.
-				</p>
 				<p class="mb-1 text-sm font-medium text-text-primary">Enter your password to confirm:</p>
 				<PasswordField
 					id="delete-account-password"
@@ -97,14 +73,4 @@
 				</div>
 			</form>
 		</div>
-	</div>
-</div>
-
-<style>
-	.delete-account-modal-subtext {
-		width: 100%;
-		max-width: none;
-		white-space: normal;
-		overflow-wrap: break-word;
-	}
-</style>
+</DialogShell>

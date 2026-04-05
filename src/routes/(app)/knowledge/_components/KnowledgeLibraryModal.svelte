@@ -12,6 +12,7 @@
 		getLibraryItemCount,
 	} from '../_helpers';
 	import { isPreviewableFile } from '$lib/utils/file-preview';
+	import DocumentsList from './DocumentsList.svelte';
 
 	let {
 		activeLibraryModal,
@@ -62,6 +63,26 @@
 			conversationId: document.conversationId,
 		});
 		onClose();
+	}
+
+	function handleTableSelect(document: KnowledgeDocumentItem) {
+		if (isPreviewableFile(document.mimeType, document.name)) {
+			openPreview(document);
+		}
+	}
+
+	function handleTableDelete(documentId: string) {
+		const artifact = documents.find((entry) => entry.id === documentId);
+		if (!artifact) return;
+		void onRemoveArtifact(artifact.id, artifact.name);
+	}
+
+	function handleTableDownload(): void {
+		return;
+	}
+
+	function handleTableUpload(): void {
+		return;
 	}
 </script>
 
@@ -137,56 +158,15 @@
 					No documents yet.
 				</div>
 			{:else}
-				<div class="overflow-x-auto rounded-[1.2rem] border border-border bg-surface-page">
-					<table class="min-w-[980px] w-full border-collapse">
-						<thead>
-							<tr class="border-b border-border bg-surface-elevated/70 text-left">
-								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Name</th>
-								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Type</th>
-								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Size</th>
-								<th class="px-4 py-3 text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Summary</th>
-								<th class="px-4 py-3 text-right text-[0.68rem] font-sans uppercase tracking-[0.12em] text-text-muted">Action</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each documents as artifact (artifact.id)}
-								<tr class={`border-b border-border last:border-b-0 ${isDeletingArtifact(artifact.id) ? 'opacity-60' : ''}`}>
-									<td class="px-4 py-3 align-top text-sm font-sans font-medium text-text-primary">{artifact.name}</td>
-									<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatDocumentKind(artifact)}</td>
-									<td class="px-4 py-3 align-top text-sm font-sans text-text-secondary">{formatArtifactSize(artifact.sizeBytes)}</td>
-									<td class="px-4 py-3 align-top">
-										<div class="memory-preview text-sm font-serif leading-[1.55] text-text-secondary">
-											{artifact.summary ?? 'No summary stored.'}
-										</div>
-									</td>
-									<td class="px-4 py-3 align-top text-right">
-										<div class="flex items-center justify-end gap-2">
-										{#if isPreviewableFile(artifact.mimeType, artifact.name)}
-											<button
-												type="button"
-												class="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
-												onclick={() => openPreview(artifact)}
-												disabled={isDeletingArtifact(artifact.id)}
-											>
-												Preview
-											</button>
-										{/if}
-										<button
-											type="button"
-											class="cursor-pointer rounded-full border border-danger px-3 py-1.5 text-xs font-sans font-medium text-danger transition hover:bg-danger/10 disabled:opacity-50"
-											onclick={() => onRemoveArtifact(artifact.id, artifact.name)}
-											disabled={isDeletingArtifact(artifact.id)}
-											aria-busy={isDeletingArtifact(artifact.id)}
-										>
-											{isDeletingArtifact(artifact.id) ? 'Removing…' : 'Remove'}
-										</button>
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+				<DocumentsList
+					documents={documents}
+					paginationLimit={20}
+					currentPage={1}
+					onSelect={handleTableSelect}
+					onDelete={handleTableDelete}
+					onDownload={handleTableDownload}
+					onUpload={handleTableUpload}
+				/>
 		{/if}
 	</div>
 </div>

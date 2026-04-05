@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { fade, scale } from 'svelte/transition';
+	import DialogShell from '$lib/components/ui/DialogShell.svelte';
 
 	let {
 		title,
@@ -19,41 +18,7 @@
 		onConfirm?: () => void;
 		onCancel?: () => void;
 	} = $props();
-
-	let dialogRef = $state<HTMLDivElement | undefined>(undefined);
-	let previousFocus: HTMLElement | null = null;
 	let confirmBtnRef = $state<HTMLButtonElement | undefined>(undefined);
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			handleCancel();
-		} else if (e.key === 'Enter') {
-			e.preventDefault();
-			handleConfirm();
-		} else if (e.key === 'Tab') {
-			// Basic focus trap
-			const focusableElements = dialogRef?.querySelectorAll(
-				'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-			);
-			if (!focusableElements || focusableElements.length === 0) return;
-
-			const firstElement = focusableElements[0] as HTMLElement;
-			const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
-
-			if (e.shiftKey) {
-				if (document.activeElement === firstElement) {
-					lastElement.focus();
-					e.preventDefault();
-				}
-			} else {
-				if (document.activeElement === lastElement) {
-					firstElement.focus();
-					e.preventDefault();
-				}
-			}
-		}
-	}
 
 	function handleConfirm() {
 		onConfirm?.();
@@ -63,72 +28,26 @@
 		onCancel?.();
 	}
 
-	onMount(() => {
-		previousFocus = document.activeElement as HTMLElement;
-		// Focus the confirm button by default for better UX on dialog open
+	$effect(() => {
 		if (confirmBtnRef) {
 			confirmBtnRef.focus();
 		}
-		document.body.style.overflow = 'hidden'; // Prevent background scrolling
-	});
-
-	onDestroy(() => {
-		if (previousFocus) {
-			previousFocus.focus();
-		}
-		document.body.style.overflow = '';
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="fixed inset-0 z-50 flex items-center justify-center p-md"
-	transition:fade={{ duration: 150 }}
->
-	<div 
-		class="absolute inset-0 bg-surface-page opacity-80 backdrop-blur-sm" 
-		onclick={handleCancel}
-	></div>
-
-	<div
-		bind:this={dialogRef}
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		aria-labelledby="dialog-title"
-		aria-describedby="dialog-message"
-		class="relative w-full max-w-[480px] rounded-lg border border-border bg-surface-page p-lg shadow-lg"
-		onclick={(event) => event.stopPropagation()}
-		transition:scale={{ duration: 150, start: 0.95 }}
-	>
-		<h2 id="dialog-title" class="mb-sm text-xl font-semibold text-text-primary">
-			{title}
-		</h2>
-		
-		<p id="dialog-message" class="mb-lg text-text-muted">
-			{message}
-		</p>
-
-		<div class="flex justify-end gap-md">
-			<button
-			type="button"
-			class="btn-secondary"
-			onclick={handleCancel}
-			>
-				{cancelText}
-			</button>
-			<button
+<DialogShell title={title} description={message} onClose={handleCancel}>
+	<div class="flex justify-end gap-md">
+		<button type="button" class="btn-secondary" onclick={handleCancel}>
+			{cancelText}
+		</button>
+		<button
 			data-testid="confirm-delete"
 			bind:this={confirmBtnRef}
 			type="button"
 			class={confirmVariant === 'danger' ? 'btn-danger' : 'btn-primary'}
 			onclick={handleConfirm}
-			>
-				{confirmText}
-			</button>
-		</div>
+		>
+			{confirmText}
+		</button>
 	</div>
-</div>
+</DialogShell>

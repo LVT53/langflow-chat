@@ -178,7 +178,7 @@
 			</div>
 		</div>
 
-		<div class="max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
+		<div class="knowledge-memory-modal-content max-h-[calc(88vh-104px)] overflow-y-auto px-5 py-5 md:px-6">
 			{#if memoryLoading && !memoryLoaded}
 				<div class="rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
 					Loading memory profile…
@@ -505,3 +505,53 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.knowledge-memory-modal-content :global(table thead) {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: var(--surface-elevated);
+	}
+
+	.knowledge-memory-modal-content :global(tbody tr) {
+		transition: background-color var(--duration-standard) var(--ease-out);
+	}
+
+	.knowledge-memory-modal-content :global(tbody tr:hover) {
+		background: var(--surface-elevated);
+	}
+
+	.knowledge-memory-modal-content :global(input[type='checkbox']) {
+		appearance: none;
+		width: 18px;
+		height: 18px;
+		border: 1.5px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		background: var(--surface-elevated);
+		cursor: pointer;
+		position: relative;
+		transition: all var(--duration-standard) var(--ease-out);
+	}
+
+	.knowledge-memory-modal-content :global(input[type='checkbox']:hover) {
+		border-color: var(--accent);
+	}
+
+	.knowledge-memory-modal-content :global(input[type='checkbox']:checked) {
+		background: var(--accent);
+		border-color: var(--accent);
+	}
+
+	.knowledge-memory-modal-content :global(input[type='checkbox']:checked::after) {
+		content: '';
+		position: absolute;
+		left: 5px;
+		top: 2px;
+		width: 5px;
+		height: 9px;
+		border: solid white;
+		border-width: 0 2px 2px 0;
+		transform: rotate(45deg);
+	}
+</style>
