@@ -946,7 +946,7 @@
 </svelte:head>
 
 <div
-	class="chat-page flex h-full min-w-0 flex-col bg-surface-page"
+	class="chat-page flex h-full min-w-0 flex-col"
 	role="region"
 	aria-label="Chat page"
 	ondragenter={handleDragEnter}

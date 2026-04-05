@@ -222,6 +222,17 @@ body {
   overscroll-behavior: none;
 }
 
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 @layer components {
   /* Prefers reduced motion - disables all animations for accessibility */
   @media (prefers-reduced-motion: reduce) {

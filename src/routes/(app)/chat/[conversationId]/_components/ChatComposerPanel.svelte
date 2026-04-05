@@ -103,6 +103,6 @@
 <style>
 	.composer-layer {
 		flex-shrink: 0;
-		padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+		padding: 0.75rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
 	}
 </style>

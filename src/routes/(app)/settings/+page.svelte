@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import ProfilePictureEditor from '$lib/components/ui/ProfilePictureEditor.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { clearConversationSessionState } from '$lib/client/conversation-session';
 	import {
 		deleteAccount,
@@ -100,6 +101,7 @@
 
 	let forgetEverythingLoading = $state(false);
 	let forgetEverythingError = $state('');
+	let showForgetEverythingConfirm = $state(false);
 
 	let adminConfig = $state<Record<string, string>>(
 		initialCurrentConfigValues ? { ...initialCurrentConfigValues } : {}
@@ -252,12 +254,17 @@
 		}
 	}
 
+	function requestForgetEverything() {
+		showForgetEverythingConfirm = true;
+	}
+
+	function closeForgetEverythingConfirm() {
+		showForgetEverythingConfirm = false;
+	}
+
 	async function runForgetEverything() {
 		forgetEverythingError = '';
-		const confirmed = window.confirm(
-			'Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves.'
-		);
-		if (!confirmed) return;
+		showForgetEverythingConfirm = false;
 
 		forgetEverythingLoading = true;
 		try {
@@ -379,7 +386,7 @@
 				onOpenDeleteModal={() => (showDeleteModal = true)}
 				forgetEverythingLoading={forgetEverythingLoading}
 				forgetEverythingError={forgetEverythingError}
-				onForgetEverything={runForgetEverything}
+				onForgetEverything={requestForgetEverything}
 			/>
 		{/if}
 
@@ -441,6 +448,21 @@
 		bind:showResetPw
 		onConfirm={confirmResetAccount}
 		onCancel={closeResetModal}
+	/>
+{/if}
+
+{#if showForgetEverythingConfirm}
+	<ConfirmDialog
+		title="Reset Memory"
+		message="Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves."
+		confirmText={forgetEverythingLoading ? 'Resetting…' : 'Reset Memory'}
+		confirmVariant="danger"
+		onCancel={closeForgetEverythingConfirm}
+		onConfirm={() => {
+			if (!forgetEverythingLoading) {
+				void runForgetEverything();
+			}
+		}}
 	/>
 {/if}
 
