@@ -4,12 +4,9 @@
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { buildKnowledgeWorkspaceHrefFromSearchResult } from '$lib/client/document-workspace-navigation';
-	import { searchVaultFiles } from '$lib/client/api/knowledge';
 	import { conversations, loadConversations } from '$lib/stores/conversations';
 	import { projects } from '$lib/stores/projects';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
-	import type { KnowledgeVaultSearchResult } from '$lib/types';
 
 	let { isOpen = false, onClose = () => {} }: {
 		isOpen?: boolean;
@@ -18,14 +15,10 @@
 
 	let searchQuery = $state('');
 	let conversationLoading = $state(false);
-	let vaultLoading = $state(false);
-	let vaultSearchError = $state('');
-	let vaultResults = $state<KnowledgeVaultSearchResult[]>([]);
 	let modalRef = $state<HTMLDivElement | undefined>(undefined);
 	let searchInputRef = $state<HTMLInputElement | undefined>(undefined);
 	let previousFocus: HTMLElement | null = null;
 	let wasOpen = false;
-	let activeSearchRequestId = 0;
 
 	const focusableSelector =
 		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -39,7 +32,6 @@
 				conversation.title.toLowerCase().includes(normalizedSearchQuery)
 			)
 		: searchableConversations.slice(0, 6));
-	const hasSearchResults = $derived(conversationResults.length > 0 || vaultResults.length > 0);
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -80,44 +72,9 @@
 		wasOpen = true;
 	});
 
-	$effect(() => {
-		if (!browser || !isOpen) return;
-
-		const requestId = ++activeSearchRequestId;
-		const delayMs = trimmedSearchQuery ? 140 : 0;
-		const timeoutId = window.setTimeout(() => {
-			vaultLoading = true;
-			vaultSearchError = '';
-			void searchVaultFiles(trimmedSearchQuery, 6)
-				.then((results) => {
-					if (requestId !== activeSearchRequestId) return;
-					vaultResults = results;
-				})
-				.catch((error) => {
-					if (requestId !== activeSearchRequestId) return;
-					vaultResults = [];
-					vaultSearchError =
-						error instanceof Error ? error.message : 'Failed to search vault files.';
-				})
-				.finally(() => {
-					if (requestId === activeSearchRequestId) {
-						vaultLoading = false;
-					}
-				});
-		}, delayMs);
-
-		return () => {
-			window.clearTimeout(timeoutId);
-		};
-	});
-
 	function handleClose() {
 		searchQuery = '';
 		conversationLoading = false;
-		vaultLoading = false;
-		vaultSearchError = '';
-		vaultResults = [];
-		activeSearchRequestId += 1;
 		onClose();
 		previousFocus?.focus();
 		previousFocus = null;
@@ -159,14 +116,6 @@
 		currentConversationId.set(id);
 		handleClose();
 		await goto(`/chat/${id}`);
-		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
-			sidebarOpen.set(false);
-		}
-	}
-
-	async function handleVaultSelection(result: KnowledgeVaultSearchResult) {
-		handleClose();
-		await goto(buildKnowledgeWorkspaceHrefFromSearchResult(result));
 		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
 			sidebarOpen.set(false);
 		}
@@ -229,7 +178,7 @@
 						bind:this={searchInputRef}
 						bind:value={searchQuery}
 						type="text"
-						placeholder="Search conversations or vault files..."
+						placeholder="Search conversations..."
 						class="h-10 w-full bg-transparent text-[16px] font-sans text-text-primary outline-none placeholder:text-text-muted"
 					/>
 					{#if searchQuery}
@@ -249,7 +198,7 @@
 			</div>
 
 			<div class="max-h-[423px] overflow-y-auto px-4 py-3">
-				{#if conversationLoading || (vaultLoading && !hasSearchResults)}
+				{#if conversationLoading}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
 							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin text-icon-muted">
@@ -258,7 +207,7 @@
 						</div>
 						<h3 class="text-[16px] font-sans text-text-primary">Loading...</h3>
 					</div>
-				{:else if !hasSearchResults && !vaultSearchError}
+				{:else if conversationResults.length === 0}
 					<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 						<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-elevated">
 							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
@@ -273,57 +222,6 @@
 					</div>
 				{:else}
 					<div class="space-y-5">
-						{#if vaultResults.length > 0 || vaultSearchError}
-							<section class="space-y-2">
-								<div class="px-2 text-[11px] font-sans font-medium uppercase tracking-[0.14em] text-text-muted">
-									{trimmedSearchQuery ? 'Vault files' : 'Recent vault files'}
-								</div>
-								{#if vaultSearchError}
-									<div class="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm font-sans text-danger">
-										{vaultSearchError}
-									</div>
-								{:else}
-									<div class="space-y-1">
-										{#each vaultResults as result (result.id)}
-											<button
-												type="button"
-												class="search-result-item flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-elevated"
-												onclick={() => handleVaultSelection(result)}
-											>
-												<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
-													<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
-														<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-														<path d="M14 2v6h6"></path>
-														<path d="M9 15h6"></path>
-														<path d="M9 11h3"></path>
-													</svg>
-												</div>
-												<div class="min-w-0 flex-1">
-													<div class="flex flex-wrap items-center gap-2">
-														<div class="truncate text-[15px] font-sans font-medium text-text-primary">
-															{result.name}
-														</div>
-														<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-sans uppercase tracking-[0.12em] text-text-muted">
-															{result.vaultName}
-														</span>
-														<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-sans uppercase tracking-[0.12em] text-text-muted">
-															{result.normalizedAvailable ? 'AI ready' : 'Source only'}
-														</span>
-													</div>
-													<p class="search-result-snippet mt-1 text-[13px] font-sans leading-[1.5] text-text-secondary">
-														{result.snippet ?? result.summary ?? 'Open to inspect the extracted text used for retrieval.'}
-													</p>
-												</div>
-												<div class="shrink-0 text-[12px] font-sans font-medium text-accent">
-													AI view
-												</div>
-											</button>
-										{/each}
-									</div>
-								{/if}
-							</section>
-						{/if}
-
 						{#if conversationResults.length > 0}
 							<section class="space-y-2">
 								<div class="px-2 text-[11px] font-sans font-medium uppercase tracking-[0.14em] text-text-muted">

@@ -20,6 +20,7 @@
 		onJumpToSource = undefined,
 		onCloseDocument,
 		onCloseWorkspace,
+		onPageChange = undefined,
 	}: {
 		open?: boolean;
 		documents?: DocumentWorkspaceItem[];
@@ -30,6 +31,7 @@
 		onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onCloseDocument: (documentId: string) => void;
 		onCloseWorkspace: () => void;
+		onPageChange?: ((page: number) => void) | undefined;
 	} = $props();
 
 	let activeDocument = $derived.by(() => {
@@ -45,6 +47,113 @@
 	let compareError = $state<string | null>(null);
 	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
 	let markdownModulePromise: Promise<MarkdownModule> | null = null;
+
+	// Fade animation state
+	let isVisible = $state(false);
+	let shouldRender = $state(false);
+	let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Page navigation state
+	let currentPage = $state(1);
+	let pageInputValue = $state('1');
+	let pageInputError = $state<string | null>(null);
+	let lastDocumentId = $state<string | null>(null);
+
+	// Resize state
+	let isResizing = $state(false);
+	let resizeStartX = $state(0);
+	let resizeStartWidth = $state(400);
+	let workspaceWidth = $state(400);
+	const MIN_WIDTH = 320;
+	const MAX_WIDTH_RATIO = 0.42;
+
+	$effect(() => {
+		if (activeDocument && activeDocument.id !== lastDocumentId) {
+			lastDocumentId = activeDocument.id;
+			currentPage = activeDocument.currentPage ?? 1;
+			pageInputValue = String(currentPage);
+			pageInputError = null;
+		}
+	});
+
+	$effect(() => {
+		if (open && activeDocument) {
+			if (closeAnimationTimer) {
+				clearTimeout(closeAnimationTimer);
+				closeAnimationTimer = null;
+			}
+
+			shouldRender = true;
+			isVisible = false;
+			const frame = requestAnimationFrame(() => {
+				isVisible = true;
+			});
+
+			return () => cancelAnimationFrame(frame);
+		}
+
+		isVisible = false;
+		if (shouldRender && !closeAnimationTimer) {
+			closeAnimationTimer = setTimeout(() => {
+				shouldRender = false;
+				closeAnimationTimer = null;
+			}, 150);
+		}
+	});
+
+	function handlePageInputChange(event: Event) {
+		const input = event.target as HTMLInputElement;
+		pageInputValue = input.value;
+		pageInputError = null;
+	}
+
+	function handlePageInputKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			validateAndJumpToPage();
+		}
+	}
+
+	function validateAndJumpToPage() {
+		const totalPages = activeDocument?.totalPages ?? 1;
+		const pageNum = parseInt(pageInputValue, 10);
+
+		if (isNaN(pageNum)) {
+			pageInputError = 'Please enter a valid number';
+			return;
+		}
+
+		if (pageNum < 1 || pageNum > totalPages) {
+			pageInputError = `Invalid: page must be between 1 and ${totalPages}`;
+			return;
+		}
+
+		pageInputError = null;
+		currentPage = pageNum;
+		onPageChange?.(pageNum);
+	}
+
+	function startResize(event: MouseEvent) {
+		isResizing = true;
+		resizeStartX = event.clientX ?? 0;
+		const desktopShell = document.querySelector('.workspace-shell-desktop') as HTMLElement;
+		if (desktopShell) {
+			resizeStartWidth = desktopShell.offsetWidth;
+		}
+	}
+
+	function handleResizeMove(event: MouseEvent) {
+		if (!isResizing) return;
+		
+		const clientX = event.clientX ?? 0;
+		const deltaX = resizeStartX - clientX;
+		const newWidth = Math.max(MIN_WIDTH, Math.min(resizeStartWidth + deltaX, window.innerWidth * MAX_WIDTH_RATIO));
+		workspaceWidth = newWidth;
+	}
+
+	function stopResize() {
+		isResizing = false;
+	}
 
 	function formatRoleLabel(role: string | null | undefined): string | null {
 		if (!role) return null;
@@ -119,6 +228,11 @@
 
 	function isTextDocument(document: DocumentWorkspaceItem): boolean {
 		return determinePreviewFileType(document.mimeType, document.filename) === 'text';
+	}
+
+	function isMultiPageDocument(document: DocumentWorkspaceItem | null): boolean {
+		if (!document) return false;
+		return (document.totalPages ?? 1) > 1;
 	}
 
 	function getDefaultCompareDocumentId(documentsInFamily: DocumentWorkspaceItem[]): string | null {
@@ -243,7 +357,7 @@
 
 </script>
 
-{#if open && activeDocument}
+{#if shouldRender && activeDocument}
 	<!-- Mobile overlay -->
 	<div class="workspace-mobile-backdrop md:hidden">
 		<button
@@ -457,7 +571,23 @@
 	</div>
 
 	<!-- Desktop / tablet side pane -->
-	<aside class="workspace-shell workspace-shell-desktop" aria-label="Document workspace">
+	<aside 
+		class="workspace-shell workspace-shell-desktop transition fade"
+		class:workspace-fade-in={isVisible}
+		class:workspace-resizing={isResizing}
+		style:width={workspaceWidth > 0 ? `${workspaceWidth}px` : undefined}
+		style:transition="opacity 150ms ease-out, transform 150ms ease-out"
+		style:opacity={isVisible ? '1' : '0'}
+		style:transform={isVisible ? 'translateX(0)' : 'translateX(-20px)'}
+		aria-label="Document workspace"
+	>
+		<div 
+			class="workspace-resize-handle" 
+			data-testid="resize-handle"
+			onmousedown={startResize}
+			role="separator"
+			aria-label="Resize workspace panel"
+		></div>
 		<div class="workspace-header">
 			<div class="workspace-heading">
 				<div class="workspace-eyebrow">Working Document</div>
@@ -585,7 +715,32 @@
 			</div>
 		{/if}
 
-		<div class="workspace-body">
+		<div class="workspace-body" data-testid="page-scroll-container">
+			{#if isMultiPageDocument(activeDocument)}
+				<div class="workspace-page-nav">
+					<div class="workspace-page-input-wrap">
+						<label class="workspace-page-input-label" for="page-input-desktop">Page</label>
+						<input
+							id="page-input-desktop"
+							type="text"
+							class="workspace-page-input"
+							class:workspace-page-input-error={pageInputError !== null}
+							bind:value={pageInputValue}
+							onchange={handlePageInputChange}
+							onkeydown={handlePageInputKeyDown}
+							data-testid="page-input"
+							aria-invalid={pageInputError !== null}
+							aria-describedby={pageInputError ? 'page-input-error-desktop' : undefined}
+						/>
+						<span class="workspace-page-total">of {activeDocument?.totalPages ?? 1}</span>
+					</div>
+					{#if pageInputError}
+						<span class="workspace-page-error" data-testid="page-input-error" id="page-input-error-desktop">
+							{pageInputError}
+						</span>
+					{/if}
+				</div>
+			{/if}
 			{#if compareMode && comparedDocument}
 				<div class="workspace-compare">
 					<div class="workspace-compare-header">
@@ -692,6 +847,14 @@
 
 	.workspace-shell-desktop {
 		display: none;
+		transition: opacity var(--duration-standard) ease-out, transform var(--duration-standard) ease-out;
+		opacity: 0;
+		transform: translateX(-20px);
+	}
+
+	.workspace-fade-in {
+		opacity: 1;
+		transform: translateX(0);
 	}
 
 	.workspace-header {
@@ -1120,6 +1283,33 @@
 			flex: 0 0 auto;
 			border-left: 1px solid var(--border-subtle);
 			background: var(--surface-page);
+			transition: opacity var(--duration-standard) ease-out, transform var(--duration-standard) ease-out;
+			opacity: 0;
+			transform: translateX(-20px);
+		}
+
+		.workspace-fade-in {
+			opacity: 1;
+			transform: translateX(0);
+		}
+
+		.workspace-resizing {
+			transition: none;
+		}
+
+		.workspace-resize-handle {
+			position: absolute;
+			left: 0;
+			top: 0;
+			bottom: 0;
+			width: 4px;
+			cursor: col-resize;
+			background: transparent;
+			z-index: 10;
+		}
+
+		.workspace-resize-handle:hover {
+			background: var(--accent);
 		}
 
 		.workspace-compare-grid {
@@ -1137,5 +1327,73 @@
 		.workspace-mobile-backdrop {
 			display: none;
 		}
+	}
+
+	.workspace-page-indicator {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.workspace-page-label {
+		color: var(--text-muted);
+	}
+
+	.workspace-page-input {
+		width: 3rem;
+		padding: 0.25rem 0.5rem;
+		border: 1px solid var(--border-default);
+		border-radius: 0.375rem;
+		background: var(--surface-page);
+		color: var(--text-primary);
+		font-size: 0.78rem;
+		text-align: center;
+	}
+
+	.workspace-page-input:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.workspace-page-input-error {
+		border-color: var(--danger);
+	}
+
+	.workspace-page-total {
+		color: var(--text-muted);
+	}
+
+	.workspace-page-error {
+		display: block;
+		color: var(--danger);
+		font-size: 0.72rem;
+		margin-top: 0.25rem;
+	}
+
+	.workspace-page-nav {
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--border-default);
+		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
+	}
+
+	.workspace-page-input-wrap {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+	}
+
+	.workspace-page-input-label {
+		color: var(--text-muted);
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 </style>

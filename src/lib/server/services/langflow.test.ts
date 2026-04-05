@@ -272,7 +272,6 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs`');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
       expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');
-      expect(body.tweaks.system_prompt).toContain('Save to Vault');
 
       expect(result).toMatchObject({
         text: 'AI response',

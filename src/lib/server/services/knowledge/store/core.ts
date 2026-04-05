@@ -6,7 +6,6 @@ import {
   artifactLinks,
   artifacts,
   conversations,
-  knowledgeVaults,
 } from "$lib/server/db/schema";
 import type {
   Artifact,
@@ -51,7 +50,6 @@ type ArtifactSummaryRow = Pick<
   | "mimeType"
   | "sizeBytes"
   | "conversationId"
-  | "vaultId"
   | "summary"
   | "createdAt"
   | "updatedAt"
@@ -59,12 +57,11 @@ type ArtifactSummaryRow = Pick<
 
 export type ArtifactOwnershipScope = {
   conversationIds: Set<string>;
-  vaultIds: Set<string>;
 };
 
 type ArtifactOwnershipCandidate = Pick<
   typeof artifacts.$inferSelect,
-  "userId" | "type" | "conversationId" | "vaultId"
+  "userId" | "type" | "conversationId"
 >;
 
 export const knowledgeArtifactListSelection = {
@@ -76,7 +73,6 @@ export const knowledgeArtifactListSelection = {
   mimeType: artifacts.mimeType,
   sizeBytes: artifacts.sizeBytes,
   conversationId: artifacts.conversationId,
-  vaultId: artifacts.vaultId,
   summary: artifacts.summary,
   metadataJson: artifacts.metadataJson,
   createdAt: artifacts.createdAt,
@@ -86,20 +82,13 @@ export const knowledgeArtifactListSelection = {
 export async function getArtifactOwnershipScope(
   userId: string,
 ): Promise<ArtifactOwnershipScope> {
-  const [conversationRows, vaultRows] = await Promise.all([
-    db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.userId, userId)),
-    db
-      .select({ id: knowledgeVaults.id })
-      .from(knowledgeVaults)
-      .where(eq(knowledgeVaults.userId, userId)),
-  ]);
+  const conversationRows = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.userId, userId));
 
   return {
     conversationIds: new Set(conversationRows.map((row) => row.id)),
-    vaultIds: new Set(vaultRows.map((row) => row.id)),
   };
 }
 
@@ -109,13 +98,9 @@ export function buildArtifactVisibilityCondition(params: {
 }) {
   const conditions = [eq(artifacts.userId, params.userId)];
   const conversationIds = Array.from(params.ownershipScope.conversationIds);
-  const vaultIds = Array.from(params.ownershipScope.vaultIds);
 
   if (conversationIds.length > 0) {
     conditions.push(inArray(artifacts.conversationId, conversationIds));
-  }
-  if (vaultIds.length > 0) {
-    conditions.push(inArray(artifacts.vaultId, vaultIds));
   }
 
   return or(...conditions);
@@ -139,10 +124,6 @@ export function isArtifactCanonicallyOwned(params: {
     return ownershipScope.conversationIds.has(artifact.conversationId);
   }
 
-  if (artifact.vaultId) {
-    return ownershipScope.vaultIds.has(artifact.vaultId);
-  }
-
   return artifact.userId === userId;
 }
 
@@ -156,7 +137,6 @@ export function mapArtifactSummary(row: ArtifactSummaryRow): ArtifactSummary {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes ?? null,
     conversationId: row.conversationId ?? null,
-    vaultId: row.vaultId ?? null,
     summary: row.summary ?? null,
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),

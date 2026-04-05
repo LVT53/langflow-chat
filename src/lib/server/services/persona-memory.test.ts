@@ -497,6 +497,7 @@ describe('persona-memory temporal safeguards', () => {
 	it('filters artifact-derived Honcho memories before persona clustering', async () => {
 		mockCanUseContextSummarizer.mockReturnValue(false);
 		mockSelectQuery
+			.mockImplementationOnce(() => createSelectChain([]))
 			.mockImplementationOnce(() => createSelectChain([{ id: 'conversation-doc' }]))
 			.mockImplementationOnce(() => createSelectChain([]))
 			.mockImplementationOnce(() =>

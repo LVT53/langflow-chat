@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { fetchVaults, type Vault } from '$lib/client/api/knowledge';
 	import type { DocumentWorkspaceItem } from '$lib/types';
-	import VaultPickerModal from './VaultPickerModal.svelte';
 
 	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
 
@@ -23,8 +21,6 @@
 		downloadUrl: string;
 		status: 'generating' | 'success' | 'failed';
 		error?: string;
-		vaults?: Vault[];
-		savedVaultName?: string | null;
 		onOpen?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	}
 
@@ -46,18 +42,10 @@
 		downloadUrl,
 		status,
 		error,
-		vaults = [],
-		savedVaultName = null,
 		onOpen = undefined,
 	}: GeneratedFileProps = $props();
 
-	let showVaultPicker = $state(false);
 	let showPreview = $state(false);
-	let isSaving = $state(false);
-	let isLoadingVaults = $state(false);
-	let saveError = $state<string | null>(null);
-	let currentSavedVaultName = $state<string | null>(null);
-	let availableVaults = $state<Vault[]>([]);
 	let canPreview = $derived(status === 'success');
 	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
 
@@ -92,38 +80,6 @@
 		return GenericFileIcon;
 	}
 
-	$effect(() => {
-		if (currentSavedVaultName === null && savedVaultName) {
-			currentSavedVaultName = savedVaultName;
-		}
-		if (vaults.length > 0) {
-			availableVaults = vaults;
-		}
-	});
-
-	async function handleSaveToVault() {
-		if (currentSavedVaultName) return;
-		saveError = null;
-
-		if (availableVaults.length === 0) {
-			isLoadingVaults = true;
-			try {
-				availableVaults = await fetchVaults();
-			} catch (err) {
-				saveError = err instanceof Error ? err.message : 'Failed to load vaults';
-				return;
-			} finally {
-				isLoadingVaults = false;
-			}
-		}
-
-		showVaultPicker = true;
-	}
-
-	function handleVaultPickerCancel() {
-		showVaultPicker = false;
-	}
-
 	function handlePreviewOpen() {
 		if (!canPreview) return;
 		if (onOpen) {
@@ -145,7 +101,6 @@
 				artifactId,
 				conversationId,
 				downloadUrl,
-				savedVaultName: currentSavedVaultName,
 			});
 			return;
 		}
@@ -162,32 +117,6 @@
 		}
 
 		return filePreviewModulePromise;
-	}
-
-	async function handleVaultPickerSave(vaultId: string) {
-		isSaving = true;
-		saveError = null;
-
-		try {
-			const response = await fetch(`/api/chat/files/${fileId}/save-to-vault`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ conversationId, vaultId }),
-			});
-
-			if (!response.ok) {
-				const data = await response.json();
-				throw new Error(data.error || 'Failed to save to vault');
-			}
-
-			const data = await response.json();
-			currentSavedVaultName = data.vaultName;
-			showVaultPicker = false;
-		} catch (err) {
-			saveError = err instanceof Error ? err.message : 'Failed to save to vault';
-		} finally {
-			isSaving = false;
-		}
 	}
 
 	function stopActionPropagation(event: MouseEvent) {
@@ -363,15 +292,6 @@
 	</svg>
 {/snippet}
 
-{#if showVaultPicker}
-	<VaultPickerModal
-		vaults={availableVaults}
-		{filename}
-		onSave={handleVaultPickerSave}
-		onCancel={handleVaultPickerCancel}
-	/>
-{/if}
-
 {#if showPreview}
 	{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
 		<FilePreviewComponent
@@ -411,25 +331,6 @@
 			<div class="file-meta-row">
 				{#if status === 'success'}
 					<div class="file-size">{formatFileSize(size)}</div>
-					{#if currentSavedVaultName}
-						<div class="saved-status">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="12"
-								height="12"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								aria-hidden="true"
-							>
-								<polyline points="20 6 9 17 4 12" />
-							</svg>
-							<span>Saved to Vault: {currentSavedVaultName}</span>
-						</div>
-					{/if}
 				{:else if status === 'generating'}
 					<div class="generating-text">
 						{@render SpinnerIcon()}
@@ -437,9 +338,6 @@
 					</div>
 				{:else if status === 'failed'}
 					<div class="error-text">{error || 'File generation failed'}</div>
-				{/if}
-				{#if saveError}
-					<div class="save-error-text">{saveError}</div>
 				{/if}
 			</div>
 		</div>
@@ -473,41 +371,6 @@
 					<line x1="12" x2="12" y1="15" y2="3" />
 				</svg>
 			</a>
-
-			<button
-				type="button"
-				class="btn-secondary action-button"
-				class:action-button--vault={true}
-				class:saved={currentSavedVaultName}
-				onclick={(event) => {
-					stopActionPropagation(event);
-					void handleSaveToVault();
-				}}
-				disabled={isSaving || isLoadingVaults || !!currentSavedVaultName}
-				aria-label={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
-				title={currentSavedVaultName ? `Saved to ${currentSavedVaultName}` : `Save ${filename} to vault`}
-			>
-				{#if isSaving || isLoadingVaults}
-					<span class="sr-only">{isSaving ? 'Saving...' : 'Loading vaults...'}</span>
-					{@render SpinnerIcon()}
-				{:else}
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="14"
-						height="14"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />
-					</svg>
-					<span class="sr-only">{currentSavedVaultName ? 'Saved' : 'Save to Vault'}</span>
-				{/if}
-			</button>
 		</div>
 	{:else if status === 'generating'}
 		<div class="generating-progress" data-testid="generating-progress" aria-hidden="true"></div>
@@ -632,15 +495,6 @@
 		color: var(--text-muted);
 	}
 
-	.saved-status {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.75rem;
-		color: var(--success, #22c55e);
-	}
-
 	.generating-text {
 		display: flex;
 		align-items: center;
@@ -676,12 +530,6 @@
 	}
 
 	.error-text {
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.72rem;
-		color: var(--danger);
-	}
-
-	.save-error-text {
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 0.72rem;
 		color: var(--danger);
@@ -728,11 +576,6 @@
 		border-color: color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
 	}
 
-	.action-button.saved {
-		color: var(--success, #22c55e);
-		background: color-mix(in srgb, var(--success, #22c55e) 10%, var(--surface-page) 90%);
-	}
-
 	.action-button:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
@@ -743,11 +586,6 @@
 		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
 	}
 
-	.action-button--vault {
-		color: color-mix(in srgb, var(--accent) 54%, var(--text-primary) 46%);
-		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
-	}
-
 	.action-button:not(:disabled):hover {
 		background: color-mix(in srgb, var(--surface-page) 42%, var(--surface-elevated) 58%);
 		border-color: color-mix(in srgb, var(--border-default) 78%, transparent 22%);
@@ -755,22 +593,6 @@
 
 	.action-button--download:not(:disabled):hover {
 		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
-	}
-
-	.action-button--vault:not(:disabled):hover {
-		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
 	}
 
 	.spinner {

@@ -4,7 +4,6 @@ import SearchModal from './SearchModal.svelte';
 import { conversations } from '$lib/stores/conversations';
 import { projects } from '$lib/stores/projects';
 import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
-import { searchVaultFiles } from '$lib/client/api/knowledge';
 import { goto } from '$app/navigation';
 
 vi.mock('svelte/transition', () => ({
@@ -23,13 +22,7 @@ vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
 }));
 
-vi.mock('$lib/client/api/knowledge', () => ({
-	searchVaultFiles: vi.fn(),
-}));
-
 describe('SearchModal', () => {
-	const mockSearchVaultFiles = searchVaultFiles as ReturnType<typeof vi.fn>;
-
 	beforeEach(() => {
 		vi.clearAllMocks();
 		Object.defineProperty(window, 'matchMedia', {
@@ -67,22 +60,7 @@ describe('SearchModal', () => {
 		sidebarOpen.set(true);
 	});
 
-	it('shows vault file results alongside conversations and routes vault AI view into knowledge workspace', async () => {
-		mockSearchVaultFiles.mockResolvedValue([
-			{
-				id: 'doc-1',
-				displayArtifactId: 'source-1',
-				promptArtifactId: 'normalized-1',
-				name: 'Vault brief.txt',
-				mimeType: 'text/plain',
-				vaultId: 'vault-1',
-				vaultName: 'Research',
-				summary: 'Brief summary',
-				snippet: 'Important extracted text',
-				normalizedAvailable: true,
-				updatedAt: Date.now(),
-			},
-		]);
+	it('shows conversation search results and routes on selection', async () => {
 		const onClose = vi.fn();
 
 		render(SearchModal, {
@@ -93,19 +71,15 @@ describe('SearchModal', () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText('Vault brief.txt')).toBeInTheDocument();
 			expect(screen.getByText('Release notes')).toBeInTheDocument();
 		});
 
-		const vaultResult = screen.getByText('Vault brief.txt').closest('button');
-		expect(vaultResult).not.toBeNull();
+		const conversationResult = screen.getByText('Release notes').closest('button');
+		expect(conversationResult).not.toBeNull();
 
-		await fireEvent.click(vaultResult!);
+		await fireEvent.click(conversationResult!);
 
-		expect(goto).toHaveBeenCalledWith(
-			'/knowledge?open_artifact=normalized-1&open_filename=Vault+brief.txt&open_mime=text%2Fplain'
-		);
+		expect(goto).toHaveBeenCalledWith('/chat/conv-1');
 		expect(onClose).toHaveBeenCalled();
-		expect(mockSearchVaultFiles).toHaveBeenCalledWith('', 6);
 	});
 });

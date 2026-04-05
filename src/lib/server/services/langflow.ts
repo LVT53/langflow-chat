@@ -52,7 +52,6 @@ const FILE_GENERATION_GUARD = [
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
 	'- Only tell the user a file is ready after the tool succeeds.',
 	'- Generated files appear in the chat UI after the response finishes.',
-	'- Do not claim you saved a generated file to a vault unless a dedicated save tool actually exists. Otherwise tell the user to use the chat UI `Save to Vault` action.',
 	'- If `generate_file` fails, inspect the actual error, make one clear fix, and retry at most once.',
 ].join('\n');
 

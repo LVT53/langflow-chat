@@ -11,7 +11,7 @@ api/
   auth.ts          - Login/logout calls
   http.ts          - Base fetch wrapper, error handling
   conversations.ts - Conversation detail, evidence, titles, drafts
-  knowledge.ts     - Uploads, library, memory, vault operations
+  knowledge.ts     - Uploads, library, memory
   models.ts        - Model list fetching
   projects.ts      - Project CRUD
   settings.ts      - Settings, account, avatar, admin calls
@@ -25,7 +25,7 @@ conversation-session.ts - Landing draft IDs, pending message replay
 | Auth flows | `api/auth.ts` |
 | HTTP errors, base fetch | `api/http.ts` |
 | Conversation detail, drafts | `api/conversations.ts` |
-| Knowledge, vaults, search | `api/knowledge.ts` |
+| Knowledge, search | `api/knowledge.ts` |
 | Model list | `api/models.ts` |
 | Projects | `api/projects.ts` |
 | Settings, admin users | `api/settings.ts` |
@@ -38,7 +38,6 @@ conversation-session.ts - Landing draft IDs, pending message replay
 - **Throw on non-OK** - let callers handle with try/catch or propagate to UI error boundaries
 - **Auth is automatic** - base wrapper reads session cookie; don't manually add headers
 - **Draft cleanup** - `conversation-session.ts` owns prepared-conversation deletion transport
-- **Vault operations** - use `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`, `searchVaultFiles` from `api/knowledge.ts`
 
 ## ANTI-PATTERNS
 

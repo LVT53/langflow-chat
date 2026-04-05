@@ -1,4 +1,4 @@
-import type { DocumentWorkspaceItem, KnowledgeVaultSearchResult } from '$lib/types';
+import type { DocumentWorkspaceItem } from '$lib/types';
 
 const KNOWLEDGE_WORKSPACE_ARTIFACT_PARAM = 'open_artifact';
 const KNOWLEDGE_WORKSPACE_FILENAME_PARAM = 'open_filename';
@@ -37,16 +37,6 @@ export function buildKnowledgeWorkspaceHref(params: {
 		url.searchParams.set(KNOWLEDGE_WORKSPACE_MIMETYPE_PARAM, params.mimeType);
 	}
 	return `${url.pathname}${url.search}`;
-}
-
-export function buildKnowledgeWorkspaceHrefFromSearchResult(
-	result: KnowledgeVaultSearchResult
-): string {
-	return buildKnowledgeWorkspaceHref({
-		artifactId: result.promptArtifactId ?? result.displayArtifactId,
-		filename: result.name,
-		mimeType: result.mimeType,
-	});
 }
 
 export function getKnowledgeWorkspaceDocumentFromUrl(url: URL): DocumentWorkspaceItem | null {

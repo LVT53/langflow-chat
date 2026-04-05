@@ -8,16 +8,9 @@
 		fetchKnowledgeMemoryOverview,
 		submitKnowledgeBulkAction,
 		submitKnowledgeMemoryAction,
+		uploadKnowledgeAttachment,
 		type KnowledgeBulkAction,
 		type KnowledgeMemoryActionPayload,
-		fetchVaults,
-		createVault,
-		renameVault,
-		deleteVault,
-		fetchStorageQuota,
-		recordDocumentWorkspaceOpen,
-		type Vault,
-		type StorageQuota,
 	} from '$lib/client/api/knowledge';
 	import { browser } from '$app/environment';
 	import { isDark } from '$lib/stores/theme';
@@ -32,6 +25,8 @@
 	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
+	import DocumentsList from './_components/DocumentsList.svelte';
+	import DocumentPreviewModal from './_components/DocumentPreviewModal.svelte';
 	import type {
 		ArtifactSummary,
 		DocumentWorkspaceItem,
@@ -49,13 +44,10 @@
 		getLibraryBulkAction,
 		getLibraryBulkConfirmation,
 		getLibraryBulkKey,
-	} from './_helpers';
-	import type {
-		FocusContinuityView,
-		KnowledgeTab,
-		LibraryModal,
-		MemoryModal,
-		PersonaMemoryFilter,
+		type FocusContinuityView,
+		type LibraryModal,
+		type MemoryModal,
+		type PersonaMemoryFilter,
 	} from './_helpers';
 	import type { PageProps } from './$types';
 
@@ -67,14 +59,10 @@
 	const initialDocuments = (getData().documents ?? []) as KnowledgeDocumentItem[];
 	const initialResults = (getData().results ?? []) as ArtifactSummary[];
 	const initialWorkflows = (getData().workflows ?? []) as WorkCapsule[];
-	const initialVaults = (getData().vaults ?? []) as Vault[];
 
 	let documents = $state<KnowledgeDocumentItem[]>(initialDocuments);
 	let results = $state<ArtifactSummary[]>(initialResults);
 	let workflows = $state<WorkCapsule[]>(initialWorkflows);
-	let vaults = $state<Vault[]>(initialVaults);
-	let activeVaultId = $state<string | null>(initialVaults[0]?.id ?? null);
-	let storageQuota = $state<StorageQuota | null>(null);
 	let personaMemories = $state<PersonaMemoryItem[]>([]);
 	let taskMemories = $state<TaskMemoryItem[]>([]);
 	let focusContinuities = $state<FocusContinuityItem[]>([]);
@@ -93,7 +81,6 @@
 	});
 	const honchoEnabled = getData().honchoEnabled ?? false;
 
-	let activeTab = $state<KnowledgeTab>('library');
 	let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 	let activeWorkspaceDocumentId = $state<string | null>(null);
 	let workspaceOpen = $state(false);
@@ -116,6 +103,13 @@
 	let selectedFocusContinuityIds = $state<string[]>([]);
 	let focusContinuityView = $state<FocusContinuityView>('tasks');
 	const userDisplayName = getData().userDisplayName?.trim() || 'You';
+
+	// Documents section state
+	let documentFilter = $state<'all' | 'uploaded' | 'generated'>('all');
+	let documentPaginationLimit = $state<20 | 50 | 100>(20);
+	let documentCurrentPage = $state(1);
+	let selectedDocumentForPreview = $state<KnowledgeDocumentItem | null>(null);
+	let isPreviewModalOpen = $state(false);
 	let deletingArtifactCount = $derived(deletingArtifactIds.size);
 	let filteredPersonaMemories = $derived(personaMemories.filter(
 		(memory) => memory.state === personaMemoryFilter
@@ -198,7 +192,6 @@
 		const handoffDocument = getKnowledgeWorkspaceDocumentFromUrl(page.url);
 		if (!handoffDocument) return;
 
-		activeTab = 'library';
 		openWorkspaceDocument({
 			...handoffDocument,
 			...(handoffDocument.artifactId
@@ -251,6 +244,99 @@
 		workspaceOpen = false;
 	}
 
+	// Documents section handlers
+	function handleDocumentFilterChange(filter: 'all' | 'uploaded' | 'generated') {
+		documentFilter = filter;
+		documentCurrentPage = 1;
+	}
+
+	function handleDocumentPaginationLimitChange(limit: number) {
+		documentPaginationLimit = limit as 20 | 50 | 100;
+	}
+
+	function handleDocumentPageChange(page: number) {
+		documentCurrentPage = page;
+	}
+
+	function handleDocumentSelect(document: KnowledgeDocumentItem) {
+		selectedDocumentForPreview = document;
+		isPreviewModalOpen = true;
+	}
+
+	function handleDocumentPreviewClose() {
+		isPreviewModalOpen = false;
+		selectedDocumentForPreview = null;
+	}
+
+	function handleDocumentDownload(documentId: string) {
+		// Find the document to get the artifact ID
+		const document = documents.find(d => d.id === documentId);
+		if (!document) return;
+		
+		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+		if (!artifactId) return;
+		
+		// Trigger download via API endpoint
+		const downloadUrl = `/api/knowledge/${artifactId}/download`;
+		window.open(downloadUrl, '_blank');
+	}
+
+	async function handleDocumentDelete(documentId: string) {
+		const document = documents.find(d => d.id === documentId);
+		if (!document) return;
+		
+		// Use the existing removeArtifact function
+		await removeArtifact(documentId, document.name);
+		
+		// Close preview modal if the deleted document was being previewed
+		if (selectedDocumentForPreview?.id === documentId) {
+			handleDocumentPreviewClose();
+		}
+	}
+
+	async function handleBulkDocumentDelete(documentIds: string[]) {
+		if (documentIds.length === 0) return;
+		
+		const confirmed = window.confirm(
+			`Delete ${documentIds.length} selected document${documentIds.length === 1 ? '' : 's'}?`
+		);
+		if (!confirmed) return;
+
+		manageError = '';
+		const failures: string[] = [];
+
+		for (const documentId of documentIds) {
+			const document = documents.find(d => d.id === documentId);
+			if (!document) continue;
+			
+			deletingArtifactIds = new Set([...deletingArtifactIds, documentId]);
+			
+			try {
+				const payload = await deleteKnowledgeArtifact(documentId);
+				if (payload.success === false) {
+					throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
+				}
+			} catch (error) {
+				failures.push(document.name);
+			} finally {
+				const next = new Set(deletingArtifactIds);
+				next.delete(documentId);
+				deletingArtifactIds = next;
+			}
+		}
+
+		await refreshKnowledgeLibrary();
+
+		// Close preview modal if the deleted document was being previewed
+		if (selectedDocumentForPreview && documentIds.includes(selectedDocumentForPreview.id)) {
+			handleDocumentPreviewClose();
+		}
+
+		if (failures.length > 0) {
+			manageError = `Failed to delete ${failures.length} document${failures.length === 1 ? '' : 's'}: ${failures.join(', ')}`;
+		}
+	}
+
 	async function jumpToWorkspaceSource(document: DocumentWorkspaceItem) {
 		if (!(document.originConversationId && document.originAssistantMessageId)) {
 			return;
@@ -262,6 +348,30 @@
 				assistantMessageId: document.originAssistantMessageId,
 			})
 		);
+	}
+
+	async function handleDocumentsUpload(files: File[]) {
+		if (files.length === 0) return;
+
+		manageError = '';
+		const failures: string[] = [];
+
+		for (const file of files) {
+			try {
+				await uploadKnowledgeAttachment(file, null);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : 'Upload failed';
+				failures.push(`${file.name}: ${reason}`);
+			}
+		}
+
+		await refreshKnowledgeLibrary();
+
+		if (failures.length > 0) {
+			manageError = failures.length === files.length
+				? `Failed to upload ${files.length} file${files.length === 1 ? '' : 's'}.`
+				: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload.`;
+		}
 	}
 
 	function escapeHtml(value: string): string {
@@ -372,7 +482,7 @@
 
 	function shouldPollLiveOverview(): boolean {
 		if (!honchoEnabled || !memoryLoaded || memoryLoading) return false;
-		if (activeTab !== 'memory' || !memoryTabVisible) return false;
+		if (!memoryTabVisible) return false;
 		if (honchoOverviewSource === 'honcho_live') return false;
 		if (
 			honchoOverviewStatus === 'disabled' ||
@@ -404,13 +514,6 @@
 			}
 		} finally {
 			liveOverviewRefreshing = false;
-		}
-	}
-
-	function selectTab(tab: KnowledgeTab) {
-		activeTab = tab;
-		if (tab === 'memory') {
-			void ensureMemoryLoaded();
 		}
 	}
 
@@ -679,7 +782,7 @@
 			}
 
 			await refreshKnowledgeLibrary();
-			if (action === 'forget_everything' || memoryLoaded || activeTab === 'memory') {
+			if (action === 'forget_everything' || memoryLoaded) {
 				await ensureMemoryLoaded(true);
 			}
 			if (action === 'forget_everything') {
@@ -722,56 +825,6 @@
 			getLibraryBulkKey(kind),
 			getLibraryBulkConfirmation(kind)
 		);
-	}
-
-	function setActiveVault(vaultId: string | null) {
-		activeVaultId = vaultId;
-	}
-
-	async function handleVaultCreate(payload: { name: string; color: string }) {
-		try {
-			const vault = await createVault(payload.name, payload.color);
-			vaults = [...vaults, vault];
-			activeVaultId = vault.id;
-		} catch (error) {
-			manageError = error instanceof Error ? error.message : 'Failed to create vault.';
-		}
-	}
-
-	async function handleVaultRename(payload: { id: string; name: string }) {
-		try {
-			const updated = await renameVault(payload.id, payload.name);
-			vaults = vaults.map((v) => (v.id === payload.id ? updated : v));
-		} catch (error) {
-			manageError = error instanceof Error ? error.message : 'Failed to rename vault.';
-		}
-	}
-
-	async function handleVaultDelete(payload: { id: string }) {
-		try {
-			await deleteVault(payload.id);
-			const remainingVaults = vaults.filter((v) => v.id !== payload.id);
-			vaults = remainingVaults;
-			if (activeVaultId === payload.id) {
-				activeVaultId = remainingVaults[0]?.id ?? null;
-			}
-			await refreshStorageQuota();
-		} catch (error) {
-			manageError = error instanceof Error ? error.message : 'Failed to delete vault.';
-		}
-	}
-
-	async function handleVaultUpload(payload: { vaultId: string; response: { artifact: { id: string; name: string } } }) {
-		await refreshStorageQuota();
-		await refreshKnowledgeLibrary();
-	}
-
-	async function refreshStorageQuota() {
-		try {
-			storageQuota = await fetchStorageQuota();
-		} catch (error) {
-			console.error('Failed to refresh storage quota:', error);
-		}
 	}
 
 	function handleWindowKeydown(event: KeyboardEvent) {
@@ -831,7 +884,7 @@
 	});
 
 	$effect(() => {
-		void refreshStorageQuota();
+		void ensureMemoryLoaded();
 	});
 </script>
 
@@ -854,36 +907,6 @@
 						Persistent documents, saved results, workflow capsules, and a live memory view of what the system currently knows about you.
 					</p>
 				</div>
-
-			<div class="inline-flex w-full rounded-full border border-border bg-surface-page p-1">
-				<button
-					type="button"
-					class={`flex-1 cursor-pointer rounded-full px-4 py-2 text-sm font-sans transition ${
-						activeTab === 'library'
-							? 'bg-surface-elevated text-text-primary shadow-sm'
-							: 'text-text-secondary hover:text-text-primary'
-					}`}
-					onclick={() => selectTab('library')}
-					aria-pressed={activeTab === 'library'}
-				>
-					Library
-				</button>
-				<button
-					type="button"
-					class={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-sans transition ${
-						activeTab === 'memory'
-							? 'bg-surface-elevated text-text-primary shadow-sm'
-							: 'text-text-secondary hover:text-text-primary'
-					}`}
-					onclick={() => selectTab('memory')}
-					aria-pressed={activeTab === 'memory'}
-				>
-					Memory Profile
-					{#if memoryLoading && !memoryLoaded}
-						<span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse"></span>
-					{/if}
-				</button>
-			</div>
 			</div>
 		</div>
 
@@ -893,61 +916,70 @@
 			</div>
 		{/if}
 
-		{#if activeTab === 'library'}
-			<div class="knowledge-library-stage flex min-h-0 flex-col gap-6 lg:flex-row">
-				<div class="min-w-0 flex-1">
-					<KnowledgeLibraryView
-						{vaults}
-						{activeVaultId}
-						{documents}
-						{results}
-						{workflows}
-						quota={storageQuota}
-						onOpenLibraryModal={openLibraryModal}
-						onSelectVault={setActiveVault}
-						onCreateVault={handleVaultCreate}
-						onRenameVault={handleVaultRename}
-						onDeleteVault={handleVaultDelete}
-						onUploadToVault={handleVaultUpload}
-						onOpenDocument={openWorkspaceDocument}
-					/>
-				</div>
-
-				<DocumentWorkspace
-					open={workspaceOpen}
-					documents={workspaceDocuments}
-					availableDocuments={availableWorkspaceDocuments}
-					activeDocumentId={activeWorkspaceDocumentId}
-					onSelectDocument={selectWorkspaceDocument}
-					onOpenDocument={openWorkspaceDocument}
-					onJumpToSource={jumpToWorkspaceSource}
-					onCloseDocument={closeWorkspaceDocument}
-					onCloseWorkspace={closeWorkspace}
-				/>
-			</div>
-		{:else}
-			<KnowledgeMemoryView
-				{memoryLoading}
-				{memoryLoaded}
-				{memoryLoadError}
-				personaMemoryCount={personaMemories.length}
-				{focusContinuityItemCount}
-				{honchoEnabled}
-				{honchoOverview}
-				{honchoOverviewSource}
-				{honchoOverviewStatus}
-				{honchoOverviewHtml}
-				{honchoOverviewUpdatedAt}
-				{honchoOverviewLastAttemptAt}
-				{durablePersonaCount}
-				{activeConstraintCount}
-				{currentProjectContextCount}
-				{liveOverviewRefreshing}
-				onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
-				onRetryLiveOverview={() => void refreshLiveOverview(true)}
-				onOpenMemoryModal={openMemoryModal}
+		<div class="knowledge-library-stage flex min-h-0 flex-col gap-6 lg:flex-row">
+			<div class="min-w-0 flex-1">
+			<KnowledgeLibraryView
+				documents={documents}
+				onOpenLibraryModal={openLibraryModal}
+				onOpenDocument={openWorkspaceDocument}
 			/>
-		{/if}
+			</div>
+
+			<DocumentWorkspace
+				open={workspaceOpen}
+				documents={workspaceDocuments}
+				availableDocuments={availableWorkspaceDocuments}
+				activeDocumentId={activeWorkspaceDocumentId}
+				onSelectDocument={selectWorkspaceDocument}
+				onOpenDocument={openWorkspaceDocument}
+				onJumpToSource={jumpToWorkspaceSource}
+				onCloseDocument={closeWorkspaceDocument}
+				onCloseWorkspace={closeWorkspace}
+			/>
+		</div>
+
+		<div class="documents-section rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
+			<div class="mb-4">
+				<h2 class="text-xl font-serif tracking-[-0.02em] text-text-primary">Documents</h2>
+				<p class="text-sm text-text-secondary mt-1">Browse and manage your uploaded and generated documents</p>
+			</div>
+			<DocumentsList
+				documents={documents}
+				filter={documentFilter}
+				paginationLimit={documentPaginationLimit}
+				currentPage={documentCurrentPage}
+				onFilterChange={handleDocumentFilterChange}
+				onPaginationLimitChange={handleDocumentPaginationLimitChange}
+				onPageChange={handleDocumentPageChange}
+				onSelect={handleDocumentSelect}
+				onDelete={handleDocumentDelete}
+				onBulkDelete={handleBulkDocumentDelete}
+				onDownload={handleDocumentDownload}
+				onUpload={handleDocumentsUpload}
+			/>
+		</div>
+
+		<KnowledgeMemoryView
+			{memoryLoading}
+			{memoryLoaded}
+			{memoryLoadError}
+			personaMemoryCount={personaMemories.length}
+			{focusContinuityItemCount}
+			{honchoEnabled}
+			{honchoOverview}
+			{honchoOverviewSource}
+			{honchoOverviewStatus}
+			{honchoOverviewHtml}
+			{honchoOverviewUpdatedAt}
+			{honchoOverviewLastAttemptAt}
+			{durablePersonaCount}
+			{activeConstraintCount}
+			{currentProjectContextCount}
+			{liveOverviewRefreshing}
+			onRetryLoadMemory={() => void ensureMemoryLoaded(true)}
+			onRetryLiveOverview={() => void refreshLiveOverview(true)}
+			onOpenMemoryModal={openMemoryModal}
+		/>
 		</div>
 	</div>
 </div>
@@ -1003,6 +1035,14 @@
 		onRemoveArtifact={removeArtifact}
 	/>
 {/if}
+
+<DocumentPreviewModal
+	document={selectedDocumentForPreview}
+	open={isPreviewModalOpen}
+	onClose={handleDocumentPreviewClose}
+	onDownload={handleDocumentDownload}
+	onDelete={handleDocumentDelete}
+/>
 
 <style>
 	button {

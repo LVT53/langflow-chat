@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import DocumentWorkspace from './DocumentWorkspace.svelte';
 
 vi.mock('$lib/services/markdown', () => ({
@@ -12,6 +13,371 @@ describe('DocumentWorkspace', () => {
 		global.fetch = vi.fn();
 	});
 
+	describe('Multi-page document navigation', () => {
+		it('renders scrollable page container for multi-page documents', async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-pdf',
+							source: 'knowledge_artifact',
+							filename: 'report.pdf',
+							title: 'Annual Report',
+							documentFamilyId: 'family-report',
+							documentLabel: 'Annual Report',
+							documentRole: 'report',
+							versionNumber: 1,
+							mimeType: 'application/pdf',
+							artifactId: 'artifact-pdf',
+							totalPages: 10,
+							currentPage: 1,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-pdf',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			
+			expect(within(desktopWorkspace).queryByTestId('page-scroll-container')).toBeInTheDocument();
+			
+			const prevArrow = within(desktopWorkspace).queryByLabelText(/previous page/i);
+			const nextArrow = within(desktopWorkspace).queryByLabelText(/next page/i);
+			expect(prevArrow).not.toBeInTheDocument();
+			expect(nextArrow).not.toBeInTheDocument();
+		});
+
+		it('renders page input that accepts numeric input and jumps to valid page', async () => {
+			const onPageChange = vi.fn();
+			
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-pdf',
+							source: 'knowledge_artifact',
+							filename: 'report.pdf',
+							title: 'Annual Report',
+							documentFamilyId: 'family-report',
+							documentLabel: 'Annual Report',
+							documentRole: 'report',
+							versionNumber: 1,
+							mimeType: 'application/pdf',
+							artifactId: 'artifact-pdf',
+							totalPages: 10,
+							currentPage: 1,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-pdf',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+					onPageChange,
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
+			
+			pageInput.value = '5';
+			pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+			await tick();
+			await fireEvent.keyDown(pageInput, { key: 'Enter' });
+			
+			expect(onPageChange).toHaveBeenCalledWith(5);
+		});
+
+		it('shows error state for invalid page number input', async () => {
+			const onPageChange = vi.fn();
+			
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-pdf',
+							source: 'knowledge_artifact',
+							filename: 'report.pdf',
+							title: 'Annual Report',
+							documentFamilyId: 'family-report',
+							documentLabel: 'Annual Report',
+							documentRole: 'report',
+							versionNumber: 1,
+							mimeType: 'application/pdf',
+							artifactId: 'artifact-pdf',
+							totalPages: 10,
+							currentPage: 1,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-pdf',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+					onPageChange,
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
+			
+			pageInput.value = '15';
+			pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+			await tick();
+			await fireEvent.keyDown(pageInput, { key: 'Enter' });
+			
+			const errorMessage = within(desktopWorkspace).queryByTestId('page-input-error');
+			expect(errorMessage).toBeInTheDocument();
+			expect(errorMessage).toHaveTextContent(/invalid|out of range/i);
+			
+			expect(onPageChange).not.toHaveBeenCalled();
+		});
+
+		it('shows error for non-numeric page input', async () => {
+			const onPageChange = vi.fn();
+			
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-pdf',
+							source: 'knowledge_artifact',
+							filename: 'report.pdf',
+							title: 'Annual Report',
+							documentFamilyId: 'family-report',
+							documentLabel: 'Annual Report',
+							documentRole: 'report',
+							versionNumber: 1,
+							mimeType: 'application/pdf',
+							artifactId: 'artifact-pdf',
+							totalPages: 10,
+							currentPage: 1,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-pdf',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+					onPageChange,
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
+			
+			pageInput.value = 'abc';
+			pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+			await tick();
+			await fireEvent.keyDown(pageInput, { key: 'Enter' });
+			
+			const errorMessage = within(desktopWorkspace).queryByTestId('page-input-error');
+			expect(errorMessage).toBeInTheDocument();
+			expect(errorMessage).toHaveTextContent(/invalid|number/i);
+			
+			expect(onPageChange).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Resizable panel', () => {
+		it('can be dragged to resize to a new width', async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-1',
+							source: 'knowledge_artifact',
+							filename: 'document.pdf',
+							title: 'Document',
+							mimeType: 'application/pdf',
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-1',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const resizeHandle = within(desktopWorkspace).getByTestId('resize-handle');
+			
+			Object.defineProperty(desktopWorkspace, 'offsetWidth', { value: 500, configurable: true });
+			
+			await fireEvent.mouseDown(resizeHandle, { clientX: 500 });
+			document.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, bubbles: true }));
+			await tick();
+			document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			await tick();
+			
+			expect(desktopWorkspace.style.width).toMatch(/\d+px/);
+		});
+
+		it('respects minimum width constraint during resize', async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-1',
+							source: 'knowledge_artifact',
+							filename: 'document.pdf',
+							title: 'Document',
+							mimeType: 'application/pdf',
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-1',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const resizeHandle = within(desktopWorkspace).getByTestId('resize-handle');
+			
+			Object.defineProperty(desktopWorkspace, 'offsetWidth', { value: 500, configurable: true });
+			
+			await fireEvent.mouseDown(resizeHandle, { clientX: 500 });
+			document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1000, bubbles: true }));
+			await tick();
+			document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			await tick();
+			
+			const width = parseInt(desktopWorkspace.style.width, 10);
+			expect(width).toBeGreaterThanOrEqual(320);
+		});
+
+		it('respects maximum width constraint during resize', async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: 'doc-1',
+							source: 'knowledge_artifact',
+							filename: 'document.pdf',
+							title: 'Document',
+							mimeType: 'application/pdf',
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-1',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			const resizeHandle = within(desktopWorkspace).getByTestId('resize-handle');
+			
+			Object.defineProperty(desktopWorkspace, 'offsetWidth', { value: 500, configurable: true });
+			
+			await fireEvent.mouseDown(resizeHandle, { clientX: 500 });
+			document.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, bubbles: true }));
+			await tick();
+			document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			await tick();
+			
+			const width = parseInt(desktopWorkspace.style.width, 10);
+			const maxWidth = window.innerWidth * 0.42;
+			expect(width).toBeLessThanOrEqual(Math.ceil(maxWidth));
+		});
+	});
+
+	describe('Fade animation', () => {
+		it('has transition class for opacity/transform when opening/closing', async () => {
+			const { rerender } = render(DocumentWorkspace, {
+				props: {
+					open: false,
+					documents: [
+						{
+							id: 'doc-1',
+							source: 'knowledge_artifact',
+							filename: 'document.pdf',
+							title: 'Document',
+							mimeType: 'application/pdf',
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-1',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+			
+			await rerender({ open: true });
+			
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			
+			const classList = desktopWorkspace.className;
+			const hasTransition = 
+				classList.includes('transition') || 
+				classList.includes('fade') ||
+				classList.includes('opacity');
+			expect(hasTransition).toBe(true);
+		});
+
+		it('applies fade-in animation when opening', async () => {
+			const { rerender } = render(DocumentWorkspace, {
+				props: {
+					open: false,
+					documents: [
+						{
+							id: 'doc-1',
+							source: 'knowledge_artifact',
+							filename: 'document.pdf',
+							title: 'Document',
+							mimeType: 'application/pdf',
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: 'doc-1',
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			await rerender({ open: true });
+			
+			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
+			
+			const style = window.getComputedStyle(desktopWorkspace);
+			expect(style.transition).toMatch(/opacity|transform/);
+		});
+	});
+
+	// Existing tests below...
 	it('shows version history for the active document family and switches to an open version', async () => {
 		const onSelectDocument = vi.fn();
 		const onOpenDocument = vi.fn();

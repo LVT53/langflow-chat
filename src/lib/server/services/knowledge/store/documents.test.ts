@@ -36,10 +36,6 @@ vi.mock("$lib/server/db/schema", () => ({
     id: { name: "id" },
     userId: { name: "userId" },
   },
-  knowledgeVaults: {
-    id: { name: "id" },
-    userId: { name: "userId" },
-  },
   artifacts: {
     id: { name: "id" },
     userId: { name: "userId" },
@@ -49,7 +45,6 @@ vi.mock("$lib/server/db/schema", () => ({
     mimeType: { name: "mimeType" },
     sizeBytes: { name: "sizeBytes" },
     conversationId: { name: "conversationId" },
-    vaultId: { name: "vaultId" },
     summary: { name: "summary" },
     metadataJson: { name: "metadataJson" },
     createdAt: { name: "createdAt" },
@@ -107,7 +102,6 @@ describe("knowledge documents store", () => {
         mimeType: "application/pdf",
         sizeBytes: 1024,
         conversationId: null,
-        vaultId: "vault-1",
         summary: "Uploaded notes",
         metadataJson: null,
         createdAt: new Date("2026-04-01T10:00:00Z"),
@@ -121,7 +115,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/plain",
         sizeBytes: 512,
         conversationId: null,
-        vaultId: "vault-1",
         summary: "Normalized notes",
         metadataJson: JSON.stringify({ sourceArtifactId: "source-1" }),
         createdAt: new Date("2026-04-01T10:01:00Z"),
@@ -135,7 +128,6 @@ describe("knowledge documents store", () => {
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         sizeBytes: 2048,
         conversationId: "conv-1",
-        vaultId: null,
         summary: "First brief draft",
         metadataJson: JSON.stringify({
           documentFamilyId: "family-brief",
@@ -154,7 +146,6 @@ describe("knowledge documents store", () => {
         mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         sizeBytes: 3072,
         conversationId: "conv-2",
-        vaultId: null,
         summary: "Second brief draft",
         metadataJson: JSON.stringify({
           documentFamilyId: "family-brief",
@@ -184,14 +175,6 @@ describe("knowledge documents store", () => {
       }
 
       if (selectCall === 2) {
-        return {
-          from: vi.fn(() => ({
-            where: vi.fn(async () => [{ id: "vault-1" }]),
-          })),
-        };
-      }
-
-      if (selectCall === 3) {
         return {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
@@ -245,7 +228,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/plain",
         sizeBytes: 512,
         conversationId: null,
-        vaultId: "vault-1",
         summary: "Budget notes",
         metadataJson: null,
         contentText: "Budget notes and rough numbers",
@@ -264,7 +246,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/plain",
         sizeBytes: 512,
         conversationId: null,
-        vaultId: "vault-1",
         summary: "Forecasted quarterly revenue",
         metadataJson: null,
         contentText: "Projected quarterly revenue and forecast assumptions",
@@ -283,14 +264,6 @@ describe("knowledge documents store", () => {
         return {
           from: vi.fn(() => ({
             where: vi.fn(async () => []),
-          })),
-        };
-      }
-
-      if (selectCall === 2) {
-        return {
-          from: vi.fn(() => ({
-            where: vi.fn(async () => [{ id: "vault-1" }]),
           })),
         };
       }
@@ -325,7 +298,6 @@ describe("knowledge documents store", () => {
             mimeType: "text/plain",
             sizeBytes: 512,
             conversationId: null,
-            vaultId: "vault-1",
             summary: "Forecasted quarterly revenue",
             createdAt: new Date("2026-04-02T10:00:00Z").getTime(),
             updatedAt: new Date("2026-04-02T10:00:00Z").getTime(),
@@ -364,7 +336,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/markdown",
         sizeBytes: 512,
         conversationId: "conv-foreign",
-        vaultId: null,
         summary: "Should not leak",
         metadataJson: null,
         contentText: "budget memory from another account",
@@ -383,7 +354,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/markdown",
         sizeBytes: 512,
         conversationId: null,
-        vaultId: null,
         summary: "Should be ignored after reset",
         metadataJson: null,
         contentText: "budget memory from deleted conversation",
@@ -402,7 +372,6 @@ describe("knowledge documents store", () => {
         mimeType: "text/markdown",
         sizeBytes: 512,
         conversationId: "conv-owned",
-        vaultId: null,
         summary: "Should remain visible",
         metadataJson: null,
         contentText: "budget memory for the current user",
@@ -421,14 +390,6 @@ describe("knowledge documents store", () => {
         return {
           from: vi.fn(() => ({
             where: vi.fn(async () => [{ id: "conv-owned" }]),
-          })),
-        };
-      }
-
-      if (selectCall === 2) {
-        return {
-          from: vi.fn(() => ({
-            where: vi.fn(async () => []),
           })),
         };
       }

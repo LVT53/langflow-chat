@@ -42,11 +42,13 @@
 	let currentPage = $state(1);
 	let totalPages = $state(0);
 	let zoom = $state(1.0);
-	let canvasRef = $state<HTMLCanvasElement | null>(null);
+	let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
+	let scrollContainerRef = $state<HTMLDivElement | null>(null);
 	let isRendering = $state(false);
 	let isEmbedded = $derived(variant === 'embedded');
 	let markdownModulePromise: Promise<MarkdownModule> | null = null;
 	let pdfWorkerUrlPromise: Promise<string> | null = null;
+	let pageObserver: IntersectionObserver | null = null;
 
 	const fileTypeIcons: Record<string, string> = {
 		pdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 13v-1a2 2 0 0 1 2-2h4"/><path d="M10 13v-1a2 2 0 0 0-2-2H4"/><line x1="10" y1="13" x2="10" y2="18"/></svg>`,
@@ -68,18 +70,30 @@
 
 	// PDF.js rendering effect
 	$effect(() => {
-		if (fileType === 'pdf' && content && canvasRef) {
+		if (fileType === 'pdf' && content) {
 			renderPdf(content);
 		}
 	});
 
-	// Re-render when the visible PDF state changes. Avoid depending on `isRendering`,
-	// otherwise the effect will re-trigger itself on every render-state flip.
+	// Re-render all pages when zoom changes
 	$effect(() => {
-		if (fileType === 'pdf' && pdfDoc && canvasRef) {
+		if (fileType === 'pdf' && pdfDoc && canvasRefs.length > 0) {
 			const activeZoom = zoom;
-			void renderPage(currentPage, activeZoom);
+			void renderAllPages(activeZoom);
 		}
+	});
+
+	// Setup IntersectionObserver for page tracking
+	$effect(() => {
+		if (fileType === 'pdf' && scrollContainerRef && canvasRefs.length > 0 && browser) {
+			setupPageObserver();
+		}
+		return () => {
+			if (pageObserver) {
+				pageObserver.disconnect();
+				pageObserver = null;
+			}
+		};
 	});
 
 	async function loadMarkdownModule() {
@@ -120,6 +134,13 @@
 		currentPage = 1;
 		totalPages = 0;
 		zoom = 1.0;
+		canvasRefs = [];
+		
+		// Disconnect observer
+		if (pageObserver) {
+			pageObserver.disconnect();
+			pageObserver = null;
+		}
 
 		try {
 			const resolvedPreviewUrl =
@@ -175,6 +196,9 @@
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
 			
+			// Render all pages
+			await renderAllPages(zoom);
+			
 		} catch (err) {
 			error = 'Failed to render PDF file';
 			console.error('PDF render error:', err);
@@ -183,15 +207,34 @@
 		}
 	}
 
-	async function renderPage(pageNum: number, scale = zoom) {
-		if (!pdfDoc || !canvasRef) return;
+	async function renderAllPages(scale = zoom) {
+		if (!pdfDoc) return;
 		
 		try {
 			isRendering = true;
+			
+			// Render each page
+			for (let i = 0; i < totalPages; i++) {
+				const canvas = canvasRefs[i];
+				if (canvas) {
+					await renderPage(i + 1, scale, canvas);
+				}
+			}
+			
+			isRendering = false;
+		} catch (err) {
+			console.error('Pages render error:', err);
+			isRendering = false;
+		}
+	}
+
+	async function renderPage(pageNum: number, scale = zoom, canvas: HTMLCanvasElement) {
+		if (!pdfDoc) return;
+		
+		try {
 			const page = await pdfDoc.getPage(pageNum);
 			
 			const viewport = page.getViewport({ scale });
-			const canvas = canvasRef;
 			const context = canvas.getContext('2d');
 			
 			if (!context) return;
@@ -203,24 +246,61 @@
 				canvasContext: context,
 				viewport: viewport,
 			}).promise;
-			
-			isRendering = false;
 		} catch (err) {
 			console.error('Page render error:', err);
-			isRendering = false;
 		}
 	}
 
-	function goToPrevPage() {
-		if (currentPage > 1) {
-			currentPage--;
+	function setupPageObserver() {
+		if (!scrollContainerRef || !browser) return;
+		
+		// Disconnect existing observer
+		if (pageObserver) {
+			pageObserver.disconnect();
 		}
-	}
-
-	function goToNextPage() {
-		if (currentPage < totalPages) {
-			currentPage++;
-		}
+		
+		// Create new observer
+		pageObserver = new IntersectionObserver(
+			(entries) => {
+				// Find the most visible page
+				let mostVisiblePage = 1;
+				let maxVisibility = 0;
+				
+				entries.forEach((entry) => {
+					if (entry.isIntersecting) {
+						const pageNum = Number.parseInt(
+							(entry.target as HTMLElement).dataset.pageNum ?? '1',
+							10
+						);
+						const visibility = entry.intersectionRatio;
+						
+						if (visibility > maxVisibility) {
+							maxVisibility = visibility;
+							mostVisiblePage = pageNum;
+						}
+					}
+				});
+				
+				if (maxVisibility > 0) {
+					currentPage = mostVisiblePage;
+				}
+			},
+			{
+				root: scrollContainerRef,
+				threshold: [0, 0.25, 0.5, 0.75, 1.0],
+			}
+		);
+		
+		// Observe all page containers
+		canvasRefs.forEach((canvas, index) => {
+			if (canvas) {
+				const container = canvas.parentElement;
+				if (container) {
+					container.dataset.pageNum = String(index + 1);
+					pageObserver!.observe(container);
+				}
+			}
+		});
 	}
 
 	function zoomIn() {
@@ -552,32 +632,8 @@
 					{#if content}
 						<div class="pdf-viewer">
 							<div class="pdf-toolbar">
-								<div class="pdf-nav">
-									<button
-										type="button"
-										class="btn-icon-bare h-8 w-8"
-										onclick={goToPrevPage}
-										disabled={currentPage <= 1 || isRendering}
-										aria-label="Previous page"
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<polyline points="15 18 9 12 15 6"/>
-										</svg>
-									</button>
-									<span class="pdf-page-info">
-										Page {currentPage} of {totalPages}
-									</span>
-									<button
-										type="button"
-										class="btn-icon-bare h-8 w-8"
-										onclick={goToNextPage}
-										disabled={currentPage >= totalPages || isRendering}
-										aria-label="Next page"
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<polyline points="9 18 15 12 9 6"/>
-										</svg>
-									</button>
+								<div class="pdf-page-info">
+									Page {currentPage} of {totalPages}
 								</div>
 								<div class="pdf-zoom">
 									<button
@@ -612,13 +668,25 @@
 									</button>
 								</div>
 							</div>
-							<div class="pdf-canvas-container">
+							<div class="pdf-canvas-container" bind:this={scrollContainerRef}>
 								{#if isRendering}
 									<div class="pdf-rendering-overlay">
 										<div class="spinner-sm"></div>
 									</div>
 								{/if}
-								<canvas bind:this={canvasRef} class="pdf-canvas"></canvas>
+								<div class="pdf-pages-scroll">
+									{#if pdfDoc && totalPages > 0}
+										{#each Array(totalPages) as _, i}
+											<div class="pdf-page-wrapper">
+												<canvas
+													bind:this={canvasRefs[i]}
+													class="pdf-canvas"
+													data-page={i + 1}
+												></canvas>
+											</div>
+										{/each}
+									{/if}
+								</div>
 							</div>
 						</div>
 					{/if}
@@ -921,12 +989,6 @@
 		flex-wrap: wrap;
 	}
 
-	.pdf-nav {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
 	.pdf-page-info {
 		font-size: 0.875rem;
 		color: var(--text-muted);
@@ -962,12 +1024,26 @@
 	.pdf-canvas-container {
 		flex: 1;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		justify-content: center;
 		padding: 1.5rem;
-		overflow: auto;
+		overflow-y: auto;
 		min-height: 50vh;
 		position: relative;
+	}
+
+	.pdf-pages-scroll {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.5rem;
+		width: 100%;
+	}
+
+	.pdf-page-wrapper {
+		display: flex;
+		justify-content: center;
+		width: 100%;
 	}
 
 	.pdf-canvas {

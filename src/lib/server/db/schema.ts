@@ -12,7 +12,6 @@ export const users = sqliteTable('users', {
   theme: text('theme').notNull().default('system'),
   avatarId: integer('avatar_id'),
   profilePicture: text('profile_picture'),
-  honchoPeerVersion: integer('honcho_peer_version').notNull().default(0),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
@@ -50,27 +49,13 @@ export const messages = sqliteTable('messages', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
-export const knowledgeVaults = sqliteTable('knowledge_vaults', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  color: text('color'),
-  sortOrder: integer('sort_order').notNull().default(0),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-}, (table) => ({
-  userIdx: index('knowledge_vaults_user_idx').on(table.userId, table.sortOrder),
-}));
-
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
-  vaultId: text('vault_id').references(() => knowledgeVaults.id, { onDelete: 'set null' }),
+  vaultId: text('vault_id'), // Historical column, no FK constraint (vaults deprecated)
   type: text('type').notNull(),
   retrievalClass: text('retrieval_class').notNull().default('durable'),
   name: text('name').notNull(),

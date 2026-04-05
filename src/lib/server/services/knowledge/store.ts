@@ -49,7 +49,6 @@ export {
   findRelevantArtifactsByTypesDetailed,
   findRelevantArtifactsByTypes,
   listLogicalDocuments,
-  searchVaultDocuments,
 } from "./store/documents";
 
 export {
@@ -62,12 +61,3 @@ export {
   resolveGeneratedDocumentFamilyContext,
   selectLatestGeneratedDocumentCandidatesByFamily,
 } from "./store/document-metadata";
-
-export {
-  createVault,
-  deleteVault,
-  getVault,
-  getVaults,
-  updateVault,
-} from "./store/vaults";
-export type { Vault, VaultUpdates } from "./store/vaults";

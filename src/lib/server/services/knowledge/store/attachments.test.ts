@@ -110,7 +110,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: 'vault-1',
+								vaultId: null,
 								type: 'source_document',
 								name: 'report.pdf',
 								mimeType: 'application/pdf',
@@ -133,7 +133,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: 'vault-1',
+				vaultId: null,
 				file: mockFile,
 			});
 
@@ -141,7 +141,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 		expect(result.renameInfo).toBeUndefined();
 		});
 
-		it('should auto-rename when filename conflict exists in vault', async () => {
+		it('should auto-rename when filename conflict exists across all user artifacts', async () => {
 			const mockFile = {
 				name: 'report.pdf',
 				size: 1024,
@@ -149,13 +149,10 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(1024))),
 			} as unknown as File;
 
-			// First call: check for existing name - returns a match
-			// Second call: get all names in vault
 			let callCount = 0;
 			mockDb.select.mockImplementation(() => {
 				callCount++;
 				if (callCount === 1) {
-					// First query: findExistingArtifactByName - returns existing
 					return {
 						from: vi.fn(() => ({
 							where: vi.fn(() => ({
@@ -164,7 +161,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing-artifact',
 											userId: 'user-1',
-											vaultId: 'vault-1',
+											vaultId: null,
 											name: 'report.pdf',
 											type: 'source_document',
 											binaryHash: 'different-hash',
@@ -178,23 +175,32 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 					};
 				}
 				if (callCount === 2) {
-					// Second query: getAllArtifactNamesInVault
 					return {
 						from: vi.fn(() => ({
 							where: vi.fn(() =>
 								Promise.resolve([
 									{ name: 'report.pdf' },
 									{ name: 'other.pdf' },
+									{ name: 'doc.pdf' },
 								])
 							),
 						})),
 					};
 				}
-				// Third query: ensureConversationAttachmentLink
 				return {
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+							limit: vi.fn(() =>
+									Promise.resolve([{
+										id: 'existing-link',
+										userId: 'user-1',
+										vaultId: null,
+										name: 'report.pdf',
+										type: 'source_document',
+										binaryHash: 'different-hash',
+										createdAt: new Date('2024-01-01'),
+										updatedAt: new Date('2024-01-01'),
+									}])),
 						})),
 					})),
 				};
@@ -208,7 +214,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: 'vault-1',
+								vaultId: null,
 								type: 'source_document',
 								name: 'report_1.pdf',
 								mimeType: 'application/pdf',
@@ -235,7 +241,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: 'vault-1',
+				vaultId: null,
 				file: mockFile,
 			});
 
@@ -265,7 +271,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing-artifact',
 											userId: 'user-1',
-											vaultId: 'vault-1',
+											vaultId: null,
 											name: 'report.pdf',
 											type: 'source_document',
 											binaryHash: 'different-hash',
@@ -294,7 +300,17 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				return {
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+							limit: vi.fn(() =>
+									Promise.resolve([{
+										id: 'existing-link',
+										userId: 'user-1',
+										vaultId: null,
+										name: 'report.pdf',
+										type: 'source_document',
+										binaryHash: 'different-hash',
+										createdAt: new Date('2024-01-01'),
+										updatedAt: new Date('2024-01-01'),
+									}])),
 						})),
 					})),
 				};
@@ -308,7 +324,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: 'vault-1',
+								vaultId: null,
 								type: 'source_document',
 								name: 'report_3.pdf',
 								mimeType: 'application/pdf',
@@ -335,7 +351,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: 'vault-1',
+				vaultId: null,
 				file: mockFile,
 			});
 
@@ -364,7 +380,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing',
 											userId: 'user-1',
-											vaultId: 'vault-1',
+											vaultId: null,
 											name: 'document.docx',
 											type: 'source_document',
 											binaryHash: 'different',
@@ -387,7 +403,17 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				return {
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+							limit: vi.fn(() =>
+									Promise.resolve([{
+										id: 'existing-link',
+										userId: 'user-1',
+										vaultId: null,
+										name: 'document.docx',
+										type: 'source_document',
+										binaryHash: 'different',
+										createdAt: new Date('2024-01-01'),
+										updatedAt: new Date('2024-01-01'),
+									}])),
 						})),
 					})),
 				};
@@ -399,7 +425,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						id: 'artifact-uuid-123',
 						userId: 'user-1',
 						conversationId: 'conv-1',
-						vaultId: 'vault-1',
+						vaultId: null,
 						type: 'source_document',
 						name: 'document_1.docx',
 						mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -430,7 +456,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: 'vault-1',
+				vaultId: null,
 				file: mockFile,
 			});
 
@@ -441,7 +467,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			});
 		});
 
-		it('should skip conflict detection for conversation-scoped uploads (no vaultId)', async () => {
+		it('should auto-rename for conversation-scoped uploads when conflict exists across user artifacts', async () => {
 			const mockFile = {
 				name: 'report.pdf',
 				size: 1024,
@@ -449,13 +475,60 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(1024))),
 			} as unknown as File;
 
-			// Should not query for conflicts when vaultId is null
-			mockDb.select.mockReturnValue({
-				from: vi.fn(() => ({
-					where: vi.fn(() => ({
-						limit: vi.fn(() => Promise.resolve([])),
+			let callCount = 0;
+			mockDb.select.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() => ({
+								limit: vi.fn(() =>
+									Promise.resolve([
+										{
+											id: 'existing-artifact',
+											userId: 'user-1',
+											vaultId: null,
+											name: 'report.pdf',
+											type: 'source_document',
+											binaryHash: 'different-hash',
+											createdAt: new Date('2024-01-01'),
+											updatedAt: new Date('2024-01-01'),
+										},
+									])
+								),
+							})),
+						})),
+					};
+				}
+				if (callCount === 2) {
+					return {
+						from: vi.fn(() => ({
+							where: vi.fn(() =>
+								Promise.resolve([
+									{ name: 'report.pdf' },
+									{ name: 'other.pdf' },
+								])
+							),
+						})),
+					};
+				}
+				return {
+					from: vi.fn(() => ({
+						where: vi.fn(() => ({
+							limit: vi.fn(() =>
+									Promise.resolve([{
+										id: 'existing-link',
+										userId: 'user-1',
+										vaultId: null,
+										name: 'README',
+										type: 'source_document',
+										binaryHash: 'different',
+										createdAt: new Date('2024-01-01'),
+										updatedAt: new Date('2024-01-01'),
+									}])),
+						})),
 					})),
-				})),
+				};
 			});
 
 			mockDb.insert.mockReturnValue({
@@ -468,15 +541,19 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								conversationId: 'conv-1',
 								vaultId: null,
 								type: 'source_document',
-								name: 'report.pdf',
+								name: 'report_1.pdf',
 								mimeType: 'application/pdf',
 								extension: 'pdf',
 								sizeBytes: 1024,
 								binaryHash: 'mock-hash-123',
 								storagePath: 'data/knowledge/user-1/artifact-uuid-123.pdf',
 								contentText: null,
-								summary: 'report.pdf',
-								metadataJson: JSON.stringify({ uploadSource: 'chat' }),
+								summary: 'report_1.pdf',
+								metadataJson: JSON.stringify({
+									uploadSource: 'chat',
+									originalName: 'report.pdf',
+									renamed: true,
+								}),
 								retrievalClass: 'durable',
 								createdAt: new Date('2024-01-01'),
 								updatedAt: new Date('2024-01-01'),
@@ -493,64 +570,9 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				file: mockFile,
 			});
 
-			// Should not be renamed since there's no vaultId
-			expect(result.artifact.name).toBe('report.pdf');
-			expect(result.renameInfo).toBeUndefined();
-		});
-
-		it('should skip conversation linking for vault uploads without a conversation id', async () => {
-			const mockFile = {
-				name: 'vault.pdf',
-				size: 1024,
-				type: 'application/pdf',
-				arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(1024))),
-			} as unknown as File;
-
-			mockDb.select.mockReturnValue({
-				from: vi.fn(() => ({
-					where: vi.fn(() => ({
-						limit: vi.fn(() => Promise.resolve([])),
-					})),
-				})),
-			});
-
-			mockDb.insert.mockReturnValue({
-				values: vi.fn(() => ({
-					returning: vi.fn(() =>
-						Promise.resolve([
-							{
-								id: 'artifact-uuid-123',
-								userId: 'user-1',
-								conversationId: null,
-								vaultId: 'vault-1',
-								type: 'source_document',
-								name: 'vault.pdf',
-								mimeType: 'application/pdf',
-								extension: 'pdf',
-								sizeBytes: 1024,
-								binaryHash: 'mock-hash-123',
-								storagePath: 'data/knowledge/user-1/artifact-uuid-123.pdf',
-								contentText: null,
-								summary: 'vault.pdf',
-								metadataJson: JSON.stringify({ uploadSource: 'chat' }),
-								retrievalClass: 'durable',
-								createdAt: new Date('2024-01-01'),
-								updatedAt: new Date('2024-01-01'),
-							},
-						])
-					),
-				})),
-			});
-
-			const result = await saveUploadedArtifact({
-				userId: 'user-1',
-				conversationId: null,
-				vaultId: 'vault-1',
-				file: mockFile,
-			});
-
-			expect(result.artifact.conversationId).toBeNull();
-			expect(mockDb.insert).toHaveBeenCalledTimes(1);
+			expect(result.artifact.name).toBe('report_1.pdf');
+			expect(result.renameInfo?.wasRenamed).toBe(true);
+			expect(result.renameInfo?.originalName).toBe('report.pdf');
 		});
 
 		it('should handle files without extension', async () => {
@@ -573,7 +595,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing',
 											userId: 'user-1',
-											vaultId: 'vault-1',
+											vaultId: null,
 											name: 'README',
 											type: 'source_document',
 											binaryHash: 'different',
@@ -596,7 +618,17 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				return {
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([{ id: 'existing-link' }])),
+							limit: vi.fn(() =>
+									Promise.resolve([{
+										id: 'existing-link',
+										userId: 'user-1',
+										vaultId: null,
+										name: 'README',
+										type: 'source_document',
+										binaryHash: 'different',
+										createdAt: new Date('2024-01-01'),
+										updatedAt: new Date('2024-01-01'),
+									}])),
 						})),
 					})),
 				};
@@ -610,7 +642,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: 'vault-1',
+								vaultId: null,
 								type: 'source_document',
 								name: 'README_1',
 								mimeType: 'text/plain',
@@ -637,7 +669,7 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: 'vault-1',
+				vaultId: null,
 				file: mockFile,
 			});
 

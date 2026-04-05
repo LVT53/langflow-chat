@@ -3,7 +3,6 @@ import type {
 	KnowledgeDocumentItem,
 	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryPayload,
-	KnowledgeVaultSearchResult,
 	KnowledgeUploadResponse,
 	WorkCapsule,
 } from '$lib/types';
@@ -119,16 +118,12 @@ export async function deleteKnowledgeArtifact(id: string): Promise<KnowledgeDele
 
 export async function uploadKnowledgeAttachment(
 	file: File,
-	conversationId?: string | null,
-	vaultId?: string | null
+	conversationId?: string | null
 ): Promise<KnowledgeUploadResponse> {
 	const formData = new FormData();
 	formData.append('file', file);
 	if (conversationId) {
 		formData.append('conversationId', conversationId);
-	}
-	if (vaultId) {
-		formData.append('vaultId', vaultId);
 	}
 
 	return requestJson<KnowledgeUploadResponse>(
@@ -139,104 +134,6 @@ export async function uploadKnowledgeAttachment(
 		},
 		'Failed to upload attachment.'
 	);
-}
-
-export interface Vault {
-	id: string;
-	userId: string;
-	name: string;
-	color: string | null;
-	sortOrder: number;
-	createdAt: number;
-	updatedAt: number;
-}
-
-export interface StorageQuota {
-	totalStorageUsed: number;
-	totalFiles: number;
-	storageLimit: number;
-	usagePercent: number;
-	isWarning: boolean;
-	warningThreshold: number;
-	vaults: Array<{
-		vaultId: string;
-		vaultName: string;
-		fileCount: number;
-		storageUsed: number;
-	}>;
-}
-
-export async function fetchVaults(): Promise<Vault[]> {
-	const payload = await requestJson<{ vaults: Vault[] }>(
-		'/api/knowledge/vaults',
-		undefined,
-		'Failed to load vaults.'
-	);
-	return payload.vaults ?? [];
-}
-
-export async function createVault(name: string, color?: string): Promise<Vault> {
-	return requestJson<Vault>(
-		'/api/knowledge/vaults',
-		{
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ name, color }),
-		},
-		'Failed to create vault.'
-	);
-}
-
-export async function renameVault(id: string, name: string): Promise<Vault> {
-	return requestJson<Vault>(
-		`/api/knowledge/vaults/${id}`,
-		{
-			method: 'PATCH',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ name }),
-		},
-		'Failed to rename vault.'
-	);
-}
-
-export async function deleteVault(id: string): Promise<void> {
-	await requestJson<void>(
-		`/api/knowledge/vaults/${id}`,
-		{
-			method: 'DELETE',
-		},
-		'Failed to delete vault.'
-	);
-}
-
-export async function fetchStorageQuota(): Promise<StorageQuota> {
-	return requestJson<StorageQuota>(
-		'/api/knowledge/storage-quota',
-		undefined,
-		'Failed to load storage quota.'
-	);
-}
-
-export async function searchVaultFiles(
-	query: string,
-	limit = 6
-): Promise<KnowledgeVaultSearchResult[]> {
-	const params = new URLSearchParams({
-		q: query.trim(),
-		limit: String(limit),
-	});
-
-	const payload = await requestJson<{ results: KnowledgeVaultSearchResult[] }>(
-		`/api/knowledge/search?${params.toString()}`,
-		undefined,
-		'Failed to search vault files.'
-	);
-
-	return payload.results ?? [];
 }
 
 export async function recordDocumentWorkspaceOpen(artifactId: string): Promise<void> {

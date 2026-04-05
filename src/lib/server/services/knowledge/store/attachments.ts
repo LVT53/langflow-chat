@@ -25,6 +25,7 @@ import {
   mapArtifact,
   withAttachmentDisplayName,
 } from "./core";
+import { linkDuplicateDocument } from "./document-versioning";
 
 type PromptArtifactDiagnostics = {
   contentLength: number;
@@ -346,7 +347,6 @@ async function ensureConversationAttachmentLink(params: {
 
 async function findExistingArtifactByName(params: {
   userId: string;
-  vaultId: string | null;
   name: string;
 }): Promise<Artifact | null> {
   const rows = await db
@@ -355,9 +355,6 @@ async function findExistingArtifactByName(params: {
     .where(
       and(
         eq(artifacts.userId, params.userId),
-        params.vaultId
-          ? eq(artifacts.vaultId, params.vaultId)
-          : isNull(artifacts.vaultId),
         eq(artifacts.name, params.name),
       ),
     )
@@ -393,18 +390,14 @@ function generateUniqueFilename(
   return newName;
 }
 
-async function getAllArtifactNamesInVault(
+async function getAllArtifactNamesForUser(
   userId: string,
-  vaultId: string | null,
 ): Promise<Set<string>> {
   const rows = await db
     .select({ name: artifacts.name })
     .from(artifacts)
     .where(
-      and(
-        eq(artifacts.userId, userId),
-        vaultId ? eq(artifacts.vaultId, vaultId) : isNull(artifacts.vaultId),
-      ),
+      eq(artifacts.userId, userId),
     );
 
   return new Set(rows.map((row) => row.name));
@@ -412,25 +405,14 @@ async function getAllArtifactNamesInVault(
 
 async function resolveArtifactNameWithAutoRename(params: {
   userId: string;
-  vaultId: string | null;
   originalName: string;
 }): Promise<{
   finalName: string;
   wasRenamed: boolean;
   originalName: string;
 }> {
-  // If no vault specified, skip conflict detection (conversation-scoped uploads)
-  if (!params.vaultId) {
-    return {
-      finalName: params.originalName,
-      wasRenamed: false,
-      originalName: params.originalName,
-    };
-  }
-
   const existing = await findExistingArtifactByName({
     userId: params.userId,
-    vaultId: params.vaultId,
     name: params.originalName,
   });
 
@@ -443,10 +425,7 @@ async function resolveArtifactNameWithAutoRename(params: {
   }
 
   // Conflict detected - get all names and generate unique one
-  const allNames = await getAllArtifactNamesInVault(
-    params.userId,
-    params.vaultId,
-  );
+  const allNames = await getAllArtifactNamesForUser(params.userId);
   const uniqueName = generateUniqueFilename(params.originalName, allNames);
 
   return {
@@ -459,7 +438,6 @@ async function resolveArtifactNameWithAutoRename(params: {
 export async function saveUploadedArtifact(params: {
   userId: string;
   conversationId?: string | null;
-  vaultId?: string | null;
   file: File;
   metadata?: Record<string, unknown> | null;
 }): Promise<{
@@ -475,10 +453,8 @@ export async function saveUploadedArtifact(params: {
   const buffer = Buffer.from(await params.file.arrayBuffer());
   const binaryHash = hashBinaryBuffer(buffer);
 
-  // Resolve name conflicts for vault uploads
   const nameResolution = await resolveArtifactNameWithAutoRename({
     userId: params.userId,
-    vaultId: params.vaultId ?? null,
     originalName: params.file.name,
   });
 
@@ -496,7 +472,6 @@ export async function saveUploadedArtifact(params: {
     id: finalArtifactId,
     userId: params.userId,
     conversationId: params.conversationId,
-    vaultId: params.vaultId ?? null,
     type: "source_document",
     name: nameResolution.finalName,
     mimeType: params.file.type || null,
@@ -520,6 +495,29 @@ export async function saveUploadedArtifact(params: {
       artifactId: artifact.id,
       conversationId: params.conversationId,
     });
+  }
+
+  if (nameResolution.wasRenamed) {
+    const existing = await findExistingArtifactByName({
+      userId: params.userId,
+      name: nameResolution.originalName,
+    });
+
+    if (existing) {
+      try {
+        await linkDuplicateDocument({
+          userId: params.userId,
+          originalArtifactId: existing.id,
+          duplicateArtifactId: artifact.id,
+        });
+      } catch (error) {
+        console.error("[ATTACHMENTS] Failed to link duplicate document", {
+          originalArtifactId: existing.id,
+          duplicateArtifactId: artifact.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   return {

@@ -35,7 +35,7 @@ const {
 		mockArtifactHasReferencesOutsideConversation: vi.fn(() => Promise.resolve(false)),
 		mockBuildArtifactVisibilityCondition: vi.fn(() => ({ field: 'visibility', value: 'user-1' })),
 		mockGetArtifactOwnershipScope: vi.fn(() =>
-			Promise.resolve({ conversationIds: new Set<string>(), vaultIds: new Set<string>() })
+			Promise.resolve({ conversationIds: new Set<string>() })
 		),
 		mockGetSourceArtifactIdForNormalizedArtifact: vi.fn(() => Promise.resolve(null)),
 	};
@@ -226,7 +226,6 @@ describe('cleanup service', () => {
 		mockState.artifactRows = [{ id: 'artifact-user-owned' }, { id: 'artifact-conv-owned' }];
 		mockGetArtifactOwnershipScope.mockResolvedValue({
 			conversationIds: new Set(['conv-owned']),
-			vaultIds: new Set<string>(),
 		});
 		(verifyPassword as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 

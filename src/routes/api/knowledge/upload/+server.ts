@@ -12,7 +12,6 @@ import {
 	logAttachmentTrace,
 } from '$lib/server/services/attachment-trace';
 import { getConversation } from '$lib/server/services/conversations';
-import { getVault } from '$lib/server/services/knowledge/store/vaults';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -47,7 +46,6 @@ export const POST: RequestHandler = async (event) => {
 
 	const file = formData.get('file');
 	const conversationIdValue = formData.get('conversationId');
-	const vaultIdValue = formData.get('vaultId');
 
 	if (!(file instanceof File)) {
 		return json({ error: 'No file provided' }, { status: 400 });
@@ -56,22 +54,9 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'File too large. Maximum size is 50MB.' }, { status: 400 });
 	}
 
-	let vaultId: string | null = null;
-	if (typeof vaultIdValue === 'string' && vaultIdValue.trim()) {
-		vaultId = vaultIdValue.trim();
-		const vault = await getVault(user.id, vaultId);
-		if (!vault) {
-			return json({ error: 'Vault not found or access denied' }, { status: 400 });
-		}
-	}
-
 	let conversationId: string | null = null;
 	if (typeof conversationIdValue === 'string' && conversationIdValue.trim()) {
 		conversationId = conversationIdValue.trim();
-	}
-
-	if (!conversationId && !vaultId) {
-		return json({ error: 'conversationId is required' }, { status: 400 });
 	}
 
 	if (conversationId) {
@@ -84,7 +69,6 @@ export const POST: RequestHandler = async (event) => {
 	const uploadResult = await saveUploadedArtifact({
 		userId: user.id,
 		conversationId,
-		vaultId,
 		file,
 	});
 	const artifact = uploadResult.artifact;
@@ -105,22 +89,20 @@ export const POST: RequestHandler = async (event) => {
 		uploaded: false,
 		mode: 'none',
 	};
-	if (conversationId) {
+	syncResult = await syncArtifactToHoncho({
+		userId: user.id,
+		conversationId,
+		artifact,
+		file,
+	});
+
+	if (!syncResult.uploaded) {
 		syncResult = await syncArtifactToHoncho({
 			userId: user.id,
 			conversationId,
 			artifact,
-			file,
+			fallbackTextArtifact: normalizedArtifact,
 		});
-
-		if (!syncResult.uploaded) {
-			syncResult = await syncArtifactToHoncho({
-				userId: user.id,
-				conversationId,
-				artifact,
-				fallbackTextArtifact: normalizedArtifact,
-			});
-		}
 	}
 
 	const resolvedAttachment = await resolvePromptAttachmentArtifacts(user.id, [artifact.id]);

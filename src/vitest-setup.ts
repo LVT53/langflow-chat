@@ -1,6 +1,9 @@
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 
+process.env.LANGFLOW_API_KEY = process.env.LANGFLOW_API_KEY || 'test-key';
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test-secret';
+
 if (!Element.prototype.animate) {
 	Object.defineProperty(Element.prototype, 'animate', {
 		writable: true,
@@ -50,3 +53,19 @@ if (!URL.revokeObjectURL) {
 		value: vi.fn(),
 	});
 }
+
+// Mock IntersectionObserver for PDF viewer scroll tracking
+class MockIntersectionObserver {
+	observe = vi.fn();
+	unobserve = vi.fn();
+	disconnect = vi.fn();
+	takeRecords = vi.fn(() => []);
+	root = null;
+	rootMargin = '';
+	thresholds = [];
+}
+
+Object.defineProperty(global, 'IntersectionObserver', {
+	writable: true,
+	value: MockIntersectionObserver,
+});

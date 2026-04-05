@@ -43,7 +43,6 @@ type WorkCapsuleArtifactRow = Pick<
 	| 'mimeType'
 	| 'sizeBytes'
 	| 'conversationId'
-	| 'vaultId'
 	| 'summary'
 	| 'metadataJson'
 	| 'createdAt'
@@ -98,7 +97,6 @@ function mapWorkCapsuleFromArtifact(artifact: Artifact): WorkCapsule {
 			mimeType: artifact.mimeType,
 			sizeBytes: artifact.sizeBytes,
 			conversationId: artifact.conversationId,
-			vaultId: artifact.vaultId,
 			summary: artifact.summary,
 			createdAt: artifact.createdAt,
 			updatedAt: artifact.updatedAt,

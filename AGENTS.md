@@ -138,7 +138,6 @@ Do not:
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
   - [`src/routes/api/chat/files/[id]/download/+server.ts`](./src/routes/api/chat/files/[id]/download/+server.ts)
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
-- [`src/routes/api/chat/files/[id]/save-to-vault/+server.ts`](./src/routes/api/chat/files/[id]/save-to-vault/+server.ts)
 - [`src/routes/api/chat/files/[id]/preview/+server.ts`](./src/routes/api/chat/files/[id]/preview/+server.ts)
 - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
 - [`src/lib/components/chat/DocumentWorkspace.svelte`](./src/lib/components/chat/DocumentWorkspace.svelte)
@@ -175,7 +174,6 @@ Do:
 - keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
 - keep the Langflow custom file-generator component's source input named `source_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
 - keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, `.pptx` via `pptxgenjs`, `.docx` via `docx`, and `.odt` via `jszip` packaging
-- save-to-vault preserves the original chat file and records vault-save state via artifact metadata so the row still appears after refresh
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 - vault save is an organization action, not the switch that determines whether the AI remembers a generated document. Working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
 - working-document continuity should prefer the shared resolver’s “current generated document” signal over generic latest-output heuristics. If a generated document is selected because of active focus or a query match, do not layer a second recency-only boost on top.
@@ -277,7 +275,7 @@ Do not:
   - [`src/routes/(app)/knowledge/_components/VaultFileUpload.svelte`](./src/routes/(app)/knowledge/_components/VaultFileUpload.svelte)
   - [`src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte`](./src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte) — main-panel vault explorer
 - Vault client API:
-  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts) — `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`, `searchVaultFiles`
+  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts) — `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `searchVaultFiles`
 - Vault search API:
   - [`src/routes/api/knowledge/search/+server.ts`](./src/routes/api/knowledge/search/+server.ts)
 - Import handler:
@@ -285,8 +283,6 @@ Do not:
   - [`src/routes/api/knowledge/import/+server.ts`](./src/routes/api/knowledge/import/+server.ts)
 - File preview:
   - [`src/lib/components/knowledge/FilePreview.svelte`](./src/lib/components/knowledge/FilePreview.svelte)
-- Storage quota:
-  - [`src/routes/api/knowledge/storage-quota/+server.ts`](./src/routes/api/knowledge/storage-quota/+server.ts)
 
 Rules:
 
@@ -529,7 +525,7 @@ Rules:
 - `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
 - `src/lib/client/api/conversations.ts` also owns browser-side draft persistence and prepared-conversation deletion transport used by `conversation-session.ts`.
 - `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, memory, and vault browser calls.
-- `src/lib/client/api/knowledge.ts` provides `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `fetchStorageQuota`, `searchVaultFiles` for vault management and search.
+- `src/lib/client/api/knowledge.ts` provides `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `searchVaultFiles` for vault management and search.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
 - `src/lib/client/api/settings.ts` also owns admin-side user list/create/promote/demote/delete/revoke-session browser calls.

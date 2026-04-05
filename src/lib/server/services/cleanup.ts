@@ -10,7 +10,6 @@ import {
 	conversationTaskStates,
 	conversationWorkingSetItems,
 	conversations,
-	knowledgeVaults,
 	memoryEvents,
 	memoryProjectTaskLinks,
 	memoryProjects,
@@ -89,7 +88,6 @@ async function purgeUserData(userId: string): Promise<void> {
 		tx.delete(conversationWorkingSetItems).where(eq(conversationWorkingSetItems.userId, userId)).run();
 		tx.delete(conversationContextStatus).where(eq(conversationContextStatus.userId, userId)).run();
 		tx.delete(projects).where(eq(projects.userId, userId)).run();
-		tx.delete(knowledgeVaults).where(eq(knowledgeVaults.userId, userId)).run();
 		tx.delete(conversations).where(eq(conversations.userId, userId)).run();
 	});
 }

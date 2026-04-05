@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, readFile, unlink, access, rm } from 'fs/promises';
 import { join, extname } from 'path';
-import { and, desc, eq, inArray, like } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { artifacts, chatGeneratedFiles, knowledgeVaults } from '$lib/server/db/schema';
+import { artifacts, chatGeneratedFiles } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
 import { createArtifactLink, createGeneratedOutputArtifact } from '$lib/server/services/knowledge';
 import {
@@ -34,13 +34,6 @@ export interface ChatFile {
 	sizeBytes: number;
 	storagePath: string;
 	createdAt: number;
-}
-
-export interface ChatFileSavedVaultLink {
-	artifactId: string;
-	filename: string;
-	vaultId: string;
-	vaultName: string;
 }
 
 export interface FileInput {
@@ -699,67 +692,6 @@ export async function readChatFileContentByUser(
 	if (!file) return null;
 
 	return readStoredChatFile(file);
-}
-
-export async function listSavedVaultsForChatFiles(
-	userId: string,
-	fileIds: string[]
-): Promise<Map<string, ChatFileSavedVaultLink>> {
-	if (fileIds.length === 0) {
-		return new Map();
-	}
-
-	const fileIdSet = new Set(fileIds);
-	const rows = await db
-		.select({
-			artifactId: artifacts.id,
-			filename: artifacts.name,
-			vaultId: artifacts.vaultId,
-			vaultName: knowledgeVaults.name,
-			metadataJson: artifacts.metadataJson,
-		})
-		.from(artifacts)
-		.innerJoin(knowledgeVaults, eq(artifacts.vaultId, knowledgeVaults.id))
-		.where(
-			and(
-				eq(artifacts.userId, userId),
-				eq(artifacts.type, 'source_document'),
-				like(artifacts.metadataJson, '%"uploadSource":"chat_generated_file"%')
-			)
-		)
-		.orderBy(desc(artifacts.updatedAt));
-
-	const savedLinks = new Map<string, ChatFileSavedVaultLink>();
-
-	for (const row of rows) {
-		const metadata = parseJsonRecord(row.metadataJson ?? null);
-		const originalChatFileId =
-			typeof metadata?.originalChatFileId === 'string' ? metadata.originalChatFileId : null;
-		if (!originalChatFileId || !fileIdSet.has(originalChatFileId) || savedLinks.has(originalChatFileId)) {
-			continue;
-		}
-
-		if (!(row.vaultId && row.vaultName)) {
-			continue;
-		}
-
-		savedLinks.set(originalChatFileId, {
-			artifactId: row.artifactId,
-			filename: row.filename,
-			vaultId: row.vaultId,
-			vaultName: row.vaultName,
-		});
-	}
-
-	return savedLinks;
-}
-
-export async function getSavedVaultForChatFile(
-	userId: string,
-	fileId: string
-): Promise<ChatFileSavedVaultLink | null> {
-	const links = await listSavedVaultsForChatFiles(userId, [fileId]);
-	return links.get(fileId) ?? null;
 }
 
 /**

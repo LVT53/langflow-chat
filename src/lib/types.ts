@@ -94,8 +94,6 @@ export interface ChatGeneratedFile {
   mimeType: string | null;
   sizeBytes: number;
   createdAt: number;
-  savedVaultId?: string | null;
-  savedVaultName?: string | null;
 }
 
 export interface ChatGeneratedFileListItem {
@@ -117,8 +115,6 @@ export interface ChatGeneratedFileListItem {
   createdAt: number;
   status: 'generating' | 'success' | 'failed';
   error?: string;
-  savedVaultId?: string | null;
-  savedVaultName?: string | null;
 }
 
 export type DocumentWorkspaceSource = 'chat_generated_file' | 'knowledge_artifact';
@@ -141,7 +137,6 @@ export interface DocumentWorkspaceItem {
   artifactId?: string | null;
   conversationId?: string | null;
   downloadUrl?: string | null;
-  savedVaultName?: string | null;
 }
 
 export interface ConversationDetail {
@@ -201,7 +196,7 @@ export type ThinkingSegment =
 
 export type MessageEvidenceStatus = 'selected' | 'rejected' | 'reference';
 
-export type EvidenceChannel = 'attached' | 'retrieved' | 'tool' | 'web' | 'memory' | 'vault';
+export type EvidenceChannel = 'attached' | 'retrieved' | 'tool' | 'web' | 'memory';
 
 export interface MessageEvidenceItem {
 	id: string;
@@ -216,7 +211,6 @@ export interface MessageEvidenceItem {
 	reason?: string | null;
 	currentTurnAttachment?: boolean;
 	channels?: EvidenceChannel[];
-	vaultName?: string;
 }
 
 export interface MessageEvidenceGroup {
@@ -324,7 +318,6 @@ export interface ArtifactSummary {
   mimeType: string | null;
   sizeBytes: number | null;
   conversationId: string | null;
-  vaultId: string | null;
   summary: string | null;
   createdAt: number;
   updatedAt: number;
@@ -339,7 +332,6 @@ export interface KnowledgeDocumentItem {
   mimeType: string | null;
   sizeBytes: number | null;
   conversationId: string | null;
-  vaultId: string | null;
   summary: string | null;
   normalizedAvailable: boolean;
   documentOrigin?: 'uploaded' | 'generated';
@@ -348,6 +340,7 @@ export interface KnowledgeDocumentItem {
   documentLabel?: string | null;
   documentRole?: string | null;
   versionNumber?: number | null;
+  isOriginal?: boolean | null;
   originConversationId?: string | null;
   originAssistantMessageId?: string | null;
   sourceChatFileId?: string | null;
@@ -365,20 +358,6 @@ export interface WorkingDocumentMetadata {
   originConversationId?: string | null;
   originAssistantMessageId?: string | null;
   sourceChatFileId?: string | null;
-}
-
-export interface KnowledgeVaultSearchResult {
-  id: string;
-  displayArtifactId: string;
-  promptArtifactId: string | null;
-  name: string;
-  mimeType: string | null;
-  vaultId: string;
-  vaultName: string;
-  summary: string | null;
-  snippet: string | null;
-  normalizedAvailable: boolean;
-  updatedAt: number;
 }
 
 export type WorkingDocumentFamilyStatus = 'active' | 'historical';

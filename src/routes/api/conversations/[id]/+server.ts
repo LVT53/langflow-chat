@@ -13,7 +13,7 @@ import {
 	getConversationContextStatus,
 	listConversationArtifacts
 } from '$lib/server/services/knowledge';
-import { getChatFiles, listSavedVaultsForChatFiles } from '$lib/server/services/chat-files';
+import { getChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import {
 	attachContinuityToTaskState,
@@ -69,18 +69,6 @@ export const GET: RequestHandler = async (event) => {
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
 		);
-		const savedVaultsByFileId = await listSavedVaultsForChatFiles(
-			user.id,
-			generatedFiles.map((file) => file.id)
-		);
-		const generatedFilesWithVaultState = generatedFiles.map((file) => {
-			const savedVault = savedVaultsByFileId.get(file.id);
-			return {
-				...file,
-				savedVaultId: savedVault?.vaultId ?? null,
-				savedVaultName: savedVault?.vaultName ?? null,
-			};
-		});
 		return json({
 			conversation,
 			messages: messageHistory,
@@ -90,7 +78,7 @@ export const GET: RequestHandler = async (event) => {
 			taskState: taskStateWithContinuity,
 			contextDebug,
 			draft,
-			generatedFiles: generatedFilesWithVaultState,
+			generatedFiles,
 			bootstrap: false,
 		});
 	} catch (err) {
