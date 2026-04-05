@@ -40,6 +40,7 @@
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
 	let fileType = $state<PreviewFileType>('unsupported');
+	let objectUrl = $state<string | null>(null);
 
 	// PDF.js state (loaded dynamically to avoid SSR issues)
 	let pdfjsLib: typeof import('pdfjs-dist') | null = null;
@@ -50,6 +51,7 @@
 	let scrollContainerRef = $state<HTMLDivElement | null>(null);
 	let isRendering = $state(false);
 	let isEmbedded = $derived(variant === 'embedded');
+	let titleElementId = $derived(`file-preview-title-${artifactId ?? filename.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`);
 	let markdownModulePromise: Promise<MarkdownModule> | null = null;
 	let pdfWorkerUrlPromise: Promise<string> | null = null;
 	let pageObserver: IntersectionObserver | null = null;
@@ -76,6 +78,26 @@
 			fileType = determinePreviewFileType(mimeType, filename);
 			void fetchFile();
 		}
+	});
+
+	$effect(() => {
+		if (!(fileType === 'image' && content)) {
+			if (objectUrl) {
+				URL.revokeObjectURL(objectUrl);
+				objectUrl = null;
+			}
+			return;
+		}
+
+		const nextObjectUrl = URL.createObjectURL(content);
+		objectUrl = nextObjectUrl;
+
+		return () => {
+			URL.revokeObjectURL(nextObjectUrl);
+			if (objectUrl === nextObjectUrl) {
+				objectUrl = null;
+			}
+		};
 	});
 
 	// PDF.js rendering effect
@@ -639,12 +661,11 @@
 	}
 
 	function getObjectUrl(): string | null {
-		if (!content) return null;
-		return URL.createObjectURL(content);
+		return objectUrl;
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+		if (event.key === 'Escape' && !isEmbedded) {
 			onClose();
 		}
 	}
@@ -681,6 +702,8 @@
 		<div
 			role={isEmbedded ? 'region' : 'dialog'}
 			aria-modal={isEmbedded ? undefined : 'true'}
+			aria-labelledby={isEmbedded ? undefined : titleElementId}
+			aria-label={isEmbedded || showHeader ? undefined : filename}
 			class:preview-panel={true}
 			class:preview-panel-modal={!isEmbedded}
 			class:preview-panel-embedded={isEmbedded}
@@ -696,7 +719,7 @@
 							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
 								File Preview
 							</div>
-							<h3 class="mt-1 text-lg font-serif tracking-[-0.02em] text-text-primary truncate">
+							<h3 id={titleElementId} class="mt-1 text-lg font-serif tracking-[-0.02em] text-text-primary truncate">
 								{filename}
 							</h3>
 						</div>
@@ -1007,14 +1030,19 @@
 		border: 1px solid var(--border-default);
 		border-radius: 1rem;
 		padding: 1rem;
-		overflow-x: auto;
+		overflow-x: hidden;
 		font-size: 0.875rem;
 		line-height: 1.6;
+		white-space: pre-wrap;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 
 	:global(.file-text-preview code) {
 		font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
-		white-space: pre;
+		white-space: pre-wrap;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 
 	.preview-embedded-shell {

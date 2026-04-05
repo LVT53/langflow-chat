@@ -104,7 +104,5 @@
 	.composer-layer {
 		flex-shrink: 0;
 		padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-		background: var(--surface-page);
-		border-top: 1px solid var(--border-subtle);
 	}
 </style>

@@ -74,15 +74,17 @@ describe('DocumentsList', () => {
 		});
 
 		it('renders empty state message for filter with no matches', () => {
-			render(DocumentsList, {
+			const onFilterChange = vi.fn();
+			const noMatchRender = render(DocumentsList, {
 				props: {
-					documents: mockDocuments,
-					filter: 'generated',
+					documents: [mockGeneratedDocument],
+					filter: 'uploaded',
+					onFilterChange,
 				},
 			});
 
-			const uploadedFilter = screen.getByRole('radio', { name: /uploaded/i });
-			fireEvent.click(uploadedFilter);
+			expect(screen.getByText(/no documents match the current filter/i)).toBeInTheDocument();
+			noMatchRender.unmount();
 		});
 	});
 
@@ -240,6 +242,65 @@ describe('DocumentsList', () => {
 			await fireEvent.click(uploadedFilter);
 
 			expect(onFilterChange).toHaveBeenCalledWith('uploaded');
+		});
+	});
+
+	describe('Search And Sorting', () => {
+		it('filters documents by search query', async () => {
+			render(DocumentsList, {
+				props: {
+					documents: mockDocuments,
+				},
+			});
+
+			const searchInput = screen.getByRole('searchbox', { name: /search documents/i });
+			await fireEvent.input(searchInput, { target: { value: 'report' } });
+
+			expect(screen.getByText('Report.docx')).toBeInTheDocument();
+			expect(screen.queryByText('Budget.pdf')).toBeNull();
+			expect(screen.queryByText('Analysis.xlsx')).toBeNull();
+		});
+
+		it('sorts by name when name header is clicked', async () => {
+			render(DocumentsList, {
+				props: {
+					documents: mockDocuments,
+				},
+			});
+
+			const nameSortButton = screen.getByRole('button', { name: /name/i });
+			await fireEvent.click(nameSortButton);
+
+			const rows = screen.getAllByRole('row').slice(1);
+			expect(rows[0]?.textContent).toContain('Analysis.xlsx');
+			expect(rows[1]?.textContent).toContain('Budget.pdf');
+		});
+
+		it('uses extension fallback for icon mapping when mime type is missing', () => {
+			const docsWithMissingMime = [
+				...mockDocuments,
+				{
+					id: 'doc-ext-fallback',
+					name: 'Deck.pptx',
+					type: 'source_document',
+					mimeType: null,
+					sizeBytes: 1024,
+					createdAt: Date.now(),
+				},
+			];
+
+			render(DocumentsList, {
+				props: {
+					documents: docsWithMissingMime,
+				},
+			});
+
+			const deckRow = screen.getByText('Deck.pptx').closest('tr');
+			expect(deckRow).not.toBeNull();
+			const iconCell = deckRow?.querySelector('[data-testid="file-icon"]');
+			expect(iconCell).not.toBeNull();
+			expect(iconCell?.textContent?.trim().length ?? 0).toBe(0);
+			expect(iconCell?.innerHTML.length ?? 0).toBeGreaterThan(20);
 		});
 	});
 

@@ -2,6 +2,8 @@
 	import type { KnowledgeDocumentItem } from '$lib/types';
 
 	type DocumentFilter = 'all' | 'uploaded' | 'generated';
+	type DocumentSortKey = 'name' | 'size' | 'type' | 'date';
+	type SortDirection = 'asc' | 'desc';
 
 	interface DocumentsListProps {
 		documents: KnowledgeDocumentItem[];
@@ -45,6 +47,9 @@
 	let dragCounter = $state(0);
 	let fileInputRef = $state<HTMLInputElement | undefined>(undefined);
 	let isUploading = $state(false);
+	let searchQuery = $state('');
+	let sortKey = $state<DocumentSortKey>('date');
+	let sortDirection = $state<SortDirection>('desc');
 
 	// Selection derived state
 	const selectedCount = $derived(selectedIds.size);
@@ -201,39 +206,120 @@
 		return documents;
 	});
 
-	// Sort documents: group by documentFamilyId, then by versionNumber
-	const sortedDocuments = $derived.by(() => {
-		const docs = [...filteredDocuments];
-		
-		// Group by documentFamilyId
-		const groups = new Map<string | null, KnowledgeDocumentItem[]>();
-		
-		for (const doc of docs) {
-			const familyId = doc.documentFamilyId ?? null;
-			if (!groups.has(familyId)) {
-				groups.set(familyId, []);
+	function normalizeText(value: string | null | undefined): string {
+		return (value ?? '').toLowerCase().trim();
+	}
+
+	function tokenizeQuery(query: string): string[] {
+		return normalizeText(query)
+			.split(/\s+/)
+			.filter((term) => term.length > 1);
+	}
+
+	function scoreTermMatches(target: string, terms: string[], weight: number): number {
+		if (!target || terms.length === 0) return 0;
+		let score = 0;
+		for (const term of terms) {
+			if (target.includes(term)) {
+				score += weight;
 			}
-			groups.get(familyId)!.push(doc);
 		}
-		
-		// Sort each group by versionNumber
-		for (const [, group] of groups) {
-			group.sort((a, b) => (a.versionNumber ?? 0) - (b.versionNumber ?? 0));
+		return score;
+	}
+
+	function getDocumentKind(document: KnowledgeDocumentItem): 'generated' | 'uploaded' {
+		return document.documentOrigin === 'generated' || document.type === 'generated_output'
+			? 'generated'
+			: 'uploaded';
+	}
+
+	function scoreDocumentForSearch(document: KnowledgeDocumentItem, query: string): number {
+		const normalizedQuery = normalizeText(query);
+		if (!normalizedQuery) return 1;
+
+		const terms = tokenizeQuery(normalizedQuery);
+		const name = normalizeText(document.name);
+		const label = normalizeText(document.documentLabel ?? null);
+		const role = normalizeText(document.documentRole ?? null);
+		const summary = normalizeText(document.summary ?? null);
+		const kind = getDocumentKind(document);
+
+		let score = 0;
+
+		if (name.includes(normalizedQuery)) score += 70;
+		if (label && label.includes(normalizedQuery)) score += 60;
+		if (summary && summary.includes(normalizedQuery)) score += 28;
+		if (role && role.includes(normalizedQuery)) score += 18;
+		if (kind.includes(normalizedQuery)) score += 12;
+
+		score += scoreTermMatches(name, terms, 18);
+		score += scoreTermMatches(label, terms, 15);
+		score += scoreTermMatches(summary, terms, 6);
+		score += scoreTermMatches(role, terms, 5);
+
+		return score;
+	}
+
+	const searchedDocuments = $derived.by(() => {
+		const query = normalizeText(searchQuery);
+		if (!query) {
+			return filteredDocuments.map((document) => ({ document, score: 0 }));
 		}
-		
-		// Flatten groups back into array (families with versions first, then ungrouped)
-		const result: KnowledgeDocumentItem[] = [];
-		const familyIds = Array.from(groups.keys()).sort((a, b) => {
-			if (a === null) return 1;
-			if (b === null) return -1;
-			return a.localeCompare(b);
+
+		return filteredDocuments
+			.map((document) => ({
+				document,
+				score: scoreDocumentForSearch(document, query),
+			}))
+			.filter((entry) => entry.score > 0);
+	});
+
+	function compareText(left: string, right: string): number {
+		return left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true });
+	}
+
+	const sortedDocuments = $derived.by(() => {
+		const direction = sortDirection === 'asc' ? 1 : -1;
+		const entries = [...searchedDocuments];
+
+		entries.sort((leftEntry, rightEntry) => {
+			const left = leftEntry.document;
+			const right = rightEntry.document;
+
+			// When searching, preserve relevance as highest priority.
+			if (searchQuery.trim().length > 0 && leftEntry.score !== rightEntry.score) {
+				return rightEntry.score - leftEntry.score;
+			}
+
+			if (sortKey === 'name') {
+				const byName = compareText(left.name, right.name) * direction;
+				if (byName !== 0) return byName;
+			}
+
+			if (sortKey === 'size') {
+				const bySize = ((left.sizeBytes ?? 0) - (right.sizeBytes ?? 0)) * direction;
+				if (bySize !== 0) return bySize;
+			}
+
+			if (sortKey === 'type') {
+				const byType = compareText(getDocumentKind(left), getDocumentKind(right)) * direction;
+				if (byType !== 0) return byType;
+			}
+
+			if (sortKey === 'date') {
+				const byDate = ((left.createdAt ?? 0) - (right.createdAt ?? 0)) * direction;
+				if (byDate !== 0) return byDate;
+			}
+
+			// Deterministic tie-breakers
+			const byNameTie = compareText(left.name, right.name);
+			if (byNameTie !== 0) return byNameTie;
+			const byDateTie = (right.createdAt ?? 0) - (left.createdAt ?? 0);
+			if (byDateTie !== 0) return byDateTie;
+			return compareText(left.id, right.id);
 		});
-		
-		for (const familyId of familyIds) {
-			result.push(...groups.get(familyId)!);
-		}
-		
-		return result;
+
+		return entries.map((entry) => entry.document);
 	});
 
 	// Pagination
@@ -246,6 +332,25 @@
 
 	const showingFrom = $derived((currentPage - 1) * paginationLimit + 1);
 	const showingTo = $derived(Math.min(currentPage * paginationLimit, sortedDocuments.length));
+
+	function toggleSort(nextSortKey: DocumentSortKey) {
+		if (sortKey === nextSortKey) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+			return;
+		}
+		sortKey = nextSortKey;
+		sortDirection = nextSortKey === 'name' || nextSortKey === 'type' ? 'asc' : 'desc';
+	}
+
+	function getAriaSort(column: DocumentSortKey): 'none' | 'ascending' | 'descending' {
+		if (sortKey !== column) return 'none';
+		return sortDirection === 'asc' ? 'ascending' : 'descending';
+	}
+
+	function getSortIndicator(column: DocumentSortKey): string {
+		if (sortKey !== column) return '↕';
+		return sortDirection === 'asc' ? '↑' : '↓';
+	}
 
 	function formatFileSize(bytes: number | null | undefined): string {
 		if (!bytes) return '0 B';
@@ -271,14 +376,68 @@
 		}).format(timestamp);
 	}
 
-	function getFileIcon(mimeType: string | null): typeof GenericFileIcon {
-		if (!mimeType) return GenericFileIcon;
-		if (mimeType.startsWith('image/')) return ImageIcon;
-		if (mimeType === 'application/pdf') return PdfIcon;
-		if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) return SpreadsheetIcon;
-		if (mimeType.includes('document') || mimeType.includes('word')) return DocumentIcon;
-		if (mimeType.includes('code') || mimeType.includes('javascript') || mimeType.includes('typescript') || mimeType.includes('json') || mimeType.includes('xml') || mimeType.includes('html') || mimeType.includes('css')) return CodeIcon;
-		if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) return ArchiveIcon;
+	function getFileExtension(filename: string | null | undefined): string {
+		const value = (filename ?? '').trim();
+		if (!value.includes('.')) return '';
+		return value.split('.').pop()?.toLowerCase() ?? '';
+	}
+
+	function getFileIcon(mimeType: string | null, filename: string): typeof GenericFileIcon {
+		const mime = normalizeText(mimeType);
+		const extension = getFileExtension(filename);
+
+		if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(extension)) {
+			return ImageIcon;
+		}
+
+		if (mime === 'application/pdf' || extension === 'pdf') {
+			return PdfIcon;
+		}
+
+		if (
+			mime.includes('spreadsheet') ||
+			mime.includes('excel') ||
+			mime.includes('csv') ||
+			['csv', 'xls', 'xlsx', 'ods'].includes(extension)
+		) {
+			return SpreadsheetIcon;
+		}
+
+		if (mime.includes('presentation') || ['ppt', 'pptx', 'odp'].includes(extension)) {
+			return SlidesIcon;
+		}
+
+		if (
+			mime.includes('code') ||
+			mime.includes('javascript') ||
+			mime.includes('typescript') ||
+			mime.includes('json') ||
+			mime.includes('xml') ||
+			mime.includes('html') ||
+			mime.includes('css') ||
+			['js', 'ts', 'tsx', 'jsx', 'json', 'xml', 'html', 'css', 'py', 'java', 'go', 'rs'].includes(extension)
+		) {
+			return CodeIcon;
+		}
+
+		if (
+			mime.includes('zip') ||
+			mime.includes('compressed') ||
+			mime.includes('archive') ||
+			['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)
+		) {
+			return ArchiveIcon;
+		}
+
+		if (
+			mime.includes('text/') ||
+			['txt', 'md', 'rtf', 'log', 'odt', 'doc', 'docx'].includes(extension) ||
+			mime.includes('document') ||
+			mime.includes('word')
+		) {
+			return DocumentIcon;
+		}
+
 		return GenericFileIcon;
 	}
 
@@ -291,8 +450,8 @@
 	}
 
 	function handleRowClick(event: MouseEvent, document: KnowledgeDocumentItem) {
-		// Don't trigger if clicking on action buttons
-		if ((event.target as HTMLElement).closest('button')) return;
+		// Don't trigger if clicking on row actions or selection controls
+		if ((event.target as HTMLElement).closest('button, input, label, .checkbox-label')) return;
 		onSelect?.(document);
 	}
 
@@ -429,6 +588,16 @@
 			</svg>
 		`;
 	}
+
+	function SlidesIcon() {
+		return `
+			<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"></path>
+				<path d="M8 21h8"></path>
+				<path d="M12 17v4"></path>
+			</svg>
+		`;
+	}
 </script>
 
 <div
@@ -466,6 +635,18 @@
 			<p class="empty-hint">Upload or generate documents to see them here</p>
 		</div>
 	{:else}
+		<div class="search-controls">
+			<label class="documents-search-label" for="documents-search-input">Search documents</label>
+			<input
+				id="documents-search-input"
+				type="search"
+				class="documents-search-input"
+				placeholder="Search by name, title, role, or content"
+				bind:value={searchQuery}
+				aria-label="Search documents"
+			/>
+		</div>
+
 		<div class="filter-controls" role="radiogroup" aria-label="Document filter">
 			<div class="filter-group">
 				<label class="filter-option">
@@ -527,9 +708,13 @@
 		{/if}
 	</div>
 
-	{#if filteredDocuments.length === 0}
+	{#if sortedDocuments.length === 0}
 			<div class="empty-state">
-				<p class="empty-title">No documents match the current filter</p>
+				<p class="empty-title">
+					{searchQuery.trim().length > 0
+						? 'No documents match your search'
+						: 'No documents match the current filter'}
+				</p>
 			</div>
 		{:else}
 			<div class="table-container">
@@ -548,12 +733,28 @@
 									/>
 								</label>
 							</th>
-							<th class="col-icon"></th>
-							<th class="col-name">Name</th>
-							<th class="col-type">Type</th>
-							<th class="col-size">Size</th>
-							<th class="col-date">Date</th>
-							<th class="col-actions">Actions</th>
+							<th class="col-icon" scope="col" aria-label="File type icon"></th>
+							<th class="col-name" scope="col" aria-sort={getAriaSort('name')}>
+								<button type="button" class="sort-button" onclick={() => toggleSort('name')}>
+									Name <span class="sort-indicator">{getSortIndicator('name')}</span>
+								</button>
+							</th>
+							<th class="col-type" scope="col" aria-sort={getAriaSort('type')}>
+								<button type="button" class="sort-button" onclick={() => toggleSort('type')}>
+									Type <span class="sort-indicator">{getSortIndicator('type')}</span>
+								</button>
+							</th>
+							<th class="col-size" scope="col" aria-sort={getAriaSort('size')}>
+								<button type="button" class="sort-button" onclick={() => toggleSort('size')}>
+									Size <span class="sort-indicator">{getSortIndicator('size')}</span>
+								</button>
+							</th>
+							<th class="col-date" scope="col" aria-sort={getAriaSort('date')}>
+								<button type="button" class="sort-button" onclick={() => toggleSort('date')}>
+									Date <span class="sort-indicator">{getSortIndicator('date')}</span>
+								</button>
+							</th>
+							<th class="col-actions" scope="col">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -584,7 +785,7 @@
 								</td>
 								<td class="col-icon">
 									<div class="file-icon" data-testid="file-icon">
-										{@html getFileIcon(document.mimeType)()}
+										{@html getFileIcon(document.mimeType, document.name)()}
 									</div>
 								</td>
 								<td class="col-name">
@@ -824,6 +1025,35 @@
 		justify-content: space-between;
 	}
 
+	.search-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.documents-search-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.documents-search-input {
+		width: min(100%, 28rem);
+		padding: 0.58rem 0.74rem;
+		border: 1px solid var(--border-default);
+		border-radius: 0.7rem;
+		background: var(--surface-elevated);
+		color: var(--text-primary);
+		font-size: 0.85rem;
+	}
+
+	.documents-search-input:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 2px;
+	}
+
 	.filter-group {
 		display: flex;
 		gap: var(--space-sm);
@@ -941,6 +1171,30 @@
 		text-transform: uppercase;
 		letter-spacing: 0.12em;
 		color: var(--text-muted);
+	}
+
+	.sort-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.32rem;
+		padding: 0;
+		border: none;
+		background: transparent;
+		font: inherit;
+		letter-spacing: inherit;
+		text-transform: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.sort-button:hover {
+		color: var(--text-primary);
+	}
+
+	.sort-indicator {
+		font-size: 0.72rem;
+		line-height: 1;
+		opacity: 0.85;
 	}
 
 	.documents-table td {

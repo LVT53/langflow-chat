@@ -39,6 +39,7 @@
 		return documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
 	});
 	let compareMode = $state(false);
+	let fullscreenPreviewOpen = $state(false);
 	let compareDocumentId = $state<string | null>(null);
 	let compareCurrentTextHtml = $state<string | null>(null);
 	let compareOtherTextHtml = $state<string | null>(null);
@@ -121,6 +122,12 @@
 		}
 	});
 
+	$effect(() => {
+		if (!open || !activeDocument) {
+			fullscreenPreviewOpen = false;
+		}
+	});
+
 	function handlePageInputChange(event: Event) {
 		const input = event.target as HTMLInputElement;
 		pageInputValue = input.value;
@@ -173,6 +180,34 @@
 
 	function stopResize() {
 		isResizing = false;
+	}
+
+	function clampWorkspaceWidth(nextWidth: number): number {
+		return Math.max(MIN_WIDTH, Math.min(nextWidth, window.innerWidth * MAX_WIDTH_RATIO));
+	}
+
+	function handleResizeKeyDown(event: KeyboardEvent) {
+		if (!browser) return;
+		const step = event.shiftKey ? 40 : 20;
+		if (event.key === 'ArrowLeft') {
+			event.preventDefault();
+			workspaceWidth = clampWorkspaceWidth(workspaceWidth + step);
+			return;
+		}
+		if (event.key === 'ArrowRight') {
+			event.preventDefault();
+			workspaceWidth = clampWorkspaceWidth(workspaceWidth - step);
+			return;
+		}
+		if (event.key === 'Home') {
+			event.preventDefault();
+			workspaceWidth = MIN_WIDTH;
+			return;
+		}
+		if (event.key === 'End') {
+			event.preventDefault();
+			workspaceWidth = clampWorkspaceWidth(window.innerWidth * MAX_WIDTH_RATIO);
+		}
 	}
 
 	$effect(() => {
@@ -311,6 +346,14 @@
 		return null;
 	}
 
+	function openFullscreenPreview() {
+		fullscreenPreviewOpen = true;
+	}
+
+	function closeFullscreenPreview() {
+		fullscreenPreviewOpen = false;
+	}
+
 	async function loadComparePreview(document: DocumentWorkspaceItem): Promise<string> {
 		const previewUrl = getDocumentPreviewUrl(document);
 		if (!previewUrl) {
@@ -422,17 +465,33 @@
 						</div>
 					{/if}
 				</div>
-				<button
-					type="button"
-					class="btn-icon-bare workspace-close-button"
-					onclick={onCloseWorkspace}
-					aria-label="Close document workspace"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="18" x2="6" y1="6" y2="18" />
-						<line x1="6" x2="18" y1="6" y2="18" />
-					</svg>
-				</button>
+				<div class="workspace-header-actions">
+					<button
+						type="button"
+						class="btn-icon-bare workspace-expand-button"
+						onclick={openFullscreenPreview}
+						aria-label={`Open ${getDocumentTitle(activeDocument)} in fullscreen`}
+						title="Open fullscreen preview"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="15 3 21 3 21 9" />
+							<polyline points="9 21 3 21 3 15" />
+							<line x1="21" y1="3" x2="14" y2="10" />
+							<line x1="3" y1="21" x2="10" y2="14" />
+						</svg>
+					</button>
+					<button
+						type="button"
+						class="btn-icon-bare workspace-close-button"
+						onclick={onCloseWorkspace}
+						aria-label="Close document workspace"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="18" x2="6" y1="6" y2="18" />
+							<line x1="6" x2="18" y1="6" y2="18" />
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			{#if canJumpToSource(activeDocument)}
@@ -618,7 +677,9 @@
 		class:workspace-fade-in={isVisible}
 		class:workspace-resizing={isResizing}
 		style:width={workspaceWidth > 0 ? `${workspaceWidth}px` : undefined}
-		style:transition="opacity 150ms ease-out, transform 150ms ease-out"
+		style:transition={
+			isResizing ? 'none' : 'opacity 150ms ease-out, transform 150ms ease-out'
+		}
 		style:opacity={isVisible ? '1' : '0'}
 		style:transform={isVisible ? 'translateX(0)' : 'translateX(-20px)'}
 		aria-label="Document workspace"
@@ -627,6 +688,7 @@
 			class="workspace-resize-handle" 
 			data-testid="resize-handle"
 			onmousedown={startResize}
+			onkeydown={handleResizeKeyDown}
 			role="slider"
 			aria-label="Resize workspace panel"
 			aria-valuemin={MIN_WIDTH}
@@ -649,17 +711,33 @@
 					</div>
 				{/if}
 			</div>
-			<button
-				type="button"
-				class="btn-icon-bare workspace-close-button"
-				onclick={onCloseWorkspace}
-				aria-label="Close document workspace"
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="18" x2="6" y1="6" y2="18" />
-					<line x1="6" x2="18" y1="6" y2="18" />
-				</svg>
-			</button>
+			<div class="workspace-header-actions">
+				<button
+					type="button"
+					class="btn-icon-bare workspace-expand-button"
+					onclick={openFullscreenPreview}
+					aria-label={`Open ${getDocumentTitle(activeDocument)} in fullscreen`}
+					title="Open fullscreen preview"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="15 3 21 3 21 9" />
+						<polyline points="9 21 3 21 3 15" />
+						<line x1="21" y1="3" x2="14" y2="10" />
+						<line x1="3" y1="21" x2="10" y2="14" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="btn-icon-bare workspace-close-button"
+					onclick={onCloseWorkspace}
+					aria-label="Close document workspace"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="18" x2="6" y1="6" y2="18" />
+						<line x1="6" x2="18" y1="6" y2="18" />
+					</svg>
+				</button>
+			</div>
 		</div>
 
 		{#if canJumpToSource(activeDocument)}
@@ -859,6 +937,25 @@
 			{/if}
 		</div>
 	</aside>
+
+	{#if fullscreenPreviewOpen}
+		{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
+			<FilePreviewComponent
+				open={true}
+				variant="modal"
+				showHeader={true}
+				artifactId={activeDocument.artifactId ?? null}
+				previewUrl={activeDocument.previewUrl ?? null}
+				filename={activeDocument.filename}
+				mimeType={activeDocument.mimeType}
+				onClose={closeFullscreenPreview}
+			/>
+		{:catch}
+			<div class="workspace-fullscreen-fallback" role="status" aria-live="polite">
+				Failed to load fullscreen preview.
+			</div>
+		{/await}
+	{/if}
 {/if}
 
 <style>
@@ -976,6 +1073,35 @@
 
 	.workspace-close-button {
 		flex-shrink: 0;
+	}
+
+	.workspace-header-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		flex-shrink: 0;
+	}
+
+	.workspace-expand-button {
+		color: var(--icon-muted);
+	}
+
+	.workspace-expand-button:hover {
+		color: var(--text-primary);
+	}
+
+	.workspace-fullscreen-fallback {
+		position: fixed;
+		left: 1rem;
+		right: 1rem;
+		bottom: 1rem;
+		z-index: 140;
+		padding: 0.8rem 1rem;
+		border-radius: 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+		background: color-mix(in srgb, var(--surface-elevated) 90%, var(--danger) 10%);
+		color: var(--danger);
+		font-size: 0.84rem;
 	}
 
 	.workspace-tabs {
