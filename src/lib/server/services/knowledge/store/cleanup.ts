@@ -1,6 +1,6 @@
 import { unlink } from "fs/promises";
 import { join } from "path";
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, eq, inArray, like, ne, or } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   artifactLinks,
@@ -17,6 +17,7 @@ import {
 } from "./core";
 import { listLogicalDocuments } from "./documents";
 import { parseWorkingDocumentMetadata } from "./document-metadata";
+import { parseJsonRecord } from "$lib/server/utils/json";
 
 export async function hardDeleteArtifactsForUser(
   userId: string,
@@ -224,6 +225,7 @@ export async function deleteArtifactForUser(
 
     if (documentFamilyId) {
       const ownershipScope = await getArtifactOwnershipScope(userId);
+      // Use LIKE prefilter to narrow scope before in-memory verification
       const familyRows = await db
         .select()
         .from(artifacts)
@@ -231,14 +233,16 @@ export async function deleteArtifactForUser(
           and(
             eq(artifacts.userId, userId),
             eq(artifacts.type, "generated_output"),
+            like(artifacts.metadataJson, `%"documentFamilyId":"${documentFamilyId}"%`),
             buildArtifactVisibilityCondition({ userId, ownershipScope }),
           ),
         );
 
       for (const row of familyRows) {
         const rowMetadata = parseWorkingDocumentMetadata(
-          row.metadataJson ? JSON.parse(row.metadataJson) : null,
+          parseJsonRecord(row.metadataJson),
         );
+        // Double-check the family ID matches (LIKE is approximate)
         if (rowMetadata.documentFamilyId === documentFamilyId) {
           if (
             isArtifactCanonicallyOwned({

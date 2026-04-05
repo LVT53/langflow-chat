@@ -5,6 +5,7 @@ import {
 	createArtifactLink,
 	getArtifactForUser,
 } from '$lib/server/services/knowledge';
+import { getConversation } from '$lib/server/services/conversations';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -18,6 +19,11 @@ export const POST: RequestHandler = async (event) => {
 	const conversationId = typeof body?.conversationId === 'string' ? body.conversationId : null;
 	if (!conversationId) {
 		return json({ error: 'conversationId is required' }, { status: 400 });
+	}
+
+	const conversation = await getConversation(user.id, conversationId);
+	if (!conversation) {
+		return json({ error: 'Conversation not found or access denied' }, { status: 400 });
 	}
 
 	const link = await createArtifactLink({

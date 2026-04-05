@@ -72,6 +72,7 @@ vi.mock("drizzle-orm", () => ({
   inArray: vi.fn((field: { name: string }, value: unknown[]) => ({ field: field.name, value })),
   ne: vi.fn(),
   or: vi.fn(),
+  like: vi.fn((field: { name: string }, value: string) => ({ field: field.name, value, op: "like" })),
 }));
 
 vi.mock("fs/promises", async (importOriginal) => {

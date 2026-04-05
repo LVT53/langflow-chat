@@ -5,6 +5,7 @@ import { artifacts } from "$lib/server/db/schema";
 import type { Artifact } from "$lib/types";
 import { mapArtifact } from "./core";
 import { parseWorkingDocumentMetadata } from "./document-metadata";
+import { parseJsonRecord } from "$lib/server/utils/json";
 
 /**
  * Generates a unique document family ID for version linking
@@ -27,7 +28,7 @@ export async function getDocumentVersions(
 
   const versions = rows.filter((row) => {
     const metadata = parseWorkingDocumentMetadata(
-      row.metadataJson ? JSON.parse(row.metadataJson) : null,
+      parseJsonRecord(row.metadataJson),
     );
     return metadata.documentFamilyId === familyId;
   });
@@ -73,9 +74,7 @@ export async function assignDocumentFamilyId(params: {
     throw new Error(`Artifact ${params.artifactId} not found`);
   }
 
-  const existingMetadata = existing.metadataJson
-    ? JSON.parse(existing.metadataJson)
-    : {};
+  const existingMetadata = parseJsonRecord(existing.metadataJson) ?? {};
 
   const updatedMetadata = {
     ...existingMetadata,
