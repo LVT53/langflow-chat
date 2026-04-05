@@ -24,7 +24,7 @@
 	let content = $state<string | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
-	let abortController = $state<AbortController | null>(null);
+	let abortController: AbortController | null = null;
 
 	function formatFileSize(bytes: number | null | undefined): string {
 		if (!bytes) return '0 B';
