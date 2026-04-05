@@ -21,6 +21,7 @@
 		deletingArtifactCount,
 		isKnowledgeActionPending,
 		isDeletingArtifact,
+		onUpload,
 		onClose,
 		onOpenDocument,
 		onRunKnowledgeAction,
@@ -32,6 +33,7 @@
 		deletingArtifactCount: number;
 		isKnowledgeActionPending: (key: string) => boolean;
 		isDeletingArtifact: (id: string) => boolean;
+		onUpload?: (files: File[]) => void | Promise<void>;
 		onClose: () => void;
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRunKnowledgeAction: (kind: Exclude<LibraryModal, null>) => void | Promise<void>;
@@ -81,8 +83,9 @@
 		return;
 	}
 
-	function handleTableUpload(): void {
-		return;
+	async function handleTableUpload(files: File[]): Promise<void> {
+		if (!onUpload || files.length === 0) return;
+		await onUpload(files);
 	}
 </script>
 

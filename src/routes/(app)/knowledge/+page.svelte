@@ -1084,6 +1084,7 @@
 		{deletingArtifactCount}
 		{isKnowledgeActionPending}
 		{isDeletingArtifact}
+		onUpload={handleDocumentsUpload}
 		onClose={closeLibraryModal}
 		onOpenDocument={openWorkspaceDocument}
 		onRunKnowledgeAction={runLibraryBulkAction}

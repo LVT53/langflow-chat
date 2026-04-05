@@ -324,6 +324,67 @@ describe('MessageInput', () => {
 		expect(sendSpy).not.toHaveBeenCalled();
 	});
 
+	it('uploads all selected files from one picker action', async () => {
+		fetchMock
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					artifact: {
+						id: 'artifact-multi-1',
+						type: 'source_document',
+						retrievalClass: 'durable',
+						name: 'first.txt',
+						mimeType: 'text/plain',
+						sizeBytes: 5,
+						conversationId: 'conv-1',
+						summary: null,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+					promptReady: true,
+					promptArtifactId: 'normalized-multi-1',
+					readinessError: null,
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					artifact: {
+						id: 'artifact-multi-2',
+						type: 'source_document',
+						retrievalClass: 'durable',
+						name: 'second.txt',
+						mimeType: 'text/plain',
+						sizeBytes: 6,
+						conversationId: 'conv-1',
+						summary: null,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+					promptReady: true,
+					promptArtifactId: 'normalized-multi-2',
+					readinessError: null,
+				}),
+			});
+
+		const { container, findByText } = render(MessageInputWrapper, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+		});
+
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const firstFile = new File(['first'], 'first.txt', { type: 'text/plain' });
+		const secondFile = new File(['second'], 'second.txt', { type: 'text/plain' });
+
+		await fireEvent.change(fileInput, {
+			target: { files: [firstFile, secondFile] },
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(await findByText('first.txt')).toBeDefined();
+		expect(await findByText('second.txt')).toBeDefined();
+	});
+
 	it('ignores stale async draft emissions after send clears the composer', async () => {
 		let resolveConversation: ((id: string) => void) | null = null;
 		const ensureConversation = vi.fn(

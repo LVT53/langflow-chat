@@ -291,6 +291,8 @@
 		if (!files) return;
 		uploadState = 'uploading';
 		attachmentError = '';
+		const selectedFiles = Array.from(files);
+		const failures: string[] = [];
 		let preparingTimer: ReturnType<typeof setTimeout> | null = null;
 		if (typeof window !== 'undefined') {
 			preparingTimer = window.setTimeout(() => {
@@ -307,26 +309,37 @@
 			if (!targetConversationId) {
 				throw new Error('Unable to prepare a conversation for attachments.');
 			}
-			for (const file of Array.from(files)) {
-				const payload = await uploadKnowledgeAttachment(file, targetConversationId);
-				if (payload?.artifact) {
-					const next = new Map(
-						pendingAttachments.map((attachment) => [attachment.artifact.id, attachment])
-					);
-					next.set(payload.artifact.id, {
-						artifact: payload.artifact,
-						promptReady: Boolean(payload.promptReady),
-						promptArtifactId:
-							typeof payload.promptArtifactId === 'string' ? payload.promptArtifactId : null,
-						readinessError:
-							typeof payload.readinessError === 'string' && payload.readinessError.trim()
-								? payload.readinessError
-								: null,
-					});
-					pendingAttachments = Array.from(next.values());
-					draftEmissionVersion += 1;
-					void emitDraftChange();
+			for (const file of selectedFiles) {
+				try {
+					const payload = await uploadKnowledgeAttachment(file, targetConversationId);
+					if (payload?.artifact) {
+						const next = new Map(
+							pendingAttachments.map((attachment) => [attachment.artifact.id, attachment])
+						);
+						next.set(payload.artifact.id, {
+							artifact: payload.artifact,
+							promptReady: Boolean(payload.promptReady),
+							promptArtifactId:
+								typeof payload.promptArtifactId === 'string' ? payload.promptArtifactId : null,
+							readinessError:
+								typeof payload.readinessError === 'string' && payload.readinessError.trim()
+									? payload.readinessError
+									: null,
+						});
+						pendingAttachments = Array.from(next.values());
+						draftEmissionVersion += 1;
+						void emitDraftChange();
+					}
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : 'Upload failed';
+					failures.push(`${file.name}: ${reason}`);
 				}
+			}
+
+			if (failures.length > 0) {
+				attachmentError = failures.length === selectedFiles.length
+					? `Failed to upload ${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}.`
+					: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload.`;
 			}
 		} catch (error) {
 			attachmentError = error instanceof Error ? error.message : 'Failed to upload attachment.';
