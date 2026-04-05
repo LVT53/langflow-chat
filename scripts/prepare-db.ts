@@ -52,6 +52,7 @@ const requiredExistingColumns = [
 	['users', 'theme'],
 	['users', 'avatar_id'],
 	['users', 'profile_picture'],
+	['users', 'honcho_peer_version'],
 ];
 
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';

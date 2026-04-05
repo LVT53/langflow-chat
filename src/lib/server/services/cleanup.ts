@@ -157,6 +157,22 @@ export async function deleteConversationWithCleanup(
 	deletedArtifactIds: string[];
 	preservedArtifactIds: string[];
 } | null> {
+	const logDeleteStep = (
+		step: string,
+		status: 'start' | 'ok' | 'fail',
+		meta?: Record<string, unknown>
+	): void => {
+		const logger = status === 'fail' ? console.error : console.info;
+		logger('[CONVERSATION_DELETE]', {
+			step,
+			status,
+			userId,
+			conversationId,
+			...meta,
+		});
+	};
+
+	logDeleteStep('verify_conversation', 'start');
 	const [conversation] = await db
 		.select({ id: conversations.id })
 		.from(conversations)
@@ -167,14 +183,26 @@ export async function deleteConversationWithCleanup(
 			)
 		)
 		.limit(1);
+	logDeleteStep('verify_conversation', 'ok', { exists: Boolean(conversation) });
 
 	if (!conversation) {
 		return null;
 	}
 
-	await deleteConversationHonchoState(userId, conversationId);
+	logDeleteStep('delete_honcho_state', 'start');
+	try {
+		await deleteConversationHonchoState(userId, conversationId);
+		logDeleteStep('delete_honcho_state', 'ok');
+	} catch (error) {
+		logDeleteStep('delete_honcho_state', 'fail', {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw error;
+	}
 
+	logDeleteStep('list_owned_artifacts', 'start');
 	const ownedArtifacts = await listConversationOwnedArtifacts(userId, conversationId);
+	logDeleteStep('list_owned_artifacts', 'ok', { artifactCount: ownedArtifacts.length });
 	const deletedArtifactIds: string[] = [];
 	const preservedArtifactIds: string[] = [];
 
@@ -197,9 +225,30 @@ export async function deleteConversationWithCleanup(
 		deletedArtifactIds.push(artifact.id);
 	}
 
-	await hardDeleteArtifactsForUser(userId, deletedArtifactIds);
-	await deleteAllChatFilesForConversation(conversationId);
+	logDeleteStep('delete_owned_artifacts', 'start', { deleteCount: deletedArtifactIds.length });
+	try {
+		await hardDeleteArtifactsForUser(userId, deletedArtifactIds);
+		logDeleteStep('delete_owned_artifacts', 'ok');
+	} catch (error) {
+		logDeleteStep('delete_owned_artifacts', 'fail', {
+			error: error instanceof Error ? error.message : String(error),
+			deleteCount: deletedArtifactIds.length,
+		});
+		throw error;
+	}
 
+	logDeleteStep('delete_chat_files', 'start');
+	try {
+		const deletedFileCount = await deleteAllChatFilesForConversation(conversationId);
+		logDeleteStep('delete_chat_files', 'ok', { deletedFileCount });
+	} catch (error) {
+		logDeleteStep('delete_chat_files', 'fail', {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw error;
+	}
+
+	logDeleteStep('delete_conversation_row', 'start');
 	await db
 		.delete(conversations)
 		.where(
@@ -208,6 +257,10 @@ export async function deleteConversationWithCleanup(
 				eq(conversations.userId, userId)
 			)
 		);
+	logDeleteStep('delete_conversation_row', 'ok', {
+		deletedArtifactIds: deletedArtifactIds.length,
+		preservedArtifactIds: preservedArtifactIds.length,
+	});
 
 	return {
 		deletedArtifactIds,

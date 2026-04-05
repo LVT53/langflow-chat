@@ -6,6 +6,7 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   name: text('name'),
+  honchoPeerVersion: integer('honcho_peer_version').notNull().default(0),
   role: text('role').notNull().default('user'),
   preferredModel: text('preferred_model').notNull().default('model1'),
   translationEnabled: integer('translation_enabled').notNull().default(0),
