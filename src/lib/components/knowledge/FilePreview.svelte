@@ -54,6 +54,10 @@
 	let pageObserver: IntersectionObserver | null = null;
 	let isProgrammaticScroll = $state(false);
 
+	// PDF render concurrency tracking
+	let pdfRenderVersion = 0;
+	let activeRenderTasks = new Map<number, { cancel: () => void }>();
+
 	const fileTypeIcons: Record<string, string> = {
 		pdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 13v-1a2 2 0 0 1 2-2h4"/><path d="M10 13v-1a2 2 0 0 0-2-2H4"/><line x1="10" y1="13" x2="10" y2="18"/></svg>`,
 		docx: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
@@ -84,6 +88,14 @@
 		if (fileType === 'pdf' && pdfDoc && canvasRefs.length > 0) {
 			const activeZoom = zoom;
 			void renderAllPages(activeZoom);
+		}
+	});
+
+	// Cleanup PDF render tasks when file closes or changes
+	$effect(() => {
+		if (!open) {
+			cancelActivePdfRenderTasks();
+			pdfRenderVersion++;
 		}
 	});
 
@@ -156,7 +168,11 @@
 		totalPages = 0;
 		zoom = 1.0;
 		canvasRefs = [];
-		
+
+		// Cancel any in-progress PDF renders
+		cancelActivePdfRenderTasks();
+		pdfRenderVersion++;
+
 		// Disconnect observer
 		if (pageObserver) {
 			pageObserver.disconnect();
@@ -200,59 +216,102 @@
 		}
 	}
 
+	/**
+	 * Cancel all active PDF render tasks to prevent canvas reuse errors.
+	 */
+	function cancelActivePdfRenderTasks() {
+		for (const [pageNum, task] of activeRenderTasks) {
+			try {
+				task.cancel();
+			} catch {
+				// Ignore cancellation errors
+			}
+		}
+		activeRenderTasks.clear();
+	}
+
 	async function renderPdf(blob: Blob) {
 		if (!browser) return;
-		
+
+		// Cancel any in-progress renders and increment version
+		cancelActivePdfRenderTasks();
+		pdfRenderVersion++;
+		const currentVersion = pdfRenderVersion;
+
 		try {
 			isRendering = true;
-			
+
 			// Load PDF.js dynamically (avoids SSR issues)
 			if (!pdfjsLib) {
 				pdfjsLib = await import('pdfjs-dist');
 				pdfjsLib.GlobalWorkerOptions.workerSrc = await loadPdfWorkerUrl();
 			}
-			
+
+			// Bail if a newer render cycle started during async loading
+			if (pdfRenderVersion !== currentVersion) return;
+
 			const arrayBuffer = await blob.arrayBuffer();
 			pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
 			lastObservedPage = 1;
-			
+
+			// Bail if a newer render cycle started during document loading
+			if (pdfRenderVersion !== currentVersion) return;
+
 			// Set zoom to "fit to width" based on container and first page
 			if (scrollContainerRef && totalPages > 0) {
 				const page = await pdfDoc.getPage(1);
+				// Bail if stale
+				if (pdfRenderVersion !== currentVersion) return;
+
 				const unscaledViewport = page.getViewport({ scale: 1.0 });
 				const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
 				if (containerWidth > 0 && unscaledViewport.width > 0) {
 					zoom = containerWidth / unscaledViewport.width;
 				}
 			}
-			
+
 			// Render all pages
-			await renderAllPages(zoom);
-			
+			await renderAllPages(zoom, currentVersion);
+
 		} catch (err) {
 			error = 'Failed to render PDF file';
 			console.error('PDF render error:', err);
 		} finally {
-			isRendering = false;
+			if (pdfRenderVersion === currentVersion) {
+				isRendering = false;
+			}
 		}
 	}
 
-	async function renderAllPages(scale = zoom) {
+	async function renderAllPages(scale = zoom, version?: number) {
 		if (!pdfDoc) return;
-		
+
+		let currentVersion: number;
+
+		if (version !== undefined) {
+			currentVersion = version;
+		} else {
+			cancelActivePdfRenderTasks();
+			pdfRenderVersion++;
+			currentVersion = pdfRenderVersion;
+		}
+
 		try {
 			isRendering = true;
-			
+
 			// Render each page
 			for (let i = 0; i < totalPages; i++) {
+				// Bail if a newer render cycle started
+				if (pdfRenderVersion !== currentVersion) return;
+
 				const canvas = canvasRefs[i];
 				if (canvas) {
-					await renderPage(i + 1, scale, canvas);
+					await renderPage(i + 1, scale, canvas, currentVersion);
 				}
 			}
-			
+
 			isRendering = false;
 		} catch (err) {
 			console.error('Pages render error:', err);
@@ -260,26 +319,56 @@
 		}
 	}
 
-	async function renderPage(pageNum: number, scale = zoom, canvas: HTMLCanvasElement) {
+	async function renderPage(
+		pageNum: number,
+		scale: number,
+		canvas: HTMLCanvasElement,
+		version: number
+	) {
 		if (!pdfDoc) return;
-		
+
+		// Bail early if stale
+		if (pdfRenderVersion !== version) return;
+
+		let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
+
 		try {
 			const page = await pdfDoc.getPage(pageNum);
-			
+
+			// Bail if stale after async getPage
+			if (pdfRenderVersion !== version) return;
+
 			const viewport = page.getViewport({ scale });
 			const context = canvas.getContext('2d');
-			
+
 			if (!context) return;
-			
+
 			canvas.width = viewport.width;
 			canvas.height = viewport.height;
-			
-			await page.render({
+
+			// Create and register render task
+			renderTask = page.render({
 				canvasContext: context,
 				viewport: viewport,
-			}).promise;
+			});
+			activeRenderTasks.set(pageNum, renderTask);
+
+			await renderTask.promise;
 		} catch (err) {
+			// Ignore cancellation errors - these are expected when zooming rapidly
+			if (
+				err instanceof Error &&
+				(err.name === 'RenderingCancelledException' ||
+					err.message?.includes('cancelled'))
+			) {
+				return;
+			}
 			console.error('Page render error:', err);
+		} finally {
+			// Always cleanup the task registration
+			if (renderTask) {
+				activeRenderTasks.delete(pageNum);
+			}
 		}
 	}
 

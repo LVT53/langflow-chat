@@ -50,8 +50,10 @@ vi.mock('jszip', () => ({
 	},
 }));
 
+const mockPdfRenderCancel = vi.fn();
 const mockPdfRender = vi.fn(() => ({
 	promise: Promise.resolve(),
+	cancel: mockPdfRenderCancel,
 }));
 
 const mockPdfGetPage = vi.fn(async () => ({
@@ -333,6 +335,49 @@ describe('FilePreview', () => {
 		await waitFor(() => {
 			expect(mockPdfRender.mock.calls.length).toBeGreaterThan(initialRenderCount);
 		});
+	});
+
+	it('cancels previous render tasks when zoom changes rapidly', async () => {
+		// Create a render that can be cancelled
+		let renderResolve: () => void;
+		const slowRenderPromise = new Promise<void>((resolve) => {
+			renderResolve = resolve;
+		});
+		mockPdfRender.mockImplementationOnce(() => ({
+			promise: slowRenderPromise,
+			cancel: mockPdfRenderCancel,
+		}));
+
+		const mockBlob = new Blob(['PDF content'], { type: 'application/pdf' });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: 'test-123',
+				filename: 'document.pdf',
+				mimeType: 'application/pdf',
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+		});
+
+		// Trigger zoom change while render is still pending
+		await fireEvent.click(screen.getByLabelText('Zoom in'));
+
+		// The previous render should have been cancelled
+		await waitFor(() => {
+			expect(mockPdfRenderCancel).toHaveBeenCalled();
+		});
+
+		// Resolve the slow render to clean up
+		renderResolve!();
 	});
 
 	it('detects image file type correctly', async () => {

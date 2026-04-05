@@ -16,6 +16,7 @@ import {
   isArtifactCanonicallyOwned,
 } from "./core";
 import { listLogicalDocuments } from "./documents";
+import { parseWorkingDocumentMetadata } from "./document-metadata";
 
 export async function hardDeleteArtifactsForUser(
   userId: string,
@@ -61,7 +62,7 @@ export async function hardDeleteArtifactsForUser(
     };
   }
 
-  db.transaction((tx) => {
+  await db.transaction((tx) => {
     tx.delete(conversationWorkingSetItems)
       .where(inArray(conversationWorkingSetItems.artifactId, ids))
       .run();
@@ -214,6 +215,42 @@ export async function deleteArtifactForUser(
 
     for (const row of derivedRows) {
       artifactIdsToDelete.add(row.artifact.id);
+    }
+  }
+
+  if (artifact.type === "generated_output") {
+    const metadata = parseWorkingDocumentMetadata(artifact.metadata);
+    const documentFamilyId = metadata.documentFamilyId;
+
+    if (documentFamilyId) {
+      const ownershipScope = await getArtifactOwnershipScope(userId);
+      const familyRows = await db
+        .select()
+        .from(artifacts)
+        .where(
+          and(
+            eq(artifacts.userId, userId),
+            eq(artifacts.type, "generated_output"),
+            buildArtifactVisibilityCondition({ userId, ownershipScope }),
+          ),
+        );
+
+      for (const row of familyRows) {
+        const rowMetadata = parseWorkingDocumentMetadata(
+          row.metadataJson ? JSON.parse(row.metadataJson) : null,
+        );
+        if (rowMetadata.documentFamilyId === documentFamilyId) {
+          if (
+            isArtifactCanonicallyOwned({
+              userId,
+              ownershipScope,
+              artifact: row,
+            })
+          ) {
+            artifactIdsToDelete.add(row.id);
+          }
+        }
+      }
     }
   }
 
