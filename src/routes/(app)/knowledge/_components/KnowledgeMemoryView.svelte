@@ -108,18 +108,18 @@
 							Manage durable profile memories
 						</h3>
 					</div>
-				<span class="text-xs font-sans uppercase tracking-[0.1em] text-text-muted">
+				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 					{personaMemoryCount}
 				</span>
 				</div>
 				<div class="mt-4 flex flex-wrap gap-2">
 					{#if activeConstraintCount > 0}
-						<span class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+						<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
 							{activeConstraintCount} active constraint{activeConstraintCount === 1 ? '' : 's'}
 						</span>
 					{/if}
 					{#if currentProjectContextCount > 0}
-						<span class="text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+						<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
 							{currentProjectContextCount} current project context item{currentProjectContextCount === 1 ? '' : 's'}
 						</span>
 					{/if}
@@ -157,7 +157,7 @@
 							Manage focus continuity
 						</h3>
 					</div>
-				<span class="text-xs font-sans uppercase tracking-[0.1em] text-text-muted">
+				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 					{focusContinuityItemCount}
 				</span>
 				</div>

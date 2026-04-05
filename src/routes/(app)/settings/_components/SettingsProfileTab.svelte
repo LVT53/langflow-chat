@@ -274,7 +274,7 @@
 			Delete Account
 		</button>
 		<button class="btn-secondary" style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
-			{forgetEverythingLoading ? 'Resetting…' : 'Forget everything'}
+			{forgetEverythingLoading ? 'Resetting…' : 'Reset Memory'}
 		</button>
 	</div>
 </section>

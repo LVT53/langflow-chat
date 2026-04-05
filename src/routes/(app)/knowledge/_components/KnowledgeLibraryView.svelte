@@ -821,7 +821,7 @@
 		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Documents</div>
-				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 					{documents.length}
 				</span>
 			</div>
@@ -842,7 +842,7 @@
 		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Results</div>
-				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 					{results.length}
 				</span>
 			</div>
@@ -863,7 +863,7 @@
 		<div class="flex h-full flex-col rounded-[1.3rem] border border-border bg-surface-page px-4 py-4">
 			<div class="flex items-center justify-between gap-3">
 				<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">Workflows</div>
-				<span class="rounded-full border border-border px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
+				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
 					{workflows.length}
 				</span>
 			</div>
