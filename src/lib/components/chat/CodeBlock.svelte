@@ -101,7 +101,7 @@
 	</div>
 
 	{#if !collapsed}
-		<div class="code-body" transition:slide|local={{ duration: 200 }}>
+		<div class="code-body" transition:slide={{ duration: 200 }}>
 			<div class="code-content w-full overflow-x-auto p-md text-[14px] leading-[1.5]">
 				{@html contentHtml}
 			</div>

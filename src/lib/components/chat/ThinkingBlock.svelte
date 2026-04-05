@@ -103,7 +103,7 @@
 	</button>
 
 	{#if visibleTools.length > 0}
-		<div class="tool-call-stack" transition:slide|local={{ duration: 200 }}>
+		<div class="tool-call-stack" transition:slide={{ duration: 200 }}>
 			{#each visibleTools as tool (tool.name + JSON.stringify(tool.input))}
 				<div class="tool-call-row" class:is-running={tool.status === 'running'}>
 					{#if tool.status === 'running'}
@@ -125,7 +125,7 @@
 	{/if}
 
 	{#if expanded}
-		<div class="thinking-content" transition:slide|local>
+		<div class="thinking-content" transition:slide>
 			{#if hasSegments}
 				{#each segments as seg}
 					{#if seg.type === 'text'}
