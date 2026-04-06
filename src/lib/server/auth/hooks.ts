@@ -21,7 +21,7 @@ export function getBearerToken(authorizationHeader: string | null): string | nul
 
 type ServiceFileGenerateClaims = {
 	conversationId: string;
-	userId: string;
+	userId?: string;
 	exp: number;
 };
 
@@ -45,8 +45,8 @@ function isValidServiceFileGenerateClaims(value: unknown): value is ServiceFileG
 	return (
 		typeof claims.conversationId === 'string' &&
 		claims.conversationId.trim().length > 0 &&
-		typeof claims.userId === 'string' &&
-		claims.userId.trim().length > 0 &&
+		(claims.userId === undefined ||
+			(typeof claims.userId === 'string' && claims.userId.trim().length > 0)) &&
 		typeof claims.exp === 'number' &&
 		Number.isFinite(claims.exp)
 	);

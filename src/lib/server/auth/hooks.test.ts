@@ -47,6 +47,21 @@ describe('auth hooks', () => {
 	it('verifies a valid signed service assertion', () => {
 		const payload = {
 			conversationId: 'conv-1',
+			exp: Date.now() + 60_000,
+		};
+		const token = signPayload(payload, 'test-signing-key');
+
+		const result = verifyFileGenerateServiceAssertion(`Bearer ${token}`);
+		expect(result.valid).toBe(true);
+		if (result.valid) {
+			expect(result.claims.conversationId).toBe('conv-1');
+			expect(result.claims.userId).toBeUndefined();
+		}
+	});
+
+	it('accepts valid signed assertions that include userId for compatibility', () => {
+		const payload = {
+			conversationId: 'conv-1',
 			userId: 'user-1',
 			exp: Date.now() + 60_000,
 		};
@@ -63,7 +78,6 @@ describe('auth hooks', () => {
 	it('rejects expired signed assertions', () => {
 		const payload = {
 			conversationId: 'conv-1',
-			userId: 'user-1',
 			exp: Date.now() - 1,
 		};
 		const token = signPayload(payload, 'test-signing-key');
@@ -78,7 +92,6 @@ describe('auth hooks', () => {
 	it('rejects invalid signatures', () => {
 		const payload = {
 			conversationId: 'conv-1',
-			userId: 'user-1',
 			exp: Date.now() + 60_000,
 		};
 		const token = signPayload(payload, 'different-signing-key');
