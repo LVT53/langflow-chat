@@ -33,17 +33,6 @@ function coerceToFile(value: FormDataEntryValue | null): File | null {
 	return null;
 }
 
-function mapLanguageForPaddleBackend(language: string): string {
-	const normalized = normalizeLanguage(language);
-	if (normalized.includes('hu') || normalized.includes('nl')) {
-		return 'latin';
-	}
-	if (normalized.includes('en')) {
-		return 'en';
-	}
-	return normalized;
-}
-
 export const POST: RequestHandler = async ({ request }) => {
 	const config = getConfig();
 	const formData = await request.formData().catch(() => null);
@@ -61,7 +50,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		typeof languageRaw === 'string' && languageRaw.trim()
 			? languageRaw.trim()
 			: config.documentParserOcrLanguage;
-	const backendLanguage = mapLanguageForPaddleBackend(requestedLanguage);
+	const backendLanguage = normalizeLanguage(requestedLanguage);
 	const backendEndpoint = config.documentParserPaddleBackendUrl.trim();
 
 	if (!backendEndpoint) {
@@ -81,9 +70,20 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json(response);
 	} catch (error) {
 		if (error instanceof PaddleAdapterHttpError) {
+			const body = error.body?.trim();
+			const summarizedBody = body ? body.slice(0, 1000) : null;
+			console.error('[OCR_PROXY] Paddle backend request failed', {
+				status: error.status,
+				body: summarizedBody,
+			});
+
+			const errorMessage = summarizedBody
+				? `${error.message} | upstream: ${summarizedBody}`
+				: error.message;
+
 			return json(
 				{
-					error: error.message,
+					error: errorMessage,
 					upstreamStatus: error.status,
 					upstreamBody: error.body,
 				},
