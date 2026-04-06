@@ -257,7 +257,6 @@ describe('POST /api/chat/files/generate', () => {
 			valid: true,
 			claims: {
 				conversationId: 'conv-service',
-				userId: 'user-9',
 				exp: Date.now() + 60_000,
 			},
 		});
@@ -338,7 +337,6 @@ describe('POST /api/chat/files/generate', () => {
 			valid: true,
 			claims: {
 				conversationId: 'other-conversation',
-				userId: 'user-9',
 				exp: Date.now() + 60_000,
 			},
 		});
@@ -359,7 +357,7 @@ describe('POST /api/chat/files/generate', () => {
 		expect(mockGetConversationUserId).not.toHaveBeenCalled();
 	});
 
-	it('rejects service assertions when resolved conversation owner mismatches assertion user', async () => {
+	it('accepts service assertions even when optional assertion userId differs', async () => {
 		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
 			valid: true,
 			claims: {
@@ -369,6 +367,28 @@ describe('POST /api/chat/files/generate', () => {
 			},
 		});
 		mockGetConversationUserId.mockResolvedValue('different-user');
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'output.csv',
+					mimeType: 'text/csv',
+					content: Buffer.from('a,b\n1,2'),
+					sizeBytes: 7
+				}
+			],
+			stdout: 'Execution successful',
+			stderr: ''
+		});
+		mockStoreGeneratedFile.mockResolvedValue({
+			id: 'file-optional-user-mismatch',
+			conversationId: 'conv-service',
+			userId: 'different-user',
+			filename: 'output.csv',
+			mimeType: 'text/csv',
+			sizeBytes: 7,
+			storagePath: 'conv-service/file-optional-user-mismatch.csv',
+			createdAt: Date.now()
+		});
 
 		const response = await POST(
 			makeEvent(
@@ -382,8 +402,16 @@ describe('POST /api/chat/files/generate', () => {
 			)
 		);
 
-		expect(response.status).toBe(404);
-		expect(mockExecuteCode).not.toHaveBeenCalled();
+		expect(response.status).toBe(200);
+		expect(mockExecuteCode).toHaveBeenCalled();
+		expect(mockStoreGeneratedFile).toHaveBeenCalledWith(
+			'conv-service',
+			'different-user',
+			expect.objectContaining({
+				filename: 'output.csv',
+			})
+		);
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith('different-user', 'file_generate_service');
 	});
 
 	it('returns 400 when conversationId is missing', async () => {

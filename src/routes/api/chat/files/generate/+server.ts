@@ -152,7 +152,6 @@ export const POST: RequestHandler = async (event) => {
 		}
 
 		const assertedConversationId = serviceAssertion.claims.conversationId;
-		const assertedUserId = serviceAssertion.claims.userId;
 		if (assertedConversationId !== conversationId) {
 			console.warn('[FILE_GENERATE] Service assertion conversation mismatch', {
 				requestId,
@@ -163,15 +162,16 @@ export const POST: RequestHandler = async (event) => {
 		}
 
 		const conversationUserId = await getConversationUserId(conversationId);
-		if (!conversationUserId || conversationUserId !== assertedUserId) {
+		if (!conversationUserId) {
 			console.warn('[FILE_GENERATE] Conversation not found for service request', {
 				requestId,
 				conversationId,
-				assertedUserId,
+				assertedUserId: serviceAssertion.claims.userId ?? null,
 				conversationUserId,
 			});
 			return json({ error: 'Conversation not found' }, { status: 404 });
 		}
+
 		ownerUserId = conversationUserId;
 	}
 
