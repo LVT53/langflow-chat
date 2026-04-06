@@ -153,6 +153,73 @@ describe('POST /api/knowledge/upload', () => {
 		expect(data.readinessError).toBeNull();
 	});
 
+	it('keeps upload successful when Honcho native sync is unsupported and fallback sync succeeds', async () => {
+		const artifact = {
+			id: 'artifact-image-415',
+			type: 'source_document',
+			retrievalClass: 'durable',
+			name: 'photo.png',
+			mimeType: 'image/png',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Image OCR',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		const normalizedArtifact = {
+			id: 'normalized-image-415',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: 'photo.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 240,
+			conversationId: 'conv-1',
+			summary: 'OCR text',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		mockSaveUploadedArtifact.mockResolvedValue({
+			artifact,
+			reusedExistingArtifact: false,
+			normalizedArtifact,
+		});
+		mockSyncArtifactToHoncho
+			.mockResolvedValueOnce({ uploaded: false, mode: 'none' })
+			.mockResolvedValueOnce({ uploaded: true, mode: 'normalized' });
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [artifact],
+			promptArtifacts: [normalizedArtifact],
+			items: [
+				{
+					requestedArtifactId: artifact.id,
+					displayArtifact: artifact,
+					promptArtifact: normalizedArtifact,
+					promptReady: true,
+					readinessError: null,
+					contentLength: 220,
+					contentPreview: 'Detected text from image OCR',
+					contentHash: 'hash-image-415',
+					chunkCount: 2,
+				},
+			],
+			unresolvedItems: [],
+		});
+
+		const formData = new FormData();
+		formData.append('file', new File(['image'], 'photo.png', { type: 'image/png' }));
+		formData.append('conversationId', 'conv-1');
+
+		const response = await POST(makeEventWithFormData(formData));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.promptReady).toBe(true);
+		expect(data.readinessError).toBeNull();
+		expect(data.honcho).toEqual({ uploaded: true, mode: 'normalized' });
+		expect(mockSyncArtifactToHoncho).toHaveBeenCalledTimes(2);
+	});
+
 	it('returns a readiness error when the file cannot be normalized for chat', async () => {
 		const artifact = {
 			id: 'artifact-2',

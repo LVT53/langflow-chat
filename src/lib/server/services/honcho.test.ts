@@ -16,12 +16,13 @@ const {
   mockGetPromptArtifactSnippets,
   mockPrepareTaskContext,
   mockRequestStructuredControlModel,
-  mockRerankItems,
-  mockSummarizeHistoricalContext,
-  mockSessionQueueStatus,
-  mockSessionContext,
-  mockSessionAddPeers,
-  mockSessionDelete,
+	mockRerankItems,
+	mockSummarizeHistoricalContext,
+	mockSessionQueueStatus,
+	mockSessionContext,
+	mockSessionUploadFile,
+	mockSessionAddPeers,
+	mockSessionDelete,
   mockPeerContext,
   mockPeerChat,
   mockPeerSetCard,
@@ -121,18 +122,19 @@ const {
     mockRequestStructuredControlModel: vi.fn(),
     mockRerankItems: vi.fn(),
     mockSummarizeHistoricalContext: vi.fn(async () => null),
-    mockSessionQueueStatus: vi.fn(async () => ({
-      pendingWorkUnits: 0,
-      inProgressWorkUnits: 0,
-    })),
-    mockSessionContext: vi.fn(async () => ({
-      messages: [],
-      summary: null,
-      peerRepresentation: null,
-      peerCard: null,
-    })),
-    mockSessionAddPeers: vi.fn(async () => undefined),
-    mockSessionDelete: vi.fn(async () => undefined),
+		mockSessionQueueStatus: vi.fn(async () => ({
+			pendingWorkUnits: 0,
+			inProgressWorkUnits: 0,
+		})),
+		mockSessionContext: vi.fn(async () => ({
+			messages: [],
+			summary: null,
+			peerRepresentation: null,
+			peerCard: null,
+		})),
+		mockSessionUploadFile: vi.fn(async () => undefined),
+		mockSessionAddPeers: vi.fn(async () => undefined),
+		mockSessionDelete: vi.fn(async () => undefined),
     mockPeerContext: vi.fn(async () => ({ representation: null, peerCard: null })),
     mockPeerChat: vi.fn(async () => ''),
     mockPeerSetCard: vi.fn(async () => []),
@@ -199,15 +201,15 @@ vi.mock('@honcho-ai/sdk', () => {
   class Honcho {
     async session(id: string) {
       return {
-        id,
-        addPeers: mockSessionAddPeers,
-        queueStatus: mockSessionQueueStatus,
-        context: mockSessionContext,
-        addMessages: vi.fn(async () => []),
-        uploadFile: vi.fn(async () => undefined),
-        delete: mockSessionDelete,
-      };
-    }
+			id,
+			addPeers: mockSessionAddPeers,
+			queueStatus: mockSessionQueueStatus,
+			context: mockSessionContext,
+			addMessages: vi.fn(async () => []),
+			uploadFile: mockSessionUploadFile,
+			delete: mockSessionDelete,
+		};
+	}
 
     async peer(id: string) {
       const conclusions = makeScope();
@@ -394,13 +396,15 @@ describe('Honcho Service', () => {
       inProgressWorkUnits: 0,
     });
     mockSessionContext.mockReset();
-    mockSessionContext.mockResolvedValue({
-      messages: [],
-      summary: null,
-      peerRepresentation: null,
-      peerCard: null,
-    });
-    mockSessionAddPeers.mockReset();
+		mockSessionContext.mockResolvedValue({
+			messages: [],
+			summary: null,
+			peerRepresentation: null,
+			peerCard: null,
+		});
+		mockSessionUploadFile.mockReset();
+		mockSessionUploadFile.mockResolvedValue(undefined);
+		mockSessionAddPeers.mockReset();
     mockSessionAddPeers.mockResolvedValue(undefined);
     mockBuildPersonaPromptContext.mockReset();
     mockBuildPersonaPromptContext.mockResolvedValue('');
@@ -1091,14 +1095,63 @@ describe('Honcho Service', () => {
     });
   });
 
-  describe('mirrorMessage', () => {
+	describe('mirrorMessage', () => {
     it('should return immediately when Honcho is disabled', async () => {
       const { mirrorMessage } = await import('./honcho');
       // Should not throw even though Honcho is not configured
       await expect(
         mirrorMessage('user-123', 'conv-456', 'user', 'Hello')
       ).resolves.toBeUndefined();
-    });
+	});
+
+	describe('syncArtifactToHoncho', () => {
+		it('uses normalized fallback for unsupported image mime types instead of native upload', async () => {
+			mockConfig.honchoEnabled = true;
+
+			const { syncArtifactToHoncho } = await import('./honcho');
+			const result = await syncArtifactToHoncho({
+				userId: 'user-123',
+				conversationId: 'conv-456',
+				artifact: {
+					id: 'artifact-image-1',
+					userId: 'user-123',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'photo.png',
+					mimeType: 'image/png',
+					sizeBytes: 100,
+					conversationId: 'conv-456',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					extension: '.png',
+					storagePath: null,
+					contentText: null,
+					metadata: null,
+				},
+				fallbackTextArtifact: {
+					id: 'normalized-image-1',
+					userId: 'user-123',
+					type: 'normalized_document',
+					retrievalClass: 'durable',
+					name: 'photo.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 48,
+					conversationId: 'conv-456',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					extension: '.txt',
+					storagePath: null,
+					contentText: 'Detected text from image',
+					metadata: null,
+				},
+			});
+
+			expect(result).toEqual({ uploaded: true, mode: 'normalized' });
+			expect(mockSessionUploadFile).not.toHaveBeenCalled();
+		});
+	});
 
     it('should return immediately for empty content', async () => {
       const { mirrorMessage } = await import('./honcho');

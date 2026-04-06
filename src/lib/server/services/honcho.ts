@@ -73,6 +73,8 @@ const honchoPeerVersionCache = new Map<string, number>();
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
+const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES = ['text/'];
+const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set(['application/pdf', 'application/json']);
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -268,6 +270,31 @@ export async function syncArtifactToHoncho(params: {
 
 	const session = await getSession(params.userId, params.conversationId);
 	const userPeer = await getUserPeer(params.userId);
+	const nativeMimeType = (params.file?.type || params.artifact.mimeType || 'application/octet-stream')
+		.trim()
+		.toLowerCase();
+	const nativeUploadSupported =
+		HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES.has(nativeMimeType) ||
+		HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES.some((prefix) => nativeMimeType.startsWith(prefix));
+
+	if (!nativeUploadSupported) {
+		const fallbackArtifact = params.fallbackTextArtifact;
+		if (fallbackArtifact?.contentText?.trim()) {
+			await session.addMessages(
+				userPeer.message(fallbackArtifact.contentText, {
+					metadata: {
+						role: 'user',
+						artifactId: fallbackArtifact.id,
+						artifactType: fallbackArtifact.type,
+						sourceArtifactId: params.artifact.id,
+					},
+				})
+			);
+			return { uploaded: true, mode: 'normalized' };
+		}
+
+		return { uploaded: false, mode: 'none' };
+	}
 
 	try {
 		if (params.file) {
@@ -286,7 +313,7 @@ export async function syncArtifactToHoncho(params: {
 				{
 					filename: params.artifact.name,
 					content: buffer,
-					content_type: params.artifact.mimeType ?? 'application/octet-stream',
+					content_type: nativeMimeType,
 				},
 				userPeer,
 				{
