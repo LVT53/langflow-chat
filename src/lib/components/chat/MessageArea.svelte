@@ -131,12 +131,12 @@
 <div
 	bind:this={scrollContainer}
 	onscroll={handleScroll}
-	class="scroll-container h-full min-h-0 overflow-x-hidden overflow-y-auto px-sm py-lg md:px-lg md:py-xl lg:px-xl"
+	class="scroll-container h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
 	style="touch-action: pan-y;"
 	aria-live="polite"
 	aria-atomic="false"
 >
-	<div class="mx-auto flex min-h-full min-w-0 w-full max-w-[760px] flex-col gap-lg">
+	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg px-sm py-lg md:px-lg md:py-xl lg:px-xl">
 		{#if messages.length === 0}
 			<div class="conversation-empty-state">
 				<div class="conversation-empty-eyebrow">Conversation Ready</div>
