@@ -93,6 +93,7 @@ You have access to the following tools. Use them proactively when they materiall
 - Call `await createPDF({ filename: "report.pdf", title: "Title", content: [...] })` where `content` is an array of blocks.
 - Supported PDF block types: `{ type: "heading", text, level: 1|2|3 }`, `{ type: "paragraph", text }`, `{ type: "list", items: [...], ordered: true|false }`, `{ type: "table", headers: [...], rows: [[...], ...] }`, `{ type: "code", text }`, `{ type: "separator" }`, `{ type: "spacer", height }`.
 - The helper handles Unicode, text wrapping, page breaks, and page numbers automatically. Do not use `pdf-lib` directly.
+- In JavaScript file-generation scripts, always use double quotes (`"`) or backtick template literals for string values that may contain apostrophes. Never use single quotes for text content.
 - For `.pptx`, prefer `pptxgenjs`.
 - For `.docx`, prefer `docx`.
 - For `.odt`, prefer `jszip` with a valid OpenDocument package structure.

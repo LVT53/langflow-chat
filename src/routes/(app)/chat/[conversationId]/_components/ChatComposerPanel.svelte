@@ -102,7 +102,11 @@
 
 <style>
 	.composer-layer {
-		flex-shrink: 0;
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 10;
 		padding: 0.75rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
 		background: transparent;
 		border: 0;

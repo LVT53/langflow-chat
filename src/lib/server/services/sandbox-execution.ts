@@ -150,9 +150,17 @@ function stripCreatePdfRequires(code: string): string {
 	);
 }
 
+function fixDoubleEscapedQuotes(code: string): string {
+	// Fix the most common model escaping error: writing \\' instead of \'
+	// inside single-quoted strings.  e.g. 'Alföldy\\'s' → SyntaxError
+	// because \\\\ produces a literal backslash and the next ' ends the string.
+	// Reducing \\\\ + ' to \\ + ' turns it into an escaped apostrophe.
+	return code.replace(/\\\\'/g, "\\'");
+}
+
 function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
 	if (language === 'javascript') {
-		const sanitized = stripCreatePdfRequires(code);
+		const sanitized = fixDoubleEscapedQuotes(stripCreatePdfRequires(code));
 		return `
 const sandboxFs = require('fs');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};

@@ -20,18 +20,25 @@
 	const color = $derived(getAvatarColor(avatarId, userId));
 	const initial = $derived(name ? name[0].toUpperCase() : (userId[0] ?? '?').toUpperCase());
 	const fontSize = $derived(Math.round(size * 0.42));
+	let imgFailed = $state(false);
 	const imgSrc = $derived(profilePicture
 		? `/api/avatar/${userId}${cacheBuster ? `?t=${cacheBuster}` : ''}`
 		: null);
+
+	// Reset failure state when the source URL changes (e.g. after upload).
+	$effect(() => {
+		if (imgSrc) imgFailed = false;
+	});
 </script>
 
-{#if imgSrc}
+{#if imgSrc && !imgFailed}
 	<img
 		src={imgSrc}
 		alt={name ?? userId}
 		class="avatar-circle flex-shrink-0 select-none rounded-full object-cover"
 		style="width: {size}px; height: {size}px;"
 		aria-hidden="true"
+		onerror={() => { imgFailed = true; }}
 	/>
 {:else}
 	<div

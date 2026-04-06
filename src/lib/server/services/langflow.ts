@@ -45,6 +45,7 @@ const FILE_GENERATION_GUARD = [
 	'- Call `await createPDF({ filename: "report.pdf", title: "Title", content: [...] })` where `content` is an array of blocks.',
 	'- Supported block types: `{ type: "heading", text, level: 1|2|3 }`, `{ type: "paragraph", text }`, `{ type: "list", items: [...], ordered: true|false }`, `{ type: "table", headers: [...], rows: [[...], ...] }`, `{ type: "code", text }`, `{ type: "separator" }`, `{ type: "spacer", height }`. Unknown types with a `text` field render as paragraphs.',
 	'- The helper handles Unicode, text wrapping, page breaks, and page numbers automatically. Do not use `pdf-lib` directly.',
+	'- In JavaScript file-generation scripts, always use double quotes (`"`) or backtick template literals for string values that may contain apostrophes. Never use single quotes for text content.',
 	'- On generation failure, fix the requested output generation code itself; do not create fallback error files such as `error_log.txt` in `/output` as a substitute for the requested artifact.',
 	'- Never use `run_python_repl` as a fallback for downloadable-file requests after a `generate_file` failure; keep the flow on `generate_file`.',
 	'- Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs` when generating files. They are for previewing, not file creation.',

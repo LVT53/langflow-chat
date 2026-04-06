@@ -559,6 +559,10 @@
 			draftPersistence.clear();
 		}
 		attachedArtifacts = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
+		// Clear after merge so the composer's reactive merge effect doesn't re-add
+		// the sent artifacts.  The server-side attachArtifactsToMessage call removes
+		// the pending DB links, so a page refresh also starts clean.
+		attachedArtifacts = [];
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const placeholderId = crypto.randomUUID();
@@ -956,8 +960,8 @@
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<div class="chat-main flex min-h-0 flex-1 flex-col overflow-hidden">
-			<div class="chat-messages flex min-h-0 flex-1 overflow-hidden">
+		<div class="chat-main relative min-h-0 flex-1 overflow-hidden">
+			<div class="chat-messages h-full overflow-hidden">
 				<ChatMessagePane
 					messages={$messages}
 					conversationId={data.conversation.id}

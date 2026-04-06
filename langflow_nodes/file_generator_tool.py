@@ -55,6 +55,8 @@ For PDF generation, the `createPDF` helper is pre-loaded in the JavaScript runti
 Do not require it; just call it directly. It handles Unicode, text wrapping, page breaks,
 and page numbers automatically. Do not use `pdf-lib` directly.
 Supported block types: heading (level 1-3), paragraph, list, table, code, separator, spacer.
+In JavaScript scripts, always use double quotes or backtick template literals for text
+content. Never use single quotes for strings that may contain apostrophes.
 Do not write fallback diagnostics (for example `error_log.txt`) to `/output`; `/output` should contain only
 the final user-requested artifact files.
 """

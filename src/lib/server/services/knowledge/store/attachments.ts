@@ -602,6 +602,23 @@ export async function attachArtifactsToMessage(params: {
       linkType: "attached_to_conversation",
     });
   }
+
+  // Remove the conversation-level "pending" links (messageId IS NULL) so
+  // these artifacts no longer appear as uncommitted composer attachments.
+  const attachedIds = ownedArtifacts.map((a) => a.id);
+  if (attachedIds.length > 0) {
+    await db
+      .delete(artifactLinks)
+      .where(
+        and(
+          eq(artifactLinks.userId, params.userId),
+          eq(artifactLinks.conversationId, params.conversationId),
+          inArray(artifactLinks.artifactId, attachedIds),
+          eq(artifactLinks.linkType, "attached_to_conversation"),
+          isNull(artifactLinks.messageId),
+        ),
+      );
+  }
 }
 
 export async function listConversationSourceArtifactIds(
