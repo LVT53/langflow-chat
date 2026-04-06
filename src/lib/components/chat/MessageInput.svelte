@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
 	import { currentConversationId } from '$lib/stores/ui';
 	import ContextUsageRing from './ContextUsageRing.svelte';
@@ -133,6 +133,37 @@
 	});
 
 	$effect(() => {
+		// Always merge attachedArtifacts into pendingAttachments
+		// These are conversation-scoped artifacts that exist in the database
+		const currentAttached = attachedArtifacts;
+		
+		// Use untrack to prevent subscribing to pendingAttachments changes
+		const currentPending = untrack(() => pendingAttachments);
+		
+		// Merge into pendingAttachments
+		const merged = new Map<string, PendingAttachment>();
+		
+		// Add current pendingAttachments first (they might have newer readiness info)
+		for (const attachment of currentPending) {
+			merged.set(attachment.artifact.id, attachment);
+		}
+		
+		// Add attachedArtifacts (only if not already present)
+		for (const artifact of currentAttached) {
+			if (!merged.has(artifact.id)) {
+				merged.set(artifact.id, {
+					artifact,
+					promptReady: true,
+					promptArtifactId: null,
+					readinessError: null,
+				});
+			}
+		}
+		
+		pendingAttachments = Array.from(merged.values());
+	});
+
+	$effect(() => {
 		if (draftVersion === appliedDraftVersion) return;
 
 		const shouldApplyDraft =
@@ -143,7 +174,21 @@
 
 		if (shouldApplyDraft) {
 			message = draftText;
-			pendingAttachments = draftAttachments.map((attachment) => ({ ...attachment }));
+			
+			// Merge draftAttachments (override existing)
+			const merged = new Map<string, PendingAttachment>();
+			
+			// Keep existing pendingAttachments
+			for (const attachment of pendingAttachments) {
+				merged.set(attachment.artifact.id, attachment);
+			}
+			
+			// Override with draftAttachments
+			for (const attachment of draftAttachments) {
+				merged.set(attachment.artifact.id, attachment);
+			}
+			
+			pendingAttachments = Array.from(merged.values());
 			attachmentError = '';
 			uploadState = 'idle';
 			queuedSendAfterProcessing = false;
