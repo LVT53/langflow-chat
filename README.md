@@ -224,9 +224,9 @@ Notes before the tables:
 | `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 | `DOCUMENT_PARSER_OCR_ENABLED` | No | `true` | Enables OCR during upload normalization via Liteparse | Set `false` if you want pure non-OCR extraction | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | `http://127.0.0.1:3000/api/ocr/paddle` | Liteparse OCR endpoint URL (expects Liteparse OCR API: multipart `file` + `language`) | Set to your app’s local OCR proxy route when using Paddle backend integration | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | empty | Liteparse OCR endpoint URL (expects Liteparse OCR API: multipart `file` + `language`) | Leave empty to use Liteparse built-in OCR (Tesseract path); set to your app’s local OCR proxy route only for Paddle integration | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_PADDLE_BACKEND_URL` | No | empty | Upstream Paddle OCR backend URL that the local OCR proxy forwards to | Set to your Paddle service endpoint (for example `http://127.0.0.1:5000/ocr`) | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_OCR_LANGUAGE` | No | `hu+en+nl` | OCR language/profile passed to Liteparse OCR engine/server | Keep `hu+en+nl` for Hungarian/English/Dutch-first deployments, or set a single language/profile if needed | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_LANGUAGE` | No | `hun+eng+nld` | OCR language/profile passed to Liteparse OCR engine/server | For built-in Tesseract, prefer 3-letter codes (`hun+eng+nld`). For external OCR adapters, 2-letter profiles like `hu+en+nl` are also accepted. | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_NUM_WORKERS` | No | `4` | OCR worker parallelism used by Liteparse | Raise/lower based on CPU and OCR service capacity | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_MAX_PAGES` | No | `1000` | Maximum pages Liteparse processes per document | Reduce to cap resource usage on large files | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_DPI` | No | `150` | Render DPI used for OCR operations | Raise for better OCR quality at higher cost | Can also be overridden in admin config |
@@ -250,8 +250,11 @@ Notes before the tables:
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
 - On Linux/macOS, install `libreoffice` and `imagemagick` so Liteparse can normalize Office/image uploads consistently.
 - Upload normalization now uses Liteparse. Install `libreoffice` and `imagemagick` in deployment environments so Office/image extraction paths are available.
-- Liteparse expects an OCR server contract on `DOCUMENT_PARSER_OCR_SERVER_URL` (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
-- This repo now includes a local OCR proxy route at `POST /api/ocr/paddle`; point `DOCUMENT_PARSER_OCR_SERVER_URL` there and set `DOCUMENT_PARSER_PADDLE_BACKEND_URL` to your Paddle OCR backend endpoint.
+- Knowledge/document uploads currently accept document and image extensions: `.pdf`, `.doc`, `.docx`, `.txt`, `.md`, `.json`, `.csv`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.html`, `.htm`, `.jpg`, `.jpeg`, `.jfif`, `.png`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.svg`, `.heic`, `.heif`, `.avif`.
+- OCR/extraction quality still depends on conversion delegates installed on the host. For HEIC/HEIF/AVIF, verify ImageMagick delegate support explicitly (see AlmaLinux notes below).
+- Liteparse built-in OCR (Tesseract path) is active when `DOCUMENT_PARSER_OCR_SERVER_URL` is empty.
+- If you set `DOCUMENT_PARSER_OCR_SERVER_URL`, Liteparse expects an OCR server contract (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
+- This repo includes an optional local OCR proxy route at `POST /api/ocr/paddle`; use it only when routing to an external Paddle backend via `DOCUMENT_PARSER_PADDLE_BACKEND_URL`.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
@@ -289,6 +292,35 @@ Notes before the tables:
 - The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
+
+### AlmaLinux / RHEL: ImageMagick Delegate Setup (HEIC/HEIF/AVIF)
+
+If `libde265` is not available in your enabled repositories, do **not** block on that package name. On EL systems the effective fix is to install ImageMagick + HEIF support packages, then verify delegates are active.
+
+```bash
+sudo dnf -y install epel-release dnf-plugins-core
+sudo dnf config-manager --set-enabled crb || true
+sudo dnf -y makecache
+
+# Core converters used by Liteparse upload normalization
+sudo dnf -y install libreoffice ImageMagick ghostscript poppler-utils librsvg2
+
+# HEIF/AVIF support packages (names vary by repo build)
+sudo dnf -y install libheif || true
+sudo dnf -y install ImageMagick-heic || true
+
+# Optional discovery when one package name is missing
+dnf repoquery --available 'ImageMagick*heic*' 'libheif*' 'libde265*' | sort
+```
+
+Verify delegate support after install:
+
+```bash
+magick -version
+magick -list format | egrep -i 'HEIC|HEIF|AVIF|JPEG|PNG|WEBP|TIFF|SVG|PDF'
+```
+
+Expected outcome: `HEIC`/`HEIF`/`AVIF` appear in `magick -list format`. If they do not appear, those uploads may still store successfully but OCR extraction/prep can fail until delegate support is available on the host image.
 
 ## Testing And Verification
 
