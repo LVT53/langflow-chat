@@ -10,6 +10,18 @@ export interface LiteparseOcrResponse {
 	results: LiteparseOcrResultItem[];
 }
 
+export class PaddleAdapterHttpError extends Error {
+	status: number;
+	body: string | null;
+
+	constructor(status: number, message: string, body: string | null) {
+		super(message);
+		this.name = 'PaddleAdapterHttpError';
+		this.status = status;
+		this.body = body;
+	}
+}
+
 export interface PaddleBlockLike {
 	text?: unknown;
 	block_content?: unknown;
@@ -105,13 +117,19 @@ export function mapPaddleResponseToLiteparseOcr(payload: unknown): LiteparseOcrR
 	return { results };
 }
 
+function resolvePaddleEndpoint(): string {
+	const config = getConfig();
+	const endpoint = config.documentParserPaddleBackendUrl.trim() || config.documentParserOcrServerUrl.trim();
+	return endpoint;
+}
+
 export async function callPaddleOcrAdapter(params: {
 	file: File;
 	language: string;
 	signal?: AbortSignal;
+    endpoint?: string;
 }): Promise<LiteparseOcrResponse> {
-	const config = getConfig();
-	const endpoint = config.documentParserOcrServerUrl.trim();
+	const endpoint = params.endpoint?.trim() || resolvePaddleEndpoint();
 	if (!endpoint) {
 		return { results: [] };
 	}
@@ -127,7 +145,12 @@ export async function callPaddleOcrAdapter(params: {
 	});
 
 	if (!response.ok) {
-		throw new Error(`Paddle OCR adapter failed: ${response.status} ${response.statusText}`);
+		const errorBody = await response.text().catch(() => null);
+		throw new PaddleAdapterHttpError(
+			response.status,
+			`Paddle OCR adapter failed: ${response.status} ${response.statusText}`,
+			errorBody
+		);
 	}
 
 	const json = (await response.json().catch(() => null)) as unknown;
