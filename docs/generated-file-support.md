@@ -16,7 +16,7 @@ This is the current target support matrix for AlfyAI generated files.
 - `.js` JavaScript source files
 - `.py` Python source files
 - `.xlsx` Excel workbooks via `exceljs`
-- `.pdf` PDF documents via `pdf-lib`
+- `.pdf` PDF documents via `create-pdf` helper (Unicode-safe)
 - `.pptx` PowerPoint presentations via `pptxgenjs`
 - `.docx` Word documents via `docx`
 - `.odt` OpenDocument text files via `jszip` packaging
@@ -32,8 +32,6 @@ This is the current target support matrix for AlfyAI generated files.
 - Use `language: "python"` for plain text and text-like files such as `.txt`, `.md`, `.csv`, `.json`, `.html`, `.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`.
 - Use `language: "javascript"` for `.xlsx`, `.pdf`, `.pptx`, and `.docx`.
 - Use `language: "javascript"` plus `jszip` when building `.odt`.
-- For `.pdf` with `pdf-lib`, generate bytes with `await pdfDoc.save()` and write them to `/output/your-file.pdf` using a Node file write.
-- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const fs = require("fs"); const pdfDoc = await PDFDocument.create(); const page = pdfDoc.addPage([595, 842]); const font = await pdfDoc.embedFont(StandardFonts.Helvetica); page.drawText("Hello", { x: 50, y: 780, size: 12, font, color: rgb(0, 0, 0) }); const pdfBytes = await pdfDoc.save(); fs.writeFileSync("/output/file.pdf", pdfBytes);`.
-- In `pdf-lib`, embed a standard font first and pass the resulting `PDFFont` instance to `drawText`.
-- Avoid incorrect patterns such as `const { pdfDoc } = require("pdf-lib")`, `await pdfDoc.create()`, passing `StandardFonts.Helvetica` directly as `options.font`, or using invented APIs like `pdfDoc.getStandardFont(...)`.
+- For `.pdf`, use the built-in helper at `/workspace/helpers/create-pdf` which handles Unicode, text wrapping, page breaks, and page layout automatically: `const createPDF = require("/workspace/helpers/create-pdf"); await createPDF({ filename: "report.pdf", title: "Title", content: [...] });`
+- Supported PDF block types: heading (level 1-3), paragraph, list (ordered/unordered), table, code, separator, spacer.
 - Preview libraries such as `pdfjs-dist` and `pptxviewjs` are for viewing files in the UI, not generating them.

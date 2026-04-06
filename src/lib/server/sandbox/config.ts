@@ -22,6 +22,7 @@ interface SandboxRuntimeConfig {
 }
 
 const JAVASCRIPT_NODE_MODULES_DIR = path.join(process.cwd(), 'node_modules');
+const JAVASCRIPT_HELPERS_DIR = path.join(process.cwd(), 'sandbox-helpers');
 
 const SANDBOX_RUNTIME_CONFIG: Record<SandboxLanguage, SandboxRuntimeConfig> = {
 	python: {
@@ -34,7 +35,10 @@ const SANDBOX_RUNTIME_CONFIG: Record<SandboxLanguage, SandboxRuntimeConfig> = {
 		idleCommand: ['node', '-e', 'process.stdin.resume()'],
 		execCommand: (code: string) => ['node', '-e', code],
 		workingDir: '/workspace',
-		binds: [`${JAVASCRIPT_NODE_MODULES_DIR}:/workspace/node_modules:ro`],
+		binds: [
+			`${JAVASCRIPT_NODE_MODULES_DIR}:/workspace/node_modules:ro`,
+			`${JAVASCRIPT_HELPERS_DIR}:/workspace/helpers:ro`,
+		],
 	},
 };
 

@@ -261,14 +261,10 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('`.odt` files');
       expect(body.tweaks.system_prompt).toContain('`.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`');
       expect(body.tweaks.system_prompt).toContain('use `require(...)`, not top-level `import` statements');
-      expect(body.tweaks.system_prompt).toContain('create the PDF bytes with `await pdfDoc.save()`');
-      expect(body.tweaks.system_prompt).toContain('const { PDFDocument, StandardFonts, rgb } = require("pdf-lib")');
-      expect(body.tweaks.system_prompt).toContain('const pdfDoc = await PDFDocument.create()');
-      expect(body.tweaks.system_prompt).toContain('const font = await pdfDoc.embedFont(StandardFonts.Helvetica)');
-      expect(body.tweaks.system_prompt).toContain('Do not pass `StandardFonts.Helvetica` directly as `options.font`');
-      expect(body.tweaks.system_prompt).toContain('Do not use incorrect `pdf-lib` patterns such as `const { pdfDoc } = require("pdf-lib")`');
-      expect(body.tweaks.system_prompt).toContain('Do not use invented `pdf-lib` APIs such as `pdfDoc.getStandardFont(...)`');
-      expect(body.tweaks.system_prompt).toContain('Node-compatible file writes');
+      expect(body.tweaks.system_prompt).toContain('use the built-in helper: `const createPDF = require("/workspace/helpers/create-pdf");`');
+      expect(body.tweaks.system_prompt).toContain('await createPDF({ filename: "report.pdf"');
+      expect(body.tweaks.system_prompt).toContain('handles Unicode, text wrapping, page breaks, and page numbers automatically');
+      expect(body.tweaks.system_prompt).toContain('Do not use `pdf-lib` directly');
       expect(body.tweaks.system_prompt).toContain('Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs`');
       expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
       expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');
