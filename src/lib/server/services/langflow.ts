@@ -42,6 +42,11 @@ const FILE_GENERATION_GUARD = [
 	'- Do not claim `.xlsx`, `.pdf`, `.pptx`, `.docx`, or `.odt` generation is unavailable when `generate_file` is available. Choose the appropriate runtime and use the installed libraries directly.',
 	'- For `.xlsx`, prefer `exceljs`. For `.pdf`, prefer `pdf-lib`. For `.pptx`, prefer `pptxgenjs`. For `.docx`, prefer `docx`. For `.odt`, prefer `jszip` with a valid OpenDocument structure.',
 	'- For `.pdf` with `pdf-lib`, create the PDF bytes with `await pdfDoc.save()` and write them directly to `/output/your-file.pdf`.',
+	'- `pdf-lib` standard fonts are WinAnsi-only and will fail for many Unicode characters (for example `Č` and many non-English characters).',
+	'- For Unicode-safe PDFs, register `@pdf-lib/fontkit`, embed a Unicode-capable `.ttf/.otf` font, and draw text with that embedded font instead of relying on WinAnsi-only standard fonts.',
+	'- Keep newline handling explicit in `pdf-lib`: split content by `\\n` and draw lines individually, or otherwise sanitize to avoid passing raw unsupported control/newline code points into `drawText`.',
+	'- On generation failure, fix the requested output generation code itself; do not create fallback error files such as `error_log.txt` in `/output` as a substitute for the requested artifact.',
+	'- Never use `run_python_repl` as a fallback for downloadable-file requests after a `generate_file` failure; keep the flow on `generate_file`.',
 	'- For `.pdf` with `pdf-lib` in Node/CommonJS, prefer this exact shape: `const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"); const fs = require("fs"); const pdfDoc = await PDFDocument.create(); const page = pdfDoc.addPage([595, 842]); const font = await pdfDoc.embedFont(StandardFonts.Helvetica); page.drawText("Hello", { x: 50, y: 780, size: 12, font, color: rgb(0, 0, 0) }); const pdfBytes = await pdfDoc.save(); fs.writeFileSync("/output/file.pdf", pdfBytes);`',
 	'- In `pdf-lib`, always embed a standard font first, for example `const font = await pdfDoc.embedFont(StandardFonts.Helvetica)`, and pass that `font` object to `drawText`.',
 	'- Do not pass `StandardFonts.Helvetica` directly as `options.font`; `drawText` expects an embedded `PDFFont` object.',
@@ -52,7 +57,7 @@ const FILE_GENERATION_GUARD = [
 	'- If a file-generation tool is available and you use it, write the final output files to `/output` or no file will be created.',
 	'- Only tell the user a file is ready after the tool succeeds.',
 	'- Generated files appear in the chat UI after the response finishes.',
-	'- If `generate_file` fails, inspect the actual error, make one clear fix, and retry at most once.',
+	'- If `generate_file` fails, inspect the actual error, make one clear fix in the `generate_file` script, and retry at most once without switching tools.',
 ].join('\n');
 
 function containsHttpUrl(value: string): boolean {

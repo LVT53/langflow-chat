@@ -55,6 +55,10 @@ For PDF generation with `pdf-lib`, prefer the exact CommonJS pattern above.
 Do not use incorrect forms such as `const { pdfDoc } = require("pdf-lib")` or `await pdfDoc.create()`.
 Do not pass `StandardFonts.Helvetica` directly to `drawText`; embed it first and pass the returned `PDFFont`.
 Do not use invented APIs such as `pdfDoc.getStandardFont(...)`.
+Standard pdf-lib fonts are WinAnsi-only and can fail on Unicode text. For multilingual or special characters,
+register `@pdf-lib/fontkit`, embed a Unicode-capable `.ttf/.otf` font, and use that embedded font.
+Do not write fallback diagnostics (for example `error_log.txt`) to `/output`; `/output` should contain only
+the final user-requested artifact files.
 """
 
 from __future__ import annotations
@@ -118,7 +122,7 @@ class FileGeneratorToolComponent(Component):
         DropdownInput(
             name="language",
             display_name="Runtime Language",
-            info="Choose the sandbox runtime. Use JavaScript for XLSX, PDF, PPTX, DOCX, and ODT generation.",
+            info="Choose the sandbox runtime. Use JavaScript for XLSX, PDF, PPTX, DOCX, and ODT generation. For Unicode-heavy PDFs with pdf-lib, embed a Unicode font via @pdf-lib/fontkit.",
             options=["python", "javascript"],
             value="python",
             tool_mode=True,
@@ -126,7 +130,7 @@ class FileGeneratorToolComponent(Component):
         MultilineInput(
             name="source_code",
             display_name="Source Code",
-            info="Source code to execute. Write output files to /output directory.",
+            info="Source code to execute. Write only the final requested output files to /output (no fallback error logs).",
             value="",
             required=True,
             tool_mode=True,  # This enables the component as a tool
