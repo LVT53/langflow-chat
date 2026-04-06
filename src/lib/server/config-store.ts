@@ -53,6 +53,7 @@ export const ADMIN_CONFIG_KEYS = [
   'HONCHO_OVERVIEW_WAIT_MS',
   'DOCUMENT_PARSER_OCR_ENABLED',
   'DOCUMENT_PARSER_OCR_SERVER_URL',
+  'DOCUMENT_PARSER_PADDLE_BACKEND_URL',
   'DOCUMENT_PARSER_OCR_LANGUAGE',
   'DOCUMENT_PARSER_NUM_WORKERS',
   'DOCUMENT_PARSER_MAX_PAGES',
@@ -117,6 +118,7 @@ export interface RuntimeConfig {
   memoryMaintenanceIntervalMinutes: number;
   documentParserOcrEnabled: boolean;
   documentParserOcrServerUrl: string;
+  documentParserPaddleBackendUrl: string;
   documentParserOcrLanguage: string;
   documentParserNumWorkers: number;
   documentParserMaxPages: number;
@@ -303,6 +305,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
   DOCUMENT_PARSER_OCR_SERVER_URL: (config, value) => {
     config.documentParserOcrServerUrl = value;
   },
+  DOCUMENT_PARSER_PADDLE_BACKEND_URL: (config, value) => {
+    config.documentParserPaddleBackendUrl = value;
+  },
   DOCUMENT_PARSER_OCR_LANGUAGE: (config, value) => {
     config.documentParserOcrLanguage = value.trim() || 'hu+en+nl';
   },
@@ -452,6 +457,7 @@ export function getResolvedAdminConfigValues(
     HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
     DOCUMENT_PARSER_OCR_ENABLED: String(config.documentParserOcrEnabled),
     DOCUMENT_PARSER_OCR_SERVER_URL: config.documentParserOcrServerUrl,
+    DOCUMENT_PARSER_PADDLE_BACKEND_URL: config.documentParserPaddleBackendUrl,
     DOCUMENT_PARSER_OCR_LANGUAGE: config.documentParserOcrLanguage,
     DOCUMENT_PARSER_NUM_WORKERS: String(config.documentParserNumWorkers),
     DOCUMENT_PARSER_MAX_PAGES: String(config.documentParserMaxPages),
@@ -508,6 +514,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     HONCHO_OVERVIEW_WAIT_MS: String(envConfig.honchoOverviewWaitMs),
     DOCUMENT_PARSER_OCR_ENABLED: String(envConfig.documentParserOcrEnabled),
     DOCUMENT_PARSER_OCR_SERVER_URL: envConfig.documentParserOcrServerUrl,
+    DOCUMENT_PARSER_PADDLE_BACKEND_URL: envConfig.documentParserPaddleBackendUrl,
     DOCUMENT_PARSER_OCR_LANGUAGE: envConfig.documentParserOcrLanguage,
     DOCUMENT_PARSER_NUM_WORKERS: String(envConfig.documentParserNumWorkers),
     DOCUMENT_PARSER_MAX_PAGES: String(envConfig.documentParserMaxPages),

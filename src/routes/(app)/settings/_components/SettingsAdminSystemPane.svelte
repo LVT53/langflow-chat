@@ -56,6 +56,7 @@
 	HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
 	DOCUMENT_PARSER_OCR_ENABLED: 'Document Parser OCR Enabled',
 	DOCUMENT_PARSER_OCR_SERVER_URL: 'Document Parser OCR Server URL',
+	DOCUMENT_PARSER_PADDLE_BACKEND_URL: 'Paddle OCR Backend URL',
 	DOCUMENT_PARSER_OCR_LANGUAGE: 'Document Parser OCR Language',
 	DOCUMENT_PARSER_NUM_WORKERS: 'Document Parser OCR Workers',
 	DOCUMENT_PARSER_MAX_PAGES: 'Document Parser Max Pages',
@@ -320,6 +321,7 @@
 	<div class="flex flex-col gap-3">
 		{#each [
 			'DOCUMENT_PARSER_OCR_SERVER_URL',
+			'DOCUMENT_PARSER_PADDLE_BACKEND_URL',
 			'DOCUMENT_PARSER_OCR_LANGUAGE',
 			'DOCUMENT_PARSER_NUM_WORKERS',
 			'DOCUMENT_PARSER_MAX_PAGES',
@@ -337,7 +339,11 @@
 				/>
 				{#if key === 'DOCUMENT_PARSER_OCR_SERVER_URL'}
 					<p class="mt-1 text-xs text-text-muted">
-						Optional external OCR endpoint compatible with Liteparse OCR API (for example a PaddleOCR adapter).
+						Liteparse OCR endpoint URL. Use <code>/api/ocr/paddle</code> to route OCR through this app.
+					</p>
+				{:else if key === 'DOCUMENT_PARSER_PADDLE_BACKEND_URL'}
+					<p class="mt-1 text-xs text-text-muted">
+						Upstream Paddle OCR service endpoint (for example <code>http://127.0.0.1:5000/ocr</code>) used by the local OCR adapter route.
 					</p>
 				{/if}
 			</div>

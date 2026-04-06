@@ -67,6 +67,7 @@ interface Config {
   memoryMaintenanceIntervalMinutes: number;
   documentParserOcrEnabled: boolean;
   documentParserOcrServerUrl: string;
+  documentParserPaddleBackendUrl: string;
   documentParserOcrLanguage: string;
   documentParserNumWorkers: number;
   documentParserMaxPages: number;
@@ -212,6 +213,7 @@ function readConfig(): Config {
     ),
     documentParserOcrEnabled: process.env.DOCUMENT_PARSER_OCR_ENABLED !== 'false',
     documentParserOcrServerUrl: process.env.DOCUMENT_PARSER_OCR_SERVER_URL || '',
+    documentParserPaddleBackendUrl: process.env.DOCUMENT_PARSER_PADDLE_BACKEND_URL || '',
     documentParserOcrLanguage: process.env.DOCUMENT_PARSER_OCR_LANGUAGE || 'hu+en+nl',
     documentParserNumWorkers: Math.max(
       1,

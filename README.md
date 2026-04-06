@@ -224,7 +224,8 @@ Notes before the tables:
 | `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 | `DOCUMENT_PARSER_OCR_ENABLED` | No | `true` | Enables OCR during upload normalization via Liteparse | Set `false` if you want pure non-OCR extraction | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | empty | Optional external OCR endpoint compatible with Liteparse OCR API | Set when routing OCR to an external adapter/service | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | `http://127.0.0.1:3000/api/ocr/paddle` | Liteparse OCR endpoint URL (expects Liteparse OCR API: multipart `file` + `language`) | Set to your app’s local OCR proxy route when using Paddle backend integration | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_PADDLE_BACKEND_URL` | No | empty | Upstream Paddle OCR backend URL that the local OCR proxy forwards to | Set to your Paddle service endpoint (for example `http://127.0.0.1:5000/ocr`) | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_OCR_LANGUAGE` | No | `hu+en+nl` | OCR language/profile passed to Liteparse OCR engine/server | Keep `hu+en+nl` for Hungarian/English/Dutch-first deployments, or set a single language/profile if needed | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_NUM_WORKERS` | No | `4` | OCR worker parallelism used by Liteparse | Raise/lower based on CPU and OCR service capacity | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_MAX_PAGES` | No | `1000` | Maximum pages Liteparse processes per document | Reduce to cap resource usage on large files | Can also be overridden in admin config |
@@ -249,7 +250,8 @@ Notes before the tables:
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
 - On Linux/macOS, install `libreoffice` and `imagemagick` so Liteparse can normalize Office/image uploads consistently.
 - Upload normalization now uses Liteparse. Install `libreoffice` and `imagemagick` in deployment environments so Office/image extraction paths are available.
-- Optional external OCR adapters can be configured with `DOCUMENT_PARSER_OCR_SERVER_URL` when you want Liteparse OCR routed to a separate service (for example a PaddleOCR-compatible adapter).
+- Liteparse expects an OCR server contract on `DOCUMENT_PARSER_OCR_SERVER_URL` (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
+- This repo now includes a local OCR proxy route at `POST /api/ocr/paddle`; point `DOCUMENT_PARSER_OCR_SERVER_URL` there and set `DOCUMENT_PARSER_PADDLE_BACKEND_URL` to your Paddle OCR backend endpoint.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
