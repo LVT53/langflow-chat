@@ -339,11 +339,15 @@
 				/>
 				{#if key === 'DOCUMENT_PARSER_OCR_SERVER_URL'}
 					<p class="mt-1 text-xs text-text-muted">
-						Liteparse OCR endpoint URL. Use <code>/api/ocr/paddle</code> to route OCR through this app.
+						Leave empty to use Liteparse built-in OCR (Tesseract path). Set <code>/api/ocr/paddle</code> only when routing through the optional Paddle adapter.
 					</p>
 				{:else if key === 'DOCUMENT_PARSER_PADDLE_BACKEND_URL'}
 					<p class="mt-1 text-xs text-text-muted">
-						Upstream Paddle OCR service endpoint (for example <code>http://127.0.0.1:5000/ocr</code>) used by the local OCR adapter route.
+						Optional upstream Paddle OCR endpoint (for example <code>http://127.0.0.1:5000/ocr</code>) used only when the local OCR adapter route is enabled.
+					</p>
+				{:else if key === 'DOCUMENT_PARSER_OCR_LANGUAGE'}
+					<p class="mt-1 text-xs text-text-muted">
+						Built-in Tesseract works best with ISO-639-3 codes (for example <code>hun+eng+nld</code>). External adapters may still use profile-style values like <code>hu+en+nl</code>.
 					</p>
 				{/if}
 			</div>

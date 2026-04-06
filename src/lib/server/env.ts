@@ -214,7 +214,7 @@ function readConfig(): Config {
     documentParserOcrEnabled: process.env.DOCUMENT_PARSER_OCR_ENABLED !== 'false',
     documentParserOcrServerUrl: process.env.DOCUMENT_PARSER_OCR_SERVER_URL || '',
     documentParserPaddleBackendUrl: process.env.DOCUMENT_PARSER_PADDLE_BACKEND_URL || '',
-    documentParserOcrLanguage: process.env.DOCUMENT_PARSER_OCR_LANGUAGE || 'hu+en+nl',
+    documentParserOcrLanguage: process.env.DOCUMENT_PARSER_OCR_LANGUAGE || 'hun+eng+nld',
     documentParserNumWorkers: Math.max(
       1,
       parseInt(process.env.DOCUMENT_PARSER_NUM_WORKERS || '4', 10) || 4

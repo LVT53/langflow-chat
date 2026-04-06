@@ -309,7 +309,7 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
     config.documentParserPaddleBackendUrl = value;
   },
   DOCUMENT_PARSER_OCR_LANGUAGE: (config, value) => {
-    config.documentParserOcrLanguage = value.trim() || 'hu+en+nl';
+	config.documentParserOcrLanguage = value.trim() || 'hun+eng+nld';
   },
   DOCUMENT_PARSER_NUM_WORKERS: (config, value) => {
     const parsed = parseIntOverride(value);

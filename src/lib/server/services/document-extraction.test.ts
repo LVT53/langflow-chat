@@ -4,8 +4,13 @@ import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockParserParse = vi.fn();
+let lastLiteParseConfig: Record<string, unknown> | null = null;
 
 class MockLiteParse {
+	constructor(config?: Record<string, unknown>) {
+		lastLiteParseConfig = config ?? null;
+	}
+
 	parse = mockParserParse;
 }
 
@@ -33,6 +38,8 @@ describe('document extraction', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		tempDir = null;
+		lastLiteParseConfig = null;
+		configStub.documentParserOcrServerUrl = '';
 	});
 
 	afterEach(async () => {
@@ -77,7 +84,35 @@ describe('document extraction', () => {
 			normalizedName: 'financial-model.txt',
 			mimeType: 'text/plain',
 		});
+		expect(lastLiteParseConfig?.ocrServerUrl).toBeUndefined();
+		expect(lastLiteParseConfig?.ocrLanguage).toBe('eng');
 		expect(mockParserParse).toHaveBeenCalledWith('/tmp/financial-model.xlsx');
+	});
+
+	it('passes configured OCR server URL to Liteparse when explicitly set', async () => {
+		configStub.documentParserOcrServerUrl = 'http://127.0.0.1:3000/api/ocr/paddle';
+		configStub.documentParserOcrLanguage = 'hu+en+nl';
+		mockParserParse.mockResolvedValueOnce({ text: 'Remote OCR text' });
+
+		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
+		resetDocumentExtractionExecutableCache();
+
+		await extractDocumentText('/tmp/scan.pdf', 'application/pdf', 'scan.pdf');
+
+		expect(lastLiteParseConfig?.ocrServerUrl).toBe('http://127.0.0.1:3000/api/ocr/paddle');
+		expect(lastLiteParseConfig?.ocrLanguage).toBe('hu+en+nl');
+	});
+
+	it('uses Tesseract-friendly defaults when OCR language profile is empty', async () => {
+		configStub.documentParserOcrLanguage = '';
+		mockParserParse.mockResolvedValueOnce({ text: 'Recovered scan text' });
+
+		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
+		resetDocumentExtractionExecutableCache();
+
+		await extractDocumentText('/tmp/scan.pdf', 'application/pdf', 'scan.pdf');
+
+		expect(lastLiteParseConfig?.ocrLanguage).toBe('hun+eng+nld');
 	});
 
 	it('extracts html without liteparse by stripping markup', async () => {
@@ -132,5 +167,21 @@ describe('document extraction', () => {
 			mimeType: 'text/plain',
 		});
 		expect(mockParserParse).toHaveBeenCalledWith('/tmp/generated.odt');
+	});
+
+	it('treats HEIC files as liteparse OCR candidates', async () => {
+		mockParserParse.mockResolvedValueOnce({ text: 'Recovered photo text' });
+
+		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
+		resetDocumentExtractionExecutableCache();
+
+		const result = await extractDocumentText('/tmp/photo.heic', 'image/heic', 'photo.heic');
+
+		expect(result).toEqual({
+			text: 'Recovered photo text',
+			normalizedName: 'photo.txt',
+			mimeType: 'text/plain',
+		});
+		expect(mockParserParse).toHaveBeenCalledWith('/tmp/photo.heic');
 	});
 });

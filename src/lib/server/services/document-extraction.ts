@@ -16,6 +16,27 @@ type ParseWithText = {
 let parserCacheKey: string | null = null;
 let parserInstance: LiteParse | null = null;
 
+const TESSERACT_LANGUAGE_MAP: Record<string, string> = {
+	en: 'eng',
+	fr: 'fra',
+	de: 'deu',
+	es: 'spa',
+	it: 'ita',
+	pt: 'por',
+	ru: 'rus',
+	zh: 'chi_sim',
+	'zh-cn': 'chi_sim',
+	'zh-tw': 'chi_tra',
+	ja: 'jpn',
+	ko: 'kor',
+	ar: 'ara',
+	hi: 'hin',
+	th: 'tha',
+	vi: 'vie',
+	hu: 'hun',
+	nl: 'nld',
+};
+
 function decodeXmlEntities(value: string): string {
 	return value
 		.replace(/&amp;/g, '&')
@@ -43,9 +64,25 @@ function isImageMimeType(mimeType: string | null): boolean {
 	return Boolean(mimeType?.startsWith('image/'));
 }
 
+const IMAGE_EXTENSIONS = new Set([
+	'.jpg',
+	'.jpeg',
+	'.jfif',
+	'.png',
+	'.gif',
+	'.bmp',
+	'.tiff',
+	'.tif',
+	'.webp',
+	'.svg',
+	'.heic',
+	'.heif',
+	'.avif',
+]);
+
 function isLiteParseCandidate(mimeType: string | null, extension: string): boolean {
 	if (mimeType === 'application/pdf' || extension === '.pdf') return true;
-	if (isImageMimeType(mimeType) || ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.svg'].includes(extension)) {
+	if (isImageMimeType(mimeType) || IMAGE_EXTENSIONS.has(extension)) {
 		return true;
 	}
 
@@ -61,6 +98,24 @@ function isLiteParseCandidate(mimeType: string | null, extension: string): boole
 	return ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.rtf'].includes(extension);
 }
 
+function normalizeOcrLanguageProfile(raw: string, externalOcrServerEnabled: boolean): string {
+	const normalized = raw
+		.split(/[+,]/)
+		.map((segment) => segment.trim().toLowerCase())
+		.filter(Boolean)
+		.filter((value, index, array) => array.indexOf(value) === index);
+
+	if (normalized.length === 0) {
+		return externalOcrServerEnabled ? 'hu+en+nl' : 'hun+eng+nld';
+	}
+
+	if (externalOcrServerEnabled) {
+		return normalized.join('+');
+	}
+
+	return normalized.map((segment) => TESSERACT_LANGUAGE_MAP[segment] ?? segment).join('+');
+}
+
 export function resetDocumentExtractionExecutableCache(): void {
 	parserCacheKey = null;
 	parserInstance = null;
@@ -68,16 +123,15 @@ export function resetDocumentExtractionExecutableCache(): void {
 
 function getLiteParseConfig(): { parser: LiteParse; timeoutMs: number } {
 	const config = getConfig();
-	const normalizedLanguage = config.documentParserOcrLanguage
-		.split(/[+,]/)
-		.map((segment) => segment.trim().toLowerCase())
-		.filter(Boolean)
-		.filter((value, index, array) => array.indexOf(value) === index)
-		.join('+');
+	const externalOcrServerEnabled = Boolean(config.documentParserOcrServerUrl.trim());
+	const normalizedLanguage = normalizeOcrLanguageProfile(
+		config.documentParserOcrLanguage,
+		externalOcrServerEnabled
+	);
 
 	const parserConfig: Partial<LiteParseConfig> = {
 		ocrEnabled: config.documentParserOcrEnabled,
-		ocrLanguage: normalizedLanguage || 'hu+en+nl',
+		ocrLanguage: normalizedLanguage,
 		numWorkers: config.documentParserNumWorkers,
 		maxPages: config.documentParserMaxPages,
 		dpi: config.documentParserDpi,
@@ -107,6 +161,7 @@ function getLiteParseConfig(): { parser: LiteParse; timeoutMs: number } {
 
 async function parseWithLiteParse(filePath: string): Promise<string | null> {
 	const { parser, timeoutMs } = getLiteParseConfig();
+	const startedAt = Date.now();
 
 	try {
 		const parsePromise = parser.parse(filePath) as Promise<ParseWithText>;
@@ -120,12 +175,31 @@ async function parseWithLiteParse(filePath: string): Promise<string | null> {
 		]);
 
 		if (!result || typeof result.text !== 'string') {
+			console.info('[OCR_PIPELINE] finished_ocr', {
+				filePath,
+				durationMs: Date.now() - startedAt,
+				timedOut: true,
+				hasText: false,
+			});
 			return null;
 		}
 
 		const trimmed = result.text.trim();
+		console.info('[OCR_PIPELINE] finished_ocr', {
+			filePath,
+			durationMs: Date.now() - startedAt,
+			timedOut: false,
+			hasText: trimmed.length > 0,
+			textLength: trimmed.length,
+		});
 		return trimmed.length > 0 ? trimmed : null;
-	} catch {
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error('[OCR_PIPELINE] finished_ocr_error', {
+			filePath,
+			durationMs: Date.now() - startedAt,
+			message,
+		});
 		return null;
 	}
 }
