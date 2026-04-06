@@ -7,11 +7,11 @@
  *   2. Delete task checkpoints for the conversation's task state.
  *   3. Delete generated_output artifacts + their links + working-set refs.
  *   4. Delete the work capsule artifact for the conversation.
- *   5. Delete the assistant message (analytics cascade via FK).
+ *   5. Delete Honcho session state (mirrored messages and conclusions).
+ *   6. Delete the assistant message (analytics cascade via FK).
  *
  * Limitations:
  *   - User messages are never touched.
- *   - Honcho mirrors are left orphaned (no reliable delete API).
  *   - All deletions are idempotent.
  */
 
@@ -26,6 +26,7 @@ import {
 	conversationWorkingSetItems,
 } from '$lib/server/db/schema';
 import { deleteMessages } from '$lib/server/services/messages';
+import { deleteConversationHonchoState } from '../honcho.js';
 
 export type CleanupResult = {
 	steps: CleanupStep[];
@@ -170,6 +171,14 @@ export async function cleanupFailedTurn(params: {
 	} catch (error) {
 		log('delete work capsule', false, String(error));
 		warnings.push(`work-capsule: ${String(error)}`);
+	}
+
+	try {
+		await deleteConversationHonchoState(userId, conversationId);
+		log('delete Honcho session state', true);
+	} catch (error) {
+		log('delete Honcho session state', false, String(error));
+		warnings.push(`honcho-cleanup: ${String(error)}`);
 	}
 
 	try {
