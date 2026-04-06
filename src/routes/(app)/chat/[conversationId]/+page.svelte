@@ -962,8 +962,8 @@
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
-		<div class="chat-main relative min-h-0 flex-1 overflow-hidden">
-			<div class="chat-messages flex-1 overflow-hidden">
+		<div class="chat-main relative flex min-h-0 flex-1 flex-col overflow-hidden">
+			<div class="chat-messages flex flex-1 flex-col overflow-hidden">
 				<ChatMessagePane
 					messages={$messages}
 					conversationId={data.conversation.id}

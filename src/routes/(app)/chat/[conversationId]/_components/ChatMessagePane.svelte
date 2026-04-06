@@ -32,7 +32,7 @@
 	} = $props();
 </script>
 
-<div class="message-layer message-layer-active min-h-0 flex-1">
+<div class="message-layer message-layer-active flex min-h-0 flex-1">
 	<MessageArea
 		{messages}
 		{conversationId}
