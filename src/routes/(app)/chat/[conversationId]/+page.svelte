@@ -558,11 +558,7 @@
 			conversationDraft = null;
 			draftPersistence.clear();
 		}
-		attachedArtifacts = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
-		// Clear after merge so the composer's reactive merge effect doesn't re-add
-		// the sent artifacts.  The server-side attachArtifactsToMessage call removes
-		// the pending DB links, so a page refresh also starts clean.
-		attachedArtifacts = [];
+		const sentAttachments = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const placeholderId = crypto.randomUUID();
@@ -577,10 +573,15 @@
 				id: clientUserMsgId,
 				text,
 				attachmentIds,
-				attachedArtifacts,
+				attachedArtifacts: sentAttachments,
 			});
 			messages.update((list) => appendUserMessageAndPlaceholder(list, userMessage, placeholder));
 		}
+
+		// Clear AFTER the user message is created so the message bubble keeps
+		// the attachment data, but the composer's reactive merge effect won't
+		// re-add them during streaming.
+		attachedArtifacts = [];
 
 		activeStream = streamChat(
 			text,

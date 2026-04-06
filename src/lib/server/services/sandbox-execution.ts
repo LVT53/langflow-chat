@@ -143,9 +143,15 @@ interface OutputReadbackFile {
 	contentBase64: string;
 }
 
-function stripCreatePdfRequires(code: string): string {
+function stripCreatePdfRedeclarations(code: string): string {
+	// Strip any line that re-declares createPDF via require().
+	// The bootstrap already provides createPDF from the helper module.
+	// Matches both:
+	//   const createPDF = require('/workspace/helpers/create-pdf');
+	//   const { createPDF } = require('pdf-lib');
+	//   const { createPDF, PDFDocument } = require("pdf-lib");
 	return code.replace(
-		/^[ \t]*(?:const|let|var)\s+createPDF\s*=\s*require\s*\(\s*["'`]\/workspace\/helpers\/create-pdf["'`]\s*\)\s*;?\s*$/gm,
+		/^[ \t]*(?:const|let|var)\s+(?:\{[^}]*\bcreatePDF\b[^}]*\}|createPDF)\s*=\s*require\s*\([^)]*\)\s*;?\s*$/gm,
 		'// (createPDF is pre-loaded by the sandbox)',
 	);
 }
@@ -160,7 +166,7 @@ function fixDoubleEscapedQuotes(code: string): string {
 
 function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
 	if (language === 'javascript') {
-		const sanitized = fixDoubleEscapedQuotes(stripCreatePdfRequires(code));
+		const sanitized = fixDoubleEscapedQuotes(stripCreatePdfRedeclarations(code));
 		return `
 const sandboxFs = require('fs');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};

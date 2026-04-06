@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import { basename, extname, join } from "path";
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { db } from "$lib/server/db";
 import {
   artifactLinks,
@@ -425,16 +426,32 @@ export async function listConversationArtifacts(
   userId: string,
   conversationId: string,
 ): Promise<ArtifactSummary[]> {
+  // Return artifacts with a pending (messageId IS NULL) conversation link,
+  // but exclude any that have already been consumed by a message.  A LEFT
+  // JOIN against message-level links filters them out while preserving the
+  // original pending links that workspace and document systems rely on.
+  const messageLinks = alias(artifactLinks, "message_links");
+
   const rows = await db
     .select({ artifact: artifacts })
     .from(artifactLinks)
     .innerJoin(artifacts, eq(artifactLinks.artifactId, artifacts.id))
+    .leftJoin(
+      messageLinks,
+      and(
+        eq(messageLinks.artifactId, artifactLinks.artifactId),
+        eq(messageLinks.conversationId, conversationId),
+        eq(messageLinks.linkType, "attached_to_conversation"),
+        isNotNull(messageLinks.messageId),
+      ),
+    )
     .where(
       and(
         eq(artifactLinks.userId, userId),
         eq(artifactLinks.conversationId, conversationId),
         eq(artifactLinks.linkType, "attached_to_conversation"),
         isNull(artifactLinks.messageId),
+        isNull(messageLinks.id),
       ),
     )
     .orderBy(desc(artifacts.updatedAt));

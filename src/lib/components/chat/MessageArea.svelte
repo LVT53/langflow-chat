@@ -172,7 +172,9 @@
 	}
 
 	.scroll-clearance {
-		height: 9rem;
+		/* Extra height accounts for the absolutely-positioned floating composer
+		   overlaying the bottom of the scroll area. */
+		height: 13rem;
 		flex: 0 0 auto;
 	}
 
