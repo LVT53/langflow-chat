@@ -1,5 +1,9 @@
 # AGENTS.md
 
+**Generated:** 2026-04-06 15:20 UTC  
+**Commit:** 2322eed  
+**Branch:** main  
+
 This file is the canonical engineering map for AlfyAI. Read it before changing code. Public setup, deployment, and environment documentation live in [README.md](./README.md). Product and design notes in other docs are supplemental, not the source of truth for code placement.
 
 ## Mandatory Docs Check
