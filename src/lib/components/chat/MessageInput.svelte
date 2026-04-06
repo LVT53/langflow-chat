@@ -94,6 +94,8 @@
 	let lastEmittedDraftKey = '';
 	let ensureDraftConversationPromise: Promise<string> | null = null;
 	let draftEmissionVersion = 0;
+	// Track attachment IDs that have been sent to prevent re-merging
+	let sentAttachmentIds = $state<Set<string>>(new Set());
 	
 	let isEmpty = $derived(message.trim().length === 0);
 	let isOverMaxLength = $derived(message.length > maxLength);
@@ -140,7 +142,7 @@
 		// Use untrack to prevent subscribing to pendingAttachments changes
 		const currentPending = untrack(() => pendingAttachments);
 		
-		// Merge into pendingAttachments
+		// Merge into pendingAttachments, but exclude any that were already sent
 		const merged = new Map<string, PendingAttachment>();
 		
 		// Add current pendingAttachments first (they might have newer readiness info)
@@ -148,9 +150,9 @@
 			merged.set(attachment.artifact.id, attachment);
 		}
 		
-		// Add attachedArtifacts (only if not already present)
+		// Add attachedArtifacts (only if not already present AND not already sent)
 		for (const artifact of currentAttached) {
-			if (!merged.has(artifact.id)) {
+			if (!merged.has(artifact.id) && !sentAttachmentIds.has(artifact.id)) {
 				merged.set(artifact.id, {
 					artifact,
 					promptReady: true,
@@ -282,6 +284,12 @@
 	}
 
 	function clearComposerAfterSubmit() {
+		// Track the IDs of attachments being sent so they don't re-appear
+		for (const attachment of pendingAttachments) {
+			sentAttachmentIds.add(attachment.artifact.id);
+		}
+		// Trigger reactivity by reassigning the Set
+		sentAttachmentIds = sentAttachmentIds;
 		message = '';
 		pendingAttachments = [];
 		attachmentError = '';
