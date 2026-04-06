@@ -558,7 +558,13 @@
 			conversationDraft = null;
 			draftPersistence.clear();
 		}
-		const sentAttachments = mergeAttachedArtifacts(attachedArtifacts, newAttachments);
+		
+		// CRITICAL: Clear attachedArtifacts BEFORE anything else so the child component
+		// doesn't re-merge them after clearComposerAfterSubmit() runs.
+		const currentAttachedArtifacts = attachedArtifacts;
+		attachedArtifacts = [];
+		
+		const sentAttachments = mergeAttachedArtifacts(currentAttachedArtifacts, newAttachments);
 		upsertConversationLocal(data.conversation.id, data.conversation.title, Date.now() / 1000);
 
 		const placeholderId = crypto.randomUUID();
@@ -577,11 +583,6 @@
 			});
 			messages.update((list) => appendUserMessageAndPlaceholder(list, userMessage, placeholder));
 		}
-
-		// Clear AFTER the user message is created so the message bubble keeps
-		// the attachment data, but the composer's reactive merge effect won't
-		// re-add them during streaming.
-		attachedArtifacts = [];
 
 		activeStream = streamChat(
 			text,
@@ -962,7 +963,7 @@
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
 		<div class="chat-main relative min-h-0 flex-1 overflow-hidden">
-			<div class="chat-messages h-full overflow-hidden">
+			<div class="chat-messages flex-1 overflow-hidden">
 				<ChatMessagePane
 					messages={$messages}
 					conversationId={data.conversation.id}
