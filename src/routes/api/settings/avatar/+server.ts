@@ -50,9 +50,14 @@ export const POST: RequestHandler = async (event) => {
     return json({ error: 'No image provided' }, { status: 400 });
   }
 
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return json({ error: 'Invalid file type. Allowed: JPEG, PNG, WebP, GIF' }, { status: 400 });
-  }
+	if (!ALLOWED_TYPES.includes(file.type)) {
+		return json(
+			{
+				error: 'Invalid file type. Allowed: JPEG, PNG, WebP, GIF, AVIF, HEIC, HEIF, TIFF, BMP',
+			},
+			{ status: 400 }
+		);
+	}
 
   if (file.size > MAX_FILE_SIZE) {
     return json({ error: 'File too large. Maximum size is 20MB' }, { status: 400 });

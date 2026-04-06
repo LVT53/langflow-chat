@@ -215,14 +215,14 @@ export async function resolvePromptAttachmentArtifacts(
         userId,
         displayArtifact.id,
       );
-      if (!normalized) {
-        return {
+	      if (!normalized) {
+	        return {
           requestedArtifactId: attachmentId,
           displayArtifact,
           promptArtifact: null,
           promptReady: false,
-          readinessError:
-            "This file could not be prepared for chat. Supported extraction currently works best for text, HTML, JSON, PDF, DOCX, PPTX, and XLSX files.",
+	          readinessError:
+	            "This file could not be prepared for chat. Supported extraction currently works best for text, HTML, JSON, PDF, DOCX, PPTX, XLSX, and common image formats (including HEIC/HEIF when server conversion support is installed).",
           contentLength: 0,
           contentPreview: null,
           contentHash: null,

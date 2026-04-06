@@ -104,7 +104,21 @@ describe('DocumentsList', () => {
 		});
 	});
 
-	describe('Upload Interactions', () => {
+		describe('Upload Interactions', () => {
+		it('accepts mobile image formats including HEIC/HEIF in the file input', () => {
+			render(DocumentsList, {
+				props: {
+					documents: [mockUploadedDocument],
+					onUpload: vi.fn(),
+				},
+			});
+
+			const fileInput = screen.getByTestId('file-input') as HTMLInputElement;
+			expect(fileInput.getAttribute('accept')).toContain('.heic');
+			expect(fileInput.getAttribute('accept')).toContain('.heif');
+			expect(fileInput.getAttribute('accept')).toContain('.avif');
+		});
+
 		it('supports drag and drop uploads when documents already exist', async () => {
 			const onUpload = vi.fn().mockResolvedValue(undefined);
 

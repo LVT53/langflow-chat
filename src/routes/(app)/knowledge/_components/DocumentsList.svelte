@@ -89,7 +89,8 @@
 	});
 
 	// Accepted file types for upload
-	const acceptedFileTypes = '.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm';
+	const acceptedFileTypes =
+		'.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.jpg,.jpeg,.jfif,.png,.gif,.bmp,.tiff,.tif,.webp,.svg,.heic,.heif,.avif';
 
 	function handleDragEnter(event: DragEvent) {
 		event.preventDefault();
@@ -358,7 +359,10 @@
 		const mime = normalizeText(mimeType);
 		const extension = getFileExtension(filename);
 
-		if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(extension)) {
+		if (
+			mime.startsWith('image/') ||
+			['png', 'jpg', 'jpeg', 'jfif', 'gif', 'bmp', 'tiff', 'tif', 'svg', 'webp', 'heic', 'heif', 'avif'].includes(extension)
+		) {
 			return ImageIcon;
 		}
 

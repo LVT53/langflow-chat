@@ -27,7 +27,21 @@ const TEXT_EXTENSIONS = new Set([
 	'zsh',
 ]);
 
-const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
+const IMAGE_EXTENSIONS = new Set([
+	'jpg',
+	'jpeg',
+	'jfif',
+	'png',
+	'gif',
+	'webp',
+	'svg',
+	'bmp',
+	'tif',
+	'tiff',
+	'heic',
+	'heif',
+	'avif',
+]);
 
 const EXTENSION_CONTENT_TYPES: Record<string, string> = {
 	pdf: 'application/pdf',
@@ -44,6 +58,12 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
 	gif: 'image/gif',
 	webp: 'image/webp',
 	svg: 'image/svg+xml',
+	bmp: 'image/bmp',
+	tif: 'image/tiff',
+	tiff: 'image/tiff',
+	heic: 'image/heic',
+	heif: 'image/heif',
+	avif: 'image/avif',
 	txt: 'text/plain',
 	md: 'text/markdown',
 	csv: 'text/csv',

@@ -36,6 +36,8 @@ describe('file-preview utils', () => {
 		expect(determinePreviewFileType('text/css', 'file.css')).toBe('text');
 		expect(determinePreviewFileType('application/javascript', 'file.js')).toBe('text');
 		expect(determinePreviewFileType('text/x-python', 'file.py')).toBe('text');
+		expect(determinePreviewFileType('image/heic', 'file.heic')).toBe('image');
+		expect(determinePreviewFileType('image/heif', 'file.heif')).toBe('image');
 	});
 
 	it('infers content types for generated formats from filename when mime is absent', () => {
@@ -47,6 +49,8 @@ describe('file-preview utils', () => {
 		expect(getPreviewContentType('file.css', null)).toBe('text/css');
 		expect(getPreviewContentType('file.js', null)).toBe('application/javascript');
 		expect(getPreviewContentType('file.py', null)).toBe('text/x-python');
+		expect(getPreviewContentType('file.heic', null)).toBe('image/heic');
+		expect(getPreviewContentType('file.heif', null)).toBe('image/heif');
 	});
 
 	it('exposes syntax languages for code-like previewable formats', () => {
@@ -64,6 +68,7 @@ describe('file-preview utils', () => {
 		expect(isPreviewableFile('text/css', 'draft.css')).toBe(true);
 		expect(isPreviewableFile('application/javascript', 'draft.js')).toBe(true);
 		expect(isPreviewableFile('text/x-python', 'draft.py')).toBe(true);
+		expect(isPreviewableFile('image/heic', 'draft.heic')).toBe(true);
 		expect(isPreviewableFile('application/octet-stream', 'draft.bin')).toBe(false);
 	});
 });
