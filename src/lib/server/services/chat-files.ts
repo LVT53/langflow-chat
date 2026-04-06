@@ -3,7 +3,7 @@ import { mkdir, writeFile, readFile, unlink, access, rm } from 'fs/promises';
 import { join, extname } from 'path';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { artifacts, chatGeneratedFiles } from '$lib/server/db/schema';
+import { artifacts, chatGeneratedFiles, conversations } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
 import {
 	buildGeneratedOutputDocumentMetadata,
@@ -672,6 +672,30 @@ export async function getChatFileByUser(
 	return row ? mapRowToChatFile(row) : null;
 }
 
+export async function getChatFileByConversationOwner(
+	fileId: string,
+	userId: string
+): Promise<ChatFile | null> {
+	const [row] = await db
+		.select({
+			id: chatGeneratedFiles.id,
+			conversationId: chatGeneratedFiles.conversationId,
+			assistantMessageId: chatGeneratedFiles.assistantMessageId,
+			userId: chatGeneratedFiles.userId,
+			filename: chatGeneratedFiles.filename,
+			mimeType: chatGeneratedFiles.mimeType,
+			sizeBytes: chatGeneratedFiles.sizeBytes,
+			storagePath: chatGeneratedFiles.storagePath,
+			createdAt: chatGeneratedFiles.createdAt,
+		})
+		.from(chatGeneratedFiles)
+		.innerJoin(conversations, eq(chatGeneratedFiles.conversationId, conversations.id))
+		.where(and(eq(chatGeneratedFiles.id, fileId), eq(conversations.userId, userId)))
+		.limit(1);
+
+	return row ? mapRowToChatFile(row) : null;
+}
+
 async function readStoredChatFile(file: ChatFile): Promise<Buffer | null> {
 	const fullPath = join(getChatFilesDir(), file.storagePath);
 	try {
@@ -705,6 +729,16 @@ export async function readChatFileContentByUser(
 	userId: string
 ): Promise<Buffer | null> {
 	const file = await getChatFileByUser(fileId, userId);
+	if (!file) return null;
+
+	return readStoredChatFile(file);
+}
+
+export async function readChatFileContentByConversationOwner(
+	fileId: string,
+	userId: string
+): Promise<Buffer | null> {
+	const file = await getChatFileByConversationOwner(fileId, userId);
 	if (!file) return null;
 
 	return readStoredChatFile(file);

@@ -5,17 +5,27 @@ vi.mock('$lib/server/auth/hooks', () => ({
 }));
 
 vi.mock('$lib/server/services/chat-files', () => ({
+	getChatFileByConversationOwner: vi.fn(),
 	getChatFileByUser: vi.fn(),
+	readChatFileContentByConversationOwner: vi.fn(),
 	readChatFileContentByUser: vi.fn(),
 }));
 
 import { GET } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getChatFileByUser, readChatFileContentByUser } from '$lib/server/services/chat-files';
+import {
+	getChatFileByConversationOwner,
+	getChatFileByUser,
+	readChatFileContentByConversationOwner,
+	readChatFileContentByUser,
+} from '$lib/server/services/chat-files';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetChatFileByUser = getChatFileByUser as ReturnType<typeof vi.fn>;
+const mockGetChatFileByConversationOwner = getChatFileByConversationOwner as ReturnType<typeof vi.fn>;
 const mockReadChatFileContentByUser = readChatFileContentByUser as ReturnType<typeof vi.fn>;
+const mockReadChatFileContentByConversationOwner =
+	readChatFileContentByConversationOwner as ReturnType<typeof vi.fn>;
 
 function makeEvent(fileId = 'file-1', user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -48,6 +58,7 @@ describe('GET /api/chat/files/[id]/preview', () => {
 
 	it('returns 404 when the generated file cannot be previewed', async () => {
 		mockGetChatFileByUser.mockResolvedValue(null);
+		mockGetChatFileByConversationOwner.mockResolvedValue(null);
 
 		const response = await GET(makeEvent());
 		const body = await response.json();
@@ -55,6 +66,7 @@ describe('GET /api/chat/files/[id]/preview', () => {
 		expect(response.status).toBe(404);
 		expect(body.error).toBe('File not found');
 		expect(mockGetChatFileByUser).toHaveBeenCalledWith('file-1', 'user-1');
+		expect(mockGetChatFileByConversationOwner).toHaveBeenCalledWith('file-1', 'user-1');
 	});
 
 	it('returns inline preview content for a user-owned generated file', async () => {
@@ -94,12 +106,34 @@ describe('GET /api/chat/files/[id]/preview', () => {
 			createdAt: Date.now(),
 		});
 		mockReadChatFileContentByUser.mockResolvedValue(null);
+		mockReadChatFileContentByConversationOwner.mockResolvedValue(null);
 
 		const response = await GET(makeEvent());
 		const body = await response.json();
 
 		expect(response.status).toBe(500);
 		expect(body.error).toBe('Failed to read file content');
+	});
+
+	it('falls back to conversation ownership lookup when userId scoped lookup misses', async () => {
+		mockGetChatFileByUser.mockResolvedValue(null);
+		mockGetChatFileByConversationOwner.mockResolvedValue({
+			id: 'file-1',
+			conversationId: 'conv-1',
+			userId: 'legacy-mismatch',
+			filename: 'legacy.txt',
+			mimeType: 'text/plain',
+			sizeBytes: 5,
+			storagePath: 'conv-1/file-1.txt',
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(null);
+		mockReadChatFileContentByConversationOwner.mockResolvedValue(Buffer.from('hello'));
+
+		const response = await GET(makeEvent());
+
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe('hello');
 	});
 
 	it('infers ODT preview content type from the filename', async () => {
