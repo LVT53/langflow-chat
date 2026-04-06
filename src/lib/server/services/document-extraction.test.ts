@@ -1,27 +1,48 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mockParserParse = vi.fn();
+
+class MockLiteParse {
+	parse = mockParserParse;
+}
+
+vi.mock('@llamaindex/liteparse', () => ({
+	LiteParse: MockLiteParse,
+}));
+
+const configStub = {
+	documentParserOcrEnabled: true,
+	documentParserOcrServerUrl: '',
+	documentParserOcrLanguage: 'en',
+	documentParserNumWorkers: 4,
+	documentParserMaxPages: 1000,
+	documentParserDpi: 150,
+	documentParserTimeoutMs: 120000,
+};
+
+vi.mock('../config-store', () => ({
+	getConfig: () => configStub,
+}));
 
 describe('document extraction', () => {
-	let previousPath = process.env.PATH ?? '';
 	let tempDir: string | null = null;
 
 	beforeEach(() => {
-		vi.resetModules();
-		previousPath = process.env.PATH ?? '';
+		vi.clearAllMocks();
 		tempDir = null;
 	});
 
 	afterEach(async () => {
-		process.env.PATH = previousPath;
 		if (tempDir) {
 			await rm(tempDir, { recursive: true, force: true });
 		}
 	});
 
-	it('returns null instead of throwing when no external extractor exists', async () => {
-		process.env.PATH = '';
+	it('returns null instead of throwing when parser cannot extract document text', async () => {
+		mockParserParse.mockRejectedValueOnce(new Error('boom'));
 
 		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
 		resetDocumentExtractionExecutableCache();
@@ -29,7 +50,7 @@ describe('document extraction', () => {
 		const result = await extractDocumentText(
 			'/tmp/portfolio.docx',
 			'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-			'portfolio.docx'
+			'portfolio.docx',
 		);
 
 		expect(result).toEqual({
@@ -39,13 +60,8 @@ describe('document extraction', () => {
 		});
 	});
 
-	it('falls back to strings when office extraction is unavailable', async () => {
-		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-'));
-		const stringsPath = join(tempDir, 'strings');
-		await writeFile(stringsPath, '#!/bin/sh\necho "Recovered spreadsheet text"\n', 'utf8');
-		await chmod(stringsPath, 0o755);
-
-		process.env.PATH = tempDir;
+	it('uses liteparse for office extraction candidates', async () => {
+		mockParserParse.mockResolvedValueOnce({ text: 'Recovered spreadsheet text' });
 
 		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
 		resetDocumentExtractionExecutableCache();
@@ -53,7 +69,7 @@ describe('document extraction', () => {
 		const result = await extractDocumentText(
 			'/tmp/financial-model.xlsx',
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-			'financial-model.xlsx'
+			'financial-model.xlsx',
 		);
 
 		expect(result).toEqual({
@@ -61,9 +77,10 @@ describe('document extraction', () => {
 			normalizedName: 'financial-model.txt',
 			mimeType: 'text/plain',
 		});
+		expect(mockParserParse).toHaveBeenCalledWith('/tmp/financial-model.xlsx');
 	});
 
-	it('extracts html without requiring platform-specific binaries', async () => {
+	it('extracts html without liteparse by stripping markup', async () => {
 		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-html-'));
 		const htmlPath = join(tempDir, 'report.html');
 		await writeFile(htmlPath, '<h1>Portfolio</h1><p>Strong growth</p>', 'utf8');
@@ -77,9 +94,10 @@ describe('document extraction', () => {
 			normalizedName: 'report.txt',
 			mimeType: 'text/plain',
 		});
+		expect(mockParserParse).not.toHaveBeenCalled();
 	});
 
-	it('treats SVG files as text-extractable content', async () => {
+	it('treats SVG files as text-extractable content without liteparse', async () => {
 		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-svg-'));
 		const svgPath = join(tempDir, 'diagram.svg');
 		await writeFile(svgPath, '<svg><text>Hello Diagram</text></svg>', 'utf8');
@@ -93,29 +111,11 @@ describe('document extraction', () => {
 			normalizedName: 'diagram.txt',
 			mimeType: 'text/plain',
 		});
+		expect(mockParserParse).not.toHaveBeenCalled();
 	});
 
-	it('extracts ODT text through the OpenDocument content.xml payload', async () => {
-		tempDir = await mkdtemp(join(tmpdir(), 'doc-extract-odt-'));
-		const unzipPath = join(tempDir, 'unzip');
-		await writeFile(
-			unzipPath,
-			`#!/bin/sh
-if [ "$1" = "-Z1" ]; then
-  echo "content.xml"
-  exit 0
-fi
-if [ "$1" = "-p" ] && [ "$3" = "content.xml" ]; then
-  echo '<office:document-content><office:body><office:text><text:p>Hello from ODT</text:p></office:text></office:body></office:document-content>'
-  exit 0
-fi
-exit 1
-`,
-			'utf8'
-		);
-		await chmod(unzipPath, 0o755);
-
-		process.env.PATH = tempDir;
+	it('extracts ODT text through liteparse engine', async () => {
+		mockParserParse.mockResolvedValueOnce({ text: 'Hello from ODT' });
 
 		const { extractDocumentText, resetDocumentExtractionExecutableCache } = await import('./document-extraction');
 		resetDocumentExtractionExecutableCache();
@@ -123,7 +123,7 @@ exit 1
 		const result = await extractDocumentText(
 			'/tmp/generated.odt',
 			'application/vnd.oasis.opendocument.text',
-			'generated.odt'
+			'generated.odt',
 		);
 
 		expect(result).toEqual({
@@ -131,5 +131,6 @@ exit 1
 			normalizedName: 'generated.txt',
 			mimeType: 'text/plain',
 		});
+		expect(mockParserParse).toHaveBeenCalledWith('/tmp/generated.odt');
 	});
 });

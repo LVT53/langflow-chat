@@ -1,17 +1,20 @@
-import { constants } from 'fs';
-import { access, readFile } from 'fs/promises';
-import { basename, delimiter, extname, join } from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
-const executableCache = new Map<string, Promise<string | null>>();
+import { readFile } from 'fs/promises';
+import { basename, extname } from 'path';
+import { LiteParse, type LiteParseConfig } from '@llamaindex/liteparse';
+import { getConfig } from '../config-store';
 
 interface ExtractionResult {
 	text: string | null;
 	normalizedName: string;
 	mimeType: string;
 }
+
+type ParseWithText = {
+	text: string;
+};
+
+let parserCacheKey: string | null = null;
+let parserInstance: LiteParse | null = null;
 
 function decodeXmlEntities(value: string): string {
 	return value
@@ -36,88 +39,95 @@ function toNormalizedName(originalName: string): string {
 	return `${stem || 'document'}.txt`;
 }
 
-function candidateExecutablePaths(command: string): string[] {
-	if (command.includes('/') || command.includes('\\')) {
-		return [command];
-	}
-
-	const pathEntries = (process.env.PATH ?? '')
-		.split(delimiter)
-		.map((entry) => entry.trim())
-		.filter(Boolean);
-
-	if (process.platform === 'win32') {
-		const pathext = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM')
-			.split(';')
-			.map((ext) => ext.trim())
-			.filter(Boolean);
-
-		return pathEntries.flatMap((entry) => [
-			join(entry, command),
-			...pathext.map((ext) => join(entry, `${command}${ext.toLowerCase()}`)),
-		]);
-	}
-
-	return pathEntries.map((entry) => join(entry, command));
+function isImageMimeType(mimeType: string | null): boolean {
+	return Boolean(mimeType?.startsWith('image/'));
 }
 
-async function resolveExecutable(command: string): Promise<string | null> {
-	const cached = executableCache.get(command);
-	if (cached) return cached;
+function isLiteParseCandidate(mimeType: string | null, extension: string): boolean {
+	if (mimeType === 'application/pdf' || extension === '.pdf') return true;
+	if (isImageMimeType(mimeType) || ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.svg'].includes(extension)) {
+		return true;
+	}
 
-	const lookup = (async () => {
-		for (const candidate of candidateExecutablePaths(command)) {
-			try {
-				await access(candidate, constants.X_OK);
-				return candidate;
-			} catch {
-				// Keep looking until we find an executable on PATH.
-			}
-		}
-		return null;
-	})();
+	if (
+		mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+		mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+		mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+		mimeType === 'application/vnd.oasis.opendocument.text'
+	) {
+		return true;
+	}
 
-	executableCache.set(command, lookup);
-	return lookup;
+	return ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.rtf'].includes(extension);
 }
 
 export function resetDocumentExtractionExecutableCache(): void {
-	executableCache.clear();
+	parserCacheKey = null;
+	parserInstance = null;
 }
 
-async function execText(command: string, args: string[]): Promise<string | null> {
+function getLiteParseConfig(): { parser: LiteParse; timeoutMs: number } {
+	const config = getConfig();
+	const normalizedLanguage = config.documentParserOcrLanguage
+		.split(/[+,]/)
+		.map((segment) => segment.trim().toLowerCase())
+		.filter(Boolean)
+		.filter((value, index, array) => array.indexOf(value) === index)
+		.join('+');
+
+	const parserConfig: Partial<LiteParseConfig> = {
+		ocrEnabled: config.documentParserOcrEnabled,
+		ocrLanguage: normalizedLanguage || 'hu+en+nl',
+		numWorkers: config.documentParserNumWorkers,
+		maxPages: config.documentParserMaxPages,
+		dpi: config.documentParserDpi,
+		outputFormat: 'text',
+	};
+
+	if (config.documentParserOcrServerUrl.trim()) {
+		parserConfig.ocrServerUrl = config.documentParserOcrServerUrl.trim();
+	}
+
+	const cacheKey = JSON.stringify(parserConfig);
+	if (parserInstance && parserCacheKey === cacheKey) {
+		return {
+			parser: parserInstance,
+			timeoutMs: config.documentParserTimeoutMs,
+		};
+	}
+
+	parserInstance = new LiteParse(parserConfig);
+	parserCacheKey = cacheKey;
+
+	return {
+		parser: parserInstance,
+		timeoutMs: config.documentParserTimeoutMs,
+	};
+}
+
+async function parseWithLiteParse(filePath: string): Promise<string | null> {
+	const { parser, timeoutMs } = getLiteParseConfig();
+
 	try {
-		const executable = await resolveExecutable(command);
-		if (!executable) return null;
-		const { stdout } = await execFileAsync(executable, args, { maxBuffer: 16 * 1024 * 1024 });
-		const trimmed = stdout.trim();
+		const parsePromise = parser.parse(filePath) as Promise<ParseWithText>;
+		const timeoutPromise = new Promise<null>((resolve) => {
+			setTimeout(() => resolve(null), timeoutMs);
+		});
+
+		const result: ParseWithText | null = await Promise.race([
+			parsePromise.then((value) => value ?? null),
+			timeoutPromise,
+		]);
+
+		if (!result || typeof result.text !== 'string') {
+			return null;
+		}
+
+		const trimmed = result.text.trim();
 		return trimmed.length > 0 ? trimmed : null;
 	} catch {
 		return null;
 	}
-}
-
-async function extractOfficeXml(filePath: string, prefixes: string[]): Promise<string | null> {
-	const listing = await execText('unzip', ['-Z1', filePath]);
-	if (!listing) return null;
-
-	const files = listing
-		.split('\n')
-		.map((item) => item.trim())
-		.filter((item) => item.length > 0 && prefixes.some((prefix) => item.startsWith(prefix)));
-
-	if (files.length === 0) return null;
-
-	const chunks: string[] = [];
-	for (const file of files) {
-		const content = await execText('unzip', ['-p', filePath, file]);
-		if (content) {
-			chunks.push(stripMarkup(content));
-		}
-	}
-
-	const text = chunks.join('\n\n').trim();
-	return text.length > 0 ? text : null;
 }
 
 export async function extractDocumentText(
@@ -175,74 +185,10 @@ export async function extractDocumentText(
 		};
 	}
 
-	if (mimeType === 'application/pdf' || extension === '.pdf') {
-		const pdfText = await execText('pdftotext', ['-layout', filePath, '-']);
-		if (pdfText) {
-			return {
-				text: pdfText,
-				normalizedName,
-				mimeType: 'text/plain',
-			};
-		}
-	}
+	const text = isLiteParseCandidate(mimeType, extension)
+		? await parseWithLiteParse(filePath)
+		: null;
 
-	if (
-		mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-		extension === '.docx'
-	) {
-		const text = await extractOfficeXml(filePath, ['word/document.xml']);
-		if (text) {
-			return {
-				text,
-				normalizedName,
-				mimeType: 'text/plain',
-			};
-		}
-	}
-
-	if (
-		mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-		extension === '.pptx'
-	) {
-		const text = await extractOfficeXml(filePath, ['ppt/slides/slide']);
-		if (text) {
-			return {
-				text,
-				normalizedName,
-				mimeType: 'text/plain',
-			};
-		}
-	}
-
-	if (
-		mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-		extension === '.xlsx'
-	) {
-		const text = await extractOfficeXml(filePath, ['xl/sharedStrings.xml', 'xl/worksheets/sheet']);
-		if (text) {
-			return {
-				text,
-				normalizedName,
-				mimeType: 'text/plain',
-			};
-		}
-	}
-
-	if (
-		mimeType === 'application/vnd.oasis.opendocument.text' ||
-		extension === '.odt'
-	) {
-		const text = await extractOfficeXml(filePath, ['content.xml']);
-		if (text) {
-			return {
-				text,
-				normalizedName,
-				mimeType: 'text/plain',
-			};
-		}
-	}
-
-	const text = await execText('strings', [filePath]);
 	return {
 		text,
 		normalizedName,

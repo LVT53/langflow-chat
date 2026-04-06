@@ -47,6 +47,7 @@
 		"vitest": "^4.1.0"
 	},
 	"dependencies": {
+		"@llamaindex/liteparse": "^1.4.4",
 		"@honcho-ai/sdk": "^2.0.1",
 		"bcryptjs": "^3.0.3",
 		"better-sqlite3": "^12.8.0",
