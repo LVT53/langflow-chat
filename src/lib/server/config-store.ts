@@ -51,6 +51,13 @@ export const ADMIN_CONFIG_KEYS = [
   'HONCHO_CONTEXT_POLL_INTERVAL_MS',
   'HONCHO_PERSONA_CONTEXT_WAIT_MS',
   'HONCHO_OVERVIEW_WAIT_MS',
+  'DOCUMENT_PARSER_OCR_ENABLED',
+  'DOCUMENT_PARSER_OCR_SERVER_URL',
+  'DOCUMENT_PARSER_OCR_LANGUAGE',
+  'DOCUMENT_PARSER_NUM_WORKERS',
+  'DOCUMENT_PARSER_MAX_PAGES',
+  'DOCUMENT_PARSER_DPI',
+  'DOCUMENT_PARSER_TIMEOUT_MS',
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -108,6 +115,13 @@ export interface RuntimeConfig {
   honchoPersonaContextWaitMs: number;
   honchoOverviewWaitMs: number;
   memoryMaintenanceIntervalMinutes: number;
+  documentParserOcrEnabled: boolean;
+  documentParserOcrServerUrl: string;
+  documentParserOcrLanguage: string;
+  documentParserNumWorkers: number;
+  documentParserMaxPages: number;
+  documentParserDpi: number;
+  documentParserTimeoutMs: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -283,6 +297,39 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
       config.honchoOverviewWaitMs = Math.max(0, parsed);
     }
   },
+  DOCUMENT_PARSER_OCR_ENABLED: (config, value) => {
+    config.documentParserOcrEnabled = value !== 'false';
+  },
+  DOCUMENT_PARSER_OCR_SERVER_URL: (config, value) => {
+    config.documentParserOcrServerUrl = value;
+  },
+  DOCUMENT_PARSER_OCR_LANGUAGE: (config, value) => {
+    config.documentParserOcrLanguage = value.trim() || 'hu+en+nl';
+  },
+  DOCUMENT_PARSER_NUM_WORKERS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.documentParserNumWorkers = Math.max(1, parsed);
+    }
+  },
+  DOCUMENT_PARSER_MAX_PAGES: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.documentParserMaxPages = Math.max(1, parsed);
+    }
+  },
+  DOCUMENT_PARSER_DPI: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.documentParserDpi = Math.max(72, parsed);
+    }
+  },
+  DOCUMENT_PARSER_TIMEOUT_MS: (config, value) => {
+    const parsed = parseIntOverride(value);
+    if (parsed !== undefined) {
+      config.documentParserTimeoutMs = Math.max(1000, parsed);
+    }
+  },
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -403,6 +450,13 @@ export function getResolvedAdminConfigValues(
     HONCHO_CONTEXT_POLL_INTERVAL_MS: String(config.honchoContextPollIntervalMs),
     HONCHO_PERSONA_CONTEXT_WAIT_MS: String(config.honchoPersonaContextWaitMs),
     HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
+    DOCUMENT_PARSER_OCR_ENABLED: String(config.documentParserOcrEnabled),
+    DOCUMENT_PARSER_OCR_SERVER_URL: config.documentParserOcrServerUrl,
+    DOCUMENT_PARSER_OCR_LANGUAGE: config.documentParserOcrLanguage,
+    DOCUMENT_PARSER_NUM_WORKERS: String(config.documentParserNumWorkers),
+    DOCUMENT_PARSER_MAX_PAGES: String(config.documentParserMaxPages),
+    DOCUMENT_PARSER_DPI: String(config.documentParserDpi),
+    DOCUMENT_PARSER_TIMEOUT_MS: String(config.documentParserTimeoutMs),
   };
 }
 
@@ -452,5 +506,12 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
     HONCHO_CONTEXT_POLL_INTERVAL_MS: String(envConfig.honchoContextPollIntervalMs),
     HONCHO_PERSONA_CONTEXT_WAIT_MS: String(envConfig.honchoPersonaContextWaitMs),
     HONCHO_OVERVIEW_WAIT_MS: String(envConfig.honchoOverviewWaitMs),
+    DOCUMENT_PARSER_OCR_ENABLED: String(envConfig.documentParserOcrEnabled),
+    DOCUMENT_PARSER_OCR_SERVER_URL: envConfig.documentParserOcrServerUrl,
+    DOCUMENT_PARSER_OCR_LANGUAGE: envConfig.documentParserOcrLanguage,
+    DOCUMENT_PARSER_NUM_WORKERS: String(envConfig.documentParserNumWorkers),
+    DOCUMENT_PARSER_MAX_PAGES: String(envConfig.documentParserMaxPages),
+    DOCUMENT_PARSER_DPI: String(envConfig.documentParserDpi),
+    DOCUMENT_PARSER_TIMEOUT_MS: String(envConfig.documentParserTimeoutMs),
   };
 }

@@ -65,6 +65,13 @@ interface Config {
   honchoPersonaContextWaitMs: number;
   honchoOverviewWaitMs: number;
   memoryMaintenanceIntervalMinutes: number;
+  documentParserOcrEnabled: boolean;
+  documentParserOcrServerUrl: string;
+  documentParserOcrLanguage: string;
+  documentParserNumWorkers: number;
+  documentParserMaxPages: number;
+  documentParserDpi: number;
+  documentParserTimeoutMs: number;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -202,6 +209,26 @@ function readConfig(): Config {
     memoryMaintenanceIntervalMinutes: Math.max(
       0,
       parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES || '0', 10) || 0
+    ),
+    documentParserOcrEnabled: process.env.DOCUMENT_PARSER_OCR_ENABLED !== 'false',
+    documentParserOcrServerUrl: process.env.DOCUMENT_PARSER_OCR_SERVER_URL || '',
+    documentParserOcrLanguage: process.env.DOCUMENT_PARSER_OCR_LANGUAGE || 'hu+en+nl',
+    documentParserNumWorkers: Math.max(
+      1,
+      parseInt(process.env.DOCUMENT_PARSER_NUM_WORKERS || '4', 10) || 4
+    ),
+    documentParserMaxPages: Math.max(
+      1,
+      parseInt(process.env.DOCUMENT_PARSER_MAX_PAGES || '1000', 10) || 1000
+    ),
+    documentParserDpi: Math.max(
+      72,
+      parseInt(process.env.DOCUMENT_PARSER_DPI || '150', 10) || 150
+    ),
+    documentParserTimeoutMs: Math.max(
+      1000,
+      parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '120000', 10) ||
+        120000
     ),
   };
 }

@@ -54,10 +54,17 @@
 		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
 	HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
 	HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
+	DOCUMENT_PARSER_OCR_ENABLED: 'Document Parser OCR Enabled',
+	DOCUMENT_PARSER_OCR_SERVER_URL: 'Document Parser OCR Server URL',
+	DOCUMENT_PARSER_OCR_LANGUAGE: 'Document Parser OCR Language',
+	DOCUMENT_PARSER_NUM_WORKERS: 'Document Parser OCR Workers',
+	DOCUMENT_PARSER_MAX_PAGES: 'Document Parser Max Pages',
+	DOCUMENT_PARSER_DPI: 'Document Parser DPI',
+	DOCUMENT_PARSER_TIMEOUT_MS: 'Document Parser Timeout (ms)',
 	MAX_MODEL_CONTEXT: 'Max Model Context (tokens)',
 	COMPACTION_UI_THRESHOLD: 'Compaction UI Threshold (tokens)',
 	TARGET_CONSTRUCTED_CONTEXT: 'Target Constructed Context (tokens)',
-};
+	};
 
 	const NUMBER_KEYS = new Set([
 		'MAX_MESSAGE_LENGTH',
@@ -70,6 +77,10 @@
 		'MAX_MODEL_CONTEXT',
 		'COMPACTION_UI_THRESHOLD',
 		'TARGET_CONSTRUCTED_CONTEXT',
+		'DOCUMENT_PARSER_NUM_WORKERS',
+		'DOCUMENT_PARSER_MAX_PAGES',
+		'DOCUMENT_PARSER_DPI',
+		'DOCUMENT_PARSER_TIMEOUT_MS',
 	]);
 
 	function placeholderFor(key: string): string {
@@ -279,6 +290,54 @@
 				{:else}
 					<p class="mt-1 text-xs text-text-muted">
 						Timeout for the Knowledge Base live Honcho overview refresh path. This can be longer than the chat-side persona enrichment timeout because the overview now has a cached fallback and a retry loop.
+					</p>
+				{/if}
+			</div>
+		{/each}
+	</div>
+</section>
+
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">Document Extraction</h2>
+	<div class="mb-3 flex items-center justify-between">
+		<div>
+			<label class="settings-label mb-0" for="DOCUMENT_PARSER_OCR_ENABLED">{CONFIG_LABELS.DOCUMENT_PARSER_OCR_ENABLED}</label>
+			<p class="text-xs text-text-tertiary">Enable OCR during upload normalization via Liteparse.</p>
+		</div>
+		<label class="relative inline-flex cursor-pointer items-center">
+			<input
+				id="DOCUMENT_PARSER_OCR_ENABLED"
+				type="checkbox"
+				class="peer sr-only"
+				checked={adminConfig.DOCUMENT_PARSER_OCR_ENABLED !== 'false'}
+				onchange={(event) => {
+					adminConfig.DOCUMENT_PARSER_OCR_ENABLED = event.currentTarget.checked ? 'true' : 'false';
+				}}
+			/>
+			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
+		</label>
+	</div>
+	<div class="flex flex-col gap-3">
+		{#each [
+			'DOCUMENT_PARSER_OCR_SERVER_URL',
+			'DOCUMENT_PARSER_OCR_LANGUAGE',
+			'DOCUMENT_PARSER_NUM_WORKERS',
+			'DOCUMENT_PARSER_MAX_PAGES',
+			'DOCUMENT_PARSER_DPI',
+			'DOCUMENT_PARSER_TIMEOUT_MS',
+		] as key}
+			<div>
+				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
+				<input
+					id={key}
+					type={NUMBER_KEYS.has(key) ? 'number' : 'text'}
+					class="settings-input"
+					bind:value={adminConfig[key]}
+					placeholder={placeholderFor(key)}
+				/>
+				{#if key === 'DOCUMENT_PARSER_OCR_SERVER_URL'}
+					<p class="mt-1 text-xs text-text-muted">
+						Optional external OCR endpoint compatible with Liteparse OCR API (for example a PaddleOCR adapter).
 					</p>
 				{/if}
 			</div>

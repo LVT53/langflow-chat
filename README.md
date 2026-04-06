@@ -223,6 +223,13 @@ Notes before the tables:
 | `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for auxiliary Honcho persona enrichment on chat turns, especially persona prompt context | Lower it to keep the prompt path responsive while persona clusters refresh in the background | Can also be overridden in admin config |
 | `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
+| `DOCUMENT_PARSER_OCR_ENABLED` | No | `true` | Enables OCR during upload normalization via Liteparse | Set `false` if you want pure non-OCR extraction | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | empty | Optional external OCR endpoint compatible with Liteparse OCR API | Set when routing OCR to an external adapter/service | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_LANGUAGE` | No | `hu+en+nl` | OCR language/profile passed to Liteparse OCR engine/server | Keep `hu+en+nl` for Hungarian/English/Dutch-first deployments, or set a single language/profile if needed | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_NUM_WORKERS` | No | `4` | OCR worker parallelism used by Liteparse | Raise/lower based on CPU and OCR service capacity | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_MAX_PAGES` | No | `1000` | Maximum pages Liteparse processes per document | Reduce to cap resource usage on large files | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_DPI` | No | `150` | Render DPI used for OCR operations | Raise for better OCR quality at higher cost | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_TIMEOUT_MS` | No | `120000` | Extraction timeout budget for Liteparse parsing | Tune to avoid long-running OCR stalls | Can also be overridden in admin config |
 
 ### Deployment And Runtime Wrapper Variables
 
@@ -240,7 +247,9 @@ Notes before the tables:
 - If you bypass `scripts/deploy.sh`, run `npm run db:prepare` before starting the production server.
 - The runtime now also contains one bounded SQLite compatibility shim for `users.honcho_peer_version` in case a deploy starts new code against an old schema. That fallback exists only to prevent login lockouts; normal deploys should still rely on `npm run db:prepare`, not on app-start schema mutation.
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
-- On Linux, document extraction quality improves if `poppler-utils`, `unzip`, and `binutils` are installed.
+- On Linux/macOS, install `libreoffice` and `imagemagick` so Liteparse can normalize Office/image uploads consistently.
+- Upload normalization now uses Liteparse. Install `libreoffice` and `imagemagick` in deployment environments so Office/image extraction paths are available.
+- Optional external OCR adapters can be configured with `DOCUMENT_PARSER_OCR_SERVER_URL` when you want Liteparse OCR routed to a separate service (for example a PaddleOCR-compatible adapter).
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
