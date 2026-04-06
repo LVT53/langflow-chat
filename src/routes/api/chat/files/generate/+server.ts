@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
+import path from 'path';
 import type { RequestHandler } from './$types';
 import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
@@ -37,6 +38,21 @@ function summarizeExecutionFiles(
 		mimeType: file.mimeType ?? 'application/octet-stream',
 		sizeBytes: Buffer.isBuffer(file.content) ? file.content.length : Buffer.byteLength(file.content),
 	}));
+}
+
+function getLowercaseExtension(filename: string | undefined): string {
+	if (!filename) return '';
+	return path.extname(filename).toLowerCase();
+}
+
+function toBuffer(content: Buffer | Uint8Array): Buffer {
+	return Buffer.isBuffer(content) ? content : Buffer.from(content);
+}
+
+function looksLikePdf(content: Buffer | Uint8Array): boolean {
+	const buffer = toBuffer(content);
+	if (buffer.length < 5) return false;
+	return buffer.subarray(0, 5).toString('ascii') === '%PDF-';
 }
 
 function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | { ok: false; error: string; status: number } {
@@ -245,7 +261,63 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	// Store generated files
+	if (customFilename && executionResult.files.length !== 1) {
+		console.warn('[FILE_GENERATE] Custom filename requires a single generated file', {
+			requestId,
+			conversationId,
+			ownerUserId,
+			customFilename,
+			generatedFileCount: executionResult.files.length,
+			files: summarizeExecutionFiles(executionResult.files),
+		});
+		return json(
+			{ error: 'Custom filename can only be used when exactly one output file is generated.' },
+			{ status: 422 }
+		);
+	}
+
+	if (customFilename) {
+		const customExtension = getLowercaseExtension(customFilename);
+		const generatedExtension = getLowercaseExtension(executionResult.files[0]?.filename);
+		if (customExtension && generatedExtension && customExtension !== generatedExtension) {
+			console.warn('[FILE_GENERATE] Custom filename extension mismatch', {
+				requestId,
+				conversationId,
+				ownerUserId,
+				customFilename,
+				generatedFilename: executionResult.files[0]?.filename ?? null,
+				customExtension,
+				generatedExtension,
+				generatedMimeType: executionResult.files[0]?.mimeType ?? null,
+			});
+			return json(
+				{ error: 'Custom filename extension must match the generated output file type.' },
+				{ status: 422 }
+			);
+		}
+	}
+
+	for (const generatedFile of executionResult.files) {
+		const effectiveFilename = customFilename || generatedFile.filename;
+		if (getLowercaseExtension(effectiveFilename) === '.pdf' && !looksLikePdf(generatedFile.content)) {
+			console.warn('[FILE_GENERATE] Generated file failed PDF signature check', {
+				requestId,
+				conversationId,
+				ownerUserId,
+				effectiveFilename,
+				generatedFilename: generatedFile.filename,
+				generatedMimeType: generatedFile.mimeType ?? null,
+				sizeBytes: Buffer.isBuffer(generatedFile.content)
+					? generatedFile.content.length
+					: Buffer.byteLength(generatedFile.content),
+			});
+			return json(
+				{ error: 'Generated PDF output is invalid. Ensure the script writes real PDF bytes to /output.' },
+				{ status: 422 }
+			);
+		}
+	}
+
 	const files: FileMetadata[] = [];
 	for (const file of executionResult.files) {
 		const storedFile = await storeGeneratedFile(conversationId, ownerUserId, {

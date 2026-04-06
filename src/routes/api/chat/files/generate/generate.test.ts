@@ -81,7 +81,7 @@ describe('POST /api/chat/files/generate', () => {
 				{
 					filename: 'output.pdf',
 					mimeType: 'application/pdf',
-					content: Buffer.from('test pdf content'),
+					content: Buffer.from('%PDF-1.4 test pdf content'),
 					sizeBytes: 17
 				}
 			],
@@ -149,7 +149,7 @@ describe('POST /api/chat/files/generate', () => {
 				{
 					filename: 'report.pdf',
 					mimeType: 'application/pdf',
-					content: Buffer.from('pdf content'),
+					content: Buffer.from('%PDF-1.4 pdf content'),
 					sizeBytes: 12
 				}
 			],
@@ -632,7 +632,7 @@ describe('POST /api/chat/files/generate', () => {
 				{
 					filename: 'output.pdf',
 					mimeType: 'application/pdf',
-					content: Buffer.from('test pdf content'),
+					content: Buffer.from('%PDF-1.4 test pdf content'),
 					sizeBytes: 17
 				}
 			],
@@ -670,5 +670,107 @@ describe('POST /api/chat/files/generate', () => {
 				filename: 'custom-report.pdf'
 			})
 		);
+	});
+
+	it('rejects custom filename when generated extension does not match', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'error_log.txt',
+					mimeType: 'text/plain',
+					content: Buffer.from('Error details'),
+					sizeBytes: 13,
+				}
+			],
+			stdout: '',
+			stderr: '',
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				code: 'generate fallback log',
+				language: 'javascript',
+				filename: 'uploaded_documents_summary.pdf',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(data.error).toMatch(/extension.*match/i);
+		expect(mockStoreGeneratedFile).not.toHaveBeenCalled();
+	});
+
+	it('rejects custom filename when more than one file is generated', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'one.pdf',
+					mimeType: 'application/pdf',
+					content: Buffer.from('pdf1'),
+					sizeBytes: 4,
+				},
+				{
+					filename: 'two.pdf',
+					mimeType: 'application/pdf',
+					content: Buffer.from('pdf2'),
+					sizeBytes: 4,
+				},
+			],
+			stdout: 'Generated 2 files',
+			stderr: '',
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				code: 'generate multiple outputs',
+				language: 'javascript',
+				filename: 'final.pdf',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(data.error).toMatch(/exactly one output file/i);
+		expect(mockStoreGeneratedFile).not.toHaveBeenCalled();
+	});
+
+	it('rejects invalid pdf content when effective filename is pdf', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+
+		mockExecuteCode.mockResolvedValue({
+			files: [
+				{
+					filename: 'uploaded_documents_summary.pdf',
+					mimeType: 'text/plain',
+					content: Buffer.from('Error: WinAnsi cannot encode'),
+					sizeBytes: 28,
+				}
+			],
+			stdout: '',
+			stderr: 'Error details',
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				code: 'fake pdf write',
+				language: 'javascript',
+				filename: 'uploaded_documents_summary.pdf',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(data.error).toMatch(/pdf output is invalid/i);
+		expect(mockStoreGeneratedFile).not.toHaveBeenCalled();
 	});
 });
