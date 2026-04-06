@@ -41,7 +41,7 @@ const FILE_GENERATION_GUARD = [
 	'- In the JavaScript runtime, prefer the smallest direct script. Do not wrap the whole script in another framework or agent layer.',
 	'- Do not claim `.xlsx`, `.pdf`, `.pptx`, `.docx`, or `.odt` generation is unavailable when `generate_file` is available. Choose the appropriate runtime and use the installed libraries directly.',
 	'- For `.xlsx`, prefer `exceljs`. For `.pptx`, prefer `pptxgenjs`. For `.docx`, prefer `docx`. For `.odt`, prefer `jszip` with a valid OpenDocument structure.',
-	'- For `.pdf`, use the built-in helper: `const createPDF = require("/workspace/helpers/create-pdf");`',
+	'- For `.pdf`, the `createPDF` helper is pre-loaded in the JavaScript runtime. Do not require it; just call it directly.',
 	'- Call `await createPDF({ filename: "report.pdf", title: "Title", content: [...] })` where `content` is an array of blocks.',
 	'- Supported block types: `{ type: "heading", text, level: 1|2|3 }`, `{ type: "paragraph", text }`, `{ type: "list", items: [...], ordered: true|false }`, `{ type: "table", headers: [...], rows: [[...], ...] }`, `{ type: "code", text }`, `{ type: "separator" }`, `{ type: "spacer", height }`. Unknown types with a `text` field render as paragraphs.',
 	'- The helper handles Unicode, text wrapping, page breaks, and page numbers automatically. Do not use `pdf-lib` directly.',

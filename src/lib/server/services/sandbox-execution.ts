@@ -143,15 +143,24 @@ interface OutputReadbackFile {
 	contentBase64: string;
 }
 
+function stripCreatePdfRequires(code: string): string {
+	return code.replace(
+		/^[ \t]*(?:const|let|var)\s+createPDF\s*=\s*require\s*\(\s*["'`]\/workspace\/helpers\/create-pdf["'`]\s*\)\s*;?\s*$/gm,
+		'// (createPDF is pre-loaded by the sandbox)',
+	);
+}
+
 function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
 	if (language === 'javascript') {
+		const sanitized = stripCreatePdfRequires(code);
 		return `
 const sandboxFs = require('fs');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
+const createPDF = require('/workspace/helpers/create-pdf');
 
 (async () => {
 	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
-${code}
+${sanitized}
 })().catch((error) => {
 	console.error(error && error.stack ? error.stack : String(error));
 	process.exit(1);

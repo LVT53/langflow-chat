@@ -32,6 +32,6 @@ This is the current target support matrix for AlfyAI generated files.
 - Use `language: "python"` for plain text and text-like files such as `.txt`, `.md`, `.csv`, `.json`, `.html`, `.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`.
 - Use `language: "javascript"` for `.xlsx`, `.pdf`, `.pptx`, and `.docx`.
 - Use `language: "javascript"` plus `jszip` when building `.odt`.
-- For `.pdf`, use the built-in helper at `/workspace/helpers/create-pdf` which handles Unicode, text wrapping, page breaks, and page layout automatically: `const createPDF = require("/workspace/helpers/create-pdf"); await createPDF({ filename: "report.pdf", title: "Title", content: [...] });`
+- For `.pdf`, the `createPDF` helper is pre-loaded in the JavaScript runtime. Call it directly: `await createPDF({ filename: "report.pdf", title: "Title", content: [...] });` It handles Unicode, text wrapping, page breaks, and page layout automatically.
 - Supported PDF block types: heading (level 1-3), paragraph, list (ordered/unordered), table, code, separator, spacer.
 - Preview libraries such as `pdfjs-dist` and `pptxviewjs` are for viewing files in the UI, not generating them.

@@ -38,7 +38,7 @@ await workbook.xlsx.writeFile("/output/report.xlsx");
 ```
 
 ```javascript
-const createPDF = require("/workspace/helpers/create-pdf");
+// createPDF is pre-loaded -- no require needed
 await createPDF({
   filename: "example.pdf",
   title: "Hello from AlfyAI",
@@ -51,8 +51,9 @@ await createPDF({
 });
 ```
 
-For PDF generation, use the built-in `create-pdf` helper as shown above. It handles Unicode,
-text wrapping, page breaks, and page numbers automatically. Do not use `pdf-lib` directly.
+For PDF generation, the `createPDF` helper is pre-loaded in the JavaScript runtime.
+Do not require it; just call it directly. It handles Unicode, text wrapping, page breaks,
+and page numbers automatically. Do not use `pdf-lib` directly.
 Supported block types: heading (level 1-3), paragraph, list, table, code, separator, spacer.
 Do not write fallback diagnostics (for example `error_log.txt`) to `/output`; `/output` should contain only
 the final user-requested artifact files.
@@ -91,7 +92,7 @@ class FileGeneratorToolComponent(Component):
     - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
     - JavaScript: xlsx via exceljs, pdf via create-pdf helper, pptx via pptxgenjs, docx via docx, odt via jszip packaging
     - JavaScript runs under Node with CommonJS `require(...)`; write final files to `/output`
-    - For PDF, use the built-in helper: `const createPDF = require("/workspace/helpers/create-pdf"); await createPDF({ filename, title, content: [...] });`
+    - For PDF, `createPDF` is pre-loaded: `await createPDF({ filename, title, content: [...] });`
     """
 
     display_name = "File Generator"

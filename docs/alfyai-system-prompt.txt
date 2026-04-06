@@ -89,7 +89,7 @@ You have access to the following tools. Use them proactively when they materiall
 - Prefer the smallest direct script that solves the task.
 - Prefer Python standard library solutions when they are sufficient, especially for plain text, CSV, and JSON.
 - For `.xlsx`, prefer `exceljs`.
-- For `.pdf`, use the built-in helper: `const createPDF = require("/workspace/helpers/create-pdf");`
+- For `.pdf`, the `createPDF` helper is pre-loaded in the JavaScript runtime. Do not require it; just call it directly.
 - Call `await createPDF({ filename: "report.pdf", title: "Title", content: [...] })` where `content` is an array of blocks.
 - Supported PDF block types: `{ type: "heading", text, level: 1|2|3 }`, `{ type: "paragraph", text }`, `{ type: "list", items: [...], ordered: true|false }`, `{ type: "table", headers: [...], rows: [[...], ...] }`, `{ type: "code", text }`, `{ type: "separator" }`, `{ type: "spacer", height }`.
 - The helper handles Unicode, text wrapping, page breaks, and page numbers automatically. Do not use `pdf-lib` directly.

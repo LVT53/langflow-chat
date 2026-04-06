@@ -261,7 +261,7 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('`.odt` files');
       expect(body.tweaks.system_prompt).toContain('`.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`');
       expect(body.tweaks.system_prompt).toContain('use `require(...)`, not top-level `import` statements');
-      expect(body.tweaks.system_prompt).toContain('use the built-in helper: `const createPDF = require("/workspace/helpers/create-pdf");`');
+      expect(body.tweaks.system_prompt).toContain('`createPDF` helper is pre-loaded in the JavaScript runtime');
       expect(body.tweaks.system_prompt).toContain('await createPDF({ filename: "report.pdf"');
       expect(body.tweaks.system_prompt).toContain('handles Unicode, text wrapping, page breaks, and page numbers automatically');
       expect(body.tweaks.system_prompt).toContain('Do not use `pdf-lib` directly');
