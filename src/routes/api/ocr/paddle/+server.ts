@@ -15,6 +15,12 @@ function normalizeLanguage(raw: string): string {
 		.join('+') || 'hu+en+nl';
 }
 
+function selectBackendLanguage(languageProfile: string): string {
+	const normalized = normalizeLanguage(languageProfile);
+	const parts = normalized.split('+').map((value) => value.trim()).filter(Boolean);
+	return parts[0] || 'en';
+}
+
 function coerceToFile(value: FormDataEntryValue | null): File | null {
 	if (typeof value !== 'object' || value === null) {
 		return null;
@@ -50,7 +56,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		typeof languageRaw === 'string' && languageRaw.trim()
 			? languageRaw.trim()
 			: config.documentParserOcrLanguage;
-	const backendLanguage = normalizeLanguage(requestedLanguage);
+	const backendLanguage = selectBackendLanguage(requestedLanguage);
 	const backendEndpoint = config.documentParserPaddleBackendUrl.trim();
 
 	if (!backendEndpoint) {

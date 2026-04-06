@@ -46,7 +46,7 @@ describe('/api/ocr/paddle', () => {
 		expect(await response.json()).toEqual({ error: 'Missing file' });
 	});
 
-	it('forwards normalized OCR language profile and proxies response', async () => {
+	it('forwards first language from profile for paddle backend compatibility', async () => {
 		mockCallPaddleOcrAdapter.mockResolvedValueOnce({
 			results: [{ text: 'Szia', bbox: [0, 0, 10, 10], confidence: 0.9 }],
 		});
@@ -64,7 +64,7 @@ describe('/api/ocr/paddle', () => {
 		expect(response.status).toBe(200);
 		expect(mockCallPaddleOcrAdapter).toHaveBeenCalledWith(
 			expect.objectContaining({
-				language: 'hu+en+nl',
+				language: 'hu',
 				endpoint: 'http://127.0.0.1:5000/ocr',
 			})
 		);
