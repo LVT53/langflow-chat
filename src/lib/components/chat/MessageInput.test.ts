@@ -276,6 +276,71 @@ describe('MessageInput', () => {
 		expect(sendSpy).not.toHaveBeenCalled();
 	});
 
+	it('queues send intent on Enter while attachment processing is running and auto-sends when ready', async () => {
+		let resolveUpload: ((value: unknown) => void) | null = null;
+		fetchMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveUpload = resolve;
+				})
+		);
+
+		const artifact = {
+			id: 'artifact-auto-send-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'notes.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 12,
+			conversationId: 'conv-1',
+			summary: 'OCR me',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		const sendSpy = vi.fn();
+		const { container, getByPlaceholderText, getByText } = render(MessageInputWrapper, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onSend: sendSpy,
+		});
+
+		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+		await fireEvent.input(textarea, { target: { value: 'Send when ready' } });
+		await fireEvent.change(fileInput, {
+			target: { files: [new File(['scan'], 'notes.pdf', { type: 'application/pdf' })] },
+		});
+
+		await waitFor(() => {
+			expect(getByText('Uploading file...')).toBeDefined();
+		});
+
+		await fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+		await waitFor(() => {
+			expect(
+				getByText('Message will send automatically when file processing finishes.')
+			).toBeDefined();
+		});
+
+		resolveUpload?.({
+			ok: true,
+			json: async () => ({
+				artifact,
+				promptReady: true,
+				promptArtifactId: 'normalized-auto-send-1',
+				readinessError: null,
+			}),
+		});
+
+		await waitFor(() => {
+			expect(sendSpy).toHaveBeenCalledTimes(1);
+		});
+		expect(sendSpy).toHaveBeenCalledWith('Send when ready');
+	});
+
 	it('blocks send when an uploaded attachment is not prompt-ready', async () => {
 		fetchMock.mockResolvedValue({
 			ok: true,

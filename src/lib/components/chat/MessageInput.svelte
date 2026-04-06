@@ -89,6 +89,7 @@
 	let attachmentError = $state('');
 	let resolvedConversationId = $state<string | null>(null);
 	let showToolsMenu = $state(false);
+	let queuedSendAfterProcessing = $state(false);
 	let appliedDraftVersion = -1;
 	let lastEmittedDraftKey = '';
 	let ensureDraftConversationPromise: Promise<string> | null = null;
@@ -145,11 +146,19 @@
 			pendingAttachments = draftAttachments.map((attachment) => ({ ...attachment }));
 			attachmentError = '';
 			uploadState = 'idle';
+			queuedSendAfterProcessing = false;
 			showToolsMenu = false;
 			lastEmittedDraftKey = '';
 			draftEmissionVersion += 1;
 			adjustHeight();
 		}
+	});
+
+	$effect(() => {
+		if (isGenerating || !queuedSendAfterProcessing || !canSend) return;
+		onSend?.(buildSendPayload());
+		queuedSendAfterProcessing = false;
+		clearComposerAfterSubmit();
 	});
 
 	function isMobile(): boolean {
@@ -175,6 +184,7 @@
 			pendingAttachments = [];
 			attachmentError = '';
 			uploadState = 'idle';
+			queuedSendAfterProcessing = false;
 			showToolsMenu = false;
 			lastEmittedDraftKey = '';
 			draftEmissionVersion += 1;
@@ -230,6 +240,7 @@
 		message = '';
 		pendingAttachments = [];
 		attachmentError = '';
+		queuedSendAfterProcessing = false;
 		showToolsMenu = false;
 		lastEmittedDraftKey = '';
 		draftEmissionVersion += 1;
@@ -242,14 +253,22 @@
 	}
 
 	function send() {
-		if (!canSend || isGenerating) return;
+		if (isGenerating) return;
+		if (!canSend) {
+			if (!isEmpty && !isOverMaxLength && (isUploadingAttachment || hasUnreadyAttachment)) {
+				queuedSendAfterProcessing = true;
+			}
+			return;
+		}
 		onSend?.(buildSendPayload());
+		queuedSendAfterProcessing = false;
 		clearComposerAfterSubmit();
 	}
 
 	function queue() {
 		if (!canQueue) return;
 		onQueue?.(buildSendPayload());
+		queuedSendAfterProcessing = false;
 		clearComposerAfterSubmit();
 	}
 
@@ -354,6 +373,9 @@
 
 	function removePendingAttachment(id: string) {
 		pendingAttachments = pendingAttachments.filter((attachment) => attachment.artifact.id !== id);
+		if (pendingAttachments.length === 0) {
+			queuedSendAfterProcessing = false;
+		}
 		draftEmissionVersion += 1;
 		void emitDraftChange();
 	}
@@ -572,12 +594,15 @@
 		</div>
 	{/if}
 
-	{#if isUploadingAttachment || attachmentError || attachmentReadinessErrors.length > 0}
+	{#if isUploadingAttachment || attachmentError || attachmentReadinessErrors.length > 0 || queuedSendAfterProcessing}
 		<div class="mt-2 flex flex-col gap-1 px-2 text-xs font-sans">
 			{#if uploadState === 'uploading'}
 				<span class="text-text-muted">Uploading file...</span>
 			{:else if uploadState === 'preparing'}
-				<span class="text-text-muted">Preparing file for chat...</span>
+				<span class="text-text-muted">Extracting document text… this can take up to ~10s for scanned PDFs.</span>
+			{/if}
+			{#if queuedSendAfterProcessing && (isUploadingAttachment || hasUnreadyAttachment)}
+				<span class="text-text-muted">Message will send automatically when file processing finishes.</span>
 			{/if}
 			{#if attachmentError}
 				<span class="text-danger">{attachmentError}</span>
