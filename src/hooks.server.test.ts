@@ -77,6 +77,21 @@ describe('hooks.server.ts', () => {
 		expect(event.locals.user).toBeNull();
 	});
 
+	it('allows the OCR proxy route without a session', async () => {
+		const { handle } = await import('./hooks.server');
+		const resolve = vi.fn(async () => new Response('ok'));
+		const event = {
+			cookies: { get: vi.fn(() => undefined) },
+			locals: {},
+			url: new URL('http://localhost/api/ocr/paddle'),
+		} as any;
+
+		await handle({ event, resolve });
+
+		expect(resolve).toHaveBeenCalledOnce();
+		expect(event.locals.user).toBeNull();
+	});
+
 	it('redirects protected routes to /login when no user is present', async () => {
 		const { handle } = await import('./hooks.server');
 		const event = {
