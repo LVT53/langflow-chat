@@ -195,7 +195,7 @@ describe('persona-memory temporal safeguards', () => {
 					id: 'memory-1',
 					content: 'The user mentioned having a date.',
 					createdAt: Date.UTC(2026, 2, 28),
-					scope: 'session',
+					scope: 'self',
 					sessionId: 'conversation-1',
 				},
 			],
@@ -207,7 +207,7 @@ describe('persona-memory temporal safeguards', () => {
 		expect(payload.rawMemories[0]).toEqual({
 			id: 'memory-1',
 			content: 'The user mentioned having a date.',
-			scope: 'session',
+			scope: 'self',
 			sessionId: 'conversation-1',
 		});
 		expect(payload.rawMemories[0]).not.toHaveProperty('createdAt');
@@ -258,7 +258,7 @@ describe('persona-memory temporal safeguards', () => {
 					id: 'memory-1',
 					content: 'The user mentioned having a date.',
 					createdAt: Date.UTC(2026, 2, 28),
-					scope: 'session',
+					scope: 'self',
 					sessionId: 'conversation-1',
 				},
 			],
@@ -278,7 +278,7 @@ describe('persona-memory temporal safeguards', () => {
 					id: 'memory-1',
 					content: 'The user has a meeting on Tuesday.',
 					createdAt: Date.UTC(2026, 2, 28),
-					scope: 'session',
+					scope: 'self',
 					sessionId: 'conversation-1',
 				},
 			],
@@ -411,33 +411,39 @@ describe('persona-memory temporal safeguards', () => {
 	});
 
 	it('records deadline events when a new active deadline cluster appears', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(Date.UTC(2026, 3, 5, 12, 0, 0)));
 		mockCanUseContextSummarizer.mockReturnValue(false);
 
 		const { syncPersonaMemoryClusters } = await import('./persona-memory');
 
-		await syncPersonaMemoryClusters({
-			userId: 'user-deadline',
-			rawRecords: [
-				{
-					id: 'deadline-1',
-					content: 'The user is time-constrained to finish assessment documentation in two days.',
-					createdAt: Date.UTC(2026, 3, 4),
-					scope: 'self',
-					sessionId: 'conversation-1',
-				},
-			],
-			reason: 'test',
-			force: true,
-		});
+		try {
+			await syncPersonaMemoryClusters({
+				userId: 'user-deadline',
+				rawRecords: [
+					{
+						id: 'deadline-1',
+						content: 'The user is time-constrained to finish assessment documentation in two days.',
+						createdAt: Date.UTC(2026, 3, 4),
+						scope: 'self',
+						sessionId: 'conversation-1',
+					},
+				],
+				reason: 'test',
+				force: true,
+			});
 
-		expect(mockRecordMemoryEvents).toHaveBeenCalledWith(
-			expect.arrayContaining([
-				expect.objectContaining({
-					domain: 'temporal',
-					eventType: 'deadline_set',
-				}),
-			])
-		);
+			expect(mockRecordMemoryEvents).toHaveBeenCalledWith(
+				expect.arrayContaining([
+					expect.objectContaining({
+						domain: 'temporal',
+						eventType: 'deadline_set',
+					}),
+				])
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('supersedes older fact-slot memories deterministically and records a persona fact update', async () => {
