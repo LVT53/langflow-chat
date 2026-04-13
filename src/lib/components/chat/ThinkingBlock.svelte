@@ -19,11 +19,9 @@
 	const isActiveThinking = $derived(!thinkingIsDone);
 	const hasSegments = $derived(segments.length > 0);
 	const visibleTools = $derived(
-		thinkingIsDone
-			? []
-			: segments.filter(
-					(segment): segment is ThinkingSegment & { type: 'tool_call' } => segment.type === 'tool_call'
-				)
+		segments.filter(
+			(segment): segment is ThinkingSegment & { type: 'tool_call' } => segment.type === 'tool_call'
+		)
 	);
 
 	function extractHostname(raw: string): string {
@@ -103,7 +101,7 @@
 	</button>
 
 	{#if visibleTools.length > 0}
-		<div class="tool-call-stack" transition:slide={{ duration: 200 }}>
+		<div class="tool-call-stack">
 			{#each visibleTools as tool (tool.name + JSON.stringify(tool.input))}
 				<div class="tool-call-row" class:is-running={tool.status === 'running'}>
 					{#if tool.status === 'running'}
