@@ -251,22 +251,15 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
-      expect(body.tweaks.system_prompt).toContain('Generated file workflow');
-      expect(body.tweaks.system_prompt).toContain('call it instead of only describing the result in text');
-      expect(body.tweaks.system_prompt).toContain('do not claim it is unavailable');
+      expect(body.tweaks.system_prompt).toContain('Generated file workflow (split toolkit)');
+      expect(body.tweaks.system_prompt).toContain('export_document');
+      expect(body.tweaks.system_prompt).toContain('generate_file');
+      expect(body.tweaks.system_prompt).toContain('YAML frontmatter for cover page metadata');
+      expect(body.tweaks.system_prompt).toContain('Obsidian-style blockquotes for callouts');
+      expect(body.tweaks.system_prompt).toContain('image_search');
+      expect(body.tweaks.system_prompt).toContain('Pandas for data analysis');
+      expect(body.tweaks.system_prompt).toContain('openpyxl for advanced Excel formatting');
       expect(body.tweaks.system_prompt).toContain('Do not use generic code-execution tools such as `run_python_repl`');
-      expect(body.tweaks.system_prompt).toContain('exposes `source_code`');
-      expect(body.tweaks.system_prompt).toContain('Use `language: "javascript"` for `.xlsx` files with `exceljs`');
-      expect(body.tweaks.system_prompt).toContain('`.docx` files with `docx`');
-      expect(body.tweaks.system_prompt).toContain('`.odt` files');
-      expect(body.tweaks.system_prompt).toContain('`.xml`, `.svg`, `.rtf`, `.css`, `.js`, and `.py`');
-      expect(body.tweaks.system_prompt).toContain('use `require(...)`, not top-level `import` statements');
-      expect(body.tweaks.system_prompt).toContain('`createPDF` helper is pre-loaded in the JavaScript runtime');
-      expect(body.tweaks.system_prompt).toContain('await createPDF({ filename: "report.pdf"');
-      expect(body.tweaks.system_prompt).toContain('handles Unicode, text wrapping, page breaks, and page numbers automatically');
-      expect(body.tweaks.system_prompt).toContain('Do not use `pdf-lib` directly');
-      expect(body.tweaks.system_prompt).toContain('Do not import preview-only libraries such as `pdfjs-dist` or `pptxviewjs`');
-      expect(body.tweaks.system_prompt).toContain('write the final output files to `/output`');
       expect(body.tweaks.system_prompt).toContain('Only tell the user a file is ready after the tool succeeds');
 
       expect(result).toMatchObject({
@@ -513,10 +506,10 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('You are a helpful AI assistant.');
       expect(body.tweaks.system_prompt).toContain('Time-sensitive search workflow');
       expect(body.tweaks.system_prompt).toContain('first get the current date and time');
-      expect(body.tweaks.system_prompt).toContain('Generated file workflow');
-      expect(body.tweaks.system_prompt).toContain('do not claim it is unavailable');
+      expect(body.tweaks.system_prompt).toContain('Generated file workflow (split toolkit)');
+      expect(body.tweaks.system_prompt).toContain('export_document');
+      expect(body.tweaks.system_prompt).toContain('generate_file');
       expect(body.tweaks.system_prompt).toContain('Do not use generic code-execution tools such as `run_python_repl`');
-      expect(body.tweaks.system_prompt).toContain('exposes `source_code`');
 
       expect(response.stream).toBeDefined();
     });

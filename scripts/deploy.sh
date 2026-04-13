@@ -35,12 +35,17 @@ npm install
 echo -e "${GREEN}✓ Dependencies installed${NC}"
 echo ""
 
-echo -e "${YELLOW}3. Applying database migrations...${NC}"
+echo -e "${YELLOW}3. Installing Playwright Chromium...${NC}"
+npx playwright install chromium --with-deps
+echo -e "${GREEN}✓ Playwright Chromium installed${NC}"
+echo ""
+
+echo -e "${YELLOW}4. Applying database migrations...${NC}"
 npm run db:prepare
 echo -e "${GREEN}✓ Database migrations complete${NC}"
 echo ""
 
-echo -e "${YELLOW}4. Building application...${NC}"
+echo -e "${YELLOW}5. Building application...${NC}"
 npm run build
 echo -e "${GREEN}✓ Build complete${NC}"
 echo ""
