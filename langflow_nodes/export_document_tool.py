@@ -222,6 +222,22 @@ class ExportDocumentToolComponent(Component):
                 "error": f"Unexpected error: {type(e).__name__}: {str(e)}",
             }
 
+    def _emit_tool_marker(self, marker_type: str, payload: dict[str, Any]) -> None:
+        """Emit TOOL_START/TOOL_END markers into the Langflow stream.
+
+        Args:
+            marker_type: "TOOL_START" or "TOOL_END"
+            payload: JSON-serializable payload for the marker
+        """
+        try:
+            event_manager = getattr(self, "_event_manager", None)
+            if event_manager is None:
+                return
+            marker_str = f"\x02{marker_type}\x1f{json.dumps(payload, ensure_ascii=False)}\x03"
+            event_manager.on_token(data={"chunk": marker_str})
+        except Exception as e:
+            logger.warning(f"Failed to emit {marker_type} marker: {e}")
+
     def export_document(self) -> Data:
         """Tool function called by the agent via Langflow tool mode."""
         markdown_content = str(getattr(self, "markdown_content", "") or "").strip()
@@ -236,7 +252,14 @@ class ExportDocumentToolComponent(Component):
                 "error": "No conversation context available.",
             })
 
-
+        # Emit TOOL_START marker
+        self._emit_tool_marker("TOOL_START", {
+            "name": "export_document",
+            "input": {
+                "markdown_content": markdown_content[:200] + "..." if len(markdown_content) > 200 else markdown_content,
+                "filename": filename,
+            },
+        })
 
         # Ensure filename doesn't have .pdf extension (will be added by backend)
         if filename.lower().endswith(".pdf"):
@@ -258,6 +281,14 @@ class ExportDocumentToolComponent(Component):
             file_path = result.get("filePath", "")
             logger.info(f"Document export successful: {file_path}")
 
+            # Emit TOOL_END marker
+            self._emit_tool_marker("TOOL_END", {
+                "name": "export_document",
+                "sourceType": "tool",
+                "outputSummary": result.get("message", "Export completed"),
+                "candidates": [{"filePath": file_path}] if file_path else [],
+            })
+
             return Data(data={
                 "success": True,
                 "message": result.get("message", "Export completed"),
@@ -267,6 +298,14 @@ class ExportDocumentToolComponent(Component):
         else:
             error_msg = result.get("error", "Unknown error")
             logger.error(f"Document export failed: {error_msg}")
+
+            # Emit TOOL_END marker even on error
+            self._emit_tool_marker("TOOL_END", {
+                "name": "export_document",
+                "sourceType": "tool",
+                "outputSummary": None,
+                "candidates": [],
+            })
 
             return Data(data={
                 "success": False,

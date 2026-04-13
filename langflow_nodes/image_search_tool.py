@@ -199,6 +199,22 @@ class ImageSearchToolComponent(Component):
                 "error": f"Unexpected error: {type(e).__name__}: {str(e)}",
             }
 
+    def _emit_tool_marker(self, marker_type: str, payload: dict[str, Any]) -> None:
+        """Emit TOOL_START/TOOL_END markers into the Langflow stream.
+
+        Args:
+            marker_type: "TOOL_START" or "TOOL_END"
+            payload: JSON-serializable payload for the marker
+        """
+        try:
+            event_manager = getattr(self, "_event_manager", None)
+            if event_manager is None:
+                return
+            marker_str = f"\x02{marker_type}\x1f{json.dumps(payload, ensure_ascii=False)}\x03"
+            event_manager.on_token(data={"chunk": marker_str})
+        except Exception as e:
+            logger.warning(f"Failed to emit {marker_type} marker: {e}")
+
     def search_images(self) -> Data:
         """Tool function called by the agent via Langflow tool mode."""
         query = str(getattr(self, "query", "") or "").strip()
@@ -218,6 +234,12 @@ class ImageSearchToolComponent(Component):
                 "error": "No search query provided.",
             })
 
+        # Emit TOOL_START marker
+        self._emit_tool_marker("TOOL_START", {
+            "name": "image_search",
+            "input": {"query": query},
+        })
+
         logger.info(
             "Searching images in conversation %s with query: %s",
             conversation_id[:8],
@@ -233,6 +255,14 @@ class ImageSearchToolComponent(Component):
             results = result.get("results", [])
             logger.info(f"Image search successful: found {len(results)} result(s)")
 
+            # Emit TOOL_END marker
+            self._emit_tool_marker("TOOL_END", {
+                "name": "image_search",
+                "sourceType": "web",
+                "outputSummary": result.get("message", "Search completed"),
+                "candidates": results,
+            })
+
             return Data(data={
                 "success": True,
                 "message": result.get("message", "Search completed"),
@@ -242,6 +272,14 @@ class ImageSearchToolComponent(Component):
         else:
             error_msg = result.get("error", "Unknown error")
             logger.error(f"Image search failed: {error_msg}")
+
+            # Emit TOOL_END marker even on error
+            self._emit_tool_marker("TOOL_END", {
+                "name": "image_search",
+                "sourceType": "web",
+                "outputSummary": None,
+                "candidates": [],
+            })
 
             return Data(data={
                 "success": False,
