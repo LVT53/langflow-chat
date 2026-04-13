@@ -55,7 +55,7 @@ class ExportDocumentToolComponent(Component):
     """
 
     display_name = "Export Document"
-    description = "Export markdown content to PDF format."
+    description = "Export markdown content to PDF format. If markdown_content is empty, the server fetches the active conversation context automatically."
     documentation = "https://docs.langflow.org/tools"
     icon = "file-text"
     name = "ExportDocumentTool"
@@ -79,9 +79,10 @@ class ExportDocumentToolComponent(Component):
         MultilineInput(
             name="markdown_content",
             display_name="Markdown Content",
-            info="Markdown content to export as PDF",
+            info="Markdown content to export as PDF. Leave empty to trigger server-side content fetch from the active conversation context.",
             value="",
-            required=True,
+            required=False,
+            advanced=False,
             tool_mode=True,
         ),
         StrInput(
@@ -235,11 +236,7 @@ class ExportDocumentToolComponent(Component):
                 "error": "No conversation context available.",
             })
 
-        if not markdown_content:
-            return Data(data={
-                "success": False,
-                "error": "No markdown content provided.",
-            })
+
 
         # Ensure filename doesn't have .pdf extension (will be added by backend)
         if filename.lower().endswith(".pdf"):
