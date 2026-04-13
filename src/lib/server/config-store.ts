@@ -124,6 +124,7 @@ export interface RuntimeConfig {
   documentParserMaxPages: number;
   documentParserDpi: number;
   documentParserTimeoutMs: number;
+  braveSearchApiKey: string;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -131,6 +132,7 @@ function buildDefaultConfig(): RuntimeConfig {
     ...envConfig,
     model1: { ...envConfig.model1 },
     model2: { ...envConfig.model2 },
+    braveSearchApiKey: envConfig.braveSearchApiKey,
   };
 }
 

@@ -73,6 +73,7 @@ interface Config {
   documentParserMaxPages: number;
   documentParserDpi: number;
   documentParserTimeoutMs: number;
+  braveSearchApiKey: string;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -232,6 +233,7 @@ function readConfig(): Config {
       parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '120000', 10) ||
         120000
     ),
+    braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   };
 }
 
