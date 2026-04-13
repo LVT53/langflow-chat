@@ -157,6 +157,19 @@
 		return `${day} ${month} ${year}, ${h}:${m}`;
 	}
 
+	function formatDuration(ms: number): string {
+		if (ms < 1000) {
+			return `${ms}ms`;
+		}
+		const seconds = ms / 1000;
+		if (seconds < 60) {
+			return `${seconds.toFixed(1)}s`;
+		}
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = (seconds % 60).toFixed(1);
+		return `${minutes}m ${remainingSeconds}s`;
+	}
+
 	function toggleTimestampTooltip(e: MouseEvent) {
 		e.stopPropagation();
 		showTimestampTooltip = !showTimestampTooltip;
@@ -325,6 +338,12 @@
 									<div class="tooltip-row">
 										<span class="tooltip-label">Model</span>
 										<span class="tooltip-value">{message.modelDisplayName}</span>
+									</div>
+								{/if}
+								{#if message.generationDurationMs && message.generationDurationMs > 0}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Response time</span>
+										<span class="tooltip-value">{formatDuration(message.generationDurationMs)}</span>
 									</div>
 								{/if}
 								{#if hasThinking}

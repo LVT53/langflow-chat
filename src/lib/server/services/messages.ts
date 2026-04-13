@@ -31,7 +31,8 @@ function getModelDisplayName(modelId?: string | null): string | undefined {
 
 function mapRowToChatMessage(
 	row: typeof messages.$inferSelect,
-	modelId?: string | null
+	modelId?: string | null,
+	generationTimeMs?: number | null
 ): ChatMessage {
 	// Restore full interleaved thinkingSegments from persisted JSON.
 	// The column stores the complete segment array (text + tool_call entries in order)
@@ -64,6 +65,7 @@ function mapRowToChatMessage(
 		thinkingSegments,
 		timestamp: row.createdAt.getTime(),
 		modelDisplayName: getModelDisplayName(modelId),
+		generationDurationMs: generationTimeMs ?? undefined,
 		evidenceSummary,
 		evidencePending,
 		honchoContext: metadata?.honchoContext ?? undefined,
@@ -85,7 +87,8 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		db
 			.select({
 				message: messages,
-				model: messageAnalytics.model
+				model: messageAnalytics.model,
+				generationTimeMs: messageAnalytics.generationTimeMs,
 			})
 			.from(messages)
 			.leftJoin(messageAnalytics, eq(messages.id, messageAnalytics.messageId))
@@ -95,7 +98,7 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 	]);
 
 	return result.map((row) => ({
-		...mapRowToChatMessage(row.message, row.model),
+		...mapRowToChatMessage(row.message, row.model, row.generationTimeMs),
 		attachments: attachmentMap.get(row.message.id) ?? [],
 	}));
 }
