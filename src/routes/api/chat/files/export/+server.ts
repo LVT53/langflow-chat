@@ -6,6 +6,7 @@ import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import { storeGeneratedFile } from '$lib/server/services/chat-files';
 import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { listMessages } from '$lib/server/services/messages';
 import { parseMarkdown } from '$lib/server/utils/markdown-parser';
 import { generatePdfFromHtml } from '$lib/server/services/pdf-generator';
 import TerracottaCrownLayout from '$lib/components/pdf/TerracottaCrownLayout.svelte';
@@ -14,7 +15,7 @@ import { render } from 'svelte/server';
 interface ExportRequest {
 	conversationId: string;
 	filename: string;
-	markdown: string;
+	markdown?: string;
 	format: 'pdf' | 'docx';
 }
 
@@ -33,10 +34,6 @@ function validateRequest(body: unknown): { ok: true; value: ExportRequest } | { 
 		return { ok: false, error: 'filename is required', status: 400 };
 	}
 
-	if (typeof markdown !== 'string' || markdown.trim().length === 0) {
-		return { ok: false, error: 'markdown is required', status: 400 };
-	}
-
 	if (format !== 'pdf' && format !== 'docx') {
 		return { ok: false, error: 'format must be pdf or docx', status: 400 };
 	}
@@ -46,7 +43,7 @@ function validateRequest(body: unknown): { ok: true; value: ExportRequest } | { 
 		value: {
 			conversationId: conversationId.trim(),
 			filename: filename.trim(),
-			markdown: markdown.trim(),
+			markdown: typeof markdown === 'string' ? markdown.trim() : '',
 			format: format as 'pdf' | 'docx'
 		}
 	};
@@ -79,7 +76,21 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: validation.error }, { status: validation.status });
 	}
 
-	const { conversationId, filename, markdown, format } = validation.value;
+	const { conversationId, filename, markdown: rawMarkdown, format } = validation.value;
+
+	let markdown = rawMarkdown;
+	if (!markdown) {
+		const messages = await listMessages(conversationId);
+		const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
+		if (!lastAssistantMessage) {
+			console.warn('[FILE_EXPORT] No assistant message found for export', {
+				requestId,
+				conversationId,
+			});
+			return json({ error: 'No active document or previous message found to export.' }, { status: 400 });
+		}
+		markdown = lastAssistantMessage.content;
+	}
 
 	if (format !== 'pdf') {
 		console.warn('[FILE_EXPORT] Unsupported format', { requestId, format });
