@@ -14,11 +14,11 @@ const generatedOutputBackfillInFlight = new Map<string, Promise<void>>();
 const WORKFLOW_HINT_RE =
 	/\b(workflow|process|history|previous|earlier|before|draft|result|output|summary|version)\b/i;
 
-function normalizeSimilarityText(text: string): string {
+export function normalizeSimilarityText(text: string): string {
 	return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function buildShingles(text: string, size = 5): Set<string> {
+export function buildShingles(text: string, size = 5): Set<string> {
 	const words = normalizeSimilarityText(text).split(/\s+/).filter(Boolean);
 	if (words.length === 0) return new Set();
 	if (words.length <= size) return new Set([words.join(' ')]);
@@ -381,12 +381,28 @@ async function setGeneratedDocumentFamilyStatus(params: {
 		.where(eq(artifacts.id, params.artifactId));
 }
 
-async function backfillGeneratedOutputRetrievalClasses(userId: string): Promise<void> {
-	const rows = await db
-		.select()
-		.from(artifacts)
-		.where(and(eq(artifacts.userId, userId), eq(artifacts.type, 'generated_output')))
-		.orderBy(desc(artifacts.updatedAt));
+async function backfillGeneratedOutputRetrievalClasses(
+	userId: string,
+	artifacts: Array<{
+		id: string;
+		userId: string;
+		conversationId: string | null;
+		vaultId: string | null;
+		type: string;
+		retrievalClass: string | null;
+		name: string;
+		mimeType: string | null;
+		sizeBytes: number | null;
+		extension: string | null;
+		storagePath: string | null;
+		contentText: string | null;
+		summary: string | null;
+		metadataJson: string | null;
+		createdAt: Date;
+		updatedAt: Date;
+	}>
+): Promise<void> {
+	const rows = artifacts;
 
 	const outputs = rows.map((row) => ({
 		...row,
@@ -464,12 +480,28 @@ async function backfillGeneratedOutputRetrievalClasses(userId: string): Promise<
 	}
 }
 
-async function backfillGeneratedOutputFamilyStatuses(userId: string): Promise<void> {
-	const rows = await db
-		.select()
-		.from(artifacts)
-		.where(and(eq(artifacts.userId, userId), eq(artifacts.type, 'generated_output')))
-		.orderBy(desc(artifacts.updatedAt));
+async function backfillGeneratedOutputFamilyStatuses(
+	userId: string,
+	artifacts: Array<{
+		id: string;
+		userId: string;
+		conversationId: string | null;
+		vaultId: string | null;
+		type: string;
+		retrievalClass: string | null;
+		name: string;
+		mimeType: string | null;
+		sizeBytes: number | null;
+		extension: string | null;
+		storagePath: string | null;
+		contentText: string | null;
+		summary: string | null;
+		metadataJson: string | null;
+		createdAt: Date;
+		updatedAt: Date;
+	}>
+): Promise<void> {
+	const rows = artifacts;
 
 	const outputs = rows.map((row) => {
 		const metadata = parseJsonRecord(row.metadataJson ?? null);
@@ -541,13 +573,51 @@ async function backfillGeneratedOutputFamilyStatuses(userId: string): Promise<vo
 
 export async function repairGeneratedOutputRetrievalClasses(
 	userId: string,
+	artifacts: Array<{
+		id: string;
+		userId: string;
+		conversationId: string | null;
+		vaultId: string | null;
+		type: string;
+		retrievalClass: string | null;
+		name: string;
+		mimeType: string | null;
+		sizeBytes: number | null;
+		extension: string | null;
+		storagePath: string | null;
+		contentText: string | null;
+		summary: string | null;
+		metadataJson: string | null;
+		createdAt: Date;
+		updatedAt: Date;
+	}>
 ): Promise<void> {
-	await backfillGeneratedOutputRetrievalClasses(userId);
+	await backfillGeneratedOutputRetrievalClasses(userId, artifacts);
 	generatedOutputBackfillDone.add(userId);
 }
 
-export async function repairGeneratedOutputFamilyStatuses(userId: string): Promise<void> {
-	await backfillGeneratedOutputFamilyStatuses(userId);
+export async function repairGeneratedOutputFamilyStatuses(
+	userId: string,
+	artifacts: Array<{
+		id: string;
+		userId: string;
+		conversationId: string | null;
+		vaultId: string | null;
+		type: string;
+		retrievalClass: string | null;
+		name: string;
+		mimeType: string | null;
+		sizeBytes: number | null;
+		extension: string | null;
+		storagePath: string | null;
+		contentText: string | null;
+		summary: string | null;
+		metadataJson: string | null;
+		createdAt: Date;
+		updatedAt: Date;
+	}>
+): Promise<void> {
+	await backfillGeneratedOutputFamilyStatuses(userId, artifacts);
 }
 
 export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Promise<void> {

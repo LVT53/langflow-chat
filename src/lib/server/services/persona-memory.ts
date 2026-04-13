@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	artifacts,
@@ -34,6 +34,7 @@ import { recordMemoryEvents } from './memory-events';
 import { queuePersonaClusterSemanticEmbeddingRefresh } from './semantic-embedding-refresh';
 import { shortlistSemanticMatchesBySubject } from './semantic-ranking';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
+import { classifyMemoryBatch } from './task-state/control-model';
 import {
 	determineTeiWinningMode,
 	logTeiRetrievalSummary,
@@ -1464,12 +1465,25 @@ function buildClusterGroups(records: HonchoPersonaMemoryRecord[]): Array<{
 		});
 	}
 
+	const hashGroups = new Map<string, HonchoPersonaMemoryRecord[]>();
+	for (const record of sorted) {
+		if (assigned.has(record.id)) continue;
+		const hash = normalizeMemoryText(record.content).split(/\s+/).slice(0, 5).join(' ');
+		const group = hashGroups.get(hash) ?? [];
+		group.push(record);
+		hashGroups.set(hash, group);
+	}
+
 	for (const record of sorted) {
 		if (assigned.has(record.id)) continue;
 		const group = [record];
 		assigned.add(record.id);
 		const baseText = normalizeMemoryText(record.content);
-		for (const candidate of sorted) {
+		
+		const hash = baseText.split(/\s+/).slice(0, 5).join(' ');
+		const candidateGroup = hashGroups.get(hash) ?? [];
+
+		for (const candidate of candidateGroup) {
 			if (assigned.has(candidate.id)) continue;
 			const candidateText = normalizeMemoryText(candidate.content);
 			if (
@@ -2516,110 +2530,157 @@ export async function syncPersonaMemoryClusters(params: {
 	const now = Date.now();
 	const plans: ClusterPlan[] = [];
 
-	for (const group of groups) {
-		const clusterId = clusterIdForKey(params.userId, group.key);
-		const existing = existingSnapshots.get(clusterId);
-		const defaultCanonicalText = deriveCanonicalText({
-			records: group.records,
-			inventoryFingerprint: group.inventoryFingerprint,
-		});
-		const defaultMemoryClass = group.inventoryFingerprint
-			? ('perishable_fact' as const)
-			: classifyMemoryTextDeterministically(defaultCanonicalText);
-		const defaultSalience = computeSalienceScore({
-			memoryClass: defaultMemoryClass,
-			sourceCount: group.records.length,
-			lastSeenAt: Math.max(...group.records.map((record) => record.createdAt)),
-			now,
+	const chunkArray = <T>(arr: T[], size: number): T[][] => {
+		return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
+			arr.slice(i * size, i * size + size)
+		);
+	};
+
+	const batches = chunkArray(groups, 20);
+
+	for (const batch of batches) {
+		const classifications = await classifyMemoryBatch(
+			batch.flatMap(group => 
+				group.records.map(record => ({ id: record.id, content: record.content }))
+			)
+		);
+		
+		const personalGroups = batch.filter(group => {
+			if (!classifications) return true;
+			const groupClassifications = classifications.filter(c => 
+				group.records.some(r => r.id === c.id)
+			);
+			if (groupClassifications.length === 0) return true;
+			return !groupClassifications.every(c => c.status === 'FOREIGN');
 		});
 
-		const memberIds = group.records.map((record) => record.id).sort();
-		const dirty =
-			gate.fullSweep ||
-			!existing ||
-			memberIds.join('|') !== existing.memberIds.slice().sort().join('|');
-		const dream = dirty
-			? await dreamCluster({
+		const dreamResults = await Promise.all(
+			personalGroups.map(async (group) => {
+				const clusterId = clusterIdForKey(params.userId, group.key);
+				const existing = existingSnapshots.get(clusterId);
+				const defaultCanonicalText = deriveCanonicalText({
 					records: group.records,
-					defaultCanonicalText,
-					defaultMemoryClass,
-					defaultSalience,
-				})
-			: {
-					canonicalText: existing.canonicalText,
-					memoryClass: existing.memoryClass,
-					salienceScore: existing.salienceScore,
-					stateHint: null,
-					supersededBy:
-						typeof existing.metadata.supersededByClusterId === 'string'
-							? String(existing.metadata.supersededByClusterId)
-							: null,
-				};
-		const normalizedMemoryClass = normalizeDreamMemoryClass(
-			dream.canonicalText,
-			dream.memoryClass
+					inventoryFingerprint: group.inventoryFingerprint,
+				});
+				const defaultMemoryClass = group.inventoryFingerprint
+					? ('perishable_fact' as const)
+					: classifyMemoryTextDeterministically(defaultCanonicalText);
+				const defaultSalience = computeSalienceScore({
+					memoryClass: defaultMemoryClass,
+					sourceCount: group.records.length,
+					lastSeenAt: Math.max(...group.records.map((record) => record.createdAt)),
+					now,
+				});
+
+				const memberIds = group.records.map((record) => record.id).sort();
+				const dirty =
+					gate.fullSweep ||
+					!existing ||
+					memberIds.join('|') !== existing.memberIds.slice().sort().join('|');
+				
+				let dream;
+				if (dirty) {
+					try {
+						dream = await dreamCluster({
+							records: group.records,
+							defaultCanonicalText,
+							defaultMemoryClass,
+							defaultSalience,
+						});
+					} catch (error) {
+						console.error('[PERSONA_MEMORY] Dream failed for group:', error);
+						dream = {
+							canonicalText: defaultCanonicalText,
+							memoryClass: defaultMemoryClass,
+							salienceScore: defaultSalience,
+							stateHint: null,
+							supersededBy: null,
+						};
+					}
+				} else {
+					dream = {
+						canonicalText: existing.canonicalText,
+						memoryClass: existing.memoryClass,
+						salienceScore: existing.salienceScore,
+						stateHint: null,
+						supersededBy:
+							typeof existing.metadata.supersededByClusterId === 'string'
+								? String(existing.metadata.supersededByClusterId)
+								: null,
+					};
+				}
+
+				return { group, clusterId, existing, dream, memberIds };
+			})
 		);
 
-		const pinned = existing?.pinned ?? false;
-		const firstSeenAt = Math.min(...group.records.map((record) => record.createdAt));
-		const lastSeenAt = Math.max(...group.records.map((record) => record.createdAt));
-		const preferenceMetadata =
-			normalizedMemoryClass === 'stable_preference'
-				? extractPreferenceSlotMetadata(dream.canonicalText)
-				: null;
-		const temporalMetadata = deriveTemporalMetadata({
-			canonicalText: dream.canonicalText,
-			records: group.records,
-			memoryClass: normalizedMemoryClass,
-			now,
-		});
-		const topicKey = deriveTopicKey(dream.canonicalText);
-		const metadata = {
-			...toRecordWithoutPreferenceMetadata(existing?.metadata ?? {}),
-			clusterKey: group.key,
-			conclusionIds: memberIds,
-			dreamReason: params.reason ?? 'manual',
-			supersededByClusterId: dream.supersededBy ?? null,
-			temporal: temporalMetadata,
-			activeConstraint:
-				(normalizedMemoryClass === 'short_term_constraint' ||
-					temporalMetadata?.kind === 'deadline') &&
-				temporalMetadata?.freshness !== 'expired' &&
-				temporalMetadata?.freshness !== 'historical',
-			topicKey,
-			...(preferenceMetadata ?? {}),
-		};
-		const decay = deriveStateFromDecay({
-			memoryClass: normalizedMemoryClass,
-			lastSeenAt,
-			pinned,
-			stateHint: dream.stateHint,
-			metadata,
-			now,
-		});
+		for (const { group, clusterId, existing, dream, memberIds } of dreamResults) {
+			const normalizedMemoryClass = normalizeDreamMemoryClass(
+				dream.canonicalText,
+				dream.memoryClass
+			);
 
-		plans.push({
-			clusterId,
-			records: group.records,
-			canonicalText: dream.canonicalText,
-			memoryClass: normalizedMemoryClass,
-			salienceScore: computeRepairedSalienceScore({
+			const pinned = existing?.pinned ?? false;
+			const firstSeenAt = Math.min(...group.records.map((record) => record.createdAt));
+			const lastSeenAt = Math.max(...group.records.map((record) => record.createdAt));
+			const preferenceMetadata =
+				normalizedMemoryClass === 'stable_preference'
+					? extractPreferenceSlotMetadata(dream.canonicalText)
+					: null;
+			const temporalMetadata = deriveTemporalMetadata({
+				canonicalText: dream.canonicalText,
+				records: group.records,
 				memoryClass: normalizedMemoryClass,
-				sourceCount: group.records.length,
+				now,
+			});
+			const topicKey = deriveTopicKey(dream.canonicalText);
+			const metadata = {
+				...toRecordWithoutPreferenceMetadata(existing?.metadata ?? {}),
+				clusterKey: group.key,
+				conclusionIds: memberIds,
+				dreamReason: params.reason ?? 'manual',
+				supersededByClusterId: dream.supersededBy ?? null,
+				temporal: temporalMetadata,
+				activeConstraint:
+					(normalizedMemoryClass === 'short_term_constraint' ||
+						temporalMetadata?.kind === 'deadline') &&
+					temporalMetadata?.freshness !== 'expired' &&
+					temporalMetadata?.freshness !== 'historical',
+				topicKey,
+				...(preferenceMetadata ?? {}),
+			};
+			const decay = deriveStateFromDecay({
+				memoryClass: normalizedMemoryClass,
 				lastSeenAt,
-				state: decay.state,
+				pinned,
+				stateHint: dream.stateHint,
 				metadata,
 				now,
-			}),
-			pinned,
-			metadata,
-			firstSeenAt,
-			lastSeenAt,
-			lastDreamedAt: now,
-			state: decay.state,
-			decayAt: decay.decayAt,
-			archiveAt: decay.archiveAt,
-		});
+			});
+
+			plans.push({
+				clusterId,
+				records: group.records,
+				canonicalText: dream.canonicalText,
+				memoryClass: normalizedMemoryClass,
+				salienceScore: computeRepairedSalienceScore({
+					memoryClass: normalizedMemoryClass,
+					sourceCount: group.records.length,
+					lastSeenAt,
+					state: decay.state,
+					metadata,
+					now,
+				}),
+				pinned,
+				metadata,
+				firstSeenAt: Math.min(firstSeenAt, existing?.firstSeenAt ?? Number.MAX_SAFE_INTEGER),
+				lastSeenAt,
+				lastDreamedAt: now,
+				state: decay.state,
+				decayAt: decay.decayAt,
+				archiveAt: decay.archiveAt,
+			});
+		}
 	}
 
 	applyDeterministicPreferenceSupersession(plans);
@@ -2643,8 +2704,6 @@ export async function syncPersonaMemoryClusters(params: {
 		plans,
 		existingSnapshots,
 	});
-	await db.delete(personaMemoryClusterMembers).where(eq(personaMemoryClusterMembers.userId, params.userId));
-	await db.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, params.userId));
 
 	if (plans.length > 0) {
 		await db
@@ -2668,8 +2727,23 @@ export async function syncPersonaMemoryClusters(params: {
 					updatedAt: new Date(),
 				}))
 			)
-			.onConflictDoNothing({
+			.onConflictDoUpdate({
 				target: personaMemoryClusters.clusterId,
+				set: {
+					canonicalText: sql.raw(`excluded.${personaMemoryClusters.canonicalText.name}`),
+					memoryClass: sql.raw(`excluded.${personaMemoryClusters.memoryClass.name}`),
+					state: sql.raw(`excluded.${personaMemoryClusters.state.name}`),
+					salienceScore: sql.raw(`excluded.${personaMemoryClusters.salienceScore.name}`),
+					sourceCount: sql.raw(`excluded.${personaMemoryClusters.sourceCount.name}`),
+					firstSeenAt: sql.raw(`excluded.${personaMemoryClusters.firstSeenAt.name}`),
+					lastSeenAt: sql.raw(`excluded.${personaMemoryClusters.lastSeenAt.name}`),
+					lastDreamedAt: sql.raw(`excluded.${personaMemoryClusters.lastDreamedAt.name}`),
+					decayAt: sql.raw(`excluded.${personaMemoryClusters.decayAt.name}`),
+					archiveAt: sql.raw(`excluded.${personaMemoryClusters.archiveAt.name}`),
+					pinned: sql.raw(`excluded.${personaMemoryClusters.pinned.name}`),
+					metadataJson: sql.raw(`excluded.${personaMemoryClusters.metadataJson.name}`),
+					updatedAt: sql.raw(`excluded.${personaMemoryClusters.updatedAt.name}`),
+				}
 			});
 
 		await db
@@ -2689,11 +2763,18 @@ export async function syncPersonaMemoryClusters(params: {
 					}))
 				)
 			)
-			.onConflictDoNothing({
+			.onConflictDoUpdate({
 				target: [
 					personaMemoryClusterMembers.userId,
 					personaMemoryClusterMembers.conclusionId,
 				],
+				set: {
+					clusterId: sql.raw(`excluded.${personaMemoryClusterMembers.clusterId.name}`),
+					content: sql.raw(`excluded.${personaMemoryClusterMembers.content.name}`),
+					scope: sql.raw(`excluded.${personaMemoryClusterMembers.scope.name}`),
+					sessionId: sql.raw(`excluded.${personaMemoryClusterMembers.sessionId.name}`),
+					updatedAt: sql.raw(`excluded.${personaMemoryClusterMembers.updatedAt.name}`),
+				}
 			});
 	}
 

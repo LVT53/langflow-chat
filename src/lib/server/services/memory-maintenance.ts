@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
+	artifacts,
 	conversationTaskStates,
 	taskCheckpoints,
 	users,
@@ -8,6 +9,7 @@ import {
 import { getConfig } from '$lib/server/config-store';
 import {
 	areNearDuplicateArtifactTexts,
+	normalizeSimilarityText,
 	repairGeneratedOutputFamilyStatuses,
 	repairGeneratedOutputRetrievalClasses,
 } from './evidence-family';
@@ -36,15 +38,26 @@ function taskIsStale(updatedAt: Date, now = Date.now()): boolean {
 	return now - updatedAt.getTime() >= TASK_ARCHIVE_AFTER_DAYS * 86_400_000;
 }
 
+function getFastHash(text: string): string {
+	const words = normalizeSimilarityText(text).split(/\s+/).filter(Boolean);
+	return words.slice(0, 5).join(' ');
+}
+
 async function dedupePersonaMemory(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	const records = await listPersonaMemories(userId).catch(() => []);
 	if (records.length <= 1) return records;
 
 	const kept: HonchoPersonaMemoryRecord[] = [];
+	const groups = new Map<string, HonchoPersonaMemoryRecord[]>();
+
 	for (const record of records) {
-		const duplicate = kept.some((existing) =>
+		const hash = getFastHash(record.content);
+		const group = groups.get(hash) ?? [];
+
+		const duplicate = group.some((existing) =>
 			areNearDuplicateArtifactTexts(record.content, existing.content)
 		);
+
 		if (duplicate) {
 			await forgetPersonaMemory(userId, record.id).catch((error) =>
 				console.error('[MEMORY_MAINTENANCE] Failed to remove duplicate persona memory:', {
@@ -55,6 +68,9 @@ async function dedupePersonaMemory(userId: string): Promise<HonchoPersonaMemoryR
 			);
 			continue;
 		}
+
+		group.push(record);
+		groups.set(hash, group);
 		kept.push(record);
 	}
 
@@ -178,8 +194,17 @@ async function performUserMemoryMaintenance(
 			reason,
 		});
 		await refreshPersonaClusterStates(userId);
-		await repairGeneratedOutputRetrievalClasses(userId);
-		await repairGeneratedOutputFamilyStatuses(userId);
+
+		// Single query for all generated_output artifacts
+		const generatedOutputArtifacts = await db
+			.select()
+			.from(artifacts)
+			.where(and(eq(artifacts.userId, userId), eq(artifacts.type, 'generated_output')))
+			.orderBy(desc(artifacts.updatedAt));
+
+		await repairGeneratedOutputRetrievalClasses(userId, generatedOutputArtifacts);
+		await repairGeneratedOutputFamilyStatuses(userId, generatedOutputArtifacts);
+
 		const semanticEmbeddingBackfill = await backfillSemanticEmbeddingsForUser(userId);
 		await pruneTaskCheckpoints(userId);
 		await archiveStaleTaskMemory(userId);

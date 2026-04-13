@@ -56,6 +56,12 @@ vi.mock('$lib/server/db/schema', () => ({
 	conversationTaskStates: {},
 	taskCheckpoints: {},
 	users: { id: 'id' },
+	artifacts: {
+		id: 'id',
+		userId: 'user_id',
+		type: 'type',
+		updatedAt: 'updated_at',
+	},
 }));
 
 vi.mock('$lib/server/config-store', () => ({
@@ -145,9 +151,9 @@ describe('memory-maintenance scheduling', () => {
 		await runUserMemoryMaintenance('user-1', 'manual');
 
 		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledTimes(1);
-		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledWith('user-1');
+		expect(mockRepairGeneratedOutputRetrievalClasses).toHaveBeenCalledWith('user-1', expect.any(Array));
 		expect(mockRepairGeneratedOutputFamilyStatuses).toHaveBeenCalledTimes(1);
-		expect(mockRepairGeneratedOutputFamilyStatuses).toHaveBeenCalledWith('user-1');
+		expect(mockRepairGeneratedOutputFamilyStatuses).toHaveBeenCalledWith('user-1', expect.any(Array));
 		expect(mockBackfillSemanticEmbeddingsForUser).toHaveBeenCalledTimes(1);
 		expect(mockBackfillSemanticEmbeddingsForUser).toHaveBeenCalledWith('user-1');
 	});

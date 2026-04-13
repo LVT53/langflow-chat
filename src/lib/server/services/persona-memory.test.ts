@@ -52,6 +52,7 @@ vi.mock('$lib/server/db', () => ({
 					insertedMemberRows.splice(0, insertedMemberRows.length, ...(Array.isArray(values) ? values : [values]));
 				}
 				return {
+					onConflictDoUpdate: vi.fn(async () => undefined),
 					onConflictDoNothing: vi.fn(async () => undefined),
 					returning: vi.fn(async () => []),
 				};
@@ -88,6 +89,11 @@ vi.mock('$lib/server/db/schema', () => ({
 		clusterId: Symbol('cluster-id'),
 		userId: Symbol('user-id'),
 		conclusionId: Symbol('conclusion-id'),
+		content: Symbol('content'),
+		scope: Symbol('scope'),
+		sessionId: Symbol('session-id'),
+		updatedAt: Symbol('updated-at'),
+		createdAt: Symbol('created-at'),
 		sessionId: Symbol('session-id'),
 		content: Symbol('content'),
 		createdAt: Symbol('created-at'),
@@ -104,6 +110,7 @@ vi.mock('$lib/server/db/schema', () => ({
 		pinned: Symbol('pinned'),
 		firstSeenAt: Symbol('first-seen-at'),
 		lastSeenAt: Symbol('last-seen-at'),
+		lastDreamedAt: Symbol('last-dreamed-at'),
 		createdAt: Symbol('created-at'),
 		updatedAt: Symbol('updated-at'),
 		metadataJson: Symbol('metadata-json'),
