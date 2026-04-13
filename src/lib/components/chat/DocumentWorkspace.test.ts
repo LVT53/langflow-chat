@@ -53,7 +53,7 @@ describe('DocumentWorkspace', () => {
 			expect(nextArrow).not.toBeInTheDocument();
 		});
 
-		it.skip('renders page input that accepts numeric input and jumps to valid page', async () => {
+		it('renders page input that accepts numeric input and jumps to valid page', async () => {
 			const onPageChange = vi.fn();
 			
 			render(DocumentWorkspace, {
@@ -88,7 +88,9 @@ describe('DocumentWorkspace', () => {
 			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
 			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
 			
-			await fireEvent.change(pageInput, { target: { value: '5' } });
+			// Directly set the value and dispatch input event for Svelte 5 bind:value
+			pageInput.value = '5';
+			await fireEvent.input(pageInput);
 			await tick();
 			await fireEvent.keyDown(pageInput, { key: 'Enter' });
 			await tick();
@@ -96,7 +98,7 @@ describe('DocumentWorkspace', () => {
 			expect(onPageChange).toHaveBeenCalledWith(5);
 		});
 
-		it.skip('shows error state for invalid page number input', async () => {
+		it('shows error state for invalid page number input', async () => {
 			const onPageChange = vi.fn();
 			
 			render(DocumentWorkspace, {
@@ -131,7 +133,9 @@ describe('DocumentWorkspace', () => {
 			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
 			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
 			
-			await fireEvent.change(pageInput, { target: { value: '15' } });
+			// Directly set the value and dispatch input event for Svelte 5 bind:value
+			pageInput.value = '15';
+			await fireEvent.input(pageInput);
 			await tick();
 			await fireEvent.keyDown(pageInput, { key: 'Enter' });
 			await tick();
@@ -143,7 +147,7 @@ describe('DocumentWorkspace', () => {
 			expect(onPageChange).not.toHaveBeenCalled();
 		});
 
-		it.skip('shows error for non-numeric page input', async () => {
+		it('shows error for non-numeric page input', async () => {
 			const onPageChange = vi.fn();
 			
 			render(DocumentWorkspace, {
@@ -178,7 +182,9 @@ describe('DocumentWorkspace', () => {
 			const desktopWorkspace = screen.getByRole('complementary', { name: /document workspace/i });
 			const pageInput = within(desktopWorkspace).getByTestId('page-input') as HTMLInputElement;
 			
-			await fireEvent.change(pageInput, { target: { value: 'abc' } });
+			// Directly set the value and dispatch input event for Svelte 5 bind:value
+			pageInput.value = 'abc';
+			await fireEvent.input(pageInput);
 			await tick();
 			await fireEvent.keyDown(pageInput, { key: 'Enter' });
 			await tick();

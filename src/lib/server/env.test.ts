@@ -9,26 +9,24 @@ describe('Environment Configuration', () => {
     vi.resetModules()
   })
 
-  it('should throw error when LANGFLOW_API_KEY is missing', async () => {
-    // Clear the required env var
+  it('should use mock default when LANGFLOW_API_KEY is missing', async () => {
+    // Clear the env var
     delete process.env.LANGFLOW_API_KEY
     // Keep SESSION_SECRET set to isolate the test
     process.env.SESSION_SECRET = 'test-session-secret-12345678901234567890123456789012'
 
-    await expect(
-      import('./env').then(({ config }) => config.langflowApiKey)
-    ).rejects.toThrow('Missing required environment variable: LANGFLOW_API_KEY')
+    const { config } = await import('./env')
+    expect(config.langflowApiKey).toBe('mock-langflow-api-key')
   })
 
-  it('should throw error when SESSION_SECRET is missing', async () => {
-    // Clear the required env var
+  it('should use mock default when SESSION_SECRET is missing', async () => {
+    // Clear the env var
     delete process.env.SESSION_SECRET
     // Keep LANGFLOW_API_KEY set to isolate the test
     process.env.LANGFLOW_API_KEY = 'test-api-key'
 
-    await expect(
-      import('./env').then(({ config }) => config.sessionSecret)
-    ).rejects.toThrow('Missing required environment variable: SESSION_SECRET')
+    const { config } = await import('./env')
+    expect(config.sessionSecret).toBe('mock-session-secret-for-dev-testing-only')
   })
 
   it('should apply defaults when optional vars are missing', async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+import { untrack } from 'svelte';
 	import {
 		determinePreviewFileType,
 		getPreviewLanguage,
@@ -92,9 +93,12 @@
 	});
 
 	$effect(() => {
-		if (String(currentPage) !== pageInputValue && !pageInputError) {
-			pageInputValue = String(currentPage);
-		}
+		const curr = currentPage;
+		untrack(() => {
+			if (String(curr) !== pageInputValue && !pageInputError) {
+				pageInputValue = String(curr);
+			}
+		});
 	});
 
 	$effect(() => {
