@@ -47,6 +47,7 @@
 	let pdfDoc = $state<any>(null);
 	let lastObservedPage = $state(1);
 	let zoom = $state(1.0);
+	let baseScale = $state(1.0);
 	let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
 	let scrollContainerRef = $state<HTMLDivElement | null>(null);
 	let isRendering = $state(false);
@@ -302,7 +303,8 @@
 				const unscaledViewport = page.getViewport({ scale: 1.0 });
 				const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
 				if (containerWidth > 0 && unscaledViewport.width > 0) {
-					zoom = containerWidth / unscaledViewport.width;
+					baseScale = containerWidth / unscaledViewport.width;
+					zoom = 1.0;
 				}
 			}
 
@@ -319,7 +321,7 @@
 		}
 	}
 
-	async function renderAllPages(scale = zoom, version?: number) {
+	async function renderAllPages(zoomLevel = zoom, version?: number) {
 		if (!pdfDoc) return;
 
 		let currentVersion: number;
@@ -342,7 +344,7 @@
 
 				const canvas = canvasRefs[i];
 				if (canvas) {
-					await renderPage(i + 1, scale, canvas, currentVersion);
+					await renderPage(i + 1, zoomLevel, canvas, currentVersion);
 				}
 			}
 
@@ -355,7 +357,7 @@
 
 	async function renderPage(
 		pageNum: number,
-		scale: number,
+		zoomLevel: number,
 		canvas: HTMLCanvasElement,
 		version: number
 	) {
@@ -372,7 +374,9 @@
 			// Bail if stale after async getPage
 			if (pdfRenderVersion !== version) return;
 
-			const viewport = page.getViewport({ scale });
+			// Apply baseScale * zoom to fit container at 100% zoom
+			const actualScale = baseScale * zoomLevel;
+			const viewport = page.getViewport({ scale: actualScale });
 			const context = canvas.getContext('2d');
 
 			if (!context) return;
