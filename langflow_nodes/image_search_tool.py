@@ -57,7 +57,7 @@ class ImageSearchToolComponent(Component):
     description = "Search for images using Brave Search API."
     documentation = "https://docs.langflow.org/tools"
     icon = "image"
-    name = "ImageSearchTool"
+    name = "image_search"
     beta = False
 
     inputs = [

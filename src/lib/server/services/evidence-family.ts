@@ -628,7 +628,13 @@ export async function ensureGeneratedOutputRetrievalBackfill(userId: string): Pr
 		return;
 	}
 
-	const promise = repairGeneratedOutputRetrievalClasses(userId)
+	const generatedOutputArtifacts = await db
+		.select()
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), eq(artifacts.type, 'generated_output')))
+		.orderBy(desc(artifacts.updatedAt));
+
+	const promise = repairGeneratedOutputRetrievalClasses(userId, generatedOutputArtifacts)
 		.then(() => {
 			generatedOutputBackfillDone.add(userId);
 		})

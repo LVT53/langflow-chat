@@ -58,7 +58,7 @@ class ExportDocumentToolComponent(Component):
     description = "Export markdown content to PDF format. If markdown_content is empty, the server fetches the active conversation context automatically."
     documentation = "https://docs.langflow.org/tools"
     icon = "file-text"
-    name = "ExportDocumentTool"
+    name = "export_document"
     beta = False
 
     inputs = [
