@@ -1,0 +1,1 @@
+curl -v -H "Authorization: $(cat token.txt)" -H "Content-Type: application/json" -d '{"conversationId": "123", "filename": "test", "markdown": "# test", "format": "pdf"}' http://localhost:5175/api/chat/files/export

@@ -20,6 +20,7 @@ const PUBLIC_PATHS = [
 	'/api/auth/login',
 	'/api/webhook/sentence',
 	'/api/chat/files/generate',
+	'/api/chat/files/export',
 	'/api/ocr/paddle',
 	'/api/health',
 ];
