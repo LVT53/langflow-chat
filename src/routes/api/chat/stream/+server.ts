@@ -318,7 +318,7 @@ export const POST: RequestHandler = async (event) => {
           status: record.status,
         }));
         const hadGenerateFileToolCall = toolCallSummary.some(
-          (record) => record.name === "generate_file",
+          (record) => record.name === "generate_file" || record.name === "export_document",
         );
 
         console.info("[CHAT_STREAM] Tool-call summary", {
