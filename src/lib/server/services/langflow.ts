@@ -33,7 +33,8 @@ const FILE_GENERATION_GUARD = [
 	'',
 	'For PDFs and static documents (reports, brochures, fact sheets):',
 	'- Use the `export_document` tool.',
-	'- Write rich Markdown content. Use YAML frontmatter for cover page metadata (title, subtitle, author, date).',
+	'- For lightweight PDF export, call `export_document` with an empty `markdown_content` field. Do NOT rewrite the entire document into the tool payload. The system will automatically use the active conversation context.',
+	'- For full document generation, write rich Markdown content. Use YAML frontmatter for cover page metadata (title, subtitle, author, date).',
 	'- Use Obsidian-style blockquotes for callouts: `> [!info]`, `> [!warning]`, `> [!tip]`, `> [!note]`.',
 	'- Embed real-world images using `image_search` to find URLs, then include them as `![alt text](url)` in the Markdown.',
 	'- The `export_document` tool renders Markdown to PDF via Playwright.',
@@ -52,6 +53,14 @@ const FILE_GENERATION_GUARD = [
 	'- If file generation fails, inspect the actual error, make one clear fix, and retry at most once without switching tools.',
 ].join('\n');
 
+const IMAGE_SEARCH_GUARD = [
+	'Image search workflow:',
+	'- When the user asks for images, call the `image_search` tool.',
+	'- The tool returns a JSON list of image URLs.',
+	'- You MUST embed these URLs into your final text response using standard markdown syntax: `![alt text](url)` exactly where you want them to appear.',
+	'- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.',
+].join('\n');
+
 function containsHttpUrl(value: string): boolean {
 	return /https?:\/\/[^\s)>\]]+/i.test(value);
 }
@@ -62,7 +71,7 @@ function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 }): string {
 	const basePrompt = params.basePrompt.trim();
-	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD, FILE_GENERATION_GUARD];
+	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD, FILE_GENERATION_GUARD, IMAGE_SEARCH_GUARD];
 
 	if (containsHttpUrl(params.inputValue)) {
 		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);

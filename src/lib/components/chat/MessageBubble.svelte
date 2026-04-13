@@ -472,6 +472,12 @@
 	.prose-container :global(img) {
 		max-width: 100%;
 		height: auto;
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-sm);
+		margin: 1rem 0;
+		max-height: 400px;
+		object-fit: contain;
+		background-color: var(--surface-elevated);
 	}
 	.prose-container :global(p),
 	.prose-container :global(li),
