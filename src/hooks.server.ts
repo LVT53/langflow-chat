@@ -21,6 +21,7 @@ const PUBLIC_PATHS = [
 	'/api/webhook/sentence',
 	'/api/chat/files/generate',
 	'/api/chat/files/export',
+	'/api/tools/image-search',
 	'/api/ocr/paddle',
 	'/api/health',
 ];
