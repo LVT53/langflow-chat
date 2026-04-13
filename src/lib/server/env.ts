@@ -130,11 +130,11 @@ function readConfig(): Config {
     ),
     teiTimeoutMs: Math.max(
       100,
-      parseInt(process.env.TEI_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '120000', 10) ||
-        120000
+      parseInt(process.env.TEI_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '300000', 10) ||
+        300000
     ),
     webhookPort,
-    requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10),
+    requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '300000', 10),
     maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
     maxModelContext: Math.max(
       1000,
@@ -223,8 +223,8 @@ function readConfig(): Config {
     ),
     documentParserTimeoutMs: Math.max(
       1000,
-      parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '120000', 10) ||
-        120000
+      parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '300000', 10) ||
+        300000
     ),
     braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   };
