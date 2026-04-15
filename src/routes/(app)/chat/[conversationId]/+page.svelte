@@ -159,6 +159,10 @@
 	}
 
 	function addPendingGeneratedFile(input: Record<string, unknown>, assistantMessageId: string) {
+		// Prevent duplicate pending files if the tool is called multiple times before completion
+		if (pendingGeneratedFiles.some((f) => f.assistantMessageId === assistantMessageId)) {
+			return;
+		}
 		const filename = inferGeneratedFilename(input);
 		pendingGeneratedFiles = [
 			...pendingGeneratedFiles,
