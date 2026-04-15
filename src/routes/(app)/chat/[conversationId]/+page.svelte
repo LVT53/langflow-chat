@@ -84,6 +84,14 @@
 	const initialBootstrapMode = getData().bootstrap ?? false;
 	const initialGeneratedFiles = getData().generatedFiles ?? [];
 
+	// Track conversation title locally to keep browser tab title reactive
+	let conversationTitle = $state(data.conversation.title);
+
+	// Sync local title when page data changes (e.g. navigation)
+	$effect(() => {
+		conversationTitle = data.conversation.title;
+	});
+
 	const messages = writable<ChatMessage[]>(initialMessages);
 	const draftPersistence = createDraftPersistence();
 	let sendError = $state<string | null>(null);
@@ -462,8 +470,8 @@
 		sendError = null;
 	}
 
-	function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: string) {
-		if (titleGenerationTriggered || data.conversation.title !== 'New Conversation') {
+function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: string) {
+		if (titleGenerationTriggered || conversationTitle !== 'New Conversation') {
 			return;
 		}
 
@@ -476,10 +484,11 @@
 			.then((title) => {
 				if (title) {
 					updateConversationTitleLocal(conversationIdForTitle, title);
+					conversationTitle = title;
 				}
 			})
-			.catch(() => {
-				// Ignore errors, title remains "New conversation"
+.catch(() => {
+				// Ignore errors, title remains 'New conversation'
 			});
 	}
 
@@ -595,7 +604,7 @@
 					messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 				},
 				onToolCall(name, input, status, details) {
-					if (name === 'generate_file' && status === 'running') {
+					if ((name === 'generate_file' || name === 'export_document') && status === 'running') {
 						addPendingGeneratedFile(input, placeholderId);
 					}
 					messages.update((list) =>
@@ -705,7 +714,7 @@
 						messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 					},
 				onToolCall(name, input, status, details) {
-					if (name === 'generate_file' && status === 'running') {
+					if ((name === 'generate_file' || name === 'export_document') && status === 'running') {
 						addPendingGeneratedFile(input, placeholderId);
 					}
 						messages.update((list) =>
@@ -948,7 +957,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.conversation.title}</title>
+	<title>{conversationTitle}</title>
 </svelte:head>
 
 <div

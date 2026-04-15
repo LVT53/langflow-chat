@@ -509,9 +509,9 @@
 
 	.generating-progress {
 		position: absolute;
-		left: 0.85rem;
-		right: 0.85rem;
-		bottom: 0.45rem;
+		left: 1.25rem;
+		right: 1.25rem;
+		bottom: 0.75rem;
 		height: 0.18rem;
 		border-radius: 999px;
 		overflow: hidden;

@@ -119,4 +119,10 @@
 		border: 0;
 		box-shadow: none;
 	}
+
+	@media (max-width: 767px) {
+		.composer-layer {
+			padding-bottom: calc(1.5rem + env(safe-area-inset-bottom) + 16px);
+		}
+	}
 </style>
