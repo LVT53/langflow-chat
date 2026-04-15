@@ -286,6 +286,34 @@
       line-height: 1.6;
     }
 
+    /* Images - responsive, page-break safe */
+    img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 24px auto;
+      page-break-inside: avoid;
+      border-radius: 4px;
+    }
+
+    figure {
+      margin: 24px 0;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+
+    figure img {
+      margin: 0 auto 12px auto;
+    }
+
+    figcaption {
+      font-family: 'Nimbus Sans L', sans-serif;
+      font-size: 0.8125rem;
+      color: #6B6B6B;
+      font-style: italic;
+      margin-top: 8px;
+    }
+
     /* Blockquotes - minimal left border */
     blockquote {
       border-left: 2px solid #D4B896;
