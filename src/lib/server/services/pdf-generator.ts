@@ -33,7 +33,7 @@ const HEADER_TEMPLATE = `
  */
 const FOOTER_TEMPLATE = `
 <div style="width:100%;display:flex;align-items:center;justify-content:center;padding:10px 0;font-family:'Nimbus Sans L',system-ui,sans-serif;">
-  <span style="font-size:10px;color:#6B6B6B;letter-spacing:0.02em;">
+  <span style="font-size:12px;color:#6B6B6B;letter-spacing:0.02em;">
     <span class="pageNumber"></span> / <span class="totalPages"></span>
   </span>
 </div>

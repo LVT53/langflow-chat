@@ -36,9 +36,21 @@
     }
     @font-face {
       font-family: 'Nimbus Sans L';
+      src: url('/fonts/NimbusSanL-RegularItalic.woff2') format('woff2');
+      font-weight: 400;
+      font-style: italic;
+    }
+    @font-face {
+      font-family: 'Nimbus Sans L';
       src: url('/fonts/NimbusSanL-Bold.woff2') format('woff2');
       font-weight: 700;
       font-style: normal;
+    }
+    @font-face {
+      font-family: 'Nimbus Sans L';
+      src: url('/fonts/NimbusSanL-BoldItalic.woff2') format('woff2');
+      font-weight: 700;
+      font-style: italic;
     }
     @font-face {
       font-family: 'Libre Baskerville';
@@ -78,7 +90,7 @@
       print-color-adjust: exact;
     }
 
-    /* Cover page - minimal, clean design matching UI aesthetic */
+    /* Cover page - enhanced design with brand accent for longer reports */
     .cover-page {
       page-break-after: always;
       height: 100vh;
@@ -88,7 +100,14 @@
       align-items: center;
       text-align: center;
       padding: 64px 48px;
-      background-color: #FAFAF8;
+      background: linear-gradient(180deg, #FAFAF8 0%, rgba(193, 95, 60, 0.05) 100%);
+      border-top: 8px solid #C15F3C;
+    }
+
+    .cover-logo {
+      width: 64px;
+      height: 72px;
+      margin-bottom: 32px;
     }
 
     .cover-title {
@@ -154,13 +173,16 @@
 
     h2 {
       font-size: 1.375rem;
-      margin-top: 40px;
+      color: #C15F3C;
+      margin-top: 56px;
       margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(193, 95, 60, 0.2);
     }
 
     h3 {
       font-size: 1.125rem;
-      margin-top: 32px;
+      margin-top: 40px;
       margin-bottom: 14px;
     }
 
@@ -191,6 +213,14 @@
     ul, ol {
       margin-bottom: 16px;
       padding-left: 28px;
+    }
+
+    ul {
+      list-style-type: disc;
+    }
+
+    ul li::marker {
+      color: #C15F3C;
     }
 
     li {
@@ -232,14 +262,17 @@
       line-height: 1.6;
     }
 
-    /* Images - responsive, page-break safe */
+    /* Images - styled with border-radius, shadow, and size constraints */
     img {
       max-width: 100%;
+      max-height: 400px;
       height: auto;
       display: block;
       margin: 24px auto;
       page-break-inside: avoid;
-      border-radius: 4px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      object-fit: contain;
     }
 
     figure {
@@ -303,8 +336,8 @@
 
     hr {
       border: none;
-      border-top: 1px solid rgba(0,0,0,0.08);
-      margin: 40px 0;
+      border-top: 2px solid rgba(193, 95, 60, 0.3);
+      margin: 56px 0;
     }
 
     /* Callouts - minimal, subtle backgrounds with accent colors */
@@ -411,6 +444,16 @@
 
 {#if metadata.cover}
   <div class="cover-page">
+    <svg class="cover-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 112" aria-hidden="true">
+      <path fill="none" stroke="#C15F3C" stroke-width="4.2" stroke-linecap="round" d="M50 19 C46 40 36 64 24 88"/>
+      <path fill="none" stroke="#C15F3C" stroke-width="4.2" stroke-linecap="round" d="M50 19 C54 40 64 64 76 88"/>
+      <line x1="27" y1="57" x2="73" y2="57" stroke="#C15F3C" stroke-width="2.2" stroke-linecap="round"/>
+      <line x1="27" y1="52" x2="27" y2="62" stroke="#C15F3C" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+      <line x1="73" y1="52" x2="73" y2="62" stroke="#C15F3C" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+      <line x1="14" y1="90" x2="36" y2="90" stroke="#C15F3C" stroke-width="3.2" stroke-linecap="round"/>
+      <line x1="64" y1="90" x2="86" y2="90" stroke="#C15F3C" stroke-width="3.2" stroke-linecap="round"/>
+      <circle cx="50" cy="19" r="3.5" fill="#C15F3C"/>
+    </svg>
     <h1 class="cover-title">{metadata.title}</h1>
     {#if metadata.subtitle}
       <p class="cover-subtitle">{metadata.subtitle}</p>
