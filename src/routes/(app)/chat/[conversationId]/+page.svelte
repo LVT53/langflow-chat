@@ -84,13 +84,12 @@
 	const initialBootstrapMode = getData().bootstrap ?? false;
 	const initialGeneratedFiles = getData().generatedFiles ?? [];
 
-	// Track conversation title locally to keep browser tab title reactive
-	let conversationTitle = $state(data.conversation.title);
+	// Track conversation title reactively - use $derived to keep in sync with page data
+	let conversationTitle = $derived(data.conversation.title);
 
-	// Sync local title when page data changes (e.g. navigation)
-	$effect(() => {
-		conversationTitle = data.conversation.title;
-	});
+	// For manual updates (title generation), track separately
+	let generatedTitleOverride = $state<string | null>(null);
+	let effectiveConversationTitle = $derived(generatedTitleOverride ?? conversationTitle);
 
 	const messages = writable<ChatMessage[]>(initialMessages);
 	const draftPersistence = createDraftPersistence();
@@ -121,9 +120,13 @@
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
+	// Set to true when we're waiting for the initial pending message to be sent (landing page transition)
+	let initialStreamPending = $state(false);
 	const evidencePollControllers = new Map<string, AbortController>();
 
 	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
+	// Show loading state when transitioning from landing page with a pending message
+	let showInitialLoading = $derived(initialStreamPending && $messages.length === 0);
 	let generatedFileCards = $derived([
 		...generatedFiles.map((file) => ({
 			...file,
@@ -275,6 +278,8 @@
 		if (!pendingDraft.message.trim()) {
 			return;
 		}
+		// Show loading state until streaming actually starts
+		initialStreamPending = true;
 		handleSend({ ...pendingDraft, pendingAttachments: [] });
 	}
 
@@ -475,7 +480,7 @@
 	}
 
 function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: string) {
-		if (titleGenerationTriggered || conversationTitle !== 'New Conversation') {
+		if (titleGenerationTriggered || effectiveConversationTitle !== 'New Conversation') {
 			return;
 		}
 
@@ -488,7 +493,7 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 			.then((title) => {
 				if (title) {
 					updateConversationTitleLocal(conversationIdForTitle, title);
-					conversationTitle = title;
+					generatedTitleOverride = title;
 				}
 			})
 .catch(() => {
@@ -564,6 +569,7 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 
 		sendError = null;
 		isSending = true;
+		initialStreamPending = false;
 		lastUserMessage = text;
 		canRetry = true;
 		hasPersistedMessages = true;
@@ -961,7 +967,7 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 </script>
 
 <svelte:head>
-	<title>{conversationTitle}</title>
+	<title>{effectiveConversationTitle}</title>
 </svelte:head>
 
 <div
@@ -977,17 +983,26 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
 		<div class="chat-main relative flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div class="chat-messages flex flex-1 flex-col overflow-hidden">
-				<ChatMessagePane
-					messages={$messages}
-					conversationId={data.conversation.id}
-					{isThinkingActive}
-					{contextDebug}
-					generatedFiles={generatedFileCards}
-					onOpenDocument={openWorkspaceDocument}
-					onRegenerate={handleRegenerate}
-					onEdit={handleEdit}
-					onSteer={handleSteering}
-				/>
+				{#if showInitialLoading}
+					<div class="flex flex-1 items-center justify-center">
+						<div class="flex flex-col items-center gap-3">
+							<div class="spinner-large"></div>
+							<span class="text-sm text-text-muted">Starting conversation...</span>
+						</div>
+					</div>
+				{:else}
+					<ChatMessagePane
+						messages={$messages}
+						conversationId={data.conversation.id}
+						{isThinkingActive}
+						{contextDebug}
+						generatedFiles={generatedFileCards}
+						onOpenDocument={openWorkspaceDocument}
+						onRegenerate={handleRegenerate}
+						onEdit={handleEdit}
+						onSteer={handleSteering}
+					/>
+				{/if}
 			</div>
 
 			<ChatComposerPanel
@@ -1047,5 +1062,18 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 
 	.chat-messages {
 		min-width: 0;
+	}
+
+	.spinner-large {
+		width: 32px;
+		height: 32px;
+		border: 3px solid color-mix(in srgb, var(--border-default) 50%, transparent 50%);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 </style>
