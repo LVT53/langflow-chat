@@ -153,6 +153,7 @@ export function createServerChunkRuntime({
     status: "running" | "done",
     details?: StreamToolCallDetails,
   ) => {
+    flushInlineThinkingBuffer();
     flushPendingThinking();
     enqueueChunk(
       `event: tool_call\ndata: ${JSON.stringify({
