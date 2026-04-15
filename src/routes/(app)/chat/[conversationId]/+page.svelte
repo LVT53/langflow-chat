@@ -125,8 +125,8 @@
 	const evidencePollControllers = new Map<string, AbortController>();
 
 	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
-	// Show loading state when transitioning from landing page with a pending message
-	let showInitialLoading = $derived(initialStreamPending && $messages.length === 0);
+	// Show loading state when waiting for the first response (either from pending message or new send)
+	let showInitialLoading = $derived((isSending || initialStreamPending) && $messages.length === 0);
 	let generatedFileCards = $derived([
 		...generatedFiles.map((file) => ({
 			...file,
