@@ -84,8 +84,7 @@ export async function generatePdfFromHtml(html: string): Promise<Buffer> {
 		const context = await browser.newContext();
 		const page = await context.newPage();
 
-		// Set content and wait for network idle so remote images load
-		await page.setContent(html, { waitUntil: 'networkidle' });
+		await page.setContent(html, { waitUntil: 'load' });
 
 		// Generate PDF with A4 format, proper margins, and header/footer templates
 		const pdfBuffer = await page.pdf({
@@ -124,7 +123,7 @@ export async function generatePdfFromHtml(html: string): Promise<Buffer> {
 					const context = await browser.newContext();
 					const page = await context.newPage();
 
-					await page.setContent(html, { waitUntil: 'networkidle' });
+					await page.setContent(html, { waitUntil: 'load' });
 
 					const pdfBuffer = await page.pdf({
 						format: 'A4',

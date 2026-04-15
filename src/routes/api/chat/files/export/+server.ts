@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 import type { RequestHandler } from './$types';
 import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
@@ -11,6 +13,38 @@ import { parseMarkdown } from '$lib/server/utils/markdown-parser';
 import { generatePdfFromHtml } from '$lib/server/services/pdf-generator';
 import TerracottaCrownLayout from '$lib/components/pdf/TerracottaCrownLayout.svelte';
 import { render } from 'svelte/server';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '../../../../../..');
+
+function loadFontsAsBase64() {
+	const fontsDir = path.join(projectRoot, 'static', 'fonts');
+	
+	const fontFiles = {
+		nimbusRegular: 'NimbusSanL-Regular.woff2',
+		nimbusRegularItalic: 'NimbusSanL-RegularItalic.woff2',
+		nimbusBold: 'NimbusSanL-Bold.woff2',
+		nimbusBoldItalic: 'NimbusSanL-BoldItalic.woff2',
+		libreRegular: 'LibreBaskerville-Regular.woff2',
+		libreItalic: 'LibreBaskerville-Italic.woff2',
+		libreBold: 'LibreBaskerville-Bold.woff2'
+	};
+	
+	const fontData: Record<string, string> = {};
+	
+	for (const [key, filename] of Object.entries(fontFiles)) {
+		try {
+			const filePath = path.join(fontsDir, filename);
+			const buffer = readFileSync(filePath);
+			const base64 = buffer.toString('base64');
+			fontData[key] = `data:font/woff2;base64,${base64}`;
+		} catch {
+			fontData[key] = `/fonts/${filename}`;
+		}
+	}
+	
+	return fontData;
+}
 
 interface ExportRequest {
 	conversationId: string;
@@ -185,10 +219,13 @@ export const POST: RequestHandler = async (event) => {
 		
 		const metadata = { title, subtitle, author, date, cover };
 		
+		const fontData = loadFontsAsBase64();
+		
 		const { html } = render(TerracottaCrownLayout, {
 			props: {
 				htmlContent,
-				metadata
+				metadata,
+				fontData
 			}
 		});
 

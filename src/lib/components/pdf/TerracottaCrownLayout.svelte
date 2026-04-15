@@ -1,4 +1,14 @@
 <script lang="ts">
+  interface FontData {
+    nimbusRegular: string;
+    nimbusRegularItalic: string;
+    nimbusBold: string;
+    nimbusBoldItalic: string;
+    libreRegular: string;
+    libreItalic: string;
+    libreBold: string;
+  }
+
   interface Metadata {
     title: string;
     subtitle?: string;
@@ -10,9 +20,10 @@
   interface Props {
     htmlContent: string;
     metadata: Metadata;
+    fontData?: FontData;
   }
 
-  let { htmlContent, metadata }: Props = $props();
+  let { htmlContent, metadata, fontData }: Props = $props();
 </script>
 
 <svelte:options runes={true} />
@@ -30,43 +41,43 @@
 
     @font-face {
       font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-Regular.woff2') format('woff2');
+      src: url('{fontData?.nimbusRegular || '/fonts/NimbusSanL-Regular.woff2'}') format('woff2');
       font-weight: 400;
       font-style: normal;
     }
     @font-face {
       font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-RegularItalic.woff2') format('woff2');
+      src: url('{fontData?.nimbusRegularItalic || '/fonts/NimbusSanL-RegularItalic.woff2'}') format('woff2');
       font-weight: 400;
       font-style: italic;
     }
     @font-face {
       font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-Bold.woff2') format('woff2');
+      src: url('{fontData?.nimbusBold || '/fonts/NimbusSanL-Bold.woff2'}') format('woff2');
       font-weight: 700;
       font-style: normal;
     }
     @font-face {
       font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-BoldItalic.woff2') format('woff2');
+      src: url('{fontData?.nimbusBoldItalic || '/fonts/NimbusSanL-BoldItalic.woff2'}') format('woff2');
       font-weight: 700;
       font-style: italic;
     }
     @font-face {
       font-family: 'Libre Baskerville';
-      src: url('/fonts/LibreBaskerville-Regular.woff2') format('woff2');
+      src: url('{fontData?.libreRegular || '/fonts/LibreBaskerville-Regular.woff2'}') format('woff2');
       font-weight: 400;
       font-style: normal;
     }
     @font-face {
       font-family: 'Libre Baskerville';
-      src: url('/fonts/LibreBaskerville-Italic.woff2') format('woff2');
+      src: url('{fontData?.libreItalic || '/fonts/LibreBaskerville-Italic.woff2'}') format('woff2');
       font-weight: 400;
       font-style: italic;
     }
     @font-face {
       font-family: 'Libre Baskerville';
-      src: url('/fonts/LibreBaskerville-Bold.woff2') format('woff2');
+      src: url('{fontData?.libreBold || '/fonts/LibreBaskerville-Bold.woff2'}') format('woff2');
       font-weight: 700;
       font-style: normal;
     }
