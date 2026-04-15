@@ -27,7 +27,7 @@
       margin: 0;
       padding: 0;
     }
-    
+
     @font-face {
       font-family: 'Nimbus Sans L';
       src: url('/fonts/NimbusSanL-Regular.woff2') format('woff2');
@@ -70,28 +70,36 @@
       font-weight: 700;
       font-style: normal;
     }
-    
+
+    /* CSS Paged Media - Page setup with header and footer */
     @page {
       size: A4;
-      margin: 60px 50px 50px 50px;
+      margin: 70px 50px 60px 50px;
       @top-center {
-        content: '';
-        border-top: 4pt solid #C15F3C;
-        width: 100%;
+        content: element(header-brand);
+      }
+      @bottom-center {
+        content: counter(page);
+        font-family: 'Nimbus Sans L', sans-serif;
+        font-size: 10px;
+        color: #6B6B6B;
       }
     }
-    
+
     @page :first {
       @top-center {
         content: none;
       }
+      @bottom-center {
+        content: none;
+      }
     }
-    
+
     html {
       font-size: 16px;
-      line-height: 1.6;
+      line-height: 1.7;
     }
-    
+
     body {
       font-family: 'Libre Baskerville', Georgia, serif;
       background-color: #FAFAF8;
@@ -99,7 +107,31 @@
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    
+
+    /* Header brand element for CSS Paged Media */
+    .page-header {
+      position: running(header-brand);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding-bottom: 16px;
+    }
+
+    .page-header-logo {
+      width: 24px;
+      height: 24px;
+    }
+
+    .page-header-text {
+      font-family: 'Nimbus Sans L', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: #C8A882;
+      letter-spacing: 0.05em;
+    }
+
+    /* Cover page - minimal, clean design */
     .cover-page {
       page-break-after: always;
       height: 100vh;
@@ -108,304 +140,294 @@
       justify-content: center;
       align-items: center;
       text-align: center;
-      padding: 48px;
-      background: linear-gradient(
-        180deg,
-        #FAFAF8 0%,
-        #F4F3EE 100%
-      );
-      position: relative;
+      padding: 64px 48px;
+      background-color: #FAFAF8;
     }
-    
-    .cover-page::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 8pt;
-      background-color: #C15F3C;
-    }
-    
-    .cover-ornament {
-      width: 80px;
-      height: 4px;
-      background-color: #C15F3C;
-      margin-bottom: 32px;
-    }
-    
+
     .cover-title {
       font-family: 'Libre Baskerville', Georgia, serif;
-      font-size: 2.5rem;
+      font-size: 2.25rem;
       font-weight: 700;
-      color: #C15F3C;
-      line-height: 1.2;
-      margin-bottom: 16px;
+      color: #C8A882;
+      line-height: 1.25;
+      margin-bottom: 24px;
       max-width: 80%;
     }
-    
+
     .cover-subtitle {
       font-family: 'Nimbus Sans L', sans-serif;
-      font-size: 1.25rem;
+      font-size: 1.125rem;
       font-weight: 400;
       color: #6B6B6B;
-      letter-spacing: 0.025em;
-      margin-bottom: 48px;
+      letter-spacing: 0.02em;
+      margin-bottom: 56px;
       max-width: 70%;
+      line-height: 1.5;
     }
-    
+
     .cover-meta {
       margin-top: auto;
       padding-top: 48px;
       font-family: 'Nimbus Sans L', sans-serif;
     }
-    
+
     .cover-author {
-      font-size: 1rem;
+      font-size: 0.9375rem;
       font-weight: 700;
       color: #1A1A1A;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
+      letter-spacing: 0.03em;
       margin-bottom: 8px;
     }
-    
+
     .cover-date {
       font-size: 0.875rem;
       color: #6B6B6B;
-      letter-spacing: 0.025em;
+      letter-spacing: 0.02em;
     }
-    
+
     .content {
-      padding: 24px 0;
+      padding: 32px 0;
     }
-    
+
+    /* Headings - minimal, no heavy borders */
     h1, h2, h3, h4, h5, h6 {
       font-family: 'Libre Baskerville', Georgia, serif;
       font-weight: 700;
       line-height: 1.3;
-      margin-top: 32px;
-      margin-bottom: 16px;
       page-break-after: avoid;
     }
-    
+
     h1 {
-      font-size: 2rem;
-      color: #C15F3C;
-      border-bottom: 2px solid #C15F3C;
-      padding-bottom: 8px;
+      font-size: 1.75rem;
+      color: #C8A882;
       margin-top: 0;
+      margin-bottom: 20px;
     }
-    
+
     h2 {
-      font-size: 1.5rem;
-      color: #AE5630;
+      font-size: 1.375rem;
+      color: #1A1A1A;
+      margin-top: 40px;
+      margin-bottom: 16px;
     }
-    
+
     h3 {
-      font-size: 1.25rem;
-      color: #AE5630;
-    }
-    
-    h4 {
       font-size: 1.125rem;
       color: #1A1A1A;
+      margin-top: 40px;
+      margin-bottom: 16px;
     }
-    
-    h5, h6 {
+
+    h4 {
       font-size: 1rem;
+      color: #1A1A1A;
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+
+    h5, h6 {
+      font-size: 0.9375rem;
       color: #6B6B6B;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
+      margin-top: 32px;
+      margin-bottom: 12px;
     }
-    
+
+    /* Body text - relaxed spacing */
     p {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       text-align: justify;
       hyphens: auto;
+      line-height: 1.7;
     }
-    
+
     ul, ol {
-      margin-bottom: 16px;
-      padding-left: 24px;
+      margin-bottom: 20px;
+      padding-left: 28px;
     }
-    
+
     li {
-      margin-bottom: 4px;
+      margin-bottom: 8px;
+      line-height: 1.6;
     }
-    
+
     a {
-      color: #C15F3C;
+      color: #C8A882;
       text-decoration: underline;
-      text-decoration-color: #C15F3C;
+      text-decoration-color: #D4B896;
       text-underline-offset: 2px;
     }
-    
+
+    /* Code - subtle, clean */
     code {
       font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 0.875em;
       background-color: #F5F5F0;
       padding: 2px 6px;
-      border-radius: 5px;
+      border-radius: 4px;
       color: #1A1A1A;
     }
-    
+
     pre {
       background-color: #F5F5F0;
-      border: 1px solid rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.06);
       border-radius: 6px;
-      padding: 16px;
+      padding: 20px;
       overflow-x: auto;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       page-break-inside: avoid;
     }
-    
+
     pre code {
       background-color: transparent;
       padding: 0;
       font-size: 0.8125rem;
-      line-height: 1.5;
+      line-height: 1.6;
     }
-    
+
+    /* Blockquotes - minimal left border */
     blockquote {
-      border-left: 4px solid #C15F3C;
-      padding-left: 16px;
+      border-left: 2px solid #D4B896;
+      padding-left: 20px;
       margin-left: 0;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       color: #6B6B6B;
       font-style: italic;
     }
-    
+
     blockquote p:last-child {
       margin-bottom: 0;
     }
-    
+
+    /* Tables - subtle, clean */
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       page-break-inside: avoid;
     }
-    
+
     th, td {
-      padding: 8px 16px;
+      padding: 10px 16px;
       text-align: left;
-      border-bottom: 1px solid rgba(0,0,0,0.08);
+      border-bottom: 1px solid rgba(0,0,0,0.06);
     }
-    
+
     th {
       font-family: 'Nimbus Sans L', sans-serif;
       font-weight: 700;
-      color: #C15F3C;
-      border-bottom: 2px solid #C15F3C;
-      text-transform: uppercase;
+      color: #1A1A1A;
+      border-bottom: 1px solid rgba(0,0,0,0.12);
       font-size: 0.875rem;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.02em;
     }
-    
+
     tr:nth-child(even) {
-      background-color: #F4F3EE;
+      background-color: rgba(0,0,0,0.02);
     }
-    
+
     hr {
       border: none;
       border-top: 1px solid rgba(0,0,0,0.08);
-      margin: 32px 0;
+      margin: 40px 0;
     }
-    
+
+    /* Callouts - minimal, subtle backgrounds */
     .callout {
       border-radius: 6px;
-      padding: 16px;
-      margin-bottom: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
       page-break-inside: avoid;
     }
-    
+
     .callout-title {
       font-family: 'Nimbus Sans L', sans-serif;
       font-weight: 700;
-      font-size: 0.875rem;
+      font-size: 0.8125rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
+      letter-spacing: 0.04em;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    
+
     .callout-content {
       font-size: 0.9375rem;
-      line-height: 1.5;
+      line-height: 1.6;
     }
-    
+
     .callout-content p:last-child {
       margin-bottom: 0;
     }
-    
+
     .callout-info {
-      background-color: rgba(193, 95, 60, 0.08);
-      border-left: 4px solid #C15F3C;
+      background-color: rgba(200, 168, 130, 0.06);
+      border-left: 2px solid #C8A882;
     }
-    
+
     .callout-info .callout-title {
-      color: #C15F3C;
+      color: #C8A882;
     }
-    
+
     .callout-warning {
-      background-color: rgba(193, 95, 60, 0.12);
-      border-left: 4px solid #AE5630;
+      background-color: rgba(200, 168, 130, 0.1);
+      border-left: 2px solid #D4B896;
     }
-    
+
     .callout-warning .callout-title {
-      color: #AE5630;
+      color: #B8956A;
     }
-    
+
     .callout-tip {
-      background-color: rgba(21, 128, 61, 0.08);
-      border-left: 4px solid #15803D;
+      background-color: rgba(21, 128, 61, 0.05);
+      border-left: 2px solid #15803D;
     }
-    
+
     .callout-tip .callout-title {
       color: #15803D;
     }
-    
+
     .callout-note {
-      background-color: rgba(107, 107, 107, 0.08);
-      border-left: 4px solid #6B6B6B;
+      background-color: rgba(107, 107, 107, 0.05);
+      border-left: 2px solid #6B6B6B;
     }
-    
+
     .callout-note .callout-title {
       color: #6B6B6B;
     }
-    
+
     .text-center {
       text-align: center;
     }
-    
+
     .text-right {
       text-align: right;
     }
-    
+
     .page-break {
       page-break-before: always;
     }
-    
+
     .no-break {
       page-break-inside: avoid;
     }
-    
+
     @media print {
       body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
-      
+
       .cover-page {
         page-break-after: always;
       }
-      
+
       h1, h2, h3 {
         page-break-after: avoid;
       }
-      
+
       pre, table, .callout {
         page-break-inside: avoid;
       }
@@ -413,9 +435,25 @@
   </style>
 </svelte:head>
 
+<!-- Header brand element for CSS Paged Media -->
+<div class="page-header">
+  <svg class="page-header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 112" aria-hidden="true">
+    <path fill="none" stroke="#C8A882" stroke-width="4.2" stroke-linecap="round"
+      d="M50 19 C46 40 36 64 24 88"/>
+    <path fill="none" stroke="#C8A882" stroke-width="4.2" stroke-linecap="round"
+      d="M50 19 C54 40 64 64 76 88"/>
+    <line x1="27" y1="57" x2="73" y2="57" stroke="#C8A882" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="27" y1="52" x2="27" y2="62" stroke="#C8A882" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+    <line x1="73" y1="52" x2="73" y2="62" stroke="#C8A882" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
+    <line x1="14" y1="90" x2="36" y2="90" stroke="#C8A882" stroke-width="3.2" stroke-linecap="round"/>
+    <line x1="64" y1="90" x2="86" y2="90" stroke="#C8A882" stroke-width="3.2" stroke-linecap="round"/>
+    <circle cx="50" cy="19" r="3.5" fill="#C8A882"/>
+  </svg>
+  <span class="page-header-text">AlfyAI</span>
+</div>
+
 {#if metadata.cover}
   <div class="cover-page">
-    <div class="cover-ornament"></div>
     <h1 class="cover-title">{metadata.title}</h1>
     {#if metadata.subtitle}
       <p class="cover-subtitle">{metadata.subtitle}</p>
