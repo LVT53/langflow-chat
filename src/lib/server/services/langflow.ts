@@ -51,6 +51,7 @@ const FILE_GENERATION_GUARD = [
 	'- If the user asks for a downloadable file and a file-generation tool is available, call it instead of only describing the result in text.',
 	'- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when a dedicated file-generation tool is available.',
 	'- Only tell the user a file is ready after the tool succeeds.',
+	'- Do not mention the generated file name or include a file download link in your response text. The file will automatically appear in the chat UI with a download button.',
 	'- Generated files appear in the chat UI after the response finishes.',
 	'- If file generation fails, inspect the actual error, make one clear fix, and retry at most once without switching tools.',
 ].join('\n');
