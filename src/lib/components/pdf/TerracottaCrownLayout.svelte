@@ -36,21 +36,9 @@
     }
     @font-face {
       font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-RegularItalic.woff2') format('woff2');
-      font-weight: 400;
-      font-style: italic;
-    }
-    @font-face {
-      font-family: 'Nimbus Sans L';
       src: url('/fonts/NimbusSanL-Bold.woff2') format('woff2');
       font-weight: 700;
       font-style: normal;
-    }
-    @font-face {
-      font-family: 'Nimbus Sans L';
-      src: url('/fonts/NimbusSanL-BoldItalic.woff2') format('woff2');
-      font-weight: 700;
-      font-style: italic;
     }
     @font-face {
       font-family: 'Libre Baskerville';
@@ -71,33 +59,15 @@
       font-style: normal;
     }
 
-    /* CSS Paged Media - Page setup with header and footer */
-    @page {
-      size: A4;
-      margin: 70px 50px 60px 50px;
-      @top-center {
-        content: element(header-brand);
-      }
-      @bottom-center {
-        content: counter(page);
-        font-family: 'Nimbus Sans L', sans-serif;
-        font-size: 10px;
-        color: #6B6B6B;
-      }
-    }
-
-    @page :first {
-      @top-center {
-        content: none;
-      }
-      @bottom-center {
-        content: none;
-      }
-    }
+    /*
+     * NOTE: Header and footer are rendered by Playwright's headerTemplate/footerTemplate.
+     * CSS @page rules are not supported by Chromium for complex elements like SVGs.
+     * See src/lib/server/services/pdf-generator.ts for the template definitions.
+     */
 
     html {
       font-size: 16px;
-      line-height: 1.7;
+      line-height: 1.6;
     }
 
     body {
@@ -108,30 +78,7 @@
       print-color-adjust: exact;
     }
 
-    /* Header brand element for CSS Paged Media */
-    .page-header {
-      position: running(header-brand);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding-bottom: 16px;
-    }
-
-    .page-header-logo {
-      width: 24px;
-      height: 24px;
-    }
-
-    .page-header-text {
-      font-family: 'Nimbus Sans L', sans-serif;
-      font-size: 12px;
-      font-weight: 500;
-      color: #C8A882;
-      letter-spacing: 0.05em;
-    }
-
-    /* Cover page - minimal, clean design */
+    /* Cover page - minimal, clean design matching UI aesthetic */
     .cover-page {
       page-break-after: always;
       height: 100vh;
@@ -148,18 +95,18 @@
       font-family: 'Libre Baskerville', Georgia, serif;
       font-size: 2.25rem;
       font-weight: 700;
-      color: #C8A882;
+      color: #1A1A1A;
       line-height: 1.25;
       margin-bottom: 24px;
       max-width: 80%;
     }
 
     .cover-subtitle {
-      font-family: 'Nimbus Sans L', sans-serif;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-size: 1.125rem;
       font-weight: 400;
       color: #6B6B6B;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.01em;
       margin-bottom: 56px;
       max-width: 70%;
       line-height: 1.5;
@@ -168,94 +115,93 @@
     .cover-meta {
       margin-top: auto;
       padding-top: 48px;
-      font-family: 'Nimbus Sans L', sans-serif;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
     }
 
     .cover-author {
       font-size: 0.9375rem;
       font-weight: 700;
       color: #1A1A1A;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.02em;
       margin-bottom: 8px;
     }
 
     .cover-date {
       font-size: 0.875rem;
       color: #6B6B6B;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.01em;
     }
 
     .content {
-      padding: 32px 0;
+      padding: 0;
     }
 
-    /* Headings - minimal, no heavy borders */
+    /* Headings - clean hierarchy with accent color on h1 only */
     h1, h2, h3, h4, h5, h6 {
       font-family: 'Libre Baskerville', Georgia, serif;
       font-weight: 700;
       line-height: 1.3;
       page-break-after: avoid;
+      color: #1A1A1A;
     }
 
     h1 {
       font-size: 1.75rem;
-      color: #C8A882;
+      color: #C15F3C;
       margin-top: 0;
       margin-bottom: 20px;
     }
 
     h2 {
       font-size: 1.375rem;
-      color: #1A1A1A;
       margin-top: 40px;
       margin-bottom: 16px;
     }
 
     h3 {
       font-size: 1.125rem;
-      color: #1A1A1A;
-      margin-top: 40px;
-      margin-bottom: 16px;
+      margin-top: 32px;
+      margin-bottom: 14px;
     }
 
     h4 {
       font-size: 1rem;
-      color: #1A1A1A;
-      margin-top: 32px;
+      margin-top: 28px;
       margin-bottom: 12px;
     }
 
     h5, h6 {
-      font-size: 0.9375rem;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
+      font-size: 0.875rem;
       color: #6B6B6B;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      margin-top: 32px;
-      margin-bottom: 12px;
+      margin-top: 24px;
+      margin-bottom: 10px;
     }
 
     /* Body text - relaxed spacing */
     p {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       text-align: justify;
       hyphens: auto;
       line-height: 1.7;
     }
 
     ul, ol {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       padding-left: 28px;
     }
 
     li {
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       line-height: 1.6;
     }
 
     a {
-      color: #C8A882;
+      color: #C15F3C;
       text-decoration: underline;
-      text-decoration-color: #D4B896;
+      text-decoration-color: rgba(193, 95, 60, 0.4);
       text-underline-offset: 2px;
     }
 
@@ -307,20 +253,20 @@
     }
 
     figcaption {
-      font-family: 'Nimbus Sans L', sans-serif;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-size: 0.8125rem;
       color: #6B6B6B;
       font-style: italic;
       margin-top: 8px;
     }
 
-    /* Blockquotes - minimal left border */
+    /* Blockquotes - minimal left border with accent color */
     blockquote {
-      border-left: 2px solid #D4B896;
+      border-left: 3px solid #C15F3C;
       padding-left: 20px;
       margin-left: 0;
       margin-bottom: 20px;
-      color: #6B6B6B;
+      color: #4A4A4A;
       font-style: italic;
     }
 
@@ -343,12 +289,12 @@
     }
 
     th {
-      font-family: 'Nimbus Sans L', sans-serif;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-weight: 700;
       color: #1A1A1A;
       border-bottom: 1px solid rgba(0,0,0,0.12);
       font-size: 0.875rem;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.01em;
     }
 
     tr:nth-child(even) {
@@ -361,7 +307,7 @@
       margin: 40px 0;
     }
 
-    /* Callouts - minimal, subtle backgrounds */
+    /* Callouts - minimal, subtle backgrounds with accent colors */
     .callout {
       border-radius: 6px;
       padding: 20px;
@@ -370,7 +316,7 @@
     }
 
     .callout-title {
-      font-family: 'Nimbus Sans L', sans-serif;
+      font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-weight: 700;
       font-size: 0.8125rem;
       text-transform: uppercase;
@@ -391,26 +337,26 @@
     }
 
     .callout-info {
-      background-color: rgba(200, 168, 130, 0.06);
-      border-left: 2px solid #C8A882;
+      background-color: rgba(193, 95, 60, 0.06);
+      border-left: 3px solid #C15F3C;
     }
 
     .callout-info .callout-title {
-      color: #C8A882;
+      color: #C15F3C;
     }
 
     .callout-warning {
-      background-color: rgba(200, 168, 130, 0.1);
-      border-left: 2px solid #D4B896;
+      background-color: rgba(193, 95, 60, 0.1);
+      border-left: 3px solid #C15F3C;
     }
 
     .callout-warning .callout-title {
-      color: #B8956A;
+      color: #A05030;
     }
 
     .callout-tip {
       background-color: rgba(21, 128, 61, 0.05);
-      border-left: 2px solid #15803D;
+      border-left: 3px solid #15803D;
     }
 
     .callout-tip .callout-title {
@@ -419,7 +365,7 @@
 
     .callout-note {
       background-color: rgba(107, 107, 107, 0.05);
-      border-left: 2px solid #6B6B6B;
+      border-left: 3px solid #6B6B6B;
     }
 
     .callout-note .callout-title {
@@ -462,23 +408,6 @@
     }
   </style>
 </svelte:head>
-
-<!-- Header brand element for CSS Paged Media -->
-<div class="page-header">
-  <svg class="page-header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 112" aria-hidden="true">
-    <path fill="none" stroke="#C8A882" stroke-width="4.2" stroke-linecap="round"
-      d="M50 19 C46 40 36 64 24 88"/>
-    <path fill="none" stroke="#C8A882" stroke-width="4.2" stroke-linecap="round"
-      d="M50 19 C54 40 64 64 76 88"/>
-    <line x1="27" y1="57" x2="73" y2="57" stroke="#C8A882" stroke-width="2.2" stroke-linecap="round"/>
-    <line x1="27" y1="52" x2="27" y2="62" stroke="#C8A882" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
-    <line x1="73" y1="52" x2="73" y2="62" stroke="#C8A882" stroke-width="1.8" stroke-linecap="round" opacity="0.75"/>
-    <line x1="14" y1="90" x2="36" y2="90" stroke="#C8A882" stroke-width="3.2" stroke-linecap="round"/>
-    <line x1="64" y1="90" x2="86" y2="90" stroke="#C8A882" stroke-width="3.2" stroke-linecap="round"/>
-    <circle cx="50" cy="19" r="3.5" fill="#C8A882"/>
-  </svg>
-  <span class="page-header-text">AlfyAI</span>
-</div>
 
 {#if metadata.cover}
   <div class="cover-page">
