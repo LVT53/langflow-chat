@@ -156,7 +156,7 @@
     }
 
     /* Headings - clean hierarchy with accent color on h1 only */
-    h1, h2, h3, h4, h5, h6 {
+    :global(.content h1), :global(.content h2), :global(.content h3), :global(.content h4), :global(.content h5), :global(.content h6) {
       font-family: 'Libre Baskerville', Georgia, serif;
       font-weight: 700;
       line-height: 1.3;
@@ -164,14 +164,14 @@
       color: #1A1A1A;
     }
 
-    h1 {
+    :global(.content h1) {
       font-size: 1.75rem;
       color: #C15F3C;
       margin-top: 0;
       margin-bottom: 20px;
     }
 
-    h2 {
+    :global(.content h2) {
       font-size: 1.375rem;
       color: #C15F3C;
       margin-top: 56px;
@@ -180,19 +180,19 @@
       border-bottom: 1px solid rgba(193, 95, 60, 0.2);
     }
 
-    h3 {
+    :global(.content h3) {
       font-size: 1.125rem;
       margin-top: 40px;
       margin-bottom: 14px;
     }
 
-    h4 {
+    :global(.content h4) {
       font-size: 1rem;
       margin-top: 28px;
       margin-bottom: 12px;
     }
 
-    h5, h6 {
+    :global(.content h5), :global(.content h6) {
       font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-size: 0.875rem;
       color: #6B6B6B;
@@ -203,32 +203,32 @@
     }
 
     /* Body text - relaxed spacing */
-    p {
+    :global(.content p) {
       margin-bottom: 16px;
       text-align: justify;
       hyphens: auto;
       line-height: 1.7;
     }
 
-    ul, ol {
+    :global(.content ul), :global(.content ol) {
       margin-bottom: 16px;
       padding-left: 28px;
     }
 
-    ul {
+    :global(.content ul) {
       list-style-type: disc;
     }
 
-    ul li::marker {
+    :global(.content ul li::marker) {
       color: #C15F3C;
     }
 
-    li {
+    :global(.content li) {
       margin-bottom: 6px;
       line-height: 1.6;
     }
 
-    a {
+    :global(.content a) {
       color: #C15F3C;
       text-decoration: underline;
       text-decoration-color: rgba(193, 95, 60, 0.4);
@@ -236,7 +236,7 @@
     }
 
     /* Code - subtle, clean */
-    code {
+    :global(.content code) {
       font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 0.875em;
       background-color: #F5F5F0;
@@ -245,7 +245,7 @@
       color: #1A1A1A;
     }
 
-    pre {
+    :global(.content pre) {
       background-color: #F5F5F0;
       border: 1px solid rgba(0,0,0,0.06);
       border-radius: 6px;
@@ -255,7 +255,7 @@
       page-break-inside: avoid;
     }
 
-    pre code {
+    :global(.content pre code) {
       background-color: transparent;
       padding: 0;
       font-size: 0.8125rem;
@@ -263,7 +263,7 @@
     }
 
     /* Images - styled with border-radius, shadow, and size constraints */
-    img {
+    :global(.content img) {
       max-width: 100%;
       max-height: 400px;
       height: auto;
@@ -275,17 +275,17 @@
       object-fit: contain;
     }
 
-    figure {
+    :global(.content figure) {
       margin: 24px 0;
       page-break-inside: avoid;
       text-align: center;
     }
 
-    figure img {
+    :global(.content figure img) {
       margin: 0 auto 12px auto;
     }
 
-    figcaption {
+    :global(.content figcaption) {
       font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-size: 0.8125rem;
       color: #6B6B6B;
@@ -294,7 +294,7 @@
     }
 
     /* Blockquotes - minimal left border with accent color */
-    blockquote {
+    :global(.content blockquote) {
       border-left: 3px solid #C15F3C;
       padding-left: 20px;
       margin-left: 0;
@@ -303,25 +303,25 @@
       font-style: italic;
     }
 
-    blockquote p:last-child {
+    :global(.content blockquote p:last-child) {
       margin-bottom: 0;
     }
 
     /* Tables - subtle, clean */
-    table {
+    :global(.content table) {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 20px;
       page-break-inside: avoid;
     }
 
-    th, td {
+    :global(.content th), :global(.content td) {
       padding: 10px 16px;
       text-align: left;
       border-bottom: 1px solid rgba(0,0,0,0.06);
     }
 
-    th {
+    :global(.content th) {
       font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-weight: 700;
       color: #1A1A1A;
@@ -330,25 +330,25 @@
       letter-spacing: 0.01em;
     }
 
-    tr:nth-child(even) {
+    :global(.content tr:nth-child(even)) {
       background-color: rgba(0,0,0,0.02);
     }
 
-    hr {
+    :global(.content hr) {
       border: none;
       border-top: 2px solid rgba(193, 95, 60, 0.3);
       margin: 56px 0;
     }
 
     /* Callouts - minimal, subtle backgrounds with accent colors */
-    .callout {
+    :global(.content .callout) {
       border-radius: 6px;
       padding: 20px;
       margin-bottom: 20px;
       page-break-inside: avoid;
     }
 
-    .callout-title {
+    :global(.content .callout-title) {
       font-family: 'Nimbus Sans L', system-ui, sans-serif;
       font-weight: 700;
       font-size: 0.8125rem;
@@ -360,64 +360,64 @@
       gap: 8px;
     }
 
-    .callout-content {
+    :global(.content .callout-content) {
       font-size: 0.9375rem;
       line-height: 1.6;
     }
 
-    .callout-content p:last-child {
+    :global(.content .callout-content p:last-child) {
       margin-bottom: 0;
     }
 
-    .callout-info {
+    :global(.content .callout-info) {
       background-color: rgba(193, 95, 60, 0.06);
       border-left: 3px solid #C15F3C;
     }
 
-    .callout-info .callout-title {
+    :global(.content .callout-info .callout-title) {
       color: #C15F3C;
     }
 
-    .callout-warning {
+    :global(.content .callout-warning) {
       background-color: rgba(193, 95, 60, 0.1);
       border-left: 3px solid #C15F3C;
     }
 
-    .callout-warning .callout-title {
+    :global(.content .callout-warning .callout-title) {
       color: #A05030;
     }
 
-    .callout-tip {
+    :global(.content .callout-tip) {
       background-color: rgba(21, 128, 61, 0.05);
       border-left: 3px solid #15803D;
     }
 
-    .callout-tip .callout-title {
+    :global(.content .callout-tip .callout-title) {
       color: #15803D;
     }
 
-    .callout-note {
+    :global(.content .callout-note) {
       background-color: rgba(107, 107, 107, 0.05);
       border-left: 3px solid #6B6B6B;
     }
 
-    .callout-note .callout-title {
+    :global(.content .callout-note .callout-title) {
       color: #6B6B6B;
     }
 
-    .text-center {
+    :global(.content .text-center) {
       text-align: center;
     }
 
-    .text-right {
+    :global(.content .text-right) {
       text-align: right;
     }
 
-    .page-break {
+    :global(.content .page-break) {
       page-break-before: always;
     }
 
-    .no-break {
+    :global(.content .no-break) {
       page-break-inside: avoid;
     }
 
@@ -431,11 +431,11 @@
         page-break-after: always;
       }
 
-      h1, h2, h3 {
+      :global(.content h1), :global(.content h2), :global(.content h3) {
         page-break-after: avoid;
       }
 
-      pre, table, .callout {
+      :global(.content pre), :global(.content table), :global(.content .callout) {
         page-break-inside: avoid;
       }
     }
