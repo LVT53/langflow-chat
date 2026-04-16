@@ -19,7 +19,7 @@ vi.mock('../sandbox/config', () => ({
 	executeSandboxCommand: vi.fn(),
 	SANDBOX_TIMEOUT_MS: 60000,
 	SANDBOX_MEMORY_MB: 1024,
-	SANDBOX_MAX_FILE_MB: 50,
+	SANDBOX_MAX_FILE_MB: 100,
 	SANDBOX_MAX_OUTPUT_FILES: 20,
 	SANDBOX_MAX_TOTAL_OUTPUT_MB: 50,
 }));

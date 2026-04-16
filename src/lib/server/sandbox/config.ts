@@ -5,7 +5,7 @@ import path from 'path';
 
 export const SANDBOX_TIMEOUT_MS = 60000;
 export const SANDBOX_MEMORY_MB = 1024;
-export const SANDBOX_MAX_FILE_MB = 50;
+export const SANDBOX_MAX_FILE_MB = 100;
 export const SANDBOX_MAX_OUTPUT_FILES = 20;
 export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;
 

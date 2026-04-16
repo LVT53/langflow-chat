@@ -76,10 +76,10 @@ describe('POST /api/knowledge/upload', () => {
 		});
 	});
 
-	it('rejects files larger than 50MB', async () => {
+	it('rejects files larger than 100MB', async () => {
 		const formData = new FormData();
 		const file = new File(['tiny'], 'large.pdf', { type: 'application/pdf' });
-		Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 + 1 });
+		Object.defineProperty(file, 'size', { value: 100 * 1024 * 1024 + 1 });
 		formData.append('file', file);
 		formData.append('conversationId', 'conv-1');
 
@@ -87,7 +87,7 @@ describe('POST /api/knowledge/upload', () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(400);
-		expect(data.error).toMatch(/50MB/i);
+		expect(data.error).toMatch(/100MB/i);
 		expect(mockSaveUploadedArtifact).not.toHaveBeenCalled();
 	});
 
@@ -364,7 +364,7 @@ describe('POST /api/knowledge/upload', () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(413);
-		expect(data.error).toMatch(/50MB/i);
+		expect(data.error).toMatch(/100MB/i);
 		expect(data.error).toMatch(/BODY_SIZE_LIMIT/i);
 	});
 

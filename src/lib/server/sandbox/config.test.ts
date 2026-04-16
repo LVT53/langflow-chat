@@ -73,8 +73,8 @@ describe('sandbox config', () => {
 			expect(SANDBOX_MEMORY_MB).toBe(1024);
 		});
 
-		it('should have correct max file size (50MB)', () => {
-			expect(SANDBOX_MAX_FILE_MB).toBe(50);
+		it('should have correct max file size (100MB)', () => {
+			expect(SANDBOX_MAX_FILE_MB).toBe(100);
 		});
 	});
 
