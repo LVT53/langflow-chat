@@ -275,6 +275,16 @@
 	.search-portal-backdrop {
 		background: color-mix(in srgb, var(--surface-page) 80%, transparent 20%);
 		backdrop-filter: blur(8px);
+		/* Mobile: ensure proper centering when viewport changes (keyboard open, etc.) */
+		align-items: center;
+		justify-content: center;
+	}
+
+	/* Mobile-specific backdrop fixes for virtual keyboard scenarios */
+	@media (max-width: 767px) {
+		:global(.search-portal-backdrop) {
+			padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+		}
 	}
 
 	:global(.dark) .search-portal-backdrop {
@@ -285,12 +295,23 @@
 		box-shadow:
 			0 25px 50px -12px rgba(0, 0, 0, 0.25),
 			0 0 0 1px color-mix(in srgb, var(--border-default) 50%, transparent 50%);
+		/* Mobile: prevent modal from exceeding viewport height and ensure centering */
+		max-height: 90dvh;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	:global(.dark) .search-portal-modal {
 		box-shadow:
 			0 25px 50px -12px rgba(0, 0, 0, 0.5),
 			0 0 0 1px color-mix(in srgb, var(--border-default) 30%, transparent 70%);
+	}
+
+	/* Mobile-specific centering fix: ensure modal stays centered when viewport changes */
+	@media (max-width: 767px) {
+		.search-portal-modal {
+			max-height: 85dvh;
+		}
 	}
 
 	.search-input-wrapper {

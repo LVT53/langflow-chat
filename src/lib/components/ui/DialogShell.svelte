@@ -66,6 +66,12 @@
 <div
   class={`fixed inset-0 ${zIndexClass} flex items-center justify-center p-md`}
   transition:fade={{ duration: 150 }}
+  style={{
+    paddingTop: 'max(1rem, env(safe-area-inset-top))',
+    paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+    paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+    paddingRight: 'max(1rem, env(safe-area-inset-right))'
+  }}
 >
   <button
     type="button"
@@ -83,6 +89,10 @@
     tabindex="-1"
     class={`relative w-full ${maxWidthClass} rounded-lg border border-border bg-surface-page p-lg shadow-lg`}
     transition:scale={{ duration: 150, start: 0.95 }}
+    style={{
+      maxHeight: '85dvh',
+      overflowY: 'auto'
+    }}
   >
     <h2 id="dialog-shell-title" class="mb-sm text-xl font-semibold text-text-primary">{title}</h2>
     {#if description}
