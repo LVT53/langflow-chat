@@ -492,17 +492,17 @@
 
 	.ring-popover--mobile {
 		position: fixed;
-		left: 50%;
-		right: auto;
+		left: 0.25rem;
+		right: 0.25rem;
 		bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
-		width: min(22rem, calc(100vw - 1.5rem));
+		width: auto;
 		max-height: min(70vh, 30rem);
 		overflow-y: auto;
-		transform: translateX(-50%) translateY(6px);
+		transform: translateY(6px);
 	}
 
 	.ring-popover--mobile.ring-popover--mobile-visible {
-		transform: translateX(-50%) translateY(0);
+		transform: translateY(0);
 	}
 
 	.popover-section + .popover-section {
