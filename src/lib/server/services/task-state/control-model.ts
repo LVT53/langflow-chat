@@ -182,18 +182,18 @@ export async function requestContextSummarizer(params: {
   );
 
   if (!response.ok) {
-    // 404 means the endpoint doesn't exist - summarizer is not configured properly
-    // This is non-fatal, just return null and let the caller use fallback behavior
-    if (response.status === 404) {
-      console.warn(
-        `[CONTEXT_SUMMARIZER] Endpoint not found (404) at ${baseUrl}/chat/completions. ` +
-        `Set CONTEXT_SUMMARIZER_URL to a valid OpenAI-compatible endpoint or leave empty to disable.`,
-      );
-      return null;
+    // Read the error body so we can log exactly why vLLM rejected the request.
+    // vLLM returns JSON with { error: { message, type, param, code } }.
+    let errorDetail = '';
+    try {
+      const errorBody = await response.json();
+      errorDetail = errorBody?.error?.message ?? JSON.stringify(errorBody).slice(0, 200);
+    } catch {
+      errorDetail = await response.text().catch(() => '').then((t) => t.slice(0, 200));
     }
-    // Other errors are unexpected but still non-fatal
     console.warn(
-      `[CONTEXT_SUMMARIZER] Request failed: ${response.status} ${response.statusText}`,
+      `[CONTEXT_SUMMARIZER] Request failed: ${response.status} ${response.statusText} — ${errorDetail} ` +
+      `(url=${baseUrl}/chat/completions, model=${config.contextSummarizerModel})`,
     );
     return null;
   }
