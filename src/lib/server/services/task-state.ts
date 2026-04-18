@@ -24,6 +24,7 @@ import { parseJsonRecord } from "$lib/server/utils/json";
 import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/server/utils/tokens";
+import { computeCrossConversationDecay } from "../utils/artifact-decay";
 import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
 import { getLatestHonchoMetadata } from "./messages";
@@ -860,6 +861,14 @@ function computeEvidenceScore(params: {
   if (params.artifact.conversationId === params.taskState?.conversationId)
     score += 4;
   if (params.currentGeneratedOutputIds.has(params.artifact.id)) score += 8;
+
+  const isSameConversation = !params.artifact.conversationId || params.artifact.conversationId === params.taskState?.conversationId;
+  const daysSinceLastAccess = Math.max(0, (Date.now() - params.artifact.updatedAt) / (1000 * 60 * 60 * 24));
+  score = computeCrossConversationDecay({
+    baseScore: score,
+    daysSinceLastAccess,
+    isSameConversation,
+  });
 
   return score;
 }

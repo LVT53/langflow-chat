@@ -78,3 +78,84 @@ describe('knowledge service listKnowledgeArtifacts', () => {
 		await maintenancePromise;
 	});
 });
+
+import { findRelevantKnowledgeArtifacts } from './knowledge/context';
+import { applyConversationBoundaryPenalty, isCrossConversationArtifactEligible } from '../utils/conversation-boundary-filter';
+import * as store from './knowledge/store';
+
+vi.mock('../utils/conversation-boundary-filter', () => ({
+	applyConversationBoundaryPenalty: vi.fn((params) => params.score),
+	isCrossConversationArtifactEligible: vi.fn(() => true),
+}));
+
+// We should mock countRecentMemoryEventsBySubject directly
+const mockCountRecentMemoryEventsBySubject = vi.fn(() => Promise.resolve(new Map()));
+
+vi.mock('./document-resolution', async (importOriginal) => {
+	const actual = await importOriginal();
+	return {
+		...actual as any,
+		resolveRelevantGeneratedDocumentSelection: vi.fn((params) => ({ orderedArtifacts: params.artifacts })),
+		getGeneratedDocumentBehaviorKey: vi.fn(() => 'test'),
+	};
+});
+
+vi.mock('../memory-events', () => ({
+	countRecentMemoryEventsBySubject: (...args: any) => mockCountRecentMemoryEventsBySubject(...args),
+}));
+
+describe('findRelevantKnowledgeArtifacts', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		
+		// Add the mocked functions explicitly here since they weren't in the original mock of store
+		(store as any).findRelevantArtifactsByTypesDetailed = vi.fn();
+		(store as any).getArtifactsForUser = vi.fn();
+		
+		((store as any).getArtifactsForUser).mockResolvedValue([]);
+		((store as any).findRelevantArtifactsByTypesDetailed).mockImplementation((params: any) => {
+			if (params.types[0] === 'normalized_document') {
+				return Promise.resolve([
+					{
+						artifact: { id: 'doc-1', type: 'normalized_document', conversationId: 'conv-1', updatedAt: Date.now(), name: 'test doc', summary: '' },
+						lexicalScore: 3,
+						semanticScore: 10,
+						rerankScore: 10,
+						finalScore: 10,
+					},
+				]);
+			}
+			if (params.types[0] === 'generated_output') {
+				return Promise.resolve([
+					{
+						artifact: { id: 'gen-1', type: 'generated_output', conversationId: 'conv-2', updatedAt: Date.now(), name: 'test gen', summary: '' },
+						lexicalScore: 4,
+						semanticScore: 20,
+						rerankScore: 20,
+						finalScore: 20,
+					},
+				]);
+			}
+			return Promise.resolve([]);
+		});
+	});
+
+	it('filters artifacts using conversation boundary filter and penalty', async () => {
+		await findRelevantKnowledgeArtifacts({
+			userId: 'user-1',
+			query: 'test query',
+			currentConversationId: 'conv-1',
+		});
+
+		expect(isCrossConversationArtifactEligible).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifactConversationId: 'conv-2',
+				currentConversationId: 'conv-1',
+				matchScore: 4,
+				minMatchScore: 3,
+			})
+		);
+
+		expect(applyConversationBoundaryPenalty).toHaveBeenCalled();
+	});
+});

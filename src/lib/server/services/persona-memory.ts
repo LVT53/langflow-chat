@@ -35,6 +35,7 @@ import { queuePersonaClusterSemanticEmbeddingRefresh } from './semantic-embeddin
 import { shortlistSemanticMatchesBySubject } from './semantic-ranking';
 import { canUseContextSummarizer, requestStructuredControlModel } from './task-state';
 import { classifyMemoryBatch } from './task-state/control-model';
+import { shouldIncludePersonaMemoryInGeneratedContext } from '../utils/conversation-boundary-filter';
 import {
 	determineTeiWinningMode,
 	logTeiRetrievalSummary,
@@ -3054,6 +3055,11 @@ export async function buildPersonaPromptContext(
 		items,
 	});
 
+	const isGeneratedDocumentRequest =
+		/\bgenerate_file\b/i.test(query) ||
+		(/\b(?:generate|create|write|draft|make)\b/i.test(query) &&
+			/\b(?:file|document|pdf|report|presentation|deck|slide|spreadsheet)\b/i.test(query));
+
 	const activeConstraints = items
 		.filter((item) => item.state === 'active' && item.activeConstraint)
 		.map((item) => ({
@@ -3071,6 +3077,14 @@ export async function buildPersonaPromptContext(
 						? 1
 						: 0,
 		}))
+		.filter((entry) =>
+			shouldIncludePersonaMemoryInGeneratedContext({
+				memoryCanonicalText: entry.item.canonicalText,
+				currentQuery: query,
+				queryOverlap: entry.matchScore,
+				isGeneratedDocumentRequest,
+			})
+		)
 		.sort(
 			(left, right) =>
 				right.constraintRank - left.constraintRank ||
@@ -3090,6 +3104,14 @@ export async function buildPersonaPromptContext(
 				rerankScoreById,
 			}),
 		}))
+		.filter((entry) =>
+			shouldIncludePersonaMemoryInGeneratedContext({
+				memoryCanonicalText: entry.item.canonicalText,
+				currentQuery: query,
+				queryOverlap: entry.matchScore,
+				isGeneratedDocumentRequest,
+			})
+		)
 		.sort(
 			(left, right) =>
 				right.matchScore - left.matchScore ||
@@ -3109,6 +3131,14 @@ export async function buildPersonaPromptContext(
 			}),
 		}))
 		.filter((entry) => entry.matchScore >= 0.1)
+		.filter((entry) =>
+			shouldIncludePersonaMemoryInGeneratedContext({
+				memoryCanonicalText: entry.item.canonicalText,
+				currentQuery: query,
+				queryOverlap: entry.matchScore,
+				isGeneratedDocumentRequest,
+			})
+		)
 		.sort(
 			(left, right) =>
 				right.matchScore - left.matchScore ||

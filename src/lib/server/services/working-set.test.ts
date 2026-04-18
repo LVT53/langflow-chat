@@ -198,4 +198,32 @@ describe('working-set ranking', () => {
 		expect(ranked[0]?.artifactId).toBe('doc-multi');
 		expect(ranked[1]?.artifactId).toBe('doc-single');
 	});
+
+	it('applies decay penalty to old artifacts', () => {
+		const now = Date.now();
+		const ranked = rankWorkingSetCandidates([
+			{
+				artifactId: 'doc-old',
+				artifactType: 'source_document',
+				name: 'Old document',
+				summary: null,
+				contentText: null,
+				updatedAt: now - 30 * 24 * 60 * 60 * 1000,
+				isAttachedThisTurn: true,
+			},
+			{
+				artifactId: 'doc-new',
+				artifactType: 'source_document',
+				name: 'New document',
+				summary: null,
+				contentText: null,
+				updatedAt: now,
+				isAttachedThisTurn: true,
+			},
+		]);
+
+		expect(ranked[0]?.artifactId).toBe('doc-new');
+		expect(ranked[1]?.artifactId).toBe('doc-old');
+		expect(ranked[0]?.score).toBeGreaterThan(ranked[1]?.score ?? 0);
+	});
 });

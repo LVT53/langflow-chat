@@ -11,6 +11,15 @@ import { db } from '../db';
 import { personaMemoryAttributions, users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
 import { estimateTokenCount } from '$lib/server/utils/tokens';
+import { TokenBudget } from '$lib/server/utils/token-budget';
+import { extractiveCompress } from '$lib/server/utils/extractive-compression';
+import { computeDecayScore, computeCrossConversationDecay } from '$lib/server/utils/artifact-decay';
+import { detectTopicShift, shouldSuppressCarryover } from '$lib/server/utils/topic-shift-detector';
+import {
+	isCrossConversationArtifactEligible,
+	applyConversationBoundaryPenalty,
+	shouldIncludePersonaMemoryInGeneratedContext,
+} from '$lib/server/utils/conversation-boundary-filter';
 import {
 	buildContextSection,
 	compactContextSections,
@@ -37,6 +46,7 @@ import {
 	WORKING_SET_OUTPUT_TOKEN_BUDGET,
 	WORKING_SET_PROMPT_TOKEN_BUDGET,
 } from './knowledge';
+import { scoreMatch } from './working-set';
 import type {
 	Artifact,
 	ChatMessage,
@@ -50,7 +60,6 @@ import {
 	getContextDebugState,
 	getPromptArtifactSnippets,
 	prepareTaskContext,
-	summarizeHistoricalContext,
 } from './task-state';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import {
@@ -1481,39 +1490,124 @@ export async function buildConstructedContext(params: {
 			total + estimateTokenCount(buildContextSection(section.title, section.body)),
 		estimateTokenCount(params.message) + 12
 	);
-	let compactionMode: ConversationContextStatus['compactionMode'] = 'none';
-	if (sectionTotalEstimate > getTargetConstructedContext()) {
-		const compactibleSections = effectiveSections.filter(
-			(section) => section.llmCompactible && section.body.trim()
+	const targetBudget = getTargetConstructedContext();
+	const budget = new TokenBudget(targetBudget);
+
+	budget.reserve('system', params.message);
+
+	const personaSection = effectiveSections.find((s) => s.title === 'User Memory');
+	if (personaSection && personaSection.body.trim()) {
+		const queryOverlap = estimateTokenCount(
+			personaSection.body.substring(0, 200)
 		);
-		const condensedHistorical = await summarizeHistoricalContext({
-			message: params.message,
-			taskState,
-			sectionBodies: compactibleSections.map((section) => ({
-				title: section.title,
-				body: section.body,
-			})),
-			targetTokens: getTargetConstructedContext(),
-		}).catch(() => null);
-		if (condensedHistorical) {
-			compactionMode = 'llm_fallback';
-			const retained = effectiveSections.filter((section) => !section.llmCompactible);
-			retained.push({
-				title: 'Historical Context Checkpoint',
-				body: condensedHistorical,
-				layer: taskState ? 'task_state' : 'session',
-				llmCompactible: true,
-			});
-			effectiveSections = retained;
+		const include = shouldIncludePersonaMemoryInGeneratedContext({
+			memoryCanonicalText: personaSection.body,
+			currentQuery: params.message,
+			queryOverlap,
+			isGeneratedDocumentRequest: activeDocumentState.documentFocused,
+		});
+		if (include) {
+			budget.reserve('persona', personaSection.body);
 		}
 	}
 
+	const historySections = effectiveSections.filter(
+		(section) =>
+			section.title !== 'User Memory' &&
+			section.title !== 'Current Attachments' &&
+			section.title !== 'Retrieved Evidence'
+	);
+	for (const section of historySections) {
+		const sectionText = buildContextSection(section.title, section.body);
+		budget.reserve(`history:${section.title}`, sectionText);
+	}
+
+	const attachmentSection = effectiveSections.find((s) => s.title === 'Current Attachments');
+	if (attachmentSection) {
+		const sectionText = buildContextSection(attachmentSection.title, attachmentSection.body);
+		budget.reserve('attachments', sectionText);
+	}
+
+	const documentSection = effectiveSections.find((s) => s.title === 'Retrieved Evidence');
+	let compactionApplied = false;
+
+	if (documentSection && documentSection.body.trim().length >= 500) {
+		const docCharBudget = budget.remaining() * 4;
+		if (docCharBudget > 0) {
+			const compressed = extractiveCompress({
+				chunks: [documentSection.body],
+				query: params.message,
+				maxChars: Math.max(200, docCharBudget),
+			});
+			if (compressed.compressionRatio > 0.05) {
+				compactionApplied = true;
+				documentSection.body = compressed.text;
+			}
+		}
+	}
+
+	if (documentSection) {
+		const sectionText = buildContextSection(documentSection.title, documentSection.body);
+		budget.reserve('documents', sectionText);
+	}
+
+	const topicShift = detectTopicShift({
+		currentMessageEmbedding: [],
+		previousMessageEmbedding: [],
+	});
+	const suppressCarryover = shouldSuppressCarryover({
+		isShift: topicShift.isShift,
+		hasExplicitResetSignal: activeDocumentState.hasContextResetSignal,
+		turnsSinceLastShift: 0,
+	});
+
+	for (const artifact of selectedEvidence) {
+		const daysSinceAccess = artifact.updatedAt
+			? Math.floor((Date.now() - artifact.updatedAt.getTime()) / 86_400_000)
+			: 0;
+		const isSameConversation = artifact.conversationId === params.conversationId;
+		const matchScore = scoreMatch(params.message, `${artifact.name}\n${artifact.summary ?? ''}`);
+		const eligible = isCrossConversationArtifactEligible({
+			artifactConversationId: artifact.conversationId,
+			currentConversationId: params.conversationId,
+			matchScore,
+			explicitlyRequested: false,
+		});
+		if (!eligible) {
+			continue;
+		}
+		const penalty = applyConversationBoundaryPenalty({
+			score: 1,
+			isSameConversation,
+			daysSinceLastAccess: daysSinceAccess,
+		});
+		if (penalty <= 0) {
+			continue;
+		}
+		const decayScore = computeDecayScore({
+			importance: 1,
+			ageSeconds: daysSinceAccess * 86_400,
+			staleSeconds: 0,
+			queryOverlap: matchScore,
+			queryLength: estimateTokenCount(params.message),
+		});
+		const crossDecay = computeCrossConversationDecay({
+			baseScore: decayScore,
+			daysSinceLastAccess: daysSinceAccess,
+			isSameConversation,
+		});
+	}
+
+	const intro = suppressCarryover || compactionApplied
+		? 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.'
+		: 'Context from your conversation history:';
+
 	const compacted = compactContextSections({
-		intro: 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.',
+		intro,
 		message: params.message,
 		sections: effectiveSections,
-		targetTokens: getTargetConstructedContext(),
-		initialCompactionMode: compactionMode,
+		targetTokens: targetBudget,
+		initialCompactionMode: compactionApplied ? 'deterministic' : 'none',
 	});
 
 	const status = await updateConversationContextStatus({

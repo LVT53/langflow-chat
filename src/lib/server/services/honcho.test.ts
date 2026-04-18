@@ -16,7 +16,6 @@ const {
   mockPrepareTaskContext,
   mockRequestStructuredControlModel,
 	mockRerankItems,
-	mockSummarizeHistoricalContext,
 	mockSessionQueueStatus,
 	mockSessionContext,
 	mockSessionUploadFile,
@@ -119,7 +118,6 @@ const {
     })),
     mockRequestStructuredControlModel: vi.fn(),
     mockRerankItems: vi.fn(),
-    mockSummarizeHistoricalContext: vi.fn(async () => null),
 		mockSessionQueueStatus: vi.fn(async () => ({
 			pendingWorkUnits: 0,
 			inProgressWorkUnits: 0,
@@ -356,7 +354,6 @@ vi.mock('./task-state', () => ({
   getPromptArtifactSnippets: mockGetPromptArtifactSnippets,
   prepareTaskContext: mockPrepareTaskContext,
   requestStructuredControlModel: mockRequestStructuredControlModel,
-  summarizeHistoricalContext: mockSummarizeHistoricalContext,
 }));
 
 vi.mock('./tei-reranker', () => ({
@@ -375,6 +372,40 @@ vi.mock('./active-state', () => ({
 vi.mock('./messages', () => ({
   listMessages: mockListMessages,
   getLatestHonchoMetadata: mockGetLatestHonchoMetadata,
+}));
+
+vi.mock('./working-set', () => ({
+  scoreMatch: (_query: string, _haystack: string) => 3,
+}));
+
+vi.mock('$lib/server/utils/token-budget', () => ({
+  TokenBudget: class {
+    constructor(public totalBudget: number) {}
+    reserve = vi.fn();
+    remaining = () => 50000;
+    remainingChars = () => 200000;
+    getSlotUsage = () => new Map();
+  },
+}));
+
+vi.mock('$lib/server/utils/extractive-compression', () => ({
+  extractiveCompress: () => ({ text: '', compressionRatio: 0 }),
+}));
+
+vi.mock('$lib/server/utils/artifact-decay', () => ({
+  computeDecayScore: () => 1.0,
+  computeCrossConversationDecay: () => 1.0,
+}));
+
+vi.mock('$lib/server/utils/topic-shift-detector', () => ({
+  detectTopicShift: () => ({ isShift: false, distance: 0 }),
+  shouldSuppressCarryover: () => false,
+}));
+
+vi.mock('$lib/server/utils/conversation-boundary-filter', () => ({
+  isCrossConversationArtifactEligible: () => true,
+  applyConversationBoundaryPenalty: (params: { score: number }) => params.score,
+  shouldIncludePersonaMemoryInGeneratedContext: () => true,
 }));
 
 describe('Honcho Service', () => {

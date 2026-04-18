@@ -3,14 +3,15 @@ export function isCrossConversationArtifactEligible(params: {
 	currentConversationId: string;
 	matchScore: number;
 	explicitlyRequested: boolean;
+	minMatchScore?: number;
 }): boolean {
-	const { artifactConversationId, currentConversationId, matchScore, explicitlyRequested } = params;
+	const { artifactConversationId, currentConversationId, matchScore, explicitlyRequested, minMatchScore = 3 } = params;
 
 	if (artifactConversationId === null || artifactConversationId === currentConversationId) {
 		return true;
 	}
 
-	return matchScore >= 3 || explicitlyRequested;
+	return matchScore >= minMatchScore || explicitlyRequested;
 }
 
 export function applyConversationBoundaryPenalty(params: {

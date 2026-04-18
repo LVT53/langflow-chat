@@ -162,7 +162,11 @@ vi.mock('./tei-reranker', () => ({
 }));
 
 vi.mock('./working-set', () => ({
-	scoreMatch: vi.fn(() => 0),
+	scoreMatch: vi.fn((query: string, text: string) => {
+		if (query.includes('software engineer') && text.includes('software engineer')) return 3;
+		if (query.includes('bulleted lists') && text.includes('bulleted lists')) return 3;
+		return 0;
+	}),
 }));
 
 describe('persona-memory temporal safeguards', () => {
@@ -738,47 +742,56 @@ describe('persona-memory temporal safeguards', () => {
 	it('marks overlapping older persona memories as corrected when a newer explicit correction appears', async () => {
 		mockCanUseContextSummarizer.mockReturnValue(false);
 
-		const { syncPersonaMemoryClusters } = await import('./persona-memory');
+		const mockNow = Date.UTC(2026, 3, 5);
+		const originalNow = Date.now;
+		Date.now = () => mockNow;
 
-		await syncPersonaMemoryClusters({
-			userId: 'user-correction-signal',
-			rawRecords: [
-				{
-					id: 'project-old',
-					content: 'The user is working on assessment documentation.',
-					createdAt: Date.UTC(2026, 3, 1),
-					scope: 'self',
-					sessionId: 'conversation-1',
-				},
-				{
-					id: 'project-correction',
-					content: 'Actually, the user is not working on assessment documentation anymore.',
-					createdAt: Date.UTC(2026, 3, 4),
-					scope: 'self',
-					sessionId: 'conversation-2',
-				},
-			],
-			reason: 'test',
-			force: true,
-		});
+		try {
+			const { syncPersonaMemoryClusters } = await import('./persona-memory');
 
-		expect(insertedClusterRows).toHaveLength(2);
-		const correctedCluster = insertedClusterRows.find((row) =>
-			String(row.canonicalText).includes('working on assessment documentation.')
-		);
-		const correctionCluster = insertedClusterRows.find((row) =>
-			String(row.canonicalText).includes('not working on assessment documentation anymore')
-		);
-		expect(correctedCluster).toBeTruthy();
-		expect(correctionCluster).toBeTruthy();
-		expect(JSON.parse(String(correctedCluster?.metadataJson))).toMatchObject({
-			correctionCount: 1,
-			correctionReason: 'explicit_user_correction',
-			correctedByClusterId: correctionCluster?.clusterId,
-			correctionObservedAt: Date.UTC(2026, 3, 4),
-		});
-		expect(Number(correctedCluster?.salienceScore)).toBeLessThan(Number(correctionCluster?.salienceScore));
+			await syncPersonaMemoryClusters({
+				userId: 'user-correction-signal',
+				rawRecords: [
+					{
+						id: 'project-old',
+						content: 'The user is working on assessment documentation.',
+						createdAt: Date.UTC(2026, 3, 1),
+						scope: 'self',
+						sessionId: 'conversation-1',
+					},
+					{
+						id: 'project-correction',
+						content: 'Actually, the user is not working on assessment documentation anymore.',
+						createdAt: Date.UTC(2026, 3, 4),
+						scope: 'self',
+						sessionId: 'conversation-2',
+					},
+				],
+				reason: 'test',
+				force: true,
+			});
+
+			expect(insertedClusterRows).toHaveLength(2);
+			const correctedCluster = insertedClusterRows.find((row) =>
+				String(row.canonicalText).includes('working on assessment documentation.')
+			);
+			const correctionCluster = insertedClusterRows.find((row) =>
+				String(row.canonicalText).includes('not working on assessment documentation anymore')
+			);
+			expect(correctedCluster).toBeTruthy();
+			expect(correctionCluster).toBeTruthy();
+			expect(JSON.parse(String(correctedCluster?.metadataJson))).toMatchObject({
+				correctionCount: 1,
+				correctionReason: 'explicit_user_correction',
+				correctedByClusterId: correctionCluster?.clusterId,
+				correctionObservedAt: Date.UTC(2026, 3, 4),
+			});
+			expect(Number(correctedCluster?.salienceScore)).toBeLessThan(Number(correctionCluster?.salienceScore));
+		} finally {
+			Date.now = originalNow;
+		}
 	});
+
 
 	it('only keeps the correction penalty until the memory is reaffirmed later', async () => {
 		const now = Date.now();
@@ -1035,5 +1048,76 @@ describe('persona-memory temporal safeguards', () => {
 			supersessionReason: 'temporal_update',
 			topicKey: 'assessment documentation',
 		});
+	});
+
+	it('filters out persona memories with low overlap in generated document requests', async () => {
+		const { buildPersonaPromptContext } = await import('./persona-memory');
+
+		mockSelectQuery.mockImplementation(() =>
+			createSelectChain([
+				{
+					cluster: {
+						clusterId: 'cluster-filter-1',
+						userId: 'user-doc-filter',
+						canonicalText: 'The user prefers bulleted lists.',
+						memoryClass: 'stable_preference',
+						state: 'active',
+						salienceScore: 76,
+						metadataJson: '{}',
+						lastSeenAt: new Date(),
+						updatedAt: new Date(),
+						createdAt: new Date(),
+					},
+					member: {
+						conclusionId: 'c1',
+						content: 'I like bullet points.',
+						scope: 'self',
+						sessionId: 'sess-1',
+						createdAt: new Date(),
+					},
+					conversationTitle: 'List conversation',
+				},
+				{
+					cluster: {
+						clusterId: 'cluster-filter-2',
+						userId: 'user-doc-filter',
+						canonicalText: 'The user is a software engineer from Hungary.',
+						memoryClass: 'identity_profile',
+						state: 'active',
+						salienceScore: 88,
+						metadataJson: '{}',
+						lastSeenAt: new Date(),
+						updatedAt: new Date(),
+						createdAt: new Date(),
+					},
+					member: {
+						conclusionId: 'c2',
+						content: 'I am a developer from Hungary.',
+						scope: 'self',
+						sessionId: 'sess-2',
+						createdAt: new Date(),
+					},
+					conversationTitle: 'Intro',
+				},
+			])
+		);
+
+		const promptNormal = await buildPersonaPromptContext('user-doc-filter', 'How do I center a div?');
+		expect(promptNormal).toContain('prefers bulleted lists');
+		expect(promptNormal).toContain('software engineer');
+
+		const promptGenLowOverlap = await buildPersonaPromptContext(
+			'user-doc-filter',
+			'generate_file on how to center a div'
+		);
+		expect(promptGenLowOverlap).not.toContain('prefers bulleted lists');
+		expect(promptGenLowOverlap).not.toContain('software engineer');
+
+		const promptGenHighOverlap = await buildPersonaPromptContext(
+			'user-doc-filter',
+			'generate_file about software engineering and bulleted lists'
+		);
+		expect(promptGenHighOverlap).toContain('prefers bulleted lists');
+		expect(promptGenHighOverlap).toContain('software engineer');
 	});
 });

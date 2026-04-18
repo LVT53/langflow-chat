@@ -18,6 +18,7 @@ import {
   type TeiRerankDiagnostics,
 } from "../../tei-observability";
 import { scoreMatch } from "../../working-set";
+import { computeDecayScore } from "../../../utils/artifact-decay";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import {
   getArtifactDocumentOrigin,
@@ -480,16 +481,24 @@ async function rankArtifactMatches(params: {
       const lexicalScore = lexicalMatches.find((entry) => entry.artifact.id === artifact.id)?.lexicalScore ?? 0;
       const semanticScore = semanticScoreById.get(artifact.id) ?? 0;
       const rerankScore = rerankScoreById.get(artifact.id) ?? 0;
+      const baseScore = lexicalScore * 10 + semanticScore * 18 + rerankScore * 24 + (artifact.updatedAt / 1_000_000_000_000);
+      const ageSeconds = Math.max(0, (Date.now() - artifact.updatedAt) / 1000);
+      
+      const finalScore = computeDecayScore({
+        importance: baseScore,
+        ageSeconds,
+        staleSeconds: ageSeconds,
+        queryOverlap: lexicalScore,
+        queryLength: 1,
+        decayRate: 0.001,
+      });
+
       return {
         artifact,
         lexicalScore,
         semanticScore,
         rerankScore,
-        finalScore:
-          lexicalScore * 10 +
-          semanticScore * 18 +
-          rerankScore * 24 +
-          (artifact.updatedAt / 1_000_000_000_000),
+        finalScore,
       };
     })
     .filter((entry) => entry.lexicalScore > 0 || entry.semanticScore > 0 || entry.rerankScore > 0)

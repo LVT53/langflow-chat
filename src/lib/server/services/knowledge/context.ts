@@ -17,6 +17,11 @@ import type {
 	WorkingSetReasonCode,
 } from '$lib/types';
 import { parseJsonStringArray } from '$lib/server/utils/json';
+import { countRecentMemoryEventsBySubject } from '../memory-events';
+import {
+	applyConversationBoundaryPenalty,
+	isCrossConversationArtifactEligible,
+} from '$lib/server/utils/conversation-boundary-filter';
 import {
 	buildActiveDocumentState,
 	deriveCurrentTurnReasonCodes,
@@ -532,26 +537,80 @@ export async function findRelevantKnowledgeArtifacts(params: {
 }): Promise<Artifact[]> {
 	const limit = params.limit ?? 6;
 	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
+	const currentConversationId = params.currentConversationId ?? '';
 
-	const [documentMatches, generatedOutputMatches, preferredArtifacts] = await Promise.all([
+	const [documentMatchesRaw, generatedOutputMatchesRaw, preferredArtifacts] = await Promise.all([
 		findRelevantArtifactsByTypesDetailed({
 			userId: params.userId,
 			query: params.query,
 			types: ['normalized_document'],
-			limit,
+			limit: limit * 3,
 			excludeConversationId: params.excludeConversationId,
 		}),
 		findRelevantArtifactsByTypesDetailed({
 			userId: params.userId,
 			query: params.query,
 			types: ['generated_output'],
-			limit: Math.max(limit * 3, 12),
+			limit: Math.max(limit * 5, 20),
 			excludeConversationId: params.excludeConversationId,
 		}),
 		params.preferredArtifactId
 			? getArtifactsForUser(params.userId, [params.preferredArtifactId])
 			: Promise.resolve([]),
 	]);
+
+	const processMatches = (matches: typeof documentMatchesRaw, minMatchScore: number) => {
+		return matches
+			.map((entry) => {
+				const isSameConversation = entry.artifact.conversationId === currentConversationId;
+				const isCrossConversation = entry.artifact.conversationId !== null && !isSameConversation;
+
+				const explicitlyRequested =
+					scoreMatch(params.query, entry.artifact.name) > 0 ||
+					scoreMatch(params.query, entry.artifact.summary ?? '') > 1;
+
+				if (isCrossConversation) {
+					const eligible = isCrossConversationArtifactEligible({
+						artifactConversationId: entry.artifact.conversationId,
+						currentConversationId,
+						matchScore: entry.lexicalScore,
+						explicitlyRequested,
+						minMatchScore,
+					});
+					if (!eligible) return null;
+				}
+
+				const daysSinceLastAccess = Math.max(0, (Date.now() - entry.artifact.updatedAt) / 86_400_000);
+
+				return {
+					...entry,
+					finalScore: applyConversationBoundaryPenalty({
+						score: entry.finalScore,
+						isSameConversation,
+						daysSinceLastAccess,
+					}),
+					semanticScore: applyConversationBoundaryPenalty({
+						score: entry.semanticScore,
+						isSameConversation,
+						daysSinceLastAccess,
+					}),
+					rerankScore: applyConversationBoundaryPenalty({
+						score: entry.rerankScore,
+						isSameConversation,
+						daysSinceLastAccess,
+					}),
+				};
+			})
+			.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+			.sort((left, right) => {
+				if (right.finalScore !== left.finalScore) return right.finalScore - left.finalScore;
+				return right.artifact.updatedAt - left.artifact.updatedAt;
+			});
+	};
+
+	const documentMatches = processMatches(documentMatchesRaw, 2).slice(0, limit);
+	const generatedOutputMatches = processMatches(generatedOutputMatchesRaw, 3).slice(0, Math.max(limit * 3, 12));
+
 	const documents = documentMatches.map((entry) => entry.artifact);
 	const generatedOutputs = generatedOutputMatches.map((entry) => entry.artifact);
 	const generatedSemanticScoresByArtifactId = new Map(

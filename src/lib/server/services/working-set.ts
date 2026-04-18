@@ -1,3 +1,4 @@
+import { computeDecayScore } from '../utils/artifact-decay';
 import type {
 	ArtifactType,
 	WorkingSetReasonCode,
@@ -82,6 +83,16 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 		score += matchBoost;
 		reasonCodes.push('matched_current_turn');
 	}
+
+	const ageSeconds = Math.max(0, (Date.now() - candidate.updatedAt) / 1000);
+	score = computeDecayScore({
+		importance: score,
+		ageSeconds,
+		staleSeconds: ageSeconds,
+		queryOverlap: candidate.messageMatchScore ?? 0,
+		queryLength: candidate.messageMatchScore ? 1 : 0,
+		decayRate: 0.001,
+	});
 
 	return {
 		artifactId: candidate.artifactId,
