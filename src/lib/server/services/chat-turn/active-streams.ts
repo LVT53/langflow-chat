@@ -213,6 +213,10 @@ export function getOrphanedStream(conversationId: string): string | null {
 	return conversationStreams.get(conversationId) ?? null;
 }
 
+export function isStreamActive(streamId: string): boolean {
+	return activeStreams.has(streamId);
+}
+
 export function requestActiveChatStreamStop(params: {
 	streamId: string;
 	userId: string;
