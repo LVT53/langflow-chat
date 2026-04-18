@@ -35,7 +35,7 @@
 		TaskSteeringPayload,
 	} from '$lib/types';
 	import type { PageProps } from './$types';
-	import { streamChat } from '$lib/services/streaming';
+	import { streamChat, checkForOrphanedStream } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
 	import { inferGeneratedFilenameFromToolInput } from '$lib/utils/generate-file-tool';
 	import {
@@ -350,9 +350,103 @@
 		}
 	}
 
+	async function reconnectToOrphanedStream(streamId: string) {
+		if (isSending || activeStream) return;
+
+		isSending = true;
+		hasPersistedMessages = true;
+
+		const placeholderId = crypto.randomUUID();
+		const placeholder = createAssistantPlaceholder(placeholderId);
+		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
+
+		activeStream = streamChat(
+			'',
+			data.conversation.id,
+			{
+				onToken(chunk) {
+					messages.update((list) => appendTokenChunkToMessageList(list, placeholderId, chunk));
+				},
+				onThinking(chunk) {
+					messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
+				},
+				onToolCall(name, input, status, details) {
+					if ((name === 'generate_file' || name === 'export_document') && status === 'running') {
+						addPendingGeneratedFile(input, placeholderId);
+					}
+					messages.update((list) =>
+						applyToolCallUpdateToMessageList(list, {
+							placeholderId,
+							name,
+							input,
+							status,
+							details,
+						})
+					);
+				},
+				onEnd(fullText, metadata) {
+					contextStatus = metadata?.contextStatus ?? contextStatus;
+					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
+					taskState = metadata?.taskState ?? taskState;
+					contextDebug = metadata?.contextDebug ?? contextDebug;
+					if (metadata?.generatedFiles) {
+						const existingIds = new Set(generatedFiles.map((f) => f.id));
+						const newFiles = metadata.generatedFiles.filter((f) => !existingIds.has(f.id));
+						generatedFiles = [...generatedFiles, ...newFiles];
+					}
+					resetPendingGeneratedFiles();
+					const serverAssistantId = metadata?.assistantMessageId;
+					messages.update((list) =>
+						finalizeStreamingMessageList(list, {
+							placeholderId,
+							clientUserMessageId: null,
+							metadata,
+						})
+					);
+					isSending = false;
+					activeStream = null;
+					canRetry = false;
+					if (serverAssistantId) {
+						void pollMessageEvidence(serverAssistantId);
+					}
+				},
+				onError(err) {
+					messages.update((list) => removeMessageById(list, placeholderId));
+					activeStream = null;
+					isSending = false;
+					resetPendingGeneratedFiles();
+
+					const isBrowserAbort =
+						err.name === 'AbortError' && browser && document.visibilityState === 'hidden';
+					if (isBrowserAbort) {
+						streamInterruptedByBackground = true;
+						return;
+					}
+
+					sendError = toFriendlySendError(err);
+					canRetry = true;
+				},
+			},
+			{
+				reconnectToStreamId: streamId,
+			}
+		);
+	}
+
+	async function checkForOrphanedStreamOnMount() {
+		if (isSending || activeStream || hydratingConversation) return;
+		if ($messages.length > 0) return;
+
+		const streamId = await checkForOrphanedStream(data.conversation.id);
+		if (!streamId) return;
+
+		void reconnectToOrphanedStream(streamId);
+	}
+
 	onMount(() => {
 		currentConversationId.set(data.conversation.id);
 		document.addEventListener('visibilitychange', handleVisibilityChange);
+		void checkForOrphanedStreamOnMount();
 	});
 
 	onDestroy(() => {

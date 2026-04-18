@@ -13,6 +13,9 @@ const pendingStops = new Map<string, ReturnType<typeof setTimeout>>();
 // Track per-user stream counts for limit enforcement
 const userStreamCounts = new Map<string, number>();
 
+// Track conversationId → streamId for orphan detection
+const conversationStreams = new Map<string, string>();
+
 function markPendingStop(streamId: string) {
 	if (pendingStops.has(streamId)) {
 		return;
@@ -36,11 +39,19 @@ export function registerActiveChatStream(params: {
 	streamId: string;
 	userId: string;
 	controller: AbortController;
-}) {
+	conversationId: string;
+}): boolean {
+	const existingStreamId = conversationStreams.get(params.conversationId);
+	if (existingStreamId && existingStreamId !== params.streamId) {
+		return false;
+	}
+
 	activeStreams.set(params.streamId, {
 		userId: params.userId,
 		controller: params.controller,
 	});
+
+	conversationStreams.set(params.conversationId, params.streamId);
 
 	if (pendingStops.has(params.streamId)) {
 		params.controller.abort();
@@ -48,6 +59,8 @@ export function registerActiveChatStream(params: {
 
 	const currentCount = userStreamCounts.get(params.userId) ?? 0;
 	userStreamCounts.set(params.userId, currentCount + 1);
+
+	return true;
 }
 
 export function unregisterActiveChatStream(streamId: string, controller?: AbortController) {
@@ -59,17 +72,27 @@ export function unregisterActiveChatStream(streamId: string, controller?: AbortC
 
 	if (!controller || activeStream.controller === controller) {
 		activeStreams.delete(streamId);
-		if (activeStream) {
-			const userId = activeStream.userId;
-			const currentCount = userStreamCounts.get(userId) ?? 1;
-			if (currentCount <= 1) {
-				userStreamCounts.delete(userId);
-			} else {
-				userStreamCounts.set(userId, currentCount - 1);
+
+		for (const [convId, sid] of conversationStreams) {
+			if (sid === streamId) {
+				conversationStreams.delete(convId);
+				break;
 			}
+		}
+
+		const userId = activeStream.userId;
+		const currentCount = userStreamCounts.get(userId) ?? 1;
+		if (currentCount <= 1) {
+			userStreamCounts.delete(userId);
+		} else {
+			userStreamCounts.set(userId, currentCount - 1);
 		}
 	}
 	clearPendingStop(streamId);
+}
+
+export function getOrphanedStream(conversationId: string): string | null {
+	return conversationStreams.get(conversationId) ?? null;
 }
 
 export function requestActiveChatStreamStop(params: {

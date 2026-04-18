@@ -174,6 +174,7 @@ export const POST: RequestHandler = async (event) => {
           streamId,
           userId: user.id,
           controller: upstreamAbortController,
+          conversationId,
         });
       }
       const outputTranslator = shouldTranslateHungarian(turn)

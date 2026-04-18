@@ -53,6 +53,17 @@ function toStreamError(message: string, code?: string): Error {
 	return error;
 }
 
+export async function checkForOrphanedStream(conversationId: string): Promise<string | null> {
+	try {
+		const res = await fetch(`/api/chat/stream/status?conversationId=${encodeURIComponent(conversationId)}`);
+		if (!res.ok) return null;
+		const data = await res.json();
+		return data.hasOrphanedStream ? data.streamId : null;
+	} catch {
+		return null;
+	}
+}
+
 async function requestServerSideStreamStop(streamId: string): Promise<void> {
 	try {
 		await fetch('/api/chat/stream/stop', {
@@ -71,6 +82,7 @@ export type StreamChatOptions = {
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
 	retryAssistantMessageId?: string;
+	reconnectToStreamId?: string;
 };
 
 export function streamChat(
@@ -85,9 +97,10 @@ export function streamChat(
 		attachmentIds,
 		activeDocumentArtifactId,
 		retryAssistantMessageId,
+		reconnectToStreamId,
 	} = options ?? {};
 	const controller = new AbortController();
-	const streamId = crypto.randomUUID();
+	const streamId = reconnectToStreamId ?? crypto.randomUUID();
 	let stopRequested = false;
 	let detached = false;
 	let fullText = '';
@@ -137,6 +150,7 @@ export function streamChat(
 						skipPersistUserMessage,
 						attachmentIds,
 						activeDocumentArtifactId,
+						reconnectToStreamId,
 					});
 			const res = await fetch(url, {
 				method: 'POST',
