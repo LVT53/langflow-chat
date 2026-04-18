@@ -597,8 +597,15 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 	}
 
 	async function checkForOrphanedStreamOnMount() {
-		if (isSending || activeStream || hydratingConversation) {
-			console.info('[CHAT] Skip orphan check: isSending=', isSending, 'activeStream=', !!activeStream, 'hydrating=', hydratingConversation);
+		// Note: hydratingConversation is intentionally NOT in the skip condition.
+		// Orphan detection is independent of bootstrap hydration — the reconnection
+		// path guards itself via isSending/activeStream, and hydration skips when
+		// activeStream is set. Skipping the orphan check while hydrating causes a
+		// race where the client misses the orphaned stream, the server keeps it
+		// alive, and the user gets a 502 on the next send due to orphan cancellation
+		// timing issues.
+		if (isSending || activeStream) {
+			console.info('[CHAT] Skip orphan check: isSending=', isSending, 'activeStream=', !!activeStream);
 			return;
 		}
 
