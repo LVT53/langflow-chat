@@ -464,6 +464,12 @@
 						})
 					);
 				},
+				onWaiting() {
+					console.info('[CHAT] Reconnection waiting - polling for completion');
+					activeStream?.detach();
+					activeStream = null;
+					void pollForCompletion(placeholderId);
+				},
 				onEnd(fullText, metadata) {
 					console.info('[CHAT] Reconnection stream ended, fullText length:', fullText.length);
 					contextStatus = metadata?.contextStatus ?? contextStatus;

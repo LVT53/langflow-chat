@@ -351,7 +351,8 @@ const preflight = await preflightChatTurn({
           })}\n\n`);
 
           closeDownstream();
-          unregisterActiveChatStream(streamId);
+          // Do NOT unregister - keep stream registered so subsequent visits can still detect orphan
+          // The original stream will clean itself up when it completes
           return;
         }
       }
