@@ -24,29 +24,30 @@ Environment Variables:
 
 Example code the model might generate:
 ```python
-with open("/output/example.txt", "w", encoding="utf-8") as handle:
-    handle.write("Hello from AlfyAI")
+with open('/output/example.txt', 'w', encoding='utf-8') as handle:
+    handle.write('Hello from AlfyAI')
 ```
 
 ```javascript
-const ExcelJS = require("exceljs");
+const ExcelJS = require('exceljs');
 const workbook = new ExcelJS.Workbook();
-const sheet = workbook.addWorksheet("Report");
-sheet.addRow(["Name", "Value"]);
-sheet.addRow(["Alpha", 42]);
-await workbook.xlsx.writeFile("/output/report.xlsx");
+const sheet = workbook.addWorksheet('Report');
+sheet.addRow(['Name', 'Value']);
+sheet.addRow(['Alpha', 42]);
+await workbook.xlsx.writeFile('/output/report.xlsx');
 ```
 
 ```javascript
 // createPDF is pre-loaded -- no require needed
 await createPDF({
-  filename: "example.pdf",
-  title: "Hello from AlfyAI",
+  filename: 'example.pdf',
+  title: 'Hello from AlfyAI',
   content: [
-    { type: "heading", text: "Section 1", level: 1 },
-    { type: "paragraph", text: "This is a paragraph with Unicode: Č, ö, ü, ñ." },
-    { type: "table", headers: ["Name", "Value"], rows: [["Alpha", "42"]] },
-    { type: "list", items: ["Item 1", "Item 2"], ordered: true },
+    { type: 'heading', text: 'Section 1', level: 1 },
+    { type: 'paragraph', text: 'This is a paragraph with Unicode: \u010c, \u00f6, \u00fc, \u00f1.' },
+    { type: 'table', headers: ['Name', 'Value'], rows: [['Alpha', '42']] },
+    { type: 'list', items: ['Item 1', 'Item 2'], ordered: true },
+    { type: 'image', src: '/workspace/assets/diagram.png', alt: 'Architecture diagram', style: 'full' },
   ],
 });
 ```
@@ -54,7 +55,19 @@ await createPDF({
 For PDF generation, the `createPDF` helper is pre-loaded in the JavaScript runtime.
 Do not require it; just call it directly. It handles Unicode, text wrapping, page breaks,
 and page numbers automatically. Do not use `pdf-lib` directly.
-Supported block types: heading (level 1-3), paragraph, list, table, code, separator, spacer.
+
+Supported block types: heading (level 1-3), paragraph, list, table, code, separator, spacer, image.
+
+Image blocks accept:
+- src: Local file path (e.g., '/workspace/assets/image.png') or base64 data URI (data:image/png;base64,...)
+- alt: Caption text shown below the image
+- width: Max width in points (default: content width)
+- height: Max height in points (default: 400)
+- style: 'full' (border + shadow), 'rounded' (border only), 'shadow' (shadow only)
+
+Images are styled with the AlfyAI brand theme (terracotta accents, shadows, captions).
+Remote URLs are NOT supported (sandbox has no network access).
+
 In JavaScript scripts, always use double quotes or backtick template literals for text
 content. Never use single quotes for strings that may contain apostrophes.
 Do not write fallback diagnostics (for example `error_log.txt`) to `/output`; `/output` should contain only
@@ -89,12 +102,13 @@ class FileGeneratorToolComponent(Component):
     - 60 second timeout
     - 1GB memory limit
     - Non-root execution
-    
+
     Supported output formats depend on the selected runtime:
     - Python: txt, md, csv, json, html, xml, svg, rtf, css, js, py
-    - JavaScript: xlsx via exceljs, pdf via create-pdf helper, pptx via pptxgenjs, docx via docx, odt via jszip packaging
+    - JavaScript: xlsx via exceljs, pdf via create-pdf helper (with image block support), pptx via pptxgenjs, docx via docx, odt via jszip packaging
     - JavaScript runs under Node with CommonJS `require(...)`; write final files to `/output`
     - For PDF, `createPDF` is pre-loaded: `await createPDF({ filename, title, content: [...] });`
+      Supports: heading, paragraph, list, table, code, separator, spacer, image blocks with brand styling.
     """
 
     display_name = "File Generator"
@@ -193,7 +207,7 @@ class FileGeneratorToolComponent(Component):
 
     def _get_conversation_id(self) -> str | None:
         """Get the conversation ID from the Langflow session.
-        
+
         The session_id in Langflow corresponds to the conversationId in AlfyAI.
         """
         try:
@@ -236,17 +250,17 @@ class FileGeneratorToolComponent(Component):
         filename: str | None = None,
     ) -> dict[str, Any]:
         """Execute Python code in the sandbox and return the result.
-        
+
         Args:
             code: Python code to execute
             conversation_id: AlfyAI conversation ID for file storage
             filename: Optional custom filename
-            
+
         Returns:
             Dict with 'success', 'files', or 'error' keys
         """
         url = f"{self.alfyai_api_url.rstrip('/')}/api/chat/files/generate"
-        
+
         headers = {
             "Content-Type": "application/json",
         }
@@ -254,16 +268,16 @@ class FileGeneratorToolComponent(Component):
         signed_assertion = self._build_service_assertion(conversation_id)
         if signed_assertion:
             headers["Authorization"] = f"Bearer {signed_assertion}"
-        
+
         payload = {
             "conversationId": conversation_id,
             "code": code,
             "language": language,
         }
-        
+
         if filename:
             payload["filename"] = filename
-        
+
         try:
             response = requests.post(
                 url,
@@ -271,7 +285,7 @@ class FileGeneratorToolComponent(Component):
                 json=payload,
                 timeout=120,  # 2 minute timeout for sandbox execution
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return {
@@ -290,7 +304,13 @@ class FileGeneratorToolComponent(Component):
                     "error": "Conversation not found. The session may have expired.",
                 }
             elif response.status_code == 500:
-                error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+                error_data = (
+                    response.json()
+                    if response.headers.get("content-type", "").startswith(
+                        "application/json"
+                    )
+                    else {}
+                )
                 return {
                     "success": False,
                     "error": error_data.get("error", "Sandbox execution failed"),
@@ -298,7 +318,9 @@ class FileGeneratorToolComponent(Component):
             elif response.status_code == 422:
                 error_data = (
                     response.json()
-                    if response.headers.get("content-type", "").startswith("application/json")
+                    if response.headers.get("content-type", "").startswith(
+                        "application/json"
+                    )
                     else {}
                 )
                 return {
@@ -313,7 +335,7 @@ class FileGeneratorToolComponent(Component):
                     "success": False,
                     "error": f"API error: {response.status_code} {response.text[:200]}",
                 }
-                
+
         except requests.exceptions.Timeout:
             return {
                 "success": False,
@@ -338,30 +360,34 @@ class FileGeneratorToolComponent(Component):
 
         # Get conversation ID from session
         conversation_id = self._get_conversation_id()
-        
+
         if not conversation_id:
             logger.error("No conversation ID available - cannot generate files")
-            return Data(data={
-                "success": False,
-                "error": "No conversation context available. Cannot generate files outside of a chat session.",
-            })
-        
+            return Data(
+                data={
+                    "success": False,
+                    "error": "No conversation context available. Cannot generate files outside of a chat session.",
+                }
+            )
+
         if not code or not code.strip():
-            return Data(data={
-                "success": False,
-                "error": (
-                    "No source code provided. If you just updated this node, refresh or re-add it in "
-                    "Langflow so the tool sends the `source_code` argument."
-                ),
-            })
-        
+            return Data(
+                data={
+                    "success": False,
+                    "error": (
+                        "No source code provided. If you just updated this node, refresh or re-add it in "
+                        "Langflow so the tool sends the `source_code` argument."
+                    ),
+                }
+            )
+
         # Log the generation attempt
         logger.info(
             "Generating file in conversation %s via %s",
             conversation_id[:8],
             self.alfyai_api_url.rstrip("/"),
         )
-        
+
         # Execute the code
         result = self._execute_code(
             code=code,
@@ -369,42 +395,50 @@ class FileGeneratorToolComponent(Component):
             language=language,
             filename=filename if filename else None,
         )
-        
+
         if result["success"]:
             files = result.get("files", [])
             file_info = []
-            
+
             for f in files:
-                file_info.append({
-                    "filename": f.get("filename", "unknown"),
-                    "size": f.get("size", 0),
-                    "mimeType": f.get("mimeType", "application/octet-stream"),
-                    "downloadUrl": f.get("downloadUrl", ""),
-                })
-            
+                file_info.append(
+                    {
+                        "filename": f.get("filename", "unknown"),
+                        "size": f.get("size", 0),
+                        "mimeType": f.get("mimeType", "application/octet-stream"),
+                        "downloadUrl": f.get("downloadUrl", ""),
+                    }
+                )
+
             # Create a user-friendly summary
             if len(files) == 1:
-                summary = f"Generated file: {files[0]['filename']} ({files[0]['size']} bytes)"
+                summary = (
+                    f"Generated file: {files[0]['filename']} ({files[0]['size']} bytes)"
+                )
             else:
                 summary = f"Generated {len(files)} files: {', '.join(f['filename'] for f in files)}"
-            
+
             logger.info(f"File generation successful: {summary}")
-            
-            return Data(data={
-                "success": True,
-                "message": summary,
-                "files": file_info,
-                "conversationId": conversation_id,
-            })
+
+            return Data(
+                data={
+                    "success": True,
+                    "message": summary,
+                    "files": file_info,
+                    "conversationId": conversation_id,
+                }
+            )
         else:
             error_msg = result.get("error", "Unknown error")
             logger.error(f"File generation failed: {error_msg}")
-            
-            return Data(data={
-                "success": False,
-                "error": error_msg,
-                "conversationId": conversation_id,
-            })
+
+            return Data(
+                data={
+                    "success": False,
+                    "error": error_msg,
+                    "conversationId": conversation_id,
+                }
+            )
 
     def update_build_config(
         self,
@@ -413,7 +447,7 @@ class FileGeneratorToolComponent(Component):
         field_name: str | None = None,
     ) -> dict:
         """Update build configuration dynamically.
-        
+
         This method is called when field values change in the Langflow UI.
         """
         # Ensure API URL has a sensible default
@@ -421,8 +455,7 @@ class FileGeneratorToolComponent(Component):
             current_value = build_config["alfyai_api_url"].get("value", "")
             if not current_value:
                 build_config["alfyai_api_url"]["value"] = os.getenv(
-                    "ALFYAI_API_URL", 
-                    "http://localhost:3000"
+                    "ALFYAI_API_URL", "http://localhost:3000"
                 )
-        
+
         return build_config

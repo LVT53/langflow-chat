@@ -2,35 +2,47 @@
  * create-pdf.js -- Unicode-safe PDF helper for the AlfyAI sandbox.
  *
  * Usage:
- *   const createPDF = require("/workspace/helpers/create-pdf");
+ *   const createPDF = require('/workspace/helpers/create-pdf');
  *   await createPDF({
- *     filename: "report.pdf",
- *     title: "My Report",
+ *     filename: 'report.pdf',
+ *     title: 'My Report',
  *     content: [
- *       { type: "heading", text: "Section 1", level: 1 },
- *       { type: "paragraph", text: "Hello, Č, ö, ü, ñ -- all safe." },
- *       { type: "table", headers: ["Name", "Score"], rows: [["Alice", "95"]] },
- *       { type: "list", items: ["First", "Second"], ordered: true },
+ *       { type: 'heading', text: 'Section 1', level: 1 },
+ *       { type: 'paragraph', text: 'Hello, C, o, u, n -- all safe.' },
+ *       { type: 'table', headers: ['Name', 'Score'], rows: [['Alice', '95']] },
+ *       { type: 'list', items: ['First', 'Second'], ordered: true },
+ *       { type: 'image', src: '/path/to/image.png', alt: 'Description' },
+ *       { type: 'image', src: 'data:image/png;base64,...' },
  *     ],
  *   });
+ *
+ * Image block options:
+ *   - src: URL, file path, or base64 data URI (data:image/png;base64,...)
+ *   - alt: Text description (for accessibility, also used as caption)
+ *   - width: Max width in points (default: content width)
+ *   - height: Max height in points (default: auto)
+ *   - style: 'rounded' | 'shadow' | 'full' (default: 'full')
  */
 
-"use strict";
+'use strict';
 
-const { PDFDocument, rgb } = require("pdf-lib");
-const fontkit = require("@pdf-lib/fontkit");
-const fs = require("fs");
-const path = require("path");
+const { PDFDocument, rgb } = require('pdf-lib');
+const fontkit = require('@pdf-lib/fontkit');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || "/output";
+const OUTPUT_DIR = process.env.PDF_OUTPUT_DIR || '/output';
 
-const FONT_DIR = path.join(__dirname, "fonts");
-const REGULAR_FONT_PATH = path.join(FONT_DIR, "DejaVuSans.ttf");
-const BOLD_FONT_PATH = path.join(FONT_DIR, "DejaVuSans-Bold.ttf");
+const FONT_DIR = path.join(__dirname, 'fonts');
+const REGULAR_FONT_PATH = path.join(FONT_DIR, 'DejaVuSans.ttf');
+const BOLD_FONT_PATH = path.join(FONT_DIR, 'DejaVuSans-Bold.ttf');
 
 const DEFAULT_PAGE_SIZE = [595.28, 841.89]; // A4 in points
 const DEFAULT_MARGINS = { top: 60, bottom: 60, left: 50, right: 50 };
@@ -52,6 +64,111 @@ const SEPARATOR_COLOR = rgb(0.8, 0.8, 0.8);
 const TEXT_COLOR = rgb(0, 0, 0);
 const CODE_BG = rgb(0.96, 0.96, 0.96);
 
+// Image styling constants (AlfyAI Terracotta Crown theme)
+const IMAGE_STYLE = {
+  // Full style: border-radius + shadow
+  full: {
+    borderRadius: 8,
+    shadowOpacity: 0.1,
+    shadowBlur: 4,
+    shadowOffsetX: 0,
+    shadowOffsetY: 2,
+    shadowColor: rgb(0, 0, 0),
+  },
+  // Rounded style: just border-radius
+  rounded: {
+    borderRadius: 8,
+    shadowOpacity: 0,
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    shadowColor: rgb(0, 0, 0),
+  },
+  // Shadow style: just shadow
+  shadow: {
+    borderRadius: 0,
+    shadowOpacity: 0.1,
+    shadowBlur: 4,
+    shadowOffsetX: 0,
+    shadowOffsetY: 2,
+    shadowColor: rgb(0, 0, 0),
+  },
+};
+
+// Colors matching Terracotta Crown theme
+const BRAND_COLOR = rgb(193 / 255, 95 / 255, 60 / 255); // #C15F3C terracotta
+const SECONDARY_COLOR = rgb(107 / 255, 107 / 255, 107 / 255); // #6B6B6B gray
+const MUTED_COLOR = rgb(74 / 255, 74 / 255, 74 / 255); // #4A4A4A
+
+// ---------------------------------------------------------------------------
+// HTTP/HTTPS fetch for remote images
+// ---------------------------------------------------------------------------
+
+function fetchUrl(urlString) {
+  return new Promise((resolve, reject) => {
+    try {
+      const parsedUrl = new URL(urlString);
+      const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+      const request = protocol.get(urlString, { timeout: 10000 }, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          // Follow redirects
+          fetchUrl(response.headers.location).then(resolve).catch(reject);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`HTTP ${response.statusCode} for ${urlString}`));
+          return;
+        }
+
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+        response.on('error', reject);
+      });
+
+      request.on('error', reject);
+      request.on('timeout', () => {
+        request.destroy();
+        reject(new Error(`Timeout fetching ${urlString}`));
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Image loading helpers
+// ---------------------------------------------------------------------------
+
+async function loadImageAsBytes(src) {
+  // Base64 data URI
+  if (src.startsWith('data:')) {
+    const match = src.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error('Invalid base64 data URI');
+    }
+    return Buffer.from(match[2], 'base64');
+  }
+
+  // File path
+  if (!src.startsWith('http://') && !src.startsWith('https://')) {
+    if (!fs.existsSync(src)) {
+      throw new Error(`Image file not found: ${src}`);
+    }
+    return fs.readFileSync(src);
+  }
+
+  // Remote URL - NOT available in sandbox (no network access)
+  // Return a placeholder indicating remote images aren't supported in sandbox
+  throw new Error(
+    'Remote URLs are not supported in sandbox PDF generation. ' +
+    'Use local file paths or base64-encoded images instead.'
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Text measurement & wrapping
 // ---------------------------------------------------------------------------
@@ -67,19 +184,19 @@ function measureText(text, font, size) {
 
 function wrapText(text, font, size, maxWidth) {
   const lines = [];
-  const rawLines = String(text).split("\n");
+  const rawLines = String(text).split('\n');
 
   for (const rawLine of rawLines) {
-    if (rawLine.trim() === "") {
-      lines.push("");
+    if (rawLine.trim() === '') {
+      lines.push('');
       continue;
     }
 
-    const words = rawLine.split(/\s+/);
-    let currentLine = "";
+    const words = rawLine.split(/\u0020+/);
+    let currentLine = '';
 
     for (const word of words) {
-      const candidate = currentLine ? currentLine + " " + word : word;
+      const candidate = currentLine ? currentLine + ' ' + word : word;
       const width = measureText(candidate, font, size);
 
       if (width > maxWidth && currentLine) {
@@ -106,14 +223,14 @@ function safeDrawText(page, text, options) {
   try {
     page.drawText(text, options);
   } catch (e) {
-    if (e && e.message && e.message.includes("cannot encode")) {
+    if (e && e.message && e.message.includes('cannot encode')) {
       // Replace unencodable characters with '?' and retry
       const cleaned = text.replace(/./gu, (ch) => {
         try {
           options.font.widthOfTextAtSize(ch, options.size || 12);
           return ch;
         } catch {
-          return "?";
+          return '?';
         }
       });
       page.drawText(cleaned, options);
@@ -187,12 +304,15 @@ function renderHeading(pm, block) {
   const fontSize = HEADING_SIZES[level];
   const lineHeight = fontSize * HEADING_LINE_HEIGHT_FACTOR;
   const font = pm.fonts.bold;
-  const text = String(block.text || "");
+  const text = String(block.text || '');
   const lines = wrapText(text, font, fontSize, pm.contentWidth);
 
   const totalHeight = lines.length * lineHeight + 8; // 8pt spacing above
   pm.ensureSpace(totalHeight);
   pm.advance(level === 1 ? 16 : 10); // extra space before heading
+
+  // H1 and H2 get terracotta color (#C15F3C) per brand theme
+  const headingColor = level <= 2 ? BRAND_COLOR : TEXT_COLOR;
 
   for (const line of lines) {
     pm.ensureSpace(lineHeight);
@@ -201,23 +321,34 @@ function renderHeading(pm, block) {
       y: pm.cursorY,
       size: fontSize,
       font,
-      color: TEXT_COLOR,
+      color: headingColor,
     });
     pm.advance(lineHeight);
   }
 
   pm.advance(4); // space after heading
+
+  // H2 gets a subtle bottom border
+  if (level === 2) {
+    pm.ensureSpace(4);
+    pm.currentPage.drawLine({
+      start: { x: pm.margins.left, y: pm.cursorY + 4 },
+      end: { x: pm.margins.left + pm.contentWidth, y: pm.cursorY + 4 },
+      thickness: 0.5,
+      color: rgb(193 / 255, 95 / 255, 60 / 255, 0.2), // terracotta with 20% opacity
+    });
+  }
 }
 
 function renderParagraph(pm, block) {
   const font = pm.fonts.regular;
-  const text = String(block.text || "");
+  const text = String(block.text || '');
   const lineHeight = BODY_SIZE * LINE_HEIGHT_FACTOR;
   const lines = wrapText(text, font, BODY_SIZE, pm.contentWidth);
 
   for (const line of lines) {
     pm.ensureSpace(lineHeight);
-    if (line !== "") {
+    if (line !== '') {
       safeDrawText(pm.currentPage, line, {
         x: pm.margins.left,
         y: pm.cursorY,
@@ -240,7 +371,7 @@ function renderList(pm, block) {
   const indent = 20;
 
   for (let i = 0; i < items.length; i++) {
-    const bullet = ordered ? `${i + 1}. ` : "\u2022 ";
+    const bullet = ordered ? `${i + 1}. ` : '\u2022 ';
     const bulletWidth = measureText(bullet, font, BODY_SIZE);
     const itemLines = wrapText(
       String(items[i]),
@@ -252,15 +383,16 @@ function renderList(pm, block) {
     for (let j = 0; j < itemLines.length; j++) {
       pm.ensureSpace(lineHeight);
       if (j === 0) {
+        // Use terracotta bullet for unordered lists
         safeDrawText(pm.currentPage, bullet, {
           x: pm.margins.left + indent - bulletWidth,
           y: pm.cursorY,
           size: BODY_SIZE,
           font,
-          color: TEXT_COLOR,
+          color: ordered ? TEXT_COLOR : BRAND_COLOR, // Colored bullets for ul
         });
       }
-      if (itemLines[j] !== "") {
+      if (itemLines[j] !== '') {
         safeDrawText(pm.currentPage, itemLines[j], {
           x: pm.margins.left + indent,
           y: pm.cursorY,
@@ -278,16 +410,16 @@ function renderList(pm, block) {
 
 function renderCode(pm, block) {
   const font = pm.fonts.regular; // DejaVu Sans is monospace-like enough for code
-  const text = String(block.text || "");
+  const text = String(block.text || '');
   const lineHeight = CODE_SIZE * LINE_HEIGHT_FACTOR;
-  const lines = text.split("\n");
+  const lines = text.split('\n');
   const padX = 8;
   const padY = 6;
   const totalHeight = lines.length * lineHeight + padY * 2;
 
   pm.ensureSpace(totalHeight);
 
-  // Draw background rectangle
+  // Draw background rectangle with subtle border
   const bgTop = pm.cursorY + CODE_SIZE;
   pm.currentPage.drawRectangle({
     x: pm.margins.left,
@@ -295,13 +427,15 @@ function renderCode(pm, block) {
     width: pm.contentWidth,
     height: totalHeight,
     color: CODE_BG,
+    borderColor: rgb(0, 0, 0, 0.06),
+    borderWidth: 0.5,
   });
 
   pm.advance(padY);
 
   for (const line of lines) {
     pm.ensureSpace(lineHeight);
-    if (line !== "") {
+    if (line !== '') {
       safeDrawText(pm.currentPage, line, {
         x: pm.margins.left + padX,
         y: pm.cursorY,
@@ -328,35 +462,41 @@ function renderTable(pm, block) {
   const rowHeight = BODY_SIZE + TABLE_CELL_PAD_Y * 2 + 2;
 
   // Helper: draw one row
-  function drawRow(cells, y, isHeader) {
+  function drawRow(cells, y, isHeader, rowIndex) {
     const cellFont = isHeader ? boldFont : font;
     const startX = pm.margins.left;
 
-    // Background for header
+    // Background for header and alternating rows
+    let bgColor = null;
     if (isHeader) {
+      bgColor = TABLE_HEADER_BG;
+    } else if (rowIndex % 2 === 1) {
+      bgColor = rgb(0, 0, 0, 0.02); // Zebra striping
+    }
+    if (bgColor) {
       pm.currentPage.drawRectangle({
         x: startX,
         y: y - rowHeight + BODY_SIZE + TABLE_CELL_PAD_Y,
         width: pm.contentWidth,
         height: rowHeight,
-        color: TABLE_HEADER_BG,
+        color: bgColor,
       });
     }
 
     // Cell text
     for (let c = 0; c < colCount; c++) {
-      const cellText = String(cells[c] != null ? cells[c] : "");
+      const cellText = String(cells[c] != null ? cells[c] : '');
       // Truncate if too wide
       let displayText = cellText;
       const maxCellWidth = colWidth - TABLE_CELL_PAD_X * 2;
       if (measureText(displayText, cellFont, BODY_SIZE) > maxCellWidth) {
         while (
           displayText.length > 1 &&
-          measureText(displayText + "\u2026", cellFont, BODY_SIZE) > maxCellWidth
+          measureText(displayText + '\u2026', cellFont, BODY_SIZE) > maxCellWidth
         ) {
           displayText = displayText.slice(0, -1);
         }
-        displayText += "\u2026";
+        displayText += '\u2026';
       }
 
       safeDrawText(pm.currentPage, displayText, {
@@ -364,7 +504,7 @@ function renderTable(pm, block) {
         y: y,
         size: BODY_SIZE,
         font: cellFont,
-        color: TEXT_COLOR,
+        color: isHeader ? rgb(0.1, 0.1, 0.1) : TEXT_COLOR,
       });
     }
 
@@ -372,23 +512,24 @@ function renderTable(pm, block) {
     pm.currentPage.drawLine({
       start: { x: startX, y: y - TABLE_CELL_PAD_Y - 1 },
       end: { x: startX + pm.contentWidth, y: y - TABLE_CELL_PAD_Y - 1 },
-      thickness: 0.5,
-      color: TABLE_BORDER_COLOR,
+      thickness: isHeader ? 1 : 0.5,
+      color: isHeader ? rgb(0, 0, 0, 0.12) : TABLE_BORDER_COLOR,
     });
   }
 
   // Draw header
   if (headers.length > 0) {
     pm.ensureSpace(rowHeight);
-    drawRow(headers, pm.cursorY, true);
+    drawRow(headers, pm.cursorY, true, 0);
     pm.advance(rowHeight);
   }
 
   // Draw data rows
-  for (const row of rows) {
+  for (let ri = 0; ri < rows.length; ri++) {
     pm.ensureSpace(rowHeight);
+    const row = rows[ri];
     const cells = Array.isArray(row) ? row : [row];
-    drawRow(cells, pm.cursorY, false);
+    drawRow(cells, pm.cursorY, false, ri + 1);
     pm.advance(rowHeight);
   }
 
@@ -403,7 +544,7 @@ function renderSeparator(pm) {
     start: { x: pm.margins.left, y },
     end: { x: pm.margins.left + pm.contentWidth, y },
     thickness: 0.75,
-    color: SEPARATOR_COLOR,
+    color: rgb(193 / 255, 95 / 255, 60 / 255, 0.3), // Terracotta with 30% opacity
   });
   pm.advance(12);
 }
@@ -414,16 +555,192 @@ function renderSpacer(pm, block) {
   pm.advance(height);
 }
 
+async function renderImage(pm, block) {
+  const src = block.src;
+  if (!src) return;
+
+  const maxWidth = block.width || pm.contentWidth;
+  const maxHeight = block.height || 400;
+  const styleName = block.style || 'full';
+  const style = IMAGE_STYLE[styleName] || IMAGE_STYLE.full;
+  const alt = block.alt || '';
+
+  let imageBytes;
+  try {
+    imageBytes = await loadImageAsBytes(src);
+  } catch (err) {
+    // If image fails to load, draw a placeholder box with error text
+    pm.ensureSpace(60);
+    pm.advance(10);
+    pm.currentPage.drawRectangle({
+      x: pm.margins.left,
+      y: pm.cursorY - 40,
+      width: pm.contentWidth,
+      height: 40,
+      color: rgb(0.96, 0.96, 0.96),
+      borderColor: rgb(0.75, 0.75, 0.75),
+      borderWidth: 1,
+    });
+    safeDrawText(pm.currentPage, `[Image: ${err.message}]`, {
+      x: pm.margins.left + 10,
+      y: pm.cursorY - 25,
+      size: BODY_SIZE,
+      font: pm.fonts.regular,
+      color: MUTED_COLOR,
+    });
+    pm.advance(50);
+    return;
+  }
+
+  // Embed the image
+  let embeddedImage;
+  try {
+    // Detect image type from first bytes
+    let embedFunc;
+    if (imageBytes[0] === 0x89 && imageBytes[1] === 0x50 && imageBytes[2] === 0x4e && imageBytes[3] === 0x47) {
+      // PNG
+      embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
+    } else if (
+      (imageBytes[0] === 0xff && imageBytes[1] === 0xd8) ||
+      imageBytes[0] === 0xff && imageBytes[1] === 0xd9
+    ) {
+      // JPEG
+      embeddedImage = await pm.pdfDoc.embedJpg(imageBytes);
+    } else if (imageBytes[0] === 0x47 && imageBytes[1] === 0x49) {
+      // GIF
+      embeddedImage = await pm.pdfDoc.embedPng(imageBytes); // Convert GIF to PNG
+    } else {
+      // Try as PNG first, then JPEG
+      try {
+        embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
+      } catch {
+        embeddedImage = await pm.pdfDoc.embedJpg(imageBytes);
+      }
+    }
+  } catch (err) {
+    // Fallback: draw error placeholder
+    pm.ensureSpace(60);
+    pm.advance(10);
+    pm.currentPage.drawRectangle({
+      x: pm.margins.left,
+      y: pm.cursorY - 40,
+      width: pm.contentWidth,
+      height: 40,
+      color: rgb(0.96, 0.96, 0.96),
+      borderColor: rgb(0.75, 0.75, 0.75),
+      borderWidth: 1,
+    });
+    safeDrawText(pm.currentPage, `[Image: Could not embed - ${err.message}]`, {
+      x: pm.margins.left + 10,
+      y: pm.cursorY - 25,
+      size: BODY_SIZE,
+      font: pm.fonts.regular,
+      color: MUTED_COLOR,
+    });
+    pm.advance(50);
+    return;
+  }
+
+  // Calculate scaled dimensions while maintaining aspect ratio
+  let imgWidth = embeddedImage.width;
+  let imgHeight = embeddedImage.height;
+
+  // Scale down if needed to fit max dimensions
+  const widthScale = maxWidth / imgWidth;
+  const heightScale = maxHeight / imgHeight;
+  const scale = Math.min(widthScale, heightScale, 1); // Don't upscale
+
+  imgWidth = Math.floor(imgWidth * scale);
+  imgHeight = Math.floor(imgHeight * scale);
+
+  // Ensure minimum size
+  imgWidth = Math.max(imgWidth, 20);
+  imgHeight = Math.max(imgHeight, 20);
+
+  // Calculate position (centered)
+  const x = pm.margins.left + (pm.contentWidth - imgWidth) / 2;
+
+  pm.ensureSpace(imgHeight + 36); // Image + spacing + optional caption
+
+  // Draw shadow first (behind the image)
+  if (style.shadowOpacity > 0) {
+    const shadowOffset = 2;
+    for (let s = style.shadowBlur; s > 0; s -= 1) {
+      const opacity = style.shadowOpacity * (1 - s / style.shadowBlur);
+      pm.currentPage.drawRectangle({
+        x: x + shadowOffset,
+        y: pm.cursorY - imgHeight - shadowOffset,
+        width: imgWidth,
+        height: imgHeight,
+        color: rgb(0, 0, 0, opacity),
+        borderWidth: 0,
+      });
+    }
+  }
+
+  // Draw the image
+  pm.currentPage.drawImage(embeddedImage, {
+    x,
+    y: pm.cursorY - imgHeight,
+    width: imgWidth,
+    height: imgHeight,
+  });
+
+  // Draw border if rounded
+  if (style.borderRadius > 0) {
+    // Draw a rounded rectangle outline (approximation since pdf-lib doesn't have rounded rect)
+    // We draw 4 corner arcs and 4 lines - this is a simplified version
+    const borderMargin = 0.5;
+    pm.currentPage.drawRectangle({
+      x: x + borderMargin,
+      y: pm.cursorY - imgHeight + borderMargin,
+      width: imgWidth - borderMargin * 2,
+      height: imgHeight - borderMargin * 2,
+      borderColor: rgb(193 / 255, 95 / 255, 60 / 255, 0.1),
+      borderWidth: 0.5,
+    });
+  }
+
+  pm.advance(imgHeight);
+
+  // Draw caption if alt text provided
+  if (alt) {
+    const captionFont = pm.fonts.regular;
+    const captionSize = SMALL_SIZE;
+    const captionLines = wrapText(alt, captionFont, captionSize, pm.contentWidth);
+    const captionHeight = captionLines.length * captionSize * 1.4;
+
+    pm.ensureSpace(captionHeight + 8);
+    pm.advance(4);
+
+    for (const line of captionLines) {
+      pm.ensureSpace(captionSize * 1.4);
+      safeDrawText(pm.currentPage, line, {
+        x: pm.margins.left,
+        y: pm.cursorY,
+        size: captionSize,
+        font: captionFont,
+        color: SECONDARY_COLOR,
+      });
+      pm.advance(captionSize * 1.4);
+    }
+
+    pm.advance(16);
+  } else {
+    pm.advance(20);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
 async function createPDF(options) {
-  if (!options || typeof options !== "object") {
-    throw new Error("createPDF expects an options object");
+  if (!options || typeof options !== 'object') {
+    throw new Error('createPDF expects an options object');
   }
 
-  const filename = options.filename || "document.pdf";
+  const filename = options.filename || 'document.pdf';
   const pageSize = options.pageSize || DEFAULT_PAGE_SIZE;
   const margins = Object.assign({}, DEFAULT_MARGINS, options.margins);
   const content = Array.isArray(options.content) ? options.content : [];
@@ -450,7 +767,7 @@ async function createPDF(options) {
 
   // Render title block if provided
   if (options.title) {
-    renderHeading(pm, { type: "heading", text: options.title, level: 1 });
+    renderHeading(pm, { type: 'heading', text: options.title, level: 1 });
     renderSeparator(pm);
   }
 
@@ -459,26 +776,29 @@ async function createPDF(options) {
     if (!block || !block.type) continue;
 
     switch (block.type) {
-      case "heading":
+      case 'heading':
         renderHeading(pm, block);
         break;
-      case "paragraph":
+      case 'paragraph':
         renderParagraph(pm, block);
         break;
-      case "list":
+      case 'list':
         renderList(pm, block);
         break;
-      case "table":
+      case 'table':
         renderTable(pm, block);
         break;
-      case "code":
+      case 'code':
         renderCode(pm, block);
         break;
-      case "separator":
+      case 'separator':
         renderSeparator(pm);
         break;
-      case "spacer":
+      case 'spacer':
         renderSpacer(pm, block);
+        break;
+      case 'image':
+        await renderImage(pm, block);
         break;
       default:
         // Treat unknown types as paragraphs
