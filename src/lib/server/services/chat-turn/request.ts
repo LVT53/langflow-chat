@@ -12,6 +12,7 @@ type ParseResult =
 
 type RequestBody = {
 	message?: unknown;
+	userMessage?: unknown;
 	conversationId?: unknown;
 	streamId?: unknown;
 	model?: unknown;
@@ -34,6 +35,7 @@ export async function parseChatTurnRequest(
 
 	const {
 		message,
+		userMessage,
 		conversationId,
 		streamId,
 		model,
@@ -44,14 +46,18 @@ export async function parseChatTurnRequest(
 
 	// Allow empty message when reconnecting to an existing stream (streamId provided)
 	const isReconnect = typeof streamId === 'string' && streamId.trim().length > 0;
-	if (!isReconnect && (typeof message !== 'string' || message.trim().length === 0)) {
+
+	const rawMessage = isReconnect && typeof userMessage === 'string' ? userMessage : message;
+	const normalizedMessage = typeof rawMessage === 'string' ? rawMessage.trim() : '';
+
+	if (!isReconnect && normalizedMessage.length === 0) {
 		return {
 			ok: false,
 			error: { status: 400, error: 'Message must be a non-empty string' },
 		};
 	}
 
-	if (message.length > runtimeConfig.maxMessageLength) {
+	if (normalizedMessage.length > runtimeConfig.maxMessageLength) {
 		return {
 			ok: false,
 			error: {
@@ -79,7 +85,7 @@ export async function parseChatTurnRequest(
 		ok: true,
 		value: {
 			conversationId,
-			normalizedMessage: isReconnect ? '' : message.trim(),
+			normalizedMessage,
 			streamId:
 				typeof streamId === 'string' && streamId.trim().length > 0
 					? streamId.trim()

@@ -35,7 +35,7 @@
 		TaskSteeringPayload,
 	} from '$lib/types';
 	import type { PageProps } from './$types';
-	import { streamChat, checkForOrphanedStream } from '$lib/services/streaming';
+	import { streamChat, checkForOrphanedStream, getStreamBufferInfo } from '$lib/services/streaming';
 	import type { StreamHandle } from '$lib/services/streaming';
 	import { inferGeneratedFilenameFromToolInput } from '$lib/utils/generate-file-tool';
 	import {
@@ -352,10 +352,10 @@
 		}
 	}
 
-	async function reconnectToOrphanedStream(streamId: string, retryCount = 0) {
+	async function reconnectToOrphanedStream(streamId: string, userMessage: string = '', retryCount = 0) {
 		if (isSending || activeStream) return;
 
-		console.info('[CHAT] Starting reconnection to stream:', streamId, 'attempt:', retryCount + 1);
+		console.info('[CHAT] Starting reconnection to stream:', streamId, 'userMessage:', userMessage.slice(0, 50), 'attempt:', retryCount + 1);
 		isSending = true;
 		hasPersistedMessages = true;
 
@@ -364,7 +364,7 @@
 		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
 
 		activeStream = streamChat(
-			'',
+			userMessage || '',
 			data.conversation.id,
 			{
 				onToken(chunk) {
@@ -438,7 +438,7 @@
 						activeStream = null;
 						messages.update((list) => removeMessageById(list, placeholderId));
 						setTimeout(() => {
-							void reconnectToOrphanedStream(streamId, retryCount + 1);
+							void reconnectToOrphanedStream(streamId, userMessage, retryCount + 1);
 						}, delay);
 						return;
 					}
@@ -477,6 +477,7 @@
 			},
 			{
 				reconnectToStreamId: streamId,
+				reconnectUserMessage: userMessage,
 			}
 		);
 	}
@@ -499,7 +500,11 @@
 
 		if (!streamId) return;
 
-		void reconnectToOrphanedStream(streamId);
+		// Fetch buffer info to get the original user message for reconnection
+		const bufferInfo = await getStreamBufferInfo(streamId);
+		console.info('[CHAT] Buffer info:', bufferInfo?.exists ? `found, ${bufferInfo.tokenCount} tokens` : 'not found');
+
+		void reconnectToOrphanedStream(streamId, bufferInfo?.userMessage ?? '');
 	}
 
 	onMount(() => {

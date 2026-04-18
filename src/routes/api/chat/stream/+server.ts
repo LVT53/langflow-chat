@@ -28,6 +28,10 @@ import {
   registerActiveChatStream,
   unregisterActiveChatStream,
   wasActiveChatStreamStopRequested,
+  getStreamBuffer,
+  getOrCreateStreamBuffer,
+  appendToStreamBuffer,
+  clearStreamBuffer,
 } from '$lib/server/services/chat-turn/active-streams';
 import {
   URL_LIST_TOOL_RECOVERY_APPENDIX,
@@ -185,6 +189,7 @@ const preflight = await preflightChatTurn({
           controller: upstreamAbortController,
           conversationId,
         });
+        getOrCreateStreamBuffer(streamId, normalizedMessage);
       }
       const outputTranslator = shouldTranslateHungarian(turn)
         ? new StreamingHungarianTranslator()
@@ -232,8 +237,34 @@ const preflight = await preflightChatTurn({
       };
 
       const chunkRuntime = createServerChunkRuntime({ enqueueChunk });
-      const emitThinking = chunkRuntime.emitThinking;
-      const emitToolCallEvent = chunkRuntime.emitToolCallEvent;
+      const rawEmitThinking = chunkRuntime.emitThinking;
+      const emitThinking = (reasoning: string) => {
+        if (streamId) {
+          appendToStreamBuffer(streamId, 'thinking', { text: reasoning });
+        }
+        return rawEmitThinking(reasoning);
+      };
+      const rawEmitToolCallEvent = chunkRuntime.emitToolCallEvent;
+      const emitToolCallEvent = (
+        name: string,
+        input: Record<string, unknown>,
+        status: 'running' | 'done',
+        details?: {
+          outputSummary?: string | null;
+          sourceType?: import('$lib/types').EvidenceSourceType | null;
+          candidates?: import('$lib/types').ToolEvidenceCandidate[];
+        },
+      ) => {
+        if (streamId) {
+          appendToStreamBuffer(streamId, 'tool_call', {
+            name,
+            input,
+            status,
+            outputSummary: details?.outputSummary,
+          });
+        }
+        return rawEmitToolCallEvent(name, input, status, details);
+      };
       const emitToolCallEventWithDebug = (
         name: string,
         input: Record<string, unknown>,
@@ -260,7 +291,13 @@ const preflight = await preflightChatTurn({
 
         emitToolCallEvent(name, input, status, details);
       };
-      const emitInlineToken = chunkRuntime.emitInlineToken;
+      const rawEmitInlineToken = chunkRuntime.emitInlineToken;
+      const emitInlineToken = (chunk: string) => {
+        if (streamId) {
+          appendToStreamBuffer(streamId, 'token', { text: chunk });
+        }
+        return rawEmitInlineToken(chunk);
+      };
       const emitChunkWithPreserveHandling =
         chunkRuntime.emitChunkWithPreserveHandling;
       const flushPendingThinking = chunkRuntime.flushPendingThinking;
@@ -271,6 +308,44 @@ const preflight = await preflightChatTurn({
       }, 15000);
 
       enqueueChunk(createSsePreludeComment());
+
+      if (isReconnect && streamId) {
+        const buffer = getStreamBuffer(streamId);
+        if (buffer && (buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0)) {
+          console.info('[CHAT_STREAM] Replaying buffer for stream', streamId, {
+            tokens: buffer.tokens.length,
+            thinking: buffer.thinking.length,
+            toolCalls: buffer.toolCalls.length,
+          });
+
+          enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
+            tokenCount: buffer.tokens.length,
+            thinkingCount: buffer.thinking.length,
+            toolCallCount: buffer.toolCalls.length,
+            userMessage: buffer.userMessage,
+          })}\n\n`);
+
+          for (const token of buffer.tokens) {
+            enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
+          }
+
+          for (const thinking of buffer.thinking) {
+            enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
+          }
+
+          for (const toolCall of buffer.toolCalls) {
+            enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
+              name: toolCall.name,
+              input: toolCall.input,
+              status: toolCall.status,
+              outputSummary: toolCall.outputSummary,
+            })}\n\n`);
+          }
+
+          enqueueChunk('event: replay_end\ndata: {}\n\n');
+        }
+      }
+
       let generatedFileIdsAtStart = new Set<string>();
       try {
         generatedFileIdsAtStart = new Set(
@@ -341,8 +416,11 @@ const preflight = await preflightChatTurn({
         | null
         | undefined;
       const completeSuccess = (wasStopped = false) => {
-        if (ended) return; // Do not check `closed` — client may have disconnected but we still persist to DB
+        if (ended) return;
         ended = true;
+        if (streamId) {
+          clearStreamBuffer(streamId);
+        }
         const thinkingTokenCount = estimateTokenCount(
           chunkRuntime.thinkingContent,
         );
@@ -558,6 +636,9 @@ const preflight = await preflightChatTurn({
       const failStream = (code: StreamErrorCode) => {
         if (ended) return;
         ended = true;
+        if (streamId) {
+          clearStreamBuffer(streamId);
+        }
         emitError(code);
         closeDownstream();
       };

@@ -16,6 +16,96 @@ const userStreamCounts = new Map<string, number>();
 // Track conversationId → streamId for orphan detection
 const conversationStreams = new Map<string, string>();
 
+// Stream token buffer for reconnection replay
+interface StreamTokenBuffer {
+	userMessage: string;
+	tokens: string[];
+	thinking: string[];
+	toolCalls: Array<{
+		name: string;
+		input: Record<string, unknown>;
+		status: 'running' | 'done';
+		outputSummary?: string | null;
+	}>;
+}
+
+const streamBuffers = new Map<string, StreamTokenBuffer>();
+const BUFFER_MAX_TOKENS = 100_000;
+const BUFFER_CLEANUP_MS = 5 * 60 * 1000;
+
+let bufferCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function startBufferCleanupTimer() {
+	if (bufferCleanupTimer) return;
+	bufferCleanupTimer = setInterval(() => {
+		for (const [streamId, buffer] of streamBuffers) {
+			void streamId;
+			void buffer;
+		}
+	}, BUFFER_CLEANUP_MS);
+}
+
+export function getStreamBuffer(streamId: string): StreamTokenBuffer | null {
+	return streamBuffers.get(streamId) ?? null;
+}
+
+export function getOrCreateStreamBuffer(streamId: string, userMessage: string): StreamTokenBuffer {
+	let buffer = streamBuffers.get(streamId);
+	if (!buffer) {
+		buffer = { userMessage, tokens: [], thinking: [], toolCalls: [] };
+		streamBuffers.set(streamId, buffer);
+		startBufferCleanupTimer();
+	}
+	return buffer;
+}
+
+export function appendToStreamBuffer(
+	streamId: string,
+	event: 'token' | 'thinking' | 'tool_call',
+	data: { text?: string; name?: string; input?: Record<string, unknown>; status?: 'running' | 'done'; outputSummary?: string | null }
+) {
+	const buffer = streamBuffers.get(streamId);
+	if (!buffer) return;
+
+	if (event === 'token' && data.text) {
+		buffer.tokens.push(data.text);
+		// Cap buffer size
+		if (buffer.tokens.join('').length > BUFFER_MAX_TOKENS) {
+			buffer.tokens = buffer.tokens.slice(-Math.floor(BUFFER_MAX_TOKENS / 10));
+		}
+	} else if (event === 'thinking' && data.text) {
+		buffer.thinking.push(data.text);
+		if (buffer.thinking.join('').length > BUFFER_MAX_TOKENS) {
+			buffer.thinking = buffer.thinking.slice(-Math.floor(BUFFER_MAX_TOKENS / 10));
+		}
+	} else if (event === 'tool_call' && data.name) {
+		if (data.status === 'running') {
+			buffer.toolCalls.push({
+				name: data.name,
+				input: data.input ?? {},
+				status: 'running',
+			});
+		} else {
+			// Mark last matching tool_call as done
+			for (let i = buffer.toolCalls.length - 1; i >= 0; i--) {
+				if (buffer.toolCalls[i].name === data.name && buffer.toolCalls[i].status === 'running') {
+					buffer.toolCalls[i] = {
+						name: data.name,
+						input: buffer.toolCalls[i].input,
+						status: 'done',
+						outputSummary: data.outputSummary ?? null,
+					};
+					break;
+				}
+			}
+		}
+	}
+}
+
+export function clearStreamBuffer(streamId: string) {
+	streamBuffers.delete(streamId);
+}
+
 function markPendingStop(streamId: string) {
 	if (pendingStops.has(streamId)) {
 		return;

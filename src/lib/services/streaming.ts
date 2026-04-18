@@ -64,6 +64,24 @@ export async function checkForOrphanedStream(conversationId: string): Promise<st
 	}
 }
 
+export interface StreamBufferInfo {
+	exists: boolean;
+	userMessage?: string;
+	tokenCount?: number;
+	thinkingCount?: number;
+	toolCallCount?: number;
+}
+
+export async function getStreamBufferInfo(streamId: string): Promise<StreamBufferInfo | null> {
+	try {
+		const res = await fetch(`/api/chat/stream/buffer?streamId=${encodeURIComponent(streamId)}`);
+		if (!res.ok) return null;
+		return await res.json();
+	} catch {
+		return null;
+	}
+}
+
 async function requestServerSideStreamStop(streamId: string): Promise<void> {
 	try {
 		await fetch('/api/chat/stream/stop', {
@@ -83,6 +101,7 @@ export type StreamChatOptions = {
 	activeDocumentArtifactId?: string;
 	retryAssistantMessageId?: string;
 	reconnectToStreamId?: string;
+	reconnectUserMessage?: string;
 };
 
 export function streamChat(
@@ -98,6 +117,7 @@ export function streamChat(
 		activeDocumentArtifactId,
 		retryAssistantMessageId,
 		reconnectToStreamId,
+		reconnectUserMessage,
 	} = options ?? {};
 	const controller = new AbortController();
 	const streamId = reconnectToStreamId ?? crypto.randomUUID();
@@ -105,6 +125,9 @@ export function streamChat(
 	let detached = false;
 	let fullText = '';
 	const inlineThinkingState = createInlineThinkingState();
+	let isReplaying = false;
+	const replayTokenBuffer: string[] = [];
+	const replayThinkingBuffer: string[] = [];
 
 	function emitInlineChunk(chunk: string) {
 		void processInlineThinkingChunk(inlineThinkingState, chunk, {
@@ -151,6 +174,7 @@ export function streamChat(
 						attachmentIds,
 						activeDocumentArtifactId,
 						reconnectToStreamId,
+						userMessage: reconnectUserMessage,
 					});
 			const res = await fetch(url, {
 				method: 'POST',
@@ -181,7 +205,7 @@ export function streamChat(
 			const reader = res.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | null = null;
+			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | 'replay_start' | 'replay_end' | null = null;
 
 			const processLine = (rawLine: string): boolean => {
 				const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -206,6 +230,14 @@ export function streamChat(
 					currentEvent = 'error';
 					return false;
 				}
+				if (line.startsWith('event: replay_start')) {
+					currentEvent = 'replay_start';
+					return false;
+				}
+				if (line.startsWith('event: replay_end')) {
+					currentEvent = 'replay_end';
+					return false;
+				}
 				if (line.startsWith('data: ')) {
 					const rawData = line.slice('data: '.length);
 
@@ -214,7 +246,11 @@ export function streamChat(
 							const parsed = JSON.parse(rawData);
 							const chunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
 							if (chunk) {
-								emitInlineChunk(chunk);
+								if (isReplaying) {
+									replayTokenBuffer.push(chunk);
+								} else {
+									emitInlineChunk(chunk);
+								}
 							}
 						} catch {
 							/* noop */
@@ -229,7 +265,11 @@ export function streamChat(
 							if (!rawThinking) return false;
 							const thinkingChunk = rawThinking.replace(/<tool_calls>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'\"{}\u4e00-\u9fff-]*?<\/tool_calls>/gi, '');
 							if (thinkingChunk) {
-								callbacks.onThinking(thinkingChunk);
+								if (isReplaying) {
+									replayThinkingBuffer.push(thinkingChunk);
+								} else {
+									callbacks.onThinking(thinkingChunk);
+								}
 							}
 						} catch {
 							/* noop */
@@ -295,6 +335,36 @@ export function streamChat(
 						callbacks.onError(toStreamError(errorMessage, errorCode));
 						return true;
 					}
+
+					if (currentEvent === 'replay_start') {
+						isReplaying = true;
+						replayTokenBuffer.length = 0;
+						replayThinkingBuffer.length = 0;
+						console.info('[STREAM] Replay started');
+						return false;
+					}
+
+					if (currentEvent === 'replay_end') {
+						console.info('[STREAM] Replay ended, flushing', replayTokenBuffer.length, 'tokens,', replayThinkingBuffer.length, 'thinking chunks');
+						isReplaying = false;
+						for (const chunk of replayTokenBuffer) {
+							emitInlineChunk(chunk);
+						}
+						for (const chunk of replayThinkingBuffer) {
+							callbacks.onThinking(chunk);
+						}
+						void flushInlineThinkingState(inlineThinkingState, {
+							onVisible(visibleChunk) {
+								fullText += visibleChunk;
+								callbacks.onToken(visibleChunk);
+							},
+							onThinking(thinkingChunk) {
+								callbacks.onThinking(thinkingChunk);
+							},
+						});
+						return false;
+					}
+
 					return false;
 				}
 
