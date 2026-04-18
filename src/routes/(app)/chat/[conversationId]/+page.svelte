@@ -426,10 +426,16 @@
 					}
 
 					// Reconnection error - the stream may have completed server-side
-					// while we attempted to reconnect. Reload persisted messages instead.
-					console.info('[CHAT] Reconnection failed, reloading persisted messages:', err.message);
-					void invalidateAll();
+					// while we attempted to reconnect. Fetch fresh data and update state.
+					console.info('[CHAT] Reconnection failed, fetching fresh data:', err.message);
 					hasPersistedMessages = true;
+					// Force invalidateAll and wait for it to complete before refreshing state
+					void invalidateAll().then(() => {
+						// After invalidation completes, update local state from fresh data
+						messages.set(getData().messages ?? []);
+						generatedFiles = getData().generatedFiles ?? [];
+						conversationDraft = getData().draft ?? null;
+					});
 				},
 			},
 			{
@@ -440,6 +446,11 @@
 
 	async function checkForOrphanedStreamOnMount() {
 		if (isSending || activeStream || hydratingConversation) return;
+
+		// Consume pending message from sessionStorage immediately
+		// This prevents maybeSendPendingInitialMessage() from also trying to send
+		const pendingMessage = consumePendingConversationMessage(data.conversation.id);
+		void pendingMessage; // Acknowledge but don't use - we're reconnecting to existing stream
 
 		// Check for orphaned streams regardless of existing messages
 		// Previous turns don't prevent reconnection to active streams
