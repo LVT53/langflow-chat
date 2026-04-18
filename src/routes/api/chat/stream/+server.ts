@@ -297,6 +297,9 @@ const preflight = await preflightChatTurn({
       };
 
       const enqueueChunk = (chunk: string): boolean => {
+        // Always broadcast to reconnect listeners first, even if this downstream
+        // is already closed (e.g. reconnect client navigated away). The listener
+        // needs `event: end` to fire onEnd and finalize the UI placeholder.
         if (isMainStream && streamId) {
           broadcastStreamChunk(streamId, chunk);
         }

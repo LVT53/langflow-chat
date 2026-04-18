@@ -462,7 +462,14 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 
 		const placeholderId = crypto.randomUUID();
 		const placeholder = createAssistantPlaceholder(placeholderId);
-		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
+		const clientUserMsgId = crypto.randomUUID();
+		const userMsgObj = createUserMessage({
+			id: clientUserMsgId,
+			text: userMessage,
+			attachmentIds: [],
+			attachedArtifacts: [],
+		});
+		messages.update((list) => appendUserMessageAndPlaceholder(list, userMsgObj, placeholder));
 
 		activeStream = streamChat(
 			userMessage || '',
