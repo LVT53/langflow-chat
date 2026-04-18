@@ -347,6 +347,8 @@
 		if (document.visibilityState === 'visible' && streamInterruptedByBackground) {
 			streamInterruptedByBackground = false;
 			invalidateAll();
+			// Also check for orphaned streams when returning to foreground
+			void checkForOrphanedStreamOnMount();
 		}
 	}
 
@@ -435,8 +437,9 @@
 
 	async function checkForOrphanedStreamOnMount() {
 		if (isSending || activeStream || hydratingConversation) return;
-		if ($messages.length > 0) return;
 
+		// Check for orphaned streams regardless of existing messages
+		// Previous turns don't prevent reconnection to active streams
 		const streamId = await checkForOrphanedStream(data.conversation.id);
 		if (!streamId) return;
 
