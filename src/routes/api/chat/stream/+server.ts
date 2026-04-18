@@ -183,12 +183,59 @@ const preflight = await preflightChatTurn({
     async start(controller) {
       const upstreamAbortController = new AbortController();
       if (streamId) {
-        registerActiveChatStream({
+        const registered = registerActiveChatStream({
           streamId,
           userId: user.id,
           controller: upstreamAbortController,
           conversationId,
         });
+
+        // If registration failed (orphan stream exists), don't proceed with new stream
+        // Instead, treat this as a reconnect to the existing orphan
+        if (!registered) {
+          console.info('[CHAT_STREAM] Stream registration conflict - existing orphan stream detected');
+          enqueueChunk(createSsePreludeComment());
+          const existingStreamId = conversationStreams.get(conversationId);
+          if (existingStreamId) {
+            const buffer = getStreamBuffer(existingStreamId);
+            if (buffer) {
+              const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
+              console.info('[CHAT_STREAM] Replaying orphan buffer for stream', existingStreamId, {
+                hasContent,
+                tokens: buffer.tokens.length,
+                thinking: buffer.thinking.length,
+              });
+              enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
+                tokenCount: buffer.tokens.length,
+                thinkingCount: buffer.thinking.length,
+                toolCallCount: buffer.toolCalls.length,
+                userMessage: buffer.userMessage,
+              })}\n\n`);
+              for (const token of buffer.tokens) {
+                enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
+              }
+              for (const thinking of buffer.thinking) {
+                enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
+              }
+              for (const toolCall of buffer.toolCalls) {
+                enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
+                  name: toolCall.name,
+                  input: toolCall.input,
+                  status: toolCall.status,
+                  outputSummary: toolCall.outputSummary,
+                })}\n\n`);
+              }
+              enqueueChunk('event: replay_end\ndata: {}\n\n');
+            }
+          }
+          console.info('[CHAT_STREAM] Conflict mode - waiting for orphan stream to complete');
+          enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
+            message: 'Waiting for previous stream to complete...',
+          })}\n\n`);
+          closeDownstream();
+          return;
+        }
+
         getOrCreateStreamBuffer(streamId, normalizedMessage);
       }
       const outputTranslator = shouldTranslateHungarian(turn)
