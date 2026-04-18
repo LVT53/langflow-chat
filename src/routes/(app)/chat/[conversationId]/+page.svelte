@@ -438,10 +438,19 @@
 						// Fetch fresh data to get partial responses
 						fetchConversationDetail(data.conversation.id)
 							.then((detail) => {
-								console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length);
+								console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length, 'generatedFiles:', detail.generatedFiles?.length ?? 0);
+								// Log messages to debug empty box issue
+								const lastMsg = detail.messages[detail.messages.length - 1];
+								const secondLastMsg = detail.messages[detail.messages.length - 2];
+								console.info('[CHAT] Last 2 messages:', 
+									lastMsg?.role, 'content len:', lastMsg?.content?.length ?? 'N/A',
+									secondLastMsg?.role, 'content len:', secondLastMsg?.content?.length ?? 'N/A');
+								
 								messages.set(detail.messages ?? []);
 								generatedFiles = detail.generatedFiles ?? [];
 								conversationDraft = null;
+								// Force UI update
+								void invalidateAll();
 								// Clear sessionStorage draft to prevent restoration
 								const pending = consumePendingConversationMessage(data.conversation.id);
 								void pending;
@@ -458,10 +467,19 @@
 					hasPersistedMessages = true;
 					fetchConversationDetail(data.conversation.id)
 						.then((detail) => {
-							console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length);
+							console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length, 'generatedFiles:', detail.generatedFiles?.length ?? 0);
+							// Log messages to debug empty box issue
+							const lastMsg = detail.messages[detail.messages.length - 1];
+							const secondLastMsg = detail.messages[detail.messages.length - 2];
+							console.info('[CHAT] Last 2 messages:',
+								lastMsg?.role, 'content len:', lastMsg?.content?.length ?? 'N/A',
+								secondLastMsg?.role, 'content len:', secondLastMsg?.content?.length ?? 'N/A');
+							
 							messages.set(detail.messages ?? []);
 							generatedFiles = detail.generatedFiles ?? [];
 							conversationDraft = null;
+							// Force UI update
+							void invalidateAll();
 							// Clear sessionStorage draft to prevent restoration
 							const pending = consumePendingConversationMessage(data.conversation.id);
 							void pending;
