@@ -28,6 +28,7 @@
 
 const { PDFDocument, rgb } = require('pdf-lib');
 const fontkit = require('@pdf-lib/fontkit');
+const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -150,7 +151,9 @@ async function loadImageAsBytes(src) {
     if (!match) {
       throw new Error('Invalid base64 data URI');
     }
-    return Buffer.from(match[2], 'base64');
+    const mimeType = match[1].toLowerCase();
+    const imageBytes = Buffer.from(match[2], 'base64');
+    return convertToPngIfNeeded(imageBytes, mimeType);
   }
 
   // File path
@@ -158,15 +161,52 @@ async function loadImageAsBytes(src) {
     if (!fs.existsSync(src)) {
       throw new Error(`Image file not found: ${src}`);
     }
-    return fs.readFileSync(src);
+    const imageBytes = fs.readFileSync(src);
+    const ext = path.extname(src).toLowerCase();
+    const mimeType = extToMimeType(ext);
+    return convertToPngIfNeeded(imageBytes, mimeType);
   }
 
   // Remote URL - NOT available in sandbox (no network access)
-  // Return a placeholder indicating remote images aren't supported in sandbox
   throw new Error(
     'Remote URLs are not supported in sandbox PDF generation. ' +
     'Use local file paths or base64-encoded images instead.'
   );
+}
+
+function extToMimeType(ext) {
+  const map = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.avif': 'image/avif',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.bmp': 'image/bmp',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+async function convertToPngIfNeeded(imageBytes, mimeType) {
+  // If already PNG or JPEG, return as-is
+  if (mimeType === 'image/png' || mimeType === 'image/jpeg') {
+    return imageBytes;
+  }
+
+  // Convert WebP, AVIF, GIF, TIFF, BMP to PNG using sharp
+  try {
+    const converted = await sharp(imageBytes)
+      .png({ quality: 100, compressionLevel: 9 })
+      .toBuffer();
+    return converted;
+  } catch (err) {
+    throw new Error(
+      `Failed to convert ${mimeType} to PNG: ${err.message}. ` +
+      'Supported formats: PNG, JPEG, GIF, WebP, AVIF, TIFF, BMP.'
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -593,48 +633,10 @@ async function renderImage(pm, block) {
   }
 
   // Embed the image
+  // loadImageAsBytes already converts all formats to PNG via sharp
   let embeddedImage;
   try {
-    // Detect image type from first bytes
-    const b0 = imageBytes[0], b1 = imageBytes[1], b2 = imageBytes[2], b3 = imageBytes[3];
-
-    // PNG: 89 50 4E 47
-    if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) {
-      embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
-    }
-    // JPEG: FF D8 FF
-    else if (b0 === 0xff && b1 === 0xd8 && (b2 === 0xff || b2 === 0xdb || b2 === 0xe0 || b2 === 0xe1)) {
-      embeddedImage = await pm.pdfDoc.embedJpg(imageBytes);
-    }
-    // GIF: 47 49 46
-    else if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) {
-      embeddedImage = await pm.pdfDoc.embedPng(imageBytes); // Convert GIF to PNG
-    }
-    // WebP: 52 49 46 46 (RIFF) .... 57 45 42 50 (WEBP)
-    else if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && imageBytes.slice(8, 12).toString('ascii') === 'WEBP') {
-      // WebP needs conversion to PNG - try to extract VP8 frame
-      const webpError = new Error('WebP format detected but requires conversion to PNG/JPEG. Please convert your image to PNG or JPEG format.');
-      throw webpError;
-    }
-    // AVIF: Check for ftyp box with avif brand (at offset 4)
-    else if (imageBytes.length > 12 && imageBytes.slice(4, 8).toString('ascii') === 'ftyp') {
-      // Check if it's AVIF (avif, av01, miaf brands)
-      const brand = imageBytes.slice(8, 12).toString('ascii');
-      if (brand === 'avif' || brand === 'av01' || brand === 'miaf') {
-        const avifError = new Error('AVIF format detected but requires conversion to PNG/JPEG. Please convert your image to PNG or JPEG format.');
-        throw avifError;
-      }
-      // Unknown ftyp variant - try PNG
-      embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
-    }
-    else {
-      // Unknown format - try as PNG first, then JPEG
-      try {
-        embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
-      } catch {
-        embeddedImage = await pm.pdfDoc.embedJpg(imageBytes);
-      }
-    }
+    embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
   } catch (err) {
     // Fallback: draw error placeholder
     pm.ensureSpace(60);
@@ -648,7 +650,7 @@ async function renderImage(pm, block) {
       borderColor: rgb(0.75, 0.75, 0.75),
       borderWidth: 1,
     });
-    safeDrawText(pm.currentPage, `[Image: Could not embed - ${err.message}]`, {
+    safeDrawText(pm.currentPage, `[Image: ${err.message}]`, {
       x: pm.margins.left + 10,
       y: pm.cursorY - 25,
       size: BODY_SIZE,
