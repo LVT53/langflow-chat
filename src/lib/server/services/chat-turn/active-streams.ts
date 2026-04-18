@@ -27,6 +27,7 @@ interface StreamTokenBuffer {
 		status: 'running' | 'done';
 		outputSummary?: string | null;
 	}>;
+	listeners: Set<(chunk: string) => void>;
 }
 
 const streamBuffers = new Map<string, StreamTokenBuffer>();
@@ -52,7 +53,7 @@ export function getStreamBuffer(streamId: string): StreamTokenBuffer | null {
 export function getOrCreateStreamBuffer(streamId: string, userMessage: string): StreamTokenBuffer {
 	let buffer = streamBuffers.get(streamId);
 	if (!buffer) {
-		buffer = { userMessage, tokens: [], thinking: [], toolCalls: [] };
+		buffer = { userMessage, tokens: [], thinking: [], toolCalls: [], listeners: new Set() };
 		streamBuffers.set(streamId, buffer);
 		startBufferCleanupTimer();
 	}
@@ -104,6 +105,33 @@ export function appendToStreamBuffer(
 
 export function clearStreamBuffer(streamId: string) {
 	streamBuffers.delete(streamId);
+}
+
+export function subscribeToStream(streamId: string, listener: (chunk: string) => void) {
+	const buffer = streamBuffers.get(streamId);
+	if (buffer) {
+		buffer.listeners.add(listener);
+	}
+}
+
+export function unsubscribeFromStream(streamId: string, listener: (chunk: string) => void) {
+	const buffer = streamBuffers.get(streamId);
+	if (buffer) {
+		buffer.listeners.delete(listener);
+	}
+}
+
+export function broadcastStreamChunk(streamId: string, chunk: string) {
+	const buffer = streamBuffers.get(streamId);
+	if (buffer) {
+		for (const listener of buffer.listeners) {
+			try {
+				listener(chunk);
+			} catch {
+				buffer.listeners.delete(listener);
+			}
+		}
+	}
 }
 
 function markPendingStop(streamId: string) {

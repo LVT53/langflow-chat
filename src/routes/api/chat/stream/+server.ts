@@ -33,6 +33,9 @@ import {
   appendToStreamBuffer,
   clearStreamBuffer,
   requestActiveChatStreamStop,
+  subscribeToStream,
+  unsubscribeFromStream,
+  broadcastStreamChunk,
 } from '$lib/server/services/chat-turn/active-streams';
 import {
   URL_LIST_TOOL_RECOVERY_APPENDIX,
@@ -183,31 +186,23 @@ const preflight = await preflightChatTurn({
   const stream = new ReadableStream({
     async start(controller) {
       const upstreamAbortController = new AbortController();
+      let isMainStream = false;
+
       if (streamId) {
-        const registered = registerActiveChatStream({
-          streamId,
-          userId: user.id,
-          controller: upstreamAbortController,
-          conversationId,
-        });
+        const existingStreamId = getOrphanedStream(conversationId);
 
-        // If registration failed (orphan stream exists), determine what to do:
-        // - If same streamId: this is a reconnect attempt → replay + wait
-        // - If different streamId: this is a NEW message → cancel orphan, proceed
-        if (!registered) {
-          const existingStreamId = conversationStreams.get(conversationId);
-
-          if (existingStreamId === streamId) {
-            console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
-            enqueueChunk(createSsePreludeComment());
-            const buffer = getStreamBuffer(existingStreamId);
-            if (buffer) {
-              const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
-              console.info('[CHAT_STREAM] Replaying orphan buffer for stream', existingStreamId, {
-                hasContent,
-                tokens: buffer.tokens.length,
-                thinking: buffer.thinking.length,
-              });
+        if (existingStreamId === streamId) {
+          console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
+          enqueueChunk(createSsePreludeComment());
+          const buffer = getStreamBuffer(streamId);
+          if (buffer) {
+            const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
+            console.info('[CHAT_STREAM] Replaying orphan buffer for stream', streamId, {
+              hasContent,
+              tokens: buffer.tokens.length,
+              thinking: buffer.thinking.length,
+            });
+            if (hasContent) {
               enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
                 tokenCount: buffer.tokens.length,
                 thinkingCount: buffer.thinking.length,
@@ -230,25 +225,42 @@ const preflight = await preflightChatTurn({
               }
               enqueueChunk('event: replay_end\ndata: {}\n\n');
             }
-            enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
-              message: 'Waiting for previous stream to complete...',
-            })}\n\n`);
-            closeDownstream();
-            return;
-          } else {
-            console.info('[CHAT_STREAM] New message while orphan exists - canceling orphan stream', {
-              orphanStreamId: existingStreamId,
-              newStreamId: streamId,
-            });
-            if (existingStreamId) {
-              requestActiveChatStreamStop({ streamId: existingStreamId, userId: user.id });
-              unregisterActiveChatStream(existingStreamId);
-              clearStreamBuffer(existingStreamId);
-            }
           }
+
+          const liveListener = (chunk: string) => {
+            enqueueChunk(chunk);
+            if (chunk.startsWith('event: end\n') || chunk.startsWith('event: error\n')) {
+              unsubscribeFromStream(streamId, liveListener);
+              closeDownstream();
+            }
+          };
+          subscribeToStream(streamId, liveListener);
+
+          downstreamAbortSignal.addEventListener('abort', () => {
+            unsubscribeFromStream(streamId, liveListener);
+            closeDownstream();
+          }, { once: true });
+
+          return;
+        } else if (existingStreamId) {
+          console.info('[CHAT_STREAM] New message while orphan exists - canceling orphan stream', {
+            orphanStreamId: existingStreamId,
+            newStreamId: streamId,
+          });
+          requestActiveChatStreamStop({ streamId: existingStreamId, userId: user.id });
+          unregisterActiveChatStream(existingStreamId);
+          clearStreamBuffer(existingStreamId);
         }
 
+        registerActiveChatStream({
+          streamId,
+          userId: user.id,
+          controller: upstreamAbortController,
+          conversationId,
+        });
+
         getOrCreateStreamBuffer(streamId, normalizedMessage);
+        isMainStream = true;
       }
       const outputTranslator = shouldTranslateHungarian(turn)
         ? new StreamingHungarianTranslator()
@@ -282,13 +294,14 @@ const preflight = await preflightChatTurn({
       }
 
       const enqueueChunk = (chunk: string): boolean => {
+        if (isMainStream && streamId) {
+          broadcastStreamChunk(streamId, chunk);
+        }
         if (downstreamClosed) return true;
 
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          // Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
-          // The client reloads persisted messages on visibility restore (mobile background fix).
           closeDownstream();
         }
 
@@ -367,58 +380,6 @@ const preflight = await preflightChatTurn({
       }, 15000);
 
       enqueueChunk(createSsePreludeComment());
-
-      if (isReconnect && streamId) {
-        const buffer = getStreamBuffer(streamId);
-        if (buffer) {
-          const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
-          console.info('[CHAT_STREAM] Reconnect detected for stream', streamId, {
-            hasBuffer: true,
-            hasContent,
-            tokens: buffer.tokens.length,
-            thinking: buffer.thinking.length,
-          });
-
-          if (hasContent) {
-            enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
-              tokenCount: buffer.tokens.length,
-              thinkingCount: buffer.thinking.length,
-              toolCallCount: buffer.toolCalls.length,
-              userMessage: buffer.userMessage,
-            })}\n\n`);
-
-            for (const token of buffer.tokens) {
-              enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
-            }
-
-            for (const thinking of buffer.thinking) {
-              enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
-            }
-
-            for (const toolCall of buffer.toolCalls) {
-              enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
-                name: toolCall.name,
-                input: toolCall.input,
-                status: toolCall.status,
-                outputSummary: toolCall.outputSummary,
-              })}\n\n`);
-            }
-
-            enqueueChunk('event: replay_end\ndata: {}\n\n');
-          }
-
-          console.info('[CHAT_STREAM] Reconnect mode - waiting for original stream to complete');
-
-          enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
-            message: 'Waiting for original stream to complete...',
-          })}\n\n`);
-
-          closeDownstream();
-          // Do NOT unregister - keep stream registered so subsequent visits can still detect orphan
-          // The original stream will clean itself up when it completes
-          return;
-        }
-      }
 
       let generatedFileIdsAtStart = new Set<string>();
       try {
