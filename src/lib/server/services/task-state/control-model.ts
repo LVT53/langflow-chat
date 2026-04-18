@@ -195,7 +195,13 @@ export async function requestStructuredControlModel<
   maxTokens: number;
   temperature?: number;
 }): Promise<T | null> {
-  const content = await requestContextSummarizer(params);
+  let content: string | null;
+  try {
+    content = await requestContextSummarizer(params);
+  } catch (error) {
+    console.error('[TASK_STATE] Evidence verifier failed:', error);
+    return null;
+  }
   if (!content) return null;
   const parsed = parseJsonFromModel(content);
   return parsed ? (parsed as T) : null;

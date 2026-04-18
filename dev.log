@@ -1,7 +1,12 @@
 
-  VITE v8.0.0  ready in 356 ms
+> dev
+> vite dev --port 5175
 
-  ➜  Local:   http://localhost:5175/
+Port 5175 is in use, trying another one...
+
+  VITE v8.0.8  ready in 729 ms
+
+  ➜  Local:   http://localhost:5176/
   ➜  Network: use --host to expose
 [FILE_GENERATE] Scheduling sandbox image warmup { runtime: 'python', image: 'python:3.11-slim' }
 [FILE_GENERATE] Scheduling sandbox image warmup { runtime: 'javascript', image: 'node:22-bookworm-slim' }
@@ -27,43 +32,187 @@
     address: '/var/run/docker.sock'
   }
 }
-4:19:04 PM [vite] .env changed, restarting server...
-4:19:05 PM [vite] server restarted.
-[FILE_GENERATE] Scheduling sandbox image warmup { runtime: 'python', image: 'python:3.11-slim' }
-[FILE_GENERATE] Scheduling sandbox image warmup { runtime: 'javascript', image: 'node:22-bookworm-slim' }
-[FILE_GENERATE] Sandbox image warmup failed {
-  runtime: 'python',
-  image: 'python:3.11-slim',
-  error: Error: connect ENOENT /var/run/docker.sock
-      at PipeConnectWrap.afterConnect [as oncomplete] (node:net:1705:16) {
-    errno: -2,
-    code: 'ENOENT',
-    syscall: 'connect',
-    address: '/var/run/docker.sock'
+11:47:32 AM [vite] (client) hmr update /src/app.css
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/3.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/8.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:47:51 AM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:47:51 AM [vite] (client) page reload .svelte-kit/generated/root.js
+11:47:51 AM [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:47:51 AM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
+[TEI] Retrieval summary {
+  scope: 'documents',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  conversationId: null,
+  queryLength: 30,
+  candidateCount: 8,
+  winningMode: 'none',
+  winnerId: null,
+  semantic: {
+    queryLength: 30,
+    inputCount: 8,
+    latencyMs: 0,
+    storedEmbeddingCount: 0,
+    matchCount: 0,
+    fallbackReason: 'model_unconfigured'
+  },
+  rerank: null,
+  winnerType: null,
+  shortlistedCount: 8,
+  lexicalTopCount: 0,
+  returnedCount: 0
+}
+[TEI] Retrieval summary {
+  scope: 'documents',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  conversationId: null,
+  queryLength: 30,
+  candidateCount: 8,
+  winningMode: 'none',
+  winnerId: null,
+  semantic: {
+    queryLength: 30,
+    inputCount: 8,
+    latencyMs: 0,
+    storedEmbeddingCount: 0,
+    matchCount: 0,
+    fallbackReason: 'model_unconfigured'
+  },
+  rerank: null,
+  winnerType: null,
+  shortlistedCount: 8,
+  lexicalTopCount: 0,
+  returnedCount: 0
+}
+[LANGFLOW] Starting streaming request {
+  url: 'http://localhost:7860/api/v1/run/?stream=true',
+  flowId: '',
+  sessionId: '3f15c697-5246-4b72-aaf5-8da323c8d394',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  modelId: 'model1',
+  modelName: 'model-1',
+  attachmentCount: 0,
+  inputLength: 152
+}
+[STREAM] Falling back to non-stream Langflow run after stream connect failure {
+  conversationId: '3f15c697-5246-4b72-aaf5-8da323c8d394',
+  attempt: 1,
+  errorName: 'TypeError',
+  errorMessage: 'fetch failed'
+}
+[TEI] Retrieval summary {
+  scope: 'documents',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  conversationId: null,
+  queryLength: 30,
+  candidateCount: 8,
+  winningMode: 'none',
+  winnerId: null,
+  semantic: {
+    queryLength: 30,
+    inputCount: 8,
+    latencyMs: 0,
+    storedEmbeddingCount: 0,
+    matchCount: 0,
+    fallbackReason: 'model_unconfigured'
+  },
+  rerank: null,
+  winnerType: null,
+  shortlistedCount: 8,
+  lexicalTopCount: 0,
+  returnedCount: 0
+}
+[TEI] Retrieval summary {
+  scope: 'documents',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  conversationId: null,
+  queryLength: 30,
+  candidateCount: 8,
+  winningMode: 'none',
+  winnerId: null,
+  semantic: {
+    queryLength: 30,
+    inputCount: 8,
+    latencyMs: 0,
+    storedEmbeddingCount: 0,
+    matchCount: 0,
+    fallbackReason: 'model_unconfigured'
+  },
+  rerank: null,
+  winnerType: null,
+  shortlistedCount: 8,
+  lexicalTopCount: 0,
+  returnedCount: 0
+}
+[TEI] Retrieval summary {
+  scope: 'task_routing',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  conversationId: '3f15c697-5246-4b72-aaf5-8da323c8d394',
+  queryLength: 30,
+  candidateCount: 1,
+  winningMode: 'lexical',
+  winnerId: '496d588a-ab5d-4876-9e4b-70ed05963699',
+  semantic: {
+    queryLength: 30,
+    inputCount: 1,
+    latencyMs: 0,
+    storedEmbeddingCount: 0,
+    matchCount: 0,
+    fallbackReason: 'model_unconfigured'
+  },
+  rerank: null,
+  rankedCount: 1,
+  bestScore: 14
+}
+[LANGFLOW] Starting request {
+  url: 'http://localhost:7860/api/v1/run/',
+  flowId: '',
+  sessionId: '3f15c697-5246-4b72-aaf5-8da323c8d394',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  modelId: 'model1',
+  modelName: 'model-1',
+  attachmentCount: 0,
+  inputLength: 152
+}
+[STREAM] Chat stream error {
+  conversationId: '3f15c697-5246-4b72-aaf5-8da323c8d394',
+  userId: '7e1c3d32-dfb9-4d01-89f7-c427930b2b34',
+  message: 'fetch failed',
+  stack: 'TypeError: fetch failed',
+  cause: AggregateError [ECONNREFUSED]: 
+      at internalConnectMultiple (node:net:1193:18)
+      at afterConnectMultiple (node:net:1783:7) {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
   }
 }
-[FILE_GENERATE] Sandbox image warmup failed {
-  runtime: 'javascript',
-  image: 'node:22-bookworm-slim',
-  error: Error: connect ENOENT /var/run/docker.sock
-      at PipeConnectWrap.afterConnect [as oncomplete] (node:net:1705:16) {
-    errno: -2,
-    code: 'ENOENT',
-    syscall: 'connect',
-    address: '/var/run/docker.sock'
-  }
-}
-4:20:50 PM [vite] (ssr) page reload src/hooks.server.ts
-4:21:01 PM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
-4:21:01 PM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
-4:21:01 PM [vite] (ssr) page reload .svelte-kit/generated/root.js
-4:21:09 PM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
-4:21:09 PM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
-4:21:09 PM [vite] (ssr) page reload .svelte-kit/generated/root.js
-4:21:13 PM [vite] (ssr) page reload src/hooks.server.ts
-4:21:33 PM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
-4:21:33 PM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
-4:21:33 PM [vite] (ssr) page reload .svelte-kit/generated/root.js
-4:21:35 PM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
-4:21:35 PM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
-4:21:35 PM [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:54:35 AM [vite] (client) hmr update /src/app.css
+11:54:35 AM [vite] (ssr) page reload src/lib/server/services/task-state/control-model.ts
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/3.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/5.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/8.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:54:38 AM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:54:38 AM [vite] (client) page reload .svelte-kit/generated/root.js
+11:54:38 AM [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:54:38 AM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/3.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/5.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/nodes/8.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:54:57 AM [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:54:57 AM [vite] (client) page reload .svelte-kit/generated/root.js
+11:54:57 AM [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:54:57 AM [vite] (ssr) page reload .svelte-kit/generated/root.svelte
