@@ -41,7 +41,10 @@ export async function parseChatTurnRequest(
 		attachmentIds,
 		activeDocumentArtifactId,
 	} = body;
-	if (typeof message !== 'string' || message.trim().length === 0) {
+
+	// Allow empty message when reconnecting to an existing stream (streamId provided)
+	const isReconnect = typeof streamId === 'string' && streamId.trim().length > 0;
+	if (!isReconnect && (typeof message !== 'string' || message.trim().length === 0)) {
 		return {
 			ok: false,
 			error: { status: 400, error: 'Message must be a non-empty string' },
@@ -76,7 +79,7 @@ export async function parseChatTurnRequest(
 		ok: true,
 		value: {
 			conversationId,
-			normalizedMessage: message.trim(),
+			normalizedMessage: isReconnect ? '' : message.trim(),
 			streamId:
 				typeof streamId === 'string' && streamId.trim().length > 0
 					? streamId.trim()
