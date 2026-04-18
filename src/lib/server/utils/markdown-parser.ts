@@ -13,7 +13,7 @@ function transformCallouts(html: string): string {
 		);
 
 		result = result.replace(regex, (_match, content) => {
-			return `<div class="callout callout-${type}">${content}</div>`;
+			return `<div class=\"callout callout-${type}\">${content}</div>`;
 		});
 	}
 
@@ -21,25 +21,38 @@ function transformCallouts(html: string): string {
 }
 
 export function parseMarkdown(markdown: string): { metadata: Record<string, unknown>; html: string } {
-	// Sanitize YAML frontmatter: strip backslash-escaped quotes that cause parse errors.
-	// AI-generated frontmatter sometimes produces \" instead of plain quotes in YAML values.
-	// Extract frontmatter block (between first --- and second ---), strip escaped quotes,
-	// then reconstruct and parse.
-	let sanitizedMarkdown = markdown;
-	const frontmatterMatch = markdown.match(/^---\r?\n([\r\n\ta-zA-Z0-9_./:-]+)\r?\n---\r?\n?([\r\n\ta-zA-Z0-9_./:-]+)/);
-	if (frontmatterMatch) {
-		const frontmatter = frontmatterMatch[1];
-		const body = frontmatterMatch[2] ?? '';
-		const sanitizedFrontmatter = frontmatter.replace(/\\+([\\'\"`])/g, '$1');
-		sanitizedMarkdown = `---\n${sanitizedFrontmatter}\n---\n${body}`;
+	// Defensively strip thinking tags that might appear at the start of the markdown
+	// (edge case: thinking content leaks into the final response).
+	let cleanMarkdown = markdown;
+	const thinkingStartMatch = markdown.match(/^<thinking>[\r\n]*/i);
+	if (thinkingStartMatch) {
+		const afterThinking = markdown.slice(thinkingStartMatch[0].length);
+		const thinkingEndIndex = afterThinking.indexOf('</thinking>');
+		if (thinkingEndIndex !== -1) {
+			cleanMarkdown = afterThinking.slice(thinkingEndIndex + '</thinking>'.length).trimStart();
+		}
 	}
 
-	const { data, content } = matter(sanitizedMarkdown);
-	const html = marked.parse(content ?? '', { async: false }) as string;
+	let metadata: Record<string, unknown> = {};
+	let content = cleanMarkdown;
+
+	// gray-matter handles YAML frontmatter extraction and parsing internally.
+	// Wrap in try-catch so malformed YAML (e.g. unquoted colons in values) doesn't crash the response.
+	try {
+		const parsed = matter(cleanMarkdown);
+		metadata = parsed.data ?? {};
+		content = parsed.content ?? '';
+	} catch {
+		// Malformed YAML frontmatter — fall back to treating the entire input as markdown body.
+		// This keeps the chat response visible instead of crashing on a YAML parse error.
+		content = cleanMarkdown;
+	}
+
+	const html = marked.parse(content, { async: false }) as string;
 	const transformedHtml = transformCallouts(html);
 
 	return {
-		metadata: data ?? {},
-		html: transformedHtml
+		metadata,
+		html: transformedHtml,
 	};
 }
