@@ -115,7 +115,7 @@ function readConfig(): Config {
     titleGenSystemPromptCodeAppendixHu: process.env.TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU || '',
     contextSummarizerUrl: process.env.CONTEXT_SUMMARIZER_URL || process.env.TITLE_GEN_URL || '',
     contextSummarizerApiKey: process.env.CONTEXT_SUMMARIZER_API_KEY || process.env.TITLE_GEN_API_KEY || '',
-    contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || '',
+    contextSummarizerModel: process.env.CONTEXT_SUMMARIZER_MODEL || process.env.TITLE_GEN_MODEL || '',
     teiEmbedderUrl: process.env.TEI_EMBEDDER_URL || '',
     teiEmbedderApiKey: process.env.TEI_EMBEDDER_API_KEY || '',
     teiEmbedderModel: process.env.TEI_EMBEDDER_MODEL || '',

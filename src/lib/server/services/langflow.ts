@@ -26,6 +26,11 @@ const DATE_BEFORE_SEARCH_GUARD = [
 	'- Before any web search, news search, or other freshness-sensitive search, first get the current date and time.',
 	'- Use that date/time to frame the search query and interpret freshness.',
 	'- Do not search first and check the date afterward.',
+	'- When the user asks about past or future dates, events, or timeframes (e.g. March 2026, two weeks ago, next quarter):',
+	'  1. Call get_current_date to get the current date.',
+	'  2. Use the returned date to calculate whether the requested date is in the past, present, or future.',
+	'  3. If it is a future date, acknowledge you know the current date and reason about what is publicly known up to that point (plans, scheduled events, published information).',
+	'  4. If it is a past date, use the date to set the correct temporal context for your response.',
 ].join('\n');
 
 const FILE_GENERATION_GUARD = [
