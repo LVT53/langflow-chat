@@ -120,6 +120,8 @@
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
+	// Set to true when onWaiting fired and we're polling for completion
+	let isPollingForCompletion = false;
 	// Set to true when we're waiting for the initial pending message to be sent (landing page transition)
 	let initialStreamPending = $state(false);
 	const evidencePollControllers = new Map<string, AbortController>();
@@ -352,12 +354,13 @@
 	}
 }
 
-	async function pollForCompletion(placeholderId: string, attempt = 0) {
+async function pollForCompletion(placeholderId: string, attempt = 0) {
 		const maxAttempts = 60;
 		const pollInterval = 2000;
 
 		if (attempt >= maxAttempts) {
 			console.info('[CHAT] Polling timeout - checking final state');
+			isPollingForCompletion = false;
 			void loadPersistedData();
 			return;
 		}
@@ -370,18 +373,37 @@
 			return;
 		}
 
-		// Check if there's a new assistant message (indicates original stream completed)
+		// Get current message IDs to avoid duplicates
+		let currentMessageIds: string[] = [];
+		messages.update((list) => {
+			currentMessageIds = list.map((m) => m.id);
+			return list;
+		});
+
+		// Find messages that are NOT already in our list and are assistant messages
 		const newMessages = detail.messages ?? [];
-		const lastAssistant = newMessages.findLast((m: ChatMessage) => m.role === 'assistant');
-		const userMessage = newMessages.findLast((m: ChatMessage) => m.role === 'user');
+		const existingAssistantIds = new Set(
+			newMessages.filter((m: ChatMessage) => m.role === 'assistant').map((m: ChatMessage) => m.id)
+		);
 
-		if (lastAssistant && lastAssistant.content && lastAssistant.content.length > 0) {
-			console.info('[CHAT] Completion detected - assistant message found, content length:', lastAssistant.content.length);
+		// Find NEW assistant messages (ones not already in our list)
+		const newAssistantMessages = newMessages.filter(
+			(m: ChatMessage) =>
+				m.role === 'assistant' &&
+				m.content &&
+				m.content.length > 0 &&
+				!currentMessageIds.includes(m.id)
+		);
 
-			// Remove the placeholder and add the real message
+		if (newAssistantMessages.length > 0) {
+			// Get the most recent new assistant message
+			const newAssistant = newAssistantMessages[newAssistantMessages.length - 1];
+			console.info('[CHAT] Completion detected - new assistant message found, content length:', newAssistant.content.length);
+
+			// Remove the placeholder
 			messages.update((list) => {
 				const filtered = list.filter((m) => m.id !== placeholderId);
-				return [...filtered, lastAssistant];
+				return [...filtered, newAssistant];
 			});
 
 			isSending = false;
@@ -400,19 +422,20 @@
 
 			// Update generated files
 			if (detail.generatedFiles) {
-				generatedFiles = [...detail.generatedFiles];
+				generatedFiles = [...detail.generatedFiles ?? []];
 			}
 
 			// Poll for evidence
-			if (lastAssistant.id) {
-				void pollMessageEvidence(lastAssistant.id);
+			if (newAssistant.id) {
+				void pollMessageEvidence(newAssistant.id);
 			}
 
+			isPollingForCompletion = false;
 			return;
 		}
 
 		// Still waiting, poll again
-		setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterval);
+setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterval);
 	}
 
 	async function loadPersistedData() {
@@ -427,6 +450,7 @@
 			void pending;
 		}
 		isSending = false;
+		isPollingForCompletion = false;
 	}
 
 	async function reconnectToOrphanedStream(streamId: string, userMessage: string = '', retryCount = 0) {
@@ -468,9 +492,16 @@
 					console.info('[CHAT] Reconnection waiting - polling for completion');
 					activeStream?.detach();
 					activeStream = null;
+					isPollingForCompletion = true;
 					void pollForCompletion(placeholderId);
 				},
 				onEnd(fullText, metadata) {
+					// If we're polling for completion, don't finalize - polling will handle it
+					if (isPollingForCompletion) {
+						console.info('[CHAT] Stream ended during polling - ignoring finalize');
+						isPollingForCompletion = false;
+						return;
+					}
 					console.info('[CHAT] Reconnection stream ended, fullText length:', fullText.length);
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
