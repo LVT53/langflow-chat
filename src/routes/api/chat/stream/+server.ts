@@ -311,38 +311,42 @@ const preflight = await preflightChatTurn({
 
       if (isReconnect && streamId) {
         const buffer = getStreamBuffer(streamId);
-        if (buffer && (buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0)) {
-          console.info('[CHAT_STREAM] Replaying buffer for stream', streamId, {
+        if (buffer) {
+          const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
+          console.info('[CHAT_STREAM] Reconnect detected for stream', streamId, {
+            hasBuffer: true,
+            hasContent,
             tokens: buffer.tokens.length,
             thinking: buffer.thinking.length,
-            toolCalls: buffer.toolCalls.length,
           });
 
-          enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
-            tokenCount: buffer.tokens.length,
-            thinkingCount: buffer.thinking.length,
-            toolCallCount: buffer.toolCalls.length,
-            userMessage: buffer.userMessage,
-          })}\n\n`);
-
-          for (const token of buffer.tokens) {
-            enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
-          }
-
-          for (const thinking of buffer.thinking) {
-            enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
-          }
-
-          for (const toolCall of buffer.toolCalls) {
-            enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
-              name: toolCall.name,
-              input: toolCall.input,
-              status: toolCall.status,
-              outputSummary: toolCall.outputSummary,
+          if (hasContent) {
+            enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
+              tokenCount: buffer.tokens.length,
+              thinkingCount: buffer.thinking.length,
+              toolCallCount: buffer.toolCalls.length,
+              userMessage: buffer.userMessage,
             })}\n\n`);
-          }
 
-          enqueueChunk('event: replay_end\ndata: {}\n\n');
+            for (const token of buffer.tokens) {
+              enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
+            }
+
+            for (const thinking of buffer.thinking) {
+              enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
+            }
+
+            for (const toolCall of buffer.toolCalls) {
+              enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
+                name: toolCall.name,
+                input: toolCall.input,
+                status: toolCall.status,
+                outputSummary: toolCall.outputSummary,
+              })}\n\n`);
+            }
+
+            enqueueChunk('event: replay_end\ndata: {}\n\n');
+          }
 
           console.info('[CHAT_STREAM] Reconnect mode - waiting for original stream to complete');
 
