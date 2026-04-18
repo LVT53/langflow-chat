@@ -88,47 +88,56 @@ export const POST: RequestHandler = async (event) => {
   requireAuth(event);
   const user = event.locals.user!;
 
-  const capacity = checkStreamCapacity(user.id);
-  if (!capacity.allowed) {
-    console.warn('[CHAT_STREAM] Rejected due to capacity', {
-      userId: user.id,
-      reason: capacity.reason,
-      retryAfterSeconds: capacity.retryAfterSeconds,
-      currentGlobalCount: capacity.currentGlobalCount,
-      currentUserCount: capacity.currentUserCount,
-    });
-
-    return new Response(
-      JSON.stringify({
-        error: 'Server at capacity. Please try again later.',
-        code: 'CAPACITY_EXCEEDED',
-        reason: capacity.reason,
-        retryAfter: capacity.retryAfterSeconds,
-      }),
-      {
-        status: 503,
-        headers: {
-          'Content-Type': 'application/json',
-          'Retry-After': String(capacity.retryAfterSeconds ?? 10),
-          'Cache-Control': 'no-store',
-        },
-      },
-    );
-  }
-
   const requestStartTime = Date.now();
   const runtimeConfig = getConfig();
 
+  // Parse request first to detect if this is a reconnect to an orphaned stream
   const parsedRequest = await parseChatTurnRequest(
     event.request,
     runtimeConfig,
-    "stream",
+    'stream',
   );
   if (!parsedRequest.ok) {
     return createStreamJsonErrorResponse(parsedRequest.error);
   }
 
-  const preflight = await preflightChatTurn({
+  // Check if this is a reconnect attempt (streamId provided in request)
+  const isReconnect =
+    typeof parsedRequest.value.streamId === 'string' && parsedRequest.value.streamId.length > 0;
+
+  // For reconnects, skip capacity check - the orphan stream will be replaced
+  // when we register the new stream (registerActiveChatStream handles this)
+  if (!isReconnect) {
+    const capacity = checkStreamCapacity(user.id);
+    if (!capacity.allowed) {
+      console.warn('[CHAT_STREAM] Rejected due to capacity', {
+        userId: user.id,
+        reason: capacity.reason,
+        retryAfterSeconds: capacity.retryAfterSeconds,
+        currentGlobalCount: capacity.currentGlobalCount,
+        currentUserCount: capacity.currentUserCount,
+      });
+
+      return new Response(
+        JSON.stringify({
+          error: 'Server at capacity. Please try again later.',
+          code: 'CAPACITY_EXCEEDED',
+          reason: capacity.reason,
+          retryAfter: capacity.retryAfterSeconds,
+        }),
+        {
+          status: 503,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(capacity.retryAfterSeconds ?? 10),
+            'Cache-Control': 'no-store',
+          },
+        },
+      );
+    }
+  }
+
+const preflight = await preflightChatTurn({
     userId: user.id,
     translationEnabled: user.translationEnabled,
     request: parsedRequest.value,
