@@ -59,12 +59,13 @@ and page numbers automatically. Do not use `pdf-lib` directly.
 Supported block types: heading (level 1-3), paragraph, list, table, code, separator, spacer, image.
 
 Image blocks accept:
-- src: Local file path (e.g., '/workspace/assets/image.png') or base64 data URI (data:image/png;base64,...)
+- src: Local file path (e.g., '/workspace/assets/diagram.webp') or base64 data URI
 - alt: Caption text shown below the image
 - width: Max width in points (default: content width)
 - height: Max height in points (default: 400)
 - style: 'full' (border + shadow), 'rounded' (border only), 'shadow' (shadow only)
 
+Supported image formats: PNG, JPEG, GIF, WebP, AVIF, TIFF, BMP (auto-converted to PNG).
 Images are styled with the AlfyAI brand theme (terracotta accents, shadows, captions).
 Remote URLs are NOT supported (sandbox has no network access).
 
