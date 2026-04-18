@@ -64,6 +64,12 @@ const IMAGE_SEARCH_GUARD = [
 	'- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.',
 ].join('\n');
 
+const PERSONA_MEMORY_GUARD = [
+	'Persona Memory Usage:',
+	'- Persona memory describes the human user for personalization and direct address.',
+	'- Do NOT incorporate persona facts (pet ownership, hobbies, biographical details) into generated documents, reports, or file content unless the user explicitly asks for them.',
+].join('\n');
+
 function containsHttpUrl(value: string): boolean {
 	return /https?:\/\/[^\s)>\]]+/i.test(value);
 }
@@ -74,7 +80,7 @@ function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 }): string {
 	const basePrompt = params.basePrompt.trim();
-	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD, FILE_GENERATION_GUARD, IMAGE_SEARCH_GUARD];
+	const additions: string[] = [DATE_BEFORE_SEARCH_GUARD, FILE_GENERATION_GUARD, IMAGE_SEARCH_GUARD, PERSONA_MEMORY_GUARD];
 
 	if (containsHttpUrl(params.inputValue)) {
 		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);

@@ -399,7 +399,7 @@ vi.mock('$lib/server/utils/artifact-decay', () => ({
 
 vi.mock('$lib/server/utils/topic-shift-detector', () => ({
   detectTopicShift: () => ({ isShift: false, distance: 0 }),
-  shouldSuppressCarryover: () => false,
+  shouldSuppressCarryover: (params: any) => params.isShift || params.hasExplicitResetSignal,
 }));
 
 vi.mock('$lib/server/utils/conversation-boundary-filter', () => ({

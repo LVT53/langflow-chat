@@ -62,6 +62,7 @@ import {
 	prepareTaskContext,
 } from './task-state';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
+import { embedTexts } from './tei-embedder';
 import {
 	hasMeaningfulAttachmentText,
 	logAttachmentTrace,
@@ -1267,6 +1268,39 @@ export async function buildConstructedContext(params: {
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		currentConversationId: params.conversationId,
 	});
+
+	let currentMessageEmbedding: number[] = [];
+	let previousMessageEmbedding: number[] = [];
+	const previousUserMessage = sessionMessages
+		.slice()
+		.reverse()
+		.find((m) => m.role === 'user')?.content;
+
+	if (previousUserMessage && params.message) {
+		try {
+			const embeddingsPromise = embedTexts([params.message, previousUserMessage]);
+			const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+			const embeddingsResult = await Promise.race([embeddingsPromise, timeoutPromise]);
+			if (embeddingsResult && embeddingsResult.length >= 2) {
+				currentMessageEmbedding = embeddingsResult[0] ?? [];
+				previousMessageEmbedding = embeddingsResult[1] ?? [];
+			}
+		} catch (error) {
+			console.warn('[CONTEXT] Failed to generate topic shift embeddings:', error);
+		}
+	}
+
+	const topicShift = detectTopicShift({
+		currentMessageEmbedding,
+		previousMessageEmbedding,
+	});
+
+	const suppressCarryover = shouldSuppressCarryover({
+		isShift: topicShift.isShift,
+		hasExplicitResetSignal: retrievalActiveDocumentState.hasContextResetSignal,
+		turnsSinceLastShift: 0,
+	});
+
 	const relevantArtifacts = await findRelevantKnowledgeArtifacts({
 		userId: params.userId,
 		query: params.message,
@@ -1278,8 +1312,7 @@ export async function buildConstructedContext(params: {
 			params.activeDocumentArtifactId,
 		preferredGeneratedFamilyId:
 			retrievalActiveDocumentState.recentlyRefinedFamilyId ?? null,
-		suppressGeneratedCarryover:
-			retrievalActiveDocumentState.hasContextResetSignal,
+		suppressGeneratedCarryover: suppressCarryover,
 	}).catch(() => []);
 	const activeDocumentState = buildActiveDocumentState({
 		artifacts: dedupeById([...currentAttachments, ...workingSetArtifacts, ...relevantArtifacts]),
@@ -1326,17 +1359,23 @@ export async function buildConstructedContext(params: {
 		useFullContent: true,
 	}).catch(() => new Map<string, string>());
 
-	const recentTurns = selectRecentRoleTurns(
+	const allTurns = selectRecentRoleTurns(
 		sessionMessages,
 		(message) => message.role,
-		6
+		sessionMessages.length
 	);
-	const recentTurnCount = recentTurns.length;
-	const recentTurnMessages = recentTurns.flatMap((turn) => turn.messages);
-	const sessionContextMessages =
-		honchoContext?.source === 'persisted_fallback'
-			? recentTurnMessages
-			: sessionMessages;
+
+	const filteredTurns = allTurns.filter((turn, index) => {
+		const isRecent = index >= allTurns.length - 3;
+		if (isRecent) return true;
+
+		const turnContent = turn.messages.map((m) => m.content).join(' ');
+		const score = scoreMatch(params.message, turnContent);
+		return score >= 1;
+	});
+
+	const recentTurnCount = filteredTurns.length;
+	const sessionContextMessages = filteredTurns.flatMap((turn) => turn.messages);
 	const sections: PromptContextSection[] = [];
 
 	if (taskState) {
@@ -1428,11 +1467,14 @@ export async function buildConstructedContext(params: {
 	if (sessionContextMessages.length > 0) {
 		sections.push({
 			title: 'Honcho Session Context',
-			body: serializeRoleMessages(
-				sessionContextMessages,
-				(message) => message.role,
-				(message) => message.content,
-				sessionContextMessages.length
+			body: truncateToTokenBudget(
+				serializeRoleMessages(
+					sessionContextMessages,
+					(message) => message.role,
+					(message) => message.content,
+					sessionContextMessages.length
+				),
+				HONCHO_LIVE_CONTEXT_TOKENS
 			),
 			layer: 'session',
 			essential: true,
@@ -1550,16 +1592,6 @@ export async function buildConstructedContext(params: {
 		const sectionText = buildContextSection(documentSection.title, documentSection.body);
 		budget.reserve('documents', sectionText);
 	}
-
-	const topicShift = detectTopicShift({
-		currentMessageEmbedding: [],
-		previousMessageEmbedding: [],
-	});
-	const suppressCarryover = shouldSuppressCarryover({
-		isShift: topicShift.isShift,
-		hasExplicitResetSignal: activeDocumentState.hasContextResetSignal,
-		turnsSinceLastShift: 0,
-	});
 
 	for (const artifact of selectedEvidence) {
 		const daysSinceAccess = artifact.updatedAt
