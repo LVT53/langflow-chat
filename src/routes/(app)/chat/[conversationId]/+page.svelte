@@ -425,8 +425,11 @@
 						return;
 					}
 
-					sendError = toFriendlySendError(err);
-					canRetry = true;
+					// Reconnection error - the stream may have completed server-side
+					// while we attempted to reconnect. Reload persisted messages instead.
+					console.info('[CHAT] Reconnection failed, reloading persisted messages:', err.message);
+					void invalidateAll();
+					hasPersistedMessages = true;
 				},
 			},
 			{
