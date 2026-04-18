@@ -187,63 +187,6 @@ const preflight = await preflightChatTurn({
 
   const stream = new ReadableStream({
     async start(controller) {
-      if (streamId) {
-        console.info('[CHAT_STREAM] start called', {
-          streamId,
-          abortAlreadySignaled: downstreamAbortSignal.aborted,
-        });
-      }
-      const upstreamAbortController = new AbortController();
-      let isMainStream = false;
-
-      if (streamId) {
-        let existingStreamId: string | null;
-        try {
-          existingStreamId = getOrphanedStream(conversationId);
-        } catch (err) {
-          console.error('[CHAT_STREAM] getOrphanedStream threw', { conversationId, streamId, err });
-          closeDownstream();
-          return;
-        }
-
-        if (existingStreamId === streamId) {
-          console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
-          setTimeout(() => doReconnect(streamId), 0);
-          return;
-        } else if (existingStreamId) {
-          const clientStreamActive = isStreamActive(streamId);
-          const orphanStreamActive = isStreamActive(existingStreamId);
-
-          if (clientStreamActive) {
-            console.info('[CHAT_STREAM] Reconnect to client stream (concurrent active)', streamId);
-            setTimeout(() => doReconnect(streamId), 0);
-            return;
-          } else if (orphanStreamActive) {
-            console.info('[CHAT_STREAM] Reconnect to orphan stream (client streamId stale)', {
-              clientStreamId: streamId,
-              activeOrphanStreamId: existingStreamId,
-            });
-            setTimeout(() => doReconnect(existingStreamId), 0);
-            return;
-          } else {
-            console.info('[CHAT_STREAM] No active streams - cleaning up and starting new', {
-              clientStreamId: streamId,
-              orphanedStreamId: existingStreamId,
-            });
-            clearStreamBuffer(existingStreamId);
-          }
-        }
-
-        registerActiveChatStream({
-          streamId,
-          userId: user.id,
-          controller: upstreamAbortController,
-          conversationId,
-        });
-
-        getOrCreateStreamBuffer(streamId, normalizedMessage);
-        isMainStream = true;
-      }
       const outputTranslator = shouldTranslateHungarian(turn)
         ? new StreamingHungarianTranslator()
         : null;
@@ -355,6 +298,63 @@ const preflight = await preflightChatTurn({
         return true;
       };
 
+      if (streamId) {
+        console.info('[CHAT_STREAM] start called', {
+          streamId,
+          abortAlreadySignaled: downstreamAbortSignal.aborted,
+        });
+      }
+      const upstreamAbortController = new AbortController();
+      let isMainStream = false;
+
+      if (streamId) {
+        let existingStreamId: string | null;
+        try {
+          existingStreamId = getOrphanedStream(conversationId);
+        } catch (err) {
+          console.error('[CHAT_STREAM] getOrphanedStream threw', { conversationId, streamId, err });
+          closeDownstream();
+          return;
+        }
+
+        if (existingStreamId === streamId) {
+          console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
+          setTimeout(() => doReconnect(streamId), 0);
+          return;
+        } else if (existingStreamId) {
+          const clientStreamActive = isStreamActive(streamId);
+          const orphanStreamActive = isStreamActive(existingStreamId);
+
+          if (clientStreamActive) {
+            console.info('[CHAT_STREAM] Reconnect to client stream (concurrent active)', streamId);
+            setTimeout(() => doReconnect(streamId), 0);
+            return;
+          } else if (orphanStreamActive) {
+            console.info('[CHAT_STREAM] Reconnect to orphan stream (client streamId stale)', {
+              clientStreamId: streamId,
+              activeOrphanStreamId: existingStreamId,
+            });
+            setTimeout(() => doReconnect(existingStreamId), 0);
+            return;
+          } else {
+            console.info('[CHAT_STREAM] No active streams - cleaning up and starting new', {
+              clientStreamId: streamId,
+              orphanedStreamId: existingStreamId,
+            });
+            clearStreamBuffer(existingStreamId);
+          }
+        }
+
+        registerActiveChatStream({
+          streamId,
+          userId: user.id,
+          controller: upstreamAbortController,
+          conversationId,
+        });
+
+        getOrCreateStreamBuffer(streamId, normalizedMessage);
+        isMainStream = true;
+      }
       const chunkRuntime = createServerChunkRuntime({ enqueueChunk });
       const rawEmitThinking = chunkRuntime.emitThinking;
       const emitThinking = (reasoning: string) => {
