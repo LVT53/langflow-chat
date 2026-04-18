@@ -596,21 +596,39 @@ async function renderImage(pm, block) {
   let embeddedImage;
   try {
     // Detect image type from first bytes
-    let embedFunc;
-    if (imageBytes[0] === 0x89 && imageBytes[1] === 0x50 && imageBytes[2] === 0x4e && imageBytes[3] === 0x47) {
-      // PNG
+    const b0 = imageBytes[0], b1 = imageBytes[1], b2 = imageBytes[2], b3 = imageBytes[3];
+
+    // PNG: 89 50 4E 47
+    if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) {
       embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
-    } else if (
-      (imageBytes[0] === 0xff && imageBytes[1] === 0xd8) ||
-      imageBytes[0] === 0xff && imageBytes[1] === 0xd9
-    ) {
-      // JPEG
+    }
+    // JPEG: FF D8 FF
+    else if (b0 === 0xff && b1 === 0xd8 && (b2 === 0xff || b2 === 0xdb || b2 === 0xe0 || b2 === 0xe1)) {
       embeddedImage = await pm.pdfDoc.embedJpg(imageBytes);
-    } else if (imageBytes[0] === 0x47 && imageBytes[1] === 0x49) {
-      // GIF
+    }
+    // GIF: 47 49 46
+    else if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) {
       embeddedImage = await pm.pdfDoc.embedPng(imageBytes); // Convert GIF to PNG
-    } else {
-      // Try as PNG first, then JPEG
+    }
+    // WebP: 52 49 46 46 (RIFF) .... 57 45 42 50 (WEBP)
+    else if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && imageBytes.slice(8, 12).toString('ascii') === 'WEBP') {
+      // WebP needs conversion to PNG - try to extract VP8 frame
+      const webpError = new Error('WebP format detected but requires conversion to PNG/JPEG. Please convert your image to PNG or JPEG format.');
+      throw webpError;
+    }
+    // AVIF: Check for ftyp box with avif brand (at offset 4)
+    else if (imageBytes.length > 12 && imageBytes.slice(4, 8).toString('ascii') === 'ftyp') {
+      // Check if it's AVIF (avif, av01, miaf brands)
+      const brand = imageBytes.slice(8, 12).toString('ascii');
+      if (brand === 'avif' || brand === 'av01' || brand === 'miaf') {
+        const avifError = new Error('AVIF format detected but requires conversion to PNG/JPEG. Please convert your image to PNG or JPEG format.');
+        throw avifError;
+      }
+      // Unknown ftyp variant - try PNG
+      embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
+    }
+    else {
+      // Unknown format - try as PNG first, then JPEG
       try {
         embeddedImage = await pm.pdfDoc.embedPng(imageBytes);
       } catch {
