@@ -42,6 +42,8 @@
 		MODEL_2_ENABLED: 'Enable Model 2',
 		TITLE_GEN_URL: 'Title Generator URL',
 		TITLE_GEN_MODEL: 'Title Generator Model',
+		CONTEXT_SUMMARIZER_URL: 'Context Summarizer URL',
+		CONTEXT_SUMMARIZER_MODEL: 'Context Summarizer Model',
 		TITLE_GEN_SYSTEM_PROMPT_EN: 'Title Generator Prompt (English)',
 		TITLE_GEN_SYSTEM_PROMPT_HU: 'Title Generator Prompt (Hungarian)',
 		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN: 'Title Generator Code Appendix (English)',
@@ -212,9 +214,22 @@
 	</div>
 </section>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Translator</h2>
-	<div class="flex flex-col gap-3">
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>Context Summarizer</h2>
+	<div class=flex flex-col gap-3>
+		{#each ['CONTEXT_SUMMARIZER_URL', 'CONTEXT_SUMMARIZER_MODEL'] as key}
+			<div>
+				<label class=settings-label for={key}>{CONFIG_LABELS[key]}</label>
+				<input id={key} type=text class=settings-input bind:value={adminConfig[key]} placeholder={placeholderFor(key)} />
+				<p class=mt-1 text-xs text-text-muted>{key === 'CONTEXT_SUMMARIZER_URL' ? 'OpenAI-compatible endpoint. Uses the same vLLM server as the title generator. Leave empty to disable.' : 'Model name served by the endpoint above.'}</p>
+			</div>
+		{/each}
+	</div>
+</section>
+
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>Translator</h2>
+	<div class=flex flex-col gap-3>
 		{#each ['TRANSLATOR_URL', 'TRANSLATOR_MODEL', 'TRANSLATION_MAX_TOKENS', 'TRANSLATION_TEMPERATURE'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
