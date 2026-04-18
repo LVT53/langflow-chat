@@ -222,6 +222,19 @@ const preflight = await preflightChatTurn({
         try {
           enqueueChunk(createSsePreludeComment());
           enqueueChunk(createSseHeartbeatComment());
+
+          // Check whether the stream already finished while the client was disconnected.
+          // If isStreamActive returns false, completeSuccess() already ran and the buffer
+          // was cleared — the generation is done and we must send end to close the UI.
+          if (!isStreamActive(targetStreamId)) {
+            console.info('[CHAT_STREAM] Stream already finished before reconnect', targetStreamId);
+            enqueueChunk(
+              `event: end\ndata: ${JSON.stringify({ wasStopped: false })}\n\n`,
+            );
+            closeDownstream();
+            return;
+          }
+
           const buffer = getStreamBuffer(targetStreamId);
           if (buffer) {
             const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
