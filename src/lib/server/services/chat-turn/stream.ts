@@ -127,9 +127,14 @@ export function createServerChunkRuntime({
     );
   };
 
+  const stripToolCallsFromThinking = (text: string): string => {
+    return text.replace(/<tool_calls>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'\"{}\u4e00-\u9fff-]*?<\/tool_calls>/gi, '');
+  };
+
   const emitThinking = (reasoning: string) => {
     if (!reasoning) return true;
-    pendingThinkingBuffer += reasoning;
+    const cleanedReasoning = stripToolCallsFromThinking(reasoning);
+    pendingThinkingBuffer += cleanedReasoning;
     if (pendingThinkingBuffer.length >= thinkingBatchMin) {
       return flushPendingThinking();
     }

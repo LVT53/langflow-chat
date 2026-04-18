@@ -211,7 +211,9 @@ export function streamChat(
 					if (currentEvent === 'thinking') {
 						try {
 							const parsed = JSON.parse(rawData);
-							const thinkingChunk = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+							const rawThinking = parsed.text ?? (typeof parsed === 'string' ? parsed : '');
+							if (!rawThinking) return false;
+							const thinkingChunk = rawThinking.replace(/<tool_calls>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'\"{}\u4e00-\u9fff-]*?<\/tool_calls>/gi, '');
 							if (thinkingChunk) {
 								callbacks.onThinking(thinkingChunk);
 							}

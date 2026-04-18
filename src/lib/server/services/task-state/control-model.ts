@@ -155,12 +155,8 @@ export async function requestContextSummarizer(params: {
     headers.Authorization = `Bearer ${config.contextSummarizerApiKey}`;
   }
 
-  // Normalize base URL: strip trailing slashes, any /chat/completions suffix,
-  // and any /vN version segment so the code can always safely append `/chat/completions`.
-  // Handles cases where env/admin config includes the full path or a versioned base.
-  let baseUrl = config.contextSummarizerUrl.replace(/\/+$/, ''); // strip trailing slashes
-  baseUrl = baseUrl.replace(/\/chat\/completions\/?$/i, ''); // strip /chat/completions suffix
-  baseUrl = baseUrl.replace(/\/v[0-9]+$/i, ''); // strip /v1, /v2, etc. version segment
+  let baseUrl = config.contextSummarizerUrl.replace(/\/+$/, '');
+  baseUrl = baseUrl.replace(/\/chat\/completions\/?$/i, '');
 
   // If the URL normalized to empty or just the protocol, the summarizer is not configured
   if (!baseUrl || !baseUrl.includes('://')) {
