@@ -278,6 +278,25 @@ export async function syncArtifactToHoncho(params: {
 
 	const session = await getSession(params.userId, params.conversationId);
 	const userPeer = await getUserPeer(params.userId);
+
+	// When extracted text (fallbackTextArtifact) is available, prefer it for Honcho sync
+	// instead of attempting native upload of potentially large binary files.
+	// Honcho has a ~5MB file size limit, and extracted text is more useful for memory.
+	const fallbackArtifact = params.fallbackTextArtifact;
+	if (fallbackArtifact?.contentText?.trim()) {
+		await session.addMessages(
+			userPeer.message(fallbackArtifact.contentText, {
+				metadata: {
+					role: 'user',
+					artifactId: fallbackArtifact.id,
+					artifactType: fallbackArtifact.type,
+					sourceArtifactId: params.artifact.id,
+				},
+			})
+		);
+		return { uploaded: true, mode: 'normalized' };
+	}
+
 	const nativeMimeType = (params.file?.type || params.artifact.mimeType || 'application/octet-stream')
 		.trim()
 		.toLowerCase();
@@ -286,21 +305,6 @@ export async function syncArtifactToHoncho(params: {
 		HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES.some((prefix) => nativeMimeType.startsWith(prefix));
 
 	if (!nativeUploadSupported) {
-		const fallbackArtifact = params.fallbackTextArtifact;
-		if (fallbackArtifact?.contentText?.trim()) {
-			await session.addMessages(
-				userPeer.message(fallbackArtifact.contentText, {
-					metadata: {
-						role: 'user',
-						artifactId: fallbackArtifact.id,
-						artifactType: fallbackArtifact.type,
-						sourceArtifactId: params.artifact.id,
-					},
-				})
-			);
-			return { uploaded: true, mode: 'normalized' };
-		}
-
 		return { uploaded: false, mode: 'none' };
 	}
 
@@ -336,21 +340,6 @@ export async function syncArtifactToHoncho(params: {
 		}
 	} catch (error) {
 		console.error('[HONCHO] Native artifact upload failed:', error);
-	}
-
-	const fallbackArtifact = params.fallbackTextArtifact;
-	if (fallbackArtifact?.contentText?.trim()) {
-		await session.addMessages(
-			userPeer.message(fallbackArtifact.contentText, {
-				metadata: {
-					role: 'user',
-					artifactId: fallbackArtifact.id,
-					artifactType: fallbackArtifact.type,
-					sourceArtifactId: params.artifact.id,
-				},
-			})
-		);
-		return { uploaded: true, mode: 'normalized' };
 	}
 
 	return { uploaded: false, mode: 'none' };
