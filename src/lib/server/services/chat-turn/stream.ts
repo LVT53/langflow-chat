@@ -99,9 +99,15 @@ export function createSseHeartbeatComment(): string {
 
 export function createServerChunkRuntime({
   enqueueChunk,
+  onToken,
+  onThinking,
+  onToolCall,
   thinkingBatchMin = 80,
 }: {
   enqueueChunk: (chunk: string) => boolean;
+  onToken?: (text: string) => void;
+  onThinking?: (text: string) => void;
+  onToolCall?: (name: string, input: Record<string, unknown>, status: 'running' | 'done', outputSummary?: string | null) => void;
   thinkingBatchMin?: number;
 }) {
   let fullResponse = "";
@@ -124,6 +130,7 @@ export function createServerChunkRuntime({
     } else {
       serverSegments.push({ type: "text", content: chunk });
     }
+    if (onThinking) onThinking(chunk);
     return enqueueChunk(
       `event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`,
     );
@@ -149,6 +156,7 @@ export function createServerChunkRuntime({
     }
 
     fullResponse += chunk;
+    if (onToken) onToken(chunk);
     return enqueueChunk(
       `event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`,
     );
@@ -162,6 +170,7 @@ export function createServerChunkRuntime({
   ) => {
     flushInlineThinkingBuffer();
     flushPendingThinking();
+    if (onToolCall) onToolCall(name, input, status, details?.outputSummary);
     enqueueChunk(
       `event: tool_call\ndata: ${JSON.stringify({
         name,

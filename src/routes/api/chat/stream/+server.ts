@@ -355,35 +355,26 @@ const preflight = await preflightChatTurn({
         getOrCreateStreamBuffer(streamId, normalizedMessage);
         isMainStream = true;
       }
-      const chunkRuntime = createServerChunkRuntime({ enqueueChunk });
-      const rawEmitThinking = chunkRuntime.emitThinking;
-      const emitThinking = (reasoning: string) => {
-        if (streamId) {
-          appendToStreamBuffer(streamId, 'thinking', { text: reasoning });
-        }
-        return rawEmitThinking(reasoning);
-      };
-      const rawEmitToolCallEvent = chunkRuntime.emitToolCallEvent;
-      const emitToolCallEvent = (
-        name: string,
-        input: Record<string, unknown>,
-        status: 'running' | 'done',
-        details?: {
-          outputSummary?: string | null;
-          sourceType?: import('$lib/types').EvidenceSourceType | null;
-          candidates?: import('$lib/types').ToolEvidenceCandidate[];
+      const chunkRuntime = createServerChunkRuntime({
+        enqueueChunk,
+        onToken: (chunk) => {
+          if (streamId) appendToStreamBuffer(streamId, 'token', { text: chunk });
         },
-      ) => {
-        if (streamId) {
-          appendToStreamBuffer(streamId, 'tool_call', {
-            name,
-            input,
-            status,
-            outputSummary: details?.outputSummary,
-          });
+        onThinking: (reasoning) => {
+          if (streamId) appendToStreamBuffer(streamId, 'thinking', { text: reasoning });
+        },
+        onToolCall: (name, input, status, outputSummary) => {
+          if (streamId) {
+            appendToStreamBuffer(streamId, 'tool_call', {
+              name,
+              input,
+              status,
+              outputSummary,
+            });
+          }
         }
-        return rawEmitToolCallEvent(name, input, status, details);
-      };
+      });
+      const emitThinking = chunkRuntime.emitThinking;
       const emitToolCallEventWithDebug = (
         name: string,
         input: Record<string, unknown>,
@@ -407,16 +398,9 @@ const preflight = await preflightChatTurn({
             outputSummary: details?.outputSummary ?? null,
           });
         }
-
-        emitToolCallEvent(name, input, status, details);
+        chunkRuntime.emitToolCallEvent(name, input, status, details);
       };
-      const rawEmitInlineToken = chunkRuntime.emitInlineToken;
-      const emitInlineToken = (chunk: string) => {
-        if (streamId) {
-          appendToStreamBuffer(streamId, 'token', { text: chunk });
-        }
-        return rawEmitInlineToken(chunk);
-      };
+      const emitInlineToken = chunkRuntime.emitInlineToken;
       const emitChunkWithPreserveHandling =
         chunkRuntime.emitChunkWithPreserveHandling;
       const flushPendingThinking = chunkRuntime.flushPendingThinking;
