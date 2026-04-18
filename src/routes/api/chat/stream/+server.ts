@@ -296,7 +296,6 @@ const preflight = await preflightChatTurn({
               orphanedStreamId: existingStreamId,
             });
             clearStreamBuffer(existingStreamId);
-            conversationStreams.delete(conversationId);
           }
         }
 
