@@ -190,59 +190,76 @@ const preflight = await preflightChatTurn({
       let isMainStream = false;
 
       if (streamId) {
-        const existingStreamId = getOrphanedStream(conversationId);
+        let existingStreamId: string | null;
+        try {
+          existingStreamId = getOrphanedStream(conversationId);
+        } catch (err) {
+          console.error('[CHAT_STREAM] getOrphanedStream threw', { conversationId, streamId, err });
+          closeDownstream();
+          return;
+        }
 
         if (existingStreamId === streamId) {
-          console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
-          enqueueChunk(createSsePreludeComment());
-          const buffer = getStreamBuffer(streamId);
-          if (buffer) {
-            const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
-            console.info('[CHAT_STREAM] Replaying orphan buffer for stream', streamId, {
-              hasContent,
-              tokens: buffer.tokens.length,
-              thinking: buffer.thinking.length,
-            });
-            if (hasContent) {
-              enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
-                tokenCount: buffer.tokens.length,
-                thinkingCount: buffer.thinking.length,
-                toolCallCount: buffer.toolCalls.length,
-                userMessage: buffer.userMessage,
-              })}\n\n`);
-              for (const token of buffer.tokens) {
-                enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
-              }
-              for (const thinking of buffer.thinking) {
-                enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
-              }
-              for (const toolCall of buffer.toolCalls) {
-                enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
-                  name: toolCall.name,
-                  input: toolCall.input,
-                  status: toolCall.status,
-                  outputSummary: toolCall.outputSummary,
+          console.info('[CHAT_STREAM] Reconnect to same stream', streamId, {
+            abortAlreadySignaled: downstreamAbortSignal.aborted,
+            downstreamClosed,
+          });
+          try {
+            enqueueChunk(createSsePreludeComment());
+            const buffer = getStreamBuffer(streamId);
+            if (buffer) {
+              const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
+              console.info('[CHAT_STREAM] Replaying orphan buffer for stream', streamId, {
+                hasContent,
+                tokens: buffer.tokens.length,
+                thinking: buffer.thinking.length,
+              });
+              if (hasContent) {
+                enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
+                  tokenCount: buffer.tokens.length,
+                  thinkingCount: buffer.thinking.length,
+                  toolCallCount: buffer.toolCalls.length,
+                  userMessage: buffer.userMessage,
                 })}\n\n`);
+                for (const token of buffer.tokens) {
+                  enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
+                }
+                for (const thinking of buffer.thinking) {
+                  enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
+                }
+                for (const toolCall of buffer.toolCalls) {
+                  enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
+                    name: toolCall.name,
+                    input: toolCall.input,
+                    status: toolCall.status,
+                    outputSummary: toolCall.outputSummary,
+                  })}\n\n`);
+                }
+                enqueueChunk('event: replay_end\ndata: {}\n\n');
               }
-              enqueueChunk('event: replay_end\ndata: {}\n\n');
             }
-          }
 
-          const liveListener = (chunk: string) => {
-            enqueueChunk(chunk);
-            if (chunk.startsWith('event: end\n') || chunk.startsWith('event: error\n')) {
+            const liveListener = (chunk: string) => {
+              enqueueChunk(chunk);
+              if (chunk.startsWith('event: end\n') || chunk.startsWith('event: error\n')) {
+                unsubscribeFromStream(streamId, liveListener);
+                closeDownstream();
+              }
+            };
+            subscribeToStream(streamId, liveListener);
+
+            downstreamAbortSignal.addEventListener('abort', () => {
               unsubscribeFromStream(streamId, liveListener);
               closeDownstream();
-            }
-          };
-          subscribeToStream(streamId, liveListener);
+            }, { once: true });
 
-          downstreamAbortSignal.addEventListener('abort', () => {
-            unsubscribeFromStream(streamId, liveListener);
+            console.info('[CHAT_STREAM] Reconnect handler done, waiting for live chunks');
+            return;
+          } catch (err) {
+            console.error('[CHAT_STREAM] Reconnect block threw', { streamId, err });
             closeDownstream();
-          }, { once: true });
-
-          return;
+            return;
+          }
         } else if (existingStreamId) {
           console.info('[CHAT_STREAM] New message while orphan exists - canceling orphan stream', {
             orphanStreamId: existingStreamId,
