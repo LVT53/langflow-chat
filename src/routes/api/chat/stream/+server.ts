@@ -450,8 +450,15 @@ const preflight = await preflightChatTurn({
           toolCalls: toolCallSummary,
         });
 
+let userMessageToPersist = normalizedMessage;
+        if (isReconnect && streamId) {
+          const buffer = getStreamBuffer(streamId);
+          if (buffer?.userMessage) {
+            userMessageToPersist = buffer.userMessage;
+          }
+        }
         const userMsgPromise = persistUserMessage
-          ? createMessage(conversationId, "user", normalizedMessage).catch(
+          ? createMessage(conversationId, 'user', userMessageToPersist).catch(
               () => undefined,
             )
           : Promise.resolve(undefined);
