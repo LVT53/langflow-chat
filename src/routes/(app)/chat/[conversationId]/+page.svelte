@@ -347,9 +347,86 @@
 		if (document.visibilityState === 'visible' && streamInterruptedByBackground) {
 			streamInterruptedByBackground = false;
 			invalidateAll();
-			// Also check for orphaned streams when returning to foreground
-			void checkForOrphanedStreamOnMount();
+// Also check for orphaned streams when returning to foreground
+		void checkForOrphanedStreamOnMount();
+	}
+}
+
+	async function pollForCompletion(placeholderId: string, attempt = 0) {
+		const maxAttempts = 60;
+		const pollInterval = 2000;
+
+		if (attempt >= maxAttempts) {
+			console.info('[CHAT] Polling timeout - checking final state');
+			void loadPersistedData();
+			return;
 		}
+
+		console.info('[CHAT] Polling for completion, attempt:', attempt + 1);
+		const detail = await fetchConversationDetail(data.conversation.id).catch(() => null);
+
+		if (!detail) {
+			setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterval);
+			return;
+		}
+
+		// Check if there's a new assistant message (indicates original stream completed)
+		const newMessages = detail.messages ?? [];
+		const lastAssistant = newMessages.findLast((m: ChatMessage) => m.role === 'assistant');
+		const userMessage = newMessages.findLast((m: ChatMessage) => m.role === 'user');
+
+		if (lastAssistant && lastAssistant.content && lastAssistant.content.length > 0) {
+			console.info('[CHAT] Completion detected - assistant message found, content length:', lastAssistant.content.length);
+
+			// Remove the placeholder and add the real message
+			messages.update((list) => {
+				const filtered = list.filter((m) => m.id !== placeholderId);
+				return [...filtered, lastAssistant];
+			});
+
+			isSending = false;
+			canRetry = false;
+
+			// Update context status
+			if (detail.contextStatus) {
+				contextStatus = detail.contextStatus;
+			}
+			if (detail.activeWorkingSet) {
+				activeWorkingSet = detail.activeWorkingSet;
+			}
+			if (detail.taskState) {
+				taskState = detail.taskState;
+			}
+
+			// Update generated files
+			if (detail.generatedFiles) {
+				generatedFiles = [...detail.generatedFiles];
+			}
+
+			// Poll for evidence
+			if (lastAssistant.id) {
+				void pollMessageEvidence(lastAssistant.id);
+			}
+
+			return;
+		}
+
+		// Still waiting, poll again
+		setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterval);
+	}
+
+	async function loadPersistedData() {
+		console.info('[CHAT] Loading persisted data after polling timeout');
+		hasPersistedMessages = true;
+		const detail = await fetchConversationDetail(data.conversation.id).catch(() => null);
+		if (detail) {
+			messages.set([...detail.messages ?? []]);
+			generatedFiles = [...detail.generatedFiles ?? []];
+			conversationDraft = null;
+			const pending = consumePendingConversationMessage(data.conversation.id);
+			void pending;
+		}
+		isSending = false;
 	}
 
 	async function reconnectToOrphanedStream(streamId: string, userMessage: string = '', retryCount = 0) {
@@ -881,21 +958,28 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 					onThinking(chunk) {
 						messages.update((list) => appendThinkingChunkToMessageList(list, placeholderId, chunk));
 					},
-				onToolCall(name, input, status, details) {
+onToolCall(name, input, status, details) {
 					if ((name === 'generate_file' || name === 'export_document') && status === 'running') {
 						addPendingGeneratedFile(input, placeholderId);
 					}
-						messages.update((list) =>
-							applyToolCallUpdateToMessageList(list, {
-								placeholderId,
-								name,
-								input,
-								status,
-								details,
-							})
-						);
-					},
-					onEnd(fullText, metadata) {
+					messages.update((list) =>
+						applyToolCallUpdateToMessageList(list, {
+							placeholderId,
+							name,
+							input,
+							status,
+							details,
+						})
+					);
+				},
+				onWaiting() {
+					console.info('[CHAT] Entering waiting state - polling for completion');
+					activeStream?.detach();
+					activeStream = null;
+					// Start polling for completion
+					void pollForCompletion(placeholderId);
+				},
+				onEnd(fullText, metadata) {
 						lastAssistantResponse = fullText;
 						contextStatus = metadata?.contextStatus ?? contextStatus;
 						activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;

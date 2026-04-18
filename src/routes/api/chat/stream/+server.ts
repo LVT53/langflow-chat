@@ -343,6 +343,16 @@ const preflight = await preflightChatTurn({
           }
 
           enqueueChunk('event: replay_end\ndata: {}\n\n');
+
+          console.info('[CHAT_STREAM] Reconnect mode - waiting for original stream to complete');
+
+          enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
+            message: 'Waiting for original stream to complete...',
+          })}\n\n`);
+
+          closeDownstream();
+          unregisterActiveChatStream(streamId);
+          return;
         }
       }
 

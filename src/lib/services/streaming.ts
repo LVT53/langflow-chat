@@ -26,6 +26,7 @@ export interface StreamCallbacks {
 	onThinking: (chunk: string) => void;
 	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
+	onWaiting?: () => void;
 	onToolCall?: (
 		name: string,
 		input: Record<string, unknown>,
@@ -205,7 +206,7 @@ export function streamChat(
 			const reader = res.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | 'replay_start' | 'replay_end' | null = null;
+			let currentEvent: 'token' | 'thinking' | 'end' | 'error' | 'tool_call' | 'replay_start' | 'replay_end' | 'waiting' | null = null;
 
 			const processLine = (rawLine: string): boolean => {
 				const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -236,6 +237,10 @@ export function streamChat(
 				}
 				if (line.startsWith('event: replay_end')) {
 					currentEvent = 'replay_end';
+					return false;
+				}
+				if (line.startsWith('event: waiting')) {
+					currentEvent = 'waiting';
 					return false;
 				}
 				if (line.startsWith('data: ')) {
@@ -362,6 +367,13 @@ export function streamChat(
 								callbacks.onThinking(thinkingChunk);
 							},
 						});
+						return false;
+					}
+
+					if (currentEvent === 'waiting') {
+						console.info('[STREAM] Waiting for original stream to complete');
+						flushInlineBufferAtEnd();
+						callbacks.onWaiting?.();
 						return false;
 					}
 
