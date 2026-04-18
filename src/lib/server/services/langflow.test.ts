@@ -254,7 +254,8 @@ describe('Langflow API Client Service', () => {
       expect(body.tweaks.system_prompt).toContain('Generated file workflow (split toolkit)');
       expect(body.tweaks.system_prompt).toContain('export_document');
       expect(body.tweaks.system_prompt).toContain('generate_file');
-      expect(body.tweaks.system_prompt).toContain('YAML frontmatter for cover page metadata');
+      expect(body.tweaks.system_prompt).toContain('Terracotta Crown theme');
+      expect(body.tweaks.system_prompt).toContain('createPDF({ filename, title, content })');
       expect(body.tweaks.system_prompt).toContain('Obsidian-style blockquotes for callouts');
       expect(body.tweaks.system_prompt).toContain('image_search');
       expect(body.tweaks.system_prompt).toContain('Pandas for data analysis');
