@@ -1,0 +1,44 @@
+# Server Utils — Shared Helpers
+
+Low-level utilities consumed across server services. Pure functions, no side effects, no external dependencies.
+
+## Structure
+
+| File | Purpose |
+|------|---------|
+| `json.ts` | Safe JSON parsing with fallback defaults |
+| `text.ts` | Whitespace normalization, text clipping |
+| `tokens.ts` | Token estimation for budget calculations |
+| `markdown-parser.ts` | Frontmatter + markdown body splitting |
+| `prompt-context.ts` | Context section building, compaction, serialization to token budget |
+| `token-budget.ts` | Context window budget management with compaction thresholds |
+| `artifact-decay.ts` | Time-based salience decay for artifact retrieval |
+| `conversation-boundary-filter.ts` | Detects conversation boundaries for context splitting |
+| `extractive-compression.ts` | Text summarization without LLM |
+| `topic-shift-detector.ts` | Detects topic changes for memory management |
+
+## Usage by Service
+
+| Util | Used by |
+|------|---------|
+| `json.ts` | `task-state/`, `knowledge/` |
+| `text.ts` | `task-state/`, `messages.ts` |
+| `tokens.ts` | `prompt-context.ts`, `context.ts` |
+| `prompt-context.ts` | `honcho.ts`, `task-state.ts` |
+| `token-budget.ts` | Context compaction decisions |
+| `artifact-decay.ts` | Knowledge retrieval ranking |
+| `conversation-boundary-filter.ts` | Chat context assembly |
+| `topic-shift-detector.ts` | Memory event emission |
+
+## Conventions
+
+- **No side effects**: Pure functions only
+- **No external I/O**: No network calls, file access, or DB access
+- **No server-only APIs**: Safe to import in shared/client code with proper guards
+- **Typed defaults**: JSON parsing returns typed defaults on failure, never throws
+
+## Anti-Patterns
+
+- **No mutable shared state**: Utils must not maintain module-level state that persists across calls
+- **No DOM access**: Utils should not reference `window`, `document`, or other browser globals
+- **No date/time in constructors**: Pass timestamps as parameters for testability
