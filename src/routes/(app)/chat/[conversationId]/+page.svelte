@@ -352,10 +352,10 @@
 		}
 	}
 
-	async function reconnectToOrphanedStream(streamId: string) {
+	async function reconnectToOrphanedStream(streamId: string, retryCount = 0) {
 		if (isSending || activeStream) return;
 
-		console.info('[CHAT] Starting reconnection to stream:', streamId);
+		console.info('[CHAT] Starting reconnection to stream:', streamId, 'attempt:', retryCount + 1);
 		isSending = true;
 		hasPersistedMessages = true;
 
@@ -428,36 +428,24 @@
 						return;
 					}
 
-					// Capacity error means the orphaned stream is still running in background
-					// We should reload persisted data to show the partial response
+// Capacity error means the orphaned stream is still running in background
+					// Retry reconnection with exponential backoff (max 3 retries)
 					const isCapacityError = err.message?.includes('capacity') || err.code === 'CAPACITY_EXCEEDED';
-					if (isCapacityError) {
-						console.info('[CHAT] Capacity error - reloading persisted data (stream still running)');
-						streamInterruptedByBackground = true;
-						hasPersistedMessages = true;
-						// Fetch fresh data to get partial responses
-						fetchConversationDetail(data.conversation.id)
-							.then((detail) => {
-console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length, 'generatedFiles:', detail.generatedFiles?.length ?? 0);
-								// Log messages to debug empty box issue
-								const lastMsg = detail.messages[detail.messages.length - 1];
-								const secondLastMsg = detail.messages[detail.messages.length - 2];
-								console.info('[CHAT] Last 2 messages:',
-									lastMsg?.role, 'content len:', lastMsg?.content?.length ?? 'N/A',
-									secondLastMsg?.role, 'content len:', secondLastMsg?.content?.length ?? 'N/A');
-								
-								// Update stores directly - don't call invalidateAll as it can overwrite our fresh data
-								messages.set([...detail.messages ?? []]);  // Create new array to trigger reactivity
-								generatedFiles = [...detail.generatedFiles ?? []];
-								conversationDraft = null;
-								// Clear sessionStorage draft to prevent restoration
-								const pending = consumePendingConversationMessage(data.conversation.id);
-								void pending;
-							})
-							.catch((e) => {
-								console.error('[CHAT] Failed to fetch fresh data:', e);
-							});
+					if (isCapacityError && retryCount < 3) {
+						const delay = Math.pow(2, retryCount) * 500; // 500ms, 1s, 2s
+						console.info('[CHAT] Capacity error - retrying reconnection in', delay, 'ms (attempt', retryCount + 2, ')');
+						isSending = false;
+						activeStream = null;
+						messages.update((list) => removeMessageById(list, placeholderId));
+						setTimeout(() => {
+							void reconnectToOrphanedStream(streamId, retryCount + 1);
+						}, delay);
 						return;
+					}
+					
+					// After max retries, fall back to showing persisted data
+					if (isCapacityError) {
+						console.info('[CHAT] Max retries reached, loading persisted data');
 					}
 
 					// Reconnection error - the stream may have completed server-side
