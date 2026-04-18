@@ -8,7 +8,6 @@ import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
 } from './attachment-trace';
-import { getLangflowAgent } from './http-agents';
 
 type AuthenticatedPromptUser = {
 	id: string;
@@ -275,7 +274,6 @@ export async function sendMessage(
       },
       body: JSON.stringify(body),
       signal,
-      dispatcher: getLangflowAgent(),
     });
 
     if (!response.ok) {
@@ -434,7 +432,6 @@ export async function sendMessageStream(
       },
       body: JSON.stringify(body),
       signal,
-      dispatcher: getLangflowAgent(),
     });
     clearTimeout(connectTimeoutId);
 
