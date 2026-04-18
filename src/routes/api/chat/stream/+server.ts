@@ -32,6 +32,7 @@ import {
   getOrCreateStreamBuffer,
   appendToStreamBuffer,
   clearStreamBuffer,
+  requestActiveChatStreamStop,
 } from '$lib/server/services/chat-turn/active-streams';
 import {
   URL_LIST_TOOL_RECOVERY_APPENDIX,
@@ -190,13 +191,15 @@ const preflight = await preflightChatTurn({
           conversationId,
         });
 
-        // If registration failed (orphan stream exists), don't proceed with new stream
-        // Instead, treat this as a reconnect to the existing orphan
+        // If registration failed (orphan stream exists), determine what to do:
+        // - If same streamId: this is a reconnect attempt → replay + wait
+        // - If different streamId: this is a NEW message → cancel orphan, proceed
         if (!registered) {
-          console.info('[CHAT_STREAM] Stream registration conflict - existing orphan stream detected');
-          enqueueChunk(createSsePreludeComment());
           const existingStreamId = conversationStreams.get(conversationId);
-          if (existingStreamId) {
+
+          if (existingStreamId === streamId) {
+            console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
+            enqueueChunk(createSsePreludeComment());
             const buffer = getStreamBuffer(existingStreamId);
             if (buffer) {
               const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
@@ -227,13 +230,22 @@ const preflight = await preflightChatTurn({
               }
               enqueueChunk('event: replay_end\ndata: {}\n\n');
             }
+            enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
+              message: 'Waiting for previous stream to complete...',
+            })}\n\n`);
+            closeDownstream();
+            return;
+          } else {
+            console.info('[CHAT_STREAM] New message while orphan exists - canceling orphan stream', {
+              orphanStreamId: existingStreamId,
+              newStreamId: streamId,
+            });
+            if (existingStreamId) {
+              requestActiveChatStreamStop({ streamId: existingStreamId, userId: user.id });
+              unregisterActiveChatStream(existingStreamId);
+              clearStreamBuffer(existingStreamId);
+            }
           }
-          console.info('[CHAT_STREAM] Conflict mode - waiting for orphan stream to complete');
-          enqueueChunk(`event: waiting\ndata: ${JSON.stringify({
-            message: 'Waiting for previous stream to complete...',
-          })}\n\n`);
-          closeDownstream();
-          return;
         }
 
         getOrCreateStreamBuffer(streamId, normalizedMessage);
