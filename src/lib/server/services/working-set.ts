@@ -16,17 +16,11 @@ export interface WorkingSetCandidate {
 	summary: string | null;
 	contentText: string | null;
 	updatedAt: number;
-	previousScore?: number;
-	previousState?: WorkingSetState | null;
 	isAttachedThisTurn?: boolean;
 	isActiveDocumentFocus?: boolean;
 	isRecentUserCorrection?: boolean;
 	isRecentlyRefinedDocumentFamily?: boolean;
-	recentRefinementBehaviorScore?: number;
-	recentDocumentOpenScore?: number;
-	isHistoricalDocumentFamily?: boolean;
 	isCurrentGeneratedDocument?: boolean;
-	isLinkedToLatestOutput?: boolean;
 	messageMatchScore?: number;
 }
 
@@ -46,7 +40,7 @@ function clamp(value: number, min: number, max: number): number {
 export function scoreMatch(query: string, haystack: string): number {
 	const terms = query
 		.toLowerCase()
-		.split(/\s+/)
+		.split(/\\s+/)
 		.map((term) => term.trim())
 		.filter((term) => term.length > 2);
 	if (terms.length === 0) return 0;
@@ -56,12 +50,7 @@ export function scoreMatch(query: string, haystack: string): number {
 
 function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 	const reasonCodes: WorkingSetReasonCode[] = [];
-	let score = Math.round((candidate.previousScore ?? 0) * 0.25);
-
-	if ((candidate.previousScore ?? 0) > 0 && candidate.previousState === 'active') {
-		score += 3;
-		reasonCodes.push('persisted_from_previous_turn');
-	}
+	let score = 0;
 
 	if (candidate.isAttachedThisTurn) {
 		score += 100;
@@ -83,28 +72,9 @@ function scoreCandidate(candidate: WorkingSetCandidate): RankedWorkingSetItem {
 		reasonCodes.push('recently_refined_document_family');
 	}
 
-	if ((candidate.recentRefinementBehaviorScore ?? 0) > 0) {
-		score += clamp((candidate.recentRefinementBehaviorScore ?? 0) * 4, 0, 16);
-		reasonCodes.push('recent_refinement_behavior');
-	}
-
-	if ((candidate.recentDocumentOpenScore ?? 0) > 0) {
-		score += clamp((candidate.recentDocumentOpenScore ?? 0) * 2, 0, 8);
-		reasonCodes.push('recent_document_open');
-	}
-
-	if (candidate.isHistoricalDocumentFamily) {
-		score -= 12;
-	}
-
 	if (candidate.isCurrentGeneratedDocument) {
 		score += 54;
 		reasonCodes.push('current_generated_document');
-	}
-
-	if (candidate.isLinkedToLatestOutput) {
-		score += 34;
-		reasonCodes.push('recently_used_in_output');
 	}
 
 	const matchBoost = clamp((candidate.messageMatchScore ?? 0) * 15, 0, 60);

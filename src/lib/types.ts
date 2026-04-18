@@ -278,8 +278,8 @@ export type MemoryLayer = 'session' | 'capsule' | 'documents' | 'outputs' | 'wor
 export type TaskStateStatus = 'active' | 'candidate' | 'revived' | 'archived';
 
 export type CompactionMode = 'none' | 'deterministic' | 'llm_fallback';
-export type RoutingStage = 'deterministic' | 'task_router' | 'evidence_rerank' | 'verification_fallback';
-export type VerificationStatus = 'skipped' | 'passed' | 'failed' | 'fallback';
+export type RoutingStage = 'deterministic' | 'semantic' | 'evidence_rerank' | 'verification_fallback';
+export type VerificationStatus = 'skipped' | 'fallback';
 export type TaskEvidenceRole = 'selected' | 'pinned' | 'excluded' | 'checkpoint_source';
 export type TaskEvidenceOrigin = 'system' | 'user';
 export type TaskCheckpointType = 'micro' | 'stable';

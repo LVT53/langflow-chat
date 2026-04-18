@@ -46,7 +46,6 @@ export type { KnowledgeBulkAction } from './knowledge/store';
 
 export {
 	createGeneratedOutputArtifact,
-	findRelevantWorkCapsules,
 	upsertWorkCapsule,
 } from './knowledge/capsules';
 

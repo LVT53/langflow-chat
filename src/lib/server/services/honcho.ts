@@ -20,7 +20,6 @@ import {
 	serializeArtifacts,
 	serializePeerContext,
 	serializeRoleMessages,
-	serializeWorkCapsules,
 	serializeWorkingSetArtifacts,
 	selectRecentRoleTurns,
 	truncateToTokenBudget,
@@ -29,7 +28,6 @@ import {
 import {
 	AttachmentReadinessError,
 	findRelevantKnowledgeArtifacts,
-	findRelevantWorkCapsules,
 	getCompactionUiThreshold,
 	getTargetConstructedContext,
 	resolvePromptAttachmentArtifacts,
@@ -1211,7 +1209,6 @@ export async function buildConstructedContext(params: {
 		sessionContext,
 		resolvedAttachments,
 		workingSetArtifacts,
-		relevantCapsules,
 	] =
 		await Promise.all([
 			loadSessionPromptContext({
@@ -1227,7 +1224,6 @@ export async function buildConstructedContext(params: {
 				attachmentIds,
 				params.activeDocumentArtifactId
 			).catch(() => []),
-			findRelevantWorkCapsules(params.userId, params.message, params.conversationId, 3).catch(() => []),
 		]);
 	const {
 		sessionMessages,
@@ -1440,15 +1436,6 @@ export async function buildConstructedContext(params: {
 			title: 'User Memory',
 			body: truncateToTokenBudget(peerContext, 1400),
 			layer: 'session',
-			llmCompactible: true,
-		});
-	}
-
-	if (relevantCapsules.length > 0) {
-		sections.push({
-			title: 'Relevant Prior Workflows',
-			body: truncateToTokenBudget(serializeWorkCapsules(relevantCapsules), 1200),
-			layer: 'capsule',
 			llmCompactible: true,
 		});
 	}

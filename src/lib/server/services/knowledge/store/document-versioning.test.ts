@@ -35,10 +35,8 @@ vi.mock('../../../db', () => ({
 
 const {
 	generateDocumentFamilyId,
-	linkDocumentsAsVersions,
 	linkDuplicateDocument,
 	getDocumentVersions,
-	getNextVersionNumber,
 } = await import('./document-versioning');
 
 describe('Document Versioning', () => {
@@ -76,33 +74,25 @@ describe('Document Versioning', () => {
 			const mockArtifacts = [
 				{
 					id: 'artifact-1',
-					metadataJson: JSON.stringify({ documentFamilyId: 'family-1', versionNumber: 1 }),
+					metadataJson: JSON.stringify({ documentFamilyId: 'family-1' }),
 					createdAt: new Date('2024-01-01'),
 					updatedAt: new Date('2024-01-01'),
 				},
 				{
 					id: 'artifact-2',
-					metadataJson: JSON.stringify({ documentFamilyId: 'family-1', versionNumber: 2 }),
+					metadataJson: JSON.stringify({ documentFamilyId: 'family-1' }),
 					createdAt: new Date('2024-01-02'),
 					updatedAt: new Date('2024-01-02'),
 				},
 			];
 
-			mockDb.select
-				.mockReturnValueOnce({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							orderBy: vi.fn(() => Promise.resolve(mockArtifacts)),
-						})),
+			mockDb.select.mockReturnValue({
+				from: vi.fn(() => ({
+					where: vi.fn(() => ({
+						orderBy: vi.fn(() => Promise.resolve(mockArtifacts)),
 					})),
-				})
-				.mockReturnValue({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([mockArtifacts[0]])),
-						})),
-					})),
-				});
+				})),
+			});
 
 			const versions = await getDocumentVersions('family-1');
 			expect(versions).toHaveLength(2);
@@ -122,151 +112,6 @@ describe('Document Versioning', () => {
 		});
 	});
 
-	describe('getNextVersionNumber', () => {
-		it('should return 1 for new family', async () => {
-			mockDb.select.mockReturnValue({
-				from: vi.fn(() => ({
-					where: vi.fn(() => ({
-						orderBy: vi.fn(() => Promise.resolve([])),
-					})),
-				})),
-			});
-
-			const version = await getNextVersionNumber('new-family');
-			expect(version).toBe(1);
-		});
-
-		it('should increment from highest version', async () => {
-			const mockArtifacts = [
-				{
-					id: 'artifact-1',
-					metadataJson: JSON.stringify({ documentFamilyId: 'existing-family', versionNumber: 1 }),
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				},
-				{
-					id: 'artifact-2',
-					metadataJson: JSON.stringify({ documentFamilyId: 'existing-family', versionNumber: 3 }),
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				},
-			];
-
-			mockDb.select
-				.mockReturnValueOnce({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							orderBy: vi.fn(() => Promise.resolve(mockArtifacts)),
-						})),
-					})),
-				})
-				.mockReturnValue({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([mockArtifacts[0]])),
-						})),
-					})),
-				});
-
-			const version = await getNextVersionNumber('existing-family');
-			expect(version).toBe(4);
-		});
-	});
-
-	describe('linkDocumentsAsVersions', () => {
-		it('should throw error when no artifact IDs provided', async () => {
-			await expect(
-				linkDocumentsAsVersions({ artifactIds: [] })
-			).rejects.toThrow('At least one artifact ID is required');
-		});
-
-		it('should create new family when no existing family ID provided', async () => {
-			const mockArtifacts = [
-				{
-					id: 'artifact-1',
-					metadataJson: null,
-					createdAt: new Date('2024-01-01'),
-					updatedAt: new Date('2024-01-01'),
-				},
-			];
-
-			mockDb.select
-				.mockReturnValueOnce({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							orderBy: vi.fn(() => Promise.resolve(mockArtifacts)),
-						})),
-					})),
-				})
-				.mockReturnValue({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([mockArtifacts[0]])),
-						})),
-					})),
-				});
-
-			mockDb.update.mockReturnValue({
-				set: vi.fn(() => ({
-					where: vi.fn(() => ({
-						returning: vi.fn(() => Promise.resolve([{}])),
-					})),
-				})),
-			});
-
-			const result = await linkDocumentsAsVersions({
-				artifactIds: ['artifact-1'],
-			});
-
-			expect(typeof result.familyId).toBe('string');
-			expect(result.familyId.length).toBeGreaterThan(0);
-			expect(result.linkedArtifacts).toHaveLength(1);
-			expect(result.linkedArtifacts[0].isOriginal).toBe(true);
-			expect(result.linkedArtifacts[0].versionNumber).toBe(1);
-		});
-
-		it('should mark first artifact as original', async () => {
-			const mockArtifacts = [
-				{
-					id: 'artifact-1',
-					metadataJson: null,
-					createdAt: new Date('2024-01-01'),
-					updatedAt: new Date('2024-01-01'),
-				},
-				{
-					id: 'artifact-2',
-					metadataJson: null,
-					createdAt: new Date('2024-01-02'),
-					updatedAt: new Date('2024-01-02'),
-				},
-			];
-
-			mockDb.select.mockReturnValue({
-				from: vi.fn(() => ({
-					where: vi.fn(() => ({
-						orderBy: vi.fn(() => Promise.resolve(mockArtifacts)),
-						limit: vi.fn(() => Promise.resolve(mockArtifacts)),
-					})),
-				})),
-			});
-
-			mockDb.update.mockReturnValue({
-				set: vi.fn(() => ({
-					where: vi.fn(() => ({
-						returning: vi.fn(() => Promise.resolve([{}])),
-					})),
-				})),
-			});
-
-			const result = await linkDocumentsAsVersions({
-				artifactIds: ['artifact-1', 'artifact-2'],
-			});
-
-			expect(result.linkedArtifacts[0].isOriginal).toBe(true);
-			expect(result.linkedArtifacts[1].isOriginal).toBe(false);
-		});
-	});
-
 	describe('linkDuplicateDocument', () => {
 		it('should create new family when original has no family', async () => {
 			const mockOriginal = {
@@ -276,14 +121,14 @@ describe('Document Versioning', () => {
 				updatedAt: new Date('2024-01-01'),
 			};
 
+			const mockDuplicate = {
+				id: 'duplicate-1',
+				metadataJson: null,
+				createdAt: new Date('2024-01-02'),
+				updatedAt: new Date('2024-01-02'),
+			};
+
 			mockDb.select
-				.mockReturnValueOnce({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([mockOriginal])),
-						})),
-					})),
-				})
 				.mockReturnValueOnce({
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
@@ -301,7 +146,7 @@ describe('Document Versioning', () => {
 				.mockReturnValueOnce({
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([{ id: 'duplicate-1' }])),
+							limit: vi.fn(() => Promise.resolve([mockDuplicate])),
 						})),
 					})),
 				});
@@ -322,8 +167,8 @@ describe('Document Versioning', () => {
 
 			expect(typeof result.familyId).toBe('string');
 			expect(result.familyId.length).toBeGreaterThan(0);
-			expect(result.originalVersionNumber).toBe(1);
-			expect(result.duplicateVersionNumber).toBe(1);
+			expect(result.originalSupersedesArtifactId ?? null).toBeNull();
+			expect(result.duplicateSupersedesArtifactId).toBe('original-1');
 		});
 
 		it('should use existing family when original has one', async () => {
@@ -331,26 +176,17 @@ describe('Document Versioning', () => {
 				id: 'original-1',
 				metadataJson: JSON.stringify({
 					documentFamilyId: 'existing-family',
-					versionNumber: 1,
 				}),
 				createdAt: new Date('2024-01-01'),
 				updatedAt: new Date('2024-01-01'),
 			};
 
-			const mockVersions = [
-				{
-					id: 'original-1',
-					metadataJson: JSON.stringify({ documentFamilyId: 'existing-family', versionNumber: 1 }),
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				},
-				{
-					id: 'artifact-2',
-					metadataJson: JSON.stringify({ documentFamilyId: 'existing-family', versionNumber: 2 }),
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				},
-			];
+			const mockDuplicate = {
+				id: 'duplicate-1',
+				metadataJson: null,
+				createdAt: new Date('2024-01-02'),
+				updatedAt: new Date('2024-01-02'),
+			};
 
 			mockDb.select
 				.mockReturnValueOnce({
@@ -363,14 +199,7 @@ describe('Document Versioning', () => {
 				.mockReturnValueOnce({
 					from: vi.fn(() => ({
 						where: vi.fn(() => ({
-							orderBy: vi.fn(() => Promise.resolve(mockVersions)),
-						})),
-					})),
-				})
-				.mockReturnValue({
-					from: vi.fn(() => ({
-						where: vi.fn(() => ({
-							limit: vi.fn(() => Promise.resolve([mockOriginal])),
+							limit: vi.fn(() => Promise.resolve([mockDuplicate])),
 						})),
 					})),
 				});
@@ -390,7 +219,7 @@ describe('Document Versioning', () => {
 			});
 
 			expect(result.familyId).toBe('existing-family');
-			expect(result.duplicateVersionNumber).toBe(3);
+			expect(result.duplicateSupersedesArtifactId).toBe('original-1');
 		});
 
 		it('should throw error when original artifact not found', async () => {

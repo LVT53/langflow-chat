@@ -91,8 +91,8 @@
 
 	function formatRoutingStage(stage: ContextDebugState['routingStage'] | undefined): string {
 		switch (stage) {
-			case 'task_router':
-				return 'Task router';
+			case 'semantic':
+				return 'Semantic';
 			case 'evidence_rerank':
 				return 'Evidence rerank';
 			case 'verification_fallback':

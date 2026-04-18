@@ -138,13 +138,9 @@ function scoreGeneratedDocumentArtifact(params: {
     reasonCodes.push("semantic_document_match");
   }
 
-  if (rerankScore > 0) {
+if (rerankScore > 0) {
     score += Math.min(24, rerankScore * 24);
-    reasonCodes.push("reranked_document_match");
-  }
-
-  if (metadata.documentFamilyStatus === "historical") {
-    score -= 12;
+    reasonCodes.push('reranked_document_match');
   }
 
   return {
@@ -219,35 +215,29 @@ export function isGeneratedDocumentPromptEligible(params: {
   messageMatchScore: number;
   explicitlyRequested: boolean;
 }): boolean {
-  if (params.artifact.type !== "generated_output") {
+  if (params.artifact.type !== 'generated_output') {
     return true;
   }
 
-  const allowEphemeralOutput =
-    params.reasonCodes.includes("active_document_focus") ||
-    params.reasonCodes.includes("recent_user_correction") ||
-    params.reasonCodes.includes("recently_refined_document_family") ||
-    params.reasonCodes.includes("current_generated_document");
-
-  if (params.artifact.retrievalClass === "durable") {
+  if (params.artifact.retrievalClass === 'durable') {
     return true;
   }
 
-  if (!allowEphemeralOutput) {
-    return false;
+  if (
+    params.artifact.conversationId &&
+    params.artifact.conversationId === params.conversationId
+  ) {
+    const hasRecentActivity =
+      params.reasonCodes.includes('attached_this_turn') ||
+      params.reasonCodes.includes('active_document_focus') ||
+      params.reasonCodes.includes('recent_user_correction') ||
+      params.reasonCodes.includes('recently_refined_document_family') ||
+      params.reasonCodes.includes('current_generated_document') ||
+      params.reasonCodes.includes('recently_used_in_output');
+    return hasRecentActivity || params.messageMatchScore >= 3 || params.explicitlyRequested;
   }
 
-  return (
-    params.reasonCodes.includes("attached_this_turn") ||
-    params.reasonCodes.includes("active_document_focus") ||
-    params.reasonCodes.includes("recent_user_correction") ||
-    params.reasonCodes.includes("recently_refined_document_family") ||
-    params.reasonCodes.includes("current_generated_document") ||
-    params.messageMatchScore >= 2 ||
-    params.explicitlyRequested ||
-    (params.reasonCodes.includes("recently_used_in_output") &&
-      params.messageMatchScore >= 1)
-  );
+  return params.messageMatchScore >= 3 || params.explicitlyRequested;
 }
 
 export function resolveRelevantGeneratedDocumentArtifacts(params: {
@@ -285,7 +275,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   rerankScoresByArtifactId?: Map<string, number>;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
-    (artifact) => artifact.type === "generated_output",
+    (artifact) => artifact.type === 'generated_output',
   );
   const preferredArtifact = params.preferredArtifactId
     ? generatedArtifacts.find((artifact) => artifact.id === params.preferredArtifactId) ??
@@ -311,9 +301,6 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   const orderedArtifacts: Artifact[] = [];
   const seenArtifactIds = new Set<string>();
   const primaryResolution = resolutions[0] ?? null;
-  const hasQueryMatchedFamily = hasExplicitGeneratedDocumentQueryMatch(
-    primaryResolution,
-  );
 
   if (preferredArtifact) {
     orderedArtifacts.push(preferredArtifact);
@@ -321,7 +308,7 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   } else if (preferredFamilyArtifact) {
     orderedArtifacts.push(preferredFamilyArtifact);
     seenArtifactIds.add(preferredFamilyArtifact.id);
-  } else if (!params.suppressCarryoverWhenUnfocused || hasQueryMatchedFamily) {
+  } else if (!params.suppressCarryoverWhenUnfocused) {
     const primaryArtifact = primaryResolution?.artifact ?? null;
     if (primaryArtifact) {
       orderedArtifacts.push(primaryArtifact);
@@ -338,15 +325,15 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   }
 
   const primaryReasonCodes = preferredArtifact
-    ? ["preferred_artifact"]
+    ? ['preferred_artifact']
     : preferredFamilyArtifact
-      ? ["recently_refined_document_family"]
+      ? ['recently_refined_document_family']
       : (orderedArtifacts.length > 0 ? (primaryResolution?.reasonCodes ?? []) : []);
 
   return {
     orderedArtifacts,
     primaryArtifactId: orderedArtifacts[0]?.id ?? null,
-    primaryReasonCodes,
+primaryReasonCodes,
     resolutions,
   };
 }

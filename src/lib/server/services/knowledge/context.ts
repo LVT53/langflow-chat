@@ -27,7 +27,6 @@ import {
 	isGeneratedDocumentPromptEligible,
 	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
-import { countRecentMemoryEventsBySubject } from '../memory-events';
 import {
 	rankWorkingSetCandidates,
 	scoreMatch,
@@ -288,7 +287,6 @@ export async function refreshConversationWorkingSet(params: {
 	selectedGeneratedArtifactId?: string | null;
 }): Promise<ArtifactSummary[]> {
 	const attachmentIds = params.attachmentIds ?? [];
-	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
 	const existingItems = await listConversationWorkingSetItems(params.userId, params.conversationId);
 	const sourceArtifactIds = await listConversationSourceArtifactIds(params.userId, params.conversationId);
 	const outputArtifacts = await db
@@ -313,24 +311,7 @@ export async function refreshConversationWorkingSet(params: {
 	});
 	const latestGeneratedArtifactIds = activeDocumentState.latestGeneratedArtifactIds;
 	const currentGeneratedArtifactId = activeDocumentState.currentGeneratedArtifactId;
-	const sourceIdsLinkedToCurrentGenerated = currentGeneratedArtifactId
-		? await db
-				.select({ relatedArtifactId: artifactLinks.relatedArtifactId })
-				.from(artifactLinks)
-				.where(
-					and(
-						eq(artifactLinks.userId, params.userId),
-						eq(artifactLinks.conversationId, params.conversationId),
-						eq(artifactLinks.linkType, 'used_in_output'),
-						eq(artifactLinks.artifactId, currentGeneratedArtifactId)
-					)
-				)
-				.then((rows) =>
-					rows
-						.map((row) => row.relatedArtifactId)
-						.filter((value): value is string => typeof value === 'string')
-				)
-		: [];
+	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
 
 	const candidateIds = new Set<string>([
 		...existingItems.map((item) => item.artifactId),
@@ -345,40 +326,13 @@ export async function refreshConversationWorkingSet(params: {
 	}
 
 	const artifactRows = await getArtifactsForUser(params.userId, Array.from(candidateIds));
-	const generatedBehaviorKeys = Array.from(
-		new Set(
-			artifactRows
-				.filter((artifact) => artifact.type === 'generated_output')
-				.map((artifact) => getGeneratedDocumentBehaviorKey(artifact))
-		)
-	);
-	const [behaviorScoresByKey, reopenScoresByKey] =
-		generatedBehaviorKeys.length > 0
-			? await Promise.all([
-					countRecentMemoryEventsBySubject({
-						userId: params.userId,
-						domain: 'document',
-						eventTypes: ['document_refined'],
-						subjectIds: generatedBehaviorKeys,
-						since: recentBehaviorWindowStart,
-					}).catch(() => new Map<string, number>()),
-					countRecentMemoryEventsBySubject({
-						userId: params.userId,
-						domain: 'document',
-						eventTypes: ['document_opened'],
-						subjectIds: generatedBehaviorKeys,
-						since: recentBehaviorWindowStart,
-					}).catch(() => new Map<string, number>()),
-				])
-			: [new Map<string, number>(), new Map<string, number>()];
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
-	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
+		.filter((artifact) => artifact.conversationId === params.conversationId)
 		.map((artifact) => {
-			const documentMetadata = parseWorkingDocumentMetadata(artifact.metadata);
 			return {
 				artifactId: artifact.id,
 				artifactType: artifact.type as WorkingSetCandidate['artifactType'],
@@ -386,29 +340,15 @@ export async function refreshConversationWorkingSet(params: {
 				summary: artifact.summary,
 				contentText: artifact.contentText,
 				updatedAt: artifact.updatedAt,
-				previousScore: existingByArtifactId.get(artifact.id)?.score,
-				previousState: existingByArtifactId.get(artifact.id)?.state ?? null,
 				isAttachedThisTurn: attachmentIds.includes(artifact.id),
 				isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
 				isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
 				isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
 					artifact.id
 				),
-				recentRefinementBehaviorScore:
-					artifact.type === 'generated_output'
-						? behaviorScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
-						: 0,
-				recentDocumentOpenScore:
-					artifact.type === 'generated_output'
-						? reopenScoresByKey.get(getGeneratedDocumentBehaviorKey(artifact)) ?? 0
-						: 0,
-				isHistoricalDocumentFamily:
-					artifact.type === 'generated_output' &&
-					documentMetadata.documentFamilyStatus === 'historical',
 				isCurrentGeneratedDocument:
 					currentGeneratedArtifactId === artifact.id &&
 					currentGeneratedReasonCodes.has('current_generated_document'),
-				isLinkedToLatestOutput: sourceIdsLinkedToCurrentGenerated.includes(artifact.id),
 				messageMatchScore: message
 					? scoreMatch(
 							message,
@@ -429,7 +369,7 @@ export async function refreshConversationWorkingSet(params: {
 			candidate.reasonCodes.includes('active_document_focus') ||
 			candidate.reasonCodes.includes('recently_refined_document_family') ||
 			candidate.reasonCodes.includes('matched_current_turn') ||
-			candidate.reasonCodes.includes('recently_used_in_output');
+			candidate.reasonCodes.includes('recent_user_correction');
 
 		if (existing) {
 			await db

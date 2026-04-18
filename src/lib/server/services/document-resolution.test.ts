@@ -318,7 +318,7 @@ describe("document resolution", () => {
 
   it("downranks historical document families for generic carryover retrieval", () => {
     const selection = resolveRelevantGeneratedDocumentSelection({
-      query: "please update the draft",
+      query: "draft",
       limit: 4,
       artifacts: [
         makeArtifact({
@@ -347,6 +347,7 @@ describe("document resolution", () => {
 
     expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
       "artifact-active",
+      "artifact-historical",
     ]);
   });
 

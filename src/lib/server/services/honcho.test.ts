@@ -7,7 +7,6 @@ const {
   mockResolvePromptAttachmentArtifacts,
   mockSelectWorkingSetArtifactsForPrompt,
   mockFindRelevantKnowledgeArtifacts,
-  mockFindRelevantWorkCapsules,
   mockUpdateConversationContextStatus,
   mockCanUseContextSummarizer,
   mockCanUseTeiReranker,
@@ -80,7 +79,6 @@ const {
     })),
     mockSelectWorkingSetArtifactsForPrompt: vi.fn(async () => []),
     mockFindRelevantKnowledgeArtifacts: vi.fn(async () => []),
-    mockFindRelevantWorkCapsules: vi.fn(async () => []),
     mockUpdateConversationContextStatus: vi.fn(async () => ({
       conversationId: 'conv-456',
       userId: 'user-123',
@@ -342,7 +340,6 @@ vi.mock('./knowledge', () => ({
   getMaxModelContext: () => 262144,
   getTargetConstructedContext: () => 157286,
   findRelevantKnowledgeArtifacts: mockFindRelevantKnowledgeArtifacts,
-  findRelevantWorkCapsules: mockFindRelevantWorkCapsules,
   getArtifactsForUser: vi.fn(async () => []),
   resolvePromptAttachmentArtifacts: mockResolvePromptAttachmentArtifacts,
   selectWorkingSetArtifactsForPrompt: mockSelectWorkingSetArtifactsForPrompt,

@@ -98,7 +98,7 @@ const CURRENT_TASK_STATUSES: TaskState["status"][] = [
 ];
 const ROUTER_CONFIDENCE_MIN = 68;
 const RERANK_CONFIDENCE_MIN = 64;
-const VERIFY_CONFIDENCE_MIN = 64;
+
 const MAX_RERANK_CANDIDATES = 8;
 const TASK_SEMANTIC_SHORTLIST_LIMIT = 8;
 const TASK_ROUTER_RERANK_LIMIT = 6;
@@ -676,19 +676,10 @@ async function routeTaskStateForTurn(params: {
     }))
     .sort((a, b) => b.score - a.score);
 
-  const best = ranked[0] ?? null;
-  const second = ranked[1] ?? null;
-  const ambiguous =
-    best !== null &&
-    second !== null &&
-    second.score >= Math.max(TASK_MATCH_MIN_SCORE - 2, best.score - 4);
-  const shouldRouteWithModel =
-    canUseContextSummarizer() &&
-    ranked.length > 0 &&
-    (ambiguous || (best?.score ?? 0) < TASK_MATCH_MIN_SCORE);
+const best = ranked[0] ?? null;
 
   logTeiRetrievalSummary({
-    scope: "task_routing",
+    scope: 'task_routing',
     userId: params.userId,
     conversationId: params.conversationId,
     queryLength: params.message.trim().length,
@@ -704,106 +695,21 @@ async function routeTaskStateForTurn(params: {
     winnerId: best?.state.taskId ?? null,
     extra: {
       rankedCount: ranked.length,
-      routedWithModel: shouldRouteWithModel,
-      ambiguous,
       bestScore: best?.score ?? 0,
     },
   });
 
-  if (shouldRouteWithModel) {
-    type TaskRoutePayload = {
-      decision?: "continue_active" | "revive_task" | "start_new_task";
-      taskId?: string;
-      confidence?: number;
-    };
+  const bestSemanticScore = best ? semanticScoreByTaskId.get(best.state.taskId) ?? 0 : 0;
+  const useSemanticStage = bestSemanticScore > 0.5 && (best?.score ?? 0) >= TASK_MATCH_MIN_SCORE;
 
-    try {
-      const routed = await requestStructuredControlModel<TaskRoutePayload>({
-        system:
-          "Route the current user turn to the correct task. Return strict JSON with decision, taskId, confidence. Decision must be one of continue_active, revive_task, start_new_task. Choose start_new_task when the user clearly changed topics.",
-        user: [
-          `User message: ${params.message}`,
-          `Attachment ids: ${JSON.stringify(attachmentIds)}`,
-          `Current task: ${currentTask ? JSON.stringify(buildTaskCandidateSummary(currentTask), null, 2) : "null"}`,
-          `Candidate tasks: ${JSON.stringify(
-            ranked.slice(0, 5).map((entry) => ({
-              ...buildTaskCandidateSummary(entry.state),
-              score: entry.score,
-            })),
-            null,
-            2,
-          )}`,
-        ].join("\n\n"),
-        maxTokens: 220,
-        temperature: 0.0,
-      });
-
-      if (
-        routed &&
-        typeof routed.confidence === "number" &&
-        routed.confidence >= ROUTER_CONFIDENCE_MIN
-      ) {
-        if (routed.decision === "start_new_task" && params.createIfMissing) {
-          const created = await createTaskState({
-            userId: params.userId,
-            conversationId: params.conversationId,
-            objective: params.message,
-            attachmentIds,
-            status: "candidate",
-            confidence: routed.confidence,
-          });
-          await setCurrentTask(
-            created.taskId,
-            params.userId,
-            params.conversationId,
-            "candidate",
-          );
-          return {
-            taskState:
-              (await getConversationTaskState(
-                params.userId,
-                params.conversationId,
-              )) ?? created,
-            routingStage: "task_router",
-            routingConfidence: Math.round(routed.confidence),
-          };
-        }
-
-        if (typeof routed.taskId === "string") {
-          const chosen = states.find((state) => state.taskId === routed.taskId);
-          if (chosen) {
-            if (!currentTask || chosen.taskId !== currentTask.taskId) {
-              await setCurrentTask(
-                chosen.taskId,
-                params.userId,
-                params.conversationId,
-                routed.decision === "revive_task" ? "revived" : "active",
-              );
-            }
-            return {
-              taskState:
-                (await getConversationTaskState(
-                  params.userId,
-                  params.conversationId,
-                )) ?? chosen,
-              routingStage: "task_router",
-              routingConfidence: Math.round(routed.confidence),
-            };
-          }
-        }
-      }
-    } catch (error) {
-      console.error("[TASK_STATE] Task routing model failed:", error);
-    }
-  }
-
-  if (best && best.score >= TASK_MATCH_MIN_SCORE) {
+if (best && best.score >= TASK_MATCH_MIN_SCORE) {
+    const stage: RoutingStage = useSemanticStage ? 'semantic' : 'deterministic';
     if (!currentTask || best.state.taskId !== currentTask.taskId) {
       await setCurrentTask(
         best.state.taskId,
         params.userId,
         params.conversationId,
-        best.state.status === "archived" ? "revived" : "active",
+        best.state.status === 'archived' ? 'revived' : 'active',
       );
       return {
         taskState:
@@ -811,14 +717,14 @@ async function routeTaskStateForTurn(params: {
             params.userId,
             params.conversationId,
           )) ?? best.state,
-        routingStage: "deterministic",
+        routingStage: stage,
         routingConfidence: Math.min(99, Math.max(55, best.score * 4)),
-      };
+};
     }
 
     return {
       taskState: best.state,
-      routingStage: "deterministic",
+      routingStage: stage,
       routingConfidence: Math.min(99, Math.max(55, best.score * 4)),
     };
   }
@@ -826,7 +732,7 @@ async function routeTaskStateForTurn(params: {
   if (!params.createIfMissing) {
     return {
       taskState: best?.state ?? currentTask ?? null,
-      routingStage: "deterministic",
+      routingStage: 'deterministic' as RoutingStage,
       routingConfidence: Math.min(50, Math.max(0, (best?.score ?? 0) * 4)),
     };
   }
@@ -836,20 +742,20 @@ async function routeTaskStateForTurn(params: {
     conversationId: params.conversationId,
     objective: params.message,
     attachmentIds,
-    status: "candidate",
+    status: 'candidate',
     confidence: 45,
   });
   await setCurrentTask(
     created.taskId,
     params.userId,
     params.conversationId,
-    "candidate",
+    'candidate',
   );
   return {
     taskState:
       (await getConversationTaskState(params.userId, params.conversationId)) ??
       created,
-    routingStage: "deterministic",
+    routingStage: 'deterministic' as RoutingStage,
     routingConfidence: 45,
   };
 }
@@ -1022,101 +928,6 @@ async function maybeRerankEvidence(params: {
   return { artifacts: params.candidates, usedModel: false, confidence: 0 };
 }
 
-async function maybeVerifyEvidence(params: {
-  taskState: TaskState | null;
-  message: string;
-  selectedArtifacts: Artifact[];
-  pinnedIds: Set<string>;
-  shouldVerify: boolean;
-  protectedIds?: Set<string>;
-}): Promise<{
-  artifacts: Artifact[];
-  status: VerificationStatus;
-  fallbackToDeterministic: boolean;
-}> {
-  if (
-    !params.shouldVerify ||
-    !canUseContextSummarizer() ||
-    params.selectedArtifacts.length === 0
-  ) {
-    return {
-      artifacts: params.selectedArtifacts,
-      status: "skipped",
-      fallbackToDeterministic: false,
-    };
-  }
-
-  type VerifyPayload = {
-    passed?: boolean;
-    vetoArtifactIds?: string[];
-    confidence?: number;
-  };
-
-  try {
-    const verified = await requestStructuredControlModel<VerifyPayload>({
-      system:
-        "Verify whether the selected evidence is tightly aligned with the current turn. Return strict JSON with passed, vetoArtifactIds, confidence. Veto stale or weakly related evidence.",
-      user: [
-        `Current task: ${params.taskState ? params.taskState.objective : "none"}`,
-        `User message: ${params.message}`,
-        `Selected evidence: ${JSON.stringify(
-          params.selectedArtifacts.map((artifact) => ({
-            id: artifact.id,
-            name: artifact.name,
-            summary: clip(
-              artifact.summary ?? artifact.contentText ?? artifact.name,
-              200,
-            ),
-          })),
-          null,
-          2,
-        )}`,
-      ].join("\n\n"),
-      maxTokens: 180,
-      temperature: 0.0,
-    });
-
-    if (
-      verified &&
-      typeof verified.confidence === "number" &&
-      verified.confidence >= VERIFY_CONFIDENCE_MIN
-    ) {
-      const vetoIds = new Set(
-        (Array.isArray(verified.vetoArtifactIds)
-          ? verified.vetoArtifactIds
-          : []
-        ).filter((value): value is string => typeof value === "string"),
-      );
-      const filtered = params.selectedArtifacts.filter(
-        (artifact) =>
-          params.pinnedIds.has(artifact.id) ||
-          (params.protectedIds?.has(artifact.id) ?? false) ||
-          !vetoIds.has(artifact.id),
-      );
-      if (filtered.length === 0 && params.selectedArtifacts.length > 0) {
-        return {
-          artifacts: params.selectedArtifacts,
-          status: "fallback",
-          fallbackToDeterministic: true,
-        };
-      }
-      return {
-        artifacts: filtered,
-        status: verified.passed === false ? "failed" : "passed",
-        fallbackToDeterministic: false,
-      };
-    }
-  } catch (error) {
-    console.error("[TASK_STATE] Evidence verifier failed:", error);
-  }
-
-  return {
-    artifacts: params.selectedArtifacts,
-    status: "fallback",
-    fallbackToDeterministic: false,
-  };
-}
-
 export async function prepareTaskContext(params: {
   userId: string;
   conversationId: string;
@@ -1219,7 +1030,7 @@ export async function prepareTaskContext(params: {
         hasCorrectionSignal,
       }),
     }))
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score > 5)
     .sort((a, b) => b.score - a.score);
 
   let selectedArtifacts = dedupeById([
@@ -1265,28 +1076,6 @@ export async function prepareTaskContext(params: {
     routingConfidence = reranked.confidence;
   }
 
-  const verified = await maybeVerifyEvidence({
-    taskState,
-    message: params.message,
-    selectedArtifacts,
-    pinnedIds,
-    protectedIds: new Set([
-      ...currentAttachmentIds,
-      ...activeDocumentIds,
-      ...activeDocumentState.correctionTargetIds,
-    ]),
-    shouldVerify:
-      routingStage !== "deterministic" ||
-      excludedIds.size > 0 ||
-      pinnedIds.size > 0 ||
-      selectedArtifacts.length >= 4,
-  });
-
-  if (verified.fallbackToDeterministic) {
-    routingStage = "verification_fallback";
-  }
-  selectedArtifacts = dedupeById(verified.artifacts);
-
   if (taskState) {
     await replaceSystemSelectedEvidenceLinks({
       userId: params.userId,
@@ -1309,7 +1098,7 @@ export async function prepareTaskContext(params: {
     taskState,
     routingStage,
     routingConfidence,
-    verificationStatus: verified.status,
+    verificationStatus: 'skipped' as const,
     selectedArtifacts,
     pinnedArtifactIds: Array.from(pinnedIds),
     excludedArtifactIds: Array.from(excludedIds),
