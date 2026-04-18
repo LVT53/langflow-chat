@@ -212,6 +212,7 @@ const preflight = await preflightChatTurn({
           });
           try {
             enqueueChunk(createSsePreludeComment());
+            enqueueChunk(createSseHeartbeatComment());
             const buffer = getStreamBuffer(streamId);
             if (buffer) {
               const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
@@ -249,6 +250,7 @@ const preflight = await preflightChatTurn({
               enqueueChunk(chunk);
               if (chunk.startsWith('event: end\n') || chunk.startsWith('event: error\n')) {
                 unsubscribeFromStream(streamId, liveListener);
+                clearInterval(reconnectHeartbeatId);
                 closeDownstream();
               }
             };
@@ -256,8 +258,13 @@ const preflight = await preflightChatTurn({
 
             downstreamAbortSignal.addEventListener('abort', () => {
               unsubscribeFromStream(streamId, liveListener);
+              clearInterval(reconnectHeartbeatId);
               closeDownstream();
             }, { once: true });
+
+            const reconnectHeartbeatId = setInterval(() => {
+              enqueueChunk(createSseHeartbeatComment());
+            }, 10000);
 
             console.info('[CHAT_STREAM] Reconnect handler done, waiting for live chunks');
             return;

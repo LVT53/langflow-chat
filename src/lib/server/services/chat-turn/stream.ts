@@ -13,12 +13,14 @@ import type { ChatTurnRequestError } from "./types";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache, no-transform",
-  Connection: "keep-alive",
-  "X-Accel-Buffering": "no",
+  'Content-Type': 'text/event-stream',
+  'Cache-Control': 'no-cache, no-store, must-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Connection': 'keep-alive',
+  'X-Accel-Buffering': 'no',
 };
-const SSE_PRELUDE_PADDING_BYTES = 4096;
+const SSE_PRELUDE_PADDING_BYTES = 8192;
 const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
 
 const TOOL_CALL_START_RE = /\x02TOOL_START\x1f([^\x03]*)\x03/g;
