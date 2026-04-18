@@ -428,6 +428,30 @@
 						return;
 					}
 
+					// Capacity error means the orphaned stream is still running in background
+					// We should reload persisted data to show the partial response
+					const isCapacityError = err.message?.includes('capacity') || err.code === 'CAPACITY_EXCEEDED';
+					if (isCapacityError) {
+						console.info('[CHAT] Capacity error - reloading persisted data (stream still running)');
+						streamInterruptedByBackground = true;
+						hasPersistedMessages = true;
+						// Fetch fresh data to get partial responses
+						fetchConversationDetail(data.conversation.id)
+							.then((detail) => {
+								console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length);
+								messages.set(detail.messages ?? []);
+								generatedFiles = detail.generatedFiles ?? [];
+								conversationDraft = null;
+								// Clear sessionStorage draft to prevent restoration
+								const pending = consumePendingConversationMessage(data.conversation.id);
+								void pending;
+							})
+							.catch((e) => {
+								console.error('[CHAT] Failed to fetch fresh data:', e);
+							});
+						return;
+					}
+
 					// Reconnection error - the stream may have completed server-side
 					// while we attempted to reconnect. Fetch fresh data directly.
 					console.info('[CHAT] Reconnection failed, fetching fresh data directly');
@@ -437,10 +461,8 @@
 							console.info('[CHAT] Fresh data loaded, messages:', detail.messages.length);
 							messages.set(detail.messages ?? []);
 							generatedFiles = detail.generatedFiles ?? [];
-							conversationDraft = detail.draft ?? null;
-							contextStatus = detail.contextStatus ?? contextStatus;
-							taskState = detail.taskState ?? taskState;
-							// Clear the draft from sessionStorage since we have fresh server data
+							conversationDraft = null;
+							// Clear sessionStorage draft to prevent restoration
 							const pending = consumePendingConversationMessage(data.conversation.id);
 							void pending;
 						})
