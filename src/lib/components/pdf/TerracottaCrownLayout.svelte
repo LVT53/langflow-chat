@@ -101,7 +101,7 @@
       print-color-adjust: exact;
     }
 
-    /* Cover page - enhanced design with brand accent for longer reports */
+    /* Cover page - professional design with brand accent */
     .cover-page {
       page-break-after: always;
       height: 100vh;
@@ -110,15 +110,28 @@
       justify-content: center;
       align-items: center;
       text-align: center;
-      padding: 64px 48px;
-      background: linear-gradient(180deg, #FAFAF8 0%, rgba(193, 95, 60, 0.05) 100%);
-      border-top: 8px solid #C15F3C;
+      padding: 80px 60px;
+      background: linear-gradient(180deg, #FAFAF8 0%, rgba(193, 95, 60, 0.03) 100%);
+      border-top: 6px solid #C15F3C;
+      position: relative;
+    }
+
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #C15F3C, transparent);
     }
 
     .cover-logo {
-      width: 64px;
-      height: 72px;
-      margin-bottom: 32px;
+      width: 48px;
+      height: 54px;
+      margin-bottom: 24px;
+      opacity: 0.85;
     }
 
     .cover-title {
@@ -164,6 +177,15 @@
 
     .content {
       padding: 0;
+      max-width: 100%;
+      width: 100%;
+    }
+
+    /* Constrain content to page margins */
+    body > :global(*) {
+      max-width: calc(100% - 100px);
+      margin-left: auto;
+      margin-right: auto;
     }
 
     /* Headings - clean hierarchy with accent color on h1 only */
@@ -187,14 +209,22 @@
       color: #C15F3C;
       margin-top: 56px;
       margin-bottom: 16px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(193, 95, 60, 0.2);
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(193, 95, 60, 0.25);
+    }
+
+    :global(.content h2 + p) {
+      margin-top: 8px;
     }
 
     :global(.content h3) {
       font-size: 1.125rem;
       margin-top: 40px;
       margin-bottom: 14px;
+    }
+
+    :global(.content h3 + p) {
+      margin-top: 6px;
     }
 
     :global(.content h4) {
@@ -273,27 +303,38 @@
       line-height: 1.6;
     }
 
-    /* Images - styled with border-radius, shadow, and size constraints */
+    /* Images - prevent overflow, resize for page width, avoid page breaks */
     :global(.content img) {
-      max-width: 100%;
-      max-height: 400px;
+      max-width: min(100%, calc(100% - 100px));
+      max-height: 350px;
+      width: auto;
       height: auto;
       display: block;
       margin: 24px auto;
+      page-break-before: avoid;
+      page-break-after: avoid;
       page-break-inside: avoid;
+      break-inside: avoid;
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       object-fit: contain;
+      overflow: hidden;
     }
 
     :global(.content figure) {
       margin: 24px 0;
+      page-break-before: avoid;
+      page-break-after: avoid;
       page-break-inside: avoid;
+      break-inside: avoid;
       text-align: center;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     :global(.content figure img) {
       margin: 0 auto 12px auto;
+      max-width: min(100%, calc(100% - 100px));
     }
 
     :global(.content figcaption) {
