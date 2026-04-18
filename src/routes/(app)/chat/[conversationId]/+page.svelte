@@ -355,6 +355,7 @@
 	async function reconnectToOrphanedStream(streamId: string) {
 		if (isSending || activeStream) return;
 
+		console.info('[CHAT] Starting reconnection to stream:', streamId);
 		isSending = true;
 		hasPersistedMessages = true;
 
@@ -387,6 +388,7 @@
 					);
 				},
 				onEnd(fullText, metadata) {
+					console.info('[CHAT] Reconnection stream ended, fullText length:', fullText.length);
 					contextStatus = metadata?.contextStatus ?? contextStatus;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
@@ -413,6 +415,7 @@
 					}
 				},
 				onError(err) {
+					console.info('[CHAT] Reconnection error:', err.message);
 					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
@@ -445,16 +448,21 @@
 	}
 
 	async function checkForOrphanedStreamOnMount() {
-		if (isSending || activeStream || hydratingConversation) return;
+		if (isSending || activeStream || hydratingConversation) {
+			console.info('[CHAT] Skip orphan check: isSending=', isSending, 'activeStream=', !!activeStream, 'hydrating=', hydratingConversation);
+			return;
+		}
 
 		// Consume pending message from sessionStorage immediately
 		// This prevents maybeSendPendingInitialMessage() from also trying to send
 		const pendingMessage = consumePendingConversationMessage(data.conversation.id);
-		void pendingMessage; // Acknowledge but don't use - we're reconnecting to existing stream
+		console.info('[CHAT] Orphan check - pending message consumed:', pendingMessage ? pendingMessage.message.slice(0, 50) : 'none');
 
 		// Check for orphaned streams regardless of existing messages
 		// Previous turns don't prevent reconnection to active streams
 		const streamId = await checkForOrphanedStream(data.conversation.id);
+		console.info('[CHAT] Orphan check result:', streamId ? `found stream ${streamId}` : 'no orphaned stream');
+
 		if (!streamId) return;
 
 		void reconnectToOrphanedStream(streamId);
