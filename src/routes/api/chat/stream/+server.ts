@@ -186,6 +186,12 @@ const preflight = await preflightChatTurn({
 
   const stream = new ReadableStream({
     async start(controller) {
+      if (streamId) {
+        console.info('[CHAT_STREAM] start called', {
+          streamId,
+          abortAlreadySignaled: downstreamAbortSignal.aborted,
+        });
+      }
       const upstreamAbortController = new AbortController();
       let isMainStream = false;
 
