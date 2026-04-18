@@ -155,8 +155,14 @@ export async function requestContextSummarizer(params: {
     headers.Authorization = `Bearer ${config.contextSummarizerApiKey}`;
   }
 
+  // Normalize base URL: strip trailing slashes and strip any /chat/completions suffix
+  // so the code can always safely append `/chat/completions`.
+  // Handles cases where env/admin config includes the full path already.
+  let baseUrl = config.contextSummarizerUrl.replace(/\/+$/, ''); // strip trailing slashes
+  baseUrl = baseUrl.replace(/\/chat\/completions\/?$/i, ''); // strip /chat/completions suffix
+
   const response = await fetch(
-    `${config.contextSummarizerUrl}/chat/completions`,
+    `${baseUrl}/chat/completions`,
     {
       method: "POST",
       headers,
