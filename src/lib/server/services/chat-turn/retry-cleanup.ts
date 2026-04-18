@@ -26,7 +26,7 @@ import {
 	conversationWorkingSetItems,
 } from '$lib/server/db/schema';
 import { deleteMessages } from '$lib/server/services/messages';
-import { deleteConversationHonchoState } from '../honcho.js';
+import { deleteConversationHonchoState } from '../honcho';
 
 export type CleanupResult = {
 	steps: CleanupStep[];

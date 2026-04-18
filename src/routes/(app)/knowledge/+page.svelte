@@ -923,7 +923,7 @@
 		}
 
 		let cancelled = false;
-		let intervalId: ReturnType<typeof window.setInterval> | null = null;
+		let intervalId: number | null = null;
 
 		const startPolling = async () => {
 			await refreshLiveOverview(false);

@@ -1,5 +1,6 @@
 <script lang='ts'>
 	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
 	import type {
@@ -108,6 +109,7 @@
 	});
 
 	onDestroy(() => {
+		if (!browser) return;
 		if (typeof window.visualViewport !== 'undefined') {
 			window.visualViewport.removeEventListener('resize', handleVisualViewportChange);
 			window.visualViewport.removeEventListener('scroll', handleVisualViewportChange);
