@@ -53,6 +53,7 @@ describe('POST /api/chat/stream/stop', () => {
 			streamId: 'stream-1',
 			userId: 'user-1',
 			controller,
+			conversationId: 'conv-1',
 		});
 
 		const response = await POST(makeEvent({ streamId: 'stream-1' }));
