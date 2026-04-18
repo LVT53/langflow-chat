@@ -208,7 +208,7 @@ const preflight = await preflightChatTurn({
 
         if (existingStreamId === streamId) {
           console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
-          doReconnect(streamId);
+          setTimeout(() => doReconnect(streamId), 0);
           return;
         } else if (existingStreamId) {
           const clientStreamActive = isStreamActive(streamId);
@@ -216,14 +216,14 @@ const preflight = await preflightChatTurn({
 
           if (clientStreamActive) {
             console.info('[CHAT_STREAM] Reconnect to client stream (concurrent active)', streamId);
-            doReconnect(streamId);
+            setTimeout(() => doReconnect(streamId), 0);
             return;
           } else if (orphanStreamActive) {
             console.info('[CHAT_STREAM] Reconnect to orphan stream (client streamId stale)', {
               clientStreamId: streamId,
               activeOrphanStreamId: existingStreamId,
             });
-            doReconnect(existingStreamId);
+            setTimeout(() => doReconnect(existingStreamId), 0);
             return;
           } else {
             console.info('[CHAT_STREAM] No active streams - cleaning up and starting new', {

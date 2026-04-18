@@ -19,7 +19,6 @@ const SSE_HEADERS = {
   'Expires': '0',
   'Connection': 'keep-alive',
   'X-Accel-Buffering': 'no',
-  'Upgrade': 'websocket',
 };
 const SSE_PRELUDE_PADDING_BYTES = 8192;
 const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
