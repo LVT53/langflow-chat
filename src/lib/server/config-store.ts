@@ -125,6 +125,8 @@ export interface RuntimeConfig {
   documentParserDpi: number;
   documentParserTimeoutMs: number;
   braveSearchApiKey: string;
+  concurrentStreamLimit: number;
+  perUserStreamLimit: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {

@@ -24,10 +24,11 @@ import {
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import {
+  checkStreamCapacity,
   registerActiveChatStream,
   unregisterActiveChatStream,
   wasActiveChatStreamStopRequested,
-} from "$lib/server/services/chat-turn/active-streams";
+} from '$lib/server/services/chat-turn/active-streams';
 import {
   URL_LIST_TOOL_RECOVERY_APPENDIX,
   type StreamErrorCode,
@@ -86,6 +87,35 @@ function shouldFallbackToNonStreaming(error: unknown): boolean {
 export const POST: RequestHandler = async (event) => {
   requireAuth(event);
   const user = event.locals.user!;
+
+  const capacity = checkStreamCapacity(user.id);
+  if (!capacity.allowed) {
+    console.warn('[CHAT_STREAM] Rejected due to capacity', {
+      userId: user.id,
+      reason: capacity.reason,
+      retryAfterSeconds: capacity.retryAfterSeconds,
+      currentGlobalCount: capacity.currentGlobalCount,
+      currentUserCount: capacity.currentUserCount,
+    });
+
+    return new Response(
+      JSON.stringify({
+        error: 'Server at capacity. Please try again later.',
+        code: 'CAPACITY_EXCEEDED',
+        reason: capacity.reason,
+        retryAfter: capacity.retryAfterSeconds,
+      }),
+      {
+        status: 503,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(capacity.retryAfterSeconds ?? 10),
+          'Cache-Control': 'no-store',
+        },
+      },
+    );
+  }
+
   const requestStartTime = Date.now();
   const runtimeConfig = getConfig();
 

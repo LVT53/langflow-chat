@@ -16,10 +16,39 @@ import {
 } from '$lib/server/services/chat-turn/finalize';
 import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
 import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
+import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
+
+	// Check capacity limits before processing
+	const capacity = checkStreamCapacity(user.id);
+	if (!capacity.allowed) {
+		console.warn('[CHAT_SEND] Rejected due to capacity', {
+			userId: user.id,
+			reason: capacity.reason,
+			retryAfterSeconds: capacity.retryAfterSeconds,
+			currentGlobalCount: capacity.currentGlobalCount,
+			currentUserCount: capacity.currentUserCount,
+		});
+
+		return json(
+			{
+				error: 'Server at capacity. Please try again later.',
+				code: 'CAPACITY_EXCEEDED',
+				reason: capacity.reason,
+				retryAfter: capacity.retryAfterSeconds,
+			},
+			{
+				status: 503,
+				headers: {
+					'Retry-After': String(capacity.retryAfterSeconds ?? 10),
+					'Cache-Control': 'no-store',
+				},
+			}
+		);
+	}
 
 	const parsedRequest = await parseChatTurnRequest(event.request, getConfig(), 'send');
 	if (!parsedRequest.ok) {

@@ -74,6 +74,8 @@ interface Config {
   documentParserDpi: number;
   documentParserTimeoutMs: number;
   braveSearchApiKey: string;
+  concurrentStreamLimit: number;
+  perUserStreamLimit: number;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -227,6 +229,14 @@ function readConfig(): Config {
         300000
     ),
     braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
+    concurrentStreamLimit: Math.max(
+      1,
+      parseInt(process.env.CONCURRENT_STREAM_LIMIT || '3', 10) || 3
+    ),
+    perUserStreamLimit: Math.max(
+      1,
+      parseInt(process.env.PER_USER_STREAM_LIMIT || '1', 10) || 1
+    ),
   };
 }
 

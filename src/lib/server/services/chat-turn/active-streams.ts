@@ -1,3 +1,5 @@
+import { getConfig } from '$lib/server/config-store';
+
 const STOP_REQUEST_TTL_MS = 30_000;
 
 type ActiveChatStream = {
@@ -7,6 +9,9 @@ type ActiveChatStream = {
 
 const activeStreams = new Map<string, ActiveChatStream>();
 const pendingStops = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Track per-user stream counts for limit enforcement
+const userStreamCounts = new Map<string, number>();
 
 function markPendingStop(streamId: string) {
 	if (pendingStops.has(streamId)) {
@@ -40,6 +45,9 @@ export function registerActiveChatStream(params: {
 	if (pendingStops.has(params.streamId)) {
 		params.controller.abort();
 	}
+
+	const currentCount = userStreamCounts.get(params.userId) ?? 0;
+	userStreamCounts.set(params.userId, currentCount + 1);
 }
 
 export function unregisterActiveChatStream(streamId: string, controller?: AbortController) {
@@ -51,6 +59,15 @@ export function unregisterActiveChatStream(streamId: string, controller?: AbortC
 
 	if (!controller || activeStream.controller === controller) {
 		activeStreams.delete(streamId);
+		if (activeStream) {
+			const userId = activeStream.userId;
+			const currentCount = userStreamCounts.get(userId) ?? 1;
+			if (currentCount <= 1) {
+				userStreamCounts.delete(userId);
+			} else {
+				userStreamCounts.set(userId, currentCount - 1);
+			}
+		}
 	}
 	clearPendingStop(streamId);
 }
@@ -77,4 +94,64 @@ export function requestActiveChatStreamStop(params: {
 
 export function wasActiveChatStreamStopRequested(streamId: string | undefined): boolean {
 	return Boolean(streamId) && pendingStops.has(streamId);
+}
+
+export interface StreamCapacityCheck {
+	allowed: boolean;
+	reason?: 'global_limit' | 'user_limit';
+	retryAfterSeconds?: number;
+	currentGlobalCount?: number;
+	currentUserCount?: number;
+}
+
+export interface StreamStats {
+	globalActiveCount: number;
+	perUserCounts: Map<string, number>;
+	maxGlobal: number;
+	maxPerUser: number;
+}
+
+export function checkStreamCapacity(userId: string): StreamCapacityCheck {
+	const config = getConfig();
+	const maxGlobal = config.concurrentStreamLimit;
+	const maxPerUser = config.perUserStreamLimit;
+
+	const currentGlobalCount = activeStreams.size;
+	const currentUserCount = userStreamCounts.get(userId) ?? 0;
+
+	if (currentGlobalCount >= maxGlobal) {
+		return {
+			allowed: false,
+			reason: 'global_limit',
+			retryAfterSeconds: 10,
+			currentGlobalCount,
+			currentUserCount,
+		};
+	}
+
+	if (currentUserCount >= maxPerUser) {
+		return {
+			allowed: false,
+			reason: 'user_limit',
+			retryAfterSeconds: 5,
+			currentGlobalCount,
+			currentUserCount,
+		};
+	}
+
+	return {
+		allowed: true,
+		currentGlobalCount,
+		currentUserCount,
+	};
+}
+
+export function getStreamStats(): StreamStats {
+	const config = getConfig();
+	return {
+		globalActiveCount: activeStreams.size,
+		perUserCounts: new Map(userStreamCounts),
+		maxGlobal: config.concurrentStreamLimit,
+		maxPerUser: config.perUserStreamLimit,
+	};
 }

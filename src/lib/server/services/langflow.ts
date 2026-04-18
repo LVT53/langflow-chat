@@ -8,6 +8,7 @@ import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
 } from './attachment-trace';
+import { getLangflowAgent } from './http-agents';
 
 type AuthenticatedPromptUser = {
 	id: string;
@@ -273,7 +274,8 @@ export async function sendMessage(
         'x-api-key': config.langflowApiKey
       },
       body: JSON.stringify(body),
-      signal
+      signal,
+      dispatcher: getLangflowAgent(),
     });
 
     if (!response.ok) {
@@ -431,7 +433,8 @@ export async function sendMessageStream(
         'x-api-key': config.langflowApiKey,
       },
       body: JSON.stringify(body),
-      signal
+      signal,
+      dispatcher: getLangflowAgent(),
     });
     clearTimeout(connectTimeoutId);
 
