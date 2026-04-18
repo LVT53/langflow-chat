@@ -2,6 +2,21 @@ import { render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ChatComposerPanel from './ChatComposerPanel.svelte';
 
+// Mock window.matchMedia for jsdom environment
+Object.defineProperty(window, 'matchMedia', {
+	writable: true,
+	value: (query: string) => ({
+		matches: false,
+		media: query,
+		onchange: null,
+		addListener: () => undefined,
+		removeListener: () => undefined,
+		addEventListener: () => undefined,
+		removeEventListener: () => undefined,
+		dispatchEvent: () => false,
+	}),
+});
+
 describe('ChatComposerPanel', () => {
 	it('renders the docked chat composer without the landing-page hero copy', () => {
 		const { container, queryByText } = render(ChatComposerPanel, {
