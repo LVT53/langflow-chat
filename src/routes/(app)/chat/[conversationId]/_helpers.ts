@@ -152,10 +152,16 @@ export function appendTokenChunkToMessageList(
 	placeholderId: string,
 	chunk: string
 ): ChatMessage[] {
+	// NOTE: Do NOT set isThinkingStreaming: false here.
+	// isThinkingStreaming tracks whether thinking chunks are still arriving.
+	// It should only be set true by appendThinkingChunkToMessageList (when thinking
+	// chunks arrive) and set false by finalizeStreamingMessageList (when stream ends).
+	// Setting it false on first visible token causes thinkingIsDone to become true
+	// while tool_call thinking segments may still be arriving, showing <tool_call|>
+	// artifacts in the UI before the thinking block is fully rendered.
 	return updateMessageById(list, placeholderId, (message) => ({
 		...message,
 		content: message.content + chunk,
-		isThinkingStreaming: false,
 	}));
 }
 

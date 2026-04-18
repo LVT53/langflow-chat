@@ -388,8 +388,9 @@ async function summarizeTaskStateUpdate(params: {
         12,
       ),
     };
-  } catch (error) {
-    console.error("[TASK_STATE] Summarizer checkpoint update failed:", error);
+} catch (error) {
+    // Non-fatal: summarizer unavailable, fall back to deterministic update
+    console.warn('[TASK_STATE] Summarizer unavailable, using deterministic update:', error);
     return null;
   }
 }

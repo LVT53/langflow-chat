@@ -35,7 +35,7 @@ const FILE_GENERATION_GUARD = [
 	'- Use `export_document` for quick, unstyled PDF exports of conversation content. Call it with an empty `markdown_content` field to export the active conversation context.',
 	'- Use `generate_file` for professional, styled documents with custom branding, HTML/CSS templates, and layout control.',
 	'- For `export_document`: Do NOT rewrite the entire document into the tool payload. The system will automatically use the active conversation context.',
-	'- For `generate_file`: Write rich Markdown content with YAML frontmatter for cover page metadata (title, subtitle, author, date).',
+	'- For `generate_file`: Write rich Markdown content with YAML frontmatter for cover page metadata (title, subtitle, author, date). Use plain strings or standard YAML quoting without backslash escapes. Never use \\ to escape quotes in frontmatter values.',
 	'- Use Obsidian-style blockquotes for callouts: `> [!info]`, `> [!warning]`, `> [!tip]`, `> [!note]`.',
 	'- Embed real-world images using `image_search` to find URLs, then include them as `![alt text](url)` in the Markdown.',
 	'- The `export_document` tool renders Markdown to PDF via Playwright with no custom styling.',

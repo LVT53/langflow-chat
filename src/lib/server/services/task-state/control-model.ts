@@ -149,7 +149,7 @@ export async function requestContextSummarizer(params: {
 
   const config = getConfig();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   };
   if (config.contextSummarizerApiKey) {
     headers.Authorization = `Bearer ${config.contextSummarizerApiKey}`;
@@ -161,16 +161,21 @@ export async function requestContextSummarizer(params: {
   let baseUrl = config.contextSummarizerUrl.replace(/\/+$/, ''); // strip trailing slashes
   baseUrl = baseUrl.replace(/\/chat\/completions\/?$/i, ''); // strip /chat/completions suffix
 
+  // If the URL normalized to empty or just the protocol, the summarizer is not configured
+  if (!baseUrl || !baseUrl.includes('://')) {
+    return null;
+  }
+
   const response = await fetch(
     `${baseUrl}/chat/completions`,
     {
-      method: "POST",
+      method: 'POST',
       headers,
       body: JSON.stringify({
         model: config.contextSummarizerModel,
         messages: [
-          { role: "system", content: params.system },
-          { role: "user", content: params.user },
+          { role: 'system', content: params.system },
+          { role: 'user', content: params.user },
         ],
         max_tokens: params.maxTokens,
         temperature: params.temperature ?? 0.1,
@@ -180,9 +185,20 @@ export async function requestContextSummarizer(params: {
   );
 
   if (!response.ok) {
-    throw new Error(
-      `Context summarizer error: ${response.status} ${response.statusText}`,
+    // 404 means the endpoint doesn't exist - summarizer is not configured properly
+    // This is non-fatal, just return null and let the caller use fallback behavior
+    if (response.status === 404) {
+      console.warn(
+        `[CONTEXT_SUMMARIZER] Endpoint not found (404) at ${baseUrl}/chat/completions. ` +
+        `Set CONTEXT_SUMMARIZER_URL to a valid OpenAI-compatible endpoint or leave empty to disable.`,
+      );
+      return null;
+    }
+    // Other errors are unexpected but still non-fatal
+    console.warn(
+      `[CONTEXT_SUMMARIZER] Request failed: ${response.status} ${response.statusText}`,
     );
+    return null;
   }
 
   const json = await response.json();
@@ -190,7 +206,7 @@ export async function requestContextSummarizer(params: {
     json.choices?.[0]?.message?.content ??
     json.choices?.[0]?.text ??
     (json.choices?.[0]?.message?.content?.[0]?.text as string | undefined);
-  return typeof content === "string" && content.trim() ? content.trim() : null;
+return typeof content === 'string' && content.trim() ? content.trim() : null;
 }
 
 export async function requestStructuredControlModel<
