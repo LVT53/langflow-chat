@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DocumentWorkspaceItem } from '$lib/types';
+	import { formatByteSize } from '$lib/utils/format';
 
 	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
 
@@ -48,18 +49,6 @@
 	let showPreview = $state(false);
 	let canPreview = $derived(status === 'success');
 	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
-
-	function formatFileSize(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		if (bytes >= 1024 ** 4) {
-			return `${(bytes / (1024 ** 4)).toFixed(1)} TB`;
-		}
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		const value = bytes / Math.pow(k, i);
-		return `${value.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
-	}
 
 	function getFileIcon() {
 		if (mimeType.startsWith('image/')) {
@@ -333,7 +322,7 @@
 			<div class="filename" title={filename}>{filename}</div>
 			<div class="file-meta-row">
 				{#if status === 'success'}
-					<div class="file-size">{formatFileSize(size)}</div>
+					<div class="file-size">{formatByteSize(size)}</div>
 				{:else if status === 'generating'}
 					<div class="generating-text">
 						{@render SpinnerIcon()}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { KnowledgeDocumentItem } from '$lib/types';
+	import { formatByteSize } from '$lib/utils/format';
 
 	type DocumentSortKey = 'name' | 'size' | 'type' | 'date';
 	type SortDirection = 'asc' | 'desc';
@@ -323,20 +324,6 @@
 	function getSortIndicator(column: DocumentSortKey): string {
 		if (sortKey !== column) return '↕';
 		return sortDirection === 'asc' ? '↑' : '↓';
-	}
-
-	function formatFileSize(bytes: number | null | undefined): string {
-		if (!bytes) return '0 B';
-		if (bytes === 0) return '0 B';
-		if (bytes >= 1024 ** 4) {
-			return `${(bytes / (1024 ** 4)).toFixed(1)} TB`;
-		}
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		const value = bytes / Math.pow(k, i);
-		const formatted = value % 1 === 0 ? value.toString() : value.toFixed(1);
-		return `${formatted} ${sizes[i]}`;
 	}
 
 	function formatDate(timestamp: number | null | undefined): string {
@@ -765,7 +752,7 @@
 									{/if}
 								</td>
 								<td class="col-size">
-									{formatFileSize(document.sizeBytes)}
+									{formatByteSize(document.sizeBytes, { trimWholeUnits: true })}
 								</td>
 								<td class="col-date">
 									{formatDate(document.createdAt)}

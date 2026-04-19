@@ -5,6 +5,7 @@ import type {
 	TaskMemoryItem,
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
+import { formatRoundedKilobytes } from '$lib/utils/format';
 
 export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
@@ -63,8 +64,7 @@ export function getPersonaRowKey(memory: PersonaMemoryItem, index: number): stri
 }
 
 export function formatArtifactSize(sizeBytes: number | null | undefined): string {
-	if (!sizeBytes) return 'Unknown size';
-	return `${Math.ceil(sizeBytes / 1024)} KB`;
+	return formatRoundedKilobytes(sizeBytes);
 }
 
 export function formatDocumentKind(document: KnowledgeDocumentItem): string {
