@@ -14,6 +14,53 @@ const generatedOutputBackfillInFlight = new Map<string, Promise<void>>();
 const WORKFLOW_HINT_RE =
 	/\b(workflow|process|history|previous|earlier|before|draft|result|output|summary|version)\b/i;
 
+type GeneratedOutputArtifactRow = {
+	id: string;
+	userId: string;
+	conversationId: string | null;
+	type: string;
+	retrievalClass: string | null;
+	name: string;
+	mimeType: string | null;
+	sizeBytes: number | null;
+	extension: string | null;
+	storagePath: string | null;
+	contentText: string | null;
+	summary: string | null;
+	metadataJson: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+};
+
+function parseArtifactMetadataJson(metadataJson: string | null): Record<string, unknown> | null {
+	return metadataJson && typeof metadataJson === 'string'
+		? (JSON.parse(metadataJson) as Record<string, unknown>)
+		: null;
+}
+
+function mapGeneratedOutputArtifactRow(
+	row: GeneratedOutputArtifactRow,
+	metadata: Record<string, unknown> | null = parseArtifactMetadataJson(row.metadataJson)
+): Artifact {
+	return {
+		id: row.id,
+		userId: row.userId,
+		conversationId: row.conversationId ?? null,
+		type: row.type as Artifact['type'],
+		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
+		name: row.name,
+		mimeType: row.mimeType ?? null,
+		sizeBytes: row.sizeBytes ?? null,
+		extension: row.extension ?? null,
+		storagePath: row.storagePath ?? null,
+		contentText: row.contentText ?? null,
+		summary: row.summary ?? null,
+		metadata,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
 export function normalizeSimilarityText(text: string): string {
 	return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -383,52 +430,15 @@ async function setGeneratedDocumentFamilyStatus(params: {
 
 async function backfillGeneratedOutputRetrievalClasses(
 	userId: string,
-	artifacts: Array<{
-		id: string;
-		userId: string;
-		conversationId: string | null;
-		type: string;
-		retrievalClass: string | null;
-		name: string;
-		mimeType: string | null;
-		sizeBytes: number | null;
-		extension: string | null;
-		storagePath: string | null;
-		contentText: string | null;
-		summary: string | null;
-		metadataJson: string | null;
-		createdAt: Date;
-		updatedAt: Date;
-	}>
+	artifacts: GeneratedOutputArtifactRow[]
 ): Promise<void> {
-	const rows = artifacts;
-
-	const outputs = rows.map((row) => ({
+	const outputs = artifacts.map((row) => ({
 		...row,
 		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
 	}));
 	if (outputs.length === 0) return;
 
-	const artifactObjects = outputs.map((row) => ({
-		id: row.id,
-		userId: row.userId,
-		conversationId: row.conversationId ?? null,
-		type: row.type as Artifact['type'],
-		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
-		name: row.name,
-		mimeType: row.mimeType ?? null,
-		sizeBytes: row.sizeBytes ?? null,
-		extension: row.extension ?? null,
-		storagePath: row.storagePath ?? null,
-		contentText: row.contentText ?? null,
-		summary: row.summary ?? null,
-		metadata:
-			row.metadataJson && typeof row.metadataJson === 'string'
-				? (JSON.parse(row.metadataJson) as Record<string, unknown>)
-				: null,
-		createdAt: row.createdAt.getTime(),
-		updatedAt: row.updatedAt.getTime(),
-	})) satisfies Artifact[];
+	const artifactObjects = outputs.map((row) => mapGeneratedOutputArtifactRow(row));
 
 	const pinnedRows = await db
 		.select({ artifactId: taskStateEvidenceLinks.artifactId })
@@ -480,27 +490,9 @@ async function backfillGeneratedOutputRetrievalClasses(
 
 async function backfillGeneratedOutputFamilyStatuses(
 	userId: string,
-	artifacts: Array<{
-		id: string;
-		userId: string;
-		conversationId: string | null;
-		type: string;
-		retrievalClass: string | null;
-		name: string;
-		mimeType: string | null;
-		sizeBytes: number | null;
-		extension: string | null;
-		storagePath: string | null;
-		contentText: string | null;
-		summary: string | null;
-		metadataJson: string | null;
-		createdAt: Date;
-		updatedAt: Date;
-	}>
+	artifacts: GeneratedOutputArtifactRow[]
 ): Promise<void> {
-	const rows = artifacts;
-
-	const outputs = rows.map((row) => {
+	const outputs = artifacts.map((row) => {
 		const metadata = parseJsonRecord(row.metadataJson ?? null);
 		return {
 			...row,
@@ -509,23 +501,7 @@ async function backfillGeneratedOutputFamilyStatuses(
 	});
 	if (outputs.length === 0) return;
 
-	const artifactObjects = outputs.map((row) => ({
-		id: row.id,
-		userId: row.userId,
-		conversationId: row.conversationId ?? null,
-		type: row.type as Artifact['type'],
-		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
-		name: row.name,
-		mimeType: row.mimeType ?? null,
-		sizeBytes: row.sizeBytes ?? null,
-		extension: row.extension ?? null,
-		storagePath: row.storagePath ?? null,
-		contentText: row.contentText ?? null,
-		summary: row.summary ?? null,
-		metadata: row.metadata,
-		createdAt: row.createdAt.getTime(),
-		updatedAt: row.updatedAt.getTime(),
-	})) satisfies Artifact[];
+	const artifactObjects = outputs.map((row) => mapGeneratedOutputArtifactRow(row, row.metadata));
 
 	const familyKeys = await resolveArtifactFamilyKeys(userId, artifactObjects);
 	const latestByFamily = new Map<
@@ -569,23 +545,7 @@ async function backfillGeneratedOutputFamilyStatuses(
 
 export async function repairGeneratedOutputRetrievalClasses(
 	userId: string,
-	artifacts: Array<{
-		id: string;
-		userId: string;
-		conversationId: string | null;
-		type: string;
-		retrievalClass: string | null;
-		name: string;
-		mimeType: string | null;
-		sizeBytes: number | null;
-		extension: string | null;
-		storagePath: string | null;
-		contentText: string | null;
-		summary: string | null;
-		metadataJson: string | null;
-		createdAt: Date;
-		updatedAt: Date;
-	}>
+	artifacts: GeneratedOutputArtifactRow[]
 ): Promise<void> {
 	await backfillGeneratedOutputRetrievalClasses(userId, artifacts);
 	generatedOutputBackfillDone.add(userId);
@@ -593,23 +553,7 @@ export async function repairGeneratedOutputRetrievalClasses(
 
 export async function repairGeneratedOutputFamilyStatuses(
 	userId: string,
-	artifacts: Array<{
-		id: string;
-		userId: string;
-		conversationId: string | null;
-		type: string;
-		retrievalClass: string | null;
-		name: string;
-		mimeType: string | null;
-		sizeBytes: number | null;
-		extension: string | null;
-		storagePath: string | null;
-		contentText: string | null;
-		summary: string | null;
-		metadataJson: string | null;
-		createdAt: Date;
-		updatedAt: Date;
-	}>
+	artifacts: GeneratedOutputArtifactRow[]
 ): Promise<void> {
 	await backfillGeneratedOutputFamilyStatuses(userId, artifacts);
 }
@@ -657,26 +601,7 @@ export async function classifyGeneratedOutputArtifact(params: {
 
 	const candidates = rows
 		.filter((row) => row.id !== params.artifact.id && (row.retrievalClass ?? 'durable') === 'durable')
-		.map((row) => ({
-			id: row.id,
-			userId: row.userId,
-			conversationId: row.conversationId ?? null,
-			type: row.type as Artifact['type'],
-			retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
-			name: row.name,
-			mimeType: row.mimeType ?? null,
-			sizeBytes: row.sizeBytes ?? null,
-			extension: row.extension ?? null,
-			storagePath: row.storagePath ?? null,
-			contentText: row.contentText ?? null,
-			summary: row.summary ?? null,
-			metadata:
-				row.metadataJson && typeof row.metadataJson === 'string'
-					? (JSON.parse(row.metadataJson) as Record<string, unknown>)
-					: null,
-			createdAt: row.createdAt.getTime(),
-			updatedAt: row.updatedAt.getTime(),
-		})) satisfies Artifact[];
+		.map((row) => mapGeneratedOutputArtifactRow(row));
 
 	if (candidates.length === 0) return 'durable';
 
