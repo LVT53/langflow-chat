@@ -37,7 +37,7 @@
 		onClose: () => void;
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRunKnowledgeAction: (kind: Exclude<LibraryModal, null>) => void | Promise<void>;
-		onRemoveArtifact: (id: string, label: string) => void | Promise<void>;
+		onRemoveArtifact: (id: string) => void | Promise<void>;
 	} = $props();
 
 	let itemCount = $derived(
@@ -76,7 +76,7 @@
 	function handleTableDelete(documentId: string) {
 		const artifact = documents.find((entry) => entry.id === documentId);
 		if (!artifact) return;
-		void onRemoveArtifact(artifact.id, artifact.name);
+		void onRemoveArtifact(artifact.id);
 	}
 
 	function handleTableDownload(): void {

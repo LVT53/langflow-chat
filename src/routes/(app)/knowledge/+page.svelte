@@ -316,7 +316,7 @@
 		const document = documents.find(d => d.id === documentId);
 		if (!document) return;
 
-		await removeArtifact(documentId, document.name);
+		await removeArtifact(documentId);
 	}
 
 	async function handleBulkDocumentDelete(documentIds: string[]): Promise<boolean> {
@@ -849,7 +849,7 @@
 		}
 	}
 
-	async function removeArtifact(id: string, label: string) {
+	async function removeArtifact(id: string) {
 		if (isDeletingArtifact(id)) return;
 		documentDeleteCandidateId = id;
 	}
