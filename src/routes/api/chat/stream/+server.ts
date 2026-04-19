@@ -223,18 +223,6 @@ const preflight = await preflightChatTurn({
           enqueueChunk(createSsePreludeComment());
           enqueueChunk(createSseHeartbeatComment());
 
-          // Check whether the stream already finished while the client was disconnected.
-          // If isStreamActive returns false, completeSuccess() already ran and the buffer
-          // was cleared — the generation is done and we must send end to close the UI.
-          if (!isStreamActive(targetStreamId)) {
-            console.info('[CHAT_STREAM] Stream already finished before reconnect', targetStreamId);
-            enqueueChunk(
-              `event: end\ndata: ${JSON.stringify({ wasStopped: false })}\n\n`,
-            );
-            closeDownstream();
-            return;
-          }
-
           const buffer = getStreamBuffer(targetStreamId);
           if (buffer) {
             const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
@@ -558,13 +546,6 @@ const sendEndAndClose = async (
           userMsgId?: string,
           assistantMsgId?: string,
         ) => {
-          // Guard: if the stream was already unregistered (reconnect claimed the streamId
-          // and started sending end via doReconnect's active-stream check), skip sending
-          // a second end event. The reconnect path handles its own end before closing.
-          if (streamId && !isStreamActive(streamId)) {
-            return;
-          }
-
           let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
             if (assistantMsgId && hadGenerateFileToolCall) {
