@@ -3,6 +3,7 @@
 		KnowledgeMemoryOverviewSource,
 		KnowledgeMemoryOverviewStatus,
 	} from '$lib/types';
+	import { formatMediumDateTime } from '$lib/utils/time';
 
 	let {
 		memoryLoading,
@@ -195,11 +196,11 @@
 					</h2>
 					{#if honchoOverviewUpdatedAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live overview {new Date(honchoOverviewUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+							Last live overview {formatMediumDateTime(honchoOverviewUpdatedAt)}
 						</p>
 					{:else if honchoOverviewLastAttemptAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live attempt {new Date(honchoOverviewLastAttemptAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+							Last live attempt {formatMediumDateTime(honchoOverviewLastAttemptAt)}
 						</p>
 					{/if}
 				</div>

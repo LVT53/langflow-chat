@@ -6,6 +6,7 @@ import type {
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
 import { formatRoundedKilobytes } from '$lib/utils/format';
+import { formatMediumDateTime } from '$lib/utils/time';
 
 export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
@@ -53,10 +54,7 @@ export function formatPersonaClass(memoryClass: PersonaMemoryItem['memoryClass']
 }
 
 export function formatMemoryTimestamp(timestamp: number): string {
-	return new Intl.DateTimeFormat(undefined, {
-		dateStyle: 'medium',
-		timeStyle: 'short',
-	}).format(timestamp);
+	return formatMediumDateTime(timestamp);
 }
 
 export function getPersonaRowKey(memory: PersonaMemoryItem, index: number): string {

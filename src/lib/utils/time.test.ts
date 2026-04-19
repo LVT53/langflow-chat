@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { formatRelativeTime } from './time';
+import { formatMediumDateTime, formatRelativeTime } from './time';
 
 describe('formatRelativeTime', () => {
 	beforeEach(() => {
@@ -34,5 +34,23 @@ describe('formatRelativeTime', () => {
 	it('handles unix timestamp in seconds', () => {
 		const timestamp = Math.floor(new Date('2024-03-15T11:55:00.000Z').getTime() / 1000);
 		expect(formatRelativeTime(timestamp)).toBe('5 min ago');
+	});
+});
+
+describe('formatMediumDateTime', () => {
+	it('returns an em dash for missing or invalid timestamps', () => {
+		expect(formatMediumDateTime(null)).toBe('—');
+		expect(formatMediumDateTime(Number.NaN)).toBe('—');
+	});
+
+	it('formats timestamps with medium date and short time style', () => {
+		const expected = new Intl.DateTimeFormat(undefined, {
+			dateStyle: 'medium',
+			timeStyle: 'short',
+		}).format(new Date('2024-03-15T12:00:00.000Z').getTime());
+
+		expect(formatMediumDateTime(new Date('2024-03-15T12:00:00.000Z').getTime())).toBe(
+			expected
+		);
 	});
 });

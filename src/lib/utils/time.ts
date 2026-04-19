@@ -25,3 +25,13 @@ export function formatRelativeTime(unixTimestamp: number): string {
 	return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
 }
 
+export function formatMediumDateTime(timestamp: number | null | undefined): string {
+	if (timestamp == null || !isFinite(timestamp)) {
+		return '—';
+	}
+
+	return new Intl.DateTimeFormat(undefined, {
+		dateStyle: 'medium',
+		timeStyle: 'short',
+	}).format(timestamp);
+}

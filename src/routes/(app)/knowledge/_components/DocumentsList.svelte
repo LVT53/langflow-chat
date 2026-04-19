@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { KnowledgeDocumentItem } from '$lib/types';
 	import { formatByteSize } from '$lib/utils/format';
+	import { formatMediumDateTime } from '$lib/utils/time';
 
 	type DocumentSortKey = 'name' | 'size' | 'type' | 'date';
 	type SortDirection = 'asc' | 'desc';
@@ -324,16 +325,6 @@
 	function getSortIndicator(column: DocumentSortKey): string {
 		if (sortKey !== column) return '↕';
 		return sortDirection === 'asc' ? '↑' : '↓';
-	}
-
-	function formatDate(timestamp: number | null | undefined): string {
-		if (timestamp == null || !isFinite(timestamp)) {
-			return '—';
-		}
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: 'medium',
-			timeStyle: 'short',
-		}).format(timestamp);
 	}
 
 	function getFileExtension(filename: string | null | undefined): string {
@@ -755,7 +746,7 @@
 									{formatByteSize(document.sizeBytes, { trimWholeUnits: true })}
 								</td>
 								<td class="col-date">
-									{formatDate(document.createdAt)}
+									{formatMediumDateTime(document.createdAt)}
 								</td>
 								<td class="col-actions">
 									<div class="action-buttons">
