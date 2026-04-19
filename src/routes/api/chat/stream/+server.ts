@@ -500,9 +500,6 @@ const preflight = await preflightChatTurn({
       const completeSuccess = (wasStopped = false) => {
         if (ended) return;
         ended = true;
-        if (streamId) {
-          clearStreamBuffer(streamId);
-        }
         const thinkingTokenCount = estimateTokenCount(
           chunkRuntime.thinkingContent,
         );
@@ -557,10 +554,17 @@ let userMessageToPersist = normalizedMessage;
             ).catch(() => undefined)
           : Promise.resolve(undefined);
 
-        const sendEndAndClose = async (
+const sendEndAndClose = async (
           userMsgId?: string,
           assistantMsgId?: string,
         ) => {
+          // Guard: if the stream was already unregistered (reconnect claimed the streamId
+          // and started sending end via doReconnect's active-stream check), skip sending
+          // a second end event. The reconnect path handles its own end before closing.
+          if (streamId && !isStreamActive(streamId)) {
+            return;
+          }
+
           let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
           try {
             if (assistantMsgId && hadGenerateFileToolCall) {
@@ -627,6 +631,8 @@ let userMessageToPersist = normalizedMessage;
             })}\n\n`,
           );
           touchConversation(user.id, conversationId).catch(() => undefined);
+          // Clear buffer AFTER broadcasting end event so reconnect listeners receive it.
+          if (streamId) clearStreamBuffer(streamId);
           closeDownstream();
         };
 
