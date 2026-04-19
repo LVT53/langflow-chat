@@ -28,7 +28,6 @@
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import DocumentsList from './_components/DocumentsList.svelte';
-	import DocumentPreviewModal from './_components/DocumentPreviewModal.svelte';
 	import type {
 		FocusContinuityItem,
 		KnowledgeDocumentItem,
@@ -131,8 +130,6 @@
 	// Documents section state
 	let documentPaginationLimit = $state<20 | 50 | 100>(20);
 	let documentCurrentPage = $state(1);
-	let selectedDocumentForPreview = $state<KnowledgeDocumentItem | null>(null);
-	let isPreviewModalOpen = $state(false);
 	let documentDeleteCandidateId = $state<string | null>(null);
 	let bulkDeleteCandidateIds = $state<string[] | null>(null);
 	let bulkDeleteSuccessVersion = $state(0);
@@ -164,27 +161,29 @@
 	let overviewRenderVersion = 0;
 
 	let availableWorkspaceDocuments = $derived(
-		documents.map((document) => {
-			const artifactId = document.promptArtifactId ?? document.displayArtifactId;
-			return {
-				id: `artifact:${artifactId}`,
-				source: 'knowledge_artifact' as const,
-				filename: document.name,
-				title: document.documentLabel ?? document.name,
-				documentFamilyId: document.documentFamilyId ?? null,
-				documentFamilyStatus: document.documentFamilyStatus ?? null,
-				documentLabel: document.documentLabel ?? null,
-				documentRole: document.documentRole ?? null,
-				versionNumber: document.versionNumber ?? null,
-				originConversationId: document.originConversationId ?? null,
-				originAssistantMessageId: document.originAssistantMessageId ?? null,
-				sourceChatFileId: document.sourceChatFileId ?? null,
-				mimeType: document.mimeType,
-				artifactId,
-				conversationId: document.conversationId,
-			};
-		})
+		documents.map((document) => toWorkspaceDocument(document))
 	);
+
+	function toWorkspaceDocument(document: KnowledgeDocumentItem): DocumentWorkspaceItem {
+		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+		return {
+			id: `artifact:${artifactId}`,
+			source: 'knowledge_artifact',
+			filename: document.name,
+			title: document.documentLabel ?? document.name,
+			documentFamilyId: document.documentFamilyId ?? null,
+			documentFamilyStatus: document.documentFamilyStatus ?? null,
+			documentLabel: document.documentLabel ?? null,
+			documentRole: document.documentRole ?? null,
+			versionNumber: document.versionNumber ?? null,
+			originConversationId: document.originConversationId ?? null,
+			originAssistantMessageId: document.originAssistantMessageId ?? null,
+			sourceChatFileId: document.sourceChatFileId ?? null,
+			mimeType: document.mimeType,
+			artifactId,
+			conversationId: document.conversationId,
+		};
+	}
 
 	function getWorkspaceMetadataForArtifact(artifactId: string): Pick<
 		DocumentWorkspaceItem,
@@ -287,13 +286,7 @@
 	}
 
 	function handleDocumentSelect(document: KnowledgeDocumentItem) {
-		selectedDocumentForPreview = document;
-		isPreviewModalOpen = true;
-	}
-
-	function handleDocumentPreviewClose() {
-		isPreviewModalOpen = false;
-		selectedDocumentForPreview = null;
+		openWorkspaceDocument(toWorkspaceDocument(document));
 	}
 
 	function handleDocumentDownload(documentId: string) {
@@ -351,9 +344,11 @@
 
 		await refreshKnowledgeLibrary();
 
-		// Close preview modal if the deleted document was being previewed
-		if (selectedDocumentForPreview && documentIds.includes(selectedDocumentForPreview.id)) {
-			handleDocumentPreviewClose();
+		for (const documentId of documentIds) {
+			const deletedDocument = documents.find((document) => document.id === documentId);
+			if (deletedDocument) {
+				closeWorkspaceDocument(toWorkspaceDocument(deletedDocument).id);
+			}
 		}
 
 		if (failures.length > 0) {
@@ -873,10 +868,7 @@
 				throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
 			}
 			await refreshKnowledgeLibrary();
-			// Close preview modal if the deleted document was being previewed
-			if (selectedDocumentForPreview?.id === id) {
-				handleDocumentPreviewClose();
-			}
+			closeWorkspaceDocument(toWorkspaceDocument(document).id);
 		} catch (error) {
 			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
 		} finally {
@@ -1090,14 +1082,6 @@
 		onRemoveArtifact={removeArtifact}
 	/>
 {/if}
-
-<DocumentPreviewModal
-	document={selectedDocumentForPreview}
-	open={isPreviewModalOpen}
-	onClose={handleDocumentPreviewClose}
-	onDownload={handleDocumentDownload}
-	onDelete={handleDocumentDelete}
-/>
 
 {#if documentDeleteCandidateId}
 	<ConfirmDialog
