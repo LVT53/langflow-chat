@@ -52,6 +52,7 @@
 
 	const OVERVIEW_POLL_INTERVAL_MS = 20_000;
 	const OVERVIEW_POLL_MAX_ATTEMPTS = 15;
+	const MEMORY_UPDATE_ERROR_MESSAGE = 'Failed to update memory profile.';
 
 	let { data }: PageProps = $props();
 	const getData = () => data;
@@ -662,10 +663,7 @@
 	) {
 		if (isMemoryActionPending(key)) return;
 
-		manageError = '';
-		pendingMemoryActionKey = key;
-
-		try {
+		await withPendingMemoryAction(key, async () => {
 			const result = await submitMemoryAction(payload);
 			applyMemoryPayload(result);
 			if (payload.action === 'forget_persona_memory') {
@@ -688,12 +686,7 @@
 					(id) => id !== payload.projectId
 				);
 			}
-		} catch (error) {
-			manageError =
-				error instanceof Error ? error.message : 'Failed to update memory profile.';
-		} finally {
-			pendingMemoryActionKey = null;
-		}
+		});
 	}
 
 	async function runBulkPersonaForget() {
@@ -708,10 +701,7 @@
 	}
 
 	async function executeBulkPersonaForget() {
-		manageError = '';
-		pendingMemoryActionKey = 'forget-selected-persona';
-
-		try {
+		await withPendingMemoryAction('forget-selected-persona', async () => {
 			let result: KnowledgeMemoryPayload | null = null;
 			if (selectedPersonaMemoryIds.length === personaMemories.length && honchoEnabled) {
 				result = await submitMemoryAction({ action: 'forget_all_persona_memory' });
@@ -724,12 +714,7 @@
 				applyMemoryPayload(result);
 			}
 			selectedPersonaMemoryIds = [];
-		} catch (error) {
-			manageError =
-				error instanceof Error ? error.message : 'Failed to update memory profile.';
-		} finally {
-			pendingMemoryActionKey = null;
-		}
+		});
 	}
 
 	async function runBulkTaskForget() {
@@ -744,10 +729,7 @@
 	}
 
 	async function executeBulkTaskForget() {
-		manageError = '';
-		pendingMemoryActionKey = 'forget-selected-task';
-
-		try {
+		await withPendingMemoryAction('forget-selected-task', async () => {
 			let result: KnowledgeMemoryPayload | null = null;
 			for (const id of selectedTaskMemoryIds) {
 				result = await submitMemoryAction({ action: 'forget_task_memory', taskId: id });
@@ -756,12 +738,7 @@
 				applyMemoryPayload(result);
 			}
 			selectedTaskMemoryIds = [];
-		} catch (error) {
-			manageError =
-				error instanceof Error ? error.message : 'Failed to update memory profile.';
-		} finally {
-			pendingMemoryActionKey = null;
-		}
+		});
 	}
 
 	async function runBulkFocusContinuityForget() {
@@ -776,10 +753,7 @@
 	}
 
 	async function executeBulkFocusContinuityForget() {
-		manageError = '';
-		pendingMemoryActionKey = 'forget-selected-focus-continuity';
-
-		try {
+		await withPendingMemoryAction('forget-selected-focus-continuity', async () => {
 			let result: KnowledgeMemoryPayload | null = null;
 			for (const id of selectedFocusContinuityIds) {
 				result = await submitMemoryAction({
@@ -791,9 +765,17 @@
 				applyMemoryPayload(result);
 			}
 			selectedFocusContinuityIds = [];
+		});
+	}
+
+	async function withPendingMemoryAction(key: string, action: () => Promise<void>) {
+		manageError = '';
+		pendingMemoryActionKey = key;
+
+		try {
+			await action();
 		} catch (error) {
-			manageError =
-				error instanceof Error ? error.message : 'Failed to update memory profile.';
+			manageError = error instanceof Error ? error.message : MEMORY_UPDATE_ERROR_MESSAGE;
 		} finally {
 			pendingMemoryActionKey = null;
 		}
