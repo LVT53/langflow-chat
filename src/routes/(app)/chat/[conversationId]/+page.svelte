@@ -65,6 +65,11 @@
 		removeMessageById,
 		toFriendlySendError,
 		updateMessageById,
+		cloneSendPayload,
+		isOsFileDropEvent,
+		reducePendingGeneratedFiles,
+		reduceWorkspaceDocumentClose,
+		reduceWorkspaceDocumentOpen,
 		type DraftChangePayload,
 		type MessageEditPayload,
 		type MessageRegeneratePayload,
@@ -163,24 +168,13 @@
 	}
 
 	function addPendingGeneratedFile(input: Record<string, unknown>, assistantMessageId: string) {
-		// Prevent duplicate pending files if the tool is called multiple times before completion
-		if (pendingGeneratedFiles.some((f) => f.assistantMessageId === assistantMessageId)) {
-			return;
-		}
 		const filename = inferGeneratedFilename(input);
-		pendingGeneratedFiles = [
-			...pendingGeneratedFiles,
-			{
-				id: `pending-${crypto.randomUUID()}`,
-				conversationId: data.conversation.id,
-				assistantMessageId,
-				filename,
-				mimeType: 'application/octet-stream',
-				sizeBytes: 0,
-				createdAt: Date.now(),
-				status: 'generating',
-			},
-		];
+		pendingGeneratedFiles = reducePendingGeneratedFiles(
+			pendingGeneratedFiles,
+			filename,
+			assistantMessageId,
+			data.conversation.id
+		);
 	}
 
 	function resetPendingGeneratedFiles() {
@@ -188,17 +182,10 @@
 	}
 
 	function openWorkspaceDocument(document: DocumentWorkspaceItem) {
-		const alreadyOpen = workspaceDocuments.some((entry) => entry.id === document.id);
-		if (alreadyOpen) {
-			workspaceDocuments = workspaceDocuments.map((entry) =>
-				entry.id === document.id ? { ...entry, ...document } : entry
-			);
-		} else {
-			workspaceDocuments = [...workspaceDocuments, document];
-		}
-
-		activeWorkspaceDocumentId = document.id;
-		workspaceOpen = true;
+		const result = reduceWorkspaceDocumentOpen(workspaceDocuments, document);
+		workspaceDocuments = result.documents;
+		activeWorkspaceDocumentId = result.activeDocumentId;
+		workspaceOpen = result.isOpen;
 		if (browser && document.artifactId) {
 			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
 		}
@@ -214,16 +201,14 @@
 	}
 
 	function closeWorkspaceDocument(documentId: string) {
-		const remainingDocuments = workspaceDocuments.filter((document) => document.id !== documentId);
-		workspaceDocuments = remainingDocuments;
-
-		if (activeWorkspaceDocumentId === documentId) {
-			activeWorkspaceDocumentId = remainingDocuments.at(-1)?.id ?? null;
-		}
-
-		if (remainingDocuments.length === 0) {
-			workspaceOpen = false;
-		}
+		const result = reduceWorkspaceDocumentClose(
+			workspaceDocuments,
+			documentId,
+			activeWorkspaceDocumentId
+		);
+		workspaceDocuments = result.documents;
+		activeWorkspaceDocumentId = result.activeDocumentId;
+		workspaceOpen = result.isOpen;
 	}
 
 	function closeWorkspace() {
@@ -716,18 +701,6 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 		}
 	});
 
-	function cloneSendPayload(payload: SendPayload): SendPayload {
-		return {
-			message: payload.message,
-			attachmentIds: [...(payload.attachmentIds ?? [])],
-			attachments: [...(payload.attachments ?? [])],
-			pendingAttachments: (payload.pendingAttachments ?? []).map((attachment) => ({
-				...attachment,
-			})),
-			conversationId: payload.conversationId ?? null,
-		};
-	}
-
 	function restorePayloadToDraft(payload: SendPayload) {
 		const nextConversationId = payload.conversationId ?? data.conversation.id;
 		conversationDraft = createConversationDraftRecord({
@@ -1198,7 +1171,6 @@ onToolCall(name, input, status, details) {
 		});
 	}
 
-	const INTERNAL_MIME = 'application/x-alfyai-conversation';
 	let fileDragActive = $state(false);
 	let fileDragRejected = $state(false);
 	let dragEnterCount = 0;
@@ -1208,27 +1180,16 @@ onToolCall(name, input, status, details) {
 		uploadFilesFn = uploadFn;
 	}
 
-	function isOsFileDrop(event: DragEvent): boolean {
-		const types = event.dataTransfer?.types;
-		if (!types) return false;
-		// Must have Files type (OS file drop), not internal conversation DnD
-		return types.includes('Files') && !types.includes(INTERNAL_MIME);
-	}
-
 	function handleDragEnter(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		dragEnterCount += 1;
-		if (isSending) {
-			fileDragRejected = true;
-		} else {
-			fileDragRejected = false;
-		}
+		fileDragRejected = isSending;
 		fileDragActive = true;
 	}
 
 	function handleDragOver(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = 'copy';
@@ -1236,7 +1197,7 @@ onToolCall(name, input, status, details) {
 	}
 
 	function handleDragLeave(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		dragEnterCount -= 1;
 		if (dragEnterCount <= 0) {
 			dragEnterCount = 0;
@@ -1249,7 +1210,7 @@ onToolCall(name, input, status, details) {
 		dragEnterCount = 0;
 		fileDragActive = false;
 		fileDragRejected = false;
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		if (isSending) return;
 		const files = event.dataTransfer?.files;

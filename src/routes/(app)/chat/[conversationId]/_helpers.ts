@@ -5,6 +5,8 @@ import type {
 	EvidenceSourceType,
 	PendingAttachment,
 	ToolEvidenceCandidate,
+	ChatGeneratedFileListItem,
+	DocumentWorkspaceItem,
 } from '$lib/types';
 
 export type SendPayload = {
@@ -288,4 +290,82 @@ export function finalizeStreamingMessageList(
 
 export function removeMessageById(list: ChatMessage[], messageId: string): ChatMessage[] {
 	return list.filter((message) => message.id !== messageId);
+}
+
+export function reducePendingGeneratedFiles(
+	list: ChatGeneratedFileListItem[],
+	filename: string,
+	assistantMessageId: string,
+	conversationId: string
+): ChatGeneratedFileListItem[] {
+	if (list.some((f) => f.assistantMessageId === assistantMessageId)) {
+		return list;
+	}
+	return [
+		...list,
+		{
+			id: `pending-${crypto.randomUUID()}`,
+			conversationId,
+			assistantMessageId,
+			filename,
+			mimeType: 'application/octet-stream',
+			sizeBytes: 0,
+			createdAt: Date.now(),
+			status: 'generating',
+		},
+	];
+}
+
+export function cloneSendPayload(payload: SendPayload): SendPayload {
+	return {
+		message: payload.message,
+		attachmentIds: [...(payload.attachmentIds ?? [])],
+		attachments: [...(payload.attachments ?? [])],
+		pendingAttachments: (payload.pendingAttachments ?? []).map((attachment) => ({
+			...attachment,
+		})),
+		conversationId: payload.conversationId ?? null,
+	};
+}
+
+export function isOsFileDropEvent(event: DragEvent): boolean {
+	const types = event.dataTransfer?.types;
+	if (!types) return false;
+	// Must have Files type (OS file drop), not internal conversation DnD
+	return types.includes('Files') && !types.includes('application/x-alfyai-conversation');
+}
+
+export function reduceWorkspaceDocumentOpen(
+	documents: DocumentWorkspaceItem[],
+	document: DocumentWorkspaceItem
+): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
+	const alreadyOpen = documents.some((entry) => entry.id === document.id);
+	const updatedDocuments = alreadyOpen
+		? documents.map((entry) => (entry.id === document.id ? { ...entry, ...document } : entry))
+		: [...documents, document];
+
+	return {
+		documents: updatedDocuments,
+		activeDocumentId: document.id,
+		isOpen: true,
+	};
+}
+
+export function reduceWorkspaceDocumentClose(
+	documents: DocumentWorkspaceItem[],
+	documentId: string,
+	activeWorkspaceDocumentId: string | null
+): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
+	const remainingDocuments = documents.filter((document) => document.id !== documentId);
+	let nextActiveId = activeWorkspaceDocumentId;
+
+	if (activeWorkspaceDocumentId === documentId) {
+		nextActiveId = remainingDocuments.at(-1)?.id ?? null;
+	}
+
+	return {
+		documents: remainingDocuments,
+		activeDocumentId: nextActiveId,
+		isOpen: remainingDocuments.length > 0,
+	};
 }
