@@ -1584,7 +1584,7 @@ export async function buildConstructedContext(params: {
 
 	for (const artifact of selectedEvidence) {
 		const daysSinceAccess = artifact.updatedAt
-			? Math.floor((Date.now() - artifact.updatedAt.getTime()) / 86_400_000)
+			? Math.floor((Date.now() - (typeof artifact.updatedAt === 'number' ? artifact.updatedAt : (artifact.updatedAt as unknown as Date).getTime())) / 86_400_000)
 			: 0;
 		const isSameConversation = artifact.conversationId === params.conversationId;
 		const matchScore = scoreMatch(params.message, `${artifact.name}\n${artifact.summary ?? ''}`);
