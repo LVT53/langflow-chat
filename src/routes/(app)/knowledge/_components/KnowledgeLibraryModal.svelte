@@ -5,8 +5,6 @@
 	} from '$lib/types';
 	import type { LibraryModal } from '../_helpers';
 	import {
-		formatArtifactSize,
-		formatDocumentKind,
 		getLibraryBulkKey,
 		getLibraryBulkLabel,
 		getLibraryItemCount,

@@ -1,14 +1,11 @@
 import type {
 	FocusContinuityItem,
-	KnowledgeDocumentItem,
 	PersonaMemoryItem,
 	TaskMemoryItem,
 } from '$lib/types';
 import type { KnowledgeBulkAction } from '$lib/client/api/knowledge';
-import { formatRoundedKilobytes } from '$lib/utils/format';
 import { formatMediumDateTime } from '$lib/utils/time';
 
-export type KnowledgeTab = 'library' | 'memory';
 export type MemoryModal = 'persona' | 'focus' | null;
 export type LibraryModal = 'documents' | null;
 export type PersonaMemoryFilter = 'active' | 'dormant' | 'archived';
@@ -59,19 +56,6 @@ export function formatMemoryTimestamp(timestamp: number): string {
 
 export function getPersonaRowKey(memory: PersonaMemoryItem, index: number): string {
 	return `${memory.state}:${memory.id}:${index}`;
-}
-
-export function formatArtifactSize(sizeBytes: number | null | undefined): string {
-	return formatRoundedKilobytes(sizeBytes);
-}
-
-export function formatDocumentKind(document: KnowledgeDocumentItem): string {
-	if (document.documentOrigin === 'generated') return 'Generated document';
-	return document.normalizedAvailable ? 'Indexed document' : 'Source-only document';
-}
-
-export function formatDocumentLifecycleStatus(document: KnowledgeDocumentItem): string | null {
-	return document.documentFamilyStatus === 'historical' ? 'Historical' : null;
 }
 
 export function getLibraryBulkAction(_kind: Exclude<LibraryModal, null>): KnowledgeBulkAction {
