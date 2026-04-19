@@ -11,7 +11,7 @@ How it works:
 3. The sandbox executes the code in an isolated Docker container
 4. Generated files are stored and returned as metadata
 5. Files only count as generated when the code writes them to /output
-6. After generation, the user can download the file from chat or click Save to Vault
+6. After generation, the user can download the file from chat
 
 Usage in Langflow:
 1. Add this component to your flow

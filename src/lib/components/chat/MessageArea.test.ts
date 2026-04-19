@@ -193,7 +193,7 @@ describe('MessageArea', () => {
 		const messageTimestamp = Date.now();
 		const evidenceItem = {
 			id: 'evidence-1',
-			title: 'Vault note',
+			title: 'Research note',
 			sourceType: 'document' as const,
 			status: 'selected' as const,
 		};

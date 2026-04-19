@@ -61,40 +61,33 @@
     {
       "idx": 8,
       "version": "6",
-      "when": 1775142000000,
-      "tag": "0008_knowledge_vaults",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
       "when": 1775157367422,
       "tag": "1775157367422_chat_generated_files",
       "breakpoints": true
     },
     {
-      "idx": 10,
+      "idx": 9,
       "version": "7",
       "when": 1775240400000,
       "tag": "1775240400000_chat_generated_files_assistant_message",
       "breakpoints": true
     },
     {
-      "idx": 11,
+      "idx": 10,
       "version": "7",
       "when": 1775326800000,
       "tag": "1775326800000_memory_events",
       "breakpoints": true
     },
     {
-      "idx": 12,
+      "idx": 11,
       "version": "7",
       "when": 1775413200000,
       "tag": "1775413200000_semantic_embeddings",
       "breakpoints": true
     },
     {
-      "idx": 13,
+      "idx": 12,
       "version": "7",
       "when": 1775416800000,
       "tag": "1775416800000_users_honcho_peer_version",

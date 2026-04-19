@@ -60,7 +60,7 @@ describe('schema core tables', () => {
   });
 
   describe('artifacts table', () => {
-    it('can insert artifact without vaultId', () => {
+    it('can insert artifact with the minimal document fields', () => {
       const userId = 'test-user-artifact';
       db.insert(schema.users).values({
         id: userId,
@@ -69,7 +69,7 @@ describe('schema core tables', () => {
         name: 'Artifact Test User',
       }).run();
 
-      const artifactId = 'artifact-no-vault';
+      const artifactId = 'artifact-minimal-document';
       db.insert(schema.artifacts).values({
         id: artifactId,
         userId: userId,
@@ -83,16 +83,16 @@ describe('schema core tables', () => {
 
       expect(artifact).toBeTruthy();
       expect(artifact?.id).toBe(artifactId);
-      expect(artifact?.vaultId).toBeNull();
     });
 
-    it('artifact vaultId column exists but is nullable', () => {
+    it('keeps document ownership on the artifact row only', () => {
       const columns = sqlite
         .prepare("PRAGMA table_info(artifacts)")
         .all() as { name: string }[];
 
       const columnNames = columns.map(c => c.name);
-      expect(columnNames).toContain('vault_id');
+      expect(columnNames).toContain('user_id');
+      expect(columnNames).toContain('conversation_id');
     });
   });
 });

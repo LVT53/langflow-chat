@@ -195,7 +195,6 @@ export async function createArtifact(params: {
   id?: string;
   userId: string;
   conversationId?: string | null;
-  vaultId?: string | null;
   type: ArtifactType;
   retrievalClass?: Artifact["retrievalClass"];
   name: string;
@@ -215,7 +214,6 @@ export async function createArtifact(params: {
       id,
       userId: params.userId,
       conversationId: params.conversationId ?? null,
-      vaultId: params.vaultId ?? null,
       type: params.type,
       retrievalClass: params.retrievalClass ?? "durable",
       name: params.name,

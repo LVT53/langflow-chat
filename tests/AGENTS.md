@@ -19,7 +19,7 @@ Unit tests co-located with source (`*.test.ts`). E2E tests in `e2e/` using Playw
 | Conversation lifecycle | `tests/e2e/conversation.spec.ts` |
 | Settings/admin | `tests/e2e/settings-admin.spec.ts` |
 | Auth/login | `tests/e2e/login.test.ts`, `tests/e2e/auth.spec.ts` |
-| Knowledge/vaults | `tests/e2e/knowledge.spec.ts` |
+| Knowledge | `tests/e2e/knowledge.spec.ts` |
 | Search modal | `tests/e2e/search-modal.spec.ts` |
 | Mobile/responsive | `tests/e2e/mobile-*.spec.ts`, `tests/e2e/responsive*.spec.ts` |
 | Server routes | `src/routes/api/**/*.test.ts` |

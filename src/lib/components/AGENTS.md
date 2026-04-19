@@ -7,7 +7,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) defines component categories and boundar
 ```
 layout/
   Sidebar.svelte                    ← navigation shell, profile, new-chat button
-    ├── search/SearchModal.svelte   ← global conversation + vault-file search (Ctrl+K)
+    ├── search/SearchModal.svelte   ← global conversation + document search (Ctrl+K)
     └── sidebar/ConversationList.svelte  ← list with drag/drop, project folders
           ├── sidebar/ProjectItem.svelte      ← folder row (event emitter only)
           └── sidebar/ConversationItem.svelte  ← conversation row (event emitter only)
@@ -77,7 +77,7 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `KnowledgeLibraryView` (main-panel vault explorer and vault manager), `KnowledgeMemoryModal`, `KnowledgeUploadView`, `VaultFileUpload`
+- Route-local `_components/` — `KnowledgeMemoryModal`, `KnowledgeUploadView`, and page-scoped library components
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
@@ -100,7 +100,7 @@ ui/
 - The landing page may force a full document navigation after the first send so the browser cannot remain on the home-screen visual state while the new chat route is already executing on the server
 - `MessageInput.svelte` accepts `onUploadReady` callback for external upload handling
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for document opening
-- `SearchModal.svelte` pulls vault-file hits through `client/api/knowledge.ts` and hands document opens off to the knowledge-page workspace instead of owning a parallel preview modal
+- `SearchModal.svelte` pulls document hits through `client/api/knowledge.ts` and hands document opens off to the knowledge-page workspace instead of owning a parallel preview modal
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download UI, and the shimmer-style generating state
 - `GeneratedFile.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
@@ -110,10 +110,6 @@ ui/
 - `DocumentWorkspace.svelte` now owns version-history tabs/strips, source-message jump affordances, text-document compare mode, and the shared historical-status badge for dormant generated-document families. Keep those behaviors inside the shared workspace instead of rebuilding them in chat rows, search, or knowledge-page components
 - Workspace-open behavior tracking should stay in the route-owned open/select handlers, not inside `DocumentWorkspace.svelte` or row components. The shared workspace UI remains a pure callback consumer while document-open events flow through the existing browser API + `memory_events` rail.
 - Historical document badges are informational, not disabling state. Components should still allow explicit open/jump/version navigation for historical families even though server-side ranking now soft-deprioritizes them on weak generic turns.
-- `GeneratedFile.svelte` is for displaying generated files only; vault save is handled through the workspace
-- `src/routes/(app)/knowledge/_components/VaultFileUpload.svelte` accepts an optional `conversationId` because direct vault uploads from the knowledge page are not conversation-scoped
-- `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` is the knowledge-page vault surface; keep vault browsing/search/filter state, drag/drop upload targeting, and vault CRUD affordances there instead of reintroducing a separate sidebar rail
-- `src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte` should render any server-provided generated-document lifecycle label such as `Historical` directly from document metadata. Do not re-derive dormant document status in the component.
 - Knowledge-memory UI should render server-derived persona classes and historical temporal phrasing as-is. Do not re-derive deadline freshness or topic lifecycle rules in Svelte components.
 - `MarkdownRenderer.svelte` uses Shiki with 25+ language grammars — init is async; check `initHighlighter()`
 - `ContextUsageRing.svelte` (656 lines) is large because it contains SVG rendering logic, not business logic

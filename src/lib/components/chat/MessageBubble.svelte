@@ -293,7 +293,6 @@
 							downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
 							status={file.status}
 							error={file.error}
-							savedVaultName={file.savedVaultName ?? null}
 							onOpen={onOpenDocument}
 						/>
 					{/each}

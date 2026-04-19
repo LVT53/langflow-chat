@@ -18,7 +18,7 @@ The longer-term follow-up ideas beyond this refactor wave are tracked in [Memory
 
 After this refactor wave, the system should behave like one coherent document product:
 
-- generated files, uploaded files, and vault files open in one workspace
+- generated files and uploaded files open in one workspace
 - the AI can identify the correct working document and recent versions without relying on filename guesswork
 - document continuity lives in one structured path, not across several semi-overlapping heuristics
 - persona memory stops absorbing document-content facts that belong in document/task continuity
@@ -28,8 +28,8 @@ After this refactor wave, the system should behave like one coherent document pr
 
 These are explicitly out of scope for the current refactor:
 
-- in-app editing of vault files
-- collaborative/shared vaults
+- in-app editing of library files
+- collaborative/shared document spaces
 - a second preview stack
 - a second memory subsystem parallel to artifacts plus Honcho
 - replacing the artifact system with a new document database
@@ -278,7 +278,7 @@ Done criteria:
 
 - generated-output boosting and latest-output selection are no longer hand-rolled in multiple services
 
-## Phase 4: Fold Attachments And Vault Documents Into The Workspace
+## Phase 4: Fold Attachments And Library Documents Into The Workspace
 
 Goal:
 
@@ -288,7 +288,7 @@ Changes:
 
 - all supported generated files open in the workspace
 - chat attachments open in the same workspace
-- vault documents open in the same workspace shell when invoked from chat or knowledge
+- library documents open in the same workspace shell when invoked from chat or knowledge
 - keep the current preview renderer as the only preview engine
 
 Code boundaries:
@@ -314,7 +314,7 @@ Tests:
 
 Done criteria:
 
-- the user sees one document system, not chat files vs vault files vs attachments
+- the user sees one document system, not chat files vs library files vs attachments
 
 ## Phase 5: Separate Persona Memory From Document Memory
 
@@ -456,7 +456,7 @@ Each phase should be gated by a narrow verification set instead of one massive e
 
 - generated file created in chat, then referred to in a later turn
 - generated file renamed/refined and still resolved as same family
-- saved-to-vault document remains same working document, not a separate identity
+- manually organized documents remain the same working documents, not separate identities
 - document does not appear in persona profile as if it were user identity
 
 ## Rollout Rules

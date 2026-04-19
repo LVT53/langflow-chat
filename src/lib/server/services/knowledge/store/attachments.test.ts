@@ -110,7 +110,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: null,
 								type: 'source_document',
 								name: 'report.pdf',
 								mimeType: 'application/pdf',
@@ -133,7 +132,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 
@@ -161,7 +159,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing-artifact',
 											userId: 'user-1',
-											vaultId: null,
 											name: 'report.pdf',
 											type: 'source_document',
 											binaryHash: 'different-hash',
@@ -194,7 +191,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 									Promise.resolve([{
 										id: 'existing-link',
 										userId: 'user-1',
-										vaultId: null,
 										name: 'report.pdf',
 										type: 'source_document',
 										binaryHash: 'different-hash',
@@ -214,7 +210,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: null,
 								type: 'source_document',
 								name: 'report_1.pdf',
 								mimeType: 'application/pdf',
@@ -241,7 +236,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 
@@ -271,7 +265,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing-artifact',
 											userId: 'user-1',
-											vaultId: null,
 											name: 'report.pdf',
 											type: 'source_document',
 											binaryHash: 'different-hash',
@@ -304,7 +297,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 									Promise.resolve([{
 										id: 'existing-link',
 										userId: 'user-1',
-										vaultId: null,
 										name: 'report.pdf',
 										type: 'source_document',
 										binaryHash: 'different-hash',
@@ -324,7 +316,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: null,
 								type: 'source_document',
 								name: 'report_3.pdf',
 								mimeType: 'application/pdf',
@@ -351,7 +342,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 
@@ -380,7 +370,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing',
 											userId: 'user-1',
-											vaultId: null,
 											name: 'document.docx',
 											type: 'source_document',
 											binaryHash: 'different',
@@ -407,7 +396,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 									Promise.resolve([{
 										id: 'existing-link',
 										userId: 'user-1',
-										vaultId: null,
 										name: 'document.docx',
 										type: 'source_document',
 										binaryHash: 'different',
@@ -425,7 +413,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 						id: 'artifact-uuid-123',
 						userId: 'user-1',
 						conversationId: 'conv-1',
-						vaultId: null,
 						type: 'source_document',
 						name: 'document_1.docx',
 						mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -456,7 +443,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 
@@ -487,7 +473,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing-artifact',
 											userId: 'user-1',
-											vaultId: null,
 											name: 'report.pdf',
 											type: 'source_document',
 											binaryHash: 'different-hash',
@@ -519,7 +504,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 									Promise.resolve([{
 										id: 'existing-link',
 										userId: 'user-1',
-										vaultId: null,
 										name: 'README',
 										type: 'source_document',
 										binaryHash: 'different',
@@ -539,7 +523,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: null,
 								type: 'source_document',
 								name: 'report_1.pdf',
 								mimeType: 'application/pdf',
@@ -566,7 +549,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 
@@ -595,7 +577,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 										{
 											id: 'existing',
 											userId: 'user-1',
-											vaultId: null,
 											name: 'README',
 											type: 'source_document',
 											binaryHash: 'different',
@@ -622,7 +603,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 									Promise.resolve([{
 										id: 'existing-link',
 										userId: 'user-1',
-										vaultId: null,
 										name: 'README',
 										type: 'source_document',
 										binaryHash: 'different',
@@ -642,7 +622,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 								id: 'artifact-uuid-123',
 								userId: 'user-1',
 								conversationId: 'conv-1',
-								vaultId: null,
 								type: 'source_document',
 								name: 'README_1',
 								mimeType: 'text/plain',
@@ -669,7 +648,6 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 			const result = await saveUploadedArtifact({
 				userId: 'user-1',
 				conversationId: 'conv-1',
-				vaultId: null,
 				file: mockFile,
 			});
 

@@ -31,26 +31,26 @@ describe('document workspace navigation', () => {
 		expect(
 			buildKnowledgeWorkspaceHref({
 				artifactId: 'normalized-1',
-				filename: 'Vault brief.txt',
+				filename: 'Research brief.txt',
 				mimeType: 'text/plain',
 			})
 		).toBe(
-			'/knowledge?open_artifact=normalized-1&open_filename=Vault+brief.txt&open_mime=text%2Fplain'
+			'/knowledge?open_artifact=normalized-1&open_filename=Research+brief.txt&open_mime=text%2Fplain'
 		);
 	});
 
 	it('derives a workspace document from a knowledge handoff url', () => {
 		const document = getKnowledgeWorkspaceDocumentFromUrl(
 			new URL(
-				'http://localhost/knowledge?open_artifact=normalized-1&open_filename=Vault+brief.txt&open_mime=text%2Fplain'
+				'http://localhost/knowledge?open_artifact=normalized-1&open_filename=Research+brief.txt&open_mime=text%2Fplain'
 			)
 		);
 
 		expect(document).toEqual({
 			id: 'artifact:normalized-1',
 			source: 'knowledge_artifact',
-			filename: 'Vault brief.txt',
-			title: 'Vault brief.txt',
+			filename: 'Research brief.txt',
+			title: 'Research brief.txt',
 			mimeType: 'text/plain',
 			artifactId: 'normalized-1',
 		});
@@ -59,7 +59,7 @@ describe('document workspace navigation', () => {
 	it('clears workspace handoff params after consumption', () => {
 		const url = clearKnowledgeWorkspaceParams(
 			new URL(
-				'http://localhost/knowledge?open_artifact=normalized-1&open_filename=Vault+brief.txt&open_mime=text%2Fplain&tab=library'
+				'http://localhost/knowledge?open_artifact=normalized-1&open_filename=Research+brief.txt&open_mime=text%2Fplain&tab=library'
 			)
 		);
 

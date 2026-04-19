@@ -9,8 +9,6 @@ const mockUploadedDocument = {
 	mimeType: 'application/pdf',
 	sizeBytes: 1024 * 1024 * 2.5,
 	createdAt: Date.now() - 86400000,
-	vaultId: 'vault-1',
-	vaultName: 'Research',
 };
 
 const mockGeneratedDocument = {
@@ -33,8 +31,6 @@ const mockDocuments = [
 		mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		sizeBytes: 1024 * 1024,
 		createdAt: Date.now() - 259200000,
-		vaultId: 'vault-2',
-		vaultName: 'Ops',
 	},
 	{
 		id: 'doc-4',

@@ -1,6 +1,6 @@
 # Working Documents Architecture
 
-This document defines the concrete upgrade path from the current mix of chat-generated files, chat attachments, vault artifacts, and preview modals into one coherent **working documents** system.
+This document defines the concrete upgrade path from the current mix of chat-generated files, chat attachments, knowledge artifacts, and preview modals into one coherent **working documents** system.
 
 It is grounded in the current codebase, not a greenfield rewrite.
 
@@ -9,9 +9,9 @@ For the execution order, file ownership, migrations, and verification gates, see
 ## Goals
 
 1. A user should be able to iteratively work on an AI-generated or user-uploaded document while still seeing the rest of the chat.
-2. The AI should remember working documents even when they were never manually saved to a vault.
+2. The AI should remember working documents created in chat.
 3. The AI should be able to distinguish multiple documents, versions, and refinements across chats.
-4. Vault save should remain a human organization action, not the switch that decides whether the AI remembers a document.
+4. Document continuity should be artifact-backed, not tied to any manual organization action.
 5. The implementation must consolidate existing systems rather than creating a second preview, memory, or persistence path.
 
 ## Current Foundation
@@ -38,7 +38,7 @@ Documents can originate from:
 
 - AI-generated chat output
 - uploaded attachment
-- imported or uploaded vault file
+- imported or uploaded library file
 
 Documents can exist in states such as:
 
@@ -53,7 +53,7 @@ Documents can have:
 - chat references
 - AI-visible summary/content memory
 
-The vault remains an organization layer over documents, not a separate product concept.
+The library remains a document surface, not a separate persistence concept.
 
 ## Technical Model
 
@@ -95,7 +95,7 @@ Current first implementation slice:
 - generated chat files open into the workspace
 - the workspace reuses the existing `FilePreview` renderer in embedded mode
 
-Later slices should open vault documents and uploaded attachments through the same workspace path.
+Later slices should open library documents and uploaded attachments through the same workspace path.
 
 ### 3. One Preview System
 
@@ -111,7 +111,7 @@ This component now supports two shells:
 Do not introduce:
 
 - a second chat-only document viewer
-- a second vault-only viewer
+- a second library-only viewer
 - a second generated-file viewer
 
 ### 4. Document Identity And Versioning
@@ -203,7 +203,7 @@ Outcome:
 - user can keep chat visible while reviewing a generated document on desktop
 - mobile already follows the same concept via a full-screen workspace layer
 
-### Phase 2: Fold Attachments And Vault Docs Into The Same Workspace
+### Phase 2: Fold Attachments And Library Docs Into The Same Workspace
 
 Goal:
 
@@ -214,7 +214,7 @@ Deliverables:
 - route-level document-opening helpers for:
   - generated files
   - chat attachments
-  - vault documents
+  - library documents
 - replace attachment-only modal openings with workspace openings across chat, knowledge, and search surfaces
 
 Outcome:
@@ -280,7 +280,7 @@ These rules are mandatory for future implementation:
 - No second preview stack
 - No second persistence model for working documents outside the artifact backbone unless the family/version layer proves necessary
 - No second AI-memory subsystem parallel to artifacts + Honcho
-- No vault-only document behavior that bypasses the workspace
+- No library-only document behavior that bypasses the workspace
 - No desktop-only concept that changes the product model on mobile
 
 ## Current Implementation Status
@@ -293,7 +293,7 @@ Implemented now:
 
 Not implemented yet:
 
-- workspace opening for attachments and vault docs
+- workspace opening for attachments and library docs
 - durable family/version identity beyond current generated-output metadata
 - document reference resolver
 - version timeline / compare mode

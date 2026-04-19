@@ -155,7 +155,6 @@
 			artifactId: file.artifactId ?? null,
 			conversationId: file.conversationId,
 			downloadUrl: `/api/chat/files/${file.id}/download`,
-			savedVaultName: file.savedVaultName ?? null,
 		}))
 	);
 

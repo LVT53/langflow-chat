@@ -24,7 +24,6 @@ function makeArtifact(params: {
     mimeType: "application/pdf",
     sizeBytes: 1024,
     conversationId: params.conversationId ?? null,
-    vaultId: null,
     summary: params.summary ?? null,
     createdAt: params.updatedAt ?? 1,
     updatedAt: params.updatedAt ?? 1,

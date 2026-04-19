@@ -387,7 +387,6 @@ async function backfillGeneratedOutputRetrievalClasses(
 		id: string;
 		userId: string;
 		conversationId: string | null;
-		vaultId: string | null;
 		type: string;
 		retrievalClass: string | null;
 		name: string;
@@ -414,7 +413,6 @@ async function backfillGeneratedOutputRetrievalClasses(
 		id: row.id,
 		userId: row.userId,
 		conversationId: row.conversationId ?? null,
-		vaultId: row.vaultId ?? null,
 		type: row.type as Artifact['type'],
 		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
 		name: row.name,
@@ -486,7 +484,6 @@ async function backfillGeneratedOutputFamilyStatuses(
 		id: string;
 		userId: string;
 		conversationId: string | null;
-		vaultId: string | null;
 		type: string;
 		retrievalClass: string | null;
 		name: string;
@@ -516,7 +513,6 @@ async function backfillGeneratedOutputFamilyStatuses(
 		id: row.id,
 		userId: row.userId,
 		conversationId: row.conversationId ?? null,
-		vaultId: row.vaultId ?? null,
 		type: row.type as Artifact['type'],
 		retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
 		name: row.name,
@@ -577,7 +573,6 @@ export async function repairGeneratedOutputRetrievalClasses(
 		id: string;
 		userId: string;
 		conversationId: string | null;
-		vaultId: string | null;
 		type: string;
 		retrievalClass: string | null;
 		name: string;
@@ -602,7 +597,6 @@ export async function repairGeneratedOutputFamilyStatuses(
 		id: string;
 		userId: string;
 		conversationId: string | null;
-		vaultId: string | null;
 		type: string;
 		retrievalClass: string | null;
 		name: string;
@@ -667,7 +661,6 @@ export async function classifyGeneratedOutputArtifact(params: {
 			id: row.id,
 			userId: row.userId,
 			conversationId: row.conversationId ?? null,
-			vaultId: row.vaultId ?? null,
 			type: row.type as Artifact['type'],
 			retrievalClass: (row.retrievalClass ?? 'durable') as ArtifactRetrievalClass,
 			name: row.name,

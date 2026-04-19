@@ -44,7 +44,7 @@ Do not invert that order. TEI should improve candidate quality, not become a sec
 ### Wave 2: Embedding Persistence
 
 - Add durable embedding storage for:
-  - knowledge/vault/generated artifacts
+  - knowledge/generated artifacts
   - persona-memory clusters
   - task continuity/task-state rows
 - Persist source-text hashes so re-embedding stays idempotent

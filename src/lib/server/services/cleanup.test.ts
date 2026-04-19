@@ -105,7 +105,6 @@ vi.mock('$lib/server/db/schema', () => ({
 	conversationTaskStates: { userId: { name: 'userId' } },
 	conversationWorkingSetItems: { userId: { name: 'userId' } },
 	chatGeneratedFiles: { userId: { name: 'userId' } },
-	knowledgeVaults: { userId: { name: 'userId' } },
 	memoryEvents: { userId: { name: 'userId' } },
 	memoryProjectTaskLinks: { userId: { name: 'userId' } },
 	memoryProjects: { userId: { name: 'userId' } },

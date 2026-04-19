@@ -98,8 +98,8 @@ Do not:
   - Route-local `_components/` and `*_helpers.ts` files are acceptable for chat render scaffolding and pure page-only transforms, but stream/evidence/draft orchestration should stay in the page.
 - [`src/routes/(app)/knowledge/+page.svelte`](./src/routes/(app)/knowledge/+page.svelte)
   - Large page-specific knowledge UI with a single primary content column.
-  - Main content: Vault Explorer plus Library and Memory Profile tabs.
-  - Vault scope selection, drag/drop uploads, and vault CRUD surface inside the main library panel instead of a separate sidebar rail.
+  - Main content: Library and Memory Profile tabs.
+  - Upload, search, and document-management behavior lives inside the main library panel.
   - Also owns the knowledge-side working-document workspace shell and cross-route workspace handoff from global search.
   - It may contain page-local fetches for page-only actions, but shared browser API logic should still move to `src/lib/client/api/` if reused.
 - [`src/routes/(app)/settings/+page.svelte`](./src/routes/(app)/settings/+page.svelte)
@@ -137,7 +137,7 @@ Do not:
   - [`src/lib/server/services/title-generator.ts`](./src/lib/server/services/title-generator.ts)
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)
   - [`src/lib/server/services/message-evidence.ts`](./src/lib/server/services/message-evidence.ts)
-  - Owns evidence channel types including 'vault' for vault-sourced artifacts
+  - Owns evidence channel types for document-backed artifacts
 - Chat-generated files:
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
   - [`src/routes/api/chat/files/[id]/download/+server.ts`](./src/routes/api/chat/files/[id]/download/+server.ts)
@@ -145,7 +145,6 @@ Do not:
 - [`src/routes/api/chat/files/[id]/preview/+server.ts`](./src/routes/api/chat/files/[id]/preview/+server.ts)
 - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
 - [`src/lib/components/chat/DocumentWorkspace.svelte`](./src/lib/components/chat/DocumentWorkspace.svelte)
-- [`src/lib/components/chat/VaultPickerModal.svelte`](./src/lib/components/chat/VaultPickerModal.svelte)
 - Generated files refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
   - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
@@ -167,19 +166,18 @@ Do:
 - treat `<preserve>...</preserve>` as translation-preserved display content, not a signal to wrap prose in fenced code
 - use `GeneratedFile.svelte` for rendering AI-generated files in chat
 - use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
-- use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, vault/library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
+- use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
 - keep the shared rich-preview stack lazy-loaded from `DocumentWorkspace.svelte`, `GeneratedFile.svelte`, and `knowledge/FilePreview.svelte`; do not static-import the heavy preview path back into the idle chat or knowledge shell
 - use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
-- use `VaultPickerModal.svelte` for saving generated files to vaults
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
 - `/api/chat/files/generate` may authenticate with either the signed-in session or a signed service assertion validated with `ALFYAI_API_SIGNING_KEY`; keep that service path conversation-scoped and internal
-- keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, generated files show up in chat, and vault saving is still a separate UI action unless a dedicated tool is added
+- keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, and generated files show up in chat
 - keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
 - keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
 - keep the Langflow custom file-generator component's source input named `source_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
 - keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, `.pptx` via `pptxgenjs`, `.docx` via `docx`, and `.odt` via `jszip` packaging
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
-- vault save is an organization action, not the switch that determines whether the AI remembers a generated document. Working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
+- working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
 - working-document continuity should prefer the shared resolver’s “current generated document” signal over generic latest-output heuristics. If a generated document is selected because of active focus or a query match, do not layer a second recency-only boost on top.
 - keep document-selection observability compact and authority-scoped. Extend the `[CONTEXT] Working document selection` summary in `knowledge/context.ts` instead of reintroducing noisy per-artifact debug logs across routes.
 
@@ -222,19 +220,15 @@ Responsibility split:
   - artifact mapping and shared selection helpers
 - `store/attachments.ts`
   - attachment readiness
-  - upload to vault (with vaultId parameter)
+  - uploaded attachment persistence
   - auto-rename on file name conflicts
   - attachment linking and listing
-- `store/vaults.ts`
-  - vault CRUD operations
-  - vault ownership validation
-  - cascading delete with file cleanup
 - `store/documents.ts`
   - normalized-document creation
   - logical document listing
   - artifact query matching
-  - vault-document search result mapping
-- generated chat files, uploaded attachments, and vault documents should converge on one working-document model built on the existing artifact backbone; do not create a parallel document persistence subsystem
+  - document search result mapping
+- generated chat files and uploaded attachments should converge on one working-document model built on the existing artifact backbone; do not create a parallel document persistence subsystem
 - `store/cleanup.ts`
   - artifact deletion
   - cross-conversation reference checks
@@ -266,22 +260,8 @@ Do not:
 - place large retrieval heuristics in route files
 - add a second parallel artifact service outside the `knowledge` boundary
 
-### Knowledge Vaults
+### Knowledge Library
 
-- Vault store:
-  - [`src/lib/server/services/knowledge/store/vaults.ts`](./src/lib/server/services/knowledge/store/vaults.ts)
-- Vault API:
-  - [`src/routes/api/knowledge/vaults/+server.ts`](./src/routes/api/knowledge/vaults/+server.ts)
-  - [`src/routes/api/knowledge/vaults/[id]/+server.ts`](./src/routes/api/knowledge/vaults/[id]/+server.ts)
-- Vault UI:
-  - [`src/routes/(app)/knowledge/_components/CreateVaultModal.svelte`](./src/routes/(app)/knowledge/_components/CreateVaultModal.svelte)
-  - [`src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte`](./src/routes/(app)/knowledge/_components/DeleteVaultDialog.svelte)
-  - [`src/routes/(app)/knowledge/_components/VaultFileUpload.svelte`](./src/routes/(app)/knowledge/_components/VaultFileUpload.svelte)
-  - [`src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte`](./src/routes/(app)/knowledge/_components/KnowledgeLibraryView.svelte) — main-panel vault explorer
-- Vault client API:
-  - [`src/lib/client/api/knowledge.ts`](./src/lib/client/api/knowledge.ts) — `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `searchVaultFiles`
-- Vault search API:
-  - [`src/routes/api/knowledge/search/+server.ts`](./src/routes/api/knowledge/search/+server.ts)
 - Import handler:
   - [`src/lib/server/services/knowledge/import.ts`](./src/lib/server/services/knowledge/import.ts)
   - [`src/routes/api/knowledge/import/+server.ts`](./src/routes/api/knowledge/import/+server.ts)
@@ -290,25 +270,19 @@ Do not:
 
 Rules:
 
-- Vaults are single-level folders only - no nested folder support
-- Each vault belongs to a single user - no collaboration/sharing
-- Direct vault uploads through `/api/knowledge/upload` may omit `conversationId`; when present, the route must validate that the conversation belongs to the user before any artifact insert or link write
+- Direct library uploads through `/api/knowledge/upload` may omit `conversationId`; when present, the route must validate that the conversation belongs to the user before any artifact insert or link write
 - File versioning is NOT supported - single version per file
 - Auto-rename on name conflicts (counter suffix) - no overwrite
-- Delete vault = delete all files inside (cascading delete)
 - Import from Obsidian/Notion flattens hierarchy, stores original path in metadata
 - File preview uses client-side libraries (PDF.js, Mammoth.js, SheetJS, PPTXjs) - no external services
 - Storage quota is display-only - no enforcement
-- Global shell search surfaces vault-file hits through `/api/knowledge/search`, and vault-file clicks should hand off into the knowledge-page working-document workspace instead of opening a separate modal path
-- `KnowledgeLibraryView.svelte` is the vault surface: keep vault scope selection, vault CRUD affordances, drag/drop upload targeting, and local vault-file search there instead of reintroducing a separate rail
+- Global shell search surfaces document hits through `/api/knowledge/search`, and document clicks should hand off into the knowledge-page working-document workspace instead of opening a separate modal path
 
 Do not:
 
-- add nested folder support (parentId on vaults)
-- add vault collaboration/sharing features
 - add file versioning/history
 - add in-app file editing
-- allow AI to edit existing vault files (AI generates NEW files only)
+- allow AI to edit existing library files (AI generates NEW files only)
 - add batch operations in v1
 - add file deduplication (allow duplicates with auto-rename)
 - use external hosted services for file preview
@@ -360,7 +334,7 @@ Rules:
 - `getKnowledgeMemory` and other knowledge-memory reads should use the latest stored persona clusters immediately and treat Honcho overview generation as auxiliary. Do not block the entire Memory Profile on cluster refresh or a live `peer.chat(...)` summary.
 - `memory.ts` owns Memory Profile overview source selection, cached Honcho overview reuse, and overview refresh backoff. Prefer a live Honcho overview only when enough local durable persona memory exists to justify an overview at all, then a matching cached Honcho overview, then a local durable-persona summary before showing an empty-state message.
 - `memory.ts` must apply local temporal truth before trusting Honcho overview text. Expired short-term constraints and other historical temporal memories should not re-enter the Memory Profile just because Honcho returned stale summary prose.
-- Artifact retrieval and cleanup should treat linked conversation/vault ownership as stronger authority than `artifacts.userId` alone. Conversation-scoped working artifacts such as `generated_output` and `work_capsule` are not valid retrieval candidates once their conversation link is gone, even if a stale row survives in SQLite.
+- Artifact retrieval and cleanup should treat linked conversation ownership as stronger authority than `artifacts.userId` alone. Conversation-scoped working artifacts such as `generated_output` and `work_capsule` are not valid retrieval candidates once their conversation link is gone, even if a stale row survives in SQLite.
 - `memory-events.ts` owns the persisted normalized event log for important state changes such as deadlines, preference updates, persona fact replacement, project continuity transitions, and document supersession. Add new event types there and emit them from the existing state-change boundaries; do not create ad hoc side logs or route-local event tables.
 - `task-state/continuity.ts` now also consumes the latest task-domain project events on the read path. If a newer `project_paused` or `project_resumed` event exists, continuity summaries should prefer that signal over an older still-active row.
 - User-selected task evidence preferences should stay family-aware for working documents. If a user pins or excludes one version inside a document family, clear contradictory user preference links for sibling versions in that same family instead of letting multiple versions stay preferred at once.
@@ -528,8 +502,7 @@ Rules:
 - `src/lib/client/api/auth.ts` owns reusable browser auth calls such as login and logout.
 - `src/lib/client/api/conversations.ts` owns reusable browser conversation-detail, evidence, title, and steering calls.
 - `src/lib/client/api/conversations.ts` also owns browser-side draft persistence and prepared-conversation deletion transport used by `conversation-session.ts`.
-- `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, memory, and vault browser calls.
-- `src/lib/client/api/knowledge.ts` provides `fetchVaults`, `createVault`, `renameVault`, `deleteVault`, `searchVaultFiles` for vault management and search.
+- `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, memory, and document-search browser calls.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
 - `src/lib/client/api/settings.ts` also owns admin-side user list/create/promote/demote/delete/revoke-session browser calls.
@@ -627,8 +600,6 @@ Do not:
   - `src/lib/server/services/user-admin.ts`
 - New knowledge artifact or context behavior:
   - `src/lib/server/services/knowledge/`
-- New vault behavior:
-  - `src/lib/server/services/knowledge/store/vaults.ts`
 - New chat-generated file behavior:
   - `src/lib/server/services/chat-files.ts`
   - `src/lib/server/services/sandbox-execution.ts`

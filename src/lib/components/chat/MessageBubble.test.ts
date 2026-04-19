@@ -22,7 +22,6 @@ describe('MessageBubble', () => {
 					mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 					sizeBytes: 1024,
 					conversationId: 'conv-1',
-					vaultId: null,
 					summary: null,
 					createdAt: timestamp,
 					updatedAt: timestamp,

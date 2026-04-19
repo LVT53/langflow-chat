@@ -716,7 +716,6 @@ async function listPersonaDocumentMemoryCandidates(
 			id: artifacts.id,
 			userId: artifacts.userId,
 			conversationId: artifacts.conversationId,
-			vaultId: artifacts.vaultId,
 			type: artifacts.type,
 			name: artifacts.name,
 			summary: artifacts.summary,

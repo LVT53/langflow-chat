@@ -56,7 +56,6 @@ export const artifacts = sqliteTable('artifacts', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
-  vaultId: text('vault_id'), // Historical column, no FK constraint (vaults deprecated)
   type: text('type').notNull(),
   retrievalClass: text('retrieval_class').notNull().default('durable'),
   name: text('name').notNull(),
@@ -73,7 +72,6 @@ export const artifacts = sqliteTable('artifacts', {
 }, (table) => ({
   userBinaryHashIdx: index('artifacts_user_binary_hash_idx').on(table.userId, table.binaryHash),
   userSizeIdx: index('artifacts_user_size_idx').on(table.userId, table.sizeBytes),
-  vaultIdx: index('artifacts_vault_idx').on(table.vaultId),
 }));
 
 export const artifactChunks = sqliteTable('artifact_chunks', {

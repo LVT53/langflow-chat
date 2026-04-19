@@ -13,7 +13,6 @@ store.ts (facade — re-exports store/*)
   ├── store/core.ts         ← artifact CRUD, WORKING_SET_*_BUDGET constants
   ├── store/attachments.ts  ← upload → extract → dedupe → link
   ├── store/documents.ts    ← normalized docs, semantic retrieval (Wave 5)
-  ├── store/vaults.ts       ← vault CRUD
   ├── store/cleanup.ts      ← cross-reference-aware deletion
   └── store/document-metadata.ts ← generated-document family metadata
 context.ts                ← working-set ranking, compaction, active-state integration
@@ -27,8 +26,7 @@ import.ts                 ← Obsidian/Notion ZIP import handler
 |------|------|
 | Create artifact + chunks | `store/core.ts` `createArtifact()` |
 | Upload + readiness | `store/attachments.ts` `saveUploadedArtifact()` |
-| Semantic document search | `store/documents.ts` `searchVaultDocuments()` |
-| Vault CRUD | `store/vaults.ts` |
+| Semantic document search | `store/documents.ts` |
 | Delete with ref checks | `store/cleanup.ts` `deleteArtifactForUser()` |
 | Working-set ranking | `context.ts` `selectWorkingSetArtifactsForPrompt()` |
 | Compaction status | `context.ts` `refreshConversationContextStatus()` |
@@ -39,7 +37,7 @@ import.ts                 ← Obsidian/Notion ZIP import handler
 
 - **Token budgets**: `WORKING_SET_DOCUMENT_TOKEN_BUDGET` (4k), `WORKING_SET_OUTPUT_TOKEN_BUDGET` (2k), `WORKING_SET_PROMPT_TOKEN_BUDGET` (20k) live in `store/core.ts`
 - **Semantic retrieval**: `store/documents.ts` composes lexical fetch + embedding shortlist + TEI rerank; keeps deterministic filters above TEI scores
-- **Vault uploads**: `conversationId` may be null; skip `attached_to_conversation` link when null
+- **Library uploads**: `conversationId` may be null; skip `attached_to_conversation` link when null
 - **Document families**: metadata-driven via `store/document-metadata.ts`; `document-resolution.ts` is authority for "which version is current"
 - **Capsules**: workflow summaries only; document lineage lives in artifact metadata + links
 - **Observability**: `[CONTEXT] Working document selection` summary in `context.ts`; extend it rather than per-candidate logs
@@ -47,7 +45,7 @@ import.ts                 ← Obsidian/Notion ZIP import handler
 ## Anti-Patterns
 
 - Do NOT create a second artifact persistence path outside `store/core.ts`
-- Do NOT duplicate vault search ranking in routes; use `searchVaultDocuments()`
+- Do NOT duplicate document search ranking in routes; use the shared document search service
 - Do NOT make capsules the authority for document lineage
 - Do NOT route TEI reranking through control-model chat completions
 - Do NOT add per-candidate debug logs; keep retrieval observability summary-level

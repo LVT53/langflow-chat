@@ -16,7 +16,7 @@ Routes are thin adapters. Page routes render UI; API routes expose endpoints. Du
   chat/[conversationId]/
     +page.svelte       # Chat detail (stream lifecycle, draft restore)
   knowledge/
-    +page.svelte       # Knowledge base (library, memory, vaults)
+    +page.svelte       # Knowledge base (library, memory)
     _components/       # Page-local UI components
     _helpers.ts        # Page-only helpers
   settings/
@@ -25,7 +25,7 @@ Routes are thin adapters. Page routes render UI; API routes expose endpoints. Du
 api/                   # API endpoints
   chat/                # Send, stream, retry, stop, file generation
   conversations/       # CRUD, title, draft, messages, evidence
-  knowledge/           # Upload, search, vaults, documents, memory
+  knowledge/           # Upload, search, documents, memory
   admin/               # Config, users, sessions, memory-maintenance
   settings/            # Account, profile, password, avatar
 
@@ -43,7 +43,6 @@ logout/                # Logout page
 | `api/chat/send/+server.ts` | Non-streaming chat endpoint |
 | `api/chat/stream/+server.ts` | SSE streaming endpoint |
 | `api/knowledge/upload/+server.ts` | File upload handler |
-| `api/knowledge/vaults/+server.ts` | Vault CRUD |
 | `api/admin/config/+server.ts` | Runtime config overrides |
 
 ## Conventions

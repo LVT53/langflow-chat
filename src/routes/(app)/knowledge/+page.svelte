@@ -25,7 +25,6 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
-	import KnowledgeLibraryView from './_components/KnowledgeLibraryView.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import DocumentsList from './_components/DocumentsList.svelte';

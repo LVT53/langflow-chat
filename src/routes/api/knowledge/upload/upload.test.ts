@@ -368,7 +368,7 @@ describe('POST /api/knowledge/upload', () => {
 		expect(data.error).toMatch(/BODY_SIZE_LIMIT/i);
 	});
 
-	it('uploads without vaultId leaves vaultId null on artifact', async () => {
+	it('uploads a conversation-scoped attachment', async () => {
 		const artifact = {
 			id: 'artifact-1',
 			type: 'source_document',
