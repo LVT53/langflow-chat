@@ -1,4 +1,4 @@
-import { sanitizeHtml } from '$lib/utils/html-sanitizer';
+import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 
 type MarkedModule = typeof import('marked');
 type Highlighter = Awaited<
@@ -176,7 +176,7 @@ async function renderMarkdown(content: string, isDark: boolean): Promise<string>
 }
 
 function renderCodeBlock(content: string, language: string | undefined, isDark: boolean): string {
-  const escapedContent = escapeHtml(content);
+  const escapedContent = escapeHtml(content, { apostropheEntity: '&#039;' });
 
   if (!highlighter || !language?.trim()) {
     return sanitizeHtml(`<pre><code>${escapedContent}</code></pre>`);
@@ -213,19 +213,6 @@ function createMarkdownRenderer(isDark: boolean) {
   renderer.code = ({ text, lang = '' }) => renderCodeBlock(text, lang, isDark);
 
   return renderer;
-}
-
-// Helper function to escape HTML
-function escapeHtml(text: string): string {
-  const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  };
-  
-  return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 export {

@@ -16,7 +16,7 @@
 	import { browser } from '$app/environment';
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
-	import { sanitizeHtml } from '$lib/utils/html-sanitizer';
+	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 	import {
 		buildChatSourceMessageHref,
 		clearKnowledgeWorkspaceParams,
@@ -394,15 +394,6 @@
 				? `Failed to upload ${files.length} file${files.length === 1 ? '' : 's'}.`
 				: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload.`;
 		}
-	}
-
-	function escapeHtml(value: string): string {
-		return value
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
 	}
 
 	async function renderHonchoOverview(source: string, isDarkMode: boolean) {

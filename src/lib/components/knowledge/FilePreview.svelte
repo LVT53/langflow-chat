@@ -5,7 +5,7 @@
 		getPreviewLanguage,
 		type PreviewFileType,
 	} from '$lib/utils/file-preview';
-	import { sanitizeHtml } from '$lib/utils/html-sanitizer';
+	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 
 	type MarkdownModule = typeof import('$lib/services/markdown');
 
@@ -562,15 +562,6 @@
 		} catch (err) {
 			error = 'Failed to render PPTX file';
 		}
-	}
-
-	function escapeHtml(value: string): string {
-		return value
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
 	}
 
 	function renderOdtTextNode(node: Node): string {
