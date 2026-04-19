@@ -47,3 +47,4 @@ data/knowledge/
 # Python
 __pycache__/
 *.pyc
+\n# Ignored artifacts\ndev.log\noutput.css\ntoken.txt\ndata/chat.db*\ntests/e2e/.last-run.json\n
