@@ -289,6 +289,16 @@
 		openWorkspaceDocument(toWorkspaceDocument(document));
 	}
 
+	function addDeletingArtifact(id: string) {
+		deletingArtifactIds = new Set([...deletingArtifactIds, id]);
+	}
+
+	function removeDeletingArtifact(id: string) {
+		const next = new Set(deletingArtifactIds);
+		next.delete(id);
+		deletingArtifactIds = next;
+	}
+
 	function handleDocumentDownload(documentId: string) {
 		// Find the document to get the artifact ID
 		const document = documents.find(d => d.id === documentId);
@@ -305,8 +315,7 @@
 	async function handleDocumentDelete(documentId: string) {
 		const document = documents.find(d => d.id === documentId);
 		if (!document) return;
-		
-		// Open confirmation modal (preview stays open until deletion succeeds)
+
 		await removeArtifact(documentId, document.name);
 	}
 
@@ -325,9 +334,9 @@
 		for (const documentId of documentIds) {
 			const document = documents.find(d => d.id === documentId);
 			if (!document) continue;
-			
-			deletingArtifactIds = new Set([...deletingArtifactIds, documentId]);
-			
+
+			addDeletingArtifact(documentId);
+
 			try {
 				const payload = await deleteKnowledgeArtifact(documentId);
 				if (payload.success === false) {
@@ -336,9 +345,7 @@
 			} catch (error) {
 				failures.push(document.name);
 			} finally {
-				const next = new Set(deletingArtifactIds);
-				next.delete(documentId);
-				deletingArtifactIds = next;
+				removeDeletingArtifact(documentId);
 			}
 		}
 
@@ -851,7 +858,8 @@
 		if (isDeletingArtifact(id)) return;
 
 		manageError = '';
-		deletingArtifactIds = new Set([...deletingArtifactIds, id]);
+		const deletedDocument = documents.find((document) => document.id === id) ?? null;
+		addDeletingArtifact(id);
 
 		try {
 			const payload = await deleteKnowledgeArtifact(id);
@@ -859,13 +867,13 @@
 				throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
 			}
 			await refreshKnowledgeLibrary();
-			closeWorkspaceDocument(toWorkspaceDocument(document).id);
+			if (deletedDocument) {
+				closeWorkspaceDocument(toWorkspaceDocument(deletedDocument).id);
+			}
 		} catch (error) {
 			manageError = error instanceof Error ? error.message : 'Failed to remove artifact.';
 		} finally {
-			const next = new Set(deletingArtifactIds);
-			next.delete(id);
-			deletingArtifactIds = next;
+			removeDeletingArtifact(id);
 		}
 	}
 
