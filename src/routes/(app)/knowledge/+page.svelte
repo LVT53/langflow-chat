@@ -75,8 +75,6 @@
 
 	// Coordinator bridge for workspace document management
 	let workspaceCoordinator: KnowledgeWorkspaceCoordinator | undefined = $state();
-	let workspaceOpen = $state(false);
-	let activeWorkspaceDocumentId = $state<string | null>(null);
 
 	let pendingMemoryActionKey = $state<string | null>(null);
 	let pendingKnowledgeActionKey = $state<string | null>(null);
@@ -115,7 +113,6 @@
 	let liveOverviewPollAttempts = $state(0);
 	let memoryTabVisible = $state(true);
 	let activeMemoryModal = $state<MemoryModal>(null);
-	let activeLibraryModal = $state<LibraryModal>(null);
 	let honchoOverviewHtml = $state('');
 	let selectedPersonaMemoryIds = $state<string[]>([]);
 	let personaMemoryFilter = $state<PersonaMemoryFilter>('active');
@@ -420,7 +417,6 @@
 
 	function openMemoryModal(kind: Exclude<MemoryModal, null>) {
 		resetModalSelections();
-		activeLibraryModal = null;
 		activeMemoryModal = kind;
 		if (kind === 'persona') {
 			personaMemoryFilter = getDefaultPersonaMemoryFilter(personaMemories);
@@ -434,16 +430,6 @@
 	function closeMemoryModal() {
 		activeMemoryModal = null;
 		resetModalSelections();
-	}
-
-	function openLibraryModal(kind: Exclude<LibraryModal, null>) {
-		activeMemoryModal = null;
-		resetModalSelections();
-		activeLibraryModal = kind;
-	}
-
-	function closeLibraryModal() {
-		activeLibraryModal = null;
 	}
 
 	function isMemoryActionPending(key: string): boolean {
@@ -701,7 +687,6 @@
 			}
 			if (action === 'forget_everything') {
 				activeMemoryModal = null;
-				activeLibraryModal = null;
 				resetModalSelections();
 			}
 		} catch (error) {
@@ -884,7 +869,6 @@
 		{isKnowledgeActionPending}
 		onJumpToSource={jumpToWorkspaceSource}
 		onRunKnowledgeAction={() => void runLibraryBulkAction('documents')}
-		onOpenLibraryModal={() => { activeLibraryModal = 'documents'; }}
 	/>
 </div>
 
