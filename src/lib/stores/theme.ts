@@ -1,5 +1,6 @@
 import { writable, get, derived } from 'svelte/store';
 import { updateUserPreferences } from '$lib/client/api/settings';
+import { canUseStorage, persist } from './_local-storage';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -35,7 +36,7 @@ export function initTheme(serverTheme?: Theme) {
 
 	theme.set(initialTheme);
 	applyTheme(initialTheme);
-	localStorage.setItem('theme', initialTheme);
+	persist('theme', initialTheme);
 
 	window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 		if (get(theme) === 'system') {
@@ -46,7 +47,7 @@ export function initTheme(serverTheme?: Theme) {
 
 export function setTheme(t: Theme) {
 	theme.set(t);
-	localStorage.setItem('theme', t);
+	persist('theme', t);
 	applyTheme(t);
 }
 

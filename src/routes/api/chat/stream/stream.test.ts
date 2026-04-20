@@ -160,6 +160,7 @@ function buildSseStream(lines: string[]): {
 	contextDebug: null;
 	honchoContext: null;
 	honchoSnapshot: null;
+	[Symbol.asyncIterator]: () => AsyncIterator<Uint8Array>;
 } {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
@@ -177,6 +178,9 @@ function buildSseStream(lines: string[]): {
 		contextDebug: null,
 		honchoContext: null,
 		honchoSnapshot: null,
+		[Symbol.asyncIterator]() {
+			return stream[Symbol.asyncIterator]();
+		},
 	};
 }
 
@@ -1009,3 +1013,4 @@ describe('POST /api/chat/stream', () => {
 		expect(data.error).toMatch(/conversationId/i);
 	});
 });
+

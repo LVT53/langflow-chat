@@ -7,6 +7,7 @@ import type {
 	WorkCapsule,
 } from '$lib/types';
 import { requestJson, requestVoid } from './http';
+import { _unwrapList } from './_utils';
 
 export type KnowledgeLibrary = {
 	documents: KnowledgeDocumentItem[];
@@ -49,9 +50,9 @@ export async function fetchKnowledgeLibrary(): Promise<KnowledgeLibrary> {
 	);
 
 	return {
-		documents: Array.isArray(payload.documents) ? payload.documents : [],
-		results: Array.isArray(payload.results) ? payload.results : [],
-		workflows: Array.isArray(payload.workflows) ? payload.workflows : [],
+		documents: _unwrapList<KnowledgeDocumentItem>(payload, 'documents'),
+		results: _unwrapList<ArtifactSummary>(payload, 'results'),
+		workflows: _unwrapList<WorkCapsule>(payload, 'workflows'),
 	};
 }
 

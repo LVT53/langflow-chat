@@ -45,6 +45,33 @@ import {
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { scoreMatch } from './working-set';
 import type { HonchoPersonaMemoryRecord } from './honcho';
+// Classification helpers (extracted to sub-module)
+import {
+    getPersonaMemoryDomain,
+    hasShortTermConstraintCue,
+    hasActiveProjectCue,
+    classifyMemoryTextDeterministically,
+    normalizeDreamMemoryClass,
+} from './persona-memory/classification';
+
+// Re-export extracted helpers for backward compatibility and test access
+export {
+    getPersonaMemoryDomain,
+    hasShortTermConstraintCue,
+    hasActiveProjectCue,
+    classifyMemoryTextDeterministically,
+    normalizeDreamMemoryClass,
+} from './persona-memory/classification';
+
+// Temporal helpers (extracted to sub-module)
+import {
+    deriveTemporalMetadata,
+    deriveTopicStatus,
+    getTemporalFreshness,
+    hasResolvedTemporalCue,
+    resolveRelativeExpiryFromText,
+} from './persona-memory/temporal';
+
 
 const DAY_MS = 86_400_000;
 const DREAM_MIN_CHANGES = 10;
@@ -343,18 +370,7 @@ function stripTrailingPeriod(value: string): string {
 	return normalizeWhitespace(value).replace(/[.]+$/, '');
 }
 
-function getPersonaMemoryDomain(memoryClass: PersonaMemoryClass): PersonaMemoryDomain {
-	if (memoryClass === 'stable_preference') return 'preference';
-	if (
-		memoryClass === 'short_term_constraint' ||
-		memoryClass === 'active_project_context' ||
-		memoryClass === 'situational_context' ||
-		memoryClass === 'perishable_fact'
-	) {
-		return 'temporal';
-	}
-	return 'persona';
-}
+
 
 function canonicalizePreferenceValue(
 	value: string,
@@ -946,153 +962,20 @@ function deriveTopicKey(text: string): string | null {
 	return fallback || null;
 }
 
-function hasShortTermConstraintCue(text: string): boolean {
-	const normalized = normalizeMemoryText(text);
-	return (
-		/\b(deadline|due|time[- ]constrained|only have|time pressure|urgent|due date|must finish|need to finish|need to submit|submission)\b/.test(
-			normalized
-		) ||
-		(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|couple)(?:\s+more)?\s+(hours?|days?|weeks?|months?)\b/.test(
-			normalized
-		) &&
-			/\b(in|within|left|remaining|have|got|more|another)\b/.test(normalized))
-	);
-}
 
-function hasActiveProjectCue(text: string): boolean {
-	const normalized = normalizeMemoryText(text);
-	return /\b(currently|right now|working on|building|preparing|writing|drafting|applying|shipping|finishing|completing)\b/.test(
-		normalized
-	);
-}
 
-function hasResolvedTemporalCue(text: string): boolean {
-	const normalized = normalizeMemoryText(text);
-	return /\b(deadline passed|passed the deadline|finished|completed|submitted|done with|wrapped up|no longer|not time[- ]constrained anymore|got an extension|was extended)\b/.test(
-		normalized
-	);
-}
 
-function resolveRelativeExpiryFromText(text: string, referenceTime: number): {
-	expiresAt: number | null;
-	relative: boolean;
-} {
-	const normalized = normalizeMemoryText(text);
-	const durationMatch = normalized.match(
-		/\b(?:in|within|for|next|only have|have|got|another)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple)(?:\s+more)?\s+(hours?|days?|weeks?|months?)\b/
-	);
-	if (durationMatch) {
-		const amount = parseNumberToken(durationMatch[1]);
-		if (amount) {
-			return {
-				expiresAt: addDurationMs(referenceTime, amount, durationMatch[2]),
-				relative: true,
-			};
-		}
-	}
 
-	const remainingMatch = normalized.match(
-		/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|couple)\s+(hours?|days?|weeks?|months?)\s+(?:left|remaining)\b/
-	);
-	if (remainingMatch) {
-		const amount = parseNumberToken(remainingMatch[1]);
-		if (amount) {
-			return {
-				expiresAt: addDurationMs(referenceTime, amount, remainingMatch[2]),
-				relative: true,
-			};
-		}
-	}
 
-	if (/\btoday|tonight\b/.test(normalized)) {
-		return { expiresAt: referenceTime + DAY_MS, relative: true };
-	}
-	if (/\btomorrow\b/.test(normalized)) {
-		return { expiresAt: referenceTime + 2 * DAY_MS, relative: true };
-	}
-	if (/\bthis week\b/.test(normalized)) {
-		return { expiresAt: referenceTime + 7 * DAY_MS, relative: true };
-	}
-	if (/\bnext week\b/.test(normalized)) {
-		return { expiresAt: referenceTime + 14 * DAY_MS, relative: true };
-	}
 
-	return { expiresAt: null, relative: false };
-}
-
-function getTemporalFreshness(params: {
-	expiresAt: number | null;
-	resolved: boolean;
-	now?: number;
-}): PersonaMemoryTemporalFreshness {
-	const now = params.now ?? Date.now();
-	if (params.resolved) return 'historical';
-	if (!params.expiresAt) return 'unknown';
-	if (now >= params.expiresAt) return 'expired';
-	if (params.expiresAt - now <= 2 * DAY_MS) return 'stale';
-	return 'active';
-}
 
 function buildHistoricalTemporalText(text: string, observedAt: number): string {
 	return `As of ${formatIsoDate(observedAt)}, ${stripTrailingPunctuation(text)}.`;
 }
 
-function deriveTopicStatus(params: {
-	memoryClass: PersonaMemoryClass;
-	state: PersonaMemoryState;
-	temporal: TemporalMetadata | null;
-}): PersonaMemoryTopicStatus | null {
-	if (
-		params.temporal?.freshness === 'expired' ||
-		params.temporal?.freshness === 'historical' ||
-		params.state === 'archived'
-	) {
-		return 'historical';
-	}
-	if (
-		params.memoryClass === 'short_term_constraint' ||
-		params.memoryClass === 'active_project_context' ||
-		params.memoryClass === 'situational_context'
-	) {
-		return params.state === 'dormant' ? 'dormant' : 'active';
-	}
-	return null;
-}
 
-function deriveTemporalMetadata(params: {
-	canonicalText: string;
-	records: HonchoPersonaMemoryRecord[];
-	memoryClass: PersonaMemoryClass;
-	now?: number;
-}): TemporalMetadata | null {
-	const now = params.now ?? Date.now();
-	const latestRecordAt = Math.max(...params.records.map((record) => record.createdAt));
-	const text = stripTrailingPunctuation(params.canonicalText);
-	const resolved = hasResolvedTemporalCue(text);
 
-	let kind: PersonaMemoryTemporalKind | null = null;
-	if (params.memoryClass === 'short_term_constraint') {
-		kind = 'deadline';
-	} else if (params.memoryClass === 'active_project_context' || params.memoryClass === 'situational_context') {
-		kind = 'project_window';
-	} else if (params.memoryClass === 'perishable_fact') {
-		kind = 'availability';
-	}
 
-	if (!kind) return null;
-
-	const { expiresAt, relative } = resolveRelativeExpiryFromText(text, latestRecordAt);
-	const freshness = getTemporalFreshness({ expiresAt, resolved, now });
-	return {
-		kind,
-		freshness,
-		observedAt: latestRecordAt,
-		effectiveAt: latestRecordAt,
-		expiresAt,
-		relative,
-		resolved,
-	};
-}
 
 function temporalMetadataFromRecord(
 	metadata: Record<string, unknown> | null
@@ -1164,62 +1047,9 @@ function buildInventoryCanonical(
 	return `${fingerprint.subject} had ${head}, and ${tail} available for ${fingerprint.context} on ${fingerprint.date}.`;
 }
 
-export function classifyMemoryTextDeterministically(text: string): PersonaMemoryClass {
-	const normalized = normalizeMemoryText(text);
+export 
 
-	if (
-		/\b(fridge|pantry|freezer|leftovers?|meal prep|grocery|groceries|available|today|tonight|this week|for dinner|for lunch|for breakfast|in stock|expir(?:e|es|ing))\b/.test(
-			normalized
-		) ||
-		/\b(have|has)\b.+\b(fridge|pantry|freezer|leftovers?)\b/.test(normalized)
-	) {
-		return 'perishable_fact';
-	}
 
-	if (hasShortTermConstraintCue(normalized)) {
-		return 'short_term_constraint';
-	}
-
-	if (hasActiveProjectCue(normalized)) {
-		return 'active_project_context';
-	}
-
-	if (
-		/\b(plan|planning|currently|right now|this month|this week|temporary|working on|applying|preparing)\b/.test(
-			normalized
-		)
-	) {
-		return 'situational_context';
-	}
-
-	if (
-		/\b(prefers?|preferences?|likes|dislikes|favorite|usually|communication style|tone|writing style|framework|stack|toolchain|tooling)\b/.test(
-			normalized
-		)
-	) {
-		return 'stable_preference';
-	}
-
-	if (
-		/\b(name is|i am|works as|studies|lives in|birthday|born|identity|profession|occupation)\b/.test(
-			normalized
-		)
-	) {
-		return 'identity_profile';
-	}
-
-	return 'long_term_context';
-}
-
-function normalizeDreamMemoryClass(
-	canonicalText: string,
-	memoryClass: PersonaMemoryClass
-): PersonaMemoryClass {
-	if (memoryClass !== 'situational_context') return memoryClass;
-	if (hasShortTermConstraintCue(canonicalText)) return 'short_term_constraint';
-	if (hasActiveProjectCue(canonicalText)) return 'active_project_context';
-	return memoryClass;
-}
 
 function computeSalienceScore(params: {
 	memoryClass: PersonaMemoryClass;

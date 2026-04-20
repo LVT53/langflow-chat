@@ -1,5 +1,6 @@
 import type { Project } from '$lib/types';
 import { requestJson } from './http';
+import { _unwrapList } from './_utils';
 
 export async function fetchProjects(): Promise<Project[]> {
 	const payload = await requestJson<{ projects?: Project[] }>(
@@ -7,7 +8,7 @@ export async function fetchProjects(): Promise<Project[]> {
 		undefined,
 		'Failed to load projects'
 	);
-	return Array.isArray(payload.projects) ? payload.projects : [];
+	return _unwrapList<Project>(payload, 'projects');
 }
 
 export async function createProject(name: string): Promise<Project> {

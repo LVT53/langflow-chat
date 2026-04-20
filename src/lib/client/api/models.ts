@@ -1,5 +1,6 @@
 import type { ModelId } from '$lib/types';
 import { requestJson } from './http';
+import { _unwrapList } from './_utils';
 
 export interface AvailableModel {
 	id: ModelId;
@@ -13,5 +14,5 @@ export async function fetchAvailableModels(): Promise<AvailableModel[]> {
 		'Failed to load models'
 	);
 
-	return Array.isArray(payload.models) ? payload.models : [];
+	return _unwrapList<AvailableModel>(payload, 'models');
 }

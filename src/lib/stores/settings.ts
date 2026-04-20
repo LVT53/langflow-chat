@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { updateUserPreferences } from '$lib/client/api/settings';
 import type { ModelId } from '$lib/types';
+import { canUseStorage, persist, read } from './_local-storage';
 
 export type TranslationState = 'enabled' | 'disabled';
 export type { ModelId };
@@ -11,36 +12,6 @@ export const selectedModel = writable<ModelId>('model1');
 const SELECTED_MODEL_KEY = 'selectedModel';
 const TRANSLATION_STATE_KEY = 'translationState';
 
-function canUseStorage(): boolean {
-	return typeof window !== 'undefined';
-}
-
-function persistSelectedModel(model: ModelId): void {
-	if (canUseStorage()) {
-		localStorage.setItem(SELECTED_MODEL_KEY, model);
-	}
-}
-
-function persistTranslationState(state: TranslationState): void {
-	if (canUseStorage()) {
-		localStorage.setItem(TRANSLATION_STATE_KEY, state);
-	}
-}
-
-function readStoredModel(): ModelId | null {
-	if (!canUseStorage()) return null;
-
-	const storedModel = localStorage.getItem(SELECTED_MODEL_KEY);
-	return storedModel === 'model1' || storedModel === 'model2' ? storedModel : null;
-}
-
-function readStoredTranslationState(): TranslationState | null {
-	if (!canUseStorage()) return null;
-
-	const storedTranslation = localStorage.getItem(TRANSLATION_STATE_KEY);
-	return storedTranslation === 'enabled' || storedTranslation === 'disabled' ? storedTranslation : null;
-}
-
 export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean }): void {
 	if (!canUseStorage()) {
 		return;
@@ -48,9 +19,11 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 
 	if (serverPrefs?.model) {
 		selectedModel.set(serverPrefs.model);
-		persistSelectedModel(serverPrefs.model);
+		persist(SELECTED_MODEL_KEY, serverPrefs.model);
 	} else {
-		const storedModel = readStoredModel();
+		const storedModel = read<ModelId>(SELECTED_MODEL_KEY, null as ModelId | null, (v): v is ModelId =>
+			v === 'model1' || v === 'model2'
+		);
 		if (storedModel) {
 			selectedModel.set(storedModel);
 		}
@@ -59,9 +32,11 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 	if (serverPrefs?.translationEnabled !== undefined) {
 		const state: TranslationState = serverPrefs.translationEnabled ? 'enabled' : 'disabled';
 		translationState.set(state);
-		persistTranslationState(state);
+		persist(TRANSLATION_STATE_KEY, state);
 	} else {
-		const storedTranslation = readStoredTranslationState();
+		const storedTranslation = read<TranslationState>(TRANSLATION_STATE_KEY, null as TranslationState | null, (v): v is TranslationState =>
+			v === 'enabled' || v === 'disabled'
+		);
 		if (storedTranslation) {
 			translationState.set(storedTranslation);
 		}
@@ -70,20 +45,20 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 
 export function setTranslationState(state: TranslationState): void {
 	translationState.set(state);
-	persistTranslationState(state);
+	persist(TRANSLATION_STATE_KEY, state);
 }
 
 export function toggleTranslationState(): void {
 	translationState.update((current) => {
 		const newState: TranslationState = current === 'enabled' ? 'disabled' : 'enabled';
-		persistTranslationState(newState);
+		persist(TRANSLATION_STATE_KEY, newState);
 		return newState;
 	});
 }
 
 export function setSelectedModel(model: ModelId): void {
 	selectedModel.set(model);
-	persistSelectedModel(model);
+	persist(SELECTED_MODEL_KEY, model);
 }
 
 export async function setSelectedModelAndSync(model: ModelId): Promise<void> {

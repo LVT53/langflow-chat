@@ -1,4 +1,5 @@
 
+import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { touchConversation } from "$lib/server/services/conversations";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";

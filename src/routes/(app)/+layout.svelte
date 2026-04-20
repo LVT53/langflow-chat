@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import Header from '$lib/components/layout/Header.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
-	import { currentConversationId, sidebarOpen } from '$lib/stores/ui';
+	import { currentConversationId, sidebarOpen, initUIListeners } from '$lib/stores/ui';
 	import {
 		conversations,
 		loadConversations,
@@ -105,10 +105,15 @@
 			translationEnabled: data.userTranslation,
 		});
 		initAvatar(data.user?.profilePicture ?? null);
+		const cleanupUIListeners = initUIListeners();
 
 		// Add event listeners for conversation list refresh
 		document.addEventListener('visibilitychange', handleVisibilityChange);
 		window.addEventListener('focus', handleWindowFocus);
+
+		return () => {
+			cleanupUIListeners();
+		};
 	});
 
 	onDestroy(() => {

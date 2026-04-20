@@ -28,20 +28,32 @@ export const SIDEBAR_DESKTOP_BREAKPOINT = 1024;
 const initialSidebarState = browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false;
 export const sidebarOpen = writable<boolean>(initialSidebarState);
 
-if (browser) {
-  let wasDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+/**
+ * Register the window resize listener for sidebar auto-open/close.
+ * Call this once from the app layout bootstrap (onMount).
+ * Returns a cleanup function for teardown if needed.
+ */
+export function initUIListeners(): () => void {
+	if (!browser) {
+		return () => {};
+	}
 
-  window.addEventListener('resize', () => {
-    const isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+	let wasDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
 
-    if (isDesktop) {
-      sidebarOpen.set(true);
-    } else if (wasDesktop) {
-      sidebarOpen.set(false);
-    }
+	const handler = () => {
+		const isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
 
-    wasDesktop = isDesktop;
-  });
+		if (isDesktop) {
+			sidebarOpen.set(true);
+		} else if (wasDesktop) {
+			sidebarOpen.set(false);
+		}
+
+		wasDesktop = isDesktop;
+	};
+
+	window.addEventListener('resize', handler);
+	return () => window.removeEventListener('resize', handler);
 }
 
 // Tracks the currently active conversation

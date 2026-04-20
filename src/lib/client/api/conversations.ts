@@ -7,6 +7,7 @@ import type {
 	TaskSteeringPayload,
 } from '$lib/types';
 import { requestJson, requestVoid, type FetchLike } from './http';
+import { _unwrapList } from './_utils';
 
 type ConversationSummary = Pick<ConversationListItem, 'id' | 'title' | 'updatedAt' | 'projectId'>;
 type MessageEvidenceSummary = ChatMessage['evidenceSummary'];
@@ -37,7 +38,7 @@ export async function fetchConversations(): Promise<ConversationListItem[]> {
 		undefined,
 		'Failed to load conversations'
 	);
-	return Array.isArray(payload.conversations) ? payload.conversations : [];
+	return _unwrapList<ConversationListItem>(payload, 'conversations');
 }
 
 export async function fetchConversationDetail(
