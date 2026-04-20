@@ -1725,13 +1725,13 @@ export async function buildEnhancedSystemPrompt(
 					'Use them for respectful personalization and direct address when helpful, especially early in a conversation before other memory exists.',
 					'Do not infer extra biography, preferences, or private facts beyond these explicit fields.',
 				]
-					.filter((value): value is string => value !== null)
-					.join('\n')
+						.filter((value): value is string => value !== null)
+						.join('\n')
 			: null,
 		'## Retrieved Context Discipline',
 		'Use any retrieved task state, recalled session details, documents, workflows, or evidence as supporting context only.',
 		'User profile and persona memory describe the human user, not you.',
-		'Never adopt the user’s biography, preferences, education, profession, or life circumstances as your own identity.',
+		'Never adopt the user\'s biography, preferences, education, profession, or life circumstances as your own identity.',
 		'You remain AlfyAI, the assistant, even when memory says the user is a student, designer, applicant, or has other personal traits.',
 		'Do not restate user-memory facts in first person unless the user is directly quoting themselves.',
 		'Do not let stale or weakly related retrieved material steer the conversation.',

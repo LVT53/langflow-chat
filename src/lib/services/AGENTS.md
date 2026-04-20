@@ -8,10 +8,7 @@ Client/server shared utilities and protocol definitions. These span both environ
 streaming.ts         - Browser stream transport (SSE parsing, token handling, abort/stop)
 stream-protocol.ts   - Shared stream tag parsing (thinking, tool_calls, preserve chunks)
 markdown.ts          - Markdown rendering with Shiki highlighting (lazy init)
-streaming-markdown.ts - Streaming markdown parsing
 table-layout.ts      - Markdown table rendering
-unified-streaming.ts - Combined streaming protocol
-webhook-streaming.ts - Webhook callback streaming
 ```
 
 ## WHERE TO LOOK
@@ -22,7 +19,6 @@ webhook-streaming.ts - Webhook callback streaming
 | Stream tag parsing | `stream-protocol.ts` |
 | Markdown with highlighting | `markdown.ts` |
 | Markdown table rendering | `table-layout.ts` |
-| Webhook callbacks | `webhook-streaming.ts` |
 
 ## Stream Protocol Tags
 

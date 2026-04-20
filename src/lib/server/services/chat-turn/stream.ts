@@ -8,6 +8,11 @@ import {
   flushInlineThinkingState,
   getPartialTagPrefixLength,
   processInlineThinkingChunk,
+  FRIENDLY_STREAM_ERRORS,
+  getNestedObject,
+  getFirstChoice,
+  getTextFromContentBlocks,
+  getTextContent,
 } from "$lib/services/stream-protocol";
 import type { ChatTurnRequestError } from "./types";
 
@@ -29,21 +34,13 @@ const PRESERVE_TAG_RE = /<\/?preserve>/gi;
 const THINKING_BLOCK_RE = /<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>/gi;
 const THINKING_TAG_RE = /<\/?thinking>|<\/?think>/gi;
 
-const FRIENDLY_STREAM_ERRORS = {
-  timeout: "The response is taking too long. Please try again.",
-  network:
-    "We could not reach the chat service. Check your connection and try again.",
-  backend_failure:
-    "We hit a temporary issue generating a response. Please try again.",
-} as const;
-
-export type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;
-
 export type StreamToolCallDetails = {
   outputSummary?: string | null;
   sourceType?: EvidenceSourceType | null;
   candidates?: ToolEvidenceCandidate[];
 };
+
+type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;
 
 type UpstreamEvent = {
   event: string;
@@ -827,28 +824,6 @@ function parseEventBlock(block: string): UpstreamEvent | null {
     : parseJsonBlock(block);
 }
 
-function getNestedObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
-
-function getFirstChoice(
-  payload: Record<string, unknown>,
-): Record<string, unknown> | null {
-  if (
-    !payload ||
-    !Array.isArray(payload.choices) ||
-    payload.choices.length === 0
-  ) {
-    return null;
-  }
-
-  const [firstChoice] = payload.choices;
-  return getNestedObject(firstChoice);
-}
-
 function getSender(value: unknown): string | null {
   const payload = getNestedObject(value);
   if (!payload) return null;
@@ -872,107 +847,4 @@ function getSender(value: unknown): string | null {
 
 function normalizeSender(value: string): string {
   return value.toLowerCase().replace(/[\s_-]+/g, " ").trim();
-}
-
-function getTextFromContentBlocks(value: unknown): string {
-  if (!Array.isArray(value)) {
-    return "";
-  }
-
-  const prioritized: Array<{ text: string; priority: number }> = [];
-
-  for (const block of value) {
-    const blockRecord = getNestedObject(block);
-    if (!blockRecord || !Array.isArray(blockRecord.contents)) {
-      continue;
-    }
-
-    for (const content of blockRecord.contents) {
-      const contentRecord = getNestedObject(content);
-      if (!contentRecord) {
-        continue;
-      }
-
-      const text =
-        typeof contentRecord.text === "string" ? contentRecord.text.trim() : "";
-      if (!text) {
-        continue;
-      }
-
-      const header = getNestedObject(contentRecord.header);
-      const headerTitle =
-        typeof header?.title === "string"
-          ? header.title.toLowerCase().trim()
-          : "";
-
-      if (headerTitle.includes("input")) {
-        continue;
-      }
-
-      const priority =
-        headerTitle.includes("output") ||
-        headerTitle.includes("answer") ||
-        headerTitle.includes("response")
-          ? 2
-          : 1;
-
-      prioritized.push({ text, priority });
-    }
-  }
-
-  if (prioritized.length === 0) {
-    return "";
-  }
-
-  const highestPriority = prioritized.reduce(
-    (best, entry) => Math.max(best, entry.priority),
-    0,
-  );
-
-  return prioritized
-    .filter((entry) => entry.priority === highestPriority)
-    .map((entry) => entry.text)
-    .join("\n")
-    .trim();
-}
-
-function getTextContent(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  const payload = getNestedObject(value);
-  if (!payload) return "";
-
-  const choice = getFirstChoice(payload);
-  if (choice) {
-    for (const key of ["delta", "message"]) {
-      if (key in choice) {
-        const nestedContent = getTextContent(choice[key]);
-        if (nestedContent) {
-          return nestedContent;
-        }
-      }
-    }
-  }
-
-  for (const key of ["text", "chunk", "content"]) {
-    const candidate = payload[key];
-    if (typeof candidate === "string" && candidate.length > 0) {
-      return candidate;
-    }
-  }
-
-  if ("content_blocks" in payload) {
-    const contentBlocksText = getTextFromContentBlocks(payload.content_blocks);
-    if (contentBlocksText) {
-      return contentBlocksText;
-    }
-  }
-
-  if ("data" in payload) {
-    return getTextContent(payload.data);
-  }
-
-  return "";
 }
