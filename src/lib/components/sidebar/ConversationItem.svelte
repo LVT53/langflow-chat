@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { ConversationListItem, Project } from '$lib/types';
+	import { portal, setMenuBaseBackground, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 	import TypewriterText from '../ui/TypewriterText.svelte';
 
@@ -64,25 +65,6 @@
 		}
 	});
 
-	function setMenuBaseBackground() {
-		if (typeof document === 'undefined') return;
-		const isDark = document.documentElement.classList.contains('dark');
-		menuBaseBackground = isDark
-			? 'rgb(33 35 38 / 1)'
-			: 'rgb(241 239 235 / 1)';
-	}
-
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				if (node.parentNode) {
-					node.parentNode.removeChild(node);
-				}
-			}
-		};
-	}
-
 	function handleSelect() {
 		if (!isEditing && !menuOpen) {
 			onSelect?.({ id: conversation.id });
@@ -138,12 +120,16 @@
 		showDeleteConfirm = false;
 	}
 
+	function doUpdatePosition() {
+		if (!triggerRef) return;
+		menuBaseBackground = setMenuBaseBackground();
+		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 190);
+	}
+
 	function toggleMenu(e: MouseEvent) {
 		e.stopPropagation();
 		showProjectSubmenu = false;
-		if (!menuOpen) {
-			updateMenuPosition();
-		}
+		if (!menuOpen) doUpdatePosition();
 		onMenuToggle?.({ id: conversation.id, open: !menuOpen });
 	}
 
@@ -164,19 +150,7 @@
 		}
 	}
 
-	function updateMenuPosition() {
-		if (!triggerRef) return;
-		setMenuBaseBackground();
-		const rect = triggerRef.getBoundingClientRect();
-		const menuWidth = 190;
-		const viewportPadding = 12;
-		const left = Math.min(
-			window.innerWidth - menuWidth - viewportPadding,
-			Math.max(viewportPadding, rect.right - menuWidth)
-		);
-		const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
-		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
-	}
+
 
 	function toggleProjectSubmenu(e: MouseEvent) {
 		e.stopPropagation();
@@ -227,26 +201,8 @@
 		onDragEnd?.({ id: conversation.id });
 	}
 
-	$effect(() => {
-		if (menuOpen) {
-			updateMenuPosition();
-		}
-	});
-
 	onMount(() => {
-		const syncMenuPosition = () => {
-			if (menuOpen) {
-				updateMenuPosition();
-			}
-		};
-
-		window.addEventListener('resize', syncMenuPosition);
-		window.addEventListener('scroll', syncMenuPosition, true);
-
-		return () => {
-			window.removeEventListener('resize', syncMenuPosition);
-			window.removeEventListener('scroll', syncMenuPosition, true);
-		};
+		return setupMenuSync(() => menuOpen, doUpdatePosition);
 	});
 </script>
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Project } from '$lib/types';
+	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 
 	let {
@@ -40,44 +41,14 @@
 	let menuPositionStyle = $state('');
 	let menuBaseBackground = $state('');
 
-	function setMenuBaseBackground() {
-		if (typeof document === 'undefined') return;
-		const isDark = document.documentElement.classList.contains('dark');
-		menuBaseBackground = isDark ? 'rgb(33 35 38 / 1)' : 'rgb(241 239 235 / 1)';
-	}
-
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				if (node.parentNode) node.parentNode.removeChild(node);
-			}
-		};
-	}
-
-	function updateMenuPosition() {
+	function doUpdatePosition() {
 		if (!triggerRef) return;
-		setMenuBaseBackground();
-		const rect = triggerRef.getBoundingClientRect();
-		const menuWidth = 176;
-		const viewportPadding = 12;
-		const left = Math.min(
-			window.innerWidth - menuWidth - viewportPadding,
-			Math.max(viewportPadding, rect.right - menuWidth)
-		);
-		const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
-		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
+		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 176);
 	}
-
-	$effect(() => {
-		if (menuOpen) {
-			updateMenuPosition();
-		}
-	});
 
 	function toggleMenu(e: MouseEvent) {
 		e.stopPropagation();
-		if (!menuOpen) updateMenuPosition();
+		if (!menuOpen) doUpdatePosition();
 		onMenuToggle?.({ id: project.id, open: !menuOpen });
 	}
 
@@ -155,13 +126,7 @@
 	}
 
 	onMount(() => {
-		const sync = () => { if (menuOpen) updateMenuPosition(); };
-		window.addEventListener('resize', sync);
-		window.addEventListener('scroll', sync, true);
-		return () => {
-			window.removeEventListener('resize', sync);
-			window.removeEventListener('scroll', sync, true);
-		};
+		return setupMenuSync(() => menuOpen, doUpdatePosition);
 	});
 </script>
 

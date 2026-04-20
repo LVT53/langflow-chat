@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
-	import { tick } from 'svelte';
+	import { preserveScrollOnToggle } from '$lib/actions/preserve-scroll';
 
 	let {
 		code = '',
@@ -18,16 +18,7 @@
 	let copyTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	async function toggleCollapse() {
-		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
-		const blockTop = container?.getBoundingClientRect().top ?? 0;
-		collapsed = !collapsed;
-		if (scrollEl) {
-			await tick();
-			requestAnimationFrame(() => {
-				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
-				scrollEl.scrollTop += newBlockTop - blockTop;
-			});
-		}
+		await preserveScrollOnToggle(container, collapsed, () => { collapsed = !collapsed; });
 	}
 
 	async function copyToClipboard() {

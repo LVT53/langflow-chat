@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { tick } from 'svelte';
 	import type { ThinkingSegment } from '$lib/types';
 
 	let {
@@ -59,21 +58,13 @@
 	}
 
 	async function toggle() {
-		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
-		const blockTop = container?.getBoundingClientRect().top ?? 0;
-		expanded = !expanded;
-		if (scrollEl) {
-			await tick();
-			requestAnimationFrame(() => {
-				const newBlockTop = container?.getBoundingClientRect().top ?? 0;
-				scrollEl.scrollTop += newBlockTop - blockTop;
-			});
-		}
+		await preserveScrollOnToggle(container, expanded, () => { expanded = !expanded; });
 	}
 </script>
 
 <script module>
 	import { slide } from 'svelte/transition';
+	import { preserveScrollOnToggle } from '$lib/actions/preserve-scroll';
 </script>
 
 <div class="thinking-block" bind:this={container}>

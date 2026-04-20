@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
+	import { estimateTokenCount } from '$lib/utils/tokens';
 	import type {
 		ArtifactSummary,
 		ChatGeneratedFileListItem,
@@ -45,26 +46,6 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
-
-	function estimateTokenCount(text: string) {
-		const trimmed = text.trim();
-		if (!trimmed) return 0;
-
-		const segments = trimmed.match(/[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];
-		let estimated = 0;
-
-		for (const segment of segments) {
-			if (/^[\p{L}\p{N}]+$/u.test(segment)) {
-				const isAscii = /^[\x00-\x7F]+$/.test(segment);
-				estimated += Math.max(1, Math.ceil(segment.length / (isAscii ? 4 : 2)));
-				continue;
-			}
-
-			estimated += segment.length;
-		}
-
-		return estimated;
-	}
 
 	let isUser = $derived(message.role === 'user');
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { preserveScrollOnToggle } from '$lib/actions/preserve-scroll';
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
 	import type { EvidencePreference, MessageEvidenceSummary, TaskSteeringPayload } from '$lib/types';
 
@@ -47,37 +47,8 @@
 		return 'Tool';
 	}
 
-	async function revealExpandedContent() {
-		const scrollEl = container?.closest('.scroll-container') as HTMLElement | null;
-		if (!scrollEl || !container || !groupsPanel) return;
-
-		await tick();
-		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
-				if (!scrollEl || !container || !groupsPanel) return;
-
-				const shellRect = container.getBoundingClientRect();
-				const groupsRect = groupsPanel.getBoundingClientRect();
-				const scrollRect = scrollEl.getBoundingClientRect();
-				const topPadding = 20;
-				const bottomPadding = 176;
-
-				if (groupsRect.bottom > scrollRect.bottom - bottomPadding) {
-					scrollEl.scrollTop += groupsRect.bottom - (scrollRect.bottom - bottomPadding);
-				}
-
-				if (shellRect.top < scrollRect.top + topPadding) {
-					scrollEl.scrollTop -= scrollRect.top + topPadding - shellRect.top;
-				}
-			});
-		});
-	}
-
-	function toggle() {
-		expanded = !expanded;
-		if (expanded) {
-			void revealExpandedContent();
-		}
+	async function toggle() {
+		await preserveScrollOnToggle(container, expanded, () => { expanded = !expanded; });
 	}
 </script>
 

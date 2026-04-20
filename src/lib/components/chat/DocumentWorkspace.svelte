@@ -6,10 +6,10 @@ import { untrack } from 'svelte';
 		getPreviewLanguage,
 	} from '$lib/utils/file-preview';
 	import { summarizeTextComparison } from '$lib/utils/text-compare';
+	import { renderHighlightedText } from '$lib/utils/markdown-loader';
 	import type { DocumentWorkspaceItem } from '$lib/types';
 
 	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
-	type MarkdownModule = typeof import('$lib/services/markdown');
 
 	let {
 		open = false,
@@ -48,8 +48,6 @@ import { untrack } from 'svelte';
 	let compareLoading = $state(false);
 	let compareError = $state<string | null>(null);
 	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
-	let markdownModulePromise: Promise<MarkdownModule> | null = null;
-
 	// Fade animation state
 	let isVisible = $state(false);
 	let shouldRender = $state(false);
@@ -382,11 +380,6 @@ import { untrack } from 'svelte';
 	}
 
 	async function renderHighlightedCompareText(document: DocumentWorkspaceItem, text: string) {
-		if (!markdownModulePromise) {
-			markdownModulePromise = import('$lib/services/markdown');
-		}
-
-		const { renderHighlightedText } = await markdownModulePromise;
 		return renderHighlightedText(
 			text,
 			getPreviewLanguage(document.mimeType, document.filename),

@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { logout } from '$lib/client/api/auth';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
+	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -50,41 +51,15 @@
 		}
 	}
 
-	function setMenuBaseBackground() {
-		if (typeof document === 'undefined') return;
-		const isDark = document.documentElement.classList.contains('dark');
-		menuBaseBackground = isDark ? 'rgb(33 35 38 / 1)' : 'rgb(241 239 235 / 1)';
-	}
-
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				if (node.parentNode) {
-					node.parentNode.removeChild(node);
-				}
-			}
-		};
-	}
-
-	function updateMenuPosition() {
+	function doUpdatePosition() {
 		if (!triggerRef) return;
-		setMenuBaseBackground();
-		const rect = triggerRef.getBoundingClientRect();
-		const menuWidth = 188;
-		const viewportPadding = 12;
-		const left = Math.min(
-			window.innerWidth - menuWidth - viewportPadding,
-			Math.max(viewportPadding, rect.right - menuWidth)
-		);
-		const top = Math.min(window.innerHeight - 12, rect.bottom + 8);
-		menuPositionStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${menuWidth}px;`;
+		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 188);
 	}
 
 	function toggleMobileMenu(event: MouseEvent) {
 		event.stopPropagation();
 		if (!mobileMenuOpen) {
-			updateMenuPosition();
+			doUpdatePosition();
 		}
 		mobileMenuOpen = !mobileMenuOpen;
 	}
@@ -106,26 +81,8 @@
 		}
 	}
 
-	$effect(() => {
-		if (mobileMenuOpen) {
-			updateMenuPosition();
-		}
-	});
-
 	onMount(() => {
-		const syncMenuPosition = () => {
-			if (mobileMenuOpen) {
-				updateMenuPosition();
-			}
-		};
-
-		window.addEventListener('resize', syncMenuPosition);
-		window.addEventListener('scroll', syncMenuPosition, true);
-
-		return () => {
-			window.removeEventListener('resize', syncMenuPosition);
-			window.removeEventListener('scroll', syncMenuPosition, true);
-		};
+		return setupMenuSync(() => mobileMenuOpen, doUpdatePosition);
 	});
 </script>
 
