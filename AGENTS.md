@@ -661,6 +661,8 @@ Do not:
 Default verification after meaningful changes:
 
 ```bash
+npm run check    # Type check with svelte-check
+npm run lint     # Lint with biome
 npm test
 npm run build
 ```

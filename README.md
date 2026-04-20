@@ -70,6 +70,8 @@ npm run dev
 Common verification commands:
 
 ```bash
+npm run check   # Type check with svelte-check
+npm run lint    # Lint with biome
 npm test
 npm run build
 ```
@@ -326,6 +328,8 @@ Expected outcome: `HEIC`/`HEIF`/`AVIF` appear in `magick -list format`. If they 
 For a basic verification pass:
 
 ```bash
+npm run check   # Type check with svelte-check
+npm run lint    # Lint with biome
 npm test
 npm run build
 ```
