@@ -1,5 +1,7 @@
 import type {
+	DocumentWorkspaceItem,
 	FocusContinuityItem,
+	KnowledgeDocumentItem,
 	PersonaMemoryItem,
 	TaskMemoryItem,
 } from '$lib/types';
@@ -58,28 +60,25 @@ export function getPersonaRowKey(memory: PersonaMemoryItem, index: number): stri
 	return `${memory.state}:${memory.id}:${index}`;
 }
 
-export function getLibraryBulkAction(_kind: Exclude<LibraryModal, null>): KnowledgeBulkAction {
+export function getLibraryBulkAction(): KnowledgeBulkAction {
 	return 'forget_all_documents';
 }
 
-export function getLibraryBulkKey(_kind: Exclude<LibraryModal, null>): string {
+export function getLibraryBulkKey(): string {
 	return 'forget-all-documents';
 }
 
-export function getLibraryBulkLabel(_kind: Exclude<LibraryModal, null>): string {
+export function getLibraryBulkLabel(): string {
 	return 'Forget all documents';
 }
 
-export function getLibraryBulkConfirmation(_kind: Exclude<LibraryModal, null>): string {
+export function getLibraryBulkConfirmation(): string {
 	return 'Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.';
 }
 
-export function getLibraryItemCount(
-	_kind: Exclude<LibraryModal, null>,
-	params: {
-		documents: KnowledgeDocumentItem[];
-	}
-): number {
+export function getLibraryItemCount(params: {
+	documents: KnowledgeDocumentItem[];
+}): number {
 	return params.documents.length;
 }
 
@@ -88,4 +87,58 @@ export function getFocusContinuityItemCount(params: {
 	focusContinuities: FocusContinuityItem[];
 }): number {
 	return params.taskMemories.length + params.focusContinuities.length;
+}
+
+// Workspace document helpers
+
+export function toWorkspaceDocument(document: KnowledgeDocumentItem): DocumentWorkspaceItem {
+	const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+	return {
+		id: `artifact:${artifactId}`,
+		source: 'knowledge_artifact',
+		filename: document.name,
+		title: document.documentLabel ?? document.name,
+		documentFamilyId: document.documentFamilyId ?? null,
+		documentFamilyStatus: document.documentFamilyStatus ?? null,
+		documentLabel: document.documentLabel ?? null,
+		documentRole: document.documentRole ?? null,
+		versionNumber: document.versionNumber ?? null,
+		originConversationId: document.originConversationId ?? null,
+		originAssistantMessageId: document.originAssistantMessageId ?? null,
+		sourceChatFileId: document.sourceChatFileId ?? null,
+		mimeType: document.mimeType,
+		artifactId,
+		conversationId: document.conversationId,
+	};
+}
+
+export function getWorkspaceMetadataForArtifact(
+	documents: KnowledgeDocumentItem[],
+	artifactId: string
+): Pick<
+	DocumentWorkspaceItem,
+	| 'documentFamilyId'
+	| 'documentFamilyStatus'
+	| 'documentLabel'
+	| 'documentRole'
+	| 'versionNumber'
+	| 'title'
+> | null {
+	const matchingDocument =
+		documents.find(
+			(document) =>
+				document.promptArtifactId === artifactId || document.displayArtifactId === artifactId
+		) ?? null;
+	if (!matchingDocument) {
+		return null;
+	}
+
+	return {
+		title: matchingDocument.documentLabel ?? matchingDocument.name,
+		documentFamilyId: matchingDocument.documentFamilyId ?? null,
+		documentFamilyStatus: matchingDocument.documentFamilyStatus ?? null,
+		documentLabel: matchingDocument.documentLabel ?? null,
+		documentRole: matchingDocument.documentRole ?? null,
+		versionNumber: matchingDocument.versionNumber ?? null,
+	};
 }

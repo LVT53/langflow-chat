@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import {
 		deleteKnowledgeArtifact,
 		fetchKnowledgeLibrary,
@@ -9,7 +8,6 @@
 		submitKnowledgeBulkAction,
 		submitKnowledgeMemoryAction,
 		uploadKnowledgeAttachment,
-		recordDocumentWorkspaceOpen,
 		type KnowledgeBulkAction,
 		type KnowledgeMemoryActionPayload,
 	} from '$lib/client/api/knowledge';
@@ -17,17 +15,14 @@
 	import { isDark } from '$lib/stores/theme';
 	import { renderMarkdown } from '$lib/services/markdown';
 	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
-	import {
-		buildChatSourceMessageHref,
-		clearKnowledgeWorkspaceParams,
-		getKnowledgeWorkspaceDocumentFromUrl,
-	} from '$lib/client/document-workspace-navigation';
+	import { buildChatSourceMessageHref } from '$lib/client/document-workspace-navigation';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
 	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import DocumentsList from './_components/DocumentsList.svelte';
+	import KnowledgeWorkspaceCoordinator from './_components/KnowledgeWorkspaceCoordinator.svelte';
 	import type {
 		FocusContinuityItem,
 		KnowledgeDocumentItem,
@@ -40,9 +35,8 @@
 	import {
 		getDefaultPersonaMemoryFilter,
 		getFocusContinuityItemCount,
-		getLibraryBulkAction,
-		getLibraryBulkConfirmation,
-		getLibraryBulkKey,
+		toWorkspaceDocument,
+		getWorkspaceMetadataForArtifact,
 		type FocusContinuityView,
 		type LibraryModal,
 		type MemoryModal,
@@ -77,11 +71,13 @@
 	});
 	const honchoEnabled = getData().honchoEnabled ?? false;
 
-	let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
-	let activeWorkspaceDocumentId = $state<string | null>(null);
-	let workspaceOpen = $state(false);
-	let lastHandledWorkspaceHandoffKey = $state<string | null>(null);
 	let deletingArtifactIds = $state(new Set<string>());
+
+	// Coordinator bridge for workspace document management
+	let workspaceCoordinator: KnowledgeWorkspaceCoordinator | undefined = $state();
+	let workspaceOpen = $state(false);
+	let activeWorkspaceDocumentId = $state<string | null>(null);
+
 	let pendingMemoryActionKey = $state<string | null>(null);
 	let pendingKnowledgeActionKey = $state<string | null>(null);
 	let manageError = $state('');
@@ -161,122 +157,6 @@
 
 	let overviewRenderVersion = 0;
 
-	let availableWorkspaceDocuments = $derived(
-		documents.map((document) => toWorkspaceDocument(document))
-	);
-
-	function toWorkspaceDocument(document: KnowledgeDocumentItem): DocumentWorkspaceItem {
-		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
-		return {
-			id: `artifact:${artifactId}`,
-			source: 'knowledge_artifact',
-			filename: document.name,
-			title: document.documentLabel ?? document.name,
-			documentFamilyId: document.documentFamilyId ?? null,
-			documentFamilyStatus: document.documentFamilyStatus ?? null,
-			documentLabel: document.documentLabel ?? null,
-			documentRole: document.documentRole ?? null,
-			versionNumber: document.versionNumber ?? null,
-			originConversationId: document.originConversationId ?? null,
-			originAssistantMessageId: document.originAssistantMessageId ?? null,
-			sourceChatFileId: document.sourceChatFileId ?? null,
-			mimeType: document.mimeType,
-			artifactId,
-			conversationId: document.conversationId,
-		};
-	}
-
-	function getWorkspaceMetadataForArtifact(artifactId: string): Pick<
-		DocumentWorkspaceItem,
-		| 'documentFamilyId'
-		| 'documentFamilyStatus'
-		| 'documentLabel'
-		| 'documentRole'
-		| 'versionNumber'
-		| 'title'
-	> | null {
-		const matchingDocument =
-			documents.find(
-				(document) =>
-					document.promptArtifactId === artifactId || document.displayArtifactId === artifactId
-			) ?? null;
-		if (!matchingDocument) {
-			return null;
-		}
-
-		return {
-			title: matchingDocument.documentLabel ?? matchingDocument.name,
-			documentFamilyId: matchingDocument.documentFamilyId ?? null,
-			documentFamilyStatus: matchingDocument.documentFamilyStatus ?? null,
-			documentLabel: matchingDocument.documentLabel ?? null,
-			documentRole: matchingDocument.documentRole ?? null,
-			versionNumber: matchingDocument.versionNumber ?? null,
-		};
-	}
-
-	$effect(() => {
-		const handoffDocument = getKnowledgeWorkspaceDocumentFromUrl(page.url);
-		if (!handoffDocument) return;
-
-		const handoffKey = `${handoffDocument.artifactId ?? handoffDocument.id}|${handoffDocument.filename}`;
-		if (lastHandledWorkspaceHandoffKey === handoffKey) {
-			replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
-			return;
-		}
-
-		openWorkspaceDocument({
-			...handoffDocument,
-			...(handoffDocument.artifactId
-				? getWorkspaceMetadataForArtifact(handoffDocument.artifactId) ?? {}
-				: {}),
-		});
-		lastHandledWorkspaceHandoffKey = handoffKey;
-		replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
-	});
-
-	function openWorkspaceDocument(document: DocumentWorkspaceItem) {
-		const alreadyOpen = workspaceDocuments.some((entry) => entry.id === document.id);
-		if (alreadyOpen) {
-			workspaceDocuments = workspaceDocuments.map((entry) =>
-				entry.id === document.id ? { ...entry, ...document } : entry
-			);
-		} else {
-			workspaceDocuments = [...workspaceDocuments, document];
-		}
-
-		activeWorkspaceDocumentId = document.id;
-		workspaceOpen = true;
-		if (browser && document.artifactId) {
-			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
-		}
-	}
-
-	function selectWorkspaceDocument(documentId: string) {
-		activeWorkspaceDocumentId = documentId;
-		workspaceOpen = true;
-		const document = workspaceDocuments.find((entry) => entry.id === documentId) ?? null;
-		if (browser && document?.artifactId) {
-			void recordDocumentWorkspaceOpen(document.artifactId).catch(() => undefined);
-		}
-	}
-
-	function closeWorkspaceDocument(documentId: string) {
-		const remainingDocuments = workspaceDocuments.filter((document) => document.id !== documentId);
-		workspaceDocuments = remainingDocuments;
-
-		if (activeWorkspaceDocumentId === documentId) {
-			activeWorkspaceDocumentId = remainingDocuments.at(-1)?.id ?? null;
-		}
-
-		if (remainingDocuments.length === 0) {
-			workspaceOpen = false;
-		}
-	}
-
-	function closeWorkspace() {
-		workspaceOpen = false;
-	}
-
 	// Documents section handlers
 	function handleDocumentPaginationLimitChange(limit: number) {
 		documentPaginationLimit = limit as 20 | 50 | 100;
@@ -287,7 +167,7 @@
 	}
 
 	function handleDocumentSelect(document: KnowledgeDocumentItem) {
-		openWorkspaceDocument(toWorkspaceDocument(document));
+		workspaceCoordinator?.handleOpenDocument(toWorkspaceDocument(document));
 	}
 
 	function addDeletingArtifact(id: string) {
@@ -861,18 +741,15 @@
 
 	function runLibraryBulkAction(kind: Exclude<LibraryModal, null>) {
 		return runKnowledgeAction(
-			getLibraryBulkAction(kind),
-			getLibraryBulkKey(kind),
-			getLibraryBulkConfirmation(kind)
+			getLibraryBulkAction(),
+			getLibraryBulkKey(),
+			getLibraryBulkConfirmation()
 		);
 	}
 
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && activeMemoryModal) {
 			closeMemoryModal();
-		}
-		if (event.key === 'Escape' && activeLibraryModal) {
-			closeLibraryModal();
 		}
 	}
 
@@ -1000,16 +877,14 @@
 		</div>
 	</div>
 
-	<DocumentWorkspace
-		open={workspaceOpen}
-		documents={workspaceDocuments}
-		availableDocuments={availableWorkspaceDocuments}
-		activeDocumentId={activeWorkspaceDocumentId}
-		onSelectDocument={selectWorkspaceDocument}
-		onOpenDocument={openWorkspaceDocument}
+	<KnowledgeWorkspaceCoordinator
+		bind:this={workspaceCoordinator}
+		{documents}
+		{pendingKnowledgeActionKey}
+		{isKnowledgeActionPending}
 		onJumpToSource={jumpToWorkspaceSource}
-		onCloseDocument={closeWorkspaceDocument}
-		onCloseWorkspace={closeWorkspace}
+		onRunKnowledgeAction={() => void runLibraryBulkAction('documents')}
+		onOpenLibraryModal={() => { activeLibraryModal = 'documents'; }}
 	/>
 </div>
 
@@ -1045,22 +920,6 @@
 		onRunBulkTaskForget={runBulkTaskForget}
 		onRunBulkFocusContinuityForget={runBulkFocusContinuityForget}
 		onRunMemoryAction={runMemoryAction}
-	/>
-{/if}
-
-{#if activeLibraryModal}
-	<KnowledgeLibraryModal
-		activeLibraryModal={activeLibraryModal}
-		{documents}
-		{pendingKnowledgeActionKey}
-		{deletingArtifactCount}
-		{isKnowledgeActionPending}
-		{isDeletingArtifact}
-		onUpload={handleDocumentsUpload}
-		onClose={closeLibraryModal}
-		onOpenDocument={openWorkspaceDocument}
-		onRunKnowledgeAction={runLibraryBulkAction}
-		onRemoveArtifact={removeArtifact}
 	/>
 {/if}
 

@@ -39,9 +39,9 @@
 	} = $props();
 
 	let itemCount = $derived(
-		getLibraryItemCount(activeLibraryModal, { documents })
+		getLibraryItemCount({ documents })
 	);
-	let bulkKey = $derived(getLibraryBulkKey(activeLibraryModal));
+	let bulkKey = $derived(getLibraryBulkKey());
 
 	function openPreview(document: KnowledgeDocumentItem) {
 		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
@@ -118,7 +118,7 @@
 						onclick={() => onRunKnowledgeAction(activeLibraryModal)}
 						disabled={isKnowledgeActionPending(bulkKey)}
 					>
-						{isKnowledgeActionPending(bulkKey) ? 'Removing…' : getLibraryBulkLabel(activeLibraryModal)}
+						{isKnowledgeActionPending(bulkKey) ? 'Removing…' : getLibraryBulkLabel()}
 					</button>
 				{/if}
 				<button
