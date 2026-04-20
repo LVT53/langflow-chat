@@ -1,7 +1,11 @@
 {
+  "$schema": "https://biomejs.dev/schemas/2.4.12/schema.json",
+  "files": {
+    "includes": ["src/**", "scripts/**", "tests/**"]
+  },
   "overrides": [
     {
-      "include": ["**/*.svelte"],
+      "includes": ["**/*.svelte"],
       "linter": {
         "rules": {
           "correctness": {

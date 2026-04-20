@@ -4,6 +4,8 @@
 		"build": "vite build && node scripts/patch-body-size-limit.mjs",
 		"start": "npm run db:prepare && node build",
 		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"lint": "biome check .",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
@@ -15,6 +17,7 @@
 		"db:studio": "drizzle-kit studio"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "^2.4.12",
 		"@playwright/test": "^1.59.1",
 		"@rolldown/binding-linux-x64-gnu": "^1.0.0-rc.16",
 		"@sveltejs/adapter-node": "^5.5.4",
@@ -42,8 +45,10 @@
 		"jsdom": "^29.0.0",
 		"postcss": "^8.5.8",
 		"svelte": "^5.53.12",
+		"svelte-check": "^4.4.6",
 		"tailwindcss": "^4.2.1",
 		"tsx": "^4.21.0",
+		"typescript": "^6.0.3",
 		"vite": "^8.0.8",
 		"vitest": "^4.1.0"
 	},
