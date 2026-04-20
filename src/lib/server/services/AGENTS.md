@@ -8,15 +8,26 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 |------|------|-------|-----------|
 | 1 | `task-state.ts` | 1,535 | Facade + task routing, evidence selection, checkpointing, steering |
 | 2 | `honcho.ts` | 1,460 | Honcho client lifecycle, session bootstrap, context construction |
-| 3 | `chat-turn/stream.ts` | 980 | SSE parsing, tool-call markers, thinking extraction, `<preserve>` chunks |
-| 4 | `knowledge/store/attachments.ts` | 583 | Upload dedupe, readiness checks, artifact linking |
-| 5 | `task-state/continuity.ts` | 683 | Project memory, focus continuity, task-project linking |
-| 6 | `knowledge/context.ts` | 432 | Working-set ranking, context status, compaction logic |
-| 7 | `knowledge/capsules.ts` | 347 | Workflow summarization, generated-output artifacts |
-| 8 | `knowledge/store/core.ts` | 353 | Artifact CRUD, mapping, token-budget constants |
-| 9 | `task-state/artifacts.ts` | 358 | Chunking, prompt-snippet selection, historical summarization |
-| 10 | `knowledge/store/cleanup.ts` | 302 | Cross-reference-aware deletion, bulk cleanup |
-| 11 | `chat-turn/retry-cleanup.ts` | ~190 | Idempotent cleanup of failed turn data (evidence, checkpoints, work capsules, generated outputs) |
+| 3 | `stream-orchestrator.ts` | 1,018 | Full chat-turn streaming pipeline, upstream retry, downstream SSE framing |
+| 4 | `chat-turn/stream.ts` | 520 | Re-exports sub-modules; retains internal chunk runtime, preserve handling, and utility helpers |
+| 5 | `knowledge/store/attachments.ts` | 583 | Upload dedupe, readiness checks, artifact linking |
+| 6 | `task-state/continuity.ts` | 683 | Project memory, focus continuity, task-project linking |
+| 7 | `knowledge/context.ts` | 432 | Working-set ranking, context status, compaction logic |
+| 8 | `knowledge/capsules.ts` | 347 | Workflow summarization, generated-output artifacts |
+| 9 | `knowledge/store/core.ts` | 353 | Artifact CRUD, mapping, token-budget constants |
+| 10 | `task-state/artifacts.ts` | 358 | Chunking, prompt-snippet selection, historical summarization |
+| 11 | `knowledge/store/cleanup.ts` | 302 | Cross-reference-aware deletion, bulk cleanup |
+| 12 | `chat-turn/retry-cleanup.ts` | ~190 | Idempotent cleanup of failed turn data (evidence, checkpoints, work capsules, generated outputs) |
+
+**Chat-turn sub-modules** (extracted from stream.ts):
+- `chat-turn/stream-parser.ts` — async generator for parsing Langflow SSE/JSON event streams
+- `chat-turn/thinking-normalizer.ts` — thinking block/tag stripping and reasoning content extraction
+- `chat-turn/tool-call-markers.ts` — `TOOL_START/END` marker processing and tool evidence normalization
+
+**Persona-memory sub-modules** (extracted from persona-memory.ts):
+- `persona-memory/_constants.ts` — `DAY_MS` constant
+- `persona-memory/classification.ts` — deterministic memory text classification (class, domain, short-term cues, active-project cues)
+- `persona-memory/temporal.ts` — relative-time parsing, expiry resolution, temporal freshness derivation
 
 ## Memory Authority Snapshot
 
@@ -44,7 +55,7 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
                     ┌─────────┼─────────┐
                     ▼         ▼         ▼
               chat-turn/   chat-turn/   translator.ts
-              execute.ts   stream.ts
+              execute.ts   stream.ts ──► stream-parser.ts, thinking-normalizer.ts, tool-call-markers.ts
                     │         │
                     └────┬────┘
                          ▼
@@ -55,8 +66,28 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
                    │       │        │            │
                    └───┬───┘        │            │
                        ▼            ▼            ▼
-                  persona-memory  utils/*    knowledge/store/*  chat-turn/retry-cleanup.ts
+                  persona-memory ──► persona-memory/classification.ts, persona-memory/temporal.ts
+                       │            utils/*    knowledge/store/*  chat-turn/retry-cleanup.ts
+                  attachment-trace.ts (feeds stream-orchestrator, langflow, chat-files)
+                       │
+                  webhook-buffer.ts (feeds chat-turn streaming pipeline)
+                       │
+                  language.ts (feeds chat-turn request/execute)
+                       │
+                  conversation-drafts.ts (feeds conversation routes)
 ```
+
+**Additional active services not shown above:**
+- `auth/hooks.ts` — `requireAuth`, `getBearerToken` (canonical auth boundary for API routes)
+- `prompts.ts` (src/lib/server/prompts.ts) — system prompt configs for translation rules (consumed by langflow, honcho)
+- `http-agents.ts` — HTTP agent pooling for langflow keep-alive (consumed by langflow)
+- `analytics.ts` — analytics event ingestion (consumed by finalize.ts)
+- `pdf-generator.ts` — PDF artifact generation from chat content or file generation requests
+- `image-search.ts` — image search integration (tool endpoint at api/tools/image-search)
+- `ocr/paddle-adapter.ts` — PaddleOCR integration (endpoint at api/ocr/paddle)
+- `projects.ts` (src/lib/server/services/projects.ts) — project CRUD using db + schema.ts directly (active service, not legacy)
+- `server/api/responses.ts` — shared JSON response helpers for API routes (consumed across route files)
+- `webhook-buffer.ts` — sentence-level webhook buffering for streaming turns
 
 **Key insight**: `finalize.ts` is the fan-out point — after a turn completes, it dispatches to persistence, evidence, memory, and Honcho sync.
 
@@ -69,12 +100,12 @@ preflightChatTurn()           ← conversation exists? attachments ready?
         │
    ┌────┴────┐
    ▼         ▼
-execute()  stream.ts          ← diverge here
-   │      createServerChunkRuntime()
-   │         │
-   │    parseUpstreamEvents()  ← Langflow SSE → tokens, thinking, tool_calls
+execute()  stream-orchestrator.ts ← diverge here; orchestrates full pipeline
+   │      │
+   │    parseUpstreamEvents()  ← Langflow SSE/JSON stream → events
    │    processToolCallMarkers()
    │    normalizeVisibleAssistantText()
+   │    createServerChunkRuntime() → tokens, thinking, tool_calls, <preserve> chunks
    │         │
    └────┬────┘
         ▼
@@ -179,9 +210,4 @@ task-state.ts (facade — 1,535 lines)
 | `utils/text.ts` | `task-state/`, `messages.ts` | Whitespace normalization, text clipping |
 | `utils/tokens.ts` | `prompt-context.ts`, `context.ts` | Token estimation for budget checks |
 
-## Legacy Files — Do Not Extend
 
-These exist in `src/lib/server/db/` but are legacy wrappers:
-- `conversations.ts`, `projects.ts`, `sessions.ts`, `users.ts`
-
-New persistence goes in the relevant service using `db` + `schema.ts` directly.

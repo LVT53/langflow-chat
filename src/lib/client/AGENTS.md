@@ -8,13 +8,15 @@ Browser-side API clients and session state management. Thin wrappers around `fet
 
 ```
 api/
+  _utils.ts        - Shared internal helpers (e.g., _unwrapList for list responses)
+  admin.ts         - Admin user management CRUD (list/create/update/delete/revoke-sessions)
   auth.ts          - Login/logout calls
   http.ts          - Base fetch wrapper, error handling
   conversations.ts - Conversation detail, evidence, titles, drafts
   knowledge.ts     - Uploads, library, memory
   models.ts        - Model list fetching
   projects.ts      - Project CRUD
-  settings.ts      - Settings, account, avatar, admin calls
+  settings.ts      - Settings, account, avatar, admin calls (re-exports from admin.ts)
 conversation-session.ts - Landing draft IDs, pending message replay
 ```
 
@@ -24,11 +26,12 @@ conversation-session.ts - Landing draft IDs, pending message replay
 |--------|------|
 | Auth flows | `api/auth.ts` |
 | HTTP errors, base fetch | `api/http.ts` |
+| Admin user management | `api/admin.ts` |
 | Conversation detail, drafts | `api/conversations.ts` |
 | Knowledge, search | `api/knowledge.ts` |
 | Model list | `api/models.ts` |
 | Projects | `api/projects.ts` |
-| Settings, admin users | `api/settings.ts` |
+| Settings, account, avatar | `api/settings.ts` |
 | Landing/chat handoff | `conversation-session.ts` |
 
 ## CONVENTIONS
@@ -46,3 +49,4 @@ conversation-session.ts - Landing draft IDs, pending message replay
 - **Don't invent new `sessionStorage` keys** outside `conversation-session.ts`
 - **Don't duplicate error handling** - let the base wrapper normalize HTTP errors
 - **Don't bypass auth** - always route through the shared HTTP wrapper
+- **Don't reimplement admin CRUD** in `settings.ts` - import from `api/admin.ts` and re-export for backward compat

@@ -125,7 +125,15 @@ Do not:
   - [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
   - [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
   - [`src/lib/server/services/chat-turn/execute.ts`](./src/lib/server/services/chat-turn/execute.ts)
+  - [`src/lib/server/services/chat-turn/stream-orchestrator.ts`](./src/lib/server/services/chat-turn/stream-orchestrator.ts)
+    - Orchestrates the full chat-turn streaming pipeline: upstream event parsing,
+      tool-call marker handling, token/thinking framing, stream buffer management.
+      Imported by: `src/routes/api/chat/stream/+server.ts`, `src/routes/api/chat/retry/+server.ts`
   - [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
+    - re-exports from sub-modules:
+      - [`stream-parser.ts`](./src/lib/server/services/chat-turn/stream-parser.ts)
+      - [`thinking-normalizer.ts`](./src/lib/server/services/chat-turn/thinking-normalizer.ts)
+      - [`tool-call-markers.ts`](./src/lib/server/services/chat-turn/tool-call-markers.ts)
   - [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
   - [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
   - [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
@@ -262,9 +270,6 @@ Do not:
 
 ### Knowledge Library
 
-- Import handler:
-  - [`src/lib/server/services/knowledge/import.ts`](./src/lib/server/services/knowledge/import.ts)
-  - [`src/routes/api/knowledge/import/+server.ts`](./src/routes/api/knowledge/import/+server.ts)
 - File preview:
   - [`src/lib/components/knowledge/FilePreview.svelte`](./src/lib/components/knowledge/FilePreview.svelte)
 
@@ -298,8 +303,11 @@ Do not:
   - [`src/lib/server/services/task-state/mappers.ts`](./src/lib/server/services/task-state/mappers.ts)
 - Honcho adapter:
   - [`src/lib/server/services/honcho.ts`](./src/lib/server/services/honcho.ts)
-- Persona support:
+-- Persona support:
   - [`src/lib/server/services/persona-memory.ts`](./src/lib/server/services/persona-memory.ts)
+    - re-exports from:
+      - [`persona-memory/classification.ts`](./src/lib/server/services/persona-memory/classification.ts)
+      - [`persona-memory/temporal.ts`](./src/lib/server/services/persona-memory/temporal.ts)
 - Event log:
   - [`src/lib/server/services/memory-events.ts`](./src/lib/server/services/memory-events.ts)
 - Maintenance/orchestration:
@@ -479,6 +487,8 @@ Do not:
 ### Browser API, Stores, And Session Handoff
 
 - Shared browser API:
+  - [`src/lib/client/api/_utils.ts`](./src/lib/client/api/_utils.ts) — shared list-unwrapping helper for API responses
+  - [`src/lib/client/api/admin.ts`](./src/lib/client/api/admin.ts) — reusable admin-side user management browser calls
   - [`src/lib/client/api/auth.ts`](./src/lib/client/api/auth.ts)
   - [`src/lib/client/api/http.ts`](./src/lib/client/api/http.ts)
   - [`src/lib/client/api/conversations.ts`](./src/lib/client/api/conversations.ts)
@@ -505,7 +515,7 @@ Rules:
 - `src/lib/client/api/knowledge.ts` owns reusable knowledge upload, library, memory, and document-search browser calls.
 - `src/lib/client/api/models.ts` owns reusable model-list browser calls.
 - `src/lib/client/api/settings.ts` owns reusable settings/account/avatar/admin/analytics browser calls.
-- `src/lib/client/api/settings.ts` also owns admin-side user list/create/promote/demote/delete/revoke-session browser calls.
+- `src/lib/client/api/settings.ts` re-exports admin functions from `api/admin.ts` for backward compat; admin calls live in `api/admin.ts`
 - stores own browser state, optimistic updates, and UI-facing transitions.
 - `conversation-session.ts` owns landing draft IDs, pending first-message replay, previous-conversation markers, and draft cleanup rules.
 
@@ -518,7 +528,37 @@ Do not:
 - make stores mutate unrelated domains because it feels convenient
 - move reusable HTTP error handling into page files
 
-### Components
+### Additional Active Services
+
+These services are actively imported but not documented in the feature sections above:
+
+-- Server utilities and helpers:
+  - [`src/lib/server/auth/hooks.ts`](./src/lib/server/auth/hooks.ts) — `requireAuth`, `getBearerToken` helpers. Canonical auth enforcement point for API routes; mirrors `hooks.server.ts` logic in a reusable form.
+  - [`src/lib/server/services/attachment-trace.ts`](./src/lib/server/services/attachment-trace.ts) — logging helper for langflow/chat-file tracing. Adds `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]` correlation context. Consumed by stream-orchestrator and langflow.
+  - [`src/lib/server/services/language.ts`](./src/lib/server/services/language.ts) — language detection utilities. Consumed by chat-turn request/execute pipeline for input language checks.
+  - [`src/lib/server/services/conversation-drafts.ts`](./src/lib/server/services/conversation-drafts.ts) — draft management for conversations. Used by conversation routes for draft save/load.
+  - [`src/lib/server/services/http-agents.ts`](./src/lib/server/services/http-agents.ts) — HTTP agent pooling for langflow. Manages keep-alive agents to avoid connection overhead on repeated Langflow calls.
+  - [`src/lib/server/services/webhook-buffer.ts`](./src/lib/server/services/webhook-buffer.ts) — sentence-level webhook buffering for streaming turns. Consumed by hooks.server.ts.
+  - [`src/lib/server/prompts.ts`](./src/lib/server/prompts.ts) — system prompt configuration for translation rules. Consumed by langflow and honcho.
+  - [`src/lib/server/api/responses.ts`](./src/lib/server/api/responses.ts) — shared JSON response helpers (`createJsonErrorResponse`, `createJsonResponse`) for API routes. Used across route files for consistent error/success formatting.
+  - [`src/lib/server/services/analytics.ts`](./src/lib/server/services/analytics.ts) — analytics event ingestion. Consumed by chat-turn finalize.ts. Event ingestion endpoint at `src/routes/api/analytics/+server.ts`.
+  - [`src/lib/server/services/pdf-generator.ts`](./src/lib/server/services/pdf-generator.ts) — PDF artifact generation from chat content or file generation requests.
+
+-- Tool endpoints:
+  - [`src/routes/api/tools/image-search/+server.ts`](./src/routes/api/tools/image-search/+server.ts) — image search tool endpoint
+  - [`src/routes/api/ocr/paddle/+server.ts`](./src/routes/api/ocr/paddle/+server.ts) — PaddleOCR endpoint; adapter at `src/lib/server/services/ocr/paddle-adapter.ts`
+
+-- Webhook endpoints:
+  - [`src/routes/api/webhook/sentence/+server.ts`](./src/routes/api/webhook/sentence/+server.ts) — sentence webhook endpoint
+  - [`src/routes/api/stream/webhook/[sessionId]/+server.ts`](./src/routes/api/stream/webhook/[sessionId]/+server.ts) — stream webhook endpoint
+
+-- Other API endpoints:
+  - [`src/routes/api/chat/files/export/+server.ts`](./src/routes/api/chat/files/export/+server.ts) — conversation file export
+  - [`src/routes/api/chat/stream/buffer/+server.ts`](./src/routes/api/chat/stream/buffer/+server.ts) — stream buffer replay for reconnection
+  - [`src/routes/api/chat/stream/status/+server.ts`](./src/routes/api/chat/stream/status/+server.ts) — stream capacity/status check
+
+-- Active project service:
+  - [`src/lib/server/services/projects.ts`](./src/lib/server/services/projects.ts) — project CRUD using `db` + `schema.ts` directly. Not a legacy DB wrapper; active service.
 
 - Chat rendering components live under [`src/lib/components/chat/`](./src/lib/components/chat/).
 - Layout/navigation components live under [`src/lib/components/layout/`](./src/lib/components/layout/).

@@ -47,9 +47,4 @@ SQLite persistence with Drizzle ORM. Schema definitions and connection bootstrap
 - Do NOT read `DATABASE_PATH` directly - use `getDatabasePath()` from `env.ts`
 - Do NOT bypass foreign keys - pragma is enabled
 
-## Legacy Files (Do Not Extend)
 
-These compatibility wrappers exist but are not authoritative:
-- `conversations.ts`, `projects.ts`, `sessions.ts`, `users.ts`
-
-New persistence belongs in relevant services using `db` + `schema.ts`.

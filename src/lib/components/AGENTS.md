@@ -31,7 +31,6 @@ chat/
   ModelSelector.svelte              ← model dropdown
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
-  LoadingIndicator.svelte           ← loading states
   LogoMark.svelte                   ← animated brand logo
 
 ui/
