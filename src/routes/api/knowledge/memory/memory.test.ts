@@ -137,7 +137,6 @@ describe('knowledge memory routes', () => {
 		expect(response.status).toBe(200);
 		expect(data.summary.overviewSource).toBe('honcho_live');
 		expect(mockGetKnowledgeMemoryOverview).toHaveBeenCalledWith('user-1', 'Test User', {
-			awaitLive: true,
 			force: true,
 		});
 	});

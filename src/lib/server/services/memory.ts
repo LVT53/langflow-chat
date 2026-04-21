@@ -998,7 +998,10 @@ export async function getKnowledgeMemoryOverview(
 		userId,
 		userDisplayName,
 		personaMemories,
-		awaitLive: options.awaitLive ?? true,
+		// Default to non-blocking for client polls; background refresh
+		// updates the cache asynchronously. Callers may pass true to
+		// await the live result (used in tests and internal paths).
+		awaitLive: options.awaitLive ?? false,
 		force: options.force ?? false,
 	});
 

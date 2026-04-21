@@ -10,7 +10,6 @@ export const GET: RequestHandler = async (event) => {
 
 	try {
 		const overview = await getKnowledgeMemoryOverview(user.id, user.displayName, {
-			awaitLive: true,
 			force,
 		});
 		return json(overview);
