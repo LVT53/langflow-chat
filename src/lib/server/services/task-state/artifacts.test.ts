@@ -21,7 +21,7 @@ vi.mock('$lib/server/services/knowledge/store/core', () => ({
   getSmallFileThreshold: mockGetSmallFileThreshold,
 }));
 
-vi.mock('$lib/server/utils/tokens', () => ({
+vi.mock('$lib/utils/tokens', () => ({
   estimateTokenCount: vi.fn((text: string) => Math.ceil(text.length / 4)),
 }));
 

@@ -22,6 +22,7 @@ import {
 	getPeerContext,
 	isHonchoEnabled,
 } from './honcho';
+import { DAY_MS } from '$lib/server/utils/constants';
 import { runUserMemoryMaintenance } from './memory-maintenance';
 import {
 	deleteAllPersonaMemoryStateForUser,
@@ -37,7 +38,6 @@ import {
 	listTaskMemoryItems,
 } from './task-state';
 
-const DAY_MS = 86_400_000;
 const OVERVIEW_MIN_DURABLE_ITEMS = 2;
 const OVERVIEW_RECENT_SITUATIONAL_MS = 21 * DAY_MS;
 const OVERVIEW_SECTION_ITEM_LIMIT = 3;

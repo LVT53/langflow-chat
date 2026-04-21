@@ -15,7 +15,7 @@ import type {
   ArtifactType,
 } from "$lib/types";
 import { parseJsonRecord } from "$lib/server/utils/json";
-import { syncArtifactChunks } from "../../task-state";
+import { syncArtifactChunks } from "../../task-state/chunk-sync";
 import { queueArtifactSemanticEmbeddingRefresh } from "../../semantic-embedding-refresh";
 import { getConfig } from "../../../config-store";
 import {

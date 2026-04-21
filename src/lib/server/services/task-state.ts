@@ -20,10 +20,11 @@ import type {
   TaskSteeringAction,
   VerificationStatus,
 } from "$lib/types";
+import { RERANK_CONFIDENCE_MIN } from "$lib/server/utils/constants";
 import { parseJsonRecord } from "$lib/server/utils/json";
 import { dedupeById } from "$lib/server/utils/prompt-context";
 import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
-import { estimateTokenCount } from "$lib/server/utils/tokens";
+import { estimateTokenCount } from "$lib/utils/tokens";
 import { computeCrossConversationDecay } from "../utils/artifact-decay";
 import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
@@ -98,8 +99,6 @@ const CURRENT_TASK_STATUSES: TaskState["status"][] = [
   "candidate",
 ];
 const ROUTER_CONFIDENCE_MIN = 68;
-const RERANK_CONFIDENCE_MIN = 64;
-
 const MAX_RERANK_CANDIDATES = 8;
 const TASK_SEMANTIC_SHORTLIST_LIMIT = 8;
 const TASK_ROUTER_RERANK_LIMIT = 6;
@@ -136,9 +135,6 @@ function uniqueCompact(
   return result;
 }
 
-function clip(text: string, maxLength: number): string {
-  return clipText(text, maxLength);
-}
 
 export { estimateTokenCount };
 
@@ -254,7 +250,7 @@ async function buildTaskRoutingScoreMaps(params: {
 function extractQuestionCandidate(text: string): string | null {
   if (!text.includes("?")) return null;
   const match = text.replace(/\s+/g, " ").match(/[^.?!]*\?/);
-  return match ? clip(match[0], 180) : clip(text, 180);
+  return match ? clipText(match[0], 180) : clipText(text, 180);
 }
 
 function extractListItems(text: string): string[] {
@@ -267,10 +263,10 @@ function extractListItems(text: string): string[] {
     .map((line) => line.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, ""));
 
   if (explicit.length > 0) {
-    return explicit.slice(0, MAX_LIST_ITEMS).map((line) => clip(line, 140));
+    return explicit.slice(0, MAX_LIST_ITEMS).map((line) => clipText(line, 140));
   }
 
-  return lines.slice(0, 3).map((line) => clip(line, 140));
+  return lines.slice(0, 3).map((line) => clipText(line, 140));
 }
 
 function extractDecisionCandidates(text: string): string[] {
@@ -286,7 +282,7 @@ function extractDecisionCandidates(text: string): string[] {
       ),
     )
     .slice(0, 3)
-    .map((sentence) => clip(sentence, 180));
+    .map((sentence) => clipText(sentence, 180));
 }
 
 function extractConstraintCandidates(text: string): string[] {
@@ -302,7 +298,7 @@ function extractConstraintCandidates(text: string): string[] {
       ),
     )
     .slice(0, 3)
-    .map((sentence) => clip(sentence, 180));
+    .map((sentence) => clipText(sentence, 180));
 }
 
 function extractFactCandidates(text: string): string[] {
@@ -311,7 +307,7 @@ function extractFactCandidates(text: string): string[] {
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
-  return sentences.slice(0, 3).map((sentence) => clip(sentence, 180));
+  return sentences.slice(0, 3).map((sentence) => clipText(sentence, 180));
 }
 
 async function summarizeTaskStateUpdate(params: {
@@ -358,8 +354,8 @@ async function summarizeTaskStateUpdate(params: {
     return {
       objective:
         typeof parsed.objective === "string" && parsed.objective.trim()
-          ? clip(parsed.objective, 220)
-          : (params.existing?.objective ?? clip(params.message, 220)),
+          ? clipText(parsed.objective, 220)
+          : (params.existing?.objective ?? clipText(params.message, 220)),
       constraints: uniqueCompact(
         Array.isArray(parsed.constraints)
           ? (parsed.constraints as string[])
@@ -405,7 +401,7 @@ function buildDeterministicTaskStateUpdate(params: {
   const objective =
     params.existing && scoreMatch(params.message, params.existing.objective) > 0
       ? params.existing.objective
-      : clip(params.message, 220);
+      : clipText(params.message, 220);
 
   return {
     objective,
@@ -608,7 +604,7 @@ async function createTaskState(params: {
       userId: params.userId,
       conversationId: params.conversationId,
       status: params.status ?? "candidate",
-      objective: clip(params.objective, 220),
+      objective: clipText(params.objective, 220),
       confidence: Math.round(params.confidence ?? 40),
       locked: params.locked ? 1 : 0,
       openQuestionsJson: JSON.stringify([]),
@@ -904,7 +900,7 @@ async function maybeRerankEvidence(params: {
         [
           artifact.name,
           artifact.type,
-          clip(artifact.summary ?? artifact.contentText ?? artifact.name, 320),
+          clipText(artifact.summary ?? artifact.contentText ?? artifact.name, 320),
         ].join("\n"),
       maxTexts: MAX_RERANK_CANDIDATES,
     });
@@ -1325,7 +1321,7 @@ export async function applyTaskSteeringAction(params: {
       break;
     case "start_new_task": {
       const nextObjective = params.objective?.trim()
-        ? clip(params.objective.trim(), 220)
+        ? clipText(params.objective.trim(), 220)
         : "New task";
       const created = await createTaskState({
         userId: params.userId,
@@ -1483,7 +1479,7 @@ export async function updateTaskStateCheckpoint(params: {
     .update(conversationTaskStates)
     .set({
       status: "active",
-      objective: clip(merged.objective ?? existing.objective, 220),
+      objective: clipText(merged.objective ?? existing.objective, 220),
       confidence: nextConfidence,
       locked: existing.locked ? 1 : 0,
       lastConfirmedTurnMessageId:
@@ -1553,6 +1549,13 @@ export async function updateTaskStateCheckpoint(params: {
       sourceEvidenceIds,
       sourceTurnRange,
       verificationStatus: llmUpdate ? "passed" : "skipped",
+    });
+  }
+
+  queueTaskStateSemanticEmbeddingRefresh(current);
+  return current;
+}
+assed" : "skipped",
     });
   }
 

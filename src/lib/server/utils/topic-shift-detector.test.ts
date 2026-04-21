@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { cosineSimilarity } from '$lib/server/utils/math';
 import {
-	cosineSimilarity,
 	detectTopicShift,
 	shouldSuppressCarryover,
 } from './topic-shift-detector';

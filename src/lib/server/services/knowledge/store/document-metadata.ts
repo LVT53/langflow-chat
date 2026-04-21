@@ -1,3 +1,4 @@
+import { DAY_MS } from "$lib/server/utils/constants";
 import type {
   Artifact,
   ArtifactType,
@@ -186,7 +187,7 @@ export function resolveGeneratedDocumentFamilyStatus(params: {
 }): WorkingDocumentFamilyStatus {
   const historicalAfterMs =
     (params.historicalAfterDays ?? GENERATED_DOCUMENT_FAMILY_HISTORICAL_AFTER_DAYS) *
-    86_400_000;
+    DAY_MS;
   return (params.now ?? Date.now()) - params.updatedAt >= historicalAfterMs
     ? "historical"
     : "active";

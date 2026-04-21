@@ -4,7 +4,7 @@ import type {
 	MemoryLayer,
 	WorkCapsule,
 } from '$lib/types';
-import { estimateTokenCount } from './tokens';
+import { estimateTokenCount } from '$lib/utils/tokens';
 
 export type PromptContextSection = {
 	title: string;

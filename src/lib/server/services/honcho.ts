@@ -6,11 +6,12 @@ import { Honcho } from '@honcho-ai/sdk';
 import type { Message, Peer } from '@honcho-ai/sdk';
 import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
 import type { Session } from '@honcho-ai/sdk/dist/session';
+import { DAY_MS } from '$lib/server/utils/constants';
 import { getConfig } from '../config-store';
 import { db } from '../db';
 import { personaMemoryAttributions, users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
-import { estimateTokenCount } from '$lib/server/utils/tokens';
+import { estimateTokenCount } from '$lib/utils/tokens';
 import { TokenBudget } from '$lib/server/utils/token-budget';
 import { extractiveCompress } from '$lib/server/utils/extractive-compression';
 import { computeDecayScore, computeCrossConversationDecay } from '$lib/server/utils/artifact-decay';
@@ -69,7 +70,7 @@ import {
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
 import { buildActiveDocumentState } from './active-state';
-import { buildPersonaPromptContext } from './persona-memory';
+import { buildPersonaPromptContext } from './persona-memory/context-builder';
 import { getLatestHonchoMetadata, listMessages } from './messages';
 
 let client: Honcho | null = null;
@@ -1584,7 +1585,7 @@ export async function buildConstructedContext(params: {
 
 	for (const artifact of selectedEvidence) {
 		const daysSinceAccess = artifact.updatedAt
-			? Math.floor((Date.now() - (typeof artifact.updatedAt === 'number' ? artifact.updatedAt : (artifact.updatedAt as unknown as Date).getTime())) / 86_400_000)
+			? Math.floor((Date.now() - (typeof artifact.updatedAt === 'number' ? artifact.updatedAt : (artifact.updatedAt as unknown as Date).getTime())) / DAY_MS)
 			: 0;
 		const isSameConversation = artifact.conversationId === params.conversationId;
 		const matchScore = scoreMatch(params.message, `${artifact.name}\n${artifact.summary ?? ''}`);

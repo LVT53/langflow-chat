@@ -1,12 +1,6 @@
 // System prompts for different models
 // These are stored here instead of env vars because they're too long and complex
 
-export interface SystemPromptConfig {
-  name: string;
-  description: string;
-  prompt: string;
-}
-
 const CURRENT_TRANSLATION_DELIVERABLE_RULE =
   'When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write only the requested deliverable in English and wrap that deliverable in <preserve>...</preserve> tags.';
 const TRANSLATION_META_SILENCE_RULE =
