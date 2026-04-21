@@ -21,6 +21,7 @@ import type {
 } from '$lib/types';
 import { parseJsonRecord as parseJsonRecordOrNull } from '$lib/server/utils/json';
 import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
+import { DAY_MS } from '$lib/server/utils/constants';
 import { areNearDuplicateArtifactTexts } from './evidence-family';
 import {
 	buildArtifactVisibilityCondition,
@@ -2770,4 +2771,4 @@ export async function deleteAllPersonaMemoryStateForUser(userId: string): Promis
 	});
 }
 
-export { buildPersonaPromptContext } from './context-builder';
+export { buildPersonaPromptContext } from './persona-memory/context-builder';

@@ -11,6 +11,7 @@ export {
 	updateAdminConfig,
 } from './admin';
 
+
 export interface HonchoHealth {
 	enabled: boolean;
 	connected: boolean;

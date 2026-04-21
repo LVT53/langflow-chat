@@ -1555,10 +1555,3 @@ export async function updateTaskStateCheckpoint(params: {
   queueTaskStateSemanticEmbeddingRefresh(current);
   return current;
 }
-assed" : "skipped",
-    });
-  }
-
-  queueTaskStateSemanticEmbeddingRefresh(current);
-  return current;
-}

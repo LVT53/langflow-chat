@@ -17,8 +17,7 @@
 	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 	import { buildChatSourceMessageHref } from '$lib/client/document-workspace-navigation';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
-	import DocumentWorkspace from '$lib/components/chat/DocumentWorkspace.svelte';
-	import KnowledgeLibraryModal from './_components/KnowledgeLibraryModal.svelte';
+
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
 	import DocumentsList from './_components/DocumentsList.svelte';
@@ -38,7 +37,7 @@
 		toWorkspaceDocument,
 		getWorkspaceMetadataForArtifact,
 		type FocusContinuityView,
-		type LibraryModal,
+
 		type MemoryModal,
 		type PersonaMemoryFilter,
 	} from './_helpers';
@@ -165,6 +164,10 @@
 
 	function handleDocumentSelect(document: KnowledgeDocumentItem) {
 		workspaceCoordinator?.handleOpenDocument(toWorkspaceDocument(document));
+	}
+
+	function closeWorkspaceDocument(documentId?: string) {
+		workspaceCoordinator?.closeDocument?.(documentId);
 	}
 
 	function addDeletingArtifact(id: string) {
@@ -722,16 +725,8 @@
 		} finally {
 			removeDeletingArtifact(id);
 		}
-	}
 
-	function runLibraryBulkAction(kind: Exclude<LibraryModal, null>) {
-		return runKnowledgeAction(
-			getLibraryBulkAction(),
-			getLibraryBulkKey(),
-			getLibraryBulkConfirmation()
-		);
 	}
-
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && activeMemoryModal) {
 			closeMemoryModal();
@@ -865,10 +860,7 @@
 	<KnowledgeWorkspaceCoordinator
 		bind:this={workspaceCoordinator}
 		{documents}
-		{pendingKnowledgeActionKey}
-		{isKnowledgeActionPending}
 		onJumpToSource={jumpToWorkspaceSource}
-		onRunKnowledgeAction={() => void runLibraryBulkAction('documents')}
 	/>
 </div>
 
