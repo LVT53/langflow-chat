@@ -27,9 +27,14 @@
 
 		const key = `${handoffDoc.artifactId ?? handoffDoc.id}|${handoffDoc.filename}`;
 		if (lastHandoffKey === key) {
-			replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+			if (browser) {
+				requestAnimationFrame(() => {
+					replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+				});
+			}
 			return;
 		}
+
 
 		openDocument({
 			...handoffDoc,
@@ -38,7 +43,11 @@
 				: {}),
 		});
 		lastHandoffKey = key;
-		replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+		if (browser) {
+			requestAnimationFrame(() => {
+				replaceState(clearKnowledgeWorkspaceParams(page.url), page.state);
+			});
+		}
 	});
 
 	function openDocument(doc: DocumentWorkspaceItem) {
@@ -50,7 +59,7 @@
 		}
 	}
 
-	function closeDocument(documentId?: string) {
+	export function closeDocument(documentId?: string) {
 		if (documentId && activeDocument && activeDocument.id !== documentId) {
 			return;
 		}
@@ -70,7 +79,7 @@
 	}
 
 	// Expose openDocument for external callers (via bind:this)
-	function handleOpenDocument(doc: DocumentWorkspaceItem) {
+	export function handleOpenDocument(doc: DocumentWorkspaceItem) {
 		openDocument(doc);
 	}
 </script>
