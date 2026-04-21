@@ -185,7 +185,7 @@
 		const document = documents.find(d => d.id === documentId);
 		if (!document) return;
 		
-		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+		const artifactId = document.displayArtifactId;
 		if (!artifactId) return;
 		
 		// Trigger download via API endpoint

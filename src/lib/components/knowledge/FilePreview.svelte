@@ -1138,7 +1138,7 @@ function downloadFile() {
 
 	.preview-embedded-shell {
 		display: flex;
-		height: 100%;
+		flex: 1 1 auto;
 		min-height: 0;
 		min-width: 0;
 		background: var(--surface-page);
@@ -1163,7 +1163,6 @@ function downloadFile() {
 
 	.preview-panel-embedded {
 		flex: 1 1 auto;
-		height: 100%;
 		border: none;
 		background: var(--surface-page);
 	}
@@ -1191,7 +1190,6 @@ function downloadFile() {
 
 	.preview-body-embedded {
 		flex: 1 1 auto;
-		height: 100%;
 	}
 
 	.preview-download-button {
