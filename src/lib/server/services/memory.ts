@@ -605,6 +605,9 @@ async function refreshKnowledgeOverview(params: {
 			lastError: null,
 		});
 
+		// Overview timeout is configurable via HONCHO_OVERVIEW_WAIT_MS (default 10s).
+		// If Honcho is slow, this times out gracefully and falls back to the cached
+		// or local persona overview. Increase the env var if timeouts are frequent.
 		try {
 			const liveOverview = await getPeerContext(
 				params.userId,

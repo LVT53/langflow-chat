@@ -1136,6 +1136,12 @@ function downloadFile() {
 		background: color-mix(in srgb, var(--surface-page) 50%, transparent);
 	}
 
+	/* The embedded variant participates in a flex layout chain.
+	   Do NOT add height: 100% here or in .preview-panel-embedded /
+	   .preview-body-embedded. Percentage height requires an ancestor
+	   with an explicit height property; flexbox-computed heights do
+	   not count, so the percentage collapses to auto and overflow
+	   never triggers scrollbars. Use flex: 1 1 auto throughout. */
 	.preview-embedded-shell {
 		display: flex;
 		flex: 1 1 auto;

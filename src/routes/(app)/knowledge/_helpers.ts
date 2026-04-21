@@ -113,6 +113,11 @@ export function getFocusContinuityItemCount(params: {
 export function toWorkspaceDocument(
 	document: KnowledgeDocumentItem,
 ): DocumentWorkspaceItem {
+	// Use displayArtifactId (source artifact with storagePath to the actual binary file),
+	// NOT promptArtifactId (normalized artifact with extracted contentText only).
+	// Preview/download endpoints need the binary source, not extracted text.
+	// Reverting to promptArtifactId causes: PDF preview InvalidPDFException,
+	// and downloads returning text/plain with .pdf extension.
 	const artifactId = document.displayArtifactId;
 	return {
 		id: `artifact:${artifactId}`,
