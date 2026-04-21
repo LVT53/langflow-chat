@@ -79,6 +79,10 @@ function logKnowledgeOverviewSelection(params: {
 	userId: string;
 	selection: KnowledgeOverviewSelection;
 }): void {
+	const key = `${params.selection.overviewSource}:${params.selection.overviewStatus}:${params.selection.durablePersonaCount}`;
+	const prev = lastLoggedSelectionByUser.get(params.userId);
+	if (prev === key) return;
+	lastLoggedSelectionByUser.set(params.userId, key);
 	console.info('[KNOWLEDGE_MEMORY] Selected overview source', {
 		userId: params.userId,
 		overviewSource: params.selection.overviewSource,
@@ -103,6 +107,7 @@ type ResolveOverviewOptions = {
 const overviewRefreshInFlight = new Map<string, Promise<CachedKnowledgeOverview | null>>();
 const overviewAttemptStates = new Map<string, OverviewAttemptState>();
 const overviewRuntimeEpochByUser = new Map<string, number>();
+const lastLoggedSelectionByUser = new Map<string, string>();
 
 export type KnowledgeMemoryAction =
 	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }

@@ -36,6 +36,7 @@
 	let content = $state<Blob | null>(null);
 	let textContent = $state<string | null>(null);
 	let highlightedTextHtml = $state<string | null>(null);
+	let csvTableHtml = $state<string | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let htmlContent = $state<string | null>(null);
@@ -179,6 +180,7 @@
 		textContent = null;
 		highlightedTextHtml = null;
 		htmlContent = null;
+		csvTableHtml = null;
 		pdfDoc = null;
 		currentPage = 1;
 		totalPages = 0;
@@ -215,7 +217,15 @@
 
 			if (fileType === 'text') {
 				textContent = await blob.text();
-				highlightedTextHtml = await renderHighlightedPreviewText(textContent);
+				if (
+					mimeType === 'text/csv' ||
+					filename.toLowerCase().endsWith('.csv')
+				) {
+					csvTableHtml = parseCsvToHtmlTable(textContent);
+				} else {
+					highlightedTextHtml = await renderHighlightedPreviewText(textContent);
+				}
+
 			} else if (fileType === 'docx') {
 				await renderDocx(blob);
 			} else if (fileType === 'xlsx') {
@@ -656,6 +666,65 @@
 
 
 
+
+	function parseCsvToHtmlTable(csvText: string): string {
+		const rows: string[][] = [];
+		let currentRow: string[] = [];
+		let currentCell = '';
+		let inQuotes = false;
+
+		for (let i = 0; i < csvText.length; i++) {
+			const char = csvText[i];
+			const nextChar = csvText[i + 1];
+
+			if (inQuotes) {
+				if (char === '"' && nextChar === '"') {
+					currentCell += '"';
+					i++;
+				} else if (char === '"') {
+					inQuotes = false;
+				} else {
+					currentCell += char;
+				}
+			} else {
+				if (char === '"') {
+					inQuotes = true;
+				} else if (char === ',') {
+					currentRow.push(currentCell);
+					currentCell = '';
+				} else if (char === '\r' && nextChar === '\n') {
+					currentRow.push(currentCell);
+					rows.push(currentRow);
+					currentRow = [];
+					currentCell = '';
+					i++;
+				} else if (char === '\n' || char === '\r') {
+					currentRow.push(currentCell);
+					rows.push(currentRow);
+					currentRow = [];
+					currentCell = '';
+				} else {
+					currentCell += char;
+				}
+			}
+		}
+
+		currentRow.push(currentCell);
+		if (currentRow.length > 1 || currentRow[0] !== '' || rows.length === 0) {
+			rows.push(currentRow);
+		}
+
+		let html = '<table class="csv-table">';
+		for (const row of rows) {
+			html += '<tr>';
+			for (const cell of row) {
+				html += `<td>${escapeHtml(cell)}</td>`;
+			}
+			html += '</tr>';
+		}
+		html += '</table>';
+		return html;
+	}
 	function downloadFile() {
 		if (!content) return;
 		const url = URL.createObjectURL(content);
@@ -839,9 +908,15 @@
 				{:else if fileType === 'text'}
 					{#if content}
 						<div class="p-6">
-							<div class="file-text-preview">
-								{@html highlightedTextHtml ?? ''}
-							</div>
+							{#if csvTableHtml}
+								<div class="csv-table-container">
+									{@html sanitizeHtml(csvTableHtml)}
+								</div>
+							{:else}
+								<div class="file-text-preview">
+									{@html highlightedTextHtml ?? ''}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx' || fileType === 'odt'}
@@ -1017,6 +1092,29 @@
 		white-space: pre-wrap;
 		overflow-wrap: break-word;
 		word-break: break-word;
+	}
+
+	:global(.csv-table-container) {
+		font-family: 'Nimbus Sans L', sans-serif;
+		overflow-x: auto;
+	}
+	:global(.csv-table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+	}
+	:global(.csv-table td),
+	:global(.csv-table th) {
+		border: 1px solid var(--border-default);
+		padding: 0.5rem 0.75rem;
+		text-align: left;
+	}
+	:global(.csv-table tr:first-child td) {
+		background: var(--surface-overlay);
+		font-weight: 600;
+	}
+	:global(.csv-table tr:nth-child(even)) {
+		background: color-mix(in srgb, var(--surface-page) 50%, transparent);
 	}
 
 	.preview-embedded-shell {

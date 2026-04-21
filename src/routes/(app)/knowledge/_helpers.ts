@@ -92,7 +92,7 @@ export function getFocusContinuityItemCount(params: {
 // Workspace document helpers
 
 export function toWorkspaceDocument(document: KnowledgeDocumentItem): DocumentWorkspaceItem {
-	const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+	const artifactId = document.displayArtifactId;
 	return {
 		id: `artifact:${artifactId}`,
 		source: 'knowledge_artifact',
