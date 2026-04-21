@@ -1,741 +1,760 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import {
-		determinePreviewFileType,
-		getPreviewLanguage,
-		type PreviewFileType,
-	} from '$lib/utils/file-preview';
-	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
-	import { renderHighlightedText } from '$lib/utils/markdown-loader';
-	import FileTypeIcon from '$lib/components/ui/FileTypeIcon.svelte';
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import { browser } from "$app/environment";
+import {
+	determinePreviewFileType,
+	getPreviewLanguage,
+	type PreviewFileType,
+} from "$lib/utils/file-preview";
+import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
+import { renderHighlightedText } from "$lib/utils/markdown-loader";
+import FileTypeIcon from "$lib/components/ui/FileTypeIcon.svelte";
 
-	let {
-		open,
-		artifactId,
-		previewUrl = null,
-		filename,
-		mimeType,
-		variant = 'modal',
-		showHeader = true,
-		onClose,
-		currentPage = $bindable(1),
-		totalPages = $bindable(0),
-	}: {
-		open: boolean;
-		artifactId: string | null;
-		previewUrl?: string | null;
-		filename: string;
-		mimeType: string | null;
-		variant?: 'modal' | 'embedded';
-		showHeader?: boolean;
-		onClose: () => void;
-		currentPage?: number;
-		totalPages?: number;
-	} = $props();
+let {
+	open,
+	artifactId,
+	previewUrl = null,
+	filename,
+	mimeType,
+	variant = "modal",
+	showHeader = true,
+	onClose,
+	currentPage = $bindable(1),
+	totalPages = $bindable(0),
+}: {
+	open: boolean;
+	artifactId: string | null;
+	previewUrl?: string | null;
+	filename: string;
+	mimeType: string | null;
+	variant?: "modal" | "embedded";
+	showHeader?: boolean;
+	onClose: () => void;
+	currentPage?: number;
+	totalPages?: number;
+} = $props();
 
-	let content = $state<Blob | null>(null);
-	let textContent = $state<string | null>(null);
-	let highlightedTextHtml = $state<string | null>(null);
-	let csvTableHtml = $state<string | null>(null);
-	let isLoading = $state(false);
-	let error = $state<string | null>(null);
-	let htmlContent = $state<string | null>(null);
-	let fileType = $state<PreviewFileType>('unsupported');
-	let objectUrl = $state<string | null>(null);
+let content = $state<Blob | null>(null);
+let textContent = $state<string | null>(null);
+let highlightedTextHtml = $state<string | null>(null);
+let csvTableHtml = $state<string | null>(null);
+let isLoading = $state(false);
+let error = $state<string | null>(null);
+let htmlContent = $state<string | null>(null);
+let fileType = $state<PreviewFileType>("unsupported");
+let objectUrl = $state<string | null>(null);
 
-	// PDF.js state (loaded dynamically to avoid SSR issues)
-	let pdfjsLib: typeof import('pdfjs-dist') | null = null;
-	let pdfDoc = $state<any>(null);
-	let lastObservedPage = $state(1);
-	let zoom = $state(1.0);
-	let baseScale = $state(1.0);
-	let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
-	let scrollContainerRef = $state<HTMLDivElement | null>(null);
-	let isRendering = $state(false);
-	let isEmbedded = $derived(variant === 'embedded');
-	let titleElementId = $derived(`file-preview-title-${artifactId ?? filename.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`);
-	let pdfWorkerUrlPromise: Promise<string> | null = null;
-	let pageObserver: IntersectionObserver | null = null;
-	let isProgrammaticScroll = $state(false);
-	let programmaticScrollResetTimeout: ReturnType<typeof setTimeout> | null = null;
+// PDF.js state (loaded dynamically to avoid SSR issues)
+let pdfjsLib: typeof import("pdfjs-dist") | null = null;
+let pdfDoc = $state<PDFDocumentProxy | null>(null);
+let lastObservedPage = $state(1);
+let zoom = $state(1.0);
+let baseScale = $state(1.0);
+let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
+let scrollContainerRef = $state<HTMLDivElement | null>(null);
+let isRendering = $state(false);
+let isEmbedded = $derived(variant === "embedded");
+let titleElementId = $derived(
+	`file-preview-title-${artifactId ?? filename.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`,
+);
+let pdfWorkerUrlPromise: Promise<string> | null = null;
+let pageObserver: IntersectionObserver | null = null;
+let isProgrammaticScroll = $state(false);
+let programmaticScrollResetTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	// PDF render concurrency tracking
-	let pdfRenderVersion = 0;
-	let activeRenderTasks = new Map<number, { cancel: () => void }>();
+// PDF render concurrency tracking
+let pdfRenderVersion = 0;
+let activeRenderTasks = new Map<number, { cancel: () => void }>();
 
+$effect(() => {
+	if (open && (artifactId || previewUrl)) {
+		fileType = determinePreviewFileType(mimeType, filename);
+		void fetchFile();
+	}
+});
 
-
-	$effect(() => {
-		if (open && (artifactId || previewUrl)) {
-			fileType = determinePreviewFileType(mimeType, filename);
-			void fetchFile();
+$effect(() => {
+	if (!(fileType === "image" && content)) {
+		if (objectUrl) {
+			URL.revokeObjectURL(objectUrl);
+			objectUrl = null;
 		}
-	});
+		return;
+	}
 
-	$effect(() => {
-		if (!(fileType === 'image' && content)) {
-			if (objectUrl) {
-				URL.revokeObjectURL(objectUrl);
-				objectUrl = null;
-			}
-			return;
+	const nextObjectUrl = URL.createObjectURL(content);
+	objectUrl = nextObjectUrl;
+
+	return () => {
+		URL.revokeObjectURL(nextObjectUrl);
+		if (objectUrl === nextObjectUrl) {
+			objectUrl = null;
 		}
+	};
+});
 
-		const nextObjectUrl = URL.createObjectURL(content);
-		objectUrl = nextObjectUrl;
+// PDF.js rendering effect
+$effect(() => {
+	if (fileType === "pdf" && content) {
+		renderPdf(content);
+	}
+});
 
-		return () => {
-			URL.revokeObjectURL(nextObjectUrl);
-			if (objectUrl === nextObjectUrl) {
-				objectUrl = null;
-			}
-		};
-	});
+// Re-render all pages when zoom changes
+$effect(() => {
+	if (fileType === "pdf" && pdfDoc && canvasRefs.length > 0) {
+		const activeZoom = zoom;
+		void renderAllPages(activeZoom);
+	}
+});
 
-	// PDF.js rendering effect
-	$effect(() => {
-		if (fileType === 'pdf' && content) {
-			renderPdf(content);
-		}
-	});
+// Cleanup PDF render tasks when file closes or changes
+$effect(() => {
+	if (!open) {
+		cancelActivePdfRenderTasks();
+		pdfRenderVersion++;
+	}
+});
 
-	// Re-render all pages when zoom changes
-	$effect(() => {
-		if (fileType === 'pdf' && pdfDoc && canvasRefs.length > 0) {
-			const activeZoom = zoom;
-			void renderAllPages(activeZoom);
-		}
-	});
-
-	// Cleanup PDF render tasks when file closes or changes
-	$effect(() => {
-		if (!open) {
-			cancelActivePdfRenderTasks();
-			pdfRenderVersion++;
-		}
-	});
-
-	// Scroll to page when currentPage changes externally
-	$effect(() => {
-		if (fileType === 'pdf' && canvasRefs.length > 0 && currentPage !== lastObservedPage && browser) {
-			const targetPage = Math.max(1, Math.min(currentPage, totalPages));
-			const canvas = canvasRefs[targetPage - 1];
-			if (canvas && canvas.parentElement) {
-				if (programmaticScrollResetTimeout) {
-					clearTimeout(programmaticScrollResetTimeout);
-					programmaticScrollResetTimeout = null;
-				}
-				isProgrammaticScroll = true;
-				canvas.parentElement.scrollIntoView({ behavior: 'auto', block: 'start' });
-				lastObservedPage = targetPage;
-				// Keep guard active long enough for observer callbacks
-				programmaticScrollResetTimeout = setTimeout(() => {
-					isProgrammaticScroll = false;
-					programmaticScrollResetTimeout = null;
-				}, 120);
-			}
-		}
-	});
-
-	// Setup IntersectionObserver for page tracking
-	$effect(() => {
-		if (fileType === 'pdf' && scrollContainerRef && canvasRefs.length > 0 && browser) {
-			setupPageObserver();
-		}
-		return () => {
-			if (pageObserver) {
-				pageObserver.disconnect();
-				pageObserver = null;
-			}
+// Scroll to page when currentPage changes externally
+$effect(() => {
+	if (
+		fileType === "pdf" &&
+		canvasRefs.length > 0 &&
+		currentPage !== lastObservedPage &&
+		browser
+	) {
+		const targetPage = Math.max(1, Math.min(currentPage, totalPages));
+		const canvas = canvasRefs[targetPage - 1];
+		if (canvas?.parentElement) {
 			if (programmaticScrollResetTimeout) {
 				clearTimeout(programmaticScrollResetTimeout);
 				programmaticScrollResetTimeout = null;
 			}
-			isProgrammaticScroll = false;
-		};
-	});
-
-	async function renderHighlightedPreviewText(content: string) {
-		return renderHighlightedText(
-			content,
-			getPreviewLanguage(mimeType, filename),
-			browser ? document?.documentElement?.classList.contains('dark') ?? false : false
-		);
-	}
-
-	async function loadPdfWorkerUrl() {
-		if (!pdfWorkerUrlPromise) {
-			pdfWorkerUrlPromise = import('pdfjs-dist/build/pdf.worker.min.mjs?url').then(
-				(module) => module.default
-			);
+			isProgrammaticScroll = true;
+			canvas.parentElement.scrollIntoView({ behavior: "auto", block: "start" });
+			lastObservedPage = targetPage;
+			// Keep guard active long enough for observer callbacks
+			programmaticScrollResetTimeout = setTimeout(() => {
+				isProgrammaticScroll = false;
+				programmaticScrollResetTimeout = null;
+			}, 120);
 		}
-
-		return pdfWorkerUrlPromise;
 	}
+});
 
-	async function fetchFile() {
-		isLoading = true;
-		error = null;
-		content = null;
-		textContent = null;
-		highlightedTextHtml = null;
-		htmlContent = null;
-		csvTableHtml = null;
-		pdfDoc = null;
-		currentPage = 1;
-		totalPages = 0;
-		zoom = 1.0;
-		canvasRefs = [];
-
-		// Cancel any in-progress PDF renders
-		cancelActivePdfRenderTasks();
-		pdfRenderVersion++;
-
-		// Disconnect observer
+// Setup IntersectionObserver for page tracking
+$effect(() => {
+	if (
+		fileType === "pdf" &&
+		scrollContainerRef &&
+		canvasRefs.length > 0 &&
+		browser
+	) {
+		setupPageObserver();
+	}
+	return () => {
 		if (pageObserver) {
 			pageObserver.disconnect();
 			pageObserver = null;
 		}
+		if (programmaticScrollResetTimeout) {
+			clearTimeout(programmaticScrollResetTimeout);
+			programmaticScrollResetTimeout = null;
+		}
+		isProgrammaticScroll = false;
+	};
+});
 
+async function renderHighlightedPreviewText(content: string) {
+	return renderHighlightedText(
+		content,
+		getPreviewLanguage(mimeType, filename),
+		browser
+			? (document?.documentElement?.classList.contains("dark") ?? false)
+			: false,
+	);
+}
+
+async function loadPdfWorkerUrl() {
+	if (!pdfWorkerUrlPromise) {
+		pdfWorkerUrlPromise = import(
+			"pdfjs-dist/build/pdf.worker.min.mjs?url"
+		).then((module) => module.default);
+	}
+
+	return pdfWorkerUrlPromise;
+}
+
+async function fetchFile() {
+	isLoading = true;
+	error = null;
+	content = null;
+	textContent = null;
+	highlightedTextHtml = null;
+	htmlContent = null;
+	csvTableHtml = null;
+	pdfDoc = null;
+	currentPage = 1;
+	totalPages = 0;
+	zoom = 1.0;
+	canvasRefs = [];
+
+	// Cancel any in-progress PDF renders
+	cancelActivePdfRenderTasks();
+	pdfRenderVersion++;
+
+	// Disconnect observer
+	if (pageObserver) {
+		pageObserver.disconnect();
+		pageObserver = null;
+	}
+
+	try {
+		const resolvedPreviewUrl =
+			previewUrl ??
+			(artifactId ? `/api/knowledge/${artifactId}/preview` : null);
+		if (!resolvedPreviewUrl) {
+			throw new Error("Preview not available");
+		}
+		const response = await fetch(resolvedPreviewUrl);
+
+		if (!response.ok) {
+			if (response.status === 404) {
+				throw new Error("File not found");
+			}
+			throw new Error("Failed to load file");
+		}
+
+		const blob = await response.blob();
+		content = blob;
+
+		if (fileType === "text") {
+			textContent = await blob.text();
+			if (mimeType === "text/csv" || filename.toLowerCase().endsWith(".csv")) {
+				csvTableHtml = parseCsvToHtmlTable(textContent);
+			} else {
+				highlightedTextHtml = await renderHighlightedPreviewText(textContent);
+			}
+		} else if (fileType === "docx") {
+			await renderDocx(blob);
+		} else if (fileType === "xlsx") {
+			await renderXlsx(blob);
+		} else if (fileType === "pptx") {
+			await renderPptx(blob);
+		} else if (fileType === "odt") {
+			await renderOdt(blob);
+		}
+	} catch (err) {
+		error = err instanceof Error ? err.message : "Failed to load file";
+	} finally {
+		isLoading = false;
+	}
+}
+
+/**
+ * Cancel all active PDF render tasks to prevent canvas reuse errors.
+ */
+function cancelActivePdfRenderTasks() {
+	for (const [pageNum, task] of activeRenderTasks) {
 		try {
-			const resolvedPreviewUrl =
-				previewUrl ?? (artifactId ? `/api/knowledge/${artifactId}/preview` : null);
-			if (!resolvedPreviewUrl) {
-				throw new Error('Preview not available');
-			}
-			const response = await fetch(resolvedPreviewUrl);
-			
-			if (!response.ok) {
-				if (response.status === 404) {
-					throw new Error('File not found');
-				}
-				throw new Error('Failed to load file');
-			}
-
-			const blob = await response.blob();
-			content = blob;
-
-			if (fileType === 'text') {
-				textContent = await blob.text();
-				if (
-					mimeType === 'text/csv' ||
-					filename.toLowerCase().endsWith('.csv')
-				) {
-					csvTableHtml = parseCsvToHtmlTable(textContent);
-				} else {
-					highlightedTextHtml = await renderHighlightedPreviewText(textContent);
-				}
-
-			} else if (fileType === 'docx') {
-				await renderDocx(blob);
-			} else if (fileType === 'xlsx') {
-				await renderXlsx(blob);
-			} else if (fileType === 'pptx') {
-				await renderPptx(blob);
-			} else if (fileType === 'odt') {
-				await renderOdt(blob);
-			}
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load file';
-		} finally {
-			isLoading = false;
+			task.cancel();
+		} catch {
+			// Ignore cancellation errors
 		}
 	}
+	activeRenderTasks.clear();
+}
 
-	/**
-	 * Cancel all active PDF render tasks to prevent canvas reuse errors.
-	 */
-	function cancelActivePdfRenderTasks() {
-		for (const [pageNum, task] of activeRenderTasks) {
-			try {
-				task.cancel();
-			} catch {
-				// Ignore cancellation errors
+async function renderPdf(blob: Blob) {
+	if (!browser) return;
+
+	// Cancel any in-progress renders and increment version
+	cancelActivePdfRenderTasks();
+	pdfRenderVersion++;
+	const currentVersion = pdfRenderVersion;
+
+	try {
+		isRendering = true;
+
+		// Load PDF.js dynamically (avoids SSR issues)
+		if (!pdfjsLib) {
+			pdfjsLib = await import("pdfjs-dist");
+			pdfjsLib.GlobalWorkerOptions.workerSrc = await loadPdfWorkerUrl();
+		}
+
+		// Bail if a newer render cycle started during async loading
+		if (pdfRenderVersion !== currentVersion) return;
+
+		const arrayBuffer = await blob.arrayBuffer();
+		pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+		totalPages = pdfDoc.numPages;
+		currentPage = 1;
+		lastObservedPage = 1;
+
+		// Bail if a newer render cycle started during document loading
+		if (pdfRenderVersion !== currentVersion) return;
+
+		// Set zoom to "fit to width" based on container and first page
+		if (scrollContainerRef && totalPages > 0) {
+			const page = await pdfDoc.getPage(1);
+			// Bail if stale
+			if (pdfRenderVersion !== currentVersion) return;
+
+			const unscaledViewport = page.getViewport({ scale: 1.0 });
+			const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
+			if (containerWidth > 0 && unscaledViewport.width > 0) {
+				baseScale = containerWidth / unscaledViewport.width;
+				zoom = 1.0;
 			}
 		}
-		activeRenderTasks.clear();
+
+		// Render all pages
+		await renderAllPages(zoom, currentVersion);
+	} catch (err) {
+		error = "Failed to render PDF file";
+		console.error("PDF render error:", err);
+	} finally {
+		if (pdfRenderVersion === currentVersion) {
+			isRendering = false;
+		}
 	}
+}
 
-	async function renderPdf(blob: Blob) {
-		if (!browser) return;
+async function renderAllPages(zoomLevel = zoom, version?: number) {
+	if (!pdfDoc) return;
 
-		// Cancel any in-progress renders and increment version
+	let currentVersion: number;
+
+	if (version !== undefined) {
+		currentVersion = version;
+	} else {
 		cancelActivePdfRenderTasks();
 		pdfRenderVersion++;
-		const currentVersion = pdfRenderVersion;
-
-		try {
-			isRendering = true;
-
-			// Load PDF.js dynamically (avoids SSR issues)
-			if (!pdfjsLib) {
-				pdfjsLib = await import('pdfjs-dist');
-				pdfjsLib.GlobalWorkerOptions.workerSrc = await loadPdfWorkerUrl();
-			}
-
-			// Bail if a newer render cycle started during async loading
-			if (pdfRenderVersion !== currentVersion) return;
-
-			const arrayBuffer = await blob.arrayBuffer();
-			pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-			totalPages = pdfDoc.numPages;
-			currentPage = 1;
-			lastObservedPage = 1;
-
-			// Bail if a newer render cycle started during document loading
-			if (pdfRenderVersion !== currentVersion) return;
-
-			// Set zoom to "fit to width" based on container and first page
-			if (scrollContainerRef && totalPages > 0) {
-				const page = await pdfDoc.getPage(1);
-				// Bail if stale
-				if (pdfRenderVersion !== currentVersion) return;
-
-				const unscaledViewport = page.getViewport({ scale: 1.0 });
-				const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
-				if (containerWidth > 0 && unscaledViewport.width > 0) {
-					baseScale = containerWidth / unscaledViewport.width;
-					zoom = 1.0;
-				}
-			}
-
-			// Render all pages
-			await renderAllPages(zoom, currentVersion);
-
-		} catch (err) {
-			error = 'Failed to render PDF file';
-			console.error('PDF render error:', err);
-		} finally {
-			if (pdfRenderVersion === currentVersion) {
-				isRendering = false;
-			}
-		}
+		currentVersion = pdfRenderVersion;
 	}
 
-	async function renderAllPages(zoomLevel = zoom, version?: number) {
-		if (!pdfDoc) return;
+	try {
+		isRendering = true;
 
-		let currentVersion: number;
+		// Render each page
+		for (let i = 0; i < totalPages; i++) {
+			// Bail if a newer render cycle started
+			if (pdfRenderVersion !== currentVersion) return;
 
-		if (version !== undefined) {
-			currentVersion = version;
-		} else {
-			cancelActivePdfRenderTasks();
-			pdfRenderVersion++;
-			currentVersion = pdfRenderVersion;
-		}
-
-		try {
-			isRendering = true;
-
-			// Render each page
-			for (let i = 0; i < totalPages; i++) {
-				// Bail if a newer render cycle started
-				if (pdfRenderVersion !== currentVersion) return;
-
-				const canvas = canvasRefs[i];
-				if (canvas) {
-					await renderPage(i + 1, zoomLevel, canvas, currentVersion);
-				}
+			const canvas = canvasRefs[i];
+			if (canvas) {
+				await renderPage(i + 1, zoomLevel, canvas, currentVersion);
 			}
-
-			isRendering = false;
-		} catch (err) {
-			console.error('Pages render error:', err);
-			isRendering = false;
 		}
+
+		isRendering = false;
+	} catch (err) {
+		console.error("Pages render error:", err);
+		isRendering = false;
 	}
+}
 
-	async function renderPage(
-		pageNum: number,
-		zoomLevel: number,
-		canvas: HTMLCanvasElement,
-		version: number
-	) {
-		if (!pdfDoc) return;
+async function renderPage(
+	pageNum: number,
+	zoomLevel: number,
+	canvas: HTMLCanvasElement,
+	version: number,
+) {
+	if (!pdfDoc) return;
 
-		// Bail early if stale
+	// Bail early if stale
+	if (pdfRenderVersion !== version) return;
+
+	let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
+
+	try {
+		const page = await pdfDoc.getPage(pageNum);
+
+		// Bail if stale after async getPage
 		if (pdfRenderVersion !== version) return;
 
-		let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
+		// Apply baseScale * zoom to fit container at 100% zoom
+		const actualScale = baseScale * zoomLevel;
+		const viewport = page.getViewport({ scale: actualScale });
+		const context = canvas.getContext("2d");
 
-		try {
-			const page = await pdfDoc.getPage(pageNum);
+		if (!context) return;
 
-			// Bail if stale after async getPage
-			if (pdfRenderVersion !== version) return;
+		canvas.width = viewport.width;
+		canvas.height = viewport.height;
 
-			// Apply baseScale * zoom to fit container at 100% zoom
-			const actualScale = baseScale * zoomLevel;
-			const viewport = page.getViewport({ scale: actualScale });
-			const context = canvas.getContext('2d');
-
-			if (!context) return;
-
-			canvas.width = viewport.width;
-			canvas.height = viewport.height;
-
-			// Create and register render task
-			renderTask = page.render({
-				canvasContext: context,
-				viewport: viewport,
-			});
-			activeRenderTasks.set(pageNum, renderTask);
-
-			await renderTask.promise;
-		} catch (err) {
-			// Ignore cancellation errors - these are expected when zooming rapidly
-			if (
-				err instanceof Error &&
-				(err.name === 'RenderingCancelledException' ||
-					err.message?.includes('cancelled'))
-			) {
-				return;
-			}
-			console.error('Page render error:', err);
-		} finally {
-			// Always cleanup the task registration
-			if (renderTask) {
-				activeRenderTasks.delete(pageNum);
-			}
-		}
-	}
-
-	function setupPageObserver() {
-		if (!scrollContainerRef || !browser) return;
-		
-		// Disconnect existing observer
-		if (pageObserver) {
-			pageObserver.disconnect();
-		}
-		
-		// Create new observer
-		pageObserver = new IntersectionObserver(
-			(entries) => {
-				// Skip observer updates during programmatic scroll to prevent loops
-				if (isProgrammaticScroll) return;
-
-				// Find the most visible page
-				let mostVisiblePage = 1;
-				let maxVisibility = 0;
-				
-				entries.forEach((entry) => {
-					if (entry.isIntersecting) {
-						const pageNum = Number.parseInt(
-							(entry.target as HTMLElement).dataset.pageNum ?? '1',
-							10
-						);
-						const visibility = entry.intersectionRatio;
-						
-						if (visibility > maxVisibility) {
-							maxVisibility = visibility;
-							mostVisiblePage = pageNum;
-						}
-					}
-				});
-				
-				if (maxVisibility > 0) {
-					if (currentPage !== mostVisiblePage) {
-						lastObservedPage = mostVisiblePage;
-						currentPage = mostVisiblePage;
-					}
-				}
-			},
-			{
-				root: scrollContainerRef,
-				threshold: [0, 0.25, 0.5, 0.75, 1.0],
-			}
-		);
-		
-		// Observe all page containers
-		canvasRefs.forEach((canvas, index) => {
-			if (canvas) {
-				const container = canvas.parentElement;
-				if (container) {
-					container.dataset.pageNum = String(index + 1);
-					pageObserver!.observe(container);
-				}
-			}
+		// Create and register render task
+		renderTask = page.render({
+			canvasContext: context,
+			viewport: viewport,
 		});
-	}
+		activeRenderTasks.set(pageNum, renderTask);
 
-	function zoomIn() {
-		zoom = Math.min(zoom + 0.25, 3.0);
-	}
-
-	function zoomOut() {
-		zoom = Math.max(zoom - 0.25, 0.5);
-	}
-
-	function resetZoom() {
-		zoom = 1.0;
-	}
-
-	async function renderDocx(blob: Blob) {
-		try {
-			const mammoth = await import('mammoth');
-			const arrayBuffer = await blob.arrayBuffer();
-			const result = await mammoth.convertToHtml({ arrayBuffer });
-			htmlContent = result.value;
-		} catch (err) {
-			error = 'Failed to render DOCX file';
+		await renderTask.promise;
+	} catch (err) {
+		// Ignore cancellation errors - these are expected when zooming rapidly
+		if (
+			err instanceof Error &&
+			(err.name === "RenderingCancelledException" ||
+				err.message?.includes("cancelled"))
+		) {
+			return;
+		}
+		console.error("Page render error:", err);
+	} finally {
+		// Always cleanup the task registration
+		if (renderTask) {
+			activeRenderTasks.delete(pageNum);
 		}
 	}
+}
 
-	async function renderXlsx(blob: Blob) {
-		try {
-			const ExcelJS = await import('exceljs');
-			const arrayBuffer = await blob.arrayBuffer();
-			const workbook = new ExcelJS.Workbook();
-			await workbook.xlsx.load(arrayBuffer);
-			
-			let html = '<div class="xlsx-container">';
-			workbook.eachSheet((worksheet, sheetId) => {
-				const sheetName = worksheet.name || `Sheet ${sheetId}`;
-				html += `<div class="sheet"><h4>${sheetName}</h4><table class="xlsx-table">`;
-				
-				worksheet.eachRow((row) => {
-					html += '<tr>';
-					row.eachCell((cell) => {
-						const value = cell.value ?? '';
-						html += `<td>${value}</td>`;
-					});
-					html += '</tr>';
+function setupPageObserver() {
+	if (!scrollContainerRef || !browser) return;
+
+	// Disconnect existing observer
+	if (pageObserver) {
+		pageObserver.disconnect();
+	}
+
+	// Create new observer
+	pageObserver = new IntersectionObserver(
+		(entries) => {
+			// Skip observer updates during programmatic scroll to prevent loops
+			if (isProgrammaticScroll) return;
+
+			// Find the most visible page
+			let mostVisiblePage = 1;
+			let maxVisibility = 0;
+
+			entries.forEach((entry) => {
+				if (entry.isIntersecting) {
+					const pageNum = Number.parseInt(
+						(entry.target as HTMLElement).dataset.pageNum ?? "1",
+						10,
+					);
+					const visibility = entry.intersectionRatio;
+
+					if (visibility > maxVisibility) {
+						maxVisibility = visibility;
+						mostVisiblePage = pageNum;
+					}
+				}
+			});
+
+			if (maxVisibility > 0) {
+				if (currentPage !== mostVisiblePage) {
+					lastObservedPage = mostVisiblePage;
+					currentPage = mostVisiblePage;
+				}
+			}
+		},
+		{
+			root: scrollContainerRef,
+			threshold: [0, 0.25, 0.5, 0.75, 1.0],
+		},
+	);
+
+	// Observe all page containers
+	canvasRefs.forEach((canvas, index) => {
+		if (canvas) {
+			const container = canvas.parentElement;
+			if (container) {
+				container.dataset.pageNum = String(index + 1);
+				pageObserver?.observe(container);
+			}
+		}
+	});
+}
+
+function zoomIn() {
+	zoom = Math.min(zoom + 0.25, 3.0);
+}
+
+function zoomOut() {
+	zoom = Math.max(zoom - 0.25, 0.5);
+}
+
+function resetZoom() {
+	zoom = 1.0;
+}
+
+async function renderDocx(blob: Blob) {
+	try {
+		const mammoth = await import("mammoth");
+		const arrayBuffer = await blob.arrayBuffer();
+		const result = await mammoth.convertToHtml({ arrayBuffer });
+		htmlContent = result.value;
+	} catch (err) {
+		error = "Failed to render DOCX file";
+	}
+}
+
+async function renderXlsx(blob: Blob) {
+	try {
+		const ExcelJS = await import("exceljs");
+		const arrayBuffer = await blob.arrayBuffer();
+		const workbook = new ExcelJS.Workbook();
+		await workbook.xlsx.load(arrayBuffer);
+
+		let html = '<div class="xlsx-container">';
+		workbook.eachSheet((worksheet, sheetId) => {
+			const sheetName = worksheet.name || `Sheet ${sheetId}`;
+			html += `<div class="sheet"><h4>${sheetName}</h4><table class="xlsx-table">`;
+
+			worksheet.eachRow((row) => {
+				html += "<tr>";
+				row.eachCell((cell) => {
+					const value = cell.value ?? "";
+					html += `<td>${value}</td>`;
 				});
-				
-				html += '</table></div>';
+				html += "</tr>";
 			});
-			html += '</div>';
-			htmlContent = html;
-		} catch (err) {
-			error = 'Failed to render XLSX file';
-		}
-	}
 
-	async function renderPptx(blob: Blob) {
-		try {
-			const { PPTXViewer } = await import('pptxviewjs');
-			const arrayBuffer = await blob.arrayBuffer();
-			
-			// Create a temporary canvas for rendering slides
-			const canvas = document.createElement('canvas');
-			canvas.width = 1280;
-			canvas.height = 720;
-			
-			const viewer = new PPTXViewer({
-				canvas,
-				slideSizeMode: 'fit',
-				backgroundColor: '#ffffff'
-			});
-			
-			await viewer.loadFile(arrayBuffer);
-			
-			const slideCount = viewer.getSlideCount();
-			let html = '<div class="pptx-container">';
-			
-			// Render each slide and convert to image
-			for (let i = 0; i < slideCount; i++) {
-				await viewer.goToSlide(i);
-				await viewer.render();
-				const dataUrl = canvas.toDataURL('image/png');
-				html += `
+			html += "</table></div>";
+		});
+		html += "</div>";
+		htmlContent = html;
+	} catch (err) {
+		error = "Failed to render XLSX file";
+	}
+}
+
+async function renderPptx(blob: Blob) {
+	try {
+		const { PPTXViewer } = await import("pptxviewjs");
+		const arrayBuffer = await blob.arrayBuffer();
+
+		// Create a temporary canvas for rendering slides
+		const canvas = document.createElement("canvas");
+		canvas.width = 1280;
+		canvas.height = 720;
+
+		const viewer = new PPTXViewer({
+			canvas,
+			slideSizeMode: "fit",
+			backgroundColor: "#ffffff",
+		});
+
+		await viewer.loadFile(arrayBuffer);
+
+		const slideCount = viewer.getSlideCount();
+		let html = '<div class="pptx-container">';
+
+		// Render each slide and convert to image
+		for (let i = 0; i < slideCount; i++) {
+			await viewer.goToSlide(i);
+			await viewer.render();
+			const dataUrl = canvas.toDataURL("image/png");
+			html += `
 					<div class="pptx-slide">
 						<div class="pptx-slide-header">Slide ${i + 1} of ${slideCount}</div>
 						<img src="${dataUrl}" alt="Slide ${i + 1}" class="pptx-slide-image" />
 					</div>
 				`;
-			}
-			
-			html += '</div>';
-			htmlContent = html;
-			
-			viewer.destroy();
-		} catch (err) {
-			error = 'Failed to render PPTX file';
 		}
+
+		html += "</div>";
+		htmlContent = html;
+
+		viewer.destroy();
+	} catch (err) {
+		error = "Failed to render PPTX file";
+	}
+}
+
+function renderOdtTextNode(node: Node): string {
+	if (node.nodeType === Node.TEXT_NODE) {
+		return escapeHtml(node.textContent ?? "");
 	}
 
-	function renderOdtTextNode(node: Node): string {
-		if (node.nodeType === Node.TEXT_NODE) {
-			return escapeHtml(node.textContent ?? '');
-		}
-
-		if (node.nodeType !== Node.ELEMENT_NODE) {
-			return '';
-		}
-
-		const element = node as Element;
-		const children = Array.from(element.childNodes).map(renderOdtTextNode).join('');
-
-		switch (element.localName) {
-			case 's': {
-				const count = Number.parseInt(element.getAttribute('text:c') ?? '1', 10);
-				return '&nbsp;'.repeat(Number.isFinite(count) && count > 0 ? count : 1);
-			}
-			case 'tab':
-				return '&nbsp;&nbsp;&nbsp;&nbsp;';
-			case 'line-break':
-				return '<br />';
-			case 'span':
-				return children;
-			default:
-				return children;
-		}
+	if (node.nodeType !== Node.ELEMENT_NODE) {
+		return "";
 	}
 
-	function renderOdtBlock(node: Node): string {
-		if (node.nodeType !== Node.ELEMENT_NODE) {
-			return '';
-		}
+	const element = node as Element;
+	const children = Array.from(element.childNodes)
+		.map(renderOdtTextNode)
+		.join("");
 
-		const element = node as Element;
-		const children = Array.from(element.childNodes).map(renderOdtBlock).join('');
-		const textChildren = Array.from(element.childNodes).map(renderOdtTextNode).join('');
-
-		switch (element.localName) {
-			case 'h': {
-				const level = Math.min(
-					Math.max(Number.parseInt(element.getAttribute('text:outline-level') ?? '2', 10), 1),
-					6
-				);
-				return `<h${level}>${textChildren}</h${level}>`;
-			}
-			case 'p':
-				return `<p>${textChildren}</p>`;
-			case 'list':
-				return `<ul>${children}</ul>`;
-			case 'list-item':
-				return `<li>${children || textChildren}</li>`;
-			case 'table':
-				return `<table>${children}</table>`;
-			case 'table-row':
-				return `<tr>${children}</tr>`;
-			case 'table-cell':
-				return `<td>${children || textChildren}</td>`;
-			default:
-				return children;
+	switch (element.localName) {
+		case "s": {
+			const count = Number.parseInt(element.getAttribute("text:c") ?? "1", 10);
+			return "&nbsp;".repeat(Number.isFinite(count) && count > 0 ? count : 1);
 		}
+		case "tab":
+			return "&nbsp;&nbsp;&nbsp;&nbsp;";
+		case "line-break":
+			return "<br />";
+		case "span":
+			return children;
+		default:
+			return children;
+	}
+}
+
+function renderOdtBlock(node: Node): string {
+	if (node.nodeType !== Node.ELEMENT_NODE) {
+		return "";
 	}
 
-	async function renderOdt(blob: Blob) {
-		try {
-			const JSZip = (await import('jszip')).default;
-			const arrayBuffer = await blob.arrayBuffer();
-			const zip = await JSZip.loadAsync(arrayBuffer);
-			const contentEntry = zip.file('content.xml');
-			if (!contentEntry) {
-				throw new Error('Missing ODT content.xml');
-			}
+	const element = node as Element;
+	const children = Array.from(element.childNodes).map(renderOdtBlock).join("");
+	const textChildren = Array.from(element.childNodes)
+		.map(renderOdtTextNode)
+		.join("");
 
-			const xml = await contentEntry.async('string');
-			const parsed = new DOMParser().parseFromString(xml, 'application/xml');
-			if (parsed.querySelector('parsererror')) {
-				throw new Error('Invalid ODT XML');
-			}
-
-			const officeNs = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
-			const officeTextRoot =
-				parsed.getElementsByTagNameNS(officeNs, 'text')[0] ?? parsed.documentElement;
-			const html = Array.from(officeTextRoot.childNodes).map(renderOdtBlock).join('');
-			htmlContent =
-				html.trim().length > 0
-					? `<div class="odt-preview">${html}</div>`
-					: '<div class="odt-preview"><p>Preview available, but the document contains no readable text.</p></div>';
-		} catch (err) {
-			error = 'Failed to render ODT file';
+	switch (element.localName) {
+		case "h": {
+			const level = Math.min(
+				Math.max(
+					Number.parseInt(
+						element.getAttribute("text:outline-level") ?? "2",
+						10,
+					),
+					1,
+				),
+				6,
+			);
+			return `<h${level}>${textChildren}</h${level}>`;
 		}
+		case "p":
+			return `<p>${textChildren}</p>`;
+		case "list":
+			return `<ul>${children}</ul>`;
+		case "list-item":
+			return `<li>${children || textChildren}</li>`;
+		case "table":
+			return `<table>${children}</table>`;
+		case "table-row":
+			return `<tr>${children}</tr>`;
+		case "table-cell":
+			return `<td>${children || textChildren}</td>`;
+		default:
+			return children;
 	}
+}
 
-	function getObjectUrl(): string | null {
-		return objectUrl;
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && !isEmbedded) {
-			onClose();
+async function renderOdt(blob: Blob) {
+	try {
+		const JSZip = (await import("jszip")).default;
+		const arrayBuffer = await blob.arrayBuffer();
+		const zip = await JSZip.loadAsync(arrayBuffer);
+		const contentEntry = zip.file("content.xml");
+		if (!contentEntry) {
+			throw new Error("Missing ODT content.xml");
 		}
-	}
 
-	function handleBackdropClick() {
+		const xml = await contentEntry.async("string");
+		const parsed = new DOMParser().parseFromString(xml, "application/xml");
+		if (parsed.querySelector("parsererror")) {
+			throw new Error("Invalid ODT XML");
+		}
+
+		const officeNs = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
+		const officeTextRoot =
+			parsed.getElementsByTagNameNS(officeNs, "text")[0] ??
+			parsed.documentElement;
+		const html = Array.from(officeTextRoot.childNodes)
+			.map(renderOdtBlock)
+			.join("");
+		htmlContent =
+			html.trim().length > 0
+				? `<div class="odt-preview">${html}</div>`
+				: '<div class="odt-preview"><p>Preview available, but the document contains no readable text.</p></div>';
+	} catch (err) {
+		error = "Failed to render ODT file";
+	}
+}
+
+function getObjectUrl(): string | null {
+	return objectUrl;
+}
+
+function handleKeydown(event: KeyboardEvent) {
+	if (event.key === "Escape" && !isEmbedded) {
 		onClose();
 	}
+}
 
-	function handleModalClick(event: MouseEvent) {
-		event.stopPropagation();
-	}
+function handleBackdropClick() {
+	onClose();
+}
 
+function handleModalClick(event: MouseEvent) {
+	event.stopPropagation();
+}
 
+function parseCsvToHtmlTable(csvText: string): string {
+	const rows: string[][] = [];
+	let currentRow: string[] = [];
+	let currentCell = "";
+	let inQuotes = false;
 
+	for (let i = 0; i < csvText.length; i++) {
+		const char = csvText[i];
+		const nextChar = csvText[i + 1];
 
-	function parseCsvToHtmlTable(csvText: string): string {
-		const rows: string[][] = [];
-		let currentRow: string[] = [];
-		let currentCell = '';
-		let inQuotes = false;
-
-		for (let i = 0; i < csvText.length; i++) {
-			const char = csvText[i];
-			const nextChar = csvText[i + 1];
-
-			if (inQuotes) {
-				if (char === '"' && nextChar === '"') {
-					currentCell += '"';
-					i++;
-				} else if (char === '"') {
-					inQuotes = false;
-				} else {
-					currentCell += char;
-				}
+		if (inQuotes) {
+			if (char === '"' && nextChar === '"') {
+				currentCell += '"';
+				i++;
+			} else if (char === '"') {
+				inQuotes = false;
 			} else {
-				if (char === '"') {
-					inQuotes = true;
-				} else if (char === ',') {
-					currentRow.push(currentCell);
-					currentCell = '';
-				} else if (char === '\r' && nextChar === '\n') {
-					currentRow.push(currentCell);
-					rows.push(currentRow);
-					currentRow = [];
-					currentCell = '';
-					i++;
-				} else if (char === '\n' || char === '\r') {
-					currentRow.push(currentCell);
-					rows.push(currentRow);
-					currentRow = [];
-					currentCell = '';
-				} else {
-					currentCell += char;
-				}
+				currentCell += char;
+			}
+		} else {
+			if (char === '"') {
+				inQuotes = true;
+			} else if (char === ",") {
+				currentRow.push(currentCell);
+				currentCell = "";
+			} else if (char === "\r" && nextChar === "\n") {
+				currentRow.push(currentCell);
+				rows.push(currentRow);
+				currentRow = [];
+				currentCell = "";
+				i++;
+			} else if (char === "\n" || char === "\r") {
+				currentRow.push(currentCell);
+				rows.push(currentRow);
+				currentRow = [];
+				currentCell = "";
+			} else {
+				currentCell += char;
 			}
 		}
-
-		currentRow.push(currentCell);
-		if (currentRow.length > 1 || currentRow[0] !== '' || rows.length === 0) {
-			rows.push(currentRow);
-		}
-
-		let html = '<table class="csv-table">';
-		for (const row of rows) {
-			html += '<tr>';
-			for (const cell of row) {
-				html += `<td>${escapeHtml(cell)}</td>`;
-			}
-			html += '</tr>';
-		}
-		html += '</table>';
-		return html;
 	}
-	function downloadFile() {
-		if (!content) return;
-		const url = URL.createObjectURL(content);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = filename;
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-		URL.revokeObjectURL(url);
+
+	currentRow.push(currentCell);
+	if (currentRow.length > 1 || currentRow[0] !== "" || rows.length === 0) {
+		rows.push(currentRow);
 	}
+
+	let html = '<table class="csv-table">';
+	for (const row of rows) {
+		html += "<tr>";
+		for (const cell of row) {
+			html += `<td>${escapeHtml(cell)}</td>`;
+		}
+		html += "</tr>";
+	}
+	html += "</table>";
+	return html;
+}
+function downloadFile() {
+	if (!content) return;
+	const url = URL.createObjectURL(content);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(url);
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

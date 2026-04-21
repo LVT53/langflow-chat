@@ -1,11 +1,9 @@
-import { createHash } from 'crypto';
-import { eq, inArray } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import {
-	conversations,
-	personaMemoryOverviews,
-} from '$lib/server/db/schema';
-import { getConfig } from '$lib/server/config-store';
+import { createHash } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
+import { getConfig } from "$lib/server/config-store";
+import { db } from "$lib/server/db";
+import { conversations, personaMemoryOverviews } from "$lib/server/db/schema";
+import { DAY_MS } from "$lib/server/utils/constants";
 import type {
 	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryOverviewSource,
@@ -13,7 +11,7 @@ import type {
 	KnowledgeMemoryPayload,
 	KnowledgeMemorySummary,
 	PersonaMemoryItem,
-} from '$lib/types';
+} from "$lib/types";
 import {
 	forgetAllPersonaMemories,
 	forgetPersonaMemory,
@@ -21,22 +19,21 @@ import {
 	getHonchoUserPeerId,
 	getPeerContext,
 	isHonchoEnabled,
-} from './honcho';
-import { DAY_MS } from '$lib/server/utils/constants';
-import { runUserMemoryMaintenance } from './memory-maintenance';
+} from "./honcho";
+import { runUserMemoryMaintenance } from "./memory-maintenance";
 import {
 	deleteAllPersonaMemoryStateForUser,
 	deletePersonaMemoryClustersForConclusionIds,
 	ensurePersonaMemoryClustersReady,
 	getPersonaMemoryClusterConclusionIds,
 	listPersonaMemoryClusters,
-} from './persona-memory';
+} from "./persona-memory";
 import {
 	forgetFocusContinuity,
 	forgetTaskMemory,
 	listFocusContinuityItems,
 	listTaskMemoryItems,
-} from './task-state';
+} from "./task-state";
 
 const OVERVIEW_MIN_DURABLE_ITEMS = 2;
 const OVERVIEW_RECENT_SITUATIONAL_MS = 21 * DAY_MS;
@@ -83,7 +80,7 @@ function logKnowledgeOverviewSelection(params: {
 	const prev = lastLoggedSelectionByUser.get(params.userId);
 	if (prev === key) return;
 	lastLoggedSelectionByUser.set(params.userId, key);
-	console.info('[KNOWLEDGE_MEMORY] Selected overview source', {
+	console.info("[KNOWLEDGE_MEMORY] Selected overview source", {
 		userId: params.userId,
 		overviewSource: params.selection.overviewSource,
 		overviewStatus: params.selection.overviewStatus,
@@ -104,17 +101,24 @@ type ResolveOverviewOptions = {
 	force?: boolean;
 };
 
-const overviewRefreshInFlight = new Map<string, Promise<CachedKnowledgeOverview | null>>();
+const overviewRefreshInFlight = new Map<
+	string,
+	Promise<CachedKnowledgeOverview | null>
+>();
 const overviewAttemptStates = new Map<string, OverviewAttemptState>();
 const overviewRuntimeEpochByUser = new Map<string, number>();
 const lastLoggedSelectionByUser = new Map<string, string>();
 
 export type KnowledgeMemoryAction =
-	| { action: 'forget_persona_memory'; clusterId?: string; conclusionId?: string }
-	| { action: 'forget_all_persona_memory' }
-	| { action: 'forget_task_memory'; taskId: string }
-	| { action: 'forget_focus_continuity'; continuityId: string }
-	| { action: 'forget_project_memory'; projectId: string };
+	| {
+			action: "forget_persona_memory";
+			clusterId?: string;
+			conclusionId?: string;
+	  }
+	| { action: "forget_all_persona_memory" }
+	| { action: "forget_task_memory"; taskId: string }
+	| { action: "forget_focus_continuity"; continuityId: string }
+	| { action: "forget_project_memory"; projectId: string };
 
 function getOverviewRuntimeEpoch(userId: string): number {
 	return overviewRuntimeEpochByUser.get(userId) ?? 0;
@@ -131,86 +135,97 @@ export function clearKnowledgeMemoryRuntimeStateForUser(userId: string): void {
 }
 
 function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function replaceAllCaseInsensitive(text: string, needle: string, replacement: string): string {
+function replaceAllCaseInsensitive(
+	text: string,
+	needle: string,
+	replacement: string,
+): string {
 	if (!needle.trim()) return text;
-	return text.replace(new RegExp(escapeRegExp(needle), 'gi'), replacement);
+	return text.replace(new RegExp(escapeRegExp(needle), "gi"), replacement);
 }
 
 function sanitizeMemoryText(
 	text: string | null,
 	userId: string,
-	userDisplayName: string
+	userDisplayName: string,
 ): string | null {
 	if (!text?.trim()) return text;
 
-	const safeDisplayName = userDisplayName.trim() || 'the user';
+	const safeDisplayName = userDisplayName.trim() || "the user";
 	const honchoUserPeerId = getHonchoUserPeerId(userId);
 	const honchoAssistantPeerId = getHonchoAssistantPeerId(userId);
 	let sanitized = text;
 
 	sanitized = sanitized.replace(
-		new RegExp(`\\bthe user\\s+${escapeRegExp(userId)}\\b`, 'gi'),
-		safeDisplayName
+		new RegExp(`\\bthe user\\s+${escapeRegExp(userId)}\\b`, "gi"),
+		safeDisplayName,
 	);
 	sanitized = sanitized.replace(
-		new RegExp(`\\buser\\s+${escapeRegExp(userId)}\\b`, 'gi'),
-		safeDisplayName
+		new RegExp(`\\buser\\s+${escapeRegExp(userId)}\\b`, "gi"),
+		safeDisplayName,
 	);
 	sanitized = sanitized.replace(
-		new RegExp(`\\bthe user\\s+${escapeRegExp(honchoUserPeerId)}\\b`, 'gi'),
-		safeDisplayName
+		new RegExp(`\\bthe user\\s+${escapeRegExp(honchoUserPeerId)}\\b`, "gi"),
+		safeDisplayName,
 	);
 	sanitized = sanitized.replace(
-		new RegExp(`\\buser\\s+${escapeRegExp(honchoUserPeerId)}\\b`, 'gi'),
-		safeDisplayName
+		new RegExp(`\\buser\\s+${escapeRegExp(honchoUserPeerId)}\\b`, "gi"),
+		safeDisplayName,
 	);
-	sanitized = replaceAllCaseInsensitive(sanitized, honchoAssistantPeerId, 'AlfyAI');
-	sanitized = replaceAllCaseInsensitive(sanitized, honchoUserPeerId, safeDisplayName);
+	sanitized = replaceAllCaseInsensitive(
+		sanitized,
+		honchoAssistantPeerId,
+		"AlfyAI",
+	);
+	sanitized = replaceAllCaseInsensitive(
+		sanitized,
+		honchoUserPeerId,
+		safeDisplayName,
+	);
 	sanitized = replaceAllCaseInsensitive(sanitized, userId, safeDisplayName);
 
 	return sanitized;
 }
 
 function normalizeOverviewSentence(text: string): string {
-	const normalized = text.replace(/\s+/g, ' ').trim();
-	if (!normalized) return '';
+	const normalized = text.replace(/\s+/g, " ").trim();
+	if (!normalized) return "";
 	return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
 }
 
 function normalizeForTemporalMatch(text: string): string {
 	return text
 		.toLowerCase()
-		.replace(/\s+/g, ' ')
-		.replace(/[.!?]+$/g, '')
+		.replace(/\s+/g, " ")
+		.replace(/[.!?]+$/g, "")
 		.trim();
 }
 
 function withoutLeadingActor(text: string): string {
-	return text.replace(/^(?:the user|user|he|she|they)\s+(?:is|was|has|had)\s+/i, '').trim();
+	return text
+		.replace(/^(?:the user|user|he|she|they)\s+(?:is|was|has|had)\s+/i, "")
+		.trim();
 }
 
 function mentionsExpiredTemporalMemory(
 	overviewText: string,
-	personaMemories: PersonaMemoryItem[]
+	personaMemories: PersonaMemoryItem[],
 ): boolean {
 	const normalizedOverview = normalizeForTemporalMatch(overviewText);
 	if (!normalizedOverview) return false;
 
 	return personaMemories.some((memory) => {
 		if (
-			memory.temporal?.freshness !== 'expired' &&
-			memory.temporal?.freshness !== 'historical'
+			memory.temporal?.freshness !== "expired" &&
+			memory.temporal?.freshness !== "historical"
 		) {
 			return false;
 		}
 
-		const candidates = [
-			memory.rawCanonicalText,
-			memory.canonicalText,
-		]
+		const candidates = [memory.rawCanonicalText, memory.canonicalText]
 			.filter((value): value is string => Boolean(value))
 			.flatMap((value) => {
 				const normalized = normalizeForTemporalMatch(value);
@@ -221,46 +236,59 @@ function mentionsExpiredTemporalMemory(
 			})
 			.filter((value) => value.length >= 12);
 
-		return candidates.some((candidate) => normalizedOverview.includes(candidate));
+		return candidates.some((candidate) =>
+			normalizedOverview.includes(candidate),
+		);
 	});
 }
 
-function isDurableOverviewCandidate(memory: PersonaMemoryItem, now = Date.now()): boolean {
-	if (memory.state === 'archived') return false;
-	if (memory.topicStatus === 'historical') return false;
-	if (memory.temporal?.freshness === 'expired' || memory.temporal?.freshness === 'historical') {
+function isDurableOverviewCandidate(
+	memory: PersonaMemoryItem,
+	now = Date.now(),
+): boolean {
+	if (memory.state === "archived") return false;
+	if (memory.topicStatus === "historical") return false;
+	if (
+		memory.temporal?.freshness === "expired" ||
+		memory.temporal?.freshness === "historical"
+	) {
 		return false;
 	}
 
 	switch (memory.memoryClass) {
-		case 'perishable_fact':
+		case "perishable_fact":
 			return false;
-		case 'short_term_constraint':
-			return memory.state === 'active' && Boolean(memory.activeConstraint);
-		case 'active_project_context':
+		case "short_term_constraint":
+			return memory.state === "active" && Boolean(memory.activeConstraint);
+		case "active_project_context":
 			return (
-				memory.state === 'active' ||
-				(memory.state === 'dormant' &&
+				memory.state === "active" ||
+				(memory.state === "dormant" &&
 					now - memory.lastSeenAt <= OVERVIEW_RECENT_SITUATIONAL_MS &&
 					memory.salienceScore >= 54)
 			);
-		case 'situational_context':
+		case "situational_context":
 			return (
-				memory.state === 'active' &&
+				memory.state === "active" &&
 				now - memory.lastSeenAt <= OVERVIEW_RECENT_SITUATIONAL_MS &&
 				memory.salienceScore >= 52
 			);
-		case 'long_term_context':
-			return memory.pinned || memory.state === 'active' || memory.salienceScore >= 58;
-		case 'stable_preference':
-		case 'identity_profile':
+		case "long_term_context":
+			return (
+				memory.pinned || memory.state === "active" || memory.salienceScore >= 58
+			);
+		case "stable_preference":
+		case "identity_profile":
 			return true;
 	}
 }
 
-function sortOverviewMemories(left: PersonaMemoryItem, right: PersonaMemoryItem): number {
-	const stateRank = (state: PersonaMemoryItem['state']) =>
-		state === 'active' ? 0 : state === 'dormant' ? 1 : 2;
+function sortOverviewMemories(
+	left: PersonaMemoryItem,
+	right: PersonaMemoryItem,
+): number {
+	const stateRank = (state: PersonaMemoryItem["state"]) =>
+		state === "active" ? 0 : state === "dormant" ? 1 : 2;
 	return (
 		stateRank(left.state) - stateRank(right.state) ||
 		Number(right.pinned) - Number(left.pinned) ||
@@ -271,7 +299,7 @@ function sortOverviewMemories(left: PersonaMemoryItem, right: PersonaMemoryItem)
 
 function buildOverviewSection(
 	title: string,
-	memories: PersonaMemoryItem[]
+	memories: PersonaMemoryItem[],
 ): string | null {
 	if (memories.length === 0) return null;
 	const items = memories
@@ -280,31 +308,40 @@ function buildOverviewSection(
 		.slice(0, OVERVIEW_SECTION_ITEM_LIMIT)
 		.map((memory) => `- ${normalizeOverviewSentence(memory.canonicalText)}`);
 
-	return `### ${title}\n${items.join('\n')}`;
+	return `### ${title}\n${items.join("\n")}`;
 }
 
-function selectActiveConstraintMemories(personaMemories: PersonaMemoryItem[]): PersonaMemoryItem[] {
+function selectActiveConstraintMemories(
+	personaMemories: PersonaMemoryItem[],
+): PersonaMemoryItem[] {
 	return personaMemories.filter(
 		(memory) =>
-			memory.memoryClass === 'short_term_constraint' &&
-			memory.state === 'active' &&
+			memory.memoryClass === "short_term_constraint" &&
+			memory.state === "active" &&
 			Boolean(memory.activeConstraint) &&
-			memory.temporal?.freshness !== 'expired' &&
-			memory.temporal?.freshness !== 'historical'
+			memory.temporal?.freshness !== "expired" &&
+			memory.temporal?.freshness !== "historical",
 	);
 }
 
-function selectCurrentProjectContextMemories(personaMemories: PersonaMemoryItem[]): PersonaMemoryItem[] {
+function selectCurrentProjectContextMemories(
+	personaMemories: PersonaMemoryItem[],
+): PersonaMemoryItem[] {
 	return personaMemories.filter((memory) => {
-		if (memory.temporal?.freshness === 'expired' || memory.temporal?.freshness === 'historical') {
+		if (
+			memory.temporal?.freshness === "expired" ||
+			memory.temporal?.freshness === "historical"
+		) {
 			return false;
 		}
 
-		if (memory.memoryClass === 'active_project_context') {
-			return memory.state === 'active' || memory.state === 'dormant';
+		if (memory.memoryClass === "active_project_context") {
+			return memory.state === "active" || memory.state === "dormant";
 		}
 
-		return memory.memoryClass === 'situational_context' && memory.state === 'active';
+		return (
+			memory.memoryClass === "situational_context" && memory.state === "active"
+		);
 	});
 }
 
@@ -315,7 +352,7 @@ function createOverviewFingerprint(memories: PersonaMemoryItem[]): string {
 			(left, right) =>
 				left.id.localeCompare(right.id) ||
 				left.lastSeenAt - right.lastSeenAt ||
-				left.salienceScore - right.salienceScore
+				left.salienceScore - right.salienceScore,
 		)
 		.map((memory) => ({
 			id: memory.id,
@@ -327,13 +364,18 @@ function createOverviewFingerprint(memories: PersonaMemoryItem[]): string {
 			lastSeenAt: memory.lastSeenAt,
 		}));
 
-	return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+	return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): DurableOverviewSelection {
-	const durableMemories = personaMemories.filter((memory) => isDurableOverviewCandidate(memory));
+function buildLocalPersonaOverview(
+	personaMemories: PersonaMemoryItem[],
+): DurableOverviewSelection {
+	const durableMemories = personaMemories.filter((memory) =>
+		isDurableOverviewCandidate(memory),
+	);
 	const activeConstraints = selectActiveConstraintMemories(durableMemories);
-	const currentProjectContext = selectCurrentProjectContextMemories(durableMemories);
+	const currentProjectContext =
+		selectCurrentProjectContextMemories(durableMemories);
 	const durablePersonaCount = durableMemories.length;
 	const sourceFingerprint = createOverviewFingerprint(durableMemories);
 	if (durablePersonaCount < OVERVIEW_MIN_DURABLE_ITEMS) {
@@ -341,24 +383,30 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): Durabl
 	}
 
 	const sections = [
-		buildOverviewSection('Active Constraints', activeConstraints),
-		buildOverviewSection('Current Project Context', currentProjectContext),
+		buildOverviewSection("Active Constraints", activeConstraints),
+		buildOverviewSection("Current Project Context", currentProjectContext),
 		buildOverviewSection(
-			'Stable Preferences',
-			durableMemories.filter((memory) => memory.memoryClass === 'stable_preference')
+			"Stable Preferences",
+			durableMemories.filter(
+				(memory) => memory.memoryClass === "stable_preference",
+			),
 		),
 		buildOverviewSection(
-			'Identity And Profile',
-			durableMemories.filter((memory) => memory.memoryClass === 'identity_profile')
+			"Identity And Profile",
+			durableMemories.filter(
+				(memory) => memory.memoryClass === "identity_profile",
+			),
 		),
 		buildOverviewSection(
-			'Long-Term Context',
-			durableMemories.filter((memory) => memory.memoryClass === 'long_term_context')
+			"Long-Term Context",
+			durableMemories.filter(
+				(memory) => memory.memoryClass === "long_term_context",
+			),
 		),
 	].filter((section): section is string => Boolean(section));
 
 	return {
-		overview: sections.length > 0 ? sections.join('\n\n') : null,
+		overview: sections.length > 0 ? sections.join("\n\n") : null,
 		durablePersonaCount,
 		sourceFingerprint,
 	};
@@ -366,7 +414,7 @@ function buildLocalPersonaOverview(personaMemories: PersonaMemoryItem[]): Durabl
 
 function getOverviewAttemptState(
 	userId: string,
-	cachedOverview: CachedKnowledgeOverview | null
+	cachedOverview: CachedKnowledgeOverview | null,
 ): OverviewAttemptState {
 	const transient = overviewAttemptStates.get(userId) ?? {
 		lastAttemptAt: null,
@@ -384,7 +432,7 @@ function getOverviewAttemptState(
 
 function updateOverviewAttemptState(
 	userId: string,
-	state: Partial<OverviewAttemptState>
+	state: Partial<OverviewAttemptState>,
 ): void {
 	const current = overviewAttemptStates.get(userId) ?? {
 		lastAttemptAt: null,
@@ -393,18 +441,18 @@ function updateOverviewAttemptState(
 	};
 	overviewAttemptStates.set(userId, {
 		lastAttemptAt: state.lastAttemptAt ?? current.lastAttemptAt,
-		lastFailureAt:
-			Object.prototype.hasOwnProperty.call(state, 'lastFailureAt')
-				? state.lastFailureAt ?? null
-				: current.lastFailureAt,
-		lastError:
-			Object.prototype.hasOwnProperty.call(state, 'lastError')
-				? state.lastError ?? null
-				: current.lastError,
+		lastFailureAt: Object.hasOwn(state, "lastFailureAt")
+			? (state.lastFailureAt ?? null)
+			: current.lastFailureAt,
+		lastError: Object.hasOwn(state, "lastError")
+			? (state.lastError ?? null)
+			: current.lastError,
 	});
 }
 
-async function getCachedKnowledgeOverview(userId: string): Promise<CachedKnowledgeOverview | null> {
+async function getCachedKnowledgeOverview(
+	userId: string,
+): Promise<CachedKnowledgeOverview | null> {
 	const rows = await db
 		.select()
 		.from(personaMemoryOverviews)
@@ -442,7 +490,9 @@ async function upsertCachedKnowledgeOverview(params: {
 			sourceFingerprint: params.sourceFingerprint,
 			generatedAt: new Date(params.generatedAt),
 			lastAttemptAt: new Date(params.lastAttemptAt),
-			lastFailureAt: params.lastFailureAt ? new Date(params.lastFailureAt) : null,
+			lastFailureAt: params.lastFailureAt
+				? new Date(params.lastFailureAt)
+				: null,
 			lastError: params.lastError,
 			updatedAt: now,
 		})
@@ -453,7 +503,9 @@ async function upsertCachedKnowledgeOverview(params: {
 				sourceFingerprint: params.sourceFingerprint,
 				generatedAt: new Date(params.generatedAt),
 				lastAttemptAt: new Date(params.lastAttemptAt),
-				lastFailureAt: params.lastFailureAt ? new Date(params.lastFailureAt) : null,
+				lastFailureAt: params.lastFailureAt
+					? new Date(params.lastFailureAt)
+					: null,
 				lastError: params.lastError,
 				updatedAt: now,
 			},
@@ -498,11 +550,14 @@ async function recordKnowledgeOverviewFailure(params: {
 
 function startBackgroundPersonaRefresh(userId: string, reason: string): void {
 	void ensurePersonaMemoryClustersReady(userId, reason).catch((error) => {
-		console.warn('[KNOWLEDGE_MEMORY] Background persona cluster refresh failed', {
-			userId,
-			reason,
-			error,
-		});
+		console.warn(
+			"[KNOWLEDGE_MEMORY] Background persona cluster refresh failed",
+			{
+				userId,
+				reason,
+				error,
+			},
+		);
 	});
 }
 
@@ -515,7 +570,10 @@ function shouldStartOverviewRefresh(params: {
 	if (overviewRefreshInFlight.has(params.userId)) return false;
 	if (params.force) return true;
 
-	const attemptState = getOverviewAttemptState(params.userId, params.cachedOverview);
+	const attemptState = getOverviewAttemptState(
+		params.userId,
+		params.cachedOverview,
+	);
 	const lastAttemptAt = attemptState.lastAttemptAt ?? 0;
 	return Date.now() - lastAttemptAt >= OVERVIEW_REFRESH_BACKOFF_MS;
 }
@@ -548,37 +606,56 @@ async function refreshKnowledgeOverview(params: {
 		});
 
 		try {
-			const liveOverview = await getPeerContext(params.userId, params.userDisplayName, {
-				timeoutMs: Math.max(1, getConfig().honchoOverviewWaitMs),
-			});
+			const liveOverview = await getPeerContext(
+				params.userId,
+				params.userDisplayName,
+				{
+					timeoutMs: Math.max(1, getConfig().honchoOverviewWaitMs),
+				},
+			);
 			const normalizedOverview =
-				sanitizeMemoryText(liveOverview, params.userId, params.userDisplayName)?.trim() ?? '';
+				sanitizeMemoryText(
+					liveOverview,
+					params.userId,
+					params.userDisplayName,
+				)?.trim() ?? "";
 
 			if (!normalizedOverview) {
 				await recordKnowledgeOverviewFailure({
 					userId: params.userId,
 					lastAttemptAt: startedAt,
-					errorMessage: 'empty_live_overview',
+					errorMessage: "empty_live_overview",
 					cachedOverview,
 				});
-				console.warn('[KNOWLEDGE_MEMORY] Live Honcho overview returned no text', {
-					userId: params.userId,
-					durationMs: Date.now() - startedAt,
-					sourceServed: cachedOverview ? 'cache' : 'fallback',
-				});
+				console.warn(
+					"[KNOWLEDGE_MEMORY] Live Honcho overview returned no text",
+					{
+						userId: params.userId,
+						durationMs: Date.now() - startedAt,
+						sourceServed: cachedOverview ? "cache" : "fallback",
+					},
+				);
 				return null;
 			}
-			if (mentionsExpiredTemporalMemory(normalizedOverview, params.personaMemories)) {
+			if (
+				mentionsExpiredTemporalMemory(
+					normalizedOverview,
+					params.personaMemories,
+				)
+			) {
 				await recordKnowledgeOverviewFailure({
 					userId: params.userId,
 					lastAttemptAt: startedAt,
-					errorMessage: 'stale_temporal_live_overview',
+					errorMessage: "stale_temporal_live_overview",
 					cachedOverview,
 				});
-				console.warn('[KNOWLEDGE_MEMORY] Rejected stale Honcho overview with expired temporal memory', {
-					userId: params.userId,
-					durationMs: Date.now() - startedAt,
-				});
+				console.warn(
+					"[KNOWLEDGE_MEMORY] Rejected stale Honcho overview with expired temporal memory",
+					{
+						userId: params.userId,
+						durationMs: Date.now() - startedAt,
+					},
+				);
 				return null;
 			}
 			if (!isOverviewRuntimeEpochCurrent(params.userId, runtimeEpoch)) {
@@ -599,10 +676,10 @@ async function refreshKnowledgeOverview(params: {
 				lastFailureAt: null,
 				lastError: null,
 			});
-			console.info('[KNOWLEDGE_MEMORY] Refreshed live Honcho overview', {
+			console.info("[KNOWLEDGE_MEMORY] Refreshed live Honcho overview", {
 				userId: params.userId,
 				durationMs: Date.now() - startedAt,
-				sourceServed: 'live',
+				sourceServed: "live",
 				cacheAgeMs: 0,
 				fingerprintMatch: true,
 			});
@@ -612,19 +689,23 @@ async function refreshKnowledgeOverview(params: {
 				return null;
 			}
 			const errorMessage =
-				error instanceof Error ? error.message : 'unknown_honcho_overview_error';
+				error instanceof Error
+					? error.message
+					: "unknown_honcho_overview_error";
 			await recordKnowledgeOverviewFailure({
 				userId: params.userId,
 				lastAttemptAt: startedAt,
 				errorMessage,
 				cachedOverview,
 			});
-			console.warn('[KNOWLEDGE_MEMORY] Live Honcho overview refresh failed', {
+			console.warn("[KNOWLEDGE_MEMORY] Live Honcho overview refresh failed", {
 				userId: params.userId,
 				durationMs: Date.now() - startedAt,
 				error: errorMessage,
-				sourceServed: cachedOverview ? 'cache' : 'fallback',
-				cacheAgeMs: cachedOverview ? Date.now() - cachedOverview.generatedAt : null,
+				sourceServed: cachedOverview ? "cache" : "fallback",
+				cacheAgeMs: cachedOverview
+					? Date.now() - cachedOverview.generatedAt
+					: null,
 				fingerprintMatch:
 					cachedOverview?.sourceFingerprint === params.sourceFingerprint,
 			});
@@ -651,8 +732,8 @@ async function selectKnowledgeOverview(params: {
 	if (!honchoEnabled) {
 		const selection = {
 			overview: fallback.overview,
-			overviewSource: fallback.overview ? 'persona_fallback' : null,
-			overviewStatus: 'disabled',
+			overviewSource: fallback.overview ? "persona_fallback" : null,
+			overviewStatus: "disabled",
 			overviewUpdatedAt: null,
 			overviewLastAttemptAt: null,
 			durablePersonaCount: fallback.durablePersonaCount,
@@ -667,7 +748,7 @@ async function selectKnowledgeOverview(params: {
 		const selection = {
 			overview: null,
 			overviewSource: null,
-			overviewStatus: 'not_enough_durable_memory',
+			overviewStatus: "not_enough_durable_memory",
 			overviewUpdatedAt: null,
 			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
@@ -678,7 +759,7 @@ async function selectKnowledgeOverview(params: {
 
 	const hasMatchingCache = Boolean(
 		cachedOverview?.overviewText.trim() &&
-			cachedOverview.sourceFingerprint === fallback.sourceFingerprint
+			cachedOverview.sourceFingerprint === fallback.sourceFingerprint,
 	);
 	let refreshPromise: Promise<CachedKnowledgeOverview | null> | null = null;
 	const shouldRefresh = shouldStartOverviewRefresh({
@@ -703,14 +784,17 @@ async function selectKnowledgeOverview(params: {
 		const refreshedOverview = await refreshPromise;
 		if (
 			refreshedOverview?.overviewText.trim() &&
-			!mentionsExpiredTemporalMemory(refreshedOverview.overviewText, params.personaMemories)
+			!mentionsExpiredTemporalMemory(
+				refreshedOverview.overviewText,
+				params.personaMemories,
+			)
 		) {
 			cachedOverview = refreshedOverview;
 			if (refreshedOverview.sourceFingerprint === fallback.sourceFingerprint) {
 				const selection = {
 					overview: refreshedOverview.overviewText,
-					overviewSource: 'honcho_live',
-					overviewStatus: 'ready',
+					overviewSource: "honcho_live",
+					overviewStatus: "ready",
 					overviewUpdatedAt: refreshedOverview.generatedAt,
 					overviewLastAttemptAt: refreshedOverview.lastAttemptAt,
 					durablePersonaCount: fallback.durablePersonaCount,
@@ -724,12 +808,15 @@ async function selectKnowledgeOverview(params: {
 	if (
 		hasMatchingCache &&
 		cachedOverview &&
-		!mentionsExpiredTemporalMemory(cachedOverview.overviewText, params.personaMemories)
+		!mentionsExpiredTemporalMemory(
+			cachedOverview.overviewText,
+			params.personaMemories,
+		)
 	) {
 		const selection = {
 			overview: cachedOverview.overviewText,
-			overviewSource: 'honcho_cache',
-			overviewStatus: 'refreshing',
+			overviewSource: "honcho_cache",
+			overviewStatus: "refreshing",
 			overviewUpdatedAt: cachedOverview.generatedAt,
 			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
@@ -741,8 +828,8 @@ async function selectKnowledgeOverview(params: {
 	if (fallback.overview) {
 		const selection = {
 			overview: fallback.overview,
-			overviewSource: 'persona_fallback',
-			overviewStatus: 'refreshing',
+			overviewSource: "persona_fallback",
+			overviewStatus: "refreshing",
 			overviewUpdatedAt: null,
 			overviewLastAttemptAt: attemptState.lastAttemptAt,
 			durablePersonaCount: fallback.durablePersonaCount,
@@ -756,8 +843,8 @@ async function selectKnowledgeOverview(params: {
 		overviewSource: null,
 		overviewStatus:
 			fallback.durablePersonaCount >= OVERVIEW_MIN_DURABLE_ITEMS
-				? 'temporarily_unavailable'
-				: 'not_enough_durable_memory',
+				? "temporarily_unavailable"
+				: "not_enough_durable_memory",
 		overviewUpdatedAt: null,
 		overviewLastAttemptAt: attemptState.lastAttemptAt,
 		durablePersonaCount: fallback.durablePersonaCount,
@@ -768,7 +855,7 @@ async function selectKnowledgeOverview(params: {
 
 async function enrichPersonaMemories(
 	userId: string,
-	userDisplayName: string
+	userDisplayName: string,
 ): Promise<PersonaMemoryItem[]> {
 	const records = await listPersonaMemoryClusters(userId);
 	const conversationIds = Array.from(
@@ -776,9 +863,9 @@ async function enrichPersonaMemories(
 			records.flatMap((record) =>
 				record.members
 					.map((member) => member.sessionId)
-					.filter((sessionId): sessionId is string => Boolean(sessionId))
-			)
-		)
+					.filter((sessionId): sessionId is string => Boolean(sessionId)),
+			),
+		),
 	);
 
 	const titleRows =
@@ -796,19 +883,22 @@ async function enrichPersonaMemories(
 	return records.map((record) => ({
 		...record,
 		canonicalText:
-			sanitizeMemoryText(record.canonicalText, userId, userDisplayName) ?? record.canonicalText,
+			sanitizeMemoryText(record.canonicalText, userId, userDisplayName) ??
+			record.canonicalText,
 		rawCanonicalText: record.rawCanonicalText
-			? sanitizeMemoryText(record.rawCanonicalText, userId, userDisplayName) ??
-				record.rawCanonicalText
+			? (sanitizeMemoryText(record.rawCanonicalText, userId, userDisplayName) ??
+				record.rawCanonicalText)
 			: record.rawCanonicalText,
 		conversationTitles: record.conversationTitles.map(
-			(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
+			(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title,
 		),
 		members: record.members.map((member) => ({
 			...member,
-			content: sanitizeMemoryText(member.content, userId, userDisplayName) ?? member.content,
+			content:
+				sanitizeMemoryText(member.content, userId, userDisplayName) ??
+				member.content,
 			conversationTitle: member.sessionId
-				? titleMap.get(member.sessionId) ?? member.conversationTitle
+				? (titleMap.get(member.sessionId) ?? member.conversationTitle)
 				: member.conversationTitle,
 		})),
 	}));
@@ -820,7 +910,7 @@ function buildKnowledgeMemorySummary(
 	activeConstraintCount: number,
 	currentProjectContextCount: number,
 	taskCount: number,
-	focusContinuityCount: number
+	focusContinuityCount: number,
 ): KnowledgeMemorySummary {
 	return {
 		personaCount,
@@ -839,9 +929,9 @@ function buildKnowledgeMemorySummary(
 
 export async function getKnowledgeMemory(
 	userId: string,
-	userDisplayName: string
+	userDisplayName: string,
 ): Promise<KnowledgeMemoryPayload> {
-	startBackgroundPersonaRefresh(userId, 'knowledge_read');
+	startBackgroundPersonaRefresh(userId, "knowledge_read");
 
 	const [personaMemories, taskMemories, focusContinuities] = await Promise.all([
 		enrichPersonaMemories(userId, userDisplayName),
@@ -855,7 +945,8 @@ export async function getKnowledgeMemory(
 		awaitLive: false,
 	});
 	const activeConstraints = selectActiveConstraintMemories(personaMemories);
-	const currentProjectContext = selectCurrentProjectContextMemories(personaMemories);
+	const currentProjectContext =
+		selectCurrentProjectContextMemories(personaMemories);
 
 	return {
 		personaMemories,
@@ -869,7 +960,7 @@ export async function getKnowledgeMemory(
 			checkpointSummary: sanitizeMemoryText(
 				taskMemory.checkpointSummary,
 				userId,
-				userDisplayName
+				userDisplayName,
 			),
 		})),
 		focusContinuities: focusContinuities.map((continuity) => ({
@@ -879,7 +970,7 @@ export async function getKnowledgeMemory(
 				continuity.name,
 			summary: sanitizeMemoryText(continuity.summary, userId, userDisplayName),
 			conversationTitles: continuity.conversationTitles.map(
-				(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title
+				(title) => sanitizeMemoryText(title, userId, userDisplayName) ?? title,
 			),
 		})),
 		summary: buildKnowledgeMemorySummary(
@@ -888,7 +979,7 @@ export async function getKnowledgeMemory(
 			activeConstraints.length,
 			currentProjectContext.length,
 			taskMemories.length,
-			focusContinuities.length
+			focusContinuities.length,
 		),
 	};
 }
@@ -896,9 +987,9 @@ export async function getKnowledgeMemory(
 export async function getKnowledgeMemoryOverview(
 	userId: string,
 	userDisplayName: string,
-	options: ResolveOverviewOptions = {}
+	options: ResolveOverviewOptions = {},
 ): Promise<KnowledgeMemoryOverviewPayload> {
-	startBackgroundPersonaRefresh(userId, 'knowledge_overview_read');
+	startBackgroundPersonaRefresh(userId, "knowledge_overview_read");
 	const personaMemories = await enrichPersonaMemories(userId, userDisplayName);
 	const overviewSummary = await selectKnowledgeOverview({
 		userId,
@@ -915,7 +1006,7 @@ export async function getKnowledgeMemoryOverview(
 			selectActiveConstraintMemories(personaMemories).length,
 			selectCurrentProjectContextMemories(personaMemories).length,
 			0,
-			0
+			0,
 		),
 	};
 }
@@ -923,34 +1014,42 @@ export async function getKnowledgeMemoryOverview(
 export async function applyKnowledgeMemoryAction(
 	userId: string,
 	userDisplayName: string,
-	payload: KnowledgeMemoryAction
+	payload: KnowledgeMemoryAction,
 ): Promise<KnowledgeMemoryPayload> {
 	switch (payload.action) {
-		case 'forget_persona_memory':
+		case "forget_persona_memory":
 			clearKnowledgeMemoryRuntimeStateForUser(userId);
-			if (typeof payload.clusterId === 'string') {
-				const conclusionIds = await getPersonaMemoryClusterConclusionIds(userId, payload.clusterId);
+			if (typeof payload.clusterId === "string") {
+				const conclusionIds = await getPersonaMemoryClusterConclusionIds(
+					userId,
+					payload.clusterId,
+				);
 				for (const conclusionId of conclusionIds) {
 					await forgetPersonaMemory(userId, conclusionId);
 				}
-				await deletePersonaMemoryClustersForConclusionIds(userId, conclusionIds);
-			} else if (typeof payload.conclusionId === 'string') {
+				await deletePersonaMemoryClustersForConclusionIds(
+					userId,
+					conclusionIds,
+				);
+			} else if (typeof payload.conclusionId === "string") {
 				await forgetPersonaMemory(userId, payload.conclusionId);
-				await deletePersonaMemoryClustersForConclusionIds(userId, [payload.conclusionId]);
+				await deletePersonaMemoryClustersForConclusionIds(userId, [
+					payload.conclusionId,
+				]);
 			}
 			break;
-		case 'forget_all_persona_memory':
+		case "forget_all_persona_memory":
 			clearKnowledgeMemoryRuntimeStateForUser(userId);
 			await forgetAllPersonaMemories(userId);
 			await deleteAllPersonaMemoryStateForUser(userId);
 			break;
-		case 'forget_task_memory':
+		case "forget_task_memory":
 			await forgetTaskMemory(userId, payload.taskId);
 			break;
-		case 'forget_focus_continuity':
+		case "forget_focus_continuity":
 			await forgetFocusContinuity(userId, payload.continuityId);
 			break;
-		case 'forget_project_memory':
+		case "forget_project_memory":
 			await forgetFocusContinuity(userId, payload.projectId);
 			break;
 	}
