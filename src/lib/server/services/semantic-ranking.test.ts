@@ -34,7 +34,7 @@ describe('semantic-ranking', () => {
   });
 
   it('computes cosine similarity safely', async () => {
-    const { cosineSimilarity } = await import('./semantic-ranking');
+    const { cosineSimilarity } = await import('$lib/server/utils/math');
 
     expect(cosineSimilarity([1, 0], [1, 0])).toBeCloseTo(1);
     expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0);

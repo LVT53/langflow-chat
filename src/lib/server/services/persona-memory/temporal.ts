@@ -2,23 +2,15 @@ import type {
 	PersonaMemoryClass,
 	PersonaMemoryState,
 	PersonaMemoryTemporalFreshness,
+	PersonaMemoryTemporalInfo,
 	PersonaMemoryTemporalKind,
 	PersonaMemoryTopicStatus,
 } from '$lib/types';
 import { normalizeWhitespace } from '$lib/server/utils/text';
 import type { HonchoPersonaMemoryRecord } from '../honcho';
 import { normalizeMemoryText } from './classification';
-import { DAY_MS } from './_constants';
+import { DAY_MS } from '$lib/server/utils/constants';
 
-type TemporalMetadata = {
-	kind: PersonaMemoryTemporalKind;
-	freshness: PersonaMemoryTemporalFreshness;
-	observedAt: number;
-	effectiveAt: number | null;
-	expiresAt: number | null;
-	relative: boolean;
-	resolved: boolean;
-};
 
 function stripTrailingPunctuation(value: string): string {
 	return normalizeWhitespace(value).replace(/[.!?]+$/, '');
@@ -153,7 +145,7 @@ export function buildHistoricalTemporalText(text: string, observedAt: number): s
 export function deriveTopicStatus(params: {
 	memoryClass: PersonaMemoryClass;
 	state: PersonaMemoryState;
-	temporal: TemporalMetadata | null;
+	temporal: PersonaMemoryTemporalInfo | null;
 }): PersonaMemoryTopicStatus | null {
 	if (
 		params.temporal?.freshness === 'expired' ||
@@ -175,12 +167,12 @@ export function deriveTopicStatus(params: {
 /**
  * Derive temporal metadata from canonical text and records.
  */
-export function deriveTemporalMetadata(params: {
+export function derivePersonaMemoryTemporalInfo(params: {
 	canonicalText: string;
 	records: HonchoPersonaMemoryRecord[];
 	memoryClass: PersonaMemoryClass;
 	now?: number;
-}): TemporalMetadata | null {
+}): PersonaMemoryTemporalInfo | null {
 	const now = params.now ?? Date.now();
 	const latestRecordAt = Math.max(...params.records.map((record) => record.createdAt));
 	const text = stripTrailingPunctuation(params.canonicalText);
@@ -211,4 +203,4 @@ export function deriveTemporalMetadata(params: {
 	};
 }
 
-export type { TemporalMetadata };
+export type { PersonaMemoryTemporalInfo };

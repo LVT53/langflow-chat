@@ -50,34 +50,6 @@ export interface PreserveScrollOptions {
 }
 
 /**
- * Svelte action: preserves scroll position when the attached element expands/collapses.
- * Attach to the collapsible block's root element.
- *
- * @param container - The collapsible element
- * @param options - { topPadding, bottomPadding, extraCheck }
- */
-export function preserveScroll(
-	container: HTMLElement,
-	options: PreserveScrollOptions
-): { destroy: () => void } {
-	const scrollEl = container.closest('.scroll-container') as HTMLElement | null;
-	if (!scrollEl) return { destroy() {} };
-
-	const blockTop = container.getBoundingClientRect().top;
-	options.onToggle?.();
-
-	// Defer until after DOM update
-	Promise.resolve().then(() => {
-		requestAnimationFrame(() => {
-			const newBlockTop = container.getBoundingClientRect().top;
-			scrollEl.scrollTop += newBlockTop - blockTop;
-		});
-	});
-
-	return { destroy() {} };
-}
-
-/**
  * Simple scroll preservation for toggle-style collapsibles.
  * Call this in your toggle handler after changing the expanded state.
  *

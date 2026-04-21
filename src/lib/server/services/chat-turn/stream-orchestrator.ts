@@ -48,7 +48,7 @@ import {
   toIncrementalChunk,
 } from "$lib/server/services/chat-turn/stream";
 import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
-import { estimateTokenCount } from "$lib/server/utils/tokens";
+import { estimateTokenCount } from "$lib/utils/tokens";
 import {
   assignGeneratedFilesToAssistantMessage,
   getChatFiles,

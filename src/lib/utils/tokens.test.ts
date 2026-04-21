@@ -11,8 +11,8 @@ describe('estimateTokenCount', () => {
 	it('counts ASCII alphanumeric text at ~4 chars per token', () => {
 		// 'hello' = 5 chars, ceil(5/4) = 2 tokens
 		expect(estimateTokenCount('hello')).toBe(2);
-		// 'hello world' splits into 'hello', ' ', 'world' → 2 + 1 + 2 = 5 tokens
-		expect(estimateTokenCount('hello world')).toBe(5);
+		// 'hello world' splits into 'hello', 'world' (spaces skipped) → 2 + 2 = 4 tokens
+		expect(estimateTokenCount('hello world')).toBe(4);
 		// 20 chars → ceil(20/4) = 5 tokens
 		expect(estimateTokenCount('abcdefghijklmnopqrst')).toBe(5);
 	});
@@ -28,26 +28,26 @@ describe('estimateTokenCount', () => {
 		expect(estimateTokenCount('test')).toBe(1);
 	});
 
-	it('counts CJK and non-Latin scripts as 1 char per token (approximation)', () => {
-		// CJK: 4 chars → 4 tokens (non-ASCII, non-alphanumeric class)
-		expect(estimateTokenCount('你好世界')).toBe(4);
+	it('counts CJK and non-Latin scripts at ~2 chars per token', () => {
+		// CJK: 4 chars → ceil(4/2) = 2 tokens (\p{L} recognises all Unicode letters)
+		expect(estimateTokenCount('你好世界')).toBe(2);
 		// Cyrillic: 6 chars → 3 tokens (letter/number class, ceil(6/2))
 		expect(estimateTokenCount('привет')).toBe(3);
-		// Arabic: 4 chars → 3 tokens (letter/number class, ceil(4/2))
+		// Arabic: 5 chars → 3 tokens (letter/number class, ceil(5/2))
 		expect(estimateTokenCount('مرحبا')).toBe(3);
 	});
 
 	it('counts symbols and punctuation as 1 char per token', () => {
 		// 12 punctuation characters → 12 tokens
 		expect(estimateTokenCount('.,;:!?()[]{}')).toBe(12);
-		// 5 hyphens → 3 tokens (1 for ASCII letter/number run + 2 for remaining)
-		expect(estimateTokenCount('-----')).toBe(3);
+		// 5 hyphens → 5 tokens (punctuation, 1 char per token)
+		expect(estimateTokenCount('-----')).toBe(5);
 	});
 
 	it('handles mixed content correctly', () => {
-		// 'hello' (5 → 2) + ' ' (1) + '测试' (4 → 2) = 5
+		// 'hello' (5 → 2) + '测试' (2 CJK chars → 1) = 3
 		const mixed = 'hello 测试';
-		expect(estimateTokenCount(mixed)).toBe(5);
+		expect(estimateTokenCount(mixed)).toBe(3);
 	});
 
 	it('strips leading/trailing whitespace before counting', () => {

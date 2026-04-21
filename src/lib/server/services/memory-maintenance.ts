@@ -17,6 +17,7 @@ import type { HonchoPersonaMemoryRecord } from './honcho';
 import { forgetPersonaMemory, listPersonaMemories } from './honcho';
 import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
 import { backfillSemanticEmbeddingsForUser } from './semantic-embedding-refresh';
+import { DAY_MS } from '$lib/server/utils/constants';
 import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './task-state';
 
 const KEEP_MICRO_CHECKPOINTS = 6;
@@ -35,7 +36,7 @@ const userMaintenanceStates = new Map<string, {
 }>();
 
 function taskIsStale(updatedAt: Date, now = Date.now()): boolean {
-	return now - updatedAt.getTime() >= TASK_ARCHIVE_AFTER_DAYS * 86_400_000;
+	return now - updatedAt.getTime() >= TASK_ARCHIVE_AFTER_DAYS * DAY_MS;
 }
 
 function getFastHash(text: string): string {

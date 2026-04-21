@@ -19,6 +19,7 @@ import type {
 } from "$lib/types";
 import { parseJsonStringArray } from "$lib/server/utils/json";
 import { clipNullableText, normalizeWhitespace } from "$lib/server/utils/text";
+import { DAY_MS, RERANK_CONFIDENCE_MIN } from "$lib/server/utils/constants";
 import { scoreMatch } from "$lib/server/services/working-set";
 import {
   canUseContextSummarizer,
@@ -76,7 +77,7 @@ function projectStatusForLastActive(
   now = Date.now(),
 ): FocusContinuityStatus {
   if (!lastActiveAt) return "archived";
-  const ageDays = Math.floor((now - lastActiveAt) / 86_400_000);
+  const ageDays = Math.floor((now - lastActiveAt) / DAY_MS);
   if (ageDays >= 45) return "archived";
   if (ageDays >= 14) return "dormant";
   return "active";
@@ -265,7 +266,7 @@ async function chooseProjectCandidate(params: {
     if (
       routed &&
       typeof routed.confidence === "number" &&
-      routed.confidence >= 64 &&
+      routed.confidence >= RERANK_CONFIDENCE_MIN &&
       typeof routed.projectId === "string"
     ) {
       return (

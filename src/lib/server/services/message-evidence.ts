@@ -14,6 +14,8 @@ import type {
 import { getArtifactsForUser } from './knowledge';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { resolveArtifactFamilyKeys } from './evidence-family';
+import { RERANK_CONFIDENCE_MIN } from '$lib/server/utils/constants';
+import { clipText } from '$lib/server/utils/text';
 
 const GROUP_LABELS: Record<EvidenceSourceType, string> = {
 	web: 'Web Search',
@@ -28,12 +30,6 @@ const GROUP_ORDER: Record<EvidenceSourceType, number> = {
 	tool: 2,
 	memory: 3,
 };
-
-function clip(text: string, maxLength: number): string {
-	const normalized = text.replace(/\s+/g, ' ').trim();
-	if (normalized.length <= maxLength) return normalized;
-	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
 
 function sanitizeUrl(value: unknown): string | null {
 	if (typeof value !== 'string' || !value.trim()) return null;
@@ -98,7 +94,7 @@ function buildMemoryGroup(contextStatus: ConversationContextStatus | null | unde
 			sourceType: 'memory',
 			status: 'reference',
 			description: contextStatus.summary
-				? clip(contextStatus.summary, 180)
+				? clipText(contextStatus.summary, 180)
 				: 'Session summary and recalled context were included.',
 		});
 	}
@@ -191,7 +187,7 @@ async function buildArtifactGroups(params: {
 			status: 'selected',
 			artifactId: attachment.id,
 			description: attachment.summary
-				? `Included automatically for this turn. ${clip(attachment.summary, 180)}`
+				? `Included automatically for this turn. ${clipText(attachment.summary, 180)}`
 				: 'Included automatically for this turn.',
 			currentTurnAttachment: true,
 			channels,
@@ -292,7 +288,7 @@ async function buildRerankedToolGroup(params: {
 						title: tool.name,
 						sourceType: params.sourceType,
 						status: 'reference' as const,
-						description: tool.outputSummary ? clip(tool.outputSummary, 180) : null,
+						description: tool.outputSummary ? clipText(tool.outputSummary, 180) : null,
 						channels: [params.sourceType === 'web' ? 'web' : 'tool'] as EvidenceChannel[],
 					}))
 			: [];
@@ -335,7 +331,7 @@ async function buildRerankedToolGroup(params: {
 				maxTexts: 6,
 			});
 
-			if (rerankedResponse && rerankedResponse.items.length > 0 && rerankedResponse.confidence >= 64) {
+			if (rerankedResponse && rerankedResponse.items.length > 0 && rerankedResponse.confidence >= RERANK_CONFIDENCE_MIN) {
 				const nextSelectedIds = new Set(
 					rerankedResponse.items.slice(0, 3).map(({ item }) => item.id)
 				);

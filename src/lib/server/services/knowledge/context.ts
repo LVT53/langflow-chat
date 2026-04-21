@@ -17,6 +17,7 @@ import type {
 	WorkingSetReasonCode,
 } from '$lib/types';
 import { parseJsonStringArray } from '$lib/server/utils/json';
+import { DAY_MS } from '$lib/server/utils/constants';
 import { countRecentMemoryEventsBySubject } from '../memory-events';
 import {
 	applyConversationBoundaryPenalty,
@@ -536,7 +537,7 @@ export async function findRelevantKnowledgeArtifacts(params: {
 	suppressGeneratedCarryover?: boolean;
 }): Promise<Artifact[]> {
 	const limit = params.limit ?? 6;
-	const recentBehaviorWindowStart = Date.now() - 14 * 86_400_000;
+	const recentBehaviorWindowStart = Date.now() - 14 * DAY_MS;
 	const currentConversationId = params.currentConversationId ?? '';
 
 	const [documentMatchesRaw, generatedOutputMatchesRaw, preferredArtifacts] = await Promise.all([
@@ -580,7 +581,7 @@ export async function findRelevantKnowledgeArtifacts(params: {
 					if (!eligible) return null;
 				}
 
-				const daysSinceLastAccess = Math.max(0, (Date.now() - entry.artifact.updatedAt) / 86_400_000);
+				const daysSinceLastAccess = Math.max(0, (Date.now() - entry.artifact.updatedAt) / DAY_MS);
 
 				return {
 					...entry,

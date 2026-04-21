@@ -1,12 +1,9 @@
-import { randomUUID } from "crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { artifactChunks } from "$lib/server/db/schema";
 import type { Artifact, ArtifactChunk, TaskState } from "$lib/types";
 import { clipText } from "$lib/server/utils/text";
-import { estimateTokenCount } from "$lib/server/utils/tokens";
 import { scoreMatch } from "$lib/server/services/working-set";
-import { getSmallFileThreshold } from "$lib/server/services/knowledge/store/core";
 import { canUseTeiReranker, rerankItems } from "../tei-reranker";
 import {
   canUseContextSummarizer,
@@ -14,116 +11,32 @@ import {
 } from "./control-model";
 import { mapArtifactChunk } from "./mappers";
 
-const CHUNK_CHAR_TARGET = 1400;
-const CHUNK_CHAR_OVERLAP = 220;
-const CHUNK_RERANK_CONFIDENCE_MIN = 64;
-
 /** Maximum characters for full content retrieval to prevent unbounded content */
-export const FULL_CONTENT_MAX_CHARS = 6000;
+const FULL_CONTENT_MAX_CHARS = 6000;
 
-function clip(text: string, maxLength: number): string {
-  return clipText(text, maxLength);
-}
-
-/**
- * Determines if a file should bypass chunking based on its content length.
- * Small files (< threshold) are stored in full without chunking to save storage.
- */
-function shouldBypassChunking(contentLength: number): boolean {
-  return contentLength < getSmallFileThreshold();
-}
-
-function splitIntoChunks(text: string): string[] {
-  const normalized = text.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-
-  const chunks: string[] = [];
-  let start = 0;
-
-  while (start < normalized.length) {
-    let end = Math.min(normalized.length, start + CHUNK_CHAR_TARGET);
-    if (end < normalized.length) {
-      const paragraphBreak = normalized.lastIndexOf("\n\n", end);
-      const lineBreak = normalized.lastIndexOf("\n", end);
-      const sentenceBreak = Math.max(
-        normalized.lastIndexOf(". ", end),
-        normalized.lastIndexOf("? ", end),
-        normalized.lastIndexOf("! ", end),
-      );
-      const boundary = Math.max(paragraphBreak, lineBreak, sentenceBreak);
-      if (boundary > start + Math.floor(CHUNK_CHAR_TARGET * 0.45)) {
-        end = boundary + 1;
-      }
-    }
-
-    const chunk = normalized.slice(start, end).trim();
-    if (chunk) {
-      chunks.push(chunk);
-    }
-
-    if (end >= normalized.length) break;
-    start = Math.max(end - CHUNK_CHAR_OVERLAP, start + 1);
-  }
-
-  return chunks;
-}
+export { syncArtifactChunks } from "./chunk-sync";
 
 export function formatTaskStateForPrompt(taskState: TaskState): string {
   const sections = [
     `Objective: ${taskState.objective}`,
     taskState.constraints.length > 0
-      ? `Constraints:\n- ${taskState.constraints.join("\n- ")}`
+      ? `Constraints:\n- ${taskState.constraints.join("\n-")}`
       : null,
     taskState.factsToPreserve.length > 0
-      ? `Facts to preserve:\n- ${taskState.factsToPreserve.join("\n- ")}`
+      ? `Facts to preserve:\n- ${taskState.factsToPreserve.join("\n-")}`
       : null,
     taskState.decisions.length > 0
-      ? `Decisions:\n- ${taskState.decisions.join("\n- ")}`
+      ? `Decisions:\n- ${taskState.decisions.join("\n-")}`
       : null,
     taskState.openQuestions.length > 0
-      ? `Open questions:\n- ${taskState.openQuestions.join("\n- ")}`
+      ? `Open questions:\n- ${taskState.openQuestions.join("\n-")}`
       : null,
     taskState.nextSteps.length > 0
-      ? `Next steps:\n- ${taskState.nextSteps.join("\n- ")}`
+      ? `Next steps:\n- ${taskState.nextSteps.join("\n-")}`
       : null,
   ].filter((value): value is string => Boolean(value));
 
   return sections.join("\n\n");
-}
-
-export async function syncArtifactChunks(params: {
-  artifactId: string;
-  userId: string;
-  conversationId?: string | null;
-  contentText?: string | null;
-}): Promise<void> {
-  // Always delete existing chunks first
-  await db
-    .delete(artifactChunks)
-    .where(eq(artifactChunks.artifactId, params.artifactId));
-
-  if (!params.contentText?.trim()) return;
-
-  // Small file bypass: store full content without chunking
-  if (shouldBypassChunking(params.contentText.length)) {
-    return;
-  }
-
-  const chunks = splitIntoChunks(params.contentText);
-  if (chunks.length === 0) return;
-
-  await db.insert(artifactChunks).values(
-    chunks.map((chunk, index) => ({
-      id: randomUUID(),
-      artifactId: params.artifactId,
-      userId: params.userId,
-      conversationId: params.conversationId ?? null,
-      chunkIndex: index,
-      contentText: chunk,
-      tokenEstimate: estimateTokenCount(chunk),
-      updatedAt: new Date(),
-    })),
-  );
 }
 
 export async function listArtifactChunksForArtifacts(
@@ -198,7 +111,7 @@ export async function getPromptArtifactSnippets(params: {
 
   for (const artifact of params.artifacts) {
     const chunks = chunksByArtifactId.get(artifact.id) ?? [];
-    
+
     if (chunks.length === 0) {
       if (params.useFullContent && artifact.contentText) {
         const fullContent = await getFullArtifactContent(
@@ -212,7 +125,7 @@ export async function getPromptArtifactSnippets(params: {
       }
       const fallback =
         artifact.contentText ?? artifact.summary ?? artifact.name;
-      snippets.set(artifact.id, clip(fallback, perArtifactCharBudget));
+      snippets.set(artifact.id, clipText(fallback, perArtifactCharBudget));
       continue;
     }
 
@@ -253,8 +166,8 @@ export async function getPromptArtifactSnippets(params: {
           getText: (entry) =>
             [
               `Artifact: ${artifact.name}`,
-              artifact.summary ? `Artifact summary: ${clip(artifact.summary, 220)}` : null,
-              clip(entry.chunk.contentText, 500),
+              artifact.summary ? `Artifact summary: ${clipText(artifact.summary, 220)}` : null,
+              clipText(entry.chunk.contentText, 500),
             ]
               .filter((value): value is string => Boolean(value))
               .join("\n\n"),
@@ -264,7 +177,7 @@ export async function getPromptArtifactSnippets(params: {
         if (
           reranked &&
           reranked.items.length > 0 &&
-          reranked.confidence >= CHUNK_RERANK_CONFIDENCE_MIN
+          reranked.confidence >= RERANK_CONFIDENCE_MIN
         ) {
           chosen = reranked.items
             .slice(0, perArtifactLimit)
@@ -277,13 +190,13 @@ export async function getPromptArtifactSnippets(params: {
 
     const combined = chosen
       .map((entry) =>
-        clip(
+        clipText(
           entry.chunk.contentText,
           Math.floor(perArtifactCharBudget / chosen.length),
         ),
       )
       .join("\n\n");
-    snippets.set(artifact.id, clip(combined, perArtifactCharBudget));
+    snippets.set(artifact.id, clipText(combined, perArtifactCharBudget));
   }
 
   return snippets;
