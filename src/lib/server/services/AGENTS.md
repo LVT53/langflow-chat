@@ -80,7 +80,6 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
 **Additional active services not shown above:**
 - `auth/hooks.ts` — `requireAuth`, `getBearerToken` (canonical auth boundary for API routes)
 - `prompts.ts` (src/lib/server/prompts.ts) — system prompt configs for translation rules (consumed by langflow, honcho)
-- `http-agents.ts` — HTTP agent pooling for langflow keep-alive (consumed by langflow)
 - `analytics.ts` — analytics event ingestion (consumed by finalize.ts)
 - `pdf-generator.ts` — PDF artifact generation from chat content or file generation requests
 - `image-search.ts` — image search integration (tool endpoint at api/tools/image-search)

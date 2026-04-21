@@ -1,85 +1,85 @@
+import {
+	createInlineThinkingState,
+	FRIENDLY_STREAM_ERRORS,
+	flushInlineThinkingState,
+	getPartialTagPrefixLength,
+	getTextContent,
+	processInlineThinkingChunk,
+	type StreamErrorCode,
+} from "$lib/services/stream-protocol";
 import type {
 	EvidenceSourceType,
 	ToolCallEntry,
 	ToolEvidenceCandidate,
-} from '$lib/types';
-import {
-	createInlineThinkingState,
-	flushInlineThinkingState,
-	getPartialTagPrefixLength,
-	processInlineThinkingChunk,
-	FRIENDLY_STREAM_ERRORS,
-	getTextFromContentBlocks,
-	getTextContent,
-} from '$lib/services/stream-protocol';
-import type { ChatTurnRequestError } from './types';
+} from "$lib/types";
+import type { ChatTurnRequestError } from "./types";
 
+export type { UpstreamEvent } from "./stream-parser";
+export {
+	parseEventBlock,
+	parseJsonBlock,
+	parseMaybeJson,
+	// stream-parser
+	parseSseBlock,
+	parseUpstreamEvents,
+} from "./stream-parser";
 // Re-export all public symbols from sub-modules for backward compatibility
 export {
+	getReasoningContent,
+	normalizeVisibleAssistantText,
+	PRESERVE_TAG_RE,
 	// thinking-normalizer
 	THINKING_BLOCK_RE,
 	THINKING_TAG_RE,
-	PRESERVE_TAG_RE,
-	normalizeVisibleAssistantText,
-	getReasoningContent,
-} from './thinking-normalizer';
-
+} from "./thinking-normalizer";
+export type { StreamToolCallDetails } from "./tool-call-markers";
 export {
+	processToolCallMarkers,
+	TOOL_CALL_END_RE,
 	// tool-call-markers
 	TOOL_CALL_START_RE,
-	TOOL_CALL_END_RE,
-	processToolCallMarkers,
-} from './tool-call-markers';
-
-export type { StreamToolCallDetails } from './tool-call-markers';
-
-export {
-	// stream-parser
-	parseSseBlock,
-	parseJsonBlock,
-	parseEventBlock,
-	parseUpstreamEvents,
-} from './stream-parser';
-
-export type { UpstreamEvent } from './stream-parser';
+} from "./tool-call-markers";
 
 // ---------------------------------------------------------------------------
 // Internal helpers (moved to sub-modules, retained here for local use)
 // ---------------------------------------------------------------------------
-import { getNestedObject, getFirstChoice } from '$lib/services/stream-protocol';
-import type { StreamToolCallDetails as ImportedToolDetails } from './tool-call-markers';
+import { getNestedObject } from "$lib/services/stream-protocol";
+import { parseMaybeJson } from "./stream-parser";
+import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
+const JSON_HEADERS = { "Content-Type": "application/json" };
 const SSE_HEADERS = {
-	'Content-Type': 'text/event-stream',
-	'Cache-Control': 'no-cache, no-store, must-revalidate',
-	'Pragma': 'no-cache',
-	'Expires': '0',
-	'Connection': 'keep-alive',
-	'X-Accel-Buffering': 'no',
+	"Content-Type": "text/event-stream",
+	"Cache-Control": "no-cache, no-store, must-revalidate",
+	Pragma: "no-cache",
+	Expires: "0",
+	Connection: "keep-alive",
+	"X-Accel-Buffering": "no",
 };
 const SSE_PRELUDE_PADDING_BYTES = 8192;
-const SSE_HEARTBEAT_COMMENT = ': keep-alive\n\n';
+const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
 
 export type ServerStreamSegment =
-	| { type: 'text'; content: string }
+	| { type: "text"; content: string }
 	| {
-			type: 'tool_call';
+			type: "tool_call";
 			name: string;
 			input: Record<string, unknown>;
-			status: 'running' | 'done';
+			status: "running" | "done";
 			outputSummary?: string | null;
 			sourceType?: EvidenceSourceType | null;
 			candidates?: ToolEvidenceCandidate[];
 	  };
 
 export const URL_LIST_TOOL_RECOVERY_APPENDIX = [
-	'Important retry guard for URL-processing tools:',
-	'- If a tool uses a field named `urls`, it must be a JSON array of strings.',
-	'- Even for one link, pass `[]`, never a bare string.',
-].join('\n');
+	"Important retry guard for URL-processing tools:",
+	"- If a tool uses a field named `urls`, it must be a JSON array of strings.",
+	"- Even for one link, pass `[]`, never a bare string.",
+].join("\n");
 
-export function createStreamJsonErrorResponse(error: ChatTurnRequestError): Response {
+export function createStreamJsonErrorResponse(
+	error: ChatTurnRequestError,
+): Response {
 	return new Response(JSON.stringify(stripUndefined(error)), {
 		status: error.status,
 		headers: JSON_HEADERS,
@@ -91,7 +91,7 @@ export function createEventStreamResponse(stream: ReadableStream): Response {
 }
 
 export function createSsePreludeComment(): string {
-	return `:${' '.repeat(SSE_PRELUDE_PADDING_BYTES)}\n\n`;
+	return `:${" ".repeat(SSE_PRELUDE_PADDING_BYTES)}\n\n`;
 }
 
 export function createSseHeartbeatComment(): string {
@@ -111,39 +111,41 @@ export function createServerChunkRuntime({
 	onToolCall?: (
 		name: string,
 		input: Record<string, unknown>,
-		status: 'running' | 'done',
+		status: "running" | "done",
 		outputSummary?: string | null,
 	) => void;
 	thinkingBatchMin?: number;
 }) {
-	let fullResponse = '';
-	let thinkingContent = '';
+	let fullResponse = "";
+	let thinkingContent = "";
 	const inlineThinkingState = createInlineThinkingState();
-	let preserveBuffer = '';
+	let preserveBuffer = "";
 	let insidePreserve = false;
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
-	let pendingThinkingBuffer = '';
+	let pendingThinkingBuffer = "";
 
 	const flushPendingThinking = (): boolean => {
 		if (!pendingThinkingBuffer) return true;
 		const chunk = pendingThinkingBuffer;
-		pendingThinkingBuffer = '';
+		pendingThinkingBuffer = "";
 		thinkingContent += chunk;
 		const lastSegment = serverSegments[serverSegments.length - 1];
-		if (lastSegment?.type === 'text') {
+		if (lastSegment?.type === "text") {
 			lastSegment.content += chunk;
 		} else {
-			serverSegments.push({ type: 'text', content: chunk });
+			serverSegments.push({ type: "text", content: chunk });
 		}
 		if (onThinking) onThinking(chunk);
-		return enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+		return enqueueChunk(
+			`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`,
+		);
 	};
 
 	const stripToolCallsFromThinking = (text: string): string => {
 		return text.replace(
-			/<tool_calls>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'\"{}\u4e00-\u9fff-]*?<\/tool_calls>/gi,
-			'',
+			/<tool_calls>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'"{}\u4e00-\u9fff-]*?<\/tool_calls>/gi,
+			"",
 		);
 	};
 
@@ -164,13 +166,15 @@ export function createServerChunkRuntime({
 
 		fullResponse += chunk;
 		if (onToken) onToken(chunk);
-		return enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+		return enqueueChunk(
+			`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`,
+		);
 	};
 
 	const emitToolCallEvent = (
 		name: string,
 		input: Record<string, unknown>,
-		status: 'running' | 'done',
+		status: "running" | "done",
 		details?: ImportedToolDetails,
 	) => {
 		flushInlineThinkingBuffer();
@@ -187,16 +191,25 @@ export function createServerChunkRuntime({
 			})}\n\n`,
 		);
 
-		if (status === 'running') {
-			serverSegments.push({ type: 'tool_call', name, input, status: 'running' });
-			toolCallRecords.push({ name, input, status: 'running' });
+		if (status === "running") {
+			serverSegments.push({
+				type: "tool_call",
+				name,
+				input,
+				status: "running",
+			});
+			toolCallRecords.push({ name, input, status: "running" });
 			return;
 		}
 
 		for (let i = serverSegments.length - 1; i >= 0; i--) {
 			const segment = serverSegments[i];
-			if (segment.type === 'tool_call' && segment.name === name && segment.status === 'running') {
-				segment.status = 'done';
+			if (
+				segment.type === "tool_call" &&
+				segment.name === name &&
+				segment.status === "running"
+			) {
+				segment.status = "done";
 				segment.outputSummary = details?.outputSummary ?? null;
 				segment.sourceType = details?.sourceType ?? null;
 				segment.candidates = details?.candidates;
@@ -206,10 +219,10 @@ export function createServerChunkRuntime({
 
 		for (let i = toolCallRecords.length - 1; i >= 0; i--) {
 			const toolRecord = toolCallRecords[i];
-			if (toolRecord.name === name && toolRecord.status === 'running') {
+			if (toolRecord.name === name && toolRecord.status === "running") {
 				toolCallRecords[i] = {
 					...toolRecord,
-					status: 'done',
+					status: "done",
 					outputSummary: details?.outputSummary ?? null,
 					sourceType: details?.sourceType ?? null,
 					candidates: details?.candidates,
@@ -233,8 +246,8 @@ export function createServerChunkRuntime({
 		});
 	};
 
-	const PRESERVE_OPEN_TAG = '<preserve>';
-	const PRESERVE_CLOSE_TAG = '</preserve>';
+	const PRESERVE_OPEN_TAG = "<preserve>";
+	const PRESERVE_CLOSE_TAG = "</preserve>";
 
 	const emitChunkWithPreserveHandling = (chunk: string): boolean => {
 		if (!chunk) {
@@ -251,12 +264,17 @@ export function createServerChunkRuntime({
 					if (!emitInlineToken(content)) {
 						return false;
 					}
-					preserveBuffer = preserveBuffer.slice(closeIndex + PRESERVE_CLOSE_TAG.length);
+					preserveBuffer = preserveBuffer.slice(
+						closeIndex + PRESERVE_CLOSE_TAG.length,
+					);
 					insidePreserve = false;
 					continue;
 				}
 
-				const partialCloseLength = getPartialTagPrefixLength(preserveBuffer, PRESERVE_CLOSE_TAG);
+				const partialCloseLength = getPartialTagPrefixLength(
+					preserveBuffer,
+					PRESERVE_CLOSE_TAG,
+				);
 				if (partialCloseLength > 0) {
 					break;
 				}
@@ -269,12 +287,17 @@ export function createServerChunkRuntime({
 				if (visibleChunk && !emitInlineToken(visibleChunk)) {
 					return false;
 				}
-				preserveBuffer = preserveBuffer.slice(openIndex + PRESERVE_OPEN_TAG.length);
+				preserveBuffer = preserveBuffer.slice(
+					openIndex + PRESERVE_OPEN_TAG.length,
+				);
 				insidePreserve = true;
 				continue;
 			}
 
-			const partialOpenLength = getPartialTagPrefixLength(preserveBuffer, PRESERVE_OPEN_TAG);
+			const partialOpenLength = getPartialTagPrefixLength(
+				preserveBuffer,
+				PRESERVE_OPEN_TAG,
+			);
 			const flushLength = preserveBuffer.length - partialOpenLength;
 			if (flushLength > 0) {
 				const visibleChunk = preserveBuffer.slice(0, flushLength);
@@ -295,7 +318,7 @@ export function createServerChunkRuntime({
 		}
 
 		const remainder = preserveBuffer;
-		preserveBuffer = '';
+		preserveBuffer = "";
 
 		if (insidePreserve) {
 			insidePreserve = false;
@@ -334,25 +357,27 @@ export function createServerChunkRuntime({
 export function classifyStreamError(rawMessage: string): StreamErrorCode {
 	const message = rawMessage.toLowerCase();
 
-	if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
-		return 'timeout';
+	if (
+		message.includes("timeout") ||
+		message.includes("timed out") ||
+		message.includes("abort")
+	) {
+		return "timeout";
 	}
 
 	if (
-		message.includes('network') ||
-		message.includes('fetch') ||
-		message.includes('econn') ||
-		message.includes('enotfound') ||
-		message.includes('socket') ||
-		message.includes('connection')
+		message.includes("network") ||
+		message.includes("fetch") ||
+		message.includes("econn") ||
+		message.includes("enotfound") ||
+		message.includes("socket") ||
+		message.includes("connection")
 	) {
-		return 'network';
+		return "network";
 	}
 
-	return 'backend_failure';
+	return "backend_failure";
 }
-
-type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;
 
 export function isAbruptUpstreamTermination(error: unknown): boolean {
 	if (!(error instanceof Error)) {
@@ -360,40 +385,50 @@ export function isAbruptUpstreamTermination(error: unknown): boolean {
 	}
 
 	const message = error.message.toLowerCase();
-	const cause = 'cause' in error ? (error as Error & { cause?: unknown }).cause : undefined;
+	const cause =
+		"cause" in error ? (error as Error & { cause?: unknown }).cause : undefined;
 	const causeCode =
-		cause && typeof cause === 'object' && 'code' in cause ? (cause as { code?: unknown }).code : undefined;
+		cause && typeof cause === "object" && "code" in cause
+			? (cause as { code?: unknown }).code
+			: undefined;
 
-	return message.includes('terminated') || message.includes('socket') || causeCode === 'UND_ERR_SOCKET';
+	return (
+		message.includes("terminated") ||
+		message.includes("socket") ||
+		causeCode === "UND_ERR_SOCKET"
+	);
 }
 
 export function streamErrorEvent(code: StreamErrorCode): string {
 	return `event: error\ndata: ${JSON.stringify({ code, message: FRIENDLY_STREAM_ERRORS[code] })}\n\n`;
 }
 
-export function extractAssistantChunk(eventType: string, rawData: unknown): string {
+export function extractAssistantChunk(
+	eventType: string,
+	rawData: unknown,
+): string {
 	const data = parseMaybeJson(rawData);
 	const sender = getSender(data);
 	const normalizedSender = sender ? normalizeSender(sender) : null;
 
-	if (normalizedSender && ['user', 'human'].includes(normalizedSender)) {
-		return '';
+	if (normalizedSender && ["user", "human"].includes(normalizedSender)) {
+		return "";
 	}
 
 	if (
 		normalizedSender &&
 		![
-			'assistant',
-			'ai',
-			'machine',
-			'model',
-			'language model',
-			'agent',
-			'bot',
+			"assistant",
+			"ai",
+			"machine",
+			"model",
+			"language model",
+			"agent",
+			"bot",
 		].includes(normalizedSender) &&
-		eventType !== 'token'
+		eventType !== "token"
 	) {
-		return '';
+		return "";
 	}
 
 	return getTextContent(data);
@@ -409,26 +444,30 @@ export function toIncrementalChunk(
 	lastSnapshot: string;
 	emittedText: string;
 } {
-	if (eventType === 'token') {
+	if (eventType === "token") {
 		return { chunk, lastSnapshot, emittedText: emittedText + chunk };
 	}
 
 	if (!chunk) {
-		return { chunk: '', lastSnapshot, emittedText };
+		return { chunk: "", lastSnapshot, emittedText };
 	}
 
 	if (emittedText) {
 		if (chunk === emittedText) {
-			return { chunk: '', lastSnapshot: chunk, emittedText };
+			return { chunk: "", lastSnapshot: chunk, emittedText };
 		}
 
 		if (chunk.startsWith(emittedText)) {
 			const delta = chunk.slice(emittedText.length);
-			return { chunk: delta, lastSnapshot: chunk, emittedText: emittedText + delta };
+			return {
+				chunk: delta,
+				lastSnapshot: chunk,
+				emittedText: emittedText + delta,
+			};
 		}
 
 		if (emittedText.startsWith(chunk)) {
-			return { chunk: '', lastSnapshot: chunk, emittedText };
+			return { chunk: "", lastSnapshot: chunk, emittedText };
 		}
 	}
 
@@ -437,16 +476,20 @@ export function toIncrementalChunk(
 	}
 
 	if (chunk === lastSnapshot) {
-		return { chunk: '', lastSnapshot, emittedText };
+		return { chunk: "", lastSnapshot, emittedText };
 	}
 
 	if (chunk.startsWith(lastSnapshot)) {
 		const delta = chunk.slice(lastSnapshot.length);
-		return { chunk: delta, lastSnapshot: chunk, emittedText: emittedText + delta };
+		return {
+			chunk: delta,
+			lastSnapshot: chunk,
+			emittedText: emittedText + delta,
+		};
 	}
 
 	if (lastSnapshot.startsWith(chunk)) {
-		return { chunk: '', lastSnapshot, emittedText };
+		return { chunk: "", lastSnapshot, emittedText };
 	}
 
 	return { chunk, lastSnapshot: chunk, emittedText: emittedText + chunk };
@@ -455,44 +498,34 @@ export function toIncrementalChunk(
 export function extractErrorMessage(rawData: unknown): string {
 	const data = parseMaybeJson(rawData);
 
-	if (typeof data === 'string') return data;
+	if (typeof data === "string") return data;
 
 	const payload = getNestedObject(data);
-	if (!payload) return 'Streaming failed';
+	if (!payload) return "Streaming failed";
 
-	if (typeof payload.message === 'string') return payload.message;
-	if (typeof payload.error === 'string') return payload.error;
-	if (typeof payload.text === 'string') return payload.text;
-	if (typeof payload.detail === 'string') return payload.detail;
-	if (typeof payload.reason === 'string') return payload.reason;
-	if ('data' in payload) return extractErrorMessage(payload.data);
+	if (typeof payload.message === "string") return payload.message;
+	if (typeof payload.error === "string") return payload.error;
+	if (typeof payload.text === "string") return payload.text;
+	if (typeof payload.detail === "string") return payload.detail;
+	if (typeof payload.reason === "string") return payload.reason;
+	if ("data" in payload) return extractErrorMessage(payload.data);
 
-	return 'Streaming failed';
+	return "Streaming failed";
 }
 
 export function isUrlListValidationError(rawMessage: string): boolean {
 	const message = rawMessage.toLowerCase();
 	return (
-		message.includes('validation error') &&
-		message.includes('urls') &&
-		(message.includes('valid list') || message.includes('type=list_type'))
+		message.includes("validation error") &&
+		message.includes("urls") &&
+		(message.includes("valid list") || message.includes("type=list_type"))
 	);
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): T {
-	return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
-}
-
-function parseMaybeJson(value: unknown): unknown {
-	if (typeof value !== 'string') {
-		return value;
-	}
-
-	try {
-		return JSON.parse(value);
-	} catch {
-		return value;
-	}
+	return Object.fromEntries(
+		Object.entries(value).filter(([, entry]) => entry !== undefined),
+	) as T;
 }
 
 function getSender(value: unknown): string | null {
@@ -500,16 +533,16 @@ function getSender(value: unknown): string | null {
 	if (!payload) return null;
 
 	const sender =
-		typeof payload.sender === 'string'
+		typeof payload.sender === "string"
 			? payload.sender
-			: typeof payload.sender_name === 'string'
+			: typeof payload.sender_name === "string"
 				? payload.sender_name
 				: null;
 	if (sender) {
 		return sender.toLowerCase();
 	}
 
-	if ('data' in payload) {
+	if ("data" in payload) {
 		return getSender(payload.data);
 	}
 
@@ -517,5 +550,8 @@ function getSender(value: unknown): string | null {
 }
 
 function normalizeSender(value: string): string {
-	return value.toLowerCase().replace(/[\r\n]+/g, ' ').trim();
+	return value
+		.toLowerCase()
+		.replace(/[\r\n]+/g, " ")
+		.trim();
 }
