@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { createConversation } from '../../src/lib/server/services/conversations';
 import { createArtifact } from '../../src/lib/server/services/knowledge/store/core';
 import { buildConstructedContext } from '../../src/lib/server/services/honcho';
-import { estimateTokenCount } from '../../src/lib/server/utils/tokens';
+import { estimateTokenCount } from '../../src/lib/utils/tokens';
 import { getSmallFileThreshold, getDocumentTokenBudget, getWorkingSetPromptTokenBudget, getTargetConstructedContext, getCompactionUiThreshold, getMaxModelContext } from '../../src/lib/server/services/knowledge/store/core';
 
 const SMALL_FILE_CONTENT = 'This is a small file content. '.repeat(100);

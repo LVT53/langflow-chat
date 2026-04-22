@@ -41,6 +41,7 @@ import {
   extractErrorMessage,
   getReasoningContent,
   isAbruptUpstreamTermination,
+  isUrlListValidationError,
   normalizeVisibleAssistantText,
   parseUpstreamEvents,
   processToolCallMarkers,

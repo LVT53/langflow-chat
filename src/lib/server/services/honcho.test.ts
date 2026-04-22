@@ -361,7 +361,7 @@ vi.mock('./tei-reranker', () => ({
   rerankItems: mockRerankItems,
 }));
 
-vi.mock('./persona-memory', () => ({
+vi.mock('./persona-memory/context-builder', () => ({
   buildPersonaPromptContext: mockBuildPersonaPromptContext,
 }));
 
