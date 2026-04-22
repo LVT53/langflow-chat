@@ -8,7 +8,6 @@ import {
 	memoryEvents,
 	memoryProjects,
 	memoryProjectTaskLinks,
-	personaMemoryAttributions,
 	semanticEmbeddings,
 	taskCheckpoints,
 	taskStateEvidenceLinks,
@@ -24,14 +23,12 @@ import {
 } from "../knowledge";
 import { clearKnowledgeMemoryRuntimeStateForUser } from "../memory";
 import { clearMessageEvidenceForUser } from "../messages";
-import { deleteAllPersonaMemoryStateForUser } from "../persona-memory";
 
 export async function resetKnowledgeBaseState(userId: string): Promise<{
 	deletedArtifactIds: string[];
 }> {
 	clearKnowledgeMemoryRuntimeStateForUser(userId);
 	await deleteAllHonchoStateForUser(userId);
-	await deleteAllPersonaMemoryStateForUser(userId);
 	await rotateHonchoPeerIdentity(userId);
 
 	const ownershipScope = await getArtifactOwnershipScope(userId);
@@ -58,9 +55,6 @@ export async function resetKnowledgeBaseState(userId: string): Promise<{
 			.run();
 		tx.delete(memoryProjects).where(eq(memoryProjects.userId, userId)).run();
 		tx.delete(memoryEvents).where(eq(memoryEvents.userId, userId)).run();
-		tx.delete(personaMemoryAttributions)
-			.where(eq(personaMemoryAttributions.userId, userId))
-			.run();
 		tx.delete(semanticEmbeddings)
 			.where(eq(semanticEmbeddings.userId, userId))
 			.run();

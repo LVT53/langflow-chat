@@ -1,5 +1,4 @@
 import { getConversation } from '$lib/server/services/conversations';
-import { capturePersonaMemorySnapshot } from '$lib/server/services/honcho';
 import { detectLanguage } from '$lib/server/services/language';
 import {
 	assertPromptReadyAttachments,
@@ -56,7 +55,6 @@ export async function preflightChatTurn(params: {
 			...request,
 			sourceLanguage: detectLanguage(request.normalizedMessage),
 			translationEnabled,
-			personaMemorySnapshotPromise: capturePersonaMemorySnapshot(userId).catch(() => undefined),
 		},
 	};
 }

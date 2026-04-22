@@ -14,7 +14,6 @@ import {
 	memoryProjects,
 	memoryProjectTaskLinks,
 	messageAnalytics,
-	personaMemoryAttributions,
 	projects,
 	semanticEmbeddings,
 	sessions,
@@ -34,7 +33,6 @@ import {
 	hardDeleteArtifactsForUser,
 } from "../knowledge";
 import { clearKnowledgeMemoryRuntimeStateForUser } from "../memory";
-import { deleteAllPersonaMemoryStateForUser } from "../persona-memory";
 
 export type DeleteUserAccountResult =
 	| { status: "deleted" }
@@ -48,7 +46,6 @@ export type ResetUserAccountResult =
 
 export async function purgeUserData(userId: string): Promise<void> {
 	clearKnowledgeMemoryRuntimeStateForUser(userId);
-	await deleteAllPersonaMemoryStateForUser(userId);
 	await deleteAllHonchoStateForUser(userId);
 	await deleteAllChatFilesForUser(userId);
 
@@ -90,9 +87,6 @@ export async function purgeUserData(userId: string): Promise<void> {
 			.run();
 		tx.delete(memoryProjects).where(eq(memoryProjects.userId, userId)).run();
 		tx.delete(memoryEvents).where(eq(memoryEvents.userId, userId)).run();
-		tx.delete(personaMemoryAttributions)
-			.where(eq(personaMemoryAttributions.userId, userId))
-			.run();
 		tx.delete(semanticEmbeddings)
 			.where(eq(semanticEmbeddings.userId, userId))
 			.run();

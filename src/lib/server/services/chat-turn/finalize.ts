@@ -250,13 +250,6 @@ export async function runPostTurnTasks(params: RunPostTurnTasksParams): Promise<
 
 	try {
 		await Promise.allSettled(honchoTasks);
-		await syncConversationPersonaMemoryAttributions({
-			userId: params.userId,
-			conversationId: params.conversationId,
-			beforeIds: await params.personaMemorySnapshotPromise,
-			attempts: 3,
-			delayMs: 300,
-		});
 		await runUserMemoryMaintenance(params.userId, params.maintenanceReason);
 	} catch (error) {
 		console.error(`${params.logPrefix} Post-turn memory maintenance failed:`, error);
