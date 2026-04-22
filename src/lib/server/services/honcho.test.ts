@@ -365,6 +365,10 @@ vi.mock('./persona-memory/context-builder', () => ({
   buildPersonaPromptContext: mockBuildPersonaPromptContext,
 }));
 
+vi.mock('./persona-memory', () => ({
+  deletePersonaMemoryAttributionsByConclusionIds: vi.fn(async () => undefined),
+}));
+
 vi.mock('./active-state', () => ({
   buildActiveDocumentState: mockBuildActiveDocumentState,
 }));

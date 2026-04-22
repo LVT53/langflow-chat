@@ -19,10 +19,12 @@ import {
 	getHonchoUserPeerId,
 	getPeerContext,
 	isHonchoEnabled,
+	rotateHonchoPeerIdentity,
 } from "./honcho";
 import { runUserMemoryMaintenance } from "./memory-maintenance";
 import {
 	deleteAllPersonaMemoryStateForUser,
+	deletePersonaMemoryAttributionsByConclusionIds,
 	deletePersonaMemoryClustersForConclusionIds,
 	ensurePersonaMemoryClustersReady,
 	getPersonaMemoryClusterConclusionIds,
@@ -117,8 +119,7 @@ export type KnowledgeMemoryAction =
 	  }
 	| { action: "forget_all_persona_memory" }
 	| { action: "forget_task_memory"; taskId: string }
-	| { action: "forget_focus_continuity"; continuityId: string }
-	| { action: "forget_project_memory"; projectId: string };
+	| { action: "forget_focus_continuity"; continuityId: string };
 
 function getOverviewRuntimeEpoch(userId: string): number {
 	return overviewRuntimeEpochByUser.get(userId) ?? 0;
@@ -1032,6 +1033,9 @@ export async function applyKnowledgeMemoryAction(
 				);
 				for (const conclusionId of conclusionIds) {
 					await forgetPersonaMemory(userId, conclusionId);
+					await deletePersonaMemoryAttributionsByConclusionIds(userId, [
+						conclusionId,
+					]);
 				}
 				await deletePersonaMemoryClustersForConclusionIds(
 					userId,
@@ -1039,6 +1043,9 @@ export async function applyKnowledgeMemoryAction(
 				);
 			} else if (typeof payload.conclusionId === "string") {
 				await forgetPersonaMemory(userId, payload.conclusionId);
+				await deletePersonaMemoryAttributionsByConclusionIds(userId, [
+					payload.conclusionId,
+				]);
 				await deletePersonaMemoryClustersForConclusionIds(userId, [
 					payload.conclusionId,
 				]);
@@ -1048,15 +1055,13 @@ export async function applyKnowledgeMemoryAction(
 			clearKnowledgeMemoryRuntimeStateForUser(userId);
 			await forgetAllPersonaMemories(userId);
 			await deleteAllPersonaMemoryStateForUser(userId);
+			await rotateHonchoPeerIdentity(userId);
 			break;
 		case "forget_task_memory":
 			await forgetTaskMemory(userId, payload.taskId);
 			break;
 		case "forget_focus_continuity":
 			await forgetFocusContinuity(userId, payload.continuityId);
-			break;
-		case "forget_project_memory":
-			await forgetFocusContinuity(userId, payload.projectId);
 			break;
 	}
 

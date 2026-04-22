@@ -550,11 +550,6 @@
 					(id) => id !== payload.continuityId
 				);
 			}
-			if (payload.action === 'forget_project_memory') {
-				selectedFocusContinuityIds = selectedFocusContinuityIds.filter(
-					(id) => id !== payload.projectId
-				);
-			}
 		});
 	}
 

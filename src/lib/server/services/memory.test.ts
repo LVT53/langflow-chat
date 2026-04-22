@@ -10,6 +10,7 @@ const {
 	mockRunUserMemoryMaintenance,
 	mockDeletePersonaMemoryClustersForConclusionIds,
 	mockDeleteAllPersonaMemoryStateForUser,
+	mockRotateHonchoPeerIdentity,
 	mockEnsurePersonaMemoryClustersReady,
 	mockGetPersonaMemoryClusterConclusionIds,
 	mockListPersonaMemoryClusters,
@@ -28,6 +29,7 @@ const {
 	mockRunUserMemoryMaintenance: vi.fn(async () => undefined),
 	mockDeletePersonaMemoryClustersForConclusionIds: vi.fn(async () => undefined),
 	mockDeleteAllPersonaMemoryStateForUser: vi.fn(async () => undefined),
+	mockRotateHonchoPeerIdentity: vi.fn(async () => undefined),
 	mockEnsurePersonaMemoryClustersReady: vi.fn(async () => undefined),
 	mockGetPersonaMemoryClusterConclusionIds: vi.fn(async () => []),
 	mockListPersonaMemoryClusters: vi.fn(async () => []),
@@ -129,6 +131,7 @@ vi.mock('./honcho', () => ({
 	getHonchoUserPeerId: mockGetHonchoUserPeerId,
 	getPeerContext: mockGetPeerContext,
 	isHonchoEnabled: mockIsHonchoEnabled,
+	rotateHonchoPeerIdentity: mockRotateHonchoPeerIdentity,
 }));
 
 vi.mock('./memory-maintenance', () => ({

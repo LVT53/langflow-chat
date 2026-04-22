@@ -48,6 +48,7 @@ import {
 	WORKING_SET_PROMPT_TOKEN_BUDGET,
 } from './knowledge';
 import { scoreMatch } from './working-set';
+import { deletePersonaMemoryAttributionsByConclusionIds } from './persona-memory';
 import type {
 	Artifact,
 	ChatMessage,
@@ -566,22 +567,6 @@ async function listAttributedPersonaMemoryIdsForConversation(
 		);
 
 	return rows.map((row) => row.conclusionId);
-}
-
-async function deletePersonaMemoryAttributionsByConclusionIds(
-	userId: string,
-	conclusionIds: string[]
-): Promise<void> {
-	if (conclusionIds.length === 0) return;
-
-	await db
-		.delete(personaMemoryAttributions)
-		.where(
-			and(
-				eq(personaMemoryAttributions.userId, userId),
-				inArray(personaMemoryAttributions.conclusionId, conclusionIds)
-			)
-		);
 }
 
 async function storePersonaMemoryAttributions(params: {

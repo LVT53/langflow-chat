@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import {
 	artifacts,
 	conversations,
+	personaMemoryAttributions,
 	personaMemoryClusterMembers,
 	personaMemoryClusters,
 	personaMemoryOverviews,
@@ -2752,6 +2753,17 @@ export async function deletePersonaMemoryClustersForConclusionIds(
 	const clusterIds = Array.from(new Set(rows.map((row) => row.clusterId)));
 	if (clusterIds.length === 0) return;
 
+	// Delete cluster members first
+	await db
+		.delete(personaMemoryClusterMembers)
+		.where(
+			and(
+				eq(personaMemoryClusterMembers.userId, userId),
+				inArray(personaMemoryClusterMembers.clusterId, clusterIds)
+			)
+		);
+
+	// Then delete the clusters
 	await db
 		.delete(personaMemoryClusters)
 		.where(
@@ -2765,10 +2777,26 @@ export async function deletePersonaMemoryClustersForConclusionIds(
 export async function deleteAllPersonaMemoryStateForUser(userId: string): Promise<void> {
 	clearPersonaMemoryRuntimeStateForUser(userId);
 	await db.transaction((tx) => {
+		tx.delete(personaMemoryAttributions).where(eq(personaMemoryAttributions.userId, userId)).run();
 		tx.delete(personaMemoryOverviews).where(eq(personaMemoryOverviews.userId, userId)).run();
 		tx.delete(personaMemoryClusterMembers).where(eq(personaMemoryClusterMembers.userId, userId)).run();
 		tx.delete(personaMemoryClusters).where(eq(personaMemoryClusters.userId, userId)).run();
 	});
+}
+
+export async function deletePersonaMemoryAttributionsByConclusionIds(
+	userId: string,
+	conclusionIds: string[]
+): Promise<void> {
+	if (conclusionIds.length === 0) return;
+	await db
+		.delete(personaMemoryAttributions)
+		.where(
+			and(
+				eq(personaMemoryAttributions.userId, userId),
+				inArray(personaMemoryAttributions.conclusionId, conclusionIds)
+			)
+		);
 }
 
 export { buildPersonaPromptContext } from './persona-memory/context-builder';

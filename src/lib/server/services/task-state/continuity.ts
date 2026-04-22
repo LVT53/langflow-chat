@@ -4,6 +4,7 @@ import { db } from "$lib/server/db";
 import {
   conversations,
   conversationTaskStates,
+  memoryEvents,
   memoryProjectTaskLinks,
   memoryProjects,
   taskCheckpoints,
@@ -406,6 +407,16 @@ export async function forgetTaskMemory(
       ),
     );
 
+  await db
+    .delete(memoryEvents)
+    .where(
+      and(
+        eq(memoryEvents.userId, userId),
+        eq(memoryEvents.domain, "task"),
+        eq(memoryEvents.relatedId, taskId),
+      ),
+    );
+
   return true;
 }
 
@@ -763,6 +774,17 @@ export async function forgetFocusContinuity(
         eq(memoryProjects.projectId, continuityId),
       ),
     );
+
+  await db
+    .delete(memoryEvents)
+    .where(
+      and(
+        eq(memoryEvents.userId, userId),
+        eq(memoryEvents.domain, "task"),
+        eq(memoryEvents.subjectId, continuityId),
+      ),
+    );
+
   return true;
 }
 
