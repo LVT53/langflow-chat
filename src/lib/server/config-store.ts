@@ -115,7 +115,6 @@ export interface RuntimeConfig {
 	honchoWorkspace: string;
 	honchoEnabled: boolean;
 	honchoContextWaitMs: number;
-	honchoContextPollIntervalMs: number;
 	honchoPersonaContextWaitMs: number;
 	honchoOverviewWaitMs: number;
 	memoryMaintenanceIntervalMinutes: number;
@@ -290,12 +289,6 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	HONCHO_CONTEXT_WAIT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.honchoContextWaitMs = Math.max(0, parsed);
-	},
-	HONCHO_CONTEXT_POLL_INTERVAL_MS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) {
-			config.honchoContextPollIntervalMs = Math.max(50, parsed);
-		}
 	},
 	HONCHO_PERSONA_CONTEXT_WAIT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
@@ -472,7 +465,6 @@ export function getResolvedAdminConfigValues(
 		TRANSLATION_TEMPERATURE: String(config.translationTemperature),
 		HONCHO_ENABLED: String(config.honchoEnabled),
 		HONCHO_CONTEXT_WAIT_MS: String(config.honchoContextWaitMs),
-		HONCHO_CONTEXT_POLL_INTERVAL_MS: String(config.honchoContextPollIntervalMs),
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(config.honchoPersonaContextWaitMs),
 		HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
 		DOCUMENT_PARSER_OCR_ENABLED: String(config.documentParserOcrEnabled),
@@ -535,9 +527,6 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
 		HONCHO_ENABLED: String(envConfig.honchoEnabled),
 		HONCHO_CONTEXT_WAIT_MS: String(envConfig.honchoContextWaitMs),
-		HONCHO_CONTEXT_POLL_INTERVAL_MS: String(
-			envConfig.honchoContextPollIntervalMs,
-		),
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(
 			envConfig.honchoPersonaContextWaitMs,
 		),
