@@ -1,11 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { artifacts, conversationTaskStates, personaMemoryClusters } from '$lib/server/db/schema';
+import { artifacts, conversationTaskStates } from '$lib/server/db/schema';
 import { getConfig } from '$lib/server/config-store';
 import type {
   Artifact,
-  PersonaMemoryClass,
-  PersonaMemoryState,
   TaskState,
 } from '$lib/types';
 import { clipText, normalizeWhitespace } from '$lib/server/utils/text';
@@ -24,17 +22,8 @@ import {
 const MAX_SOURCE_TEXT_CHARS = 8000;
 const queuedRefreshes = new Map<string, Promise<void>>();
 
-type PersonaClusterEmbeddingSource = {
-  clusterId: string;
-  userId: string;
-  canonicalText: string;
-  memoryClass: PersonaMemoryClass;
-  state: PersonaMemoryState;
-};
-
 type RefreshableSubject =
   | { subjectType: 'artifact'; subjectId: string; userId: string; sourceText: string }
-  | { subjectType: 'persona_cluster'; subjectId: string; userId: string; sourceText: string }
   | { subjectType: 'task_state'; subjectId: string; userId: string; sourceText: string };
 
 type ArtifactEmbeddingSource = Pick<Artifact, 'id' | 'userId' | 'name' | 'summary' | 'contentText'>;
@@ -60,17 +49,6 @@ export function buildArtifactEmbeddingSourceText(artifact: ArtifactEmbeddingSour
     artifact.name,
     artifact.summary,
     artifact.contentText,
-  ]);
-  return source || null;
-}
-
-export function buildPersonaClusterEmbeddingSourceText(
-  cluster: PersonaClusterEmbeddingSource
-): string | null {
-  const source = compactLines([
-    cluster.canonicalText,
-    `Memory class: ${cluster.memoryClass}`,
-    `State: ${cluster.state}`,
   ]);
   return source || null;
 }
@@ -205,39 +183,17 @@ export function queueTaskStateSemanticEmbeddingRefresh(taskState: TaskState): vo
   });
 }
 
-export function queuePersonaClusterSemanticEmbeddingRefresh(
-  clusters: PersonaClusterEmbeddingSource[]
-): void {
-  for (const cluster of clusters) {
-    const sourceText = buildPersonaClusterEmbeddingSourceText(cluster);
-    if (!sourceText) continue;
-
-    queueSubjectRefresh(`persona_cluster:${cluster.clusterId}`, async () => {
-      await refreshSubjectEmbeddings([
-        {
-          subjectType: 'persona_cluster',
-          subjectId: cluster.clusterId,
-          userId: cluster.userId,
-          sourceText,
-        },
-      ]);
-    });
-  }
-}
-
 export async function backfillSemanticEmbeddingsForUser(userId: string): Promise<{
   artifactCount: number;
-  personaClusterCount: number;
   taskStateCount: number;
 }> {
   const modelName = getEmbeddingModelName();
   if (!modelName || !canUseTeiEmbedder()) {
-    return { artifactCount: 0, personaClusterCount: 0, taskStateCount: 0 };
+    return { artifactCount: 0, taskStateCount: 0 };
   }
 
-  const [artifactRows, personaRows, taskRows] = await Promise.all([
+  const [artifactRows, taskRows] = await Promise.all([
     db.select().from(artifacts).where(eq(artifacts.userId, userId)),
-    db.select().from(personaMemoryClusters).where(eq(personaMemoryClusters.userId, userId)),
     db.select().from(conversationTaskStates).where(eq(conversationTaskStates.userId, userId)),
   ]);
 
@@ -258,22 +214,6 @@ export async function backfillSemanticEmbeddingsForUser(userId: string): Promise
       }))
   );
 
-  const personaClusterCount = await refreshSubjectEmbeddings(
-    personaRows.map((row) => ({
-      subjectType: 'persona_cluster' as const,
-      subjectId: row.clusterId,
-      userId: row.userId,
-      sourceText:
-        buildPersonaClusterEmbeddingSourceText({
-          clusterId: row.clusterId,
-          userId: row.userId,
-          canonicalText: row.canonicalText,
-          memoryClass: row.memoryClass as PersonaMemoryClass,
-          state: row.state as PersonaMemoryState,
-        }) ?? '',
-    }))
-  );
-
   const taskStateCount = await refreshSubjectEmbeddings(
     taskRows
       .map((row) => mapTaskState(row))
@@ -287,7 +227,6 @@ export async function backfillSemanticEmbeddingsForUser(userId: string): Promise
 
   return {
     artifactCount,
-    personaClusterCount,
     taskStateCount,
   };
 }

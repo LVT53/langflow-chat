@@ -1,7 +1,7 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { createHash, randomUUID } from 'crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Honcho } from '@honcho-ai/sdk';
 import type { Message, Peer } from '@honcho-ai/sdk';
 import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
@@ -9,7 +9,7 @@ import type { Session } from '@honcho-ai/sdk/dist/session';
 import { DAY_MS } from '$lib/server/utils/constants';
 import { getConfig } from '../config-store';
 import { db } from '../db';
-import { personaMemoryAttributions, users } from '../db/schema';
+import { users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
 import { estimateTokenCount } from '$lib/utils/tokens';
 import { TokenBudget } from '$lib/server/utils/token-budget';
@@ -70,7 +70,6 @@ import {
 	summarizeAttachmentTraceText,
 } from './attachment-trace';
 import { buildActiveDocumentState } from './active-state';
-import { buildPersonaPromptContext } from './persona-memory/context-builder';
 import { getLatestHonchoMetadata, listMessages } from './messages';
 
 let client: Honcho | null = null;
@@ -481,44 +480,6 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function selectPersonaMemoryAttributionCandidates(params: {
-	records: PersonaMemoryAttributionCandidate[];
-	conversationId: string;
-	beforeIds?: ReadonlySet<string>;
-}): PersonaMemoryAttributionCandidate[] {
-	const seen = new Set<string>();
-	const candidates: PersonaMemoryAttributionCandidate[] = [];
-
-	for (const record of params.records) {
-		const alreadyTracked = params.beforeIds?.has(record.id) ?? false;
-		const shouldAttribute =
-			record.sessionId === params.conversationId ||
-			(params.beforeIds ? !alreadyTracked : false);
-		if (!shouldAttribute || seen.has(record.id)) continue;
-		seen.add(record.id);
-		candidates.push(record);
-	}
-
-	return candidates;
-}
-
-export function selectConversationPersonaMemoryDeletionIds(params: {
-	records: PersonaMemoryAttributionCandidate[];
-	conversationId: string;
-	attributedIds: string[];
-}): string[] {
-	const attributedIdSet = new Set(params.attributedIds);
-	const ids = new Set<string>();
-
-	for (const record of params.records) {
-		if (record.sessionId === params.conversationId || attributedIdSet.has(record.id)) {
-			ids.add(record.id);
-		}
-	}
-
-	return Array.from(ids);
-}
-
 async function listVisiblePersonaMemoryRecords(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	if (!isHonchoEnabled()) return [];
 
@@ -551,116 +512,8 @@ async function listVisiblePersonaMemoryRecords(userId: string): Promise<HonchoPe
 	].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function listAttributedPersonaMemoryIdsForConversation(
-	userId: string,
-	conversationId: string
-): Promise<string[]> {
-	const rows = await db
-		.select({ conclusionId: personaMemoryAttributions.conclusionId })
-		.from(personaMemoryAttributions)
-		.where(
-			and(
-				eq(personaMemoryAttributions.userId, userId),
-				eq(personaMemoryAttributions.conversationId, conversationId)
-			)
-		);
-
-	return rows.map((row) => row.conclusionId);
-}
-
-async function deletePersonaMemoryAttributionsByConclusionIds(
-	userId: string,
-	conclusionIds: string[]
-): Promise<void> {
-	if (conclusionIds.length === 0) return;
-
-	await db
-		.delete(personaMemoryAttributions)
-		.where(
-			and(
-				eq(personaMemoryAttributions.userId, userId),
-				inArray(personaMemoryAttributions.conclusionId, conclusionIds)
-			)
-		);
-}
-
-async function storePersonaMemoryAttributions(params: {
-	userId: string;
-	conversationId: string;
-	records: PersonaMemoryAttributionCandidate[];
-}): Promise<number> {
-	if (params.records.length === 0) return 0;
-
-	const existingRows = await db
-		.select({
-			conclusionId: personaMemoryAttributions.conclusionId,
-		})
-		.from(personaMemoryAttributions)
-		.where(
-			and(
-				eq(personaMemoryAttributions.userId, params.userId),
-				eq(personaMemoryAttributions.conversationId, params.conversationId)
-			)
-		);
-
-	const existingIds = new Set(existingRows.map((row) => row.conclusionId));
-	const inserts = params.records
-		.filter((record) => !existingIds.has(record.id))
-		.map((record) => ({
-			id: randomUUID(),
-			conclusionId: record.id,
-			userId: params.userId,
-			conversationId: params.conversationId,
-			scope: record.scope,
-		}));
-
-	if (inserts.length === 0) return 0;
-	await db.insert(personaMemoryAttributions).values(inserts);
-	return inserts.length;
-}
-
 export async function listPersonaMemories(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	return listVisiblePersonaMemoryRecords(userId);
-}
-
-export async function capturePersonaMemorySnapshot(userId: string): Promise<Set<string>> {
-	const records = await listVisiblePersonaMemoryRecords(userId);
-	return new Set(records.map((record) => record.id));
-}
-
-export async function syncConversationPersonaMemoryAttributions(params: {
-	userId: string;
-	conversationId: string;
-	beforeIds?: ReadonlySet<string>;
-	attempts?: number;
-	delayMs?: number;
-}): Promise<number> {
-	if (!isHonchoEnabled()) return 0;
-
-	const attempts = Math.max(1, params.attempts ?? 1);
-	const delayMs = Math.max(0, params.delayMs ?? 0);
-	let storedCount = 0;
-
-	for (let attempt = 0; attempt < attempts; attempt += 1) {
-		const records = await listVisiblePersonaMemoryRecords(params.userId);
-		const candidates = selectPersonaMemoryAttributionCandidates({
-			records,
-			conversationId: params.conversationId,
-			beforeIds: params.beforeIds,
-		});
-
-		storedCount += await storePersonaMemoryAttributions({
-			userId: params.userId,
-			conversationId: params.conversationId,
-			records: candidates,
-		});
-
-		if (attempt < attempts - 1 && delayMs > 0) {
-			await sleep(delayMs);
-		}
-	}
-
-	return storedCount;
 }
 
 export async function forgetPersonaMemory(userId: string, conclusionId: string): Promise<boolean> {
@@ -680,7 +533,6 @@ export async function forgetPersonaMemory(userId: string, conclusionId: string):
 	} else {
 		await deleteScopeConclusions(assistantAboutUserScope, [conclusionId]);
 	}
-	await deletePersonaMemoryAttributionsByConclusionIds(userId, [conclusionId]);
 	return true;
 }
 
@@ -703,7 +555,6 @@ export async function forgetAllPersonaMemories(userId: string): Promise<number> 
 		deleteScopeConclusions(assistantAboutUserScope, assistantIds),
 	]);
 	await clearAllPeerCards(userPeer, assistantPeer);
-	await deletePersonaMemoryAttributionsByConclusionIds(userId, records.map((item) => item.id));
 
 	return records.length;
 }
@@ -718,16 +569,6 @@ export async function deleteConversationHonchoState(userId: string, conversation
 		getUserPeer(userId),
 		getAssistantPeer(userId),
 	]);
-	const [visiblePersonaMemories, attributedConclusionIds] = await Promise.all([
-		listVisiblePersonaMemoryRecords(userId),
-		listAttributedPersonaMemoryIdsForConversation(userId, conversationId),
-	]);
-	const visibleById = new Map(visiblePersonaMemories.map((record) => [record.id, record]));
-	const additionalDeletionIds = selectConversationPersonaMemoryDeletionIds({
-		records: visiblePersonaMemories,
-		conversationId,
-		attributedIds: attributedConclusionIds,
-	});
 	const scopes = [
 		userPeer.conclusions,
 		assistantPeer.conclusions,
@@ -742,18 +583,6 @@ export async function deleteConversationHonchoState(userId: string, conversation
 			conclusions.map((item) => item.id)
 		);
 	}
-
-	const selfDeletionIds = additionalDeletionIds.filter(
-		(id) => visibleById.get(id)?.scope === 'self'
-	);
-	const assistantAboutUserDeletionIds = additionalDeletionIds.filter(
-		(id) => visibleById.get(id)?.scope === 'assistant_about_user'
-	);
-	await Promise.all([
-		deleteScopeConclusions(userPeer.conclusions, selfDeletionIds),
-		deleteScopeConclusions(assistantPeer.conclusionsOf(userPeer), assistantAboutUserDeletionIds),
-	]);
-	await deletePersonaMemoryAttributionsByConclusionIds(userId, additionalDeletionIds);
 
 	await deleteHonchoSession(conversationId);
 	clearHonchoCaches({ conversationId, userId });
@@ -936,7 +765,7 @@ async function loadPersonaContext(params: {
 }): Promise<string> {
 	const personaTimeoutMs = Math.max(0, getConfig().honchoPersonaContextWaitMs);
 	const result = await resolveWithTimeout(
-		buildPersonaPromptContext(params.userId, params.message),
+		getPeerContext(params.userId, undefined, { timeoutMs: personaTimeoutMs }),
 		{
 			timeoutMs: personaTimeoutMs,
 			label: 'persona prompt context',
@@ -1068,8 +897,7 @@ async function loadSessionPromptContext(params: {
 	if (sessionMessages.length === 0 && !summary) {
 		return fallbackToStoredContext(
 			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
-			'empty_live_context',
-			queueObservation
+			'empty_live_context'
 		);
 	}
 
@@ -1086,8 +914,8 @@ async function loadSessionPromptContext(params: {
 		honchoContext: {
 			source: 'live',
 			waitedMs: Date.now() - startedAt,
-			queuePendingWorkUnits: queueObservation.pendingWorkUnits,
-			queueInProgressWorkUnits: queueObservation.inProgressWorkUnits,
+			queuePendingWorkUnits: 0,
+			queueInProgressWorkUnits: 0,
 			fallbackReason: null,
 			snapshotCreatedAt: honchoSnapshot?.createdAt ?? null,
 		},
@@ -1095,15 +923,6 @@ async function loadSessionPromptContext(params: {
 	};
 }
 
-async function getPeerContextString(userId: string, query: string): Promise<string> {
-	const peer = await getUserPeer(userId);
-	const peerContext = await peer.context({
-		searchQuery: query,
-		searchTopK: 8,
-		maxConclusions: 12,
-	});
-	return serializePeerContext(peerContext);
-}
 
 export async function buildConstructedContext(params: {
 	userId: string;

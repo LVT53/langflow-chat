@@ -13,9 +13,6 @@ import {
 	repairGeneratedOutputFamilyStatuses,
 	repairGeneratedOutputRetrievalClasses,
 } from './evidence-family';
-import type { HonchoPersonaMemoryRecord } from './honcho';
-import { forgetPersonaMemory, listPersonaMemories } from './honcho';
-import { refreshPersonaClusterStates, syncPersonaMemoryClusters } from './persona-memory';
 import { backfillSemanticEmbeddingsForUser } from './semantic-embedding-refresh';
 import { DAY_MS } from '$lib/server/utils/constants';
 import { pruneOrphanProjectMemory, updateProjectMemoryStatuses } from './task-state';
@@ -42,40 +39,6 @@ function taskIsStale(updatedAt: Date, now = Date.now()): boolean {
 function getFastHash(text: string): string {
 	const words = normalizeSimilarityText(text).split(/\s+/).filter(Boolean);
 	return words.slice(0, 5).join(' ');
-}
-
-async function dedupePersonaMemory(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
-	const records = await listPersonaMemories(userId).catch(() => []);
-	if (records.length <= 1) return records;
-
-	const kept: HonchoPersonaMemoryRecord[] = [];
-	const groups = new Map<string, HonchoPersonaMemoryRecord[]>();
-
-	for (const record of records) {
-		const hash = getFastHash(record.content);
-		const group = groups.get(hash) ?? [];
-
-		const duplicate = group.some((existing) =>
-			areNearDuplicateArtifactTexts(record.content, existing.content)
-		);
-
-		if (duplicate) {
-			await forgetPersonaMemory(userId, record.id).catch((error) =>
-				console.error('[MEMORY_MAINTENANCE] Failed to remove duplicate persona memory:', {
-					userId,
-					conclusionId: record.id,
-					error,
-				})
-			);
-			continue;
-		}
-
-		group.push(record);
-		groups.set(hash, group);
-		kept.push(record);
-	}
-
-	return kept;
 }
 
 async function pruneTaskCheckpoints(userId: string): Promise<void> {
@@ -140,7 +103,7 @@ async function archiveStaleTaskMemory(userId: string): Promise<void> {
 				eq(conversationTaskStates.userId, userId),
 				inArray(conversationTaskStates.taskId, staleIds)
 			)
-	);
+		);
 }
 
 function getUserMaintenanceState(userId: string) {
@@ -188,14 +151,6 @@ async function performUserMemoryMaintenance(
 	reason = 'manual'
 ): Promise<void> {
 	try {
-		const dedupedPersonaRecords = await dedupePersonaMemory(userId);
-		await syncPersonaMemoryClusters({
-			userId,
-			rawRecords: dedupedPersonaRecords,
-			reason,
-		});
-		await refreshPersonaClusterStates(userId);
-
 		// Single query for all generated_output artifacts
 		const generatedOutputArtifacts = await db
 			.select()
