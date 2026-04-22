@@ -53,8 +53,6 @@
 		TRANSLATION_MAX_TOKENS: 'Translation Max Tokens',
 		TRANSLATION_TEMPERATURE: 'Translation Temperature',
 		HONCHO_CONTEXT_WAIT_MS: 'Honcho Session Context Wait (ms)',
-		HONCHO_CONTEXT_POLL_INTERVAL_MS: 'Honcho Poll Interval (ms)',
-	HONCHO_PERSONA_CONTEXT_WAIT_MS: 'Honcho Persona Context Wait (ms)',
 	HONCHO_OVERVIEW_WAIT_MS: 'Honcho Overview Wait (ms)',
 	DOCUMENT_PARSER_OCR_ENABLED: 'Document Parser OCR Enabled',
 	DOCUMENT_PARSER_OCR_SERVER_URL: 'Document Parser OCR Server URL',
@@ -74,8 +72,6 @@
 		'TRANSLATION_MAX_TOKENS',
 		'TRANSLATION_TEMPERATURE',
 		'HONCHO_CONTEXT_WAIT_MS',
-		'HONCHO_CONTEXT_POLL_INTERVAL_MS',
-		'HONCHO_PERSONA_CONTEXT_WAIT_MS',
 		'HONCHO_OVERVIEW_WAIT_MS',
 		'MAX_MODEL_CONTEXT',
 		'COMPACTION_UI_THRESHOLD',
@@ -281,7 +277,7 @@
 		{/if}
 	</div>
 	<div class="mt-4 flex flex-col gap-3">
-		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_CONTEXT_POLL_INTERVAL_MS', 'HONCHO_PERSONA_CONTEXT_WAIT_MS', 'HONCHO_OVERVIEW_WAIT_MS'] as key}
+		{#each ['HONCHO_CONTEXT_WAIT_MS', 'HONCHO_PERSONA_CONTEXT_WAIT_MS', 'HONCHO_OVERVIEW_WAIT_MS'] as key}
 			<div>
 				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
 				<input
@@ -294,10 +290,6 @@
 				{#if key === 'HONCHO_CONTEXT_WAIT_MS'}
 					<p class="mt-1 text-xs text-text-muted">
 						How long chat waits for live Honcho session bootstrap, queue settling, and `session.context(...)` before falling back to the last good snapshot or persisted turns.
-					</p>
-				{:else if key === 'HONCHO_CONTEXT_POLL_INTERVAL_MS'}
-					<p class="mt-1 text-xs text-text-muted">
-						How often the app polls Honcho queue status while waiting for live session context to finish deriving.
 					</p>
 				{:else if key === 'HONCHO_PERSONA_CONTEXT_WAIT_MS'}
 					<p class="mt-1 text-xs text-text-muted">
