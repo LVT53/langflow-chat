@@ -2,9 +2,8 @@ import { recordMessageAnalytics } from '$lib/server/services/analytics';
 import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
 import { hasRecentUserCorrectionSignal } from '$lib/server/services/active-state';
 import {
-	mirrorMessage,
-	mirrorWorkCapsuleConclusion,
-	syncConversationPersonaMemoryAttributions,
+  mirrorMessage,
+  mirrorWorkCapsuleConclusion,
 } from '$lib/server/services/honcho';
 import {
 	attachArtifactsToMessage,

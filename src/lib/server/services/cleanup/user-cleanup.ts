@@ -32,7 +32,6 @@ import {
 	getArtifactOwnershipScope,
 	hardDeleteArtifactsForUser,
 } from "../knowledge";
-import { clearKnowledgeMemoryRuntimeStateForUser } from "../memory";
 
 export type DeleteUserAccountResult =
 	| { status: "deleted" }
@@ -45,8 +44,7 @@ export type ResetUserAccountResult =
 	| { status: "incorrect_password" };
 
 export async function purgeUserData(userId: string): Promise<void> {
-	clearKnowledgeMemoryRuntimeStateForUser(userId);
-	await deleteAllHonchoStateForUser(userId);
+  await deleteAllHonchoStateForUser(userId);
 	await deleteAllChatFilesForUser(userId);
 
 	const ownershipScope = await getArtifactOwnershipScope(userId);

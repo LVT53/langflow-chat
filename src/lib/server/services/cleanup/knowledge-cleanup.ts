@@ -21,14 +21,11 @@ import {
 	getArtifactOwnershipScope,
 	hardDeleteArtifactsForUser,
 } from "../knowledge";
-import { clearKnowledgeMemoryRuntimeStateForUser } from "../memory";
-import { clearMessageEvidenceForUser } from "../messages";
 
 export async function resetKnowledgeBaseState(userId: string): Promise<{
 	deletedArtifactIds: string[];
 }> {
-	clearKnowledgeMemoryRuntimeStateForUser(userId);
-	await deleteAllHonchoStateForUser(userId);
+  await deleteAllHonchoStateForUser(userId);
 	await rotateHonchoPeerIdentity(userId);
 
 	const ownershipScope = await getArtifactOwnershipScope(userId);
