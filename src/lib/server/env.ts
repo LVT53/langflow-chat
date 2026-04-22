@@ -188,11 +188,11 @@ function readConfig(): Config {
     honchoEnabled: process.env.HONCHO_ENABLED === 'true',
     honchoContextWaitMs: Math.max(
       0,
-      parseInt(process.env.HONCHO_CONTEXT_WAIT_MS || '3000', 10) || 3000
+      parseInt(process.env.HONCHO_CONTEXT_WAIT_MS || '8000', 10) || 8000
     ),
     honchoPersonaContextWaitMs: Math.max(
       0,
-      parseInt(process.env.HONCHO_PERSONA_CONTEXT_WAIT_MS || '1500', 10) || 1500
+      parseInt(process.env.HONCHO_PERSONA_CONTEXT_WAIT_MS || '8000', 10) || 8000
     ),
     honchoOverviewWaitMs: Math.max(
       0,

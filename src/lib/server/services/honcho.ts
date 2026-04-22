@@ -78,6 +78,8 @@ const peerCache = new Map<string, Peer>();
 const sessionCache = new Map<string, Session>();
 const sessionOwnerCache = new Map<string, string>();
 const honchoPeerVersionCache = new Map<string, number>();
+const peerContextCache = new Map<string, { value: string | null; expiresAt: number }>();
+const PEER_CONTEXT_CACHE_TTL_MS = 30_000;
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
@@ -441,10 +443,10 @@ export function clearHonchoCaches(params: { userId?: string; conversationId?: st
 	if (params.userId) {
 		const cachedVersion = honchoPeerVersionCache.get(params.userId);
 		deletePeerCacheEntries(params.userId, 0);
+		peerContextCache.delete(params.userId);
 		if (typeof cachedVersion === 'number' && cachedVersion !== 0) {
 			deletePeerCacheEntries(params.userId, cachedVersion);
 		}
-
 		for (const [sessionId, ownerUserId] of sessionOwnerCache.entries()) {
 			if (ownerUserId !== params.userId) continue;
 			sessionOwnerCache.delete(sessionId);
@@ -1406,6 +1408,12 @@ export async function getPeerContext(
 ): Promise<string | null> {
 	if (!isHonchoEnabled()) return null;
 
+	const cacheKey = `${userId}:${userDisplayName ?? ''}`;
+	const cached = peerContextCache.get(cacheKey);
+	if (cached && Date.now() < cached.expiresAt) {
+		return cached.value;
+	}
+
 	try {
 		const peer = await getUserPeer(userId);
 		const safeDisplayName = userDisplayName?.trim() || 'the user';
@@ -1424,14 +1432,15 @@ export async function getPeerContext(
 			}
 		);
 
+		let result: string | null = null;
 		if (typeof response.value === 'string') {
-			return response.value.trim() || null;
-		}
-
-		if (response.error) {
+			result = response.value.trim() || null;
+		} else if (response.error) {
 			console.error('[HONCHO] getPeerContext failed:', response.error);
 		}
-		return null;
+
+		peerContextCache.set(cacheKey, { value: result, expiresAt: Date.now() + PEER_CONTEXT_CACHE_TTL_MS });
+		return result;
 	} catch (err) {
 		console.error('[HONCHO] getPeerContext failed:', err);
 		return null;
