@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   artifactRows,
-  personaRows,
   taskRows,
   mockEmbedTexts,
   mockListSemanticEmbeddingsBySubject,
@@ -17,13 +16,6 @@ const {
     name: string;
     summary: string | null;
     contentText: string | null;
-  }>,
-  personaRows: [] as Array<{
-    clusterId: string;
-    userId: string;
-    canonicalText: string;
-    memoryClass: string;
-    state: string;
   }>,
   taskRows: [] as Array<Record<string, unknown>>,
   mockEmbedTexts: vi.fn(async (texts: string[]) => texts.map(() => [0.1, 0.2])),
@@ -42,7 +34,6 @@ vi.mock('$lib/server/config-store', () => ({
 
 vi.mock('$lib/server/db/schema', () => ({
   artifacts: { name: 'artifacts', userId: { name: 'userId' } },
-  personaMemoryClusters: { name: 'personaMemoryClusters', userId: { name: 'userId' } },
   conversationTaskStates: { name: 'conversationTaskStates', userId: { name: 'userId' } },
 }));
 
@@ -52,7 +43,6 @@ vi.mock('$lib/server/db', () => ({
       from: vi.fn((table: { name?: string }) => ({
         where: vi.fn(async () => {
           if (table?.name === 'artifacts') return artifactRows;
-          if (table?.name === 'personaMemoryClusters') return personaRows;
           if (table?.name === 'conversationTaskStates') return taskRows;
           return [];
         }),
@@ -93,7 +83,6 @@ vi.mock('drizzle-orm', () => ({
 describe('semantic-embedding-refresh', () => {
   beforeEach(() => {
     artifactRows.splice(0, artifactRows.length);
-    personaRows.splice(0, personaRows.length);
     taskRows.splice(0, taskRows.length);
     vi.clearAllMocks();
     mockCanUseTeiEmbedder.mockReturnValue(true);
@@ -104,10 +93,9 @@ describe('semantic-embedding-refresh', () => {
     mockUpsertSemanticEmbedding.mockResolvedValue(undefined);
   });
 
-  it('builds compact semantic source text for artifacts, persona clusters, and task states', async () => {
+  it('builds compact semantic source text for artifacts and task states', async () => {
     const {
       buildArtifactEmbeddingSourceText,
-      buildPersonaClusterEmbeddingSourceText,
       buildTaskStateEmbeddingSourceText,
     } = await import('./semantic-embedding-refresh');
 
@@ -120,16 +108,6 @@ describe('semantic-embedding-refresh', () => {
         contentText: 'Full proposal body',
       })
     ).toContain('Proposal');
-
-    expect(
-      buildPersonaClusterEmbeddingSourceText({
-        clusterId: 'cluster-1',
-        userId: 'user-1',
-        canonicalText: 'The user prefers concise answers.',
-        memoryClass: 'stable_preference',
-        state: 'active',
-      })
-    ).toContain('Memory class: stable_preference');
 
     expect(
       buildTaskStateEmbeddingSourceText({
@@ -169,20 +147,13 @@ describe('semantic-embedding-refresh', () => {
     );
   });
 
-  it('backfills missing semantic embeddings for artifacts, persona clusters, and task states', async () => {
+  it('backfills missing semantic embeddings for artifacts and task states', async () => {
     artifactRows.push({
       id: 'artifact-1',
       userId: 'user-1',
       name: 'Proposal',
       summary: 'Draft summary',
       contentText: 'Full proposal body',
-    });
-    personaRows.push({
-      clusterId: 'cluster-1',
-      userId: 'user-1',
-      canonicalText: 'The user prefers concise answers.',
-      memoryClass: 'stable_preference',
-      state: 'active',
     });
     taskRows.push({
       taskId: 'task-1',
@@ -200,10 +171,9 @@ describe('semantic-embedding-refresh', () => {
 
     expect(result).toEqual({
       artifactCount: 1,
-      personaClusterCount: 1,
       taskStateCount: 1,
     });
-    expect(mockEmbedTexts).toHaveBeenCalledTimes(3);
-    expect(mockUpsertSemanticEmbedding).toHaveBeenCalledTimes(3);
+    expect(mockEmbedTexts).toHaveBeenCalledTimes(2);
+    expect(mockUpsertSemanticEmbedding).toHaveBeenCalledTimes(2);
   });
 });
