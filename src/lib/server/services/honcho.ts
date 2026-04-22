@@ -834,13 +834,6 @@ type LoadedSessionPromptContext = {
 	honchoSnapshot: HonchoContextSnapshot | null;
 };
 
-type HonchoQueueObservation = {
-	pendingWorkUnits: number;
-	inProgressWorkUnits: number;
-	waitedMs: number;
-	timedOut: boolean;
-};
-
 function mapSnapshotMessagesToPromptContext(
 	messages: HonchoContextSnapshot['messages']
 ): PromptContextMessage[] {
@@ -940,71 +933,6 @@ async function loadPersonaContext(params: {
 	return typeof result.value === 'string' ? result.value : '';
 }
 
-async function waitForHonchoQueue(params: {
-	session: Session;
-	conversationId: string;
-	userId: string;
-}): Promise<HonchoQueueObservation> {
-	const config = getConfig();
-	const waitBudgetMs = Math.max(0, config.honchoContextWaitMs);
-	const pollIntervalMs = Math.max(50, config.honchoContextPollIntervalMs);
-	const queueProbeTimeoutMs = Math.max(500, Math.min(waitBudgetMs || 500, pollIntervalMs * 2));
-	const startedAt = Date.now();
-	let pendingWorkUnits = 0;
-	let inProgressWorkUnits = 0;
-
-	if (waitBudgetMs === 0) {
-		return {
-			pendingWorkUnits,
-			inProgressWorkUnits,
-			waitedMs: 0,
-			timedOut: false,
-		};
-	}
-
-	while (true) {
-		const queueResult = await resolveWithTimeout(params.session.queueStatus(), {
-			timeoutMs: queueProbeTimeoutMs,
-			label: 'Honcho session queue status',
-			conversationId: params.conversationId,
-			userId: params.userId,
-		});
-
-		if (!queueResult.value) {
-			return {
-				pendingWorkUnits,
-				inProgressWorkUnits,
-				waitedMs: Date.now() - startedAt,
-				timedOut: queueResult.timedOut,
-			};
-		}
-
-		pendingWorkUnits = queueResult.value.pendingWorkUnits ?? 0;
-		inProgressWorkUnits = queueResult.value.inProgressWorkUnits ?? 0;
-
-		if (pendingWorkUnits <= 0 && inProgressWorkUnits <= 0) {
-			return {
-				pendingWorkUnits,
-				inProgressWorkUnits,
-				waitedMs: Date.now() - startedAt,
-				timedOut: false,
-			};
-		}
-
-		const elapsedMs = Date.now() - startedAt;
-		if (elapsedMs >= waitBudgetMs) {
-			return {
-				pendingWorkUnits,
-				inProgressWorkUnits,
-				waitedMs: elapsedMs,
-				timedOut: true,
-			};
-		}
-
-		await sleep(Math.min(pollIntervalMs, waitBudgetMs - elapsedMs));
-	}
-}
-
 async function loadSessionPromptContext(params: {
 	userId: string;
 	conversationId: string;
@@ -1052,8 +980,7 @@ async function loadSessionPromptContext(params: {
 	const startedAt = Date.now();
 	const fallbackToStoredContext = async (
 		source: HonchoContextInfo['source'],
-		fallbackReason: HonchoContextInfo['fallbackReason'],
-		queueObservation?: Partial<HonchoQueueObservation>
+		fallbackReason: HonchoContextInfo['fallbackReason']
 	): Promise<LoadedSessionPromptContext> => {
 		const snapshot = latestHonchoMetadata.honchoSnapshot;
 		const sessionMessages = snapshot
@@ -1070,8 +997,8 @@ async function loadSessionPromptContext(params: {
 			honchoContext: {
 				source,
 				waitedMs,
-				queuePendingWorkUnits: queueObservation?.pendingWorkUnits ?? 0,
-				queueInProgressWorkUnits: queueObservation?.inProgressWorkUnits ?? 0,
+				queuePendingWorkUnits: 0,
+				queueInProgressWorkUnits: 0,
 				fallbackReason,
 				snapshotCreatedAt: snapshot?.createdAt ?? null,
 			},
@@ -1095,12 +1022,6 @@ async function loadSessionPromptContext(params: {
 		);
 	}
 
-	const queueObservation = await waitForHonchoQueue({
-		session: sessionResult.value,
-		conversationId: params.conversationId,
-		userId: params.userId,
-	});
-
 	const liveContextResult = await resolveWithTimeout(
 		sessionResult.value.context({
 			summary: true,
@@ -1117,12 +1038,7 @@ async function loadSessionPromptContext(params: {
 	if (!liveContextResult.value) {
 		return fallbackToStoredContext(
 			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
-			queueObservation.timedOut || liveContextResult.timedOut
-				? queueObservation.timedOut
-					? 'queue_timeout'
-					: 'timeout'
-				: 'context_error',
-			queueObservation
+			liveContextResult.timedOut ? 'timeout' : 'context_error'
 		);
 	}
 
