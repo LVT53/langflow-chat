@@ -137,13 +137,6 @@ vi.mock('$lib/server/db/schema', () => ({
 		honchoPeerVersion: { name: 'honchoPeerVersion' },
 		updatedAt: { name: 'updatedAt' },
 	},
-	personaMemoryAttributions: {
-		__name: 'personaMemoryAttributions',
-		userId: { name: 'userId' },
-		conclusionId: { name: 'conclusionId' },
-		conversationId: { name: 'conversationId' },
-		scope: { name: 'scope' },
-	},
 	artifacts: {
 		__name: 'artifacts',
 		id: Symbol('artifact-id'),
@@ -171,9 +164,7 @@ vi.mock('$lib/server/db/schema', () => ({
 	taskCheckpoints: {
 		taskId: Symbol('checkpoint-task-id'),
 	},
-	personaMemoryClusters: {},
-	personaMemoryClusterMembers: {},
-	personaMemoryOverviews: {},
+
 	memoryEvents: {},
 }));
 
@@ -240,10 +231,6 @@ vi.mock('$lib/server/utils/prompt-context', () => ({
 	rerankHistoricalSections: vi.fn(() => []),
 	selectRecentRoleTurns: vi.fn(() => []),
 	truncateToTokenBudget: vi.fn((text: string) => text),
-}));
-
-vi.mock('$lib/server/services/persona-memory/context-builder', () => ({
-	buildPersonaPromptContext: vi.fn(async () => ''),
 }));
 
 vi.mock('$lib/server/services/messages', () => ({

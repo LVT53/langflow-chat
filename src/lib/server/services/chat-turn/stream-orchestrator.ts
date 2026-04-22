@@ -112,7 +112,6 @@ export function runChatStreamOrchestrator(options: StreamOrchestratorOptions): R
   const safeAttachmentIds = turn.attachmentIds;
   const activeDocumentArtifactId = turn.activeDocumentArtifactId;
   const attachmentTraceId = turn.attachmentTraceId;
-  const personaMemorySnapshotPromise = turn.personaMemorySnapshotPromise;
 
   const encoder = new TextEncoder();
   let cancelStream = () => undefined;
@@ -631,7 +630,6 @@ const sendEndAndClose = async (
                 upstreamMessage,
                 assistantMirrorContent: chunkRuntime.fullResponse,
                 workCapsule: latestWorkCapsule,
-                personaMemorySnapshotPromise,
                 maintenanceReason: "chat_stream",
               });
             });

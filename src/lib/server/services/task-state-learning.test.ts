@@ -173,9 +173,7 @@ vi.mock('$lib/server/db/schema', () => ({
 		updatedAt: { name: 'updatedAt' },
 	},
 	artifacts: { id: Symbol('id') },
-	personaMemoryClusters: {},
-	personaMemoryClusterMembers: {},
-	personaMemoryOverviews: {},
+
 	memoryEvents: {},
 }));
 

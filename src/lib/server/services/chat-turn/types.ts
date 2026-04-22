@@ -32,7 +32,6 @@ export type ParsedChatTurnRequest = {
 export type PreflightedChatTurn = ParsedChatTurnRequest & {
 	sourceLanguage: string;
 	translationEnabled: boolean;
-	personaMemorySnapshotPromise: Promise<ReadonlySet<string> | undefined>;
 };
 
 export type WorkingSetItem = {
@@ -110,6 +109,5 @@ export type RunPostTurnTasksParams = {
 	upstreamMessage: string;
 	assistantMirrorContent?: string;
 	workCapsule?: WorkCapsuleSummary;
-	personaMemorySnapshotPromise: Promise<ReadonlySet<string> | undefined>;
 	maintenanceReason: 'chat_send' | 'chat_stream';
 };

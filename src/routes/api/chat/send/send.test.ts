@@ -59,11 +59,9 @@ vi.mock('$lib/server/services/translator', () => ({
 }));
 
 vi.mock('$lib/server/services/honcho', () => ({
-	capturePersonaMemorySnapshot: vi.fn(async () => new Set()),
 	listPersonaMemories: vi.fn(async () => []),
 	mirrorMessage: vi.fn(async () => undefined),
 	mirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
-	syncConversationPersonaMemoryAttributions: vi.fn(async () => 0),
 }));
 
 vi.mock('$lib/server/env', () => ({

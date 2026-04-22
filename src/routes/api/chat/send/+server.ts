@@ -158,7 +158,6 @@ export const POST: RequestHandler = async (event) => {
 			upstreamMessage,
 			assistantMirrorContent: text,
 			workCapsule: turnState.workCapsule,
-			personaMemorySnapshotPromise: turn.personaMemorySnapshotPromise,
 			maintenanceReason: 'chat_send',
 		});
 
