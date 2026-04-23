@@ -97,7 +97,14 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		listMessageAttachments(conversationId),
 	]);
 
-	return result.map((row) => ({
+	const uniqueRows = new Map<string, (typeof result)[number]>();
+	for (const row of result) {
+		if (!uniqueRows.has(row.message.id)) {
+			uniqueRows.set(row.message.id, row);
+		}
+	}
+
+	return Array.from(uniqueRows.values()).map((row) => ({
 		...mapRowToChatMessage(row.message, row.model, row.generationTimeMs),
 		attachments: attachmentMap.get(row.message.id) ?? [],
 	}));

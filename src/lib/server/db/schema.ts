@@ -389,7 +389,9 @@ export const messageAnalytics = sqliteTable('message_analytics', {
 	reasoningTokens: integer('reasoning_tokens'),
 	generationTimeMs: integer('generation_time_ms'),
 	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+	messageUniqueIdx: uniqueIndex('message_analytics_message_unique_idx').on(table.messageId),
+}));
 
 export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	id: text('id').primaryKey(),

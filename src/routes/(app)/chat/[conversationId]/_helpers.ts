@@ -298,7 +298,7 @@ export function reducePendingGeneratedFiles(
 	assistantMessageId: string,
 	conversationId: string
 ): ChatGeneratedFileListItem[] {
-	if (list.some((f) => f.assistantMessageId === assistantMessageId)) {
+	if (list.some((f) => f.assistantMessageId === assistantMessageId && f.filename === filename)) {
 		return list;
 	}
 	return [

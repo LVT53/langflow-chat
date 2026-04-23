@@ -195,21 +195,53 @@ export const POST: RequestHandler = async (event) => {
 		});
 	});
 
-	// Execute code in sandbox (language is already validated)
-	let executionResult;
-	try {
-		executionResult = await executeCode(code, language);
-	} catch (error) {
-		console.error('[FILE_GENERATE] Sandbox execution threw', {
-			requestId,
-			conversationId,
-			ownerUserId,
-			error,
-		});
-		return json(
-			{ error: 'Failed to execute code in sandbox' },
-			{ status: 500 }
+	// Execute code in sandbox with retry for transient failures
+	const MAX_RETRIES = 2;
+	const RETRY_DELAYS_MS = [500, 1000];
+	const TRANSIENT_ERROR_PATTERNS = [
+		'Execution timed out',
+		'temporary storage exhausted',
+		'sandbox runtime error',
+	];
+
+	let executionResult: Awaited<ReturnType<typeof executeCode>>;
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		try {
+			executionResult = await executeCode(code, language);
+		} catch (error) {
+			console.error('[FILE_GENERATE] Sandbox execution threw', {
+				requestId,
+				conversationId,
+				ownerUserId,
+				error,
+				attempt: attempt + 1,
+			});
+			return json(
+				{ error: 'Failed to execute code in sandbox' },
+				{ status: 500 }
+			);
+		}
+
+		if (!executionResult.error) {
+			break;
+		}
+
+		const isTransient = TRANSIENT_ERROR_PATTERNS.some((pattern) =>
+			executionResult.error!.includes(pattern)
 		);
+		if (!isTransient) {
+			break;
+		}
+
+		if (attempt < MAX_RETRIES) {
+			console.warn('[FILE_GENERATE] Sandbox execution returned transient error, retrying', {
+				requestId,
+				attempt: attempt + 1,
+				maxRetries: MAX_RETRIES,
+				error: executionResult.error,
+			});
+			await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+		}
 	}
 
 	console.info('[FILE_GENERATE] Sandbox execution completed', {

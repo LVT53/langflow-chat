@@ -3,6 +3,7 @@ import { join } from 'path';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getArtifactForUser } from '$lib/server/services/knowledge';
+import { getSourceArtifactIdForNormalizedArtifact } from '$lib/server/services/knowledge/store/core';
 import { getPreviewContentType } from '$lib/utils/file-preview';
 import { createJsonErrorResponse } from '$lib/server/api/responses';
 
@@ -19,9 +20,20 @@ export const GET: RequestHandler = async (event) => {
 	const artifactId = event.params.id;
 
 	// Get artifact and verify ownership
-	const artifact = await getArtifactForUser(user.id, artifactId);
+	let artifact = await getArtifactForUser(user.id, artifactId);
 	if (!artifact) {
 		return createJsonErrorResponse('Artifact not found', 404);
+	}
+
+	// Resolve normalized_document to source_document for binary preview
+	if (artifact.type === 'normalized_document' && artifact.contentText) {
+		const sourceArtifactId = await getSourceArtifactIdForNormalizedArtifact(user.id, artifact.id);
+		if (sourceArtifactId) {
+			const sourceArtifact = await getArtifactForUser(user.id, sourceArtifactId);
+			if (sourceArtifact && sourceArtifact.storagePath) {
+				artifact = sourceArtifact;
+			}
+		}
 	}
 
 	// Determine content type

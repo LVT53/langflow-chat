@@ -93,7 +93,7 @@
 
 	{#if visibleTools.length > 0}
 		<div class="tool-call-stack">
-			{#each visibleTools as tool (tool.name + JSON.stringify(tool.input))}
+			{#each visibleTools as tool, i (tool.name + JSON.stringify(tool.input) + '-' + i)}
 				<div class="tool-call-row" class:is-running={tool.status === 'running'}>
 					{#if tool.status === 'running'}
 						<span class="tool-dot"></span>

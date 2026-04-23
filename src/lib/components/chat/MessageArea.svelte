@@ -82,7 +82,7 @@
 			return;
 		}
 
-		const isNewMessage = hasNewMessage(messages);
+		const isNewMessage = hasNewMessage(dedupedMessages);
 		const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
 
 		if (shouldJumpToConversationBottom) {
@@ -100,7 +100,7 @@
 			instantScrollToBottom();
 		}
 
-		lastMessageCount = messages.length;
+		lastMessageCount = dedupedMessages.length;
 		lastGeneratedFileCount = generatedFiles.length;
 	});
 
@@ -115,6 +115,20 @@
 	let excludedArtifactIds = $derived(
 		contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? []
 	);
+
+let dedupedMessages = $derived(
+	messages.reduce(
+		(acc, msg) => {
+			const key = msg.renderKey ?? msg.id;
+			if (!acc.seen.has(key)) {
+				acc.seen.add(key);
+				acc.list.push(msg);
+			}
+			return acc;
+		},
+		{ seen: new Set<string>(), list: [] as ChatMessage[] }
+	).list
+);
 
 	async function alignToBottomAfterRender() {
 		if (!scrollContainer) return;
@@ -145,10 +159,10 @@
 				</p>
 			</div>
 		{:else}
-			{#each messages as message, i (message.renderKey ?? message.id)}
+			{#each dedupedMessages as message, i (message.renderKey ?? message.id)}
 				<MessageBubble
 					{message}
-					isLast={i === messages.length - 1}
+					isLast={i === dedupedMessages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
 					generatedFiles={getGeneratedFilesForMessage(message.id)}

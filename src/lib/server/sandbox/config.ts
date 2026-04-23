@@ -305,7 +305,7 @@ export async function createSandbox(language: SandboxLanguage = 'python'): Promi
 			// SECURITY: Writable tmpfs for output and temp (since rootfs is readonly and we run as non-root)
 			Tmpfs: {
 				'/output': 'rw,size=100m,mode=1777',
-				'/tmp': 'rw,size=50m,mode=1777',
+				'/tmp': language === 'javascript' ? 'rw,size=200m,mode=1777' : 'rw,size=50m,mode=1777',
 			},
 		},
 		Labels: {

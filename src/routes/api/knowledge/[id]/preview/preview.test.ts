@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 
 const mockRequireAuth = vi.fn();
 const mockGetArtifactForUser = vi.fn();
+const mockGetSourceArtifactId = vi.fn();
 
 vi.mock('$lib/server/auth/hooks', () => ({
 	requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
@@ -12,6 +13,10 @@ vi.mock('$lib/server/auth/hooks', () => ({
 vi.mock('$lib/server/services/knowledge', () => ({
 	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
 }));
+vi.mock('$lib/server/services/knowledge/store/core', () => ({
+	getSourceArtifactIdForNormalizedArtifact: (...args: unknown[]) => mockGetSourceArtifactId(...args),
+}));
+
 
 import { GET } from './+server';
 
@@ -337,4 +342,49 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		expect(contentDisposition).toContain('inline');
 		expect(contentDisposition).toContain(encodeURIComponent('document with spaces & special chars.pdf'));
 	});
+	it('resolves normalized_document to source_document for PDF preview', async () => {
+		const pdfBuffer = Buffer.from('PDF binary content');
+		await writePreviewFile('data/knowledge/user-123/source.pdf', pdfBuffer);
+
+		mockGetArtifactForUser.mockImplementation(async (_userId: string, id: string) => {
+			if (id === 'normalized-123') {
+				return {
+					id: 'normalized-123',
+					name: 'document.pdf',
+					storagePath: null,
+					contentText: 'Extracted text content',
+					mimeType: 'text/plain',
+					extension: 'pdf',
+					type: 'normalized_document',
+				};
+			}
+			if (id === 'source-123') {
+				return {
+					id: 'source-123',
+					name: 'document.pdf',
+					storagePath: 'data/knowledge/user-123/source.pdf',
+					contentText: null,
+					mimeType: 'application/pdf',
+					extension: 'pdf',
+					type: 'source_document',
+				};
+			}
+			return null;
+		});
+
+		mockGetSourceArtifactId.mockResolvedValue('source-123');
+
+		const event = {
+			locals: { user: mockUser },
+			params: { id: 'normalized-123' },
+		} as any;
+
+		const response = await GET(event);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('application/pdf');
+		const body = await response.arrayBuffer();
+		expect(Buffer.from(body).toString()).toBe('PDF binary content');
+	});
+
 });

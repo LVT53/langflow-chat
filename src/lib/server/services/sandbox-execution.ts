@@ -449,6 +449,13 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 	if (stderr.includes('Cannot find module') || stderr.includes('ERR_MODULE_NOT_FOUND')) {
 		return `Import error: ${stderr}`;
 	}
+	if (stderr.includes('sharp') || stderr.includes('ENOMEM') || stderr.includes('No space left on device') || stderr.includes('ENOSPC')) {
+		return 'Execution failed: temporary storage exhausted during image processing';
+	}
+
+	if (exitCode === 125 || exitCode === 126) {
+		return 'Execution failed: sandbox runtime error';
+	}
 
 	if (exitCode !== 0 && exitCode !== undefined) {
 		return `Execution failed with exit code ${exitCode}`;

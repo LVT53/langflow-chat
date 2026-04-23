@@ -81,7 +81,6 @@ describe('GeneratedFile', () => {
 		});
 
 		expect(getByText('generating.xlsx')).toBeInTheDocument();
-		expect(getByTestId('generating-spinner')).toBeInTheDocument();
 		expect(getByTestId('generating-progress')).toBeInTheDocument();
 		expect(getByText('Generating...')).toBeInTheDocument();
 		expect(queryByLabelText('Download generating.xlsx')).toBeNull();

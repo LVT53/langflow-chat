@@ -325,7 +325,6 @@
 					<div class="file-size">{formatByteSize(size)}</div>
 				{:else if status === 'generating'}
 					<div class="generating-text">
-						{@render SpinnerIcon()}
 						<span>Generating...</span>
 					</div>
 				{:else if status === 'failed'}
@@ -408,6 +407,10 @@
 	.generated-file-card.generating {
 		overflow: hidden;
 	}
+
+.generated-file-card.generating .file-main {
+	margin-bottom: 0.5rem;
+}
 
 	.generated-file-card.generating::after {
 		content: '';

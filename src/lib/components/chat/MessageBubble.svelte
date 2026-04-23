@@ -46,7 +46,18 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
-
+let dedupedGeneratedFiles = $derived(
+	generatedFiles.reduce(
+		(acc, file) => {
+			if (!acc.seen.has(file.id)) {
+				acc.seen.add(file.id);
+				acc.list.push(file);
+			}
+			return acc;
+		},
+		{ seen: new Set<string>(), list: [] as ChatGeneratedFileListItem[] }
+	).list
+);
 	let isUser = $derived(message.role === 'user');
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 	let hasThinking = $derived(Boolean(message.thinking?.trim()));
@@ -264,7 +275,7 @@
 			</div>
 			{#if generatedFiles.length > 0 && conversationId}
 				<div class="generated-files-inline" data-testid="message-generated-files">
-					{#each generatedFiles as file (file.id)}
+					{#each dedupedGeneratedFiles as file (file.id)}
 						<GeneratedFile
 							fileId={file.id}
 							{conversationId}
