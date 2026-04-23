@@ -26,6 +26,8 @@ if [ -f .env ]; then
 fi
 
 echo -e "${YELLOW}1. Pulling latest changes...${NC}"
+# Discard local package-lock churn so pull never fails on npm-install drift
+git checkout -- package-lock.json 2>/dev/null || true
 git pull origin main
 echo -e "${GREEN}✓ Git pull complete${NC}"
 echo ""
