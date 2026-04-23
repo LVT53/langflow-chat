@@ -1149,6 +1149,7 @@ function downloadFile() {
 	   never triggers scrollbars. Use flex: 1 1 auto throughout. */
 	.preview-embedded-shell {
 		display: flex;
+		flex-direction: column;
 		flex: 1 1 auto;
 		min-height: 0;
 		min-width: 0;
