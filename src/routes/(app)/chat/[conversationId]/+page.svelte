@@ -90,7 +90,7 @@
 	const initialGeneratedFiles = getData().generatedFiles ?? [];
 
 	// Track conversation title reactively - use $derived to keep in sync with page data
-	let conversationTitle = $derived(data.conversation.title);
+	let conversationTitle = $derived(data.conversation?.title ?? '');
 
 	// For manual updates (title generation), track separately
 	let generatedTitleOverride = $state<string | null>(null);
@@ -306,7 +306,12 @@
 		evidenceManagerOpen = false;
 		draftPersistence.clear();
 		currentConversationId.set(data.conversation.id);
-		maybeSendPendingInitialMessage();
+		// Defer pending-message send to avoid state-cascade during hydration
+		if (typeof window !== 'undefined') {
+			requestAnimationFrame(() => {
+				maybeSendPendingInitialMessage();
+			});
+		}
 		if (bootstrapMode) {
 			void hydrateConversationDetail(data.conversation.id);
 		}
