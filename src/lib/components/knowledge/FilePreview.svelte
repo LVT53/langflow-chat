@@ -535,6 +535,9 @@ async function renderPptx(blob: Blob) {
 			canvas,
 			slideSizeMode: "fit",
 			backgroundColor: "#ffffff",
+			// Disable the post-load chart re-render timeout; it fires after we call
+			// destroy() and throws an uncaught "No PPTX loaded" error.
+			autoChartRerenderDelayMs: 0,
 		});
 
 		await viewer.loadFile(arrayBuffer);
@@ -544,8 +547,8 @@ async function renderPptx(blob: Blob) {
 
 		// Render each slide and convert to image
 		for (let i = 0; i < slideCount; i++) {
+			// goToSlide already calls render() internally; do not call render() again
 			await viewer.goToSlide(i);
-			await viewer.render();
 			const dataUrl = canvas.toDataURL("image/png");
 			html += `
 					<div class="pptx-slide">
@@ -1064,6 +1067,7 @@ function downloadFile() {
 
 	:global(.pptx-container) {
 		font-family: 'Nimbus Sans L', sans-serif;
+		min-width: 0;
 	}
 
 	:global(.pptx-slide) {
@@ -1072,6 +1076,7 @@ function downloadFile() {
 		border-radius: 0.75rem;
 		border: 1px solid var(--border-default);
 		overflow: hidden;
+		min-width: 0;
 	}
 
 	:global(.pptx-slide-header) {
