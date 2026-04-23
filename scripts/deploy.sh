@@ -36,17 +36,38 @@ echo -e "${GREEN}✓ Dependencies installed${NC}"
 echo ""
 
 echo -e "${YELLOW}2b. Setting up Python sandbox environment...${NC}"
-if [ -f /usr/bin/python3.11 ]; then
+PYTHON311=$(command -v python3.11 2>/dev/null || true)
+if [ -z "$PYTHON311" ]; then
+  # Fallback: check if python3 itself is 3.11+
+  PYTHON3=$(command -v python3 2>/dev/null || true)
+  if [ -n "$PYTHON3" ] && "$PYTHON3" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>/dev/null; then
+    PYTHON311="$PYTHON3"
+  fi
+fi
+
+if [ -n "$PYTHON311" ]; then
   if [ ! -d sandbox-python-env ]; then
-    /usr/bin/python3.11 -m venv sandbox-python-env
+    "$PYTHON311" -m venv sandbox-python-env
   fi
   sandbox-python-env/bin/pip install --quiet --upgrade pip 2>/dev/null || true
   sandbox-python-env/bin/pip install --quiet openpyxl xlsxwriter python-docx python-pptx 2>/dev/null || true
-  echo -e "${GREEN}✓ Python sandbox packages installed${NC}"
+  echo -e "${GREEN}✓ Python sandbox packages installed (host)${NC}"
+elif command -v docker >/dev/null 2>&1; then
+  # No host Python, but Docker is available — use a container to bootstrap packages
+  SITE_PACKAGES_DIR="$APP_DIR/sandbox-python-env/lib/python3.11/site-packages"
+  mkdir -p "$SITE_PACKAGES_DIR"
+  docker run --rm \
+    -v "$SITE_PACKAGES_DIR:/target" \
+    python:3.11-slim \
+    sh -c "pip install --no-cache-dir --target=/target openpyxl xlsxwriter python-docx python-pptx" \
+    >/dev/null 2>&1 || {
+      echo -e "${YELLOW}⚠ Docker package install failed; Python sandbox file generation may be limited${NC}"
+      exit 0
+    }
+  echo -e "${GREEN}✓ Python sandbox packages installed (Docker)${NC}"
 else
-  echo -e "${YELLOW}⚠ python3.11 not found; Python sandbox file generation may be limited${NC}"
+  echo -e "${YELLOW}⚠ python3.11 and docker not found; Python sandbox file generation may be limited${NC}"
 fi
-echo ""
 
 echo -e "${YELLOW}3. Applying database migrations...${NC}"
 npm run db:prepare
