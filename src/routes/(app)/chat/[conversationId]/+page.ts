@@ -4,12 +4,13 @@ import { hasPendingConversationMessage } from '$lib/client/conversation-session'
 import type { PageLoad } from './$types';
 import type { ConversationDetail } from '$lib/types';
 
-export const load: PageLoad = async ({ params, fetch }) => {
+export const load: PageLoad = async ({ params, fetch, url }) => {
 	const { conversationId } = params;
 	const useBootstrap =
-		browser && typeof window !== 'undefined'
+		url.searchParams.get('view') === 'bootstrap' ||
+		(browser && typeof window !== 'undefined'
 			? hasPendingConversationMessage(conversationId)
-			: false;
+			: false);
 
 	const res = await fetch(
 		`/api/conversations/${conversationId}${useBootstrap ? '?view=bootstrap' : ''}`

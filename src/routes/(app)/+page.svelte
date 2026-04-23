@@ -36,8 +36,9 @@ import type { ConversationDetail } from '$lib/types';
 		conversationId: string;
 		goto: (href: string) => Promise<void>;
 		hardNavigate?: ((href: string) => void) | null;
+		bootstrap?: boolean;
 	}): Promise<void> {
-		const href = `/chat/${params.conversationId}`;
+		const href = `/chat/${params.conversationId}${params.bootstrap ? '?view=bootstrap' : ''}`;
 
 		// The landing-to-chat bootstrap path is vulnerable to stale SPA state after deploys
 		// or restarts. Prefer a full document navigation when available so the browser cannot
@@ -197,6 +198,7 @@ import type { ConversationDetail } from '$lib/types';
 					typeof window !== 'undefined'
 						? (href) => window.location.assign(href)
 						: null,
+				bootstrap: true,
 			});
 		} catch {
 			error = 'Failed to create conversation. Please try again.';

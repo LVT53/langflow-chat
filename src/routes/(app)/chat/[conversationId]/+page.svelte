@@ -257,6 +257,12 @@
 		}
 
 		const pendingDraft = consumePendingConversationMessage(data.conversation.id);
+		// Clean up bootstrap URL param so refreshes don't replay the loading state
+		if (browser && page.url.searchParams.get('view') === 'bootstrap') {
+			const url = new URL(page.url);
+			url.searchParams.delete('view');
+			replaceState(url, page.state);
+		}
 		if (!pendingDraft || !pendingDraft.message.trim()) {
 			initialStreamPending = false;
 			return;
