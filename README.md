@@ -114,20 +114,6 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
-- Persona-memory clustering now resolves relative time into structured freshness metadata, distinguishes short-term constraints from broader active project context, archives expired temporal memories as historical facts, and prevents stale Honcho overview text from overriding fresher local temporal truth or speaking when local durable persona memory is not ready.
-- Full account resets and Knowledge Base wipes now rotate a per-user Honcho peer version before future chats resume, so a reset user starts on a brand-new Honcho identity even if the old peer retained hidden state on the Honcho side.
-- Persona-memory salience repair now also reacts to explicit user corrections. When a newer memory clearly corrects an older persona statement, the older memory stays auditable but becomes less assertive until the user reaffirms it later.
-- The memory stack now also persists normalized `memory_events` for important state changes such as deadline updates, preference supersession, project continuity transitions, persona fact replacement, and generated-document supersession. That event log is local supporting history for the existing persona/task/document authorities, not a second parallel memory engine.
-- Project continuity now also consumes those task-domain events on the read path. Explicit user pause/resume language can override stale project status immediately, and continuity views prefer the newest project state event over an older still-active row.
-- Summary-level diagnostics now stay on the authority boundaries instead of route-local debug spam: working-document selection logs through `[CONTEXT]` in `knowledge/context.ts`, while Knowledge Memory overview source selection logs through `[KNOWLEDGE_MEMORY]` in `memory.ts`.
-- TEI embedder and reranker clients now live behind app-owned service boundaries and runtime config. They are intended to power semantic shortlist generation and reranking in later waves, but they do not replace the app's deterministic authority rules for active document focus, temporal truth, or working-document lineage.
-- The rerank-shaped evidence-selection paths now use the TEI reranker directly instead of routing reranking through the generic context-summarizer chat model. The control model still owns structured routing, verification, and semantic JSON tasks; TEI now owns top-N evidence/chunk/historical/tool reranking.
-- Wave 2 TEI persistence is now in place through one local `semantic_embeddings` table keyed by user, subject type, subject id, and model name. That unified store is the shared substrate for later artifact, persona-cluster, and task-state semantic retrieval waves.
-- Wave 3 TEI refresh/backfill is now also in place. Artifact creation, task-state writes, and persona-cluster dreaming queue semantic refreshes asynchronously, while `memory-maintenance.ts` performs the slower user-scoped backfill sweep for missing or stale embeddings without blocking chat turns.
-- Wave 5 document retrieval is now semantic as well. `knowledge/store/documents.ts` broadens the user-scoped artifact candidate pool, scores it with stored artifact embeddings, optionally reranks the shortlist through TEI, and then hands those ranked candidates back to the existing document-family and active-focus authority paths.
-- Wave 6 persona retrieval is now semantic at prompt time. `persona-memory.ts` still filters archived, historical, expired, superseded, and corrected memories deterministically first, then uses stored persona-cluster embeddings and bounded rerank scores to choose which surviving memories are most relevant to the current query for prompt context.
-- Wave 7 task routing is now semantic as well. `task-state.ts` still respects locked-task precedence and deterministic status transitions, but it now uses stored task-state embeddings and bounded rerank scores to better revive or continue the right prior task when lexical overlap alone is weak.
-- Wave 8 TEI observability is now in place as well. `knowledge/store/documents.ts`, `persona-memory.ts`, and `task-state.ts` now emit one compact `[TEI] Retrieval summary` line with shortlist/rerank latency, fallback reason, candidate counts, and the winning retrieval mode instead of scattering retrieval diagnostics across unrelated logs.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
 
 ### Interface And Content Characteristics
@@ -138,7 +124,6 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
 - Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
 - Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md) and [docs/working-documents-implementation-plan.md](./docs/working-documents-implementation-plan.md). The direction is to consolidate generated files and attachments onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
-- Chat-path Honcho context is now explicitly session-limited, empty/new sessions skip live Honcho session-context reads altogether, and artifact retrieval/cleanup treat linked conversation ownership as stronger authority than `artifacts.user_id` alone. That keeps stale or inconsistent state from crossing the prompt boundary in multi-user deployments.
 
 ## Configuration Reference
 
@@ -165,12 +150,18 @@ Notes before the tables:
 | `SESSION_SECRET` | Yes | none | Signs and protects session cookies | Always set to a long random secret in every environment | App boot fails if missing |
 | `DATABASE_PATH` | No | `./data/chat.db` | SQLite database location | Set it when the database should live outside the repo root or on a mounted volume | The parent directory must be writable |
 | `WEBHOOK_PORT` | No | `8090` | Port used by webhook-related server handling | Set it only if your deployment expects a different port | Must be numeric |
-| `REQUEST_TIMEOUT_MS` | No | `120000` | Upstream request timeout for long-running model calls | Lower it for stricter failure windows or raise it for slower models | Affects perceived reliability on slow backends |
+| `REQUEST_TIMEOUT_MS` | No | `300000` | Upstream request timeout for long-running model calls | Lower it for stricter failure windows or raise it for slower models | Affects perceived reliability on slow backends |
 | `MAX_MESSAGE_LENGTH` | No | `10000` | Maximum accepted user message length | Lower it for tighter limits or raise it for longer prompts | Can also be overridden in admin config |
 | `ATTACHMENT_TRACE_DEBUG` | No | `false` | Enables extra attachment tracing logs | Turn it on while debugging upload/readiness issues | Debug logging only; not a feature flag |
 | `MAX_MODEL_CONTEXT` | No | `262144` | Maximum tokens the model context window supports | Raise it for larger context windows or lower it for stricter limits | Can also be overridden in admin config |
 | `COMPACTION_UI_THRESHOLD` | No | `209715` | UI warning threshold at 80% of max | Adjust if you want earlier or later compaction warnings | Can also be overridden in admin config |
 | `TARGET_CONSTRUCTED_CONTEXT` | No | `157286` | Target context size at 60% of max | Adjust to control how aggressively context is compacted | Can also be overridden in admin config |
+| `WORKING_SET_DOCUMENT_TOKEN_BUDGET` | No | `4000` | Token budget for working-set document snippets in prompts | Raise it if longer document excerpts should reach the model | Can also be overridden in admin config |
+| `WORKING_SET_PROMPT_TOKEN_BUDGET` | No | `20000` | Token budget for the overall working-set prompt section | Raise it if more documents should be included in context | Can also be overridden in admin config |
+| `SMALL_FILE_THRESHOLD_CHARS` | No | `5000` | Character threshold below which files are treated as small for extraction | Tune based on typical upload sizes | Can also be overridden in admin config |
+| `BRAVE_SEARCH_API_KEY` | No | empty | API key for Brave Search image-search tool | Set it when the image-search tool should be enabled | Empty disables the tool |
+| `CONCURRENT_STREAM_LIMIT` | No | `3` | Max concurrent chat streams across all users | Lower it to reduce server load | Can also be overridden in admin config |
+| `PER_USER_STREAM_LIMIT` | No | `1` | Max concurrent chat streams per user | Lower it to reduce per-user load | Can also be overridden in admin config |
 
 ### Primary And Secondary Model Endpoints
 
@@ -212,6 +203,20 @@ Notes before the tables:
 | `CONTEXT_SUMMARIZER_API_KEY` | No | falls back to `TITLE_GEN_API_KEY` | API key for the context summarizer | Set it when the summarizer has separate auth | If unset, the title generation key is reused |
 | `CONTEXT_SUMMARIZER_MODEL` | No | empty | Model name used for context summarization | Set it if summarization is enabled and uses a dedicated model | Empty means no dedicated summarizer model is configured |
 
+### Optional TEI / Semantic Retrieval
+
+| Variable | Required? | Default | What it does | When to set it | Caveats |
+|---|---|---:|---|---|---|
+| `TEI_EMBEDDER_URL` | No | empty | URL for the TEI embedding service | Set it when semantic retrieval should use a dedicated embedder | Empty disables semantic embedding |
+| `TEI_EMBEDDER_API_KEY` | No | empty | API key for the TEI embedding service | Set it if the embedder requires auth | Empty is valid for unauthenticated local deployments |
+| `TEI_EMBEDDER_MODEL` | No | empty | Model name used for the TEI embedder | Set it to the exact served model name | Must match the upstream endpoint |
+| `TEI_EMBEDDER_BATCH_SIZE` | No | `32` | Batch size for TEI embedding requests | Raise/lower based on embedder capacity | Can also be overridden in admin config |
+| `TEI_RERANKER_URL` | No | empty | URL for the TEI reranker service | Set it when semantic retrieval should use a dedicated reranker | Empty disables semantic reranking |
+| `TEI_RERANKER_API_KEY` | No | empty | API key for the TEI reranker service | Set it if the reranker requires auth | Empty is valid for unauthenticated local deployments |
+| `TEI_RERANKER_MODEL` | No | empty | Model name used for the TEI reranker | Set it to the exact served model name | Must match the upstream endpoint |
+| `TEI_RERANKER_MAX_TEXTS` | No | `32` | Max texts sent to the TEI reranker per request | Raise/lower based on reranker capacity | Can also be overridden in admin config |
+| `TEI_TIMEOUT_MS` | No | falls back to `REQUEST_TIMEOUT_MS` or `300000` | Timeout for TEI embedder and reranker requests | Tune to avoid long-running embedding/reranking stalls | Can also be overridden in admin config |
+
 ### Optional Long-Term Memory
 
 | Variable | Required? | Default | What it does | When to set it | Caveats |
@@ -220,9 +225,9 @@ Notes before the tables:
 | `HONCHO_API_KEY` | No | empty | API key for the Honcho service | Set it if your Honcho deployment requires auth | Empty is valid for unauthenticated local deployments |
 | `HONCHO_BASE_URL` | No | `http://localhost:8000` | Base URL for the Honcho service | Set it when Honcho runs on another host or port | Must be reachable from the app server |
 | `HONCHO_WORKSPACE` | No | `alfyai-prod` | Workspace namespace used inside Honcho | Set it per environment or tenant | Keep production and test workspaces separate |
-| `HONCHO_CONTEXT_WAIT_MS` | No | `3000` | Maximum time the app waits for Honcho session bootstrap, queue settling, and `session.context(...)` before falling back | Raise it if you prefer richer live Honcho session context over faster first-byte time | Can also be overridden in admin config |
+| `HONCHO_CONTEXT_WAIT_MS` | No | `8000` | Maximum time the app waits for Honcho session bootstrap, queue settling, and `session.context(...)` before falling back | Raise it if you prefer richer live Honcho session context over faster first-byte time | Can also be overridden in admin config |
 | `HONCHO_CONTEXT_POLL_INTERVAL_MS` | No | `250` | Poll interval used while waiting for Honcho queue work to settle | Lower it if you want more responsive queue checks | Can also be overridden in admin config |
-| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `1500` | Timeout for auxiliary Honcho persona enrichment on chat turns, especially persona prompt context | Lower it to keep the prompt path responsive while persona clusters refresh in the background | Can also be overridden in admin config |
+| `HONCHO_PERSONA_CONTEXT_WAIT_MS` | No | `8000` | Timeout for auxiliary Honcho persona enrichment on chat turns, especially persona prompt context | Lower it to keep the prompt path responsive while persona clusters refresh in the background | Can also be overridden in admin config |
 | `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 | `DOCUMENT_PARSER_OCR_ENABLED` | No | `true` | Enables OCR during upload normalization via Liteparse | Set `false` if you want pure non-OCR extraction | Can also be overridden in admin config |
@@ -232,7 +237,7 @@ Notes before the tables:
 | `DOCUMENT_PARSER_NUM_WORKERS` | No | `4` | OCR worker parallelism used by Liteparse | Raise/lower based on CPU and OCR service capacity | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_MAX_PAGES` | No | `1000` | Maximum pages Liteparse processes per document | Reduce to cap resource usage on large files | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_DPI` | No | `150` | Render DPI used for OCR operations | Raise for better OCR quality at higher cost | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_TIMEOUT_MS` | No | `120000` | Extraction timeout budget for Liteparse parsing | Tune to avoid long-running OCR stalls | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_TIMEOUT_MS` | No | falls back to `REQUEST_TIMEOUT_MS` or `300000` | Extraction timeout budget for Liteparse parsing | Tune to avoid long-running OCR stalls | Can also be overridden in admin config |
 
 ### Deployment And Runtime Wrapper Variables
 
@@ -251,7 +256,6 @@ Notes before the tables:
 - The runtime now also contains one bounded SQLite compatibility shim for `users.honcho_peer_version` in case a deploy starts new code against an old schema. That fallback exists only to prevent login lockouts; normal deploys should still rely on `npm run db:prepare`, not on app-start schema mutation.
 - Persist the `data/` directory across deploys so chats, drafts, uploads, and SQLite data survive restarts.
 - On Linux/macOS, install `libreoffice` and `imagemagick` so Liteparse can normalize Office/image uploads consistently.
-- Upload normalization now uses Liteparse. Install `libreoffice` and `imagemagick` in deployment environments so Office/image extraction paths are available.
 - Knowledge/document uploads currently accept document and image extensions: `.pdf`, `.doc`, `.docx`, `.txt`, `.md`, `.json`, `.csv`, `.xlsx`, `.xls`, `.pptx`, `.ppt`, `.html`, `.htm`, `.jpg`, `.jpeg`, `.jfif`, `.png`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.svg`, `.heic`, `.heif`, `.avif`.
 - OCR/extraction quality still depends on conversion delegates installed on the host. For HEIC/HEIF/AVIF, verify ImageMagick delegate support explicitly (see AlmaLinux notes below).
 - Liteparse built-in OCR (Tesseract path) is active when `DOCUMENT_PARSER_OCR_SERVER_URL` is empty.
@@ -260,37 +264,6 @@ Notes before the tables:
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
-- The file-generation sandbox now warms `python:3.11-slim` in the background at app startup and auto-pulls it on first use if it is still missing locally, so the app process needs both Docker socket access and permission to pull images.
-- Sandbox output collection now inspects `/output` from inside the container as well as the Docker archive path. If Docker's archive API misses tmpfs-backed output files, the server falls back to an in-container readback path and logs that under `[FILE_GENERATE]` instead of returning the same misleading empty-output response.
-- The sandbox waits for Docker exec inspection to report completion before reading `/output`, so file extraction no longer races an early-closed exec stream.
-- Sandbox cleanup now kills the throwaway container immediately instead of waiting through the idle process stop timeout, which removes the extra ~10 second delay after a file run completes.
-- Generated files stay available from the chat UI and are mirrored into artifact-backed document continuity and Honcho memory so the AI can recall and refine them across chats.
-- While a `generate_file` tool call is running, the chat UI now shows a temporary shimmer-state file card until the final generated-file list arrives from the stream end event.
-- Current-document selection now prefers explicit workspace focus and query/document-family matches over a generic recency fallback, which keeps refinement turns anchored to the right document version more reliably.
-- Langflow request/session correlation now logs under `[LANGFLOW]`, and chat-stream tool usage logs under `[CHAT_STREAM]`, so missing generated files can be traced by conversation id without needing live Langflow container logs.
-- Chat route teardown now detaches the local stream without calling the explicit stop endpoint; only the Stop button should mark a stream as intentionally stopped on the server.
-- Honcho session context is queue-aware and time-bounded. When Honcho stays slow beyond the configured live-session wait budget, chat falls back to the last stored Honcho snapshot or persisted conversation turns rather than hanging.
-- Persona-memory prompt context is read from the latest stored clusters immediately and refreshed in the background, so slow persona clustering no longer blocks chat turns or Knowledge Base memory loads.
-- Time-sensitive persona memory is freshness-aware: relative constraints such as `in two days` are resolved against the original observation time, expired items become historical context instead of active truth, and the Knowledge Base overview rejects stale Honcho summaries that still present expired constraints as current.
-- Memory evolution planning continues in waves. The current wave adds persisted state-change events on top of the existing local authorities; follow-up plans for contradiction handling, repair loops, and behavior-driven retrieval live in [docs/memory-evolution-roadmap.md](./docs/memory-evolution-roadmap.md).
-- TEI retrieval planning now lives in [docs/tei-retrieval-roadmap.md](./docs/tei-retrieval-roadmap.md). Follow that document for future tuning, but keep deterministic context, memory, and document authority above any TEI-powered ranking path.
-- The TEI rollout is now complete through Wave 8 for the app-owned retrieval stack: documents, persona prompt recall, task routing, and the older rerank-shaped evidence paths all run on TEI-backed shortlist/rerank helpers while preserving deterministic authority above them.
-- Current contradiction handling now extends beyond temporal facts: project continuity can be paused or resumed from explicit user language during turn finalization, continuity summaries/read paths use the latest recorded project state event before trusting an older stored status, high-confidence persona facts such as location or current role now supersede older contradictory facts with explicit `persona_fact_updated` history, and task-state artifact preferences now collapse contradictory pinned/excluded versions within the same working-document family.
-- Wave 4 active-state inference now uses structured live document signals instead of relying only on semantic similarity. Explicit user-correction phrasing (`actually`, `instead`, `use the previous version`, etc.) keeps the focused document live even when the turn text is generic, and the most recently refined working-document family now stays active across follow-up turns such as `make it shorter`.
-- Explicit move-on / completion language now suppresses stale working-document carryover. Turns like `we're done with that` or `let's talk about something else` stop reusing the old active/generated document unless the user provides a stronger fresh focus signal.
-- Prompt-time working-set selection now recomputes those live document reason codes for the current turn instead of trusting stale reason codes persisted from the previous turn. That prevents old `current generated document` or `active document focus` flags from leaking into a new topic just because the working-set DB rows have not been refreshed yet.
-- The live document-state signals are assembled through one shared server helper instead of being recomputed separately in working-set refresh, prompt-time working-set selection, task evidence selection, and Honcho prompt assembly. Active workspace focus, current generated-output selection, recent document-family refinement, correction phrasing, and move-on/reset phrasing should now stay in sync across those paths.
-- Generated-document retrieval now consumes that same active-state path too. A recently refined family can stay active on generic follow-up turns, but retrieval no longer drags in unrelated generated-document families unless the query explicitly matches them, and move-on/reset phrasing suppresses generic generated carryover there as well.
-- The active workspace document signal is also preserved through the browser stream/retry transport and the chat stream route, so iterative refinement turns keep the focused document id intact all the way to Langflow context assembly.
-- Wave 5 repair work now includes generated-output retrieval-class repair inside scheduled memory maintenance. Repeated maintenance runs reapply the existing duplicate-family compression logic so stale near-duplicate drafts stay out of general retrieval without creating a second repair subsystem.
-- The same maintenance pass now also marks dormant generated-document families as historical through the shared working-document metadata contract. That status flows through logical document mapping, the chat/knowledge workspace shell, and Knowledge Base library labels without adding a second document-lifecycle store.
-- Persona-memory refresh now also reapplies deterministic salience repair from the stored cluster metadata itself. Weakly supported dormant memories and low-confidence preferences lose prominence over time without being deleted or moved into a separate maintenance-only ranking system.
-- Wave 6 has started with a deterministic behavior signal instead of opaque analytics: focused working-document turns now record `document_refined` memory events keyed by document family when possible, and generated-document retrieval uses recent refinement counts only as a small bounded boost. Explicit query and document-identity matches still outrank passive behavior history.
-- Working-set ranking now consumes the same recent refinement counts as a smaller prompt-side boost, so retrieval ordering and prompt carryover learn from one shared event-derived behavior signal instead of diverging into separate heuristics.
-- Workspace document opens now also emit bounded `document_opened` behavior events through the shared workspace path, and retrieval/working-set ranking consume those reopen counts as a smaller signal than refinement so frequently revisited document families stay easier to recover without outranking explicit focus or query matches.
-- Maintenance-marked `historical` document families now also receive a soft ranking penalty in retrieval and prompt carryover. They remain available for explicit matches and source jumps, but weak generic follow-ups no longer keep stale ignored families ahead of active working documents.
-- Wave 6 now also learns from explicit memory corrections on the persona side. When a newer persona memory clearly corrects an older one, the older cluster receives a bounded salience penalty until later reaffirmation, so stale corrected memories stop reading like active truth without being deleted from history.
-- The Knowledge Base no longer prefetches the Memory Profile on initial page mount; it loads that endpoint only when the Memory tab or related management modals are opened.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
 
