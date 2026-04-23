@@ -612,10 +612,10 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 			return;
 		}
 
-		// Consume pending message from sessionStorage immediately
-		// This prevents maybeSendPendingInitialMessage() from also trying to send
-		const pendingMessage = consumePendingConversationMessage(data.conversation.id);
-		console.info('[CHAT] Orphan check - pending message consumed:', pendingMessage ? pendingMessage.message.slice(0, 50) : 'none');
+		// Pending message consumption is intentionally left to maybeSendPendingInitialMessage().
+		// Removing it here prevents a race where this function (called from onMount) steals the
+		// message before the $effect → resetState() → maybeSendPendingInitialMessage() path can
+		// read it, leaving the chat stuck on 'Conversation Ready' with no way to send.
 
 		// Check for orphaned streams regardless of existing messages
 		// Previous turns don't prevent reconnection to active streams
