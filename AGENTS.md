@@ -633,6 +633,15 @@ Do not:
 - Never push to any remote branch without explicit user request. The local commit history is the source of truth until the user explicitly asks for a push.
 - Do not batch unrelated changes into a single commit just because they happen in the same session.
 
+## Build and Runtime Warning Discipline
+
+- A clean build is a required invariant. `npm run build` must produce **zero warnings** from Vite, Svelte, TypeScript, or any compiler plugin.
+- Every warning must be fixed or explicitly suppressed with a comment explaining why suppression is safe.
+- In Svelte 5, `state_referenced_locally` warnings indicate a prop is being read inside `$state()` initialisation and will not react to future changes. When capturing an initial value is intentional, wrap the read in `untrack(() => ...)` to make the intent explicit and silence the compiler.
+- Do not ignore warnings because the app "still works." Warnings are often early signals of stale data, missed reactivity, or future breaking changes.
+- If a dependency upgrade introduces new warnings that cannot be immediately resolved, pin the dependency and file a tracked follow-up task. Do not leave unpinned warnings in the build output.
+
+
 ## Mandatory Verification
 
 Default verification after meaningful changes:
