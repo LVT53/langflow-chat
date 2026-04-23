@@ -56,9 +56,9 @@ const FILE_GENERATION_GUARD = [
 	"- For `generate_file` PDF: The `createPDF` helper applies the AlfyAI Terracotta Crown theme automatically (brand colors, DejaVu fonts, styled tables/images). Do not use `pdf-lib` directly.",
 	"- Embed real-world images using `image_search` to find URLs, then include them as `![alt text](url)` in Markdown or `{ type: image, src }` in structured blocks.",
 	"",
-"For data science, CSV manipulation, or plain text exports:",
+	"For data science, CSV manipulation, or plain text exports:",
 	"- Use the `generate_file` tool with `language: python`.",
-	"- Use the Python standard library (csv, json, io) for data manipulation.",
+	"- Use ONLY the Python standard library (csv, json, io). The Python sandbox does NOT have pandas, numpy, or any other third-party data-science packages.",
 	"- Write the final output file to `/output` or no file will be created.",
 	"",
 	"For binary office files (Excel .xlsx, Word .docx, PowerPoint .pptx, ODT, PDF):",
@@ -69,6 +69,7 @@ const FILE_GENERATION_GUARD = [
 	"- Use `jszip` for ODT packaging.",
 	"- Use the pre-loaded `createPDF()` helper for programmatic PDFs.",
 	"- Write the final output file to `/output` or no file will be created.",
+	"- NEVER use Python for xlsx, docx, pptx, or PDF generation. JavaScript is the only supported language for binary office files.",
 	"",
 	"General rules for both tools:",
 	"- If the user asks for a downloadable file and a file-generation tool is available, call it instead of only describing the result in text.",
@@ -76,9 +77,9 @@ const FILE_GENERATION_GUARD = [
 	"- Only tell the user a file is ready after the tool succeeds.",
 	"- Do not mention the generated file name or include a file download link in your response text. The file will automatically appear in the chat UI with a download button.",
 	"- Generated files appear in the chat UI after the response finishes.",
+	"- If the `generate_file` tool call includes a `filename` parameter, your code MUST write exactly ONE file to `/output` with that exact name. Writing zero files or multiple files when a filename is specified will cause the generation to fail.",
 	"- If file generation fails, inspect the actual error, make one clear fix, and retry at most once without switching tools.",
 ].join("\n");
-
 const IMAGE_SEARCH_GUARD = [
 	"Image search workflow:",
 	"- When the user asks for images, call the `image_search` tool.",
