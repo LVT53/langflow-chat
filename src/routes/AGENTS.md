@@ -23,15 +23,24 @@ Routes are thin adapters. Page routes render UI; API routes expose endpoints. Du
     +page.svelte       # Settings/admin UI
 
 api/                   # API endpoints
-  chat/                # Send, stream, retry, stop, file generation
-  conversations/       # CRUD, title, draft, messages, evidence
-  knowledge/           # Upload, search, documents, memory
-  admin/               # Config, users, sessions, memory-maintenance
+  auth/                # Login, logout
+  avatar/              # User avatar
+  chat/                # Send, stream, retry, stop, file generation, export
+  conversations/       # CRUD, title, draft, messages, evidence, context-status, task-steering
+  knowledge/           # Upload, search, documents, memory, actions
+  admin/               # Config, users, sessions, honcho
+  models/              # Available model list
+  ocr/                 # OCR proxy
+  projects/            # Project CRUD
   settings/            # Account, profile, password, avatar
+  stream/webhook/      # Stream webhook endpoint
+  tools/               # Image search
+  webhook/             # Sentence webhook
+  analytics/           # Analytics ingestion
+  health/              # Health check
 
 login/                 # Login page
 logout/                # Logout page
-```
 
 ## Where to Look
 
@@ -42,8 +51,42 @@ logout/                # Logout page
 | `chat/[conversationId]/+page.svelte` | Stream lifecycle, queued turns, workspace state |
 | `api/chat/send/+server.ts` | Non-streaming chat endpoint |
 | `api/chat/stream/+server.ts` | SSE streaming endpoint |
+| `api/chat/stream/buffer/+server.ts` | Stream buffer replay for reconnection |
+| `api/chat/stream/status/+server.ts` | Stream capacity/status check |
+| `api/chat/retry/+server.ts` | Retry failed turns |
+| `api/chat/stream/stop/+server.ts` | Explicit user stop |
+| `api/chat/files/generate/+server.ts` | File generation |
+| `api/chat/files/[id]/preview/+server.ts` | Generated file preview |
+| `api/chat/files/[id]/download/+server.ts` | Generated file download |
+| `api/chat/files/export/+server.ts` | Conversation file export |
+| `api/conversations/[id]/context-status/+server.ts` | Conversation context status |
+| `api/conversations/[id]/task-steering/+server.ts` | Task steering |
 | `api/knowledge/upload/+server.ts` | File upload handler |
+| `api/knowledge/[id]/+server.ts` | Artifact CRUD |
+| `api/knowledge/[id]/attach/+server.ts` | Attachment linking |
+| `api/knowledge/[id]/download/+server.ts` | Artifact download |
+| `api/knowledge/[id]/preview/+server.ts` | Artifact preview |
+| `api/knowledge/actions/+server.ts` | Bulk knowledge actions |
+| `api/knowledge/memory/+server.ts` | Memory profile data |
+| `api/knowledge/memory/actions/+server.ts` | Memory actions |
+| `api/knowledge/memory/overview/+server.ts` | Memory overview |
+| `api/knowledge/documents/behavior/+server.ts` | Document behavior |
 | `api/admin/config/+server.ts` | Runtime config overrides |
+| `api/admin/users/+server.ts` | User management |
+| `api/admin/honcho/+server.ts` | Honcho admin |
+| `api/auth/login/+server.ts` | Login endpoint |
+| `api/auth/logout/+server.ts` | Logout endpoint |
+| `api/models/+server.ts` | Available models |
+| `api/ocr/paddle/+server.ts` | OCR proxy |
+| `api/projects/+server.ts` | Project list |
+| `api/projects/[id]/+server.ts` | Project CRUD |
+| `api/avatar/[userId]/+server.ts` | Avatar endpoint |
+| `api/analytics/+server.ts` | Analytics ingestion |
+| `api/health/+server.ts` | Health check |
+| `api/tools/image-search/+server.ts` | Image search tool |
+| `api/webhook/sentence/+server.ts` | Sentence webhook |
+| `api/stream/webhook/[sessionId]/+server.ts` | Stream webhook |
+| `(app)/chat/+page.server.ts` | Chat page server data |
 
 ## Conventions
 

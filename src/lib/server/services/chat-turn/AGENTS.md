@@ -7,11 +7,12 @@ Request parsing through post-turn persistence for chat send/stream endpoints. Al
 ## STRUCTURE
 
 ```
-request.ts → preflight.ts → [execute.ts | stream.ts] → finalize.ts
-                                │
-                         active-streams.ts (lifecycle)
-                                │
-                         retry-cleanup.ts (failure cleanup)
+```
+request.ts → preflight.ts → [non-stream: execute.ts utilities | stream: stream-orchestrator.ts] → finalize.ts
+                                 │
+                          active-streams.ts (lifecycle)
+                                 │
+                          retry-cleanup.ts (failure cleanup)
 ```
 
 ## WHERE TO LOOK
@@ -20,8 +21,8 @@ request.ts → preflight.ts → [execute.ts | stream.ts] → finalize.ts
 |------|------|
 | Parse body, model, attachments | `request.ts` |
 | Validate conversation, check attachment readiness | `preflight.ts` |
-| Non-stream execution, normalize visible text | `execute.ts` |
-| SSE parsing, tool-call markers, thinking extraction, `<preserve>` chunks | `stream.ts` |
+| Non-stream text normalization, upstream message building | `execute.ts` |
+| SSE orchestration, upstream retry, downstream framing | `stream-orchestrator.ts` |
 | Post-turn persistence fan-out (messages, honcho, task-state, knowledge) | `finalize.ts` |
 | Stream lifecycle, explicit stop handling | `active-streams.ts` |
 | Idempotent cleanup on turn failure | `retry-cleanup.ts` |
@@ -29,7 +30,7 @@ request.ts → preflight.ts → [execute.ts | stream.ts] → finalize.ts
 
 ## CONVENTIONS
 
-- `stream.ts` owns all upstream event parsing: Langflow SSE → tokens, thinking tags, tool_calls. Keep SSE framing logic there, not in routes.
+- `stream-orchestrator.ts` owns all upstream event parsing: Langflow SSE → tokens, thinking tags, tool_calls. Keep SSE framing logic there, not in routes.
 - `finalize.ts` is the single fan-out point after any turn (stream or non-stream). Add new post-turn side effects there, not in route files.
 - `execute.ts` normalizes non-stream assistant text through the same stream-protocol helpers so `/send` returns the same visible content shape as `/stream`.
 - `retry-cleanup.ts` runs idempotent cleanup for evidence links, checkpoints, work capsules, generated outputs, and the assistant message itself on failure.

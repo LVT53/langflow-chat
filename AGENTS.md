@@ -45,7 +45,6 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/services/semantic-embedding-refresh.ts` owns async embedding refresh/backfill orchestration. Mutation boundaries may queue refresh work there, and maintenance may run the slower backfill sweep there, but routes should not open-code subject hashing, TEI embedding calls, or per-domain refresh loops.
 - `src/lib/server/services/semantic-ranking.ts` owns generic embedding-based shortlist math. Domain services such as `knowledge/store/documents.ts` may compose it with their own deterministic filters and rerank rules, but they should not each reimplement vector similarity from scratch.
 - `src/lib/server/services/tei-observability.ts` owns compact TEI retrieval summaries. Domain services may report shortlist/rerank latency, fallback reasons, candidate counts, and winner mode there, but do not create route-local debug spam or a second telemetry vocabulary for the same semantic paths.
-- `src/lib/server/services/persona-memory.ts` may use semantic shortlist and rerank signals for query-time prompt recall, but freshness, supersession, correction penalties, and active-truth filtering still remain deterministic there.
 - `src/lib/server/services/task-state.ts` may use semantic shortlist and rerank signals when routing the current turn onto an existing task, but active/revived/candidate truth and project continuity state still remain deterministic there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
@@ -88,8 +87,6 @@ Do not:
   - Must validate any stored landing draft conversation before reuse; only empty default-title prepared conversations are eligible for reuse from session state.
   - Owns the landing-to-chat visual handoff: once the first message is sent, the landing composer should transition into a bottom-docked "opening chat" state instead of staying centered like the idle hero surface.
   - First-message sends may use a full document navigation to `/chat/[conversationId]` after storing the pending message so deploy/restart edge cases cannot leave the browser visually stuck on the landing route while the new chat already runs on the server.
-- [`src/routes/(app)/chat/[conversationId]/+page.ts`](./src/routes/(app)/chat/[conversationId]/+page.ts)
-  - Lightweight page bootstrap for the chat detail route.
 - [`src/routes/(app)/chat/[conversationId]/+page.svelte`](./src/routes/(app)/chat/[conversationId]/+page.svelte)
   - Owns live chat page state, stream lifecycle, and draft restore behavior for an existing conversation.
   - Owns the one-slot queued follow-up turn while a response is streaming.
@@ -122,21 +119,21 @@ Do not:
   - [`src/routes/api/chat/stream/+server.ts`](./src/routes/api/chat/stream/+server.ts)
   - [`src/routes/api/chat/stream/stop/+server.ts`](./src/routes/api/chat/stream/stop/+server.ts)
 - Shared pipeline:
-  - [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
-  - [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
-  - [`src/lib/server/services/chat-turn/execute.ts`](./src/lib/server/services/chat-turn/execute.ts)
-  - [`src/lib/server/services/chat-turn/stream-orchestrator.ts`](./src/lib/server/services/chat-turn/stream-orchestrator.ts)
-    - Orchestrates the full chat-turn streaming pipeline: upstream event parsing,
-      tool-call marker handling, token/thinking framing, stream buffer management.
-      Imported by: `src/routes/api/chat/stream/+server.ts`, `src/routes/api/chat/retry/+server.ts`
-  - [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
-    - re-exports from sub-modules:
-      - [`stream-parser.ts`](./src/lib/server/services/chat-turn/stream-parser.ts)
-      - [`thinking-normalizer.ts`](./src/lib/server/services/chat-turn/thinking-normalizer.ts)
-      - [`tool-call-markers.ts`](./src/lib/server/services/chat-turn/tool-call-markers.ts)
-  - [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
-  - [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
-  - [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
+	- [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
+	- [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
+	- [`src/lib/server/services/chat-turn/execute.ts`](./src/lib/server/services/chat-turn/execute.ts)
+		- Utility-only: `buildUpstreamMessage`, `buildSendResponseText`. Not a pipeline stage.
+	- [`src/lib/server/services/chat-turn/stream-orchestrator.ts`](./src/lib/server/services/chat-turn/stream-orchestrator.ts)
+		- Orchestrates the full chat-turn streaming pipeline: upstream event parsing, tool-call marker handling, token/thinking framing, stream buffer management.
+		- Imported by: `src/routes/api/chat/stream/+server.ts`, `src/routes/api/chat/retry/+server.ts`
+	- [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
+		- Re-export hub for stream sub-modules:
+			- [`stream-parser.ts`](./src/lib/server/services/chat-turn/stream-parser.ts)
+			- [`thinking-normalizer.ts`](./src/lib/server/services/chat-turn/thinking-normalizer.ts)
+			- [`tool-call-markers.ts`](./src/lib/server/services/chat-turn/tool-call-markers.ts)
+	- [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
+	- [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
+	- [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
 - Upstream integrations:
 - [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
   - Owns model-facing prompt assembly and outbound search/date guidance.
@@ -304,10 +301,7 @@ Do not:
 - Honcho adapter:
   - [`src/lib/server/services/honcho.ts`](./src/lib/server/services/honcho.ts)
 -- Persona support:
-  - [`src/lib/server/services/persona-memory.ts`](./src/lib/server/services/persona-memory.ts)
-    - re-exports from:
-      - [`persona-memory/classification.ts`](./src/lib/server/services/persona-memory/classification.ts)
-      - [`persona-memory/temporal.ts`](./src/lib/server/services/persona-memory/temporal.ts)
+	- Delegated to Honcho when enabled; local persona clustering has been removed.
 - Event log:
   - [`src/lib/server/services/memory-events.ts`](./src/lib/server/services/memory-events.ts)
 - Maintenance/orchestration:
@@ -316,7 +310,7 @@ Do not:
 - Shared helpers:
   - [`src/lib/server/utils/json.ts`](./src/lib/server/utils/json.ts)
   - [`src/lib/server/utils/text.ts`](./src/lib/server/utils/text.ts)
-  - [`src/lib/server/utils/tokens.ts`](./src/lib/server/utils/tokens.ts)
+	- [`src/lib/utils/tokens.ts`](./src/lib/utils/tokens.ts)
   - [`src/lib/server/utils/prompt-context.ts`](./src/lib/server/utils/prompt-context.ts)
 
 Rules:
@@ -346,34 +340,14 @@ Rules:
 - `memory-events.ts` owns the persisted normalized event log for important state changes such as deadlines, preference updates, persona fact replacement, project continuity transitions, and document supersession. Add new event types there and emit them from the existing state-change boundaries; do not create ad hoc side logs or route-local event tables.
 - `task-state/continuity.ts` now also consumes the latest task-domain project events on the read path. If a newer `project_paused` or `project_resumed` event exists, continuity summaries should prefer that signal over an older still-active row.
 - User-selected task evidence preferences should stay family-aware for working documents. If a user pins or excludes one version inside a document family, clear contradictory user preference links for sibling versions in that same family instead of letting multiple versions stay preferred at once.
-- Active-state inference should keep structured live signals explicit. If the user is clearly correcting or refining a document/version, prefer a dedicated active-state signal over hoping semantic match alone keeps the right working document in context.
-- The most recently refined working-document family is now also a first-class active-state signal. On generic follow-up turns, prefer that family over a raw recency fallback unless explicit workspace focus or a stronger query match says otherwise.
-- Explicit move-on / completion phrasing should suppress stale document carryover. If the user clearly says they are done with the previous document/topic, do not let an open workspace tab or generic latest-output recency keep that document active by accident.
-- Prompt-time working-set selection must also respect current-turn active-state. Do not trust persisted working-set reason codes like `current_generated_document`, `active_document_focus`, or `matched_current_turn` as if they were still current on the next turn; recompute live document carryover for the new turn instead.
-- Shared live-signal assembly belongs in `src/lib/server/services/active-state.ts`. Do not rederive active workspace focus, current generated document, recently refined document-family state, correction/refinement signals, or move-on/reset signals separately inside `knowledge/context.ts`, `working-set.ts`, `task-state.ts`, or `honcho.ts` once the shared helper can provide them.
-- Retrieval ordering should follow the same active-state contract. A preferred/recently refined document family may stay first on generic refinement turns, but `knowledge/context.ts` should not also pull in unrelated generated-document families unless the current query explicitly matches them, and reset/move-on phrasing should suppress that carryover there too.
-- Preserve the active workspace document id through every chat transport boundary (`streaming.ts`, `/api/chat/stream`, `/api/chat/retry`, and `langflow.ts`). Iterative refinement depends on that signal surviving browser request serialization and route-level forwarding, not just the final Honcho/task-state assembly.
+- Live document-state signals (active workspace focus, current generated document, correction/refinement, move-on/reset) belong in `src/lib/server/services/active-state.ts`. Recompute carryover per turn rather than trusting stale reason codes.
 - `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger full cluster recomputation directly from routes or UI code.
 - `memory-maintenance.ts` is also the lazy semantic-embedding backfill path. Missing or stale artifact/persona/task embeddings should be repaired there rather than blocking chat routes or artifact writes.
 - Generated-output duplicate repair should also run through `memory-maintenance.ts`, not as a separate ad hoc sweep. Reuse `evidence-family.ts` retrieval-class repair so low-value near-duplicate drafts stay compressed out of broad retrieval while document history still remains available through the working-document system.
 - Generated-document lifecycle state should stay on the existing working-document metadata contract. If a generated-document family becomes dormant, let `memory-maintenance.ts` and `evidence-family.ts` mark the latest family representative as `historical`; do not create a second document-lifecycle table or route-local stale-document cache for that purpose.
 - keep Knowledge Memory observability on the existing overview boundary. `memory.ts` now logs a single `[KNOWLEDGE_MEMORY] Selected overview source` summary; do not add route-local overview-source logging when the source decision already happened there.
-- `persona-memory.ts` cluster writes should remain idempotent under overlap. If maintenance or repair paths touch cluster persistence, keep conflict guards in place instead of assuming single-flight inserts.
-- Low-confidence or weakly supported persona memories should be downranked through the existing `persona-memory.ts` cluster refresh path. Recompute repaired `salienceScore` from stored cluster metadata and support counts there; do not bolt on a second maintenance-only persona salience cache.
-- `buildPersonaPromptContext` should read the latest stored persona clusters immediately and only trigger cluster refresh in the background. Do not put synchronous cluster regeneration back on the chat request path.
-- Keep Honcho latency knobs split by responsibility: `HONCHO_CONTEXT_WAIT_MS` is for live session bootstrap/queue/context reads, `HONCHO_PERSONA_CONTEXT_WAIT_MS` is for auxiliary chat-path persona enrichment, and `HONCHO_OVERVIEW_WAIT_MS` is for the Knowledge Base live overview refresh path.
-- `persona-memory.ts` owns automatic persona-memory class and decay heuristics. Perishable facts should age out quickly and stay out of durable-profile summaries, while stable preferences should not auto-archive from age alone unless superseded.
-- `persona-memory.ts` also owns deterministic stable-preference slot extraction and same-slot supersession. Prefer explicit replacement of older durable preferences over age-based archival, and keep the metadata in existing cluster JSON rather than adding a parallel preference store.
-- `persona-memory.ts` also owns relative-time resolution, temporal freshness, same-topic deadline supersession, historical phrasing for expired temporal memories, and topic lifecycle metadata. Reuse cluster `metadataJson`; do not add a second temporal-memory store.
-- `persona-memory.ts` now also owns deterministic high-confidence fact-slot supersession for persona/situational memories such as current location or current role. Keep those replacements explicit with `supersessionReason` metadata and `memory_events`, not broad route-local heuristics.
-- Explicit persona-memory corrections should stay on that same cluster-metadata rail. If a newer memory clearly corrects an older persona statement, record the correction on the older cluster metadata and let repaired salience downrank it until later reaffirmation instead of creating a second correction store or hard-deleting the older memory.
-- Wave-2 memory evolution now persists normalized events for deadline changes, preference updates, persona fact replacement, project continuity transitions, and generated-document supersession. Treat the event log as supporting state-change history for local memory authorities, not as a second persona/task/document storage stack.
-- Wave-6 behavior learning should also stay on the existing `memory_events` rail. Focused working-document turns may record `document_refined` events, and retrieval may consume recent counts from those events as a bounded relevance boost. Do not fork that into a separate analytics-only behavior store, and do not let passive behavior history outrank explicit query/document matches.
-- If behavior learning affects prompt carryover or working-set ranking, keep it inside the existing `working-set.ts` + `document-resolution.ts` path using the same bounded event-derived scores. Do not introduce a second prompt-only behavior heuristic that can drift from retrieval ordering.
-- Shared workspace interactions may emit bounded `document_opened` events on the same rail. Keep reopen behavior weaker than explicit focus/correction/refinement signals, and route it through the same document-resolution + working-set scoring path instead of a UI-only recents system.
 - Historical working-document families are soft-deprioritized, not hidden. If maintenance has already marked a family `historical`, retrieval and prompt carryover may apply a bounded ranking penalty, but explicit query/document matches and direct source navigation must still work.
 - Project continuity contradiction handling should stay in the existing continuity boundary: explicit pause/resume language may record task-domain events and update continuity state immediately, but the authoritative current status still belongs to `task-state/continuity.ts`, not Honcho or a route-local heuristic.
-- `persona-memory.ts` may own persona-specific behavior, but low-level parsing/text/token helpers belong in shared utils.
 - Prompt-time persona recall may blend lexical and semantic query scoring, but the Knowledge Memory Overview remains a deterministic classified summary of already-filtered persona items rather than an embedding-search result.
 - Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
 
@@ -471,10 +445,6 @@ Do not:
 
 Legacy/avoidance notes:
 
-- `src/lib/server/db/conversations.ts`
-- `src/lib/server/db/projects.ts`
-- `src/lib/server/db/sessions.ts`
-- `src/lib/server/db/users.ts`
 
 Treat those `src/lib/server/db/*.ts` wrappers as legacy compatibility leftovers unless you verify a real active need. New persistence logic should normally live in the relevant service and use `db` plus `schema.ts` directly.
 
@@ -537,7 +507,6 @@ These services are actively imported but not documented in the feature sections 
   - [`src/lib/server/services/attachment-trace.ts`](./src/lib/server/services/attachment-trace.ts) — logging helper for langflow/chat-file tracing. Adds `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]` correlation context. Consumed by stream-orchestrator and langflow.
   - [`src/lib/server/services/language.ts`](./src/lib/server/services/language.ts) — language detection utilities. Consumed by chat-turn request/execute pipeline for input language checks.
   - [`src/lib/server/services/conversation-drafts.ts`](./src/lib/server/services/conversation-drafts.ts) — draft management for conversations. Used by conversation routes for draft save/load.
-  - [`src/lib/server/services/http-agents.ts`](./src/lib/server/services/http-agents.ts) — HTTP agent pooling for langflow. Manages keep-alive agents to avoid connection overhead on repeated Langflow calls.
   - [`src/lib/server/services/webhook-buffer.ts`](./src/lib/server/services/webhook-buffer.ts) — sentence-level webhook buffering for streaming turns. Consumed by hooks.server.ts.
   - [`src/lib/server/prompts.ts`](./src/lib/server/prompts.ts) — system prompt configuration for translation rules. Consumed by langflow and honcho.
   - [`src/lib/server/api/responses.ts`](./src/lib/server/api/responses.ts) — shared JSON response helpers (`createJsonErrorResponse`, `createJsonResponse`) for API routes. Used across route files for consistent error/success formatting.
@@ -654,7 +623,15 @@ Do not:
 - New landing/chat handoff behavior:
   - `src/lib/client/conversation-session.ts`
 - New environment-backed runtime setting:
-  - `src/lib/server/env.ts` and `src/lib/server/config-store.ts`
+- New environment-backed runtime setting:
+	- `src/lib/server/env.ts` and `src/lib/server/config-store.ts`
+
+## Commit and Push Discipline
+
+- Commit in small, focused chunks. Each commit should contain one logical change — a single feature, a single fix, or a single refactoring — so that `git bisect` and `git revert` remain useful tools.
+- Write commit messages that explain the *why*, not just the *what*.
+- Never push to any remote branch without explicit user request. The local commit history is the source of truth until the user explicitly asks for a push.
+- Do not batch unrelated changes into a single commit just because they happen in the same session.
 
 ## Mandatory Verification
 
@@ -694,7 +671,7 @@ Run these too when relevant:
 ## What Not To Reintroduce
 
 - No new top-level `src/lib/server/services/*.ts` public boundary just because one file is getting large.
-- No parallel memory subsystem beside `task-state.ts`, `honcho.ts`, and `persona-memory.ts`.
+- No parallel memory subsystem beside `task-state.ts` and `honcho.ts`.
 - No duplicated route-specific chat execution logic.
 - No new raw `sessionStorage` protocol outside `conversation-session.ts`.
 - No direct env reads in override-aware runtime services.

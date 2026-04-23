@@ -12,7 +12,7 @@ Client state management using Svelte writable stores. Owns browser state, optimi
 | `ui.ts` | Sidebar open/collapsed state, responsive breakpoint handling, current conversation tracking. |
 | `avatar.ts` | Profile picture state with cache-busting timestamp for fresh fetches after upload. |
 | `theme.ts` | Light/dark/system theme with OS preference detection and localStorage persistence. |
-
+| `_local-storage.ts` | Shared localStorage read/write utility (not a store). Used by `theme.ts` and `settings.ts`. |
 ## Where to Look
 
 | Domain | Store | Components |
@@ -21,9 +21,13 @@ Client state management using Svelte writable stores. Owns browser state, optimi
 | Project folders | `projects` | `ConversationList.svelte` (drag/drop) |
 | Model selector | `settings.selectedModel` | `ModelSelector.svelte` |
 | Sidebar state | `ui.sidebarOpen`, `ui.sidebarCollapsed` | `Sidebar.svelte`, `Header.svelte` |
-| Theme | `theme`, `isDark` | `ThemeToggle.svelte`, root layout |
-| Avatar | `avatarState` | `AvatarCircle.svelte` |
+| Theme | `theme`, `isDark` | Root layout |
+| Avatar | `avatarState` | `Sidebar.svelte` |
 
+| Markdown dark mode | `theme` | `MessageBubble.svelte` |
+| Translation toggle | `settings` | `ComposerToolsMenu.svelte` |
+| Draft/scroll state | `ui` | `MessageInput.svelte` |
+| Global search | `conversations`, `projects`, `ui` | `SearchModal.svelte` |
 ## Conventions
 
 - **Legacy writable pattern**: All stores use `writable()` from `svelte/store`. Not yet migrated to Svelte 5 runes.

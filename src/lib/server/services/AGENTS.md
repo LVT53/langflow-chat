@@ -6,13 +6,13 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 
 | Rank | File | Lines | Why large |
 |------|------|-------|-----------|
-| 1 | `task-state.ts` | 1,535 | Facade + task routing, evidence selection, checkpointing, steering |
-| 2 | `honcho.ts` | 1,460 | Honcho client lifecycle, session bootstrap, context construction |
-| 3 | `stream-orchestrator.ts` | 1,018 | Full chat-turn streaming pipeline, upstream retry, downstream SSE framing |
-| 4 | `chat-turn/stream.ts` | 520 | Re-exports sub-modules; retains internal chunk runtime, preserve handling, and utility helpers |
+| 1 | `task-state.ts` | ~1,558 | Facade + task routing, evidence selection, checkpointing, steering |
+| 2 | `honcho.ts` | ~1,517 | Honcho client lifecycle, session bootstrap, context construction |
+| 3 | `stream-orchestrator.ts` | ~558 | Full chat-turn streaming pipeline, upstream retry, downstream SSE framing |
+| 4 | `chat-turn/stream.ts` | ~247 | Re-export hub for stream sub-modules |
 | 5 | `knowledge/store/attachments.ts` | 583 | Upload dedupe, readiness checks, artifact linking |
-| 6 | `task-state/continuity.ts` | 683 | Project memory, focus continuity, task-project linking |
-| 7 | `knowledge/context.ts` | 432 | Working-set ranking, context status, compaction logic |
+| 6 | `task-state/continuity.ts` | ~989 | Project memory, focus continuity, task-project linking |
+| 7 | `knowledge/context.ts` | ~680 | Working-set ranking, context status, compaction logic |
 | 8 | `knowledge/capsules.ts` | 347 | Workflow summarization, generated-output artifacts |
 | 9 | `knowledge/store/core.ts` | 353 | Artifact CRUD, mapping, token-budget constants |
 | 10 | `task-state/artifacts.ts` | 358 | Chunking, prompt-snippet selection, historical summarization |
@@ -24,14 +24,8 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 - `chat-turn/thinking-normalizer.ts` — thinking block/tag stripping and reasoning content extraction
 - `chat-turn/tool-call-markers.ts` — `TOOL_START/END` marker processing and tool evidence normalization
 
-**Persona-memory sub-modules** (extracted from persona-memory.ts):
-- `persona-memory/_constants.ts` — `DAY_MS` constant
-- `persona-memory/classification.ts` — deterministic memory text classification (class, domain, short-term cues, active-project cues)
-- `persona-memory/temporal.ts` — relative-time parsing, expiry resolution, temporal freshness derivation
-
 ## Memory Authority Snapshot
 
-- `persona-memory.ts` owns persona clustering, relative-time resolution, temporal freshness, and preference-slot supersession.
 - `task-state/continuity.ts` owns project continuity buckets and active-status transitions.
 - `chat-files.ts` plus artifact metadata own generated-document lineage.
 - `memory-events.ts` owns the normalized persisted event log for cross-domain state changes. Add new event types there instead of introducing side logs inside routes or unrelated services.
@@ -41,7 +35,6 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 - `semantic-embeddings.ts` owns the durable embedding substrate for artifacts, persona clusters, and task states. Keep source-text hashing, upsert semantics, and readback there instead of reimplementing per-domain mini stores.
 - `semantic-embedding-refresh.ts` owns async refresh/backfill orchestration on top of that store. Artifact/task/persona writers may queue refreshes there, and `memory-maintenance.ts` may run user-scoped backfill there, but do not duplicate those loops in routes or domain-specific services.
 - `semantic-ranking.ts` owns generic shortlist math over stored embeddings. Domain retrieval services may consume it, but they should keep authority-specific weighting and suppression rules local instead of pushing those concerns down into the generic helper.
-- `persona-memory.ts` may also consume `semantic-ranking.ts` for query-time prompt recall, but it must keep temporal freshness, correction penalties, supersession, and overview composition deterministic on its own side of the boundary.
 - `task-state.ts` may also consume `semantic-ranking.ts` for query-time task routing, but it must keep task status transitions, locked-task precedence, and project continuity truth deterministic on its own side of the boundary.
 
 ## Cross-Service Dependency Graph
@@ -66,7 +59,6 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
                    │       │        │            │
                    └───┬───┘        │            │
                        ▼            ▼            ▼
-                  persona-memory ──► persona-memory/classification.ts, persona-memory/temporal.ts
                        │            utils/*    knowledge/store/*  chat-turn/retry-cleanup.ts
                   attachment-trace.ts (feeds stream-orchestrator, langflow, chat-files)
                        │

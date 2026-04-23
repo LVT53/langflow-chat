@@ -31,7 +31,9 @@ chat/
   ModelSelector.svelte              ← model dropdown
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
-  LogoMark.svelte                   ← animated brand logo
+  LogoMark.svelte                   ← animated brand logo (used by MessageBubble)
+  FileTypeIcon.svelte               ← file type icon display
+  DialogShell.svelte                ← reusable dialog shell wrapper
 
 ui/
   AvatarCircle.svelte               ← user avatar display
@@ -46,6 +48,7 @@ ui/
 |-----------|-------|-------------|
 | `Sidebar.svelte` | `ui` | `sidebarOpen`, `sidebarCollapsed`, `currentConversationId` |
 | `Sidebar.svelte` | `avatar` | `avatarState` |
+| `AvatarCircle.svelte` | props | `src` prop passed from parent; no store dependency |
 | `Header.svelte` | `ui` | `sidebarOpen`, `sidebarCollapsed`, `currentConversationId` |
 | `ConversationList.svelte` | `conversations` | `conversations`, CRUD actions |
 | `ConversationList.svelte` | `projects` | `projects`, CRUD actions |
@@ -62,7 +65,6 @@ ui/
 
 ### Landing (`src/routes/(app)/+page.svelte`)
 - `chat/MessageInput.svelte` — composer for first message
-- `chat/LogoMark.svelte` — brand display
 
 ### Chat (`src/routes/(app)/chat/[conversationId]/+page.svelte`)
 - `chat/MessageArea.svelte` — message list
