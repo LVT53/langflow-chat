@@ -257,11 +257,15 @@
 		}
 
 		const pendingDraft = consumePendingConversationMessage(data.conversation.id);
-		// Clean up bootstrap URL param so refreshes don't replay the loading state
+		// Clean up bootstrap URL param so refreshes don't replay the loading state.
+		// Defer the history mutation to avoid triggering page-store updates during the
+		// initial $effect flush, which can race with keyed-each reconciler state.
 		if (browser && page.url.searchParams.get('view') === 'bootstrap') {
-			const url = new URL(page.url);
-			url.searchParams.delete('view');
-			replaceState(url, page.state);
+			requestAnimationFrame(() => {
+				const url = new URL(page.url);
+				url.searchParams.delete('view');
+				replaceState(url, page.state);
+			});
 		}
 		if (!pendingDraft || !pendingDraft.message.trim()) {
 			initialStreamPending = false;
