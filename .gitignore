@@ -55,3 +55,4 @@ data/chat.db*
 tests/e2e/.last-run.json
 docs/Future ideas.md
 bun.lock
+sandbox-python-env/

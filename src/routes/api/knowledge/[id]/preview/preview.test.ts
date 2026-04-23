@@ -5,6 +5,8 @@ import { dirname, join } from 'path';
 const mockRequireAuth = vi.fn();
 const mockGetArtifactForUser = vi.fn();
 const mockGetSourceArtifactId = vi.fn();
+const mockGetChatFileByUser = vi.fn();
+const mockReadChatFileContentByUser = vi.fn();
 
 vi.mock('$lib/server/auth/hooks', () => ({
 	requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
@@ -13,10 +15,15 @@ vi.mock('$lib/server/auth/hooks', () => ({
 vi.mock('$lib/server/services/knowledge', () => ({
 	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
 }));
+
 vi.mock('$lib/server/services/knowledge/store/core', () => ({
 	getSourceArtifactIdForNormalizedArtifact: (...args: unknown[]) => mockGetSourceArtifactId(...args),
 }));
 
+vi.mock('$lib/server/services/chat-files', () => ({
+	getChatFileByUser: (...args: unknown[]) => mockGetChatFileByUser(...args),
+	readChatFileContentByUser: (...args: unknown[]) => mockReadChatFileContentByUser(...args),
+}));
 
 import { GET } from './+server';
 
@@ -32,6 +39,8 @@ describe('GET /api/knowledge/[id]/preview', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockImplementation(() => {});
+		mockGetChatFileByUser.mockResolvedValue(null);
+		mockReadChatFileContentByUser.mockResolvedValue(null);
 	});
 
 	afterEach(async () => {
@@ -387,4 +396,41 @@ describe('GET /api/knowledge/[id]/preview', () => {
 		expect(Buffer.from(body).toString()).toBe('PDF binary content');
 	});
 
+	it('resolves generated_output to source chat file for binary preview', async () => {
+		mockGetArtifactForUser.mockResolvedValue({
+			id: 'generated-123',
+			name: 'generated_report.xlsx',
+			storagePath: null,
+			contentText: 'Some generated text summary',
+			mimeType: 'text/plain',
+			extension: 'xlsx',
+			type: 'generated_output',
+			metadata: { sourceChatFileId: 'chatfile-456' },
+		});
+
+		mockGetChatFileByUser.mockResolvedValue({
+			id: 'chatfile-456',
+			filename: 'report.xlsx',
+			mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		});
+
+		const xlsxBuffer = Buffer.from('XLSX binary content');
+		mockReadChatFileContentByUser.mockResolvedValue(xlsxBuffer);
+
+		const event = {
+			locals: { user: mockUser },
+			params: { id: 'generated-123' },
+		} as any;
+
+		const response = await GET(event);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe(
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+		);
+		expect(mockGetChatFileByUser).toHaveBeenCalledWith('chatfile-456', 'user-123');
+		expect(mockReadChatFileContentByUser).toHaveBeenCalledWith('chatfile-456', 'user-123');
+		const body = await response.arrayBuffer();
+		expect(Buffer.from(body).toString()).toBe('XLSX binary content');
+	});
 });

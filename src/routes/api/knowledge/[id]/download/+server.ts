@@ -5,7 +5,10 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getArtifactForUser } from '$lib/server/services/knowledge';
 import { getSourceArtifactIdForNormalizedArtifact } from '$lib/server/services/knowledge/store/core';
-
+import {
+	getChatFileByUser,
+	readChatFileContentByUser,
+} from '$lib/server/services/chat-files';
 export const GET: RequestHandler = async (event) => {
 	try {
 		requireAuth(event);
@@ -33,6 +36,32 @@ export const GET: RequestHandler = async (event) => {
 		}
 	}
 
+	// Resolve generated_output artifacts with linked chat files to the binary source
+	if (artifact.type === 'generated_output' && !artifactToServe.storagePath) {
+		const sourceChatFileId =
+			typeof artifact.metadata?.sourceChatFileId === 'string' && artifact.metadata.sourceChatFileId.trim()
+				? artifact.metadata.sourceChatFileId.trim()
+				: null;
+		if (sourceChatFileId) {
+			const chatFile = await getChatFileByUser(sourceChatFileId, user.id);
+			if (chatFile) {
+				const fileContent = await readChatFileContentByUser(sourceChatFileId, user.id);
+				if (fileContent) {
+					return new Response(new Uint8Array(fileContent), {
+						status: 200,
+						headers: {
+							'Content-Type': chatFile.mimeType || 'application/octet-stream',
+							'Content-Length': fileContent.length.toString(),
+							'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(artifact.name || chatFile.filename)}`,
+							'Cache-Control': 'private, no-store',
+						},
+					});
+				}
+			}
+		}
+	}
+
+
 	const safeName = artifact.name || 'document';
 	const downloadName =
 		safeName.includes('.') || !artifact.extension
@@ -40,7 +69,7 @@ export const GET: RequestHandler = async (event) => {
 			: `${safeName}.${artifact.extension}`;
 
 	if (artifactToServe.contentText) {
-		const textBuffer = Buffer.from(artifact.contentText, 'utf-8');
+		const textBuffer = Buffer.from(artifactToServe.contentText, 'utf-8');
 		return new Response(textBuffer, {
 			status: 200,
 			headers: {

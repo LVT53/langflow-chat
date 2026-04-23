@@ -6,7 +6,10 @@ import { getArtifactForUser } from '$lib/server/services/knowledge';
 import { getSourceArtifactIdForNormalizedArtifact } from '$lib/server/services/knowledge/store/core';
 import { getPreviewContentType } from '$lib/utils/file-preview';
 import { createJsonErrorResponse } from '$lib/server/api/responses';
-
+import {
+	getChatFileByUser,
+	readChatFileContentByUser,
+} from '$lib/server/services/chat-files';
 /**
  * GET /api/knowledge/[id]/preview
  * 
@@ -35,6 +38,32 @@ export const GET: RequestHandler = async (event) => {
 			}
 		}
 	}
+
+	// Resolve generated_output artifacts with linked chat files to the binary source
+	if (artifact.type === 'generated_output' && !artifact.storagePath) {
+		const sourceChatFileId =
+			typeof artifact.metadata?.sourceChatFileId === 'string' && artifact.metadata.sourceChatFileId.trim()
+				? artifact.metadata.sourceChatFileId.trim()
+				: null;
+		if (sourceChatFileId) {
+			const chatFile = await getChatFileByUser(sourceChatFileId, user.id);
+			if (chatFile) {
+				const fileContent = await readChatFileContentByUser(sourceChatFileId, user.id);
+				if (fileContent) {
+					return new Response(new Uint8Array(fileContent), {
+						status: 200,
+						headers: {
+							'Content-Type': getPreviewContentType(chatFile.filename, chatFile.mimeType),
+							'Content-Length': fileContent.length.toString(),
+							'Content-Disposition': `inline; filename="${encodeURIComponent(artifact.name || chatFile.filename)}"`,
+							'Cache-Control': 'private, max-age=3600',
+						},
+					});
+				}
+			}
+		}
+	}
+
 
 	// Determine content type
 	const safeName = artifact.name || 'document';

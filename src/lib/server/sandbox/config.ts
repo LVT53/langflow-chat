@@ -23,12 +23,16 @@ interface SandboxRuntimeConfig {
 
 const JAVASCRIPT_NODE_MODULES_DIR = path.join(process.cwd(), 'node_modules');
 const JAVASCRIPT_HELPERS_DIR = path.join(process.cwd(), 'sandbox-helpers');
+const PYTHON_VENV_SITE_PACKAGES = path.join(process.cwd(), 'sandbox-python-env', 'lib', 'python3.11', 'site-packages');
 
 const SANDBOX_RUNTIME_CONFIG: Record<SandboxLanguage, SandboxRuntimeConfig> = {
 	python: {
 		image: 'python:3.11-slim',
 		idleCommand: ['python3', '-c', 'import sys; sys.stdin.read()'],
 		execCommand: (code: string) => ['python3', '-c', code],
+		binds: [
+			`${PYTHON_VENV_SITE_PACKAGES}:/workspace/python-packages:ro`,
+		],
 	},
 	javascript: {
 		image: 'node:22-bookworm-slim',
@@ -285,6 +289,7 @@ export async function createSandbox(language: SandboxLanguage = 'python'): Promi
 		StdinOnce: false,
 		StopTimeout: SANDBOX_TIMEOUT_MS / 1000,
 		WorkingDir: runtime.workingDir,
+		Env: language === 'python' ? ['PYTHONPATH=/workspace/python-packages'] : undefined,
 		// SECURITY: Run as non-root user (UID 1000, GID 1000)
 		User: '1000:1000',
 		HostConfig: {
@@ -306,6 +311,7 @@ export async function createSandbox(language: SandboxLanguage = 'python'): Promi
 			Tmpfs: {
 				'/output': 'rw,size=100m,mode=1777',
 				'/tmp': language === 'javascript' ? 'rw,size=200m,mode=1777' : 'rw,size=50m,mode=1777',
+				'/workspace': 'rw,size=50m,mode=1777',
 			},
 		},
 		Labels: {
