@@ -42,9 +42,6 @@
 		currentConversationId.set(null);
 		await goto('/');
 
-		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
-			sidebarOpen.set(false);
-		}
 	}
 
 	function openSearchModal() {

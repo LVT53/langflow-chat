@@ -41,10 +41,6 @@
 			currentConversationId.set(null);
 			mobileMenuOpen = false;
 			await goto('/');
-
-			if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
-				sidebarOpen.set(false);
-			}
 		} catch (error) {
 			console.error('Failed to create new conversation:', error);
 			alert('Failed to create new conversation. Please try again.');

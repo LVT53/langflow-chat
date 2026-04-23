@@ -128,7 +128,7 @@
 	// Set to true when onWaiting fired and we're polling for completion
 	let isPollingForCompletion = false;
 	// Set to true when we're waiting for the initial pending message to be sent (landing page transition)
-	let initialStreamPending = $state(false);
+	let initialStreamPending = $state(data.bootstrap ?? false);
 	const evidencePollControllers = new Map<string, AbortController>();
 
 	let isThinkingActive = $derived(Boolean($messages[$messages.length - 1]?.isThinkingStreaming));
@@ -257,11 +257,8 @@
 		}
 
 		const pendingDraft = consumePendingConversationMessage(data.conversation.id);
-		if (!pendingDraft) {
-			return;
-		}
-
-		if (!pendingDraft.message.trim()) {
+		if (!pendingDraft || !pendingDraft.message.trim()) {
+			initialStreamPending = false;
 			return;
 		}
 		// Show loading state until streaming actually starts

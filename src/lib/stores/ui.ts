@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
+import { read, persist } from './_local-storage';
 
 /**
  * BREAKPOINT CONTRACT - Single Source of Truth
@@ -25,8 +26,12 @@ import { browser } from '$app/environment';
 
 export const SIDEBAR_DESKTOP_BREAKPOINT = 1024;
 
-const initialSidebarState = browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false;
-export const sidebarOpen = writable<boolean>(initialSidebarState);
+const isValidBool = (v: string): v is 'true' | 'false' => v === 'true' || v === 'false';
+
+const initialSidebarOpenValue = browser
+	? read('sidebarOpen', window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT ? 'true' : 'false', isValidBool)
+	: 'false';
+export const sidebarOpen = writable<boolean>(initialSidebarOpenValue === 'true');
 
 /**
  * Register the window resize listener for sidebar auto-open/close.
@@ -60,4 +65,10 @@ export function initUIListeners(): () => void {
 export const currentConversationId = writable<string | null>(null);
 
 // Tracks whether the desktop sidebar is collapsed to icon-only mode
-export const sidebarCollapsed = writable<boolean>(true);
+const initialSidebarCollapsedValue = browser
+	? read('sidebarCollapsed', 'true', isValidBool)
+	: 'true';
+export const sidebarCollapsed = writable<boolean>(initialSidebarCollapsedValue === 'true');
+
+sidebarOpen.subscribe((value) => persist('sidebarOpen', value ? 'true' : 'false'));
+sidebarCollapsed.subscribe((value) => persist('sidebarCollapsed', value ? 'true' : 'false'));
