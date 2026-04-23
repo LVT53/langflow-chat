@@ -1,3 +1,4 @@
+import { previewText } from '$lib/server/utils/text';
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, readFile, unlink, access, rm } from 'fs/promises';
 import { join, extname } from 'path';
@@ -67,12 +68,6 @@ interface GeneratedFileVersionRecord {
 	documentRole: string | null;
 }
 
-function previewText(value: string | null | undefined, limit = 1200): string | null {
-	if (!value) return null;
-	const trimmed = value.trim();
-	if (!trimmed) return null;
-	return trimmed.length > limit ? `${trimmed.slice(0, limit)}...` : trimmed;
-}
 
 function buildGeneratedFileArtifactName(filename: string): string {
   return filename;

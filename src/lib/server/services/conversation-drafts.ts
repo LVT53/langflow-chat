@@ -1,3 +1,4 @@
+import { parseJsonStringArray } from '$lib/server/utils/json';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { conversationDrafts } from '$lib/server/db/schema';
@@ -9,17 +10,6 @@ import type {
 } from '$lib/types';
 import { resolvePromptAttachmentArtifacts } from './knowledge';
 
-function parseJsonStringArray(value: string | null): string[] {
-	if (!value) return [];
-	try {
-		const parsed = JSON.parse(value) as unknown;
-		return Array.isArray(parsed)
-			? parsed.filter((item): item is string => typeof item === 'string')
-			: [];
-	} catch {
-		return [];
-	}
-}
 
 function toArtifactSummary(artifact: Artifact): ArtifactSummary {
 	return {

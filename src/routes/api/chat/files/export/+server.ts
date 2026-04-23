@@ -1,3 +1,4 @@
+import { validateJsonBody } from '$lib/server/api/responses';
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import path from 'path';
@@ -54,11 +55,10 @@ interface ExportRequest {
 }
 
 function validateRequest(body: unknown): { ok: true; value: ExportRequest } | { ok: false; error: string; status: number } {
-	if (!body || typeof body !== 'object') {
-		return { ok: false, error: 'Invalid request body', status: 400 };
-	}
+	const base = validateJsonBody(body);
+	if (!base.ok) return base;
+	const { conversationId, filename, markdown, format } = base.body;
 
-	const { conversationId, filename, markdown, format } = body as Record<string, unknown>;
 
 	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
 		return { ok: false, error: 'conversationId is required', status: 400 };

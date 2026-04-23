@@ -1,3 +1,5 @@
+import { validateJsonBody } from '$lib/server/api/responses';
+import { previewText } from '$lib/server/utils/text';
 import { json } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import path from 'path';
@@ -23,12 +25,6 @@ interface FileMetadata {
 	mimeType: string;
 }
 
-function previewText(value: string | undefined, limit = 180): string | null {
-	if (!value) return null;
-	const normalized = value.replace(/\s+/g, ' ').trim();
-	if (!normalized) return null;
-	return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
-}
 
 function summarizeExecutionFiles(
 	files: Array<{ filename: string; mimeType?: string; content: Buffer | Uint8Array }>
@@ -56,11 +52,10 @@ function looksLikePdf(content: Buffer | Uint8Array): boolean {
 }
 
 function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | { ok: false; error: string; status: number } {
-	if (!body || typeof body !== 'object') {
-		return { ok: false, error: 'Invalid request body', status: 400 };
-	}
+	const base = validateJsonBody(body);
+	if (!base.ok) return base;
+	const { conversationId, code, language, filename } = base.body;
 
-	const { conversationId, code, language, filename } = body as Record<string, unknown>;
 
 	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
 		return { ok: false, error: 'conversationId is required', status: 400 };

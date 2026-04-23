@@ -1,11 +1,9 @@
+import { normalizeWhitespace } from '$lib/server/utils/text';
 const PLACEHOLDER_CONVERSATION_TITLES = new Set([
 	'new conversation',
 	'conversation',
 ]);
 
-function normalizeWhitespace(value: string | null | undefined): string {
-	return (value ?? '').replace(/\s+/g, ' ').trim();
-}
 
 function truncateAtWordBoundary(value: string, maxLength: number): string {
 	if (value.length <= maxLength) return value;

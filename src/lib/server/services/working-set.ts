@@ -1,3 +1,4 @@
+import { clamp } from '$lib/utils/math';
 import { computeDecayScore } from '../utils/artifact-decay';
 import type {
 	ArtifactType,
@@ -34,9 +35,6 @@ export interface RankedWorkingSetItem {
 	selected: boolean;
 }
 
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
 
 export function scoreMatch(query: string, haystack: string): number {
 	const terms = query

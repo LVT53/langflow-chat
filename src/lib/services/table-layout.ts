@@ -1,3 +1,4 @@
+import { clamp } from '$lib/utils/math';
 export type TableOverflowMode = 'fit' | 'scroll';
 
 const DEFAULT_TABLE_PRESETS: Record<number, number[]> = {
@@ -18,9 +19,6 @@ const MAX_WEIGHT_BY_COLUMN_COUNT: Record<number, number> = {
 	4: 0.38,
 };
 
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
-}
 
 function formatWidths(weights: number[]): string[] {
 	const percentages = weights.map((weight) => weight * 100);
