@@ -398,6 +398,12 @@ function closeFullscreenPreview() {
 	fullscreenPreviewOpen = false;
 }
 
+function handleMobileBackdropClick(event: MouseEvent) {
+	if (event.target === event.currentTarget) {
+		onCloseWorkspace();
+	}
+}
+
 async function loadComparePreview(
 	document: DocumentWorkspaceItem,
 ): Promise<string> {
@@ -500,13 +506,12 @@ $effect(() => {
 
 {#if shouldRender && activeDocument}
 	<!-- Mobile overlay -->
-	<div class="workspace-mobile-backdrop md:hidden">
-		<button
-			type="button"
-			class="workspace-mobile-dismiss"
-			onclick={onCloseWorkspace}
-			aria-label="Close document workspace"
-		></button>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div
+		class="workspace-mobile-backdrop md:hidden"
+		role="presentation"
+		onclick={handleMobileBackdropClick}
+	>
 		<section class="workspace-shell workspace-shell-mobile" aria-label="Document workspace">
 			<div class="workspace-header">
 				<div class="workspace-heading">
@@ -1028,14 +1033,6 @@ $effect(() => {
 		backdrop-filter: blur(10px);
 	}
 
-	.workspace-mobile-dismiss {
-		position: absolute;
-		inset: 0;
-		border: none;
-		padding: 0;
-		background: transparent;
-	}
-
 	.workspace-shell {
 		display: flex;
 		flex-direction: column;
@@ -1044,6 +1041,8 @@ $effect(() => {
 	}
 
 	.workspace-shell-mobile {
+		position: relative;
+		z-index: 1;
 		height: 100%;
 		width: 100%;
 	}

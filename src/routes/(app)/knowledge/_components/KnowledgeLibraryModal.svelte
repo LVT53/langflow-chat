@@ -5,6 +5,7 @@ import {
 	getLibraryBulkKey,
 	getLibraryBulkLabel,
 	getLibraryItemCount,
+	toWorkspaceDocument,
 } from "../_helpers";
 import { isPreviewableFile } from "$lib/utils/file-preview";
 import DocumentsList from "./DocumentsList.svelte";
@@ -41,23 +42,8 @@ let itemCount = $derived(getLibraryItemCount({ documents }));
 let bulkKey = $derived(getLibraryBulkKey());
 
 function openPreview(document: KnowledgeDocumentItem) {
-	const artifactId = document.promptArtifactId ?? document.displayArtifactId;
 	onOpenDocument({
-		id: `artifact:${artifactId}`,
-		source: "knowledge_artifact",
-		filename: document.name,
-		title: document.documentLabel ?? document.name,
-		documentFamilyId: document.documentFamilyId ?? null,
-		documentFamilyStatus: document.documentFamilyStatus ?? null,
-		documentLabel: document.documentLabel ?? null,
-		documentRole: document.documentRole ?? null,
-		versionNumber: document.versionNumber ?? null,
-		originConversationId: document.originConversationId ?? null,
-		originAssistantMessageId: document.originAssistantMessageId ?? null,
-		sourceChatFileId: document.sourceChatFileId ?? null,
-		mimeType: document.mimeType,
-		artifactId,
-		conversationId: document.conversationId,
+		...toWorkspaceDocument(document),
 		previewUrl: document.previewUrl ?? null,
 	});
 	onClose();

@@ -65,6 +65,8 @@ let programmaticScrollResetTimeout: ReturnType<typeof setTimeout> | null = null;
 // PDF render concurrency tracking
 let pdfRenderVersion = 0;
 let activeRenderTasks = new Map<number, { cancel: () => void }>();
+let pinchZoomFrame: number | null = null;
+let pendingPinchZoom = 1;
 
 $effect(() => {
 	if (open && (artifactId || previewUrl)) {
@@ -163,6 +165,80 @@ $effect(() => {
 			programmaticScrollResetTimeout = null;
 		}
 		isProgrammaticScroll = false;
+	};
+});
+
+$effect(() => {
+	if (!(browser && fileType === "pdf" && scrollContainerRef)) {
+		if (pinchZoomFrame !== null) {
+			cancelAnimationFrame(pinchZoomFrame);
+			pinchZoomFrame = null;
+		}
+		return;
+	}
+
+	const node = scrollContainerRef;
+	let pinchActive = false;
+	let pinchStartDistance = 0;
+	let pinchStartZoom = zoom;
+
+	const flushPendingPinchZoom = () => {
+		pinchZoomFrame = null;
+		setZoomLevel(pendingPinchZoom);
+	};
+
+	const stopPinch = () => {
+		pinchActive = false;
+		pinchStartDistance = 0;
+		pinchStartZoom = zoom;
+	};
+
+	const handleTouchStart = (event: TouchEvent) => {
+		if (event.touches.length !== 2) return;
+		pinchActive = true;
+		pinchStartDistance = getTouchDistance(event.touches);
+		pinchStartZoom = zoom;
+		if (pinchZoomFrame !== null) {
+			cancelAnimationFrame(pinchZoomFrame);
+			pinchZoomFrame = null;
+		}
+	};
+
+	const handleTouchMove = (event: TouchEvent) => {
+		if (!pinchActive || event.touches.length !== 2 || pinchStartDistance <= 0) {
+			return;
+		}
+
+		event.preventDefault();
+		pendingPinchZoom =
+			pinchStartZoom * (getTouchDistance(event.touches) / pinchStartDistance);
+
+		if (pinchZoomFrame === null) {
+			pinchZoomFrame = requestAnimationFrame(flushPendingPinchZoom);
+		}
+	};
+
+	const handleTouchEnd = (event: TouchEvent) => {
+		if (event.touches.length < 2) {
+			stopPinch();
+		}
+	};
+
+	node.addEventListener("touchstart", handleTouchStart, { passive: true });
+	node.addEventListener("touchmove", handleTouchMove, { passive: false });
+	node.addEventListener("touchend", handleTouchEnd);
+	node.addEventListener("touchcancel", handleTouchEnd);
+
+	return () => {
+		node.removeEventListener("touchstart", handleTouchStart);
+		node.removeEventListener("touchmove", handleTouchMove);
+		node.removeEventListener("touchend", handleTouchEnd);
+		node.removeEventListener("touchcancel", handleTouchEnd);
+		stopPinch();
+		if (pinchZoomFrame !== null) {
+			cancelAnimationFrame(pinchZoomFrame);
+			pinchZoomFrame = null;
+		}
 	};
 });
 
@@ -500,16 +576,33 @@ function setupPageObserver() {
 	});
 }
 
+function clampZoomLevel(nextZoom: number): number {
+	return Math.min(3.0, Math.max(0.5, Number.parseFloat(nextZoom.toFixed(2))));
+}
+
+function setZoomLevel(nextZoom: number) {
+	const clampedZoom = clampZoomLevel(nextZoom);
+	if (Math.abs(clampedZoom - zoom) < 0.01) return;
+	zoom = clampedZoom;
+}
+
+function getTouchDistance(touches: TouchList): number {
+	if (touches.length < 2) return 0;
+	const deltaX = touches[0].clientX - touches[1].clientX;
+	const deltaY = touches[0].clientY - touches[1].clientY;
+	return Math.hypot(deltaX, deltaY);
+}
+
 function zoomIn() {
-	zoom = Math.min(zoom + 0.25, 3.0);
+	setZoomLevel(zoom + 0.25);
 }
 
 function zoomOut() {
-	zoom = Math.max(zoom - 0.25, 0.5);
+	setZoomLevel(zoom - 0.25);
 }
 
 function resetZoom() {
-	zoom = 1.0;
+	setZoomLevel(1.0);
 }
 
 async function renderDocx(blob: Blob) {
@@ -714,8 +807,10 @@ function handleKeydown(event: KeyboardEvent) {
 	}
 }
 
-function handleBackdropClick() {
-	onClose();
+function handleBackdropClick(event: MouseEvent) {
+	if (event.target === event.currentTarget) {
+		onClose();
+	}
 }
 
 function handleModalClick(event: MouseEvent) {
@@ -1192,6 +1287,7 @@ function downloadFile() {
 	.preview-panel {
 		display: flex;
 		flex-direction: column;
+		min-height: 0;
 		min-width: 0;
 		background: var(--surface-elevated);
 	}
@@ -1228,6 +1324,8 @@ function downloadFile() {
 		min-height: 0;
 		min-width: 0;
 		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.preview-body-modal {
@@ -1237,6 +1335,7 @@ function downloadFile() {
 	.preview-body-embedded {
 		flex: 1 1 auto;
 		overflow-y: auto;
+		touch-action: pan-y;
 	}
 
 	.preview-download-button {
@@ -1333,6 +1432,9 @@ function downloadFile() {
 		overflow-y: auto;
 		min-height: 50vh;
 		position: relative;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		touch-action: pan-y;
 	}
 
 	.pdf-pages-scroll {
