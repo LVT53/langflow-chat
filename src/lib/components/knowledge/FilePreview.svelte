@@ -1202,6 +1202,7 @@ function downloadFile() {
 
 	.preview-body-embedded {
 		flex: 1 1 auto;
+		overflow-y: auto;
 	}
 
 	.preview-download-button {

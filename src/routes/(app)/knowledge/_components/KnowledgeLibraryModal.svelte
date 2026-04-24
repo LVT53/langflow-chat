@@ -1,90 +1,88 @@
 <script lang="ts">
-	import type {
-		DocumentWorkspaceItem,
-		KnowledgeDocumentItem,
-	} from '$lib/types';
-	import type { LibraryModal } from '../_helpers';
-	import {
-		getLibraryBulkKey,
-		getLibraryBulkLabel,
-		getLibraryItemCount,
-	} from '../_helpers';
-	import { isPreviewableFile } from '$lib/utils/file-preview';
-	import DocumentsList from './DocumentsList.svelte';
+import type { DocumentWorkspaceItem, KnowledgeDocumentItem } from "$lib/types";
+import type { LibraryModal } from "../_helpers";
+import {
+	getLibraryBulkKey,
+	getLibraryBulkLabel,
+	getLibraryItemCount,
+} from "../_helpers";
+import { isPreviewableFile } from "$lib/utils/file-preview";
+import DocumentsList from "./DocumentsList.svelte";
 
-	let {
-		activeLibraryModal,
-		documents,
-		pendingKnowledgeActionKey,
-		deletingArtifactCount,
-		isKnowledgeActionPending,
-		isDeletingArtifact,
-		onUpload,
-		onClose,
-		onOpenDocument,
-		onRunKnowledgeAction,
-		onRemoveArtifact,
-	}: {
-		activeLibraryModal: Exclude<LibraryModal, null>;
-		documents: KnowledgeDocumentItem[];
-		pendingKnowledgeActionKey: string | null;
-		deletingArtifactCount: number;
-		isKnowledgeActionPending: (key: string) => boolean;
-		isDeletingArtifact: (id: string) => boolean;
-		onUpload?: (files: File[]) => void | Promise<void>;
-		onClose: () => void;
-		onOpenDocument: (document: DocumentWorkspaceItem) => void;
-		onRunKnowledgeAction: (kind: Exclude<LibraryModal, null>) => void | Promise<void>;
-		onRemoveArtifact: (id: string) => void | Promise<void>;
-	} = $props();
+let {
+	activeLibraryModal,
+	documents,
+	pendingKnowledgeActionKey,
+	deletingArtifactCount,
+	isKnowledgeActionPending,
+	isDeletingArtifact,
+	onUpload,
+	onClose,
+	onOpenDocument,
+	onRunKnowledgeAction,
+	onRemoveArtifact,
+}: {
+	activeLibraryModal: Exclude<LibraryModal, null>;
+	documents: KnowledgeDocumentItem[];
+	pendingKnowledgeActionKey: string | null;
+	deletingArtifactCount: number;
+	isKnowledgeActionPending: (key: string) => boolean;
+	isDeletingArtifact: (id: string) => boolean;
+	onUpload?: (files: File[]) => void | Promise<void>;
+	onClose: () => void;
+	onOpenDocument: (document: DocumentWorkspaceItem) => void;
+	onRunKnowledgeAction: (
+		kind: Exclude<LibraryModal, null>,
+	) => void | Promise<void>;
+	onRemoveArtifact: (id: string) => void | Promise<void>;
+} = $props();
 
-	let itemCount = $derived(
-		getLibraryItemCount({ documents })
-	);
-	let bulkKey = $derived(getLibraryBulkKey());
+let itemCount = $derived(getLibraryItemCount({ documents }));
+let bulkKey = $derived(getLibraryBulkKey());
 
-	function openPreview(document: KnowledgeDocumentItem) {
-		const artifactId = document.promptArtifactId ?? document.displayArtifactId;
-		onOpenDocument({
-			id: `artifact:${artifactId}`,
-			source: 'knowledge_artifact',
-			filename: document.name,
-			title: document.documentLabel ?? document.name,
-			documentFamilyId: document.documentFamilyId ?? null,
-			documentFamilyStatus: document.documentFamilyStatus ?? null,
-			documentLabel: document.documentLabel ?? null,
-			documentRole: document.documentRole ?? null,
-			versionNumber: document.versionNumber ?? null,
-			originConversationId: document.originConversationId ?? null,
-			originAssistantMessageId: document.originAssistantMessageId ?? null,
-			sourceChatFileId: document.sourceChatFileId ?? null,
-			mimeType: document.mimeType,
-			artifactId,
-			conversationId: document.conversationId,
-		});
-		onClose();
+function openPreview(document: KnowledgeDocumentItem) {
+	const artifactId = document.promptArtifactId ?? document.displayArtifactId;
+	onOpenDocument({
+		id: `artifact:${artifactId}`,
+		source: "knowledge_artifact",
+		filename: document.name,
+		title: document.documentLabel ?? document.name,
+		documentFamilyId: document.documentFamilyId ?? null,
+		documentFamilyStatus: document.documentFamilyStatus ?? null,
+		documentLabel: document.documentLabel ?? null,
+		documentRole: document.documentRole ?? null,
+		versionNumber: document.versionNumber ?? null,
+		originConversationId: document.originConversationId ?? null,
+		originAssistantMessageId: document.originAssistantMessageId ?? null,
+		sourceChatFileId: document.sourceChatFileId ?? null,
+		mimeType: document.mimeType,
+		artifactId,
+		conversationId: document.conversationId,
+		previewUrl: document.previewUrl ?? null,
+	});
+	onClose();
+}
+
+function handleTableSelect(document: KnowledgeDocumentItem) {
+	if (isPreviewableFile(document.mimeType, document.name)) {
+		openPreview(document);
 	}
+}
 
-	function handleTableSelect(document: KnowledgeDocumentItem) {
-		if (isPreviewableFile(document.mimeType, document.name)) {
-			openPreview(document);
-		}
-	}
+function handleTableDelete(documentId: string) {
+	const artifact = documents.find((entry) => entry.id === documentId);
+	if (!artifact) return;
+	void onRemoveArtifact(artifact.id);
+}
 
-	function handleTableDelete(documentId: string) {
-		const artifact = documents.find((entry) => entry.id === documentId);
-		if (!artifact) return;
-		void onRemoveArtifact(artifact.id);
-	}
+function handleTableDownload(): void {
+	return;
+}
 
-	function handleTableDownload(): void {
-		return;
-	}
-
-	async function handleTableUpload(files: File[]): Promise<void> {
-		if (!onUpload || files.length === 0) return;
-		await onUpload(files);
-	}
+async function handleTableUpload(files: File[]): Promise<void> {
+	if (!onUpload || files.length === 0) return;
+	await onUpload(files);
+}
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
