@@ -1,16 +1,16 @@
+import path from "node:path";
+import type { Readable } from "node:stream";
+import type { Container } from "dockerode";
+import tar from "tar-stream";
 import {
 	createSandbox,
 	executeSandboxCommand,
+	getSandboxTimeout,
 	SANDBOX_MAX_FILE_MB,
 	SANDBOX_MAX_OUTPUT_FILES,
 	SANDBOX_MAX_TOTAL_OUTPUT_MB,
-	SANDBOX_TIMEOUT_MS,
 	type SandboxLanguage,
-} from '../sandbox/config';
-import tar from 'tar-stream';
-import path from 'path';
-import type { Container } from 'dockerode';
-import type { Readable } from 'stream';
+} from "../sandbox/config";
 
 export interface FileOutput {
 	filename: string;
@@ -28,29 +28,31 @@ export interface ExecutionResult {
 }
 
 const MIME_TYPES: Record<string, string> = {
-	'.pdf': 'application/pdf',
-	'.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-	'.xls': 'application/vnd.ms-excel',
-	'.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-	'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-	'.odt': 'application/vnd.oasis.opendocument.text',
-	'.png': 'image/png',
-	'.jpg': 'image/jpeg',
-	'.jpeg': 'image/jpeg',
-	'.js': 'text/javascript',
-	'.py': 'text/x-python',
-	'.css': 'text/css',
-	'.csv': 'text/csv',
-	'.json': 'application/json',
-	'.txt': 'text/plain',
-	'.md': 'text/markdown',
-	'.xml': 'application/xml',
-	'.rtf': 'application/rtf',
-	'.svg': 'image/svg+xml',
-	'.html': 'text/html',
+	".pdf": "application/pdf",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".xls": "application/vnd.ms-excel",
+	".pptx":
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".docx":
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".odt": "application/vnd.oasis.opendocument.text",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".js": "text/javascript",
+	".py": "text/x-python",
+	".css": "text/css",
+	".csv": "text/csv",
+	".json": "application/json",
+	".txt": "text/plain",
+	".md": "text/markdown",
+	".xml": "application/xml",
+	".rtf": "application/rtf",
+	".svg": "image/svg+xml",
+	".html": "text/html",
 };
 
-const OUTPUT_DIR = '/output';
+const OUTPUT_DIR = "/output";
 const PYTHON_OUTPUT_INSPECTION_SCRIPT = `
 import json
 import os
@@ -152,7 +154,7 @@ function stripCreatePdfRedeclarations(code: string): string {
 	//   const { createPDF, PDFDocument } = require("pdf-lib");
 	return code.replace(
 		/^[ \t]*(?:const|let|var)\s+(?:\{[^}]*\bcreatePDF\b[^}]*\}|createPDF)\s*=\s*require\s*\([^)]*\)\s*;?\s*$/gm,
-		'// (createPDF is pre-loaded by the sandbox)',
+		"// (createPDF is pre-loaded by the sandbox)",
 	);
 }
 
@@ -164,9 +166,14 @@ function fixDoubleEscapedQuotes(code: string): string {
 	return code.replace(/\\\\'/g, "\\'");
 }
 
-function buildSandboxBootstrapCode(code: string, language: SandboxLanguage): string {
-	if (language === 'javascript') {
-		const sanitized = fixDoubleEscapedQuotes(stripCreatePdfRedeclarations(code));
+function buildSandboxBootstrapCode(
+	code: string,
+	language: SandboxLanguage,
+): string {
+	if (language === "javascript") {
+		const sanitized = fixDoubleEscapedQuotes(
+			stripCreatePdfRedeclarations(code),
+		);
 		return `
 const sandboxFs = require('fs');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
@@ -174,7 +181,9 @@ const createPDF = require('/workspace/helpers/create-pdf');
 
 (async () => {
 	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
-${sanitized}
+	${sanitized}
+	// Allow pending micro-tasks and async I/O to drain before Node exits
+	await new Promise((r) => setTimeout(r, 500));
 })().catch((error) => {
 	console.error(error && error.stack ? error.stack : String(error));
 	process.exit(1);
@@ -191,18 +200,18 @@ ${code}
 }
 
 function buildInspectionCommand(language: SandboxLanguage): string[] {
-	if (language === 'javascript') {
-		return ['node', '-e', JAVASCRIPT_OUTPUT_INSPECTION_SCRIPT];
+	if (language === "javascript") {
+		return ["node", "-e", JAVASCRIPT_OUTPUT_INSPECTION_SCRIPT];
 	}
 
-	return ['python3', '-c', PYTHON_OUTPUT_INSPECTION_SCRIPT];
+	return ["python3", "-c", PYTHON_OUTPUT_INSPECTION_SCRIPT];
 }
 
 function buildReadbackCommand(
 	language: SandboxLanguage,
-	inspectionFiles: OutputInspectionFile[]
+	inspectionFiles: OutputInspectionFile[],
 ): string[] {
-	if (language === 'javascript') {
+	if (language === "javascript") {
 		const readbackScript = `
 const fs = require('fs');
 const path = require('path');
@@ -221,7 +230,7 @@ const files = paths.map((filePath) => {
 console.log(JSON.stringify({ files }));
 `;
 
-		return ['node', '-e', readbackScript];
+		return ["node", "-e", readbackScript];
 	}
 
 	const readbackScript = `
@@ -245,38 +254,45 @@ for path in paths:
 print(json.dumps({"files": files}))
 `;
 
-	return ['python3', '-c', readbackScript];
+	return ["python3", "-c", readbackScript];
 }
 
 function getMimeType(filename: string): string {
 	const ext = path.extname(filename).toLowerCase();
-	return MIME_TYPES[ext] || 'application/octet-stream';
+	return MIME_TYPES[ext] || "application/octet-stream";
 }
 
 function isPathTraversalAttempt(name: string): boolean {
 	return (
-		name.includes('..') ||
+		name.includes("..") ||
 		path.isAbsolute(name) ||
-		name.includes('\0') ||
-		name.includes('\x00')
+		name.includes("\0") ||
+		name.includes("\x00")
 	);
 }
 
 function isDangerousEntryType(header: tar.Headers): boolean {
 	return (
-		header.type === 'symlink' ||
-		header.type === 'link' ||
-		header.type === 'block-device' ||
-		header.type === 'character-device' ||
-		header.type === 'fifo'
+		header.type === "symlink" ||
+		header.type === "link" ||
+		header.type === "block-device" ||
+		header.type === "character-device" ||
+		header.type === "fifo"
 	);
 }
 
 function isExtractableFileEntry(header: tar.Headers): boolean {
-	return header.type === 'file' || header.type === 'contiguous-file' || header.type == null;
+	return (
+		header.type === "file" ||
+		header.type === "contiguous-file" ||
+		header.type == null
+	);
 }
 
-function finishSkippedEntry(stream: Readable, next: (error?: unknown) => void): void {
+function finishSkippedEntry(
+	stream: Readable,
+	next: (error?: unknown) => void,
+): void {
 	let done = false;
 
 	const complete = (error?: unknown) => {
@@ -285,13 +301,15 @@ function finishSkippedEntry(stream: Readable, next: (error?: unknown) => void): 
 		next(error);
 	};
 
-	stream.once('end', () => complete());
-	stream.once('close', () => complete());
-	stream.once('error', (error) => complete(error));
+	stream.once("end", () => complete());
+	stream.once("close", () => complete());
+	stream.once("error", (error) => complete(error));
 	stream.resume();
 }
 
-async function extractFilesFromContainer(container: Container): Promise<FileOutput[]> {
+async function extractFilesFromContainer(
+	container: Container,
+): Promise<FileOutput[]> {
 	const files: FileOutput[] = [];
 	const maxFileSizeBytes = SANDBOX_MAX_FILE_MB * 1024 * 1024;
 	const maxTotalBytes = SANDBOX_MAX_TOTAL_OUTPUT_MB * 1024 * 1024;
@@ -303,17 +321,17 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 		return new Promise((resolve, reject) => {
 			const extract = tar.extract();
 
-			extract.on('entry', (header, stream, next) => {
+			extract.on("entry", (header, stream, next) => {
 				const name = header.name;
-				const type = header.type ?? 'file';
+				const type = header.type ?? "file";
 
 				// SECURITY: Reject dangerous entry types (symlinks, hardlinks, devices)
 				if (isDangerousEntryType(header)) {
-					console.warn('[FILE_GENERATE] Skipping sandbox archive entry', {
+					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
-						reason: 'dangerous-entry-type',
+						reason: "dangerous-entry-type",
 					});
 					finishSkippedEntry(stream, next);
 					return;
@@ -327,11 +345,11 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 
 				// SECURITY: Reject path traversal attempts
 				if (isPathTraversalAttempt(name)) {
-					console.warn('[FILE_GENERATE] Skipping sandbox archive entry', {
+					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
-						reason: 'path-traversal',
+						reason: "path-traversal",
 					});
 					finishSkippedEntry(stream, next);
 					return;
@@ -339,11 +357,11 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 
 				// SECURITY: Check max files limit
 				if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-					console.warn('[FILE_GENERATE] Skipping sandbox archive entry', {
+					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
-						reason: 'max-files-limit',
+						reason: "max-files-limit",
 						maxFiles: SANDBOX_MAX_OUTPUT_FILES,
 					});
 					finishSkippedEntry(stream, next);
@@ -354,7 +372,7 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 				const chunks: Buffer[] = [];
 				let fileSize = 0;
 
-				stream.on('data', (chunk: Buffer) => {
+				stream.on("data", (chunk: Buffer) => {
 					fileSize += chunk.length;
 					// SECURITY: Enforce per-file size limit during streaming
 					if (fileSize <= maxFileSizeBytes) {
@@ -362,14 +380,14 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 					}
 				});
 
-				stream.on('end', () => {
+				stream.on("end", () => {
 					// SECURITY: Skip files that exceed per-file size limit
 					if (fileSize > maxFileSizeBytes) {
-						console.warn('[FILE_GENERATE] Skipping sandbox archive entry', {
+						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
-							reason: 'max-file-size-limit',
+							reason: "max-file-size-limit",
 							sizeBytes: fileSize,
 							maxFileSizeBytes,
 						});
@@ -380,11 +398,11 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 
 					// SECURITY: Check total output size limit
 					if (totalBytes + content.length > maxTotalBytes) {
-						console.warn('[FILE_GENERATE] Skipping sandbox archive entry', {
+						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
-							reason: 'max-total-size-limit',
+							reason: "max-total-size-limit",
 							sizeBytes: content.length,
 							totalBytes,
 							maxTotalBytes,
@@ -406,8 +424,8 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 					next();
 				});
 
-				stream.on('error', (error) => {
-					console.warn('[FILE_GENERATE] Sandbox archive entry read failed', {
+				stream.on("error", (error) => {
+					console.warn("[FILE_GENERATE] Sandbox archive entry read failed", {
 						containerId: container.id,
 						name,
 						type,
@@ -417,14 +435,14 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 				});
 			});
 
-			extract.on('finish', () => resolve(files));
-			extract.on('error', (err: Error) => reject(err));
+			extract.on("finish", () => resolve(files));
+			extract.on("error", (err: Error) => reject(err));
 
-			archiveStream.on('error', (err: Error) => reject(err));
+			archiveStream.on("error", (err: Error) => reject(err));
 			archiveStream.pipe(extract);
 		});
 	} catch (error) {
-		console.error('[FILE_GENERATE] Failed to read sandbox output archive', {
+		console.error("[FILE_GENERATE] Failed to read sandbox output archive", {
 			containerId: container.id,
 			outputDir: OUTPUT_DIR,
 			error,
@@ -434,27 +452,49 @@ async function extractFilesFromContainer(container: Container): Promise<FileOutp
 }
 
 function classifyError(stderr: string, exitCode: number): string | undefined {
-	if (exitCode === 137 || stderr.includes('MemoryError') || stderr.includes('OutOfMemoryError')) {
-		return 'Execution failed: memory limit exceeded';
+	if (
+		exitCode === 137 ||
+		stderr.includes("MemoryError") ||
+		stderr.includes("OutOfMemoryError")
+	) {
+		return "Execution failed: memory limit exceeded";
 	}
 
-	if (stderr.includes('SyntaxError') || stderr.includes('IndentationError')) {
+	if (stderr.includes("SyntaxError") || stderr.includes("IndentationError")) {
 		return `Syntax error: ${stderr}`;
 	}
 
-	if (stderr.includes('ImportError') || stderr.includes('ModuleNotFoundError')) {
+	if (
+		stderr.includes("ImportError") ||
+		stderr.includes("ModuleNotFoundError")
+	) {
 		return `Import error: ${stderr}`;
 	}
 
-	if (stderr.includes('Cannot find module') || stderr.includes('ERR_MODULE_NOT_FOUND')) {
+	if (
+		stderr.includes("Cannot find module") ||
+		stderr.includes("ERR_MODULE_NOT_FOUND")
+	) {
 		return `Import error: ${stderr}`;
 	}
-	if (stderr.includes('sharp') || stderr.includes('ENOMEM') || stderr.includes('No space left on device') || stderr.includes('ENOSPC')) {
-		return 'Execution failed: temporary storage exhausted during image processing';
+	if (
+		stderr.includes("sharp") ||
+		stderr.includes("ENOMEM") ||
+		stderr.includes("No space left on device") ||
+		stderr.includes("ENOSPC")
+	) {
+		return "Execution failed: temporary storage exhausted during image processing";
+	}
+
+	if (
+		exitCode === 0 &&
+		(stderr.includes("UnhandledPromiseRejection") || stderr.includes("Promise"))
+	) {
+		return "Execution completed but an async file write may have been abandoned. Use synchronous writes (fs.writeFileSync) or ensure all Promises are awaited before the script ends.";
 	}
 
 	if (exitCode === 125 || exitCode === 126) {
-		return 'Execution failed: sandbox runtime error';
+		return "Execution failed: sandbox runtime error";
 	}
 
 	if (exitCode !== 0 && exitCode !== undefined) {
@@ -463,15 +503,17 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 
 	return undefined;
 }
-
 async function inspectOutputDirectory(
 	container: Container,
-	language: SandboxLanguage
+	language: SandboxLanguage,
 ): Promise<OutputInspectionResult | null> {
-	const inspection = await executeSandboxCommand(container, buildInspectionCommand(language));
+	const inspection = await executeSandboxCommand(
+		container,
+		buildInspectionCommand(language),
+	);
 
 	if (inspection.exitCode !== 0) {
-		console.warn('[FILE_GENERATE] In-container output inspection failed', {
+		console.warn("[FILE_GENERATE] In-container output inspection failed", {
 			containerId: container.id,
 			exitCode: inspection.exitCode,
 			stdoutPreview: inspection.stdout || null,
@@ -481,22 +523,28 @@ async function inspectOutputDirectory(
 	}
 
 	if (!inspection.stdout) {
-		console.warn('[FILE_GENERATE] In-container output inspection returned no stdout', {
-			containerId: container.id,
-			stderrPreview: inspection.stderr || null,
-		});
+		console.warn(
+			"[FILE_GENERATE] In-container output inspection returned no stdout",
+			{
+				containerId: container.id,
+				stderrPreview: inspection.stderr || null,
+			},
+		);
 		return null;
 	}
 
 	try {
 		return JSON.parse(inspection.stdout) as OutputInspectionResult;
 	} catch (error) {
-		console.warn('[FILE_GENERATE] In-container output inspection parse failed', {
-			containerId: container.id,
-			stdoutPreview: inspection.stdout.slice(0, 500),
-			stderrPreview: inspection.stderr || null,
-			error,
-		});
+		console.warn(
+			"[FILE_GENERATE] In-container output inspection parse failed",
+			{
+				containerId: container.id,
+				stdoutPreview: inspection.stdout.slice(0, 500),
+				stderrPreview: inspection.stderr || null,
+				error,
+			},
+		);
 		return null;
 	}
 }
@@ -504,16 +552,22 @@ async function inspectOutputDirectory(
 async function readFilesFromInsideContainer(
 	container: Container,
 	language: SandboxLanguage,
-	inspectionFiles: OutputInspectionFile[]
+	inspectionFiles: OutputInspectionFile[],
 ): Promise<FileOutput[]> {
-	const readback = await executeSandboxCommand(container, buildReadbackCommand(language, inspectionFiles));
+	const readback = await executeSandboxCommand(
+		container,
+		buildReadbackCommand(language, inspectionFiles),
+	);
 
 	if (readback.exitCode !== 0) {
-		throw new Error(readback.stderr || `In-container file read failed with exit code ${readback.exitCode}`);
+		throw new Error(
+			readback.stderr ||
+				`In-container file read failed with exit code ${readback.exitCode}`,
+		);
 	}
 
 	if (!readback.stdout) {
-		throw new Error('In-container file read returned no stdout');
+		throw new Error("In-container file read returned no stdout");
 	}
 
 	let parsed: { files: OutputReadbackFile[] };
@@ -521,7 +575,7 @@ async function readFilesFromInsideContainer(
 		parsed = JSON.parse(readback.stdout) as { files: OutputReadbackFile[] };
 	} catch (error) {
 		throw new Error(
-			`In-container file read returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`
+			`In-container file read returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
 
@@ -532,21 +586,21 @@ async function readFilesFromInsideContainer(
 
 	for (const file of parsed.files) {
 		if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-			console.warn('[FILE_GENERATE] Skipping in-container output file', {
+			console.warn("[FILE_GENERATE] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
-				reason: 'max-files-limit',
+				reason: "max-files-limit",
 				maxFiles: SANDBOX_MAX_OUTPUT_FILES,
 			});
 			break;
 		}
 
-		const content = Buffer.from(file.contentBase64, 'base64');
+		const content = Buffer.from(file.contentBase64, "base64");
 		if (content.length !== file.sizeBytes) {
-			console.warn('[FILE_GENERATE] Skipping in-container output file', {
+			console.warn("[FILE_GENERATE] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
-				reason: 'size-mismatch',
+				reason: "size-mismatch",
 				reportedSizeBytes: file.sizeBytes,
 				decodedSizeBytes: content.length,
 			});
@@ -554,10 +608,10 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (content.length > maxFileSizeBytes) {
-			console.warn('[FILE_GENERATE] Skipping in-container output file', {
+			console.warn("[FILE_GENERATE] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
-				reason: 'max-file-size-limit',
+				reason: "max-file-size-limit",
 				sizeBytes: content.length,
 				maxFileSizeBytes,
 			});
@@ -565,10 +619,10 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (totalBytes + content.length > maxTotalBytes) {
-			console.warn('[FILE_GENERATE] Skipping in-container output file', {
+			console.warn("[FILE_GENERATE] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
-				reason: 'max-total-size-limit',
+				reason: "max-total-size-limit",
 				sizeBytes: content.length,
 				totalBytes,
 				maxTotalBytes,
@@ -590,12 +644,15 @@ async function readFilesFromInsideContainer(
 	return files;
 }
 
-export async function executeCode(code: string, language: SandboxLanguage): Promise<ExecutionResult> {
-	if (language !== 'python' && language !== 'javascript') {
+export async function executeCode(
+	code: string,
+	language: SandboxLanguage,
+): Promise<ExecutionResult> {
+	if (language !== "python" && language !== "javascript") {
 		return {
 			files: [],
-			stdout: '',
-			stderr: '',
+			stdout: "",
+			stderr: "",
 			error: `Unsupported language: ${language}. Supported languages are 'python' and 'javascript'.`,
 		};
 	}
@@ -605,18 +662,24 @@ export async function executeCode(code: string, language: SandboxLanguage): Prom
 	try {
 		const wrappedCode = buildSandboxBootstrapCode(code, language);
 
-		const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+		const result = await new Promise<{
+			stdout: string;
+			stderr: string;
+			exitCode: number;
+		}>((resolve, reject) => {
+			const timeoutMs = getSandboxTimeout(language);
 			const timeoutId = setTimeout(async () => {
 				// SECURITY: Kill the container on timeout, not just reject
 				try {
-					await sandbox.container.kill({ signal: 'SIGKILL' });
+					await sandbox.container.kill({ signal: "SIGKILL" });
 				} catch {
 					// Container may already be stopped
 				}
-				reject(new Error(`Sandbox execution timed out after ${SANDBOX_TIMEOUT_MS}ms`));
-			}, SANDBOX_TIMEOUT_MS);
+				reject(new Error(`Sandbox execution timed out after ${timeoutMs}ms`));
+			}, timeoutMs);
 
-			sandbox.execute(wrappedCode)
+			sandbox
+				.execute(wrappedCode)
 				.then((res) => {
 					clearTimeout(timeoutId);
 					resolve(res);
@@ -628,34 +691,81 @@ export async function executeCode(code: string, language: SandboxLanguage): Prom
 		});
 
 		const outputInspection =
-			result.exitCode === 0 ? await inspectOutputDirectory(sandbox.container, language) : null;
+			result.exitCode === 0
+				? await inspectOutputDirectory(sandbox.container, language)
+				: null;
 
 		let files: FileOutput[] = [];
 		let extractionError: string | undefined;
 		try {
 			files = await extractFilesFromContainer(sandbox.container);
 			if (files.length === 0 && (outputInspection?.files.length ?? 0) > 0) {
-				console.warn('[FILE_GENERATE] Archive extraction missed in-container output files; falling back to in-container read', {
-					containerId: sandbox.container.id,
-					fileCount: outputInspection?.files.length ?? 0,
-					files: outputInspection?.files ?? [],
-				});
+				console.warn(
+					"[FILE_GENERATE] Archive extraction missed in-container output files; falling back to in-container read",
+					{
+						containerId: sandbox.container.id,
+						fileCount: outputInspection?.files.length ?? 0,
+						files: outputInspection?.files ?? [],
+					},
+				);
 				files = await readFilesFromInsideContainer(
 					sandbox.container,
 					language,
-					outputInspection?.files ?? []
+					outputInspection?.files ?? [],
 				);
 			}
 		} catch (error) {
 			extractionError = error instanceof Error ? error.message : String(error);
 		}
 
-		if (!extractionError && files.length === 0 && (outputInspection?.files.length ?? 0) > 0) {
-			extractionError = 'Generated files were visible inside the sandbox but could not be collected';
+		// Re-inspection: if execution succeeded but no files were collected, wait briefly and retry once.
+		// This mitigates JS async writes that finish after the process reports exit code 0.
+		if (result.exitCode === 0 && files.length === 0) {
+			await new Promise((r) => setTimeout(r, 1500));
+			const reInspection = await inspectOutputDirectory(
+				sandbox.container,
+				language,
+			);
+			if (
+				reInspection &&
+				reInspection.files.length > 0 &&
+				extractionError === undefined
+			) {
+				console.warn(
+					"[FILE_GENERATE] Re-inspection found output files after initial empty result; retrying collection",
+					{
+						containerId: sandbox.container.id,
+						fileCount: reInspection.files.length,
+						files: reInspection.files,
+					},
+				);
+				try {
+					files = await readFilesFromInsideContainer(
+						sandbox.container,
+						language,
+						reInspection.files,
+					);
+				} catch (error) {
+					extractionError =
+						error instanceof Error ? error.message : String(error);
+				}
+			}
 		}
 
-		const error = classifyError(result.stderr, result.exitCode) ??
-			(extractionError ? `Failed to collect generated files: ${extractionError}` : undefined);
+		if (
+			!extractionError &&
+			files.length === 0 &&
+			(outputInspection?.files.length ?? 0) > 0
+		) {
+			extractionError =
+				"Generated files were visible inside the sandbox but could not be collected";
+		}
+
+		const error =
+			classifyError(result.stderr, result.exitCode) ??
+			(extractionError
+				? `Failed to collect generated files: ${extractionError}`
+				: undefined);
 
 		return {
 			files,
@@ -667,19 +777,19 @@ export async function executeCode(code: string, language: SandboxLanguage): Prom
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
 
-		if (errorMessage.includes('timed out')) {
+		if (errorMessage.includes("timed out")) {
 			return {
 				files: [],
-				stdout: '',
-				stderr: '',
-				error: 'Execution timed out',
+				stdout: "",
+				stderr: "",
+				error: "Execution timed out",
 			};
 		}
 
 		return {
 			files: [],
-			stdout: '',
-			stderr: '',
+			stdout: "",
+			stderr: "",
 			error: `Execution failed: ${errorMessage}`,
 		};
 	} finally {

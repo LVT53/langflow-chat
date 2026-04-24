@@ -1,120 +1,138 @@
 <script lang="ts">
-	import type { DocumentWorkspaceItem } from '$lib/types';
-	import { formatByteSize } from '$lib/utils/format';
+import type { DocumentWorkspaceItem } from "$lib/types";
+import { formatByteSize } from "$lib/utils/format";
 
-	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
+type FilePreviewModule =
+	typeof import("$lib/components/knowledge/FilePreview.svelte");
 
-	interface GeneratedFileProps {
-		fileId: string;
-		conversationId: string;
-		artifactId?: string | null;
-		documentFamilyId?: string | null;
-		documentFamilyStatus?: 'active' | 'historical' | null;
-		documentLabel?: string | null;
-		documentRole?: string | null;
-		versionNumber?: number | null;
-		originConversationId?: string | null;
-		originAssistantMessageId?: string | null;
-		sourceChatFileId?: string | null;
-		filename: string;
-		size: number;
-		mimeType: string;
-		downloadUrl: string;
-		status: 'generating' | 'success' | 'failed';
-		error?: string;
-		onOpen?: ((document: DocumentWorkspaceItem) => void) | undefined;
+interface GeneratedFileProps {
+	fileId: string;
+	conversationId: string;
+	artifactId?: string | null;
+	documentFamilyId?: string | null;
+	documentFamilyStatus?: "active" | "historical" | null;
+	documentLabel?: string | null;
+	documentRole?: string | null;
+	versionNumber?: number | null;
+	originConversationId?: string | null;
+	originAssistantMessageId?: string | null;
+	sourceChatFileId?: string | null;
+	filename: string;
+	size: number;
+	mimeType: string;
+	downloadUrl: string;
+	status: "generating" | "success" | "failed";
+	error?: string;
+	onOpen?: ((document: DocumentWorkspaceItem) => void) | undefined;
+}
+
+let {
+	fileId,
+	conversationId,
+	artifactId = null,
+	documentFamilyId = null,
+	documentFamilyStatus = null,
+	documentLabel = null,
+	documentRole = null,
+	versionNumber = null,
+	originConversationId = null,
+	originAssistantMessageId = null,
+	sourceChatFileId = null,
+	filename,
+	size,
+	mimeType,
+	downloadUrl,
+	status,
+	error,
+	onOpen = undefined,
+}: GeneratedFileProps = $props();
+
+let showPreview = $state(false);
+let canPreview = $derived(status === "success");
+let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
+
+function getFileIcon() {
+	if (mimeType.startsWith("image/")) {
+		return ImageIcon;
+	}
+	if (mimeType === "application/pdf") {
+		return PdfIcon;
+	}
+	if (
+		mimeType.includes("spreadsheet") ||
+		mimeType.includes("excel") ||
+		mimeType.includes("csv")
+	) {
+		return SpreadsheetIcon;
+	}
+	if (mimeType.includes("document") || mimeType.includes("word")) {
+		return DocumentIcon;
+	}
+	if (
+		mimeType.includes("code") ||
+		mimeType.includes("javascript") ||
+		mimeType.includes("typescript") ||
+		mimeType.includes("json") ||
+		mimeType.includes("xml") ||
+		mimeType.includes("html") ||
+		mimeType.includes("css")
+	) {
+		return CodeIcon;
+	}
+	if (
+		mimeType.includes("zip") ||
+		mimeType.includes("compressed") ||
+		mimeType.includes("archive")
+	) {
+		return ArchiveIcon;
+	}
+	return GenericFileIcon;
+}
+
+function handlePreviewOpen() {
+	if (!canPreview) return;
+	if (onOpen) {
+		onOpen({
+			id: fileId,
+			source: "chat_generated_file",
+			filename,
+			title: documentLabel ?? filename,
+			documentFamilyId,
+			documentFamilyStatus,
+			documentLabel,
+			documentRole,
+			versionNumber,
+			originConversationId,
+			originAssistantMessageId,
+			sourceChatFileId,
+			mimeType,
+			previewUrl: `/api/chat/files/${fileId}/preview`,
+			artifactId,
+			conversationId,
+			downloadUrl,
+		});
+		return;
+	}
+	showPreview = true;
+}
+
+function handlePreviewClose() {
+	showPreview = false;
+}
+
+async function ensureFilePreviewModule() {
+	if (!filePreviewModulePromise) {
+		filePreviewModulePromise = import(
+			"$lib/components/knowledge/FilePreview.svelte"
+		);
 	}
 
-	let {
-		fileId,
-		conversationId,
-		artifactId = null,
-		documentFamilyId = null,
-		documentFamilyStatus = null,
-		documentLabel = null,
-		documentRole = null,
-		versionNumber = null,
-		originConversationId = null,
-		originAssistantMessageId = null,
-		sourceChatFileId = null,
-		filename,
-		size,
-		mimeType,
-		downloadUrl,
-		status,
-		error,
-		onOpen = undefined,
-	}: GeneratedFileProps = $props();
+	return filePreviewModulePromise;
+}
 
-	let showPreview = $state(false);
-	let canPreview = $derived(status === 'success');
-	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
-
-	function getFileIcon() {
-		if (mimeType.startsWith('image/')) {
-			return ImageIcon;
-		}
-		if (mimeType === 'application/pdf') {
-			return PdfIcon;
-		}
-		if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) {
-			return SpreadsheetIcon;
-		}
-		if (mimeType.includes('document') || mimeType.includes('word')) {
-			return DocumentIcon;
-		}
-		if (mimeType.includes('code') || mimeType.includes('javascript') || mimeType.includes('typescript') || mimeType.includes('json') || mimeType.includes('xml') || mimeType.includes('html') || mimeType.includes('css')) {
-			return CodeIcon;
-		}
-		if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) {
-			return ArchiveIcon;
-		}
-		return GenericFileIcon;
-	}
-
-	function handlePreviewOpen() {
-		if (!canPreview) return;
-		if (onOpen) {
-			onOpen({
-				id: fileId,
-				source: 'chat_generated_file',
-				filename,
-				title: documentLabel ?? filename,
-				documentFamilyId,
-				documentFamilyStatus,
-				documentLabel,
-				documentRole,
-				versionNumber,
-				originConversationId,
-				originAssistantMessageId,
-				sourceChatFileId,
-				mimeType,
-				previewUrl: `/api/chat/files/${fileId}/preview`,
-				artifactId,
-				conversationId,
-				downloadUrl,
-			});
-			return;
-		}
-		showPreview = true;
-	}
-
-	function handlePreviewClose() {
-		showPreview = false;
-	}
-
-	async function ensureFilePreviewModule() {
-		if (!filePreviewModulePromise) {
-			filePreviewModulePromise = import('$lib/components/knowledge/FilePreview.svelte');
-		}
-
-		return filePreviewModulePromise;
-	}
-
-	function stopActionPropagation(event: MouseEvent) {
-		event.stopPropagation();
-	}
-
+function stopActionPropagation(event: MouseEvent) {
+	event.stopPropagation();
+}
 </script>
 
 {#snippet GenericFileIcon()}
@@ -627,13 +645,14 @@
 
 	@media (max-width: 720px) {
 		.generated-file-card {
-			flex-wrap: wrap;
-			align-items: flex-start;
+			flex-wrap: nowrap;
+			align-items: center;
 		}
 
 		.file-actions {
-			width: 100%;
-			justify-content: flex-start;
+			width: auto;
+			justify-content: flex-end;
+			flex-shrink: 0;
 		}
 	}
 </style>

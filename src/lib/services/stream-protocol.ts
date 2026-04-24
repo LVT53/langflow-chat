@@ -1,10 +1,20 @@
-export const THINKING_OPEN_TAG = '<thinking>';
-export const THINKING_CLOSE_TAG = '</thinking>';
-export const HERMES_THINKING_OPEN_TAG = '<think>';
-export const HERMES_THINKING_CLOSE_TAG = '</think>';
+export const THINKING_OPEN_TAG = "<thinking>";
+export const THINKING_CLOSE_TAG = "</thinking>";
+export const HERMES_THINKING_OPEN_TAG = "好吗";
+export const HERMES_THINKING_CLOSE_TAG = "吗";
+export const DEEPSEEK_THINKING_OPEN_TAG = "<think>";
+export const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
 
-const THINKING_OPEN_TAGS = [THINKING_OPEN_TAG, HERMES_THINKING_OPEN_TAG] as const;
-const THINKING_CLOSE_TAGS = [THINKING_CLOSE_TAG, HERMES_THINKING_CLOSE_TAG] as const;
+const THINKING_OPEN_TAGS = [
+	THINKING_OPEN_TAG,
+	HERMES_THINKING_OPEN_TAG,
+	DEEPSEEK_THINKING_OPEN_TAG,
+] as const;
+const THINKING_CLOSE_TAGS = [
+	THINKING_CLOSE_TAG,
+	HERMES_THINKING_CLOSE_TAG,
+	DEEPSEEK_THINKING_CLOSE_TAG,
+] as const;
 
 export interface InlineThinkingState {
 	buffer: string;
@@ -12,8 +22,8 @@ export interface InlineThinkingState {
 }
 
 interface InlineThinkingEmitters {
-	onVisible: (chunk: string) => boolean | void;
-	onThinking: (chunk: string) => boolean | void;
+	onVisible: (chunk: string) => boolean | undefined;
+	onThinking: (chunk: string) => boolean | undefined;
 }
 
 interface TagMatch {
@@ -23,7 +33,7 @@ interface TagMatch {
 
 export function createInlineThinkingState(): InlineThinkingState {
 	return {
-		buffer: '',
+		buffer: "",
 		insideThinking: false,
 	};
 }
@@ -40,7 +50,10 @@ export function getPartialTagPrefixLength(value: string, tag: string): number {
 	return 0;
 }
 
-function emitChunk(emit: (chunk: string) => boolean | void, chunk: string): boolean {
+function emitChunk(
+	emit: (chunk: string) => boolean | undefined,
+	chunk: string,
+): boolean {
 	if (!chunk) {
 		return true;
 	}
@@ -48,7 +61,10 @@ function emitChunk(emit: (chunk: string) => boolean | void, chunk: string): bool
 	return emit(chunk) !== false;
 }
 
-function findFirstTagMatch(value: string, tags: readonly string[]): TagMatch | null {
+function findFirstTagMatch(
+	value: string,
+	tags: readonly string[],
+): TagMatch | null {
 	let bestMatch: TagMatch | null = null;
 
 	for (const tag of tags) {
@@ -64,7 +80,10 @@ function findFirstTagMatch(value: string, tags: readonly string[]): TagMatch | n
 	return bestMatch;
 }
 
-function getPartialTagPrefixLengthForAny(value: string, tags: readonly string[]): number {
+function getPartialTagPrefixLengthForAny(
+	value: string,
+	tags: readonly string[],
+): number {
 	let bestLength = 0;
 
 	for (const tag of tags) {
@@ -77,7 +96,7 @@ function getPartialTagPrefixLengthForAny(value: string, tags: readonly string[])
 export function processInlineThinkingChunk(
 	state: InlineThinkingState,
 	chunk: string,
-	emitters: InlineThinkingEmitters
+	emitters: InlineThinkingEmitters,
 ): boolean {
 	if (!chunk) {
 		return true;
@@ -93,12 +112,17 @@ export function processInlineThinkingChunk(
 				if (!emitChunk(emitters.onThinking, thinkingChunk)) {
 					return false;
 				}
-				state.buffer = state.buffer.slice(closeMatch.index + closeMatch.tag.length);
+				state.buffer = state.buffer.slice(
+					closeMatch.index + closeMatch.tag.length,
+				);
 				state.insideThinking = false;
 				continue;
 			}
 
-			const partialCloseLength = getPartialTagPrefixLengthForAny(state.buffer, THINKING_CLOSE_TAGS);
+			const partialCloseLength = getPartialTagPrefixLengthForAny(
+				state.buffer,
+				THINKING_CLOSE_TAGS,
+			);
 			const flushLength = state.buffer.length - partialCloseLength;
 			if (flushLength > 0) {
 				const thinkingChunk = state.buffer.slice(0, flushLength);
@@ -121,7 +145,10 @@ export function processInlineThinkingChunk(
 			continue;
 		}
 
-		const partialOpenLength = getPartialTagPrefixLengthForAny(state.buffer, THINKING_OPEN_TAGS);
+		const partialOpenLength = getPartialTagPrefixLengthForAny(
+			state.buffer,
+			THINKING_OPEN_TAGS,
+		);
 		const flushLength = state.buffer.length - partialOpenLength;
 		if (flushLength > 0) {
 			const visibleChunk = state.buffer.slice(0, flushLength);
@@ -138,21 +165,23 @@ export function processInlineThinkingChunk(
 
 export function flushInlineThinkingState(
 	state: InlineThinkingState,
-	emitters: InlineThinkingEmitters
+	emitters: InlineThinkingEmitters,
 ): boolean {
 	if (!state.buffer) {
 		return true;
 	}
 
 	const remainder = state.buffer;
-	state.buffer = '';
+	state.buffer = "";
 
 	if (state.insideThinking) {
 		state.insideThinking = false;
 		return emitChunk(emitters.onThinking, remainder);
 	}
 
-	const isPartialOpenTag = THINKING_OPEN_TAGS.some((tag) => tag.startsWith(remainder));
+	const isPartialOpenTag = THINKING_OPEN_TAGS.some((tag) =>
+		tag.startsWith(remainder),
+	);
 	if (isPartialOpenTag) {
 		return true;
 	}
@@ -162,7 +191,7 @@ export function flushInlineThinkingState(
 
 export function extractVisibleTextFromModelResponse(value: string): string {
 	const state = createInlineThinkingState();
-	let visibleText = '';
+	let visibleText = "";
 
 	processInlineThinkingChunk(state, value, {
 		onVisible(chunk) {
@@ -181,28 +210,30 @@ export function extractVisibleTextFromModelResponse(value: string): string {
 		},
 	});
 
-	return visibleText.replace(/<\/?preserve>/gi, '');
+	return visibleText.replace(/<\/?preserve>/gi, "");
 }
 
 // Shared friendly error map — used by server stream and client helpers
 export const FRIENDLY_STREAM_ERRORS = {
-	timeout: 'The response is taking too long. Please try again.',
-	network: 'We could not reach the chat service. Check your connection and try again.',
-	backend_failure: 'We hit a temporary issue generating a response. Please try again.',
+	timeout: "The response is taking too long. Please try again.",
+	network:
+		"We could not reach the chat service. Check your connection and try again.",
+	backend_failure:
+		"We hit a temporary issue generating a response. Please try again.",
 } as const;
 
 export type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;
 
 // --- Internal stream parsing helpers ---
 function getNestedObject(value: unknown): Record<string, unknown> | null {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return null;
 	}
 	return value as Record<string, unknown>;
 }
 
 function getFirstChoice(
-	payload: Record<string, unknown>
+	payload: Record<string, unknown>,
 ): Record<string, unknown> | null {
 	if (
 		!payload ||
@@ -218,7 +249,7 @@ function getFirstChoice(
 
 function getTextFromContentBlocks(value: unknown): string {
 	if (!Array.isArray(value)) {
-		return '';
+		return "";
 	}
 
 	const prioritized: Array<{ text: string; priority: number }> = [];
@@ -236,25 +267,25 @@ function getTextFromContentBlocks(value: unknown): string {
 			}
 
 			const text =
-				typeof contentRecord.text === 'string' ? contentRecord.text.trim() : '';
+				typeof contentRecord.text === "string" ? contentRecord.text.trim() : "";
 			if (!text) {
 				continue;
 			}
 
 			const header = getNestedObject(contentRecord.header);
 			const headerTitle =
-				typeof header?.title === 'string'
+				typeof header?.title === "string"
 					? header.title.toLowerCase().trim()
-					: '';
+					: "";
 
-			if (headerTitle.includes('input')) {
+			if (headerTitle.includes("input")) {
 				continue;
 			}
 
 			const priority =
-				headerTitle.includes('output') ||
-				headerTitle.includes('answer') ||
-				headerTitle.includes('response')
+				headerTitle.includes("output") ||
+				headerTitle.includes("answer") ||
+				headerTitle.includes("response")
 					? 2
 					: 1;
 
@@ -263,32 +294,32 @@ function getTextFromContentBlocks(value: unknown): string {
 	}
 
 	if (prioritized.length === 0) {
-		return '';
+		return "";
 	}
 
 	const highestPriority = prioritized.reduce(
 		(best, entry) => Math.max(best, entry.priority),
-		0
+		0,
 	);
 
 	return prioritized
 		.filter((entry) => entry.priority === highestPriority)
 		.map((entry) => entry.text)
-		.join('\n')
+		.join("\n")
 		.trim();
 }
 
 function getTextContent(value: unknown): string {
-	if (typeof value === 'string') {
+	if (typeof value === "string") {
 		return value;
 	}
 
 	const payload = getNestedObject(value);
-	if (!payload) return '';
+	if (!payload) return "";
 
 	const choice = getFirstChoice(payload);
 	if (choice) {
-		for (const key of ['delta', 'message']) {
+		for (const key of ["delta", "message"]) {
 			if (key in choice) {
 				const nestedContent = getTextContent(choice[key]);
 				if (nestedContent) {
@@ -298,26 +329,31 @@ function getTextContent(value: unknown): string {
 		}
 	}
 
-	for (const key of ['text', 'chunk', 'content']) {
+	for (const key of ["text", "chunk", "content"]) {
 		const candidate = payload[key];
-		if (typeof candidate === 'string' && candidate.length > 0) {
+		if (typeof candidate === "string" && candidate.length > 0) {
 			return candidate;
 		}
 	}
 
-	if ('content_blocks' in payload) {
+	if ("content_blocks" in payload) {
 		const contentBlocksText = getTextFromContentBlocks(payload.content_blocks);
 		if (contentBlocksText) {
 			return contentBlocksText;
 		}
 	}
 
-	if ('data' in payload) {
+	if ("data" in payload) {
 		return getTextContent(payload.data);
 	}
 
-	return '';
+	return "";
 }
 
 // Exported for stream.ts import
-export { getNestedObject, getFirstChoice, getTextFromContentBlocks, getTextContent };
+export {
+	getFirstChoice,
+	getNestedObject,
+	getTextContent,
+	getTextFromContentBlocks,
+};

@@ -1,19 +1,22 @@
-import { validateJsonBody } from '$lib/server/api/responses';
-import { previewText } from '$lib/server/utils/text';
-import { json } from '@sveltejs/kit';
-import { randomUUID } from 'crypto';
-import path from 'path';
-import type { RequestHandler } from './$types';
-import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
-import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
-import { executeCode } from '$lib/server/services/sandbox-execution';
-import { storeGeneratedFile } from '$lib/server/services/chat-files';
-import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { json } from "@sveltejs/kit";
+import { validateJsonBody } from "$lib/server/api/responses";
+import { verifyFileGenerateServiceAssertion } from "$lib/server/auth/hooks";
+import { storeGeneratedFile } from "$lib/server/services/chat-files";
+import {
+	getConversation,
+	getConversationUserId,
+} from "$lib/server/services/conversations";
+import { runUserMemoryMaintenance } from "$lib/server/services/memory-maintenance";
+import { executeCode } from "$lib/server/services/sandbox-execution";
+import { previewText } from "$lib/server/utils/text";
+import type { RequestHandler } from "./$types";
 
 interface GenerateRequest {
 	conversationId: string;
 	code: string;
-	language: 'python' | 'javascript';
+	language: "python" | "javascript";
 	filename?: string;
 }
 
@@ -25,19 +28,24 @@ interface FileMetadata {
 	mimeType: string;
 }
 
-
 function summarizeExecutionFiles(
-	files: Array<{ filename: string; mimeType?: string; content: Buffer | Uint8Array }>
+	files: Array<{
+		filename: string;
+		mimeType?: string;
+		content: Buffer | Uint8Array;
+	}>,
 ) {
 	return files.map((file) => ({
 		filename: file.filename,
-		mimeType: file.mimeType ?? 'application/octet-stream',
-		sizeBytes: Buffer.isBuffer(file.content) ? file.content.length : Buffer.byteLength(file.content),
+		mimeType: file.mimeType ?? "application/octet-stream",
+		sizeBytes: Buffer.isBuffer(file.content)
+			? file.content.length
+			: Buffer.byteLength(file.content),
 	}));
 }
 
 function getLowercaseExtension(filename: string | undefined): string {
-	if (!filename) return '';
+	if (!filename) return "";
 	return path.extname(filename).toLowerCase();
 }
 
@@ -48,28 +56,34 @@ function toBuffer(content: Buffer | Uint8Array): Buffer {
 function looksLikePdf(content: Buffer | Uint8Array): boolean {
 	const buffer = toBuffer(content);
 	if (buffer.length < 5) return false;
-	return buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+	return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
 }
 
-function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | { ok: false; error: string; status: number } {
+function validateRequest(
+	body: unknown,
+):
+	| { ok: true; value: GenerateRequest }
+	| { ok: false; error: string; status: number } {
 	const base = validateJsonBody(body);
 	if (!base.ok) return base;
 	const { conversationId, code, language, filename } = base.body;
 
-
-	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
-		return { ok: false, error: 'conversationId is required', status: 400 };
+	if (
+		typeof conversationId !== "string" ||
+		conversationId.trim().length === 0
+	) {
+		return { ok: false, error: "conversationId is required", status: 400 };
 	}
 
-	if (typeof code !== 'string' || code.trim().length === 0) {
-		return { ok: false, error: 'code is required', status: 400 };
+	if (typeof code !== "string" || code.trim().length === 0) {
+		return { ok: false, error: "code is required", status: 400 };
 	}
 
-	if (typeof language !== 'string' || language.trim().length === 0) {
-		return { ok: false, error: 'language is required', status: 400 };
+	if (typeof language !== "string" || language.trim().length === 0) {
+		return { ok: false, error: "language is required", status: 400 };
 	}
 
-	if (language !== 'python' && language !== 'javascript') {
+	if (language !== "python" && language !== "javascript") {
 		return {
 			ok: false,
 			error: `Unsupported language: ${language}. Supported languages are 'python' and 'javascript'.`,
@@ -82,8 +96,8 @@ function validateRequest(body: unknown): { ok: true; value: GenerateRequest } | 
 		value: {
 			conversationId: conversationId.trim(),
 			code: code.trim(),
-			language: language.trim() as GenerateRequest['language'],
-			filename: typeof filename === 'string' ? filename.trim() : undefined,
+			language: language.trim() as GenerateRequest["language"],
+			filename: typeof filename === "string" ? filename.trim() : undefined,
 		},
 	};
 }
@@ -92,22 +106,22 @@ export const POST: RequestHandler = async (event) => {
 	const requestId = randomUUID().slice(0, 8);
 	const user = event.locals.user ?? null;
 
-	if (!user && !event.request.headers.get('authorization')) {
-		console.warn('[FILE_GENERATE] Unauthorized request', { requestId });
-		return json({ error: 'Unauthorized' }, { status: 401 });
+	if (!user && !event.request.headers.get("authorization")) {
+		console.warn("[FILE_GENERATE] Unauthorized request", { requestId });
+		return json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	let body: unknown;
 	try {
 		body = await event.request.json();
 	} catch {
-		console.warn('[FILE_GENERATE] Invalid JSON body', { requestId });
-		return json({ error: 'Invalid JSON body' }, { status: 400 });
+		console.warn("[FILE_GENERATE] Invalid JSON body", { requestId });
+		return json({ error: "Invalid JSON body" }, { status: 400 });
 	}
 
 	const validation = validateRequest(body);
 	if (validation.ok === false) {
-		console.warn('[FILE_GENERATE] Request validation failed', {
+		console.warn("[FILE_GENERATE] Request validation failed", {
 			requestId,
 			error: validation.error,
 			status: validation.status,
@@ -115,32 +129,39 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: validation.error }, { status: validation.status });
 	}
 
-	const { conversationId, code, filename: customFilename, language } = validation.value;
+	const {
+		conversationId,
+		code,
+		filename: customFilename,
+		language,
+	} = validation.value;
 
 	const serviceAssertion =
 		user === null
-			? verifyFileGenerateServiceAssertion(event.request.headers.get('authorization'))
+			? verifyFileGenerateServiceAssertion(
+					event.request.headers.get("authorization"),
+				)
 			: null;
-	if (user === null && (!serviceAssertion || !serviceAssertion.valid)) {
+	if (user === null && !serviceAssertion?.valid) {
 		const failureReason =
 			serviceAssertion && serviceAssertion.valid === false
 				? serviceAssertion.reason
-				: 'missing_assertion';
-		console.warn('[FILE_GENERATE] Invalid service assertion', {
+				: "missing_assertion";
+		console.warn("[FILE_GENERATE] Invalid service assertion", {
 			requestId,
 			reason: failureReason,
 		});
-		return json({ error: 'Unauthorized' }, { status: 401 });
+		return json({ error: "Unauthorized" }, { status: 401 });
 	}
-	console.info('[FILE_GENERATE] Request received', {
+	console.info("[FILE_GENERATE] Request received", {
 		requestId,
 		conversationId,
-		authMode: user ? 'session' : 'service',
+		authMode: user ? "session" : "service",
 		userId: user?.id ?? null,
 		language,
 		customFilename: customFilename ?? null,
 		codeLength: code.length,
-		writesToOutput: code.includes('/output'),
+		writesToOutput: code.includes("/output"),
 		codePreview: previewText(code),
 	});
 
@@ -149,59 +170,67 @@ export const POST: RequestHandler = async (event) => {
 		// Session-authenticated browser requests stay user-scoped.
 		const conversation = await getConversation(user.id, conversationId);
 		if (!conversation) {
-			console.warn('[FILE_GENERATE] Conversation not found for session request', {
-				requestId,
-				conversationId,
-				userId: user.id,
-			});
-			return json({ error: 'Conversation not found' }, { status: 404 });
+			console.warn(
+				"[FILE_GENERATE] Conversation not found for session request",
+				{
+					requestId,
+					conversationId,
+					userId: user.id,
+				},
+			);
+			return json({ error: "Conversation not found" }, { status: 404 });
 		}
 		ownerUserId = user.id;
 	} else {
-		if (!serviceAssertion || !serviceAssertion.valid) {
-			return json({ error: 'Unauthorized' }, { status: 401 });
+		if (!serviceAssertion?.valid) {
+			return json({ error: "Unauthorized" }, { status: 401 });
 		}
 
 		const assertedConversationId = serviceAssertion.claims.conversationId;
 		if (assertedConversationId !== conversationId) {
-			console.warn('[FILE_GENERATE] Service assertion conversation mismatch', {
+			console.warn("[FILE_GENERATE] Service assertion conversation mismatch", {
 				requestId,
 				conversationId,
 				assertedConversationId,
 			});
-			return json({ error: 'Conversation not found' }, { status: 404 });
+			return json({ error: "Conversation not found" }, { status: 404 });
 		}
 
 		const conversationUserId = await getConversationUserId(conversationId);
 		if (!conversationUserId) {
-			console.warn('[FILE_GENERATE] Conversation not found for service request', {
-				requestId,
-				conversationId,
-				assertedUserId: serviceAssertion.claims.userId ?? null,
-				conversationUserId,
-			});
-			return json({ error: 'Conversation not found' }, { status: 404 });
+			console.warn(
+				"[FILE_GENERATE] Conversation not found for service request",
+				{
+					requestId,
+					conversationId,
+					assertedUserId: serviceAssertion.claims.userId ?? null,
+					conversationUserId,
+				},
+			);
+			return json({ error: "Conversation not found" }, { status: 404 });
 		}
 
 		ownerUserId = conversationUserId;
 	}
 
-	void runUserMemoryMaintenance(ownerUserId, 'file_generate_service').catch((error) => {
-		console.error('[FILE_GENERATE] Deferred maintenance failed', {
-			requestId,
-			conversationId,
-			ownerUserId,
-			error,
-		});
-	});
+	void runUserMemoryMaintenance(ownerUserId, "file_generate_service").catch(
+		(error) => {
+			console.error("[FILE_GENERATE] Deferred maintenance failed", {
+				requestId,
+				conversationId,
+				ownerUserId,
+				error,
+			});
+		},
+	);
 
 	// Execute code in sandbox with retry for transient failures
 	const MAX_RETRIES = 2;
 	const RETRY_DELAYS_MS = [500, 1000];
 	const TRANSIENT_ERROR_PATTERNS = [
-		'Execution timed out',
-		'temporary storage exhausted',
-		'sandbox runtime error',
+		"Execution timed out",
+		"temporary storage exhausted",
+		"sandbox runtime error",
 	];
 
 	let executionResult: Awaited<ReturnType<typeof executeCode>>;
@@ -209,7 +238,7 @@ export const POST: RequestHandler = async (event) => {
 		try {
 			executionResult = await executeCode(code, language);
 		} catch (error) {
-			console.error('[FILE_GENERATE] Sandbox execution threw', {
+			console.error("[FILE_GENERATE] Sandbox execution threw", {
 				requestId,
 				conversationId,
 				ownerUserId,
@@ -217,8 +246,8 @@ export const POST: RequestHandler = async (event) => {
 				attempt: attempt + 1,
 			});
 			return json(
-				{ error: 'Failed to execute code in sandbox' },
-				{ status: 500 }
+				{ error: "Failed to execute code in sandbox" },
+				{ status: 500 },
 			);
 		}
 
@@ -227,24 +256,29 @@ export const POST: RequestHandler = async (event) => {
 		}
 
 		const isTransient = TRANSIENT_ERROR_PATTERNS.some((pattern) =>
-			executionResult.error!.includes(pattern)
+			executionResult.error?.includes(pattern),
 		);
 		if (!isTransient) {
 			break;
 		}
 
 		if (attempt < MAX_RETRIES) {
-			console.warn('[FILE_GENERATE] Sandbox execution returned transient error, retrying', {
-				requestId,
-				attempt: attempt + 1,
-				maxRetries: MAX_RETRIES,
-				error: executionResult.error,
-			});
-			await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+			console.warn(
+				"[FILE_GENERATE] Sandbox execution returned transient error, retrying",
+				{
+					requestId,
+					attempt: attempt + 1,
+					maxRetries: MAX_RETRIES,
+					error: executionResult.error,
+				},
+			);
+			await new Promise((resolve) =>
+				setTimeout(resolve, RETRY_DELAYS_MS[attempt]),
+			);
 		}
 	}
 
-	console.info('[FILE_GENERATE] Sandbox execution completed', {
+	console.info("[FILE_GENERATE] Sandbox execution completed", {
 		requestId,
 		conversationId,
 		ownerUserId,
@@ -257,57 +291,76 @@ export const POST: RequestHandler = async (event) => {
 
 	// Check for execution errors
 	if (executionResult.error) {
-		console.warn('[FILE_GENERATE] Sandbox execution returned error', {
+		console.warn("[FILE_GENERATE] Sandbox execution returned error", {
 			requestId,
 			conversationId,
 			error: executionResult.error,
 			stdoutPreview: previewText(executionResult.stdout),
 			stderrPreview: previewText(executionResult.stderr),
 		});
-		return json(
-			{ error: executionResult.error },
-			{ status: 500 }
-		);
+		// Treat async-write guidance as a user-correctable 422 rather than a server 500
+		const status = executionResult.error.includes("async file write")
+			? 422
+			: 500;
+		return json({ error: executionResult.error }, { status });
 	}
 
 	if (executionResult.files.length === 0) {
-		console.warn('[FILE_GENERATE] Sandbox finished without files', {
+		console.warn("[FILE_GENERATE] Sandbox finished without files", {
 			requestId,
 			conversationId,
 			ownerUserId,
-			writesToOutput: code.includes('/output'),
+			writesToOutput: code.includes("/output"),
 			stdoutPreview: previewText(executionResult.stdout),
 			stderrPreview: previewText(executionResult.stderr),
 		});
+		const asyncHint =
+			executionResult.stderr.includes("UnhandledPromiseRejection") ||
+			executionResult.stderr.includes("Promise")
+				? " An asynchronous file write may have been abandoned. Use synchronous writes (e.g., fs.writeFileSync) or ensure all Promises are awaited before the script ends."
+				: "";
 		return json(
 			{
 				error:
-					'The sandbox finished without creating a file. Write the final output file to /output so it can be stored and shown in chat.',
+					"The sandbox finished without creating a file. Write the final output file to /output so it can be stored and shown in chat." +
+					asyncHint,
 			},
-			{ status: 422 }
+			{ status: 422 },
 		);
 	}
 
 	if (customFilename && executionResult.files.length !== 1) {
-		console.warn('[FILE_GENERATE] Custom filename requires a single generated file', {
-			requestId,
-			conversationId,
-			ownerUserId,
-			customFilename,
-			generatedFileCount: executionResult.files.length,
-			files: summarizeExecutionFiles(executionResult.files),
-		});
+		console.warn(
+			"[FILE_GENERATE] Custom filename requires a single generated file",
+			{
+				requestId,
+				conversationId,
+				ownerUserId,
+				customFilename,
+				generatedFileCount: executionResult.files.length,
+				files: summarizeExecutionFiles(executionResult.files),
+			},
+		);
 		return json(
-			{ error: 'Custom filename can only be used when exactly one output file is generated.' },
-			{ status: 422 }
+			{
+				error:
+					"Custom filename can only be used when exactly one output file is generated.",
+			},
+			{ status: 422 },
 		);
 	}
 
 	if (customFilename) {
 		const customExtension = getLowercaseExtension(customFilename);
-		const generatedExtension = getLowercaseExtension(executionResult.files[0]?.filename);
-		if (customExtension && generatedExtension && customExtension !== generatedExtension) {
-			console.warn('[FILE_GENERATE] Custom filename extension mismatch', {
+		const generatedExtension = getLowercaseExtension(
+			executionResult.files[0]?.filename,
+		);
+		if (
+			customExtension &&
+			generatedExtension &&
+			customExtension !== generatedExtension
+		) {
+			console.warn("[FILE_GENERATE] Custom filename extension mismatch", {
 				requestId,
 				conversationId,
 				ownerUserId,
@@ -318,29 +371,41 @@ export const POST: RequestHandler = async (event) => {
 				generatedMimeType: executionResult.files[0]?.mimeType ?? null,
 			});
 			return json(
-				{ error: 'Custom filename extension must match the generated output file type.' },
-				{ status: 422 }
+				{
+					error:
+						"Custom filename extension must match the generated output file type.",
+				},
+				{ status: 422 },
 			);
 		}
 	}
 
 	for (const generatedFile of executionResult.files) {
 		const effectiveFilename = customFilename || generatedFile.filename;
-		if (getLowercaseExtension(effectiveFilename) === '.pdf' && !looksLikePdf(generatedFile.content)) {
-			console.warn('[FILE_GENERATE] Generated file failed PDF signature check', {
-				requestId,
-				conversationId,
-				ownerUserId,
-				effectiveFilename,
-				generatedFilename: generatedFile.filename,
-				generatedMimeType: generatedFile.mimeType ?? null,
-				sizeBytes: Buffer.isBuffer(generatedFile.content)
-					? generatedFile.content.length
-					: Buffer.byteLength(generatedFile.content),
-			});
+		if (
+			getLowercaseExtension(effectiveFilename) === ".pdf" &&
+			!looksLikePdf(generatedFile.content)
+		) {
+			console.warn(
+				"[FILE_GENERATE] Generated file failed PDF signature check",
+				{
+					requestId,
+					conversationId,
+					ownerUserId,
+					effectiveFilename,
+					generatedFilename: generatedFile.filename,
+					generatedMimeType: generatedFile.mimeType ?? null,
+					sizeBytes: Buffer.isBuffer(generatedFile.content)
+						? generatedFile.content.length
+						: Buffer.byteLength(generatedFile.content),
+				},
+			);
 			return json(
-				{ error: 'Generated PDF output is invalid. Ensure the script writes real PDF bytes to /output.' },
-				{ status: 422 }
+				{
+					error:
+						"Generated PDF output is invalid. Ensure the script writes real PDF bytes to /output.",
+				},
+				{ status: 422 },
 			);
 		}
 	}
@@ -358,11 +423,11 @@ export const POST: RequestHandler = async (event) => {
 			filename: storedFile.filename,
 			downloadUrl: `/api/chat/files/${storedFile.id}/download`,
 			size: storedFile.sizeBytes,
-			mimeType: storedFile.mimeType || 'application/octet-stream',
+			mimeType: storedFile.mimeType || "application/octet-stream",
 		});
 	}
 
-	console.info('[FILE_GENERATE] Request succeeded', {
+	console.info("[FILE_GENERATE] Request succeeded", {
 		requestId,
 		conversationId,
 		ownerUserId,

@@ -1,440 +1,501 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-import { untrack } from 'svelte';
-	import {
-		determinePreviewFileType,
-		getPreviewLanguage,
-	} from '$lib/utils/file-preview';
-	import { summarizeTextComparison } from '$lib/utils/text-compare';
-	import { renderHighlightedText } from '$lib/utils/markdown-loader';
-	import type { DocumentWorkspaceItem } from '$lib/types';
+import { browser } from "$app/environment";
+import { untrack } from "svelte";
+import {
+	determinePreviewFileType,
+	getPreviewLanguage,
+} from "$lib/utils/file-preview";
+import { summarizeTextComparison } from "$lib/utils/text-compare";
+import { renderHighlightedText } from "$lib/utils/markdown-loader";
+import type { DocumentWorkspaceItem } from "$lib/types";
 
-	type FilePreviewModule = typeof import('$lib/components/knowledge/FilePreview.svelte');
+type FilePreviewModule =
+	typeof import("$lib/components/knowledge/FilePreview.svelte");
 
-	let {
-		open = false,
-		documents = [],
-		availableDocuments = [],
-		activeDocumentId = null,
-		onSelectDocument,
-		onOpenDocument = undefined,
-		onJumpToSource = undefined,
-		onCloseDocument,
-		onCloseWorkspace,
-		onPageChange = undefined,
-	}: {
-		open?: boolean;
-		documents?: DocumentWorkspaceItem[];
-		availableDocuments?: DocumentWorkspaceItem[];
-		activeDocumentId?: string | null;
-		onSelectDocument: (documentId: string) => void;
-		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
-		onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
-		onCloseDocument: (documentId: string) => void;
-		onCloseWorkspace: () => void;
-		onPageChange?: ((page: number) => void) | undefined;
-	} = $props();
+let {
+	open = false,
+	documents = [],
+	availableDocuments = [],
+	activeDocumentId = null,
+	onSelectDocument,
+	onOpenDocument = undefined,
+	onJumpToSource = undefined,
+	onCloseDocument,
+	onCloseWorkspace,
+	onPageChange = undefined,
+}: {
+	open?: boolean;
+	documents?: DocumentWorkspaceItem[];
+	availableDocuments?: DocumentWorkspaceItem[];
+	activeDocumentId?: string | null;
+	onSelectDocument: (documentId: string) => void;
+	onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+	onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
+	onCloseDocument: (documentId: string) => void;
+	onCloseWorkspace: () => void;
+	onPageChange?: ((page: number) => void) | undefined;
+} = $props();
 
-	let activeDocument = $derived.by(() => {
-		if (documents.length === 0) return null;
-		return documents.find((document) => document.id === activeDocumentId) ?? documents[0] ?? null;
-	});
-	let compareMode = $state(false);
-	let fullscreenPreviewOpen = $state(false);
-	let compareDocumentId = $state<string | null>(null);
-	let compareCurrentTextHtml = $state<string | null>(null);
-	let compareOtherTextHtml = $state<string | null>(null);
-	let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(null);
-	let compareLoading = $state(false);
-	let compareError = $state<string | null>(null);
-	let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
-	// Fade animation state
-	let isVisible = $state(false);
-	let shouldRender = $state(false);
-	let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
-
-	// Page navigation state
-	let currentPage = $state(1);
-	let currentTotalPages = $state(1);
-	let pageInputValue = $state('1');
-	let pageInputError = $state<string | null>(null);
-	let lastDocumentId = $state<string | null>(null);
-
-	// Resize state
-	let isResizing = $state(false);
-	let resizeStartX = $state(0);
-	let resizeStartWidth = $state(400);
-	const MIN_WIDTH = 320;
-	const MAX_WIDTH_RATIO = 0.42;
-	const WORKSPACE_WIDTH_STORAGE_KEY = 'document-workspace-width';
-
-	let workspaceWidth = $state(
-		browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
-			? Math.max(MIN_WIDTH, parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || '400')) || 400
-			: 400
+let activeDocument = $derived.by(() => {
+	if (documents.length === 0) return null;
+	return (
+		documents.find((document) => document.id === activeDocumentId) ??
+		documents[0] ??
+		null
 	);
+});
+let compareMode = $state(false);
+let fullscreenPreviewOpen = $state(false);
+let compareDocumentId = $state<string | null>(null);
+let compareCurrentTextHtml = $state<string | null>(null);
+let compareOtherTextHtml = $state<string | null>(null);
+let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(
+	null,
+);
+let compareLoading = $state(false);
+let compareError = $state<string | null>(null);
+let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
+// Fade animation state
+let isVisible = $state(false);
+let shouldRender = $state(false);
+let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Persist workspace width when it changes
-	$effect(() => {
-		if (!browser) return;
-		localStorage.setItem(WORKSPACE_WIDTH_STORAGE_KEY, String(workspaceWidth));
-	});
+// Page navigation state
+let currentPage = $state(1);
+let currentTotalPages = $state(1);
+let pageInputValue = $state("1");
+let pageInputError = $state<string | null>(null);
+let lastDocumentId = $state<string | null>(null);
 
-	$effect(() => {
-		if (activeDocument && activeDocument.id !== lastDocumentId) {
-			lastDocumentId = activeDocument.id;
-			currentPage = activeDocument.currentPage ?? 1;
-			currentTotalPages = activeDocument.totalPages ?? 1;
-			pageInputValue = String(currentPage);
-			pageInputError = null;
+// Resize state
+let isResizing = $state(false);
+let resizeStartX = $state(0);
+let resizeStartWidth = $state(400);
+const MIN_WIDTH = 320;
+const MAX_WIDTH_RATIO = 0.42;
+const WORKSPACE_WIDTH_STORAGE_KEY = "document-workspace-width";
+
+let workspaceWidth = $state(
+	browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
+		? Math.max(
+				MIN_WIDTH,
+				parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || "400"),
+			) || 400
+		: 400,
+);
+
+// Persist workspace width when it changes
+$effect(() => {
+	if (!browser) return;
+	localStorage.setItem(WORKSPACE_WIDTH_STORAGE_KEY, String(workspaceWidth));
+});
+
+$effect(() => {
+	if (activeDocument && activeDocument.id !== lastDocumentId) {
+		lastDocumentId = activeDocument.id;
+		currentPage = activeDocument.currentPage ?? 1;
+		currentTotalPages = activeDocument.totalPages ?? 1;
+		pageInputValue = String(currentPage);
+		pageInputError = null;
+	}
+});
+
+$effect(() => {
+	const curr = currentPage;
+	untrack(() => {
+		if (String(curr) !== pageInputValue && !pageInputError) {
+			pageInputValue = String(curr);
 		}
 	});
+});
 
-	$effect(() => {
-		const curr = currentPage;
-		untrack(() => {
-			if (String(curr) !== pageInputValue && !pageInputError) {
-				pageInputValue = String(curr);
-			}
-		});
-	});
-
-	$effect(() => {
-		if (open && activeDocument) {
-			if (closeAnimationTimer) {
-				clearTimeout(closeAnimationTimer);
-				closeAnimationTimer = null;
-			}
-
-			shouldRender = true;
-			isVisible = false;
-			const frame = requestAnimationFrame(() => {
-				isVisible = true;
-			});
-
-			return () => cancelAnimationFrame(frame);
+$effect(() => {
+	if (open && activeDocument) {
+		if (closeAnimationTimer) {
+			clearTimeout(closeAnimationTimer);
+			closeAnimationTimer = null;
 		}
 
+		shouldRender = true;
 		isVisible = false;
-		if (shouldRender && !closeAnimationTimer) {
-			closeAnimationTimer = setTimeout(() => {
-				shouldRender = false;
-				closeAnimationTimer = null;
-			}, 150);
-		}
-	});
-
-	$effect(() => {
-		if (!open || !activeDocument) {
-			fullscreenPreviewOpen = false;
-		}
-	});
-
-	function handlePageInputChange(event: Event) {
-		const input = event.target as HTMLInputElement;
-		pageInputValue = input.value;
-		pageInputError = null;
-	}
-
-	function handlePageInputKeyDown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			validateAndJumpToPage();
-		}
-	}
-
-	function validateAndJumpToPage() {
-		const totalPages = currentTotalPages;
-		const pageNum = parseInt(pageInputValue, 10);
-
-		if (isNaN(pageNum)) {
-			pageInputError = 'Please enter a valid number';
-			return;
-		}
-
-		if (pageNum < 1 || pageNum > totalPages) {
-			pageInputError = `Invalid: page must be between 1 and ${totalPages}`;
-			return;
-		}
-
-		pageInputError = null;
-		currentPage = pageNum;
-		onPageChange?.(pageNum);
-	}
-
-	function startResize(event: MouseEvent) {
-		isResizing = true;
-		resizeStartX = event.clientX ?? 0;
-		const desktopShell = document.querySelector('.workspace-shell-desktop') as HTMLElement;
-		if (desktopShell) {
-			resizeStartWidth = desktopShell.offsetWidth;
-		}
-	}
-
-	function handleResizeMove(event: MouseEvent) {
-		if (!isResizing) return;
-		
-		const clientX = event.clientX ?? 0;
-		const deltaX = resizeStartX - clientX;
-		const newWidth = Math.max(MIN_WIDTH, Math.min(resizeStartWidth + deltaX, window.innerWidth * MAX_WIDTH_RATIO));
-		workspaceWidth = newWidth;
-	}
-
-	function stopResize() {
-		isResizing = false;
-	}
-
-	function clampWorkspaceWidth(nextWidth: number): number {
-		return Math.max(MIN_WIDTH, Math.min(nextWidth, window.innerWidth * MAX_WIDTH_RATIO));
-	}
-
-	function handleResizeKeyDown(event: KeyboardEvent) {
-		if (!browser) return;
-		const step = event.shiftKey ? 40 : 20;
-		if (event.key === 'ArrowLeft') {
-			event.preventDefault();
-			workspaceWidth = clampWorkspaceWidth(workspaceWidth + step);
-			return;
-		}
-		if (event.key === 'ArrowRight') {
-			event.preventDefault();
-			workspaceWidth = clampWorkspaceWidth(workspaceWidth - step);
-			return;
-		}
-		if (event.key === 'Home') {
-			event.preventDefault();
-			workspaceWidth = MIN_WIDTH;
-			return;
-		}
-		if (event.key === 'End') {
-			event.preventDefault();
-			workspaceWidth = clampWorkspaceWidth(window.innerWidth * MAX_WIDTH_RATIO);
-		}
-	}
-
-	$effect(() => {
-		if (!browser || !isResizing) return;
-
-		function onMouseMove(event: MouseEvent) {
-			handleResizeMove(event);
-		}
-
-		function onMouseUp() {
-			stopResize();
-		}
-
-		document.addEventListener('mousemove', onMouseMove);
-		document.addEventListener('mouseup', onMouseUp);
-
-		return () => {
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-		};
-	});
-
-	function formatRoleLabel(role: string | null | undefined): string | null {
-		if (!role) return null;
-		const normalized = role.trim();
-		if (!normalized) return null;
-		return normalized
-			.split(/[_-\s]+/)
-			.filter(Boolean)
-			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-			.join(' ');
-	}
-
-	function getDocumentTitle(document: DocumentWorkspaceItem): string {
-		return document.documentLabel ?? document.title ?? document.filename;
-	}
-
-	function getDocumentVersionLabel(document: DocumentWorkspaceItem): string | null {
-		return document.versionNumber && document.versionNumber > 0
-			? `v${document.versionNumber}`
-			: null;
-	}
-
-	function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
-		const roleLabel = formatRoleLabel(document.documentRole);
-		const versionLabel = getDocumentVersionLabel(document);
-		return [roleLabel, versionLabel].filter(Boolean).join(' • ') || null;
-	}
-
-	function getDocumentLifecycleLabel(document: DocumentWorkspaceItem): string | null {
-		return document.documentFamilyStatus === 'historical' ? 'Historical' : null;
-	}
-
-	let familyDocuments = $derived.by(() => {
-		if (!activeDocument?.documentFamilyId) return [];
-
-		const mergedById = new Map<string, DocumentWorkspaceItem>();
-		for (const document of [...availableDocuments, ...documents]) {
-			if (document.documentFamilyId !== activeDocument.documentFamilyId) continue;
-			const existing = mergedById.get(document.id);
-			mergedById.set(document.id, existing ? { ...existing, ...document } : document);
-		}
-
-		return Array.from(mergedById.values()).sort((left, right) => {
-			const leftVersion = left.versionNumber ?? 0;
-			const rightVersion = right.versionNumber ?? 0;
-			if (rightVersion !== leftVersion) return rightVersion - leftVersion;
-			if (left.id === activeDocument.id) return -1;
-			if (right.id === activeDocument.id) return 1;
-			return getDocumentTitle(left).localeCompare(getDocumentTitle(right));
+		const frame = requestAnimationFrame(() => {
+			isVisible = true;
 		});
-	});
 
-	function isCurrentFamilyDocument(document: DocumentWorkspaceItem): boolean {
-		return document.id === activeDocument?.id;
+		return () => cancelAnimationFrame(frame);
 	}
 
-	function isLatestFamilyDocument(document: DocumentWorkspaceItem): boolean {
-		return familyDocuments[0]?.id === document.id;
+	isVisible = false;
+	if (shouldRender && !closeAnimationTimer) {
+		closeAnimationTimer = setTimeout(() => {
+			shouldRender = false;
+			closeAnimationTimer = null;
+		}, 150);
 	}
+});
 
-	function handleFamilyDocumentOpen(document: DocumentWorkspaceItem) {
-		if (documents.some((entry) => entry.id === document.id)) {
-			onSelectDocument(document.id);
-			return;
-		}
-		onOpenDocument?.(document);
-	}
-
-	function canJumpToSource(document: DocumentWorkspaceItem): boolean {
-		return Boolean(document.originConversationId && document.originAssistantMessageId);
-	}
-
-	function isTextDocument(document: DocumentWorkspaceItem): boolean {
-		return determinePreviewFileType(document.mimeType, document.filename) === 'text';
-	}
-
-	function isMultiPageDocument(document: DocumentWorkspaceItem | null): boolean {
-		if (!document) return false;
-		return currentTotalPages > 1;
-	}
-
-	function getDefaultCompareDocumentId(documentsInFamily: DocumentWorkspaceItem[]): string | null {
-		if (!(activeDocument && documentsInFamily.length > 1)) return null;
-		const currentIndex = documentsInFamily.findIndex((document) => document.id === activeDocument.id);
-		if (currentIndex === -1) return documentsInFamily[0]?.id ?? null;
-		if (currentIndex === 0) return documentsInFamily[1]?.id ?? null;
-		return documentsInFamily[currentIndex - 1]?.id ?? null;
-	}
-
-	let canCompareActiveDocument = $derived(
-		Boolean(activeDocument && isTextDocument(activeDocument) && familyDocuments.length > 1)
-	);
-	let comparedDocument = $derived(
-		compareDocumentId
-			? familyDocuments.find((document) => document.id === compareDocumentId) ?? null
-			: null
-	);
-
-	$effect(() => {
-		if (!canCompareActiveDocument) {
-			compareMode = false;
-			compareDocumentId = null;
-			return;
-		}
-
-		const nextCompareId = getDefaultCompareDocumentId(familyDocuments);
-		if (!compareDocumentId || !familyDocuments.some((document) => document.id === compareDocumentId)) {
-			compareDocumentId = nextCompareId;
-		}
-	});
-
-	function getDocumentPreviewUrl(document: DocumentWorkspaceItem): string | null {
-		if (document.previewUrl) return document.previewUrl;
-		if (document.artifactId) return `/api/knowledge/${document.artifactId}/preview`;
-		return null;
-	}
-
-	function openFullscreenPreview() {
-		fullscreenPreviewOpen = true;
-	}
-
-	function closeFullscreenPreview() {
+$effect(() => {
+	if (!open || !activeDocument) {
 		fullscreenPreviewOpen = false;
 	}
+});
 
-	async function loadComparePreview(document: DocumentWorkspaceItem): Promise<string> {
-		const previewUrl = getDocumentPreviewUrl(document);
-		if (!previewUrl) {
-			throw new Error('Preview not available for comparison');
-		}
+function handlePageInputChange(event: Event) {
+	const input = event.target as HTMLInputElement;
+	pageInputValue = input.value;
+	pageInputError = null;
+}
 
-		const response = await fetch(previewUrl);
-		if (!response.ok) {
-			throw new Error('Failed to load comparison preview');
-		}
+function handlePageInputKeyDown(event: KeyboardEvent) {
+	if (event.key === "Enter") {
+		event.preventDefault();
+		validateAndJumpToPage();
+	}
+}
 
-		const text = await response.text();
-		return text;
+function validateAndJumpToPage() {
+	const totalPages = currentTotalPages;
+	const pageNum = parseInt(pageInputValue, 10);
+
+	if (Number.isNaN(pageNum)) {
+		pageInputError = "Please enter a valid number";
+		return;
 	}
 
-	async function ensureFilePreviewModule() {
-		if (!filePreviewModulePromise) {
-			filePreviewModulePromise = import('$lib/components/knowledge/FilePreview.svelte');
-		}
-
-		return filePreviewModulePromise;
+	if (pageNum < 1 || pageNum > totalPages) {
+		pageInputError = `Invalid: page must be between 1 and ${totalPages}`;
+		return;
 	}
 
-	async function renderHighlightedCompareText(document: DocumentWorkspaceItem, text: string) {
-		return renderHighlightedText(
-			text,
-			getPreviewLanguage(document.mimeType, document.filename),
-			browser ? globalThis.document?.documentElement?.classList.contains('dark') ?? false : false
+	pageInputError = null;
+	currentPage = pageNum;
+	onPageChange?.(pageNum);
+}
+
+function startResize(event: MouseEvent) {
+	isResizing = true;
+	resizeStartX = event.clientX ?? 0;
+	const desktopShell = document.querySelector(
+		".workspace-shell-desktop",
+	) as HTMLElement;
+	if (desktopShell) {
+		resizeStartWidth = desktopShell.offsetWidth;
+	}
+}
+
+function handleResizeMove(event: MouseEvent) {
+	if (!isResizing) return;
+
+	const clientX = event.clientX ?? 0;
+	const deltaX = resizeStartX - clientX;
+	const newWidth = Math.max(
+		MIN_WIDTH,
+		Math.min(resizeStartWidth + deltaX, window.innerWidth * MAX_WIDTH_RATIO),
+	);
+	workspaceWidth = newWidth;
+}
+
+function stopResize() {
+	isResizing = false;
+}
+
+function clampWorkspaceWidth(nextWidth: number): number {
+	return Math.max(
+		MIN_WIDTH,
+		Math.min(nextWidth, window.innerWidth * MAX_WIDTH_RATIO),
+	);
+}
+
+function handleResizeKeyDown(event: KeyboardEvent) {
+	if (!browser) return;
+	const step = event.shiftKey ? 40 : 20;
+	if (event.key === "ArrowLeft") {
+		event.preventDefault();
+		workspaceWidth = clampWorkspaceWidth(workspaceWidth + step);
+		return;
+	}
+	if (event.key === "ArrowRight") {
+		event.preventDefault();
+		workspaceWidth = clampWorkspaceWidth(workspaceWidth - step);
+		return;
+	}
+	if (event.key === "Home") {
+		event.preventDefault();
+		workspaceWidth = MIN_WIDTH;
+		return;
+	}
+	if (event.key === "End") {
+		event.preventDefault();
+		workspaceWidth = clampWorkspaceWidth(window.innerWidth * MAX_WIDTH_RATIO);
+	}
+}
+
+$effect(() => {
+	if (!browser || !isResizing) return;
+
+	function onMouseMove(event: MouseEvent) {
+		handleResizeMove(event);
+	}
+
+	function onMouseUp() {
+		stopResize();
+	}
+
+	document.addEventListener("mousemove", onMouseMove);
+	document.addEventListener("mouseup", onMouseUp);
+
+	return () => {
+		document.removeEventListener("mousemove", onMouseMove);
+		document.removeEventListener("mouseup", onMouseUp);
+	};
+});
+
+function formatRoleLabel(role: string | null | undefined): string | null {
+	if (!role) return null;
+	const normalized = role.trim();
+	if (!normalized) return null;
+	return normalized
+		.split(/[_-\s]+/)
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
+}
+
+function getDocumentTitle(document: DocumentWorkspaceItem): string {
+	return document.documentLabel ?? document.title ?? document.filename;
+}
+
+function getDocumentVersionLabel(
+	document: DocumentWorkspaceItem,
+): string | null {
+	return document.versionNumber && document.versionNumber > 0
+		? `v${document.versionNumber}`
+		: null;
+}
+
+function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
+	const roleLabel = formatRoleLabel(document.documentRole);
+	const versionLabel = getDocumentVersionLabel(document);
+	return [roleLabel, versionLabel].filter(Boolean).join(" • ") || null;
+}
+
+function getDocumentLifecycleLabel(
+	document: DocumentWorkspaceItem,
+): string | null {
+	return document.documentFamilyStatus === "historical" ? "Historical" : null;
+}
+
+let familyDocuments = $derived.by(() => {
+	if (!activeDocument?.documentFamilyId) return [];
+
+	const mergedById = new Map<string, DocumentWorkspaceItem>();
+	for (const document of [...availableDocuments, ...documents]) {
+		if (document.documentFamilyId !== activeDocument.documentFamilyId) continue;
+		const existing = mergedById.get(document.id);
+		mergedById.set(
+			document.id,
+			existing ? { ...existing, ...document } : document,
 		);
 	}
 
-	$effect(() => {
-		if (!(browser && compareMode && activeDocument && comparedDocument && canCompareActiveDocument)) {
-			compareCurrentTextHtml = null;
-			compareOtherTextHtml = null;
-			compareSummary = null;
-			compareLoading = false;
-			compareError = null;
-			return;
-		}
+	return Array.from(mergedById.values()).sort((left, right) => {
+		const leftVersion = left.versionNumber ?? 0;
+		const rightVersion = right.versionNumber ?? 0;
+		if (rightVersion !== leftVersion) return rightVersion - leftVersion;
+		if (left.id === activeDocument.id) return -1;
+		if (right.id === activeDocument.id) return 1;
+		return getDocumentTitle(left).localeCompare(getDocumentTitle(right));
+	});
+});
 
-		let cancelled = false;
-		compareLoading = true;
-		compareError = null;
+function isCurrentFamilyDocument(document: DocumentWorkspaceItem): boolean {
+	return document.id === activeDocument?.id;
+}
+
+function isLatestFamilyDocument(document: DocumentWorkspaceItem): boolean {
+	return familyDocuments[0]?.id === document.id;
+}
+
+function handleFamilyDocumentOpen(document: DocumentWorkspaceItem) {
+	if (documents.some((entry) => entry.id === document.id)) {
+		onSelectDocument(document.id);
+		return;
+	}
+	onOpenDocument?.(document);
+}
+
+function canJumpToSource(document: DocumentWorkspaceItem): boolean {
+	return Boolean(
+		document.originConversationId && document.originAssistantMessageId,
+	);
+}
+
+function isTextDocument(document: DocumentWorkspaceItem): boolean {
+	return (
+		determinePreviewFileType(document.mimeType, document.filename) === "text"
+	);
+}
+
+function isMultiPageDocument(document: DocumentWorkspaceItem | null): boolean {
+	if (!document) return false;
+	return currentTotalPages > 1;
+}
+
+function getDefaultCompareDocumentId(
+	documentsInFamily: DocumentWorkspaceItem[],
+): string | null {
+	if (!(activeDocument && documentsInFamily.length > 1)) return null;
+	const currentIndex = documentsInFamily.findIndex(
+		(document) => document.id === activeDocument.id,
+	);
+	if (currentIndex === -1) return documentsInFamily[0]?.id ?? null;
+	if (currentIndex === 0) return documentsInFamily[1]?.id ?? null;
+	return documentsInFamily[currentIndex - 1]?.id ?? null;
+}
+
+let canCompareActiveDocument = $derived(
+	Boolean(
+		activeDocument &&
+			isTextDocument(activeDocument) &&
+			familyDocuments.length > 1,
+	),
+);
+let comparedDocument = $derived(
+	compareDocumentId
+		? (familyDocuments.find((document) => document.id === compareDocumentId) ??
+				null)
+		: null,
+);
+
+$effect(() => {
+	if (!canCompareActiveDocument) {
+		compareMode = false;
+		compareDocumentId = null;
+		return;
+	}
+
+	const nextCompareId = getDefaultCompareDocumentId(familyDocuments);
+	if (
+		!compareDocumentId ||
+		!familyDocuments.some((document) => document.id === compareDocumentId)
+	) {
+		compareDocumentId = nextCompareId;
+	}
+});
+
+function getDocumentPreviewUrl(document: DocumentWorkspaceItem): string | null {
+	if (document.previewUrl) return document.previewUrl;
+	if (document.artifactId)
+		return `/api/knowledge/${document.artifactId}/preview`;
+	return null;
+}
+
+function openFullscreenPreview() {
+	fullscreenPreviewOpen = true;
+}
+
+function closeFullscreenPreview() {
+	fullscreenPreviewOpen = false;
+}
+
+async function loadComparePreview(
+	document: DocumentWorkspaceItem,
+): Promise<string> {
+	const previewUrl = getDocumentPreviewUrl(document);
+	if (!previewUrl) {
+		throw new Error("Preview not available for comparison");
+	}
+
+	const response = await fetch(previewUrl);
+	if (!response.ok) {
+		throw new Error("Failed to load comparison preview");
+	}
+
+	const text = await response.text();
+	return text;
+}
+
+async function ensureFilePreviewModule() {
+	if (!filePreviewModulePromise) {
+		filePreviewModulePromise = import(
+			"$lib/components/knowledge/FilePreview.svelte"
+		);
+	}
+
+	return filePreviewModulePromise;
+}
+
+async function renderHighlightedCompareText(
+	document: DocumentWorkspaceItem,
+	text: string,
+) {
+	return renderHighlightedText(
+		text,
+		getPreviewLanguage(document.mimeType, document.filename),
+		browser
+			? (globalThis.document?.documentElement?.classList.contains("dark") ??
+					false)
+			: false,
+	);
+}
+
+$effect(() => {
+	if (
+		!(
+			browser &&
+			compareMode &&
+			activeDocument &&
+			comparedDocument &&
+			canCompareActiveDocument
+		)
+	) {
 		compareCurrentTextHtml = null;
 		compareOtherTextHtml = null;
 		compareSummary = null;
+		compareLoading = false;
+		compareError = null;
+		return;
+	}
 
-		void (async () => {
-			try {
-				const [currentText, otherText] = await Promise.all([
-					loadComparePreview(activeDocument),
-					loadComparePreview(comparedDocument),
-				]);
-				const [currentHtml, otherHtml] = await Promise.all([
-					renderHighlightedCompareText(activeDocument, currentText),
-					renderHighlightedCompareText(comparedDocument, otherText),
-				]);
+	let cancelled = false;
+	compareLoading = true;
+	compareError = null;
+	compareCurrentTextHtml = null;
+	compareOtherTextHtml = null;
+	compareSummary = null;
 
-				if (cancelled) return;
-				compareCurrentTextHtml = currentHtml;
-				compareOtherTextHtml = otherHtml;
-				compareSummary = summarizeTextComparison(currentText, otherText);
-			} catch (error) {
-				if (cancelled) return;
-				compareError =
-					error instanceof Error ? error.message : 'Failed to load comparison preview';
-			} finally {
-				if (!cancelled) {
-					compareLoading = false;
-				}
+	void (async () => {
+		try {
+			const [currentText, otherText] = await Promise.all([
+				loadComparePreview(activeDocument),
+				loadComparePreview(comparedDocument),
+			]);
+			const [currentHtml, otherHtml] = await Promise.all([
+				renderHighlightedCompareText(activeDocument, currentText),
+				renderHighlightedCompareText(comparedDocument, otherText),
+			]);
+
+			if (cancelled) return;
+			compareCurrentTextHtml = currentHtml;
+			compareOtherTextHtml = otherHtml;
+			compareSummary = summarizeTextComparison(currentText, otherText);
+		} catch (error) {
+			if (cancelled) return;
+			compareError =
+				error instanceof Error
+					? error.message
+					: "Failed to load comparison preview";
+		} finally {
+			if (!cancelled) {
+				compareLoading = false;
 			}
-		})();
+		}
+	})();
 
-		return () => {
-			cancelled = true;
-		};
-	});
-
+	return () => {
+		cancelled = true;
+	};
+});
 </script>
 
 {#if shouldRender && activeDocument}
@@ -1554,5 +1615,8 @@ import { untrack } from 'svelte';
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+	.workspace-shell-mobile .workspace-expand-button {
+		display: none;
 	}
 </style>

@@ -192,8 +192,8 @@ async function fetchFile() {
 	content = null;
 	textContent = null;
 	highlightedTextHtml = null;
-	htmlContent = null;
 	csvTableHtml = null;
+	htmlContent = null;
 	pdfDoc = null;
 	currentPage = 1;
 	totalPages = 0;
@@ -228,6 +228,33 @@ async function fetchFile() {
 
 		const blob = await response.blob();
 		content = blob;
+
+		// Defensive override: re-derive fileType from actual filename when MIME is generic or missing
+		const mime = mimeType?.toLowerCase() ?? "";
+		if (
+			!mime ||
+			mime === "application/octet-stream" ||
+			mime === "application/download"
+		) {
+			fileType = determinePreviewFileType(null, filename);
+		}
+
+		// Defensive override: if text branch was chosen, check blob magic for binary formats
+		if (fileType === "text") {
+			const peekBuffer = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+			const peekStr = new TextDecoder("utf-8").decode(peekBuffer);
+			if (peekStr.startsWith("%PDF-")) {
+				fileType = "pdf";
+			} else if (
+				peekBuffer[0] === 0x50 &&
+				peekBuffer[1] === 0x4b &&
+				peekBuffer[2] === 0x03 &&
+				peekBuffer[3] === 0x04 &&
+				filename.toLowerCase().endsWith(".pptx")
+			) {
+				fileType = "pptx";
+			}
+		}
 
 		if (fileType === "text") {
 			textContent = await blob.text();
@@ -289,24 +316,29 @@ async function renderPdf(blob: Blob) {
 		const arrayBuffer = await blob.arrayBuffer();
 		pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 		totalPages = pdfDoc.numPages;
+		// Pre-size canvasRefs so Svelte 5 array reactivity fires before template render
+		canvasRefs = new Array(totalPages).fill(null);
 		currentPage = 1;
 		lastObservedPage = 1;
 
 		// Bail if a newer render cycle started during document loading
 		if (pdfRenderVersion !== currentVersion) return;
 
+		// Allow flex layout to settle before measuring container width
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		if (pdfRenderVersion !== currentVersion) return;
+
 		// Set zoom to "fit to width" based on container and first page
 		if (scrollContainerRef && totalPages > 0) {
 			const page = await pdfDoc.getPage(1);
-			// Bail if stale
-			if (pdfRenderVersion !== currentVersion) return;
-
 			const unscaledViewport = page.getViewport({ scale: 1.0 });
 			const containerWidth = scrollContainerRef.clientWidth - 48; // 1.5rem padding * 2
 			if (containerWidth > 0 && unscaledViewport.width > 0) {
 				baseScale = containerWidth / unscaledViewport.width;
-				zoom = 1.0;
+			} else {
+				baseScale = 1.0;
 			}
+			zoom = 1.0;
 		}
 
 		// Render all pages
@@ -564,6 +596,7 @@ async function renderPptx(blob: Blob) {
 		viewer.destroy();
 	} catch (err) {
 		error = "Failed to render PPTX file";
+		console.error("PPTX render error:", err);
 	}
 }
 
@@ -1177,6 +1210,7 @@ function downloadFile() {
 		flex: 1 1 auto;
 		border: none;
 		background: var(--surface-page);
+		min-height: 0;
 	}
 
 	.preview-header {
