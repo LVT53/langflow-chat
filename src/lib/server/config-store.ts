@@ -62,14 +62,8 @@ export const ADMIN_CONFIG_KEYS = [
 	"HONCHO_CONTEXT_WAIT_MS",
 	"HONCHO_PERSONA_CONTEXT_WAIT_MS",
 	"HONCHO_OVERVIEW_WAIT_MS",
-	"DOCUMENT_PARSER_OCR_ENABLED",
-	"DOCUMENT_PARSER_OCR_SERVER_URL",
-	"DOCUMENT_PARSER_PADDLE_BACKEND_URL",
-	"DOCUMENT_PARSER_OCR_LANGUAGE",
-	"DOCUMENT_PARSER_NUM_WORKERS",
-	"DOCUMENT_PARSER_MAX_PAGES",
-	"DOCUMENT_PARSER_DPI",
-	"DOCUMENT_PARSER_TIMEOUT_MS",
+	"MINERU_API_URL",
+	"MINERU_TIMEOUT_MS",
 	"SYSTEM_PROMPT",
 ] as const;
 
@@ -136,14 +130,8 @@ export interface RuntimeConfig {
 	honchoPersonaContextWaitMs: number;
 	honchoOverviewWaitMs: number;
 	memoryMaintenanceIntervalMinutes: number;
-	documentParserOcrEnabled: boolean;
-	documentParserOcrServerUrl: string;
-	documentParserPaddleBackendUrl: string;
-	documentParserOcrLanguage: string;
-	documentParserNumWorkers: number;
-	documentParserMaxPages: number;
-	documentParserDpi: number;
-	documentParserTimeoutMs: number;
+	mineruApiUrl: string;
+	mineruTimeoutMs: number;
 	braveSearchApiKey: string;
 	concurrentStreamLimit: number;
 	perUserStreamLimit: number;
@@ -348,40 +336,13 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 			config.honchoOverviewWaitMs = Math.max(0, parsed);
 		}
 	},
-	DOCUMENT_PARSER_OCR_ENABLED: (config, value) => {
-		config.documentParserOcrEnabled = value !== "false";
+	MINERU_API_URL: (config, value) => {
+		config.mineruApiUrl = value;
 	},
-	DOCUMENT_PARSER_OCR_SERVER_URL: (config, value) => {
-		config.documentParserOcrServerUrl = value;
-	},
-	DOCUMENT_PARSER_PADDLE_BACKEND_URL: (config, value) => {
-		config.documentParserPaddleBackendUrl = value;
-	},
-	DOCUMENT_PARSER_OCR_LANGUAGE: (config, value) => {
-		config.documentParserOcrLanguage = value.trim() || "hun+eng+nld";
-	},
-	DOCUMENT_PARSER_NUM_WORKERS: (config, value) => {
+	MINERU_TIMEOUT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) {
-			config.documentParserNumWorkers = Math.max(1, parsed);
-		}
-	},
-	DOCUMENT_PARSER_MAX_PAGES: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) {
-			config.documentParserMaxPages = Math.max(1, parsed);
-		}
-	},
-	DOCUMENT_PARSER_DPI: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) {
-			config.documentParserDpi = Math.max(72, parsed);
-		}
-	},
-	DOCUMENT_PARSER_TIMEOUT_MS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) {
-			config.documentParserTimeoutMs = Math.max(1000, parsed);
+			config.mineruTimeoutMs = Math.max(10000, parsed);
 		}
 	},
 	SYSTEM_PROMPT: (config, value) => {
@@ -611,14 +572,8 @@ export function getResolvedAdminConfigValues(
 		HONCHO_CONTEXT_WAIT_MS: String(config.honchoContextWaitMs),
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(config.honchoPersonaContextWaitMs),
 		HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
-		DOCUMENT_PARSER_OCR_ENABLED: String(config.documentParserOcrEnabled),
-		DOCUMENT_PARSER_OCR_SERVER_URL: config.documentParserOcrServerUrl,
-		DOCUMENT_PARSER_PADDLE_BACKEND_URL: config.documentParserPaddleBackendUrl,
-		DOCUMENT_PARSER_OCR_LANGUAGE: config.documentParserOcrLanguage,
-		DOCUMENT_PARSER_NUM_WORKERS: String(config.documentParserNumWorkers),
-		DOCUMENT_PARSER_MAX_PAGES: String(config.documentParserMaxPages),
-		DOCUMENT_PARSER_DPI: String(config.documentParserDpi),
-		DOCUMENT_PARSER_TIMEOUT_MS: String(config.documentParserTimeoutMs),
+		MINERU_API_URL: config.mineruApiUrl,
+		MINERU_TIMEOUT_MS: String(config.mineruTimeoutMs),
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 	};
 }
@@ -692,15 +647,8 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 			envConfig.honchoPersonaContextWaitMs,
 		),
 		HONCHO_OVERVIEW_WAIT_MS: String(envConfig.honchoOverviewWaitMs),
-		DOCUMENT_PARSER_OCR_ENABLED: String(envConfig.documentParserOcrEnabled),
-		DOCUMENT_PARSER_OCR_SERVER_URL: envConfig.documentParserOcrServerUrl,
-		DOCUMENT_PARSER_PADDLE_BACKEND_URL:
-			envConfig.documentParserPaddleBackendUrl,
-		DOCUMENT_PARSER_OCR_LANGUAGE: envConfig.documentParserOcrLanguage,
-		DOCUMENT_PARSER_NUM_WORKERS: String(envConfig.documentParserNumWorkers),
-		DOCUMENT_PARSER_MAX_PAGES: String(envConfig.documentParserMaxPages),
-		DOCUMENT_PARSER_DPI: String(envConfig.documentParserDpi),
-		DOCUMENT_PARSER_TIMEOUT_MS: String(envConfig.documentParserTimeoutMs),
+		MINERU_API_URL: envConfig.mineruApiUrl,
+		MINERU_TIMEOUT_MS: String(envConfig.mineruTimeoutMs),
 		SYSTEM_PROMPT: envConfig.systemPrompt,
 	};
 }

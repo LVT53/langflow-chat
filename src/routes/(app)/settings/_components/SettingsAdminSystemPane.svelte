@@ -218,14 +218,8 @@
 		HONCHO_CONTEXT_WAIT_MS: "Honcho Session Context Wait (ms)",
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: "Honcho Persona Context Wait (ms)",
 		HONCHO_OVERVIEW_WAIT_MS: "Honcho Overview Wait (ms)",
-		DOCUMENT_PARSER_OCR_ENABLED: "Document Parser OCR Enabled",
-		DOCUMENT_PARSER_OCR_SERVER_URL: "Document Parser OCR Server URL",
-		DOCUMENT_PARSER_PADDLE_BACKEND_URL: "Paddle OCR Backend URL",
-		DOCUMENT_PARSER_OCR_LANGUAGE: "Document Parser OCR Language",
-		DOCUMENT_PARSER_NUM_WORKERS: "Document Parser OCR Workers",
-		DOCUMENT_PARSER_MAX_PAGES: "Document Parser Max Pages",
-		DOCUMENT_PARSER_DPI: "Document Parser DPI",
-		DOCUMENT_PARSER_TIMEOUT_MS: "Document Parser Timeout (ms)",
+		MINERU_API_URL: "MinerU API URL",
+		MINERU_TIMEOUT_MS: "MinerU Timeout (ms)",
 		MAX_MODEL_CONTEXT: "Max Model Context (tokens)",
 		COMPACTION_UI_THRESHOLD: "Compaction UI Threshold (tokens)",
 		TARGET_CONSTRUCTED_CONTEXT: "Target Constructed Context (tokens)",
@@ -241,10 +235,7 @@
 		"COMPACTION_UI_THRESHOLD",
 		"TARGET_CONSTRUCTED_CONTEXT",
 		"MAX_MESSAGE_LENGTH",
-		"DOCUMENT_PARSER_NUM_WORKERS",
-		"DOCUMENT_PARSER_MAX_PAGES",
-		"DOCUMENT_PARSER_DPI",
-		"DOCUMENT_PARSER_TIMEOUT_MS",
+		"MINERU_TIMEOUT_MS",
 		"HONCHO_PERSONA_CONTEXT_WAIT_MS",
 		"TRANSLATION_MAX_TOKENS",
 		"TRANSLATION_TEMPERATURE",
@@ -475,61 +466,36 @@
 	</div>
 </section>
 
-<!-- Document Extraction -->
+<!-- MinerU Document Extraction -->
 <section class="settings-card mb-4">
-	<h2 class="settings-section-title">Document Extraction</h2>
-	<div class="mb-3 flex items-center justify-between">
-		<div>
-			<label class="settings-label mb-0" for="DOCUMENT_PARSER_OCR_ENABLED">{CONFIG_LABELS.DOCUMENT_PARSER_OCR_ENABLED}</label>
-			<p class="text-xs text-text-tertiary">Enable OCR during upload normalization via Liteparse.</p>
-		</div>
-		<label class="relative inline-flex cursor-pointer items-center">
-			<input
-				id="DOCUMENT_PARSER_OCR_ENABLED"
-				type="checkbox"
-				class="peer sr-only"
-				checked={adminConfig.DOCUMENT_PARSER_OCR_ENABLED !== 'false'}
-				onchange={(event) => {
-					adminConfig.DOCUMENT_PARSER_OCR_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-				}}
-			/>
-			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-		</label>
-	</div>
+	<h2 class="settings-section-title">MinerU Document Extraction</h2>
 	<div class="flex flex-col gap-3">
-		{#each [
-			'DOCUMENT_PARSER_OCR_SERVER_URL',
-			'DOCUMENT_PARSER_PADDLE_BACKEND_URL',
-			'DOCUMENT_PARSER_OCR_LANGUAGE',
-			'DOCUMENT_PARSER_NUM_WORKERS',
-			'DOCUMENT_PARSER_MAX_PAGES',
-			'DOCUMENT_PARSER_DPI',
-			'DOCUMENT_PARSER_TIMEOUT_MS',
-		] as key}
-			<div>
-				<label class="settings-label" for={key}>{CONFIG_LABELS[key]}</label>
-				<input
-					id={key}
-					type={NUMBER_KEYS.has(key) ? 'number' : 'text'}
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-				/>
-				{#if key === 'DOCUMENT_PARSER_OCR_SERVER_URL'}
-					<p class="mt-1 text-xs text-text-muted">
-						Leave empty to use Liteparse built-in OCR (Tesseract path). Set <code>/api/ocr/paddle</code> only when routing through the optional Paddle adapter.
-					</p>
-				{:else if key === 'DOCUMENT_PARSER_PADDLE_BACKEND_URL'}
-					<p class="mt-1 text-xs text-text-muted">
-						Optional upstream Paddle OCR endpoint (for example <code>http://127.0.0.1:5000/ocr</code>) used only when the local OCR adapter route is enabled.
-					</p>
-				{:else if key === 'DOCUMENT_PARSER_OCR_LANGUAGE'}
-					<p class="mt-1 text-xs text-text-muted">
-						Built-in Tesseract works best with ISO-639-3 codes (for example <code>hun+eng+nld</code>). External adapters may still use profile-style values like <code>hu+en+nl</code>.
-					</p>
-				{/if}
-			</div>
-		{/each}
+		<div>
+			<label class="settings-label" for="MINERU_API_URL">{CONFIG_LABELS.MINERU_API_URL}</label>
+			<input
+				id="MINERU_API_URL"
+				type="text"
+				class="settings-input"
+				bind:value={adminConfig.MINERU_API_URL}
+				placeholder={placeholderFor('MINERU_API_URL')}
+			/>
+			<p class="mt-1 text-xs text-text-muted">
+				MinerU API server endpoint. Run <code>docker run -d --name mineru -p 8001:8001 opendatalab/mineru:latest</code> to start the service.
+			</p>
+		</div>
+		<div>
+			<label class="settings-label" for="MINERU_TIMEOUT_MS">{CONFIG_LABELS.MINERU_TIMEOUT_MS}</label>
+			<input
+				id="MINERU_TIMEOUT_MS"
+				type="number"
+				class="settings-input"
+				bind:value={adminConfig.MINERU_TIMEOUT_MS}
+				placeholder={placeholderFor('MINERU_TIMEOUT_MS')}
+			/>
+			<p class="mt-1 text-xs text-text-muted">
+				Maximum time to wait for a response from MinerU. Increase for large documents.
+			</p>
+		</div>
 	</div>
 </section>
 

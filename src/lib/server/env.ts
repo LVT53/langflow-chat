@@ -75,14 +75,8 @@ interface Config {
   honchoPersonaContextWaitMs: number;
   honchoOverviewWaitMs: number;
   memoryMaintenanceIntervalMinutes: number;
-  documentParserOcrEnabled: boolean;
-  documentParserOcrServerUrl: string;
-  documentParserPaddleBackendUrl: string;
-  documentParserOcrLanguage: string;
-  documentParserNumWorkers: number;
-  documentParserMaxPages: number;
-  documentParserDpi: number;
-  documentParserTimeoutMs: number;
+  mineruApiUrl: string;
+  mineruTimeoutMs: number;
   braveSearchApiKey: string;
   concurrentStreamLimit: number;
 	systemPrompt: string;
@@ -268,25 +262,10 @@ function readConfig(): Config {
       0,
       parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES || '0', 10) || 0
     ),
-    documentParserOcrEnabled: process.env.DOCUMENT_PARSER_OCR_ENABLED !== 'false',
-    documentParserOcrServerUrl: process.env.DOCUMENT_PARSER_OCR_SERVER_URL || '',
-    documentParserPaddleBackendUrl: process.env.DOCUMENT_PARSER_PADDLE_BACKEND_URL || '',
-    documentParserOcrLanguage: process.env.DOCUMENT_PARSER_OCR_LANGUAGE || 'hun+eng+nld',
-    documentParserNumWorkers: Math.max(
-      1,
-      parseInt(process.env.DOCUMENT_PARSER_NUM_WORKERS || '4', 10) || 4
-    ),
-    documentParserMaxPages: Math.max(
-      1,
-      parseInt(process.env.DOCUMENT_PARSER_MAX_PAGES || '1000', 10) || 1000
-    ),
-    documentParserDpi: Math.max(
-      72,
-      parseInt(process.env.DOCUMENT_PARSER_DPI || '150', 10) || 150
-    ),
-    documentParserTimeoutMs: Math.max(
-      1000,
-      parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '300000', 10) ||
+    mineruApiUrl: process.env.MINERU_API_URL || 'http://127.0.0.1:8001',
+    mineruTimeoutMs: Math.max(
+      10000,
+      parseInt(process.env.MINERU_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '300000', 10) ||
         300000
     ),
     systemPrompt: process.env.SYSTEM_PROMPT || '',
