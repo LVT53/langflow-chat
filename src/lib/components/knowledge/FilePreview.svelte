@@ -1377,7 +1377,7 @@ function downloadFile() {
 		display: flex;
 		flex-direction: column;
 		background: var(--surface-page);
-		min-height: 50vh;
+		min-height: 0;
 	}
 
 	.pdf-toolbar {
