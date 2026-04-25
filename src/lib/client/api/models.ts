@@ -5,6 +5,7 @@ import { _unwrapList } from './_utils';
 export interface AvailableModel {
 	id: ModelId;
 	displayName: string;
+	isThirdParty?: boolean;
 }
 
 export async function fetchAvailableModels(): Promise<AvailableModel[]> {

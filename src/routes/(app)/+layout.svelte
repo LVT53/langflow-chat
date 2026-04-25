@@ -104,7 +104,7 @@
 	onMount(() => {
 		initTheme(data.userTheme as 'system' | 'light' | 'dark');
 		initSettings({
-			model: data.userModel as 'model1' | 'model2',
+			model: data.userModel,
 			translationEnabled: data.userTranslation,
 		});
 		initAvatar(data.user?.profilePicture ?? null);

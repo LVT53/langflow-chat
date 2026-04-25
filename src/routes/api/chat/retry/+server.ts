@@ -23,6 +23,7 @@ export const POST: RequestHandler = async (event) => {
 		assistantMessageId?: unknown;
 		activeDocumentArtifactId?: unknown;
 		streamId?: unknown;
+		model?: unknown;
 	};
 	try {
 		body = await event.request.json();
@@ -30,7 +31,7 @@ export const POST: RequestHandler = async (event) => {
 		return createJsonErrorResponse('Invalid JSON body', 400);
 	}
 
-	const { conversationId, assistantMessageId, activeDocumentArtifactId, streamId } = body;
+	const { conversationId, assistantMessageId, activeDocumentArtifactId, streamId, model } = body;
 	if (typeof conversationId !== 'string' || !conversationId.trim()) {
 		return createJsonErrorResponse('conversationId is required', 400);
 	}
@@ -113,6 +114,7 @@ export const POST: RequestHandler = async (event) => {
 				typeof streamId === 'string' && streamId.trim()
 					? streamId.trim()
 					: undefined,
+			model: typeof model === 'string' && model.trim() ? model.trim() : undefined,
 			skipPersistUserMessage: true,
 		}),
 	});

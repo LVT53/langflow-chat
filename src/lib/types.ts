@@ -4,7 +4,18 @@ export type UserRole = 'user' | 'admin';
 
 export type Theme = 'system' | 'light' | 'dark';
 
-export type ModelId = 'model1' | 'model2';
+export type ModelId = 'model1' | 'model2' | `provider:${string}`;
+
+export function isProviderModelId(modelId: string): modelId is `provider:${string}` {
+	return modelId.startsWith('provider:');
+}
+
+export function getProviderIdFromModelId(modelId: ModelId): string | null {
+	if (modelId.startsWith('provider:')) {
+		return modelId.slice(9);
+	}
+	return null;
+}
 
 export interface UserPreferences {
   preferredModel: ModelId;

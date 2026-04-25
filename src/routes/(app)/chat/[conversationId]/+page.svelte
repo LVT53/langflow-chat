@@ -342,13 +342,30 @@
 	});
 
 	function handleVisibilityChange() {
-		if (document.visibilityState === 'visible' && streamInterruptedByBackground) {
-			streamInterruptedByBackground = false;
-			invalidateAll();
-// Also check for orphaned streams when returning to foreground
-		void checkForOrphanedStreamOnMount();
+		if (document.visibilityState === 'visible') {
+			if (streamInterruptedByBackground) {
+				streamInterruptedByBackground = false;
+				invalidateAll();
+				void checkForOrphanedStreamOnMount();
+			}
+
+			// Recover evidence for any messages with pending status
+			recoverPendingEvidence();
+		}
 	}
-}
+
+	function recoverPendingEvidence() {
+		const currentMessages = $messages;
+		for (const message of currentMessages) {
+			if (
+				message.role === 'assistant' &&
+				message.evidencePending &&
+				!message.evidenceSummary
+			) {
+				void pollMessageEvidence(message.id);
+			}
+		}
+	}
 
 async function pollForCompletion(placeholderId: string, attempt = 0) {
 		const maxAttempts = 60;
@@ -635,6 +652,8 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 		currentConversationId.set(data.conversation.id);
 		document.addEventListener('visibilitychange', handleVisibilityChange);
 		void checkForOrphanedStreamOnMount();
+		// Recover any messages with pending evidence (e.g., if polling timed out)
+		void recoverPendingEvidence();
 	});
 
 	onDestroy(() => {
@@ -1074,6 +1093,7 @@ onToolCall(name, input, status, details) {
 					},
 				},
 				{
+					modelId: $selectedModel,
 					activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 					retryAssistantMessageId: retryAssistantMessageId ?? undefined,
 				}

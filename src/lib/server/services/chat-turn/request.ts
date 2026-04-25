@@ -1,5 +1,10 @@
 import { createAttachmentTraceId } from '$lib/server/services/attachment-trace';
-import { normalizeModelSelection, type RuntimeConfig } from '$lib/server/config-store';
+import {
+	getProviderById,
+	normalizeModelSelection,
+	type RuntimeConfig,
+} from '$lib/server/config-store';
+import type { ModelId } from '$lib/types';
 import type {
 	ChatTurnRequestError,
 	ChatTurnRoute,
@@ -71,12 +76,39 @@ export async function parseChatTurnRequest(
 		return { ok: false, error: { status: 400, error: 'conversationId is required' } };
 	}
 
-	const modelId =
-		model === 'model1' || model === 'model2'
-			? normalizeModelSelection(model, runtimeConfig)
-			: undefined;
-	const modelDisplayName =
-		modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
+	let modelId: ModelId | undefined;
+	let modelDisplayName: string;
+
+	const modelStr = typeof model === 'string' ? model.trim() : '';
+
+	if (modelStr === 'model1' || modelStr === 'model2') {
+		modelId = normalizeModelSelection(modelStr, runtimeConfig);
+		modelDisplayName =
+			modelId === 'model2' ? runtimeConfig.model2.displayName : runtimeConfig.model1.displayName;
+	} else if (modelStr.startsWith('provider:')) {
+		const providerId = modelStr.slice('provider:'.length);
+		if (providerId.length > 0) {
+			const provider = await getProviderById(providerId);
+			if (!provider || !provider.enabled) {
+				return {
+					ok: false,
+					error: { status: 400, error: 'Selected provider model is not available' },
+				};
+			}
+			modelId = modelStr as ModelId;
+			modelDisplayName = provider.displayName;
+		} else {
+			modelId = undefined;
+			modelDisplayName = runtimeConfig.model1.displayName;
+		}
+	} else if (modelStr !== '') {
+		modelId = undefined;
+		modelDisplayName = runtimeConfig.model1.displayName;
+	} else {
+		modelId = 'model1';
+		modelDisplayName = runtimeConfig.model1.displayName;
+	}
+
 	const safeAttachmentIds = Array.isArray(attachmentIds)
 		? attachmentIds.filter((id): id is string => typeof id === 'string')
 		: [];

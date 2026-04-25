@@ -386,7 +386,7 @@ describe('POST /api/chat/stream', () => {
 			expect(mockSendMessageStream).toHaveBeenCalledWith(
 				'Refine it',
 				'conv-1',
-				undefined,
+				'model1',
 				expect.objectContaining({
 					activeDocumentArtifactId: 'artifact-focused-1',
 					user: {
@@ -443,7 +443,7 @@ describe('POST /api/chat/stream', () => {
 			'Hello',
 			undefined,
 			undefined,
-			{ evidenceStatus: 'pending' }
+			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 		expect(mockTouchConversation).toHaveBeenCalledWith('user-1', 'conv-1');
 	});
@@ -647,7 +647,7 @@ describe('POST /api/chat/stream', () => {
 			'Hello world again',
 			undefined,
 			undefined,
-			{ evidenceStatus: 'pending' }
+			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 	});
 
@@ -678,7 +678,7 @@ describe('POST /api/chat/stream', () => {
 			'Hello world',
 			undefined,
 			undefined,
-			{ evidenceStatus: 'pending' }
+			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 	});
 
@@ -751,7 +751,7 @@ describe('POST /api/chat/stream', () => {
 			'BeforeAfter',
 			'Need to reason carefully',
 			[{ type: 'text', content: 'Need to reason carefully' }],
-			{ evidenceStatus: 'pending' }
+			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 	});
 
@@ -782,7 +782,7 @@ describe('POST /api/chat/stream', () => {
 			'The United States has a culture shaped by regional diversity, popular media, and civic traditions.',
 			undefined,
 			undefined,
-			{ evidenceStatus: 'pending' }
+			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 	});
 
@@ -802,7 +802,7 @@ describe('POST /api/chat/stream', () => {
 		const body = await readSseResponse(response);
 
 		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-			expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', undefined, {
+			expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', 'model1', {
 				signal: expect.any(Object),
 				user: {
 					id: 'user-1',
@@ -896,7 +896,7 @@ describe('POST /api/chat/stream', () => {
 			expect(mockSendMessage).toHaveBeenCalledWith(
 				'Hi',
 				'conv-1',
-				undefined,
+				'model1',
 				{
 					id: 'user-1',
 					displayName: undefined,
@@ -964,7 +964,7 @@ describe('POST /api/chat/stream', () => {
 			1,
 			'Check https://example.com',
 			'conv-1',
-				undefined,
+				'model1',
 				expect.objectContaining({
 					signal: expect.any(Object),
 					user: {
@@ -979,7 +979,7 @@ describe('POST /api/chat/stream', () => {
 			2,
 			'Check https://example.com',
 			'conv-1',
-				undefined,
+				'model1',
 				expect.objectContaining({
 					signal: expect.any(Object),
 					user: {
@@ -1011,4 +1011,3 @@ describe('POST /api/chat/stream', () => {
 		expect(data.error).toMatch(/conversationId/i);
 	});
 });
-

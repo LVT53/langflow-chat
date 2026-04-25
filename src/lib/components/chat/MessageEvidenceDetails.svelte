@@ -279,7 +279,7 @@
 	}
 
 	.evidence-link {
-		text-decoration: none;
+		text-decoration: underline;
 	}
 
 	.evidence-link:hover {

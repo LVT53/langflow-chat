@@ -404,6 +404,19 @@ export function normalizeModelSelection(
 	return "model1";
 }
 
+export async function normalizeModelSelectionWithProviders(
+	modelId: string | null | undefined,
+	config: RuntimeConfig = runtimeConfig,
+): Promise<ModelId> {
+	if (modelId?.startsWith("provider:")) {
+		const provider = await getProviderById(modelId.slice("provider:".length));
+		if (provider?.enabled) {
+			return modelId as ModelId;
+		}
+	}
+	return normalizeModelSelection(modelId, config);
+}
+
 export function getAvailableModels(
 	config: RuntimeConfig = runtimeConfig,
 ): Array<{ id: ModelId; displayName: string }> {
@@ -542,4 +555,62 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		DOCUMENT_PARSER_DPI: String(envConfig.documentParserDpi),
 		DOCUMENT_PARSER_TIMEOUT_MS: String(envConfig.documentParserTimeoutMs),
 	};
+}
+
+let cachedProviders: import('$lib/server/services/inference-providers').InferenceProvider[] | null = null;
+let providersLoadTime = 0;
+const PROVIDERS_CACHE_TTL_MS = 60000;
+
+export async function getInferenceProviders(): Promise<
+	import('$lib/server/services/inference-providers').InferenceProvider[]
+> {
+	const now = Date.now();
+	if (cachedProviders && now - providersLoadTime < PROVIDERS_CACHE_TTL_MS) {
+		return cachedProviders;
+	}
+
+	const { listProviders } = await import('$lib/server/services/inference-providers');
+	cachedProviders = await listProviders();
+	providersLoadTime = now;
+	return cachedProviders;
+}
+
+export async function getEnabledProviders(): Promise<
+	import('$lib/server/services/inference-providers').InferenceProvider[]
+> {
+	const providers = await getInferenceProviders();
+	return providers.filter((p) => p.enabled);
+}
+
+export async function getProviderById(
+	id: string
+): Promise<import('$lib/server/services/inference-providers').InferenceProvider | null> {
+	const providers = await getInferenceProviders();
+	return providers.find((p) => p.id === id) ?? null;
+}
+
+export async function getAvailableModelsWithProviders(): Promise<
+	Array<{ id: ModelId; displayName: string; isThirdParty: boolean }>
+> {
+	const [builtIn, providers] = await Promise.all([
+		Promise.resolve(getAvailableModels()),
+		getEnabledProviders(),
+	]);
+
+	const models = builtIn.map((m) => ({ ...m, isThirdParty: false }));
+
+	for (const provider of providers) {
+		models.push({
+			id: `provider:${provider.id}` as ModelId,
+			displayName: provider.displayName,
+			isThirdParty: true,
+		});
+	}
+
+	return models;
+}
+
+export function clearProvidersCache(): void {
+	cachedProviders = null;
+	providersLoadTime = 0;
 }
