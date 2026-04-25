@@ -35,70 +35,6 @@ const URL_LIST_TOOL_ARGUMENT_GUARD = [
 	'- For a single link, use `["https://example.com"]`, never a bare string.',
 ].join("\n");
 
-const DATE_BEFORE_SEARCH_GUARD = [
-	"Time-sensitive search workflow:",
-	"- Before any web search, news search, or other freshness-sensitive search, first get the current date and time.",
-	"- Use that date/time to frame the search query and interpret freshness.",
-	"- Do not search first and check the date afterward.",
-	"- When the user asks about past or future dates, events, or timeframes (e.g. March 2026, two weeks ago, next quarter):",
-	"  1. Call get_current_date to get the current date.",
-	"  2. Use the returned date to calculate whether the requested date is in the past, present, or future.",
-	"  3. If it is a future date, acknowledge you know the current date and reason about what is publicly known up to that point (plans, scheduled events, published information).",
-	"  4. If it is a past date, use the date to set the correct temporal context for your response.",
-].join("\n");
-
-const FILE_GENERATION_GUARD = [
-	"Generated file workflow (split toolkit):",
-	"",
-	"For PDFs and static documents (reports, brochures, fact sheets):",
-	"- Use `export_document` for styled PDF exports with the Terracotta Crown theme (brand colors, cover pages, styled headings, tables, code blocks, callouts).",
-	"- For `export_document`: Write Markdown content with YAML frontmatter to enable styled output:",
-	"  - `title: Report Title` (required for cover page)",
-	"  - `subtitle: Subtitle text` (optional)",
-	"  - `author: Author name` (optional)",
-	"  - `date: YYYY-MM-DD` (optional)",
-	"  - `cover: true` (optional — enables the styled cover page)",
-	"- For `export_document`: Use Obsidian-style blockquotes for callouts: `> [!info]`, `> [!warning]`, `> [!tip]`, `> [!note]`.",
-	"- For `export_document`: Embed images as `![alt text](url)` — Playwright renders them with border-radius and shadow styling.",
-	"- For `export_document`: Do NOT rewrite the entire document into the tool payload. The system will automatically use the active conversation context when `markdown_content` is empty.",
-	"- Use `generate_file` with `language: javascript` for programmatic PDFs via the pre-loaded `createPDF()` helper.",
-	"- For `generate_file` PDF: Pass structured content blocks to `createPDF({ filename, title, content })`. Supported block types: `{ type: heading, text, level: 1|2|3 }`, `{ type: paragraph, text }`, `{ type: list, items, ordered }`, `{ type: table, headers, rows }`, `{ type: code, text }`, `{ type: separator }`, `{ type: image, src, alt }`.",
-	"- For `generate_file` PDF: The `createPDF` helper applies the AlfyAI Terracotta Crown theme automatically (brand colors, DejaVu fonts, styled tables/images). Do not use `pdf-lib` directly.",
-	"- Embed real-world images using `image_search` to find URLs, then include them as `![alt text](url)` in Markdown or `{ type: image, src }` in structured blocks.",
-	"",
-	"For data science, CSV manipulation, or plain text exports:",
-	"- Use the `generate_file` tool with `language: python`.",
-	"- Use ONLY the Python standard library (csv, json, io). The Python sandbox does NOT have pandas, numpy, or any other third-party data-science packages.",
-	"- Write the final output file to `/output` or no file will be created.",
-	"",
-	"For binary office files (Excel .xlsx, Word .docx, PowerPoint .pptx, ODT, PDF):",
-	"- Use the `generate_file` tool with `language: javascript`.",
-	"- Use `exceljs` for Excel workbooks (`new ExcelJS.Workbook()`).",
-	"- Use `docx` for Word documents (`new docx.Document()`).",
-	"- Use `pptxgenjs` for PowerPoint presentations (`new PptxGenJS()`).",
-	"- Use `jszip` for ODT packaging.",
-	"- Use the pre-loaded `createPDF()` helper for programmatic PDFs.",
-	"- Write the final output file to `/output` or no file will be created.",
-	"- NEVER use Python for xlsx, docx, pptx, or PDF generation. JavaScript is the only supported language for binary office files.",
-	"",
-	"General rules for both tools:",
-	"- If the user asks for a downloadable file and a file-generation tool is available, call it instead of only describing the result in text.",
-	"- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when a dedicated file-generation tool is available.",
-	"- Only tell the user a file is ready after the tool succeeds.",
-	"- Do not mention the generated file name or include a file download link in your response text. The file will automatically appear in the chat UI with a download button.",
-	"- Generated files appear in the chat UI after the response finishes.",
-	"- If the `generate_file` tool call includes a `filename` parameter, your code MUST write exactly ONE file to `/output` with that exact name. Writing zero files or multiple files when a filename is specified will cause the generation to fail.",
-	"- If file generation fails, inspect the actual error, make one clear fix, and retry at most once without switching tools.",
-].join("\n");
-const IMAGE_SEARCH_GUARD = [
-	"Image search workflow:",
-	"- When the user asks for images, call the `image_search` tool.",
-	"- The tool expects a single JSON argument: {\"query\": \"your search terms\"}.",
-	"- The tool returns a JSON list of image URLs.",
-	"- You MUST embed these URLs into your final text response using standard markdown syntax: `![alt text](url)` exactly where you want them to appear.",
-	"- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.",
-].join("\n");
-
 const PERSONA_MEMORY_GUARD = [
 	"Persona Memory Usage:",
 	"- Persona memory describes the human user for personalization and direct address.",
@@ -112,9 +48,11 @@ function containsHttpUrl(value: string): boolean {
 function buildOutboundSystemPrompt(params: {
 	basePrompt: string;
 	inputValue: string;
+	modelDisplayName?: string;
 	systemPromptAppendix?: string;
 }): string {
-	const basePrompt = params.basePrompt.trim();
+	const modelHeader = params.modelDisplayName ? `[MODEL: ${params.modelDisplayName}]\n` : '';
+	const basePrompt = modelHeader + params.basePrompt.trim();
 	const todayStr = new Date().toLocaleDateString("en-US", {
 		weekday: "long",
 		year: "numeric",
@@ -124,18 +62,13 @@ function buildOutboundSystemPrompt(params: {
 	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for all relative timeframes. You do not need to call a tool to find the date.]`;
   const additions: string[] = [
     explicitDateContext,
-    DATE_BEFORE_SEARCH_GUARD,
   ];
 
   if (containsHttpUrl(params.inputValue)) {
     additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
   }
 
-  additions.push(
-    FILE_GENERATION_GUARD,
-    IMAGE_SEARCH_GUARD,
-    PERSONA_MEMORY_GUARD,
-  );
+  additions.push(PERSONA_MEMORY_GUARD);
 
 	if (
 		typeof params.systemPromptAppendix === "string" &&
@@ -275,6 +208,7 @@ export async function prepareOutboundChatContext(params: {
 	const systemPrompt = buildOutboundSystemPrompt({
 		basePrompt: baseSystemPrompt,
 		inputValue,
+		modelDisplayName: params.modelConfig.displayName,
 		systemPromptAppendix: params.systemPromptAppendix,
 	});
 
@@ -405,6 +339,7 @@ export async function sendMessage(
 		const systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
+			modelDisplayName: modelConfig.displayName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 		});
 
@@ -585,6 +520,7 @@ export async function sendMessageStream(
 		const systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
+			modelDisplayName: modelConfig.displayName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 		});
 

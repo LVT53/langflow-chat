@@ -16,6 +16,14 @@ export const ADMIN_CONFIG_KEYS = [
 	"MAX_MODEL_CONTEXT",
 	"COMPACTION_UI_THRESHOLD",
 	"TARGET_CONSTRUCTED_CONTEXT",
+	"MODEL_1_MAX_MODEL_CONTEXT",
+	"MODEL_1_COMPACTION_UI_THRESHOLD",
+	"MODEL_1_TARGET_CONSTRUCTED_CONTEXT",
+	"MODEL_1_MAX_MESSAGE_LENGTH",
+	"MODEL_2_MAX_MODEL_CONTEXT",
+	"MODEL_2_COMPACTION_UI_THRESHOLD",
+	"MODEL_2_TARGET_CONSTRUCTED_CONTEXT",
+	"MODEL_2_MAX_MESSAGE_LENGTH",
 	"WORKING_SET_DOCUMENT_TOKEN_BUDGET",
 	"WORKING_SET_PROMPT_TOKEN_BUDGET",
 	"SMALL_FILE_THRESHOLD_CHARS",
@@ -46,10 +54,6 @@ export const ADMIN_CONFIG_KEYS = [
 	"TEI_RERANKER_URL",
 	"TEI_RERANKER_MODEL",
 	"TEI_RERANKER_MAX_TEXTS",
-	"TRANSLATOR_URL",
-	"TRANSLATOR_MODEL",
-	"TRANSLATION_MAX_TOKENS",
-	"TRANSLATION_TEMPERATURE",
 	"HONCHO_ENABLED",
 	"HONCHO_CONTEXT_WAIT_MS",
 	"HONCHO_PERSONA_CONTEXT_WAIT_MS",
@@ -72,11 +76,6 @@ export interface RuntimeConfig {
 	langflowFlowId: string;
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
-	translatorUrl: string;
-	translatorApiKey: string;
-	translatorModel: string;
-	translationMaxTokens: number;
-	translationTemperature: number;
 	titleGenUrl: string;
 	titleGenApiKey: string;
 	titleGenModel: string;
@@ -102,6 +101,14 @@ export interface RuntimeConfig {
 	maxModelContext: number;
 	compactionUiThreshold: number;
 	targetConstructedContext: number;
+	model1MaxModelContext: number;
+	model1CompactionUiThreshold: number;
+	model1TargetConstructedContext: number;
+	model1MaxMessageLength: number;
+	model2MaxModelContext: number;
+	model2CompactionUiThreshold: number;
+	model2TargetConstructedContext: number;
+	model2MaxMessageLength: number;
 	workingSetDocumentTokenBudget: number;
 	workingSetPromptTokenBudget: number;
 	smallFileThresholdChars: number;
@@ -150,11 +157,6 @@ function parseIntOverride(value: string): number | undefined {
 	return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function parseFloatOverride(value: string): number | undefined {
-	const parsed = parseFloat(value);
-	return Number.isNaN(parsed) ? undefined : parsed;
-}
-
 const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MAX_MESSAGE_LENGTH: (config, value) => {
 		const parsed = parseIntOverride(value);
@@ -171,6 +173,38 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	TARGET_CONSTRUCTED_CONTEXT: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.targetConstructedContext = parsed;
+	},
+	MODEL_1_MAX_MODEL_CONTEXT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model1MaxModelContext = parsed;
+	},
+	MODEL_1_COMPACTION_UI_THRESHOLD: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model1CompactionUiThreshold = parsed;
+	},
+	MODEL_1_TARGET_CONSTRUCTED_CONTEXT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model1TargetConstructedContext = parsed;
+	},
+	MODEL_1_MAX_MESSAGE_LENGTH: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model1MaxMessageLength = parsed;
+	},
+	MODEL_2_MAX_MODEL_CONTEXT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model2MaxModelContext = parsed;
+	},
+	MODEL_2_COMPACTION_UI_THRESHOLD: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model2CompactionUiThreshold = parsed;
+	},
+	MODEL_2_TARGET_CONSTRUCTED_CONTEXT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model2TargetConstructedContext = parsed;
+	},
+	MODEL_2_MAX_MESSAGE_LENGTH: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.model2MaxMessageLength = parsed;
 	},
 	WORKING_SET_DOCUMENT_TOKEN_BUDGET: (config, value) => {
 		const parsed = parseIntOverride(value);
@@ -270,20 +304,6 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.teiRerankerMaxTexts = Math.max(1, parsed);
 	},
-	TRANSLATOR_URL: (config, value) => {
-		config.translatorUrl = value;
-	},
-	TRANSLATOR_MODEL: (config, value) => {
-		config.translatorModel = value;
-	},
-	TRANSLATION_MAX_TOKENS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.translationMaxTokens = parsed;
-	},
-	TRANSLATION_TEMPERATURE: (config, value) => {
-		const parsed = parseFloatOverride(value);
-		if (parsed !== undefined) config.translationTemperature = parsed;
-	},
 	HONCHO_ENABLED: (config, value) => {
 		config.honchoEnabled = value === "true";
 	},
@@ -357,13 +377,12 @@ export async function refreshConfig(): Promise<void> {
 
 	runtimeConfig = base;
 
-	// Cross-field validation: target < threshold < max
+	// Cross-field validation: target < threshold < max (per-model)
 	if (
 		runtimeConfig.targetConstructedContext >=
 			runtimeConfig.compactionUiThreshold ||
 		runtimeConfig.compactionUiThreshold >= runtimeConfig.maxModelContext
 	) {
-		// Revert to env defaults if invalid
 		runtimeConfig.targetConstructedContext = envConfig.targetConstructedContext;
 		runtimeConfig.compactionUiThreshold = envConfig.compactionUiThreshold;
 		runtimeConfig.maxModelContext = envConfig.maxModelContext;
@@ -384,6 +403,32 @@ export function getWorkingSetPromptTokenBudget(): number {
 
 export function getSmallFileThreshold(): number {
 	return runtimeConfig.smallFileThresholdChars;
+}
+
+// Per-model context limit getters
+
+export function getMaxModelContext(modelId?: string): number {
+	if (modelId === 'model1') return runtimeConfig.model1MaxModelContext;
+	if (modelId === 'model2') return runtimeConfig.model2MaxModelContext;
+	return runtimeConfig.maxModelContext;
+}
+
+export function getCompactionUiThreshold(modelId?: string): number {
+	if (modelId === 'model1') return runtimeConfig.model1CompactionUiThreshold;
+	if (modelId === 'model2') return runtimeConfig.model2CompactionUiThreshold;
+	return runtimeConfig.compactionUiThreshold;
+}
+
+export function getTargetConstructedContext(modelId?: string): number {
+	if (modelId === 'model1') return runtimeConfig.model1TargetConstructedContext;
+	if (modelId === 'model2') return runtimeConfig.model2TargetConstructedContext;
+	return runtimeConfig.targetConstructedContext;
+}
+
+export function getMaxMessageLength(modelId?: string): number {
+	if (modelId === 'model1') return runtimeConfig.model1MaxMessageLength;
+	if (modelId === 'model2') return runtimeConfig.model2MaxMessageLength;
+	return runtimeConfig.maxMessageLength;
 }
 
 export function isModelEnabled(
@@ -439,6 +484,14 @@ export function getResolvedAdminConfigValues(
 		MAX_MODEL_CONTEXT: String(config.maxModelContext),
 		COMPACTION_UI_THRESHOLD: String(config.compactionUiThreshold),
 		TARGET_CONSTRUCTED_CONTEXT: String(config.targetConstructedContext),
+		MODEL_1_MAX_MODEL_CONTEXT: String(config.model1MaxModelContext),
+		MODEL_1_COMPACTION_UI_THRESHOLD: String(config.model1CompactionUiThreshold),
+		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(config.model1TargetConstructedContext),
+		MODEL_1_MAX_MESSAGE_LENGTH: String(config.model1MaxMessageLength),
+		MODEL_2_MAX_MODEL_CONTEXT: String(config.model2MaxModelContext),
+		MODEL_2_COMPACTION_UI_THRESHOLD: String(config.model2CompactionUiThreshold),
+		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(config.model2TargetConstructedContext),
+		MODEL_2_MAX_MESSAGE_LENGTH: String(config.model2MaxMessageLength),
 		WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(
 			config.workingSetDocumentTokenBudget,
 		),
@@ -473,10 +526,6 @@ export function getResolvedAdminConfigValues(
 		TEI_RERANKER_URL: config.teiRerankerUrl,
 		TEI_RERANKER_MODEL: config.teiRerankerModel,
 		TEI_RERANKER_MAX_TEXTS: String(config.teiRerankerMaxTexts),
-		TRANSLATOR_URL: config.translatorUrl,
-		TRANSLATOR_MODEL: config.translatorModel,
-		TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
-		TRANSLATION_TEMPERATURE: String(config.translationTemperature),
 		HONCHO_ENABLED: String(config.honchoEnabled),
 		HONCHO_CONTEXT_WAIT_MS: String(config.honchoContextWaitMs),
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(config.honchoPersonaContextWaitMs),
@@ -499,6 +548,14 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MAX_MODEL_CONTEXT: String(envConfig.maxModelContext),
 		COMPACTION_UI_THRESHOLD: String(envConfig.compactionUiThreshold),
 		TARGET_CONSTRUCTED_CONTEXT: String(envConfig.targetConstructedContext),
+		MODEL_1_MAX_MODEL_CONTEXT: String(envConfig.model1MaxModelContext),
+		MODEL_1_COMPACTION_UI_THRESHOLD: String(envConfig.model1CompactionUiThreshold),
+		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(envConfig.model1TargetConstructedContext),
+		MODEL_1_MAX_MESSAGE_LENGTH: String(envConfig.model1MaxMessageLength),
+		MODEL_2_MAX_MODEL_CONTEXT: String(envConfig.model2MaxModelContext),
+		MODEL_2_COMPACTION_UI_THRESHOLD: String(envConfig.model2CompactionUiThreshold),
+		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(envConfig.model2TargetConstructedContext),
+		MODEL_2_MAX_MESSAGE_LENGTH: String(envConfig.model2MaxMessageLength),
 		WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(
 			envConfig.workingSetDocumentTokenBudget,
 		),
@@ -535,10 +592,6 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		TEI_RERANKER_URL: envConfig.teiRerankerUrl,
 		TEI_RERANKER_MODEL: envConfig.teiRerankerModel,
 		TEI_RERANKER_MAX_TEXTS: String(envConfig.teiRerankerMaxTexts),
-		TRANSLATOR_URL: envConfig.translatorUrl,
-		TRANSLATOR_MODEL: envConfig.translatorModel,
-		TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
-		TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
 		HONCHO_ENABLED: String(envConfig.honchoEnabled),
 		HONCHO_CONTEXT_WAIT_MS: String(envConfig.honchoContextWaitMs),
 		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(

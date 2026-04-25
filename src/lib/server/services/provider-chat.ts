@@ -191,10 +191,20 @@ async function executeToolCalls(params: {
 async function prepareProviderChat(params: ProviderChatParams) {
 	const provider = await resolveProvider(params.providerId);
 	const runtimeConfig = getConfig();
+	// Build a synthetic model config from the provider settings and unified system prompt
+	const modelConfig = {
+		baseUrl: provider.baseUrl,
+		apiKey: '',
+		modelName: provider.modelName,
+		displayName: provider.displayName,
+		systemPrompt: runtimeConfig.model1.systemPrompt,
+		flowId: '',
+		componentId: '',
+	};
 	const context = await prepareOutboundChatContext({
 		message: params.upstreamMessage,
 		sessionId: params.conversationId,
-		modelConfig: runtimeConfig.model1,
+		modelConfig,
 		user: params.user,
 		attachmentIds: params.attachmentIds,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,

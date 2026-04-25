@@ -38,10 +38,8 @@
 		onSavePassword,
 		availableModels,
 		selectedModel,
-		translationEnabled,
 		selectedTheme,
 		onChangeModel,
-		onChangeTranslation,
 		onChangeTheme,
 		onOpenResetModal,
 		onOpenDeleteModal,
@@ -80,10 +78,8 @@
 		onSavePassword: () => void | Promise<void>;
 		availableModels: AvailableModel[];
 		selectedModel: ModelId;
-		translationEnabled: boolean;
 		selectedTheme: Theme;
 		onChangeModel: (model: ModelId) => void | Promise<void>;
-		onChangeTranslation: (enabled: boolean) => void | Promise<void>;
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
 		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
@@ -224,21 +220,6 @@
 					</button>
 				{/each}
 			</div>
-		</div>
-
-		<div>
-			<p class="settings-label mb-0">Translation</p>
-			<p class="mb-2 mt-0.5 text-xs text-text-muted">Auto-translate Hungarian ↔ English</p>
-			<button
-				class="toggle-btn"
-				class:toggle-on={translationEnabled}
-				onclick={() => onChangeTranslation(!translationEnabled)}
-				aria-label="Toggle translation"
-				role="switch"
-				aria-checked={translationEnabled}
-			>
-				<span class="toggle-thumb"></span>
-			</button>
 		</div>
 
 		<div>

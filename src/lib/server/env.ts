@@ -20,11 +20,6 @@ interface Config {
   langflowWebhookSecret: string;
   alfyaiApiSigningKey: string;
   attachmentTraceDebug: boolean;
-  translatorUrl: string;
-  translatorApiKey: string;
-  translatorModel: string;
-  translationMaxTokens: number;
-  translationTemperature: number;
   titleGenUrl: string;
   titleGenApiKey: string;
   titleGenModel: string;
@@ -46,10 +41,18 @@ interface Config {
   teiTimeoutMs: number;
   webhookPort: number;
   requestTimeoutMs: number;
-  maxMessageLength: number;
-  maxModelContext: number;
-  compactionUiThreshold: number;
-  targetConstructedContext: number;
+	maxMessageLength: number;
+	maxModelContext: number;
+	compactionUiThreshold: number;
+	targetConstructedContext: number;
+	model1MaxModelContext: number;
+	model1CompactionUiThreshold: number;
+	model1TargetConstructedContext: number;
+	model1MaxMessageLength: number;
+	model2MaxModelContext: number;
+	model2CompactionUiThreshold: number;
+	model2TargetConstructedContext: number;
+	model2MaxMessageLength: number;
   workingSetDocumentTokenBudget: number;
   workingSetPromptTokenBudget: number;
   smallFileThresholdChars: number;
@@ -113,11 +116,6 @@ function readConfig(): Config {
     langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || '',
     alfyaiApiSigningKey: process.env.ALFYAI_API_SIGNING_KEY || '',
     attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === 'true',
-    translatorUrl: process.env.TRANSLATOR_URL || 'http://localhost:30002/v1',
-    translatorApiKey: process.env.TRANSLATOR_API_KEY || '',
-    translatorModel: process.env.TRANSLATOR_MODEL || 'translategemma',
-    translationMaxTokens: parseInt(process.env.TRANSLATION_MAX_TOKENS || '256', 10),
-    translationTemperature: parseFloat(process.env.TRANSLATION_TEMPERATURE || '0.1'),
     titleGenUrl: process.env.TITLE_GEN_URL || 'http://localhost:30001/v1',
     titleGenApiKey: process.env.TITLE_GEN_API_KEY || '',
     titleGenModel: process.env.TITLE_GEN_MODEL || 'nemotron-nano',
@@ -149,19 +147,51 @@ function readConfig(): Config {
     ),
     webhookPort,
     requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || '300000', 10),
-    maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
-    maxModelContext: Math.max(
-      1000,
-      parseInt(process.env.MAX_MODEL_CONTEXT || '262144', 10) || 262144
-    ),
-    compactionUiThreshold: Math.max(
-      1000,
-      parseInt(process.env.COMPACTION_UI_THRESHOLD || '209715', 10) || 209715
-    ),
-    targetConstructedContext: Math.max(
-      1000,
-      parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
-    ),
+		maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || '10000', 10),
+		maxModelContext: Math.max(
+			1000,
+			parseInt(process.env.MAX_MODEL_CONTEXT || '262144', 10) || 262144
+		),
+		compactionUiThreshold: Math.max(
+			1000,
+			parseInt(process.env.COMPACTION_UI_THRESHOLD || '209715', 10) || 209715
+		),
+		targetConstructedContext: Math.max(
+			1000,
+			parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
+		),
+		model1MaxModelContext: Math.max(
+			1000,
+			parseInt(process.env.MODEL_1_MAX_MODEL_CONTEXT || process.env.MAX_MODEL_CONTEXT || '262144', 10) || 262144
+		),
+		model1CompactionUiThreshold: Math.max(
+			1000,
+			parseInt(process.env.MODEL_1_COMPACTION_UI_THRESHOLD || process.env.COMPACTION_UI_THRESHOLD || '209715', 10) || 209715
+		),
+		model1TargetConstructedContext: Math.max(
+			1000,
+			parseInt(process.env.MODEL_1_TARGET_CONSTRUCTED_CONTEXT || process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
+		),
+		model1MaxMessageLength: Math.max(
+			1,
+			parseInt(process.env.MODEL_1_MAX_MESSAGE_LENGTH || process.env.MAX_MESSAGE_LENGTH || '10000', 10) || 10000
+		),
+		model2MaxModelContext: Math.max(
+			1000,
+			parseInt(process.env.MODEL_2_MAX_MODEL_CONTEXT || process.env.MAX_MODEL_CONTEXT || '262144', 10) || 262144
+		),
+		model2CompactionUiThreshold: Math.max(
+			1000,
+			parseInt(process.env.MODEL_2_COMPACTION_UI_THRESHOLD || process.env.COMPACTION_UI_THRESHOLD || '209715', 10) || 209715
+		),
+		model2TargetConstructedContext: Math.max(
+			1000,
+			parseInt(process.env.MODEL_2_TARGET_CONSTRUCTED_CONTEXT || process.env.TARGET_CONSTRUCTED_CONTEXT || '157286', 10) || 157286
+		),
+		model2MaxMessageLength: Math.max(
+			1,
+			parseInt(process.env.MODEL_2_MAX_MESSAGE_LENGTH || process.env.MAX_MESSAGE_LENGTH || '10000', 10) || 10000
+		),
     workingSetDocumentTokenBudget: Math.max(
       100,
       parseInt(process.env.WORKING_SET_DOCUMENT_TOKEN_BUDGET || '4000', 10) || 4000
@@ -177,20 +207,20 @@ function readConfig(): Config {
     sessionSecret,
     databasePath,
     model1: {
-      baseUrl: process.env.MODEL_1_BASEURL || 'http://localhost:30001/v1',
-      apiKey: process.env.MODEL_1_API_KEY || '',
-      modelName: process.env.MODEL_1_NAME || 'model-1',
-      displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
-      systemPrompt: process.env.MODEL_1_SYSTEM_PROMPT || '',
-      flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
-      componentId: process.env.MODEL_1_COMPONENT_ID || '',
+			baseUrl: process.env.MODEL_1_BASEURL || 'http://localhost:30001/v1',
+			apiKey: process.env.MODEL_1_API_KEY || '',
+			modelName: process.env.MODEL_1_NAME || 'model-1',
+			displayName: process.env.MODEL_1_DISPLAY_NAME || 'Model 1',
+			systemPrompt: process.env.SYSTEM_PROMPT || process.env.MODEL_1_SYSTEM_PROMPT || '',
+			flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
+			componentId: process.env.MODEL_1_COMPONENT_ID || '',
     },
     model2: {
-      baseUrl: process.env.MODEL_2_BASEURL || '',
-      apiKey: process.env.MODEL_2_API_KEY || '',
-      modelName: process.env.MODEL_2_NAME || '',
-      displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
-      systemPrompt: process.env.MODEL_2_SYSTEM_PROMPT || '',
+			baseUrl: process.env.MODEL_2_BASEURL || '',
+			apiKey: process.env.MODEL_2_API_KEY || '',
+			modelName: process.env.MODEL_2_NAME || '',
+			displayName: process.env.MODEL_2_DISPLAY_NAME || 'Model 2',
+			systemPrompt: process.env.SYSTEM_PROMPT || process.env.MODEL_2_SYSTEM_PROMPT || '',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
       componentId: process.env.MODEL_2_COMPONENT_ID || '',
     },

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ModelSelector from './ModelSelector.svelte';
-	import { translationState, toggleTranslationState } from '$lib/stores/settings';
 
 	let {
 		canAttach = false,
@@ -24,10 +23,6 @@
 	function handleAttach() {
 		onAttach?.();
 		onClose?.();
-	}
-
-	function handleTranslateToggle() {
-		toggleTranslationState();
 	}
 
 	onMount(() => {
@@ -59,22 +54,6 @@
 	<div class="menu-row menu-row--static">
 		<div class="menu-label">Model</div>
 		<ModelSelector onSelect={closeMenu} />
-	</div>
-
-	<div class="menu-row">
-		<button
-			type="button"
-			class="menu-row menu-row--button"
-			onclick={handleTranslateToggle}
-			aria-label={$translationState === 'enabled' ? 'Disable translation' : 'Enable translation'}
-			aria-checked={$translationState === 'enabled'}
-			role="menuitemcheckbox"
-		>
-			<span class="menu-label">Translate</span>
-			<span class={`menu-badge ${$translationState === 'enabled' ? 'menu-badge--active' : ''}`} aria-hidden="true">
-				HU
-			</span>
-		</button>
 	</div>
 
 	<div class="menu-row">

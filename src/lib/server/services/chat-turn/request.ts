@@ -2,6 +2,7 @@ import { createAttachmentTraceId } from '$lib/server/services/attachment-trace';
 import {
 	getProviderById,
 	normalizeModelSelection,
+	getMaxMessageLength,
 	type RuntimeConfig,
 } from '$lib/server/config-store';
 import type { ModelId } from '$lib/types';
@@ -61,16 +62,8 @@ export async function parseChatTurnRequest(
 			error: { status: 400, error: 'Message must be a non-empty string' },
 		};
 	}
-
-	if (normalizedMessage.length > runtimeConfig.maxMessageLength) {
-		return {
-			ok: false,
-			error: {
-				status: 400,
-				error: `Message exceeds maximum length of ${runtimeConfig.maxMessageLength} characters`,
-			},
-		};
-	}
+	// Message length validation deferred to after model resolution below
+	// (per-model maxMessageLength may differ from global)
 
 	if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
 		return { ok: false, error: { status: 400, error: 'conversationId is required' } };
@@ -109,9 +102,19 @@ export async function parseChatTurnRequest(
 		modelDisplayName = runtimeConfig.model1.displayName;
 	}
 
+	// Per-model message length check
+	const maxLen = getMaxMessageLength(modelId);
+	if (normalizedMessage.length > maxLen) {
+		return {
+			ok: false,
+			error: {
+				status: 400,
+				error: `Message exceeds maximum length of ${maxLen} characters`,
+			},
+		};
+	}
+
 	const safeAttachmentIds = Array.isArray(attachmentIds)
-		? attachmentIds.filter((id): id is string => typeof id === 'string')
-		: [];
 
 	return {
 		ok: true,
