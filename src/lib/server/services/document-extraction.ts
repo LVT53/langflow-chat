@@ -95,6 +95,7 @@ export async function extractDocumentText(
 		const formData = new FormData();
 		formData.append('files', file);
 		formData.append('return_md', 'true');
+		formData.append('backend', 'pipeline');
 		formData.append('parse_method', 'ocr');
 
 		const controller = new AbortController();
@@ -133,6 +134,7 @@ export async function extractDocumentText(
 			filePath,
 			durationMs: Date.now() - startedAt,
 			textLength: markdown.length,
+			textPreview: markdown.slice(0, 300),
 		});
 
 		return { text: markdown.trim(), normalizedName, mimeType: 'text/markdown' };

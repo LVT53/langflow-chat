@@ -215,6 +215,8 @@ describe('extractDocumentText', () => {
 		expect(formData.get('return_md')).toBe('true');
 		expect(formData.has('parse_method')).toBe(true);
 		expect(formData.get('parse_method')).toBe('ocr');
+		expect(formData.has('backend')).toBe(true);
+		expect(formData.get('backend')).toBe('pipeline');
 	});
 
 	it('produces normalized .md file name', async () => {
