@@ -8,6 +8,45 @@ interface ExtractionResult {
 	mimeType: string;
 }
 
+function mimeFromExtension(ext: string): string | null {
+	const map: Record<string, string> = {
+		'.pdf': 'application/pdf',
+		'.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		'.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+		'.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		'.odt': 'application/vnd.oasis.opendocument.text',
+		'.doc': 'application/msword',
+		'.xls': 'application/vnd.ms-excel',
+		'.ppt': 'application/vnd.ms-powerpoint',
+		'.png': 'image/png',
+		'.jpg': 'image/jpeg',
+		'.jpeg': 'image/jpeg',
+		'.gif': 'image/gif',
+		'.bmp': 'image/bmp',
+		'.webp': 'image/webp',
+		'.tiff': 'image/tiff',
+		'.tif': 'image/tiff',
+		'.svg': 'image/svg+xml',
+		'.heic': 'image/heic',
+		'.heif': 'image/heif',
+		'.avif': 'image/avif',
+		'.txt': 'text/plain',
+		'.md': 'text/markdown',
+		'.html': 'text/html',
+		'.htm': 'text/html',
+		'.csv': 'text/csv',
+		'.json': 'application/json',
+		'.py': 'text/x-python',
+		'.js': 'text/javascript',
+		'.ts': 'application/typescript',
+		'.css': 'text/css',
+		'.yaml': 'application/yaml',
+		'.yml': 'application/yaml',
+		'.xml': 'application/xml',
+	};
+	return map[ext] ?? null;
+}
+
 function toNormalizedName(originalName: string): string {
 	const stem = basename(originalName, extname(originalName));
 	return `${stem || 'document'}.md`;
@@ -29,9 +68,16 @@ export async function extractDocumentText(
 
 	try {
 		const fileBuffer = await readFile(filePath);
+		if (fileBuffer.length === 0) {
+			console.error('[MINERU] empty_file', { filePath });
+			return { text: null, normalizedName, mimeType: 'text/markdown' };
+		}
+
+		const ext = extname(originalName).toLowerCase();
+		const mime = mimeFromExtension(ext) ?? 'application/octet-stream';
+		const file = new File([fileBuffer], originalName, { type: mime });
 		const formData = new FormData();
-		const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
-		formData.append('file', blob, originalName);
+		formData.append('file', file);
 
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), config.mineruTimeoutMs);
@@ -44,10 +90,12 @@ export async function extractDocumentText(
 		clearTimeout(timeout);
 
 		if (!response.ok) {
+			const errorBody = await response.text().catch(() => null);
 			console.error('[MINERU] request_failed', {
 				filePath,
 				status: response.status,
 				durationMs: Date.now() - startedAt,
+				errorBody: errorBody?.slice(0, 500) ?? null,
 			});
 			return { text: null, normalizedName, mimeType: 'text/markdown' };
 		}
