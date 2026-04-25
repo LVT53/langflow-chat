@@ -384,7 +384,7 @@
 	function shouldPollLiveOverview(): boolean {
 		if (!honchoEnabled || !memoryLoaded || memoryLoading) return false;
 		if (!memoryTabVisible) return false;
-		if (honchoOverviewSource === 'honcho_live') return false;
+		if (honchoOverviewSource === 'honcho_live' || honchoOverviewSource === 'honcho_scoped') return false;
 		if (
 			honchoOverviewStatus === 'disabled' ||
 			honchoOverviewStatus === 'not_enough_durable_memory'
@@ -751,7 +751,7 @@
 
 		const startPolling = async () => {
 			await refreshLiveOverview(false);
-			if (cancelled || honchoOverviewSource === 'honcho_live') return;
+			if (cancelled || honchoOverviewSource === 'honcho_live' || honchoOverviewSource === 'honcho_scoped') return;
 			intervalId = window.setInterval(() => {
 				if (cancelled || liveOverviewRefreshing) return;
 				if (liveOverviewPollAttempts >= OVERVIEW_POLL_MAX_ATTEMPTS) {

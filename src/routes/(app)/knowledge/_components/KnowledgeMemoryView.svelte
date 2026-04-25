@@ -200,7 +200,7 @@
 						</p>
 					{:else if honchoOverviewLastAttemptAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live attempt {formatMediumDateTime(honchoOverviewLastAttemptAt)}
+							Last overview attempt {formatMediumDateTime(honchoOverviewLastAttemptAt)}
 						</p>
 					{/if}
 				</div>
@@ -211,7 +211,7 @@
 						onclick={onRetryLiveOverview}
 						disabled={liveOverviewRefreshing}
 					>
-						{liveOverviewRefreshing ? 'Refreshing…' : 'Retry live overview'}
+						{liveOverviewRefreshing ? 'Refreshing…' : 'Refresh overview'}
 					</button>
 				{/if}
 			</div>
@@ -224,13 +224,17 @@
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 						Showing a local durable-memory fallback while the live Honcho overview is unavailable.
 					</p>
+				{:else if honchoOverviewSource === 'honcho_scoped'}
+					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
+						Showing scoped Honcho memory for this account only.
+					</p>
 				{/if}
 				<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">
 					{@html honchoOverviewHtml}
 				</div>
 			{:else if honchoOverviewStatus === 'temporarily_unavailable'}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Durable persona memory exists, but the live Honcho overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
+					Durable persona memory exists, but the Honcho overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
 				</p>
 			{:else if honchoEnabled}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
@@ -238,7 +242,7 @@
 				</p>
 			{:else}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Memory Profile is disabled in this deployment, so the live persona memory overview is not available.
+					Memory Profile is disabled in this deployment, so the persona memory overview is not available.
 				</p>
 			{/if}
 		</div>

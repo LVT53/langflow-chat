@@ -67,7 +67,7 @@ const memoryPayload = {
 		taskCount: 1,
 		focusContinuityCount: 1,
 		overview: 'The user likes concise responses.',
-		overviewSource: 'honcho_live',
+		overviewSource: 'honcho_scoped',
 		overviewStatus: 'ready',
 		overviewUpdatedAt: Date.now(),
 		overviewLastAttemptAt: Date.now(),
@@ -135,7 +135,7 @@ describe('knowledge memory routes', () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(data.summary.overviewSource).toBe('honcho_live');
+		expect(data.summary.overviewSource).toBe('honcho_scoped');
 		expect(mockGetKnowledgeMemoryOverview).toHaveBeenCalledWith('user-1', 'Test User', {
 			force: true,
 		});

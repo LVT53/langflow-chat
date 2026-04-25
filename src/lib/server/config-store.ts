@@ -3,6 +3,7 @@
 
 import { config as envConfig } from "./env";
 
+import type { ModelConfig } from "./env";
 export type { ModelConfig } from "./env";
 
 import type { ModelId } from "$lib/types";
@@ -112,6 +113,7 @@ export interface RuntimeConfig {
 	honchoApiKey: string;
 	honchoBaseUrl: string;
 	honchoWorkspace: string;
+	honchoIdentityNamespace: string;
 	honchoEnabled: boolean;
 	honchoContextWaitMs: number;
 	honchoPersonaContextWaitMs: number;

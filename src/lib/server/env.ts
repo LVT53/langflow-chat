@@ -1,5 +1,7 @@
 // src/lib/server/env.ts
 // Centralized environment configuration module
+import { createHash } from 'crypto';
+import { resolve } from 'path';
 
 export interface ModelConfig {
   baseUrl: string;
@@ -59,6 +61,7 @@ interface Config {
   honchoApiKey: string;
   honchoBaseUrl: string;
   honchoWorkspace: string;
+  honchoIdentityNamespace: string;
   honchoEnabled: boolean;
   honchoContextWaitMs: number;
   honchoPersonaContextWaitMs: number;
@@ -81,6 +84,14 @@ export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
   return env.DATABASE_PATH || './data/chat.db';
 }
 
+function buildDefaultHonchoIdentityNamespace(databasePath: string, honchoWorkspace: string): string {
+  const digest = createHash('sha256')
+    .update(`${honchoWorkspace}\0${resolve(databasePath)}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `db_${digest}`;
+}
+
 // Read and validate environment variables
 function readConfig(): Config {
   // Required variables (mocked if missing for local dev/testing)
@@ -92,6 +103,8 @@ function readConfig(): Config {
   if (isNaN(webhookPort)) {
     throw new Error('Invalid WEBHOOK_PORT: must be a valid number');
   }
+  const databasePath = getDatabasePath();
+  const honchoWorkspace = process.env.HONCHO_WORKSPACE || 'alfyai-prod';
 
   return {
     langflowApiUrl: process.env.LANGFLOW_API_URL || 'http://localhost:7860',
@@ -162,7 +175,7 @@ function readConfig(): Config {
       parseInt(process.env.SMALL_FILE_THRESHOLD_CHARS || '5000', 10) || 5000
     ),
     sessionSecret,
-    databasePath: getDatabasePath(),
+    databasePath,
     model1: {
       baseUrl: process.env.MODEL_1_BASEURL || 'http://localhost:30001/v1',
       apiKey: process.env.MODEL_1_API_KEY || '',
@@ -184,7 +197,10 @@ function readConfig(): Config {
     model2Enabled: process.env.MODEL_2_ENABLED !== 'false',
     honchoApiKey: process.env.HONCHO_API_KEY || '',
     honchoBaseUrl: process.env.HONCHO_BASE_URL || 'http://localhost:8000',
-    honchoWorkspace: process.env.HONCHO_WORKSPACE || 'alfyai-prod',
+    honchoWorkspace,
+    honchoIdentityNamespace:
+      process.env.HONCHO_IDENTITY_NAMESPACE ||
+      buildDefaultHonchoIdentityNamespace(databasePath, honchoWorkspace),
     honchoEnabled: process.env.HONCHO_ENABLED === 'true',
     honchoContextWaitMs: Math.max(
       0,

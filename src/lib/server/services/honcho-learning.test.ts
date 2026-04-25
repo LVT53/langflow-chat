@@ -12,6 +12,7 @@ const mockConfig = {
 	honchoApiKey: 'test-api-key',
 	honchoBaseUrl: 'http://localhost:8000',
 	honchoWorkspace: 'test-workspace',
+	honchoIdentityNamespace: 'test-namespace',
 	honchoEnabled: true,
 	honchoContextWaitMs: 3000,
 	honchoContextPollIntervalMs: 250,
@@ -40,6 +41,8 @@ const mockSessionAddMessages = vi.fn(async () => []);
 const mockSessionQueueStatus = vi.fn(async () => ({ pendingWorkUnits: 0, inProgressWorkUnits: 0 }));
 const mockSessionUploadFile = vi.fn(async () => undefined);
 const mockSessionDelete = vi.fn(async () => undefined);
+const mockSessionSetMetadata = vi.fn(async () => undefined);
+const mockSessionSetPeers = vi.fn(async () => undefined);
 const mockPeerContext = vi.fn(async () => ({ representation: 'User peer context for testing', peerCard: null }));
 const mockPeerChat = vi.fn(async () => 'Mock peer chat response');
 const mockPeerSetCard = vi.fn(async () => []);
@@ -47,6 +50,37 @@ const mockPeerSessions = vi.fn(async () => ({ toArray: async () => [] }));
 const mockScopeList = vi.fn(async () => ({ toArray: async () => [] }));
 const mockScopeDelete = vi.fn(async () => undefined);
 const mockScopeCreate = vi.fn(async () => undefined);
+const mockListMessages = vi.fn(async () => []);
+const mockGetLatestHonchoMetadata = vi.fn(async () => ({
+	honchoContext: null,
+	honchoSnapshot: null,
+}));
+const mockHonchoSession = vi.fn(async (id: string) => ({
+	id,
+	addPeers: vi.fn(async () => undefined),
+	setPeers: mockSessionSetPeers,
+	setMetadata: mockSessionSetMetadata,
+	queueStatus: mockSessionQueueStatus,
+	context: mockSessionContext,
+	addMessages: mockSessionAddMessages,
+	uploadFile: mockSessionUploadFile,
+	delete: mockSessionDelete,
+}));
+const mockHonchoPeer = vi.fn(async (id: string) => ({
+	id,
+	context: mockPeerContext,
+	chat: mockPeerChat,
+	setCard: mockPeerSetCard,
+	sessions: mockPeerSessions,
+	conclusions: { list: mockScopeList, delete: mockScopeDelete, create: mockScopeCreate },
+	conclusionsOf: vi.fn(() => ({ list: mockScopeList, delete: mockScopeDelete })),
+	message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
+		content,
+		metadata: options?.metadata ?? {},
+		peerId: id,
+		createdAt: new Date().toISOString(),
+	}),
+}));
 
 const mockGetUserPeer = vi.fn(async () => ({
 	id: 'user-1',
@@ -170,39 +204,10 @@ vi.mock('$lib/server/db/schema', () => ({
 
 // Mock Honcho SDK
 vi.mock('@honcho-ai/sdk', () => {
-	const makeScope = () => ({
-		list: mockScopeList,
-		delete: mockScopeDelete,
-		create: mockScopeCreate,
-	});
-
-	// Create a proper constructor function
 	function HonchoClient() {
 		return {
-			session: vi.fn(async (id: string) => ({
-				id,
-				addPeers: vi.fn(async () => undefined),
-				queueStatus: mockSessionQueueStatus,
-				context: mockSessionContext,
-				addMessages: mockSessionAddMessages,
-				uploadFile: mockSessionUploadFile,
-				delete: mockSessionDelete,
-			})),
-			peer: vi.fn(async (id: string) => ({
-				id,
-				context: mockPeerContext,
-				chat: mockPeerChat,
-				setCard: mockPeerSetCard,
-				sessions: mockPeerSessions,
-				conclusions: makeScope(),
-				conclusionsOf: vi.fn(() => makeScope()),
-				message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
-					content,
-					metadata: options?.metadata ?? {},
-					peerId: id,
-					createdAt: new Date().toISOString(),
-				}),
-			})),
+			session: mockHonchoSession,
+			peer: mockHonchoPeer,
 		};
 	}
 
@@ -234,11 +239,8 @@ vi.mock('$lib/server/utils/prompt-context', () => ({
 }));
 
 vi.mock('$lib/server/services/messages', () => ({
-	getLatestHonchoMetadata: vi.fn(async () => ({
-		honchoContext: null,
-		honchoSnapshot: null,
-	})),
-	listMessages: vi.fn(async () => []),
+	getLatestHonchoMetadata: mockGetLatestHonchoMetadata,
+	listMessages: mockListMessages,
 }));
 
 // Mock knowledge module to avoid complex dependencies
@@ -349,6 +351,12 @@ vi.mock('$lib/server/services/mappers', () => ({
 	mapTaskState: vi.fn((value: unknown) => value),
 }));
 
+beforeEach(() => {
+	mockConfig.honchoEnabled = true;
+	mockConfig.honchoIdentityNamespace = 'test-namespace';
+	mockHonchoPeerVersion.value = 0;
+});
+
 describe('honcho learning - mirrorMessage', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -356,17 +364,52 @@ describe('honcho learning - mirrorMessage', () => {
 	});
 
 	it('stores user message via mocked Honcho session', async () => {
-		const { mirrorMessage } = await import('./honcho');
+		const { getHonchoSessionId, mirrorMessage } = await import('./honcho');
 
 		await mirrorMessage('user-1', 'conv-1', 'user', 'Hello, this is a test message');
 
 		expect(mockSessionAddMessages).toHaveBeenCalled();
+		expect(mockHonchoSession).toHaveBeenCalledWith(getHonchoSessionId('user-1', 'conv-1'));
+		expect(mockHonchoSession).not.toHaveBeenCalledWith('conv-1');
 		const calls = mockSessionAddMessages.mock.calls;
 		expect(calls.length).toBeGreaterThan(0);
 		
 		const callArgs = calls[0];
 		expect(callArgs).toBeDefined();
 		expect(Array.isArray(callArgs)).toBe(true);
+	});
+
+	it('uses explicit scoped peer configuration for a Honcho session', async () => {
+		const { getHonchoAssistantPeerId, getHonchoUserPeerId, mirrorMessage } = await import('./honcho');
+
+		await mirrorMessage('user-1', 'conv-1', 'user', 'Hello');
+
+		expect(mockSessionSetPeers).toHaveBeenCalledWith([
+			[getHonchoUserPeerId('user-1'), { observeMe: true, observeOthers: false }],
+			[getHonchoAssistantPeerId('user-1'), { observeMe: false, observeOthers: true }],
+		]);
+		expect(mockSessionSetMetadata).toHaveBeenCalledWith(
+			expect.objectContaining({
+				alfyaiConversationId: 'conv-1',
+				alfyaiUserId: 'user-1',
+				alfyaiHonchoIdentityNamespace: 'test-namespace',
+			})
+		);
+	});
+
+	it('generates distinct Honcho IDs for different namespaces and users', async () => {
+		const { getHonchoSessionId, getHonchoUserPeerId } = await import('./honcho');
+
+		const userOnePeer = getHonchoUserPeerId('user-1');
+		const userTwoPeer = getHonchoUserPeerId('user-2');
+		const firstNamespaceSession = getHonchoSessionId('user-1', 'conv-1');
+
+		mockConfig.honchoIdentityNamespace = 'other-namespace';
+		vi.resetModules();
+		const reloaded = await import('./honcho');
+
+		expect(userOnePeer).not.toBe(userTwoPeer);
+		expect(firstNamespaceSession).not.toBe(reloaded.getHonchoSessionId('user-1', 'conv-1'));
 	});
 
 	it('stores assistant message via mocked Honcho session', async () => {
@@ -387,6 +430,8 @@ describe('honcho learning - mirrorMessage', () => {
 			const messages = calls[0];
 			if (Array.isArray(messages) && messages.length > 0) {
 				expect(messages[0].metadata?.role).toBe('user');
+				expect(messages[0].metadata?.alfyaiConversationId).toBe('conv-1');
+				expect(messages[0].metadata?.alfyaiUserId).toBe('user-1');
 			}
 		}
 	});
@@ -654,6 +699,49 @@ describe('honcho learning - getPeerContext', () => {
 		expect(records).toHaveLength(0);
 	});
 
+	it('returns no peer context for an empty scoped Honcho memory set', async () => {
+		mockScopeList.mockResolvedValue({ toArray: async () => [] });
+
+		const { getPeerContext } = await import('./honcho');
+		const context = await getPeerContext('user-1', 'Test User');
+
+		expect(context).toBeNull();
+		expect(mockPeerChat).not.toHaveBeenCalled();
+	});
+
+	it('builds peer context only from scoped conclusions without peer.chat', async () => {
+		mockScopeList
+			.mockResolvedValueOnce({
+				toArray: async () => [
+					{
+						id: 'self-1',
+						content: 'user-1 prefers concise responses',
+						sessionId: 'conv-1',
+						createdAt: new Date().toISOString(),
+					},
+				],
+			})
+			.mockResolvedValueOnce({
+				toArray: async () => [
+					{
+						id: 'about-1',
+						content: 'Assistant observed that the user is preparing a report',
+						sessionId: 'conv-1',
+						createdAt: new Date().toISOString(),
+					},
+				],
+			});
+
+		const { getPeerContext } = await import('./honcho');
+		const context = await getPeerContext('user-1', 'Test User');
+
+		expect(context).toContain('Scoped user memory');
+		expect(context).toContain('Test User prefers concise responses');
+		expect(context).toContain('preparing a report');
+		expect(context).not.toContain('user-1');
+		expect(mockPeerChat).not.toHaveBeenCalled();
+	});
+
 	it('normalizes conclusion timestamps correctly', async () => {
 		const fixedTime = '2026-04-15T10:30:00.000Z';
 		mockScopeList.mockResolvedValueOnce({
@@ -708,18 +796,26 @@ describe('honcho learning - rotateHonchoPeerIdentity', () => {
 	});
 
 	it('generates distinct peer IDs after rotation', async () => {
-		const { getHonchoUserPeerId, getHonchoAssistantPeerId, rotateHonchoPeerIdentity } = await import('./honcho');
+		const {
+			getHonchoUserPeerId,
+			getHonchoAssistantPeerId,
+			getHonchoSessionId,
+			rotateHonchoPeerIdentity,
+		} = await import('./honcho');
 
 		const beforePeerId = getHonchoUserPeerId('user-1');
 		const beforeAssistantPeerId = getHonchoAssistantPeerId('user-1');
+		const beforeSessionId = getHonchoSessionId('user-1', 'conv-1');
 
 		await rotateHonchoPeerIdentity('user-1');
 
 		const afterPeerId = getHonchoUserPeerId('user-1');
 		const afterAssistantPeerId = getHonchoAssistantPeerId('user-1');
+		const afterSessionId = getHonchoSessionId('user-1', 'conv-1');
 
-		expect(typeof afterPeerId).toBe('string');
-		expect(typeof afterAssistantPeerId).toBe('string');
+		expect(afterPeerId).not.toBe(beforePeerId);
+		expect(afterAssistantPeerId).not.toBe(beforeAssistantPeerId);
+		expect(afterSessionId).not.toBe(beforeSessionId);
 	});
 
 	it('updates peer version in DB', async () => {

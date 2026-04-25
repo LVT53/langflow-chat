@@ -728,6 +728,7 @@ export interface TaskContinuitySummary {
 
 export type KnowledgeMemoryOverviewSource =
   | 'honcho_live'
+  | 'honcho_scoped'
   | 'honcho_cache'
   | 'persona_fallback'
   | null;
