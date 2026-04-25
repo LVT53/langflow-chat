@@ -93,6 +93,7 @@ const FILE_GENERATION_GUARD = [
 const IMAGE_SEARCH_GUARD = [
 	"Image search workflow:",
 	"- When the user asks for images, call the `image_search` tool.",
+	"- The tool expects a single JSON argument: {\"query\": \"your search terms\"}.",
 	"- The tool returns a JSON list of image URLs.",
 	"- You MUST embed these URLs into your final text response using standard markdown syntax: `![alt text](url)` exactly where you want them to appear.",
 	"- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.",
