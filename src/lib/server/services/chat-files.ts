@@ -498,18 +498,12 @@ export async function syncGeneratedFilesToMemory(params: {
 				continue;
 			}
 
-			let extractedText: string | null = null;
-			const isBinaryImage =
-				file.mimeType?.startsWith('image/') === true && file.mimeType !== 'image/svg+xml';
-
-			if (!isBinaryImage) {
 				const extraction = await extractDocumentText(
-					join(getChatFilesDir(), file.storagePath),
-					file.mimeType,
-					file.filename
-				);
-				extractedText = extraction.text;
-			}
+				join(getChatFilesDir(), file.storagePath),
+				file.mimeType,
+				file.filename
+			);
+			const extractedText = extraction.text;
 
 			const recentVersions = await listRecentGeneratedFileVersions(params.userId, file.filename, 4);
 			const previousVersion = recentVersions[0] ?? null;
