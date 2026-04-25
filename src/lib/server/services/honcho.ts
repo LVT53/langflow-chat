@@ -339,21 +339,25 @@ export async function syncArtifactToHoncho(params: {
 	// Honcho has a ~5MB file size limit, and extracted text is more useful for memory.
 	const fallbackArtifact = params.fallbackTextArtifact;
 	if (fallbackArtifact?.contentText?.trim()) {
-		const clipped = clipText(fallbackArtifact.contentText, 50_000);
-		await session.addMessages(
-			userPeer.message(clipped, {
-				metadata: {
-					role: 'user',
-					artifactId: fallbackArtifact.id,
-					artifactType: fallbackArtifact.type,
-					sourceArtifactId: params.artifact.id,
-					alfyaiConversationId: params.conversationId,
-					alfyaiUserId: params.userId,
-					alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
-				},
-			})
-		);
-		return { uploaded: true, mode: 'normalized' };
+		try {
+			const clipped = clipText(fallbackArtifact.contentText, 10_000);
+			await session.addMessages(
+				userPeer.message(clipped, {
+					metadata: {
+						role: 'user',
+						artifactId: fallbackArtifact.id,
+						artifactType: fallbackArtifact.type,
+						sourceArtifactId: params.artifact.id,
+						alfyaiConversationId: params.conversationId,
+						alfyaiUserId: params.userId,
+						alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
+					},
+				})
+			);
+			return { uploaded: true, mode: 'normalized' };
+		} catch (error) {
+			console.error('[HONCHO] Fallback text sync failed:', error);
+		}
 	}
 
 	const nativeMimeType = (params.file?.type || params.artifact.mimeType || 'application/octet-stream')
