@@ -40,6 +40,10 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_FLOW_ID",
 	"MODEL_2_COMPONENT_ID",
 	"MODEL_2_ENABLED",
+	"TRANSLATOR_URL",
+	"TRANSLATOR_MODEL",
+	"TRANSLATION_MAX_TOKENS",
+	"TRANSLATION_TEMPERATURE",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
 	"TITLE_GEN_SYSTEM_PROMPT_EN",
@@ -77,6 +81,11 @@ export interface RuntimeConfig {
 	langflowFlowId: string;
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
+	translatorUrl: string;
+	translatorApiKey: string;
+	translatorModel: string;
+	translationMaxTokens: number;
+	translationTemperature: number;
 	titleGenUrl: string;
 	titleGenApiKey: string;
 	titleGenModel: string;
@@ -261,6 +270,20 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_ENABLED: (config, value) => {
 		config.model2Enabled = value === "true";
+	},
+	TRANSLATOR_URL: (config, value) => {
+		config.translatorUrl = value;
+	},
+	TRANSLATOR_MODEL: (config, value) => {
+		config.translatorModel = value;
+	},
+	TRANSLATION_MAX_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.translationMaxTokens = Math.max(1, parsed);
+	},
+	TRANSLATION_TEMPERATURE: (config, value) => {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) config.translationTemperature = parsed;
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -563,6 +586,10 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_FLOW_ID: config.model2.flowId,
 		MODEL_2_COMPONENT_ID: config.model2.componentId,
 		MODEL_2_ENABLED: String(config.model2Enabled),
+		TRANSLATOR_URL: config.translatorUrl,
+		TRANSLATOR_MODEL: config.translatorModel,
+		TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
+		TRANSLATION_TEMPERATURE: String(config.translationTemperature),
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: config.titleGenSystemPromptEn,
@@ -638,6 +665,10 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MODEL_2_FLOW_ID: envConfig.model2.flowId,
 		MODEL_2_COMPONENT_ID: envConfig.model2.componentId,
 		MODEL_2_ENABLED: String(envConfig.model2Enabled),
+		TRANSLATOR_URL: envConfig.translatorUrl,
+		TRANSLATOR_MODEL: envConfig.translatorModel,
+		TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
+		TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
 		TITLE_GEN_URL: envConfig.titleGenUrl,
 		TITLE_GEN_MODEL: envConfig.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: envConfig.titleGenSystemPromptEn,

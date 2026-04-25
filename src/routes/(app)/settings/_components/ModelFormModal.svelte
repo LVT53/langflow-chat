@@ -35,15 +35,21 @@
 	let formMaxMessageLength = $state(untrack(() => model?.maxMessageLength ? String(model.maxMessageLength) : ''));
 	let formName = $state(untrack(() => model?.name ?? ''));
 	let showApiKey = $state(false);
+	let localError = $state('');
 
 	let isBuiltIn = $derived(model?.isBuiltIn ?? false);
 	let title = $derived(isCreate ? 'Add Model' : 'Edit Model');
 	let saveLabel = $derived(isCreate ? 'Add Model' : 'Save Changes');
+	let visibleError = $derived(error || localError);
 
 	function handleSave() {
+		localError = '';
 		const data: Record<string, unknown> = {};
 		if (isCreate) {
-			if (!formName || !formDisplayName || !formBaseUrl || !formApiKey || !formModelName) return;
+			if (!formName || !formDisplayName || !formBaseUrl || !formApiKey || !formModelName) {
+				localError = 'Fill in all required provider fields.';
+				return;
+			}
 			data.name = formName;
 			data.apiKey = formApiKey;
 		} else if (isBuiltIn) {
@@ -54,7 +60,10 @@
 			data.componentId = formComponentId;
 			data.model1 = model?.name === 'model1' || model?.name === 'model2' ? model.name : undefined;
 		} else {
-			if (!formDisplayName || !formBaseUrl || !formModelName) return;
+			if (!formDisplayName || !formBaseUrl || !formModelName) {
+				localError = 'Fill in display name, base URL, and model name.';
+				return;
+			}
 		}
 		data.displayName = data.displayName ?? formDisplayName;
 		data.baseUrl = data.baseUrl ?? formBaseUrl;
@@ -168,8 +177,8 @@
 				</div>
 			</div>
 
-			{#if error}
-				<p class="mt-4 text-sm text-danger">{error}</p>
+			{#if visibleError}
+				<p class="mt-4 text-sm text-danger">{visibleError}</p>
 			{/if}
 
 			<div class="mt-4 flex gap-2">

@@ -63,6 +63,107 @@ export interface UpdateProviderInput {
   maxMessageLength?: number | null;
 }
 
+export type ProviderLimitInput = {
+  maxModelContext?: unknown;
+  compactionUiThreshold?: unknown;
+  targetConstructedContext?: unknown;
+  maxMessageLength?: unknown;
+};
+
+export type NormalizedProviderLimits = {
+  maxModelContext?: number | null;
+  compactionUiThreshold?: number | null;
+  targetConstructedContext?: number | null;
+  maxMessageLength?: number | null;
+};
+
+export function parseProviderLimitOverrides(input: ProviderLimitInput): {
+  ok: true;
+  value: NormalizedProviderLimits;
+} | {
+  ok: false;
+  error: string;
+} {
+  const normalized: NormalizedProviderLimits = {};
+
+  const parseOptionalNumber = (
+    key: keyof ProviderLimitInput,
+    min: number,
+    label: string
+  ): { ok: true; value: number | null | undefined } | { ok: false; error: string } => {
+    const value = input[key];
+    if (value === undefined) return { ok: true, value: undefined };
+    if (value === null || value === '') return { ok: true, value: null };
+    if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+      return { ok: false, error: `${label} must be an integer` };
+    }
+    if (value < min) {
+      return { ok: false, error: `${label} must be at least ${min}` };
+    }
+    return { ok: true, value };
+  };
+
+  const maxModelContext = parseOptionalNumber('maxModelContext', 1000, 'Max model context');
+  if (!maxModelContext.ok) return maxModelContext;
+  if (maxModelContext.value !== undefined) normalized.maxModelContext = maxModelContext.value;
+
+  const compactionUiThreshold = parseOptionalNumber(
+    'compactionUiThreshold',
+    1000,
+    'Compaction UI threshold'
+  );
+  if (!compactionUiThreshold.ok) return compactionUiThreshold;
+  if (compactionUiThreshold.value !== undefined) {
+    normalized.compactionUiThreshold = compactionUiThreshold.value;
+  }
+
+  const targetConstructedContext = parseOptionalNumber(
+    'targetConstructedContext',
+    1000,
+    'Target constructed context'
+  );
+  if (!targetConstructedContext.ok) return targetConstructedContext;
+  if (targetConstructedContext.value !== undefined) {
+    normalized.targetConstructedContext = targetConstructedContext.value;
+  }
+
+  const maxMessageLength = parseOptionalNumber('maxMessageLength', 1, 'Max message length');
+  if (!maxMessageLength.ok) return maxMessageLength;
+  if (maxMessageLength.value !== undefined) normalized.maxMessageLength = maxMessageLength.value;
+
+  return { ok: true, value: normalized };
+}
+
+export function validateProviderLimitOrdering(input: {
+  maxModelContext: number | null;
+  compactionUiThreshold: number | null;
+  targetConstructedContext: number | null;
+}): string | null {
+  const { maxModelContext, compactionUiThreshold, targetConstructedContext } = input;
+  if (
+    maxModelContext !== null &&
+    compactionUiThreshold !== null &&
+    compactionUiThreshold >= maxModelContext
+  ) {
+    return 'Compaction UI threshold must be less than max model context';
+  }
+  if (
+    compactionUiThreshold !== null &&
+    targetConstructedContext !== null &&
+    targetConstructedContext >= compactionUiThreshold
+  ) {
+    return 'Target constructed context must be less than compaction UI threshold';
+  }
+  if (
+    maxModelContext !== null &&
+    targetConstructedContext !== null &&
+    targetConstructedContext >= maxModelContext
+  ) {
+    return 'Target constructed context must be less than max model context';
+  }
+  return null;
+}
+
 export function normalizeReasoningEffort(value: unknown): ProviderReasoningEffort | null {
   return value === 'low' || value === 'medium' || value === 'high' || value === 'max' || value === 'xhigh' ? value : null;
 }

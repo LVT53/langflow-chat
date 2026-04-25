@@ -1,4 +1,9 @@
-import { getConfig } from '$lib/server/config-store';
+import {
+	getCompactionUiThreshold,
+	getConfig,
+	getMaxModelContext,
+	getTargetConstructedContext,
+} from '$lib/server/config-store';
 import {
 	callInferenceProvider,
 	streamInferenceProvider,
@@ -210,6 +215,12 @@ async function prepareProviderChat(params: ProviderChatParams) {
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		attachmentTraceId: params.attachmentTraceId,
 		systemPromptAppendix: params.systemPromptAppendix,
+		contextLimits: {
+			maxModelContext: provider.maxModelContext ?? getMaxModelContext(),
+			compactionUiThreshold: provider.compactionUiThreshold ?? getCompactionUiThreshold(),
+			targetConstructedContext:
+				provider.targetConstructedContext ?? getTargetConstructedContext(),
+		},
 		logLabel: 'provider request',
 	});
 	return { provider, context, messages: buildInitialMessages(context) };

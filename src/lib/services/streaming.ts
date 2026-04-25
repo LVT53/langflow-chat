@@ -102,6 +102,8 @@ export type StreamChatOptions = {
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
 	retryAssistantMessageId?: string;
+	retryUserMessageId?: string;
+	retryUserMessage?: string;
 	reconnectToStreamId?: string;
 	reconnectUserMessage?: string;
 };
@@ -118,6 +120,8 @@ export function streamChat(
 		attachmentIds,
 		activeDocumentArtifactId,
 		retryAssistantMessageId,
+		retryUserMessageId,
+		retryUserMessage,
 		reconnectToStreamId,
 		reconnectUserMessage,
 	} = options ?? {};
@@ -164,6 +168,8 @@ export function streamChat(
 				? JSON.stringify({
 						conversationId,
 						assistantMessageId: retryAssistantMessageId,
+						userMessageId: retryUserMessageId,
+						userMessage: retryUserMessage ?? message,
 						streamId,
 						model: modelId,
 						activeDocumentArtifactId,

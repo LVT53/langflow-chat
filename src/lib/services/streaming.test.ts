@@ -298,6 +298,8 @@ describe('streamChat', () => {
 		const done = waitForStream(cb);
 		streamChat('ignored', 'conv-1', cb as unknown as StreamCallbacks, {
 			retryAssistantMessageId: 'assistant-msg-1',
+			retryUserMessageId: 'user-msg-1',
+			retryUserMessage: 'historical user text',
 			activeDocumentArtifactId: 'artifact-focused-2',
 		});
 		await done;
@@ -313,6 +315,8 @@ describe('streamChat', () => {
 		const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
 		const parsedBody = JSON.parse(String(requestInit?.body));
 		expect(parsedBody.assistantMessageId).toBe('assistant-msg-1');
+		expect(parsedBody.userMessageId).toBe('user-msg-1');
+		expect(parsedBody.userMessage).toBe('historical user text');
 		expect(parsedBody.activeDocumentArtifactId).toBe('artifact-focused-2');
 	});
 

@@ -7,6 +7,8 @@ import {
   listProviders,
   normalizeReasoningEffort,
   normalizeThinkingType,
+  parseProviderLimitOverrides,
+  validateProviderLimitOrdering,
   validateProviderConnection,
   type CreateProviderInput,
 } from '$lib/server/services/inference-providers';
@@ -26,6 +28,10 @@ export const POST: RequestHandler = async (event) => {
   try {
     requireAdmin(event);
     const body = await event.request.json();
+    const limits = parseProviderLimitOverrides(body);
+    if (!limits.ok) {
+      return json({ error: limits.error }, { status: 400 });
+    }
 
     const input: CreateProviderInput = {
       name: body.name,
@@ -37,10 +43,10 @@ export const POST: RequestHandler = async (event) => {
       thinkingType: normalizeThinkingType(body.thinkingType),
       enabled: body.enabled ?? true,
       sortOrder: body.sortOrder ?? 0,
-      maxModelContext: typeof body.maxModelContext === 'number' ? body.maxModelContext : null,
-      compactionUiThreshold: typeof body.compactionUiThreshold === 'number' ? body.compactionUiThreshold : null,
-      targetConstructedContext: typeof body.targetConstructedContext === 'number' ? body.targetConstructedContext : null,
-      maxMessageLength: typeof body.maxMessageLength === 'number' ? body.maxMessageLength : null,
+      maxModelContext: limits.value.maxModelContext ?? null,
+      compactionUiThreshold: limits.value.compactionUiThreshold ?? null,
+      targetConstructedContext: limits.value.targetConstructedContext ?? null,
+      maxMessageLength: limits.value.maxMessageLength ?? null,
     };
 
     if (!input.name || !input.displayName || !input.baseUrl || !input.apiKey || !input.modelName) {
@@ -57,6 +63,15 @@ export const POST: RequestHandler = async (event) => {
 
     if (!/^[a-zA-Z0-9_-]+$/.test(input.name)) {
       return json({ error: 'Name must contain only letters, numbers, underscores, and hyphens' }, { status: 400 });
+    }
+
+    const limitOrderingError = validateProviderLimitOrdering({
+      maxModelContext: input.maxModelContext,
+      compactionUiThreshold: input.compactionUiThreshold,
+      targetConstructedContext: input.targetConstructedContext,
+    });
+    if (limitOrderingError) {
+      return json({ error: limitOrderingError }, { status: 400 });
     }
 
     const connectionTest = await validateProviderConnection(input.baseUrl, input.apiKey);

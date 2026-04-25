@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callInferenceProvider, streamInferenceProvider } from './inference-client';
 import {
 	encryptApiKey,
+	parseProviderLimitOverrides,
 	validateProviderConnection,
+	validateProviderLimitOrdering,
 	type InferenceProviderWithSecrets,
 } from './inference-providers';
 
@@ -20,6 +22,10 @@ function makeProvider(
 		thinkingType: null,
 		enabled: true,
 		sortOrder: 0,
+		maxModelContext: null,
+		compactionUiThreshold: null,
+		targetConstructedContext: null,
+		maxMessageLength: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		apiKeyEncrypted: encrypted,
@@ -135,5 +141,39 @@ describe('streamInferenceProvider', () => {
 		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
 			'https://api.fireworks.ai/inference/v1/models'
 		);
+	});
+});
+
+describe('provider limit validation', () => {
+	it('rejects non-positive and non-finite provider limits', () => {
+		expect(parseProviderLimitOverrides({ maxMessageLength: 0 })).toEqual({
+			ok: false,
+			error: 'Max message length must be at least 1',
+		});
+		expect(parseProviderLimitOverrides({ maxModelContext: -1 })).toEqual({
+			ok: false,
+			error: 'Max model context must be at least 1000',
+		});
+		expect(parseProviderLimitOverrides({ targetConstructedContext: 1200.5 })).toEqual({
+			ok: false,
+			error: 'Target constructed context must be an integer',
+		});
+	});
+
+	it('rejects inverted provider context limits', () => {
+		expect(
+			validateProviderLimitOrdering({
+				maxModelContext: 8000,
+				compactionUiThreshold: 9000,
+				targetConstructedContext: 4000,
+			})
+		).toBe('Compaction UI threshold must be less than max model context');
+		expect(
+			validateProviderLimitOrdering({
+				maxModelContext: 8000,
+				compactionUiThreshold: 6000,
+				targetConstructedContext: 7000,
+			})
+		).toBe('Target constructed context must be less than compaction UI threshold');
 	});
 });
