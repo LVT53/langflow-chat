@@ -1,9 +1,9 @@
 // Runtime config store: merges env vars with admin_config DB overrides.
 // All services should call getConfig() instead of importing from env.ts directly.
 
+import type { ModelConfig } from "./env";
 import { config as envConfig } from "./env";
 
-import type { ModelConfig } from "./env";
 export type { ModelConfig } from "./env";
 
 import type { ModelId } from "$lib/types";
@@ -378,14 +378,52 @@ export async function refreshConfig(): Promise<void> {
 	runtimeConfig = base;
 
 	// Cross-field validation: target < threshold < max (per-model)
+	function validateTriple(
+		max: number,
+		threshold: number,
+		target: number,
+	): boolean {
+		return target >= threshold || threshold >= max;
+	}
+
 	if (
-		runtimeConfig.targetConstructedContext >=
-			runtimeConfig.compactionUiThreshold ||
-		runtimeConfig.compactionUiThreshold >= runtimeConfig.maxModelContext
+		validateTriple(
+			runtimeConfig.maxModelContext,
+			runtimeConfig.compactionUiThreshold,
+			runtimeConfig.targetConstructedContext,
+		)
 	) {
 		runtimeConfig.targetConstructedContext = envConfig.targetConstructedContext;
 		runtimeConfig.compactionUiThreshold = envConfig.compactionUiThreshold;
 		runtimeConfig.maxModelContext = envConfig.maxModelContext;
+	}
+
+	if (
+		validateTriple(
+			runtimeConfig.model1MaxModelContext,
+			runtimeConfig.model1CompactionUiThreshold,
+			runtimeConfig.model1TargetConstructedContext,
+		)
+	) {
+		runtimeConfig.model1TargetConstructedContext =
+			envConfig.model1TargetConstructedContext;
+		runtimeConfig.model1CompactionUiThreshold =
+			envConfig.model1CompactionUiThreshold;
+		runtimeConfig.model1MaxModelContext = envConfig.model1MaxModelContext;
+	}
+
+	if (
+		validateTriple(
+			runtimeConfig.model2MaxModelContext,
+			runtimeConfig.model2CompactionUiThreshold,
+			runtimeConfig.model2TargetConstructedContext,
+		)
+	) {
+		runtimeConfig.model2TargetConstructedContext =
+			envConfig.model2TargetConstructedContext;
+		runtimeConfig.model2CompactionUiThreshold =
+			envConfig.model2CompactionUiThreshold;
+		runtimeConfig.model2MaxModelContext = envConfig.model2MaxModelContext;
 	}
 }
 
@@ -408,26 +446,26 @@ export function getSmallFileThreshold(): number {
 // Per-model context limit getters
 
 export function getMaxModelContext(modelId?: string): number {
-	if (modelId === 'model1') return runtimeConfig.model1MaxModelContext;
-	if (modelId === 'model2') return runtimeConfig.model2MaxModelContext;
+	if (modelId === "model1") return runtimeConfig.model1MaxModelContext;
+	if (modelId === "model2") return runtimeConfig.model2MaxModelContext;
 	return runtimeConfig.maxModelContext;
 }
 
 export function getCompactionUiThreshold(modelId?: string): number {
-	if (modelId === 'model1') return runtimeConfig.model1CompactionUiThreshold;
-	if (modelId === 'model2') return runtimeConfig.model2CompactionUiThreshold;
+	if (modelId === "model1") return runtimeConfig.model1CompactionUiThreshold;
+	if (modelId === "model2") return runtimeConfig.model2CompactionUiThreshold;
 	return runtimeConfig.compactionUiThreshold;
 }
 
 export function getTargetConstructedContext(modelId?: string): number {
-	if (modelId === 'model1') return runtimeConfig.model1TargetConstructedContext;
-	if (modelId === 'model2') return runtimeConfig.model2TargetConstructedContext;
+	if (modelId === "model1") return runtimeConfig.model1TargetConstructedContext;
+	if (modelId === "model2") return runtimeConfig.model2TargetConstructedContext;
 	return runtimeConfig.targetConstructedContext;
 }
 
 export function getMaxMessageLength(modelId?: string): number {
-	if (modelId === 'model1') return runtimeConfig.model1MaxMessageLength;
-	if (modelId === 'model2') return runtimeConfig.model2MaxMessageLength;
+	if (modelId === "model1") return runtimeConfig.model1MaxMessageLength;
+	if (modelId === "model2") return runtimeConfig.model2MaxMessageLength;
 	return runtimeConfig.maxMessageLength;
 }
 
@@ -486,11 +524,15 @@ export function getResolvedAdminConfigValues(
 		TARGET_CONSTRUCTED_CONTEXT: String(config.targetConstructedContext),
 		MODEL_1_MAX_MODEL_CONTEXT: String(config.model1MaxModelContext),
 		MODEL_1_COMPACTION_UI_THRESHOLD: String(config.model1CompactionUiThreshold),
-		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(config.model1TargetConstructedContext),
+		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(
+			config.model1TargetConstructedContext,
+		),
 		MODEL_1_MAX_MESSAGE_LENGTH: String(config.model1MaxMessageLength),
 		MODEL_2_MAX_MODEL_CONTEXT: String(config.model2MaxModelContext),
 		MODEL_2_COMPACTION_UI_THRESHOLD: String(config.model2CompactionUiThreshold),
-		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(config.model2TargetConstructedContext),
+		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(
+			config.model2TargetConstructedContext,
+		),
 		MODEL_2_MAX_MESSAGE_LENGTH: String(config.model2MaxMessageLength),
 		WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(
 			config.workingSetDocumentTokenBudget,
@@ -549,12 +591,20 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		COMPACTION_UI_THRESHOLD: String(envConfig.compactionUiThreshold),
 		TARGET_CONSTRUCTED_CONTEXT: String(envConfig.targetConstructedContext),
 		MODEL_1_MAX_MODEL_CONTEXT: String(envConfig.model1MaxModelContext),
-		MODEL_1_COMPACTION_UI_THRESHOLD: String(envConfig.model1CompactionUiThreshold),
-		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(envConfig.model1TargetConstructedContext),
+		MODEL_1_COMPACTION_UI_THRESHOLD: String(
+			envConfig.model1CompactionUiThreshold,
+		),
+		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(
+			envConfig.model1TargetConstructedContext,
+		),
 		MODEL_1_MAX_MESSAGE_LENGTH: String(envConfig.model1MaxMessageLength),
 		MODEL_2_MAX_MODEL_CONTEXT: String(envConfig.model2MaxModelContext),
-		MODEL_2_COMPACTION_UI_THRESHOLD: String(envConfig.model2CompactionUiThreshold),
-		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(envConfig.model2TargetConstructedContext),
+		MODEL_2_COMPACTION_UI_THRESHOLD: String(
+			envConfig.model2CompactionUiThreshold,
+		),
+		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(
+			envConfig.model2TargetConstructedContext,
+		),
 		MODEL_2_MAX_MESSAGE_LENGTH: String(envConfig.model2MaxMessageLength),
 		WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(
 			envConfig.workingSetDocumentTokenBudget,
@@ -610,34 +660,40 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 	};
 }
 
-let cachedProviders: import('$lib/server/services/inference-providers').InferenceProvider[] | null = null;
+let cachedProviders:
+	| import("$lib/server/services/inference-providers").InferenceProvider[]
+	| null = null;
 let providersLoadTime = 0;
 const PROVIDERS_CACHE_TTL_MS = 60000;
 
 export async function getInferenceProviders(): Promise<
-	import('$lib/server/services/inference-providers').InferenceProvider[]
+	import("$lib/server/services/inference-providers").InferenceProvider[]
 > {
 	const now = Date.now();
 	if (cachedProviders && now - providersLoadTime < PROVIDERS_CACHE_TTL_MS) {
 		return cachedProviders;
 	}
 
-	const { listProviders } = await import('$lib/server/services/inference-providers');
+	const { listProviders } = await import(
+		"$lib/server/services/inference-providers"
+	);
 	cachedProviders = await listProviders();
 	providersLoadTime = now;
 	return cachedProviders;
 }
 
 export async function getEnabledProviders(): Promise<
-	import('$lib/server/services/inference-providers').InferenceProvider[]
+	import("$lib/server/services/inference-providers").InferenceProvider[]
 > {
 	const providers = await getInferenceProviders();
 	return providers.filter((p) => p.enabled);
 }
 
 export async function getProviderById(
-	id: string
-): Promise<import('$lib/server/services/inference-providers').InferenceProvider | null> {
+	id: string,
+): Promise<
+	import("$lib/server/services/inference-providers").InferenceProvider | null
+> {
 	const providers = await getInferenceProviders();
 	return providers.find((p) => p.id === id) ?? null;
 }
