@@ -26,6 +26,11 @@ function createMockResponse(status: number, json: unknown) {
 	};
 }
 
+function mineruMdResponse(filename: string, mdContent: string) {
+	const stem = filename.replace(/\.[^.]+$/, '');
+	return { results: { [stem]: { md_content: mdContent } } };
+}
+
 describe('extractDocumentText', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -43,7 +48,7 @@ describe('extractDocumentText', () => {
 
 		vi.stubGlobal(
 			'fetch',
-			vi.fn().mockResolvedValue(createMockResponse(200, { markdown }))
+			vi.fn().mockResolvedValue(createMockResponse(200, mineruMdResponse('file.pdf', markdown)))
 		);
 
 		const result = await extractDocumentText(
@@ -57,10 +62,10 @@ describe('extractDocumentText', () => {
 		expect(result.normalizedName).toBe('file.md');
 	});
 
-	it('returns null text when MinerU returns empty markdown', async () => {
+	it('returns null text when MinerU returns empty md_content', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn().mockResolvedValue(createMockResponse(200, { markdown: '' }))
+			vi.fn().mockResolvedValue(createMockResponse(200, mineruMdResponse('empty.pdf', '')))
 		);
 
 		const result = await extractDocumentText(
@@ -92,7 +97,7 @@ describe('extractDocumentText', () => {
 		expect(result.text).toBeNull();
 	});
 
-	it('returns null text when response has no markdown or text field', async () => {
+	it('returns null text when response has no results', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn().mockResolvedValue(createMockResponse(200, { other: 'data' }))
@@ -102,6 +107,21 @@ describe('extractDocumentText', () => {
 			'/path/to/weird.pdf',
 			'application/pdf',
 			'weird.pdf'
+		);
+
+		expect(result.text).toBeNull();
+	});
+
+	it('returns null text when results are empty', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(createMockResponse(200, { results: {} }))
+		);
+
+		const result = await extractDocumentText(
+			'/path/to/empty_results.pdf',
+			'application/pdf',
+			'empty_results.pdf'
 		);
 
 		expect(result.text).toBeNull();
@@ -153,9 +173,9 @@ describe('extractDocumentText', () => {
 	it('handles missing mimeType gracefully', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi
-				.fn()
-				.mockResolvedValue(createMockResponse(200, { markdown: 'content' }))
+			vi.fn().mockResolvedValue(
+				createMockResponse(200, mineruMdResponse('unknown.bin', 'content'))
+			)
 		);
 
 		const result = await extractDocumentText(
@@ -168,10 +188,10 @@ describe('extractDocumentText', () => {
 		expect(result.normalizedName).toBe('unknown.md');
 	});
 
-	it('sends file with correct multipart form data structure', async () => {
+	it('sends files field with correct multipart form data', async () => {
 		const fetchSpy = vi
 			.fn()
-			.mockResolvedValue(createMockResponse(200, { markdown: 'data' }));
+			.mockResolvedValue(createMockResponse(200, mineruMdResponse('doc.docx', 'data')));
 		vi.stubGlobal('fetch', fetchSpy);
 
 		await extractDocumentText(
@@ -188,14 +208,19 @@ describe('extractDocumentText', () => {
 		expect(callOptions.method).toBe('POST');
 		expect(callOptions.body).toBeInstanceOf(FormData);
 		expect(callOptions.signal).toBeInstanceOf(AbortSignal);
+
+		const formData = callOptions.body as FormData;
+		expect(formData.has('files')).toBe(true);
+		expect(formData.has('return_md')).toBe(true);
+		expect(formData.get('return_md')).toBe('true');
 	});
 
 	it('produces normalized .md file name', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi
-				.fn()
-				.mockResolvedValue(createMockResponse(200, { markdown: 'text' }))
+			vi.fn().mockResolvedValue(
+				createMockResponse(200, mineruMdResponse('report.pdf', 'text'))
+			)
 		);
 
 		const result = await extractDocumentText(
@@ -210,9 +235,9 @@ describe('extractDocumentText', () => {
 	it('handles filenames with multiple dots', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi
-				.fn()
-				.mockResolvedValue(createMockResponse(200, { markdown: 'text' }))
+			vi.fn().mockResolvedValue(
+				createMockResponse(200, mineruMdResponse('archive.tar.gz', 'text'))
+			)
 		);
 
 		const result = await extractDocumentText(
@@ -226,7 +251,25 @@ describe('extractDocumentText', () => {
 
 	it('caches nothing between calls — stateless', () => {
 		resetDocumentExtractionExecutableCache();
-		// No-op call, should not throw
 		expect(() => resetDocumentExtractionExecutableCache()).not.toThrow();
+	});
+
+	it('falls back to first result when key does not match', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				createMockResponse(200, {
+					results: { some_unexpected_key: { md_content: 'fallback content' } },
+				})
+			)
+		);
+
+		const result = await extractDocumentText(
+			'/path/to/report.pdf',
+			'application/pdf',
+			'report.pdf'
+		);
+
+		expect(result.text).toBe('fallback content');
 	});
 });

@@ -47,6 +47,22 @@ function mimeFromExtension(ext: string): string | null {
 	return map[ext] ?? null;
 }
 
+function extractMdContent(data: unknown, originalName: string): string {
+	if (!data || typeof data !== 'object') return '';
+
+	const payload = data as Record<string, unknown>;
+	const results = payload.results;
+	if (!results || typeof results !== 'object') return '';
+
+	const resultsObj = results as Record<string, unknown>;
+	const docKey = basename(originalName, extname(originalName));
+	const docResult = resultsObj[docKey] ?? Object.values(resultsObj)[0];
+
+	if (!docResult || typeof docResult !== 'object') return '';
+	const md = (docResult as Record<string, unknown>).md_content;
+	return typeof md === 'string' ? md : '';
+}
+
 function toNormalizedName(originalName: string): string {
 	const stem = basename(originalName, extname(originalName));
 	return `${stem || 'document'}.md`;
@@ -77,7 +93,8 @@ export async function extractDocumentText(
 		const mime = mimeFromExtension(ext) ?? 'application/octet-stream';
 		const file = new File([fileBuffer], originalName, { type: mime });
 		const formData = new FormData();
-		formData.append('file', file);
+		formData.append('files', file);
+		formData.append('return_md', 'true');
 
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), config.mineruTimeoutMs);
@@ -101,7 +118,7 @@ export async function extractDocumentText(
 		}
 
 		const data = await response.json().catch(() => null);
-		const markdown = data?.markdown ?? data?.text ?? '';
+		const markdown = extractMdContent(data, originalName);
 
 		if (!markdown.trim()) {
 			console.info('[MINERU] empty_result', {
