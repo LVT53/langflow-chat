@@ -845,11 +845,12 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 		);
 	}
 
-	function handleSend(
+function handleSend(
 		payload: SendPayload,
 		skipUserMessage = false,
 		skipPersistUserMessage = false,
-		clearDraft = true
+		clearDraft = true,
+		retryAssistantMessageId?: string
 	) {
 		const text = payload.message;
 		const attachmentIds = payload.attachmentIds ?? [];
@@ -982,6 +983,7 @@ function maybeTriggerTitleGeneration(userMessage: string, assistantResponse: str
 				skipPersistUserMessage,
 				attachmentIds,
 				activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
+				retryAssistantMessageId,
 			}
 		);
 	}
@@ -1125,7 +1127,9 @@ onToolCall(name, input, status, details) {
 		handleSend(
 			{ message: userText, attachmentIds: [], attachments: [], pendingAttachments: [] },
 			true,
-			true
+			true,
+			true,
+			messageId
 		);
 	}
 

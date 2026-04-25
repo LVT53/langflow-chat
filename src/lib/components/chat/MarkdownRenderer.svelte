@@ -382,30 +382,21 @@
     margin-bottom: 0;
   }
 
-  /* Code blocks fade in as a unit when they first appear */
+  /* Code blocks fade in as a unit when they first appear.
+     During streaming, keep it subtle to avoid layout flicker. */
   .block-fade-in {
-    animation: blockFadeIn 450ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: blockFadeIn 300ms ease-out forwards;
   }
 
   @keyframes blockFadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(14px) scale(0.97);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  /* Word-level fade-in for streaming text (applied via JS to dynamically created spans) */
-  :global(.word-new) {
-    animation: wordFadeIn 150ms ease-out forwards;
-  }
-
-  @keyframes wordFadeIn {
-    from { opacity: 0; }
+    from { opacity: 0.4; }
     to   { opacity: 1; }
+  }
+
+  /* Word-level appearance for streaming text (applied via JS).
+     No animation - words appear instantly to prevent flicker. */
+  :global(.word-new) {
+    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -414,7 +405,6 @@
       opacity: 1;
     }
     :global(.word-new) {
-      animation: none;
       opacity: 1;
     }
   }
