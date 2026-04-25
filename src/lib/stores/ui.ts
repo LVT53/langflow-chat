@@ -44,6 +44,13 @@ export function initUIListeners(): () => void {
 	}
 
 	let wasDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+	
+	// Ensure the sidebar state is immediately synced to the viewport on mount
+	if (wasDesktop) {
+		sidebarOpen.set(true);
+	} else {
+		sidebarOpen.set(false);
+	}
 
 	const handler = () => {
 		const isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;

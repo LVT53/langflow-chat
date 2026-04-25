@@ -8,7 +8,11 @@ export function clearClientAccountState(): void {
 	clearConversationStore();
 	projects.set([]);
 	currentConversationId.set(null);
-	sidebarOpen.set(false);
+	if (typeof window !== 'undefined') {
+		sidebarOpen.set(window.innerWidth >= 1024);
+	} else {
+		sidebarOpen.set(false);
+	}
 	initAvatar(null);
 	clearConversationSessionState();
 }
