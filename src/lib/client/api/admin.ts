@@ -96,6 +96,10 @@ export interface InferenceProvider {
 	thinkingType: "enabled" | "disabled" | null;
 	enabled: boolean;
 	sortOrder: number;
+	maxModelContext: number | null;
+	compactionUiThreshold: number | null;
+	targetConstructedContext: number | null;
+	maxMessageLength: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -132,6 +136,10 @@ export async function createProvider(data: {
 	thinkingType?: "enabled" | "disabled" | null;
 	enabled?: boolean;
 	sortOrder?: number;
+	maxModelContext?: number | null;
+	compactionUiThreshold?: number | null;
+	targetConstructedContext?: number | null;
+	maxMessageLength?: number | null;
 }): Promise<InferenceProvider> {
 	const response = await requestJson<ProviderResponse>(
 		"/api/admin/providers",
@@ -156,6 +164,10 @@ export async function updateProvider(
 		thinkingType?: "enabled" | "disabled" | null;
 		enabled?: boolean;
 		sortOrder?: number;
+		maxModelContext?: number | null;
+		compactionUiThreshold?: number | null;
+		targetConstructedContext?: number | null;
+		maxMessageLength?: number | null;
 	},
 ): Promise<InferenceProvider> {
 	const response = await requestJson<ProviderResponse>(

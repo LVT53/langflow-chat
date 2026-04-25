@@ -29,6 +29,10 @@ export const PUT: RequestHandler = async (event) => {
     if (body.thinkingType !== undefined) input.thinkingType = normalizeThinkingType(body.thinkingType);
     if (body.enabled !== undefined) input.enabled = body.enabled;
     if (body.sortOrder !== undefined) input.sortOrder = body.sortOrder;
+    if (body.maxModelContext !== undefined) input.maxModelContext = body.maxModelContext;
+    if (body.compactionUiThreshold !== undefined) input.compactionUiThreshold = body.compactionUiThreshold;
+    if (body.targetConstructedContext !== undefined) input.targetConstructedContext = body.targetConstructedContext;
+    if (body.maxMessageLength !== undefined) input.maxMessageLength = body.maxMessageLength;
 
     if (body.reasoningEffort && !input.reasoningEffort) {
       return json({ error: 'Invalid reasoning effort' }, { status: 400 });

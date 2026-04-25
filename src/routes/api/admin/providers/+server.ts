@@ -37,6 +37,10 @@ export const POST: RequestHandler = async (event) => {
       thinkingType: normalizeThinkingType(body.thinkingType),
       enabled: body.enabled ?? true,
       sortOrder: body.sortOrder ?? 0,
+      maxModelContext: typeof body.maxModelContext === 'number' ? body.maxModelContext : null,
+      compactionUiThreshold: typeof body.compactionUiThreshold === 'number' ? body.compactionUiThreshold : null,
+      targetConstructedContext: typeof body.targetConstructedContext === 'number' ? body.targetConstructedContext : null,
+      maxMessageLength: typeof body.maxMessageLength === 'number' ? body.maxMessageLength : null,
     };
 
     if (!input.name || !input.displayName || !input.baseUrl || !input.apiKey || !input.modelName) {

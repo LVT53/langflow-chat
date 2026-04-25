@@ -19,6 +19,10 @@ export interface InferenceProvider {
   thinkingType: ProviderThinkingType | null;
   enabled: boolean;
   sortOrder: number;
+  maxModelContext: number | null;
+  compactionUiThreshold: number | null;
+  targetConstructedContext: number | null;
+  maxMessageLength: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +42,10 @@ export interface CreateProviderInput {
   thinkingType?: ProviderThinkingType | null;
   enabled?: boolean;
   sortOrder?: number;
+  maxModelContext?: number | null;
+  compactionUiThreshold?: number | null;
+  targetConstructedContext?: number | null;
+  maxMessageLength?: number | null;
 }
 
 export interface UpdateProviderInput {
@@ -49,6 +57,10 @@ export interface UpdateProviderInput {
   thinkingType?: ProviderThinkingType | null;
   enabled?: boolean;
   sortOrder?: number;
+  maxModelContext?: number | null;
+  compactionUiThreshold?: number | null;
+  targetConstructedContext?: number | null;
+  maxMessageLength?: number | null;
 }
 
 export function normalizeReasoningEffort(value: unknown): ProviderReasoningEffort | null {
@@ -106,6 +118,10 @@ export async function createProvider(input: CreateProviderInput): Promise<Infere
       thinkingType: input.thinkingType ?? null,
       enabled: input.enabled ?? true,
       sortOrder: input.sortOrder ?? 0,
+      maxModelContext: input.maxModelContext ?? null,
+      compactionUiThreshold: input.compactionUiThreshold ?? null,
+      targetConstructedContext: input.targetConstructedContext ?? null,
+      maxMessageLength: input.maxMessageLength ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -203,6 +219,18 @@ export async function updateProvider(
     updates.apiKeyEncrypted = encrypted;
     updates.apiKeyIv = iv;
   }
+  if (input.maxModelContext !== undefined) {
+    updates.maxModelContext = input.maxModelContext;
+  }
+  if (input.compactionUiThreshold !== undefined) {
+    updates.compactionUiThreshold = input.compactionUiThreshold;
+  }
+  if (input.targetConstructedContext !== undefined) {
+    updates.targetConstructedContext = input.targetConstructedContext;
+  }
+  if (input.maxMessageLength !== undefined) {
+    updates.maxMessageLength = input.maxMessageLength;
+  }
 
   const [updated] = await db
     .update(inferenceProviders)
@@ -271,6 +299,10 @@ function mapRowToProvider(row: typeof inferenceProviders.$inferSelect): Inferenc
     thinkingType: normalizeThinkingType(row.thinkingType),
     enabled: row.enabled ?? true,
     sortOrder: row.sortOrder ?? 0,
+    maxModelContext: row.maxModelContext ?? null,
+    compactionUiThreshold: row.compactionUiThreshold ?? null,
+    targetConstructedContext: row.targetConstructedContext ?? null,
+    maxMessageLength: row.maxMessageLength ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

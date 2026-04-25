@@ -17,23 +17,23 @@ import type {
 import { parseJsonRecord } from "$lib/server/utils/json";
 import { syncArtifactChunks } from "../../task-state/chunk-sync";
 import { queueArtifactSemanticEmbeddingRefresh } from "../../semantic-embedding-refresh";
-import { getConfig } from "../../../config-store";
+import { getConfig, getMaxModelContext as getPerModelMaxContext, getCompactionUiThreshold as getPerModelCompactionThreshold, getTargetConstructedContext as getPerModelTargetContext } from "../../../config-store";
 import {
   getDocumentTokenBudget,
   getWorkingSetPromptTokenBudget,
   getSmallFileThreshold,
 } from "../../../config-store";
 
-export function getMaxModelContext(): number {
-  return getConfig().maxModelContext;
+export function getMaxModelContext(modelId?: string): number {
+  return getPerModelMaxContext(modelId);
 }
 
-export function getCompactionUiThreshold(): number {
-  return getConfig().compactionUiThreshold;
+export function getCompactionUiThreshold(modelId?: string): number {
+  return getPerModelCompactionThreshold(modelId);
 }
 
-export function getTargetConstructedContext(): number {
-  return getConfig().targetConstructedContext;
+export function getTargetConstructedContext(modelId?: string): number {
+  return getPerModelTargetContext(modelId);
 }
 
 export const WORKING_SET_PROMPT_TOKEN_BUDGET = 20_000;
