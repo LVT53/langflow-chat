@@ -153,26 +153,6 @@
 		color: var(--text-secondary);
 	}
 
-	.menu-badge {
-		display: inline-flex;
-		min-width: 2rem;
-		justify-content: center;
-		border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent 18%);
-		border-radius: 9999px;
-		padding: 0.25rem 0.45rem;
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		color: var(--text-muted);
-		background: color-mix(in srgb, var(--surface-page) 82%, var(--surface-elevated) 18%);
-	}
-
-	.menu-badge--active {
-		color: var(--accent);
-		border-color: color-mix(in srgb, var(--accent) 35%, var(--border-default) 65%);
-		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
-	}
 
 	@keyframes menuFadeIn {
 		from {

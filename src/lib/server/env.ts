@@ -80,6 +80,7 @@ interface Config {
   documentParserTimeoutMs: number;
   braveSearchApiKey: string;
   concurrentStreamLimit: number;
+	systemPrompt: string;
   perUserStreamLimit: number;
 }
 
@@ -269,6 +270,7 @@ function readConfig(): Config {
       parseInt(process.env.DOCUMENT_PARSER_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || '300000', 10) ||
         300000
     ),
+    systemPrompt: process.env.SYSTEM_PROMPT || '',
     braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
     concurrentStreamLimit: Math.max(
       1,
