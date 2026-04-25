@@ -35,7 +35,7 @@
 
 <DialogShell
 	title="Reset Account"
-	description="This wipes your chats, knowledge base, memories, analytics, and generated files, but keeps your login credentials, profile preferences, and avatar. You will need to sign in again after the reset finishes."
+	description="This wipes your chats, Knowledge Base, memories, analytics, and generated files, but keeps your login credentials, profile preferences, and avatar. You will need to sign in again after the reset finishes."
 	onClose={onCancel}
 	maxWidthClass="max-w-[30rem]"
 	zIndexClass="z-[9999]"

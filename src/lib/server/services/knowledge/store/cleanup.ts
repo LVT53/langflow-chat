@@ -283,11 +283,41 @@ export async function deleteArtifactForUser(
   return result;
 }
 
-export type KnowledgeBulkAction = "forget_all_documents";
+export type KnowledgeBulkAction =
+  | "forget_all_documents"
+  | "forget_all_results"
+  | "forget_all_workflows";
 
 async function listDocumentRootArtifactIds(userId: string): Promise<string[]> {
   const documents = await listLogicalDocuments(userId);
   return documents.map((document) => document.id);
+}
+
+async function listOwnedArtifactIdsByType(
+  userId: string,
+  artifactType: "generated_output" | "work_capsule",
+): Promise<string[]> {
+  const ownershipScope = await getArtifactOwnershipScope(userId);
+  const rows = await db
+    .select()
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.userId, userId),
+        eq(artifacts.type, artifactType),
+        buildArtifactVisibilityCondition({ userId, ownershipScope }),
+      ),
+    );
+
+  return rows
+    .filter((row) =>
+      isArtifactCanonicallyOwned({
+        userId,
+        ownershipScope,
+        artifact: row,
+      }),
+    )
+    .map((row) => row.id);
 }
 
 export async function deleteKnowledgeArtifactsByAction(
@@ -298,6 +328,16 @@ export async function deleteKnowledgeArtifactsByAction(
   deletedStoragePaths: string[];
   failedStoragePaths: string[];
 }> {
+  if (action === "forget_all_results") {
+    const resultArtifactIds = await listOwnedArtifactIdsByType(userId, "generated_output");
+    return hardDeleteArtifactsForUser(userId, resultArtifactIds);
+  }
+
+  if (action === "forget_all_workflows") {
+    const workflowArtifactIds = await listOwnedArtifactIdsByType(userId, "work_capsule");
+    return hardDeleteArtifactsForUser(userId, workflowArtifactIds);
+  }
+
   const rootArtifactIds = await listDocumentRootArtifactIds(userId);
 
   if (rootArtifactIds.length === 0) {
