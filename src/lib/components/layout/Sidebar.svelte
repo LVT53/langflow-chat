@@ -31,9 +31,7 @@
 		user?: SessionUser | null;
 	} = $props();
 
-	let isDesktop = $state(
-		typeof window !== 'undefined' && window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT
-	);
+	let isDesktop = $state(browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false);
 	let showSearchModal = $state(false);
 	let transitionsEnabled = $state(false);
 
@@ -392,6 +390,7 @@
 		transition:
 			width 240ms cubic-bezier(0.22, 1, 0.36, 1),
 			transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+			translate 240ms cubic-bezier(0.22, 1, 0.36, 1),
 			opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
 			background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
 			border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -448,6 +447,7 @@
 		.sidebar-panel {
 			position: static !important;
 			transform: translateX(0) !important;
+			translate: 0 !important;
 			opacity: 1 !important;
 			width: 300px;
 		}
