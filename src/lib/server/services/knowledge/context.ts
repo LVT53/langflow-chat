@@ -456,16 +456,26 @@ export async function updateConversationContextStatus(params: {
 	promptArtifactCount?: number;
 	recentTurnCount?: number;
 	summary?: string | null;
+	contextLimits?: {
+		maxModelContext: number;
+		compactionUiThreshold: number;
+		targetConstructedContext: number;
+	};
 }): Promise<ConversationContextStatus> {
+	const maxContextTokens = params.contextLimits?.maxModelContext ?? getMaxModelContext();
+	const thresholdTokens =
+		params.contextLimits?.compactionUiThreshold ?? getCompactionUiThreshold();
+	const targetTokens =
+		params.contextLimits?.targetConstructedContext ?? getTargetConstructedContext();
 	const [row] = await db
 		.insert(conversationContextStatus)
 		.values({
 			conversationId: params.conversationId,
 			userId: params.userId,
 			estimatedTokens: params.estimatedTokens,
-			maxContextTokens: getMaxModelContext(),
-			thresholdTokens: getCompactionUiThreshold(),
-			targetTokens: getTargetConstructedContext(),
+			maxContextTokens,
+			thresholdTokens,
+			targetTokens,
 			compactionApplied: params.compactionApplied ? 1 : 0,
 			compactionMode: params.compactionMode ?? 'none',
 			routingStage: params.routingStage ?? 'deterministic',
@@ -486,9 +496,9 @@ export async function updateConversationContextStatus(params: {
 			set: {
 				userId: params.userId,
 				estimatedTokens: params.estimatedTokens,
-				maxContextTokens: getMaxModelContext(),
-				thresholdTokens: getCompactionUiThreshold(),
-				targetTokens: getTargetConstructedContext(),
+				maxContextTokens,
+				thresholdTokens,
+				targetTokens,
 				compactionApplied: params.compactionApplied ? 1 : 0,
 				compactionMode: params.compactionMode ?? 'none',
 				routingStage: params.routingStage ?? 'deterministic',

@@ -38,6 +38,7 @@ import {
 	AttachmentReadinessError,
 	findRelevantKnowledgeArtifacts,
 	getCompactionUiThreshold,
+	getMaxModelContext,
 	getTargetConstructedContext,
 	resolvePromptAttachmentArtifacts,
 	selectWorkingSetArtifactsForPrompt,
@@ -1071,6 +1072,12 @@ export async function buildConstructedContext(params: {
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
 	attachmentTraceId?: string;
+	modelId?: string;
+	contextLimits?: {
+		maxModelContext: number;
+		compactionUiThreshold: number;
+		targetConstructedContext: number;
+	};
 }): Promise<{
 	inputValue: string;
 	contextStatus: ConversationContextStatus;
@@ -1397,7 +1404,14 @@ export async function buildConstructedContext(params: {
 			total + estimateTokenCount(buildContextSection(section.title, section.body)),
 		estimateTokenCount(params.message) + 12
 	);
-	const targetBudget = getTargetConstructedContext();
+	const targetBudget =
+		params.contextLimits?.targetConstructedContext ??
+		getTargetConstructedContext(params.modelId);
+	const compactionThreshold =
+		params.contextLimits?.compactionUiThreshold ??
+		getCompactionUiThreshold(params.modelId);
+	const maxModelContext =
+		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
 	const budget = new TokenBudget(targetBudget);
 
 	budget.reserve('system', params.message);
@@ -1514,7 +1528,12 @@ export async function buildConstructedContext(params: {
 		compactionApplied:
 			compacted.compactionApplied ||
 			compacted.compactionMode !== 'none' ||
-			compacted.estimatedTokens >= getCompactionUiThreshold(),
+			compacted.estimatedTokens >= compactionThreshold,
+		contextLimits: {
+			maxModelContext,
+			compactionUiThreshold: compactionThreshold,
+			targetConstructedContext: targetBudget,
+		},
 		compactionMode: compacted.compactionMode,
 		routingStage: preparedContext.routingStage,
 		routingConfidence: preparedContext.routingConfidence,

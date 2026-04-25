@@ -92,7 +92,7 @@ export interface InferenceProvider {
 	displayName: string;
 	baseUrl: string;
 	modelName: string;
-	reasoningEffort: "low" | "medium" | "high" | null;
+	reasoningEffort: "low" | "medium" | "high" | "max" | "xhigh" | null;
 	thinkingType: "enabled" | "disabled" | null;
 	enabled: boolean;
 	sortOrder: number;
@@ -132,7 +132,7 @@ export async function createProvider(data: {
 	baseUrl: string;
 	apiKey: string;
 	modelName: string;
-	reasoningEffort?: "low" | "medium" | "high" | null;
+	reasoningEffort?: "low" | "medium" | "high" | "max" | "xhigh" | null;
 	thinkingType?: "enabled" | "disabled" | null;
 	enabled?: boolean;
 	sortOrder?: number;
@@ -160,7 +160,7 @@ export async function updateProvider(
 		baseUrl?: string;
 		apiKey?: string;
 		modelName?: string;
-		reasoningEffort?: "low" | "medium" | "high" | null;
+		reasoningEffort?: "low" | "medium" | "high" | "max" | "xhigh" | null;
 		thinkingType?: "enabled" | "disabled" | null;
 		enabled?: boolean;
 		sortOrder?: number;

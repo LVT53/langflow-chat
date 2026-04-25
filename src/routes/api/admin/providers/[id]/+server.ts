@@ -8,7 +8,9 @@ import {
   getProviderWithSecrets,
   normalizeReasoningEffort,
   normalizeThinkingType,
+  parseProviderLimitOverrides,
   updateProvider,
+  validateProviderLimitOrdering,
   validateProviderConnection,
   type UpdateProviderInput,
 } from '$lib/server/services/inference-providers';
@@ -18,6 +20,10 @@ export const PUT: RequestHandler = async (event) => {
     requireAdmin(event);
     const { id } = event.params;
     const body = await event.request.json();
+    const limits = parseProviderLimitOverrides(body);
+    if (!limits.ok) {
+      return json({ error: limits.error }, { status: 400 });
+    }
 
     const input: UpdateProviderInput = {};
 
@@ -29,10 +35,14 @@ export const PUT: RequestHandler = async (event) => {
     if (body.thinkingType !== undefined) input.thinkingType = normalizeThinkingType(body.thinkingType);
     if (body.enabled !== undefined) input.enabled = body.enabled;
     if (body.sortOrder !== undefined) input.sortOrder = body.sortOrder;
-    if (body.maxModelContext !== undefined) input.maxModelContext = body.maxModelContext;
-    if (body.compactionUiThreshold !== undefined) input.compactionUiThreshold = body.compactionUiThreshold;
-    if (body.targetConstructedContext !== undefined) input.targetConstructedContext = body.targetConstructedContext;
-    if (body.maxMessageLength !== undefined) input.maxMessageLength = body.maxMessageLength;
+    if (limits.value.maxModelContext !== undefined) input.maxModelContext = limits.value.maxModelContext;
+    if (limits.value.compactionUiThreshold !== undefined) {
+      input.compactionUiThreshold = limits.value.compactionUiThreshold;
+    }
+    if (limits.value.targetConstructedContext !== undefined) {
+      input.targetConstructedContext = limits.value.targetConstructedContext;
+    }
+    if (limits.value.maxMessageLength !== undefined) input.maxMessageLength = limits.value.maxMessageLength;
 
     if (body.reasoningEffort && !input.reasoningEffort) {
       return json({ error: 'Invalid reasoning effort' }, { status: 400 });
@@ -40,6 +50,37 @@ export const PUT: RequestHandler = async (event) => {
 
     if (body.thinkingType && !input.thinkingType) {
       return json({ error: 'Invalid thinking type' }, { status: 400 });
+    }
+
+    const needsExistingProvider =
+      Boolean(
+        body.baseUrl !== undefined ||
+        body.apiKey !== undefined ||
+        limits.value.maxModelContext !== undefined ||
+        limits.value.compactionUiThreshold !== undefined ||
+        limits.value.targetConstructedContext !== undefined
+      );
+    const existing = needsExistingProvider ? await getProviderWithSecrets(id) : null;
+    if (needsExistingProvider && !existing) {
+      return json({ error: 'Provider not found' }, { status: 404 });
+    }
+
+    if (existing) {
+      const limitOrderingError = validateProviderLimitOrdering({
+        maxModelContext:
+          input.maxModelContext !== undefined ? input.maxModelContext : existing.maxModelContext,
+        compactionUiThreshold:
+          input.compactionUiThreshold !== undefined
+            ? input.compactionUiThreshold
+            : existing.compactionUiThreshold,
+        targetConstructedContext:
+          input.targetConstructedContext !== undefined
+            ? input.targetConstructedContext
+            : existing.targetConstructedContext,
+      });
+      if (limitOrderingError) {
+        return json({ error: limitOrderingError }, { status: 400 });
+      }
     }
 
     const validationBaseUrl =
@@ -52,13 +93,9 @@ export const PUT: RequestHandler = async (event) => {
         : undefined;
 
     if (validationBaseUrl || validationApiKey) {
-      const existing = await getProviderWithSecrets(id);
-      if (!existing) {
-        return json({ error: 'Provider not found' }, { status: 404 });
-      }
-      const apiKey = validationApiKey ?? decryptApiKey(existing.apiKeyEncrypted, existing.apiKeyIv);
+      const apiKey = validationApiKey ?? decryptApiKey(existing!.apiKeyEncrypted, existing!.apiKeyIv);
       const connectionTest = await validateProviderConnection(
-        validationBaseUrl ?? existing.baseUrl,
+        validationBaseUrl ?? existing!.baseUrl,
         apiKey
       );
       if (!connectionTest.valid) {

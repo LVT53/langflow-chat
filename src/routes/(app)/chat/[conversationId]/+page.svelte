@@ -850,7 +850,8 @@ function handleSend(
 		skipUserMessage = false,
 		skipPersistUserMessage = false,
 		clearDraft = true,
-		retryAssistantMessageId?: string
+		retryAssistantMessageId?: string,
+		retryUserMessageId?: string
 	) {
 		const text = payload.message;
 		const attachmentIds = payload.attachmentIds ?? [];
@@ -984,6 +985,8 @@ function handleSend(
 				attachmentIds,
 				activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 				retryAssistantMessageId,
+				retryUserMessageId,
+				retryUserMessage: retryAssistantMessageId ? text : undefined,
 			}
 		);
 	}
@@ -993,13 +996,21 @@ function handleSend(
 			sendError = null;
 			isSending = true;
 			hasPersistedMessages = true;
+			const retryMessages = $messages;
+			const lastAssistantMsg = retryMessages.findLast((m) => m.role === 'assistant');
+			const retryAssistantMessageId = lastAssistantMsg?.id;
+			const retryAssistantIdx = retryAssistantMessageId
+				? retryMessages.findIndex((m) => m.id === retryAssistantMessageId)
+				: -1;
+			const retryUserMessageId =
+				retryAssistantIdx > 0 && retryMessages[retryAssistantIdx - 1]?.role === 'user'
+					? retryMessages[retryAssistantIdx - 1].id
+					: undefined;
 
 			const placeholderId = crypto.randomUUID();
 			const placeholder = createAssistantPlaceholder(placeholderId);
 			messages.update((list) => [...list, placeholder]);
 
-			const lastAssistantMsg = $messages.findLast((m) => m.role === 'assistant');
-			const retryAssistantMessageId = lastAssistantMsg?.id;
 			if (retryAssistantMessageId) {
 				messages.update((list) => removeMessageById(list, retryAssistantMessageId));
 			}
@@ -1098,6 +1109,8 @@ onToolCall(name, input, status, details) {
 					modelId: $selectedModel,
 					activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 					retryAssistantMessageId: retryAssistantMessageId ?? undefined,
+					retryUserMessageId,
+					retryUserMessage: retryAssistantMessageId ? lastUserMessage : undefined,
 				}
 			);
 		}
@@ -1115,13 +1128,8 @@ onToolCall(name, input, status, details) {
 		if (userIdx < 0 || msgs[userIdx].role !== 'user') return;
 
 		const userText = msgs[userIdx].content;
-		const idsToDelete = msgs.slice(assistantIdx).map((m) => m.id);
-
 		// Remove the assistant message(s) from in-memory state
 		messages.update((m) => m.slice(0, assistantIdx));
-
-		// Delete from DB (fire-and-forget, non-critical)
-		void deleteConversationMessages(data.conversation.id, idsToDelete).catch(() => {});
 
 		sendError = null;
 		handleSend(
@@ -1129,7 +1137,8 @@ onToolCall(name, input, status, details) {
 			true,
 			true,
 			true,
-			messageId
+			messageId,
+			msgs[userIdx].id
 		);
 	}
 

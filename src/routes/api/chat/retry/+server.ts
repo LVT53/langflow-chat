@@ -1,9 +1,10 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { and, eq, desc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { messages } from '$lib/server/db/schema';
 import { getConversation } from '$lib/server/services/conversations';
+import { deleteMessages } from '$lib/server/services/messages';
 import { getConfig } from '$lib/server/config-store';
 import { cleanupFailedTurn } from '$lib/server/services/chat-turn/retry-cleanup';
 import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
@@ -21,6 +22,8 @@ export const POST: RequestHandler = async (event) => {
 	let body: {
 		conversationId?: unknown;
 		assistantMessageId?: unknown;
+		userMessageId?: unknown;
+		userMessage?: unknown;
 		activeDocumentArtifactId?: unknown;
 		streamId?: unknown;
 		model?: unknown;
@@ -31,12 +34,26 @@ export const POST: RequestHandler = async (event) => {
 		return createJsonErrorResponse('Invalid JSON body', 400);
 	}
 
-	const { conversationId, assistantMessageId, activeDocumentArtifactId, streamId, model } = body;
+	const {
+		conversationId,
+		assistantMessageId,
+		userMessageId,
+		userMessage,
+		activeDocumentArtifactId,
+		streamId,
+		model,
+	} = body;
 	if (typeof conversationId !== 'string' || !conversationId.trim()) {
 		return createJsonErrorResponse('conversationId is required', 400);
 	}
 	if (typeof assistantMessageId !== 'string' || !assistantMessageId.trim()) {
 		return createJsonErrorResponse('assistantMessageId is required', 400);
+	}
+	if (typeof userMessageId !== 'string' || !userMessageId.trim()) {
+		return createJsonErrorResponse('userMessageId is required', 400);
+	}
+	if (typeof userMessage !== 'string' || !userMessage.trim()) {
+		return createJsonErrorResponse('userMessage is required', 400);
 	}
 
 	const conversation = await getConversation(user.id, conversationId);
@@ -44,19 +61,33 @@ export const POST: RequestHandler = async (event) => {
 		return createJsonErrorResponse('Conversation not found', 404);
 	}
 
-	const [assistantMsg] = await db
-		.select({ role: messages.role })
+	const conversationMessages = await db
+		.select({
+			id: messages.id,
+			role: messages.role,
+			content: messages.content,
+		})
 		.from(messages)
-		.where(
-			and(
-				eq(messages.id, assistantMessageId),
-				eq(messages.conversationId, conversationId),
-			),
-		)
-		.limit(1);
+		.where(eq(messages.conversationId, conversationId))
+		.orderBy(asc(messages.createdAt));
 
+	const assistantIndex = conversationMessages.findIndex((message) => message.id === assistantMessageId);
+	const assistantMsg = assistantIndex >= 0 ? conversationMessages[assistantIndex] : null;
 	if (!assistantMsg || assistantMsg.role !== 'assistant') {
 		return createJsonErrorResponse('Assistant message not found', 404);
+	}
+
+	const precedingUserMsg = conversationMessages[assistantIndex - 1];
+	if (
+		!precedingUserMsg ||
+		precedingUserMsg.role !== 'user' ||
+		precedingUserMsg.id !== userMessageId
+	) {
+		return createJsonErrorResponse('Retry target does not match the preceding user message', 409);
+	}
+
+	if (precedingUserMsg.content.trim() !== userMessage.trim()) {
+		return createJsonErrorResponse('Retry user message text does not match persisted message', 409);
 	}
 
 	let cleanupResult;
@@ -84,19 +115,12 @@ export const POST: RequestHandler = async (event) => {
 		console.warn('[RETRY] Cleanup warnings:', cleanupResult.warnings);
 	}
 
-	const [userMsg] = await db
-		.select({ content: messages.content })
-		.from(messages)
-		.where(
-			and(
-				eq(messages.conversationId, conversationId),
-				eq(messages.role, 'user'),
-			),
-		)
-		.orderBy(desc(messages.createdAt))
-		.limit(1);
+	const trailingMessageIds = conversationMessages
+		.slice(assistantIndex)
+		.map((message) => message.id);
+	await deleteMessages(trailingMessageIds);
 
-	if (!userMsg || !userMsg.content.trim()) {
+	if (!precedingUserMsg.content.trim()) {
 		return createJsonErrorResponse('No user message found to retry', 400);
 	}
 
@@ -104,7 +128,7 @@ export const POST: RequestHandler = async (event) => {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			message: userMsg.content,
+			message: precedingUserMsg.content,
 			conversationId,
 			activeDocumentArtifactId:
 				typeof activeDocumentArtifactId === 'string' && activeDocumentArtifactId.trim()

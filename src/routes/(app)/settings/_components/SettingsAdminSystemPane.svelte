@@ -195,6 +195,10 @@
 		MODEL_2_FLOW_ID: "Model 2 Flow ID",
 		MODEL_2_COMPONENT_ID: "Model 2 Component ID",
 		MODEL_2_ENABLED: "Enable Model 2",
+		TRANSLATOR_URL: "Translator URL",
+		TRANSLATOR_MODEL: "Translator Model",
+		TRANSLATION_MAX_TOKENS: "Translation Max Tokens",
+		TRANSLATION_TEMPERATURE: "Translation Temperature",
 		MODEL_1_MAX_MODEL_CONTEXT: "Model 1 Max Context",
 		MODEL_1_COMPACTION_UI_THRESHOLD: "Model 1 Compaction Threshold",
 		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: "Model 1 Target Context",
@@ -212,6 +216,7 @@
 		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN: "Title Generator Code Appendix (English)",
 		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU: "Title Generator Code Appendix (Hungarian)",
 		HONCHO_CONTEXT_WAIT_MS: "Honcho Session Context Wait (ms)",
+		HONCHO_PERSONA_CONTEXT_WAIT_MS: "Honcho Persona Context Wait (ms)",
 		HONCHO_OVERVIEW_WAIT_MS: "Honcho Overview Wait (ms)",
 		DOCUMENT_PARSER_OCR_ENABLED: "Document Parser OCR Enabled",
 		DOCUMENT_PARSER_OCR_SERVER_URL: "Document Parser OCR Server URL",
@@ -224,6 +229,7 @@
 		MAX_MODEL_CONTEXT: "Max Model Context (tokens)",
 		COMPACTION_UI_THRESHOLD: "Compaction UI Threshold (tokens)",
 		TARGET_CONSTRUCTED_CONTEXT: "Target Constructed Context (tokens)",
+		MAX_MESSAGE_LENGTH: "Max Message Length (characters)",
 		SYSTEM_PROMPT: "System Prompt",
 
 	};
@@ -234,11 +240,14 @@
 		"MAX_MODEL_CONTEXT",
 		"COMPACTION_UI_THRESHOLD",
 		"TARGET_CONSTRUCTED_CONTEXT",
+		"MAX_MESSAGE_LENGTH",
 		"DOCUMENT_PARSER_NUM_WORKERS",
 		"DOCUMENT_PARSER_MAX_PAGES",
 		"DOCUMENT_PARSER_DPI",
 		"DOCUMENT_PARSER_TIMEOUT_MS",
 		"HONCHO_PERSONA_CONTEXT_WAIT_MS",
+		"TRANSLATION_MAX_TOKENS",
+		"TRANSLATION_TEMPERATURE",
 	]);
 
 	function placeholderFor(key: string): string {
@@ -555,7 +564,7 @@
 <!-- Modal -->
 {#if showModal}
 	<ModelFormModal
-		{modalError}
+		error={modalError}
 		model={modalModel}
 		isCreate={modalIsCreate}
 		saving={modalSaving}

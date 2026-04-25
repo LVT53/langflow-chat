@@ -71,6 +71,7 @@ export async function parseChatTurnRequest(
 
 	let modelId: ModelId | undefined;
 	let modelDisplayName: string;
+	let resolvedMaxMessageLength: number | null = null;
 
 	const modelStr = typeof model === 'string' ? model.trim() : '';
 
@@ -90,6 +91,7 @@ export async function parseChatTurnRequest(
 			}
 			modelId = modelStr as ModelId;
 			modelDisplayName = provider.displayName;
+			resolvedMaxMessageLength = provider.maxMessageLength;
 		} else {
 			modelId = undefined;
 			modelDisplayName = runtimeConfig.model1.displayName;
@@ -103,7 +105,7 @@ export async function parseChatTurnRequest(
 	}
 
 	// Per-model message length check
-	const maxLen = getMaxMessageLength(modelId);
+	const maxLen = resolvedMaxMessageLength ?? getMaxMessageLength(modelId);
 	if (normalizedMessage.length > maxLen) {
 		return {
 			ok: false,
