@@ -11,11 +11,26 @@
 		segments?: ThinkingSegment[];
 	} = $props();
 
-	let expanded = $state(false);
-	let container = $state<HTMLDivElement | undefined>(undefined);
+let expanded = $state(false);
+let container = $state<HTMLDivElement | undefined>(undefined);
+let prevContentLength = $state(0);
+let contentFresh = $state(false);
+let freshTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	const label = $derived(thinkingIsDone ? 'Thought' : 'Thinking');
-	const isActiveThinking = $derived(!thinkingIsDone);
+const isActiveThinking = $derived(!thinkingIsDone);
+
+$effect(() => {
+const totalLength = hasSegments
+? segments.reduce((sum, s) => sum + (s.type === 'text' ? s.content.length : 0), 0)
+: content.length;
+if (totalLength > prevContentLength && isActiveThinking) {
+contentFresh = true;
+clearTimeout(freshTimeout);
+freshTimeout = setTimeout(() => { contentFresh = false; }, 500);
+}
+prevContentLength = totalLength;
+});
 	const hasSegments = $derived(segments.length > 0);
 	const visibleTools = $derived(
 		segments.filter(
@@ -114,7 +129,7 @@
 	{/if}
 
 	{#if expanded}
-		<div class="thinking-content" transition:slide>
+<div class="thinking-content" class:content-fresh={contentFresh} transition:slide>
 			{#if hasSegments}
 				{#each segments as seg}
 					{#if seg.type === 'text'}
@@ -283,7 +298,17 @@
 		padding: var(--space-sm) 0 var(--space-sm);
 		width: 100%;
 		min-width: 0;
-	}
+}
+
+/* Subtle fade-in mirrored from MarkdownRenderer.block-fade-in for thinking content arriving during streaming */
+@keyframes thinkContentFadeIn {
+from { opacity: 0.5; }
+to   { opacity: 1; }
+}
+
+.thinking-content.content-fresh {
+animation: thinkContentFadeIn 300ms ease-out;
+}
 
 	.thinking-text {
 		margin: 0;
@@ -334,22 +359,27 @@
 		flex-shrink: 0;
 	}
 
-	@media (prefers-reduced-motion: reduce) {
-		.thinking-label.is-active {
-			color: var(--text-muted);
-			-webkit-text-fill-color: var(--text-muted);
-			background: none;
-			animation: none;
-		}
-
-		.chevron {
-			transition: none;
-		}
-
-		.tool-dot,
-		.tool-dot-inline {
-			animation: none;
-			opacity: 0.7;
-		}
+@media (prefers-reduced-motion: reduce) {
+	.thinking-label.is-active {
+		color: var(--text-muted);
+		-webkit-text-fill-color: var(--text-muted);
+		background: none;
+		animation: none;
 	}
+
+	.chevron {
+		transition: none;
+	}
+
+	.tool-dot,
+	.tool-dot-inline {
+		animation: none;
+		opacity: 0.7;
+	}
+
+	.thinking-content.content-fresh {
+		animation: none;
+		opacity: 1;
+	}
+}
 </style>

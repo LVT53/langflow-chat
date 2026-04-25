@@ -701,7 +701,7 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('Need to break this down.');
 		expect(body).toContain('"text":"Final"');
 		expect(body).toContain('"text":" answer"');
-		expect(body).toContain('"thinking":"Need to break this down.\\n"');
+		expect(body).toContain('"thinking":"Need to break this down."');
 	});
 
 	it('extracts reasoning from OpenAI-compatible final message payloads', async () => {
@@ -721,7 +721,7 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: thinking');
 		expect(body).toContain('First analyze the request.');
 		expect(body).toContain('"text":"Completed response."');
-		expect(body).toContain('"thinking":"First analyze the request.\\n"');
+		expect(body).toContain('"thinking":"First analyze the request."');
 	});
 
 	it('extracts inline thinking tags from token chunks and persists separated thinking', async () => {

@@ -933,7 +933,7 @@ const sendEndAndClose = async (
             const rawChunk = extractAssistantChunk(eventType, data);
             const reasoningChunk = getReasoningContent(data);
             if (reasoningChunk) {
-              if (!emitThinking(`${reasoningChunk}\n`)) {
+              if (!emitThinking(reasoningChunk)) {
                 return;
               }
             }

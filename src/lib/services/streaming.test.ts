@@ -121,7 +121,7 @@ describe('streamChat', () => {
 				'data: {"text":"Final answer"}\n',
 				'\n',
 				'event: end\n',
-				'data: {"thinking":"Need to reason first\\n"}\n',
+				'data: {"thinking":"Need to reason first"}\n',
 				'\n'
 			])
 		);
@@ -137,7 +137,7 @@ describe('streamChat', () => {
 		expect(cb.onThinking).toHaveBeenCalledOnce();
 		expect(cb.onThinking).toHaveBeenCalledWith('Need to reason first');
 		expect(cb.onEnd).toHaveBeenCalledWith('Final answer', {
-			thinking: 'Need to reason first\n'
+			thinking: 'Need to reason first'
 		});
 	});
 

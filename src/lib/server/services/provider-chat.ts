@@ -270,7 +270,7 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
           if (reasoning) {
             roundReasoning += reasoning;
             if (params.callbacks?.onThinking) {
-              const shouldContinue = await params.callbacks.onThinking(`${reasoning}\n`);
+              const shouldContinue = await params.callbacks.onThinking(reasoning);
               if (shouldContinue === false) {
                 return { ...context, text: finalText, provider, usage };
               }
