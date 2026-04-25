@@ -114,7 +114,7 @@ describe('streamInferenceProvider', () => {
 			'https://api.fireworks.ai/inference/v1/chat/completions'
 		);
 		expect(body.reasoning_effort).toBe('high');
-		expect(body.extra_body).toEqual({ thinking: { type: 'enabled' } });
+		expect(body.thinking).toEqual({ type: 'enabled' });
 	});
 
 	it('validates provider model URLs without duplicating v1', async () => {

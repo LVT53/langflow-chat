@@ -121,17 +121,20 @@ function buildOutboundSystemPrompt(params: {
 		day: "numeric",
 	});
 	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for all relative timeframes. You do not need to call a tool to find the date.]`;
-	const additions: string[] = [
-		explicitDateContext,
-		DATE_BEFORE_SEARCH_GUARD,
-		FILE_GENERATION_GUARD,
-		IMAGE_SEARCH_GUARD,
-		PERSONA_MEMORY_GUARD,
-	];
+  const additions: string[] = [
+    explicitDateContext,
+    DATE_BEFORE_SEARCH_GUARD,
+  ];
 
-	if (containsHttpUrl(params.inputValue)) {
-		additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
-	}
+  if (containsHttpUrl(params.inputValue)) {
+    additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
+  }
+
+  additions.push(
+    FILE_GENERATION_GUARD,
+    IMAGE_SEARCH_GUARD,
+    PERSONA_MEMORY_GUARD,
+  );
 
 	if (
 		typeof params.systemPromptAppendix === "string" &&

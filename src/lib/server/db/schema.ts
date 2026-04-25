@@ -375,7 +375,7 @@ export const inferenceProviders = sqliteTable('inference_providers', {
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   apiKeyIv: text('api_key_iv').notNull(),
   modelName: text('model_name').notNull(),
-  reasoningEffort: text('reasoning_effort', { enum: ['low', 'medium', 'high'] }),
+  reasoningEffort: text('reasoning_effort', { enum: ['low', 'medium', 'high', 'max', 'xhigh'] }),
   thinkingType: text('thinking_type', { enum: ['enabled', 'disabled'] }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),

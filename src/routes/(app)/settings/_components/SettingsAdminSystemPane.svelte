@@ -46,7 +46,7 @@ let formDisplayName = $state("");
 let formBaseUrl = $state("");
 let formApiKey = $state("");
 let formModelName = $state("");
-let formReasoningEffort = $state<"" | "low" | "medium" | "high">("");
+let formReasoningEffort = $state<"" | "low" | "medium" | "high" | "max" | "xhigh">("");
 let formThinkingType = $state<"" | "enabled" | "disabled">("");
 let formEnabled = $state(true);
 let formSaving = $state(false);
@@ -460,8 +460,9 @@ function placeholderFor(key: string): string {
 					<option value=''>Provider default</option>
 					<option value='low'>Low</option>
 					<option value='medium'>Medium</option>
-					<option value='high'>High</option>
-				</select>
+          <option value='high'>High</option>
+          <option value='max'>Max</option>
+          <option value='xhigh'>X-High</option>
 			</div>
 			<div>
 				<label class='settings-label' for='form-thinking-type'>extra_body thinking.type</label>
