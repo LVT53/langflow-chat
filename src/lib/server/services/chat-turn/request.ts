@@ -115,6 +115,8 @@ export async function parseChatTurnRequest(
 	}
 
 	const safeAttachmentIds = Array.isArray(attachmentIds)
+		? attachmentIds.filter((id): id is string => typeof id === 'string')
+		: [];
 
 	return {
 		ok: true,
