@@ -31,9 +31,7 @@
 		user?: SessionUser | null;
 	} = $props();
 
-	let isDesktop = $state(
-		typeof window !== 'undefined' && window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT
-	);
+	let isDesktop = $state(browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false);
 	let showSearchModal = $state(false);
 	let transitionsEnabled = $state(false);
 
