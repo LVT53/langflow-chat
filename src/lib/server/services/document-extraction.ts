@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { basename, extname } from 'path';
 import { getConfig } from '../config-store';
 
@@ -134,14 +134,7 @@ export async function extractDocumentText(
 			durationMs: Date.now() - startedAt,
 			textLength: markdown.length,
 			textPreview: markdown.slice(0, 300),
-			debugDump: `${filePath}.mineru-debug.md`,
 		});
-
-		try {
-			await writeFile(`${filePath}.mineru-debug.md`, markdown.trim(), 'utf8');
-		} catch {
-			// best-effort debug dump, not critical
-		}
 
 		return { text: markdown.trim(), normalizedName, mimeType: 'text/markdown' };
 	} catch (error) {

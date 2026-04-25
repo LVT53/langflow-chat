@@ -1265,6 +1265,7 @@ export async function buildConstructedContext(params: {
 					artifacts: currentAttachments,
 					label: 'Attachment',
 					snippets: artifactSnippets,
+					excerptTokenBudget: 20_000,
 				})
 			: '';
 	const serializedAttachmentBody = extractSerializedAttachmentBody(serializedCurrentAttachments);

@@ -8,14 +8,10 @@ vi.mock('../config-store', () => ({
 const { readFileMock } = vi.hoisted(() => ({
 	readFileMock: vi.fn().mockResolvedValue(Buffer.from('mock file content')),
 }));
-const { writeFileMock } = vi.hoisted(() => ({
-	writeFileMock: vi.fn().mockResolvedValue(undefined),
-}));
 
 vi.mock('fs/promises', () => ({
 	readFile: readFileMock,
-	writeFile: writeFileMock,
-	default: { readFile: readFileMock, writeFile: writeFileMock },
+	default: { readFile: readFileMock },
 }));
 
 import { getConfig } from '../config-store';

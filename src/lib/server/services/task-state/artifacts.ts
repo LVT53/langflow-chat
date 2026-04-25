@@ -12,7 +12,7 @@ import {
 import { mapArtifactChunk } from "./mappers";
 
 /** Maximum characters for full content retrieval to prevent unbounded content */
-const FULL_CONTENT_MAX_CHARS = 6000;
+const FULL_CONTENT_MAX_CHARS = 100_000;
 
 export { syncArtifactChunks } from "./chunk-sync";
 
@@ -112,7 +112,7 @@ export async function getPromptArtifactSnippets(params: {
   for (const artifact of params.artifacts) {
     const chunks = chunksByArtifactId.get(artifact.id) ?? [];
 
-    if (chunks.length === 0) {
+    if (chunks.length === 0 || params.useFullContent) {
       if (params.useFullContent && artifact.contentText) {
         const fullContent = await getFullArtifactContent(
           artifact.id,
