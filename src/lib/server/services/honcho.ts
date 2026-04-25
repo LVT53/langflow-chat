@@ -48,6 +48,7 @@ import {
 	WORKING_SET_PROMPT_TOKEN_BUDGET,
 } from './knowledge';
 import { scoreMatch } from './working-set';
+import { clipText } from '$lib/server/utils/text';
 import type {
 	Artifact,
 	ChatMessage,
@@ -338,8 +339,9 @@ export async function syncArtifactToHoncho(params: {
 	// Honcho has a ~5MB file size limit, and extracted text is more useful for memory.
 	const fallbackArtifact = params.fallbackTextArtifact;
 	if (fallbackArtifact?.contentText?.trim()) {
+		const clipped = clipText(fallbackArtifact.contentText, 50_000);
 		await session.addMessages(
-			userPeer.message(fallbackArtifact.contentText, {
+			userPeer.message(clipped, {
 				metadata: {
 					role: 'user',
 					artifactId: fallbackArtifact.id,
