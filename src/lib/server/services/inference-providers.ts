@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { inferenceProviders } from '../db/schema';
 import { config } from '../env';
+import { buildOpenAICompatibleUrl } from './openai-compatible-url';
 
 export type ProviderReasoningEffort = 'low' | 'medium' | 'high';
 export type ProviderThinkingType = 'enabled' | 'disabled';
@@ -230,7 +231,7 @@ export async function validateProviderConnection(
       return { valid: false, error: 'Base URL must use HTTP or HTTPS protocol' };
     }
 
-    const modelsUrl = `${baseUrl.replace(/\/$/, '')}/v1/models`;
+    const modelsUrl = buildOpenAICompatibleUrl(baseUrl, '/v1/models');
     const response = await fetch(modelsUrl, {
       method: 'GET',
       headers: {

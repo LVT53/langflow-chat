@@ -1,6 +1,7 @@
 import type { InferenceProviderWithSecrets } from './inference-providers';
 import { decryptApiKey } from './inference-providers';
 import { getConfig } from '../config-store';
+import { buildOpenAICompatibleUrl } from './openai-compatible-url';
 
 export type ChatCompletionToolCall = {
   id: string;
@@ -116,7 +117,7 @@ export async function callInferenceProvider(
     throw createInferenceError('auth_error', 'Failed to decrypt API key - session secret may have changed');
   }
 
-  const url = `${provider.baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
+  const url = buildOpenAICompatibleUrl(provider.baseUrl, '/v1/chat/completions');
 
   try {
     const body = buildRequestBody(provider, request, false);
@@ -181,7 +182,7 @@ export async function* streamInferenceProvider(
     throw createInferenceError('auth_error', 'Failed to decrypt API key - session secret may have changed');
   }
 
-  const url = `${provider.baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
+  const url = buildOpenAICompatibleUrl(provider.baseUrl, '/v1/chat/completions');
 
   try {
     const body = buildRequestBody(provider, request, true);
