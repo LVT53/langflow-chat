@@ -182,7 +182,6 @@
 	});
 
 	const CONFIG_LABELS: Record<string, string> = {
-		MAX_MESSAGE_LENGTH: "Max Message Length",
 		MODEL_1_BASEURL: "Model 1 Base URL",
 		MODEL_1_NAME: "Model 1 Name",
 		MODEL_1_DISPLAY_NAME: "Model 1 Display Name",
@@ -225,10 +224,11 @@
 		MAX_MODEL_CONTEXT: "Max Model Context (tokens)",
 		COMPACTION_UI_THRESHOLD: "Compaction UI Threshold (tokens)",
 		TARGET_CONSTRUCTED_CONTEXT: "Target Constructed Context (tokens)",
+		SYSTEM_PROMPT: "System Prompt",
+
 	};
 
 	const NUMBER_KEYS = new Set([
-		"MAX_MESSAGE_LENGTH",
 		"HONCHO_CONTEXT_WAIT_MS",
 		"HONCHO_OVERVIEW_WAIT_MS",
 		"MAX_MODEL_CONTEXT",
@@ -524,20 +524,22 @@
 	</div>
 </section>
 
-<!-- General -->
+<!-- System Prompt -->
 <section class="settings-card mb-4">
-	<h2 class="settings-section-title">General</h2>
+	<h2 class="settings-section-title">System Prompt</h2>
 	<div>
-		<label class="settings-label" for="MAX_MESSAGE_LENGTH">{CONFIG_LABELS.MAX_MESSAGE_LENGTH}</label>
-		<input
-			id="MAX_MESSAGE_LENGTH"
-			type="number"
-			class="settings-input"
-			bind:value={adminConfig.MAX_MESSAGE_LENGTH}
-			placeholder={placeholderFor('MAX_MESSAGE_LENGTH')}
-		/>
+		<label class="settings-label" for="SYSTEM_PROMPT">{CONFIG_LABELS.SYSTEM_PROMPT}</label>
+		<textarea
+			id="SYSTEM_PROMPT"
+			class="settings-input min-h-[200px]"
+			bind:value={adminConfig.SYSTEM_PROMPT}
+			rows="10"
+			placeholder={placeholderFor('SYSTEM_PROMPT')}
+		></textarea>
+		<p class="mt-1 text-xs text-text-muted">Set the system prompt used for all models. You can paste a full system prompt or use a reference key like <code>alfyai-nemotron</code>. Leave empty to use per-model defaults.</p>
 	</div>
 </section>
+
 
 <!-- Save button -->
 {#if adminMessage}

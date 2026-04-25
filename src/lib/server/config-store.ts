@@ -66,6 +66,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"DOCUMENT_PARSER_MAX_PAGES",
 	"DOCUMENT_PARSER_DPI",
 	"DOCUMENT_PARSER_TIMEOUT_MS",
+	"SYSTEM_PROMPT",
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -137,6 +138,7 @@ export interface RuntimeConfig {
 	braveSearchApiKey: string;
 	concurrentStreamLimit: number;
 	perUserStreamLimit: number;
+	systemPrompt: string;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -359,6 +361,10 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 			config.documentParserTimeoutMs = Math.max(1000, parsed);
 		}
 	},
+	SYSTEM_PROMPT: (config, value) => {
+		config.systemPrompt = normalizeSystemPromptReference(value) ?? "";
+	},
+
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -424,6 +430,11 @@ export async function refreshConfig(): Promise<void> {
 		runtimeConfig.model2CompactionUiThreshold =
 			envConfig.model2CompactionUiThreshold;
 		runtimeConfig.model2MaxModelContext = envConfig.model2MaxModelContext;
+	}
+	// Global SYSTEM_PROMPT overrides per-model system prompts
+	if (runtimeConfig.systemPrompt) {
+		runtimeConfig.model1.systemPrompt = runtimeConfig.systemPrompt;
+		runtimeConfig.model2.systemPrompt = runtimeConfig.systemPrompt;
 	}
 }
 
@@ -580,6 +591,7 @@ export function getResolvedAdminConfigValues(
 		DOCUMENT_PARSER_MAX_PAGES: String(config.documentParserMaxPages),
 		DOCUMENT_PARSER_DPI: String(config.documentParserDpi),
 		DOCUMENT_PARSER_TIMEOUT_MS: String(config.documentParserTimeoutMs),
+		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 	};
 }
 
@@ -657,6 +669,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		DOCUMENT_PARSER_MAX_PAGES: String(envConfig.documentParserMaxPages),
 		DOCUMENT_PARSER_DPI: String(envConfig.documentParserDpi),
 		DOCUMENT_PARSER_TIMEOUT_MS: String(envConfig.documentParserTimeoutMs),
+		SYSTEM_PROMPT: envConfig.systemPrompt,
 	};
 }
 
