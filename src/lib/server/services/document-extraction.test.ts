@@ -213,6 +213,8 @@ describe('extractDocumentText', () => {
 		expect(formData.has('files')).toBe(true);
 		expect(formData.has('return_md')).toBe(true);
 		expect(formData.get('return_md')).toBe('true');
+		expect(formData.has('parse_method')).toBe(true);
+		expect(formData.get('parse_method')).toBe('ocr');
 	});
 
 	it('produces normalized .md file name', async () => {

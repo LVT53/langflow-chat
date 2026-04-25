@@ -95,6 +95,7 @@ export async function extractDocumentText(
 		const formData = new FormData();
 		formData.append('files', file);
 		formData.append('return_md', 'true');
+		formData.append('parse_method', 'ocr');
 
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), config.mineruTimeoutMs);
