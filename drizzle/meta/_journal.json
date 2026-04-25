@@ -106,6 +106,13 @@
       "when": 1777140000001,
       "tag": "1777140000001_inference_provider_reasoning_options",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777140000002,
+      "tag": "1777140000002_inference_provider_context_limits",
+      "breakpoints": true
     }
 
   ]
