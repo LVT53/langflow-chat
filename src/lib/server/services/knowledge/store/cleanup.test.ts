@@ -387,4 +387,91 @@ describe("knowledge store cleanup", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("deleteKnowledgeArtifactsByAction", () => {
+    it("deletes generated output artifacts for result bulk actions", async () => {
+      const { deleteKnowledgeArtifactsByAction } = await import("./cleanup");
+      const resultArtifacts = [
+        {
+          id: "result-1",
+          userId: "user-1",
+          type: "generated_output",
+          conversationId: "conv-1",
+          storagePath: null,
+        },
+        {
+          id: "result-2",
+          userId: "user-1",
+          type: "generated_output",
+          conversationId: "conv-2",
+          storagePath: null,
+        },
+      ];
+
+      mockSelect
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(resultArtifacts),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(resultArtifacts),
+          }),
+        });
+      mockTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
+        const tx = {
+          delete: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              run: vi.fn(),
+            }),
+          }),
+        };
+        await callback(tx);
+      });
+
+      const result = await deleteKnowledgeArtifactsByAction("user-1", "forget_all_results");
+
+      expect(result.deletedArtifactIds).toEqual(["result-1", "result-2"]);
+    });
+
+    it("deletes work capsule artifacts for workflow bulk actions", async () => {
+      const { deleteKnowledgeArtifactsByAction } = await import("./cleanup");
+      const workflowArtifacts = [
+        {
+          id: "workflow-1",
+          userId: "user-1",
+          type: "work_capsule",
+          conversationId: "conv-1",
+          storagePath: null,
+        },
+      ];
+
+      mockSelect
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(workflowArtifacts),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(workflowArtifacts),
+          }),
+        });
+      mockTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
+        const tx = {
+          delete: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              run: vi.fn(),
+            }),
+          }),
+        };
+        await callback(tx);
+      });
+
+      const result = await deleteKnowledgeArtifactsByAction("user-1", "forget_all_workflows");
+
+      expect(result.deletedArtifactIds).toEqual(["workflow-1"]);
+    });
+  });
 });

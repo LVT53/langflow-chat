@@ -16,6 +16,7 @@ import {
 	deleteAllHonchoStateForUser,
 	rotateHonchoPeerIdentity,
 } from "../honcho";
+import { clearMessageEvidenceForUser } from "../messages";
 import {
 	buildArtifactVisibilityCondition,
 	getArtifactOwnershipScope,
@@ -25,7 +26,7 @@ import {
 export async function resetKnowledgeBaseState(userId: string): Promise<{
 	deletedArtifactIds: string[];
 }> {
-  await deleteAllHonchoStateForUser(userId);
+	await deleteAllHonchoStateForUser(userId);
 	await rotateHonchoPeerIdentity(userId);
 
 	const ownershipScope = await getArtifactOwnershipScope(userId);

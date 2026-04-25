@@ -60,6 +60,40 @@ describe('POST /api/knowledge/actions', () => {
 		);
 	});
 
+	it('bulk-forgets generated results', async () => {
+		mockDeleteKnowledgeArtifactsByAction.mockResolvedValue({
+			deletedArtifactIds: ['result-1'],
+		});
+
+		const response = await POST(makeEvent({ action: 'forget_all_results' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.success).toBe(true);
+		expect(data.deletedArtifactIds).toEqual(['result-1']);
+		expect(mockDeleteKnowledgeArtifactsByAction).toHaveBeenCalledWith(
+			'user-1',
+			'forget_all_results'
+		);
+	});
+
+	it('bulk-forgets workflows', async () => {
+		mockDeleteKnowledgeArtifactsByAction.mockResolvedValue({
+			deletedArtifactIds: ['workflow-1'],
+		});
+
+		const response = await POST(makeEvent({ action: 'forget_all_workflows' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.success).toBe(true);
+		expect(data.deletedArtifactIds).toEqual(['workflow-1']);
+		expect(mockDeleteKnowledgeArtifactsByAction).toHaveBeenCalledWith(
+			'user-1',
+			'forget_all_workflows'
+		);
+	});
+
 	it('resets all KB memory and artifacts without deleting conversations', async () => {
 		mockResetKnowledgeBaseState.mockResolvedValue({
 			deletedArtifactIds: ['doc-1', 'result-1'],
