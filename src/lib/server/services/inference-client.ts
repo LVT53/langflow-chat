@@ -17,6 +17,7 @@ export interface ChatMessage {
   content: string;
   tool_call_id?: string;
   tool_calls?: ChatCompletionToolCall[];
+  reasoning_content?: string;
 }
 
 export interface InferenceRequest {
@@ -280,13 +281,6 @@ function buildRequestBody(
   request: InferenceRequest,
   stream: boolean
 ): Record<string, unknown> {
-  const extraBody = {
-    ...(request.extra_body ?? {}),
-    ...(provider.thinkingType
-      ? { thinking: { type: provider.thinkingType } }
-      : {}),
-  };
-
   return {
     model: request.model,
     messages: request.messages,
@@ -298,7 +292,12 @@ function buildRequestBody(
     ...(request.tools && { tools: request.tools }),
     ...(request.tool_choice && { tool_choice: request.tool_choice }),
     ...(provider.reasoningEffort ? { reasoning_effort: provider.reasoningEffort } : {}),
-    ...(Object.keys(extraBody).length > 0 ? { extra_body: extraBody } : {}),
+    // thinking goes at request top level (not inside extra_body) for raw fetch compatibility
+    ...(provider.thinkingType ? { thinking: { type: provider.thinkingType } } : {}),
+    // extra_body passthrough for other custom params
+    ...(request.extra_body && Object.keys(request.extra_body).length > 0
+      ? { extra_body: request.extra_body }
+      : {}),
   };
 }
 

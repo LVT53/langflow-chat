@@ -139,51 +139,53 @@ function collectToolCallsFromChunk(
 }
 
 async function executeToolCalls(params: {
-	messages: ChatMessage[];
-	toolCalls: ChatCompletionToolCall[];
-	conversationId: string;
-	userId: string;
-	callbacks?: ProviderChatCallbacks;
+  messages: ChatMessage[];
+  toolCalls: ChatCompletionToolCall[];
+  reasoningContent?: string;
+  conversationId: string;
+  userId: string;
+  callbacks?: ProviderChatCallbacks;
 }): Promise<void> {
-	params.messages.push({
-		role: 'assistant',
-		content: '',
-		tool_calls: params.toolCalls,
-	});
+  params.messages.push({
+    role: 'assistant',
+    content: '',
+    tool_calls: params.toolCalls,
+    ...(params.reasoningContent ? { reasoning_content: params.reasoningContent } : {}),
+  });
 
-	for (const toolCall of params.toolCalls) {
-		const input = parseToolArguments(toolCall.function.arguments);
-		params.callbacks?.onToolCall?.(toolCall.function.name, input, 'running');
-		let result: ProviderToolResult;
-		try {
-			result = await executeProviderTool({
-				name: toolCall.function.name,
-				input,
-				conversationId: params.conversationId,
-				userId: params.userId,
-			});
-		} catch (error) {
-			result = {
-				output: JSON.stringify({
-					success: false,
-					error: error instanceof Error ? error.message : String(error),
-				}),
-				outputSummary: null,
-				sourceType: 'tool',
-				candidates: [],
-			};
-		}
-		params.callbacks?.onToolCall?.(toolCall.function.name, input, 'done', {
-			outputSummary: result.outputSummary,
-			sourceType: result.sourceType,
-			candidates: result.candidates,
-		});
-		params.messages.push({
-			role: 'tool',
-			tool_call_id: toolCall.id,
-			content: result.output,
-		});
-	}
+  for (const toolCall of params.toolCalls) {
+    const input = parseToolArguments(toolCall.function.arguments);
+    params.callbacks?.onToolCall?.(toolCall.function.name, input, 'running');
+    let result: ProviderToolResult;
+    try {
+      result = await executeProviderTool({
+        name: toolCall.function.name,
+        input,
+        conversationId: params.conversationId,
+        userId: params.userId,
+      });
+    } catch (error) {
+      result = {
+        output: JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        outputSummary: null,
+        sourceType: 'tool',
+        candidates: [],
+      };
+    }
+    params.callbacks?.onToolCall?.(toolCall.function.name, input, 'done', {
+      outputSummary: result.outputSummary,
+      sourceType: result.sourceType,
+      candidates: result.candidates,
+    });
+    params.messages.push({
+      role: 'tool',
+      tool_call_id: toolCall.id,
+      content: result.output,
+    });
+  }
 }
 
 async function prepareProviderChat(params: ProviderChatParams) {
@@ -247,7 +249,8 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
 	let usage: ProviderChatResult['usage'];
 
 	for (let round = 0; round <= MAX_PROVIDER_TOOL_ROUNDS; round += 1) {
-		let roundText = '';
+    let roundText = '';
+    let roundReasoning = '';
 		const pendingToolCalls = new Map<number, PendingToolCall>();
 		let sawToolFinish = false;
 
@@ -263,13 +266,16 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
 			collectToolCallsFromChunk(pendingToolCalls, chunk);
 
 			for (const choice of chunk.choices ?? []) {
-				const reasoning = choice.delta.reasoning_content ?? choice.delta.reasoning;
-				if (reasoning && params.callbacks?.onThinking) {
-					const shouldContinue = await params.callbacks.onThinking(`${reasoning}\n`);
-					if (shouldContinue === false) {
-						return { ...context, text: finalText, provider, usage };
-					}
-				}
+          const reasoning = choice.delta.reasoning_content ?? choice.delta.reasoning;
+          if (reasoning) {
+            roundReasoning += reasoning;
+            if (params.callbacks?.onThinking) {
+              const shouldContinue = await params.callbacks.onThinking(`${reasoning}\n`);
+              if (shouldContinue === false) {
+                return { ...context, text: finalText, provider, usage };
+              }
+            }
+          }
 
 				const text = choice.delta.content ?? '';
 				if (text) {
@@ -303,13 +309,14 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
 			throw new Error('Provider exceeded the maximum tool-call rounds');
 		}
 
-		await executeToolCalls({
-			messages,
-			toolCalls,
-			conversationId: params.conversationId,
-			userId: params.user.id,
-			callbacks: params.callbacks,
-		});
+    await executeToolCalls({
+      messages,
+      toolCalls,
+      reasoningContent: roundReasoning || undefined,
+      conversationId: params.conversationId,
+      userId: params.user.id,
+      callbacks: params.callbacks,
+    });
 	}
 
 	throw new Error('Provider failed to produce a final response');

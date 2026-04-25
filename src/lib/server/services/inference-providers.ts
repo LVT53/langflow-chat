@@ -6,7 +6,7 @@ import { inferenceProviders } from '../db/schema';
 import { config } from '../env';
 import { buildOpenAICompatibleUrl } from './openai-compatible-url';
 
-export type ProviderReasoningEffort = 'low' | 'medium' | 'high';
+export type ProviderReasoningEffort = 'low' | 'medium' | 'high' | 'max' | 'xhigh';
 export type ProviderThinkingType = 'enabled' | 'disabled';
 
 export interface InferenceProvider {
@@ -52,7 +52,7 @@ export interface UpdateProviderInput {
 }
 
 export function normalizeReasoningEffort(value: unknown): ProviderReasoningEffort | null {
-  return value === 'low' || value === 'medium' || value === 'high' ? value : null;
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'max' || value === 'xhigh' ? value : null;
 }
 
 export function normalizeThinkingType(value: unknown): ProviderThinkingType | null {
