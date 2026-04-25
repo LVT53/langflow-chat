@@ -213,10 +213,9 @@ describe('extractDocumentText', () => {
 		expect(formData.has('files')).toBe(true);
 		expect(formData.has('return_md')).toBe(true);
 		expect(formData.get('return_md')).toBe('true');
-		expect(formData.has('parse_method')).toBe(true);
-		expect(formData.get('parse_method')).toBe('ocr');
+		expect(formData.has('parse_method')).toBe(false);
 		expect(formData.has('backend')).toBe(true);
-		expect(formData.get('backend')).toBe('pipeline');
+		expect(formData.get('backend')).toBe('vlm-auto-engine');
 	});
 
 	it('produces normalized .md file name', async () => {
