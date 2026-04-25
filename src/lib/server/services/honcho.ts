@@ -28,7 +28,6 @@ import {
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
 	serializeArtifacts,
-	serializePeerContext,
 	serializeRoleMessages,
 	serializeWorkingSetArtifacts,
 	selectRecentRoleTurns,
@@ -85,6 +84,7 @@ const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES = ['text/'];
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set(['application/pdf', 'application/json']);
+const HONCHO_ID_HASH_LENGTH = 32;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -107,6 +107,23 @@ function normalizePeerIdFragment(rawId: string): string {
 
 function buildHonchoPeerSeed(userId: string, version: number): string {
 	return version > 0 ? `${userId}_v${version}` : userId;
+}
+
+function buildNamespacedHonchoId(prefix: 'u' | 'a' | 's', parts: string[]): string {
+	const config = getConfig();
+	const digest = createHash('sha256')
+		.update([config.honchoIdentityNamespace, ...parts].join('\0'))
+		.digest('hex')
+		.slice(0, HONCHO_ID_HASH_LENGTH);
+	return `${prefix}_${digest}`;
+}
+
+function getLegacyHonchoUserPeerId(userId: string, version: number): string {
+	return normalizePeerIdFragment(buildHonchoPeerSeed(userId, version));
+}
+
+function getLegacyHonchoAssistantPeerId(userId: string, version: number): string {
+	return `assistant_${normalizePeerIdFragment(buildHonchoPeerSeed(userId, version))}`;
 }
 
 function getCachedHonchoPeerVersion(userId: string): number {
@@ -132,17 +149,27 @@ async function getHonchoPeerVersion(userId: string): Promise<number> {
 function deletePeerCacheEntries(userId: string, version: number): void {
 	peerCache.delete(getHonchoUserPeerId(userId, version));
 	peerCache.delete(getHonchoAssistantPeerId(userId, version));
+	peerCache.delete(getLegacyHonchoUserPeerId(userId, version));
+	peerCache.delete(getLegacyHonchoAssistantPeerId(userId, version));
 }
 
 export function getHonchoUserPeerId(userId: string, version = getCachedHonchoPeerVersion(userId)): string {
-	return normalizePeerIdFragment(buildHonchoPeerSeed(userId, version));
+	return buildNamespacedHonchoId('u', ['user', userId, String(version)]);
 }
 
 export function getHonchoAssistantPeerId(
 	userId: string,
 	version = getCachedHonchoPeerVersion(userId)
 ): string {
-	return `assistant_${normalizePeerIdFragment(buildHonchoPeerSeed(userId, version))}`;
+	return buildNamespacedHonchoId('a', ['assistant', userId, String(version)]);
+}
+
+export function getHonchoSessionId(
+	userId: string,
+	conversationId: string,
+	version = getCachedHonchoPeerVersion(userId)
+): string {
+	return buildNamespacedHonchoId('s', ['session', userId, String(version), conversationId]);
 }
 
 function roleForMessage(message: Message, userId: string): 'user' | 'assistant' {
@@ -151,7 +178,13 @@ function roleForMessage(message: Message, userId: string): 'user' | 'assistant' 
 	if (metadataRole === 'assistant' || metadataRole === 'user') {
 		return metadataRole;
 	}
-	return message.peerId === getHonchoAssistantPeerId(userId) ? 'assistant' : 'user';
+	const version = getCachedHonchoPeerVersion(userId);
+	const assistantPeerIds = new Set([
+		getHonchoAssistantPeerId(userId, version),
+		getLegacyHonchoAssistantPeerId(userId, version),
+		getLegacyHonchoAssistantPeerId(userId, 0),
+	]);
+	return assistantPeerIds.has(message.peerId) ? 'assistant' : 'user';
 }
 
 export function isHonchoEnabled(): boolean {
@@ -209,33 +242,44 @@ export async function rotateHonchoPeerIdentity(userId: string): Promise<number> 
 }
 
 async function getSession(userId: string, conversationId: string): Promise<Session> {
-	const cached = sessionCache.get(conversationId);
+	const version = await getHonchoPeerVersion(userId);
+	const honchoSessionId = getHonchoSessionId(userId, conversationId, version);
+	const cached = sessionCache.get(honchoSessionId);
 	if (cached) {
-		const cachedOwner = sessionOwnerCache.get(conversationId);
+		const cachedOwner = sessionOwnerCache.get(honchoSessionId);
 		if (!cachedOwner || cachedOwner === userId) {
 			if (!cachedOwner) {
-				sessionOwnerCache.set(conversationId, userId);
+				sessionOwnerCache.set(honchoSessionId, userId);
 			}
 			return cached;
 		}
 
-		sessionCache.delete(conversationId);
-		sessionOwnerCache.delete(conversationId);
+		sessionCache.delete(honchoSessionId);
+		sessionOwnerCache.delete(honchoSessionId);
 	}
 
 	const honcho = await ensureClient();
-	const session = await honcho.session(conversationId);
+	const session = await honcho.session(honchoSessionId);
 	const userPeer = await getUserPeer(userId);
 	const assistantPeer = await getAssistantPeer(userId);
 
 	try {
-		await session.addPeers([userPeer, assistantPeer]);
+		await session.setMetadata({
+			alfyaiConversationId: conversationId,
+			alfyaiUserId: userId,
+			alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
+			alfyaiHonchoPeerVersion: version,
+		});
+		await session.setPeers([
+			[userPeer.id, { observeMe: true, observeOthers: false }],
+			[assistantPeer.id, { observeMe: false, observeOthers: true }],
+		]);
 	} catch (err) {
 		console.error('[HONCHO] Failed to attach peers to session:', err);
 	}
 
-	sessionCache.set(conversationId, session);
-	sessionOwnerCache.set(conversationId, userId);
+	sessionCache.set(honchoSessionId, session);
+	sessionOwnerCache.set(honchoSessionId, userId);
 	return session;
 }
 
@@ -257,8 +301,15 @@ export async function mirrorMessage(
 		? await getAssistantPeer(userId)
 		: await getUserPeer(userId);
 
-	const msgs = await session.addMessages(
-		peer.message(content, { metadata: { role } })
+	await session.addMessages(
+		peer.message(content, {
+			metadata: {
+				role,
+				alfyaiConversationId: conversationId,
+				alfyaiUserId: userId,
+				alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
+			},
+		})
 	);
 }
 
@@ -293,6 +344,9 @@ export async function syncArtifactToHoncho(params: {
 					artifactId: fallbackArtifact.id,
 					artifactType: fallbackArtifact.type,
 					sourceArtifactId: params.artifact.id,
+					alfyaiConversationId: params.conversationId,
+					alfyaiUserId: params.userId,
+					alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
 				},
 			})
 		);
@@ -317,6 +371,9 @@ export async function syncArtifactToHoncho(params: {
 					role: 'user',
 					artifactId: params.artifact.id,
 					artifactType: params.artifact.type,
+					alfyaiConversationId: params.conversationId,
+					alfyaiUserId: params.userId,
+					alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
 				},
 			});
 			return { uploaded: true, mode: 'native' };
@@ -335,6 +392,9 @@ export async function syncArtifactToHoncho(params: {
 						role: 'user',
 						artifactId: params.artifact.id,
 						artifactType: params.artifact.type,
+						alfyaiConversationId: params.conversationId,
+						alfyaiUserId: params.userId,
+						alfyaiHonchoIdentityNamespace: getConfig().honchoIdentityNamespace,
 					},
 				}
 			);
@@ -355,9 +415,10 @@ export async function mirrorWorkCapsuleConclusion(params: {
 	if (!isHonchoEnabled() || !params.content.trim()) return;
 	try {
 		const peer = await getUserPeer(params.userId);
+		const version = await getHonchoPeerVersion(params.userId);
 		await peer.conclusions.create({
 			content: truncateToTokenBudget(params.content, 800),
-			sessionId: params.conversationId,
+			sessionId: getHonchoSessionId(params.userId, params.conversationId, version),
 		});
 	} catch (error) {
 		console.error('[HONCHO] Failed to mirror work capsule conclusion:', error);
@@ -439,11 +500,19 @@ async function deleteHonchoSession(sessionId: string): Promise<void> {
 	}
 }
 
+function clearPeerContextCacheForUser(userId: string): void {
+	for (const cacheKey of peerContextCache.keys()) {
+		if (cacheKey === userId || cacheKey.startsWith(`${userId}:`)) {
+			peerContextCache.delete(cacheKey);
+		}
+	}
+}
+
 export function clearHonchoCaches(params: { userId?: string; conversationId?: string }): void {
 	if (params.userId) {
 		const cachedVersion = honchoPeerVersionCache.get(params.userId);
 		deletePeerCacheEntries(params.userId, 0);
-		peerContextCache.delete(params.userId);
+		clearPeerContextCacheForUser(params.userId);
 		if (typeof cachedVersion === 'number' && cachedVersion !== 0) {
 			deletePeerCacheEntries(params.userId, cachedVersion);
 		}
@@ -457,6 +526,15 @@ export function clearHonchoCaches(params: { userId?: string; conversationId?: st
 	if (params.conversationId) {
 		sessionCache.delete(params.conversationId);
 		sessionOwnerCache.delete(params.conversationId);
+		if (params.userId) {
+			const cachedVersion = honchoPeerVersionCache.get(params.userId);
+			const versions = new Set([0, cachedVersion].filter((value): value is number => typeof value === 'number'));
+			for (const version of versions) {
+				const honchoSessionId = getHonchoSessionId(params.userId, params.conversationId, version);
+				sessionCache.delete(honchoSessionId);
+				sessionOwnerCache.delete(honchoSessionId);
+			}
+		}
 	}
 }
 
@@ -472,15 +550,6 @@ export type HonchoPersonaMemoryRecord = {
 	sessionId: string | null;
 	createdAt: number;
 };
-
-type PersonaMemoryAttributionCandidate = Pick<
-	HonchoPersonaMemoryRecord,
-	'id' | 'scope' | 'sessionId'
->;
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function listVisiblePersonaMemoryRecords(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	if (!isHonchoEnabled()) return [];
@@ -516,6 +585,50 @@ async function listVisiblePersonaMemoryRecords(userId: string): Promise<HonchoPe
 
 export async function listPersonaMemories(userId: string): Promise<HonchoPersonaMemoryRecord[]> {
 	return listVisiblePersonaMemoryRecords(userId);
+}
+
+function sanitizePersonaMemoryText(text: string, userId: string, userDisplayName?: string | null): string {
+	const replacement = userDisplayName?.trim() || 'the user';
+	let sanitized = text.trim();
+	const candidateIds = new Set<string>([
+		userId,
+		getHonchoUserPeerId(userId),
+		getHonchoAssistantPeerId(userId),
+		getLegacyHonchoUserPeerId(userId, 0),
+		getLegacyHonchoAssistantPeerId(userId, 0),
+	]);
+
+	for (const candidateId of candidateIds) {
+		if (!candidateId) continue;
+		sanitized = sanitized.split(candidateId).join(replacement);
+	}
+
+	return sanitized.replace(/\s+/g, ' ').trim();
+}
+
+function serializePersonaMemoryRecordsForPrompt(
+	records: HonchoPersonaMemoryRecord[],
+	userId: string,
+	userDisplayName?: string | null
+): string | null {
+	const seen = new Set<string>();
+	const lines = records
+		.map((record) => sanitizePersonaMemoryText(record.content, userId, userDisplayName))
+		.filter((content) => {
+			const key = content.toLowerCase();
+			if (!content || seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		})
+		.slice(0, 12)
+		.map((content) => `- ${content}`);
+
+	if (lines.length === 0) return null;
+
+	return truncateToTokenBudget(
+		['Scoped user memory from Honcho conclusions:', ...lines].join('\n'),
+		1400
+	);
 }
 
 export async function forgetPersonaMemory(userId: string, conclusionId: string): Promise<boolean> {
@@ -567,6 +680,8 @@ export async function deleteConversationHonchoState(userId: string, conversation
 		return;
 	}
 
+	const version = await getHonchoPeerVersion(userId);
+	const honchoSessionId = getHonchoSessionId(userId, conversationId, version);
 	const [userPeer, assistantPeer] = await Promise.all([
 		getUserPeer(userId),
 		getAssistantPeer(userId),
@@ -579,13 +694,17 @@ export async function deleteConversationHonchoState(userId: string, conversation
 	];
 
 	for (const scope of scopes) {
-		const conclusions = await listScopeConclusions(scope, conversationId);
+		const conclusions = [
+			...(await listScopeConclusions(scope, honchoSessionId)),
+			...(await listScopeConclusions(scope, conversationId)),
+		];
 		await deleteScopeConclusions(
 			scope,
-			conclusions.map((item) => item.id)
+			Array.from(new Set(conclusions.map((item) => item.id)))
 		);
 	}
 
+	await deleteHonchoSession(honchoSessionId);
 	await deleteHonchoSession(conversationId);
 	clearHonchoCaches({ conversationId, userId });
 }
@@ -868,10 +987,29 @@ async function loadSessionPromptContext(params: {
 		);
 	}
 
+	const peersResult = await resolveWithTimeout(
+		Promise.all([getUserPeer(params.userId), getAssistantPeer(params.userId)]),
+		{
+			label: 'Honcho peer bootstrap',
+			conversationId: params.conversationId,
+			userId: params.userId,
+		}
+	);
+
+	if (!peersResult.value) {
+		return fallbackToStoredContext(
+			latestHonchoMetadata.honchoSnapshot ? 'snapshot' : 'persisted_fallback',
+			peersResult.timedOut ? 'timeout' : 'context_error'
+		);
+	}
+
+	const [userPeer, assistantPeer] = peersResult.value;
 	const liveContextResult = await resolveWithTimeout(
 		sessionResult.value.context({
 			summary: true,
 			tokens: HONCHO_LIVE_CONTEXT_TOKENS,
+			peerTarget: userPeer,
+			peerPerspective: assistantPeer,
 			limitToSession: true,
 		}),
 		{
@@ -1415,26 +1553,21 @@ export async function getPeerContext(
 	}
 
 	try {
-		const peer = await getUserPeer(userId);
-		const safeDisplayName = userDisplayName?.trim() || 'the user';
 		const response = await resolveWithTimeout(
-			peer.chat(
-				`Summarize what you know about ${safeDisplayName}: preferences, interests, communication style, and important context. Be concise (under 200 words). Refer to them as "${safeDisplayName}" or "the user", never by internal IDs or peer IDs.`,
-				{ reasoningLevel: 'low' }
-			),
+			listVisiblePersonaMemoryRecords(userId),
 			{
 				timeoutMs: Math.max(
 					1,
 					options?.timeoutMs ?? getConfig().honchoPersonaContextWaitMs
 				),
-				label: 'Honcho peer overview',
+				label: 'Honcho scoped persona conclusions',
 				userId,
 			}
 		);
 
 		let result: string | null = null;
-		if (typeof response.value === 'string') {
-			result = response.value.trim() || null;
+		if (Array.isArray(response.value)) {
+			result = serializePersonaMemoryRecordsForPrompt(response.value, userId, userDisplayName);
 		} else if (response.error) {
 			console.error('[HONCHO] getPeerContext failed:', response.error);
 		}

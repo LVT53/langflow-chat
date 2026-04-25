@@ -10,10 +10,10 @@ dotenvConfig();
 if (!process.env.LANGFLOW_API_KEY) process.env.LANGFLOW_API_KEY = 'placeholder';
 if (!process.env.SESSION_SECRET) process.env.SESSION_SECRET = 'placeholder-secret-32-chars-long!!';
 
-import { Honcho } from '@honcho-ai/sdk';
 import { db } from '../src/lib/server/db';
 import { users, conversations, messages } from '../src/lib/server/db/schema';
 import { eq, asc } from 'drizzle-orm';
+import { getOrCreateSession, mirrorMessage } from '../src/lib/server/services/honcho';
 
 const RATE_LIMIT_MS = 100; // 10 msgs/sec
 
@@ -25,14 +25,17 @@ async function main() {
   const apiKey = process.env.HONCHO_API_KEY;
   const baseUrl = process.env.HONCHO_BASE_URL || 'http://localhost:8000';
   const workspaceName = process.env.HONCHO_WORKSPACE || 'alfyai-prod';
+  const identityNamespace = process.env.HONCHO_IDENTITY_NAMESPACE || 'database-path-derived';
 
-  const honcho = new Honcho({
-    apiKey: apiKey || 'no-auth',
-    baseURL: baseUrl,
-    workspaceId: workspaceName,
-  });
   console.log('[BACKFILL] Connecting to Honcho at', baseUrl);
   console.log('[BACKFILL] Workspace:', workspaceName);
+  console.log('[BACKFILL] Identity namespace:', identityNamespace);
+  if (!apiKey) {
+    console.log('[BACKFILL] HONCHO_API_KEY is not set; using local no-auth client mode.');
+  }
+  if (process.env.HONCHO_ENABLED !== 'true') {
+    throw new Error('HONCHO_ENABLED=true is required so the central Honcho adapter mirrors messages.');
+  }
 
   // Get all users
   const allUsers = await db.select().from(users);
@@ -43,10 +46,6 @@ async function main() {
   for (const user of allUsers) {
     console.log(`\n[BACKFILL] Processing user: ${user.email} (${user.id})`);
 
-    // Create peer for user
-    const peer = await honcho.peer(user.id);
-    console.log(`  Peer: ${peer.id}`);
-
     // Get all conversations for this user
     const userConversations = await db
       .select()
@@ -56,9 +55,9 @@ async function main() {
     console.log(`  Conversations: ${userConversations.length}`);
 
     for (const conv of userConversations) {
-      // Create session for conversation and add peer
-      const session = await honcho.session(conv.id);
-      await session.addPeers(peer);
+      // Route through the central Honcho adapter so backfills use the same
+      // namespaced peer/session identities as live traffic.
+      const honchoSessionId = await getOrCreateSession(user.id, conv.id);
 
       // Get all messages in chronological order
       const convMessages = await db
@@ -70,26 +69,14 @@ async function main() {
       if (convMessages.length === 0) continue;
 
       console.log(
-        `  Conversation "${conv.title}": ${convMessages.length} messages`
+        `  Conversation "${conv.title}" (${honchoSessionId}): ${convMessages.length} messages`
       );
 
-      // Build message inputs
-      const batch = convMessages
-        .filter((m) => m.content.trim())
-        .map((m) =>
-          peer.message(m.content, {
-            metadata: { role: m.role },
-            createdAt: m.createdAt.toISOString(),
-          })
-        );
-
-      if (batch.length === 0) continue;
-
-      // Send in batches of 50 to avoid oversized requests
-      for (let i = 0; i < batch.length; i += 50) {
-        const chunk = batch.slice(i, i + 50);
-        await session.addMessages(chunk);
-        totalMessages += chunk.length;
+      for (const message of convMessages) {
+        if (!message.content.trim()) continue;
+        if (message.role !== 'user' && message.role !== 'assistant') continue;
+        await mirrorMessage(user.id, conv.id, message.role, message.content);
+        totalMessages += 1;
         await sleep(RATE_LIMIT_MS);
       }
     }

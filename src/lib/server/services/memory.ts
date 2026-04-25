@@ -4,12 +4,16 @@ import type {
 	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryPayload,
 	KnowledgeMemorySummary,
+	PersonaMemoryItem,
 } from "$lib/types";
 import {
 	forgetAllPersonaMemories,
 	forgetPersonaMemory,
 	getPeerContext,
 	isHonchoEnabled,
+	listPersonaMemories,
+	rotateHonchoPeerIdentity,
+	type HonchoPersonaMemoryRecord,
 } from "./honcho";
 import {
 	forgetFocusContinuity,
@@ -32,13 +36,14 @@ function buildKnowledgeMemorySummary(
 	activeConstraintCount: number;
 	currentProjectContextCount: number;
 	overview: string | null;
-	overviewSource: "honcho_live" | null;
-	overviewStatus: "ready" | "disabled";
+	overviewSource: "honcho_scoped" | null;
+	overviewStatus: KnowledgeMemorySummary["overviewStatus"];
 	overviewUpdatedAt: number | null;
 	overviewLastAttemptAt: number | null;
 	durablePersonaCount: number;
 } {
 	const hasOverview = Boolean(overview?.trim());
+	const honchoEnabled = isHonchoEnabled();
 	return {
 		personaCount,
 		taskCount,
@@ -46,11 +51,48 @@ function buildKnowledgeMemorySummary(
 		activeConstraintCount,
 		currentProjectContextCount,
 		overview: hasOverview ? overview!.trim() : null,
-		overviewSource: hasOverview ? "honcho_live" : null,
-		overviewStatus: isHonchoEnabled() ? "ready" : "disabled",
+		overviewSource: hasOverview ? "honcho_scoped" : null,
+		overviewStatus: honchoEnabled
+			? hasOverview
+				? "ready"
+				: "not_enough_durable_memory"
+			: "disabled",
 		overviewUpdatedAt: hasOverview ? Date.now() : null,
-		overviewLastAttemptAt: hasOverview ? Date.now() : null,
-		durablePersonaCount: 0,
+		overviewLastAttemptAt: honchoEnabled ? Date.now() : null,
+		durablePersonaCount: personaCount,
+	};
+}
+
+function mapHonchoPersonaMemory(record: HonchoPersonaMemoryRecord): PersonaMemoryItem {
+	return {
+		id: record.id,
+		canonicalText: record.content,
+		rawCanonicalText: record.content,
+		domain: "persona",
+		memoryClass: "long_term_context",
+		state: "active",
+		salienceScore: 50,
+		sourceCount: 1,
+		conversationTitles: [],
+		firstSeenAt: record.createdAt,
+		lastSeenAt: record.createdAt,
+		pinned: false,
+		temporal: null,
+		activeConstraint: false,
+		topicKey: null,
+		topicStatus: "active",
+		supersededById: null,
+		supersessionReason: null,
+		members: [
+			{
+				id: record.id,
+				content: record.content,
+				scope: record.scope,
+				sessionId: record.sessionId,
+				conversationTitle: null,
+				createdAt: record.createdAt,
+			},
+		],
 	};
 }
 
@@ -58,14 +100,16 @@ export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string,
 ): Promise<KnowledgeMemoryPayload> {
-	const [peerContext, taskMemories, focusContinuities] = await Promise.all([
+	const [peerContext, personaRecords, taskMemories, focusContinuities] = await Promise.all([
 		getPeerContext(userId, userDisplayName, { timeoutMs: getConfig().honchoPersonaContextWaitMs }),
+		listPersonaMemories(userId),
 		listTaskMemoryItems(userId),
 		listFocusContinuityItems(userId),
 	]);
+	const personaMemories = personaRecords.map(mapHonchoPersonaMemory);
 
 	return {
-		personaMemories: [],
+		personaMemories,
 		activeConstraints: [],
 		currentProjectContext: [],
 		taskMemories: taskMemories.map((taskMemory) => ({
@@ -81,7 +125,7 @@ export async function getKnowledgeMemory(
 		})),
 		summary: buildKnowledgeMemorySummary(
 			peerContext,
-			0,
+			personaMemories.length,
 			0,
 			0,
 			taskMemories.length,
@@ -95,14 +139,17 @@ export async function getKnowledgeMemoryOverview(
 	userDisplayName: string,
 	_options: { awaitLive?: boolean; force?: boolean } = {},
 ): Promise<KnowledgeMemoryOverviewPayload> {
-	const peerContext = await getPeerContext(userId, userDisplayName, {
-		timeoutMs: getConfig().honchoPersonaContextWaitMs,
-	});
+	const [peerContext, personaRecords] = await Promise.all([
+		getPeerContext(userId, userDisplayName, {
+			timeoutMs: getConfig().honchoPersonaContextWaitMs,
+		}),
+		listPersonaMemories(userId),
+	]);
 
 	return {
 		summary: buildKnowledgeMemorySummary(
 			peerContext,
-			0,
+			personaRecords.length,
 			0,
 			0,
 			0,
@@ -126,7 +173,8 @@ export async function applyKnowledgeMemoryAction(
 		}
 		case "forget_all_persona_memory": {
 			await forgetAllPersonaMemories(userId);
-			console.info("[KNOWLEDGE_MEMORY] forget_all_persona_memory delegated to Honcho");
+			await rotateHonchoPeerIdentity(userId);
+			console.info("[KNOWLEDGE_MEMORY] forget_all_persona_memory delegated to Honcho and rotated peer identity");
 			break;
 		}
 		case "forget_task_memory":
