@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callInferenceProvider, streamInferenceProvider } from './inference-client';
-import { encryptApiKey, type InferenceProviderWithSecrets } from './inference-providers';
+import {
+	encryptApiKey,
+	validateProviderConnection,
+	type InferenceProviderWithSecrets,
+} from './inference-providers';
 
 function makeProvider(
 	overrides: Partial<InferenceProviderWithSecrets> = {}
@@ -94,7 +98,11 @@ describe('streamInferenceProvider', () => {
 		vi.stubGlobal('fetch', fetchMock);
 
 		await callInferenceProvider(
-			makeProvider({ reasoningEffort: 'high', thinkingType: 'enabled' }),
+			makeProvider({
+				baseUrl: 'https://api.fireworks.ai/inference/v1',
+				reasoningEffort: 'high',
+				thinkingType: 'enabled',
+			}),
 			{
 				model: 'test-model',
 				messages: [{ role: 'user', content: 'Hi' }],
@@ -102,7 +110,30 @@ describe('streamInferenceProvider', () => {
 		);
 
 		const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			'https://api.fireworks.ai/inference/v1/chat/completions'
+		);
 		expect(body.reasoning_effort).toBe('high');
 		expect(body.extra_body).toEqual({ thinking: { type: 'enabled' } });
+	});
+
+	it('validates provider model URLs without duplicating v1', async () => {
+		const fetchMock = vi.fn(async () =>
+			new Response(JSON.stringify({ data: [] }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = await validateProviderConnection(
+			'https://api.fireworks.ai/inference/v1',
+			'test-key'
+		);
+
+		expect(result.valid).toBe(true);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			'https://api.fireworks.ai/inference/v1/models'
+		);
 	});
 });
