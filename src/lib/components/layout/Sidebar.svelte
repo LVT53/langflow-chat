@@ -2,13 +2,14 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { logout } from '$lib/client/api/auth';
+	import { clearClientAccountState } from '$lib/client/session-boundary';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
 		SIDEBAR_DESKTOP_BREAKPOINT,
 		currentConversationId
 	} from '$lib/stores/ui';
-	import { goto, preloadData } from '$app/navigation';
+	import { goto, invalidateAll, preloadData } from '$app/navigation';
 	import { navigating } from '$app/stores';
 	import { fade } from 'svelte/transition';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
@@ -73,7 +74,9 @@
 	async function handleLogout() {
 		try {
 			await logout();
-			goto('/login');
+			clearClientAccountState();
+			await goto('/login', { invalidateAll: true });
+			await invalidateAll();
 		} catch (error) {
 			console.error('Logout failed:', error);
 		}

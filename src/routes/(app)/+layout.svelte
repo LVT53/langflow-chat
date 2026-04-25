@@ -29,7 +29,10 @@
 	$effect(() => {
 		const nextUserId = data.user?.id ?? null;
 		const resetLocalState = previousConversationUserId !== null && previousConversationUserId !== nextUserId;
-		reconcileConversationSnapshot(data.conversations ?? [], { resetLocalState });
+		reconcileConversationSnapshot(data.conversations ?? [], {
+			resetLocalState,
+			userId: nextUserId,
+		});
 		previousConversationUserId = nextUserId;
 	});
 
