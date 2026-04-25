@@ -31,7 +31,9 @@
 		user?: SessionUser | null;
 	} = $props();
 
-	let isDesktop = $state(browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false);
+	let isDesktop = $state(
+		typeof window !== 'undefined' && window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT
+	);
 	let showSearchModal = $state(false);
 	let transitionsEnabled = $state(false);
 
@@ -95,12 +97,6 @@
 
 		return () => window.removeEventListener('resize', syncViewportState);
 	});
-
-	// Guard against window being unavailable during initial client render
-	// by running syncViewportState immediately if browser && window exists
-	if (browser && typeof window !== 'undefined') {
-		isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
-	}
 </script>
 
 <!-- Mobile Overlay -->
