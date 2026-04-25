@@ -171,7 +171,7 @@ describe('POST /api/chat/send', () => {
 		expect(mockSendMessage).toHaveBeenCalledWith(
 			'Hello',
 			'conv-1',
-			undefined,
+			'model1',
 			{
 				id: 'user-1',
 				displayName: undefined,
@@ -202,7 +202,7 @@ describe('POST /api/chat/send', () => {
 		expect(mockSendMessage).toHaveBeenCalledWith(
 			'EN:Szia',
 			'conv-1',
-			undefined,
+			'model1',
 			{
 				id: 'user-1',
 				displayName: undefined,

@@ -22,7 +22,7 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 		persist(SELECTED_MODEL_KEY, serverPrefs.model);
 	} else {
 		const storedModel = read<ModelId>(SELECTED_MODEL_KEY, null as ModelId | null, (v): v is ModelId =>
-			v === 'model1' || v === 'model2'
+			v === 'model1' || v === 'model2' || (typeof v === 'string' && v.startsWith('provider:'))
 		);
 		if (storedModel) {
 			selectedModel.set(storedModel);

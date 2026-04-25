@@ -1,8 +1,9 @@
 <script lang="ts">
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import PasswordField from './PasswordField.svelte';
+	import type { ModelId } from '$lib/types';
 
-	type AvailableModel = { id: 'model1' | 'model2'; displayName: string };
+	type AvailableModel = { id: ModelId; displayName: string };
 	type Theme = 'system' | 'light' | 'dark';
 
 	let {
@@ -78,10 +79,10 @@
 		passwordError?: string;
 		onSavePassword: () => void | Promise<void>;
 		availableModels: AvailableModel[];
-		selectedModel: 'model1' | 'model2';
+		selectedModel: ModelId;
 		translationEnabled: boolean;
 		selectedTheme: Theme;
-		onChangeModel: (model: 'model1' | 'model2') => void | Promise<void>;
+		onChangeModel: (model: ModelId) => void | Promise<void>;
 		onChangeTranslation: (enabled: boolean) => void | Promise<void>;
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
 		onOpenResetModal: () => void;

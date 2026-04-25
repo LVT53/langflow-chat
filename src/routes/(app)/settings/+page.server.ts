@@ -4,12 +4,12 @@ import { db } from '$lib/server/db';
 import { users, adminConfig } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import {
-  getAvailableModels,
+  getAvailableModelsWithProviders,
   getEnvDefaults,
   ADMIN_CONFIG_KEYS,
   getResolvedAdminConfigValues,
   getConfig,
-  normalizeModelSelection
+  normalizeModelSelectionWithProviders
 } from '$lib/server/config-store';
 import type { UserSettings } from '$lib/types';
 
@@ -25,7 +25,7 @@ export const load: ServerLoad = async (event) => {
     name: userRow.name,
     role: userRow.role as 'user' | 'admin',
     preferences: {
-      preferredModel: normalizeModelSelection(userRow.preferredModel ?? 'model1'),
+      preferredModel: await normalizeModelSelectionWithProviders(userRow.preferredModel ?? 'model1'),
       translationEnabled: (userRow.translationEnabled ?? 0) === 1,
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
       avatarId: userRow.avatarId ?? null,
@@ -62,6 +62,6 @@ export const load: ServerLoad = async (event) => {
     configOverrides,
     envDefaults,
     modelNames,
-    availableModels: getAvailableModels(runtime),
+    availableModels: await getAvailableModelsWithProviders(),
   };
 };

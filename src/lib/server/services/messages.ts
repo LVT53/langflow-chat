@@ -19,6 +19,7 @@ type PersistedMessageMetadata = {
 	evidenceStatus?: MessageEvidenceStatusState;
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;
+	modelDisplayName?: string | null;
 };
 
 function getModelDisplayName(modelId?: string | null): string | undefined {
@@ -64,7 +65,7 @@ function mapRowToChatMessage(
 		thinking: row.thinking ?? undefined,
 		thinkingSegments,
 		timestamp: row.createdAt.getTime(),
-		modelDisplayName: getModelDisplayName(modelId),
+		modelDisplayName: metadata?.modelDisplayName ?? getModelDisplayName(modelId),
 		generationDurationMs: generationTimeMs ?? undefined,
 		evidenceSummary,
 		evidencePending,

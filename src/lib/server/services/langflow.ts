@@ -13,10 +13,20 @@ import {
 } from "./attachment-trace";
 import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
 
-type AuthenticatedPromptUser = {
+export type AuthenticatedPromptUser = {
 	id: string;
 	displayName?: string | null;
 	email?: string | null;
+};
+
+export type PreparedOutboundChatContext = {
+	inputValue: string;
+	systemPrompt: string;
+	contextStatus?: import("$lib/types").ConversationContextStatus;
+	taskState?: import("$lib/types").TaskState | null;
+	contextDebug?: import("$lib/types").ContextDebugState | null;
+	honchoContext?: import("$lib/types").HonchoContextInfo | null;
+	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
 };
 
 const URL_LIST_TOOL_ARGUMENT_GUARD = [
@@ -186,6 +196,93 @@ function mergeAbortSignals(
 	}
 
 	return controller.signal;
+}
+
+export async function prepareOutboundChatContext(params: {
+	message: string;
+	sessionId: string;
+	modelConfig: ModelConfig;
+	user?: AuthenticatedPromptUser;
+	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
+	attachmentTraceId?: string;
+	systemPromptAppendix?: string;
+	logLabel: "request" | "streaming bundle" | "provider request";
+}): Promise<PreparedOutboundChatContext> {
+	let inputValue = params.message;
+	let contextStatus:
+		| import("$lib/types").ConversationContextStatus
+		| undefined;
+	let taskState: import("$lib/types").TaskState | null | undefined;
+	let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
+	let honchoContext:
+		| import("$lib/types").HonchoContextInfo
+		| null
+		| undefined;
+	let honchoSnapshot:
+		| import("$lib/types").HonchoContextSnapshot
+		| null
+		| undefined;
+
+	if (params.user?.id) {
+		const constructed = await buildConstructedContext({
+			userId: params.user.id,
+			conversationId: params.sessionId,
+			message: params.message,
+			attachmentIds: params.attachmentIds,
+			activeDocumentArtifactId: params.activeDocumentArtifactId,
+			attachmentTraceId: params.attachmentTraceId,
+		});
+		inputValue = constructed.inputValue;
+		contextStatus = constructed.contextStatus;
+		taskState = constructed.taskState;
+		contextDebug = constructed.contextDebug;
+		honchoContext = constructed.honchoContext;
+		honchoSnapshot = constructed.honchoSnapshot;
+	}
+
+	const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
+	if ((params.attachmentIds?.length ?? 0) > 0) {
+		logAttachmentTrace("langflow_request", {
+			traceId: params.attachmentTraceId ?? null,
+			sessionId: params.sessionId,
+			inputValueLength: inputValue.length,
+			hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
+			attachmentSectionPreview: attachmentSection.preview,
+			attachmentSectionPreviewHash: attachmentSection.previewHash,
+		});
+		if (!attachmentSection.hasMarker) {
+			console.warn("[LANGFLOW] Attachment marker missing from outgoing " + params.logLabel, {
+				sessionId: params.sessionId,
+				attachmentIds: params.attachmentIds ?? [],
+				traceId: params.attachmentTraceId ?? null,
+				inputValueLength: inputValue.length,
+			});
+		}
+	}
+
+	const baseSystemPrompt = params.user?.id
+		? await buildEnhancedSystemPrompt(params.modelConfig.systemPrompt, {
+				userId: params.user.id,
+				displayName: params.user.displayName,
+				email: params.user.email,
+			})
+		: getSystemPrompt(params.modelConfig.systemPrompt);
+	const systemPrompt = buildOutboundSystemPrompt({
+		basePrompt: baseSystemPrompt,
+		inputValue,
+		systemPromptAppendix: params.systemPromptAppendix,
+	});
+
+	return {
+		inputValue,
+		systemPrompt,
+		contextStatus,
+		taskState,
+		contextDebug,
+		honchoContext,
+		honchoSnapshot,
+	};
 }
 
 export function extractMessageText(response: LangflowRunResponse): string {

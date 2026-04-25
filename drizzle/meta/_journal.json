@@ -92,6 +92,20 @@
       "when": 1775416800000,
       "tag": "1775416800000_users_honcho_peer_version",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777140000000,
+      "tag": "1777140000000_inference_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777140000001,
+      "tag": "1777140000001_inference_provider_reasoning_options",
+      "breakpoints": true
     }
 
   ]

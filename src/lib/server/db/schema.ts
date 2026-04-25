@@ -367,6 +367,22 @@ export const adminConfig = sqliteTable('admin_config', {
   updatedBy: text('updated_by').notNull(),
 });
 
+export const inferenceProviders = sqliteTable('inference_providers', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  baseUrl: text('base_url').notNull(),
+  apiKeyEncrypted: text('api_key_encrypted').notNull(),
+  apiKeyIv: text('api_key_iv').notNull(),
+  modelName: text('model_name').notNull(),
+  reasoningEffort: text('reasoning_effort', { enum: ['low', 'medium', 'high'] }),
+  thinkingType: text('thinking_type', { enum: ['enabled', 'disabled'] }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
   userId: text('user_id')

@@ -4,7 +4,8 @@ import { requireAuth } from '$lib/server/auth/hooks';
 import { db } from '$lib/server/db';
 import { users } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
-import { getAvailableModels } from '$lib/server/config-store';
+import { getAvailableModelsWithProviders } from '$lib/server/config-store';
+import type { ModelId } from '$lib/types';
 
 const VALID_THEMES = ['system', 'light', 'dark'];
 
@@ -27,8 +28,8 @@ export const PATCH: RequestHandler = async (event) => {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
   if (body.preferredModel !== undefined) {
-    const validModels = new Set(getAvailableModels().map((model) => model.id));
-    if (!validModels.has(body.preferredModel as 'model1' | 'model2')) {
+    const validModels = new Set((await getAvailableModelsWithProviders()).map((model) => model.id));
+    if (!validModels.has(body.preferredModel as ModelId)) {
       return json({ error: 'Invalid preferredModel' }, { status: 400 });
     }
     updates.preferredModel = body.preferredModel;

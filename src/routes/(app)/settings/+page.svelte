@@ -27,6 +27,7 @@
 	import SettingsAdministrationTab from './_components/SettingsAdministrationTab.svelte';
 	import SettingsAnalyticsTab from './_components/SettingsAnalyticsTab.svelte';
 	import SettingsProfileTab from './_components/SettingsProfileTab.svelte';
+	import type { ModelId } from '$lib/types';
 	import type { PageProps } from './$types';
 
 	// Extended data interface for admin-specific properties
@@ -37,7 +38,7 @@
 			name: string | null;
 			role: 'user' | 'admin';
 			preferences: {
-				preferredModel: 'model1' | 'model2';
+				preferredModel: ModelId;
 				translationEnabled: boolean;
 				theme: 'system' | 'light' | 'dark';
 				avatarId: number | null;
@@ -46,7 +47,7 @@
 		};
 		currentConfigValues?: Record<string, string>;
 		modelNames?: { model1: string; model2: string };
-		availableModels?: Array<{ id: 'model1' | 'model2'; displayName: string }>;
+		availableModels?: Array<{ id: ModelId; displayName: string }>;
 		envDefaults?: Record<string, string>;
 	}
 
@@ -63,7 +64,7 @@
 	const availableModels = ((getData() as SettingsPageData).availableModels ?? [
 		{ id: 'model1', displayName: modelNames.model1 },
 		{ id: 'model2', displayName: modelNames.model2 },
-	]) as Array<{ id: 'model1' | 'model2'; displayName: string }>;
+	]) as Array<{ id: ModelId; displayName: string }>;
 
 	let activeTab = $state<Tab>('profile');
 
@@ -192,7 +193,7 @@
 		await updateUserPreferences({ avatarId }).catch(() => {});
 	}
 
-	async function changeModel(model: 'model1' | 'model2') {
+	async function changeModel(model: ModelId) {
 		selectedModel = model;
 		await setSelectedModelAndSync(model);
 	}

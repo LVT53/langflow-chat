@@ -12,6 +12,7 @@ export interface StreamMetadata {
 	wasStopped?: boolean;
 	userMessageId?: string;
 	assistantMessageId?: string;
+	modelId?: import('$lib/types').ModelId;
 	modelDisplayName?: string;
 	contextStatus?: import('$lib/types').ConversationContextStatus;
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
@@ -39,7 +40,7 @@ export interface StreamCallbacks {
 	) => void;
 }
 
-export type ModelId = 'model1' | 'model2';
+export type { ModelId } from '$lib/types';
 
 export interface StreamHandle {
 	stop: () => void;
@@ -164,6 +165,7 @@ export function streamChat(
 						conversationId,
 						assistantMessageId: retryAssistantMessageId,
 						streamId,
+						model: modelId,
 						activeDocumentArtifactId,
 					})
 				: JSON.stringify({
@@ -308,6 +310,7 @@ export function streamChat(
 								wasStopped: parsed.wasStopped,
 								userMessageId: parsed.userMessageId,
 								assistantMessageId: parsed.assistantMessageId,
+								modelId: parsed.modelId,
 								modelDisplayName: parsed.modelDisplayName,
 								contextStatus: parsed.contextStatus,
 								activeWorkingSet: parsed.activeWorkingSet,
