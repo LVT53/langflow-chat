@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { login } from '$lib/client/api/auth';
+  import { clearClientAccountState } from '$lib/client/session-boundary';
 
   let email = $state('');
   let password = $state('');
@@ -22,7 +23,9 @@
 
     try {
       await login(email, password);
-      await goto('/');
+      clearClientAccountState();
+      await invalidateAll();
+      await goto('/', { invalidateAll: true });
     } catch (err) {
       error = err instanceof Error
         ? err.message

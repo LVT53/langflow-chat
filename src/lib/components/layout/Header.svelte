@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { logout } from '$lib/client/api/auth';
+	import { clearClientAccountState } from '$lib/client/session-boundary';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import {
@@ -19,8 +20,10 @@
 	async function handleLogout() {
 		try {
 			await logout();
+			clearClientAccountState();
 			mobileMenuOpen = false;
-			goto('/login');
+			await goto('/login', { invalidateAll: true });
+			await invalidateAll();
 		} catch (error) {
 			console.error('Logout failed:', error);
 		}

@@ -12,20 +12,31 @@ export const conversations = writable<ConversationListItem[]>([]);
 
 const optimisticConversationIds = new Set<string>();
 const deletedConversationIds = new Set<string>();
+let conversationSnapshotUserId: string | null = null;
 
 export function reconcileConversationSnapshot(
 	items: ConversationListItem[],
-	options: { resetLocalState?: boolean } = {}
+	options: { resetLocalState?: boolean; userId?: string | null } = {}
 ): void {
-	const incoming = options.resetLocalState
+	const ownerChanged =
+		options.userId !== undefined &&
+		conversationSnapshotUserId !== null &&
+		conversationSnapshotUserId !== options.userId;
+	const shouldReset = Boolean(options.resetLocalState || ownerChanged);
+	const incoming = shouldReset
 		? items
 		: items.filter((item) => !deletedConversationIds.has(item.id));
 
 	conversations.update((current) => {
-		if (options.resetLocalState) {
+		if (shouldReset) {
 			optimisticConversationIds.clear();
 			deletedConversationIds.clear();
+			conversationSnapshotUserId = options.userId ?? null;
 			return incoming;
+		}
+
+		if (options.userId !== undefined) {
+			conversationSnapshotUserId = options.userId;
 		}
 
 		const next = new Map(incoming.map((item) => [item.id, item]));
@@ -43,6 +54,13 @@ export function reconcileConversationSnapshot(
 
 		return Array.from(next.values()).sort((left, right) => right.updatedAt - left.updatedAt);
 	});
+}
+
+export function clearConversationStore(): void {
+	optimisticConversationIds.clear();
+	deletedConversationIds.clear();
+	conversationSnapshotUserId = null;
+	conversations.set([]);
 }
 
 export async function loadConversations(): Promise<void> {

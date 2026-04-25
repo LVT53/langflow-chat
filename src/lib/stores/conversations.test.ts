@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
+	clearConversationStore,
 	conversations,
 	createNewConversation,
 	deleteConversationById,
@@ -20,7 +21,7 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 
 describe('conversations store', () => {
 	beforeEach(() => {
-		conversations.set([]);
+		clearConversationStore();
 		vi.restoreAllMocks();
 		vi.stubGlobal('fetch', vi.fn());
 		vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -45,7 +46,6 @@ describe('conversations store', () => {
 	});
 
 	it('preserves optimistic local conversations when a stale snapshot arrives', () => {
-		conversations.set([]);
 		upsertConversationLocal('conv-local', 'Draft', 500);
 
 		reconcileConversationSnapshot([
@@ -56,6 +56,37 @@ describe('conversations store', () => {
 			{ id: 'conv-local', title: 'Draft', updatedAt: 500 },
 			{ id: 'conv-remote', title: 'Remote', updatedAt: 100, projectId: null },
 		]);
+	});
+
+	it('drops locally preserved conversations when the snapshot owner changes', () => {
+		reconcileConversationSnapshot(
+			[{ id: 'user-1-conv', title: 'User 1 chat', updatedAt: 2 }],
+			{ resetLocalState: true, userId: 'user-1' }
+		);
+		upsertConversationLocal('user-1-optimistic', 'User 1 draft', 3);
+
+		reconcileConversationSnapshot(
+			[{ id: 'user-2-conv', title: 'User 2 chat', updatedAt: 4 }],
+			{ userId: 'user-2' }
+		);
+
+		expect(get(conversations).map((conversation) => conversation.id)).toEqual(['user-2-conv']);
+	});
+
+	it('clears stored conversations and local preservation state', () => {
+		reconcileConversationSnapshot(
+			[{ id: 'user-1-conv', title: 'User 1 chat', updatedAt: 2 }],
+			{ resetLocalState: true, userId: 'user-1' }
+		);
+		upsertConversationLocal('user-1-optimistic', 'User 1 draft', 3);
+
+		clearConversationStore();
+		reconcileConversationSnapshot(
+			[{ id: 'user-2-conv', title: 'User 2 chat', updatedAt: 4 }],
+			{ userId: 'user-2' }
+		);
+
+		expect(get(conversations).map((conversation) => conversation.id)).toEqual(['user-2-conv']);
 	});
 
 	it('does not reintroduce deleted conversations from a stale snapshot', async () => {
