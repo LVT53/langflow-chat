@@ -174,4 +174,25 @@ describe('conversation-session', () => {
 			keepalive: true,
 		});
 	});
+
+	it('does not clean up a prepared conversation with a pending bootstrap message', () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+		const removeLocal = vi.fn();
+
+		storePendingConversationMessage('conv-123', {
+			message: 'Send this after navigation',
+			attachmentIds: [],
+			attachments: [],
+		});
+
+		cleanupPreparedConversation({
+			conversationId: 'conv-123',
+			removeLocal,
+			fetchImpl: fetchMock,
+		});
+
+		expect(removeLocal).not.toHaveBeenCalled();
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(hasPendingConversationMessage('conv-123')).toBe(true);
+	});
 });

@@ -127,7 +127,8 @@ describe('validateSession', () => {
       role: 'user',
       avatarId: null,
       profilePicture: null,
-      translationEnabled: false
+      translationEnabled: false,
+      titleLanguage: 'auto'
     });
   });
 

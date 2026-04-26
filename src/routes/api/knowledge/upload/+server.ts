@@ -36,7 +36,7 @@ export const POST: RequestHandler = async (event) => {
 		if (message.toLowerCase().includes('request body size exceeded')) {
 			return json(
 				{
-					error: `Upload exceeded the server request body size limit of ${MAX_FILE_SIZE_MB()}MB. Try uploading a smaller file.`,
+					error: `Upload exceeded the server request body size limit of ${MAX_FILE_SIZE_MB()}MB. Try uploading a smaller file or increase BODY_SIZE_LIMIT for this deployment.`,
 				},
 				{ status: 413 }
 			);
