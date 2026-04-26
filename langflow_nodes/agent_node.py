@@ -414,20 +414,22 @@ class AgentComponent(ToolCallingAgentComponent):
 
 
         # Ensure all tool names are unique to prevent LangChain provider crashes (e.g. OpenAI "Tool names must be unique" BadRequestError)
+        # We deduplicate by name rather than renaming, as renaming a shared instance renames all references and fails,
+        # and duplicate tools are functionally identical anyway.
         if isinstance(self.tools, list):
+            unique_tools = []
             seen_names = set()
             for tool in self.tools:
                 name = str(getattr(tool, "name", "") or "").strip()
                 if not name:
+                    unique_tools.append(tool)
                     continue
-                original_name = name
-                counter = 1
-                while name in seen_names:
-                    name = f"{original_name}_{counter}"
-                    counter += 1
-                if name != original_name:
-                    tool.name = name
-                seen_names.add(name)
+                if name not in seen_names:
+                    unique_tools.append(tool)
+                    seen_names.add(name)
+                else:
+                    logger.warning("Agent runtime tools skipping duplicate: %s", name)
+            self.tools = unique_tools
 
         # Set shared callbacks for tracing the tools used by the agent
         self.set_tools_callbacks(self.tools, self._get_shared_callbacks())
