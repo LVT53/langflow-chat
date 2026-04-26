@@ -54,12 +54,17 @@
 			data.name = formName;
 			data.apiKey = formApiKey;
 		} else if (isBuiltIn) {
+			if (!formDisplayName || !formBaseUrl || !formModelName) {
+				localError = 'Fill in display name, base URL, and model name.';
+				return;
+			}
 			data.displayName = formDisplayName;
 			data.baseUrl = formBaseUrl;
 			data.modelName = formModelName;
 			data.flowId = formFlowId;
 			data.componentId = formComponentId;
 			data.model1 = model?.name === 'model1' || model?.name === 'model2' ? model.name : undefined;
+			if (formApiKey) data.apiKey = formApiKey;
 		} else {
 			if (!formDisplayName || !formBaseUrl || !formModelName) {
 				localError = 'Fill in display name, base URL, and model name.';
@@ -100,23 +105,19 @@
 					<label class="settings-label" for="form-display-name">Display Name</label>
 					<input id="form-display-name" type="text" class="settings-input" bind:value={formDisplayName} placeholder="e.g. Model 1" />
 				</div>
-				{#if !isBuiltIn}
-					<div>
-						<label class="settings-label" for="form-base-url">Base URL</label>
-						<input id="form-base-url" type="text" class="settings-input" bind:value={formBaseUrl} placeholder="https://api.fireworks.ai/inference/v1" />
+				<div>
+					<label class="settings-label" for="form-base-url">Base URL</label>
+					<input id="form-base-url" type="url" class="settings-input" bind:value={formBaseUrl} placeholder="e.g. https://api.openai.com/v1" />
+				</div>
+				<div>
+					<label class="settings-label" for="form-api-key">API Key</label>
+					<div class="flex items-center gap-2">
+						<input id="form-api-key" type={showApiKey ? 'text' : 'password'} class="settings-input flex-1" bind:value={formApiKey} placeholder={model && !isCreate ? '(unchanged)' : 'sk-...'} />
+						<button type="button" class="btn-secondary" onclick={() => (showApiKey = !showApiKey)}>
+							{showApiKey ? 'Hide' : 'Show'}
+						</button>
 					</div>
-					<div>
-						<label class="settings-label" for="form-api-key">
-							API Key {model && !isCreate ? '(leave empty to keep current)' : ''}
-						</label>
-						<div class="flex gap-2">
-							<input id="form-api-key" type={showApiKey ? 'text' : 'password'} class="settings-input flex-1" bind:value={formApiKey} placeholder={model && !isCreate ? '(unchanged)' : 'sk-...'} />
-							<button type="button" class="btn-secondary" onclick={() => (showApiKey = !showApiKey)}>
-								{showApiKey ? 'Hide' : 'Show'}
-							</button>
-						</div>
-					</div>
-				{/if}
+				</div>
 				<div>
 					<label class="settings-label" for="form-model-name">Model Name</label>
 					<input id="form-model-name" type="text" class="settings-input" bind:value={formModelName} placeholder={isBuiltIn ? 'e.g. model-1' : 'e.g. accounts/fireworks/models/llama-v3-70b'} />
