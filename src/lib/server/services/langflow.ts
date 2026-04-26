@@ -107,6 +107,19 @@ const IMAGE_SEARCH_GUARD = [
 	"- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.",
 ].join("\n");
 
+const EXA_SEARCH_GUARD = [
+		"Web search workflow (Exa):",
+		"- When the user asks for current events, recent developments, or web-based information, call the `search` tool.",
+		"- The `search` tool expects a JSON argument: {`query`: `your search terms`}.",
+		"- For multi-hop research, chain `search` calls first, then use `get_contents` to retrieve full content.",
+		"- Use `find_similar` when the user provides a URL and wants pages with similar content.",
+		"- The `get_contents` tool expects a JSON argument: {ids: [id1, id2, ...]} using IDs from search results.",
+		"- The `find_similar` tool expects a JSON argument: {url: target URL}.",
+		"- You MUST cite your sources using markdown links: [source title](url).",
+		"- Use the injected current date for temporal context before searching.",
+		"- Prefer `search` over `find_similar` unless the user explicitly provides a source URL.",
+	].join("\n");
+
 const PERSONA_MEMORY_GUARD = [
 	"Persona Memory Usage:",
 	"- Persona memory describes the human user for personalization and direct address.",
@@ -144,6 +157,7 @@ export function buildOutboundSystemPrompt(params: {
   additions.push(
     FILE_GENERATION_GUARD,
     IMAGE_SEARCH_GUARD,
+    EXA_SEARCH_GUARD,
     PERSONA_MEMORY_GUARD,
   );
 
