@@ -340,7 +340,7 @@ export async function syncArtifactToHoncho(params: {
 	const fallbackArtifact = params.fallbackTextArtifact;
 	if (fallbackArtifact?.contentText?.trim()) {
 		try {
-			const clipped = clipText(fallbackArtifact.contentText, 10_000);
+			const clipped = clipText(fallbackArtifact.contentText, 50_000);
 			await session.addMessages(
 				userPeer.message(clipped, {
 					metadata: {
