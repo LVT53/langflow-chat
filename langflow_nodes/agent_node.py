@@ -36,6 +36,9 @@ from lfx.schema.dotdict import dotdict
 from lfx.schema.message import Message
 from lfx.schema.table import EditMode
 
+from langchain_classic.agents import create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder, PromptTemplate
+
 
 def set_advanced_true(component_input):
     component_input.advanced = True
@@ -341,6 +344,35 @@ class AgentComponent(ToolCallingAgentComponent):
         if val in {"", 0}:
             return None
         return val
+
+    def create_agent_runnable(self):
+        """Build an OpenAI-tools agent runnable with message-based tool calling.
+
+        Replaces the legacy AgentExecutor prompt-based agent with
+        create_openai_tools_agent so that intermediate tool steps are passed
+        as structured BaseMessage objects (via message_log / agent_scratchpad)
+        rather than reconstructed strings. This preserves additional_kwargs such
+        as reasoning_content across tool-turn boundaries, which is required by
+        DeepSeek and other reasoning providers.
+        """
+        llm = self._get_llm()
+        if llm is None:
+            msg = "No language model selected. Please choose a model to proceed."
+            raise ValueError(msg)
+
+        # The prompt must contain an agent_scratchpad MessagesPlaceholder.
+        # We also include a chat_history placeholder so the Langflow memory
+        # integration works out of the box.
+        messages: list[Any] = [
+            ("system", str(self.system_prompt or "").strip() or "You are a helpful assistant."),
+            MessagesPlaceholder(variable_name="chat_history", optional=True),
+            HumanMessagePromptTemplate(
+                prompt=PromptTemplate(input_variables=["input"], template="{input}")
+            ),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ]
+        prompt = ChatPromptTemplate.from_messages(messages)
+        return create_openai_tools_agent(llm, self.tools or [], prompt)
 
     def _get_llm(self):
         """Override parent to include max_tokens from the Agent's input field."""

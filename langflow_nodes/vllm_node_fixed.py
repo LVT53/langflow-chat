@@ -41,6 +41,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     system_prompt: str = ""
     enable_thinking: bool = True
+    _last_reasoning_content: str = ""
 
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.enable_thinking:
@@ -51,6 +52,80 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
         chat_template_kwargs["enable_thinking"] = True
         extra_body["chat_template_kwargs"] = chat_template_kwargs
         payload["extra_body"] = extra_body
+        return payload
+
+    def _recover_reasoning_in_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Recover reasoning_content from <thinking> tags for APIs that require it (e.g. DeepSeek).
+
+        The classic Langchain AgentExecutor can reconstruct messages from strings,
+        losing additional_kwargs. This last-mile patch scans the final payload
+        messages, extracts reasoning from embedded <thinking> tags, and injects
+        reasoning_content so the API accepts the request.
+        """
+        open_tag = self.reasoning_open_tag
+        close_tag = self.reasoning_close_tag
+        messages = payload.get("messages")
+        if not isinstance(messages, list):
+            logger.debug("[REASONING_RECOVER] No messages in payload")
+            return payload
+
+        logger.debug("[REASONING_RECOVER] Scanning %d messages", len(messages))
+        for idx, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get("role")
+            content = msg.get("content", "") or ""
+            has_reasoning = "reasoning_content" in msg
+            logger.debug(
+                "[REASONING_RECOVER] msg[%d] role=%s content_len=%d has_reasoning=%s",
+                idx,
+                role,
+                len(content) if isinstance(content, str) else 0,
+                has_reasoning,
+            )
+            if role != "assistant":
+                continue
+            if not isinstance(content, str):
+                continue
+
+            # Case 1: content contains <thinking>...</thinking> tags
+            if open_tag in content and close_tag in content:
+                start = content.find(open_tag)
+                end = content.find(close_tag) + len(close_tag)
+                inner_start = start + len(open_tag)
+                inner_end = content.find(close_tag)
+                reasoning_text = content[inner_start:inner_end]
+                clean_content = content[:start] + content[end:]
+                msg["content"] = clean_content
+                msg["reasoning_content"] = reasoning_text
+                # Cache for fallback on later turns
+                self._last_reasoning_content = reasoning_text
+                logger.debug(
+                    "[REASONING_RECOVER] msg[%d] extracted reasoning len=%d",
+                    idx,
+                    len(reasoning_text),
+                )
+                continue
+
+            # Case 2: message already has reasoning_content in additional_kwargs
+            # (langchain_openai's _convert_message_to_dict does NOT preserve it,
+            # but if a downstream patch does, we don't need to do anything)
+            if has_reasoning:
+                logger.debug("[REASONING_RECOVER] msg[%d] already has reasoning_content", idx)
+                continue
+
+            # Case 3: assistant message with tool_calls but no reasoning_content —
+            # DeepSeek requires reasoning_content for any previous assistant turn
+            # that had reasoning. Inject the cached last reasoning as a fallback.
+            if msg.get("tool_calls") and hasattr(self, "_last_reasoning_content"):
+                msg["reasoning_content"] = self._last_reasoning_content
+                logger.debug(
+                    "[REASONING_RECOVER] msg[%d] injected cached reasoning len=%d",
+                    idx,
+                    len(self._last_reasoning_content),
+                )
+                continue
+
         return payload
 
     def _reasoning_to_tagged_content(self, reasoning: str) -> str:
@@ -93,6 +168,11 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
         if isinstance(reasoning, str) and reasoning:
             return reasoning
         return None
+
+    def _get_request_payload(self, messages, stop=None, **kwargs: Any) -> dict[str, Any]:
+        """Override to recover reasoning_content from <thinking> tags before sending to the API."""
+        payload = super()._get_request_payload(messages, stop=stop, **kwargs)
+        return self._recover_reasoning_in_payload(payload)
 
     async def _astream(self, messages: Any, *args: Any, **kwargs: Any):
         """Stream model output while preserving reasoning in content tags."""
