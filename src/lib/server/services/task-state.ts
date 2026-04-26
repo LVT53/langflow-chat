@@ -51,6 +51,7 @@ import {
   mapTaskEvidenceLink,
   mapTaskState,
 } from "./task-state/mappers";
+import { parseWorkingDocumentMetadata } from "./knowledge/store";
 import { scoreMatch } from "./working-set";
 
 // Authority note:

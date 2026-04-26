@@ -119,7 +119,7 @@ export async function linkDuplicateDocument(params: {
 
   return {
     familyId,
-    originalSupersedesArtifactId: originalMetadata.supersedesArtifactId,
+    originalSupersedesArtifactId: originalMetadata.supersedesArtifactId ?? null,
     duplicateSupersedesArtifactId: params.originalArtifactId,
   };
 }

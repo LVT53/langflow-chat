@@ -174,25 +174,26 @@ export async function rerankItems<T>(params: {
         score: result.score,
       };
     })
-    .filter((value): value is RankedTeiItem<T> => Boolean(value));
+    .filter((value): value is NonNullable<typeof value> => value != null);
 
-  params.onDiagnostics?.(
-    rerankDiagnostics
-      ? {
-          ...rerankDiagnostics,
-          inputCount: params.items.length,
-          limitedCount: limitedItems.length,
-        }
-      : {
-          queryLength: params.query.trim().length,
-          inputCount: params.items.length,
-          limitedCount: limitedItems.length,
-          outputCount: rankedItems.length,
-          latencyMs: 0,
-          fallbackReason: null,
-          confidence: rankedItems.length > 0 ? scoreToConfidencePercent(rankedItems[0]?.score ?? 0) : 0,
-        }
-  );
+  if (rerankDiagnostics) {
+    const diagnostics: TeiRerankDiagnostics = rerankDiagnostics;
+    params.onDiagnostics?.({
+      ...diagnostics,
+      inputCount: params.items.length,
+      limitedCount: limitedItems.length,
+    });
+  } else {
+    params.onDiagnostics?.({
+      queryLength: params.query.trim().length,
+      inputCount: params.items.length,
+      limitedCount: limitedItems.length,
+      outputCount: rankedItems.length,
+      latencyMs: 0,
+      fallbackReason: null,
+      confidence: rankedItems.length > 0 ? scoreToConfidencePercent(rankedItems[0]?.score ?? 0) : 0,
+    });
+  }
 
   return {
     items: rankedItems,

@@ -290,7 +290,7 @@ export type TaskStateStatus = 'active' | 'candidate' | 'revived' | 'archived';
 
 export type CompactionMode = 'none' | 'deterministic' | 'llm_fallback';
 export type RoutingStage = 'deterministic' | 'semantic' | 'evidence_rerank' | 'verification_fallback';
-export type VerificationStatus = 'skipped' | 'fallback';
+export type VerificationStatus = 'skipped' | 'fallback' | 'passed';
 export type TaskEvidenceRole = 'selected' | 'pinned' | 'excluded' | 'checkpoint_source';
 export type TaskEvidenceOrigin = 'system' | 'user';
 export type TaskCheckpointType = 'micro' | 'stable';
@@ -309,7 +309,8 @@ export type WorkingSetReasonCode =
   | 'recently_used_in_output'
   | 'latest_generated_output'
   | 'matched_current_turn'
-  | 'persisted_from_previous_turn';
+  | 'persisted_from_previous_turn'
+  | 'preferred_artifact';
 
 export interface ChatAttachment {
   id: string;

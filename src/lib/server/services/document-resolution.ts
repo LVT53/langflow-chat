@@ -379,7 +379,7 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
         primaryArtifactId: primaryMatch.artifact.id,
         latestArtifactIds,
         latestArtifacts,
-        primaryReasonCodes: primaryMatch.reasonCodes,
+        primaryReasonCodes: primaryMatch.reasonCodes as WorkingSetReasonCode[],
       };
     }
   }
