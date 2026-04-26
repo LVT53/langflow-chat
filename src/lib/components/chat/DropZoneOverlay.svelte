@@ -45,7 +45,7 @@
 					<polyline points="17 8 12 3 7 8" />
 					<line x1="12" y1="3" x2="12" y2="15" />
 				</svg>
-				<p class="drop-zone-text">Drop files to attach</p>
+				<p class="drop-zone-text">Drop files to attach (max 100MB per file)</p>
 			{/if}
 		</div>
 	</div>

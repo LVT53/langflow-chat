@@ -15,6 +15,7 @@ let expanded = $state(false);
 let container = $state<HTMLDivElement | undefined>(undefined);
 let prevContentLength = $state(0);
 let contentFresh = $state(false);
+let newCharStart = $state(-1);
 let freshTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	const label = $derived(thinkingIsDone ? 'Thought' : 'Thinking');
@@ -26,6 +27,7 @@ const totalLength = hasSegments
 : content.length;
 if (totalLength > prevContentLength && isActiveThinking) {
 contentFresh = true;
+newCharStart = prevContentLength;
 clearTimeout(freshTimeout);
 freshTimeout = setTimeout(() => { contentFresh = false; }, 500);
 }
@@ -60,16 +62,28 @@ prevContentLength = totalLength;
 
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
-		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 60);
+		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 200);
 		if (n.includes('search') || n.includes('tavily')) {
 			const q = input.query ?? input.q ?? Object.values(input)[0];
-			return `Searching: "${String(q ?? '').slice(0, 60)}"`;
+			return `Searching: "${String(q ?? '').slice(0, 200)}"`;
 		}
 		if (isFetchTool(name)) {
 			const raw = String(Object.values(input)[0] ?? '');
 			return `Fetching: ${extractHostname(raw)}`;
 		}
 		return firstVal() ? `${name}: ${firstVal()}` : name;
+	}
+
+	function getToolTitle(name: string, input: Record<string, unknown>): string {
+		const n = name.toLowerCase();
+		if (n.includes('search') || n.includes('tavily')) {
+			const q = input.query ?? input.q ?? Object.values(input)[0];
+			return String(q ?? '');
+		}
+		if (isFetchTool(name)) {
+			return String(Object.values(input)[0] ?? '');
+		}
+		return String(Object.values(input)[0] ?? '');
 	}
 
 	async function toggle() {
@@ -121,7 +135,7 @@ prevContentLength = totalLength;
 					{#if getFetchUrl(tool.name, tool.input)}
 					<span class="tool-label-text">Fetching: <a class="tool-link" href={getFetchUrl(tool.name, tool.input)} target="_blank" rel="noopener noreferrer" onclick={(event) => event.stopPropagation()}>{extractHostname(String(Object.values(tool.input)[0] ?? ''))}</a></span>
 				{:else}
-					<span class="tool-label-text">{formatToolCall(tool.name, tool.input)}</span>
+					<span class="tool-label-text" title={getToolTitle(tool.name, tool.input)}>{formatToolCall(tool.name, tool.input)}</span>
 				{/if}
 				</div>
 			{/each}
@@ -147,14 +161,20 @@ prevContentLength = totalLength;
 							{#if getFetchUrl(seg.name, seg.input)}
 							<span class="tool-item-label">Fetching: <a class="tool-link" href={getFetchUrl(seg.name, seg.input)} target="_blank" rel="noopener noreferrer">{extractHostname(String(Object.values(seg.input)[0] ?? ''))}</a></span>
 						{:else}
-							<span class="tool-item-label">{formatToolCall(seg.name, seg.input)}</span>
+							<span class="tool-item-label" title={getToolTitle(seg.name, seg.input)}>{formatToolCall(seg.name, seg.input)}</span>
 						{/if}
 						</div>
 					{/if}
 				{/each}
-			{:else}
-				<pre class="thinking-text">{content}</pre>
-			{/if}
+		{:else}
+			<pre class="thinking-text">
+				{#if isActiveThinking && newCharStart > 0 && newCharStart < content.length}
+					{content.slice(0, newCharStart)}<span class="word-new">{content.slice(newCharStart)}</span>
+				{:else}
+					{content}
+				{/if}
+			</pre>
+		{/if}
 		</div>
 	{/if}
 </div>
@@ -300,7 +320,15 @@ prevContentLength = totalLength;
 		min-width: 0;
 }
 
-/* Subtle fade-in mirrored from MarkdownRenderer.block-fade-in for thinking content arriving during streaming */
+.word-new {
+animation: wordFadeIn 200ms ease-out forwards;
+}
+
+@keyframes wordFadeIn {
+from { opacity: 0.3; }
+to   { opacity: 1; }
+}
+
 @keyframes thinkContentFadeIn {
 from { opacity: 0.5; }
 to   { opacity: 1; }
@@ -378,6 +406,11 @@ animation: thinkContentFadeIn 300ms ease-out;
 	}
 
 	.thinking-content.content-fresh {
+		animation: none;
+		opacity: 1;
+	}
+
+	.word-new {
 		animation: none;
 		opacity: 1;
 	}

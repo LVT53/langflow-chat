@@ -220,6 +220,14 @@ export const FRIENDLY_STREAM_ERRORS = {
 		"We could not reach the chat service. Check your connection and try again.",
 	backend_failure:
 		"We hit a temporary issue generating a response. Please try again.",
+	capacity_exceeded:
+		"Our servers are handling too many requests right now. Please wait a moment and try again.",
+	file_too_large:
+		"The uploaded file exceeds the maximum allowed size. Please upload a smaller file.",
+	message_too_long:
+		"Your message is too long. Please shorten it and try again.",
+	provider_tool_rounds:
+		"The AI needed too many tool-call rounds for this request. Please try a simpler request.",
 } as const;
 
 export type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;

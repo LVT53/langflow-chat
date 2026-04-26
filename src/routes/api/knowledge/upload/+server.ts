@@ -12,8 +12,9 @@ import {
 	logAttachmentTrace,
 } from '$lib/server/services/attachment-trace';
 import { getConversation } from '$lib/server/services/conversations';
+import { getConfig } from '$lib/server/config-store';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_FILE_SIZE_MB = () => Math.round(getConfig().maxFileUploadSize / (1024 * 1024));
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -35,7 +36,7 @@ export const POST: RequestHandler = async (event) => {
 		if (message.toLowerCase().includes('request body size exceeded')) {
 			return json(
 				{
-					error: 'Upload exceeded the server request size limit. This deployment should allow files up to 100MB; if this persists, increase BODY_SIZE_LIMIT on the server.',
+					error: `Upload exceeded the server request body size limit of ${MAX_FILE_SIZE_MB()}MB. Try uploading a smaller file.`,
 				},
 				{ status: 413 }
 			);
@@ -50,8 +51,8 @@ export const POST: RequestHandler = async (event) => {
 	if (!(file instanceof File)) {
 		return json({ error: 'No file provided' }, { status: 400 });
 	}
-	if (file.size > MAX_FILE_SIZE) {
-		return json({ error: 'File too large. Maximum size is 100MB.' }, { status: 400 });
+	if (file.size > getConfig().maxFileUploadSize) {
+		return json({ error: `File too large. Maximum size is ${MAX_FILE_SIZE_MB()}MB.` }, { status: 400 });
 	}
 
 	let conversationId: string | null = null;

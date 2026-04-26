@@ -103,7 +103,7 @@ export function createServerChunkRuntime({
 	onToken,
 	onThinking,
 	onToolCall,
-	thinkingBatchMin = 80,
+	thinkingBatchMin = 20,
 }: {
 	enqueueChunk: (chunk: string) => boolean;
 	onToken?: (text: string) => void;

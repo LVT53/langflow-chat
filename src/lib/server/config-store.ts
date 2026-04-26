@@ -65,6 +65,8 @@ export const ADMIN_CONFIG_KEYS = [
 	"MINERU_API_URL",
 	"MINERU_TIMEOUT_MS",
 	"SYSTEM_PROMPT",
+	"MAX_FILE_UPLOAD_SIZE",
+	"MAX_PROVIDER_TOOL_ROUNDS",
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -136,6 +138,8 @@ export interface RuntimeConfig {
 	concurrentStreamLimit: number;
 	perUserStreamLimit: number;
 	systemPrompt: string;
+	maxFileUploadSize: number;
+	maxProviderToolRounds: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -348,6 +352,14 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	SYSTEM_PROMPT: (config, value) => {
 		config.systemPrompt = normalizeSystemPromptReference(value) ?? "";
 	},
+	MAX_FILE_UPLOAD_SIZE: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.maxFileUploadSize = Math.max(1048576, parsed);
+	},
+	MAX_PROVIDER_TOOL_ROUNDS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.maxProviderToolRounds = Math.max(1, parsed);
+	},
 
 };
 
@@ -436,6 +448,14 @@ export function getWorkingSetPromptTokenBudget(): number {
 
 export function getSmallFileThreshold(): number {
 	return runtimeConfig.smallFileThresholdChars;
+}
+
+export function getMaxFileUploadSize(): number {
+	return runtimeConfig.maxFileUploadSize;
+}
+
+export function getMaxProviderToolRounds(): number {
+	return runtimeConfig.maxProviderToolRounds;
 }
 
 // Per-model context limit getters
@@ -574,6 +594,8 @@ export function getResolvedAdminConfigValues(
 		MINERU_API_URL: config.mineruApiUrl,
 		MINERU_TIMEOUT_MS: String(config.mineruTimeoutMs),
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
+		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
+		MAX_PROVIDER_TOOL_ROUNDS: String(config.maxProviderToolRounds),
 	};
 }
 
@@ -649,6 +671,8 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MINERU_API_URL: envConfig.mineruApiUrl,
 		MINERU_TIMEOUT_MS: String(envConfig.mineruTimeoutMs),
 		SYSTEM_PROMPT: envConfig.systemPrompt,
+		MAX_FILE_UPLOAD_SIZE: String(envConfig.maxFileUploadSize),
+		MAX_PROVIDER_TOOL_ROUNDS: String(envConfig.maxProviderToolRounds),
 	};
 }
 

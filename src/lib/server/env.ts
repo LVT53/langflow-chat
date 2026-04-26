@@ -81,6 +81,8 @@ interface Config {
   concurrentStreamLimit: number;
 	systemPrompt: string;
   perUserStreamLimit: number;
+  maxFileUploadSize: number;
+  maxProviderToolRounds: number;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -277,6 +279,14 @@ function readConfig(): Config {
     perUserStreamLimit: Math.max(
       1,
       parseInt(process.env.PER_USER_STREAM_LIMIT || '1', 10) || 1
+    ),
+    maxFileUploadSize: Math.max(
+      1048576,
+      parseInt(process.env.MAX_FILE_UPLOAD_SIZE || '104857600', 10) || 104857600
+    ),
+    maxProviderToolRounds: Math.max(
+      1,
+      parseInt(process.env.MAX_PROVIDER_TOOL_ROUNDS || '30', 10) || 30
     ),
   };
 }

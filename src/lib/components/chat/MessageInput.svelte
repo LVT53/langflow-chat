@@ -373,6 +373,18 @@
 		}
 
 		try {
+			const MAX_FILE_SIZE = 100 * 1024 * 1024;
+			for (const file of selectedFiles) {
+				if (file.size > MAX_FILE_SIZE) {
+					failures.push(`${file.name}: File is ${(file.size / (1024 * 1024)).toFixed(0)}MB. Maximum allowed size is 100MB per file.`);
+				}
+			}
+
+			const validFiles = selectedFiles.filter((file) => file.size <= MAX_FILE_SIZE);
+			if (validFiles.length === 0 && selectedFiles.length > 0) {
+				throw new Error('All files exceed the 100MB maximum upload size.');
+			}
+
 			let targetConversationId = resolvedConversationId;
 			if (!targetConversationId && ensureConversation) {
 				targetConversationId = await ensureConversation();
@@ -381,7 +393,7 @@
 			if (!targetConversationId) {
 				throw new Error('Unable to prepare a conversation for attachments.');
 			}
-			for (const file of selectedFiles) {
+			for (const file of validFiles) {
 				try {
 					const payload = await uploadKnowledgeAttachment(file, targetConversationId);
 					if (payload?.artifact) {

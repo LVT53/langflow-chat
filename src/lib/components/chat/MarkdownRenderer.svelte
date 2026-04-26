@@ -37,7 +37,7 @@
   // enough that new blocks are perceivable with the fade-in animation.
   let pendingContent: string | null = null;
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
-  const STREAM_THROTTLE_MS = 80;
+  const STREAM_THROTTLE_MS = 40;
 
   function scheduleRender(src: string, darkMode: boolean, streaming: boolean) {
     pendingContent = src;
@@ -393,10 +393,13 @@
     to   { opacity: 1; }
   }
 
-  /* Word-level appearance for streaming text (applied via JS).
-     No animation - words appear instantly to prevent flicker. */
   :global(.word-new) {
-    opacity: 1;
+    animation: wordFadeIn 200ms ease-out forwards;
+  }
+
+  @keyframes wordFadeIn {
+    from { opacity: 0.3; }
+    to   { opacity: 1; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -405,6 +408,7 @@
       opacity: 1;
     }
     :global(.word-new) {
+      animation: none;
       opacity: 1;
     }
   }

@@ -62,7 +62,7 @@
 			class="menu-row menu-row--button"
 			onclick={handleAttach}
 			disabled={!canAttach}
-			title={attachmentsEnabled ? 'Attach file' : 'File uploads are unavailable'}
+			title={attachmentsEnabled ? 'Attach file (max 100MB)' : 'File uploads are unavailable'}
 			aria-label="Attach file"
 			role="menuitem"
 		>
