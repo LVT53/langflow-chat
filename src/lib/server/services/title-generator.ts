@@ -1,5 +1,6 @@
 // src/lib/server/services/title-generator.ts
 import { getConfig } from '../config-store';
+import { normalizeVisibleAssistantText } from './chat-turn/thinking-normalizer';
 
 // Common misspellings dictionary for post-processing correction
 const COMMON_MISSPELLINGS: Record<string, string> = {
@@ -363,7 +364,7 @@ async function generateTitleWithTemperature(
   const message = json.choices?.[0]?.message;
   const rawTitle = (
     typeof message?.content === 'string' && message.content.trim()
-      ? message.content.trim()
+      ? normalizeVisibleAssistantText(message.content.trim())
       : typeof message?.reasoning === 'string' && message.reasoning.trim()
         ? message.reasoning.trim()
         : ''
@@ -447,7 +448,9 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
 
   const json = await response.json();
   const message = json.choices?.[0]?.message;
-  const rawTitle = message?.content?.trim() || message?.reasoning?.trim() || '';
+  const rawTitle = normalizeVisibleAssistantText(
+    message?.content?.trim() || message?.reasoning?.trim() || ''
+  );
 
   if (!rawTitle) {
     return fallbackTitle(userMessage);
