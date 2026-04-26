@@ -74,6 +74,7 @@
 			name: modelName,
 			displayName: adminConfig[`${prefix}_DISPLAY_NAME`] ?? '',
 			baseUrl: adminConfig[`${prefix}_BASEURL`] ?? '',
+			apiKey: adminConfig[`${prefix}_API_KEY`] ?? '',
 			modelName: adminConfig[`${prefix}_NAME`] ?? '',
 			reasoningEffort: null,
 			thinkingType: null,
@@ -121,9 +122,10 @@
 			} else if (modalModel?.isBuiltIn) {
 				// Save built-in model config via admin config keys
 				const prefix = modalModel.name === 'model1' ? 'MODEL_1' : 'MODEL_2';
-				if (data.displayName) adminConfig[`${prefix}_DISPLAY_NAME`] = data.displayName as string;
-				if (data.baseUrl) adminConfig[`${prefix}_BASEURL`] = data.baseUrl as string;
-				if (data.modelName) adminConfig[`${prefix}_NAME`] = data.modelName as string;
+				if (data.displayName !== undefined) adminConfig[`${prefix}_DISPLAY_NAME`] = data.displayName as string;
+				if (data.baseUrl !== undefined) adminConfig[`${prefix}_BASEURL`] = data.baseUrl as string;
+				if (data.apiKey !== undefined) adminConfig[`${prefix}_API_KEY`] = data.apiKey as string;
+				if (data.modelName !== undefined) adminConfig[`${prefix}_NAME`] = data.modelName as string;
 				if (data.flowId !== undefined) adminConfig[`${prefix}_FLOW_ID`] = data.flowId as string;
 				if (data.componentId !== undefined) adminConfig[`${prefix}_COMPONENT_ID`] = data.componentId as string;
 				if (data.maxTokens !== undefined) adminConfig[`${prefix}_MAX_TOKENS`] = data.maxTokens != null ? String(data.maxTokens) : '';
@@ -185,12 +187,14 @@
 
 	const CONFIG_LABELS: Record<string, string> = {
 		MODEL_1_BASEURL: "Model 1 Base URL",
+		MODEL_1_API_KEY: "Model 1 API Key",
 		MODEL_1_NAME: "Model 1 Name",
 		MODEL_1_DISPLAY_NAME: "Model 1 Display Name",
 		MODEL_1_SYSTEM_PROMPT: "Model 1 System Prompt",
 		MODEL_1_FLOW_ID: "Model 1 Flow ID",
 		MODEL_1_COMPONENT_ID: "Model 1 Component ID",
 		MODEL_2_BASEURL: "Model 2 Base URL",
+		MODEL_2_API_KEY: "Model 2 API Key",
 		MODEL_2_NAME: "Model 2 Name",
 		MODEL_2_DISPLAY_NAME: "Model 2 Display Name",
 		MODEL_2_SYSTEM_PROMPT: "Model 2 System Prompt",
