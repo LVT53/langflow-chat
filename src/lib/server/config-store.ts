@@ -28,6 +28,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"WORKING_SET_PROMPT_TOKEN_BUDGET",
 	"SMALL_FILE_THRESHOLD_CHARS",
 	"MODEL_1_BASEURL",
+	"MODEL_1_API_KEY",
 	"MODEL_1_NAME",
 	"MODEL_1_DISPLAY_NAME",
 	"MODEL_1_SYSTEM_PROMPT",
@@ -35,6 +36,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_1_COMPONENT_ID",
 	"MODEL_1_MAX_TOKENS",
 	"MODEL_2_BASEURL",
+	"MODEL_2_API_KEY",
 	"MODEL_2_NAME",
 	"MODEL_2_DISPLAY_NAME",
 	"MODEL_2_SYSTEM_PROMPT",
@@ -228,6 +230,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MODEL_1_BASEURL: (config, value) => {
 		config.model1.baseUrl = value;
 	},
+	MODEL_1_API_KEY: (config, value) => {
+		config.model1.apiKey = value;
+	},
 	MODEL_1_NAME: (config, value) => {
 		config.model1.modelName = value;
 	},
@@ -249,6 +254,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_BASEURL: (config, value) => {
 		config.model2.baseUrl = value;
+	},
+	MODEL_2_API_KEY: (config, value) => {
+		config.model2.apiKey = value;
 	},
 	MODEL_2_NAME: (config, value) => {
 		config.model2.modelName = value;
@@ -560,6 +568,7 @@ export function getResolvedAdminConfigValues(
 		WORKING_SET_PROMPT_TOKEN_BUDGET: String(config.workingSetPromptTokenBudget),
 		SMALL_FILE_THRESHOLD_CHARS: String(config.smallFileThresholdChars),
 		MODEL_1_BASEURL: config.model1.baseUrl,
+		MODEL_1_API_KEY: config.model1.apiKey,
 		MODEL_1_NAME: config.model1.modelName,
 		MODEL_1_DISPLAY_NAME: config.model1.displayName,
 		MODEL_1_SYSTEM_PROMPT: getSystemPrompt(config.model1.systemPrompt),
@@ -568,6 +577,7 @@ export function getResolvedAdminConfigValues(
 		MODEL_1_MAX_TOKENS:
 			config.model1.maxTokens != null ? String(config.model1.maxTokens) : "",
 		MODEL_2_BASEURL: config.model2.baseUrl,
+		MODEL_2_API_KEY: config.model2.apiKey,
 		MODEL_2_NAME: config.model2.modelName,
 		MODEL_2_DISPLAY_NAME: config.model2.displayName,
 		MODEL_2_SYSTEM_PROMPT: getSystemPrompt(config.model2.systemPrompt),
@@ -639,6 +649,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		),
 		SMALL_FILE_THRESHOLD_CHARS: String(envConfig.smallFileThresholdChars),
 		MODEL_1_BASEURL: envConfig.model1.baseUrl,
+		MODEL_1_API_KEY: envConfig.model1.apiKey,
 		MODEL_1_NAME: envConfig.model1.modelName,
 		MODEL_1_DISPLAY_NAME: envConfig.model1.displayName,
 		MODEL_1_SYSTEM_PROMPT: envConfig.model1.systemPrompt,
@@ -647,6 +658,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MODEL_1_MAX_TOKENS:
 			envConfig.model1.maxTokens != null ? String(envConfig.model1.maxTokens) : "",
 		MODEL_2_BASEURL: envConfig.model2.baseUrl,
+		MODEL_2_API_KEY: envConfig.model2.apiKey,
 		MODEL_2_NAME: envConfig.model2.modelName,
 		MODEL_2_DISPLAY_NAME: envConfig.model2.displayName,
 		MODEL_2_SYSTEM_PROMPT: envConfig.model2.systemPrompt,
