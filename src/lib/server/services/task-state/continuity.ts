@@ -447,7 +447,7 @@ export async function syncTaskContinuityFromTaskState(params: {
     clipNullable(params.taskState.objective, PROJECT_SUMMARY_MAX) ??
     params.taskState.objective;
 
-  let projectId = existingLink[0]?.projectId ?? null;
+  let projectId: string | null = existingLink[0]?.projectId ?? null;
   if (!projectId) {
     const chosen = await chooseProjectCandidate({
       userId: params.userId,
