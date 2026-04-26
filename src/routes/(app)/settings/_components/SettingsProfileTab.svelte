@@ -5,6 +5,7 @@
 
 	type AvailableModel = { id: ModelId; displayName: string };
 	type Theme = 'system' | 'light' | 'dark';
+	type TitleLanguage = 'auto' | 'en' | 'hu';
 
 	let {
 		userId,
@@ -39,8 +40,10 @@
 		availableModels,
 		selectedModel,
 		selectedTheme,
+		selectedTitleLanguage,
 		onChangeModel,
 		onChangeTheme,
+		onChangeTitleLanguage,
 		onOpenResetModal,
 		onOpenDeleteModal,
 		onForgetEverything,
@@ -79,8 +82,10 @@
 		availableModels: AvailableModel[];
 		selectedModel: ModelId;
 		selectedTheme: Theme;
+		selectedTitleLanguage: TitleLanguage;
 		onChangeModel: (model: ModelId) => void | Promise<void>;
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
+		onChangeTitleLanguage: (lang: TitleLanguage) => void | Promise<void>;
 		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
 		onForgetEverything: () => void | Promise<void>;
@@ -232,6 +237,25 @@
 						onclick={() => onChangeTheme(theme as Theme)}
 					>
 						{theme.charAt(0).toUpperCase() + theme.slice(1)}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<div>
+			<p class="settings-label">Title Language</p>
+			<div class="flex gap-2">
+				{#each [
+					{ value: 'auto' as const, label: 'Auto-Detect' },
+					{ value: 'en' as const, label: 'English' },
+					{ value: 'hu' as const, label: 'Hungarian' },
+				] as lang}
+					<button
+						class="pref-pill"
+						class:pref-pill-active={selectedTitleLanguage === lang.value}
+						onclick={() => onChangeTitleLanguage(lang.value)}
+					>
+						{lang.label}
 					</button>
 				{/each}
 			</div>

@@ -28,6 +28,7 @@ export const load: ServerLoad = async (event) => {
       preferredModel: await normalizeModelSelectionWithProviders(userRow.preferredModel ?? 'model1'),
       translationEnabled: (userRow.translationEnabled ?? 0) === 1,
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
+      titleLanguage: (userRow.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
       avatarId: userRow.avatarId ?? null,
     },
     profilePicture: userRow.profilePicture ?? null,
@@ -49,11 +50,11 @@ export const load: ServerLoad = async (event) => {
   const envDefaults = getEnvDefaults();
   const currentConfigValues = getResolvedAdminConfigValues(runtime);
 
-  // Get runtime model display names for preferences section
-  const modelNames = {
-    model1: runtime.model1.displayName,
-    model2: runtime.model2.displayName,
-  };
+	const availableModels = await getAvailableModelsWithProviders();
+	const modelNames: Record<string, string> = {};
+	for (const m of availableModels) {
+		modelNames[m.id] = m.displayName;
+	}
 
   return {
     userSettings,
@@ -61,7 +62,7 @@ export const load: ServerLoad = async (event) => {
     currentConfigValues,
     configOverrides,
     envDefaults,
-    modelNames,
-    availableModels: await getAvailableModelsWithProviders(),
+		modelNames,
+		availableModels,
   };
 };

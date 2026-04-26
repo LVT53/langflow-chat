@@ -8,6 +8,7 @@ import { getAvailableModelsWithProviders } from '$lib/server/config-store';
 import type { ModelId } from '$lib/types';
 
 const VALID_THEMES = ['system', 'light', 'dark'];
+const VALID_TITLE_LANGUAGES = ['auto', 'en', 'hu'];
 
 export const PATCH: RequestHandler = async (event) => {
   requireAuth(event);
@@ -17,6 +18,7 @@ export const PATCH: RequestHandler = async (event) => {
     preferredModel?: unknown;
     translationEnabled?: unknown;
     theme?: unknown;
+    titleLanguage?: unknown;
     avatarId?: unknown;
   };
   try {
@@ -44,6 +46,13 @@ export const PATCH: RequestHandler = async (event) => {
       return json({ error: 'Invalid theme' }, { status: 400 });
     }
     updates.theme = body.theme;
+  }
+
+  if (body.titleLanguage !== undefined) {
+    if (!VALID_TITLE_LANGUAGES.includes(body.titleLanguage as string)) {
+      return json({ error: 'Invalid titleLanguage' }, { status: 400 });
+    }
+    updates.titleLanguage = body.titleLanguage;
   }
 
   if (body.avatarId !== undefined) {

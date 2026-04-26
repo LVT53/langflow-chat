@@ -18,7 +18,7 @@
 	import { reconcileConversationSnapshot } from '$lib/stores/conversations';
 	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
 	import { projects } from '$lib/stores/projects';
-	import { setSelectedModelAndSync, setTranslationAndSync } from '$lib/stores/settings';
+	import { setSelectedModelAndSync, setTranslationAndSync, setTitleLanguageAndSync, type TitleLanguage } from '$lib/stores/settings';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { currentConversationId } from '$lib/stores/ui';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
@@ -87,6 +87,7 @@
 	let selectedModel = $state(initialPreferences.preferredModel);
 	let translationEnabled = $state(initialPreferences.translationEnabled);
 	let selectedTheme = $state(initialPreferences.theme);
+	let selectedTitleLanguage = $state(initialPreferences.titleLanguage);
 	let selectedAvatar = $state(initialPreferences.avatarId);
 
 	let showDeleteModal = $state(false);
@@ -206,6 +207,11 @@
 	async function changeTheme(theme: 'system' | 'light' | 'dark') {
 		selectedTheme = theme;
 		await setThemeAndSync(theme);
+	}
+
+	async function changeTitleLanguage(lang: TitleLanguage) {
+		selectedTitleLanguage = lang;
+		await setTitleLanguageAndSync(lang);
 	}
 
 	function closeDeleteModal() {
@@ -380,9 +386,11 @@
 				{selectedModel}
 				{translationEnabled}
 				{selectedTheme}
+				{selectedTitleLanguage}
 				onChangeModel={changeModel}
 				onChangeTranslation={changeTranslation}
 				onChangeTheme={changeTheme}
+				onChangeTitleLanguage={changeTitleLanguage}
 				onOpenResetModal={() => (showResetModal = true)}
 				onOpenDeleteModal={() => (showDeleteModal = true)}
 				forgetEverythingLoading={forgetEverythingLoading}

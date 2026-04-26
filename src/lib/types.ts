@@ -21,6 +21,7 @@ export interface UserPreferences {
   preferredModel: ModelId;
   translationEnabled: boolean;
   theme: Theme;
+  titleLanguage: 'auto' | 'en' | 'hu';
   avatarId: number | null;
 }
 
@@ -66,6 +67,7 @@ export interface SessionUser {
   avatarId: number | null;
   profilePicture: string | null;
   translationEnabled: boolean;
+  titleLanguage: 'auto' | 'en' | 'hu';
 }
 
 // Project interface: a named folder grouping conversations

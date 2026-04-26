@@ -4,15 +4,18 @@ import type { ModelId } from '$lib/types';
 import { canUseStorage, persist, read } from './_local-storage';
 
 export type TranslationState = 'enabled' | 'disabled';
+export type TitleLanguage = 'auto' | 'en' | 'hu';
 export type { ModelId };
 
 export const translationState = writable<TranslationState>('enabled');
 export const selectedModel = writable<ModelId>('model1');
+export const titleLanguage = writable<TitleLanguage>('auto');
 
 const SELECTED_MODEL_KEY = 'selectedModel';
 const TRANSLATION_STATE_KEY = 'translationState';
+const TITLE_LANGUAGE_KEY = 'titleLanguage';
 
-export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean }): void {
+export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean; titleLanguage?: TitleLanguage }): void {
 	if (!canUseStorage()) {
 		return;
 	}
@@ -39,6 +42,18 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 		);
 		if (storedTranslation) {
 			translationState.set(storedTranslation);
+		}
+	}
+
+	if (serverPrefs?.titleLanguage !== undefined) {
+		titleLanguage.set(serverPrefs.titleLanguage);
+		persist(TITLE_LANGUAGE_KEY, serverPrefs.titleLanguage);
+	} else {
+		const storedTitleLang = read<TitleLanguage>(TITLE_LANGUAGE_KEY, null as TitleLanguage | null, (v): v is TitleLanguage =>
+			v === 'auto' || v === 'en' || v === 'hu'
+		);
+		if (storedTitleLang) {
+			titleLanguage.set(storedTitleLang);
 		}
 	}
 }
@@ -75,6 +90,16 @@ export async function setTranslationAndSync(enabled: boolean): Promise<void> {
 	setTranslationState(state);
 	try {
 		await updateUserPreferences({ translationEnabled: enabled });
+	} catch {
+		// Non-fatal
+	}
+}
+
+export async function setTitleLanguageAndSync(lang: TitleLanguage): Promise<void> {
+	titleLanguage.set(lang);
+	persist(TITLE_LANGUAGE_KEY, lang);
+	try {
+		await updateUserPreferences({ titleLanguage: lang });
 	} catch {
 		// Non-fatal
 	}

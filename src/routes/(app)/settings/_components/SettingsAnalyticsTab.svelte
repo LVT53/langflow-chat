@@ -39,9 +39,7 @@
 	}
 
 	function modelDisplayName(key: string): string {
-		if (key === 'model1') return modelNames.model1;
-		if (key === 'model2') return modelNames.model2;
-		return key;
+		return modelNames[key] ?? key;
 	}
 
 	function formatMs(ms: number): string {

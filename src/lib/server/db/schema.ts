@@ -11,6 +11,7 @@ export const users = sqliteTable('users', {
   preferredModel: text('preferred_model').notNull().default('model1'),
   translationEnabled: integer('translation_enabled').notNull().default(0),
   theme: text('theme').notNull().default('system'),
+  titleLanguage: text('title_language').notNull().default('auto'),
   avatarId: integer('avatar_id'),
   profilePicture: text('profile_picture'),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
