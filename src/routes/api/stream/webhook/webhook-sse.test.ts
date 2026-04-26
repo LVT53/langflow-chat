@@ -11,6 +11,10 @@ vi.mock('$lib/server/services/webhook-buffer', () => ({
 	}
 }));
 
+vi.mock('$lib/server/config-store', () => ({
+	getConfig: vi.fn(() => ({ requestTimeoutMs: 120_000 }))
+}));
+
 import { GET } from './[sessionId]/+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';

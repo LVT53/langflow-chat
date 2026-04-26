@@ -246,6 +246,9 @@ import type { ConversationDetail } from '$lib/types';
 
 		if (!nextDraft) {
 			conversationDraft = null;
+			if (hasStarted || creating) {
+				return;
+			}
 			preparedConversationId = null;
 			setLandingDraftConversationId(null);
 			if (stalePreparedConversationId) {

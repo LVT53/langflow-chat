@@ -249,6 +249,10 @@ export function cleanupPreparedConversation(params: {
 	removeLocal?: (conversationId: string) => void;
 	fetchImpl?: FetchLike;
 }): void {
+	if (hasPendingConversationMessage(params.conversationId)) {
+		return;
+	}
+
 	params.removeLocal?.(params.conversationId);
 	void deletePreparedConversation(params.conversationId, {
 		fetchImpl: params.fetchImpl,

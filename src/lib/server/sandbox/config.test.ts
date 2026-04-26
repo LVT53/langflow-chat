@@ -67,23 +67,23 @@ describe("sandbox config", () => {
 	});
 
 	describe("configuration constants", () => {
-		it("should have correct timeout value (60 seconds)", () => {
-			expect(SANDBOX_TIMEOUT_MS).toBe(60000);
+		it("should have correct timeout value (90 seconds)", () => {
+			expect(SANDBOX_TIMEOUT_MS).toBe(90000);
 		});
 
-		it("should have correct JS timeout value (90 seconds)", () => {
-			expect(SANDBOX_TIMEOUT_JS_MS).toBe(90000);
+		it("should have correct JS timeout value (135 seconds)", () => {
+			expect(SANDBOX_TIMEOUT_JS_MS).toBe(135000);
 		});
 
 		it("should return JS timeout for javascript language", () => {
-			expect(getSandboxTimeout("javascript")).toBe(90000);
+			expect(getSandboxTimeout("javascript")).toBe(135000);
 		});
 
 		it("should return default timeout for python language", () => {
-			expect(getSandboxTimeout("python")).toBe(60000);
+			expect(getSandboxTimeout("python")).toBe(90000);
 		});
-		it("should have correct memory limit (1GB)", () => {
-			expect(SANDBOX_MEMORY_MB).toBe(1024);
+		it("should have correct memory limit (2GB)", () => {
+			expect(SANDBOX_MEMORY_MB).toBe(2048);
 		});
 
 		it("should have correct max file size (100MB)", () => {
@@ -102,7 +102,7 @@ describe("sandbox config", () => {
 					Image: expect.stringContaining("python"),
 					Cmd: expect.arrayContaining(["python3"]),
 					HostConfig: expect.objectContaining({
-						Memory: 1024 * 1024 * 1024, // 1GB in bytes
+						Memory: 2048 * 1024 * 1024, // 2GB in bytes
 						NetworkMode: "none", // No network access
 						AutoRemove: true,
 					}),
@@ -118,8 +118,8 @@ describe("sandbox config", () => {
 
 			const createCall = mockDocker.createContainer.mock.calls[0][0];
 			expect(createCall.HostConfig).toMatchObject({
-				Memory: 1024 * 1024 * 1024, // 1GB
-				MemorySwap: 1024 * 1024 * 1024, // No swap
+				Memory: 2048 * 1024 * 1024, // 2GB
+				MemorySwap: 2048 * 1024 * 1024, // No swap
 				CpuQuota: 100000, // 1 CPU core
 				NetworkMode: "none", // Isolated network
 				AutoRemove: true,
@@ -331,7 +331,7 @@ describe("sandbox config", () => {
 
 			// Verify timeout is configured
 			const createCall = mockDocker.createContainer.mock.calls[0][0];
-			expect(createCall.StopTimeout).toBe(60); // 60 seconds
+			expect(createCall.StopTimeout).toBe(90); // 90 seconds
 		});
 	});
 
