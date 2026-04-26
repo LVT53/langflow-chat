@@ -233,7 +233,9 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 		},
 
 		clear(): void {
-			void doFlush();
+			// Cancel any pending timer and discard the pending request.
+			// Do NOT flush — a pending persist of an old draft would race
+			// with the explicit delete callers (e.g. after sending a message).
 			if (draftPersistTimer) {
 				clearTimeout(draftPersistTimer);
 				draftPersistTimer = null;
