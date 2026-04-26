@@ -229,6 +229,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 		},
 
 		clear(): void {
+			flush();
 			if (draftPersistTimer) {
 				clearTimeout(draftPersistTimer);
 				draftPersistTimer = null;

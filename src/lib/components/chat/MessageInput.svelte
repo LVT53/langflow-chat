@@ -298,6 +298,7 @@
 		lastEmittedDraftKey = '';
 		draftEmissionVersion += 1;
 		adjustHeight();
+		void emitDraftChange();
 		if (!isMobile()) {
 			textarea?.focus();
 		} else {
