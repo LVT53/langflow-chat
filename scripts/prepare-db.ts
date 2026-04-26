@@ -63,6 +63,7 @@ const autoCreateColumns: Array<[string, string, string]> = [
 
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
 const HONCHO_PEER_VERSION_MIGRATION_TAG = '1775416800000_users_honcho_peer_version';
+const TITLE_LANGUAGE_MIGRATION_TAG = '1777140000003_users_title_language';
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -206,18 +207,20 @@ function syncMigrationJournalToBaselineSchema(): number {
 	return insertedCount;
 }
 
-function backfillHonchoPeerVersionMigrationIfNeeded(): number {
-	if (!hasTable('users') || !hasColumn('users', 'honcho_peer_version')) {
+function backfillColumnMigrationIfNeeded(params: {
+	table: string;
+	column: string;
+	tag: string;
+}): number {
+	if (!hasTable(params.table) || !hasColumn(params.table, params.column)) {
 		return 0;
 	}
 
 	const journal = readMigrationJournalEntries();
-	const migrationIndex = journal.entries.findIndex(
-		(entry) => entry.tag === HONCHO_PEER_VERSION_MIGRATION_TAG
-	);
+	const migrationIndex = journal.entries.findIndex((entry) => entry.tag === params.tag);
 	if (migrationIndex === -1) {
 		throw new Error(
-			`Cannot find migration tag ${HONCHO_PEER_VERSION_MIGRATION_TAG} in drizzle/meta/_journal.json`
+			`Cannot find migration tag ${params.tag} in drizzle/meta/_journal.json`
 		);
 	}
 
@@ -225,7 +228,7 @@ function backfillHonchoPeerVersionMigrationIfNeeded(): number {
 	const migrationMeta = migrations[migrationIndex];
 	if (!migrationMeta) {
 		throw new Error(
-			`Cannot resolve migration metadata for tag ${HONCHO_PEER_VERSION_MIGRATION_TAG}`
+			`Cannot resolve migration metadata for tag ${params.tag}`
 		);
 	}
 
@@ -269,10 +272,25 @@ try {
 			}
 		}
 
-		const adoptedHonchoMigrationCount = backfillHonchoPeerVersionMigrationIfNeeded();
+		const adoptedHonchoMigrationCount = backfillColumnMigrationIfNeeded({
+			table: 'users',
+			column: 'honcho_peer_version',
+			tag: HONCHO_PEER_VERSION_MIGRATION_TAG,
+		});
 		if (adoptedHonchoMigrationCount > 0) {
 			console.log(
 				`Backfilled ${adoptedHonchoMigrationCount} Drizzle migration record for existing users.honcho_peer_version column in ${databasePath}.`
+			);
+		}
+
+		const adoptedTitleLanguageMigrationCount = backfillColumnMigrationIfNeeded({
+			table: 'users',
+			column: 'title_language',
+			tag: TITLE_LANGUAGE_MIGRATION_TAG,
+		});
+		if (adoptedTitleLanguageMigrationCount > 0) {
+			console.log(
+				`Backfilled ${adoptedTitleLanguageMigrationCount} Drizzle migration record for existing users.title_language column in ${databasePath}.`
 			);
 		}
 
