@@ -306,7 +306,10 @@ async function buildRerankedToolGroup(params: {
 		};
 	}
 
-	let selectedIds = new Set(candidateItems.slice(0, 3).map((item) => item.id));
+	// Adaptive selection: web search often returns 10–20 results; keeping only 3
+	// discards too much signal before the reranker even runs.
+	const defaultKeepCount = Math.min(candidateItems.length, Math.max(3, Math.ceil(candidateItems.length / 2)));
+	let selectedIds = new Set(candidateItems.slice(0, defaultKeepCount).map((item) => item.id));
 	let confidence = 0;
 	let reranked = false;
 
@@ -328,12 +331,13 @@ async function buildRerankedToolGroup(params: {
 					]
 						.filter((value): value is string => Boolean(value))
 						.join('\n'),
-				maxTexts: 6,
+				maxTexts: Math.min(12, candidateItems.length),
 			});
 
 			if (rerankedResponse && rerankedResponse.items.length > 0 && rerankedResponse.confidence >= RERANK_CONFIDENCE_MIN) {
+				const rerankKeepCount = Math.min(rerankedResponse.items.length, Math.max(3, Math.ceil(rerankedResponse.items.length / 2)));
 				const nextSelectedIds = new Set(
-					rerankedResponse.items.slice(0, 3).map(({ item }) => item.id)
+					rerankedResponse.items.slice(0, rerankKeepCount).map(({ item }) => item.id)
 				);
 				if (nextSelectedIds.size > 0) {
 					selectedIds = nextSelectedIds;
