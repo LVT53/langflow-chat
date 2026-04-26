@@ -67,6 +67,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
 	"MAX_PROVIDER_TOOL_ROUNDS",
+	"REQUEST_TIMEOUT_MS",
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -360,6 +361,10 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.maxProviderToolRounds = Math.max(1, parsed);
 	},
+	REQUEST_TIMEOUT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
+	},
 
 };
 
@@ -596,6 +601,7 @@ export function getResolvedAdminConfigValues(
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
 		MAX_PROVIDER_TOOL_ROUNDS: String(config.maxProviderToolRounds),
+		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),
 	};
 }
 
@@ -673,6 +679,7 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		SYSTEM_PROMPT: envConfig.systemPrompt,
 		MAX_FILE_UPLOAD_SIZE: String(envConfig.maxFileUploadSize),
 		MAX_PROVIDER_TOOL_ROUNDS: String(envConfig.maxProviderToolRounds),
+		REQUEST_TIMEOUT_MS: String(envConfig.requestTimeoutMs),
 	};
 }
 

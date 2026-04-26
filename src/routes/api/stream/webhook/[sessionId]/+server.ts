@@ -2,9 +2,13 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { webhookBuffer } from '$lib/server/services/webhook-buffer';
 import { createJsonErrorResponse } from '$lib/server/api/responses';
+import { getConfig } from '$lib/server/config-store';
 
 const POLL_INTERVAL_MS = 100;
-const STREAM_TIMEOUT_MS = 120_000;
+
+function getStreamTimeoutMs(): number {
+	return Math.max(60_000, getConfig().requestTimeoutMs);
+}
 
 export const GET: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -53,7 +57,7 @@ export const GET: RequestHandler = async (event) => {
 					void 0;
 				}
 				close();
-			}, STREAM_TIMEOUT_MS);
+			}, getStreamTimeoutMs());
 
 			intervalId = setInterval(() => {
 				if (closed) return;
