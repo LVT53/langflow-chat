@@ -3,10 +3,6 @@ import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { getConfig } from "$lib/server/config-store";
 import { touchConversation } from "$lib/server/services/conversations";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
-import {
-  getProviderId,
-  runProviderChatStream,
-} from "$lib/server/services/provider-chat";
 import { createMessage } from "$lib/server/services/messages";
 import {
   attachContinuityToTaskState,
@@ -68,7 +64,6 @@ import {
 } from "$lib/utils/generate-file-tool";
 import { shouldTranslateHungarian } from "$lib/server/services/chat-turn/execute";
 import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
-import { isProviderModelId } from "$lib/types";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
@@ -664,57 +659,6 @@ const sendEndAndClose = async (
 
       try {
         let usedUrlListRecovery = false;
-
-        if (modelId && isProviderModelId(modelId)) {
-          const providerResponse = await runProviderChatStream({
-            providerId: getProviderId(modelId),
-            upstreamMessage,
-            conversationId,
-            user: {
-              id: user.id,
-              displayName: user.displayName,
-              email: user.email,
-            },
-            attachmentIds: safeAttachmentIds,
-            activeDocumentArtifactId,
-            attachmentTraceId,
-            signal: upstreamAbortController.signal,
-            callbacks: {
-              onToken: emitResolvedAssistantText,
-              onThinking: emitThinking,
-              onToolCall: emitToolCallEventWithDebug,
-            },
-          });
-
-          latestContextStatus = providerResponse.contextStatus;
-          initialContextStatus = latestContextStatus;
-          latestTaskState = await attachContinuityToTaskState(
-            user.id,
-            providerResponse.taskState ?? null,
-          ).catch(() => providerResponse.taskState ?? null);
-          initialTaskState = latestTaskState;
-          latestContextDebug = providerResponse.contextDebug ?? null;
-          initialContextDebug = latestContextDebug;
-          latestHonchoContext = providerResponse.honchoContext ?? null;
-          latestHonchoSnapshot = providerResponse.honchoSnapshot ?? null;
-
-          if (outputTranslator) {
-            for (const chunk of await outputTranslator.flush()) {
-              if (!emitInlineToken(chunk)) {
-                return;
-              }
-            }
-          }
-          flushPendingThinking();
-          if (!flushInlineThinkingBuffer()) {
-            return;
-          }
-          if (!flushPreserveBuffer()) {
-            return;
-          }
-          completeSuccess();
-          return;
-        }
 
         upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
           const langflowResponse = await sendMessageStream(

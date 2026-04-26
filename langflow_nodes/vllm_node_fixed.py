@@ -18,10 +18,11 @@ import requests
 
 
 class NemotronReasoningChatOpenAI(ChatOpenAI):
-    """ChatOpenAI subclass for Nemotron reasoning via vLLM.
+    """ChatOpenAI subclass for OpenAI-compatible models with optional reasoning capture.
 
     Why this exists:
-    - vLLM can emit separate reasoning chunks (`delta.reasoning`)
+    - vLLM and some OpenAI-compatible providers can emit separate reasoning chunks
+      (`delta.reasoning` or `delta.reasoning_content`)
     - Langflow's current Agent stream pipeline only forwards `AIMessageChunk.content`
     - to avoid patching Langflow core, this model injects streamed reasoning into the
       content stream using tagged text:
@@ -39,8 +40,12 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     reasoning_close_tag: ClassVar[str] = "</thinking>"
 
     system_prompt: str = ""
+    enable_thinking: bool = True
 
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.enable_thinking:
+            return payload
+
         extra_body = dict(payload.get("extra_body") or {})
         chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
         chat_template_kwargs["enable_thinking"] = True
@@ -163,8 +168,8 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
 
 class NemotronReasoningVllmComponent(LCModelComponent):
-    display_name = "Nemotron vLLM Reasoning"
-    description = "vLLM/OpenAI-compatible Nemotron model that preserves reasoning in tagged content."
+    display_name = "OpenAI Compatible Reasoning"
+    description = "OpenAI-compatible chat model for local and third-party providers that preserves reasoning in tagged content."
     icon = "vLLM"
     name = "NemotronReasoningVllmModel"
 
@@ -187,7 +192,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             name="extra_body",
             display_name="Extra Body",
             advanced=True,
-            info="Optional extra body fields. Nemotron reasoning is forced on regardless.",
+            info="Optional provider-specific extra_body fields.",
         ),
         BoolInput(
             name="json_mode",
@@ -199,14 +204,14 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             name="model_name",
             display_name="Model Name",
             advanced=True,
-            info="The served model name exposed by vLLM. Populated automatically from app tweaks.",
+            info="The served model name. Populated automatically from app tweaks.",
             value="nemotron-super",
         ),
         StrInput(
             name="api_base",
-            display_name="vLLM API Base",
+            display_name="API Base",
             advanced=True,
-            info="The base URL of the vLLM API server. Populated automatically from app tweaks.",
+            info="The OpenAI-compatible API base URL. Populated automatically from app tweaks.",
             value="http://localhost:8000/v1",
         ),
         MultilineInput(
@@ -219,10 +224,40 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         SecretStrInput(
             name="api_key",
             display_name="API Key",
-            info="The API key to use for the vLLM model.",
+            info="The API key to use for the OpenAI-compatible model.",
             advanced=True,
             value="",
             required=False,
+        ),
+        BoolInput(
+            name="enable_thinking",
+            display_name="Enable Thinking",
+            advanced=True,
+            info="When true, sends vLLM chat_template_kwargs.enable_thinking and preserves reasoning chunks in <thinking> tags.",
+            value=True,
+        ),
+        StrInput(
+            name="reasoning_effort",
+            display_name="Reasoning Effort",
+            advanced=True,
+            info="Optional provider reasoning_effort value. Leave empty to omit.",
+            value="",
+            required=False,
+        ),
+        StrInput(
+            name="thinking_type",
+            display_name="Thinking Type",
+            advanced=True,
+            info="Optional provider thinking.type value, for example enabled or disabled. Leave empty to omit.",
+            value="",
+            required=False,
+        ),
+        BoolInput(
+            name="validate_model_on_build",
+            display_name="Validate Model On Build",
+            advanced=True,
+            info="Call /models before each build. Usually leave off because AlfyAI validates providers in admin settings.",
+            value=False,
         ),
         SliderInput(
             name="temperature",
@@ -275,13 +310,13 @@ class NemotronReasoningVllmComponent(LCModelComponent):
     ]
 
     def _validate_model_exists(self, base_url: str, model_name: str, api_key: str | None = None) -> bool:
-        """Validate that the model exists on the vLLM server."""
+        """Validate that the model exists on the OpenAI-compatible server."""
         try:
             headers = {}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
             
-            response = requests.get(f"{base_url}/models", headers=headers, timeout=10)
+            response = requests.get(f"{base_url.rstrip('/')}/models", headers=headers, timeout=10)
             response.raise_for_status()
             
             data = response.json()
@@ -301,25 +336,31 @@ class NemotronReasoningVllmComponent(LCModelComponent):
 
     def build_model(self) -> LanguageModel:  # type: ignore[type-var]
         # Debug: Log what values we received
-        logger.info(f"=== VLLM NODE DEBUG ===")
+        logger.info(f"=== OPENAI COMPATIBLE MODEL NODE DEBUG ===")
         logger.info(f"model_name field value: {self.model_name}")
         logger.info(f"api_base field value: {self.api_base}")
         logger.info(f"api_key is set: {bool(self.api_key)}")
         logger.info(f"system_prompt is set: {bool(self.system_prompt)}")
         
-        # Validate model exists before trying to use it
-        if not self._validate_model_exists(self.api_base, self.model_name, self.api_key or None):
+        # Optional: provider validation is normally handled by the AlfyAI admin UI.
+        if self.validate_model_on_build and not self._validate_model_exists(self.api_base, self.model_name, self.api_key or None):
             raise ValueError(
-                f"Model '{self.model_name}' does not exist on vLLM server at {self.api_base}. "
-                f"Check your .env configuration and ensure the model is loaded."
+                f"Model '{self.model_name}' does not exist on OpenAI-compatible server at {self.api_base}. "
+                f"Check your provider settings and ensure the model is available."
             )
         
         logger.info(f"Building model with name={self.model_name}, base_url={self.api_base}")
 
         user_extra_body = dict(self.extra_body or {})
-        chat_template_kwargs = dict(user_extra_body.get("chat_template_kwargs") or {})
-        chat_template_kwargs["enable_thinking"] = True
-        user_extra_body["chat_template_kwargs"] = chat_template_kwargs
+        if self.enable_thinking:
+            chat_template_kwargs = dict(user_extra_body.get("chat_template_kwargs") or {})
+            chat_template_kwargs["enable_thinking"] = True
+            user_extra_body["chat_template_kwargs"] = chat_template_kwargs
+
+        user_model_kwargs = dict(self.model_kwargs or {})
+        thinking_type = str(getattr(self, "thinking_type", "") or "").strip()
+        if thinking_type:
+            user_model_kwargs["thinking"] = {"type": thinking_type}
 
         # top_k is vLLM-specific and not part of the OpenAI spec, so it goes in extra_body.
         # -1 is vLLM's default (no limit), so we only set it when the user has changed it.
@@ -330,13 +371,18 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "api_key": SecretStr(self.api_key).get_secret_value() if self.api_key else None,
             "model": self.model_name,
             "max_tokens": self.max_tokens or None,
-            "model_kwargs": self.model_kwargs or {},
+            "model_kwargs": user_model_kwargs,
             "extra_body": user_extra_body,
             "base_url": self.api_base or "http://localhost:8000/v1",
             "temperature": self.temperature if self.temperature is not None else 0.1,
             "top_p": self.top_p if self.top_p is not None else 1.0,
             "system_prompt": self.system_prompt or "",
+            "enable_thinking": bool(self.enable_thinking),
         }
+
+        reasoning_effort = str(getattr(self, "reasoning_effort", "") or "").strip()
+        if reasoning_effort:
+            parameters["reasoning_effort"] = reasoning_effort
 
         if self.seed is not None and self.seed != -1:
             parameters["seed"] = self.seed
@@ -345,9 +391,12 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         if self.max_retries is not None and self.max_retries != -1:
             parameters["max_retries"] = self.max_retries
 
-        logger.info(f"=== VLLM PARAMETERS ===")
+        logger.info(f"=== OPENAI COMPATIBLE MODEL PARAMETERS ===")
         logger.info(f"model: {parameters.get('model')}")
         logger.info(f"base_url: {parameters.get('base_url')}")
+        logger.info(f"enable_thinking: {parameters.get('enable_thinking')}")
+        logger.info(f"reasoning_effort set: {bool(parameters.get('reasoning_effort'))}")
+        logger.info(f"thinking_type set: {bool(thinking_type)}")
         logger.info(f"========================")
 
         output: BaseChatModel = NemotronReasoningChatOpenAI(**parameters)

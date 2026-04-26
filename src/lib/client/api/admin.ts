@@ -100,6 +100,7 @@ export interface InferenceProvider {
 	compactionUiThreshold: number | null;
 	targetConstructedContext: number | null;
 	maxMessageLength: number | null;
+	maxTokens: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -140,6 +141,7 @@ export async function createProvider(data: {
 	compactionUiThreshold?: number | null;
 	targetConstructedContext?: number | null;
 	maxMessageLength?: number | null;
+	maxTokens?: number | null;
 }): Promise<InferenceProvider> {
 	const response = await requestJson<ProviderResponse>(
 		"/api/admin/providers",
@@ -168,6 +170,7 @@ export async function updateProvider(
 		compactionUiThreshold?: number | null;
 		targetConstructedContext?: number | null;
 		maxMessageLength?: number | null;
+		maxTokens?: number | null;
 	},
 ): Promise<InferenceProvider> {
 	const response = await requestJson<ProviderResponse>(

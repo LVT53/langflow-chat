@@ -11,6 +11,7 @@ export interface ModelConfig {
   systemPrompt: string;
   flowId: string;
   componentId: string;
+  maxTokens: number | null;
 }
 
 interface Config {
@@ -79,10 +80,9 @@ interface Config {
   mineruTimeoutMs: number;
   braveSearchApiKey: string;
   concurrentStreamLimit: number;
-	systemPrompt: string;
+  systemPrompt: string;
   perUserStreamLimit: number;
   maxFileUploadSize: number;
-  maxProviderToolRounds: number;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -230,6 +230,9 @@ function readConfig(): Config {
 			systemPrompt: process.env.SYSTEM_PROMPT || process.env.MODEL_1_SYSTEM_PROMPT || '',
 			flowId: process.env.MODEL_1_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
 			componentId: process.env.MODEL_1_COMPONENT_ID || '',
+			maxTokens: process.env.MODEL_1_MAX_TOKENS
+				? Math.max(1, parseInt(process.env.MODEL_1_MAX_TOKENS, 10) || 1)
+				: null,
     },
     model2: {
 			baseUrl: process.env.MODEL_2_BASEURL || '',
@@ -239,6 +242,9 @@ function readConfig(): Config {
 			systemPrompt: process.env.SYSTEM_PROMPT || process.env.MODEL_2_SYSTEM_PROMPT || '',
       flowId: process.env.MODEL_2_FLOW_ID || process.env.LANGFLOW_FLOW_ID || '',
       componentId: process.env.MODEL_2_COMPONENT_ID || '',
+      maxTokens: process.env.MODEL_2_MAX_TOKENS
+        ? Math.max(1, parseInt(process.env.MODEL_2_MAX_TOKENS, 10) || 1)
+        : null,
     },
     model2Enabled: process.env.MODEL_2_ENABLED !== 'false',
     honchoApiKey: process.env.HONCHO_API_KEY || '',
@@ -283,10 +289,6 @@ function readConfig(): Config {
     maxFileUploadSize: Math.max(
       1048576,
       parseInt(process.env.MAX_FILE_UPLOAD_SIZE || '104857600', 10) || 104857600
-    ),
-    maxProviderToolRounds: Math.max(
-      1,
-      parseInt(process.env.MAX_PROVIDER_TOOL_ROUNDS || '30', 10) || 30
     ),
   };
 }

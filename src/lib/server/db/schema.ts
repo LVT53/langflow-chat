@@ -384,6 +384,7 @@ export const inferenceProviders = sqliteTable('inference_providers', {
   compactionUiThreshold: integer('compaction_ui_threshold'),
   targetConstructedContext: integer('target_constructed_context'),
   maxMessageLength: integer('max_message_length'),
+  maxTokens: integer('max_tokens'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

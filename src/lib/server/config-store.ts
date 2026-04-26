@@ -33,12 +33,14 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_1_SYSTEM_PROMPT",
 	"MODEL_1_FLOW_ID",
 	"MODEL_1_COMPONENT_ID",
+	"MODEL_1_MAX_TOKENS",
 	"MODEL_2_BASEURL",
 	"MODEL_2_NAME",
 	"MODEL_2_DISPLAY_NAME",
 	"MODEL_2_SYSTEM_PROMPT",
 	"MODEL_2_FLOW_ID",
 	"MODEL_2_COMPONENT_ID",
+	"MODEL_2_MAX_TOKENS",
 	"MODEL_2_ENABLED",
 	"TRANSLATOR_URL",
 	"TRANSLATOR_MODEL",
@@ -66,7 +68,6 @@ export const ADMIN_CONFIG_KEYS = [
 	"MINERU_TIMEOUT_MS",
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
-	"MAX_PROVIDER_TOOL_ROUNDS",
 	"REQUEST_TIMEOUT_MS",
 ] as const;
 
@@ -140,7 +141,6 @@ export interface RuntimeConfig {
 	perUserStreamLimit: number;
 	systemPrompt: string;
 	maxFileUploadSize: number;
-	maxProviderToolRounds: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -243,6 +243,10 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MODEL_1_COMPONENT_ID: (config, value) => {
 		config.model1.componentId = value;
 	},
+	MODEL_1_MAX_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		config.model1.maxTokens = parsed !== undefined ? Math.max(1, parsed) : null;
+	},
 	MODEL_2_BASEURL: (config, value) => {
 		config.model2.baseUrl = value;
 	},
@@ -260,6 +264,10 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_COMPONENT_ID: (config, value) => {
 		config.model2.componentId = value;
+	},
+	MODEL_2_MAX_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		config.model2.maxTokens = parsed !== undefined ? Math.max(1, parsed) : null;
 	},
 	MODEL_2_ENABLED: (config, value) => {
 		config.model2Enabled = value === "true";
@@ -357,10 +365,6 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.maxFileUploadSize = Math.max(1048576, parsed);
 	},
-	MAX_PROVIDER_TOOL_ROUNDS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.maxProviderToolRounds = Math.max(1, parsed);
-	},
 	REQUEST_TIMEOUT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
@@ -457,10 +461,6 @@ export function getSmallFileThreshold(): number {
 
 export function getMaxFileUploadSize(): number {
 	return runtimeConfig.maxFileUploadSize;
-}
-
-export function getMaxProviderToolRounds(): number {
-	return runtimeConfig.maxProviderToolRounds;
 }
 
 // Per-model context limit getters
@@ -565,12 +565,16 @@ export function getResolvedAdminConfigValues(
 		MODEL_1_SYSTEM_PROMPT: getSystemPrompt(config.model1.systemPrompt),
 		MODEL_1_FLOW_ID: config.model1.flowId,
 		MODEL_1_COMPONENT_ID: config.model1.componentId,
+		MODEL_1_MAX_TOKENS:
+			config.model1.maxTokens != null ? String(config.model1.maxTokens) : "",
 		MODEL_2_BASEURL: config.model2.baseUrl,
 		MODEL_2_NAME: config.model2.modelName,
 		MODEL_2_DISPLAY_NAME: config.model2.displayName,
 		MODEL_2_SYSTEM_PROMPT: getSystemPrompt(config.model2.systemPrompt),
 		MODEL_2_FLOW_ID: config.model2.flowId,
 		MODEL_2_COMPONENT_ID: config.model2.componentId,
+		MODEL_2_MAX_TOKENS:
+			config.model2.maxTokens != null ? String(config.model2.maxTokens) : "",
 		MODEL_2_ENABLED: String(config.model2Enabled),
 		TRANSLATOR_URL: config.translatorUrl,
 		TRANSLATOR_MODEL: config.translatorModel,
@@ -600,7 +604,6 @@ export function getResolvedAdminConfigValues(
 		MINERU_TIMEOUT_MS: String(config.mineruTimeoutMs),
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
-		MAX_PROVIDER_TOOL_ROUNDS: String(config.maxProviderToolRounds),
 		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),
 	};
 }
@@ -641,12 +644,16 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MODEL_1_SYSTEM_PROMPT: envConfig.model1.systemPrompt,
 		MODEL_1_FLOW_ID: envConfig.model1.flowId,
 		MODEL_1_COMPONENT_ID: envConfig.model1.componentId,
+		MODEL_1_MAX_TOKENS:
+			envConfig.model1.maxTokens != null ? String(envConfig.model1.maxTokens) : "",
 		MODEL_2_BASEURL: envConfig.model2.baseUrl,
 		MODEL_2_NAME: envConfig.model2.modelName,
 		MODEL_2_DISPLAY_NAME: envConfig.model2.displayName,
 		MODEL_2_SYSTEM_PROMPT: envConfig.model2.systemPrompt,
 		MODEL_2_FLOW_ID: envConfig.model2.flowId,
 		MODEL_2_COMPONENT_ID: envConfig.model2.componentId,
+		MODEL_2_MAX_TOKENS:
+			envConfig.model2.maxTokens != null ? String(envConfig.model2.maxTokens) : "",
 		MODEL_2_ENABLED: String(envConfig.model2Enabled),
 		TRANSLATOR_URL: envConfig.translatorUrl,
 		TRANSLATOR_MODEL: envConfig.translatorModel,
@@ -678,7 +685,6 @@ export function getEnvDefaults(): Record<AdminConfigKey, string> {
 		MINERU_TIMEOUT_MS: String(envConfig.mineruTimeoutMs),
 		SYSTEM_PROMPT: envConfig.systemPrompt,
 		MAX_FILE_UPLOAD_SIZE: String(envConfig.maxFileUploadSize),
-		MAX_PROVIDER_TOOL_ROUNDS: String(envConfig.maxProviderToolRounds),
 		REQUEST_TIMEOUT_MS: String(envConfig.requestTimeoutMs),
 	};
 }

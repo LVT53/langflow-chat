@@ -29,6 +29,7 @@
 	let formEnabled = $state(untrack(() => model?.enabled ?? true));
 	let formFlowId = $state(untrack(() => model?.flowId ?? ''));
 	let formComponentId = $state(untrack(() => model?.componentId ?? ''));
+	let formMaxTokens = $state(untrack(() => model?.maxTokens ? String(model.maxTokens) : ''));
 	let formMaxModelContext = $state(untrack(() => model?.maxModelContext ? String(model.maxModelContext) : ''));
 	let formCompactionUiThreshold = $state(untrack(() => model?.compactionUiThreshold ? String(model.compactionUiThreshold) : ''));
 	let formTargetConstructedContext = $state(untrack(() => model?.targetConstructedContext ? String(model.targetConstructedContext) : ''));
@@ -71,6 +72,7 @@
 		data.reasoningEffort = formReasoningEffort || null;
 		data.thinkingType = formThinkingType || null;
 		data.enabled = formEnabled;
+		data.maxTokens = formMaxTokens ? Number(formMaxTokens) : null;
 		data.maxModelContext = formMaxModelContext ? Number(formMaxModelContext) : null;
 		data.compactionUiThreshold = formCompactionUiThreshold ? Number(formCompactionUiThreshold) : null;
 		data.targetConstructedContext = formTargetConstructedContext ? Number(formTargetConstructedContext) : null;
@@ -118,6 +120,11 @@
 				<div>
 					<label class="settings-label" for="form-model-name">Model Name</label>
 					<input id="form-model-name" type="text" class="settings-input" bind:value={formModelName} placeholder={isBuiltIn ? 'e.g. model-1' : 'e.g. accounts/fireworks/models/llama-v3-70b'} />
+				</div>
+				<div>
+					<label class="settings-label" for="form-max-tokens">Max Tokens</label>
+					<input id="form-max-tokens" type="number" class="settings-input" bind:value={formMaxTokens} placeholder="Use Langflow node default" min="1" />
+					<p class="mt-1 text-xs text-text-muted">Passed to the shared Langflow model node as <code>max_tokens</code>. Leave empty to use the node default.</p>
 				</div>
 				{#if isBuiltIn}
 					<div>
