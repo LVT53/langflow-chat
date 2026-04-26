@@ -62,9 +62,14 @@ def _tool_source_type(name: str) -> str:
 def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
+    # Web search often returns 10–20 results; raise the cap so the reranker
+    # downstream sees enough signal.  Snippets are also clipped very tightly
+    # (220 chars) which starves the reranker of context — raise it for web.
+    effective_limit = 16 if source_type == "web" else limit
+    snippet_max = 800 if source_type == "web" else 220
 
     def add_candidate(title: Any, url: Any, snippet: Any = None) -> None:
-        if len(candidates) >= limit:
+        if len(candidates) >= effective_limit:
             return
         if not isinstance(title, str) or not title.strip():
             return
@@ -79,7 +84,7 @@ def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[di
                 "id": dedupe_key,
                 "title": _clip_text(title, 160),
                 "url": normalized_url,
-                "snippet": _clip_text(snippet, 220) if snippet else None,
+                "snippet": _clip_text(snippet, snippet_max) if snippet else None,
                 "sourceType": source_type,
             }
         )

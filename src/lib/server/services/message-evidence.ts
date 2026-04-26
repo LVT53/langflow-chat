@@ -315,13 +315,20 @@ async function buildRerankedToolGroup(params: {
 
 	if (canUseTeiReranker()) {
 		try {
+			// Build a clean rerank query without meta-text prefixes that can
+			// confuse semantic similarity (e.g. "User message:" is not part of
+			// the user intent).
+			const rerankQueryParts: string[] = [];
+			if (params.taskState?.objective?.trim()) {
+				rerankQueryParts.push(params.taskState.objective.trim());
+			}
+			if (params.message?.trim()) {
+				rerankQueryParts.push(params.message.trim());
+			}
+			const rerankQuery = rerankQueryParts.join('\n\n');
+
 			const rerankedResponse = await rerankItems({
-				query: [
-					params.taskState ? `Current task: ${params.taskState.objective}` : null,
-					`User message: ${params.message}`,
-				]
-					.filter((value): value is string => Boolean(value))
-					.join('\n\n'),
+				query: rerankQuery,
 				items: candidateItems,
 				getText: (candidate) =>
 					[
@@ -331,18 +338,28 @@ async function buildRerankedToolGroup(params: {
 					]
 						.filter((value): value is string => Boolean(value))
 						.join('\n'),
-				maxTexts: Math.min(12, candidateItems.length),
+				maxTexts: Math.min(16, candidateItems.length),
 			});
 
-			if (rerankedResponse && rerankedResponse.items.length > 0 && rerankedResponse.confidence >= RERANK_CONFIDENCE_MIN) {
-				const rerankKeepCount = Math.min(rerankedResponse.items.length, Math.max(3, Math.ceil(rerankedResponse.items.length / 2)));
-				const nextSelectedIds = new Set(
-					rerankedResponse.items.slice(0, rerankKeepCount).map(({ item }) => item.id)
-				);
-				if (nextSelectedIds.size > 0) {
-					selectedIds = nextSelectedIds;
-					confidence = Math.round(rerankedResponse.confidence);
-					reranked = true;
+			if (rerankedResponse && rerankedResponse.items.length > 0) {
+				// Web-search results are inherently diverse; demanding 64 %
+				// absolute confidence often discards good relative rankings.
+				// Use a lower floor for web evidence so the reranker’s ordering
+				// is trusted when it produces any meaningful spread.
+				const confidenceFloor = params.sourceType === 'web' ? 40 : RERANK_CONFIDENCE_MIN;
+				if (rerankedResponse.confidence >= confidenceFloor) {
+					const rerankKeepCount = Math.min(
+						rerankedResponse.items.length,
+						Math.max(3, Math.ceil(rerankedResponse.items.length / 2))
+					);
+					const nextSelectedIds = new Set(
+						rerankedResponse.items.slice(0, rerankKeepCount).map(({ item }) => item.id)
+					);
+					if (nextSelectedIds.size > 0) {
+						selectedIds = nextSelectedIds;
+						confidence = Math.round(rerankedResponse.confidence);
+						reranked = true;
+					}
 				}
 			}
 		} catch (error) {
