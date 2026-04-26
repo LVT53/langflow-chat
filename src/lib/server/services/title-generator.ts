@@ -348,6 +348,7 @@ async function generateTitleWithTemperature(
       messages,
       max_tokens: 60,
       temperature,
+      extra_body: { chat_template_kwargs: { enable_thinking: false } },
     }),
   });
   
@@ -431,6 +432,7 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
       messages,
       max_tokens: 60,
       temperature: 0.2,
+      extra_body: { chat_template_kwargs: { enable_thinking: false } },
     }),
   });
 
