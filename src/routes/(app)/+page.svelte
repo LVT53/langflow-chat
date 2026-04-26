@@ -3,10 +3,11 @@ import { goto } from '$app/navigation';
 import { fade, fly } from 'svelte/transition';
 import {
 	cleanupPreparedConversation,
-		consumePreviousConversationId,
-		createConversationDraftRecord,
-		getLandingDraftConversationId,
-		setLandingDraftConversationId,
+	consumePreviousConversationId,
+	createConversationDraftRecord,
+	createDraftPersistence,
+	getLandingDraftConversationId,
+	setLandingDraftConversationId,
 	storePendingConversationMessage,
 } from '$lib/client/conversation-session';
 import { fetchConversationDetail } from '$lib/client/api/conversations';
@@ -15,7 +16,7 @@ import { currentConversationId } from '$lib/stores/ui';
 import MessageInput from '$lib/components/chat/MessageInput.svelte';
 import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
 import type { ConversationDetail } from '$lib/types';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
 		ConversationDraft,
@@ -78,6 +79,7 @@ import type { ConversationDetail } from '$lib/types';
 	let preparedConversationPromise: Promise<string> | null = null;
 	let preparedConversationValidationPromise: Promise<void> | null = null;
 	let conversationDraft = $state<ConversationDraft | null>(null);
+	const draftPersistence = createDraftPersistence();
 
 	const INTERNAL_MIME = 'application/x-alfyai-conversation';
 	let fileDragActive = $state(false);
@@ -153,6 +155,10 @@ import type { ConversationDetail } from '$lib/types';
 		}
 	});
 
+	onDestroy(() => {
+		void draftPersistence.flush();
+	});
+
 	async function ensurePreparedConversation(): Promise<string> {
 		if (preparedConversationValidationPromise) {
 			await preparedConversationValidationPromise;
@@ -186,6 +192,7 @@ import type { ConversationDetail } from '$lib/types';
 			currentConversationId.set(id);
 			upsertConversationLocal(id, 'New Conversation', Date.now() / 1000);
 			setLandingDraftConversationId(null);
+			draftPersistence.clear();
 			storePendingConversationMessage(id, {
 				message: text,
 				attachmentIds: payload.attachmentIds,
@@ -254,6 +261,11 @@ import type { ConversationDetail } from '$lib/types';
 			preparedConversationId = nextDraft.conversationId;
 			setLandingDraftConversationId(nextDraft.conversationId);
 		}
+		void draftPersistence.persist({
+			conversationId: nextDraft.conversationId,
+			draftText: payload.draftText,
+			selectedAttachmentIds: payload.selectedAttachmentIds,
+		});
 	}
 </script>
 

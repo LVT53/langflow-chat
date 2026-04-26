@@ -13,6 +13,7 @@
 	} from '$lib/client/conversation-session';
 	import {
 		applyTaskSteering,
+		deleteConversationDraft,
 		deleteConversationMessages,
 		fetchConversationDetail,
 		fetchMessageEvidence,
@@ -122,6 +123,7 @@
 	let evidenceManagerOpen = $state(false);
 	let bootstrapMode = initialBootstrapMode;
 	let hydratingConversation = false;
+	let suppressHydration = $state(false);
 	// Set to true when the stream was cancelled by the browser (e.g. mobile backgrounding)
 	// rather than by the user tapping Stop. Triggers a data reload on visibility restore.
 	let streamInterruptedByBackground = false;
@@ -307,6 +309,7 @@
 		queuedTurn = null;
 		bootstrapMode = data.bootstrap ?? false;
 		hydratingConversation = false;
+		suppressHydration = false;
 		evidenceManagerOpen = false;
 		draftPersistence.clear();
 		currentConversationId.set(data.conversation.id);
@@ -691,7 +694,9 @@ setTimeout(() => void pollForCompletion(placeholderId, attempt + 1), pollInterva
 
 		try {
 			const payload = await fetchConversationDetail(conversationId);
-			attachedArtifacts = payload.attachedArtifacts ?? attachedArtifacts;
+			if (!suppressHydration) {
+				attachedArtifacts = payload.attachedArtifacts ?? attachedArtifacts;
+			}
 			activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
 			contextStatus = payload.contextStatus ?? contextStatus;
 			taskState = payload.taskState ?? taskState;
@@ -860,6 +865,7 @@ function handleSend(
 
 		sendError = null;
 		isSending = true;
+		suppressHydration = true;
 		initialStreamPending = false;
 		lastUserMessage = text;
 		canRetry = true;
@@ -867,6 +873,7 @@ function handleSend(
 		if (clearDraft) {
 			conversationDraft = null;
 			draftPersistence.clear();
+			void deleteConversationDraft(data.conversation.id);
 		}
 		
 		// CRITICAL: Clear attachedArtifacts BEFORE anything else so the child component
