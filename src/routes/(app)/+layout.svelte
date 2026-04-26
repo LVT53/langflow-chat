@@ -106,6 +106,7 @@
 		initSettings({
 			model: data.userModel,
 			translationEnabled: data.userTranslation,
+			titleLanguage: data.userTitleLanguage,
 		});
 		initAvatar(data.user?.profilePicture ?? null);
 		const cleanupUIListeners = initUIListeners();

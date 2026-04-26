@@ -72,7 +72,9 @@ const EXPLICIT_ENGLISH_HINT_RE =
 const EXPLICIT_HUNGARIAN_HINT_RE =
   /\b(in hungarian|hungarian title|respond in hungarian|answer in hungarian)\b|magyarul/i;
 
-function resolveTitleLanguage(userMessage: string): 'en' | 'hu' {
+function resolveTitleLanguage(userMessage: string, userPreference?: 'auto' | 'en' | 'hu'): 'en' | 'hu' {
+  if (userPreference === 'en') return 'en';
+  if (userPreference === 'hu') return 'hu';
   if (EXPLICIT_ENGLISH_HINT_RE.test(userMessage)) return 'en';
   if (EXPLICIT_HUNGARIAN_HINT_RE.test(userMessage)) return 'hu';
   return detectLanguage(userMessage);
@@ -317,11 +319,12 @@ function resolveConfiguredTitleSystemPrompt(
 async function generateTitleWithTemperature(
   userMessage: string,
   assistantResponse: string,
-  temperature: number
+  temperature: number,
+  titleLanguage?: 'auto' | 'en' | 'hu'
 ): Promise<string | null> {
   const config = getConfig();
   
-  const language = resolveTitleLanguage(userMessage);
+  const language = resolveTitleLanguage(userMessage, titleLanguage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   const messages = buildTitleMessages(
     resolveConfiguredTitleSystemPrompt(language, codeRelated),
@@ -385,7 +388,8 @@ async function generateTitleWithTemperature(
  */
 async function generateTitleWithRetry(
   userMessage: string,
-  assistantResponse: string
+  assistantResponse: string,
+  titleLanguage?: 'auto' | 'en' | 'hu'
 ): Promise<string | null> {
   const temperatures = [0.1, 0.3, 0.5];
   
@@ -394,7 +398,8 @@ async function generateTitleWithRetry(
       const title = await generateTitleWithTemperature(
         userMessage,
         assistantResponse,
-        temperature
+        temperature,
+        titleLanguage
       );
       
       if (title && title.length > 0) {
@@ -409,9 +414,9 @@ async function generateTitleWithRetry(
   return null;
 }
 
-export async function generateTitle(userMessage: string, assistantResponse: string): Promise<string> {
+export async function generateTitle(userMessage: string, assistantResponse: string, titleLanguage?: 'auto' | 'en' | 'hu'): Promise<string> {
   const config = getConfig();
-  const language = resolveTitleLanguage(userMessage);
+  const language = resolveTitleLanguage(userMessage, titleLanguage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
   const messages = buildTitleMessages(
     resolveConfiguredTitleSystemPrompt(language, codeRelated),

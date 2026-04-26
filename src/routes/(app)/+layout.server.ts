@@ -37,6 +37,7 @@ export const load: ServerLoad = async (event) => {
 		userTheme: userRow?.theme ?? 'system',
 		userModel,
 		userTranslation: (userRow?.translationEnabled ?? 0) === 1,
+		userTitleLanguage: (userRow?.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
 		userAvatarId: userRow?.avatarId ?? null,
 		modelNames: {
 			model1: config.model1.displayName,

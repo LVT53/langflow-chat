@@ -16,7 +16,7 @@ import { createJsonErrorResponse, createJsonResponse } from '$lib/server/api/res
 		  return createJsonErrorResponse('Unauthorized', 401);
     }
     
-    const title = await generateTitle(userMessage, assistantResponse);
+    const title = await generateTitle(userMessage, assistantResponse, locals.user?.titleLanguage);
     
     await updateConversationTitle(userId, params.id, title);
 		return createJsonResponse({ title });
