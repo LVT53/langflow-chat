@@ -155,9 +155,12 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             if tagged_reasoning in current_content:
                 continue
 
+            additional_kwargs = dict(getattr(message, "additional_kwargs", {}) or {})
+            additional_kwargs["reasoning_content"] = reasoning
+
             generation.message = AIMessage(
                 content=f"{tagged_reasoning}{current_content}",
-                additional_kwargs=dict(getattr(message, "additional_kwargs", {}) or {}),
+                additional_kwargs=additional_kwargs,
                 response_metadata=dict(getattr(message, "response_metadata", {}) or {}),
                 tool_calls=list(getattr(message, "tool_calls", []) or []),
                 invalid_tool_calls=list(getattr(message, "invalid_tool_calls", []) or []),
@@ -165,6 +168,43 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             )
 
         return result
+
+    @classmethod
+    def _extract_reasoning_from_content(cls, content: Any) -> tuple[Any, str | None]:
+        """Extract reasoning from <thinking> tags and return (clean_content, reasoning)."""
+        if not content or not isinstance(content, str):
+            return content, None
+        open_tag = cls.reasoning_open_tag
+        close_tag = cls.reasoning_close_tag
+        if open_tag in content and close_tag in content:
+            start = content.find(open_tag)
+            end = content.find(close_tag) + len(close_tag)
+            inner_start = start + len(open_tag)
+            inner_end = content.find(close_tag)
+            reasoning_text = content[inner_start:inner_end]
+            clean_content = content[:start] + content[end:]
+            return clean_content, reasoning_text
+        return content, None
+
+    @classmethod
+    def _convert_message_to_dict(cls, message):
+        """Override to preserve reasoning_content in API payload for thinking-mode models."""
+        from langchain_core.messages import AIMessage, AIMessageChunk
+        message_dict = super()._convert_message_to_dict(message)
+        if isinstance(message, (AIMessage, AIMessageChunk)):
+            reasoning = message.additional_kwargs.get("reasoning_content")
+            content = message_dict.get("content", "")
+            if not reasoning and isinstance(content, str):
+                clean_content, reasoning = cls._extract_reasoning_from_content(content)
+                if reasoning:
+                    message_dict["content"] = clean_content
+                    message_dict["reasoning_content"] = reasoning
+            elif reasoning:
+                if isinstance(content, str):
+                    clean_content, _ = cls._extract_reasoning_from_content(content)
+                    message_dict["content"] = clean_content
+                message_dict["reasoning_content"] = reasoning
+        return message_dict
 
 
 class NemotronReasoningVllmComponent(LCModelComponent):
