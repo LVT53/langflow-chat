@@ -419,8 +419,17 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   const config = getConfig();
   const language = resolveTitleLanguage(userMessage, titleLanguage);
   const codeRelated = isCodeRelated(userMessage, assistantResponse);
+  const systemPrompt = resolveConfiguredTitleSystemPrompt(language, codeRelated);
+
+  console.info('[TITLE_GENERATE] Resolved generation params', {
+    requestedLanguage: titleLanguage,
+    resolvedLanguage: language,
+    codeRelated,
+    hasSystemPrompt: systemPrompt.trim().length > 0,
+  });
+
   const messages = buildTitleMessages(
-    resolveConfiguredTitleSystemPrompt(language, codeRelated),
+    systemPrompt,
     language,
     codeRelated,
     userMessage,
@@ -453,13 +462,21 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   );
 
   if (!rawTitle) {
+    console.info('[TITLE_GENERATE] Fallback: empty rawTitle');
     return fallbackTitle(userMessage);
   }
   const cleanedTitle = cleanTitle(rawTitle);
   if (!cleanedTitle) {
+    console.info('[TITLE_GENERATE] Fallback: empty cleanedTitle');
     return fallbackTitle(userMessage);
   }
-  if (detectLanguage(cleanedTitle) !== language) {
+  const detectedLang = detectLanguage(cleanedTitle);
+  if (detectedLang !== language) {
+    console.info('[TITLE_GENERATE] Fallback: language mismatch', {
+      expected: language,
+      detected: detectedLang,
+      cleanedTitle,
+    });
     return fallbackTitle(userMessage);
   }
 

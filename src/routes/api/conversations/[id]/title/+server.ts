@@ -12,12 +12,25 @@ import { createJsonErrorResponse, createJsonResponse } from '$lib/server/api/res
 
     const { userMessage, assistantResponse } = await request.json();
     const userId = locals.user?.id;
+    const userTitleLanguage = locals.user?.titleLanguage;
     if (!userId) {
 		  return createJsonErrorResponse('Unauthorized', 401);
     }
-    
-    const title = await generateTitle(userMessage, assistantResponse, locals.user?.titleLanguage);
-    
+
+    console.info('[TITLE_GENERATE] Starting title generation', {
+      conversationId: params.id,
+      userTitleLanguage,
+      userMessagePreview: userMessage.slice(0, 80),
+    });
+
+    const title = await generateTitle(userMessage, assistantResponse, userTitleLanguage);
+
+    console.info('[TITLE_GENERATE] Title generated', {
+      conversationId: params.id,
+      userTitleLanguage,
+      titlePreview: title.slice(0, 80),
+    });
+
     await updateConversationTitle(userId, params.id, title);
 		return createJsonResponse({ title });
   } catch (error) {

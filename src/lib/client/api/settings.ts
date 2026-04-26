@@ -75,6 +75,7 @@ export async function updateUserPreferences(params: {
 	preferredModel?: ModelId;
 	translationEnabled?: boolean;
 	theme?: 'system' | 'light' | 'dark';
+	titleLanguage?: 'auto' | 'en' | 'hu';
 	avatarId?: number | null;
 }): Promise<void> {
 	await requestJson<{ success?: boolean }>(
