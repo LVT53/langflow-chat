@@ -43,6 +43,7 @@ export const PUT: RequestHandler = async (event) => {
       input.targetConstructedContext = limits.value.targetConstructedContext;
     }
     if (limits.value.maxMessageLength !== undefined) input.maxMessageLength = limits.value.maxMessageLength;
+    if (limits.value.maxTokens !== undefined) input.maxTokens = limits.value.maxTokens;
 
     if (body.reasoningEffort && !input.reasoningEffort) {
       return json({ error: 'Invalid reasoning effort' }, { status: 400 });

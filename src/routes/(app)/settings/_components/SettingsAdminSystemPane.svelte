@@ -83,6 +83,7 @@
 			compactionUiThreshold: adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`] ? Number(adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`]) : null,
 			targetConstructedContext: adminConfig[`${prefix}_TARGET_CONSTRUCTED_CONTEXT`] ? Number(adminConfig[`${prefix}_TARGET_CONSTRUCTED_CONTEXT`]) : null,
 			maxMessageLength: adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`] ? Number(adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`]) : null,
+			maxTokens: adminConfig[`${prefix}_MAX_TOKENS`] ? Number(adminConfig[`${prefix}_MAX_TOKENS`]) : null,
 			createdAt: '',
 			updatedAt: '',
 			isBuiltIn: true,
@@ -125,6 +126,7 @@
 				if (data.modelName) adminConfig[`${prefix}_NAME`] = data.modelName as string;
 				if (data.flowId !== undefined) adminConfig[`${prefix}_FLOW_ID`] = data.flowId as string;
 				if (data.componentId !== undefined) adminConfig[`${prefix}_COMPONENT_ID`] = data.componentId as string;
+				if (data.maxTokens !== undefined) adminConfig[`${prefix}_MAX_TOKENS`] = data.maxTokens != null ? String(data.maxTokens) : '';
 				if (data.enabled !== undefined) adminConfig[`${prefix}_ENABLED`] = (data.enabled as boolean) ? 'true' : 'false';
 				if (data.maxModelContext !== undefined) adminConfig[`${prefix}_MAX_MODEL_CONTEXT`] = data.maxModelContext != null ? String(data.maxModelContext) : '';
 				if (data.compactionUiThreshold !== undefined) adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`] = data.compactionUiThreshold != null ? String(data.compactionUiThreshold) : '';
@@ -225,7 +227,6 @@
 		TARGET_CONSTRUCTED_CONTEXT: "Target Constructed Context (tokens)",
 		MAX_MESSAGE_LENGTH: "Max Message Length (characters)",
 		MAX_FILE_UPLOAD_SIZE: "Max File Upload Size (bytes)",
-		MAX_PROVIDER_TOOL_ROUNDS: "Max Provider Tool Rounds",
 		REQUEST_TIMEOUT_MS: "Request Timeout (ms)",
 		SYSTEM_PROMPT: "System Prompt",
 
@@ -242,7 +243,6 @@
 		"HONCHO_PERSONA_CONTEXT_WAIT_MS",
 		"TRANSLATION_MAX_TOKENS",
 		"TRANSLATION_TEMPERATURE",
-		"MAX_PROVIDER_TOOL_ROUNDS",
 		"MAX_FILE_UPLOAD_SIZE",
 		"REQUEST_TIMEOUT_MS",
 	]);
@@ -318,6 +318,9 @@
 						</div>
 					</div>
 				{/each}
+				<p class="text-xs text-text-muted">
+					Third-party models route through the shared Langflow Agent flow and use the same connected tools as built-in models.
+				</p>
 			</div>
 		{/if}
 
@@ -525,17 +528,6 @@
 <section class="settings-card mb-4">
 	<h2 class="settings-section-title">Rate & Size Limits</h2>
 	<div class="flex flex-col gap-3">
-		<div>
-			<label class="settings-label" for="MAX_PROVIDER_TOOL_ROUNDS">{CONFIG_LABELS.MAX_PROVIDER_TOOL_ROUNDS}</label>
-			<input
-				id="MAX_PROVIDER_TOOL_ROUNDS"
-				type="number"
-				class="settings-input"
-				bind:value={adminConfig.MAX_PROVIDER_TOOL_ROUNDS}
-				placeholder={placeholderFor('MAX_PROVIDER_TOOL_ROUNDS')}
-			/>
-			<p class="mt-1 text-xs text-text-muted">Maximum number of tool-call rounds the provider model can make per turn (e.g. web search, file generation).</p>
-		</div>
 		<div>
 			<label class="settings-label" for="MAX_FILE_UPLOAD_SIZE">{CONFIG_LABELS.MAX_FILE_UPLOAD_SIZE}</label>
 			<input

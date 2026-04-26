@@ -23,6 +23,7 @@ export interface InferenceProvider {
   compactionUiThreshold: number | null;
   targetConstructedContext: number | null;
   maxMessageLength: number | null;
+  maxTokens: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +47,7 @@ export interface CreateProviderInput {
   compactionUiThreshold?: number | null;
   targetConstructedContext?: number | null;
   maxMessageLength?: number | null;
+  maxTokens?: number | null;
 }
 
 export interface UpdateProviderInput {
@@ -61,6 +63,7 @@ export interface UpdateProviderInput {
   compactionUiThreshold?: number | null;
   targetConstructedContext?: number | null;
   maxMessageLength?: number | null;
+  maxTokens?: number | null;
 }
 
 export type ProviderLimitInput = {
@@ -68,6 +71,7 @@ export type ProviderLimitInput = {
   compactionUiThreshold?: unknown;
   targetConstructedContext?: unknown;
   maxMessageLength?: unknown;
+  maxTokens?: unknown;
 };
 
 export type NormalizedProviderLimits = {
@@ -75,6 +79,7 @@ export type NormalizedProviderLimits = {
   compactionUiThreshold?: number | null;
   targetConstructedContext?: number | null;
   maxMessageLength?: number | null;
+  maxTokens?: number | null;
 };
 
 export function parseProviderLimitOverrides(input: ProviderLimitInput): {
@@ -130,6 +135,10 @@ export function parseProviderLimitOverrides(input: ProviderLimitInput): {
   const maxMessageLength = parseOptionalNumber('maxMessageLength', 1, 'Max message length');
   if (!maxMessageLength.ok) return maxMessageLength;
   if (maxMessageLength.value !== undefined) normalized.maxMessageLength = maxMessageLength.value;
+
+  const maxTokens = parseOptionalNumber('maxTokens', 1, 'Max tokens');
+  if (!maxTokens.ok) return maxTokens;
+  if (maxTokens.value !== undefined) normalized.maxTokens = maxTokens.value;
 
   return { ok: true, value: normalized };
 }
@@ -223,6 +232,7 @@ export async function createProvider(input: CreateProviderInput): Promise<Infere
       compactionUiThreshold: input.compactionUiThreshold ?? null,
       targetConstructedContext: input.targetConstructedContext ?? null,
       maxMessageLength: input.maxMessageLength ?? null,
+      maxTokens: input.maxTokens ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -332,6 +342,9 @@ export async function updateProvider(
   if (input.maxMessageLength !== undefined) {
     updates.maxMessageLength = input.maxMessageLength;
   }
+  if (input.maxTokens !== undefined) {
+    updates.maxTokens = input.maxTokens;
+  }
 
   const [updated] = await db
     .update(inferenceProviders)
@@ -404,6 +417,7 @@ function mapRowToProvider(row: typeof inferenceProviders.$inferSelect): Inferenc
     compactionUiThreshold: row.compactionUiThreshold ?? null,
     targetConstructedContext: row.targetConstructedContext ?? null,
     maxMessageLength: row.maxMessageLength ?? null,
+    maxTokens: row.maxTokens ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

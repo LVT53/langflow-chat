@@ -4,6 +4,7 @@ import type {
 	LangflowRunResponse,
 	ModelId,
 } from "$lib/types";
+import { isProviderModelId } from "$lib/types";
 import type { ModelConfig } from "../config-store";
 import { getConfig } from "../config-store";
 import { getSystemPrompt } from "../prompts";
@@ -12,6 +13,7 @@ import {
 	summarizeAttachmentSectionInInput,
 } from "./attachment-trace";
 import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
+import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -33,6 +35,14 @@ export type PromptContextLimits = {
 	maxModelContext: number;
 	compactionUiThreshold: number;
 	targetConstructedContext: number;
+};
+
+type LangflowModelRunConfig = ModelConfig & {
+	contextLimits?: PromptContextLimits;
+	providerId?: string;
+	providerReasoningEffort?: string | null;
+	providerThinkingType?: string | null;
+	requiresComponentTweaks?: boolean;
 };
 
 const URL_LIST_TOOL_ARGUMENT_GUARD = [
@@ -109,15 +119,15 @@ const IMAGE_SEARCH_GUARD = [
 
 const EXA_SEARCH_GUARD = [
 		"Web search workflow (Exa):",
-		"- When the user asks for current events, recent developments, or web-based information, call the `search` tool.",
-		"- The `search` tool expects a JSON argument: {`query`: `your search terms`}.",
-		"- For multi-hop research, chain `search` calls first, then use `get_contents` to retrieve full content.",
-		"- Use `find_similar` when the user provides a URL and wants pages with similar content.",
+		"- Use web retrieval only when the corresponding tool is actually listed in the runtime tool schema.",
+		"- If Exa Search is connected, its search tool is usually named `search` and expects a JSON argument: {`query`: `your search terms`}.",
+		"- For multi-hop research with Exa, chain `search` calls first, then use the connected content tool. In current Langflow Exa flows this is usually `get_contents`, not `fetch_content`.",
+		"- Use `find_similar` only when that tool is connected and the user provides a URL for similar-page discovery.",
 		"- The `get_contents` tool expects a JSON argument: {ids: [id1, id2, ...]} using IDs from search results.",
 		"- The `find_similar` tool expects a JSON argument: {url: target URL}.",
 		"- You MUST cite your sources using markdown links: [source title](url).",
 		"- Use the injected current date for temporal context before searching.",
-		"- Prefer `search` over `find_similar` unless the user explicitly provides a source URL.",
+		"- Prefer `search` over `find_similar` unless the user explicitly provides a source URL and both tools are available.",
 	].join("\n");
 
 const PERSONA_MEMORY_GUARD = [
@@ -180,16 +190,84 @@ export function buildOutboundSystemPrompt(params: {
 	return `${basePrompt}\n\n## Tool And Search Guidance\n${uniqueAdditions.join("\n\n")}`;
 }
 
+async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowModelRunConfig> {
+	const config = getConfig();
+
+	if (modelId && isProviderModelId(modelId)) {
+		const providerId = modelId.slice("provider:".length);
+		const provider = await getProviderWithSecrets(providerId);
+		if (!provider || !provider.enabled) {
+			throw new Error("Selected provider model is not available");
+		}
+
+		const componentId = config.model1.componentId.trim();
+		if (!componentId) {
+			throw new Error(
+				"Provider models require MODEL_1_COMPONENT_ID to route through the shared Langflow Agent flow.",
+			);
+		}
+
+		let apiKey: string;
+		try {
+			apiKey = decryptApiKey(provider.apiKeyEncrypted, provider.apiKeyIv);
+		} catch {
+			throw new Error("Failed to decrypt provider API key. Check SESSION_SECRET and provider settings.");
+		}
+
+		return {
+			...config.model1,
+			baseUrl: provider.baseUrl,
+			apiKey,
+			modelName: provider.modelName,
+			displayName: provider.displayName,
+			maxTokens: provider.maxTokens ?? config.model1.maxTokens,
+			flowId: config.model1.flowId || config.langflowFlowId,
+			componentId,
+			contextLimits: {
+				maxModelContext: provider.maxModelContext ?? config.maxModelContext,
+				compactionUiThreshold:
+					provider.compactionUiThreshold ?? config.compactionUiThreshold,
+				targetConstructedContext:
+					provider.targetConstructedContext ?? config.targetConstructedContext,
+			},
+			providerId,
+			providerReasoningEffort: provider.reasoningEffort,
+			providerThinkingType: provider.thinkingType,
+			requiresComponentTweaks: true,
+		};
+	}
+
+	if (modelId === "model2") {
+		return config.model2;
+	}
+
+	return config.model1;
+}
+
 function buildLangflowTweaks(
-	modelConfig: ModelConfig,
+	modelConfig: LangflowModelRunConfig,
 	systemPrompt: string,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
 	const componentTweaks = {
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
+		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
+		...(modelConfig.maxTokens != null ? { max_tokens: modelConfig.maxTokens } : {}),
+		...(modelConfig.providerReasoningEffort
+			? { reasoning_effort: modelConfig.providerReasoningEffort }
+			: {}),
+		...(modelConfig.providerThinkingType
+			? { thinking_type: modelConfig.providerThinkingType }
+			: {}),
 		system_prompt: systemPrompt,
 	};
+
+	if (modelConfig.requiresComponentTweaks && !componentId) {
+		throw new Error(
+			"Provider models require a Langflow component ID for runtime model tweaks.",
+		);
+	}
 
 	if (!componentId) {
 		return componentTweaks;
@@ -364,7 +442,7 @@ export async function sendMessage(
 	const signal = mergeAbortSignals(options?.signal, controller.signal);
 
 	try {
-		const modelConfig = modelId ? config[modelId] : config.model1;
+		const modelConfig = await resolveLangflowRunConfig(modelId);
 		const flowId = modelConfig.flowId || config.langflowFlowId;
 		const url = `${config.langflowApiUrl}/api/v1/run/${flowId}`;
 		const modelName = modelConfig.modelName;
@@ -393,6 +471,7 @@ export async function sendMessage(
 				activeDocumentArtifactId: options?.activeDocumentArtifactId,
 				attachmentTraceId: options?.attachmentTraceId,
 				modelId: modelId ?? "model1",
+				contextLimits: modelConfig.contextLimits,
 			});
 			inputValue = constructed.inputValue;
 			contextStatus = constructed.contextStatus;
@@ -453,7 +532,9 @@ export async function sendMessage(
 			sessionId,
 			userId: user?.id ?? null,
 			modelId: modelId ?? "model1",
+			providerId: modelConfig.providerId ?? null,
 			modelName,
+			baseUrl,
 			attachmentCount: options?.attachmentIds?.length ?? 0,
 			inputLength: inputValue.length,
 		});
@@ -546,7 +627,7 @@ export async function sendMessageStream(
 	);
 
 	try {
-		const modelConfig = modelId ? config[modelId] : config.model1;
+		const modelConfig = await resolveLangflowRunConfig(modelId);
 		const flowId = modelConfig.flowId || config.langflowFlowId;
 		const url = `${config.langflowApiUrl}/api/v1/run/${flowId}?stream=true`;
 		const modelName = modelConfig.modelName;
@@ -575,6 +656,7 @@ export async function sendMessageStream(
 				activeDocumentArtifactId: options.activeDocumentArtifactId,
 				attachmentTraceId: options.attachmentTraceId,
 				modelId: modelId ?? "model1",
+				contextLimits: modelConfig.contextLimits,
 			});
 			inputValue = constructed.inputValue;
 			contextStatus = constructed.contextStatus;
@@ -635,7 +717,9 @@ export async function sendMessageStream(
 			sessionId,
 			userId: options?.user?.id ?? null,
 			modelId: modelId ?? "model1",
+			providerId: modelConfig.providerId ?? null,
 			modelName,
+			baseUrl,
 			attachmentCount: options?.attachmentIds?.length ?? 0,
 			inputLength: inputValue.length,
 		});

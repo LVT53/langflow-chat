@@ -3,10 +3,6 @@ import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import {
-	getProviderId,
-	runProviderChatCompletion,
-} from '$lib/server/services/provider-chat';
 import { getConfig } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
 import { logAttachmentTrace } from '$lib/server/services/attachment-trace';
@@ -21,7 +17,6 @@ import {
 import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
 import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
 import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
-import { isProviderModelId } from '$lib/types';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -85,37 +80,23 @@ export const POST: RequestHandler = async (event) => {
 			displayName: user.displayName,
 			email: user.email,
 		};
-		const providerResult =
-			turn.modelId && isProviderModelId(turn.modelId)
-				? await runProviderChatCompletion({
-						providerId: getProviderId(turn.modelId),
-						upstreamMessage,
-						conversationId: turn.conversationId,
-						user: modelUser,
-						attachmentIds: turn.attachmentIds,
-						activeDocumentArtifactId: turn.activeDocumentArtifactId,
-						attachmentTraceId: turn.attachmentTraceId,
-					})
-				: null;
-		const langflowResult = providerResult
-			? null
-			: await sendMessage(
-					upstreamMessage,
-					turn.conversationId,
-					turn.modelId,
-					modelUser,
-					{
-						attachmentIds: turn.attachmentIds,
-						activeDocumentArtifactId: turn.activeDocumentArtifactId,
-						attachmentTraceId: turn.attachmentTraceId,
-					}
-				);
-		const text = providerResult?.text ?? langflowResult?.text ?? '';
-		const contextStatus = providerResult?.contextStatus ?? langflowResult?.contextStatus;
-		const initialTaskState = providerResult?.taskState ?? langflowResult?.taskState;
-		const initialContextDebug = providerResult?.contextDebug ?? langflowResult?.contextDebug;
-		const honchoContext = providerResult?.honchoContext ?? langflowResult?.honchoContext;
-		const honchoSnapshot = providerResult?.honchoSnapshot ?? langflowResult?.honchoSnapshot;
+		const langflowResult = await sendMessage(
+			upstreamMessage,
+			turn.conversationId,
+			turn.modelId,
+			modelUser,
+			{
+				attachmentIds: turn.attachmentIds,
+				activeDocumentArtifactId: turn.activeDocumentArtifactId,
+				attachmentTraceId: turn.attachmentTraceId,
+			}
+		);
+		const text = langflowResult.text ?? '';
+		const contextStatus = langflowResult.contextStatus;
+		const initialTaskState = langflowResult.taskState;
+		const initialContextDebug = langflowResult.contextDebug;
+		const honchoContext = langflowResult.honchoContext;
+		const honchoSnapshot = langflowResult.honchoSnapshot;
 		const responseText = await buildSendResponseText({
 			responseText: text,
 			sourceLanguage: turn.sourceLanguage,
@@ -153,7 +134,6 @@ export const POST: RequestHandler = async (event) => {
 			assistantMessageId: assistantMessage.id,
 			analytics: {
 				model: turn.modelId ?? 'model1',
-				completionTokens: providerResult?.usage?.completion_tokens,
 				generationTimeMs: undefined,
 			},
 			continuitySource: 'send',

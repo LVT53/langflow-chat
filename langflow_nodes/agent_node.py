@@ -257,7 +257,7 @@ class AgentComponent(ToolCallingAgentComponent):
             display_name="Max Tokens",
             info="Maximum number of tokens to generate. Field name varies by provider.",
             advanced=True,
-            range_spec=RangeSpec(min=1, max=4096, step=1, step_type="int"),
+            range_spec=RangeSpec(min=1, max=32768, step=1, step_type="int"),
         ),
         MultilineInput(
             name="format_instructions",
@@ -353,6 +353,37 @@ class AgentComponent(ToolCallingAgentComponent):
             watsonx_project_id=getattr(self, "project_id", None),
         )
 
+    @staticmethod
+    def _tool_names(tools: Any) -> list[str]:
+        names: list[str] = []
+        if not isinstance(tools, list):
+            return names
+        for tool in tools:
+            name = str(getattr(tool, "name", "") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _system_prompt_with_runtime_tools(self, system_prompt: str, tools: Any) -> str:
+        tool_names = self._tool_names(tools)
+        if tool_names:
+            tool_list = ", ".join(f"`{name}`" for name in tool_names)
+            runtime_tools = (
+                "Runtime tool inventory:\n"
+                f"- The tools currently registered on this Agent node are: {tool_list}.\n"
+                "- Use only these exact tool names. If prompt examples mention another tool name, treat that example as unavailable."
+            )
+        else:
+            runtime_tools = (
+                "Runtime tool inventory:\n"
+                "- No tools are currently registered on this Agent node. Do not claim to use search, fetch, file, or other tools."
+            )
+
+        base_prompt = str(system_prompt or "").strip()
+        if not base_prompt:
+            return runtime_tools
+        return f"{base_prompt}\n\n{runtime_tools}"
+
     async def get_agent_requirements(self):
         """Get the agent requirements for the agent."""
         from langchain_core.tools import StructuredTool
@@ -381,19 +412,23 @@ class AgentComponent(ToolCallingAgentComponent):
 
         # Set shared callbacks for tracing the tools used by the agent
         self.set_tools_callbacks(self.tools, self._get_shared_callbacks())
+        registered_tools = ", ".join(self._tool_names(self.tools)) or "none"
+        logger.info("Agent runtime tools registered: %s", registered_tools)
+        print(f"[ALFYAI_AGENT] Agent runtime tools registered: {registered_tools}", flush=True)
 
         return llm_model, self.chat_history, self.tools
 
     async def message_response(self) -> Message:
         try:
             llm_model, self.chat_history, self.tools = await self.get_agent_requirements()
+            system_prompt = self._system_prompt_with_runtime_tools(self.system_prompt, self.tools)
             # Set up and run agent
             self.set(
                 llm=llm_model,
                 tools=self.tools or [],
                 chat_history=self.chat_history,
                 input_value=self.input_value,
-                system_prompt=self.system_prompt,
+                system_prompt=system_prompt,
             )
             # Inject tool call emitter directly onto each tool's `callbacks` list.
             # with_config() is NOT used — the parent's run_agent() passes its own
@@ -550,6 +585,10 @@ class AgentComponent(ToolCallingAgentComponent):
             # Combine all components
             combined_instructions = "\n\n".join(system_components) if system_components else ""
             llm_model, self.chat_history, self.tools = await self.get_agent_requirements()
+            combined_instructions = self._system_prompt_with_runtime_tools(
+                combined_instructions,
+                self.tools,
+            )
             self.set(
                 llm=llm_model,
                 tools=self.tools or [],
