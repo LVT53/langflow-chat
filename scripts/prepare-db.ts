@@ -50,9 +50,15 @@ const requiredExistingColumns = [
 	['users', 'preferred_model'],
 	['users', 'translation_enabled'],
 	['users', 'theme'],
+	['users', 'title_language'],
 	['users', 'avatar_id'],
 	['users', 'profile_picture'],
 	['users', 'honcho_peer_version'],
+];
+
+// Columns that should be auto-created if missing (safe defaults, no data loss)
+const autoCreateColumns: Array<[string, string, string]> = [
+	['users', 'title_language', "TEXT NOT NULL DEFAULT 'auto'"],
 ];
 
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
@@ -76,6 +82,18 @@ function listColumns(tableName: string): string[] {
 function hasColumn(tableName: string, columnName: string): boolean {
 	if (!hasTable(tableName)) return false;
 	return listColumns(tableName).includes(columnName);
+}
+
+function autoCreateMissingColumns(): number {
+	let created = 0;
+	for (const [table, column, definition] of autoCreateColumns) {
+		if (!hasTable(table)) continue;
+		if (hasColumn(table, column)) continue;
+		sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+		created += 1;
+		console.log(`[prepare-db] Added missing column: ${table}.${column}`);
+	}
+	return created;
 }
 
 function countMigrationRows(): number {
@@ -226,6 +244,8 @@ function backfillHonchoPeerVersionMigrationIfNeeded(): number {
 
 try {
 	if (hasApplicationTables()) {
+		autoCreateMissingColumns();
+
 		const schemaProblems = validateExistingRuntimeSchema();
 		const existingMigrationCount = countMigrationRows();
 		if (schemaProblems.length > 0 && existingMigrationCount > 0) {
