@@ -1,5 +1,6 @@
 
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
+import { getConfig } from "$lib/server/config-store";
 import { touchConversation } from "$lib/server/services/conversations";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
 import {
@@ -69,7 +70,9 @@ import { shouldTranslateHungarian } from "$lib/server/services/chat-turn/execute
 import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
 import { isProviderModelId } from "$lib/types";
 
-const STREAM_TIMEOUT_MS = 120_000;
+function getStreamTimeoutMs(): number {
+	return Math.max(60_000, getConfig().requestTimeoutMs);
+}
 
 function shouldFallbackToNonStreaming(error: unknown): boolean {
   if (!(error instanceof Error)) {
@@ -657,7 +660,7 @@ const sendEndAndClose = async (
 
       const timeoutId = setTimeout(() => {
         failStream("timeout");
-      }, STREAM_TIMEOUT_MS);
+      }, getStreamTimeoutMs());
 
       try {
         let usedUrlListRecovery = false;

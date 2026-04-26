@@ -226,6 +226,7 @@
 		MAX_MESSAGE_LENGTH: "Max Message Length (characters)",
 		MAX_FILE_UPLOAD_SIZE: "Max File Upload Size (bytes)",
 		MAX_PROVIDER_TOOL_ROUNDS: "Max Provider Tool Rounds",
+		REQUEST_TIMEOUT_MS: "Request Timeout (ms)",
 		SYSTEM_PROMPT: "System Prompt",
 
 	};
@@ -243,6 +244,7 @@
 		"TRANSLATION_TEMPERATURE",
 		"MAX_PROVIDER_TOOL_ROUNDS",
 		"MAX_FILE_UPLOAD_SIZE",
+		"REQUEST_TIMEOUT_MS",
 	]);
 
 	function placeholderFor(key: string): string {
@@ -544,6 +546,17 @@
 				placeholder={placeholderFor('MAX_FILE_UPLOAD_SIZE')}
 			/>
 			<p class="mt-1 text-xs text-text-muted">Maximum file upload size in bytes (default 104857600 = 100MB).</p>
+		</div>
+		<div>
+			<label class="settings-label" for="REQUEST_TIMEOUT_MS">{CONFIG_LABELS.REQUEST_TIMEOUT_MS}</label>
+			<input
+				id="REQUEST_TIMEOUT_MS"
+				type="number"
+				class="settings-input"
+				bind:value={adminConfig.REQUEST_TIMEOUT_MS}
+				placeholder={placeholderFor('REQUEST_TIMEOUT_MS')}
+			/>
+			<p class="mt-1 text-xs text-text-muted">HTTP request and stream timeout in milliseconds (default 300000 = 5 minutes). Increase for multi-round search workloads.</p>
 		</div>
 	</div>
 </section>
