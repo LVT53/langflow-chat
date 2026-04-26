@@ -136,6 +136,21 @@ const PERSONA_MEMORY_GUARD = [
 	"- Do NOT incorporate persona facts (pet ownership, hobbies, biographical details) into generated documents, reports, or file content unless the user explicitly asks for them.",
 ].join("\n");
 
+const SOURCE_AUTHORITY_GUARD = [
+	"Source Authority and Synthesis Rules:",
+	"- When you retrieve multiple sources (web search, fetched pages, manuals), rank them by authority before synthesizing your answer:",
+	"  1. Official documentation, manuals, READMEs, and primary sources (highest authority)",
+	"  2. Authoritative technical references, API docs, and established wikis",
+	"  3. Original research papers or primary-source data",
+	"  4. Forum discussions with verified, reproducible solutions",
+	"  5. Commercial listings, shop pages, marketing sites, and aggregator content (lowest authority)",
+	"- When synthesizing your answer, prioritize technical accuracy and depth from high-authority sources over recency or simplicity from low-authority sources.",
+	"- If an official manual or primary-source document contradicts a commercial listing, trust the manual.",
+	"- Do not discard detailed technical findings from earlier, high-authority tool calls just because later calls return simpler or thinner results.",
+	"- Cite the most authoritative source that supports each claim, not merely the most recent one.",
+	"- When multiple sources agree, prefer citing the highest-authority one; when they conflict, explain the conflict and cite the higher-authority source.",
+].join("\n");
+
 function containsHttpUrl(value: string): boolean {
 	return /https?:\/\/[^\s)>\]]+/i.test(value);
 }
@@ -169,6 +184,7 @@ export function buildOutboundSystemPrompt(params: {
     IMAGE_SEARCH_GUARD,
     EXA_SEARCH_GUARD,
     PERSONA_MEMORY_GUARD,
+    SOURCE_AUTHORITY_GUARD,
   );
 
 	if (
