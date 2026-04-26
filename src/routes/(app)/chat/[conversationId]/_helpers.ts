@@ -43,6 +43,10 @@ const FRIENDLY_SEND_ERRORS = {
 	timeout: 'The response is taking too long. Please try again.',
 	network: 'We could not reach the chat service. Check your connection and try again.',
 	backend_failure: 'We hit a temporary issue generating a response. Please try again.',
+	capacity_exceeded: 'Our servers are handling too many requests right now. Please wait a moment and try again.',
+	file_too_large: 'The uploaded file exceeds the maximum allowed size. Please upload a smaller file.',
+	message_too_long: 'Your message is too long. Please shorten it and try again.',
+	provider_tool_rounds: 'The AI needed too many tool-call rounds for this request. Please try a simpler request.',
 } as const;
 
 export function toFriendlySendError(error: Error): string {
@@ -53,6 +57,10 @@ export function toFriendlySendError(error: Error): string {
 	if (errorWithCode.code === 'timeout') return FRIENDLY_SEND_ERRORS.timeout;
 	if (errorWithCode.code === 'network') return FRIENDLY_SEND_ERRORS.network;
 	if (errorWithCode.code === 'backend_failure') return FRIENDLY_SEND_ERRORS.backend_failure;
+	if (errorWithCode.code === 'capacity_exceeded') return FRIENDLY_SEND_ERRORS.capacity_exceeded;
+	if (errorWithCode.code === 'file_too_large') return FRIENDLY_SEND_ERRORS.file_too_large;
+	if (errorWithCode.code === 'message_too_long') return FRIENDLY_SEND_ERRORS.message_too_long;
+	if (errorWithCode.code === 'provider_tool_rounds') return FRIENDLY_SEND_ERRORS.provider_tool_rounds;
 
 	const message = (error.message ?? '').toLowerCase();
 	if (message.includes('timeout') || message.includes('timed out')) {
@@ -67,6 +75,10 @@ export function toFriendlySendError(error: Error): string {
 	) {
 		return FRIENDLY_SEND_ERRORS.network;
 	}
+
+	if (message.includes('capacity') || message.includes('server at capacity')) return FRIENDLY_SEND_ERRORS.capacity_exceeded;
+
+	if (message.includes('file too large') || message.includes('too large') || message.includes('maximum size')) return FRIENDLY_SEND_ERRORS.file_too_large;
 
 	return FRIENDLY_SEND_ERRORS.backend_failure;
 }

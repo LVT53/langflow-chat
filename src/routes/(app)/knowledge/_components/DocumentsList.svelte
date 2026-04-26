@@ -563,7 +563,7 @@
 				<div class="drop-zone-icon">
 					{@html UploadIcon()}
 				</div>
-				<p class="drop-zone-text">Drop files here to upload</p>
+				<p class="drop-zone-text">Drop files here to upload (max 100MB per file)</p>
 			</div>
 		</div>
 	{/if}
@@ -629,7 +629,7 @@
 				type="button"
 				class="upload-btn"
 				aria-label="Upload document"
-				title="Upload document"
+				title="Upload document (max 100MB)"
 				disabled={isUploading}
 				onclick={handleUploadClick}
 			>

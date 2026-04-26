@@ -2,6 +2,7 @@ import {
 	getCompactionUiThreshold,
 	getConfig,
 	getMaxModelContext,
+	getMaxProviderToolRounds,
 	getTargetConstructedContext,
 } from '$lib/server/config-store';
 import {
@@ -22,8 +23,6 @@ import {
 	type AuthenticatedPromptUser,
 	type PreparedOutboundChatContext,
 } from '$lib/server/services/langflow';
-
-const MAX_PROVIDER_TOOL_ROUNDS = 6;
 
 export type ProviderChatCallbacks = {
 	onToken?: (chunk: string) => Promise<boolean> | boolean;
@@ -232,7 +231,7 @@ export async function runProviderChatCompletion(
 	const { provider, context, messages } = await prepareProviderChat(params);
 	let usage: ProviderChatResult['usage'];
 
-	for (let round = 0; round <= MAX_PROVIDER_TOOL_ROUNDS; round += 1) {
+	for (let round = 0; round <= getConfig().maxProviderToolRounds; round += 1) {
 		const response = await callInferenceProvider(provider, {
 			model: provider.modelName,
 			messages,
@@ -249,7 +248,7 @@ export async function runProviderChatCompletion(
 		if (toolCalls.length === 0) {
 			return { ...context, text, provider, usage };
 		}
-		if (round === MAX_PROVIDER_TOOL_ROUNDS) {
+		if (round === getConfig().maxProviderToolRounds) {
 			throw new Error('Provider exceeded the maximum tool-call rounds');
 		}
 		await executeToolCalls({
@@ -269,7 +268,7 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
 	let finalText = '';
 	let usage: ProviderChatResult['usage'];
 
-	for (let round = 0; round <= MAX_PROVIDER_TOOL_ROUNDS; round += 1) {
+	for (let round = 0; round <= getConfig().maxProviderToolRounds; round += 1) {
     let roundText = '';
     let roundReasoning = '';
 		const pendingToolCalls = new Map<number, PendingToolCall>();
@@ -326,7 +325,7 @@ export async function runProviderChatStream(params: ProviderChatParams): Promise
 		if (!sawToolFinish && roundText.trim()) {
 			return { ...context, text: finalText, provider, usage };
 		}
-		if (round === MAX_PROVIDER_TOOL_ROUNDS) {
+		if (round === getConfig().maxProviderToolRounds) {
 			throw new Error('Provider exceeded the maximum tool-call rounds');
 		}
 

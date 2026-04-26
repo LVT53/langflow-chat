@@ -71,11 +71,11 @@ curl -s http://172.17.0.1:3001/api/health
 
 ## Upload Body Size
 
-Production builds patch adapter-node so the default `BODY_SIZE_LIMIT` becomes `50M`.
+Production builds patch adapter-node so the default `BODY_SIZE_LIMIT` becomes `100M`.
 
 You can still override it explicitly:
 
-- `BODY_SIZE_LIMIT=50M` to match the current default
+- `BODY_SIZE_LIMIT=100M` to match the current default
 - a higher value if your deployment needs more headroom
 
-Keep it at or above the application’s current 50MB upload cap so multipart requests are not rejected at the transport layer first.
+Keep it at or above the application’s current 100MB upload cap so multipart requests are not rejected at the transport layer first.

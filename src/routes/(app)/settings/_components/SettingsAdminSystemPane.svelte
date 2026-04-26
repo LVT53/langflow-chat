@@ -224,6 +224,8 @@
 		COMPACTION_UI_THRESHOLD: "Compaction UI Threshold (tokens)",
 		TARGET_CONSTRUCTED_CONTEXT: "Target Constructed Context (tokens)",
 		MAX_MESSAGE_LENGTH: "Max Message Length (characters)",
+		MAX_FILE_UPLOAD_SIZE: "Max File Upload Size (bytes)",
+		MAX_PROVIDER_TOOL_ROUNDS: "Max Provider Tool Rounds",
 		SYSTEM_PROMPT: "System Prompt",
 
 	};
@@ -239,6 +241,8 @@
 		"HONCHO_PERSONA_CONTEXT_WAIT_MS",
 		"TRANSLATION_MAX_TOKENS",
 		"TRANSLATION_TEMPERATURE",
+		"MAX_PROVIDER_TOOL_ROUNDS",
+		"MAX_FILE_UPLOAD_SIZE",
 	]);
 
 	function placeholderFor(key: string): string {
@@ -512,6 +516,35 @@
 			placeholder={placeholderFor('SYSTEM_PROMPT')}
 		></textarea>
 		<p class="mt-1 text-xs text-text-muted">Set the system prompt used for all models. You can paste a full system prompt or use a reference key like <code>alfyai-nemotron</code>. Leave empty to use per-model defaults.</p>
+	</div>
+</section>
+
+<!-- Rate & Size Limits -->
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">Rate & Size Limits</h2>
+	<div class="flex flex-col gap-3">
+		<div>
+			<label class="settings-label" for="MAX_PROVIDER_TOOL_ROUNDS">{CONFIG_LABELS.MAX_PROVIDER_TOOL_ROUNDS}</label>
+			<input
+				id="MAX_PROVIDER_TOOL_ROUNDS"
+				type="number"
+				class="settings-input"
+				bind:value={adminConfig.MAX_PROVIDER_TOOL_ROUNDS}
+				placeholder={placeholderFor('MAX_PROVIDER_TOOL_ROUNDS')}
+			/>
+			<p class="mt-1 text-xs text-text-muted">Maximum number of tool-call rounds the provider model can make per turn (e.g. web search, file generation).</p>
+		</div>
+		<div>
+			<label class="settings-label" for="MAX_FILE_UPLOAD_SIZE">{CONFIG_LABELS.MAX_FILE_UPLOAD_SIZE}</label>
+			<input
+				id="MAX_FILE_UPLOAD_SIZE"
+				type="number"
+				class="settings-input"
+				bind:value={adminConfig.MAX_FILE_UPLOAD_SIZE}
+				placeholder={placeholderFor('MAX_FILE_UPLOAD_SIZE')}
+			/>
+			<p class="mt-1 text-xs text-text-muted">Maximum file upload size in bytes (default 104857600 = 100MB).</p>
+		</div>
 	</div>
 </section>
 

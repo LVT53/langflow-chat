@@ -135,8 +135,8 @@ Notes before the tables:
 - Legacy built-in prompt keys such as `alfyai-nemotron`, `hermes-thinking`, and `default` are still recognized if you already have them stored.
 - `MODEL_2_ENABLED=false` hides model 2 in the UI and forces model fallback to model 1.
 - `BODY_SIZE_LIMIT` is adapter-node/server runtime behavior, not an app-level feature flag.
-- The production build patches adapter-node so the default `BODY_SIZE_LIMIT` becomes `50M`.
-- Knowledge uploads are currently capped at 50MB in the app, so keep `BODY_SIZE_LIMIT` at or above that limit.
+- The production build patches adapter-node so the default `BODY_SIZE_LIMIT` becomes `100M`.
+- Knowledge uploads are currently capped at 100MB in the app, so keep `BODY_SIZE_LIMIT` at or above that limit.
 
 ### Core Runtime
 
@@ -244,7 +244,7 @@ Notes before the tables:
 
 | Variable | Required? | Default | What it does | When to set it | Caveats |
 |---|---|---:|---|---|---|
-| `BODY_SIZE_LIMIT` | No | patched to `50M` in production builds | Controls the adapter-node request body size limit | Raise it if your deployment needs larger request bodies | Server/runtime setting, not an app feature toggle |
+| `BODY_SIZE_LIMIT` | No | patched to `100M` in production builds | Controls the adapter-node request body size limit | Raise it if your deployment needs larger request bodies | Server/runtime setting, not an app feature toggle |
 | `HOST` | No | `0.0.0.0` in adapter-node, often overridden in deploy env files | Controls the adapter-node listen address | Set it to `0.0.0.0` when host-managed Docker sidecars such as Langflow must reach the app over the host bridge | If you set `127.0.0.1`, containers on the same host cannot reach the app directly |
 | `PORT` | No | `3000` in adapter-node | Controls the adapter-node listen port | Set it to match your reverse proxy or host-managed service expectations | Keep Apache/nginx/other proxy config aligned with the same port |
 | `NODE_ENV` | No | environment dependent | Controls framework/runtime production behavior | Set it to `production` in real deployments | Also affects cookie security behavior |
