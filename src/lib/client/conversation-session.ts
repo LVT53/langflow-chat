@@ -175,6 +175,19 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 		}
 	}
 
+	async function doFlush(): Promise<void> {
+		if (draftPersistTimer) {
+			clearTimeout(draftPersistTimer);
+			draftPersistTimer = null;
+		}
+
+		const nextRequest = pendingRequest;
+		pendingRequest = null;
+		if (nextRequest) {
+			await runPersist(nextRequest);
+		}
+	}
+
 	return {
 		async persist(
 			request: { conversationId: string; draftText: string; selectedAttachmentIds: string[] },
@@ -216,20 +229,11 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 		},
 
 		async flush(): Promise<void> {
-			if (draftPersistTimer) {
-				clearTimeout(draftPersistTimer);
-				draftPersistTimer = null;
-			}
-
-			const nextRequest = pendingRequest;
-			pendingRequest = null;
-			if (nextRequest) {
-				await runPersist(nextRequest);
-			}
+			await doFlush();
 		},
 
 		clear(): void {
-			flush();
+			void doFlush();
 			if (draftPersistTimer) {
 				clearTimeout(draftPersistTimer);
 				draftPersistTimer = null;

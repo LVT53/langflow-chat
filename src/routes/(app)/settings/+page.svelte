@@ -87,7 +87,7 @@
 	let selectedModel = $state(initialPreferences.preferredModel);
 	let translationEnabled = $state(initialPreferences.translationEnabled);
 	let selectedTheme = $state(initialPreferences.theme);
-	let selectedTitleLanguage = $state(initialPreferences.titleLanguage);
+	let selectedTitleLanguage = $state((initialPreferences as any).titleLanguage ?? 'auto');
 	let selectedAvatar = $state(initialPreferences.avatarId);
 
 	let showDeleteModal = $state(false);

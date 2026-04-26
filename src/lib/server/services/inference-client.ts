@@ -285,7 +285,7 @@ function buildRequestBody(
     model: request.model,
     messages: request.messages,
     stream,
-    max_tokens: request.max_tokens ?? 4096,
+    max_tokens: request.max_tokens ?? 32768,
     temperature: request.temperature ?? 0.7,
     ...(request.top_p && { top_p: request.top_p }),
     ...(request.stop && { stop: request.stop }),
