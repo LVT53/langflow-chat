@@ -445,7 +445,6 @@
 
 	@media (min-width: 1024px) {
 		.sidebar-panel {
-			position: static !important;
 			transform: translateX(0) !important;
 			translate: 0 !important;
 			opacity: 1 !important;
