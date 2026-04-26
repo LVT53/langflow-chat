@@ -270,7 +270,10 @@ function buildLangflowTweaks(
 	}
 
 	if (!componentId) {
-		return componentTweaks;
+		// Do not pass api_key as a flat tweak to avoid "Tool names must be unique" LangChain error
+		// when multiple nodes have api_key parameters.
+		const { api_key, ...safeTweaks } = componentTweaks;
+		return safeTweaks;
 	}
 
 	return {
