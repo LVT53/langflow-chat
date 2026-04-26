@@ -408,7 +408,26 @@ class AgentComponent(ToolCallingAgentComponent):
             if not isinstance(current_date_tool, StructuredTool):
                 msg = "CurrentDateComponent must be converted to a StructuredTool"
                 raise TypeError(msg)
-            self.tools.append(current_date_tool)
+            # Only append if it's not already in the list to prevent accumulation across runs
+            if not any(getattr(t, "name", "") == getattr(current_date_tool, "name", "") for t in self.tools):
+                self.tools.append(current_date_tool)
+
+
+        # Ensure all tool names are unique to prevent LangChain provider crashes (e.g. OpenAI "Tool names must be unique" BadRequestError)
+        if isinstance(self.tools, list):
+            seen_names = set()
+            for tool in self.tools:
+                name = str(getattr(tool, "name", "") or "").strip()
+                if not name:
+                    continue
+                original_name = name
+                counter = 1
+                while name in seen_names:
+                    name = f"{original_name}_{counter}"
+                    counter += 1
+                if name != original_name:
+                    tool.name = name
+                seen_names.add(name)
 
         # Set shared callbacks for tracing the tools used by the agent
         self.set_tools_callbacks(self.tools, self._get_shared_callbacks())
