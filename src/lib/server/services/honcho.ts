@@ -276,8 +276,13 @@ async function getSession(userId: string, conversationId: string): Promise<Sessi
 			[userPeer.id, { observeMe: true, observeOthers: false }],
 			[assistantPeer.id, { observeMe: false, observeOthers: true }],
 		]);
-	} catch (err) {
-		console.error('[HONCHO] Failed to attach peers to session:', err);
+	} catch (err: any) {
+		const is404 = err?.status === 404 || err?.code === 'not_found';
+		if (is404) {
+			console.warn(`[HONCHO] Session ${honchoSessionId} not yet created — will be initialized on first message`);
+		} else {
+			console.error('[HONCHO] Failed to attach peers to session:', err);
+		}
 	}
 
 	sessionCache.set(honchoSessionId, session);

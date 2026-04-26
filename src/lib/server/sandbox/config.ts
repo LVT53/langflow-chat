@@ -3,9 +3,9 @@ import { PassThrough } from "node:stream";
 import type { Container, Exec, ExecInspectInfo } from "dockerode";
 import Docker from "dockerode";
 
-export const SANDBOX_TIMEOUT_MS = 60000;
-export const SANDBOX_TIMEOUT_JS_MS = 90000;
-export const SANDBOX_MEMORY_MB = 1024;
+export const SANDBOX_TIMEOUT_MS = 90000;
+export const SANDBOX_TIMEOUT_JS_MS = 135000;
+export const SANDBOX_MEMORY_MB = 2048;
 export const SANDBOX_MAX_FILE_MB = 100;
 export const SANDBOX_MAX_OUTPUT_FILES = 20;
 export const SANDBOX_MAX_TOTAL_OUTPUT_MB = 50;

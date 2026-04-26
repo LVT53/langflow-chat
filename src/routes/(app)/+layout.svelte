@@ -29,7 +29,7 @@
 	$effect(() => {
 		const nextUserId = data.user?.id ?? null;
 		const resetLocalState = previousConversationUserId !== null && previousConversationUserId !== nextUserId;
-		reconcileConversationSnapshot(data.conversations ?? [], {
+		reconcileConversationSnapshot(data?.conversations ?? [], {
 			resetLocalState,
 			userId: nextUserId,
 		});
@@ -37,7 +37,7 @@
 	});
 
 	$effect(() => {
-		projects.set(data.projects ?? []);
+		projects.set(data?.projects ?? []);
 	});
 
 	$effect(() => {
@@ -137,7 +137,7 @@
 	<Header />
 
 	<div class="flex h-full flex-1 overflow-hidden">
-		<Sidebar open={$sidebarOpen} conversationsData={data.conversations ?? []} projectsData={data.projects ?? []} user={data.user} />
+		<Sidebar open={$sidebarOpen} conversationsData={data?.conversations ?? []} projectsData={data?.projects ?? []} user={data?.user} />
 
 		<main class="relative flex h-full flex-1 flex-col overflow-hidden min-w-0">
 			{#if $navigating}
