@@ -1,6 +1,35 @@
 import { derived } from 'svelte/store';
 import { uiLanguage } from '$lib/stores/settings';
 
+/**
+ * Key Naming Convention
+ * --------------------
+ * All i18n keys use dot-separated hierarchical naming:
+ *   {group}.{subgroup}.{specificName}
+ *
+ * Examples:
+ *   sidebar.newChat        → sidebar New Chat button
+ *   analytics.stats.messagesSent  → analytics stats label
+ *   settings.avatar        → settings Avatar section
+ *   login.welcomeBack      → login page welcome text
+ *   common.confirm         → shared confirm button
+ *   common.cancel          → shared cancel button
+ *
+ * Group categories:
+ *   - sidebar, header, layout (navigation/layout)
+ *   - chat, messageArea, messageInput (chat components)
+ *   - knowledge, filePreview (knowledge components)
+ *   - settings, settingsProfile, settingsAnalytics, settingsAdministration (settings)
+ *   - admin (admin panel)
+ *   - analytics (analytics tab)
+ *   - login (login page)
+ *   - common (shared UI components like ConfirmDialog, ErrorMessage)
+ *   - generatedFile (chat-generated file components)
+ *   - pageTitle (HTML <title> tags)
+ *
+ * All keys must exist in BOTH en and hu dictionaries.
+ */
+
 const dictionary = {
 	en: {
 		landingGreeting: 'What can I help you with?',

@@ -14,7 +14,7 @@
 	} from '$lib/stores/conversations';
 	import { conversationExists } from '$lib/client/api/conversations';
 	import { projects } from '$lib/stores/projects';
-	import { initSettings } from '$lib/stores/settings';
+	import { initSettings, uiLanguage } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
 	import { initAvatar } from '$lib/stores/avatar';
 	import type { LayoutProps } from './$types';
@@ -38,6 +38,13 @@
 
 	$effect(() => {
 		projects.set(data?.projects ?? []);
+	});
+
+	// Reactive <html lang> attribute
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.documentElement.lang = $uiLanguage;
+		}
 	});
 
 	$effect(() => {
