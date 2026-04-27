@@ -68,6 +68,10 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 		.select({
 			userId: usageEvents.userId,
 			messageCount: count(usageEvents.id),
+			promptTokens: sql<number>`coalesce(sum(${usageEvents.promptTokens}), 0)`,
+			cachedInputTokens: sql<number>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)`,
+			cacheHitTokens: sql<number>`coalesce(sum(${usageEvents.cacheHitTokens}), 0)`,
+			cacheMissTokens: sql<number>`coalesce(sum(${usageEvents.cacheMissTokens}), 0)`,
 			completionTokens: sql<number>`coalesce(sum(${usageEvents.completionTokens}), 0)`,
 			reasoningTokens: sql<number>`coalesce(sum(${usageEvents.reasoningTokens}), 0)`,
 		})
@@ -107,6 +111,10 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 			row.userId,
 			{
 				messageCount: Number(row.messageCount ?? 0),
+				promptTokens: Number(row.promptTokens ?? 0),
+				cachedInputTokens: Number(row.cachedInputTokens ?? 0),
+				cacheHitTokens: Number(row.cacheHitTokens ?? 0),
+				cacheMissTokens: Number(row.cacheMissTokens ?? 0),
 				completionTokens: Number(row.completionTokens ?? 0),
 				reasoningTokens: Number(row.reasoningTokens ?? 0),
 			},
@@ -132,6 +140,10 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 		.map((row) => {
 			const conversation = conversationsByUser.get(row.id);
 			const analytics = analyticsByUser.get(row.id);
+			const promptTokens = analytics?.promptTokens ?? 0;
+			const cachedInputTokens = analytics?.cachedInputTokens ?? 0;
+			const cacheHitTokens = analytics?.cacheHitTokens ?? 0;
+			const cacheMissTokens = analytics?.cacheMissTokens ?? 0;
 			const completionTokens = analytics?.completionTokens ?? 0;
 			const reasoningTokens = analytics?.reasoningTokens ?? 0;
 			return {
@@ -143,9 +155,13 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 				updatedAt: Number(row.updatedAt),
 				conversationCount: conversation?.conversationCount ?? 0,
 				messageCount: analytics?.messageCount ?? 0,
+				promptTokens,
+				cachedInputTokens,
+				cacheHitTokens,
+				cacheMissTokens,
 				completionTokens,
 				reasoningTokens,
-				totalTokenCount: completionTokens + reasoningTokens,
+				totalTokenCount: promptTokens + cachedInputTokens + cacheHitTokens + cacheMissTokens + completionTokens + reasoningTokens,
 				favoriteModel: favoriteModelByUser.get(row.id)?.model ?? null,
 				activeSessionCount: sessionsByUser.get(row.id) ?? 0,
 				lastActiveAt: row.lastSeenAt ? Number(row.lastSeenAt) : Number(row.createdAt),

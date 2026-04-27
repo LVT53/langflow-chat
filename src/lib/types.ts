@@ -45,6 +45,10 @@ export interface AdminManagedUserSummary {
   updatedAt: number;
   conversationCount: number;
   messageCount: number;
+  promptTokens: number;
+  cachedInputTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
   completionTokens: number;
   reasoningTokens: number;
   totalTokenCount: number;
