@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { logout } from '$lib/client/api/auth';
 	import { clearClientAccountState } from '$lib/client/session-boundary';
+	import { t } from '$lib/i18n';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import {
@@ -94,7 +95,7 @@
 		<button
 			class="btn-icon-bare mobile-sidebar-toggle"
 			onclick={toggleSidebar}
-			aria-label="Toggle sidebar"
+			aria-label={$t('header.toggleSidebar')}
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -123,8 +124,8 @@
 				bind:this={triggerRef}
 				class="btn-icon-bare mobile-user-trigger"
 				onclick={toggleMobileMenu}
-				aria-label="Open user menu"
-				title="Open user menu"
+				aria-label={$t('header.openUserMenu')}
+				title={$t('header.openUserMenu')}
 				aria-expanded={mobileMenuOpen}
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -148,7 +149,7 @@
 							<line x1="12" x2="12" y1="5" y2="19" />
 							<line x1="5" x2="19" y1="12" y2="12" />
 						</svg>
-						<span>New chat</span>
+						<span>{$t('header.newChat')}</span>
 					</button>
 					<button
 						class="header-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -161,7 +162,7 @@
 							<path d="M20 21a8 8 0 0 0-16 0" />
 							<circle cx="12" cy="8" r="5" />
 						</svg>
-						<span>Profile &amp; Settings</span>
+						<span>{$t('header.profileAndSettings')}</span>
 					</button>
 					<button
 						class="header-option header-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -172,7 +173,7 @@
 							<polyline points="16 17 21 12 16 7"></polyline>
 							<line x1="21" y1="12" x2="9" y2="12"></line>
 						</svg>
-						<span>Logout</span>
+						<span>{$t('header.logout')}</span>
 					</button>
 				</div>
 			{/if}

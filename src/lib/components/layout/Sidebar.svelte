@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { logout } from '$lib/client/api/auth';
 	import { clearClientAccountState } from '$lib/client/session-boundary';
+	import { t } from '$lib/i18n';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -177,8 +178,8 @@
 			class="desktop-only btn-icon-bare compose-btn"
 			class:ml-auto={!isCollapsed}
 			onclick={toggleCollapse}
-			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-			title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+			aria-label={isCollapsed ? $t('sidebar.expandSidebar') : $t('sidebar.collapseSidebar')}
+			title={isCollapsed ? $t('sidebar.expandSidebar') : $t('sidebar.collapseSidebar')}
 		>
 			{#if isCollapsed}
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -195,7 +196,7 @@
 		<button
 			class="mobile-only btn-icon-bare ml-auto"
 			onclick={() => sidebarOpen.set(false)}
-			aria-label="Close sidebar"
+			aria-label={$t('sidebar.closeSidebar')}
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<line x1="18" x2="6" y1="6" y2="18" />
@@ -213,8 +214,8 @@
 					data-testid="new-conversation"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={handleNewConversation}
-					title="New chat"
-					aria-label="New chat"
+					title={$t('sidebar.newChat')}
+					aria-label={$t('sidebar.newChat')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -225,8 +226,8 @@
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={openSearchModal}
-					title="Search"
-					aria-label="Search conversations and documents"
+					title={$t('sidebar.search')}
+					aria-label={$t('sidebar.searchConversations')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 						<circle cx="11" cy="11" r="7"></circle>
@@ -239,8 +240,8 @@
 					onclick={() => navigateAndClose('/knowledge')}
 					onmouseenter={() => warmRoute('/knowledge')}
 					onfocus={() => warmRoute('/knowledge')}
-					title="Knowledge base"
-					aria-label="Open knowledge base"
+					title={$t('sidebar.knowledgeBase')}
+					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}
 				>
 					{#if knowledgePending}
@@ -274,21 +275,21 @@
 					type="button"
 					class="search-pill flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-text-muted transition-colors duration-150 hover:border-border-focus hover:bg-surface-page focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={openSearchModal}
-					aria-label="Search conversations and documents"
+					aria-label={$t('sidebar.searchConversations')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
 						<circle cx="11" cy="11" r="7"></circle>
 						<path d="m20 20-3.5-3.5"></path>
 					</svg>
-					<span class="flex-1 truncate">Search</span>
+					<span class="flex-1 truncate">{$t('sidebar.search')}</span>
 				</button>
 				<!-- New chat compose button -->
 				<button
 					data-testid="new-conversation"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-accent transition-colors duration-150 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={handleNewConversation}
-					title="New chat"
-					aria-label="New chat"
+					title={$t('sidebar.newChat')}
+					aria-label={$t('sidebar.newChat')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -301,8 +302,8 @@
 					onclick={() => navigateAndClose('/knowledge')}
 					onmouseenter={() => warmRoute('/knowledge')}
 					onfocus={() => warmRoute('/knowledge')}
-					title="Knowledge base"
-					aria-label="Open knowledge base"
+					title={$t('sidebar.knowledgeBase')}
+					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}
 				>
 					{#if knowledgePending}
@@ -350,8 +351,8 @@
 					type="button"
 					class="profile-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={() => navigateAndClose('/settings')}
-					title="Settings"
-					aria-label="Open settings"
+					title={$t('sidebar.settings')}
+					aria-label={$t('sidebar.openSettings')}
 				>
 					<AvatarCircle
 						userId={user?.id ?? 'default'}
@@ -366,8 +367,8 @@
 					type="button"
 					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={handleLogout}
-					title="Logout"
-					aria-label="Logout"
+					title={$t('sidebar.logout')}
+					aria-label={$t('sidebar.logout')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -383,7 +384,7 @@
 					type="button"
 					class="profile-btn flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-1.5 py-1.5 text-sm text-text-secondary transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={() => navigateAndClose('/settings')}
-					aria-label="Open settings"
+					aria-label={$t('sidebar.openSettings')}
 				>
 					<AvatarCircle
 						userId={user?.id ?? 'default'}
@@ -394,7 +395,7 @@
 						size={28}
 					/>
 					<div class="min-w-0 flex-1 text-left">
-						<div class="truncate text-sm font-medium text-text-primary">{user?.displayName ?? 'Profile'}</div>
+						<div class="truncate text-sm font-medium text-text-primary">{user?.displayName ?? $t('sidebar.profile')}</div>
 						<div class="truncate text-xs text-text-muted">{user?.email ?? ''}</div>
 					</div>
 				</button>
@@ -402,8 +403,8 @@
 					type="button"
 					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={handleLogout}
-					title="Logout"
-					aria-label="Logout"
+					title={$t('sidebar.logout')}
+					aria-label={$t('sidebar.logout')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -419,8 +420,8 @@
 		<button
 			type="button"
 			class="sidebar-resize-handle"
-			aria-label="Resize sidebar"
-			title="Resize sidebar"
+			aria-label={$t('sidebar.resizeSidebar')}
+			title={$t('sidebar.resizeSidebar')}
 			onpointerdown={startResize}
 			onkeydown={handleResizeKeydown}
 			ondblclick={() => sidebarWidth.set(SIDEBAR_DEFAULT_WIDTH)}
