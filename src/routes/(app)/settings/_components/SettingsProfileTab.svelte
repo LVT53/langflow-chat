@@ -101,9 +101,9 @@
 	} = $props();
 </script>
 
-<section class=settings-card mb-4>
-	<h2 class=settings-section-title>{$t('settings_avatar')}</h2>
-	<div class=flex items-center gap-4>
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('settings_avatar')}</h2>
+	<div class="flex items-center gap-4">
 		<AvatarCircle
 			{userId}
 			name={userDisplayName}
@@ -112,16 +112,16 @@
 			{cacheBuster}
 			size={48}
 		/>
-		<div class=flex flex-wrap items-center gap-2>
-			<button class=btn-secondary text-sm onclick={onOpenPictureEditor}>
+		<div class="flex flex-wrap items-center gap-2">
+			<button class="btn-secondary text-sm" onclick={onOpenPictureEditor}>
 				{$t('settings_uploadPhoto')}
 			</button>
-			<button class=btn-secondary text-sm onclick={() => (showAvatarPicker = !showAvatarPicker)}>
+			<button class="btn-secondary text-sm" onclick={() => (showAvatarPicker = !showAvatarPicker)}>
 				{showAvatarPicker ? $t('settings_done') : $t('settings_changeColor')}
 			</button>
 			{#if profilePicture}
 				<button
-					class=btn-ghost text-sm
+					class="btn-ghost text-sm"
 					style="color: var(--color-danger);"
 					onclick={onRemovePhoto}
 					disabled={removingPhoto}
@@ -132,7 +132,7 @@
 		</div>
 	</div>
 	{#if showAvatarPicker}
-		<div class=mt-4 flex flex-wrap gap-3>
+		<div class="mt-4 flex flex-wrap gap-3">
 			{#each Array.from({ length: avatarCount }, (_, i) => i) as avatarIndex}
 				<button
 					class={clsx('avatar-swatch', 'rounded-full', 'focus:outline-none', selectedAvatar === avatarIndex && 'avatar-selected')}
@@ -141,7 +141,7 @@
 					aria-label={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
 					title={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
 				>
-					<span class=block text-center text-lg font-semibold leading-none text-white>
+					<span class="block text-center text-lg font-semibold leading-none text-white">
 						{userDisplayName[0]?.toUpperCase() ?? userEmail[0]?.toUpperCase() ?? '?'}
 					</span>
 				</button>
@@ -150,80 +150,80 @@
 	{/if}
 </section>
 
-<section class=settings-card mb-4>
-	<h2 class=settings-section-title>{$t('settings_profileInformation')}</h2>
-	<div class=flex flex-col gap-3>
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('settings_profileInformation')}</h2>
+	<div class="flex flex-col gap-3">
 		<div>
-			<label class=settings-label for=name>{$t('settings_displayName')}</label>
-			<input id=name type=text class=settings-input bind:value={name} placeholder={$t('settings_yourName')} />
+			<label class="settings-label" for="name">{$t('settings_displayName')}</label>
+			<input id="name" type="text" class="settings-input" bind:value={name} placeholder={$t('settings_yourName')} />
 		</div>
 		<div>
-			<label class=settings-label for=email>{$t('settings_emailAddress')}</label>
+			<label class="settings-label" for="email">{$t('settings_emailAddress')}</label>
 			<input
-				id=email
-				type=email
-				class=settings-input
+				id="email"
+				type="email"
+				class="settings-input"
 				bind:value={email}
 				placeholder={$t('settings_emailExample')}
 			/>
 		</div>
 		{#if profileMessage}
-			<p class=text-sm text-success>{profileMessage}</p>
+			<p class="text-sm text-success">{profileMessage}</p>
 		{/if}
 		{#if profileError}
-			<p class=text-sm text-danger>{profileError}</p>
+			<p class="text-sm text-danger">{profileError}</p>
 		{/if}
-		<button class=btn-primary self-start onclick={onSaveProfile} disabled={profileSaving}>
+		<button class="btn-primary self-start" onclick={onSaveProfile} disabled={profileSaving}>
 			{profileSaving ? $t('settings_saving') : $t('settings_save')}
 		</button>
 	</div>
 </section>
 
-<section class=settings-card mb-4>
-	<h2 class=settings-section-title>{$t('settings_changePassword')}</h2>
-	<div class=flex flex-col gap-3>
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('settings_changePassword')}</h2>
+	<div class="flex flex-col gap-3">
 		<PasswordField
-			id=current-pw
+			id="current-pw"
 			label={$t('settings_currentPassword')}
 			bind:value={currentPassword}
 			bind:shown={showCurrentPw}
-			autocomplete=current-password
+			autocomplete="current-password"
 		/>
 		<PasswordField
-			id=new-pw
+			id="new-pw"
 			label={$t('settings_newPassword')}
 			bind:value={newPassword}
 			bind:shown={showNewPw}
-			autocomplete=new-password
+			autocomplete="new-password"
 		/>
 		<PasswordField
-			id=confirm-pw
+			id="confirm-pw"
 			label={$t('settings_confirmNewPassword')}
 			bind:value={confirmPassword}
 			bind:shown={showConfirmPw}
-			autocomplete=new-password
+			autocomplete="new-password"
 		/>
 		{#if passwordMessage}
-			<p class=text-sm text-success>{passwordMessage}</p>
+			<p class="text-sm text-success">{passwordMessage}</p>
 		{/if}
 		{#if passwordError}
-			<p class=text-sm text-danger>{passwordError}</p>
+			<p class="text-sm text-danger">{passwordError}</p>
 		{/if}
-		<button class=btn-primary self-start onclick={onSavePassword} disabled={passwordSaving}>
+		<button class="btn-primary self-start" onclick={onSavePassword} disabled={passwordSaving}>
 			{passwordSaving ? $t('settings_saving') : $t('settings_changePassword')}
 		</button>
 	</div>
 </section>
 
-<section class=settings-card mb-4>
-	<h2 class=settings-section-title>{$t('settings_preferences')}</h2>
-	<div class=flex flex-col gap-5>
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('settings_preferences')}</h2>
+	<div class="flex flex-col gap-5">
 		<div>
-			<p class=settings-label>{$t('settings_defaultModel')}</p>
-			<div class=flex gap-2>
+			<p class="settings-label">{$t('settings_defaultModel')}</p>
+			<div class="flex gap-2">
 				{#each availableModels as model}
 					<button
-						class=pref-pill
+						class="pref-pill"
 						class:pref-pill-active={selectedModel === model.id}
 						onclick={() => onChangeModel(model.id)}
 					>
@@ -234,15 +234,15 @@
 		</div>
 
 		<div>
-			<p class=settings-label>{$t('settings_theme')}</p>
-			<div class=flex gap-2>
+			<p class="settings-label">{$t('settings_theme')}</p>
+			<div class="flex gap-2">
 				{#each [
 					{ value: 'system' as const, label: $t('settings_system') },
 					{ value: 'light' as const, label: $t('settings_light') },
 					{ value: 'dark' as const, label: $t('settings_dark') },
 				] as theme}
 					<button
-						class=pref-pill
+						class="pref-pill"
 						class:pref-pill-active={selectedTheme === theme.value}
 						onclick={() => onChangeTheme(theme.value)}
 					>
@@ -253,14 +253,14 @@
 		</div>
 
 		<div>
-			<p class=settings-label>{$t('uiLanguage')}</p>
-			<div class=flex gap-2>
+			<p class="settings-label">{$t('uiLanguage')}</p>
+			<div class="flex gap-2">
 				{#each [
 					{ value: 'en' as const, label: $t('english') },
 					{ value: 'hu' as const, label: $t('hungarian') },
 				] as lang}
 					<button
-						class=pref-pill
+						class="pref-pill"
 						class:pref-pill-active={selectedUiLanguage === lang.value}
 						onclick={() => onChangeUiLanguage(lang.value)}
 					>
@@ -271,15 +271,15 @@
 		</div>
 
 		<div>
-			<p class=settings-label>{$t('settings_titleLanguage')}</p>
-			<div class=flex gap-2>
+			<p class="settings-label">{$t('settings_titleLanguage')}</p>
+			<div class="flex gap-2">
 				{#each [
 					{ value: 'auto' as const, label: $t('settings_autoDetect') },
 					{ value: 'en' as const, label: $t('settings_english') },
 					{ value: 'hu' as const, label: $t('settings_hungarian') },
 				] as lang}
 					<button
-						class=pref-pill
+						class="pref-pill"
 						class:pref-pill-active={selectedTitleLanguage === lang.value}
 						onclick={() => onChangeTitleLanguage(lang.value)}
 					>
@@ -291,22 +291,22 @@
 	</div>
 </section>
 
-<section class=settings-card settings-card-danger mb-4>
-	<h2 class=settings-section-title text-danger>{$t('settings_dangerZone')}</h2>
-	<p class=mb-4 text-sm text-text-secondary>
+<section class="settings-card settings-card-danger mb-4">
+	<h2 class="settings-section-title text-danger">{$t('settings_dangerZone')}</h2>
+	<p class="mb-4 text-sm text-text-secondary">
 		{$t('settings_resetDescription')}
 	</p>
 	{#if forgetEverythingError}
-		<p class=mb-3 text-sm text-danger>{forgetEverythingError}</p>
+		<p class="mb-3 text-sm text-danger">{forgetEverythingError}</p>
 	{/if}
-	<div class=flex flex-wrap gap-2>
-		<button class=btn-secondary onclick={onOpenResetModal}>
+	<div class="flex flex-wrap gap-2">
+		<button class="btn-secondary" onclick={onOpenResetModal}>
 			{$t('settings_resetAccount')}
 		</button>
-		<button class=btn-danger onclick={onOpenDeleteModal}>
+		<button class="btn-danger" onclick={onOpenDeleteModal}>
 			{$t('settings_deleteAccount')}
 		</button>
-		<button class=btn-secondary style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
+		<button class="btn-secondary" style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
 			{forgetEverythingLoading ? $t('settings_resetting') : $t('settings_resetMemory')}
 		</button>
 	</div>
