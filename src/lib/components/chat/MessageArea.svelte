@@ -1,120 +1,125 @@
 <script lang="ts">
-	import { tick } from 'svelte';
-	import type {
-		ChatGeneratedFileListItem,
-		ChatMessage,
-		ContextDebugState,
-		DocumentWorkspaceItem,
-		TaskSteeringPayload,
-	} from '$lib/types';
-	import MessageBubble from './MessageBubble.svelte';
+import { tick } from "svelte";
+import { t } from "$lib/i18n";
+import type {
+	ChatGeneratedFileListItem,
+	ChatMessage,
+	ContextDebugState,
+	DocumentWorkspaceItem,
+	TaskSteeringPayload,
+} from "$lib/types";
+import MessageBubble from "./MessageBubble.svelte";
 
-	let {
-		messages = [],
-		conversationId = null,
-		isThinkingActive = false,
-		contextDebug = null,
-		generatedFiles = [],
-		onRegenerate = undefined,
-		onEdit = undefined,
-		onSteer = undefined,
-		onOpenDocument = undefined,
-	}: {
-		messages?: ChatMessage[];
-		conversationId?: string | null;
-		isThinkingActive?: boolean;
-		contextDebug?: ContextDebugState | null;
-		generatedFiles?: ChatGeneratedFileListItem[];
-		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
-		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
-		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
-		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
-	} = $props();
+let {
+	messages = [],
+	conversationId = null,
+	isThinkingActive = false,
+	contextDebug = null,
+	generatedFiles = [],
+	onRegenerate = undefined,
+	onEdit = undefined,
+	onSteer = undefined,
+	onOpenDocument = undefined,
+}: {
+	messages?: ChatMessage[];
+	conversationId?: string | null;
+	isThinkingActive?: boolean;
+	contextDebug?: ContextDebugState | null;
+	generatedFiles?: ChatGeneratedFileListItem[];
+	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
+	onEdit?:
+		| ((payload: { messageId: string; newText: string }) => void)
+		| undefined;
+	onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+} = $props();
 
-	let scrollContainer = $state<HTMLDivElement | null>(null);
-	let shouldAutoScroll = true;
-	let lastMessageCount = 0;
-	let lastGeneratedFileCount = 0;
-	let lastConversationId: string | null = null;
-	let shouldJumpToConversationBottom = false;
+let scrollContainer = $state<HTMLDivElement | null>(null);
+let shouldAutoScroll = true;
+let lastMessageCount = 0;
+let lastGeneratedFileCount = 0;
+let lastConversationId: string | null = null;
+let shouldJumpToConversationBottom = false;
 
-	$effect(() => {
-		if (conversationId && conversationId !== lastConversationId) {
-			lastConversationId = conversationId;
-			shouldAutoScroll = true;
-			lastMessageCount = 0;
-			lastGeneratedFileCount = 0;
-			shouldJumpToConversationBottom = true;
-		}
-	});
-
-	function handleScroll() {
-		if (!scrollContainer) return;
-		const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-		const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-		shouldAutoScroll = distanceToBottom < 50;
+$effect(() => {
+	if (conversationId && conversationId !== lastConversationId) {
+		lastConversationId = conversationId;
+		shouldAutoScroll = true;
+		lastMessageCount = 0;
+		lastGeneratedFileCount = 0;
+		shouldJumpToConversationBottom = true;
 	}
+});
 
-	// Detect if a new message was added (not just content updates or ID reconciliation on stream end)
-	function hasNewMessage(currentMessages: ChatMessage[]): boolean {
-		return currentMessages.length > lastMessageCount;
-	}
+function handleScroll() {
+	if (!scrollContainer) return;
+	const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+	const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+	shouldAutoScroll = distanceToBottom < 50;
+}
 
-	function getGeneratedFilesForMessage(messageId: string): ChatGeneratedFileListItem[] {
-		return generatedFiles.filter((file) => file.assistantMessageId === messageId);
-	}
+// Detect if a new message was added (not just content updates or ID reconciliation on stream end)
+function hasNewMessage(currentMessages: ChatMessage[]): boolean {
+	return currentMessages.length > lastMessageCount;
+}
 
-	$effect.pre(() => {
-		messages;
-		scrollContainer;
-		isThinkingActive;
-		generatedFiles.length;
+function getGeneratedFilesForMessage(
+	messageId: string,
+): ChatGeneratedFileListItem[] {
+	return generatedFiles.filter((file) => file.assistantMessageId === messageId);
+}
 
-		if (!scrollContainer) return;
+$effect.pre(() => {
+	messages;
+	scrollContainer;
+	isThinkingActive;
+	generatedFiles.length;
 
-		if (messages.length === 0) {
-			if (shouldJumpToConversationBottom) {
-				// Do not consume the first user send as an initial-load jump for empty conversations.
-				shouldJumpToConversationBottom = false;
-			}
-			lastMessageCount = 0;
-			lastGeneratedFileCount = generatedFiles.length;
-			return;
-		}
+	if (!scrollContainer) return;
 
-		const isNewMessage = hasNewMessage(dedupedMessages);
-		const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
-
+	if (messages.length === 0) {
 		if (shouldJumpToConversationBottom) {
-			// Switching to another conversation should always reveal the latest response.
-			void alignToBottomAfterRender();
+			// Do not consume the first user send as an initial-load jump for empty conversations.
 			shouldJumpToConversationBottom = false;
-		} else if (isNewMessage) {
-			// New message added: jump directly to the latest content.
-			void alignToBottomAfterRender();
-		} else if (hasNewGeneratedFiles && shouldAutoScroll) {
-			// Generated files render inside the latest assistant message; keep that expanded area visible.
-			void alignToBottomAfterRender();
-		} else if (shouldAutoScroll && isThinkingActive) {
-			// Only follow during thinking phase; stop once content streaming begins.
-			instantScrollToBottom();
 		}
-
-		lastMessageCount = dedupedMessages.length;
+		lastMessageCount = 0;
 		lastGeneratedFileCount = generatedFiles.length;
-	});
-
-	function instantScrollToBottom() {
-		if (!scrollContainer) return;
-		scrollContainer.scrollTop = scrollContainer.scrollHeight;
+		return;
 	}
 
-	let pinnedArtifactIds = $derived(
-		contextDebug?.pinnedEvidence.map((evidence) => evidence.artifactId) ?? []
-	);
-	let excludedArtifactIds = $derived(
-		contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? []
-	);
+	const isNewMessage = hasNewMessage(dedupedMessages);
+	const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
+
+	if (shouldJumpToConversationBottom) {
+		// Switching to another conversation should always reveal the latest response.
+		void alignToBottomAfterRender();
+		shouldJumpToConversationBottom = false;
+	} else if (isNewMessage) {
+		// New message added: jump directly to the latest content.
+		void alignToBottomAfterRender();
+	} else if (hasNewGeneratedFiles && shouldAutoScroll) {
+		// Generated files render inside the latest assistant message; keep that expanded area visible.
+		void alignToBottomAfterRender();
+	} else if (shouldAutoScroll && isThinkingActive) {
+		// Only follow during thinking phase; stop once content streaming begins.
+		instantScrollToBottom();
+	}
+
+	lastMessageCount = dedupedMessages.length;
+	lastGeneratedFileCount = generatedFiles.length;
+});
+
+function instantScrollToBottom() {
+	if (!scrollContainer) return;
+	scrollContainer.scrollTop = scrollContainer.scrollHeight;
+}
+
+let pinnedArtifactIds = $derived(
+	contextDebug?.pinnedEvidence.map((evidence) => evidence.artifactId) ?? [],
+);
+let excludedArtifactIds = $derived(
+	contextDebug?.excludedEvidence.map((evidence) => evidence.artifactId) ?? [],
+);
 
 let dedupedMessages = $derived(
 	messages.reduce(
@@ -126,20 +131,20 @@ let dedupedMessages = $derived(
 			}
 			return acc;
 		},
-		{ seen: new Set<string>(), list: [] as ChatMessage[] }
-	).list
+		{ seen: new Set<string>(), list: [] as ChatMessage[] },
+	).list,
 );
 
-	async function alignToBottomAfterRender() {
-		if (!scrollContainer) return;
-		await tick();
+async function alignToBottomAfterRender() {
+	if (!scrollContainer) return;
+	await tick();
+	requestAnimationFrame(() => {
+		instantScrollToBottom();
 		requestAnimationFrame(() => {
 			instantScrollToBottom();
-			requestAnimationFrame(() => {
-				instantScrollToBottom();
-			});
 		});
-	}
+	});
+}
 </script>
 
 <div
@@ -153,9 +158,9 @@ let dedupedMessages = $derived(
 	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg px-sm py-lg md:px-lg md:py-xl lg:px-xl">
 		{#if messages.length === 0}
 			<div class="conversation-empty-state">
-				<div class="conversation-empty-eyebrow">Conversation Ready</div>
+				<div class="conversation-empty-eyebrow">{$t('chat.conversationReady')}</div>
 				<p class="conversation-empty-copy">
-					Your messages and generated files will appear here.
+					{$t('chat.messagesWillAppearHere')}
 				</p>
 			</div>
 		{:else}

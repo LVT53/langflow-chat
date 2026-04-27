@@ -7,6 +7,7 @@
 		revokeAdminUserSessions,
 		updateAdminUserRole,
 	} from '$lib/client/api/settings';
+	import { t } from '$lib/i18n';
 	import CreateUserModal from './CreateUserModal.svelte';
 	import SettingsAdminSystemPane from './SettingsAdminSystemPane.svelte';
 	import SettingsAdminUsersPane from './SettingsAdminUsersPane.svelte';
@@ -192,14 +193,14 @@
 		class:tab-active={activePane === 'system'}
 		onclick={() => openPane('system')}
 	>
-		System
+		{$t('settings_systemTab')}
 	</button>
 	<button
 		class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
 		class:tab-active={activePane === 'users'}
 		onclick={() => openPane('users')}
 	>
-		Users
+		{$t('settings_usersTab')}
 	</button>
 </div>
 

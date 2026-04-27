@@ -480,9 +480,9 @@
 
 {#if showForgetEverythingConfirm}
 	<ConfirmDialog
-		title="Reset Memory"
-		message="Forget everything in the Knowledge Base? This removes persona memory, task continuity, across-chat continuity, documents, results, workflows, and stored evidence traces, but keeps the chat conversations themselves."
-		confirmText={forgetEverythingLoading ? 'Resetting…' : 'Reset Memory'}
+		title={$t('settings_resetMemory')}
+		message={$t('settings_resetMemoryMessage')}
+		confirmText={forgetEverythingLoading ? $t('settings_resetting') : $t('settings_resetMemory')}
 		confirmVariant="danger"
 		onCancel={closeForgetEverythingConfirm}
 		onConfirm={() => {

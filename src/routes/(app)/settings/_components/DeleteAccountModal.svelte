@@ -1,6 +1,7 @@
 <script lang="ts">
 	import DialogShell from '$lib/components/ui/DialogShell.svelte';
 	import PasswordField from './PasswordField.svelte';
+	import { t } from '$lib/i18n';
 
 	let {
 		deletePassword = $bindable(''),
@@ -34,41 +35,41 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <DialogShell
-	title="Delete Account"
-	description="This permanently deletes your account, chats, Knowledge Base, memories, generated files, profile preferences, and avatar. Historical analytics remain as immutable usage records. This cannot be undone."
+	title={$t('settings_deleteAccountTitle')}
+	description={$t('settings_deleteAccountDescription')}
 	onClose={onCancel}
 	maxWidthClass="max-w-[30rem]"
 	zIndexClass="z-[9999]"
 >
 	<div class="max-h-[calc(100vh-2rem)] overflow-y-auto">
 			<form
-				onsubmit={(event) => {
+				-onsubmit={(event) => {
 					event.preventDefault();
 					handleConfirm();
 				}}
 			>
-				<p class="mb-1 text-sm font-medium text-text-primary">Enter your password to confirm:</p>
+				<p class="mb-1 text-sm font-medium text-text-primary">{$t('settings_enterPasswordConfirm')}</p>
 				<PasswordField
 					id="delete-account-password"
-					label="Password"
+					label={$t('settings_passwordLabel')}
 					bind:value={deletePassword}
 					bind:shown={showDeletePw}
 					autocomplete="current-password"
-					placeholder="Your password"
+					placeholder={$t('settings_yourPasswordPlaceholder')}
 				/>
 				{#if deleteError}
 					<p class="mb-3 mt-3 text-sm text-danger">{deleteError}</p>
 				{/if}
 				<div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 					<button type="button" class="btn-secondary w-full sm:w-auto" onclick={onCancel}>
-						Cancel
+						{$t('common_cancel')}
 					</button>
 					<button
 						type="submit"
 						class="btn-danger w-full whitespace-nowrap sm:w-auto"
 						disabled={deleteLoading || !deletePassword}
 					>
-						{deleteLoading ? 'Deleting…' : 'Delete permanently'}
+						{deleteLoading ? $t('settings_deleting') : $t('settings_deletePermanently')}
 					</button>
 				</div>
 			</form>

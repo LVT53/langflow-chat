@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { t } from '$lib/i18n';
 	import type { AdminManagedUserSummary } from '$lib/types';
 
 	type RoleFilter = 'all' | 'user' | 'admin';
@@ -288,9 +289,9 @@
 
 {#if deleteCandidateId}
 	<ConfirmDialog
-		title="Delete User"
-		message="This will permanently delete the selected user account, chats, and stored data. This cannot be undone."
-		confirmText="Delete User"
+		title={$t('settings_deleteUserTitle')}
+		message={$t('settings_deleteUserMessage')}
+		confirmText={$t('settings_deleteUserBtn')}
 		confirmVariant="danger"
 		onCancel={() => (deleteCandidateId = null)}
 		onConfirm={() => {

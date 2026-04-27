@@ -1,6 +1,7 @@
 <script lang="ts">
 	import DialogShell from '$lib/components/ui/DialogShell.svelte';
 	import PasswordField from './PasswordField.svelte';
+	import { t } from '$lib/i18n';
 
 	let {
 		resetPassword = $bindable(''),
@@ -34,41 +35,41 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <DialogShell
-	title="Reset Account"
-	description="This wipes your chats, Knowledge Base, memories, and generated files, but keeps your login credentials, profile preferences, avatar, and historical analytics. You will need to sign in again after the reset finishes."
+	title={$t('settings_resetAccountTitle')}
+	description={$t('settings_resetAccountDescription')}
 	onClose={onCancel}
 	maxWidthClass="max-w-[30rem]"
 	zIndexClass="z-[9999]"
 >
 	<div class="max-h-[calc(100vh-2rem)] overflow-y-auto">
 			<form
-				onsubmit={(event) => {
+				-onsubmit={(event) => {
 					event.preventDefault();
 					handleConfirm();
 				}}
 			>
-				<p class="mb-1 text-sm font-medium text-text-primary">Enter your password to confirm:</p>
+				<p class="mb-1 text-sm font-medium text-text-primary">{$t('settings_enterPasswordConfirm')}</p>
 				<PasswordField
 					id="reset-account-password"
-					label="Password"
+					label={$t('settings_passwordLabel')}
 					bind:value={resetPassword}
 					bind:shown={showResetPw}
 					autocomplete="current-password"
-					placeholder="Your password"
+					placeholder={$t('settings_yourPasswordPlaceholder')}
 				/>
 				{#if resetError}
 					<p class="mb-3 mt-3 text-sm text-danger">{resetError}</p>
 				{/if}
 				<div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 					<button type="button" class="btn-secondary w-full sm:w-auto" onclick={onCancel}>
-						Cancel
+						{$t('common_cancel')}
 					</button>
 					<button
 						type="submit"
 						class="btn-secondary w-full whitespace-nowrap sm:w-auto"
 						disabled={resetLoading || !resetPassword}
 					>
-						{resetLoading ? 'Resetting…' : 'Reset account'}
+						{resetLoading ? $t('settings_resetting') : $t('settings_resetAccount')}
 					</button>
 				</div>
 			</form>

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/i18n';
+
 	let {
 		id,
 		label,
@@ -24,7 +26,7 @@
 			class="pw-toggle"
 			onclick={() => (shown = !shown)}
 			tabindex="-1"
-			aria-label={shown ? 'Hide password' : 'Show password'}
+			aria-label={shown ? $t('settings_hidePassword') : $t('settings_showPassword')}
 		>
 			{#if shown}
 				<svg

@@ -138,8 +138,8 @@
 					class:avatar-selected={selectedAvatar === avatarIndex}
 					style={`background: ${avatarColors[avatarIndex]}; width: 44px; height: 44px;`}
 					onclick={() => onSelectAvatar(avatarIndex)}
-					aria-label={`Avatar ${avatarIndex + 1}`}
-					title={`Avatar ${avatarIndex + 1}`}
+					aria-label={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
+					title={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
 				>
 					<span class=block text-center text-lg font-semibold leading-none text-white>
 						{userDisplayName[0]?.toUpperCase() ?? userEmail[0]?.toUpperCase() ?? '?'}
@@ -236,13 +236,17 @@
 		<div>
 			<p class=settings-label>{$t('settings_theme')}</p>
 			<div class=flex gap-2>
-				{#each ['system', 'light', 'dark'] as theme}
+				{#each [
+					{ value: 'system' as const, label: $t('settings_system') },
+					{ value: 'light' as const, label: $t('settings_light') },
+					{ value: 'dark' as const, label: $t('settings_dark') },
+				] as theme}
 					<button
 						class=pref-pill
-						class:pref-pill-active={selectedTheme === theme}
-						onclick={() => onChangeTheme(theme as Theme)}
+						class:pref-pill-active={selectedTheme === theme.value}
+						onclick={() => onChangeTheme(theme.value)}
 					>
-						{theme.charAt(0).toUpperCase() + theme.slice(1)}
+						{theme.label}
 					</button>
 				{/each}
 			</div>

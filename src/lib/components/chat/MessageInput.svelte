@@ -1,508 +1,563 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
-	import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
-	import { currentConversationId } from '$lib/stores/ui';
-	import ContextUsageRing from './ContextUsageRing.svelte';
-	import ComposerToolsMenu from './ComposerToolsMenu.svelte';
-	import FileAttachment from './FileAttachment.svelte';
-	import type {
-		ArtifactSummary,
-		ContextDebugState,
-		ConversationContextStatus,
-		PendingAttachment,
-		TaskState,
-		TaskSteeringPayload,
-	} from '$lib/types';
+import { onMount, untrack } from "svelte";
+import { t } from "$lib/i18n";
+import { uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
+import { currentConversationId } from "$lib/stores/ui";
+import ContextUsageRing from "./ContextUsageRing.svelte";
+import ComposerToolsMenu from "./ComposerToolsMenu.svelte";
+import FileAttachment from "./FileAttachment.svelte";
+import type {
+	ArtifactSummary,
+	ContextDebugState,
+	ConversationContextStatus,
+	PendingAttachment,
+	TaskState,
+	TaskSteeringPayload,
+} from "$lib/types";
 
-	type SendPayload = {
-		message: string;
-		attachmentIds: string[];
-		attachments: ArtifactSummary[];
-		pendingAttachments: PendingAttachment[];
-		conversationId: string | null;
-	};
+type SendPayload = {
+	message: string;
+	attachmentIds: string[];
+	attachments: ArtifactSummary[];
+	pendingAttachments: PendingAttachment[];
+	conversationId: string | null;
+};
 
-	type DraftPayload = {
-		conversationId: string | null;
-		draftText: string;
-		selectedAttachmentIds: string[];
-		selectedAttachments: PendingAttachment[];
-	};
+type DraftPayload = {
+	conversationId: string | null;
+	draftText: string;
+	selectedAttachmentIds: string[];
+	selectedAttachments: PendingAttachment[];
+};
 
-	let {
-		disabled = false,
-		maxLength = 10000,
-		isGenerating = false,
-		conversationId = null,
-		attachmentsEnabled = false,
-		ensureConversation = null,
-		contextStatus = null,
-		attachedArtifacts = [],
-		taskState = null,
-		contextDebug = null,
-		draftText = '',
-		draftAttachments = [],
-		draftVersion = 0,
-		onSend = undefined,
-		onQueue = undefined,
-		onStop = undefined,
-		onSteer = undefined,
-		onManageEvidence = undefined,
-		onEditQueuedMessage = undefined,
-		onDeleteQueuedMessage = undefined,
-		hasQueuedMessage = false,
-		queuedMessagePreview = '',
-		onDraftChange = undefined,
-		onUploadReady = undefined,
-	}: {
-		disabled?: boolean;
-		maxLength?: number;
-		isGenerating?: boolean;
-		conversationId?: string | null;
-		attachmentsEnabled?: boolean;
-		ensureConversation?: (() => Promise<string>) | null;
-		contextStatus?: ConversationContextStatus | null;
-		attachedArtifacts?: ArtifactSummary[];
-		taskState?: TaskState | null;
-		contextDebug?: ContextDebugState | null;
-		draftText?: string;
-		draftAttachments?: PendingAttachment[];
-		draftVersion?: number;
-		onSend?: ((payload: SendPayload) => void) | undefined;
-		onQueue?: ((payload: SendPayload) => void) | undefined;
-		onStop?: (() => void) | undefined;
-		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
-		onManageEvidence?: (() => void) | undefined;
-		onEditQueuedMessage?: (() => void) | undefined;
-		onDeleteQueuedMessage?: (() => void) | undefined;
-		hasQueuedMessage?: boolean;
-		queuedMessagePreview?: string;
-		onDraftChange?: ((payload: DraftPayload) => void) | undefined;
-		onUploadReady?: ((uploadFn: (files: FileList | null) => Promise<void>) => void) | undefined;
-	} = $props();
+let {
+	disabled = false,
+	maxLength = 10000,
+	isGenerating = false,
+	conversationId = null,
+	attachmentsEnabled = false,
+	ensureConversation = null,
+	contextStatus = null,
+	attachedArtifacts = [],
+	taskState = null,
+	contextDebug = null,
+	draftText = "",
+	draftAttachments = [],
+	draftVersion = 0,
+	onSend = undefined,
+	onQueue = undefined,
+	onStop = undefined,
+	onSteer = undefined,
+	onManageEvidence = undefined,
+	onEditQueuedMessage = undefined,
+	onDeleteQueuedMessage = undefined,
+	hasQueuedMessage = false,
+	queuedMessagePreview = "",
+	onDraftChange = undefined,
+	onUploadReady = undefined,
+}: {
+	disabled?: boolean;
+	maxLength?: number;
+	isGenerating?: boolean;
+	conversationId?: string | null;
+	attachmentsEnabled?: boolean;
+	ensureConversation?: (() => Promise<string>) | null;
+	contextStatus?: ConversationContextStatus | null;
+	attachedArtifacts?: ArtifactSummary[];
+	taskState?: TaskState | null;
+	contextDebug?: ContextDebugState | null;
+	draftText?: string;
+	draftAttachments?: PendingAttachment[];
+	draftVersion?: number;
+	onSend?: ((payload: SendPayload) => void) | undefined;
+	onQueue?: ((payload: SendPayload) => void) | undefined;
+	onStop?: (() => void) | undefined;
+	onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
+	onManageEvidence?: (() => void) | undefined;
+	onEditQueuedMessage?: (() => void) | undefined;
+	onDeleteQueuedMessage?: (() => void) | undefined;
+	hasQueuedMessage?: boolean;
+	queuedMessagePreview?: string;
+	onDraftChange?: ((payload: DraftPayload) => void) | undefined;
+	onUploadReady?:
+		| ((uploadFn: (files: FileList | null) => Promise<void>) => void)
+		| undefined;
+} = $props();
 
-	let textarea = $state<HTMLTextAreaElement | null>(null);
-	let fileInput = $state<HTMLInputElement | null>(null);
-	let message = $state('');
-	let pendingAttachments = $state<PendingAttachment[]>([]);
-	let uploadState = $state<'idle' | 'uploading' | 'preparing'>('idle');
-	let attachmentError = $state('');
-	let resolvedConversationId = $state<string | null>(null);
-	let showToolsMenu = $state(false);
-	let queuedSendAfterProcessing = $state(false);
-	let appliedDraftVersion = -1;
-	let lastEmittedDraftKey = '';
-	let ensureDraftConversationPromise: Promise<string> | null = null;
-	let draftEmissionVersion = 0;
-	// Track attachment IDs that have been sent to prevent re-merging
-	let sentAttachmentIds = $state<Set<string>>(new Set());
-	
-	let isEmpty = $derived(message.trim().length === 0);
-	let isOverMaxLength = $derived(message.length > maxLength);
-	let showCharCount = $derived(message.length > maxLength * 0.8);
-	let charCountColor = $derived(isOverMaxLength ? 'text-danger' : 'text-text-muted');
-	let isUploadingAttachment = $derived(uploadState !== 'idle');
-	let pendingAttachmentArtifacts = $derived(
-		pendingAttachments.map((attachment) => attachment.artifact)
-	);
-	let hasUnreadyAttachment = $derived(
-		pendingAttachments.some((attachment) => !attachment.promptReady)
-	);
-	let attachmentReadinessErrors = $derived(
-		pendingAttachments.filter((attachment) => Boolean(attachment.readinessError))
-	);
-	
-	let canSend = $derived(
-		!isEmpty && !isOverMaxLength && !isUploadingAttachment && !hasUnreadyAttachment
-	);
-	let canQueue = $derived(canSend && isGenerating && !hasQueuedMessage);
-	let canAttach = $derived(
-		attachmentsEnabled && Boolean(resolvedConversationId || ensureConversation) && !isUploadingAttachment
-	);
-	let composerArtifacts = $derived(
-		Array.from(
+let textarea = $state<HTMLTextAreaElement | null>(null);
+let fileInput = $state<HTMLInputElement | null>(null);
+let message = $state("");
+let pendingAttachments = $state<PendingAttachment[]>([]);
+let uploadState = $state<"idle" | "uploading" | "preparing">("idle");
+let attachmentError = $state("");
+let resolvedConversationId = $state<string | null>(null);
+let showToolsMenu = $state(false);
+let queuedSendAfterProcessing = $state(false);
+let appliedDraftVersion = -1;
+let lastEmittedDraftKey = "";
+let ensureDraftConversationPromise: Promise<string> | null = null;
+let draftEmissionVersion = 0;
+// Track attachment IDs that have been sent to prevent re-merging
+let sentAttachmentIds = $state<Set<string>>(new Set());
+
+let isEmpty = $derived(message.trim().length === 0);
+let isOverMaxLength = $derived(message.length > maxLength);
+let showCharCount = $derived(message.length > maxLength * 0.8);
+let charCountColor = $derived(
+	isOverMaxLength ? "text-danger" : "text-text-muted",
+);
+let isUploadingAttachment = $derived(uploadState !== "idle");
+let pendingAttachmentArtifacts = $derived(
+	pendingAttachments.map((attachment) => attachment.artifact),
+);
+let hasUnreadyAttachment = $derived(
+	pendingAttachments.some((attachment) => !attachment.promptReady),
+);
+let attachmentReadinessErrors = $derived(
+	pendingAttachments.filter((attachment) => Boolean(attachment.readinessError)),
+);
+
+let canSend = $derived(
+	!isEmpty &&
+		!isOverMaxLength &&
+		!isUploadingAttachment &&
+		!hasUnreadyAttachment,
+);
+let canQueue = $derived(canSend && isGenerating && !hasQueuedMessage);
+let canAttach = $derived(
+	attachmentsEnabled &&
+		Boolean(resolvedConversationId || ensureConversation) &&
+		!isUploadingAttachment,
+);
+let composerArtifacts = $derived(
+	Array.from(
 		new Map(
-			[...attachedArtifacts, ...pendingAttachmentArtifacts].map((artifact) => [artifact.id, artifact])
-		).values()
-		)
-	);
+			[...attachedArtifacts, ...pendingAttachmentArtifacts].map((artifact) => [
+				artifact.id,
+				artifact,
+			]),
+		).values(),
+	),
+);
 
-	$effect(() => {
-		resolvedConversationId = conversationId;
-		if (!conversationId) {
-			ensureDraftConversationPromise = null;
+$effect(() => {
+	resolvedConversationId = conversationId;
+	if (!conversationId) {
+		ensureDraftConversationPromise = null;
+	}
+});
+
+$effect(() => {
+	// Always merge attachedArtifacts into pendingAttachments
+	// These are conversation-scoped artifacts that exist in the database
+	const currentAttached = attachedArtifacts;
+
+	// Use untrack to prevent subscribing to pendingAttachments changes
+	const currentPending = untrack(() => pendingAttachments);
+
+	// Merge into pendingAttachments, but exclude any that were already sent
+	const merged = new Map<string, PendingAttachment>();
+
+	// Add current pendingAttachments first (they might have newer readiness info)
+	for (const attachment of currentPending) {
+		merged.set(attachment.artifact.id, attachment);
+	}
+
+	// Add attachedArtifacts (only if not already present AND not already sent)
+	for (const artifact of currentAttached) {
+		if (!merged.has(artifact.id) && !sentAttachmentIds.has(artifact.id)) {
+			merged.set(artifact.id, {
+				artifact,
+				promptReady: true,
+				promptArtifactId: null,
+				readinessError: null,
+			});
 		}
-	});
+	}
 
-	$effect(() => {
-		// Always merge attachedArtifacts into pendingAttachments
-		// These are conversation-scoped artifacts that exist in the database
-		const currentAttached = attachedArtifacts;
-		
-		// Use untrack to prevent subscribing to pendingAttachments changes
-		const currentPending = untrack(() => pendingAttachments);
-		
-		// Merge into pendingAttachments, but exclude any that were already sent
+	pendingAttachments = Array.from(merged.values());
+});
+
+$effect(() => {
+	if (draftVersion === appliedDraftVersion) return;
+
+	const shouldApplyDraft =
+		appliedDraftVersion === -1 ||
+		(draftVersion === 0 && draftText.trim().length > 0) ||
+		(message.trim().length === 0 &&
+			pendingAttachments.length === 0 &&
+			draftText.trim().length > 0);
+	appliedDraftVersion = draftVersion;
+
+	if (shouldApplyDraft) {
+		message = draftText;
+
+		// Merge draftAttachments (override existing)
 		const merged = new Map<string, PendingAttachment>();
-		
-		// Add current pendingAttachments first (they might have newer readiness info)
-		for (const attachment of currentPending) {
+
+		// Keep existing pendingAttachments
+		for (const attachment of pendingAttachments) {
 			merged.set(attachment.artifact.id, attachment);
 		}
-		
-		// Add attachedArtifacts (only if not already present AND not already sent)
-		for (const artifact of currentAttached) {
-			if (!merged.has(artifact.id) && !sentAttachmentIds.has(artifact.id)) {
-				merged.set(artifact.id, {
-					artifact,
-					promptReady: true,
-					promptArtifactId: null,
-					readinessError: null,
-				});
-			}
+
+		// Override with draftAttachments
+		for (const attachment of draftAttachments) {
+			merged.set(attachment.artifact.id, attachment);
 		}
-		
+
 		pendingAttachments = Array.from(merged.values());
-	});
-
-	$effect(() => {
-		if (draftVersion === appliedDraftVersion) return;
-
-		const shouldApplyDraft =
-			appliedDraftVersion === -1 ||
-			(draftVersion === 0 && draftText.trim().length > 0) ||
-			(message.trim().length === 0 && pendingAttachments.length === 0 && draftText.trim().length > 0);
-		appliedDraftVersion = draftVersion;
-
-		if (shouldApplyDraft) {
-			message = draftText;
-			
-			// Merge draftAttachments (override existing)
-			const merged = new Map<string, PendingAttachment>();
-			
-			// Keep existing pendingAttachments
-			for (const attachment of pendingAttachments) {
-				merged.set(attachment.artifact.id, attachment);
-			}
-			
-			// Override with draftAttachments
-			for (const attachment of draftAttachments) {
-				merged.set(attachment.artifact.id, attachment);
-			}
-			
-			pendingAttachments = Array.from(merged.values());
-			attachmentError = '';
-			uploadState = 'idle';
-			queuedSendAfterProcessing = false;
-			showToolsMenu = false;
-			lastEmittedDraftKey = '';
-			draftEmissionVersion += 1;
-			adjustHeight();
-		}
-	});
-
-	$effect(() => {
-		if (isGenerating || !queuedSendAfterProcessing || !canSend) return;
-		onSend?.(buildSendPayload());
+		attachmentError = "";
+		uploadState = "idle";
 		queuedSendAfterProcessing = false;
-		clearComposerAfterSubmit();
-	});
-
-	function isMobile(): boolean {
-		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-			return false;
-		}
-		return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-	}
-
-	let lastConversationId = '';
-
-	$effect(() => {
-		const activeConversationId = $currentConversationId;
-
-		if (!activeConversationId || activeConversationId === lastConversationId || !textarea) {
-			return;
-		}
-
-		lastConversationId = activeConversationId;
-		// Only clear if we actually switched conversations, not on initial load if it already has text.
-		if (!message) {
-			message = '';
-			pendingAttachments = [];
-			attachmentError = '';
-			uploadState = 'idle';
-			queuedSendAfterProcessing = false;
-			showToolsMenu = false;
-			lastEmittedDraftKey = '';
-			draftEmissionVersion += 1;
-			adjustHeight();
-			if (!isMobile()) {
-				setTimeout(() => textarea?.focus(), 0);
-			}
-		}
-	});
-
-	function adjustHeight() {
-		if (!textarea) return;
-		requestAnimationFrame(() => {
-			if (!textarea) return;
-			const minHeight = 90;
-			textarea.style.height = `${minHeight}px`;
-			const isMobileDevice = window.innerWidth < 768;
-			const maxHeight = isMobileDevice ? 120 : 240;
-			textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
-		});
-	}
-
-	function handleInput() {
-		message = textarea.value;
+		showToolsMenu = false;
+		lastEmittedDraftKey = "";
 		draftEmissionVersion += 1;
 		adjustHeight();
-		void emitDraftChange();
+	}
+});
+
+$effect(() => {
+	if (isGenerating || !queuedSendAfterProcessing || !canSend) return;
+	onSend?.(buildSendPayload());
+	queuedSendAfterProcessing = false;
+	clearComposerAfterSubmit();
+});
+
+function isMobile(): boolean {
+	if (
+		typeof window === "undefined" ||
+		typeof window.matchMedia !== "function"
+	) {
+		return false;
+	}
+	return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
+
+let lastConversationId = "";
+
+$effect(() => {
+	const activeConversationId = $currentConversationId;
+
+	if (
+		!activeConversationId ||
+		activeConversationId === lastConversationId ||
+		!textarea
+	) {
+		return;
 	}
 
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.isComposing) return;
-		if (event.key === 'Enter' && !event.shiftKey) {
-			event.preventDefault();
-			if (isGenerating) {
-				queue();
-				return;
-			}
-			send();
-		}
-	}
-
-	function buildSendPayload(): SendPayload {
-		return {
-			message: message.trim(),
-			attachmentIds: pendingAttachments.map((attachment) => attachment.artifact.id),
-			attachments: pendingAttachmentArtifacts,
-			pendingAttachments: pendingAttachments.map((attachment) => ({ ...attachment })),
-			conversationId: resolvedConversationId
-		};
-	}
-
-	function clearComposerAfterSubmit() {
-		// Track the IDs of attachments being sent so they don't re-appear
-		for (const attachment of pendingAttachments) {
-			sentAttachmentIds.add(attachment.artifact.id);
-		}
-		// Trigger reactivity by reassigning the Set
-		sentAttachmentIds = sentAttachmentIds;
-		message = '';
+	lastConversationId = activeConversationId;
+	// Only clear if we actually switched conversations, not on initial load if it already has text.
+	if (!message) {
+		message = "";
 		pendingAttachments = [];
-		attachmentError = '';
+		attachmentError = "";
+		uploadState = "idle";
 		queuedSendAfterProcessing = false;
 		showToolsMenu = false;
-		lastEmittedDraftKey = '';
+		lastEmittedDraftKey = "";
 		draftEmissionVersion += 1;
 		adjustHeight();
 		if (!isMobile()) {
-			textarea?.focus();
-		} else {
-			textarea?.blur();
+			setTimeout(() => textarea?.focus(), 0);
 		}
 	}
+});
 
-	function send() {
-		if (isGenerating) return;
-		if (!canSend) {
-			if (!isEmpty && !isOverMaxLength && (isUploadingAttachment || hasUnreadyAttachment)) {
-				queuedSendAfterProcessing = true;
-			}
+function adjustHeight() {
+	if (!textarea) return;
+	requestAnimationFrame(() => {
+		if (!textarea) return;
+		const minHeight = 90;
+		textarea.style.height = `${minHeight}px`;
+		const isMobileDevice = window.innerWidth < 768;
+		const maxHeight = isMobileDevice ? 120 : 240;
+		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
+	});
+}
+
+function handleInput() {
+	message = textarea.value;
+	draftEmissionVersion += 1;
+	adjustHeight();
+	void emitDraftChange();
+}
+
+function handleKeydown(event: KeyboardEvent) {
+	if (event.isComposing) return;
+	if (event.key === "Enter" && !event.shiftKey) {
+		event.preventDefault();
+		if (isGenerating) {
+			queue();
 			return;
 		}
-		onSend?.(buildSendPayload());
-		queuedSendAfterProcessing = false;
-		clearComposerAfterSubmit();
+		send();
 	}
+}
 
-	function queue() {
-		if (!canQueue) return;
-		onQueue?.(buildSendPayload());
-		queuedSendAfterProcessing = false;
-		clearComposerAfterSubmit();
+function buildSendPayload(): SendPayload {
+	return {
+		message: message.trim(),
+		attachmentIds: pendingAttachments.map(
+			(attachment) => attachment.artifact.id,
+		),
+		attachments: pendingAttachmentArtifacts,
+		pendingAttachments: pendingAttachments.map((attachment) => ({
+			...attachment,
+		})),
+		conversationId: resolvedConversationId,
+	};
+}
+
+function clearComposerAfterSubmit() {
+	// Track the IDs of attachments being sent so they don't re-appear
+	for (const attachment of pendingAttachments) {
+		sentAttachmentIds.add(attachment.artifact.id);
 	}
+	// Trigger reactivity by reassigning the Set
+	sentAttachmentIds = sentAttachmentIds;
+	message = "";
+	pendingAttachments = [];
+	attachmentError = "";
+	queuedSendAfterProcessing = false;
+	showToolsMenu = false;
+	lastEmittedDraftKey = "";
+	draftEmissionVersion += 1;
+	adjustHeight();
+	if (!isMobile()) {
+		textarea?.focus();
+	} else {
+		textarea?.blur();
+	}
+}
 
-	function stop() {
-		onStop?.();
-		showToolsMenu = false;
-		if (isMobile()) {
-			textarea.blur();
+function send() {
+	if (isGenerating) return;
+	if (!canSend) {
+		if (
+			!isEmpty &&
+			!isOverMaxLength &&
+			(isUploadingAttachment || hasUnreadyAttachment)
+		) {
+			queuedSendAfterProcessing = true;
 		}
+		return;
 	}
+	onSend?.(buildSendPayload());
+	queuedSendAfterProcessing = false;
+	clearComposerAfterSubmit();
+}
 
-	onMount(() => {
-		if (textarea) {
-			if (!isMobile()) {
-				textarea.focus();
-			}
-			adjustHeight();
-		}
-		window.addEventListener('resize', adjustHeight);
-		onUploadReady?.(uploadFiles);
-		return () => window.removeEventListener('resize', adjustHeight);
-	});
+function queue() {
+	if (!canQueue) return;
+	onQueue?.(buildSendPayload());
+	queuedSendAfterProcessing = false;
+	clearComposerAfterSubmit();
+}
 
-	function openFilePicker() {
-		if (!canAttach) return;
-		showToolsMenu = false;
-		fileInput?.click();
+function stop() {
+	onStop?.();
+	showToolsMenu = false;
+	if (isMobile()) {
+		textarea.blur();
 	}
+}
 
-	function toggleToolsMenu() {
-		showToolsMenu = !showToolsMenu;
-	}
-
-	function closeToolsMenu() {
-		showToolsMenu = false;
-	}
-
-	async function uploadFiles(files: FileList | null) {
-		if (!files) return;
-		uploadState = 'uploading';
-		attachmentError = '';
-		const selectedFiles = Array.from(files);
-		const failures: string[] = [];
-		let preparingTimer: ReturnType<typeof setTimeout> | null = null;
-		if (typeof window !== 'undefined') {
-			preparingTimer = window.setTimeout(() => {
-				uploadState = 'preparing';
-			}, 900);
-		}
-
-		try {
-			const MAX_FILE_SIZE = 100 * 1024 * 1024;
-			for (const file of selectedFiles) {
-				if (file.size > MAX_FILE_SIZE) {
-					failures.push(`${file.name}: File is ${(file.size / (1024 * 1024)).toFixed(0)}MB. Maximum allowed size is 100MB per file.`);
-				}
-			}
-
-			const validFiles = selectedFiles.filter((file) => file.size <= MAX_FILE_SIZE);
-			if (validFiles.length === 0 && selectedFiles.length > 0) {
-				throw new Error('All files exceed the 100MB maximum upload size.');
-			}
-
-			let targetConversationId = resolvedConversationId;
-			if (!targetConversationId && ensureConversation) {
-				targetConversationId = await ensureConversation();
-				resolvedConversationId = targetConversationId;
-			}
-			if (!targetConversationId) {
-				throw new Error('Unable to prepare a conversation for attachments.');
-			}
-			for (const file of validFiles) {
-				try {
-					const payload = await uploadKnowledgeAttachment(file, targetConversationId);
-					if (payload?.artifact) {
-						const next = new Map(
-							pendingAttachments.map((attachment) => [attachment.artifact.id, attachment])
-						);
-						next.set(payload.artifact.id, {
-							artifact: payload.artifact,
-							promptReady: Boolean(payload.promptReady),
-							promptArtifactId:
-								typeof payload.promptArtifactId === 'string' ? payload.promptArtifactId : null,
-							readinessError:
-								typeof payload.readinessError === 'string' && payload.readinessError.trim()
-									? payload.readinessError
-									: null,
-						});
-						pendingAttachments = Array.from(next.values());
-						draftEmissionVersion += 1;
-						void emitDraftChange();
-					}
-				} catch (error) {
-					const reason = error instanceof Error ? error.message : 'Upload failed';
-					failures.push(`${file.name}: ${reason}`);
-				}
-			}
-
-			if (failures.length > 0) {
-				attachmentError = failures.length === selectedFiles.length
-					? `Failed to upload ${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}.`
-					: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload.`;
-			}
-		} catch (error) {
-			attachmentError = error instanceof Error ? error.message : 'Failed to upload attachment.';
-		} finally {
-			if (preparingTimer) {
-				clearTimeout(preparingTimer);
-			}
-			uploadState = 'idle';
-			if (fileInput) fileInput.value = '';
-		}
-	}
-
-	function removePendingAttachment(id: string) {
-		pendingAttachments = pendingAttachments.filter((attachment) => attachment.artifact.id !== id);
-		if (pendingAttachments.length === 0) {
-			queuedSendAfterProcessing = false;
-		}
-		draftEmissionVersion += 1;
-		void emitDraftChange();
-	}
-
-	function handleSteering(payload: TaskSteeringPayload) {
-		onSteer?.(payload);
-	}
-
-	function handleManageEvidence() {
-		onManageEvidence?.();
-	}
-
-	function editQueuedMessage() {
-		onEditQueuedMessage?.();
+onMount(() => {
+	if (textarea) {
 		if (!isMobile()) {
-			textarea?.focus();
+			textarea.focus();
 		}
+		adjustHeight();
+	}
+	window.addEventListener("resize", adjustHeight);
+	onUploadReady?.(uploadFiles);
+	return () => window.removeEventListener("resize", adjustHeight);
+});
+
+function openFilePicker() {
+	if (!canAttach) return;
+	showToolsMenu = false;
+	fileInput?.click();
+}
+
+function toggleToolsMenu() {
+	showToolsMenu = !showToolsMenu;
+}
+
+function closeToolsMenu() {
+	showToolsMenu = false;
+}
+
+async function uploadFiles(files: FileList | null) {
+	if (!files) return;
+	uploadState = "uploading";
+	attachmentError = "";
+	const selectedFiles = Array.from(files);
+	const failures: string[] = [];
+	let preparingTimer: ReturnType<typeof setTimeout> | null = null;
+	if (typeof window !== "undefined") {
+		preparingTimer = window.setTimeout(() => {
+			uploadState = "preparing";
+		}, 900);
 	}
 
-	function deleteQueuedMessage() {
-		onDeleteQueuedMessage?.();
-		if (!isMobile()) {
-			textarea?.focus();
+	try {
+		const MAX_FILE_SIZE = 100 * 1024 * 1024;
+		for (const file of selectedFiles) {
+			if (file.size > MAX_FILE_SIZE) {
+				failures.push(
+					`${file.name}: ${$t("chat.fileSizeExceeded", { size: (file.size / (1024 * 1024)).toFixed(0), max: 100 })}`,
+				);
+			}
 		}
-	}
 
-	async function ensureDraftConversationId(): Promise<string | null> {
-		if (resolvedConversationId) return resolvedConversationId;
-		if (!ensureConversation) return null;
-		if (!ensureDraftConversationPromise) {
-			ensureDraftConversationPromise = ensureConversation()
-				.then((id) => {
-					resolvedConversationId = id;
-					return id;
-				})
-				.finally(() => {
-					ensureDraftConversationPromise = null;
-				});
+		const validFiles = selectedFiles.filter(
+			(file) => file.size <= MAX_FILE_SIZE,
+		);
+		if (validFiles.length === 0 && selectedFiles.length > 0) {
+			throw new Error($t("chat.allFilesTooLarge", { max: 100 }));
 		}
-		return ensureDraftConversationPromise;
-	}
 
-	async function emitDraftChange(force = false) {
-		const emissionVersion = draftEmissionVersion;
-		const nextMessage = message;
-		const nextPendingAttachments = pendingAttachments.map((attachment) => ({ ...attachment }));
-		const hasMeaningfulDraft = nextMessage.trim().length > 0 || nextPendingAttachments.length > 0;
-		const draftConversationId = hasMeaningfulDraft
-			? await ensureDraftConversationId()
-			: resolvedConversationId;
-		if (emissionVersion !== draftEmissionVersion) return;
-		const payload = {
-			conversationId: draftConversationId,
-			draftText: nextMessage,
-			selectedAttachmentIds: nextPendingAttachments.map((attachment) => attachment.artifact.id),
-			selectedAttachments: nextPendingAttachments,
-		};
-		const key = JSON.stringify(payload);
-		if (!force && key === lastEmittedDraftKey) return;
-		lastEmittedDraftKey = key;
-		onDraftChange?.(payload);
+		let targetConversationId = resolvedConversationId;
+		if (!targetConversationId && ensureConversation) {
+			targetConversationId = await ensureConversation();
+			resolvedConversationId = targetConversationId;
+		}
+		if (!targetConversationId) {
+			throw new Error($t("chat.uploadError"));
+		}
+		for (const file of validFiles) {
+			try {
+				const payload = await uploadKnowledgeAttachment(
+					file,
+					targetConversationId,
+				);
+				if (payload?.artifact) {
+					const next = new Map(
+						pendingAttachments.map((attachment) => [
+							attachment.artifact.id,
+							attachment,
+						]),
+					);
+					next.set(payload.artifact.id, {
+						artifact: payload.artifact,
+						promptReady: Boolean(payload.promptReady),
+						promptArtifactId:
+							typeof payload.promptArtifactId === "string"
+								? payload.promptArtifactId
+								: null,
+						readinessError:
+							typeof payload.readinessError === "string" &&
+							payload.readinessError.trim()
+								? payload.readinessError
+								: null,
+					});
+					pendingAttachments = Array.from(next.values());
+					draftEmissionVersion += 1;
+					void emitDraftChange();
+				}
+			} catch (error) {
+				const reason =
+					error instanceof Error ? error.message : $t("chat.uploadError");
+				failures.push(`${file.name}: ${reason}`);
+			}
+		}
+
+		if (failures.length > 0) {
+			attachmentError =
+				failures.length === selectedFiles.length
+					? $t("chat.uploadAllFailed", { count: selectedFiles.length })
+					: $t("chat.uploadSomeFailed", { count: failures.length });
+		}
+	} catch (error) {
+		attachmentError =
+			error instanceof Error
+				? error.message
+				: $t("chat.uploadAttachmentFailed");
+	} finally {
+		if (preparingTimer) {
+			clearTimeout(preparingTimer);
+		}
+		uploadState = "idle";
+		if (fileInput) fileInput.value = "";
 	}
+}
+
+function removePendingAttachment(id: string) {
+	pendingAttachments = pendingAttachments.filter(
+		(attachment) => attachment.artifact.id !== id,
+	);
+	if (pendingAttachments.length === 0) {
+		queuedSendAfterProcessing = false;
+	}
+	draftEmissionVersion += 1;
+	void emitDraftChange();
+}
+
+function handleSteering(payload: TaskSteeringPayload) {
+	onSteer?.(payload);
+}
+
+function handleManageEvidence() {
+	onManageEvidence?.();
+}
+
+function editQueuedMessage() {
+	onEditQueuedMessage?.();
+	if (!isMobile()) {
+		textarea?.focus();
+	}
+}
+
+function deleteQueuedMessage() {
+	onDeleteQueuedMessage?.();
+	if (!isMobile()) {
+		textarea?.focus();
+	}
+}
+
+async function ensureDraftConversationId(): Promise<string | null> {
+	if (resolvedConversationId) return resolvedConversationId;
+	if (!ensureConversation) return null;
+	if (!ensureDraftConversationPromise) {
+		ensureDraftConversationPromise = ensureConversation()
+			.then((id) => {
+				resolvedConversationId = id;
+				return id;
+			})
+			.finally(() => {
+				ensureDraftConversationPromise = null;
+			});
+	}
+	return ensureDraftConversationPromise;
+}
+
+async function emitDraftChange(force = false) {
+	const emissionVersion = draftEmissionVersion;
+	const nextMessage = message;
+	const nextPendingAttachments = pendingAttachments.map((attachment) => ({
+		...attachment,
+	}));
+	const hasMeaningfulDraft =
+		nextMessage.trim().length > 0 || nextPendingAttachments.length > 0;
+	const draftConversationId = hasMeaningfulDraft
+		? await ensureDraftConversationId()
+		: resolvedConversationId;
+	if (emissionVersion !== draftEmissionVersion) return;
+	const payload = {
+		conversationId: draftConversationId,
+		draftText: nextMessage,
+		selectedAttachmentIds: nextPendingAttachments.map(
+			(attachment) => attachment.artifact.id,
+		),
+		selectedAttachments: nextPendingAttachments,
+	};
+	const key = JSON.stringify(payload);
+	if (!force && key === lastEmittedDraftKey) return;
+	lastEmittedDraftKey = key;
+	onDraftChange?.(payload);
+}
 </script>
 
 <div class="composer-root relative flex w-full flex-col">
@@ -520,7 +575,7 @@
 			bind:value={message}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
-			placeholder="Type a message..."
+			placeholder={$t('chat.messagePlaceholder')}
 			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[14px] md:text-[15px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
 			rows="1"
 		></textarea>
@@ -545,10 +600,10 @@
 			>
 				<div class="min-w-0">
 					<p class="text-[11px] font-sans font-medium uppercase tracking-[0.12em] text-text-muted">
-						Queued next
+						{$t('chat.queuedNext')}
 					</p>
 					<p class="truncate text-[13px] font-sans text-text-primary">
-						{queuedMessagePreview || 'Next message queued.'}
+						{queuedMessagePreview || $t('chat.nextMessageQueued')}
 					</p>
 				</div>
 				<div class="flex items-center gap-2">
@@ -558,7 +613,7 @@
 						class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-muted transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
 						onclick={deleteQueuedMessage}
 					>
-						Delete
+						{$t('chat.delete')}
 					</button>
 					<button
 						data-testid="edit-queued-button"
@@ -566,7 +621,7 @@
 						class="rounded-full border border-border px-3 py-1 text-[12px] font-sans font-medium text-text-primary transition-colors duration-150 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
 						onclick={editQueuedMessage}
 					>
-						Edit
+						{$t('chat.edit')}
 					</button>
 				</div>
 			</div>
@@ -579,7 +634,7 @@
 						type="button"
 						class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted"
 						onclick={toggleToolsMenu}
-						aria-label="Open composer tools"
+						aria-label={$t('chat.openComposerTools')}
 						aria-expanded={showToolsMenu}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -615,17 +670,17 @@
 							data-testid="queue-button"
 							type="button"
 							onclick={queue}
-							aria-label="Queue next message"
+							aria-label={$t('chat.queueMessage')}
 							class="queue-button flex h-[50px] items-center justify-center rounded-[15px] border border-border bg-surface-page px-4 text-[13px] font-sans font-medium text-text-primary shadow-sm animate-in"
 						>
-							Queue
+							{$t('chat.queueMessage')}
 						</button>
 					{/if}
 					<button
 						data-testid="stop-button"
 						type="button"
 						onclick={stop}
-						aria-label="Stop generation"
+						aria-label={$t('chat.stop')}
 						class="composer-stop-accent flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
@@ -638,7 +693,7 @@
 						type="button"
 						onclick={send}
 						disabled={!canSend || disabled}
-						aria-label="Send message"
+						aria-label={$t('chat.sendMessage')}
 						class="btn-primary composer-send flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -654,7 +709,7 @@
 	{#if showCharCount}
 		<div class="mt-1 flex justify-end px-2">
 			<span class="text-[12px] font-sans {charCountColor}">
-				{message.length}/{maxLength}
+				{$t('chat.characterCount', { current: message.length, max: maxLength })}
 			</span>
 		</div>
 	{/if}
@@ -662,12 +717,12 @@
 	{#if isUploadingAttachment || attachmentError || attachmentReadinessErrors.length > 0 || queuedSendAfterProcessing}
 		<div class="mt-2 flex flex-col gap-1 px-2 text-xs font-sans">
 			{#if uploadState === 'uploading'}
-				<span class="text-text-muted">Uploading file...</span>
+				<span class="text-text-muted">{$t('chat.uploadingFile')}</span>
 			{:else if uploadState === 'preparing'}
-				<span class="text-text-muted">Extracting document text… this can take up to ~10s for scanned PDFs.</span>
+				<span class="text-text-muted">{$t('chat.extractingDocument')}</span>
 			{/if}
 			{#if queuedSendAfterProcessing && (isUploadingAttachment || hasUnreadyAttachment)}
-				<span class="text-text-muted">Message will send automatically when file processing finishes.</span>
+				<span class="text-text-muted">{$t('chat.messageWillSendAutomatically')}</span>
 			{/if}
 			{#if attachmentError}
 				<span class="text-danger">{attachmentError}</span>
