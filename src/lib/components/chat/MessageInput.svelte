@@ -171,7 +171,7 @@
 		const shouldApplyDraft =
 			appliedDraftVersion === -1 ||
 			(draftVersion === 0 && draftText.trim().length > 0) ||
-			(message.trim().length === 0 && pendingAttachments.length === 0);
+			(message.trim().length === 0 && pendingAttachments.length === 0 && draftText.trim().length > 0);
 		appliedDraftVersion = draftVersion;
 
 		if (shouldApplyDraft) {
