@@ -92,7 +92,7 @@
 		{/if}
 
 		<div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-			<button type="button" class="btn-secondary w-full sm:w-auto" onclick={onCancel}>{$t('common_cancel')}</button>
+			<button type="button" class="btn-secondary w-full sm:w-auto" onclick={onCancel}>{$t('common.cancel')}</button>
 			<button
 				type="button"
 				class="btn-primary w-full whitespace-nowrap sm:w-auto"
