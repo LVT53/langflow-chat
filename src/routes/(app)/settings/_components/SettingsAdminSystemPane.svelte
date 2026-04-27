@@ -43,6 +43,15 @@ let providers = $state<InferenceProvider[]>([]);
 let providersLoading = $state(false);
 let providersError = $state("");
 let providersMessage = $state("");
+let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showProvidersMessage(text: string) {
+	clearTimeout(providersMessageTimer);
+	providersMessage = text;
+	providersMessageTimer = setTimeout(() => {
+		providersMessage = "";
+	}, 4000);
+}
 
 // Modal state
 let showModal = $state(false);
@@ -142,7 +151,7 @@ async function handleModalSave(data: Record<string, unknown>) {
 	try {
 		if (modalIsCreate) {
 			await createProvider(data as any);
-			providersMessage = $t("admin.providerAdded");
+			showProvidersMessage($t("admin.providerAdded"));
 		} else if (modalModel?.isBuiltIn) {
 			// Save built-in model config via admin config keys
 			const prefix = modalModel.name === "model1" ? "MODEL_1" : "MODEL_2";
@@ -182,10 +191,10 @@ async function handleModalSave(data: Record<string, unknown>) {
 				adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`] =
 					data.maxMessageLength != null ? String(data.maxMessageLength) : "";
 			await onSaveAdminConfig?.();
-			providersMessage = `${modalModel.displayName || modelNameDisplay(modalModel.name)} ${$t("common.updated").toLowerCase()}`;
+			showProvidersMessage(`${modalModel.displayName || modelNameDisplay(modalModel.name)} ${$t("common.updated").toLowerCase()}`);
 		} else if (modalModel) {
 			await updateProvider(modalModel.id, data as any);
-			providersMessage = $t("admin.providerUpdated");
+			showProvidersMessage($t("admin.providerUpdated"));
 		}
 		closeModal();
 		await loadProviders();
@@ -204,7 +213,7 @@ async function handleDelete(provider: InferenceProvider) {
 	providersMessage = "";
 	try {
 		await deleteProvider(provider.id);
-		providersMessage = $t("admin.providerDeleted");
+		showProvidersMessage($t("admin.providerDeleted"));
 		await loadProviders();
 	} catch (e: any) {
 		providersError = e.message ?? $t("admin.failedDeleteProvider");
@@ -217,9 +226,9 @@ async function handleValidate(provider: InferenceProvider) {
 	try {
 		const result = await validateProvider(provider.id);
 		if (result.valid) {
-			providersMessage = $t("admin.providerValid", {
+			showProvidersMessage($t("admin.providerValid", {
 				name: provider.displayName,
-			});
+			}));
 		} else {
 			providersError = $t("admin.validationFailed", {
 				error: result.error ?? "Unknown error",

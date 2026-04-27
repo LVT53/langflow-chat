@@ -130,6 +130,20 @@
 	} | null>(null);
 	let honchoLoading = $state(false);
 
+	// Auto-dismiss success messages after 4 seconds
+	let messageTimers: ReturnType<typeof setTimeout>[] = [];
+	function showMessage(field: 'profileMessage' | 'passwordMessage' | 'adminMessage', text: string) {
+		if (field === 'profileMessage') profileMessage = text;
+		else if (field === 'passwordMessage') passwordMessage = text;
+		else adminMessage = text;
+		const timer = setTimeout(() => {
+			if (field === 'profileMessage') profileMessage = '';
+			else if (field === 'passwordMessage') passwordMessage = '';
+			else adminMessage = '';
+		}, 4000);
+		messageTimers.push(timer);
+	}
+
 	let analyticsData = $state<any>(null);
 	let analyticsLoading = $state(false);
 	let analyticsError = $state('');
@@ -167,7 +181,7 @@
 		profileError = '';
 		try {
 			await updateProfile({ name: name.trim() || null, email });
-			profileMessage = 'Profile updated.';
+			showMessage('profileMessage', 'Profile updated.');
 		} catch (error: any) {
 			profileError = error.message;
 		} finally {
@@ -189,7 +203,7 @@
 		passwordSaving = true;
 		try {
 			await updatePassword({ currentPassword, newPassword });
-			passwordMessage = 'Password changed.';
+			showMessage('passwordMessage', 'Password changed.');
 			currentPassword = '';
 			newPassword = '';
 			confirmPassword = '';
@@ -309,7 +323,7 @@
 		adminError = '';
 		try {
 			await updateAdminConfig(adminConfig);
-			adminMessage = 'Configuration saved.';
+			showMessage('adminMessage', 'Configuration saved.');
 		} catch (error: any) {
 			adminError = error.message;
 		} finally {

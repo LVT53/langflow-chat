@@ -118,24 +118,7 @@
 					{personaMemoryCount}
 				</span>
 				</div>
-				<div class="mt-4 flex flex-wrap gap-2">
-					{#if activeConstraintCount > 0}
-						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
-							{activeConstraintCount} {$t('memory.activeConstraint')}{activeConstraintCount === 1 ? '' : 's'}
-						</span>
-					{/if}
-					{#if currentProjectContextCount > 0}
-						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
-							{currentProjectContextCount} {$t('memory.currentProjectContext')}{currentProjectContextCount === 1 ? '' : 's'}
-						</span>
-					{/if}
-				</div>
-
-				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-					{$t('memory.personaDescription')}
-				</p>
-
-				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
+				<div class="mt-4 flex flex-wrap items-center gap-3">
 					<button
 						type="button"
 						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
@@ -208,11 +191,22 @@
 				{#if honchoEnabled && memoryLoaded}
 					<button
 						type="button"
-						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
+						class="cursor-pointer rounded-full border border-border px-3 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-elevated disabled:opacity-50"
 						onclick={onRetryLiveOverview}
 						disabled={liveOverviewRefreshing}
 					>
-						{liveOverviewRefreshing ? $t('memory.refreshingOverview') : $t('memory.refreshOverview')}
+						{#if liveOverviewRefreshing}
+							<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+							</svg>
+						{:else}
+							<svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+								<path d="M21 3v5h-5"/>
+								<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+								<path d="M3 21v-5h5"/>
+							</svg>
+						{/if}
 					</button>
 				{/if}
 			</div>
@@ -224,10 +218,6 @@
 				{:else if honchoOverviewSource === 'persona_fallback'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 						{$t('memory.personaFallbackNotice')}
-					</p>
-				{:else if honchoOverviewSource === 'honcho_scoped'}
-					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-						{$t('memory.honchoScopedNotice')}
 					</p>
 				{/if}
 				<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">

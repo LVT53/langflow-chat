@@ -231,7 +231,7 @@
 									{#each conversationResults as conversation (conversation.id)}
 										<button
 											type="button"
-											class="search-result-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
+											class="search-result-item flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-surface-elevated"
 											class:active={conversation.id === $currentConversationId}
 											onclick={() => handleSelection(conversation.id)}
 										>

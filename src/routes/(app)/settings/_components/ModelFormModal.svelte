@@ -6,6 +6,12 @@ import type { InferenceProvider } from "$lib/client/api/admin";
 
 const tVal = get(t);
 
+function handleKeydown(e: KeyboardEvent) {
+	if (e.key === 'Escape') {
+		onClose?.();
+	}
+}
+
 let {
 	model = null,
 	isCreate = false,
@@ -135,6 +141,7 @@ function handleSave() {
 }
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
 <div class="modal-overlay" role="dialog" aria-modal="true" aria-label={isCreate ? $t('admin.addModel') : $t('admin.editModel')}>
 	<div class="modal-card">
 		<div class="modal-header">

@@ -389,6 +389,7 @@ const dictionary = {
 		"admin.fillRequiredBuiltIn":
 			"Fill in display name, base URL, and model name.",
 		"admin.saveChanges": "Save Changes",
+		"admin.saveConfiguration": "Save Configuration",
 		// Admin - Create User Modal
 		"admin.createUserTitle": "Create User",
 		"admin.createUserDescription":
@@ -580,12 +581,12 @@ const dictionary = {
 		"memory.failedLoad": "Memory Profile failed to load.",
 		"memory.tryAgain": "Try again",
 		"memory.managePersona": "Manage durable profile memories",
-		"memory.manageFocus": "Manage focus continuity",
+		"memory.manageFocus": "Manage",
 		"memory.activeConstraint": "active constraint",
 		"memory.currentProjectContext": "current project context item",
 		"memory.personaDescription":
 			"Review and forget stored persona memories in a compact table instead of scanning long card stacks.",
-		"memory.managePersonaMemory": "Manage persona memory",
+		"memory.managePersonaMemory": "Manage",
 		"memory.focusDescription":
 			"Focus continuity combines per-chat task checkpoints with across-chat continuity groups in one background system.",
 		"memory.lastLiveOverview": "Last live overview",
@@ -1037,6 +1038,7 @@ const dictionary = {
 		"admin.fillRequiredBuiltIn":
 			"Töltse ki a megjelenített nevet, az alap URL-t és a modell nevét.",
 		"admin.saveChanges": "Változtatások mentése",
+		"admin.saveConfiguration": "Konfiguráció mentése",
 		// Admin - Create User Modal
 		"admin.createUserTitle": "Felhasználó létrehozása",
 		"admin.createUserDescription":
@@ -1233,12 +1235,12 @@ const dictionary = {
 		"memory.failedLoad": "A memóriaprofil betöltése sikertelen.",
 		"memory.tryAgain": "Próbáld újra",
 		"memory.managePersona": "Tartós profil-emlékek kezelése",
-		"memory.manageFocus": "Fókusz-folytonosság kezelése",
+		"memory.manageFocus": "Kezelés",
 		"memory.activeConstraint": "aktív korlátozás",
 		"memory.currentProjectContext": "aktuális projektkontextus-elem",
 		"memory.personaDescription":
 			"Tekintsd át és felejtsd el a tárolt személyiség-emlékeket egy kompakt táblázatban a hosszú kártyastackek böngészése helyett.",
-		"memory.managePersonaMemory": "Személyiség-emlékek kezelése",
+		"memory.managePersonaMemory": "Kezelés",
 		"memory.focusDescription":
 			"A fókusz-folytonosság egy háttérrendszerben egyesíti a beszélgetésenkénti feladat-ellenőrzőpontokat és a chatek közötti folytonossági csoportokat.",
 		"memory.lastLiveOverview": "Utolsó élő áttekintés",
