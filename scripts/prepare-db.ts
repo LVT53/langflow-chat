@@ -64,6 +64,7 @@ const autoCreateColumns: Array<[string, string, string]> = [
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
 const HONCHO_PEER_VERSION_MIGRATION_TAG = '1775416800000_users_honcho_peer_version';
 const TITLE_LANGUAGE_MIGRATION_TAG = '1777140000003_users_title_language';
+const INFERENCE_PROVIDERS_CREATION_TAG = '1777140000000_inference_providers';
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -207,6 +208,32 @@ function syncMigrationJournalToBaselineSchema(): number {
 	return insertedCount;
 }
 
+function backfillTableMigrationIfNeeded(tag: string): number {
+	const journal = readMigrationJournalEntries();
+	const migrationIndex = journal.entries.findIndex((entry) => entry.tag === tag);
+	if (migrationIndex === -1) {
+		throw new Error(`Cannot find migration tag ${tag} in drizzle/meta/_journal.json`);
+	}
+
+	const migrations = readMigrationFiles({ migrationsFolder: './drizzle' });
+	const migrationMeta = migrations[migrationIndex];
+	if (!migrationMeta) {
+		throw new Error(`Cannot resolve migration metadata for tag ${tag}`);
+	}
+
+	const existingHashes = listMigrationHashes();
+	if (existingHashes.has(migrationMeta.hash)) {
+		return 0;
+	}
+
+	ensureMigrationJournal();
+	sqlite
+		.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+		.run(migrationMeta.hash, String(migrationMeta.folderMillis));
+
+	return 1;
+}
+
 function backfillColumnMigrationIfNeeded(params: {
 	table: string;
 	column: string;
@@ -291,6 +318,15 @@ try {
 		if (adoptedTitleLanguageMigrationCount > 0) {
 			console.log(
 				`Backfilled ${adoptedTitleLanguageMigrationCount} Drizzle migration record for existing users.title_language column in ${databasePath}.`
+			);
+		}
+
+		const adoptedInferenceProvidersMigrationCount = backfillTableMigrationIfNeeded(
+			INFERENCE_PROVIDERS_CREATION_TAG
+		);
+		if (adoptedInferenceProvidersMigrationCount > 0) {
+			console.log(
+				`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record for existing inference_providers table in ${databasePath}.`
 			);
 		}
 
