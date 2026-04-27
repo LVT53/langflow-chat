@@ -61,13 +61,15 @@ async function openAdministrationTab(page: Page) {
   await page.goto('/settings');
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Administration' }).click();
-  await expect(page.locator('#MODEL_1_SYSTEM_PROMPT')).toBeVisible();
+  // Wait for the Models section header to be visible (always present on the System tab)
+  await expect(page.getByText('Add Provider')).toBeVisible();
 }
 
 async function openAdministrationUsersPane(page: Page) {
   await page.goto('/settings');
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Administration' }).click();
+  await expect(page.getByText('Add Provider')).toBeVisible();
   await page.getByRole('button', { name: 'Users' }).click();
   await expect(page.getByRole('button', { name: 'Create User' })).toBeVisible();
 }
@@ -93,7 +95,7 @@ async function reloadAdministrationTab(page: Page) {
   await page.reload();
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Administration' }).click();
-  await expect(page.locator('#MODEL_1_SYSTEM_PROMPT')).toBeVisible();
+  await expect(page.getByText('Add Provider')).toBeVisible();
 }
 
 test.describe('Admin prompt settings', () => {
@@ -305,5 +307,40 @@ test.describe('Admin user management', () => {
     ]);
 
     await expect(page.getByText(uniqueEmail)).not.toBeVisible();
+  });
+});
+
+test.describe('Flow ID auto-save', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await setAdminOverrideViaApi(page, 'MODEL_1_FLOW_ID', '');
+    await openAdministrationTab(page);
+  });
+
+  test.afterEach(async ({ page }) => {
+    await setAdminOverrideViaApi(page, 'MODEL_1_FLOW_ID', '');
+  });
+
+  test('should persist Flow ID across page reload after saving from the built-in model modal', async ({ page }) => {
+    const model1Card = page.locator('.rounded-md.border').filter({ hasText: 'Built-in' }).filter({ hasText: 'Model 1' });
+    await model1Card.getByRole('button', { name: 'Edit' }).click();
+
+    await expect(page.locator('#form-flow-id')).toBeVisible();
+
+    const timestamp = Date.now();
+    const testFlowId = `auto-save-test-${timestamp}`;
+    await page.locator('#form-flow-id').fill(testFlowId);
+
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+
+    await expect(page.locator('#form-flow-id')).not.toBeVisible();
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'Administration' }).click();
+
+    await model1Card.getByRole('button', { name: 'Edit' }).click();
+
+    await expect(page.locator('#form-flow-id')).toHaveValue(testFlowId);
   });
 });
