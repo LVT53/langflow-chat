@@ -41,7 +41,7 @@ if (!process.env.DATABASE_PATH) {
 
 import Database from 'better-sqlite3';
 import { dirname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 
 const databasePath = process.env.DATABASE_PATH;
 const dbDir = dirname(databasePath);
@@ -64,62 +64,29 @@ function micro(dollars: number): number {
   return Math.round(dollars * 1_000_000);
 }
 
-// ── PRICE RULES ──────────────────────────────────────────────
-// Format: { id, model_id?, model_name?, input, cached_input, cache_hit, cache_miss, output }
-// All prices in DOLLARS per 1M tokens.
-//
-// To add or change prices: edit the numbers below and re-run the script.
+import { join } from 'path';
 
-const rules = [
+const scriptDir = import.meta.dirname ?? '.';
 
-  // Built-in model slots (match by modelId, priority 1)
-  // These apply to Model 1 / Model 2 regardless of what you type as model name.
-  // Change the prices here to match whatever model Model 1 or Model 2 uses.
-  { id: 'model1-default', model_id: 'model1', model_name: '',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
-  { id: 'model2-default', model_id: 'model2', model_name: '',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
+// Try user's custom prices.json first, fall back to prices.default.json
+const userPricesPath = join(scriptDir, 'prices.json');
+const defaultPricesPath = join(scriptDir, 'prices.default.json');
+const pricesPath = existsSync(userPricesPath) ? userPricesPath : defaultPricesPath;
 
-  // DeepSeek (match by model_name, priority 3)
-  // To use these prices: set "Model Name" in admin settings to match.
-  { id: 'deepseek-v4-flash', model_name: 'deepseek-v4-flash',
-    input: 0.14, cached_input: 0.0028, output: 0.28 },
-  { id: 'deepseek-v4-pro', model_name: 'deepseek-v4-pro',
-    input: 1.74, cached_input: 0.003625, output: 3.48 },
-  { id: 'deepseek-chat', model_name: 'deepseek-chat',
-    input: 0.28, cached_input: 0.028, output: 0.42 },
-  { id: 'deepseek-reasoner', model_name: 'deepseek-reasoner',
-    input: 0.28, cached_input: 0.028, output: 0.42 },
+const raw = JSON.parse(readFileSync(pricesPath, 'utf-8'));
+const rules: Array<{
+  id: string; model_id?: string; model_name?: string;
+  input: number; cached_input: number; output: number;
+}> = [];
 
-  // Fireworks (match by model_name, priority 3)
-  // Set "Model Name" to the full provider path below.
-  { id: 'fw-llama-3-2-3b', model_name: 'accounts/fireworks/models/llama-v3-2-3b',
-    input: 0.10, cached_input: 0.05, output: 0.10 },
-  { id: 'fw-llama-3-1-8b', model_name: 'accounts/fireworks/models/llama-v3-1-8b',
-    input: 0.20, cached_input: 0.10, output: 0.20 },
-  { id: 'fw-llama-3-1-70b', model_name: 'accounts/fireworks/models/llama-v3-1-70b',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
-  { id: 'fw-llama-3-3-70b', model_name: 'accounts/fireworks/models/llama-v3-3-70b',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
-  { id: 'fw-mixtral-8x7b', model_name: 'accounts/fireworks/models/mixtral-8x7b',
-    input: 0.50, cached_input: 0.25, output: 0.50 },
-  { id: 'fw-mixtral-8x22b', model_name: 'accounts/fireworks/models/mixtral-8x22b',
-    input: 1.20, cached_input: 0.60, output: 1.20 },
-  { id: 'fw-dbrx-instruct', model_name: 'accounts/fireworks/models/dbrx-instruct',
-    input: 1.20, cached_input: 0.60, output: 1.20 },
-  { id: 'fw-deepseek-v3', model_name: 'accounts/fireworks/models/deepseek-v3',
-    input: 0.56, cached_input: 0.28, output: 1.68 },
-  { id: 'fw-qwen2-5-72b', model_name: 'accounts/fireworks/models/qwen2-5-72b',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
-  { id: 'fw-qwen2-5-32b', model_name: 'accounts/fireworks/models/qwen2-5-32b',
-    input: 0.20, cached_input: 0.10, output: 0.20 },
-  { id: 'fw-llama-v4-scout', model_name: 'accounts/fireworks/models/llama-v4-scout',
-    input: 0.20, cached_input: 0.10, output: 0.20 },
-  { id: 'fw-llama-v4-maverick', model_name: 'accounts/fireworks/models/llama-v4-maverick',
-    input: 0.90, cached_input: 0.45, output: 0.90 },
-];
+for (const group of Object.values(raw) as Array<Array<{
+  id: string; model_id?: string; model_name?: string;
+  input: number; cached_input: number; output: number;
+}>>) {
+  rules.push(...group);
+}
 
-// ── END OF PRICES ──  (edit above, don't change below)
+console.log(`Reading prices from ${pricesPath.endsWith('prices.json') ? 'prices.json (your local copy)' : 'prices.default.json (tracked)'}`);
 
 const insert = sqlite.prepare(`
   INSERT OR REPLACE INTO model_price_rules
