@@ -121,7 +121,7 @@
 			{#if profilePicture}
 				<button
 					class=btn-ghost text-sm
-					style=color: var(--color-danger);;
+					style="color: var(--color-danger);"
 					onclick={onRemovePhoto}
 					disabled={removingPhoto}
 				>
@@ -302,7 +302,7 @@
 		<button class=btn-danger onclick={onOpenDeleteModal}>
 			{$t('settings_deleteAccount')}
 		</button>
-		<button class=btn-secondary style=border-color: var(--danger); color: var(--danger); onclick={onForgetEverything} disabled={forgetEverythingLoading}>
+		<button class=btn-secondary style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
 			{forgetEverythingLoading ? $t('settings_resetting') : $t('settings_resetMemory')}
 		</button>
 	</div>
