@@ -208,7 +208,7 @@ function syncMigrationJournalToBaselineSchema(): number {
 	return insertedCount;
 }
 
-function backfillTableMigrationIfNeeded(tag: string): number {
+function backfillTableMigrationIfNeeded(tag: string): { backfill: number; repair: boolean } {
 	const journal = readMigrationJournalEntries();
 	const migrationIndex = journal.entries.findIndex((entry) => entry.tag === tag);
 	if (migrationIndex === -1) {
@@ -223,15 +223,39 @@ function backfillTableMigrationIfNeeded(tag: string): number {
 
 	const existingHashes = listMigrationHashes();
 	if (existingHashes.has(migrationMeta.hash)) {
-		return 0;
+		return { backfill: 0, repair: false };
 	}
 
 	ensureMigrationJournal();
+
+	if (!hasTable('inference_providers')) {
+		const laterEntries = journal.entries.slice(migrationIndex + 1);
+		if (laterEntries.length > 0) {
+			const laterHashes: string[] = [];
+			for (const entry of laterEntries) {
+				const idx = journal.entries.findIndex((e) => e.tag === entry.tag);
+				if (idx >= 0 && migrations[idx]) {
+					laterHashes.push(migrations[idx].hash);
+				}
+			}
+			if (laterHashes.length > 0) {
+				const placeholders = laterHashes.map(() => '?').join(', ');
+				sqlite
+					.prepare(`DELETE FROM __drizzle_migrations WHERE hash IN (${placeholders})`)
+					.run(...laterHashes);
+			}
+		}
+		sqlite
+			.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+			.run(migrationMeta.hash, String(migrationMeta.folderMillis));
+		return { backfill: 1, repair: true };
+	}
+
 	sqlite
 		.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
 		.run(migrationMeta.hash, String(migrationMeta.folderMillis));
 
-	return 1;
+	return { backfill: 1, repair: false };
 }
 
 function backfillColumnMigrationIfNeeded(params: {
@@ -321,13 +345,18 @@ try {
 			);
 		}
 
-		const adoptedInferenceProvidersMigrationCount = backfillTableMigrationIfNeeded(
-			INFERENCE_PROVIDERS_CREATION_TAG
-		);
+const { backfill: adoptedInferenceProvidersMigrationCount, repair: needsRepair } =
+			backfillTableMigrationIfNeeded(INFERENCE_PROVIDERS_CREATION_TAG);
 		if (adoptedInferenceProvidersMigrationCount > 0) {
-			console.log(
-				`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record for existing inference_providers table in ${databasePath}.`
-			);
+			if (needsRepair) {
+				console.log(
+					`Repaired inference_providers migration state in ${databasePath}: removed recorded column migrations, Drizzle will re-run the full chain.`
+				);
+			} else {
+				console.log(
+					`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record for existing inference_providers table in ${databasePath}.`
+				);
+			}
 		}
 
 		const db = drizzle(sqlite);
