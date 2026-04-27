@@ -57,6 +57,14 @@ const CODE_PATTERNS = [
   /\b(html|css|javascript|python|java|typescript|react|vue|svelte)\b/i,
 ];
 
+// Thinking/chain-of-thought patterns that indicate the model leaked its
+// reasoning process into the visible output. When a model does not respect
+// `enable_thinking: false`, it may output planning text such as
+// "Here's a thinking process: 1. **Analyze User Input:** ..." as plain
+// text in the content field.  These patterns never describe valid titles.
+const THINKING_LEAK_RE =
+  /^(Here's (a thinking|my) process|Let me (think about|work through|break (this|it) down)|I('ll| will) (approach|break (this|it) down)|First,? let me (think|analyze|break down)|Okay,? let me (think|analyze|work through)|Let's think about|I need to think about|Hmm,? let me|Alright,? let me)/i;
+
 function detectLanguage(text: string): 'en' | 'hu' {
   if (HUNGARIAN_CHARS.test(text)) {
     return 'hu';
@@ -178,6 +186,15 @@ function cleanTitle(title: string): string {
   cleaned = correctSpelling(cleaned);
 
   return cleaned;
+}
+
+/**
+ * Detect whether the raw text looks like leaked thinking/reasoning content
+ * rather than a genuine title.  Some models do not respect
+ * `enable_thinking: false` and emit their chain-of-thought as plain text.
+ */
+function isThinkingLeak(text: string): boolean {
+  return THINKING_LEAK_RE.test(text.trim());
 }
 
 /**
@@ -361,16 +378,11 @@ async function generateTitleWithTemperature(
   }
   
   const json = await response.json();
-  const message = json.choices?.[0]?.message;
-  const rawTitle = (
-    typeof message?.content === 'string' && message.content.trim()
-      ? normalizeVisibleAssistantText(message.content.trim())
-      : typeof message?.reasoning === 'string' && message.reasoning.trim()
-        ? message.reasoning.trim()
-        : ''
-  );
+  const choice = json.choices?.[0]?.message;
+  const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
+  const rawTitle = normalizeVisibleAssistantText(rawContent);
   
-  if (!rawTitle) {
+  if (!rawTitle || isThinkingLeak(rawTitle)) {
     return null;
   }
   
@@ -456,13 +468,12 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   }
 
   const json = await response.json();
-  const message = json.choices?.[0]?.message;
-  const rawTitle = normalizeVisibleAssistantText(
-    message?.content?.trim() || message?.reasoning?.trim() || ''
-  );
+  const choice = json.choices?.[0]?.message;
+  const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
+  const rawTitle = normalizeVisibleAssistantText(rawContent);
 
-  if (!rawTitle) {
-    console.info('[TITLE_GENERATE] Fallback: empty rawTitle');
+  if (!rawTitle || isThinkingLeak(rawTitle)) {
+    console.info('[TITLE_GENERATE] Fallback: empty rawTitle or thinking leak');
     return fallbackTitle(userMessage);
   }
   const cleanedTitle = cleanTitle(rawTitle);

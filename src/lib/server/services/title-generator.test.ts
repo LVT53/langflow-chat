@@ -153,14 +153,14 @@ describe('generateTitle', () => {
     expect(title).toBe('Quoted Title');
   });
 
-  it('uses reasoning when content is null', async () => {
+  it('falls back to user message when content is null (ignores reasoning)', async () => {
     const mockFetch = vi.mocked(fetch);
     const mockResponse = new Response(JSON.stringify({
       choices: [
         {
           message: {
             content: null,
-            reasoning: 'Greeting and Assistance Offered'
+            reasoning: 'Reasoning content that should never be used as a title'
           }
         }
       ]
@@ -170,8 +170,35 @@ describe('generateTitle', () => {
     });
     mockFetch.mockResolvedValue(mockResponse);
 
-    const title = await generateTitle('User', 'Assistant');
-    expect(title).toBe('Greeting and Assistance Offered');
+    await expect(
+      generateTitle('User asks about deployment', 'Assistant')
+    ).resolves.toBe('User asks about deployment');
+  });
+
+  it('falls back to user message when content is leaked thinking process', async () => {
+    const thinkingTitles = [
+      "Here's a thinking process: 1. **Analyze User Input:** - User says: \"Hello!\"",
+      "Here's a thinking process: 1. **Identify the topic** 2. **Summarize**",
+      'Let me think about this: the user is asking about Python',
+      'Let me work through this step by step',
+      "Okay, let me think about how to summarize this conversation",
+      "Let me break this down into parts and analyze",
+    ];
+
+    for (const thinkingTitle of thinkingTitles) {
+      const mockFetch = vi.mocked(fetch);
+      const mockResponse = new Response(JSON.stringify({
+        choices: [{ message: { content: thinkingTitle } }]
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      mockFetch.mockResolvedValue(mockResponse);
+
+      await expect(
+        generateTitle('User message here', 'Assistant')
+      ).resolves.toBe('User message here');
+    }
   });
 
   it('handles title generation service being unreachable (throws)', async () => {
