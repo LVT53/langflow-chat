@@ -2,7 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { db } from '$lib/server/db';
-import { analyticsConversations, usageEvents } from '$lib/server/db/schema';
+import { analyticsConversations, usageEvents, inferenceProviders } from '$lib/server/db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import { isProviderModelId, getProviderIdFromModelId } from '$lib/types';
 
 const MOCK_ANALYTICS = {
 	personal: {
@@ -58,7 +60,7 @@ function average(values: number[]): number {
 	return present.reduce((sum, value) => sum + value, 0) / present.length;
 }
 
-function modelBreakdown(rows: UsageRow[]) {
+async function modelBreakdown(rows: UsageRow[]) {
 	const grouped = new Map<string, {
 		model: string;
 		displayName: string;
@@ -72,11 +74,34 @@ function modelBreakdown(rows: UsageRow[]) {
 		totalCostMicros: number;
 	}>();
 
+	// Collect provider IDs that need display name resolution
+	const providerIds = new Set<string>();
+	for (const row of rows) {
+		if (!row.modelDisplayName && isProviderModelId(row.modelId)) {
+			const pid = getProviderIdFromModelId(row.modelId);
+			if (pid) providerIds.add(pid);
+		}
+	}
+
+	// Batch-resolve provider display names from the DB
+	const providerNames = new Map<string, string>();
+	if (providerIds.size > 0) {
+		const providers = await db
+			.select({ id: inferenceProviders.id, displayName: inferenceProviders.displayName })
+			.from(inferenceProviders)
+			.where(inArray(inferenceProviders.id, [...providerIds]));
+		for (const p of providers) {
+			providerNames.set(p.id, p.displayName);
+		}
+	}
+
 	for (const row of rows) {
 		const key = row.modelId;
+		const pid = isProviderModelId(row.modelId) ? getProviderIdFromModelId(row.modelId as any) : null;
+		const resolvedName = row.modelDisplayName ?? (pid ? providerNames.get(pid) : null) ?? row.providerModelName ?? row.modelId;
 		const current = grouped.get(key) ?? {
 			model: row.modelId,
-			displayName: row.modelDisplayName ?? row.providerModelName ?? row.modelId,
+			displayName: resolvedName,
 			providerDisplayName: row.providerDisplayName,
 			msgCount: 0,
 			promptTokens: 0,
@@ -139,8 +164,8 @@ function monthlyBreakdown(rows: UsageRow[]) {
 		.sort((left, right) => left.month.localeCompare(right.month));
 }
 
-function summarize(rows: UsageRow[], conversations: ConversationRow[]) {
-	const byModel = modelBreakdown(rows);
+async function summarize(rows: UsageRow[], conversations: ConversationRow[]) {
+	const byModel = await modelBreakdown(rows);
 	const promptTokens = rows.reduce((sum, row) => sum + row.promptTokens, 0);
 	const cachedInputTokens = rows.reduce((sum, row) => sum + row.cachedInputTokens, 0);
 	const outputTokens = rows.reduce((sum, row) => sum + row.completionTokens, 0);
@@ -180,14 +205,14 @@ export const GET: RequestHandler = async (event) => {
 
 	const personalUsageRows = usageRows.filter((row) => row.userId === user.id);
 	const personalConversationRows = conversationRows.filter((row) => row.userId === user.id);
-	const personal = summarize(personalUsageRows, personalConversationRows);
+	const personal = await summarize(personalUsageRows, personalConversationRows);
 
 	if (!isAdmin) {
 		return json({ personal });
 	}
 
 	const system = {
-		...summarize(usageRows, conversationRows),
+		...(await summarize(usageRows, conversationRows)),
 		totalUsers: new Set([
 			...usageRows.map((row) => row.userId),
 			...conversationRows.map((row) => row.userId),
@@ -199,11 +224,11 @@ export const GET: RequestHandler = async (event) => {
 		...usageRows.map((row) => row.userId),
 		...conversationRows.map((row) => row.userId),
 	]);
-	const perUser = [...userIds]
-		.map((userId) => {
+	const perUser = (await Promise.all([...userIds]
+		.map(async (userId) => {
 			const rows = usageRows.filter((row) => row.userId === userId);
 			const convRows = conversationRows.filter((row) => row.userId === userId);
-			const summary = summarize(rows, convRows);
+			const summary = await summarize(rows, convRows);
 			const latestSnapshot = rows[rows.length - 1] ?? null;
 			const latestConversationSnapshot = convRows[convRows.length - 1] ?? null;
 			return {
@@ -226,7 +251,7 @@ export const GET: RequestHandler = async (event) => {
 				favoriteModel: summary.favoriteModel,
 				conversationCount: summary.chatCount,
 			};
-		})
+		})))
 		.sort((left, right) => right.messageCount - left.messageCount);
 
 	return json({ personal, system, perUser });
