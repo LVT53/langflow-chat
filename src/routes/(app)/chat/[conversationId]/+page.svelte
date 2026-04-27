@@ -626,13 +626,8 @@ async function reconnectToOrphanedStream(
 				canRetry = false;
 				if (serverAssistantId) {
 					void pollMessageEvidence(serverAssistantId);
+					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
 				}
-			},
-			onError(err) {
-				console.info("[CHAT] Reconnection error:", err.message);
-				messages.update((list) => removeMessageById(list, placeholderId));
-				activeStream = null;
-				isSending = false;
 				resetPendingGeneratedFiles();
 
 				const isBrowserAbort =
@@ -981,6 +976,23 @@ async function pollMessageEvidence(messageId: string) {
 	);
 }
 
+async function refreshMessageCost(messageId: string) {
+	try {
+		const detail = await fetchConversationDetail(data.conversation.id);
+		const msg = detail.messages.find((m: any) => m.id === messageId);
+		if (msg && msg.costUsd != null) {
+			messages.update((list) =>
+				updateMessageById(list, messageId, (message) => ({
+					...message,
+					costUsd: msg.costUsd,
+				})),
+			);
+		}
+	} catch {
+		// Silently ignore — cost will show after page refresh
+	}
+}
+
 function handleSend(
 	payload: SendPayload,
 	skipUserMessage = false,
@@ -1103,6 +1115,7 @@ function handleSend(
 				canRetry = false;
 				if (serverAssistantId) {
 					void pollMessageEvidence(serverAssistantId);
+					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
 				}
 
 				if (metadata?.wasStopped) {
@@ -1248,9 +1261,11 @@ function handleRetry() {
 					isSending = false;
 					activeStream = null;
 					canRetry = false;
-					if (serverAssistantId) {
-						void pollMessageEvidence(serverAssistantId);
-					}
+				if (serverAssistantId) {
+					void pollMessageEvidence(serverAssistantId);
+					// Refresh cost data after analytics recording completes
+					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
+				}
 
 					if (metadata?.wasStopped) {
 						restoreQueuedTurnToDraft();
