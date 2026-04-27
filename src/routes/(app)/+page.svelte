@@ -95,6 +95,10 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		greetingName ? $t('landingGreetingNamed', { name: greetingName }) : $t('landingGreeting'),
 		greetingName ? $t('landingReadyNamed', { name: greetingName }) : $t('landingReady'),
 		greetingName ? $t('landingWorkNamed', { name: greetingName }) : $t('landingWork'),
+		greetingName ? $t('landingWhatsOnMindNamed', { name: greetingName }) : $t('landingWhatsOnMind'),
+		greetingName ? $t('landingAskMeNamed', { name: greetingName }) : $t('landingAskMe'),
+		greetingName ? $t('landingGettingStartedNamed', { name: greetingName }) : $t('landingGettingStarted'),
+		greetingName ? $t('landingListeningNamed', { name: greetingName }) : $t('landingListening'),
 	]);
 	const activeGreeting = $derived(greetingOptions[greetingIndex % greetingOptions.length]);
 	let fileDragActive = $state(false);
@@ -170,7 +174,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		}
 
 		// Static random greeting per page load (no rotation)
-		greetingIndex = Math.floor(Math.random() * 3);
+		greetingIndex = Math.floor(Math.random() * 7);
 	});
 
 	onDestroy(() => {

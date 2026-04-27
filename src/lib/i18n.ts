@@ -38,6 +38,14 @@ const dictionary = {
 		landingReadyNamed: "Ready when you are, {name}.",
 		landingWork: `Let's work through it.`,
 		landingWorkNamed: `Let's work through it, {name}.`,
+		landingWhatsOnMind: `What's on your mind?`,
+		landingWhatsOnMindNamed: `What's on your mind, {name}?`,
+		landingAskMe: `Ask me anything.`,
+		landingAskMeNamed: `Ask me anything, {name}.`,
+		landingGettingStarted: `Let's get started.`,
+		landingGettingStartedNamed: `Let's get started, {name}.`,
+		landingListening: `I'm listening.`,
+		landingListeningNamed: `I'm listening, {name}.`,
 		openingChat: "Opening your new chat...",
 		startingConversation: "Starting conversation",
 		settingsProfile: "Profile",
@@ -669,6 +677,14 @@ const dictionary = {
 		landingReadyNamed: "Kezdhetjuk, {name}.",
 		landingWork: "Dolgozzuk vegig.",
 		landingWorkNamed: "Dolgozzuk vegig, {name}.",
+		landingWhatsOnMind: "Mi jar a fejedben?",
+		landingWhatsOnMindNamed: "Mi jar a fejedben, {name}?",
+		landingAskMe: "Kerdezz batran.",
+		landingAskMeNamed: "Kerdezz batran, {name}.",
+		landingGettingStarted: "Kezdjunk neki.",
+		landingGettingStartedNamed: "Kezdjunk neki, {name}.",
+		landingListening: "Figyelek.",
+		landingListeningNamed: "Figyelek, {name}.",
 		openingChat: "Uj chat megnyitasa...",
 		startingConversation: "Beszelgetes inditasa",
 		settingsProfile: "Profil",
@@ -1234,7 +1250,7 @@ const dictionary = {
 		"memory.honchoScopedNotice":
 			"Hatókörbe vont Honcho memória megjelenítése csak ehhez a fiókhoz.",
 		"memory.temporarilyUnavailable":
-			"Tartós személyiség-memória létezik, de a Honcho áttekintés jelenleg ideiglenesen nem elérhető. A tárolt profil még mindig tartalmaz {count} tartós jelet.",
+			"Tartós személyiség-memória létezik, de a Honcho áttekintés jelenleg ideiglenesen nem elérhető. A tárolt profil még mindig tartalmaz {count} darab tartós jelet.",
 		"memory.notEnoughDurableMemory":
 			"A Memóriaprofil engedélyezve van, de még nincs elég tartós személyiség-memória egy hasznos áttekintés megjelenítéséhez.",
 		"memory.disabledNotice":

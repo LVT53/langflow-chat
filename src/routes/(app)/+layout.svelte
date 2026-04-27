@@ -147,7 +147,7 @@
 	<div class="flex h-full flex-1 overflow-hidden">
 		<Sidebar open={$sidebarOpen} conversationsData={data?.conversations ?? []} projectsData={data?.projects ?? []} user={data?.user} />
 
-		<main class="relative flex h-full flex-1 flex-col overflow-hidden min-w-0 pl-12">
+		<main class="relative flex h-full flex-1 flex-col overflow-hidden min-w-0">
 			{#if $navigating}
 				<div class="pointer-events-none absolute inset-x-0 top-0 z-20 h-1 overflow-hidden">
 					<div class="route-progress h-full w-1/3 rounded-full bg-accent/80"></div>
