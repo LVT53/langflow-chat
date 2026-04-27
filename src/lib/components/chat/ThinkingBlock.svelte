@@ -53,9 +53,8 @@ prevContentLength = totalLength;
 		return n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse');
 	}
 
-	// Returns the raw URL for fetch-type tools, or null for everything else.
+	// Returns the raw URL if any tool input contains one, or null for everything else.
 	function getFetchUrl(name: string, input: Record<string, unknown>): string | null {
-		if (!isFetchTool(name)) return null;
 		const raw = String(Object.values(input)[0] ?? '');
 		try { new URL(raw); return raw; } catch { return null; }
 	}

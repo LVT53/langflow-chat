@@ -52,7 +52,10 @@ export const load: ServerLoad = async (event) => {
   const currentConfigValues = getResolvedAdminConfigValues(runtime);
 
 	const availableModels = await getAvailableModelsWithProviders();
-	const modelNames: Record<string, string> = {};
+	const modelNames: Record<string, string> = {
+		model1: runtime.model1.displayName,
+		model2: runtime.model2.displayName,
+	};
 	for (const m of availableModels) {
 		modelNames[m.id] = m.displayName;
 	}

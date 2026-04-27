@@ -391,6 +391,7 @@ const dictionary = {
 		"admin.saveChanges": "Save Changes",
 		"admin.saveConfiguration": "Save Configuration",
 		// Admin - Create User Modal
+		"admin.createUser": "Create User",
 		"admin.createUserTitle": "Create User",
 		"admin.createUserDescription":
 			"Create a new local account and optionally grant it admin access immediately.",
@@ -1040,6 +1041,7 @@ const dictionary = {
 		"admin.saveChanges": "Változtatások mentése",
 		"admin.saveConfiguration": "Konfiguráció mentése",
 		// Admin - Create User Modal
+		"admin.createUser": "Felhasználó létrehozása",
 		"admin.createUserTitle": "Felhasználó létrehozása",
 		"admin.createUserDescription":
 			"Új helyi fiók létrehozása, és opcionálisan azonnali adminisztrátori hozzáférés biztosítása.",

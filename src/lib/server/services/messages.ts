@@ -33,7 +33,8 @@ function getModelDisplayName(modelId?: string | null): string | undefined {
 function mapRowToChatMessage(
 	row: typeof messages.$inferSelect,
 	modelId?: string | null,
-	generationTimeMs?: number | null
+	generationTimeMs?: number | null,
+	costUsdMicros?: number | null
 ): ChatMessage {
 	// Restore full interleaved thinkingSegments from persisted JSON.
 	// The column stores the complete segment array (text + tool_call entries in order)
@@ -68,6 +69,7 @@ function mapRowToChatMessage(
 		modelId: modelId as ChatMessage['modelId'],
 		modelDisplayName: metadata?.modelDisplayName ?? getModelDisplayName(modelId),
 		generationDurationMs: generationTimeMs ?? undefined,
+		costUsd: costUsdMicros != null ? costUsdMicros / 1_000_000 : undefined,
 		evidenceSummary,
 		evidencePending,
 		honchoContext: metadata?.honchoContext ?? undefined,
@@ -93,6 +95,7 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 				legacyModel: messageAnalytics.model,
 				modelDisplayName: usageEvents.modelDisplayName,
 				generationTimeMs: usageEvents.generationTimeMs,
+				costUsdMicros: usageEvents.costUsdMicros,
 				legacyGenerationTimeMs: messageAnalytics.generationTimeMs,
 			})
 			.from(messages)
@@ -114,7 +117,8 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		const mapped = mapRowToChatMessage(
 			row.message,
 			row.model ?? row.legacyModel,
-			row.generationTimeMs ?? row.legacyGenerationTimeMs
+			row.generationTimeMs ?? row.legacyGenerationTimeMs,
+			row.costUsdMicros
 		);
 		return {
 			...mapped,

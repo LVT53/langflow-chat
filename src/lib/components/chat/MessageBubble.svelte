@@ -68,7 +68,7 @@ let dedupedGeneratedFiles = $derived(
 	let thinkingTokenCount = $derived(hasThinking ? estimateTokenCount(message.thinking ?? '') : 0);
 	let responseTokenCount = $derived(estimateTokenCount(message.content));
 	let totalTokenCount = $derived(thinkingTokenCount + responseTokenCount);
-	let hasTokenInfo = $derived(hasThinking || responseTokenCount > 0);
+	let hasTokenInfo = $derived(hasThinking || responseTokenCount > 0 || message.costUsd != null);
 
 	// Thinking is definitively done once visible response text has started streaming
 	// OR the whole message is complete. This keeps the label as "Thinking" between
@@ -352,6 +352,12 @@ let dedupedGeneratedFiles = $derived(
 									<div class="tooltip-row">
 										<span class="tooltip-label">Total tokens</span>
 										<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
+									</div>
+								{/if}
+								{#if message.costUsd != null}
+									<div class="tooltip-row">
+										<span class="tooltip-label">Cost</span>
+										<span class="tooltip-value">${message.costUsd.toFixed(6)}</span>
 									</div>
 								{/if}
 							</div>

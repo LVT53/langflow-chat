@@ -303,7 +303,7 @@
 		<button class="btn-secondary" onclick={onOpenResetModal}>
 			{$t('settings_resetAccount')}
 		</button>
-		<button class="btn-danger" onclick={onOpenDeleteModal}>
+		<button class="btn-danger text-sm" onclick={onOpenDeleteModal}>
 			{$t('settings_deleteAccount')}
 		</button>
 		<button class="btn-secondary" style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
