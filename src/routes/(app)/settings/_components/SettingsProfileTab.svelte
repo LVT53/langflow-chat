@@ -1,4 +1,5 @@
 <script lang=ts>
+	import clsx from 'clsx';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import { t } from '$lib/i18n';
 	import PasswordField from './PasswordField.svelte';
@@ -134,8 +135,7 @@
 		<div class=mt-4 flex flex-wrap gap-3>
 			{#each Array.from({ length: avatarCount }, (_, i) => i) as avatarIndex}
 				<button
-					class=avatar-swatch rounded-full focus:outline-none
-					class:avatar-selected={selectedAvatar === avatarIndex}
+					class={clsx('avatar-swatch', 'rounded-full', 'focus:outline-none', selectedAvatar === avatarIndex && 'avatar-selected')}
 					style={`background: ${avatarColors[avatarIndex]}; width: 44px; height: 44px;`}
 					onclick={() => onSelectAvatar(avatarIndex)}
 					aria-label={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
