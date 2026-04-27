@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang=ts>
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import { t } from '$lib/i18n';
 	import PasswordField from './PasswordField.svelte';
@@ -100,9 +100,9 @@
 	} = $props();
 </script>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Avatar</h2>
-	<div class="flex items-center gap-4">
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>{$t('settings_avatar')}</h2>
+	<div class=flex items-center gap-4>
 		<AvatarCircle
 			{userId}
 			name={userDisplayName}
@@ -111,37 +111,37 @@
 			{cacheBuster}
 			size={48}
 		/>
-		<div class="flex flex-wrap items-center gap-2">
-			<button class="btn-secondary text-sm" onclick={onOpenPictureEditor}>
-				Upload Photo
+		<div class=flex flex-wrap items-center gap-2>
+			<button class=btn-secondary text-sm onclick={onOpenPictureEditor}>
+				{$t('settings_uploadPhoto')}
 			</button>
-			<button class="btn-secondary text-sm" onclick={() => (showAvatarPicker = !showAvatarPicker)}>
-				{showAvatarPicker ? 'Done' : 'Change Color'}
+			<button class=btn-secondary text-sm onclick={() => (showAvatarPicker = !showAvatarPicker)}>
+				{showAvatarPicker ? $t('settings_done') : $t('settings_changeColor')}
 			</button>
 			{#if profilePicture}
 				<button
-					class="btn-ghost text-sm"
-					style="color: var(--color-danger);"
+					class=btn-ghost text-sm
+					style=color: var(--color-danger);;
 					onclick={onRemovePhoto}
 					disabled={removingPhoto}
 				>
-					{removingPhoto ? 'Removing…' : 'Remove Photo'}
+					{removingPhoto ? $t('settings_removing') : $t('settings_removePhoto')}
 				</button>
 			{/if}
 		</div>
 	</div>
 	{#if showAvatarPicker}
-		<div class="mt-4 flex flex-wrap gap-3">
+		<div class=mt-4 flex flex-wrap gap-3>
 			{#each Array.from({ length: avatarCount }, (_, i) => i) as avatarIndex}
 				<button
-					class="avatar-swatch rounded-full focus:outline-none"
+					class=avatar-swatch rounded-full focus:outline-none
 					class:avatar-selected={selectedAvatar === avatarIndex}
 					style={`background: ${avatarColors[avatarIndex]}; width: 44px; height: 44px;`}
 					onclick={() => onSelectAvatar(avatarIndex)}
 					aria-label={`Avatar ${avatarIndex + 1}`}
 					title={`Avatar ${avatarIndex + 1}`}
 				>
-					<span class="block text-center text-lg font-semibold leading-none text-white">
+					<span class=block text-center text-lg font-semibold leading-none text-white>
 						{userDisplayName[0]?.toUpperCase() ?? userEmail[0]?.toUpperCase() ?? '?'}
 					</span>
 				</button>
@@ -150,80 +150,80 @@
 	{/if}
 </section>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Profile Information</h2>
-	<div class="flex flex-col gap-3">
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>{$t('settings_profileInformation')}</h2>
+	<div class=flex flex-col gap-3>
 		<div>
-			<label class="settings-label" for="name">Display Name</label>
-			<input id="name" type="text" class="settings-input" bind:value={name} placeholder="Your name" />
+			<label class=settings-label for=name>{$t('settings_displayName')}</label>
+			<input id=name type=text class=settings-input bind:value={name} placeholder={$t('settings_yourName')} />
 		</div>
 		<div>
-			<label class="settings-label" for="email">Email Address</label>
+			<label class=settings-label for=email>{$t('settings_emailAddress')}</label>
 			<input
-				id="email"
-				type="email"
-				class="settings-input"
+				id=email
+				type=email
+				class=settings-input
 				bind:value={email}
-				placeholder="email@example.com"
+				placeholder={$t('settings_emailExample')}
 			/>
 		</div>
 		{#if profileMessage}
-			<p class="text-sm text-success">{profileMessage}</p>
+			<p class=text-sm text-success>{profileMessage}</p>
 		{/if}
 		{#if profileError}
-			<p class="text-sm text-danger">{profileError}</p>
+			<p class=text-sm text-danger>{profileError}</p>
 		{/if}
-		<button class="btn-primary self-start" onclick={onSaveProfile} disabled={profileSaving}>
-			{profileSaving ? 'Saving…' : 'Save'}
+		<button class=btn-primary self-start onclick={onSaveProfile} disabled={profileSaving}>
+			{profileSaving ? $t('settings_saving') : $t('settings_save')}
 		</button>
 	</div>
 </section>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Change Password</h2>
-	<div class="flex flex-col gap-3">
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>{$t('settings_changePassword')}</h2>
+	<div class=flex flex-col gap-3>
 		<PasswordField
-			id="current-pw"
-			label="Current Password"
+			id=current-pw
+			label={$t('settings_currentPassword')}
 			bind:value={currentPassword}
 			bind:shown={showCurrentPw}
-			autocomplete="current-password"
+			autocomplete=current-password
 		/>
 		<PasswordField
-			id="new-pw"
-			label="New Password"
+			id=new-pw
+			label={$t('settings_newPassword')}
 			bind:value={newPassword}
 			bind:shown={showNewPw}
-			autocomplete="new-password"
+			autocomplete=new-password
 		/>
 		<PasswordField
-			id="confirm-pw"
-			label="Confirm New Password"
+			id=confirm-pw
+			label={$t('settings_confirmNewPassword')}
 			bind:value={confirmPassword}
 			bind:shown={showConfirmPw}
-			autocomplete="new-password"
+			autocomplete=new-password
 		/>
 		{#if passwordMessage}
-			<p class="text-sm text-success">{passwordMessage}</p>
+			<p class=text-sm text-success>{passwordMessage}</p>
 		{/if}
 		{#if passwordError}
-			<p class="text-sm text-danger">{passwordError}</p>
+			<p class=text-sm text-danger>{passwordError}</p>
 		{/if}
-		<button class="btn-primary self-start" onclick={onSavePassword} disabled={passwordSaving}>
-			{passwordSaving ? 'Saving…' : 'Change Password'}
+		<button class=btn-primary self-start onclick={onSavePassword} disabled={passwordSaving}>
+			{passwordSaving ? $t('settings_saving') : $t('settings_changePassword')}
 		</button>
 	</div>
 </section>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Preferences</h2>
-	<div class="flex flex-col gap-5">
+<section class=settings-card mb-4>
+	<h2 class=settings-section-title>{$t('settings_preferences')}</h2>
+	<div class=flex flex-col gap-5>
 		<div>
-			<p class="settings-label">Default Model</p>
-			<div class="flex gap-2">
+			<p class=settings-label>{$t('settings_defaultModel')}</p>
+			<div class=flex gap-2>
 				{#each availableModels as model}
 					<button
-						class="pref-pill"
+						class=pref-pill
 						class:pref-pill-active={selectedModel === model.id}
 						onclick={() => onChangeModel(model.id)}
 					>
@@ -234,11 +234,11 @@
 		</div>
 
 		<div>
-			<p class="settings-label">Theme</p>
-			<div class="flex gap-2">
+			<p class=settings-label>{$t('settings_theme')}</p>
+			<div class=flex gap-2>
 				{#each ['system', 'light', 'dark'] as theme}
 					<button
-						class="pref-pill"
+						class=pref-pill
 						class:pref-pill-active={selectedTheme === theme}
 						onclick={() => onChangeTheme(theme as Theme)}
 					>
@@ -249,14 +249,14 @@
 		</div>
 
 		<div>
-			<p class="settings-label">{$t('uiLanguage')}</p>
-			<div class="flex gap-2">
+			<p class=settings-label>{$t('uiLanguage')}</p>
+			<div class=flex gap-2>
 				{#each [
 					{ value: 'en' as const, label: $t('english') },
 					{ value: 'hu' as const, label: $t('hungarian') },
 				] as lang}
 					<button
-						class="pref-pill"
+						class=pref-pill
 						class:pref-pill-active={selectedUiLanguage === lang.value}
 						onclick={() => onChangeUiLanguage(lang.value)}
 					>
@@ -267,15 +267,15 @@
 		</div>
 
 		<div>
-			<p class="settings-label">Title Language</p>
-			<div class="flex gap-2">
+			<p class=settings-label>{$t('settings_titleLanguage')}</p>
+			<div class=flex gap-2>
 				{#each [
-					{ value: 'auto' as const, label: 'Auto-Detect' },
-					{ value: 'en' as const, label: 'English' },
-					{ value: 'hu' as const, label: 'Hungarian' },
+					{ value: 'auto' as const, label: $t('settings_autoDetect') },
+					{ value: 'en' as const, label: $t('settings_english') },
+					{ value: 'hu' as const, label: $t('settings_hungarian') },
 				] as lang}
 					<button
-						class="pref-pill"
+						class=pref-pill
 						class:pref-pill-active={selectedTitleLanguage === lang.value}
 						onclick={() => onChangeTitleLanguage(lang.value)}
 					>
@@ -287,24 +287,23 @@
 	</div>
 </section>
 
-<section class="settings-card settings-card-danger mb-4">
-	<h2 class="settings-section-title text-danger">Danger Zone</h2>
-	<p class="mb-4 text-sm text-text-secondary">
-		Reset clears your chats, Knowledge Base, memories, and generated files while keeping
-		your login, profile preferences, and avatar. Delete permanently removes the account itself too.
+<section class=settings-card settings-card-danger mb-4>
+	<h2 class=settings-section-title text-danger>{$t('settings_dangerZone')}</h2>
+	<p class=mb-4 text-sm text-text-secondary>
+		{$t('settings_resetDescription')}
 	</p>
 	{#if forgetEverythingError}
-		<p class="mb-3 text-sm text-danger">{forgetEverythingError}</p>
+		<p class=mb-3 text-sm text-danger>{forgetEverythingError}</p>
 	{/if}
-	<div class="flex flex-wrap gap-2">
-		<button class="btn-secondary" onclick={onOpenResetModal}>
-			Reset Account
+	<div class=flex flex-wrap gap-2>
+		<button class=btn-secondary onclick={onOpenResetModal}>
+			{$t('settings_resetAccount')}
 		</button>
-		<button class="btn-danger" onclick={onOpenDeleteModal}>
-			Delete Account
+		<button class=btn-danger onclick={onOpenDeleteModal}>
+			{$t('settings_deleteAccount')}
 		</button>
-		<button class="btn-secondary" style="border-color: var(--danger); color: var(--danger);" onclick={onForgetEverything} disabled={forgetEverythingLoading}>
-			{forgetEverythingLoading ? 'Resetting…' : 'Reset Memory'}
+		<button class=btn-secondary style=border-color: var(--danger); color: var(--danger); onclick={onForgetEverything} disabled={forgetEverythingLoading}>
+			{forgetEverythingLoading ? $t('settings_resetting') : $t('settings_resetMemory')}
 		</button>
 	</div>
 </section>
