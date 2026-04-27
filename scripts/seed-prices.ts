@@ -11,32 +11,25 @@
  *   2. rule.providerId === providerId && rule.modelName === providerModelName
  *   3. rule.modelName === providerModelName        ← LOWEST priority
  *
- * For built-in models (Model 1 / Model 2 in admin settings):
- *   → The "Flow ID / Model Name" field you type under "Edit Model"
- *     is stored as `providerModelName` in usage events.
- *   → If that value matches a `model_name` below, the price applies
- *     via priority 3.
- *   → To make model1/model2 always get a price regardless of what
- *     you type as model name, set `model_id: 'model1'` below.
- *     This matches by priority 1 (highest).
- *
- * For third-party/provider models:
- *   → Matched by priority 2 (provider + model name) or priority 3
- *     (just model name).
+ * Priority 1 entries (model1/model2 below) always apply to Model 1 / Model 2
+ * in your admin settings, no matter what model name you type.
+ * Priority 3 entries (provider model names) only apply when the "Model Name"
+ * field in admin settings matches exactly (case-insensitive).
  *
  * ── CACHE PRICING ──
- * All rules include cache hit/miss fields. The app already subtracts
- * cached tokens from regular input cost and prices them separately.
+ * All rules include cache pricing. Cached tokens are priced separately.
  *
  * ── THIS IS STATIC ──
  * Neither Fireworks nor DeepSeek expose pricing via API.
- * To update prices, edit this file and re-run the script.
+ * To update prices, edit this file and re-run: npx tsx scripts/seed-prices.ts
  * Price sources:
  *   DeepSeek:  https://api-docs.deepseek.com/quick_start/pricing
  *   Fireworks: https://fireworks.ai/pricing
  *
- * Prices in usd_micros per 1M tokens (1 usd_micro = $0.000001).
- *   Example: input=140_000 means $0.14 per 1M input tokens.
+ * ── PRICES ──
+ * All prices are in DOLLARS per 1 million tokens.
+ * Example: input: 0.14  means  $0.14 per 1M input tokens.
+ * The script converts to micro-dollars internally.
  */
 
 import { config as dotenvConfig } from 'dotenv';
@@ -66,55 +59,67 @@ if (!tableExists) {
   process.exit(1);
 }
 
-const rules: Array<{
-  id: string;
-  provider_name: string;
-  model_id: string | null;
-  model_name: string;
-  input: number;
-  cached_input: number;
-  cache_hit: number;
-  cache_miss: number;
-  output: number;
-}> = [
+// Convert dollars-per-1M to micro-dollars-per-1M (what the DB stores)
+function micro(dollars: number): number {
+  return Math.round(dollars * 1_000_000);
+}
 
-  // ═══════════════════════════════════════════════════════════
+// ── PRICE RULES ──────────────────────────────────────────────
+// Format: { id, model_id?, model_name?, input, cached_input, cache_hit, cache_miss, output }
+// All prices in DOLLARS per 1M tokens.
+//
+// To add or change prices: edit the numbers below and re-run the script.
+
+const rules = [
+
   // Built-in model slots (match by modelId, priority 1)
-  // These cover Model 1 / Model 2 in admin settings regardless
-  // of what model name the user types.
-  // Update the prices below to match whatever model you actually
-  // use for each slot.
-  // ═══════════════════════════════════════════════════════════
-  { id: 'model1-default', provider_name: 'generic', model_id: 'model1', model_name: '', input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
-  { id: 'model2-default', provider_name: 'generic', model_id: 'model2', model_name: '', input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
+  // These apply to Model 1 / Model 2 regardless of what you type as model name.
+  // Change the prices here to match whatever model Model 1 or Model 2 uses.
+  { id: 'model1-default', model_id: 'model1', model_name: '',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
+  { id: 'model2-default', model_id: 'model2', model_name: '',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
 
-  // ═══════════════════════════════════════════════════════════
   // DeepSeek (match by model_name, priority 3)
-  // Set your model's "Model Name" in admin settings to one of
-  // these values to get the correct price.
-  // ═══════════════════════════════════════════════════════════
-  { id: 'deepseek-v4-flash', provider_name: 'deepseek', model_id: null, model_name: 'deepseek-v4-flash', input: 140_000, cached_input: 2_800, cache_hit: 2_800, cache_miss: 140_000, output: 280_000 },
-  { id: 'deepseek-v4-pro',   provider_name: 'deepseek', model_id: null, model_name: 'deepseek-v4-pro',   input: 1_740_000, cached_input: 3_625, cache_hit: 3_625, cache_miss: 1_740_000, output: 3_480_000 },
-  { id: 'deepseek-chat',     provider_name: 'deepseek', model_id: null, model_name: 'deepseek-chat',     input: 280_000, cached_input: 28_000, cache_hit: 28_000, cache_miss: 280_000, output: 420_000 },
-  { id: 'deepseek-reasoner', provider_name: 'deepseek', model_id: null, model_name: 'deepseek-reasoner', input: 280_000, cached_input: 28_000, cache_hit: 28_000, cache_miss: 280_000, output: 420_000 },
+  // To use these prices: set "Model Name" in admin settings to match.
+  { id: 'deepseek-v4-flash', model_name: 'deepseek-v4-flash',
+    input: 0.14, cached_input: 0.0028, output: 0.28 },
+  { id: 'deepseek-v4-pro', model_name: 'deepseek-v4-pro',
+    input: 1.74, cached_input: 0.003625, output: 3.48 },
+  { id: 'deepseek-chat', model_name: 'deepseek-chat',
+    input: 0.28, cached_input: 0.028, output: 0.42 },
+  { id: 'deepseek-reasoner', model_name: 'deepseek-reasoner',
+    input: 0.28, cached_input: 0.028, output: 0.42 },
 
-  // ═══════════════════════════════════════════════════════════
   // Fireworks (match by model_name, priority 3)
-  // Set your model's "Model Name" to the exact provider path.
-  // ═══════════════════════════════════════════════════════════
-  { id: 'fw-llama-3-2-3b',  provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v3-2-3b',   input: 100_000, cached_input: 50_000, cache_hit: 50_000, cache_miss: 100_000, output: 100_000 },
-  { id: 'fw-llama-3-1-8b',  provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v3-1-8b',   input: 200_000, cached_input: 100_000, cache_hit: 100_000, cache_miss: 200_000, output: 200_000 },
-  { id: 'fw-llama-3-1-70b', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v3-1-70b',  input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
-  { id: 'fw-llama-3-3-70b', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v3-3-70b',  input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
-  { id: 'fw-mixtral-8x7b',  provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/mixtral-8x7b',   input: 500_000, cached_input: 250_000, cache_hit: 250_000, cache_miss: 500_000, output: 500_000 },
-  { id: 'fw-mixtral-8x22b', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/mixtral-8x22b',  input: 1_200_000, cached_input: 600_000, cache_hit: 600_000, cache_miss: 1_200_000, output: 1_200_000 },
-  { id: 'fw-dbrx-instruct', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/dbrx-instruct',  input: 1_200_000, cached_input: 600_000, cache_hit: 600_000, cache_miss: 1_200_000, output: 1_200_000 },
-  { id: 'fw-deepseek-v3',   provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/deepseek-v3',    input: 560_000, cached_input: 280_000, cache_hit: 280_000, cache_miss: 560_000, output: 1_680_000 },
-  { id: 'fw-qwen2-5-72b',   provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/qwen2-5-72b',   input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
-  { id: 'fw-qwen2-5-32b',   provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/qwen2-5-32b',   input: 200_000, cached_input: 100_000, cache_hit: 100_000, cache_miss: 200_000, output: 200_000 },
-  { id: 'fw-llama-v4-scout', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v4-scout', input: 200_000, cached_input: 100_000, cache_hit: 100_000, cache_miss: 200_000, output: 200_000 },
-  { id: 'fw-llama-v4-maverick', provider_name: 'fireworks', model_id: null, model_name: 'accounts/fireworks/models/llama-v4-maverick', input: 900_000, cached_input: 450_000, cache_hit: 450_000, cache_miss: 900_000, output: 900_000 },
+  // Set "Model Name" to the full provider path below.
+  { id: 'fw-llama-3-2-3b', model_name: 'accounts/fireworks/models/llama-v3-2-3b',
+    input: 0.10, cached_input: 0.05, output: 0.10 },
+  { id: 'fw-llama-3-1-8b', model_name: 'accounts/fireworks/models/llama-v3-1-8b',
+    input: 0.20, cached_input: 0.10, output: 0.20 },
+  { id: 'fw-llama-3-1-70b', model_name: 'accounts/fireworks/models/llama-v3-1-70b',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
+  { id: 'fw-llama-3-3-70b', model_name: 'accounts/fireworks/models/llama-v3-3-70b',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
+  { id: 'fw-mixtral-8x7b', model_name: 'accounts/fireworks/models/mixtral-8x7b',
+    input: 0.50, cached_input: 0.25, output: 0.50 },
+  { id: 'fw-mixtral-8x22b', model_name: 'accounts/fireworks/models/mixtral-8x22b',
+    input: 1.20, cached_input: 0.60, output: 1.20 },
+  { id: 'fw-dbrx-instruct', model_name: 'accounts/fireworks/models/dbrx-instruct',
+    input: 1.20, cached_input: 0.60, output: 1.20 },
+  { id: 'fw-deepseek-v3', model_name: 'accounts/fireworks/models/deepseek-v3',
+    input: 0.56, cached_input: 0.28, output: 1.68 },
+  { id: 'fw-qwen2-5-72b', model_name: 'accounts/fireworks/models/qwen2-5-72b',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
+  { id: 'fw-qwen2-5-32b', model_name: 'accounts/fireworks/models/qwen2-5-32b',
+    input: 0.20, cached_input: 0.10, output: 0.20 },
+  { id: 'fw-llama-v4-scout', model_name: 'accounts/fireworks/models/llama-v4-scout',
+    input: 0.20, cached_input: 0.10, output: 0.20 },
+  { id: 'fw-llama-v4-maverick', model_name: 'accounts/fireworks/models/llama-v4-maverick',
+    input: 0.90, cached_input: 0.45, output: 0.90 },
 ];
+
+// ── END OF PRICES ──  (edit above, don't change below)
 
 const insert = sqlite.prepare(`
   INSERT OR REPLACE INTO model_price_rules
@@ -128,16 +133,46 @@ const insert = sqlite.prepare(`
      1, unixepoch(), unixepoch())
 `);
 
+// Cache hit/miss default to the same as cached_input unless overridden
+function fillCache(r: typeof rules[number]) {
+  return {
+    cache_hit: r.cached_input,
+    cache_miss: r.input,
+  };
+}
+
+const providerName = (id: string) =>
+  id.startsWith('model') ? 'generic' :
+  id.startsWith('deepseek') ? 'deepseek' : 'fireworks';
+
 let count = 0;
 const tx = sqlite.transaction(() => {
   for (const r of rules) {
-    insert.run(r.id, r.provider_name, r.model_id, r.model_name,
-      r.input, r.cached_input, r.cache_hit, r.cache_miss, r.output);
+    const c = fillCache(r);
+    insert.run(
+      r.id,
+      providerName(r.id),
+      r.model_id ?? null,
+      r.model_name ?? '',
+      micro(r.input), micro(r.cached_input),
+      micro(c.cache_hit), micro(c.cache_miss),
+      micro(r.output)
+    );
     count++;
   }
 });
 tx();
 
 console.log(`Seeded ${count} model price rules.`);
-console.log('To verify: SELECT * FROM model_price_rules WHERE enabled = 1;');
+console.log('');
+console.log('To change prices:');
+console.log('  1. Edit this file, update the numbers (they are in $ per 1M tokens)');
+console.log('  2. Re-run: npx tsx scripts/seed-prices.ts');
+console.log('');
+console.log('To check stored prices:');
+console.log('  sqlite3 data/chat.db "SELECT id,');
+console.log('    printf(\"$%.4f\", input_usd_micros_per_1m/1000000.0) AS input,');
+console.log('    printf(\"$%.4f\", output_usd_micros_per_1m/1000000.0) AS output');
+console.log('  FROM model_price_rules WHERE enabled = 1;"');
+
 sqlite.close();
