@@ -584,6 +584,8 @@ const dictionary = {
 			"No task-state continuity has been checkpointed yet.",
 		"memory.noAcrossChatContinuity":
 			"No across-chat continuity groups have been captured yet.",
+		"memory.noCheckpointSummary": "No checkpoint summary stored yet.",
+		"memory.noContinuitySummary": "No continuity summary stored yet.",
 		"memory.personaMemoryUnavailable":
 			"Persona memory controls are unavailable because Honcho is disabled.",
 		"memory.forgetSelected": "Forget selected ({count})",
@@ -616,6 +618,7 @@ const dictionary = {
 		"memory.continuity": "Continuity",
 		"memory.summary": "Summary",
 		"memory.linkedChats": "Linked chats",
+		"memory.linkedTask": "linked task",
 		"memory.forget": "Forget",
 		"memory.selectAllTask": "Select all task continuity items",
 		"memory.selectAllAcrossChat": "Select all across-chat continuity items",
@@ -1205,6 +1208,8 @@ const dictionary = {
 		"memory.noTaskContinuity": "Még nem ellenőriztek feladat-folytonosságot.",
 		"memory.noAcrossChatContinuity":
 			"Még nem rögzítettek chatek közötti folytonosságot.",
+		"memory.noCheckpointSummary": "Még nincs tárolt ellenőrzőpont-összefoglaló.",
+		"memory.noContinuitySummary": "Még nincs tárolt folytonossági összefoglaló.",
 		"memory.personaMemoryUnavailable":
 			"A személyiség-emlékek kezelése nem elérhető, mert a Honcho le van tiltva.",
 		"memory.forgetSelected": "Kijelöltek elfelejtése ({count})",
@@ -1237,6 +1242,7 @@ const dictionary = {
 		"memory.continuity": "Folytonosság",
 		"memory.summary": "Összefoglaló",
 		"memory.linkedChats": "Kapcsolt chatek",
+		"memory.linkedTask": "kapcsolt feladat",
 		"memory.forget": "Elfelejtés",
 		"memory.selectAllTask": "Minden feladat-folytonossági elem kijelölése",
 		"memory.selectAllAcrossChat":

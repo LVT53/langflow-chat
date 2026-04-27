@@ -6,9 +6,10 @@ import {
 	getPreviewLanguage,
 	type PreviewFileType,
 } from "$lib/utils/file-preview";
-import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
-import { renderHighlightedText } from "$lib/utils/markdown-loader";
-import FileTypeIcon from "$lib/components/ui/FileTypeIcon.svelte";
+	import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
+	import { renderHighlightedText } from "$lib/utils/markdown-loader";
+	import FileTypeIcon from "$lib/components/ui/FileTypeIcon.svelte";
+	import { t } from "$lib/i18n";
 
 let {
 	open,
@@ -910,7 +911,7 @@ function downloadFile() {
 						</div>
 						<div class="min-w-0">
 							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-								File Preview
+								{$t('filePreview.title')}
 							</div>
 							<h3 id={titleElementId} class="mt-1 text-lg font-serif tracking-[-0.02em] text-text-primary truncate">
 								{filename}
@@ -923,8 +924,8 @@ function downloadFile() {
 								type="button"
 								class="preview-download-button"
 								onclick={downloadFile}
-								aria-label={`Download ${filename}`}
-								title={`Download ${filename}`}
+								aria-label={$t('filePreview.download', { filename })}
+								title={$t('filePreview.download', { filename })}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -935,7 +936,7 @@ function downloadFile() {
 							type="button"
 							class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
 							onclick={onClose}
-							aria-label="Close file preview"
+							aria-label={$t('filePreview.close')}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 								<line x1="18" x2="6" y1="6" y2="18" />
@@ -950,7 +951,7 @@ function downloadFile() {
 				{#if isLoading}
 					<div class="flex flex-col items-center justify-center py-16 gap-4">
 						<div class="spinner"></div>
-						<p class="text-sm text-text-muted">Loading preview...</p>
+						<p class="text-sm text-text-muted">{$t('filePreview.loading')}</p>
 					</div>
 				{:else if error}
 					<div class="m-6 rounded-[1rem] border border-danger/30 bg-danger/10 px-4 py-6 text-center">
@@ -963,7 +964,7 @@ function downloadFile() {
 							class="btn-secondary text-sm mt-2"
 							onclick={() => void fetchFile()}
 						>
-							Retry
+							{$t('filePreview.retry')}
 						</button>
 					</div>
 				{:else if fileType === 'unsupported'}
@@ -971,15 +972,15 @@ function downloadFile() {
 						<svg class="mx-auto mb-3 text-icon-muted" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
 						</svg>
-						<p class="text-sm text-text-muted mb-1">Preview not available for this file type</p>
-						<p class="text-xs text-text-muted/70 mb-4">Download the file to view it</p>
+						<p class="text-sm text-text-muted mb-1">{$t('filePreview.notAvailableType')}</p>
+						<p class="text-xs text-text-muted/70 mb-4">{$t('filePreview.downloadToView')}</p>
 						{#if content}
 							<button
 								type="button"
 								class="btn-primary text-sm"
 								onclick={downloadFile}
 							>
-								Download File
+								{$t('filePreview.downloadFile')}
 							</button>
 						{/if}
 					</div>
@@ -988,7 +989,7 @@ function downloadFile() {
 						<div class="pdf-viewer">
 							<div class="pdf-toolbar">
 								<div class="pdf-page-info">
-									Page {currentPage} of {totalPages}
+									{$t('filePreview.pageInfo', { current: currentPage, total: totalPages })}
 								</div>
 								<div class="pdf-zoom">
 									<button
@@ -996,7 +997,7 @@ function downloadFile() {
 										class="btn-icon-bare h-8 w-8"
 										onclick={zoomOut}
 										disabled={zoom <= 0.5}
-										aria-label="Zoom out"
+										aria-label={$t('filePreview.zoomOut')}
 									>
 										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>
@@ -1006,7 +1007,7 @@ function downloadFile() {
 										type="button"
 										class="btn-zoom-reset"
 										onclick={resetZoom}
-										aria-label="Reset zoom"
+										aria-label={$t('filePreview.resetZoom')}
 									>
 										{Math.round(zoom * 100)}%
 									</button>
@@ -1015,7 +1016,7 @@ function downloadFile() {
 										class="btn-icon-bare h-8 w-8"
 										onclick={zoomIn}
 										disabled={zoom >= 3.0}
-										aria-label="Zoom in"
+										aria-label={$t('filePreview.zoomIn')}
 									>
 										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
@@ -1077,7 +1078,7 @@ function downloadFile() {
 					{/if}
 				{:else}
 					<div class="m-6 rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-center">
-						<p class="text-sm text-text-muted">Preview not available</p>
+						<p class="text-sm text-text-muted">{$t('filePreview.notAvailable')}</p>
 					</div>
 				{/if}
 			</div>

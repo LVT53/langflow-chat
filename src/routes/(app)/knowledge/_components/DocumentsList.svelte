@@ -2,6 +2,7 @@
 	import type { KnowledgeDocumentItem } from '$lib/types';
 	import { formatByteSize } from '$lib/utils/format';
 	import { formatMediumDateTime } from '$lib/utils/time';
+	import { t } from '$lib/i18n';
 
 	type DocumentSortKey = 'name' | 'size' | 'type' | 'date';
 	type SortDirection = 'asc' | 'desc';
@@ -550,7 +551,7 @@
 	class="documents-list-wrapper"
 	class:drag-over={isDragOver}
 	role="region"
-	aria-label="Documents list with drag and drop upload"
+	aria-label={$t('knowledge.documents')}
 	ondragenter={handleDragEnter}
 	ondragleave={handleDragLeave}
 	ondragover={handleDragOver}
@@ -563,7 +564,7 @@
 				<div class="drop-zone-icon">
 					{@html UploadIcon()}
 				</div>
-				<p class="drop-zone-text">Drop files here to upload (max 100MB per file)</p>
+				<p class="drop-zone-text">{$t('knowledge.dropFiles')}</p>
 			</div>
 		</div>
 	{/if}
@@ -588,7 +589,7 @@
 				class="empty-state empty-state-upload-enabled"
 				onclick={handleEmptyStateClick}
 				disabled={isUploading}
-				aria-label="Upload documents"
+				aria-label={$t('knowledge.upload')}
 			>
 				<div class="empty-icon">
 					<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
@@ -596,8 +597,8 @@
 						<polyline points="14 2 14 8 20 8"></polyline>
 					</svg>
 				</div>
-				<p class="empty-title">No documents</p>
-				<p class="empty-hint">Upload or generate documents to see them here</p>
+				<p class="empty-title">{$t('knowledge.noDocuments')}</p>
+				<p class="empty-hint">{$t('knowledge.uploadOrGenerateHint')}</p>
 			</button>
 		{:else}
 			<div class="empty-state">
@@ -607,8 +608,8 @@
 						<polyline points="14 2 14 8 20 8"></polyline>
 					</svg>
 				</div>
-				<p class="empty-title">No documents</p>
-				<p class="empty-hint">Upload or generate documents to see them here</p>
+				<p class="empty-title">{$t('knowledge.noDocuments')}</p>
+				<p class="empty-hint">{$t('knowledge.uploadOrGenerateHint')}</p>
 			</div>
 		{/if}
 	{:else}
@@ -618,9 +619,9 @@
 					id="documents-search-input"
 					type="search"
 					class="documents-search-input"
-					placeholder="Search by name, title, role, or content"
+					placeholder={$t('knowledge.searchPlaceholder')}
 					bind:value={searchQuery}
-					aria-label="Search documents"
+					aria-label={$t('knowledge.searchDocuments')}
 				/>
 			</div>
 
@@ -628,8 +629,8 @@
 				<button
 				type="button"
 				class="upload-btn"
-				aria-label="Upload document"
-				title="Upload document (max 100MB)"
+				aria-label={$t('knowledge.upload')}
+				title={$t('knowledge.upload')}
 				disabled={isUploading}
 				onclick={handleUploadClick}
 			>
@@ -644,10 +645,10 @@
 
 				{#if sortedDocuments.length === 0}
 			<div class="empty-state">
-				<p class="empty-title">
-					{searchQuery.trim().length > 0
-						? 'No documents match your search'
-						: 'No documents available'}
+			<p class="empty-title">
+				{searchQuery.trim().length > 0
+					? $t('knowledge.noDocumentsMatch')
+					: $t('knowledge.noDocumentsAvailable')}
 				</p>
 			</div>
 		{:else}
@@ -663,32 +664,32 @@
 										checked={isAllSelected}
 										indeterminate={isIndeterminate}
 										onchange={toggleSelectAll}
-										aria-label="Select all documents on this page"
+										aria-label={$t('knowledge.selectAll')}
 									/>
 								</label>
 							</th>
-							<th class="col-icon" scope="col" aria-label="File type icon"></th>
+							<th class="col-icon" scope="col" aria-label={$t('knowledge.type')}></th>
 							<th class="col-name" scope="col" aria-sort={getAriaSort('name')}>
 								<button type="button" class="sort-button" onclick={() => toggleSort('name')}>
-									Name <span class="sort-indicator">{getSortIndicator('name')}</span>
+									{$t('knowledge.name')} <span class="sort-indicator">{getSortIndicator('name')}</span>
 								</button>
 							</th>
 							<th class="col-type" scope="col" aria-sort={getAriaSort('type')}>
 								<button type="button" class="sort-button" onclick={() => toggleSort('type')}>
-									Type <span class="sort-indicator">{getSortIndicator('type')}</span>
+									{$t('knowledge.type')} <span class="sort-indicator">{getSortIndicator('type')}</span>
 								</button>
 							</th>
 							<th class="col-size" scope="col" aria-sort={getAriaSort('size')}>
 								<button type="button" class="sort-button" onclick={() => toggleSort('size')}>
-									Size <span class="sort-indicator">{getSortIndicator('size')}</span>
+									{$t('knowledge.size')} <span class="sort-indicator">{getSortIndicator('size')}</span>
 								</button>
 							</th>
 							<th class="col-date" scope="col" aria-sort={getAriaSort('date')}>
 								<button type="button" class="sort-button" onclick={() => toggleSort('date')}>
-									Date <span class="sort-indicator">{getSortIndicator('date')}</span>
+									{$t('knowledge.date')} <span class="sort-indicator">{getSortIndicator('date')}</span>
 								</button>
 							</th>
-							<th class="col-actions" scope="col">Actions</th>
+							<th class="col-actions" scope="col">{$t('knowledge.actions')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -713,7 +714,7 @@
 											checked={selectedIds.has(document.id)}
 											onchange={() => toggleSelection(document.id)}
 											onclick={(e) => e.stopPropagation()}
-											aria-label="Select {document.name}"
+											aria-label={$t('knowledge.selectDocument', { name: document.name })}
 										/>
 									</label>
 								</td>
@@ -725,22 +726,22 @@
 								<td class="col-name">
 									<div class="document-name">
 										{document.name}
-										{#if document.isOriginal}
-											<span class="original-badge">Original</span>
-										{:else if document.versionNumber != null && document.documentFamilyId}
-											<span class="version-badge">v{document.versionNumber}</span>
-										{/if}
-										{#if document.documentFamilyStatus === 'historical'}
-											<span class="historical-badge">Historical</span>
-										{/if}
+									{#if document.isOriginal}
+										<span class="original-badge">{$t('knowledge.original')}</span>
+									{:else if document.versionNumber != null && document.documentFamilyId}
+										<span class="version-badge">v{document.versionNumber}</span>
+									{/if}
+									{#if document.documentFamilyStatus === 'historical'}
+										<span class="historical-badge">{$t('knowledge.historical')}</span>
+									{/if}
 									</div>
 								</td>
 								<td class="col-type">
-									{#if document.documentOrigin === 'generated' || document.type === 'generated_output'}
-										<span class="type-badge type-generated">Generated</span>
-									{:else}
-										<span class="type-badge type-uploaded">Uploaded</span>
-									{/if}
+								{#if document.documentOrigin === 'generated' || document.type === 'generated_output'}
+									<span class="type-badge type-generated">{$t('knowledge.generated')}</span>
+								{:else}
+									<span class="type-badge type-uploaded">{$t('knowledge.uploaded')}</span>
+								{/if}
 								</td>
 								<td class="col-size">
 									{formatByteSize(document.sizeBytes, { trimWholeUnits: true })}
@@ -753,8 +754,8 @@
 										<button
 											type="button"
 											class="action-btn"
-											aria-label="Download {document.name}"
-											title="Download {document.name}"
+											aria-label={$t('filePreview.download', { filename: document.name })}
+											title={$t('filePreview.download', { filename: document.name })}
 											onclick={(e) => handleDownloadClick(e, document.id)}
 										>
 											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -766,8 +767,8 @@
 										<button
 											type="button"
 											class="action-btn action-btn-danger"
-											aria-label="Delete {document.name}"
-											title="Delete {document.name}"
+											aria-label={$t('knowledge.deleteConfirm')}
+											title={$t('knowledge.deleteConfirm')}
 											onclick={(e) => handleDeleteClick(e, document.id)}
 										>
 											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -787,7 +788,7 @@
 			{#if hasSelection}
 				<div class="bulk-action-bar" role="toolbar" aria-label="Bulk actions">
 					<div class="bulk-info">
-						<span class="bulk-count">{selectedCount} selected</span>
+						<span class="bulk-count">{selectedCount} {$t('knowledge.selected')}</span>
 					</div>
 					<div class="bulk-actions">
 						<button
@@ -796,11 +797,15 @@
 							onclick={handleBulkDelete}
 							disabled={!onBulkDelete}
 						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polyline points="3 6 5 6 21 6"></polyline>
-								<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-							</svg>
-							Delete Selected
+							...
+							{$t('knowledge.deleteSelected')}
+						</button>
+						<button
+							type="button"
+							class="bulk-btn bulk-btn-secondary"
+							onclick={clearSelection}
+						>
+							{$t('knowledge.clear')}
 						</button>
 						<button
 							type="button"
@@ -816,10 +821,10 @@
 			{#if sortedDocuments.length > paginationLimit}
 				<nav class="pagination" aria-label="Pagination">
 					<div class="pagination-info">
-						<span>Showing {showingFrom}-{showingTo} of {sortedDocuments.length}</span>
+						<span>{$t('knowledge.showing', { from: showingFrom, to: showingTo, total: sortedDocuments.length })}</span>
 						<select
 							class="page-size-select"
-							aria-label="Items per page"
+							aria-label={$t('knowledge.itemsPerPage')}
 							value={paginationLimit}
 							onchange={(e) => onPaginationLimitChange?.(parseInt((e.target as HTMLSelectElement).value))}
 						>
@@ -829,11 +834,11 @@
 						</select>
 					</div>
 					<div class="pagination-controls">
-						<span class="page-info">Page {currentPage} of {totalPages}</span>
+						<span class="page-info">{$t('knowledge.pageInfo', { current: currentPage, total: totalPages })}</span>
 						<button
 							type="button"
 							class="pagination-btn"
-							aria-label="Previous page"
+							aria-label={$t('knowledge.previousPage')}
 							disabled={currentPage <= 1}
 							onclick={() => onPageChange?.(currentPage - 1)}
 						>
@@ -844,7 +849,7 @@
 						<button
 							type="button"
 							class="pagination-btn"
-							aria-label="Next page"
+							aria-label={$t('knowledge.nextPage')}
 							disabled={currentPage >= totalPages}
 							onclick={() => onPageChange?.(currentPage + 1)}
 						>

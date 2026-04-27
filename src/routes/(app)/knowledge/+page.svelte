@@ -17,6 +17,7 @@
 	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 	import { buildChatSourceMessageHref } from '$lib/client/document-workspace-navigation';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { t } from '$lib/i18n';
 
 	import KnowledgeMemoryModal from './_components/KnowledgeMemoryModal.svelte';
 	import KnowledgeMemoryView from './_components/KnowledgeMemoryView.svelte';
@@ -221,7 +222,7 @@
 			try {
 				const payload = await deleteKnowledgeArtifact(documentId);
 				if (payload.success === false) {
-					throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
+							throw new Error(payload.message ?? payload.error ?? $t('knowledge.failedRemoveArtifact'));
 				}
 			} catch (error) {
 				failures.push(document.name);
@@ -375,7 +376,8 @@
 			applyMemoryPayload(result);
 		} catch (error) {
 			memoryLoadError =
-				error instanceof Error ? error.message : 'Failed to load memory profile.';
+				error instanceof Error 						? error.message
+						: $t('knowledge.failedLoadMemory');
 		} finally {
 			memoryLoading = false;
 		}
@@ -411,7 +413,7 @@
 				manageError =
 					error instanceof Error
 						? error.message
-						: 'Failed to refresh the live memory overview.';
+						: $t('knowledge.failedRefreshOverview');
 			}
 		} finally {
 			liveOverviewRefreshing = false;
@@ -517,7 +519,7 @@
 		if (isMemoryActionPending(key)) return;
 
 		if (confirmationMessage) {
-			showConfirmation('memory_action', 'Confirm Action', confirmationMessage, () => {
+			showConfirmation('memory_action', $t('knowledge.confirmAction'), confirmationMessage, () => {
 				void executeMemoryAction(payload, key);
 			});
 			return;
@@ -658,7 +660,7 @@
 
 		showConfirmation(
 			'knowledge_action',
-			'Confirm Action',
+			$t('knowledge.confirmAction'),
 			confirmationMessage,
 			() => void executeKnowledgeAction(action, key)
 		);
@@ -676,7 +678,7 @@
 		try {
 			const result = await submitKnowledgeBulkAction(action);
 			if (result.success === false) {
-				throw new Error(result.error ?? result.message ?? 'Failed to update the Knowledge Base.');
+							throw new Error(result.error ?? result.message ?? $t('knowledge.failedUpdateKnowledgeBase'));
 			}
 
 			await refreshKnowledgeLibrary();
@@ -709,7 +711,7 @@
 		try {
 			const payload = await deleteKnowledgeArtifact(id);
 			if (payload.success === false) {
-				throw new Error(payload.message ?? payload.error ?? 'Failed to remove artifact.');
+							throw new Error(payload.message ?? payload.error ?? $t('knowledge.failedRemoveArtifact'));
 			}
 			await refreshKnowledgeLibrary();
 			if (deletedDocument) {
@@ -781,7 +783,7 @@
 </script>
 
 <svelte:head>
-	<title>Knowledge Base</title>
+	<title>{$t('knowledge.title')}</title>
 </svelte:head>
 
 <svelte:window onkeydown={handleWindowKeydown} />
@@ -793,10 +795,10 @@
 			<div class="flex flex-col gap-5">
 			<div class="space-y-2">
 				<h1 class="text-[2rem] font-serif tracking-[-0.05em] text-text-primary md:text-[2.75rem]">
-					Knowledge Base
+					{$t('knowledge.title')}
 				</h1>
 					<p class="max-w-[720px] text-sm font-sans leading-[1.5] text-text-secondary">
-						Persistent documents and a live memory view of what the system currently knows about you.
+						{$t('knowledge.description')}
 					</p>
 				</div>
 			</div>
@@ -810,8 +812,8 @@
 
 		<div class="documents-section rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 			<div class="mb-4">
-				<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">Documents</h2>
-				<p class="text-sm text-text-secondary mt-1">Browse and manage your uploaded and generated documents</p>
+			<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">{$t('knowledge.documents')}</h2>
+			<p class="text-sm text-text-secondary mt-1">{$t('knowledge.browseManage')}</p>
 			</div>
 			<DocumentsList
 				documents={documents}
@@ -896,9 +898,9 @@
 
 {#if documentDeleteCandidateId}
 	<ConfirmDialog
-		title="Delete Document"
+		title={$t('knowledge.deleteDocument')}
 		message={`Remove "${documents.find(d => d.id === documentDeleteCandidateId)?.name ?? 'this document'}" from the Knowledge Base?`}
-		confirmText="Delete"
+		confirmText={$t('common.delete')}
 		confirmVariant="danger"
 		onCancel={() => (documentDeleteCandidateId = null)}
 		onConfirm={() => {
@@ -913,9 +915,9 @@
 
 {#if bulkDeleteCandidateIds}
 	<ConfirmDialog
-		title="Delete Documents"
+		title={$t('knowledge.deleteDocuments')}
 		message={`Delete ${bulkDeleteCandidateIds.length} selected document${bulkDeleteCandidateIds.length === 1 ? '' : 's'}? This cannot be undone.`}
-		confirmText="Delete"
+		confirmText={$t('common.delete')}
 		confirmVariant="danger"
 		onCancel={() => (bulkDeleteCandidateIds = null)}
 		onConfirm={() => {

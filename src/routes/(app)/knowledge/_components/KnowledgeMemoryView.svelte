@@ -4,6 +4,7 @@
 		KnowledgeMemoryOverviewStatus,
 	} from '$lib/types';
 	import { formatMediumDateTime } from '$lib/utils/time';
+	import { t } from '$lib/i18n';
 
 	let {
 		memoryLoading,
@@ -82,35 +83,35 @@
 		</div>
 
 		<div class="mt-6 rounded-[1.2rem] border border-dashed border-border bg-surface-page px-4 py-5 text-sm font-sans text-text-muted">
-			Loading memory profile…
+			{$t('memory.loading')}
 		</div>
 	</section>
 {:else if memoryLoadError && !memoryLoaded}
 	<section class="rounded-[1.5rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm md:px-5 md:py-5">
 		<div class="rounded-[1.2rem] border border-danger bg-surface-page px-4 py-5">
-				<div class="text-sm font-sans font-medium text-danger">Memory Profile failed to load.</div>
+				<div class="text-sm font-sans font-medium text-danger">{$t('memory.failedLoad')}</div>
 				<p class="mt-2 text-sm font-sans leading-[1.6] text-text-secondary">{memoryLoadError}</p>
 				<button
 					type="button"
 					class="mt-4 cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 					onclick={onRetryLoadMemory}
 				>
-					Try again
+					{$t('memory.tryAgain')}
 				</button>
 		</div>
 	</section>
 {:else}
 	<section class="memory-section rounded-[1.5rem] border border-border bg-surface-elevated px-5 py-5 shadow-sm md:px-6">
 		<div class="mb-4">
-			<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">Memory Profile</h2>
-			<p class="text-sm text-text-secondary mt-1">View and manage your stored memories, persona data, and focus continuity</p>
+			<h2 class="text-2xl font-serif tracking-[-0.02em] text-text-primary">{$t('memory.title')}</h2>
+			<p class="text-sm text-text-secondary mt-1">{$t('memory.description')}</p>
 		</div>
 		<div class="grid gap-4 lg:grid-cols-2">
 			<div class="flex flex-col rounded-[1.3rem] border border-border bg-surface-elevated px-4 py-4">
 				<div class="flex items-center justify-between gap-3">
 					<div>
 						<h3 class="text-lg font-sans font-semibold text-text-primary">
-							Manage durable profile memories
+							{$t('memory.managePersona')}
 						</h3>
 					</div>
 				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
@@ -120,18 +121,18 @@
 				<div class="mt-4 flex flex-wrap gap-2">
 					{#if activeConstraintCount > 0}
 						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
-							{activeConstraintCount} active constraint{activeConstraintCount === 1 ? '' : 's'}
+							{activeConstraintCount} {$t('memory.activeConstraint')}{activeConstraintCount === 1 ? '' : 's'}
 						</span>
 					{/if}
 					{#if currentProjectContextCount > 0}
 						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.08em] text-text-muted">
-							{currentProjectContextCount} current project context item{currentProjectContextCount === 1 ? '' : 's'}
+							{currentProjectContextCount} {$t('memory.currentProjectContext')}{currentProjectContextCount === 1 ? '' : 's'}
 						</span>
 					{/if}
 				</div>
 
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-					Review and forget stored persona memories in a compact table instead of scanning long card stacks.
+					{$t('memory.personaDescription')}
 				</p>
 
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
@@ -141,15 +142,15 @@
 						onclick={() => onOpenMemoryModal('persona')}
 						disabled={!honchoEnabled}
 					>
-						Manage persona memory
+						{$t('memory.managePersonaMemory')}
 					</button>
 					{#if !honchoEnabled}
 						<span class="text-xs font-sans text-text-muted">
-							Unavailable while Honcho is disabled.
+							{$t('memory.unavailableHoncho')}
 						</span>
 					{:else if memoryLoaded && personaMemoryCount === 0}
 						<span class="text-xs font-sans text-text-muted">
-							No stored persona memory yet.
+							{$t('memory.noPersonaMemory')}
 						</span>
 					{/if}
 				</div>
@@ -159,7 +160,7 @@
 				<div class="flex items-center justify-between gap-3">
 					<div>
 						<h3 class="text-lg font-sans font-semibold text-text-primary">
-							Manage focus continuity
+							{$t('memory.manageFocus')}
 						</h3>
 					</div>
 				<span class="rounded-full border border-border bg-surface-elevated px-3 py-1 text-[0.68rem] font-sans uppercase tracking-[0.1em] text-text-muted">
@@ -168,7 +169,7 @@
 				</div>
 
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-secondary">
-					Focus continuity combines per-chat task checkpoints with across-chat continuity groups in one background system.
+					{$t('memory.focusDescription')}
 				</p>
 
 				<div class="mt-auto flex flex-wrap items-center gap-3 pt-4">
@@ -177,11 +178,11 @@
 						class="cursor-pointer rounded-full border border-border px-4 py-2 text-sm font-sans font-medium text-text-primary transition hover:bg-surface-page"
 						onclick={() => onOpenMemoryModal('focus')}
 					>
-						Manage focus continuity
+						{$t('memory.manageFocus')}
 					</button>
 					{#if memoryLoaded && focusContinuityItemCount === 0}
 						<span class="text-xs font-sans text-text-muted">
-							No focus continuity has been captured yet.
+							{$t('memory.noFocusContinuity')}
 						</span>
 					{/if}
 				</div>
@@ -192,15 +193,15 @@
 			<div class="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<h2 class="text-lg font-sans font-semibold text-text-primary">
-						Memory Overview
+						{$t('memory.overview')}
 					</h2>
 					{#if honchoOverviewUpdatedAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last live overview {formatMediumDateTime(honchoOverviewUpdatedAt)}
+							{$t('memory.lastLiveOverview')} {formatMediumDateTime(honchoOverviewUpdatedAt)}
 						</p>
 					{:else if honchoOverviewLastAttemptAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							Last overview attempt {formatMediumDateTime(honchoOverviewLastAttemptAt)}
+							{$t('memory.lastOverviewAttempt')} {formatMediumDateTime(honchoOverviewLastAttemptAt)}
 						</p>
 					{/if}
 				</div>
@@ -211,22 +212,22 @@
 						onclick={onRetryLiveOverview}
 						disabled={liveOverviewRefreshing}
 					>
-						{liveOverviewRefreshing ? 'Refreshing…' : 'Refresh overview'}
+						{liveOverviewRefreshing ? $t('memory.refreshingOverview') : $t('memory.refreshOverview')}
 					</button>
 				{/if}
 			</div>
 			{#if honchoOverview}
 				{#if honchoOverviewSource === 'honcho_cache'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-						Showing the last successful Honcho overview while a refresh is in progress.
+						{$t('memory.honchoCacheNotice')}
 					</p>
 				{:else if honchoOverviewSource === 'persona_fallback'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-						Showing a local durable-memory fallback while the live Honcho overview is unavailable.
+						{$t('memory.personaFallbackNotice')}
 					</p>
 				{:else if honchoOverviewSource === 'honcho_scoped'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-						Showing scoped Honcho memory for this account only.
+						{$t('memory.honchoScopedNotice')}
 					</p>
 				{/if}
 				<div class="memory-markdown prose mt-4 max-w-none text-base leading-[1.65] text-text-secondary dark:prose-invert">
@@ -234,15 +235,15 @@
 				</div>
 			{:else if honchoOverviewStatus === 'temporarily_unavailable'}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Durable persona memory exists, but the Honcho overview is temporarily unavailable right now. The stored profile still contains {durablePersonaCount} durable signal{durablePersonaCount === 1 ? '' : 's'}.
+					{$t('memory.temporarilyUnavailable', { count: durablePersonaCount })}
 				</p>
 			{:else if honchoEnabled}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.
+					{$t('memory.notEnoughDurableMemory')}
 				</p>
 			{:else}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
-					Memory Profile is disabled in this deployment, so the persona memory overview is not available.
+					{$t('memory.disabledNotice')}
 				</p>
 			{/if}
 		</div>
