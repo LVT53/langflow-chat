@@ -169,10 +169,8 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 				});
 		}
 
-		const greetingTimer = window.setInterval(() => {
-			greetingIndex = (greetingIndex + 1) % greetingOptions.length;
-		}, 4500);
-		return () => window.clearInterval(greetingTimer);
+		// Static random greeting per page load (no rotation)
+		greetingIndex = Math.floor(Math.random() * 3);
 	});
 
 	onDestroy(() => {
