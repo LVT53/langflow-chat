@@ -134,6 +134,7 @@
 				if (data.compactionUiThreshold !== undefined) adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`] = data.compactionUiThreshold != null ? String(data.compactionUiThreshold) : '';
 				if (data.targetConstructedContext !== undefined) adminConfig[`${prefix}_TARGET_CONSTRUCTED_CONTEXT`] = data.targetConstructedContext != null ? String(data.targetConstructedContext) : '';
 				if (data.maxMessageLength !== undefined) adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`] = data.maxMessageLength != null ? String(data.maxMessageLength) : '';
+				await onSaveAdminConfig?.();
 				providersMessage = `${modalModel.displayName || modelNameDisplay(modalModel.name)} updated.`;
 			} else if (modalModel) {
 				await updateProvider(modalModel.id, data as any);
