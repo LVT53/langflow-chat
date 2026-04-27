@@ -980,11 +980,13 @@ async function refreshMessageCost(messageId: string) {
 	try {
 		const detail = await fetchConversationDetail(data.conversation.id);
 		const msg = detail.messages.find((m: any) => m.id === messageId);
-		if (msg && msg.costUsd != null) {
+		if (msg && (msg.costUsd != null || msg.generationDurationMs != null)) {
 			messages.update((list) =>
 				updateMessageById(list, messageId, (message) => ({
 					...message,
-					costUsd: msg.costUsd,
+					costUsd: msg.costUsd ?? message.costUsd,
+					generationDurationMs: msg.generationDurationMs ?? message.generationDurationMs,
+					modelDisplayName: msg.modelDisplayName ?? message.modelDisplayName,
 				})),
 			);
 		}
