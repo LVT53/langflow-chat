@@ -89,7 +89,9 @@ export async function persistAssistantTurnState(
 			reasoningTokens: analytics.reasoningTokens,
 			generationTimeMs: analytics.generationTimeMs,
 			providerUsage: analytics.providerUsage,
-		}).catch(() => undefined);
+		}).catch((err) => {
+			console.error('[ANALYTICS] Failed to record message analytics:', err);
+		});
 	}
 
 	const sourceArtifactIds =
