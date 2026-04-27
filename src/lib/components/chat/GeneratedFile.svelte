@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { DocumentWorkspaceItem } from "$lib/types";
 import { formatByteSize } from "$lib/utils/format";
+import { t } from "$lib/i18n";
 
 type FilePreviewModule =
 	typeof import("$lib/components/knowledge/FilePreview.svelte");
@@ -313,7 +314,7 @@ function stopActionPropagation(event: MouseEvent) {
 			onClose={handlePreviewClose}
 		/>
 	{:catch}
-		<div class="save-error-text">Failed to load preview.</div>
+		<div class="save-error-text">{$t('generatedFile.previewLoadFailed')}</div>
 	{/await}
 {/if}
 
@@ -328,7 +329,7 @@ function stopActionPropagation(event: MouseEvent) {
 		<button
 			type="button"
 			class="preview-trigger"
-			aria-label={`Preview ${filename}`}
+			aria-label={$t('generatedFile.previewLabel', { filename })}
 			onclick={handlePreviewOpen}
 		></button>
 	{/if}
@@ -343,10 +344,10 @@ function stopActionPropagation(event: MouseEvent) {
 					<div class="file-size">{formatByteSize(size)}</div>
 				{:else if status === 'generating'}
 					<div class="generating-text">
-						<span>Generating...</span>
+						<span>{$t('generatedFile.generating')}</span>
 					</div>
 				{:else if status === 'failed'}
-					<div class="error-text">{error || 'File generation failed'}</div>
+					<div class="error-text">{error || $t('generatedFile.generationFailed')}</div>
 				{/if}
 			</div>
 		</div>
@@ -359,8 +360,8 @@ function stopActionPropagation(event: MouseEvent) {
 				class="btn-secondary action-button"
 				class:action-button--download={true}
 				download={filename}
-				aria-label={`Download ${filename}`}
-				title={`Download ${filename}`}
+				aria-label={$t('generatedFile.downloadLabel', { filename })}
+				title={$t('generatedFile.downloadLabel', { filename })}
 				onclick={stopActionPropagation}
 			>
 				<svg
