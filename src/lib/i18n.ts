@@ -114,7 +114,8 @@ const dictionary = {
 		settings_resetAccountDescription:
 			"This wipes your chats, Knowledge Base, memories, and generated files, but keeps your login credentials, profile preferences, avatar, and historical analytics. You will need to sign in again after the reset finishes.",
 		settings_createUserTitle: "Create User",
-		settings_createUserDescription: "Create a new local account and optionally grant it admin access immediately.",
+		settings_createUserDescription:
+			"Create a new local account and optionally grant it admin access immediately.",
 		settings_optionalDisplayName: "Optional display name",
 		settings_userEmailPlaceholder: "user@example.com",
 		settings_atLeast8Chars: "At least 8 characters",
@@ -482,9 +483,11 @@ const dictionary = {
 		"chat.uploadSomeFailed": "{count} file(s) failed to upload.",
 		"chat.uploadAttachmentFailed": "Failed to upload attachment.",
 		"knowledge.title": "Knowledge Base",
-		"knowledge.description": "Persistent documents and a live memory view of what the system currently knows about you.",
+		"knowledge.description":
+			"Persistent documents and a live memory view of what the system currently knows about you.",
 		"knowledge.documents": "Documents",
-		"knowledge.browseManage": "Browse and manage your uploaded and generated documents",
+		"knowledge.browseManage":
+			"Browse and manage your uploaded and generated documents",
 		"knowledge.library": "Library",
 		"knowledge.memory": "Memory",
 		"knowledge.upload": "Upload",
@@ -492,7 +495,8 @@ const dictionary = {
 		"knowledge.searchPlaceholder": "Search by name, title, role, or content",
 		"knowledge.searchDocuments": "Search documents",
 		"knowledge.noDocuments": "No documents",
-		"knowledge.uploadOrGenerateHint": "Upload or generate documents to see them here",
+		"knowledge.uploadOrGenerateHint":
+			"Upload or generate documents to see them here",
 		"knowledge.noDocumentsMatch": "No documents match your search",
 		"knowledge.noDocumentsAvailable": "No documents available",
 		"knowledge.dropFiles": "Drop files here to upload (max 100MB per file)",
@@ -501,6 +505,8 @@ const dictionary = {
 		"knowledge.size": "Size",
 		"knowledge.date": "Date",
 		"knowledge.actions": "Actions",
+		"knowledge.selectAll": "Select all documents on this page",
+		"knowledge.selectDocument": "Select {name}",
 		"knowledge.original": "Original",
 		"knowledge.historical": "Historical",
 		"knowledge.generated": "Generated",
@@ -520,10 +526,12 @@ const dictionary = {
 		"knowledge.documentType": "Document type",
 		"knowledge.fileSize": "File size",
 		"knowledge.failedRemoveArtifact": "Failed to remove artifact.",
-		"knowledge.failedUpdateKnowledgeBase": "Failed to update the Knowledge Base.",
+		"knowledge.failedUpdateKnowledgeBase":
+			"Failed to update the Knowledge Base.",
 		"knowledge.failedUpdateMemory": "Failed to update memory profile.",
 		"knowledge.failedLoadMemory": "Failed to load memory profile.",
-		"knowledge.failedRefreshOverview": "Failed to refresh the live memory overview.",
+		"knowledge.failedRefreshOverview":
+			"Failed to refresh the live memory overview.",
 		"filePreview.title": "File Preview",
 		"filePreview.loading": "Loading preview...",
 		"filePreview.retry": "Retry",
@@ -538,27 +546,55 @@ const dictionary = {
 		"filePreview.close": "Close file preview",
 		"filePreview.download": "Download {filename}",
 		"memory.title": "Memory Profile",
-		"memory.description": "View and manage your stored memories, persona data, and focus continuity",
+		"memory.description":
+			"View and manage your stored memories, persona data, and focus continuity",
 		"memory.loading": "Loading memory profile…",
 		"memory.failedLoad": "Memory Profile failed to load.",
 		"memory.tryAgain": "Try again",
 		"memory.managePersona": "Manage durable profile memories",
 		"memory.manageFocus": "Manage focus continuity",
+		"memory.activeConstraint": "active constraint",
+		"memory.currentProjectContext": "current project context item",
+		"memory.personaDescription":
+			"Review and forget stored persona memories in a compact table instead of scanning long card stacks.",
+		"memory.managePersonaMemory": "Manage persona memory",
+		"memory.focusDescription":
+			"Focus continuity combines per-chat task checkpoints with across-chat continuity groups in one background system.",
+		"memory.lastLiveOverview": "Last live overview",
+		"memory.lastOverviewAttempt": "Last overview attempt",
+		"memory.honchoCacheNotice":
+			"Showing the last successful Honcho overview while a refresh is in progress.",
+		"memory.personaFallbackNotice":
+			"Showing a local durable-memory fallback while the live Honcho overview is unavailable.",
+		"memory.honchoScopedNotice":
+			"Showing scoped Honcho memory for this account only.",
+		"memory.temporarilyUnavailable":
+			"Durable persona memory exists, but the Honcho overview is temporarily unavailable right now. The stored profile still contains {count} durable signal{count, plural, one {} other {s}}.",
+		"memory.notEnoughDurableMemory":
+			"Memory Profile is enabled, but there is not enough durable persona memory yet to render a useful overview.",
+		"memory.disabledNotice":
+			"Memory Profile is disabled in this deployment, so the persona memory overview is not available.",
 		"memory.overview": "Memory Overview",
 		"memory.refreshOverview": "Refresh overview",
 		"memory.refreshingOverview": "Refreshing…",
 		"memory.unavailableHoncho": "Unavailable while Honcho is disabled.",
 		"memory.noPersonaMemory": "No stored persona memory yet.",
 		"memory.noFocusContinuity": "No focus continuity has been captured yet.",
-		"memory.noTaskContinuity": "No task-state continuity has been checkpointed yet.",
-		"memory.noAcrossChatContinuity": "No across-chat continuity groups have been captured yet.",
-		"memory.personaMemoryUnavailable": "Persona memory controls are unavailable because Honcho is disabled.",
+		"memory.noTaskContinuity":
+			"No task-state continuity has been checkpointed yet.",
+		"memory.noAcrossChatContinuity":
+			"No across-chat continuity groups have been captured yet.",
+		"memory.personaMemoryUnavailable":
+			"Persona memory controls are unavailable because Honcho is disabled.",
 		"memory.forgetSelected": "Forget selected ({count})",
 		"memory.forgetAll": "Forget all",
-		"memory.forgetAllConfirm": "Forget all persona memory items? This clears the live memory profile about you.",
+		"memory.forgetAllConfirm":
+			"Forget all persona memory items? This clears the live memory profile about you.",
 		"memory.forgetPersonaConfirm": "Forget this persona memory item?",
-		"memory.forgetTaskConfirm": "Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.",
-		"memory.forgetFocusConfirm": "Forget this across-chat continuity group? Conversation history will stay intact.",
+		"memory.forgetTaskConfirm":
+			"Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.",
+		"memory.forgetFocusConfirm":
+			"Forget this across-chat continuity group? Conversation history will stay intact.",
 		"memory.actor": "Actor",
 		"memory.memory": "Memory",
 		"memory.class": "Class",
@@ -583,6 +619,25 @@ const dictionary = {
 		"memory.forget": "Forget",
 		"memory.selectAllTask": "Select all task continuity items",
 		"memory.selectAllAcrossChat": "Select all across-chat continuity items",
+		"memory.personaMemory": "Persona memory",
+		"memory.focusContinuity": "Focus continuity",
+		"memory.manageStoredPersona": "Manage stored persona memories",
+		"memory.personaModalDescription":
+			"Review memory items in a compact table and forget individual entries without scrolling through long cards.",
+		"memory.focusModalDescription":
+			"Inspect both per-chat task continuity and across-chat continuity groups without treating long-horizon work as a separate project UI.",
+		"memory.closeMemoryManager": "Close memory manager",
+		"memory.noStoredPersona": "No stored persona memory items yet.",
+		"memory.state": "State",
+		"memory.showRaw": "Show raw memories ({count})",
+		"memory.salienceScore": "Salience {score}",
+		"memory.forgetAllPersonaConfirm":
+			"Forget all persona memory items? This clears the live memory profile about you.",
+		"memory.forgetPersonaItemConfirm": "Forget this persona memory item?",
+		"memory.forgetTaskItemConfirm":
+			"Forget this task continuity? The conversation can still continue, but its long-horizon checkpoints will be cleared.",
+		"memory.forgetFocusItemConfirm":
+			"Forget this across-chat continuity group? Conversation history will stay intact.",
 	},
 	hu: {
 		landingGreeting: "Miben segithetek?",
@@ -669,7 +724,8 @@ const dictionary = {
 		settings_resetAccountDescription:
 			"Ez törli a chat-előzményeket, a tudásbázist, az emlékeket és a generált fájlokat, de megtartja a bejelentkezési adatokat, a profilbeállításokat, az avatart és a korábbi analitikai adatokat. A visszaállítás után újra be kell jelentkezned.",
 		settings_createUserTitle: "Felhasználó létrehozása",
-		settings_createUserDescription: "Hozz létre egy új helyi fiókot, és opcionálisan azonnal adj neki admin jogosultságot.",
+		settings_createUserDescription:
+			"Hozz létre egy új helyi fiókot, és opcionálisan azonnal adj neki admin jogosultságot.",
 		settings_optionalDisplayName: "Opcionális megjelenítési név",
 		settings_userEmailPlaceholder: "felhasznalo@pelda.com",
 		settings_atLeast8Chars: "Legalább 8 karakter",
@@ -1029,17 +1085,181 @@ const dictionary = {
 		"documentWorkspace.historical": "Tortenelmi",
 		"documentWorkspace.compared": "Osszehasonlitva",
 		"documentWorkspace.compareVersionsTitle": "Verziok osszehasonlitasa",
-		"documentWorkspace.compareSummary": "{changed} modositott • {added} hozzaadott • {removed} eltavolitott",
+		"documentWorkspace.compareSummary":
+			"{changed} modositott • {added} hozzaadott • {removed} eltavolitott",
 		"documentWorkspace.against": "Osszehasonlitva ezzel",
 		"documentWorkspace.loadingComparison": "Osszehasonlitas betoltese…",
-		"documentWorkspace.previewLoadFailed": "A dokumentum elonezetenek betoltese sikertelen.",
-		"documentWorkspace.fullscreenPreviewLoadFailed": "A teljes kepernyos elonezet betoltese sikertelen.",
+		"documentWorkspace.previewLoadFailed":
+			"A dokumentum elonezetenek betoltese sikertelen.",
+		"documentWorkspace.fullscreenPreviewLoadFailed":
+			"A teljes kepernyos elonezet betoltese sikertelen.",
 		"documentWorkspace.page": "Oldal",
 		"documentWorkspace.pageOf": "/ {total}",
-		"documentWorkspace.openFullscreenLabel": "{title} megnyitasa teljes kepernyon",
+		"documentWorkspace.openFullscreenLabel":
+			"{title} megnyitasa teljes kepernyon",
 		"documentWorkspace.closeDocumentLabel": "{title} bezarasa",
 		"documentWorkspace.invalidNumber": "Kerem adjon meg egy ervenyes szamot",
-		"documentWorkspace.invalidPageRange": "Ervenytelen: az oldalnak 1 es {total} kozott kell lennie",
+		"documentWorkspace.invalidPageRange":
+			"Ervenytelen: az oldalnak 1 es {total} kozott kell lennie",
+		"knowledge.title": "Tudásbázis",
+		"knowledge.description":
+			"Tartós dokumentumok és egy élő memórianézet arról, amit a rendszer jelenleg tud rólad.",
+		"knowledge.documents": "Dokumentumok",
+		"knowledge.browseManage":
+			"Böngéssz és kezeld a feltöltött és generált dokumentumaidat",
+		"knowledge.library": "Könyvtár",
+		"knowledge.memory": "Memória",
+		"knowledge.upload": "Feltöltés",
+		"knowledge.uploading": "Feltöltés...",
+		"knowledge.searchPlaceholder":
+			"Keresés név, cím, szerep vagy tartalom alapján",
+		"knowledge.searchDocuments": "Dokumentumok keresése",
+		"knowledge.noDocuments": "Nincsenek dokumentumok",
+		"knowledge.uploadOrGenerateHint":
+			"Tölts fel vagy generálj dokumentumokat, hogy itt lásd őket",
+		"knowledge.noDocumentsMatch": "Nincs a keresésnek megfelelő dokumentum",
+		"knowledge.noDocumentsAvailable": "Nincsenek elérhető dokumentumok",
+		"knowledge.dropFiles": "Húzd ide a fájlokat feltöltéshez (max. 100MB/fájl)",
+		"knowledge.name": "Név",
+		"knowledge.type": "Típus",
+		"knowledge.size": "Méret",
+		"knowledge.date": "Dátum",
+		"knowledge.actions": "Műveletek",
+		"knowledge.selectAll": "Minden dokumentum kijelölése ezen az oldalon",
+		"knowledge.selectDocument": "{name} kijelölése",
+		"knowledge.original": "Eredeti",
+		"knowledge.historical": "Történelmi",
+		"knowledge.generated": "Generált",
+		"knowledge.uploaded": "Feltöltött",
+		"knowledge.deleteSelected": "Kijelöltek törlése",
+		"knowledge.clear": "Törlés",
+		"knowledge.selected": "kijelölve",
+		"knowledge.showing": "{from}-{to} / {total} megjelenítve",
+		"knowledge.itemsPerPage": "Elemek oldalanként",
+		"knowledge.pageInfo": "{current}. oldal / {total}",
+		"knowledge.previousPage": "Előző oldal",
+		"knowledge.nextPage": "Következő oldal",
+		"knowledge.deleteDocument": "Dokumentum törlése",
+		"knowledge.deleteDocuments": "Dokumentumok törlése",
+		"knowledge.confirmAction": "Művelet megerősítése",
+		"knowledge.deleteConfirm": "Biztosan törlöd a dokumentumot?",
+		"knowledge.documentType": "Dokumentum típus",
+		"knowledge.fileSize": "Fájlméret",
+		"knowledge.failedRemoveArtifact":
+			"Nem sikerült eltávolítani az artefaktumot.",
+		"knowledge.failedUpdateKnowledgeBase":
+			"Nem sikerült frissíteni a tudásbázist.",
+		"knowledge.failedUpdateMemory": "Nem sikerült frissíteni a memóriaprofilt.",
+		"knowledge.failedLoadMemory": "Nem sikerült betölteni a memóriaprofilt.",
+		"knowledge.failedRefreshOverview":
+			"Nem sikerült frissíteni az élő memóriaáttekintést.",
+		"filePreview.title": "Fájl előnézet",
+		"filePreview.loading": "Előnézet betöltése...",
+		"filePreview.retry": "Újra",
+		"filePreview.notAvailableType":
+			"Az előnézet nem elérhető ehhez a fájltípushoz",
+		"filePreview.downloadToView": "Töltsd le a fájlt a megtekintéshez",
+		"filePreview.downloadFile": "Fájl letöltése",
+		"filePreview.pageInfo": "{current}. oldal / {total}",
+		"filePreview.zoomOut": "Kicsinyítés",
+		"filePreview.zoomIn": "Nagyítás",
+		"filePreview.resetZoom": "Nagyítás visszaállítása",
+		"filePreview.notAvailable": "Az előnézet nem elérhető",
+		"filePreview.close": "Fájl előnézet bezárása",
+		"filePreview.download": "{filename} letöltése",
+		"memory.title": "Memóriaprofil",
+		"memory.description":
+			"Nézd meg és kezeld a tárolt emlékeidet, személyiségadatokat és fókusz-folytonosságot",
+		"memory.loading": "Memóriaprofil betöltése…",
+		"memory.failedLoad": "A memóriaprofil betöltése sikertelen.",
+		"memory.tryAgain": "Próbáld újra",
+		"memory.managePersona": "Tartós profil-emlékek kezelése",
+		"memory.manageFocus": "Fókusz-folytonosság kezelése",
+		"memory.activeConstraint": "aktív korlátozás",
+		"memory.currentProjectContext": "aktuális projektkontextus-elem",
+		"memory.personaDescription":
+			"Tekintsd át és felejtsd el a tárolt személyiség-emlékeket egy kompakt táblázatban a hosszú kártyastackek böngészése helyett.",
+		"memory.managePersonaMemory": "Személyiség-emlékek kezelése",
+		"memory.focusDescription":
+			"A fókusz-folytonosság egy háttérrendszerben egyesíti a beszélgetésenkénti feladat-ellenőrzőpontokat és a chatek közötti folytonossági csoportokat.",
+		"memory.lastLiveOverview": "Utolsó élő áttekintés",
+		"memory.lastOverviewAttempt": "Utolsó áttekintési kísérlet",
+		"memory.honchoCacheNotice":
+			"Az utolsó sikeres Honcho áttekintés megjelenítése, amíg a frissítés folyamatban van.",
+		"memory.personaFallbackNotice":
+			"Helyi tartós-memória tartalék megjelenítése, amíg az élő Honcho áttekintés nem elérhető.",
+		"memory.honchoScopedNotice":
+			"Hatókörbe vont Honcho memória megjelenítése csak ehhez a fiókhoz.",
+		"memory.temporarilyUnavailable":
+			"Tartós személyiség-memória létezik, de a Honcho áttekintés jelenleg ideiglenesen nem elérhető. A tárolt profil még mindig tartalmaz {count} tartós jelet.",
+		"memory.notEnoughDurableMemory":
+			"A Memóriaprofil engedélyezve van, de még nincs elég tartós személyiség-memória egy hasznos áttekintés megjelenítéséhez.",
+		"memory.disabledNotice":
+			"A Memóriaprofil le van tiltva ebben a telepítésben, így a személyiség-memória áttekintés nem elérhető.",
+		"memory.overview": "Memória áttekintés",
+		"memory.refreshOverview": "Áttekintés frissítése",
+		"memory.refreshingOverview": "Frissítés…",
+		"memory.unavailableHoncho": "Nem elérhető, amíg a Honcho le van tiltva.",
+		"memory.noPersonaMemory": "Még nincsenek tárolt személyiség-emlékek.",
+		"memory.noFocusContinuity": "Még nem rögzítettek fókusz-folytonosságot.",
+		"memory.noTaskContinuity": "Még nem ellenőriztek feladat-folytonosságot.",
+		"memory.noAcrossChatContinuity":
+			"Még nem rögzítettek chatek közötti folytonosságot.",
+		"memory.personaMemoryUnavailable":
+			"A személyiség-emlékek kezelése nem elérhető, mert a Honcho le van tiltva.",
+		"memory.forgetSelected": "Kijelöltek elfelejtése ({count})",
+		"memory.forgetAll": "Mind elfelejtése",
+		"memory.forgetAllConfirm":
+			"Minden személyiség-emlék elfelejtése? Ez törli az élő memóriaprofilt rólad.",
+		"memory.forgetPersonaConfirm": "Elfelejted ezt a személyiség-emléket?",
+		"memory.forgetTaskConfirm":
+			"Elfelejted ezt a feladat-folytonosságot? A beszélgetés folytatódhat, de a hosszú távú ellenőrzőpontok törlődnek.",
+		"memory.forgetFocusConfirm":
+			"Elfelejted ezt a chatek közötti folytonosságot? A beszélgetéstörténet érintetlen marad.",
+		"memory.actor": "Szereplő",
+		"memory.memory": "Emlék",
+		"memory.class": "Osztály",
+		"memory.source": "Forrás",
+		"memory.lastSeen": "Utoljára látva",
+		"memory.action": "Művelet",
+		"memory.selectAllPersona": "Minden személyiség-emlék kijelölése",
+		"memory.showRawMemories": "Nyers emlékek megjelenítése ({count})",
+		"memory.conversationMemory": "Beszélgetési emlék",
+		"memory.salience": "Fontosság",
+		"memory.tasks": "Feladatok",
+		"memory.acrossChats": "Chatek között",
+		"memory.objective": "Célkitűzés",
+		"memory.checkpoint": "Ellenőrzőpont",
+		"memory.conversation": "Beszélgetés",
+		"memory.status": "Állapot",
+		"memory.updated": "Frissítve",
+		"memory.locked": "Zárolt",
+		"memory.continuity": "Folytonosság",
+		"memory.summary": "Összefoglaló",
+		"memory.linkedChats": "Kapcsolt chatek",
+		"memory.forget": "Elfelejtés",
+		"memory.selectAllTask": "Minden feladat-folytonossági elem kijelölése",
+		"memory.selectAllAcrossChat":
+			"Minden chatek közötti folytonossági elem kijelölése",
+		"memory.personaMemory": "Személyiség-memória",
+		"memory.focusContinuity": "Fókusz-folytonosság",
+		"memory.manageStoredPersona": "Tárolt személyiség-emlékek kezelése",
+		"memory.personaModalDescription":
+			"Tekintsd át az emlékelemeket egy kompakt táblázatban, és felejtsd el az egyes bejegyzéseket hosszú kártyák görgetése nélkül.",
+		"memory.focusModalDescription":
+			"Vizsgáld meg a beszélgetésenkénti feladat-folytonosságot és a chatek közötti folytonossági csoportokat anélkül, hogy a hosszú távú munkát külön projekt-kezelőként kezelnéd.",
+		"memory.closeMemoryManager": "Memória-kezelő bezárása",
+		"memory.noStoredPersona": "Még nincsenek tárolt személyiség-emlékek.",
+		"memory.state": "Állapot",
+		"memory.showRaw": "Nyers emlékek megjelenítése ({count})",
+		"memory.salienceScore": "Fontosság {score}",
+		"memory.forgetAllPersonaConfirm":
+			"Minden személyiség-emlék elfelejtése? Ez törli az élő memóriaprofilt rólad.",
+		"memory.forgetPersonaItemConfirm": "Elfelejted ezt a személyiség-emléket?",
+		"memory.forgetTaskItemConfirm":
+			"Elfelejted ezt a feladat-folytonosságot? A beszélgetés folytatódhat, de a hosszú távú ellenőrzőpontok törlődnek.",
+		"memory.forgetFocusItemConfirm":
+			"Elfelejted ezt a chatek közötti folytonosságot? A beszélgetéstörténet érintetlen marad.",
 	},
 } as const;
 
