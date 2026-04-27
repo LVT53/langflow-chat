@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
+	import { get } from 'svelte/store';
+	import { t, type I18nKey } from '$lib/i18n';
 
 	let {
 		analyticsData = null,
@@ -56,7 +58,7 @@
 		return `$${Number(value ?? 0).toFixed(4)}`;
 	}
 
-	async function initCharts() {
+	async function initCharts(translateFn: (key: I18nKey, params?: Record<string, string | number>) => string) {
 		if (!analyticsData) return;
 		await tick();
 		destroyCharts();
@@ -92,7 +94,8 @@
 						},
 						tooltip: {
 							callbacks: {
-								label: (ctx: any) => ` ${ctx.label}: ${ctx.raw} messages`,
+								label: (ctx: any) =>
+									` ${ctx.label}: ${ctx.raw} ${translateFn('analytics.tooltipMessages')}`,
 							},
 						},
 					},
@@ -110,13 +113,13 @@
 					labels: top10.map((row: any) => row.displayName || row.email),
 					datasets: [
 						{
-							label: 'Messages',
+							label: translateFn('analytics.chartMessages'),
 							data: top10.map((row: any) => row.messageCount),
 							backgroundColor: 'rgba(194, 166, 106, 0.8)',
 							borderRadius: 4,
 						},
 						{
-							label: 'Conversations',
+							label: translateFn('analytics.chartConversations'),
 							data: top10.map((row: any) => row.conversationCount),
 							backgroundColor: 'rgba(107, 149, 194, 0.75)',
 							borderRadius: 4,
@@ -154,12 +157,13 @@
 			return;
 		}
 
+		const translateFn = get(t);
 		let cancelled = false;
 
 		void (async () => {
 			await tick();
 			if (cancelled) return;
-			await initCharts();
+			await initCharts(translateFn);
 		})();
 
 		return () => {
@@ -174,43 +178,43 @@
 </script>
 
 {#if analyticsLoading}
-	<div class="flex items-center justify-center py-16 text-text-muted">Loading analytics…</div>
+	<div class="flex items-center justify-center py-16 text-text-muted">{$t('analytics.loadingAnalytics')}</div>
 {:else if analyticsError}
 	<div class="settings-card">
 		<p class="text-danger text-sm">{analyticsError}</p>
-		<button class="btn-secondary mt-3" onclick={onRetry}>Retry</button>
+		<button class="btn-secondary mt-3" onclick={onRetry}>{$t('analytics.retry')}</button>
 	</div>
 {:else if analyticsData}
 	<section class="settings-card mb-4">
-		<h2 class="settings-section-title">Your Activity</h2>
+		<h2 class="settings-section-title">{$t('analytics.yourActivity')}</h2>
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.totalMessages)}</div>
-				<div class="stat-label">Messages sent</div>
+				<div class="stat-label">{$t('analytics.messagesSent')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatMs(analyticsData.personal.avgGenerationMs)}</div>
-				<div class="stat-label">Avg response time</div>
+				<div class="stat-label">{$t('analytics.avgResponseTime')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.totalTokens)}</div>
-				<div class="stat-label">Tokens used</div>
+				<div class="stat-label">{$t('analytics.tokensUsed')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatUsd(analyticsData.personal.totalCostUsd)}</div>
-				<div class="stat-label">Estimated cost</div>
+				<div class="stat-label">{$t('totalCost')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.promptTokens)}</div>
-				<div class="stat-label">Prompt tokens</div>
+				<div class="stat-label">{$t('promptTokens')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.cachedInputTokens)}</div>
-				<div class="stat-label">Cached input</div>
+				<div class="stat-label">{$t('cachedInput')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.reasoningTokens)}</div>
-				<div class="stat-label">Reasoning tokens</div>
+				<div class="stat-label">{$t('analytics.reasoningTokens')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">
@@ -218,17 +222,17 @@
 						? modelDisplayName(analyticsData.personal.favoriteModel)
 						: '—'}
 				</div>
-				<div class="stat-label">Favorite model</div>
+				<div class="stat-label">{$t('analytics.favoriteModel')}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.chatCount)}</div>
-				<div class="stat-label">Conversations</div>
+				<div class="stat-label">{$t('analytics.conversations')}</div>
 			</div>
 		</div>
 
 		{#if analyticsData.personal.byModel?.length > 0}
 			<div class="mt-5">
-				<p class="settings-label mb-3">Model usage</p>
+				<p class="settings-label mb-3">{$t('analytics.modelUsage')}</p>
 				<div style="max-width: 300px; height: 280px; margin: 0 auto; position: relative;">
 					<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
 				</div>
@@ -238,50 +242,50 @@
 
 	{#if isAdmin && analyticsData.system}
 		<section class="settings-card mb-4">
-			<h2 class="settings-section-title">System Overview</h2>
+			<h2 class="settings-section-title">{$t('analytics.systemOverview')}</h2>
 			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.totalMessages)}</div>
-					<div class="stat-label">Total messages</div>
+					<div class="stat-label">{$t('analytics.totalMessages')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.totalUsers)}</div>
-					<div class="stat-label">Total users</div>
+					<div class="stat-label">{$t('analytics.totalUsers')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatMs(analyticsData.system.avgGenerationMs)}</div>
-					<div class="stat-label">Avg response time</div>
+					<div class="stat-label">{$t('analytics.avgResponseTime')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.totalTokens)}</div>
-					<div class="stat-label">Total tokens</div>
+					<div class="stat-label">{$t('analytics.totalTokens')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatUsd(analyticsData.system.totalCostUsd)}</div>
-					<div class="stat-label">Estimated cost</div>
+					<div class="stat-label">{$t('totalCost')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.promptTokens)}</div>
-					<div class="stat-label">Prompt tokens</div>
+					<div class="stat-label">{$t('promptTokens')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.cachedInputTokens)}</div>
-					<div class="stat-label">Cached input</div>
+					<div class="stat-label">{$t('cachedInput')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.reasoningTokens)}</div>
-					<div class="stat-label">Reasoning tokens</div>
+					<div class="stat-label">{$t('analytics.reasoningTokens')}</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.totalConversations ?? 0)}</div>
-					<div class="stat-label">Total conversations</div>
+					<div class="stat-label">{$t('analytics.totalConversations')}</div>
 				</div>
 			</div>
 		</section>
 
 		{#if analyticsData.perUser?.length > 0}
 			<section class="settings-card mb-4">
-				<h2 class="settings-section-title">User Activity</h2>
+				<h2 class="settings-section-title">{$t('analytics.userActivity')}</h2>
 				<div style={`height: ${Math.min(analyticsData.perUser.slice(0, 10).length * 36 + 60, 420)}px; position: relative;`}>
 					<canvas bind:this={userChartCanvas}></canvas>
 				</div>
@@ -290,20 +294,20 @@
 
 		{#if analyticsData.perUser?.length > 0}
 			<section class="settings-card mb-4 overflow-x-auto">
-				<h2 class="settings-section-title">Per-User Breakdown</h2>
+				<h2 class="settings-section-title">{$t('analytics.perUserBreakdown')}</h2>
 				<table class="analytics-table w-full text-sm">
 					<thead>
 						<tr class="border-b border-border text-left text-xs text-text-muted">
-							<th class="pb-2 pr-3 font-medium">User</th>
-							<th class="pb-2 pr-3 font-medium">Msgs</th>
-							<th class="pb-2 pr-3 font-medium">Avg Time</th>
-							<th class="pb-2 pr-3 font-medium">Prompt</th>
-							<th class="pb-2 pr-3 font-medium">Output</th>
-							<th class="pb-2 pr-3 font-medium">Reasoning</th>
-							<th class="pb-2 pr-3 font-medium">Total Tokens</th>
-							<th class="pb-2 pr-3 font-medium">Cost</th>
-							<th class="pb-2 pr-3 font-medium">Model</th>
-							<th class="pb-2 font-medium">Chats</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.user')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.msgs')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.avgTime')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('promptTokens')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('outputTokens')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.reasoning')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.totalTokens')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.cost')}</th>
+							<th class="pb-2 pr-3 font-medium">{$t('analytics.model')}</th>
+							<th class="pb-2 font-medium">{$t('analytics.chats')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -332,5 +336,5 @@
 		{/if}
 	{/if}
 {:else}
-	<div class="settings-card py-8 text-center text-sm text-text-muted">No analytics data yet.</div>
+	<div class="settings-card py-8 text-center text-sm text-text-muted">{$t('analytics.noData')}</div>
 {/if}
