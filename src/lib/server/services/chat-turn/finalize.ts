@@ -80,11 +80,15 @@ export async function persistAssistantTurnState(
 	if (analytics) {
 		recordMessageAnalytics({
 			messageId: params.assistantMessageId,
+			conversationId: params.conversationId,
 			userId: params.userId,
 			model: analytics.model,
+			modelDisplayName: analytics.modelDisplayName,
+			promptTokens: analytics.promptTokens,
 			completionTokens: analytics.completionTokens,
 			reasoningTokens: analytics.reasoningTokens,
 			generationTimeMs: analytics.generationTimeMs,
+			providerUsage: analytics.providerUsage,
 		}).catch(() => undefined);
 	}
 

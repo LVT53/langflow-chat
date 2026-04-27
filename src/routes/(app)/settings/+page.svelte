@@ -18,9 +18,17 @@
 	import { reconcileConversationSnapshot } from '$lib/stores/conversations';
 	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
 	import { projects } from '$lib/stores/projects';
-	import { setSelectedModelAndSync, setTranslationAndSync, setTitleLanguageAndSync, type TitleLanguage } from '$lib/stores/settings';
+	import {
+		setSelectedModelAndSync,
+		setTranslationAndSync,
+		setTitleLanguageAndSync,
+		setUiLanguageAndSync,
+		type TitleLanguage,
+		type UiLanguage,
+	} from '$lib/stores/settings';
 	import { setThemeAndSync } from '$lib/stores/theme';
 	import { currentConversationId } from '$lib/stores/ui';
+	import { t } from '$lib/i18n';
 	import { AVATAR_COLORS, AVATAR_COUNT } from '$lib/utils/avatar';
 	import DeleteAccountModal from './_components/DeleteAccountModal.svelte';
 	import ResetAccountModal from './_components/ResetAccountModal.svelte';
@@ -42,12 +50,13 @@
 				translationEnabled: boolean;
 				theme: 'system' | 'light' | 'dark';
 				titleLanguage: 'auto' | 'en' | 'hu';
+				uiLanguage: 'en' | 'hu';
 				avatarId: number | null;
 			};
 			profilePicture: string | null;
 		};
 		currentConfigValues?: Record<string, string>;
-		modelNames?: { model1: string; model2: string };
+		modelNames?: Record<string, string>;
 		availableModels?: Array<{ id: ModelId; displayName: string }>;
 		envDefaults?: Record<string, string>;
 	}
@@ -89,6 +98,7 @@
 	let translationEnabled = $state(initialPreferences.translationEnabled);
 	let selectedTheme = $state(initialPreferences.theme);
 	let selectedTitleLanguage = $state(initialPreferences.titleLanguage ?? 'auto');
+	let selectedUiLanguage = $state<UiLanguage>(initialPreferences.uiLanguage ?? 'en');
 	let selectedAvatar = $state(initialPreferences.avatarId);
 
 	let showDeleteModal = $state(false);
@@ -215,6 +225,11 @@
 		await setTitleLanguageAndSync(lang);
 	}
 
+	async function changeUiLanguage(lang: UiLanguage) {
+		selectedUiLanguage = lang;
+		await setUiLanguageAndSync(lang);
+	}
+
 	function closeDeleteModal() {
 		showDeleteModal = false;
 		deletePassword = '';
@@ -324,7 +339,7 @@
 
 <div class="flex h-full w-full flex-1 flex-col overflow-y-auto">
 	<div class="settings-shell mx-auto w-full px-4 py-8" class:settings-shell-admin={activeTab === 'administration' && isAdmin}>
-		<h1 class="mb-6 text-2xl font-semibold text-text-primary">Settings</h1>
+		<h1 class="mb-6 text-2xl font-semibold text-text-primary">{$t('settings')}</h1>
 
 		<div class="mb-6 flex gap-1 rounded-lg border border-border bg-surface-overlay p-1">
 			<button
@@ -332,14 +347,14 @@
 				class:tab-active={activeTab === 'profile'}
 				onclick={() => handleTabChange('profile')}
 			>
-				Profile
+				{$t('settingsProfile')}
 			</button>
 			<button
 				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
 				class:tab-active={activeTab === 'analytics'}
 				onclick={() => handleTabChange('analytics')}
 			>
-				Analytics
+				{$t('settingsAnalytics')}
 			</button>
 			{#if isAdmin}
 				<button
@@ -347,7 +362,7 @@
 					class:tab-active={activeTab === 'administration'}
 					onclick={() => handleTabChange('administration')}
 				>
-					Administration
+					{$t('settingsAdministration')}
 				</button>
 			{/if}
 		</div>
@@ -388,10 +403,12 @@
 				{translationEnabled}
 				{selectedTheme}
 				{selectedTitleLanguage}
+				{selectedUiLanguage}
 				onChangeModel={changeModel}
 				onChangeTranslation={changeTranslation}
 				onChangeTheme={changeTheme}
 				onChangeTitleLanguage={changeTitleLanguage}
+				onChangeUiLanguage={changeUiLanguage}
 				onOpenResetModal={() => (showResetModal = true)}
 				onOpenDeleteModal={() => (showDeleteModal = true)}
 				forgetEverythingLoading={forgetEverythingLoading}

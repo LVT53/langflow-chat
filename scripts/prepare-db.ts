@@ -65,6 +65,13 @@ const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
 const HONCHO_PEER_VERSION_MIGRATION_TAG = '1775416800000_users_honcho_peer_version';
 const TITLE_LANGUAGE_MIGRATION_TAG = '1777140000003_users_title_language';
 const INFERENCE_PROVIDERS_CREATION_TAG = '1777140000000_inference_providers';
+const UI_LANGUAGE_MIGRATION_TAG = '1777140000005_users_ui_language';
+const INFERENCE_PROVIDER_MIGRATION_TAGS = [
+	INFERENCE_PROVIDERS_CREATION_TAG,
+	'1777140000001_inference_provider_reasoning_options',
+	'1777140000002_inference_provider_context_limits',
+	'1777140000004_inference_provider_max_tokens',
+] as const;
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -208,7 +215,7 @@ function syncMigrationJournalToBaselineSchema(): number {
 	return insertedCount;
 }
 
-function backfillTableMigrationIfNeeded(tag: string): { backfill: number; repair: boolean } {
+function getMigrationMetaForTag(tag: string) {
 	const journal = readMigrationJournalEntries();
 	const migrationIndex = journal.entries.findIndex((entry) => entry.tag === tag);
 	if (migrationIndex === -1) {
@@ -221,41 +228,82 @@ function backfillTableMigrationIfNeeded(tag: string): { backfill: number; repair
 		throw new Error(`Cannot resolve migration metadata for tag ${tag}`);
 	}
 
-	const existingHashes = listMigrationHashes();
-	if (existingHashes.has(migrationMeta.hash)) {
-		return { backfill: 0, repair: false };
-	}
+	return migrationMeta;
+}
 
+function insertMigrationRecordIfMissing(tag: string): number {
 	ensureMigrationJournal();
+	const migrationMeta = getMigrationMetaForTag(tag);
+	const existingHashes = listMigrationHashes();
 
-	if (!hasTable('inference_providers')) {
-		const laterEntries = journal.entries.slice(migrationIndex + 1);
-		if (laterEntries.length > 0) {
-			const laterHashes: string[] = [];
-			for (const entry of laterEntries) {
-				const idx = journal.entries.findIndex((e) => e.tag === entry.tag);
-				if (idx >= 0 && migrations[idx]) {
-					laterHashes.push(migrations[idx].hash);
-				}
-			}
-			if (laterHashes.length > 0) {
-				const placeholders = laterHashes.map(() => '?').join(', ');
-				sqlite
-					.prepare(`DELETE FROM __drizzle_migrations WHERE hash IN (${placeholders})`)
-					.run(...laterHashes);
-			}
-		}
-		sqlite
-			.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-			.run(migrationMeta.hash, String(migrationMeta.folderMillis));
-		return { backfill: 1, repair: true };
+	if (existingHashes.has(migrationMeta.hash)) {
+		return 0;
 	}
 
 	sqlite
 		.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
 		.run(migrationMeta.hash, String(migrationMeta.folderMillis));
+	return 1;
+}
 
-	return { backfill: 1, repair: false };
+function ensureInferenceProvidersSchema(): { backfill: number; repair: boolean; created: boolean } {
+	let created = false;
+	let repaired = false;
+
+	if (!hasTable('inference_providers')) {
+		sqlite.exec(`
+			CREATE TABLE inference_providers (
+				id text PRIMARY KEY NOT NULL,
+				name text NOT NULL,
+				display_name text NOT NULL,
+				base_url text NOT NULL,
+				api_key_encrypted text NOT NULL,
+				api_key_iv text NOT NULL,
+				model_name text NOT NULL,
+				enabled integer DEFAULT 1 NOT NULL,
+				sort_order integer DEFAULT 0 NOT NULL,
+				reasoning_effort text,
+				thinking_type text,
+				max_model_context integer,
+				compaction_ui_threshold integer,
+				target_constructed_context integer,
+				max_message_length integer,
+				max_tokens integer,
+				created_at integer DEFAULT (unixepoch()) NOT NULL,
+				updated_at integer DEFAULT (unixepoch()) NOT NULL
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS inference_providers_name_unique
+				ON inference_providers (name);
+		`);
+		created = true;
+		repaired = true;
+	} else {
+		sqlite.exec(
+			'CREATE UNIQUE INDEX IF NOT EXISTS inference_providers_name_unique ON inference_providers (name)'
+		);
+		const columnsToCreate: Array<[string, string]> = [
+			['reasoning_effort', 'text'],
+			['thinking_type', 'text'],
+			['max_model_context', 'integer'],
+			['compaction_ui_threshold', 'integer'],
+			['target_constructed_context', 'integer'],
+			['max_message_length', 'integer'],
+			['max_tokens', 'integer'],
+		];
+		for (const [column, definition] of columnsToCreate) {
+			if (!hasColumn('inference_providers', column)) {
+				sqlite.exec(`ALTER TABLE inference_providers ADD COLUMN ${column} ${definition}`);
+				repaired = true;
+			}
+		}
+	}
+
+	let backfill = 0;
+	for (const providerTag of INFERENCE_PROVIDER_MIGRATION_TAGS) {
+		backfill += insertMigrationRecordIfMissing(providerTag);
+	}
+
+	return { backfill, repair: repaired, created };
 }
 
 function backfillColumnMigrationIfNeeded(params: {
@@ -345,18 +393,32 @@ try {
 			);
 		}
 
-const { backfill: adoptedInferenceProvidersMigrationCount, repair: needsRepair } =
-			backfillTableMigrationIfNeeded(INFERENCE_PROVIDERS_CREATION_TAG);
+		const {
+			backfill: adoptedInferenceProvidersMigrationCount,
+			repair: needsRepair,
+			created: createdInferenceProvidersTable,
+		} = ensureInferenceProvidersSchema();
 		if (adoptedInferenceProvidersMigrationCount > 0) {
 			if (needsRepair) {
 				console.log(
-					`Repaired inference_providers migration state in ${databasePath}: removed recorded column migrations, Drizzle will re-run the full chain.`
+					`Repaired inference_providers schema in ${databasePath}: ${createdInferenceProvidersTable ? 'created missing table and' : 'added missing columns and'} backfilled ${adoptedInferenceProvidersMigrationCount} provider migration record(s).`
 				);
 			} else {
 				console.log(
-					`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record for existing inference_providers table in ${databasePath}.`
+					`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record(s) for existing inference_providers schema in ${databasePath}.`
 				);
 			}
+		}
+
+		const adoptedUiLanguageMigrationCount = backfillColumnMigrationIfNeeded({
+			table: 'users',
+			column: 'ui_language',
+			tag: UI_LANGUAGE_MIGRATION_TAG,
+		});
+		if (adoptedUiLanguageMigrationCount > 0) {
+			console.log(
+				`Backfilled ${adoptedUiLanguageMigrationCount} Drizzle migration record for existing users.ui_language column in ${databasePath}.`
+			);
 		}
 
 		const db = drizzle(sqlite);

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { count, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations, messageAnalytics, sessions, users } from '$lib/server/db/schema';
+import { analyticsConversations, sessions, usageEvents, users } from '$lib/server/db/schema';
 import type { AdminManagedUserSummary, UserRole } from '$lib/types';
 import { deleteUserAccountAsAdminWithCleanup } from './cleanup';
 
@@ -57,33 +57,33 @@ export async function listManagedUsers(): Promise<AdminManagedUserSummary[]> {
 
 	const conversationRows = await db
 		.select({
-			userId: conversations.userId,
-			conversationCount: count(conversations.id),
+			userId: analyticsConversations.userId,
+			conversationCount: count(analyticsConversations.id),
 		})
-		.from(conversations)
-		.where(inArray(conversations.userId, userIds))
-		.groupBy(conversations.userId);
+		.from(analyticsConversations)
+		.where(inArray(analyticsConversations.userId, userIds))
+		.groupBy(analyticsConversations.userId);
 
 	const analyticsRows = await db
 		.select({
-			userId: messageAnalytics.userId,
-			messageCount: count(messageAnalytics.id),
-			completionTokens: sql<number>`coalesce(sum(${messageAnalytics.completionTokens}), 0)`,
-			reasoningTokens: sql<number>`coalesce(sum(${messageAnalytics.reasoningTokens}), 0)`,
+			userId: usageEvents.userId,
+			messageCount: count(usageEvents.id),
+			completionTokens: sql<number>`coalesce(sum(${usageEvents.completionTokens}), 0)`,
+			reasoningTokens: sql<number>`coalesce(sum(${usageEvents.reasoningTokens}), 0)`,
 		})
-		.from(messageAnalytics)
-		.where(inArray(messageAnalytics.userId, userIds))
-		.groupBy(messageAnalytics.userId);
+		.from(usageEvents)
+		.where(inArray(usageEvents.userId, userIds))
+		.groupBy(usageEvents.userId);
 
 	const favoriteModelRows = await db
 		.select({
-			userId: messageAnalytics.userId,
-			model: messageAnalytics.model,
-			messageCount: count(messageAnalytics.id),
+			userId: usageEvents.userId,
+			model: usageEvents.modelId,
+			messageCount: count(usageEvents.id),
 		})
-		.from(messageAnalytics)
-		.where(inArray(messageAnalytics.userId, userIds))
-		.groupBy(messageAnalytics.userId, messageAnalytics.model);
+		.from(usageEvents)
+		.where(inArray(usageEvents.userId, userIds))
+		.groupBy(usageEvents.userId, usageEvents.modelId);
 
 	const sessionRows = await db
 		.select({

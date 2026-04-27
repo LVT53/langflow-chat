@@ -20,7 +20,9 @@ export interface HonchoHealth {
 
 interface AnalyticsByModelRow {
 	model: string;
+	displayName?: string;
 	msgCount: number;
+	totalCostUsd?: number;
 }
 
 interface PersonalAnalytics {
@@ -28,16 +30,25 @@ interface PersonalAnalytics {
 	totalMessages: number;
 	avgGenerationMs: number;
 	totalTokens: number;
+	promptTokens: number;
+	cachedInputTokens: number;
+	outputTokens: number;
 	reasoningTokens: number;
+	totalCostUsd: number;
 	favoriteModel: string | null;
 	chatCount: number;
+	monthly?: Array<{ month: string; messages: number; totalTokens: number; totalCostUsd: number }>;
 }
 
 interface SystemAnalytics {
 	totalMessages: number;
 	avgGenerationMs: number;
 	totalTokens: number;
+	promptTokens: number;
+	cachedInputTokens: number;
+	outputTokens: number;
 	reasoningTokens: number;
+	totalCostUsd: number;
 	totalUsers: number;
 	totalConversations: number;
 	byModel: AnalyticsByModelRow[];
@@ -50,7 +61,11 @@ interface PerUserAnalytics {
 	messageCount: number;
 	avgGenerationMs: number;
 	totalTokens: number;
+	promptTokens: number;
+	cachedInputTokens?: number;
+	outputTokens: number;
 	reasoningTokens: number;
+	totalCostUsd: number;
 	favoriteModel: string | null;
 	conversationCount: number;
 }
@@ -76,6 +91,7 @@ export async function updateUserPreferences(params: {
 	translationEnabled?: boolean;
 	theme?: 'system' | 'light' | 'dark';
 	titleLanguage?: 'auto' | 'en' | 'hu';
+	uiLanguage?: 'en' | 'hu';
 	avatarId?: number | null;
 }): Promise<void> {
 	await requestJson<{ success?: boolean }>(

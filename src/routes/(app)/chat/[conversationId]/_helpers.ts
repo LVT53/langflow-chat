@@ -7,6 +7,7 @@ import type {
 	ToolEvidenceCandidate,
 	ChatGeneratedFileListItem,
 	DocumentWorkspaceItem,
+	ModelId,
 } from '$lib/types';
 
 export type SendPayload = {
@@ -15,6 +16,7 @@ export type SendPayload = {
 	attachments: ArtifactSummary[];
 	pendingAttachments: PendingAttachment[];
 	conversationId?: string | null;
+	modelId?: ModelId;
 };
 
 export type MessageEditPayload = {
@@ -275,6 +277,7 @@ export function finalizeStreamingMessageList(
 				isStreaming: false,
 				thinking: params.metadata?.thinking ?? message.thinking,
 				isThinkingStreaming: false,
+				modelId: params.metadata?.modelId ?? message.modelId,
 				modelDisplayName: params.metadata?.modelDisplayName ?? message.modelDisplayName,
 				thinkingTokenCount: params.metadata?.thinkingTokenCount,
 				responseTokenCount: params.metadata?.responseTokenCount,
@@ -337,6 +340,7 @@ export function cloneSendPayload(payload: SendPayload): SendPayload {
 			...attachment,
 		})),
 		conversationId: payload.conversationId ?? null,
+		modelId: payload.modelId,
 	};
 }
 

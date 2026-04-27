@@ -2,155 +2,232 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { db } from '$lib/server/db';
-import { messageAnalytics, conversations, users } from '$lib/server/db/schema';
-import { eq, count, avg, sum, sql } from 'drizzle-orm';
+import { analyticsConversations, usageEvents } from '$lib/server/db/schema';
 
 const MOCK_ANALYTICS = {
-  personal: {
-    byModel: [
-      { model: 'model1', msgCount: 87 },
-      { model: 'model2', msgCount: 34 },
-    ],
-    totalMessages: 121,
-    avgGenerationMs: 2340,
-    totalTokens: 48200,
-    reasoningTokens: 12400,
-    favoriteModel: 'model1',
-    chatCount: 18,
-  },
-  system: {
-    totalMessages: 430,
-    avgGenerationMs: 2100,
-    totalTokens: 176000,
-    reasoningTokens: 44000,
-    totalUsers: 5,
-    totalConversations: 60,
-    byModel: [
-      { model: 'model1', msgCount: 310 },
-      { model: 'model2', msgCount: 120 },
-    ],
-  },
-  perUser: [
-    { userId: '1', displayName: 'Admin', email: 'admin@demo.com', messageCount: 121, avgGenerationMs: 2340, totalTokens: 48200, reasoningTokens: 12400, favoriteModel: 'model1', conversationCount: 18 },
-    { userId: '2', displayName: 'Alice', email: 'alice@demo.com', messageCount: 95, avgGenerationMs: 1980, totalTokens: 38100, reasoningTokens: 9600, favoriteModel: 'model1', conversationCount: 12 },
-    { userId: '3', displayName: 'Bob', email: 'bob@demo.com', messageCount: 73, avgGenerationMs: 2600, totalTokens: 29400, reasoningTokens: 7800, favoriteModel: 'model2', conversationCount: 9 },
-    { userId: '4', displayName: 'Carol', email: 'carol@demo.com', messageCount: 88, avgGenerationMs: 1750, totalTokens: 35600, reasoningTokens: 8200, favoriteModel: 'model1', conversationCount: 14 },
-    { userId: '5', displayName: 'Dave', email: 'dave@demo.com', messageCount: 53, avgGenerationMs: 3100, totalTokens: 21300, reasoningTokens: 5800, favoriteModel: 'model2', conversationCount: 7 },
-  ],
+	personal: {
+		byModel: [
+			{ model: 'model1', displayName: 'Model 1', msgCount: 87, totalCostUsd: 1.42 },
+			{ model: 'model2', displayName: 'Model 2', msgCount: 34, totalCostUsd: 0.94 },
+		],
+		totalMessages: 121,
+		avgGenerationMs: 2340,
+		promptTokens: 35800,
+		cachedInputTokens: 5100,
+		outputTokens: 48200,
+		reasoningTokens: 12400,
+		totalTokens: 96400,
+		totalCostUsd: 2.36,
+		favoriteModel: 'model1',
+		chatCount: 18,
+		monthly: [{ month: '2026-04', messages: 121, totalTokens: 96400, totalCostUsd: 2.36 }],
+	},
+	system: {
+		totalMessages: 430,
+		avgGenerationMs: 2100,
+		promptTokens: 132000,
+		cachedInputTokens: 18800,
+		outputTokens: 176000,
+		reasoningTokens: 44000,
+		totalTokens: 352000,
+		totalCostUsd: 9.8,
+		totalUsers: 5,
+		totalConversations: 60,
+		byModel: [
+			{ model: 'model1', displayName: 'Model 1', msgCount: 310, totalCostUsd: 6.1 },
+			{ model: 'model2', displayName: 'Model 2', msgCount: 120, totalCostUsd: 3.7 },
+		],
+		monthly: [{ month: '2026-04', messages: 430, totalTokens: 352000, totalCostUsd: 9.8 }],
+	},
+	perUser: [
+		{ userId: '1', displayName: 'Admin', email: 'admin@demo.com', messageCount: 121, avgGenerationMs: 2340, totalTokens: 96400, promptTokens: 35800, outputTokens: 48200, reasoningTokens: 12400, totalCostUsd: 2.36, favoriteModel: 'model1', conversationCount: 18 },
+		{ userId: '2', displayName: 'Alice', email: 'alice@demo.com', messageCount: 95, avgGenerationMs: 1980, totalTokens: 75200, promptTokens: 27600, outputTokens: 38100, reasoningTokens: 9500, totalCostUsd: 1.9, favoriteModel: 'model1', conversationCount: 12 },
+	],
 };
 
+type UsageRow = typeof usageEvents.$inferSelect;
+type ConversationRow = typeof analyticsConversations.$inferSelect;
+
+function usd(micros: number): number {
+	return Math.round((micros / 1_000_000) * 10000) / 10000;
+}
+
+function average(values: number[]): number {
+	const present = values.filter((value) => Number.isFinite(value) && value > 0);
+	if (present.length === 0) return 0;
+	return present.reduce((sum, value) => sum + value, 0) / present.length;
+}
+
+function modelBreakdown(rows: UsageRow[]) {
+	const grouped = new Map<string, {
+		model: string;
+		displayName: string;
+		providerDisplayName: string | null;
+		msgCount: number;
+		promptTokens: number;
+		cachedInputTokens: number;
+		outputTokens: number;
+		reasoningTokens: number;
+		totalTokens: number;
+		totalCostMicros: number;
+	}>();
+
+	for (const row of rows) {
+		const key = row.modelId;
+		const current = grouped.get(key) ?? {
+			model: row.modelId,
+			displayName: row.modelDisplayName ?? row.providerModelName ?? row.modelId,
+			providerDisplayName: row.providerDisplayName,
+			msgCount: 0,
+			promptTokens: 0,
+			cachedInputTokens: 0,
+			outputTokens: 0,
+			reasoningTokens: 0,
+			totalTokens: 0,
+			totalCostMicros: 0,
+		};
+		current.msgCount += 1;
+		current.promptTokens += row.promptTokens;
+		current.cachedInputTokens += row.cachedInputTokens;
+		current.outputTokens += row.completionTokens;
+		current.reasoningTokens += row.reasoningTokens;
+		current.totalTokens += row.totalTokens;
+		current.totalCostMicros += row.costUsdMicros;
+		grouped.set(key, current);
+	}
+
+	return [...grouped.values()]
+		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
+		.sort((left, right) => right.msgCount - left.msgCount);
+}
+
+function monthlyBreakdown(rows: UsageRow[]) {
+	const grouped = new Map<string, {
+		month: string;
+		messages: number;
+		promptTokens: number;
+		cachedInputTokens: number;
+		outputTokens: number;
+		reasoningTokens: number;
+		totalTokens: number;
+		totalCostMicros: number;
+	}>();
+
+	for (const row of rows) {
+		const current = grouped.get(row.billingMonth) ?? {
+			month: row.billingMonth,
+			messages: 0,
+			promptTokens: 0,
+			cachedInputTokens: 0,
+			outputTokens: 0,
+			reasoningTokens: 0,
+			totalTokens: 0,
+			totalCostMicros: 0,
+		};
+		current.messages += 1;
+		current.promptTokens += row.promptTokens;
+		current.cachedInputTokens += row.cachedInputTokens;
+		current.outputTokens += row.completionTokens;
+		current.reasoningTokens += row.reasoningTokens;
+		current.totalTokens += row.totalTokens;
+		current.totalCostMicros += row.costUsdMicros;
+		grouped.set(row.billingMonth, current);
+	}
+
+	return [...grouped.values()]
+		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
+		.sort((left, right) => left.month.localeCompare(right.month));
+}
+
+function summarize(rows: UsageRow[], conversations: ConversationRow[]) {
+	const byModel = modelBreakdown(rows);
+	const promptTokens = rows.reduce((sum, row) => sum + row.promptTokens, 0);
+	const cachedInputTokens = rows.reduce((sum, row) => sum + row.cachedInputTokens, 0);
+	const outputTokens = rows.reduce((sum, row) => sum + row.completionTokens, 0);
+	const reasoningTokens = rows.reduce((sum, row) => sum + row.reasoningTokens, 0);
+	const totalTokens = rows.reduce((sum, row) => sum + row.totalTokens, 0);
+	const totalCostMicros = rows.reduce((sum, row) => sum + row.costUsdMicros, 0);
+
+	return {
+		byModel,
+		totalMessages: rows.length,
+		avgGenerationMs: average(rows.map((row) => row.generationTimeMs ?? 0)),
+		promptTokens,
+		cachedInputTokens,
+		outputTokens,
+		reasoningTokens,
+		totalTokens,
+		totalCostUsd: usd(totalCostMicros),
+		favoriteModel: byModel[0]?.model ?? null,
+		chatCount: new Set(conversations.map((row) => row.conversationId)).size,
+		monthly: monthlyBreakdown(rows),
+	};
+}
+
 export const GET: RequestHandler = async (event) => {
-  requireAuth(event);
-  const user = event.locals.user!;
-  const isAdmin = user.role === 'admin';
+	requireAuth(event);
+	const user = event.locals.user!;
+	const isAdmin = user.role === 'admin';
 
-  // Dev-only mock mode for testing charts without real data
-  if (event.url.searchParams.get('mock') === '1') {
-    return json(isAdmin ? MOCK_ANALYTICS : { personal: MOCK_ANALYTICS.personal });
-  }
+	if (event.url.searchParams.get('mock') === '1') {
+		return json(isAdmin ? MOCK_ANALYTICS : { personal: MOCK_ANALYTICS.personal });
+	}
 
-  // Personal stats for the requesting user
-  const personalRows = await db
-    .select({
-      model: messageAnalytics.model,
-      msgCount: count(messageAnalytics.id),
-      avgGenMs: avg(messageAnalytics.generationTimeMs),
-      totalCompletion: sum(messageAnalytics.completionTokens),
-      totalReasoning: sum(messageAnalytics.reasoningTokens),
-    })
-    .from(messageAnalytics)
-    .where(eq(messageAnalytics.userId, user.id))
-    .groupBy(messageAnalytics.model);
+	const [usageRows, conversationRows] = await Promise.all([
+		db.select().from(usageEvents),
+		db.select().from(analyticsConversations),
+	]);
 
-  const personalChatCount = await db
-    .select({ cnt: count(conversations.id) })
-    .from(conversations)
-    .where(eq(conversations.userId, user.id));
+	const personalUsageRows = usageRows.filter((row) => row.userId === user.id);
+	const personalConversationRows = conversationRows.filter((row) => row.userId === user.id);
+	const personal = summarize(personalUsageRows, personalConversationRows);
 
-  const personalStats = {
-    byModel: personalRows,
-    totalMessages: personalRows.reduce((s, r) => s + Number(r.msgCount), 0),
-    avgGenerationMs: personalRows.length
-      ? personalRows.reduce((s, r) => s + Number(r.avgGenMs || 0), 0) / personalRows.length
-      : 0,
-    totalTokens: personalRows.reduce((s, r) => s + Number(r.totalCompletion || 0), 0),
-    reasoningTokens: personalRows.reduce((s, r) => s + Number(r.totalReasoning || 0), 0),
-    favoriteModel: personalRows.sort((a, b) => Number(b.msgCount) - Number(a.msgCount))[0]?.model ?? null,
-    chatCount: Number(personalChatCount[0]?.cnt ?? 0),
-  };
+	if (!isAdmin) {
+		return json({ personal });
+	}
 
-  if (!isAdmin) {
-    return json({ personal: personalStats });
-  }
+	const system = {
+		...summarize(usageRows, conversationRows),
+		totalUsers: new Set([
+			...usageRows.map((row) => row.userId),
+			...conversationRows.map((row) => row.userId),
+		]).size,
+		totalConversations: new Set(conversationRows.map((row) => row.conversationId)).size,
+	};
 
-  // Admin: system-wide stats
-  const systemRows = await db
-    .select({
-      msgCount: count(messageAnalytics.id),
-      avgGenMs: avg(messageAnalytics.generationTimeMs),
-      totalCompletion: sum(messageAnalytics.completionTokens),
-      totalReasoning: sum(messageAnalytics.reasoningTokens),
-    })
-    .from(messageAnalytics);
+	const userIds = new Set([
+		...usageRows.map((row) => row.userId),
+		...conversationRows.map((row) => row.userId),
+	]);
+	const perUser = [...userIds]
+		.map((userId) => {
+			const rows = usageRows.filter((row) => row.userId === userId);
+			const convRows = conversationRows.filter((row) => row.userId === userId);
+			const summary = summarize(rows, convRows);
+			const latestSnapshot = rows[rows.length - 1] ?? null;
+			const latestConversationSnapshot = convRows[convRows.length - 1] ?? null;
+			return {
+				userId,
+				displayName:
+					latestSnapshot?.userName ??
+					latestConversationSnapshot?.userName ??
+					latestSnapshot?.userEmail ??
+					latestConversationSnapshot?.userEmail ??
+					userId,
+				email: latestSnapshot?.userEmail ?? latestConversationSnapshot?.userEmail ?? '',
+				messageCount: summary.totalMessages,
+				avgGenerationMs: summary.avgGenerationMs,
+				totalTokens: summary.totalTokens,
+				promptTokens: summary.promptTokens,
+				cachedInputTokens: summary.cachedInputTokens,
+				outputTokens: summary.outputTokens,
+				reasoningTokens: summary.reasoningTokens,
+				totalCostUsd: summary.totalCostUsd,
+				favoriteModel: summary.favoriteModel,
+				conversationCount: summary.chatCount,
+			};
+		})
+		.sort((left, right) => right.messageCount - left.messageCount);
 
-  const systemModelRows = await db
-    .select({
-      model: messageAnalytics.model,
-      msgCount: count(messageAnalytics.id),
-    })
-    .from(messageAnalytics)
-    .groupBy(messageAnalytics.model);
-
-  const userCount = await db.select({ cnt: count(users.id) }).from(users);
-  const conversationCount = await db.select({ cnt: count(conversations.id) }).from(conversations);
-
-  const systemStats = {
-    totalMessages: Number(systemRows[0]?.msgCount ?? 0),
-    avgGenerationMs: Number(systemRows[0]?.avgGenMs ?? 0),
-    totalTokens: Number(systemRows[0]?.totalCompletion ?? 0),
-    reasoningTokens: Number(systemRows[0]?.totalReasoning ?? 0),
-    totalUsers: Number(userCount[0]?.cnt ?? 0),
-    totalConversations: Number(conversationCount[0]?.cnt ?? 0),
-    byModel: systemModelRows,
-  };
-
-  // Per-user breakdown
-  const perUserRows = await db
-    .select({
-      userId: messageAnalytics.userId,
-      msgCount: count(messageAnalytics.id),
-      avgGenMs: avg(messageAnalytics.generationTimeMs),
-      totalCompletion: sum(messageAnalytics.completionTokens),
-      totalReasoning: sum(messageAnalytics.reasoningTokens),
-      topModel: sql<string>`(SELECT model FROM message_analytics WHERE user_id = ${messageAnalytics.userId} GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1)`,
-    })
-    .from(messageAnalytics)
-    .groupBy(messageAnalytics.userId);
-
-  // Get user info and chat counts
-  const allUsers = await db.select({ id: users.id, name: users.name, email: users.email }).from(users);
-  const userMap = new Map(allUsers.map((u) => [u.id, u]));
-
-  const chatCounts = await db
-    .select({ userId: conversations.userId, cnt: count(conversations.id) })
-    .from(conversations)
-    .groupBy(conversations.userId);
-  const chatMap = new Map(chatCounts.map((c) => [c.userId, Number(c.cnt)]));
-
-  const perUser = perUserRows.map((row) => {
-    const u = userMap.get(row.userId);
-    return {
-      userId: row.userId,
-      displayName: u?.name ?? u?.email ?? row.userId,
-      email: u?.email ?? '',
-      messageCount: Number(row.msgCount),
-      avgGenerationMs: Number(row.avgGenMs ?? 0),
-      totalTokens: Number(row.totalCompletion ?? 0),
-      reasoningTokens: Number(row.totalReasoning ?? 0),
-      favoriteModel: row.topModel ?? null,
-      conversationCount: chatMap.get(row.userId) ?? 0,
-    };
-  }).sort((a, b) => b.messageCount - a.messageCount);
-
-  return json({ personal: personalStats, system: systemStats, perUser });
+	return json({ personal, system, perUser });
 };

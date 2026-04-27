@@ -25,6 +25,9 @@ import { read, persist } from './_local-storage';
  */
 
 export const SIDEBAR_DESKTOP_BREAKPOINT = 1024;
+export const SIDEBAR_MIN_WIDTH = 240;
+export const SIDEBAR_DEFAULT_WIDTH = 300;
+export const SIDEBAR_MAX_WIDTH = 480;
 
 const isValidBool = (v: string): v is 'true' | 'false' => v === 'true' || v === 'false';
 
@@ -77,5 +80,20 @@ const initialSidebarCollapsedValue = browser
 	: 'true';
 export const sidebarCollapsed = writable<boolean>(initialSidebarCollapsedValue === 'true');
 
+function isValidSidebarWidth(value: string): value is string {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH;
+}
+
+const initialSidebarWidthValue = browser
+	? Number(read('sidebarWidth', String(SIDEBAR_DEFAULT_WIDTH), isValidSidebarWidth))
+	: SIDEBAR_DEFAULT_WIDTH;
+export const sidebarWidth = writable<number>(initialSidebarWidthValue);
+
+export function clampSidebarWidth(width: number): number {
+	return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
 sidebarOpen.subscribe((value) => persist('sidebarOpen', value ? 'true' : 'false'));
 sidebarCollapsed.subscribe((value) => persist('sidebarCollapsed', value ? 'true' : 'false'));
+sidebarWidth.subscribe((value) => persist('sidebarWidth', String(clampSidebarWidth(value))));

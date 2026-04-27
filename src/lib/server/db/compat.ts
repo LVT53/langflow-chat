@@ -31,6 +31,15 @@ function ensureUsersHonchoPeerVersionColumn(): void {
 	console.warn('[DB_COMPAT] Added missing users.honcho_peer_version column at runtime');
 }
 
+function ensureUsersUiLanguageColumn(): void {
+	if (!hasTable('users') || hasColumn('users', 'ui_language')) {
+		return;
+	}
+
+	sqlite.exec("ALTER TABLE users ADD COLUMN ui_language text DEFAULT 'en' NOT NULL");
+	console.warn('[DB_COMPAT] Added missing users.ui_language column at runtime');
+}
+
 export async function ensureRuntimeSchemaCompatibility(): Promise<void> {
 	if (runtimeSchemaCompatibilityEnsured) {
 		return;
@@ -39,6 +48,7 @@ export async function ensureRuntimeSchemaCompatibility(): Promise<void> {
 	if (!ensureRuntimeSchemaCompatibilityPromise) {
 		ensureRuntimeSchemaCompatibilityPromise = Promise.resolve().then(() => {
 			ensureUsersHonchoPeerVersionColumn();
+			ensureUsersUiLanguageColumn();
 			runtimeSchemaCompatibilityEnsured = true;
 		});
 	}

@@ -1,4 +1,4 @@
-import type { ArtifactSummary, ConversationDraft, PendingAttachment } from '$lib/types';
+import type { ArtifactSummary, ConversationDraft, ModelId, PendingAttachment } from '$lib/types';
 import {
 	deleteConversationDraft,
 	deletePreparedConversation,
@@ -14,6 +14,7 @@ export type PendingConversationMessage = {
 	message: string;
 	attachmentIds: string[];
 	attachments: ArtifactSummary[];
+	modelId?: ModelId;
 };
 
 function getSessionStorage(): Storage | null {
@@ -78,6 +79,7 @@ export function storePendingConversationMessage(
 			message: payload.message.trim(),
 			attachmentIds: payload.attachmentIds,
 			attachments: payload.attachments,
+			modelId: payload.modelId,
 		})
 	);
 }
@@ -106,6 +108,13 @@ export function consumePendingConversationMessage(
 				? parsed.attachmentIds.filter((value): value is string => typeof value === 'string')
 				: [],
 			attachments: toArtifactSummaryList(parsed.attachments),
+			modelId:
+				typeof parsed.modelId === 'string' &&
+				(parsed.modelId === 'model1' ||
+					parsed.modelId === 'model2' ||
+					parsed.modelId.startsWith('provider:'))
+					? (parsed.modelId as ModelId)
+					: undefined,
 		};
 	} catch {
 		return {

@@ -12,6 +12,7 @@ import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
 } from "./attachment-trace";
+import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
 import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
 import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
 
@@ -451,6 +452,7 @@ export async function sendMessage(
 	contextDebug?: import("$lib/types").ContextDebugState | null;
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
 	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
+	providerUsage?: ProviderUsageSnapshot | null;
 }> {
 	const config = getConfig();
 	const controller = new AbortController();
@@ -583,6 +585,7 @@ export async function sendMessage(
 
 		const rawResponse: LangflowRunResponse = await response.json();
 		const text = extractMessageText(rawResponse);
+		const providerUsage = extractProviderUsage(rawResponse);
 
 		return {
 			text,
@@ -592,6 +595,7 @@ export async function sendMessage(
 			contextDebug,
 			honchoContext,
 			honchoSnapshot,
+			providerUsage,
 		};
 	} catch (error) {
 		throw error;
@@ -622,6 +626,7 @@ export async function sendMessageStream(
 	contextDebug?: import("$lib/types").ContextDebugState | null;
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
 	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
+	providerUsage?: ProviderUsageSnapshot | null;
 }> {
 	const config = getConfig();
 	const timeoutController = new AbortController();
@@ -773,6 +778,7 @@ export async function sendMessageStream(
 		if (!contentType.includes("text/event-stream")) {
 			const rawResponse: LangflowRunResponse = await response.json();
 			const text = extractMessageText(rawResponse);
+			const providerUsage = extractProviderUsage(rawResponse);
 			console.warn(
 				"[LANGFLOW] sendMessageStream received non-stream JSON response",
 				{
@@ -790,6 +796,7 @@ export async function sendMessageStream(
 				contextDebug,
 				honchoContext,
 				honchoSnapshot,
+				providerUsage,
 			};
 		}
 

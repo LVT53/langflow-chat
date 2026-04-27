@@ -28,6 +28,10 @@ export const load: ServerLoad = async (event) => {
 		config
 	);
 	const availableModels = await getAvailableModelsWithProviders();
+	const modelNames: Record<string, string> = {};
+	for (const model of availableModels) {
+		modelNames[model.id] = model.displayName;
+	}
 
 	return {
 		user: event.locals.user,
@@ -38,11 +42,9 @@ export const load: ServerLoad = async (event) => {
 		userModel,
 		userTranslation: (userRow?.translationEnabled ?? 0) === 1,
 		userTitleLanguage: (userRow?.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
+		userUiLanguage: (userRow?.uiLanguage ?? 'en') as 'en' | 'hu',
 		userAvatarId: userRow?.avatarId ?? null,
-		modelNames: {
-			model1: config.model1.displayName,
-			model2: config.model2.displayName,
-		},
+		modelNames,
 		availableModels,
 	};
 };

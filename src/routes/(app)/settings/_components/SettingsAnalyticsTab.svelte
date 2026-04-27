@@ -52,6 +52,10 @@
 		return value.toLocaleString();
 	}
 
+	function formatUsd(value: number): string {
+		return `$${Number(value ?? 0).toFixed(4)}`;
+	}
+
 	async function initCharts() {
 		if (!analyticsData) return;
 		await tick();
@@ -67,7 +71,7 @@
 			modelChart = new Chart(modelChartCanvas, {
 				type: 'doughnut',
 				data: {
-					labels: byModel.map((row: any) => modelDisplayName(row.model)),
+					labels: byModel.map((row: any) => row.displayName ?? modelDisplayName(row.model)),
 					datasets: [{
 						data: byModel.map((row: any) => Number(row.msgCount)),
 						backgroundColor: CHART_COLORS.slice(0, byModel.length),
@@ -193,14 +197,20 @@
 				<div class="stat-label">Tokens used</div>
 			</div>
 			<div class="stat-card">
-				<div class="stat-value">{formatNum(analyticsData.personal.reasoningTokens)}</div>
-				<div class="stat-label">Reasoning tokens</div>
+				<div class="stat-value">{formatUsd(analyticsData.personal.totalCostUsd)}</div>
+				<div class="stat-label">Estimated cost</div>
 			</div>
 			<div class="stat-card">
-				<div class="stat-value">
-					{formatNum(analyticsData.personal.totalTokens + analyticsData.personal.reasoningTokens)}
-				</div>
-				<div class="stat-label">Total incl. reasoning</div>
+				<div class="stat-value">{formatNum(analyticsData.personal.promptTokens)}</div>
+				<div class="stat-label">Prompt tokens</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{formatNum(analyticsData.personal.cachedInputTokens)}</div>
+				<div class="stat-label">Cached input</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{formatNum(analyticsData.personal.reasoningTokens)}</div>
+				<div class="stat-label">Reasoning tokens</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">
@@ -247,14 +257,20 @@
 					<div class="stat-label">Total tokens</div>
 				</div>
 				<div class="stat-card">
-					<div class="stat-value">{formatNum(analyticsData.system.reasoningTokens)}</div>
-					<div class="stat-label">Reasoning tokens</div>
+					<div class="stat-value">{formatUsd(analyticsData.system.totalCostUsd)}</div>
+					<div class="stat-label">Estimated cost</div>
 				</div>
 				<div class="stat-card">
-					<div class="stat-value">
-						{formatNum(analyticsData.system.totalTokens + analyticsData.system.reasoningTokens)}
-					</div>
-					<div class="stat-label">Total incl. reasoning</div>
+					<div class="stat-value">{formatNum(analyticsData.system.promptTokens)}</div>
+					<div class="stat-label">Prompt tokens</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{formatNum(analyticsData.system.cachedInputTokens)}</div>
+					<div class="stat-label">Cached input</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-value">{formatNum(analyticsData.system.reasoningTokens)}</div>
+					<div class="stat-label">Reasoning tokens</div>
 				</div>
 				<div class="stat-card">
 					<div class="stat-value">{formatNum(analyticsData.system.totalConversations ?? 0)}</div>
@@ -281,9 +297,11 @@
 							<th class="pb-2 pr-3 font-medium">User</th>
 							<th class="pb-2 pr-3 font-medium">Msgs</th>
 							<th class="pb-2 pr-3 font-medium">Avg Time</th>
-							<th class="pb-2 pr-3 font-medium">Completion</th>
+							<th class="pb-2 pr-3 font-medium">Prompt</th>
+							<th class="pb-2 pr-3 font-medium">Output</th>
 							<th class="pb-2 pr-3 font-medium">Reasoning</th>
 							<th class="pb-2 pr-3 font-medium">Total Tokens</th>
+							<th class="pb-2 pr-3 font-medium">Cost</th>
 							<th class="pb-2 pr-3 font-medium">Model</th>
 							<th class="pb-2 font-medium">Chats</th>
 						</tr>
@@ -297,11 +315,11 @@
 								</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.messageCount)}</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatMs(row.avgGenerationMs)}</td>
-								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
+								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.promptTokens)}</td>
+								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.outputTokens)}</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.reasoningTokens)}</td>
-								<td class="py-2 pr-3 text-text-secondary">
-									{formatNum(row.totalTokens + row.reasoningTokens)}
-								</td>
+								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
+								<td class="py-2 pr-3 text-text-secondary">{formatUsd(row.totalCostUsd)}</td>
 								<td class="py-2 pr-3 text-text-secondary">
 									{row.favoriteModel ? modelDisplayName(row.favoriteModel) : '—'}
 								</td>

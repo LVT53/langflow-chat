@@ -13,9 +13,11 @@ import {
 import { fetchConversationDetail } from '$lib/client/api/conversations';
 import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
 import { currentConversationId } from '$lib/stores/ui';
+import { selectedModel } from '$lib/stores/settings';
+import { t } from '$lib/i18n';
 import MessageInput from '$lib/components/chat/MessageInput.svelte';
 import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
-import type { ConversationDetail } from '$lib/types';
+import type { ConversationDetail, ModelId } from '$lib/types';
 	import { onDestroy, onMount } from 'svelte';
 	import type {
 		ArtifactSummary,
@@ -60,6 +62,7 @@ import type { ConversationDetail } from '$lib/types';
 		attachmentIds: string[];
 		attachments: ArtifactSummary[];
 		conversationId: string | null;
+		modelId?: ModelId;
 	};
 
 	type MessageInputDraftPayload = {
@@ -75,6 +78,7 @@ import type { ConversationDetail } from '$lib/types';
 	let isFromChat = $state(false);
 	let animateIn = $state(false);
 	let pendingMessagePreview = $state('');
+	let greetingIndex = $state(0);
 	let preparedConversationId = $state<string | null>(null);
 	let preparedConversationPromise: Promise<string> | null = null;
 	let preparedConversationValidationPromise: Promise<void> | null = null;
@@ -82,6 +86,17 @@ import type { ConversationDetail } from '$lib/types';
 	const draftPersistence = createDraftPersistence();
 
 	const INTERNAL_MIME = 'application/x-alfyai-conversation';
+	const greetingName = $derived(
+		data.user?.displayName?.trim() ||
+			data.user?.email?.split('@')[0]?.trim() ||
+			''
+	);
+	const greetingOptions = $derived([
+		greetingName ? $t('landingGreetingNamed', { name: greetingName }) : $t('landingGreeting'),
+		greetingName ? $t('landingReadyNamed', { name: greetingName }) : $t('landingReady'),
+		greetingName ? $t('landingWorkNamed', { name: greetingName }) : $t('landingWork'),
+	]);
+	const activeGreeting = $derived(greetingOptions[greetingIndex % greetingOptions.length]);
 	let fileDragActive = $state(false);
 	let fileDragRejected = $state(false);
 	let dragEnterCount = 0;
@@ -153,6 +168,11 @@ import type { ConversationDetail } from '$lib/types';
 					preparedConversationValidationPromise = null;
 				});
 		}
+
+		const greetingTimer = window.setInterval(() => {
+			greetingIndex = (greetingIndex + 1) % greetingOptions.length;
+		}, 4500);
+		return () => window.clearInterval(greetingTimer);
 	});
 
 	onDestroy(() => {
@@ -197,6 +217,7 @@ import type { ConversationDetail } from '$lib/types';
 				message: text,
 				attachmentIds: payload.attachmentIds,
 				attachments: payload.attachments,
+				modelId: payload.modelId ?? $selectedModel,
 			});
 			await navigateToConversationFromLanding({
 				conversationId: id,
@@ -300,14 +321,14 @@ import type { ConversationDetail } from '$lib/types';
 							class="text-balance text-[2rem] font-serif font-medium tracking-[-0.05em] md:text-[3rem]"
 							style="color: color-mix(in srgb, var(--text-primary) 60%, var(--accent) 40%); font-weight: 500;"
 						>
-							What can I help you with?
+							{activeGreeting}
 						</h1>
 					</div>
 				{/if}
 
 				{#if creating && pendingMessagePreview}
 					<div class="pending-message-preview" transition:fade={{ duration: 150 }}>
-						<div class="pending-message-label">Starting conversation</div>
+						<div class="pending-message-label">{$t('startingConversation')}</div>
 						<p class="pending-message-body">{pendingMessagePreview}</p>
 					</div>
 				{/if}
@@ -321,7 +342,7 @@ import type { ConversationDetail } from '$lib/types';
 				{#if creating}
 					<div class="creating-indicator" transition:fade={{ duration: 150 }}>
 						<div class="spinner"></div>
-						<span class="text-sm text-text-muted">Opening your new chat...</span>
+						<span class="text-sm text-text-muted">{$t('openingChat')}</span>
 					</div>
 				{/if}
 

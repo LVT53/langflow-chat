@@ -6,6 +6,9 @@
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
+		sidebarWidth,
+		clampSidebarWidth,
+		SIDEBAR_DEFAULT_WIDTH,
 		SIDEBAR_DESKTOP_BREAKPOINT,
 		currentConversationId
 	} from '$lib/stores/ui';
@@ -34,6 +37,7 @@
 	let isDesktop = $state(browser ? window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT : false);
 	let showSearchModal = $state(false);
 	let transitionsEnabled = $state(false);
+	let resizing = $state(false);
 
 	const isCollapsed = $derived(isDesktop && $sidebarCollapsed);
 	const knowledgePending = $derived($navigating?.to?.url.pathname === '/knowledge');
@@ -56,6 +60,39 @@
 	function toggleCollapse() {
 		if (isDesktop) {
 			sidebarCollapsed.update((v) => !v);
+		}
+	}
+
+	function startResize(event: PointerEvent) {
+		if (!isDesktop || isCollapsed) return;
+		resizing = true;
+		const startX = event.clientX;
+		const startWidth = $sidebarWidth;
+		const target = event.currentTarget as HTMLElement;
+		target.setPointerCapture(event.pointerId);
+
+		const handleMove = (moveEvent: PointerEvent) => {
+			sidebarWidth.set(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+		};
+		const handleUp = () => {
+			resizing = false;
+			window.removeEventListener('pointermove', handleMove);
+			window.removeEventListener('pointerup', handleUp);
+		};
+		window.addEventListener('pointermove', handleMove);
+		window.addEventListener('pointerup', handleUp, { once: true });
+	}
+
+	function handleResizeKeydown(event: KeyboardEvent) {
+		if (!isDesktop || isCollapsed) return;
+		if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+			event.preventDefault();
+			const delta = event.key === 'ArrowRight' ? 16 : -16;
+			sidebarWidth.set(clampSidebarWidth($sidebarWidth + delta));
+		}
+		if (event.key === 'Home') {
+			event.preventDefault();
+			sidebarWidth.set(SIDEBAR_DEFAULT_WIDTH);
 		}
 	}
 
@@ -118,6 +155,8 @@
 	class:pointer-events-none={!open && !isDesktop}
 	class:sidebar-collapsed={isCollapsed}
 	class:transitions-enabled={transitionsEnabled}
+	class:sidebar-resizing={resizing}
+	style:width={isDesktop && !isCollapsed ? `${$sidebarWidth}px` : undefined}
 >
 	<!-- Sidebar Header -->
 	<div
@@ -375,6 +414,18 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if isDesktop && !isCollapsed}
+		<button
+			type="button"
+			class="sidebar-resize-handle"
+			aria-label="Resize sidebar"
+			title="Resize sidebar"
+			onpointerdown={startResize}
+			onkeydown={handleResizeKeydown}
+			ondblclick={() => sidebarWidth.set(SIDEBAR_DEFAULT_WIDTH)}
+		></button>
+	{/if}
 </aside>
 
 <SearchModal isOpen={showSearchModal} onClose={closeSearchModal} />
@@ -399,6 +450,39 @@
 	.sidebar-panel.sidebar-collapsed {
 		width: 48px;
 		overflow: hidden;
+	}
+
+	.sidebar-panel.sidebar-resizing {
+		transition: none;
+		user-select: none;
+	}
+
+	.sidebar-resize-handle {
+		position: absolute;
+		top: 0;
+		right: -5px;
+		z-index: 2;
+		width: 10px;
+		height: 100%;
+		cursor: col-resize;
+		background: transparent;
+		border: 0;
+		padding: 0;
+	}
+
+	.sidebar-resize-handle::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		right: 4px;
+		width: 2px;
+		height: 100%;
+		background: transparent;
+	}
+
+	.sidebar-resize-handle:hover::after,
+	.sidebar-resize-handle:focus-visible::after {
+		background: var(--accent);
 	}
 
 	.search-pill {
@@ -448,7 +532,6 @@
 			transform: translateX(0) !important;
 			translate: 0 !important;
 			opacity: 1 !important;
-			width: 300px;
 		}
 
 		.sidebar-panel.sidebar-collapsed {

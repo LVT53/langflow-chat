@@ -38,9 +38,12 @@ describe('ensureRuntimeSchemaCompatibility', () => {
 		await ensureRuntimeSchemaCompatibility();
 		await ensureRuntimeSchemaCompatibility();
 
-		expect(mockExec).toHaveBeenCalledOnce();
+		expect(mockExec).toHaveBeenCalledTimes(2);
 		expect(mockExec).toHaveBeenCalledWith(
 			'ALTER TABLE users ADD COLUMN honcho_peer_version integer DEFAULT 0 NOT NULL'
+		);
+		expect(mockExec).toHaveBeenCalledWith(
+			"ALTER TABLE users ADD COLUMN ui_language text DEFAULT 'en' NOT NULL"
 		);
 	});
 
@@ -54,7 +57,7 @@ describe('ensureRuntimeSchemaCompatibility', () => {
 
 			if (query.includes('PRAGMA table_info')) {
 				return {
-					all: vi.fn(() => [{ name: 'id' }, { name: 'honcho_peer_version' }]),
+					all: vi.fn(() => [{ name: 'id' }, { name: 'honcho_peer_version' }, { name: 'ui_language' }]),
 				};
 			}
 

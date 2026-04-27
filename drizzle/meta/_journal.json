@@ -127,6 +127,20 @@
       "when": 1777140000004,
       "tag": "1777140000004_inference_provider_max_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777140000005,
+      "tag": "1777140000005_users_ui_language",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777140000006,
+      "tag": "1777140000006_immutable_usage_analytics",
+      "breakpoints": true
     }
 
   ]

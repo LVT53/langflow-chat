@@ -861,6 +861,7 @@ function handleSend(
 		const text = payload.message;
 		const attachmentIds = payload.attachmentIds ?? [];
 		const newAttachments = payload.attachments ?? [];
+		const modelIdForTurn = payload.modelId ?? $selectedModel;
 		if (!text.trim() || isSending) return;
 
 		sendError = null;
@@ -987,7 +988,7 @@ function handleSend(
 				},
 			},
 			{
-				modelId: $selectedModel,
+				modelId: modelIdForTurn,
 				skipPersistUserMessage,
 				attachmentIds,
 				activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
@@ -1113,7 +1114,7 @@ onToolCall(name, input, status, details) {
 					},
 				},
 				{
-					modelId: $selectedModel,
+					modelId: lastAssistantMsg?.modelId ?? $selectedModel,
 					activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 					retryAssistantMessageId: retryAssistantMessageId ?? undefined,
 					retryUserMessageId,

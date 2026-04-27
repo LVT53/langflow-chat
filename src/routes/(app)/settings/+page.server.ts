@@ -29,6 +29,7 @@ export const load: ServerLoad = async (event) => {
       translationEnabled: (userRow.translationEnabled ?? 0) === 1,
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
       titleLanguage: (userRow.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
+      uiLanguage: (userRow.uiLanguage ?? 'en') as 'en' | 'hu',
       avatarId: userRow.avatarId ?? null,
     },
     profilePicture: userRow.profilePicture ?? null,

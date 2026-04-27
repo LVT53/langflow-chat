@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
-	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
+	import { selectedModel, setSelectedModel, setSelectedModelAndSync, type ModelId } from '$lib/stores/settings';
 
 	let { onSelect }: {
 		onSelect?: (payload: { modelId: ModelId }) => void;
@@ -42,7 +42,7 @@
 	});
 
 	function handleSelect(modelId: ModelId) {
-		setSelectedModel(modelId);
+		void setSelectedModelAndSync(modelId);
 		isOpen = false;
 		onSelect?.({ modelId });
 	}

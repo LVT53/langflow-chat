@@ -7,6 +7,7 @@ import type {
 	TaskState,
 	ToolCallEntry,
 } from '$lib/types';
+import type { ProviderUsageSnapshot } from '$lib/server/services/analytics';
 
 export type ChatTurnRoute = 'send' | 'stream';
 
@@ -57,9 +58,12 @@ export type WorkCapsuleSummary =
 
 export type AssistantAnalytics = {
 	model: string;
+	modelDisplayName?: string | null;
+	promptTokens?: number;
 	completionTokens?: number;
 	reasoningTokens?: number;
 	generationTimeMs?: number;
+	providerUsage?: ProviderUsageSnapshot | null;
 };
 
 export type PersistAssistantTurnStateParams = {

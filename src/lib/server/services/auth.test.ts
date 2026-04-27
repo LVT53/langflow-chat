@@ -128,7 +128,8 @@ describe('validateSession', () => {
       avatarId: null,
       profilePicture: null,
       translationEnabled: false,
-      titleLanguage: 'auto'
+      titleLanguage: 'auto',
+      uiLanguage: 'en'
     });
   });
 

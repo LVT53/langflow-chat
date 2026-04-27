@@ -12,6 +12,7 @@ export const users = sqliteTable('users', {
   translationEnabled: integer('translation_enabled').notNull().default(0),
   theme: text('theme').notNull().default('system'),
   titleLanguage: text('title_language').notNull().default('auto'),
+  uiLanguage: text('ui_language').notNull().default('en'),
   avatarId: integer('avatar_id'),
   profilePicture: text('profile_picture'),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
@@ -413,6 +414,73 @@ export const messageAnalytics = sqliteTable('message_analytics', {
 	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (table) => ({
 	messageUniqueIdx: uniqueIndex('message_analytics_message_unique_idx').on(table.messageId),
+}));
+
+export const analyticsConversations = sqliteTable('analytics_conversations', {
+	id: text('id').primaryKey(),
+	conversationId: text('conversation_id').notNull(),
+	userId: text('user_id').notNull(),
+	userEmail: text('user_email'),
+	userName: text('user_name'),
+	title: text('title'),
+	source: text('source').notNull().default('live'),
+	billingMonth: text('billing_month').notNull(),
+	conversationCreatedAt: integer('conversation_created_at', { mode: 'timestamp' }),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	conversationUniqueIdx: uniqueIndex('analytics_conversations_conversation_unique_idx').on(table.conversationId),
+	userMonthIdx: index('analytics_conversations_user_month_idx').on(table.userId, table.billingMonth),
+}));
+
+export const usageEvents = sqliteTable('usage_events', {
+	id: text('id').primaryKey(),
+	userId: text('user_id').notNull(),
+	userEmail: text('user_email'),
+	userName: text('user_name'),
+	conversationId: text('conversation_id').notNull(),
+	conversationTitle: text('conversation_title'),
+	messageId: text('message_id').notNull(),
+	modelId: text('model_id').notNull(),
+	modelDisplayName: text('model_display_name'),
+	providerId: text('provider_id'),
+	providerDisplayName: text('provider_display_name'),
+	providerBaseUrl: text('provider_base_url'),
+	providerModelName: text('provider_model_name'),
+	promptTokens: integer('prompt_tokens').notNull().default(0),
+	cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+	cacheHitTokens: integer('cache_hit_tokens').notNull().default(0),
+	cacheMissTokens: integer('cache_miss_tokens').notNull().default(0),
+	completionTokens: integer('completion_tokens').notNull().default(0),
+	reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+	totalTokens: integer('total_tokens').notNull().default(0),
+	usageSource: text('usage_source').notNull().default('estimated'),
+	generationTimeMs: integer('generation_time_ms'),
+	billingMonth: text('billing_month').notNull(),
+	costUsdMicros: integer('cost_usd_micros').notNull().default(0),
+	priceRuleId: text('price_rule_id'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	messageUniqueIdx: uniqueIndex('usage_events_message_unique_idx').on(table.messageId),
+	userMonthIdx: index('usage_events_user_month_idx').on(table.userId, table.billingMonth),
+	modelMonthIdx: index('usage_events_model_month_idx').on(table.modelId, table.billingMonth),
+}));
+
+export const modelPriceRules = sqliteTable('model_price_rules', {
+	id: text('id').primaryKey(),
+	providerId: text('provider_id'),
+	providerName: text('provider_name'),
+	modelId: text('model_id'),
+	modelName: text('model_name').notNull(),
+	inputUsdMicrosPer1m: integer('input_usd_micros_per_1m').notNull().default(0),
+	cachedInputUsdMicrosPer1m: integer('cached_input_usd_micros_per_1m').notNull().default(0),
+	cacheHitUsdMicrosPer1m: integer('cache_hit_usd_micros_per_1m').notNull().default(0),
+	cacheMissUsdMicrosPer1m: integer('cache_miss_usd_micros_per_1m').notNull().default(0),
+	outputUsdMicrosPer1m: integer('output_usd_micros_per_1m').notNull().default(0),
+	enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	modelIdx: index('model_price_rules_model_idx').on(table.modelId, table.modelName, table.enabled),
 }));
 
 export const chatGeneratedFiles = sqliteTable('chat_generated_files', {

@@ -35,7 +35,7 @@
 
 <DialogShell
 	title="Delete Account"
-	description="This permanently deletes your account, chats, Knowledge Base, memories, analytics, generated files, profile preferences, and avatar. This cannot be undone."
+	description="This permanently deletes your account, chats, Knowledge Base, memories, generated files, profile preferences, and avatar. Historical analytics remain as immutable usage records. This cannot be undone."
 	onClose={onCancel}
 	maxWidthClass="max-w-[30rem]"
 	zIndexClass="z-[9999]"

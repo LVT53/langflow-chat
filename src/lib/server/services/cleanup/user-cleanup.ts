@@ -13,7 +13,6 @@ import {
 	memoryEvents,
 	memoryProjects,
 	memoryProjectTaskLinks,
-	messageAnalytics,
 	projects,
 	semanticEmbeddings,
 	sessions,
@@ -64,9 +63,6 @@ export async function purgeUserData(userId: string): Promise<void> {
 
 	await db.transaction((tx) => {
 		tx.delete(sessions).where(eq(sessions.userId, userId)).run();
-		tx.delete(messageAnalytics)
-			.where(eq(messageAnalytics.userId, userId))
-			.run();
 		tx.delete(chatGeneratedFiles)
 			.where(eq(chatGeneratedFiles.userId, userId))
 			.run();

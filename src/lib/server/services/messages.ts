@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations, messages, messageAnalytics } from '$lib/server/db/schema';
+import { conversations, messages, messageAnalytics, usageEvents } from '$lib/server/db/schema';
 import type {
 	ChatMessage,
 	HonchoContextInfo,
@@ -65,6 +65,7 @@ function mapRowToChatMessage(
 		thinking: row.thinking ?? undefined,
 		thinkingSegments,
 		timestamp: row.createdAt.getTime(),
+		modelId: modelId as ChatMessage['modelId'],
 		modelDisplayName: metadata?.modelDisplayName ?? getModelDisplayName(modelId),
 		generationDurationMs: generationTimeMs ?? undefined,
 		evidenceSummary,
@@ -88,10 +89,14 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		db
 			.select({
 				message: messages,
-				model: messageAnalytics.model,
-				generationTimeMs: messageAnalytics.generationTimeMs,
+				model: usageEvents.modelId,
+				legacyModel: messageAnalytics.model,
+				modelDisplayName: usageEvents.modelDisplayName,
+				generationTimeMs: usageEvents.generationTimeMs,
+				legacyGenerationTimeMs: messageAnalytics.generationTimeMs,
 			})
 			.from(messages)
+			.leftJoin(usageEvents, eq(messages.id, usageEvents.messageId))
 			.leftJoin(messageAnalytics, eq(messages.id, messageAnalytics.messageId))
 			.where(eq(messages.conversationId, conversationId))
 			.orderBy(asc(messages.createdAt)),
@@ -105,10 +110,18 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 		}
 	}
 
-	return Array.from(uniqueRows.values()).map((row) => ({
-		...mapRowToChatMessage(row.message, row.model, row.generationTimeMs),
-		attachments: attachmentMap.get(row.message.id) ?? [],
-	}));
+	return Array.from(uniqueRows.values()).map((row) => {
+		const mapped = mapRowToChatMessage(
+			row.message,
+			row.model ?? row.legacyModel,
+			row.generationTimeMs ?? row.legacyGenerationTimeMs
+		);
+		return {
+			...mapped,
+			modelDisplayName: row.modelDisplayName ?? mapped.modelDisplayName,
+			attachments: attachmentMap.get(row.message.id) ?? [],
+		};
+	});
 }
 
 export async function deleteMessages(ids: string[]): Promise<void> {

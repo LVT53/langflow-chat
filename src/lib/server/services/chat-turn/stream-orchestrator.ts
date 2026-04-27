@@ -3,6 +3,7 @@ import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { getConfig } from "$lib/server/config-store";
 import { touchConversation } from "$lib/server/services/conversations";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
+import { extractProviderUsage, type ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import { createMessage } from "$lib/server/services/messages";
 import {
   attachContinuityToTaskState,
@@ -411,6 +412,7 @@ export function runChatStreamOrchestrator(options: StreamOrchestratorOptions): R
         | import("$lib/types").HonchoContextSnapshot
         | null
         | undefined;
+      let latestProviderUsage: ProviderUsageSnapshot | null = null;
       let initialContextStatus:
         | import("$lib/types").ConversationContextStatus
         | undefined;
@@ -586,9 +588,12 @@ const sendEndAndClose = async (
                 assistantMessageId: assistantMsg.id,
                 analytics: {
                   model: analyticsModel,
+                  modelDisplayName,
+                  promptTokens: estimateTokenCount(upstreamMessage),
                   completionTokens: responseTokenCount,
                   reasoningTokens: thinkingTokenCount,
                   generationTimeMs: genTimeMs,
+                  providerUsage: latestProviderUsage,
                 },
                 continuitySource: "stream",
                 honchoContext: latestHonchoContext,
@@ -733,6 +738,7 @@ const sendEndAndClose = async (
             initialContextDebug = latestContextDebug;
             latestHonchoContext = fallbackResponse.honchoContext ?? null;
             latestHonchoSnapshot = fallbackResponse.honchoSnapshot ?? null;
+            latestProviderUsage = fallbackResponse.providerUsage ?? null;
 
             if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
               return null;
@@ -822,6 +828,10 @@ const sendEndAndClose = async (
           )) {
             const { event: eventType, data } = upstreamEvent;
             upstreamEventCount += 1;
+            const eventUsage = extractProviderUsage(data);
+            if (eventUsage) {
+              latestProviderUsage = eventUsage;
+            }
             if (data === "[DONE]" || eventType === "end") {
               if (outputTranslator) {
                 for (const chunk of await outputTranslator.flush()) {

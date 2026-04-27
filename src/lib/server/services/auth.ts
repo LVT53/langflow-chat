@@ -50,6 +50,7 @@ export async function validateSession(token: string): Promise<SessionUser | null
     profilePicture: userObj.profilePicture ?? null,
     translationEnabled: (userObj.translationEnabled ?? 0) === 1,
     titleLanguage: (userObj.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
+    uiLanguage: (userObj.uiLanguage ?? 'en') as 'en' | 'hu',
   };
 }
 

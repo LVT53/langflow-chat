@@ -4,6 +4,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Conversation } from '$lib/types';
 import { isHonchoEnabled, getOrCreateSession } from './honcho';
+import { recordConversationAnalytics } from './analytics';
 
 export async function createConversation(userId: string, title?: string): Promise<Conversation> {
 	const id = randomUUID();
@@ -21,6 +22,12 @@ export async function createConversation(userId: string, title?: string): Promis
 			console.error('[HONCHO] Create session failed:', err)
 		);
 	}
+	recordConversationAnalytics({
+		conversationId: conversation.id,
+		userId,
+		title: conversation.title,
+		createdAt: conversation.createdAt,
+	}).catch(() => undefined);
 
 	return {
 		id: conversation.id,

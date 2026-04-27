@@ -1,11 +1,13 @@
 <script lang="ts">
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
+	import { t } from '$lib/i18n';
 	import PasswordField from './PasswordField.svelte';
 	import type { ModelId } from '$lib/types';
 
 	type AvailableModel = { id: ModelId; displayName: string };
 	type Theme = 'system' | 'light' | 'dark';
 	type TitleLanguage = 'auto' | 'en' | 'hu';
+	type UiLanguage = 'en' | 'hu';
 
 	let {
 		userId,
@@ -41,9 +43,11 @@
 		selectedModel,
 		selectedTheme,
 		selectedTitleLanguage,
+		selectedUiLanguage,
 		onChangeModel,
 		onChangeTheme,
 		onChangeTitleLanguage,
+		onChangeUiLanguage,
 		onOpenResetModal,
 		onOpenDeleteModal,
 		onForgetEverything,
@@ -83,9 +87,11 @@
 		selectedModel: ModelId;
 		selectedTheme: Theme;
 		selectedTitleLanguage: TitleLanguage;
+		selectedUiLanguage: UiLanguage;
 		onChangeModel: (model: ModelId) => void | Promise<void>;
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
 		onChangeTitleLanguage: (lang: TitleLanguage) => void | Promise<void>;
+		onChangeUiLanguage: (lang: UiLanguage) => void | Promise<void>;
 		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
 		onForgetEverything: () => void | Promise<void>;
@@ -243,6 +249,24 @@
 		</div>
 
 		<div>
+			<p class="settings-label">{$t('uiLanguage')}</p>
+			<div class="flex gap-2">
+				{#each [
+					{ value: 'en' as const, label: $t('english') },
+					{ value: 'hu' as const, label: $t('hungarian') },
+				] as lang}
+					<button
+						class="pref-pill"
+						class:pref-pill-active={selectedUiLanguage === lang.value}
+						onclick={() => onChangeUiLanguage(lang.value)}
+					>
+						{lang.label}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<div>
 			<p class="settings-label">Title Language</p>
 			<div class="flex gap-2">
 				{#each [
@@ -266,7 +290,7 @@
 <section class="settings-card settings-card-danger mb-4">
 	<h2 class="settings-section-title text-danger">Danger Zone</h2>
 	<p class="mb-4 text-sm text-text-secondary">
-		Reset clears your chats, Knowledge Base, memories, analytics, and generated files while keeping
+		Reset clears your chats, Knowledge Base, memories, and generated files while keeping
 		your login, profile preferences, and avatar. Delete permanently removes the account itself too.
 	</p>
 	{#if forgetEverythingError}

@@ -3,6 +3,7 @@
 export type UserRole = 'user' | 'admin';
 
 export type Theme = 'system' | 'light' | 'dark';
+export type UiLanguage = 'en' | 'hu';
 
 export type ModelId = 'model1' | 'model2' | `provider:${string}`;
 
@@ -22,6 +23,7 @@ export interface UserPreferences {
   translationEnabled: boolean;
   theme: Theme;
   titleLanguage: 'auto' | 'en' | 'hu';
+  uiLanguage: UiLanguage;
   avatarId: number | null;
 }
 
@@ -68,6 +70,7 @@ export interface SessionUser {
   profilePicture: string | null;
   translationEnabled: boolean;
   titleLanguage: 'auto' | 'en' | 'hu';
+  uiLanguage: UiLanguage;
 }
 
 // Project interface: a named folder grouping conversations
@@ -260,6 +263,7 @@ export interface ChatMessage {
   // Not persisted to DB — falls back to flat `thinking` string on page reload.
   thinkingSegments?: ThinkingSegment[];
 	// Display name of the model used for the response (assistant messages only)
+	modelId?: ModelId;
 	modelDisplayName?: string;
 	// Total generation duration in milliseconds (assistant messages only)
 	generationDurationMs?: number;

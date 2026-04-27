@@ -107,6 +107,7 @@
 			model: data.userModel,
 			translationEnabled: data.userTranslation,
 			titleLanguage: data.userTitleLanguage,
+			uiLanguage: data.userUiLanguage,
 		});
 		initAvatar(data.user?.profilePicture ?? null);
 		const cleanupUIListeners = initUIListeners();

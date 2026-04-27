@@ -5,17 +5,20 @@ import { canUseStorage, persist, read } from './_local-storage';
 
 export type TranslationState = 'enabled' | 'disabled';
 export type TitleLanguage = 'auto' | 'en' | 'hu';
+export type UiLanguage = 'en' | 'hu';
 export type { ModelId };
 
 export const translationState = writable<TranslationState>('enabled');
 export const selectedModel = writable<ModelId>('model1');
 export const titleLanguage = writable<TitleLanguage>('auto');
+export const uiLanguage = writable<UiLanguage>('en');
 
 const SELECTED_MODEL_KEY = 'selectedModel';
 const TRANSLATION_STATE_KEY = 'translationState';
 const TITLE_LANGUAGE_KEY = 'titleLanguage';
+const UI_LANGUAGE_KEY = 'uiLanguage';
 
-export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean; titleLanguage?: TitleLanguage }): void {
+export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled?: boolean; titleLanguage?: TitleLanguage; uiLanguage?: UiLanguage }): void {
 	if (!canUseStorage()) {
 		return;
 	}
@@ -54,6 +57,18 @@ export function initSettings(serverPrefs?: { model?: ModelId; translationEnabled
 		);
 		if (storedTitleLang) {
 			titleLanguage.set(storedTitleLang);
+		}
+	}
+
+	if (serverPrefs?.uiLanguage !== undefined) {
+		uiLanguage.set(serverPrefs.uiLanguage);
+		persist(UI_LANGUAGE_KEY, serverPrefs.uiLanguage);
+	} else {
+		const storedUiLanguage = read<UiLanguage>(UI_LANGUAGE_KEY, null as UiLanguage | null, (v): v is UiLanguage =>
+			v === 'en' || v === 'hu'
+		);
+		if (storedUiLanguage) {
+			uiLanguage.set(storedUiLanguage);
 		}
 	}
 }
@@ -100,6 +115,16 @@ export async function setTitleLanguageAndSync(lang: TitleLanguage): Promise<void
 	persist(TITLE_LANGUAGE_KEY, lang);
 	try {
 		await updateUserPreferences({ titleLanguage: lang });
+	} catch {
+		// Non-fatal
+	}
+}
+
+export async function setUiLanguageAndSync(lang: UiLanguage): Promise<void> {
+	uiLanguage.set(lang);
+	persist(UI_LANGUAGE_KEY, lang);
+	try {
+		await updateUserPreferences({ uiLanguage: lang });
 	} catch {
 		// Non-fatal
 	}
