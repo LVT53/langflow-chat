@@ -1019,16 +1019,14 @@ $effect(() => {
 			{$t('documentWorkspace.fullscreenPreviewLoadFailed')}
 		</div>
 	{/await}
-{/if}
-				{#if getDocumentLifecycleLabel(activeDocument)}
-					<div class="workspace-status-row">
-						<span class="workspace-status-badge">
-							{getDocumentLifecycleLabel(activeDocument)}
-						</span>
-					</div>
-				{/if}
+		{#if getDocumentLifecycleLabel(activeDocument)}
+			<div class="workspace-status-row">
+				<span class="workspace-status-badge">
+					{getDocumentLifecycleLabel(activeDocument)}
+				</span>
 			</div>
-			<div class="workspace-header-actions">
+		{/if}
+		<div class="workspace-header-actions">
 				<button
 					type="button"
 					class="btn-icon-bare workspace-expand-button"
@@ -1054,9 +1052,9 @@ $effect(() => {
 						<line x1="6" x2="18" y1="6" y2="18" />
 					</svg>
 				</button>
-			</div>
 		</div>
 
+{/if}
 		{#if canJumpToSource(activeDocument)}
 			<div class="workspace-actions">
 				{#if canCompareActiveDocument}
@@ -1253,7 +1251,6 @@ $effect(() => {
 				{/await}
 			{/if}
 		</div>
-	</aside>
 
 	{#if fullscreenPreviewOpen}
 		{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
