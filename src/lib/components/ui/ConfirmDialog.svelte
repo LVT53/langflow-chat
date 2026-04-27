@@ -1,11 +1,12 @@
 <script lang="ts">
 import DialogShell from "$lib/components/ui/DialogShell.svelte";
+import { t } from "$lib/i18n";
 
 let {
 	title,
 	message,
-	confirmText = "Confirm",
-	cancelText = "Cancel",
+	confirmText = undefined,
+	cancelText = undefined,
 	confirmVariant = "primary",
 	onConfirm,
 	onCancel,
@@ -40,7 +41,7 @@ $effect(() => {
 <DialogShell title={title} description={message} onClose={handleCancel} {zIndexClass}>
 	<div class="flex justify-end gap-md">
 		<button type="button" class="btn-secondary" onclick={handleCancel}>
-			{cancelText}
+			{cancelText ?? $t('common.cancel')}
 		</button>
 		<button
 			data-testid="confirm-delete"
@@ -49,7 +50,7 @@ $effect(() => {
 			class={confirmVariant === 'danger' ? 'btn-danger' : 'btn-primary'}
 			onclick={handleConfirm}
 		>
-			{confirmText}
+			{confirmText ?? $t('common.confirm')}
 		</button>
 	</div>
 </DialogShell>

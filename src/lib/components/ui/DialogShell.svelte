@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, scale } from 'svelte/transition';
   import type { Snippet } from 'svelte';
+  import { t } from '$lib/i18n';
 
   let {
     title,
@@ -76,7 +77,7 @@
   <button
     type="button"
     class="absolute inset-0 bg-surface-page opacity-80 backdrop-blur-sm"
-    aria-label="Close dialog"
+    aria-label={$t('common.close')}
     onclick={() => onClose?.()}
   ></button>
 
