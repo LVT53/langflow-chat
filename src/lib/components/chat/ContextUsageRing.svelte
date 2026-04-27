@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { t } from '$lib/i18n';
 	import type {
 		ArtifactSummary,
 		ContextDebugState,
@@ -200,7 +201,7 @@
 	<button
 		type="button"
 		class={`ring-button ${toneClass}`}
-		aria-label={contextStatus ? `Prompt budget usage ${percent}% (${contextStatus.estimatedTokens.toLocaleString()} tokens)` : 'No context yet'}
+		aria-label={contextStatus ? `Prompt budget usage ${percent}% (${contextStatus.estimatedTokens.toLocaleString()} tokens)` : $t('contextUsageRing.noContext')}
 		aria-expanded={isOpen}
 		onclick={handleClick}
 	>
@@ -231,7 +232,7 @@
 		class:ring-popover--mobile-visible={mobile && isOpen}
 		class:ring-popover--open={!mobile && isOpen}
 		role="dialog"
-		aria-label="Context focus panel"
+		aria-label={$t('contextUsageRing.focusPanel')}
 	>
 		<div class="popover-section">
 			<div class="popover-label">Focus</div>
@@ -257,7 +258,7 @@
 							id="new-task-objective"
 							class="task-form-input"
 							type="text"
-							placeholder="Leave empty to infer from your next message"
+							placeholder={$t('contextUsageRing.placeholder')}
 							bind:value={newTaskObjective}
 							onkeydown={handleNewTaskKeydown}
 						/>

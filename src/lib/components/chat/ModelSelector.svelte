@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { t } from '$lib/i18n';
 	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
 	import { selectedModel, setSelectedModel, setSelectedModelAndSync, type ModelId } from '$lib/stores/settings';
 
@@ -67,7 +68,7 @@
 		onclick={toggleDropdown}
 		aria-haspopup="listbox"
 		aria-expanded={isOpen}
-		aria-label="Select model"
+		aria-label={$t('modelSelector.selectModel')}
 		disabled={isLoading}
 		data-testid="model-selector-trigger"
 	>
@@ -96,7 +97,7 @@
 	</button>
 
 	{#if isOpen && models.length > 0}
-		<ul class="model-selector__dropdown" role="listbox" aria-label="Available models">
+		<ul class="model-selector__dropdown" role="listbox" aria-label={$t('modelSelector.availableModels')}>
 			{#each models as model}
 				<li
 					role="option"

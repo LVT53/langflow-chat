@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { preserveScrollOnToggle } from '$lib/actions/preserve-scroll';
+	import { t } from '$lib/i18n';
 
 	let {
 		code = '',
@@ -41,7 +42,7 @@
 				type="button"
 				class="code-toggle"
 				onclick={toggleCollapse}
-				aria-label={collapsed ? 'Expand code block' : 'Collapse code block'}
+				aria-label={collapsed ? $t('codeBlock.expand') : $t('codeBlock.collapse')}
 			>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -66,8 +67,8 @@
 				type="button"
 				class="btn-icon-bare copy-button gap-1.5"
 				onclick={copyToClipboard}
-				aria-label="Copy code"
-				title="Copy code"
+			aria-label={$t('codeBlock.copyCode')}
+			title={$t('codeBlock.copyCode')}
 			>
 				{#if copied}
 					<span class="text-success font-sans text-[12px] font-medium">Copied!</span>

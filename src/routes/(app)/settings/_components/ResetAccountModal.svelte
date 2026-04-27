@@ -43,7 +43,7 @@ function handleKeydown(event: KeyboardEvent) {
 >
 	<div class="max-h-[calc(100vh-2rem)] overflow-y-auto">
 			<form
-				-onsubmit={(event) => {
+				onsubmit={(event) => {
 					event.preventDefault();
 					handleConfirm();
 				}}

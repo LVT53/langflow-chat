@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ModelSelector from './ModelSelector.svelte';
+	import { t } from '$lib/i18n';
 
 	let {
 		canAttach = false,
@@ -50,7 +51,7 @@
 	});
 </script>
 
-<div bind:this={root} class="tools-menu" role="menu" aria-label="Composer tools">
+<div bind:this={root} class="tools-menu" role="menu" aria-label={$t('composerTools.menu')}>
 	<div class="menu-row menu-row--static">
 		<div class="menu-label">Model</div>
 		<ModelSelector onSelect={closeMenu} />
@@ -62,8 +63,8 @@
 			class="menu-row menu-row--button"
 			onclick={handleAttach}
 			disabled={!canAttach}
-			title={attachmentsEnabled ? 'Attach file (max 100MB)' : 'File uploads are unavailable'}
-			aria-label="Attach file"
+			title={attachmentsEnabled ? $t('composerTools.attachFileMaxSize') : $t('composerTools.uploadsUnavailable')}
+			aria-label={$t('composerTools.attachFile')}
 			role="menuitem"
 		>
 			<span class="menu-label">Attach file</span>

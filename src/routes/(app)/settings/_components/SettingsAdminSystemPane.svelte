@@ -11,7 +11,7 @@ import { get } from "svelte/store";
 import { t } from "$lib/i18n";
 import ModelFormModal from "./ModelFormModal.svelte";
 
-const $t = get(t);
+const tVal = get(t);
 
 let {
 	adminConfig = $bindable(),

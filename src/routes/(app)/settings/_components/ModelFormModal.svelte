@@ -4,7 +4,7 @@ import { get } from "svelte/store";
 import { t } from "$lib/i18n";
 import type { InferenceProvider } from "$lib/client/api/admin";
 
-const $t = get(t);
+const tVal = get(t);
 
 let {
 	model = null,

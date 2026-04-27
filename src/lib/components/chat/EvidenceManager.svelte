@@ -1,5 +1,6 @@
 <script lang="ts">
 	import EvidencePreferenceControl from './EvidencePreferenceControl.svelte';
+	import { t } from '$lib/i18n';
 	import type {
 		ContextDebugState,
 		EvidencePreference,
@@ -65,7 +66,7 @@
 	<div
 		class="evidence-overlay"
 		role="dialog"
-		aria-label="Evidence manager"
+		aria-label={$t('evidenceManager.title')}
 		aria-modal="true"
 		tabindex="-1"
 		onclick={handleBackdropClick}
@@ -74,7 +75,7 @@
 		<div class="evidence-panel">
 			<div class="panel-header">
 				<h2 class="panel-title">Manage evidence</h2>
-				<button type="button" class="panel-close" aria-label="Close evidence manager" onclick={close}>
+				<button type="button" class="panel-close" aria-label={$t('evidenceManager.close')} onclick={close}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 						<path d="M6 6 18 18" />
 						<path d="M18 6 6 18" />

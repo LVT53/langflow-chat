@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
+	import { t } from '$lib/i18n';
 	import { estimateTokenCount } from '$lib/utils/tokens';
 	import type {
 		ArtifactSummary,
@@ -313,7 +314,7 @@ let dedupedGeneratedFiles = $derived(
 					<button
 						type="button"
 						class="btn-icon-bare info-button sm:!min-h-[36px] sm:!min-w-[36px]"
-						aria-label="Message info"
+						aria-label={$t('messageBubble.messageInfo')}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<circle cx="12" cy="12" r="10"></circle>
@@ -364,8 +365,8 @@ let dedupedGeneratedFiles = $derived(
 					type="button"
 					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 					onclick={() => onRegenerate?.({ messageId: message.id })}
-					title="Regenerate response"
-					aria-label="Regenerate response"
+					title={$t('messageBubble.regenerate')}
+					aria-label={$t('messageBubble.regenerate')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M21 2v6h-6"/>
@@ -396,8 +397,8 @@ let dedupedGeneratedFiles = $derived(
 					type="button"
 					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 					onclick={startEdit}
-					title="Edit message"
-					aria-label="Edit message"
+					title={$t('messageBubble.editMessage')}
+					aria-label={$t('messageBubble.editMessage')}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -410,8 +411,8 @@ let dedupedGeneratedFiles = $derived(
 				type="button"
 				class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
 				onclick={copyToClipboard}
-				title="Copy message"
-				aria-label="Copy message"
+				title={$t('messageBubble.copyMessage')}
+				aria-label={$t('messageBubble.copyMessage')}
 			>
 				{#if copied}
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-primary">

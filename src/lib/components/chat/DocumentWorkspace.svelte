@@ -513,7 +513,7 @@ $effect(() => {
 		role="presentation"
 		onclick={handleMobileBackdropClick}
 	>
-		<section class="workspace-shell workspace-shell-mobile" aria-label="Document workspace">
+		<section class="workspace-shell workspace-shell-mobile" aria-label={$t('documentWorkspace.documentWorkspace')}>
 			<div class="workspace-header">
 				<div class="workspace-heading">
 			<div class="workspace-eyebrow">{$t('documentWorkspace.workingDocument')}</div>
@@ -534,8 +534,8 @@ $effect(() => {
 						type="button"
 						class="btn-icon-bare workspace-expand-button"
 						onclick={openFullscreenPreview}
-						aria-label={`Open ${getDocumentTitle(activeDocument)} in fullscreen`}
-						title="Open fullscreen preview"
+						aria-label={$t('documentWorkspace.openFullscreenLabel', { title: getDocumentTitle(activeDocument) })}
+						title={$t('documentWorkspace.openFullscreen')}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="15 3 21 3 21 9" />
@@ -548,7 +548,7 @@ $effect(() => {
 						type="button"
 						class="btn-icon-bare workspace-close-button"
 						onclick={onCloseWorkspace}
-						aria-label="Close document workspace"
+						aria-label={$t('documentWorkspace.closeWorkspace')}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="18" x2="6" y1="6" y2="18" />
@@ -746,7 +746,7 @@ $effect(() => {
 		}
 		style:opacity={isVisible ? '1' : '0'}
 		style:transform={isVisible ? 'translateX(0)' : 'translateX(-20px)'}
-		aria-label="Document workspace"
+		aria-label={$t('documentWorkspace.documentWorkspace')}
 	>
 		<div 
 			class="workspace-resize-handle" 
@@ -754,7 +754,7 @@ $effect(() => {
 			onmousedown={startResize}
 			onkeydown={handleResizeKeyDown}
 			role="slider"
-			aria-label="Resize workspace panel"
+			aria-label={$t('documentWorkspace.resizePanel')}
 			aria-valuemin={MIN_WIDTH}
 			aria-valuemax={typeof window !== 'undefined' ? Math.floor(window.innerWidth * MAX_WIDTH_RATIO) : 800}
 			aria-valuenow={workspaceWidth}
