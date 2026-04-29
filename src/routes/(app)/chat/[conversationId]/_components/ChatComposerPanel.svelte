@@ -39,6 +39,7 @@
 		onSteer,
 		onManageEvidence,
 		onUploadReady,
+		onUploadFiles,
 	}: {
 		sendError: string | null;
 		onRetry: () => void;
@@ -65,6 +66,14 @@
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
 		onManageEvidence: () => void;
 		onUploadReady?: ((uploadFn: (files: FileList | null) => Promise<void>) => void) | undefined;
+		onUploadFiles?: ((payload: {
+			files: File[];
+			conversationId: string;
+			done: (result:
+				| { success: true; attachment: PendingAttachment }
+				| { success: false; fileName: string; error: string }
+			) => void;
+		}) => void) | undefined;
 	} = $props();
 
 	// Dynamic keyboard detection using visualViewport API
@@ -151,6 +160,7 @@
 			{onSteer}
 			onManageEvidence={onManageEvidence}
 			{onUploadReady}
+			{onUploadFiles}
 		/>
 	</div>
 </div>

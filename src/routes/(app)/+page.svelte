@@ -11,6 +11,7 @@ import {
 	storePendingConversationMessage,
 } from '$lib/client/conversation-session';
 import { fetchConversationDetail } from '$lib/client/api/conversations';
+import { uploadKnowledgeAttachment } from '$lib/client/api/knowledge';
 import { createNewConversation, upsertConversationLocal } from '$lib/stores/conversations';
 import { currentConversationId } from '$lib/stores/ui';
 import { selectedModel } from '$lib/stores/settings';
@@ -110,6 +111,57 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		uploadFilesFn = uploadFn;
 	}
 
+	type UploadFileResult =
+		| { success: true; attachment: import('$lib/types').PendingAttachment }
+		| { success: false; fileName: string; error: string };
+
+	let addToComponentFn: ((result: UploadFileResult) => void) | null = null;
+
+	async function uploadSingleFile(
+		file: File,
+		conversationId: string,
+	): Promise<UploadFileResult> {
+		try {
+			const result = await uploadKnowledgeAttachment(file, conversationId);
+			if (result?.artifact) {
+				return {
+					success: true,
+					attachment: {
+						artifact: result.artifact,
+						promptReady: Boolean(result.promptReady),
+						promptArtifactId:
+							typeof result.promptArtifactId === 'string'
+								? result.promptArtifactId
+								: null,
+						readinessError:
+							typeof result.readinessError === 'string' &&
+							result.readinessError.trim()
+								? result.readinessError
+								: null,
+					},
+				};
+			}
+			return { success: false, fileName: file.name, error: 'Upload failed' };
+		} catch (err) {
+			return {
+				success: false,
+				fileName: file.name,
+				error: err instanceof Error ? err.message : 'Upload failed',
+			};
+		}
+	}
+
+	function handleUploadFiles(payload: {
+		files: File[];
+		conversationId: string;
+		done: (result: UploadFileResult) => void;
+	}) {
+		addToComponentFn = payload.done;
+		for (const file of payload.files) {
+			uploadSingleFile(file, payload.conversationId).then(payload.done);
+		}
+	}
+
 	function isOsFileDrop(event: DragEvent): boolean {
 		const types = event.dataTransfer?.types;
 		if (!types) return false;
@@ -142,7 +194,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		}
 	}
 
-	function handleDrop(event: DragEvent) {
+	async function handleDrop(event: DragEvent) {
 		dragEnterCount = 0;
 		fileDragActive = false;
 		fileDragRejected = false;
@@ -150,7 +202,12 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		event.preventDefault();
 		const files = event.dataTransfer?.files;
 		if (!files || files.length === 0) return;
-		uploadFilesFn?.(files);
+		const targetId = preparedConversationId ?? (await ensurePreparedConversation());
+		for (const file of Array.from(files)) {
+			uploadSingleFile(file, targetId).then((result) => {
+				addToComponentFn?.(result);
+			});
+		}
 	}
 
 	onMount(() => {
@@ -364,6 +421,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
 					onUploadReady={handleUploadReady}
+				onUploadFiles={handleUploadFiles}
 				/>
 			</div>
 		</div>

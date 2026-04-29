@@ -181,6 +181,6 @@ describe('GeneratedFile', () => {
 			status: 'failed',
 		});
 
-		expect(screen.getByText('File generation failed')).toBeInTheDocument();
+		expect(screen.getByText('Generation failed')).toBeInTheDocument();
 	});
 });

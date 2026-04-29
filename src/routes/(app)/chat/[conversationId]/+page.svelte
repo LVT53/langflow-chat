@@ -20,7 +20,7 @@ import {
 	fetchMessageEvidence,
 	generateConversationTitle,
 } from "$lib/client/api/conversations";
-import { recordDocumentWorkspaceOpen } from "$lib/client/api/knowledge";
+import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { currentConversationId } from "$lib/stores/ui";
 import { selectedModel } from "$lib/stores/settings";
 import EvidenceManager from "$lib/components/chat/EvidenceManager.svelte";
@@ -1436,6 +1436,57 @@ function handleUploadReady(
 	uploadFilesFn = uploadFn;
 }
 
+type UploadFileResult =
+	| { success: true; attachment: import('$lib/types').PendingAttachment }
+	| { success: false; fileName: string; error: string };
+
+let addToComponentFn: ((result: UploadFileResult) => void) | null = null;
+
+async function uploadSingleFile(
+	file: File,
+	conversationId: string,
+): Promise<UploadFileResult> {
+	try {
+		const result = await uploadKnowledgeAttachment(file, conversationId);
+		if (result?.artifact) {
+			return {
+				success: true,
+				attachment: {
+					artifact: result.artifact,
+					promptReady: Boolean(result.promptReady),
+					promptArtifactId:
+						typeof result.promptArtifactId === 'string'
+							? result.promptArtifactId
+							: null,
+					readinessError:
+						typeof result.readinessError === 'string' &&
+						result.readinessError.trim()
+							? result.readinessError
+							: null,
+				},
+			};
+		}
+		return { success: false, fileName: file.name, error: 'Upload failed' };
+	} catch (err) {
+		return {
+			success: false,
+			fileName: file.name,
+			error: err instanceof Error ? err.message : 'Upload failed',
+		};
+	}
+}
+
+function handleUploadFiles(payload: {
+	files: File[];
+	conversationId: string;
+	done: (result: UploadFileResult) => void;
+}) {
+	addToComponentFn = payload.done;
+	for (const file of payload.files) {
+		uploadSingleFile(file, payload.conversationId).then(payload.done);
+	}
+}
+
 function handleDragEnter(event: DragEvent) {
 	if (!isOsFileDropEvent(event)) return;
 	event.preventDefault();
@@ -1471,7 +1522,11 @@ function handleDrop(event: DragEvent) {
 	if (isSending) return;
 	const files = event.dataTransfer?.files;
 	if (!files || files.length === 0) return;
-	uploadFilesFn?.(files);
+	for (const file of Array.from(files)) {
+		uploadSingleFile(file, data.conversation.id).then((result) => {
+			addToComponentFn?.(result);
+		});
+	}
 }
 </script>
 
@@ -1540,6 +1595,7 @@ function handleDrop(event: DragEvent) {
 				onSteer={handleSteering}
 				onManageEvidence={openEvidenceManager}
 				onUploadReady={handleUploadReady}
+			onUploadFiles={handleUploadFiles}
 			/>
 		</div>
 

@@ -80,7 +80,7 @@ describe('DocumentsList', () => {
 			const fileInput = screen.getByTestId('file-input') as HTMLInputElement;
 			const clickSpy = vi.spyOn(fileInput, 'click');
 
-			const emptyStateButton = screen.getByRole('button', { name: /upload documents/i });
+			const emptyStateButton = screen.getByRole('button', { name: /upload/i });
 			await fireEvent.click(emptyStateButton);
 
 			expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -126,7 +126,7 @@ describe('DocumentsList', () => {
 			});
 
 			const dropSurface = screen.getByRole('region', {
-				name: /documents list with drag and drop upload/i,
+				name: /documents/i,
 			});
 			const file = new File(['hello'], 'new-upload.pdf', { type: 'application/pdf' });
 

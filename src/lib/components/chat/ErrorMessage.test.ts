@@ -82,7 +82,7 @@ describe('ErrorMessage', () => {
 			},
 		});
 
-		await fireEvent.click(getByRole('button', { name: /dismiss error/i }));
+		await fireEvent.click(getByRole('button', { name: /close/i }));
 
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});

@@ -3,9 +3,6 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import MessageInputWrapper from './MessageInputWrapper.test.svelte';
 import MessageInput from './MessageInput.svelte';
 
-const fetchMock = vi.fn();
-vi.stubGlobal('fetch', fetchMock);
-
 describe('MessageInput', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -214,34 +211,19 @@ describe('MessageInput', () => {
 	});
 
 	it('disables send while an attachment upload is still in progress', async () => {
-		let resolveUpload: ((value: unknown) => void) | null = null;
-		fetchMock.mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					resolveUpload = resolve;
-				})
-		);
-
-		const artifact = {
-			id: 'artifact-1',
-			type: 'source_document' as const,
-			retrievalClass: 'durable' as const,
-			name: 'recipe.txt',
-			mimeType: 'text/plain',
-			sizeBytes: 12,
-			conversationId: 'conv-1',
-			summary: 'Dinner recipe',
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		};
-
 		const sendSpy = vi.fn();
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
 		const { container, getByPlaceholderText, getByLabelText, getByText } = render(
-			MessageInputWrapper,
+			MessageInput,
 			{
 				conversationId: 'conv-1',
 				attachmentsEnabled: true,
 				onSend: sendSpy,
+				onUploadFiles: uploadFilesHandler,
 			}
 		);
 
@@ -260,14 +242,26 @@ describe('MessageInput', () => {
 			expect(sendButton.disabled).toBe(true);
 		});
 
-		resolveUpload?.({
-			ok: true,
-			json: async () => ({
-				artifact,
+		// Simulate page completing the upload
+		doneCallback!({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-1',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'recipe.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 12,
+					conversationId: 'conv-1',
+					summary: 'Dinner recipe',
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
 				promptReady: true,
 				promptArtifactId: 'normalized-1',
 				readinessError: null,
-			}),
+			},
 		});
 
 		await waitFor(() => {
@@ -277,32 +271,17 @@ describe('MessageInput', () => {
 	});
 
 	it('queues send intent on Enter while attachment processing is running and auto-sends when ready', async () => {
-		let resolveUpload: ((value: unknown) => void) | null = null;
-		fetchMock.mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					resolveUpload = resolve;
-				})
-		);
-
-		const artifact = {
-			id: 'artifact-auto-send-1',
-			type: 'source_document' as const,
-			retrievalClass: 'durable' as const,
-			name: 'notes.pdf',
-			mimeType: 'application/pdf',
-			sizeBytes: 12,
-			conversationId: 'conv-1',
-			summary: 'OCR me',
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		};
-
 		const sendSpy = vi.fn();
-		const { container, getByPlaceholderText, getByText } = render(MessageInputWrapper, {
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
+		const { container, getByPlaceholderText, getByText } = render(MessageInput, {
 			conversationId: 'conv-1',
 			attachmentsEnabled: true,
 			onSend: sendSpy,
+			onUploadFiles: uploadFilesHandler,
 		});
 
 		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
@@ -325,26 +304,64 @@ describe('MessageInput', () => {
 			).toBeDefined();
 		});
 
-		resolveUpload?.({
-			ok: true,
-			json: async () => ({
-				artifact,
+		doneCallback!({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-auto-send-1',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'notes.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 12,
+					conversationId: 'conv-1',
+					summary: 'OCR me',
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
 				promptReady: true,
 				promptArtifactId: 'normalized-auto-send-1',
 				readinessError: null,
-			}),
+			},
 		});
 
 		await waitFor(() => {
 			expect(sendSpy).toHaveBeenCalledTimes(1);
 		});
-		expect(sendSpy).toHaveBeenCalledWith('Send when ready');
+		expect(sendSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'Send when ready' })
+		);
 	});
 
 	it('blocks send when an uploaded attachment is not prompt-ready', async () => {
-		fetchMock.mockResolvedValue({
-			ok: true,
-			json: async () => ({
+		const sendSpy = vi.fn();
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
+		const { container, getByPlaceholderText, getByLabelText, findByText } = render(
+			MessageInput,
+			{
+				conversationId: 'conv-1',
+				attachmentsEnabled: true,
+				onSend: sendSpy,
+				onUploadFiles: uploadFilesHandler,
+			}
+		);
+
+		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
+		const sendButton = getByLabelText('Send message') as HTMLButtonElement;
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+		await fireEvent.input(textarea, { target: { value: 'Use this file' } });
+		await fireEvent.change(fileInput, {
+			target: { files: [new File(['scan'], 'scan.pdf', { type: 'application/pdf' })] },
+		});
+
+		doneCallback!({
+			success: true,
+			attachment: {
 				artifact: {
 					id: 'artifact-2',
 					type: 'source_document',
@@ -360,26 +377,7 @@ describe('MessageInput', () => {
 				promptReady: false,
 				promptArtifactId: null,
 				readinessError: 'This file could not be prepared for chat.',
-			}),
-		});
-
-		const sendSpy = vi.fn();
-		const { container, getByPlaceholderText, getByLabelText, findByText } = render(
-			MessageInputWrapper,
-			{
-				conversationId: 'conv-1',
-				attachmentsEnabled: true,
-				onSend: sendSpy,
-			}
-		);
-
-		const textarea = getByPlaceholderText('Type a message...') as HTMLTextAreaElement;
-		const sendButton = getByLabelText('Send message') as HTMLButtonElement;
-		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-
-		await fireEvent.input(textarea, { target: { value: 'Use this file' } });
-		await fireEvent.change(fileInput, {
-			target: { files: [new File(['scan'], 'scan.pdf', { type: 'application/pdf' })] },
+			},
 		});
 
 		expect(await findByText(/scan\.pdf: This file could not be prepared for chat\./i)).toBeDefined();
@@ -389,52 +387,12 @@ describe('MessageInput', () => {
 		expect(sendSpy).not.toHaveBeenCalled();
 	});
 
-	it('uploads all selected files from one picker action', async () => {
-		fetchMock
-			.mockResolvedValueOnce({
-				ok: true,
-				json: async () => ({
-					artifact: {
-						id: 'artifact-multi-1',
-						type: 'source_document',
-						retrievalClass: 'durable',
-						name: 'first.txt',
-						mimeType: 'text/plain',
-						sizeBytes: 5,
-						conversationId: 'conv-1',
-						summary: null,
-						createdAt: Date.now(),
-						updatedAt: Date.now(),
-					},
-					promptReady: true,
-					promptArtifactId: 'normalized-multi-1',
-					readinessError: null,
-				}),
-			})
-			.mockResolvedValueOnce({
-				ok: true,
-				json: async () => ({
-					artifact: {
-						id: 'artifact-multi-2',
-						type: 'source_document',
-						retrievalClass: 'durable',
-						name: 'second.txt',
-						mimeType: 'text/plain',
-						sizeBytes: 6,
-						conversationId: 'conv-1',
-						summary: null,
-						createdAt: Date.now(),
-						updatedAt: Date.now(),
-					},
-					promptReady: true,
-					promptArtifactId: 'normalized-multi-2',
-					readinessError: null,
-				}),
-			});
-
-		const { container, findByText } = render(MessageInputWrapper, {
+	it('emits onUploadFiles with all selected files from one picker action', async () => {
+		const uploadFilesSpy = vi.fn();
+		const { container, findByText } = render(MessageInput, {
 			conversationId: 'conv-1',
 			attachmentsEnabled: true,
+			onUploadFiles: uploadFilesSpy,
 		});
 
 		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -445,7 +403,54 @@ describe('MessageInput', () => {
 			target: { files: [firstFile, secondFile] },
 		});
 
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(uploadFilesSpy).toHaveBeenCalledTimes(1);
+		const payload = uploadFilesSpy.mock.calls[0][0];
+		expect(payload.files).toHaveLength(2);
+		expect(payload.files[0].name).toBe('first.txt');
+		expect(payload.files[1].name).toBe('second.txt');
+
+		// Simulate both uploads completing via done callback
+		payload.done({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-multi-1',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'first.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 5,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+				promptReady: true,
+				promptArtifactId: 'normalized-multi-1',
+				readinessError: null,
+			},
+		});
+		payload.done({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-multi-2',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'second.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 6,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+				promptReady: true,
+				promptArtifactId: 'normalized-multi-2',
+				readinessError: null,
+			},
+		});
+
 		expect(await findByText('first.txt')).toBeDefined();
 		expect(await findByText('second.txt')).toBeDefined();
 	});
@@ -538,5 +543,113 @@ describe('MessageInput', () => {
 		await fireEvent.click(getByTestId('delete-queued-button'));
 
 		expect(deleteSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it('emits onUploadFiles when files are picked via file picker', async () => {
+		const uploadFilesSpy = vi.fn();
+		const { container } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onUploadFiles: uploadFilesSpy,
+		});
+
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const file = new File(['hello'], 'test.txt', { type: 'text/plain' });
+
+		await fireEvent.change(fileInput, { target: { files: [file] } });
+
+		expect(uploadFilesSpy).toHaveBeenCalledTimes(1);
+		expect(uploadFilesSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: [file],
+				conversationId: 'conv-1',
+			})
+		);
+		expect(uploadFilesSpy.mock.calls[0][0].done).toBeInstanceOf(Function);
+	});
+
+	it('adds attachment to list when done callback is called with success', async () => {
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
+		const { container, findByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onUploadFiles: uploadFilesHandler,
+		});
+
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const file = new File(['content'], 'report.pdf', { type: 'application/pdf' });
+
+		await fireEvent.change(fileInput, { target: { files: [file] } });
+
+		doneCallback!({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-1',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'report.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 7,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+				promptReady: true,
+				promptArtifactId: 'normalized-1',
+				readinessError: null,
+			},
+		});
+
+		expect(await findByText('report.pdf')).toBeDefined();
+	});
+
+	it('shows error when done callback is called with failure', async () => {
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
+		const { container, findByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onUploadFiles: uploadFilesHandler,
+		});
+
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const file = new File(['broken'], 'corrupt.pdf', { type: 'application/pdf' });
+
+		await fireEvent.change(fileInput, { target: { files: [file] } });
+
+		doneCallback!({
+			success: false,
+			fileName: 'corrupt.pdf',
+			error: 'Server rejected the file',
+		});
+
+		expect(await findByText('corrupt.pdf: Server rejected the file')).toBeDefined();
+	});
+
+	it('rejects oversized file locally without emitting onUploadFiles', async () => {
+		const uploadFilesSpy = vi.fn();
+		const { container, findByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onUploadFiles: uploadFilesSpy,
+		});
+
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const largeFile = new File(['x'], 'huge.pdf', { type: 'application/pdf' });
+		Object.defineProperty(largeFile, 'size', { value: 101 * 1024 * 1024 });
+
+		await fireEvent.change(fileInput, { target: { files: [largeFile] } });
+
+		expect(uploadFilesSpy).not.toHaveBeenCalled();
+		expect(await findByText(/exceed.*100MB|exceed.*upload size/)).toBeDefined();
 	});
 });

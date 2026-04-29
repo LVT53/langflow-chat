@@ -1,7 +1,6 @@
 <script lang="ts">
 import { onMount, untrack } from "svelte";
 import { t } from "$lib/i18n";
-import { uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { currentConversationId } from "$lib/stores/ui";
 import ContextUsageRing from "./ContextUsageRing.svelte";
 import ComposerToolsMenu from "./ComposerToolsMenu.svelte";
@@ -55,6 +54,7 @@ let {
 	queuedMessagePreview = "",
 	onDraftChange = undefined,
 	onUploadReady = undefined,
+	onUploadFiles = undefined,
 }: {
 	disabled?: boolean;
 	maxLength?: number;
@@ -81,6 +81,17 @@ let {
 	onDraftChange?: ((payload: DraftPayload) => void) | undefined;
 	onUploadReady?:
 		| ((uploadFn: (files: FileList | null) => Promise<void>) => void)
+		| undefined;
+	onUploadFiles?:
+		| ((payload: {
+				files: File[];
+				conversationId: string;
+				done: (
+					result:
+						| { success: true; attachment: PendingAttachment }
+						| { success: false; fileName: string; error: string },
+				) => void;
+		  }) => void)
 		| undefined;
 } = $props();
 
@@ -395,7 +406,6 @@ async function uploadFiles(files: FileList | null) {
 	attachmentError = "";
 	const selectedFiles = Array.from(files);
 	const failures: string[] = [];
-	let preparingTimer: ReturnType<typeof setTimeout> | null = null;
 	if (typeof window !== "undefined") {
 		preparingTimer = window.setTimeout(() => {
 			uploadState = "preparing";
@@ -415,8 +425,13 @@ async function uploadFiles(files: FileList | null) {
 		const validFiles = selectedFiles.filter(
 			(file) => file.size <= MAX_FILE_SIZE,
 		);
-		if (validFiles.length === 0 && selectedFiles.length > 0) {
-			throw new Error($t("chat.allFilesTooLarge", { max: 100 }));
+
+		// Show size-check failures immediately for oversized files
+		if (failures.length > 0) {
+			if (validFiles.length === 0) {
+				throw new Error($t("chat.allFilesTooLarge", { max: 100 }));
+			}
+			attachmentError = $t("chat.uploadSomeFailed", { count: failures.length });
 		}
 
 		let targetConversationId = resolvedConversationId;
@@ -425,59 +440,60 @@ async function uploadFiles(files: FileList | null) {
 			resolvedConversationId = targetConversationId;
 		}
 		if (!targetConversationId) {
+			if (preparingTimer) {
+				clearTimeout(preparingTimer);
+			}
+			uploadState = "idle";
 			throw new Error($t("chat.uploadError"));
 		}
-		for (const file of validFiles) {
-			try {
-				const payload = await uploadKnowledgeAttachment(
-					file,
-					targetConversationId,
-				);
-				if (payload?.artifact) {
-					const next = new Map(
-						pendingAttachments.map((attachment) => [
-							attachment.artifact.id,
-							attachment,
-						]),
-					);
-					next.set(payload.artifact.id, {
-						artifact: payload.artifact,
-						promptReady: Boolean(payload.promptReady),
-						promptArtifactId:
-							typeof payload.promptArtifactId === "string"
-								? payload.promptArtifactId
-								: null,
-						readinessError:
-							typeof payload.readinessError === "string" &&
-							payload.readinessError.trim()
-								? payload.readinessError
-								: null,
-					});
-					pendingAttachments = Array.from(next.values());
-					draftEmissionVersion += 1;
-					void emitDraftChange();
-				}
-			} catch (error) {
-				const reason =
-					error instanceof Error ? error.message : $t("chat.uploadError");
-				failures.push(`${file.name}: ${reason}`);
-			}
-		}
 
-		if (failures.length > 0) {
-			attachmentError =
-				failures.length === selectedFiles.length
-					? $t("chat.uploadAllFailed", { count: selectedFiles.length })
-					: $t("chat.uploadSomeFailed", { count: failures.length });
-		}
+		pendingUploadCount = validFiles.length;
+		onUploadFiles?.({
+			files: validFiles,
+			conversationId: targetConversationId,
+			done: addUploadedAttachment,
+		});
 	} catch (error) {
+		if (preparingTimer) {
+			clearTimeout(preparingTimer);
+			preparingTimer = null;
+		}
+		uploadState = "idle";
+		if (fileInput) fileInput.value = "";
 		attachmentError =
 			error instanceof Error
 				? error.message
 				: $t("chat.uploadAttachmentFailed");
-	} finally {
+	}
+}
+
+let pendingUploadCount = $state(0);
+let preparingTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+
+function addUploadedAttachment(
+	result:
+		| { success: true; attachment: PendingAttachment }
+		| { success: false; fileName: string; error: string },
+) {
+	if (result.success) {
+		const next = new Map(
+			pendingAttachments.map((attachment) => [
+				attachment.artifact.id,
+				attachment,
+			]),
+		);
+		next.set(result.attachment.artifact.id, result.attachment);
+		pendingAttachments = Array.from(next.values());
+		draftEmissionVersion += 1;
+		void emitDraftChange();
+	} else {
+		attachmentError = `${result.fileName}: ${result.error}`;
+	}
+	pendingUploadCount -= 1;
+	if (pendingUploadCount <= 0) {
 		if (preparingTimer) {
 			clearTimeout(preparingTimer);
+			preparingTimer = null;
 		}
 		uploadState = "idle";
 		if (fileInput) fileInput.value = "";
