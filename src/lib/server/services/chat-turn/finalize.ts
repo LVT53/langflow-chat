@@ -78,7 +78,7 @@ export async function persistAssistantTurnState(
 ): Promise<PersistAssistantTurnStateResult> {
 	const analytics = params.analytics ?? null;
 	if (analytics) {
-		recordMessageAnalytics({
+		await recordMessageAnalytics({
 			messageId: params.assistantMessageId,
 			conversationId: params.conversationId,
 			userId: params.userId,

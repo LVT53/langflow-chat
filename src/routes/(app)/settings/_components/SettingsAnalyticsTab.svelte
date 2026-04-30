@@ -82,7 +82,11 @@
 	);
 
 	function prevMonth() {
-		if (!selectedMonth || availableMonths.length === 0) return;
+		if (availableMonths.length === 0) return;
+		if (!selectedMonth) {
+			onMonthChange?.(availableMonths[availableMonths.length - 1]);
+			return;
+		}
 		const idx = availableMonths.indexOf(selectedMonth);
 		if (idx < availableMonths.length - 1) {
 			onMonthChange?.(availableMonths[idx + 1]);
@@ -90,7 +94,11 @@
 	}
 
 	function nextMonth() {
-		if (!selectedMonth || availableMonths.length === 0) return;
+		if (availableMonths.length === 0) return;
+		if (!selectedMonth) {
+			onMonthChange?.(availableMonths[0]);
+			return;
+		}
 		const idx = availableMonths.indexOf(selectedMonth);
 		if (idx > 0) {
 			onMonthChange?.(availableMonths[idx - 1]);
@@ -298,7 +306,7 @@
 				<button
 					class="month-nav-btn"
 					onclick={prevMonth}
-					disabled={!selectedMonth}
+					disabled={availableMonths.length === 0}
 					aria-label="Previous month"
 				>&larr;</button>
 				<span class="month-label">
@@ -307,7 +315,7 @@
 				<button
 					class="month-nav-btn"
 					onclick={nextMonth}
-					disabled={!selectedMonth}
+					disabled={availableMonths.length === 0}
 					aria-label="Next month"
 				>&rarr;</button>
 				{#if selectedMonth}
