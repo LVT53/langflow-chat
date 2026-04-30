@@ -56,6 +56,11 @@ let {
 	onDraftChange = undefined,
 	onUploadReady = undefined,
 	onUploadFiles = undefined,
+	totalCostUsd = 0,
+	totalTokens = 0,
+	personalityProfiles = [],
+	selectedPersonalityId = null,
+	onPersonalityChange = undefined,
 }: {
 	disabled?: boolean;
 	maxLength?: number;

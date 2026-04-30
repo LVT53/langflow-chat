@@ -40,6 +40,11 @@
 		onManageEvidence,
 		onUploadReady,
 		onUploadFiles,
+		totalCostUsd,
+		totalTokens,
+		personalityProfiles,
+		selectedPersonalityId,
+		onPersonalityChange,
 	}: {
 		sendError: string | null;
 		onRetry: () => void;
@@ -74,6 +79,11 @@
 				| { success: false; fileName: string; error: string }
 			) => void;
 		}) => void) | undefined;
+		totalCostUsd?: number;
+		totalTokens?: number;
+		personalityProfiles?: Array<{ id: string; name: string; description: string }>;
+		selectedPersonalityId?: string | null;
+		onPersonalityChange?: ((id: string | null) => void) | undefined;
 	} = $props();
 
 	// Dynamic keyboard detection using visualViewport API
@@ -161,6 +171,11 @@
 			onManageEvidence={onManageEvidence}
 			{onUploadReady}
 			{onUploadFiles}
+			{totalCostUsd}
+			{totalTokens}
+			{personalityProfiles}
+			{selectedPersonalityId}
+			{onPersonalityChange}
 		/>
 	</div>
 </div>
