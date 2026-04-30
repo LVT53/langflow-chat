@@ -210,7 +210,7 @@ export function buildOutboundSystemPrompt(params: {
 	if (params.personalityPrompt?.trim()) {
 		sections.push(
 			[
-				"## Selected Response Style",
+				"## Response Style",
 				"Follow this style for the visible answer. It overrides default voice, length, and formatting preferences unless it conflicts with safety, tool, or source-citation requirements.",
 				params.personalityPrompt.trim(),
 			].join("\n"),

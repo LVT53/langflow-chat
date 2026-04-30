@@ -106,8 +106,8 @@ describe('buildOutboundSystemPrompt', () => {
 		});
 
 		expect(prompt).toContain('## Tool And Search Guidance');
-		expect(prompt).toContain('## Selected Response Style');
-		expect(prompt.indexOf('## Selected Response Style')).toBeGreaterThan(
+		expect(prompt).toContain('## Response Style');
+		expect(prompt.indexOf('## Response Style')).toBeGreaterThan(
 			prompt.indexOf('## Tool And Search Guidance')
 		);
 		expect(prompt).toContain('Be extremely concise.');

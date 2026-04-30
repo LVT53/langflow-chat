@@ -14,6 +14,7 @@
 | 2026-04-30 | grill-with-docs | **6** — Dual normalization | **RESOLVED** — Create unified `chat-turn/normalizer.ts`, delete translator service entirely, remove all `<preserve>` and Hermes traces. See candidate body for full scope. |
 | 2026-04-30 | grill-with-docs | **5** — `stream.ts` split | **SKIPPED** — Simpler cleanup only. Candidate 6's preserve removal + normalization consolidation already addresses most of the file's complexity. No new file splits. |
 | 2026-04-30 | grill-with-docs | **4** — `config-store.ts` refactor | **SCALED BACK** — Collapse `getResolvedAdminConfigValues` + `getEnvDefaults` into a shared serializer. Remove translator keys. Keep override appliers as-is (grep-friendly, zero-risk). No metadata metaprogramming. |
+| 2026-04-30 | grill-with-docs | **3** — `stream-orchestrator.ts` god object | **FINISHED** — 3 targeted extractions (completeStreamTurn, doReconnect, runNonStreamFallback) + SSE contract integration test. 36 new tests across 4 test files. Orchestrator reduced from 977 to ~720 lines. All 4 issues (#13–#16) committed in atomic TDD slices. |
 
 ---
 
@@ -254,9 +255,22 @@ task-state/steering.ts  (new, ~150 lines)
 
 ---
 
-## Candidate 3: `chat-turn/stream-orchestrator.ts` — Undertested God Object
+## Candidate 3: `chat-turn/stream-orchestrator.ts` — Undertested God Object ✅ FINISHED (2026-04-30)
 
-**Files**: `src/lib/server/services/chat-turn/stream-orchestrator.ts` (1,031 lines, 0 tests)
+> **Decision**: No shared `post-turn-orchestrator.ts`. Send and stream have fundamentally different runtime shapes (send: single string, sequential await, no tool-call records, no generated files; stream: chunkRuntime with thinking/tool-calls, Promise.all parallelism, SSE end-event broadcast). Forcing them through one shared function would require runtime branching on "am I in stream mode?" — worse than two separate sequences.
+>
+> **Revised scope**: Three targeted extractions instead of four:
+> 1. Extract `completeSuccess` closure to standalone async function `completeStreamTurn()` (~180 lines) with explicit parameters instead of closure-captured variables
+> 2. Extract non-streaming fallback path to `runNonStreamFallback()` (~47 lines) — the self-contained block that calls `sendMessage()` and emits text
+> 3. Extract `doReconnect` to `stream-reconnect.ts` (~65 lines) — replay mechanics only; the reconnect decision tree stays in the orchestrator
+>
+> **Not extracted**: Full retry loop (270 lines, 4 paths — too entangled with chunkRuntime accumulators), reconnect decision tree (37 lines — simple routing tied to ReadableStream control flow), translation (already dead after Candidate 6).
+>
+> **Test strategy**: Unit tests for all three extracts + one SSE contract integration test verifying end/error/replay event shapes. Playwright E2E covers browser consumption.
+>
+> **File renamed to 977 lines** (post-Candidate 6 normalization cleanup). `completeSuccess` closure at lines 409–634.
+
+**Files**: `src/lib/server/services/chat-turn/stream-orchestrator.ts` (977 lines, 0 tests)
 
 ### Problem
 
@@ -284,39 +298,46 @@ The `completeSuccess()` closure (lines 424-649, ~225 lines) is itself a sub-orch
 
 This **duplicates orchestration that lives in `send/+server.ts`** (lines 107-171), which manually sequences the same calls. Two different files orchestrate the same post-turn flow with different error handling and timing.
 
-### Solution Outline
+### Revised Solution Outline
 
 ```
-chat-turn/stream-orchestrator.ts  (reduced to ~600 lines)
-  └── ReadableStream adapter only
+chat-turn/stream-orchestrator.ts  (reduced to ~500 lines)
+  └── ReadableStream adapter + retry loop + reconnect decision tree + chunkRuntime wiring
   └── Composes extracted pure functions
 
-chat-turn/post-turn-orchestrator.ts  (new, ~300 lines)
-  └── Shared post-turn persistence for both send and stream paths
-  └── completeTurnAndSendEndEvent() or equivalent
-  └── Consumed by both stream-orchestrator.ts and send/+server.ts
+chat-turn/stream-completion.ts  (new, ~180 lines)
+  └── completeStreamTurn() — standalone async function
+  └── Accepts: conversationId, userId, chunkRuntime, streamId, persisted message IDs, etc.
+  └── Returns: void (side-effect driven: finalize.ts calls, generated-file sync, SSE end event)
 
-chat-turn/stream-reconnect.ts  (new, ~80 lines)
-  └── doReconnect() logic
+chat-turn/stream-fallback.ts  (new, ~60 lines)
+  └── runNonStreamFallback() — self-contained non-streaming fallback path
+  └── Accepts: sendMessage, chunk emitters, state setters
+  └── Calls sendMessage() → emits text → calls completeStreamTurn()
 
-chat-turn/stream-retry.ts  (new, ~100 lines)
-  └── Upstream retry with fallback
+chat-turn/stream-reconnect.ts  (new, ~65 lines)
+  └── doReconnect() — replay buffered tokens/thinking/tool_calls as SSE events
+  └── Accepts: targetStreamId, enqueueChunk, buffer/stream helpers, closeDownstream
 
-chat-turn/stream-translation.ts  (new, ~60 lines)
-  └── Hungarian translation handling for stream path
+Tests:
+  ├── stream-completion.test.ts   (unit — mock finalize.ts, chat-files.ts, messages.ts)
+  ├── stream-fallback.test.ts     (unit — mock sendMessage, chunk emitters)
+  ├── stream-reconnect.test.ts    (unit — mock buffer, subscribe/unsubscribe)
+  └── stream-orchestrator.test.ts (integration — SSE contract validation)
 ```
 
 ### Benefits
 
-- **Locality**: Post-turn persistence lives in one place instead of two
-- **Test surface**: Extracted functions accept inputs and return outputs — testable without ReadableStream
-- **Leverage**: The send route stops duplicating orchestration
-- **Depth**: Each extracted function has a single clear responsibility
+- **Test surface**: Three extracted functions accept explicit inputs, fully testable without ReadableStream
+- **Locality**: Each concern concentrated in a dedicated module
+- **Interface clarity**: Callers see parameters instead of closure-captured state
+- **No behavior change**: Pure extraction, no logic modified
 
 ### Risks
 
-- SSE event contract (`event: end`, `event: error`, payload shapes) must be preserved exactly — the browser stream consumer depends on it
-- ReadableStream is inherently hard to test — the extracted functions mitigate this but don't eliminate it
+- SSE event contract (`event: end`, `event: error`, payload shapes) must be preserved exactly — integration test guards this
+- `completeStreamTurn()` must handle both normal completion and `wasStopped = true` path
+- Extraction surface: 15+ closure-captured variables promoted to explicit parameters in `completeStreamTurn()`
 
 ---
 
@@ -631,7 +652,7 @@ FilePreview.svelte  (reduced to ~300 lines)
 
 | # | Candidate | Impact | Effort | Risk | Key Metric |
 |---|-----------|--------|--------|------|------------|
-| 3 | `stream-orchestrator.ts` — extract + test | 🔴 Critical | High | High | 1,031 lines, 0 tests, core pipeline |
+| 3 | `stream-orchestrator.ts` — extract + test | 🔴 Critical | High | High | ✅ FINISHED — 977 → ~720 lines, 0 → 36 tests. 3 extractions + SSE contract test. 4 commits. |
 | 1 | `honcho.ts` — split context assembly | 🔴 High | High | Medium | 1,680 lines, 5 responsibilities |
 | 2 | `task-state.ts` — separate barrel from logic | 🔴 High | Medium | Medium | 1,558 lines, mixed concerns |
 | 6 | Dual normalization — unify paths + delete translator | 🔴 High | Medium | Medium | ✅ RESOLVED — ~1,250 lines deleted, unified normalizer |

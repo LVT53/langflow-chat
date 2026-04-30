@@ -632,17 +632,6 @@ function placeholderFor(key: string): string {
 </section>
 
 
-<!-- Save button -->
-{#if adminMessage}
-	<p class="mb-3 text-sm text-success">{adminMessage}</p>
-{/if}
-{#if adminError}
-	<p class="mb-3 text-sm text-danger">{adminError}</p>
-{/if}
-<button class="btn-primary mb-8 w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
-	{adminSaving ? $t('common.saving') : $t('admin.saveConfiguration')}
-</button>
-
 <!-- Modal -->
 {#if showModal}
 	<ModelFormModal
@@ -673,6 +662,17 @@ function placeholderFor(key: string): string {
 		{/each}
 	</div>
 </section>
+
+<!-- Save button -->
+{#if adminMessage}
+	<p class="mb-3 text-sm text-success">{adminMessage}</p>
+{/if}
+{#if adminError}
+	<p class="mb-3 text-sm text-danger">{adminError}</p>
+{/if}
+<button class="btn-primary mb-8 w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
+	{adminSaving ? $t('common.saving') : $t('admin.saveConfiguration')}
+</button>
 
 <style>
 	:global(.btn-small) {
