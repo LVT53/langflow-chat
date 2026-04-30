@@ -1,977 +1,961 @@
-
-import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { getConfig } from "$lib/server/config-store";
-import { touchConversation } from "$lib/server/services/conversations";
-import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
-import { extractProviderUsage, type ProviderUsageSnapshot } from "$lib/server/services/analytics";
-import { createMessage } from "$lib/server/services/messages";
 import {
-  attachContinuityToTaskState,
-  getContextDebugState,
-  getConversationTaskState,
-} from "$lib/server/services/task-state";
-import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
+	extractProviderUsage,
+	type ProviderUsageSnapshot,
+} from "$lib/server/services/analytics";
+import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import {
-  persistAssistantEvidence,
-  persistAssistantTurnState,
-  persistUserTurnAttachments,
-  runPostTurnTasks,
-} from "$lib/server/services/chat-turn/finalize";
-import {
-  registerActiveChatStream,
-  unregisterActiveChatStream,
-  wasActiveChatStreamStopRequested,
-  getStreamBuffer,
-  getOrCreateStreamBuffer,
-  appendToStreamBuffer,
-  clearStreamBuffer,
-  subscribeToStream,
-  unsubscribeFromStream,
-  broadcastStreamChunk,
-  getOrphanedStream,
-  isStreamActive,
-} from '$lib/server/services/chat-turn/active-streams';
-import {
-  URL_LIST_TOOL_RECOVERY_APPENDIX,
-  type StreamErrorCode,
-  classifyStreamError,
-  createServerChunkRuntime,
-  createEventStreamResponse,
-  createSseHeartbeatComment,
-  createSsePreludeComment,
-  extractAssistantChunk,
-  extractErrorMessage,
-  getReasoningContent,
-  isAbruptUpstreamTermination,
-  isUrlListValidationError,
-  parseUpstreamEvents,
-  processToolCallMarkers,
-  streamErrorEvent,
-  toIncrementalChunk,
-} from "$lib/server/services/chat-turn/stream";
-import type { WorkCapsuleSummary } from "$lib/server/services/chat-turn/types";
-import { estimateTokenCount } from "$lib/utils/tokens";
-import {
-  assignGeneratedFilesToAssistantMessage,
-  getChatFiles,
-  getChatFilesForAssistantMessage,
-  syncGeneratedFilesToMemory,
+	assignGeneratedFilesToAssistantMessage,
+	getChatFiles,
+	getChatFilesForAssistantMessage,
+	syncGeneratedFilesToMemory,
 } from "$lib/server/services/chat-files";
 import {
-  getGenerateFileToolCode,
-  getGenerateFileToolFilename,
-  getGenerateFileToolLanguage,
+	appendToStreamBuffer,
+	broadcastStreamChunk,
+	clearStreamBuffer,
+	getOrCreateStreamBuffer,
+	getOrphanedStream,
+	getStreamBuffer,
+	isStreamActive,
+	registerActiveChatStream,
+	subscribeToStream,
+	unregisterActiveChatStream,
+	unsubscribeFromStream,
+	wasActiveChatStreamStopRequested,
+} from "$lib/server/services/chat-turn/active-streams";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
+import {
+	persistAssistantEvidence,
+	persistAssistantTurnState,
+	persistUserTurnAttachments,
+	runPostTurnTasks,
+} from "$lib/server/services/chat-turn/finalize";
+import {
+	classifyStreamError,
+	createEventStreamResponse,
+	createServerChunkRuntime,
+	createSseHeartbeatComment,
+	createSsePreludeComment,
+	extractAssistantChunk,
+	extractErrorMessage,
+	getReasoningContent,
+	isAbruptUpstreamTermination,
+	isUrlListValidationError,
+	parseUpstreamEvents,
+	processToolCallMarkers,
+	type StreamErrorCode,
+	streamErrorEvent,
+	toIncrementalChunk,
+	URL_LIST_TOOL_RECOVERY_APPENDIX,
+} from "$lib/server/services/chat-turn/stream";
+import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
+import type {
+	ChatTurnPreflight,
+	WorkCapsuleSummary,
+} from "$lib/server/services/chat-turn/types";
+import { touchConversation } from "$lib/server/services/conversations";
+import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
+import { createMessage } from "$lib/server/services/messages";
+import {
+	attachContinuityToTaskState,
+	getContextDebugState,
+	getConversationTaskState,
+} from "$lib/server/services/task-state";
+import {
+	getGenerateFileToolCode,
+	getGenerateFileToolFilename,
+	getGenerateFileToolLanguage,
 } from "$lib/utils/generate-file-tool";
-import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
+import { estimateTokenCount } from "$lib/utils/tokens";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
 }
 
 function shouldFallbackToNonStreaming(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
+	if (!(error instanceof Error)) {
+		return false;
+	}
 
-  const message = error.message.toLowerCase();
+	const message = error.message.toLowerCase();
 
-  return (
-    error.name === "AbortError" ||
-    error.name === "LangflowStreamConnectTimeoutError" ||
-    message.includes("abort") ||
-    message.includes("timed out") ||
-    message.includes("fetch failed") ||
-    message.includes("socket") ||
-    message.includes("connection") ||
-    message.includes("terminated")
-  );
+	return (
+		error.name === "AbortError" ||
+		error.name === "LangflowStreamConnectTimeoutError" ||
+		message.includes("abort") ||
+		message.includes("timed out") ||
+		message.includes("fetch failed") ||
+		message.includes("socket") ||
+		message.includes("connection") ||
+		message.includes("terminated")
+	);
 }
-
-
 
 export interface StreamOrchestratorOptions {
-  user: {
-      id: string;
-      displayName: string | null;
-      email: string | null;
-      translationEnabled: boolean;
-  };
-  turn: ChatTurnPreflight;
-  upstreamMessage: string;
-  downstreamAbortSignal: AbortSignal;
-  requestStartTime: number;
-  isReconnect?: boolean;
+	user: {
+		id: string;
+		displayName: string | null;
+		email: string | null;
+		translationEnabled: boolean;
+	};
+	turn: ChatTurnPreflight;
+	upstreamMessage: string;
+	downstreamAbortSignal: AbortSignal;
+	requestStartTime: number;
+	isReconnect?: boolean;
 }
 
-export function runChatStreamOrchestrator(options: StreamOrchestratorOptions): Response {
-  const { user, turn, upstreamMessage, downstreamAbortSignal, requestStartTime, isReconnect } = options;
-  const conversationId = turn.conversationId;
-  const normalizedMessage = turn.normalizedMessage;
-  const streamId = turn.streamId;
-  const modelId = turn.modelId;
-  const modelDisplayName = turn.modelDisplayName;
-  const skipPersistUserMessage = turn.skipPersistUserMessage;
-  const safeAttachmentIds = turn.attachmentIds;
-  const activeDocumentArtifactId = turn.activeDocumentArtifactId;
-  const attachmentTraceId = turn.attachmentTraceId;
+export function runChatStreamOrchestrator(
+	options: StreamOrchestratorOptions,
+): Response {
+	const {
+		user,
+		turn,
+		upstreamMessage,
+		downstreamAbortSignal,
+		requestStartTime,
+		isReconnect,
+	} = options;
+	const conversationId = turn.conversationId;
+	const normalizedMessage = turn.normalizedMessage;
+	const streamId = turn.streamId;
+	const modelId = turn.modelId;
+	const modelDisplayName = turn.modelDisplayName;
+	const skipPersistUserMessage = turn.skipPersistUserMessage;
+	const safeAttachmentIds = turn.attachmentIds;
+	const activeDocumentArtifactId = turn.activeDocumentArtifactId;
+	const attachmentTraceId = turn.attachmentTraceId;
 
-  const encoder = new TextEncoder();
-  let cancelStream = () => undefined;
+	const encoder = new TextEncoder();
+	let cancelStream = () => undefined;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let downstreamClosed = false;
-      let ended = false;
-      let lastAssistantSnapshot = "";
-      let emittedAssistantText = "";
+	const stream = new ReadableStream({
+		async start(controller) {
+			let downstreamClosed = false;
+			let ended = false;
+			let lastAssistantSnapshot = "";
+			let emittedAssistantText = "";
 
-      const closeDownstream = () => {
-        if (downstreamClosed) return;
-        downstreamClosed = true;
-        downstreamAbortSignal.removeEventListener("abort", closeDownstream);
-        // Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
-        // The client reloads persisted messages on visibility restore (mobile background fix).
-        try {
-          controller.close();
-        } catch {
-          return;
-        }
-      };
+			const closeDownstream = () => {
+				if (downstreamClosed) return;
+				downstreamClosed = true;
+				downstreamAbortSignal.removeEventListener("abort", closeDownstream);
+				// Do NOT abort upstream on client disconnect — let generation complete and persist to DB.
+				// The client reloads persisted messages on visibility restore (mobile background fix).
+				try {
+					controller.close();
+				} catch {
+					return;
+				}
+			};
 
-      cancelStream = closeDownstream;
+			cancelStream = closeDownstream;
 
-      if (downstreamAbortSignal.aborted) {
-        closeDownstream();
-      } else {
-        downstreamAbortSignal.addEventListener("abort", closeDownstream, {
-          once: true,
-        });
-      }
+			if (downstreamAbortSignal.aborted) {
+				closeDownstream();
+			} else {
+				downstreamAbortSignal.addEventListener("abort", closeDownstream, {
+					once: true,
+				});
+			}
 
-      const doReconnect = (targetStreamId: string) => {
-        try {
-          enqueueChunk(createSsePreludeComment());
-          enqueueChunk(createSseHeartbeatComment());
+			const doReconnect = (targetStreamId: string) => {
+				runReconnect(targetStreamId, {
+					enqueueChunk,
+					closeDownstream,
+					downstreamAbortSignal,
+					getStreamBuffer: (id) => getStreamBuffer(id) ?? undefined,
+					subscribeToStream,
+					unsubscribeFromStream,
+					createSsePreludeComment,
+					createSseHeartbeatComment,
+				});
+			};
 
-          const buffer = getStreamBuffer(targetStreamId);
-          if (buffer) {
-            const hasContent = buffer.tokens.length > 0 || buffer.thinking.length > 0 || buffer.toolCalls.length > 0;
-            console.info('[CHAT_STREAM] Replaying buffer for stream', targetStreamId, {
-              hasContent,
-              tokens: buffer.tokens.length,
-              thinking: buffer.thinking.length,
-            });
-            if (hasContent) {
-              enqueueChunk(`event: replay_start\ndata: ${JSON.stringify({
-                tokenCount: buffer.tokens.length,
-                thinkingCount: buffer.thinking.length,
-                toolCallCount: buffer.toolCalls.length,
-                userMessage: buffer.userMessage,
-              })}\n\n`);
-              for (const token of buffer.tokens) {
-                enqueueChunk(`event: token\ndata: ${JSON.stringify({ text: token })}\n\n`);
-              }
-              for (const thinking of buffer.thinking) {
-                enqueueChunk(`event: thinking\ndata: ${JSON.stringify({ text: thinking })}\n\n`);
-              }
-              for (const toolCall of buffer.toolCalls) {
-                enqueueChunk(`event: tool_call\ndata: ${JSON.stringify({
-                  name: toolCall.name,
-                  input: toolCall.input,
-                  status: toolCall.status,
-                  outputSummary: toolCall.outputSummary,
-                })}\n\n`);
-              }
-              enqueueChunk('event: replay_end\ndata: {}\n\n');
-            }
-          }
+			const enqueueChunk = (chunk: string): boolean => {
+				// Always broadcast to reconnect listeners first, even if this downstream
+				// is already closed (e.g. reconnect client navigated away). The listener
+				// needs `event: end` to fire onEnd and finalize the UI placeholder.
+				if (isMainStream && streamId) {
+					broadcastStreamChunk(streamId, chunk);
+				}
+				if (downstreamClosed) return true;
 
-          let reconnectHeartbeatId: ReturnType<typeof setInterval>;
-          const liveListener = (chunk: string) => {
-            enqueueChunk(chunk);
-            if (chunk.startsWith('event: end\n') || chunk.startsWith('event: error\n')) {
-              unsubscribeFromStream(targetStreamId, liveListener);
-              clearInterval(reconnectHeartbeatId);
-              closeDownstream();
-            }
-          };
-          subscribeToStream(targetStreamId, liveListener);
+				try {
+					controller.enqueue(encoder.encode(chunk));
+				} catch {
+					closeDownstream();
+				}
 
-          downstreamAbortSignal.addEventListener('abort', () => {
-            unsubscribeFromStream(targetStreamId, liveListener);
-            clearInterval(reconnectHeartbeatId);
-            closeDownstream();
-          }, { once: true });
+				return true;
+			};
 
-          reconnectHeartbeatId = setInterval(() => {
-            enqueueChunk(createSseHeartbeatComment());
-          }, 10000);
+			if (streamId) {
+				console.info("[CHAT_STREAM] start called", {
+					streamId,
+					abortAlreadySignaled: downstreamAbortSignal.aborted,
+				});
+			}
+			const upstreamAbortController = new AbortController();
+			let isMainStream = false;
 
-          console.info('[CHAT_STREAM] Reconnect done, subscribed to stream', targetStreamId);
-        } catch (err) {
-          console.error('[CHAT_STREAM] doReconnect threw', { targetStreamId, err });
-          closeDownstream();
-        }
-      };
+			if (streamId) {
+				let existingStreamId: string | null;
+				try {
+					existingStreamId = getOrphanedStream(conversationId);
+				} catch (err) {
+					console.error("[CHAT_STREAM] getOrphanedStream threw", {
+						conversationId,
+						streamId,
+						err,
+					});
+					closeDownstream();
+					return;
+				}
 
-      const enqueueChunk = (chunk: string): boolean => {
-        // Always broadcast to reconnect listeners first, even if this downstream
-        // is already closed (e.g. reconnect client navigated away). The listener
-        // needs `event: end` to fire onEnd and finalize the UI placeholder.
-        if (isMainStream && streamId) {
-          broadcastStreamChunk(streamId, chunk);
-        }
-        if (downstreamClosed) return true;
+				if (existingStreamId === streamId) {
+					console.info("[CHAT_STREAM] Reconnect to same stream", streamId);
+					setTimeout(() => doReconnect(streamId), 0);
+					return;
+				} else if (existingStreamId) {
+					const clientStreamActive = isStreamActive(streamId);
+					const orphanStreamActive = isStreamActive(existingStreamId);
 
-        try {
-          controller.enqueue(encoder.encode(chunk));
-        } catch {
-          closeDownstream();
-        }
+					if (clientStreamActive) {
+						console.info(
+							"[CHAT_STREAM] Reconnect to client stream (concurrent active)",
+							streamId,
+						);
+						setTimeout(() => doReconnect(streamId), 0);
+						return;
+					} else if (orphanStreamActive) {
+						console.info(
+							"[CHAT_STREAM] Reconnect to orphan stream (client streamId stale)",
+							{
+								clientStreamId: streamId,
+								activeOrphanStreamId: existingStreamId,
+							},
+						);
+						setTimeout(() => doReconnect(existingStreamId), 0);
+						return;
+					} else {
+						console.info(
+							"[CHAT_STREAM] No active streams - cleaning up and starting new",
+							{
+								clientStreamId: streamId,
+								orphanedStreamId: existingStreamId,
+							},
+						);
+						clearStreamBuffer(existingStreamId);
+					}
+				}
 
-        return true;
-      };
+				registerActiveChatStream({
+					streamId,
+					userId: user.id,
+					controller: upstreamAbortController,
+					conversationId,
+				});
 
-      if (streamId) {
-        console.info('[CHAT_STREAM] start called', {
-          streamId,
-          abortAlreadySignaled: downstreamAbortSignal.aborted,
-        });
-      }
-      const upstreamAbortController = new AbortController();
-      let isMainStream = false;
+				getOrCreateStreamBuffer(streamId, normalizedMessage);
+				isMainStream = true;
+			}
+			const chunkRuntime = createServerChunkRuntime({
+				enqueueChunk,
+				onToken: (chunk) => {
+					if (streamId)
+						appendToStreamBuffer(streamId, "token", { text: chunk });
+				},
+				onThinking: (reasoning) => {
+					if (streamId)
+						appendToStreamBuffer(streamId, "thinking", { text: reasoning });
+				},
+				onToolCall: (name, input, status, outputSummary) => {
+					if (streamId) {
+						appendToStreamBuffer(streamId, "tool_call", {
+							name,
+							input,
+							status,
+							outputSummary,
+						});
+					}
+				},
+			});
+			const emitThinking = chunkRuntime.emitThinking;
+			const emitToolCallEventWithDebug = (
+				name: string,
+				input: Record<string, unknown>,
+				status: "running" | "done",
+				details?: {
+					outputSummary?: string | null;
+					sourceType?: import("$lib/types").EvidenceSourceType | null;
+					candidates?: import("$lib/types").ToolEvidenceCandidate[];
+				},
+			) => {
+				if (name === "generate_file") {
+					const code = getGenerateFileToolCode(input);
+					console.info("[CHAT_STREAM] File-generation tool event", {
+						conversationId,
+						streamId,
+						status,
+						language: getGenerateFileToolLanguage(input),
+						filename: getGenerateFileToolFilename(input),
+						codeLength: code?.length ?? 0,
+						writesToOutput: code?.includes("/output") ?? false,
+						outputSummary: details?.outputSummary ?? null,
+					});
+				}
+				chunkRuntime.emitToolCallEvent(name, input, status, details);
+			};
+			const emitInlineToken = chunkRuntime.emitInlineToken;
+			const emitChunkWithPreserveHandling =
+				chunkRuntime.emitChunkWithPreserveHandling;
+			const flushPendingThinking = chunkRuntime.flushPendingThinking;
+			const flushInlineThinkingBuffer = chunkRuntime.flushInlineThinkingBuffer;
+			const flushPreserveBuffer = chunkRuntime.flushPreserveBuffer;
+			const heartbeatIntervalId = setInterval(() => {
+				enqueueChunk(createSseHeartbeatComment());
+			}, 15000);
 
-      if (streamId) {
-        let existingStreamId: string | null;
-        try {
-          existingStreamId = getOrphanedStream(conversationId);
-        } catch (err) {
-          console.error('[CHAT_STREAM] getOrphanedStream threw', { conversationId, streamId, err });
-          closeDownstream();
-          return;
-        }
+			enqueueChunk(createSsePreludeComment());
 
-        if (existingStreamId === streamId) {
-          console.info('[CHAT_STREAM] Reconnect to same stream', streamId);
-          setTimeout(() => doReconnect(streamId), 0);
-          return;
-        } else if (existingStreamId) {
-          const clientStreamActive = isStreamActive(streamId);
-          const orphanStreamActive = isStreamActive(existingStreamId);
+			let generatedFileIdsAtStart = new Set<string>();
+			try {
+				generatedFileIdsAtStart = new Set(
+					(await getChatFiles(conversationId)).map((file) => file.id),
+				);
+			} catch (error) {
+				console.warn(
+					"[CHAT_STREAM] Failed to snapshot generated files at stream start",
+					{
+						conversationId,
+						streamId,
+						error,
+					},
+				);
+			}
 
-          if (clientStreamActive) {
-            console.info('[CHAT_STREAM] Reconnect to client stream (concurrent active)', streamId);
-            setTimeout(() => doReconnect(streamId), 0);
-            return;
-          } else if (orphanStreamActive) {
-            console.info('[CHAT_STREAM] Reconnect to orphan stream (client streamId stale)', {
-              clientStreamId: streamId,
-              activeOrphanStreamId: existingStreamId,
-            });
-            setTimeout(() => doReconnect(existingStreamId), 0);
-            return;
-          } else {
-            console.info('[CHAT_STREAM] No active streams - cleaning up and starting new', {
-              clientStreamId: streamId,
-              orphanedStreamId: existingStreamId,
-            });
-            clearStreamBuffer(existingStreamId);
-          }
-        }
+			const emitError = (code: StreamErrorCode) =>
+				enqueueChunk(streamErrorEvent(code));
+			const emitResolvedAssistantText = async (
+				text: string,
+			): Promise<boolean> => {
+				if (!text) {
+					return true;
+				}
 
-        registerActiveChatStream({
-          streamId,
-          userId: user.id,
-          controller: upstreamAbortController,
-          conversationId,
-        });
+				return emitChunkWithPreserveHandling(text);
+			};
+			let latestContextStatus:
+				| import("$lib/types").ConversationContextStatus
+				| undefined;
+			let latestActiveWorkingSet:
+				| Array<{
+						id: string;
+						type: string;
+						name: string;
+						mimeType: string | null;
+						sizeBytes: number | null;
+						conversationId: string | null;
+						summary: string | null;
+						createdAt: number;
+						updatedAt: number;
+				  }>
+				| undefined;
+			let latestTaskState: import("$lib/types").TaskState | null | undefined;
+			let latestContextDebug:
+				| import("$lib/types").ContextDebugState
+				| null
+				| undefined;
+			let latestHonchoContext:
+				| import("$lib/types").HonchoContextInfo
+				| null
+				| undefined;
+			let latestHonchoSnapshot:
+				| import("$lib/types").HonchoContextSnapshot
+				| null
+				| undefined;
+			let latestProviderUsage: ProviderUsageSnapshot | null = null;
+			let initialContextStatus:
+				| import("$lib/types").ConversationContextStatus
+				| undefined;
+			let initialTaskState: import("$lib/types").TaskState | null | undefined;
+			let initialContextDebug:
+				| import("$lib/types").ContextDebugState
+				| null
+				| undefined;
+			const completeSuccess = (wasStopped = false) => {
+				if (ended) return;
+				ended = true;
+				const thinkingTokenCount = estimateTokenCount(
+					chunkRuntime.thinkingContent,
+				);
+				const responseTokenCount = estimateTokenCount(
+					chunkRuntime.fullResponse,
+				);
+				const totalTokenCount = thinkingTokenCount + responseTokenCount;
+				const genTimeMs = Date.now() - requestStartTime;
+				const analyticsModel = modelId ?? "model1";
+				const persistUserMessage = !skipPersistUserMessage;
+				const toolCallSummary = chunkRuntime.toolCallRecords.map((record) => ({
+					name: record.name,
+					status: record.status,
+				}));
+				const hadGenerateFileToolCall = toolCallSummary.some(
+					(record) =>
+						record.name === "generate_file" ||
+						record.name === "export_document",
+				);
 
-        getOrCreateStreamBuffer(streamId, normalizedMessage);
-        isMainStream = true;
-      }
-      const chunkRuntime = createServerChunkRuntime({
-        enqueueChunk,
-        onToken: (chunk) => {
-          if (streamId) appendToStreamBuffer(streamId, 'token', { text: chunk });
-        },
-        onThinking: (reasoning) => {
-          if (streamId) appendToStreamBuffer(streamId, 'thinking', { text: reasoning });
-        },
-        onToolCall: (name, input, status, outputSummary) => {
-          if (streamId) {
-            appendToStreamBuffer(streamId, 'tool_call', {
-              name,
-              input,
-              status,
-              outputSummary,
-            });
-          }
-        }
-      });
-      const emitThinking = chunkRuntime.emitThinking;
-      const emitToolCallEventWithDebug = (
-        name: string,
-        input: Record<string, unknown>,
-        status: "running" | "done",
-        details?: {
-          outputSummary?: string | null;
-          sourceType?: import("$lib/types").EvidenceSourceType | null;
-          candidates?: import("$lib/types").ToolEvidenceCandidate[];
-        },
-      ) => {
-        if (name === "generate_file") {
-          const code = getGenerateFileToolCode(input);
-          console.info("[CHAT_STREAM] File-generation tool event", {
-            conversationId,
-            streamId,
-            status,
-            language: getGenerateFileToolLanguage(input),
-            filename: getGenerateFileToolFilename(input),
-            codeLength: code?.length ?? 0,
-            writesToOutput: code?.includes("/output") ?? false,
-            outputSummary: details?.outputSummary ?? null,
-          });
-        }
-        chunkRuntime.emitToolCallEvent(name, input, status, details);
-      };
-      const emitInlineToken = chunkRuntime.emitInlineToken;
-      const emitChunkWithPreserveHandling =
-        chunkRuntime.emitChunkWithPreserveHandling;
-      const flushPendingThinking = chunkRuntime.flushPendingThinking;
-      const flushInlineThinkingBuffer = chunkRuntime.flushInlineThinkingBuffer;
-      const flushPreserveBuffer = chunkRuntime.flushPreserveBuffer;
-      const heartbeatIntervalId = setInterval(() => {
-        enqueueChunk(createSseHeartbeatComment());
-      }, 15000);
+				console.info("[CHAT_STREAM] Tool-call summary", {
+					conversationId,
+					streamId,
+					wasStopped,
+					toolCallCount: toolCallSummary.length,
+					generateFileCallCount: toolCallSummary.filter(
+						(record) => record.name === "generate_file",
+					).length,
+					toolCalls: toolCallSummary,
+				});
 
-      enqueueChunk(createSsePreludeComment());
+				let userMessageToPersist = normalizedMessage;
+				if (isReconnect && streamId) {
+					const buffer = getStreamBuffer(streamId);
+					if (buffer?.userMessage) {
+						userMessageToPersist = buffer.userMessage;
+					}
+				}
+				const userMsgPromise = persistUserMessage
+					? createMessage(conversationId, "user", userMessageToPersist).catch(
+							() => undefined,
+						)
+					: Promise.resolve(undefined);
+				const assistantMsgPromise = chunkRuntime.fullResponse.trim()
+					? createMessage(
+							conversationId,
+							"assistant",
+							chunkRuntime.fullResponse,
+							chunkRuntime.thinkingContent || undefined,
+							chunkRuntime.serverSegments.length > 0
+								? chunkRuntime.serverSegments
+								: undefined,
+							{ evidenceStatus: "pending", modelDisplayName },
+						).catch(() => undefined)
+					: Promise.resolve(undefined);
 
-      let generatedFileIdsAtStart = new Set<string>();
-      try {
-        generatedFileIdsAtStart = new Set(
-          (await getChatFiles(conversationId)).map((file) => file.id),
-        );
-      } catch (error) {
-        console.warn("[CHAT_STREAM] Failed to snapshot generated files at stream start", {
-          conversationId,
-          streamId,
-          error,
-        });
-      }
+				const sendEndAndClose = async (
+					userMsgId?: string,
+					assistantMsgId?: string,
+				) => {
+					let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
+					try {
+						if (assistantMsgId && hadGenerateFileToolCall) {
+							const allGeneratedFiles = await getChatFiles(conversationId);
+							const newGeneratedFileIds = allGeneratedFiles
+								.filter((file) => !generatedFileIdsAtStart.has(file.id))
+								.map((file) => file.id);
 
-      const emitError = (code: StreamErrorCode) =>
-        enqueueChunk(streamErrorEvent(code));
-      const emitResolvedAssistantText = async (text: string): Promise<boolean> => {
-        if (!text) {
-          return true;
-        }
+							if (newGeneratedFileIds.length > 0) {
+								await assignGeneratedFilesToAssistantMessage(
+									conversationId,
+									assistantMsgId,
+									newGeneratedFileIds,
+								);
 
-        return emitChunkWithPreserveHandling(text);
-      };
-      let latestContextStatus:
-        | import("$lib/types").ConversationContextStatus
-        | undefined;
-      let latestActiveWorkingSet:
-        | Array<{
-            id: string;
-            type: string;
-            name: string;
-            mimeType: string | null;
-            sizeBytes: number | null;
-            conversationId: string | null;
-            summary: string | null;
-            createdAt: number;
-            updatedAt: number;
-          }>
-        | undefined;
-      let latestTaskState: import("$lib/types").TaskState | null | undefined;
-      let latestContextDebug:
-        | import("$lib/types").ContextDebugState
-        | null
-        | undefined;
-      let latestHonchoContext:
-        | import("$lib/types").HonchoContextInfo
-        | null
-        | undefined;
-      let latestHonchoSnapshot:
-        | import("$lib/types").HonchoContextSnapshot
-        | null
-        | undefined;
-      let latestProviderUsage: ProviderUsageSnapshot | null = null;
-      let initialContextStatus:
-        | import("$lib/types").ConversationContextStatus
-        | undefined;
-      let initialTaskState: import("$lib/types").TaskState | null | undefined;
-      let initialContextDebug:
-        | import("$lib/types").ContextDebugState
-        | null
-        | undefined;
-      const completeSuccess = (wasStopped = false) => {
-        if (ended) return;
-        ended = true;
-        const thinkingTokenCount = estimateTokenCount(
-          chunkRuntime.thinkingContent,
-        );
-        const responseTokenCount = estimateTokenCount(
-          chunkRuntime.fullResponse,
-        );
-        const totalTokenCount = thinkingTokenCount + responseTokenCount;
-        const genTimeMs = Date.now() - requestStartTime;
-        const analyticsModel = modelId ?? "model1";
-        const persistUserMessage = !skipPersistUserMessage;
-        const toolCallSummary = chunkRuntime.toolCallRecords.map((record) => ({
-          name: record.name,
-          status: record.status,
-        }));
-        const hadGenerateFileToolCall = toolCallSummary.some(
-          (record) => record.name === "generate_file" || record.name === "export_document",
-        );
+								void syncGeneratedFilesToMemory({
+									userId: user.id,
+									conversationId,
+									assistantMessageId: assistantMsgId,
+									fileIds: newGeneratedFileIds,
+									assistantResponse: chunkRuntime.fullResponse,
+								}).catch((error) => {
+									console.error(
+										"[CHAT_STREAM] Background generated-file memory sync failed",
+										{
+											conversationId,
+											streamId,
+											assistantMessageId: assistantMsgId,
+											fileIds: newGeneratedFileIds,
+											error,
+										},
+									);
+								});
+							}
 
-        console.info("[CHAT_STREAM] Tool-call summary", {
-          conversationId,
-          streamId,
-          wasStopped,
-          toolCallCount: toolCallSummary.length,
-          generateFileCallCount: toolCallSummary.filter(
-            (record) => record.name === "generate_file",
-          ).length,
-          toolCalls: toolCallSummary,
-        });
+							generatedFiles = await getChatFilesForAssistantMessage(
+								conversationId,
+								assistantMsgId,
+							);
+						}
+					} catch (error) {
+						console.error(
+							"[CHAT_STREAM] Failed to load generated files for end event",
+							{
+								conversationId,
+								streamId,
+								error,
+							},
+						);
+					}
 
-let userMessageToPersist = normalizedMessage;
-        if (isReconnect && streamId) {
-          const buffer = getStreamBuffer(streamId);
-          if (buffer?.userMessage) {
-            userMessageToPersist = buffer.userMessage;
-          }
-        }
-        const userMsgPromise = persistUserMessage
-          ? createMessage(conversationId, 'user', userMessageToPersist).catch(
-              () => undefined,
-            )
-          : Promise.resolve(undefined);
-        const assistantMsgPromise = chunkRuntime.fullResponse.trim()
-          ? createMessage(
-              conversationId,
-              "assistant",
-              chunkRuntime.fullResponse,
-              chunkRuntime.thinkingContent || undefined,
-              chunkRuntime.serverSegments.length > 0
-                ? chunkRuntime.serverSegments
-                : undefined,
-              { evidenceStatus: "pending", modelDisplayName },
-            ).catch(() => undefined)
-          : Promise.resolve(undefined);
+					enqueueChunk(
+						`event: end\ndata: ${JSON.stringify({
+							thinkingTokenCount,
+							responseTokenCount,
+							totalTokenCount,
+							thinking: chunkRuntime.thinkingContent || undefined,
+							wasStopped,
+							userMessageId: userMsgId,
+							assistantMessageId: assistantMsgId,
+							modelId,
+							modelDisplayName,
+							contextStatus: latestContextStatus,
+							activeWorkingSet: latestActiveWorkingSet,
+							taskState: latestTaskState,
+							contextDebug: latestContextDebug,
+							generatedFiles,
+						})}\n\n`,
+					);
+					touchConversation(user.id, conversationId).catch(() => undefined);
+					// Clear buffer AFTER broadcasting end event so reconnect listeners receive it.
+					if (streamId) clearStreamBuffer(streamId);
+					closeDownstream();
+				};
 
-const sendEndAndClose = async (
-          userMsgId?: string,
-          assistantMsgId?: string,
-        ) => {
-          let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
-          try {
-            if (assistantMsgId && hadGenerateFileToolCall) {
-              const allGeneratedFiles = await getChatFiles(conversationId);
-              const newGeneratedFileIds = allGeneratedFiles
-                .filter((file) => !generatedFileIdsAtStart.has(file.id))
-                .map((file) => file.id);
+				Promise.all([userMsgPromise, assistantMsgPromise])
+					.then(([userMsg, assistantMsg]) => {
+						const postPersistTasks: Promise<unknown>[] = [];
+						let uiStateTask: Promise<unknown> = Promise.resolve();
+						if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
+							postPersistTasks.push(
+								persistUserTurnAttachments({
+									userId: user.id,
+									conversationId,
+									messageId: userMsg.id,
+									normalizedMessage,
+									attachmentIds: safeAttachmentIds,
+								}).then((workingSet) => {
+									latestActiveWorkingSet = workingSet ?? latestActiveWorkingSet;
+								}),
+							);
+						}
 
-              if (newGeneratedFileIds.length > 0) {
-                await assignGeneratedFilesToAssistantMessage(
-                  conversationId,
-                  assistantMsgId,
-                  newGeneratedFileIds,
-                );
+						let latestWorkCapsule: WorkCapsuleSummary;
+						if (assistantMsg) {
+							uiStateTask = persistAssistantTurnState({
+								userId: user.id,
+								conversationId,
+								normalizedMessage,
+								assistantResponse: chunkRuntime.fullResponse,
+								attachmentIds: safeAttachmentIds,
+								activeDocumentArtifactId,
+								contextStatus: latestContextStatus,
+								initialTaskState,
+								initialContextDebug,
+								userMessageId: userMsg?.id ?? null,
+								assistantMessageId: assistantMsg.id,
+								analytics: {
+									model: analyticsModel,
+									modelDisplayName,
+									promptTokens: estimateTokenCount(upstreamMessage),
+									completionTokens: responseTokenCount,
+									reasoningTokens: thinkingTokenCount,
+									generationTimeMs: genTimeMs,
+									providerUsage: latestProviderUsage,
+								},
+								continuitySource: "stream",
+								honchoContext: latestHonchoContext,
+								honchoSnapshot: latestHonchoSnapshot,
+							}).then((turnState) => {
+								latestActiveWorkingSet = turnState.activeWorkingSet;
+								latestTaskState = turnState.taskState;
+								latestContextDebug = turnState.contextDebug;
+								latestWorkCapsule = turnState.workCapsule;
+							});
+							postPersistTasks.push(uiStateTask);
 
-                void syncGeneratedFilesToMemory({
-                  userId: user.id,
-                  conversationId,
-                  assistantMessageId: assistantMsgId,
-                  fileIds: newGeneratedFileIds,
-                  assistantResponse: chunkRuntime.fullResponse,
-                }).catch((error) => {
-                  console.error(
-                    "[CHAT_STREAM] Background generated-file memory sync failed",
-                    {
-                      conversationId,
-                      streamId,
-                      assistantMessageId: assistantMsgId,
-                      fileIds: newGeneratedFileIds,
-                      error,
-                    },
-                  );
-                });
-              }
+							postPersistTasks.push(
+								(async () => {
+									await uiStateTask.catch(() => undefined);
+									await persistAssistantEvidence({
+										logPrefix: "[STREAM]",
+										userId: user.id,
+										conversationId,
+										assistantMessageId: assistantMsg.id,
+										normalizedMessage,
+										attachmentIds: safeAttachmentIds,
+										taskState: latestTaskState,
+										contextStatus:
+											latestContextStatus ?? initialContextStatus ?? null,
+										contextDebug: latestContextDebug,
+										initialTaskState,
+										initialContextDebug,
+										toolCalls: chunkRuntime.toolCallRecords,
+									});
+								})(),
+							);
+						}
 
-              generatedFiles = await getChatFilesForAssistantMessage(
-                conversationId,
-                assistantMsgId,
-              );
-            }
-          } catch (error) {
-            console.error("[CHAT_STREAM] Failed to load generated files for end event", {
-              conversationId,
-              streamId,
-              error,
-            });
-          }
+						void uiStateTask.finally(() => {
+							void sendEndAndClose(userMsg?.id, assistantMsg?.id);
+						});
+						Promise.allSettled(postPersistTasks).finally(() => {
+							void runPostTurnTasks({
+								logPrefix: "[STREAM]",
+								userId: user.id,
+								conversationId,
+								upstreamMessage,
+								assistantMirrorContent: chunkRuntime.fullResponse,
+								workCapsule: latestWorkCapsule,
+								maintenanceReason: "chat_stream",
+							});
+						});
+					})
+					.catch(() => {
+						void sendEndAndClose();
+					});
+			};
 
-          enqueueChunk(
-            `event: end\ndata: ${JSON.stringify({
-              thinkingTokenCount,
-              responseTokenCount,
-              totalTokenCount,
-              thinking: chunkRuntime.thinkingContent || undefined,
-              wasStopped,
-              userMessageId: userMsgId,
-              assistantMessageId: assistantMsgId,
-              modelId,
-              modelDisplayName,
-              contextStatus: latestContextStatus,
-              activeWorkingSet: latestActiveWorkingSet,
-              taskState: latestTaskState,
-              contextDebug: latestContextDebug,
-              generatedFiles,
-            })}\n\n`,
-          );
-          touchConversation(user.id, conversationId).catch(() => undefined);
-          // Clear buffer AFTER broadcasting end event so reconnect listeners receive it.
-          if (streamId) clearStreamBuffer(streamId);
-          closeDownstream();
-        };
+			const failStream = (code: StreamErrorCode) => {
+				if (ended) return;
+				ended = true;
+				if (streamId) {
+					clearStreamBuffer(streamId);
+				}
+				emitError(code);
+				closeDownstream();
+			};
 
-        Promise.all([userMsgPromise, assistantMsgPromise])
-          .then(([userMsg, assistantMsg]) => {
-            const postPersistTasks: Promise<unknown>[] = [];
-            let uiStateTask: Promise<unknown> = Promise.resolve();
-            if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
-              postPersistTasks.push(
-                persistUserTurnAttachments({
-                  userId: user.id,
-                  conversationId,
-                  messageId: userMsg.id,
-                  normalizedMessage,
-                  attachmentIds: safeAttachmentIds,
-                }).then((workingSet) => {
-                  latestActiveWorkingSet = workingSet ?? latestActiveWorkingSet;
-                }),
-              );
-            }
+			const timeoutId = setTimeout(() => {
+				failStream("timeout");
+			}, getStreamTimeoutMs());
 
-            let latestWorkCapsule: WorkCapsuleSummary;
-            if (assistantMsg) {
-              uiStateTask = persistAssistantTurnState({
-                userId: user.id,
-                conversationId,
-                normalizedMessage,
-                assistantResponse: chunkRuntime.fullResponse,
-                attachmentIds: safeAttachmentIds,
-                activeDocumentArtifactId,
-                contextStatus: latestContextStatus,
-                initialTaskState,
-                initialContextDebug,
-                userMessageId: userMsg?.id ?? null,
-                assistantMessageId: assistantMsg.id,
-                analytics: {
-                  model: analyticsModel,
-                  modelDisplayName,
-                  promptTokens: estimateTokenCount(upstreamMessage),
-                  completionTokens: responseTokenCount,
-                  reasoningTokens: thinkingTokenCount,
-                  generationTimeMs: genTimeMs,
-                  providerUsage: latestProviderUsage,
-                },
-                continuitySource: "stream",
-                honchoContext: latestHonchoContext,
-                honchoSnapshot: latestHonchoSnapshot,
-              }).then((turnState) => {
-                latestActiveWorkingSet = turnState.activeWorkingSet;
-                latestTaskState = turnState.taskState;
-                latestContextDebug = turnState.contextDebug;
-                latestWorkCapsule = turnState.workCapsule;
-              });
-              postPersistTasks.push(uiStateTask);
+			try {
+				let usedUrlListRecovery = false;
 
-              postPersistTasks.push(
-                (async () => {
-                  await uiStateTask.catch(() => undefined);
-                  await persistAssistantEvidence({
-                    logPrefix: "[STREAM]",
-                    userId: user.id,
-                    conversationId,
-                    assistantMessageId: assistantMsg.id,
-                    normalizedMessage,
-                    attachmentIds: safeAttachmentIds,
-                    taskState: latestTaskState,
-                    contextStatus:
-                      latestContextStatus ?? initialContextStatus ?? null,
-                    contextDebug: latestContextDebug,
-                    initialTaskState,
-                    initialContextDebug,
-                    toolCalls: chunkRuntime.toolCallRecords,
-                  });
-                })(),
-              );
-            }
+				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
+					const langflowResponse = await sendMessageStream(
+						upstreamMessage,
+						conversationId,
+						modelId,
+						{
+							signal: upstreamAbortController.signal,
+							user: {
+								id: user.id,
+								displayName: user.displayName,
+								email: user.email,
+							},
+							attachmentIds: safeAttachmentIds,
+							activeDocumentArtifactId,
+							attachmentTraceId,
+							systemPromptAppendix: usedUrlListRecovery
+								? URL_LIST_TOOL_RECOVERY_APPENDIX
+								: undefined,
+						},
+					).catch(async (error) => {
+						if (
+							wasActiveChatStreamStopRequested(streamId) ||
+							!shouldFallbackToNonStreaming(error) ||
+							chunkRuntime.fullResponse.trim() ||
+							chunkRuntime.thinkingContent.trim() ||
+							chunkRuntime.toolCallRecords.length > 0 ||
+							emittedAssistantText.trim()
+						) {
+							throw error;
+						}
 
-            void uiStateTask.finally(() => {
-              void sendEndAndClose(userMsg?.id, assistantMsg?.id);
-            });
-            Promise.allSettled(postPersistTasks).finally(() => {
-              void runPostTurnTasks({
-                logPrefix: "[STREAM]",
-                userId: user.id,
-                conversationId,
-                upstreamMessage,
-                assistantMirrorContent: chunkRuntime.fullResponse,
-                workCapsule: latestWorkCapsule,
-                maintenanceReason: "chat_stream",
-              });
-            });
-          })
-          .catch(() => {
-            void sendEndAndClose();
-          });
-      };
+						console.warn(
+							"[STREAM] Falling back to non-stream Langflow run after stream connect failure",
+							{
+								conversationId,
+								attempt,
+								errorName: error instanceof Error ? error.name : undefined,
+								errorMessage:
+									error instanceof Error ? error.message : String(error),
+							},
+						);
 
-      const failStream = (code: StreamErrorCode) => {
-        if (ended) return;
-        ended = true;
-        if (streamId) {
-          clearStreamBuffer(streamId);
-        }
-        emitError(code);
-        closeDownstream();
-      };
+						const fallbackResponse = await sendMessage(
+							upstreamMessage,
+							conversationId,
+							modelId,
+							{
+								id: user.id,
+								displayName: user.displayName,
+								email: user.email,
+							},
+							{
+								signal: upstreamAbortController.signal,
+								attachmentIds: safeAttachmentIds,
+								activeDocumentArtifactId,
+								attachmentTraceId,
+								systemPromptAppendix: usedUrlListRecovery
+									? URL_LIST_TOOL_RECOVERY_APPENDIX
+									: undefined,
+							},
+						);
 
-      const timeoutId = setTimeout(() => {
-        failStream("timeout");
-      }, getStreamTimeoutMs());
+						latestContextStatus = fallbackResponse.contextStatus;
+						initialContextStatus = latestContextStatus;
+						latestTaskState = await attachContinuityToTaskState(
+							user.id,
+							fallbackResponse.taskState ?? null,
+						).catch(() => fallbackResponse.taskState ?? null);
+						initialTaskState = latestTaskState;
+						latestContextDebug = fallbackResponse.contextDebug ?? null;
+						initialContextDebug = latestContextDebug;
+						latestHonchoContext = fallbackResponse.honchoContext ?? null;
+						latestHonchoSnapshot = fallbackResponse.honchoSnapshot ?? null;
+						latestProviderUsage = fallbackResponse.providerUsage ?? null;
 
-      try {
-        let usedUrlListRecovery = false;
+						if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
+							return null;
+						}
 
-        upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
-          const langflowResponse = await sendMessageStream(
-            upstreamMessage,
-            conversationId,
-            modelId,
-            {
-              signal: upstreamAbortController.signal,
-              user: {
-                id: user.id,
-                displayName: user.displayName,
-                email: user.email,
-              },
-              attachmentIds: safeAttachmentIds,
-              activeDocumentArtifactId,
-              attachmentTraceId,
-              systemPromptAppendix: usedUrlListRecovery
-                ? URL_LIST_TOOL_RECOVERY_APPENDIX
-                : undefined,
-            },
-          ).catch(async (error) => {
-            if (
-              wasActiveChatStreamStopRequested(streamId) ||
-              !shouldFallbackToNonStreaming(error) ||
-              chunkRuntime.fullResponse.trim() ||
-              chunkRuntime.thinkingContent.trim() ||
-              chunkRuntime.toolCallRecords.length > 0 ||
-              emittedAssistantText.trim()
-            ) {
-              throw error;
-            }
+						flushPendingThinking();
+						if (!flushInlineThinkingBuffer()) {
+							return null;
+						}
+						if (!flushPreserveBuffer()) {
+							return null;
+						}
+						completeSuccess();
+						return null;
+					});
+					if (!langflowResponse) {
+						return;
+					}
+					if (!langflowResponse.stream) {
+						latestContextStatus = langflowResponse.contextStatus;
+						initialContextStatus = latestContextStatus;
+						latestTaskState = await attachContinuityToTaskState(
+							user.id,
+							langflowResponse.taskState ?? null,
+						).catch(() => langflowResponse.taskState ?? null);
+						initialTaskState = latestTaskState;
+						latestContextDebug = langflowResponse.contextDebug ?? null;
+						initialContextDebug = latestContextDebug;
+						latestHonchoContext = langflowResponse.honchoContext ?? null;
+						latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
 
-            console.warn(
-              "[STREAM] Falling back to non-stream Langflow run after stream connect failure",
-              {
-                conversationId,
-                attempt,
-                errorName: error instanceof Error ? error.name : undefined,
-                errorMessage:
-                  error instanceof Error ? error.message : String(error),
-              },
-            );
+						if (
+							!(await emitResolvedAssistantText(langflowResponse.text ?? ""))
+						) {
+							return;
+						}
 
-            const fallbackResponse = await sendMessage(
-              upstreamMessage,
-              conversationId,
-              modelId,
-              {
-                id: user.id,
-                displayName: user.displayName,
-                email: user.email,
-              },
-              {
-                signal: upstreamAbortController.signal,
-                attachmentIds: safeAttachmentIds,
-                activeDocumentArtifactId,
-                attachmentTraceId,
-                systemPromptAppendix: usedUrlListRecovery
-                  ? URL_LIST_TOOL_RECOVERY_APPENDIX
-                  : undefined,
-              },
-            );
+						flushPendingThinking();
+						if (!flushInlineThinkingBuffer()) {
+							return;
+						}
+						if (!flushPreserveBuffer()) {
+							return;
+						}
+						completeSuccess();
+						return;
+					}
+					const langflowStream = langflowResponse.stream;
+					latestContextStatus = langflowResponse.contextStatus;
+					initialContextStatus = latestContextStatus;
+					latestTaskState =
+						langflowResponse.taskState ??
+						(await getConversationTaskState(user.id, conversationId).catch(
+							() => null,
+						));
+					latestTaskState = await attachContinuityToTaskState(
+						user.id,
+						latestTaskState ?? null,
+					).catch(() => latestTaskState ?? null);
+					initialTaskState = latestTaskState;
+					latestContextDebug =
+						langflowResponse.contextDebug ??
+						(await getContextDebugState(user.id, conversationId).catch(
+							() => null,
+						));
+					initialContextDebug = latestContextDebug;
+					latestHonchoContext = langflowResponse.honchoContext ?? null;
+					latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
+					let upstreamEventCount = 0;
 
-            latestContextStatus = fallbackResponse.contextStatus;
-            initialContextStatus = latestContextStatus;
-            latestTaskState = await attachContinuityToTaskState(
-              user.id,
-              fallbackResponse.taskState ?? null,
-            ).catch(() => fallbackResponse.taskState ?? null);
-            initialTaskState = latestTaskState;
-            latestContextDebug = fallbackResponse.contextDebug ?? null;
-            initialContextDebug = latestContextDebug;
-            latestHonchoContext = fallbackResponse.honchoContext ?? null;
-            latestHonchoSnapshot = fallbackResponse.honchoSnapshot ?? null;
-            latestProviderUsage = fallbackResponse.providerUsage ?? null;
+					for await (const upstreamEvent of parseUpstreamEvents(
+						langflowStream,
+					)) {
+						const { event: eventType, data } = upstreamEvent;
+						upstreamEventCount += 1;
+						const eventUsage = extractProviderUsage(data);
+						if (eventUsage) {
+							latestProviderUsage = eventUsage;
+						}
+						if (data === "[DONE]" || eventType === "end") {
+							flushPendingThinking();
+							if (!flushInlineThinkingBuffer()) {
+								return;
+							}
+							if (!flushPreserveBuffer()) {
+								return;
+							}
+							completeSuccess();
+							return;
+						}
 
-            if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
-              return null;
-            }
+						if (eventType === "error") {
+							const errorMessage = extractErrorMessage(data);
+							console.error("[STREAM] Upstream error event payload", {
+								conversationId,
+								attempt,
+								errorMessage,
+								data:
+									typeof data === "string"
+										? data
+										: JSON.stringify(data).slice(0, 2000),
+							});
+							const canRetryUrlListValidation =
+								!usedUrlListRecovery &&
+								isUrlListValidationError(errorMessage) &&
+								!chunkRuntime.fullResponse.trim() &&
+								!chunkRuntime.thinkingContent.trim() &&
+								chunkRuntime.toolCallRecords.length === 0 &&
+								!emittedAssistantText.trim();
+							if (canRetryUrlListValidation) {
+								usedUrlListRecovery = true;
+								lastAssistantSnapshot = "";
+								emittedAssistantText = "";
+								console.warn(
+									"[STREAM] Retrying upstream after URL list validation error",
+									{
+										conversationId,
+										attempt,
+										errorMessage,
+									},
+								);
+								continue upstreamAttempt;
+							}
+							failStream(classifyStreamError(errorMessage));
+							return;
+						}
 
-            flushPendingThinking();
-            if (!flushInlineThinkingBuffer()) {
-              return null;
-            }
-            if (!flushPreserveBuffer()) {
-              return null;
-            }
-            completeSuccess();
-            return null;
-          });
-          if (!langflowResponse) {
-            return;
-          }
-          if (!langflowResponse.stream) {
-            latestContextStatus = langflowResponse.contextStatus;
-            initialContextStatus = latestContextStatus;
-            latestTaskState = await attachContinuityToTaskState(
-              user.id,
-              langflowResponse.taskState ?? null,
-            ).catch(() => langflowResponse.taskState ?? null);
-            initialTaskState = latestTaskState;
-            latestContextDebug = langflowResponse.contextDebug ?? null;
-            initialContextDebug = latestContextDebug;
-            latestHonchoContext = langflowResponse.honchoContext ?? null;
-            latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
+						const rawChunk = extractAssistantChunk(eventType, data);
+						const reasoningChunk = getReasoningContent(data);
+						if (reasoningChunk) {
+							if (!emitThinking(reasoningChunk)) {
+								return;
+							}
+						}
+						if (!rawChunk) {
+							continue;
+						}
 
-            if (!(await emitResolvedAssistantText(langflowResponse.text ?? ""))) {
-              return;
-            }
+						const previousEmittedAssistantText = emittedAssistantText;
+						const incremental = toIncrementalChunk(
+							eventType,
+							rawChunk,
+							lastAssistantSnapshot,
+							emittedAssistantText,
+						);
+						lastAssistantSnapshot = incremental.lastSnapshot;
+						emittedAssistantText = incremental.emittedText;
+						const chunk = incremental.chunk;
+						if (!chunk) continue;
 
-            flushPendingThinking();
-            if (!flushInlineThinkingBuffer()) {
-              return;
-            }
-            if (!flushPreserveBuffer()) {
-              return;
-            }
-            completeSuccess();
-            return;
-          }
-          const langflowStream =
-            langflowResponse.stream;
-          latestContextStatus =
-            langflowResponse.contextStatus;
-          initialContextStatus = latestContextStatus;
-          latestTaskState =
-            langflowResponse.taskState ??
-            (await getConversationTaskState(user.id, conversationId).catch(
-              () => null,
-            ));
-          latestTaskState = await attachContinuityToTaskState(
-            user.id,
-            latestTaskState ?? null,
-          ).catch(() => latestTaskState ?? null);
-          initialTaskState = latestTaskState;
-          latestContextDebug =
-            langflowResponse.contextDebug ??
-            (await getContextDebugState(user.id, conversationId).catch(
-              () => null,
-            ));
-          initialContextDebug = latestContextDebug;
-          latestHonchoContext = langflowResponse.honchoContext ?? null;
-          latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
-          let upstreamEventCount = 0;
+						// Suppress duplicate visible text from Langflow's final summary event.
+						// Nemotron streams tokens as "<thinking>...</thinking>visible" so
+						// emittedAssistantText includes thinking tags, but the final non-token
+						// 'message' event has only visible text (tags stripped by Langflow).
+						// toIncrementalChunk can't match them, so we guard here using fullResponse
+						// with trimmed comparison to handle trailing newline/space differences.
+						if (eventType !== "token" && previousEmittedAssistantText) {
+							const normalizedEmittedText = normalizeAssistantOutput(
+								previousEmittedAssistantText,
+							);
+							const normalizedChunk = normalizeAssistantOutput(chunk);
+							if (
+								normalizedChunk &&
+								(normalizedChunk === normalizedEmittedText ||
+									normalizedEmittedText.endsWith(normalizedChunk) ||
+									normalizedChunk.endsWith(normalizedEmittedText))
+							) {
+								continue;
+							}
+						}
 
-          for await (const upstreamEvent of parseUpstreamEvents(
-            langflowStream,
-          )) {
-            const { event: eventType, data } = upstreamEvent;
-            upstreamEventCount += 1;
-            const eventUsage = extractProviderUsage(data);
-            if (eventUsage) {
-              latestProviderUsage = eventUsage;
-            }
-            if (data === "[DONE]" || eventType === "end") {
-              flushPendingThinking();
-              if (!flushInlineThinkingBuffer()) {
-                return;
-              }
-              if (!flushPreserveBuffer()) {
-                return;
-              }
-              completeSuccess();
-              return;
-            }
+						// Strip tool call markers, emitting structured tool_call SSE events
+						const cleanedChunk = processToolCallMarkers(
+							chunk,
+							emitToolCallEventWithDebug,
+						);
 
-            if (eventType === "error") {
-              const errorMessage = extractErrorMessage(data);
-              console.error("[STREAM] Upstream error event payload", {
-                conversationId,
-                attempt,
-                errorMessage,
-                data:
-                  typeof data === "string"
-                    ? data
-                    : JSON.stringify(data).slice(0, 2000),
-              });
-              const canRetryUrlListValidation =
-                !usedUrlListRecovery &&
-                isUrlListValidationError(errorMessage) &&
-                !chunkRuntime.fullResponse.trim() &&
-                !chunkRuntime.thinkingContent.trim() &&
-                chunkRuntime.toolCallRecords.length === 0 &&
-                !emittedAssistantText.trim();
-              if (canRetryUrlListValidation) {
-                usedUrlListRecovery = true;
-                lastAssistantSnapshot = "";
-                emittedAssistantText = "";
-                console.warn(
-                  "[STREAM] Retrying upstream after URL list validation error",
-                  {
-                    conversationId,
-                    attempt,
-                    errorMessage,
-                  },
-                );
-                continue upstreamAttempt;
-              }
-              failStream(classifyStreamError(errorMessage));
-              return;
-            }
+						if (!cleanedChunk) continue;
 
-            const rawChunk = extractAssistantChunk(eventType, data);
-            const reasoningChunk = getReasoningContent(data);
-            if (reasoningChunk) {
-              if (!emitThinking(reasoningChunk)) {
-                return;
-              }
-            }
-            if (!rawChunk) {
-              continue;
-            }
+						if (!emitChunkWithPreserveHandling(cleanedChunk)) {
+							return;
+						}
+					}
 
-            const previousEmittedAssistantText = emittedAssistantText;
-            const incremental = toIncrementalChunk(
-              eventType,
-              rawChunk,
-              lastAssistantSnapshot,
-              emittedAssistantText,
-            );
-            lastAssistantSnapshot = incremental.lastSnapshot;
-            emittedAssistantText = incremental.emittedText;
-            const chunk = incremental.chunk;
-            if (!chunk) continue;
+					flushPendingThinking();
+					if (!flushInlineThinkingBuffer()) {
+						return;
+					}
+					if (!flushPreserveBuffer()) {
+						return;
+					}
+					completeSuccess();
+					return;
+				}
+			} catch (error) {
+				if (
+					wasActiveChatStreamStopRequested(streamId) &&
+					error instanceof Error &&
+					(error.name === "AbortError" ||
+						error.message.toLowerCase().includes("abort"))
+				) {
+					completeSuccess(true);
+					return;
+				}
+				if (
+					isAbruptUpstreamTermination(error) &&
+					chunkRuntime.fullResponse.trim()
+				) {
+					completeSuccess();
+					return;
+				}
+				console.error("[STREAM] Chat stream error", {
+					conversationId,
+					userId: user.id,
+					message: error instanceof Error ? error.message : String(error),
+					stack: error instanceof Error ? error.stack : undefined,
+					cause:
+						error instanceof Error && "cause" in error
+							? (error as Error & { cause?: unknown }).cause
+							: undefined,
+				});
+				if (attachmentTraceId) {
+					logAttachmentTrace("stream_failure", {
+						traceId: attachmentTraceId,
+						conversationId,
+						attachmentIds: safeAttachmentIds,
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					});
+				}
+				failStream(
+					classifyStreamError(
+						error instanceof Error ? error.message : String(error),
+					),
+				);
+			} finally {
+				clearInterval(heartbeatIntervalId);
+				clearTimeout(timeoutId);
+				if (streamId) {
+					unregisterActiveChatStream(streamId, upstreamAbortController);
+				}
+				cancelStream = () => undefined;
+			}
+		},
+		cancel() {
+			cancelStream();
+		},
+	});
 
-            // Suppress duplicate visible text from Langflow's final summary event.
-            // Nemotron streams tokens as "<thinking>...</thinking>visible" so
-            // emittedAssistantText includes thinking tags, but the final non-token
-            // 'message' event has only visible text (tags stripped by Langflow).
-            // toIncrementalChunk can't match them, so we guard here using fullResponse
-            // with trimmed comparison to handle trailing newline/space differences.
-            if (eventType !== "token" && previousEmittedAssistantText) {
-              const normalizedEmittedText = normalizeAssistantOutput(
-                previousEmittedAssistantText,
-              );
-              const normalizedChunk = normalizeAssistantOutput(chunk);
-              if (
-                normalizedChunk &&
-                (normalizedChunk === normalizedEmittedText ||
-                  normalizedEmittedText.endsWith(normalizedChunk) ||
-                  normalizedChunk.endsWith(normalizedEmittedText))
-              ) {
-                continue;
-              }
-            }
-
-            // Strip tool call markers, emitting structured tool_call SSE events
-            const cleanedChunk = processToolCallMarkers(
-              chunk,
-              emitToolCallEventWithDebug,
-            );
-
-            if (!cleanedChunk) continue;
-
-            if (!emitChunkWithPreserveHandling(cleanedChunk)) {
-              return;
-            }
-          }
-
-          flushPendingThinking();
-          if (!flushInlineThinkingBuffer()) {
-            return;
-          }
-          if (!flushPreserveBuffer()) {
-            return;
-          }
-          completeSuccess();
-          return;
-        }
-      } catch (error) {
-        if (
-          wasActiveChatStreamStopRequested(streamId) &&
-          error instanceof Error &&
-          (error.name === "AbortError" ||
-            error.message.toLowerCase().includes("abort"))
-        ) {
-          completeSuccess(true);
-          return;
-        }
-        if (
-          isAbruptUpstreamTermination(error) &&
-          chunkRuntime.fullResponse.trim()
-        ) {
-          completeSuccess();
-          return;
-        }
-        console.error("[STREAM] Chat stream error", {
-          conversationId,
-          userId: user.id,
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-          cause:
-            error instanceof Error && "cause" in error
-              ? (error as Error & { cause?: unknown }).cause
-              : undefined,
-        });
-        if (attachmentTraceId) {
-          logAttachmentTrace("stream_failure", {
-            traceId: attachmentTraceId,
-            conversationId,
-            attachmentIds: safeAttachmentIds,
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-          });
-        }
-        failStream(
-          classifyStreamError(
-            error instanceof Error ? error.message : String(error),
-          ),
-        );
-      } finally {
-        clearInterval(heartbeatIntervalId);
-        clearTimeout(timeoutId);
-        if (streamId) {
-          unregisterActiveChatStream(streamId, upstreamAbortController);
-        }
-        cancelStream = () => undefined;
-      }
-    },
-    cancel() {
-      cancelStream();
-    },
-  });
-
-  return createEventStreamResponse(stream);
+	return createEventStreamResponse(stream);
 }
