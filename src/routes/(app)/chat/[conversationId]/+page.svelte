@@ -139,7 +139,7 @@ let activeWorkspaceDocumentId = $state<string | null>(null);
 let workspaceOpen = $state(false);
 let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
-let selectedPersonalityId = $state<string | null>(data.userPersonality ?? null);
+let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
 let bootstrapMode = initialBootstrapMode;
 let hydratingConversation = false;
 let suppressHydration = $state(false);

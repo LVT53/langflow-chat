@@ -20,7 +20,7 @@ import MessageInput from '$lib/components/chat/MessageInput.svelte';
 import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
 import { fetchPublicPersonalityProfiles } from '$lib/client/api/admin';
 import type { ConversationDetail, ModelId } from '$lib/types';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import type {
 		ArtifactSummary,
 		ConversationDraft,
@@ -106,7 +106,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	let fileDragActive = $state(false);
 	let fileDragRejected = $state(false);
 	let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
-	let selectedPersonalityId = $state<string | null>(data.userPersonality ?? null);
+	let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
 	let dragEnterCount = 0;
 	let uploadFilesFn: ((files: FileList | null) => Promise<void>) | null = null;
 
