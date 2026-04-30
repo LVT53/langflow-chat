@@ -161,6 +161,7 @@ export function buildOutboundSystemPrompt(params: {
 	inputValue: string;
 	modelDisplayName?: string;
 	systemPromptAppendix?: string;
+	personalityPrompt?: string;
 }): string {
 	const modelHeader = params.modelDisplayName ? `[MODEL: ${params.modelDisplayName}]\n` : '';
 	const basePrompt = modelHeader + params.basePrompt.trim();
@@ -175,6 +176,10 @@ export function buildOutboundSystemPrompt(params: {
     explicitDateContext,
     DATE_BEFORE_SEARCH_GUARD,
   ];
+
+  if (params.personalityPrompt?.trim()) {
+    additions.unshift(`## Personality & Voice\n${params.personalityPrompt.trim()}`);
+  }
 
   if (containsHttpUrl(params.inputValue)) {
     additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
@@ -333,6 +338,7 @@ export async function prepareOutboundChatContext(params: {
 	activeDocumentArtifactId?: string;
 	attachmentTraceId?: string;
 	systemPromptAppendix?: string;
+	personalityPrompt?: string;
 	modelId?: string;
 	contextLimits?: PromptContextLimits;
 	logLabel: "request" | "streaming bundle" | "provider request";
@@ -403,6 +409,7 @@ export async function prepareOutboundChatContext(params: {
 		inputValue,
 		modelDisplayName: params.modelConfig.displayName,
 		systemPromptAppendix: params.systemPromptAppendix,
+		personalityPrompt: params.personalityPrompt,
 	});
 
 	return {
@@ -443,6 +450,7 @@ export async function sendMessage(
 		activeDocumentArtifactId?: string;
 		attachmentTraceId?: string;
 		systemPromptAppendix?: string;
+		personalityPrompt?: string;
 	},
 ): Promise<{
 	text: string;
@@ -536,8 +544,9 @@ export async function sendMessage(
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			modelDisplayName: modelConfig.displayName,
-			systemPromptAppendix: options?.systemPromptAppendix,
-		});
+		systemPromptAppendix: options?.systemPromptAppendix,
+		personalityPrompt: options?.personalityPrompt,
+	});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
 			input_value: inputValue,
@@ -616,6 +625,7 @@ export async function sendMessageStream(
 		activeDocumentArtifactId?: string;
 		attachmentTraceId?: string;
 		systemPromptAppendix?: string;
+		personalityPrompt?: string;
 	},
 ): Promise<{
 	stream?: ReadableStream<Uint8Array>;
@@ -724,8 +734,9 @@ export async function sendMessageStream(
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			modelDisplayName: modelConfig.displayName,
-			systemPromptAppendix: options?.systemPromptAppendix,
-		});
+		systemPromptAppendix: options?.systemPromptAppendix,
+		personalityPrompt: options?.personalityPrompt,
+	});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
 			input_value: inputValue,

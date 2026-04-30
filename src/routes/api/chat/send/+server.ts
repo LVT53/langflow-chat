@@ -18,6 +18,7 @@ import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
 import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
 import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
 import { estimateTokenCount } from '$lib/utils/tokens';
+import { getPersonalityProfile } from '$lib/server/services/personality-profiles';
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -81,6 +82,13 @@ export const POST: RequestHandler = async (event) => {
 			displayName: user.displayName,
 			email: user.email,
 		};
+
+		let personalityPrompt: string | undefined;
+		if (turn.personalityProfileId) {
+			const profile = await getPersonalityProfile(turn.personalityProfileId).catch(() => null);
+			personalityPrompt = profile?.promptText || undefined;
+		}
+
 		const langflowResult = await sendMessage(
 			upstreamMessage,
 			turn.conversationId,
@@ -90,6 +98,7 @@ export const POST: RequestHandler = async (event) => {
 				attachmentIds: turn.attachmentIds,
 				activeDocumentArtifactId: turn.activeDocumentArtifactId,
 				attachmentTraceId: turn.attachmentTraceId,
+				personalityPrompt,
 			}
 		);
 		const text = langflowResult.text ?? '';

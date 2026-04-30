@@ -101,6 +101,7 @@ export type StreamChatOptions = {
 	skipPersistUserMessage?: boolean;
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
+	personalityProfileId?: string | null;
 	retryAssistantMessageId?: string;
 	retryUserMessageId?: string;
 	retryUserMessage?: string;
@@ -119,6 +120,7 @@ export function streamChat(
 		skipPersistUserMessage,
 		attachmentIds,
 		activeDocumentArtifactId,
+		personalityProfileId,
 		retryAssistantMessageId,
 		retryUserMessageId,
 		retryUserMessage,
@@ -173,6 +175,7 @@ export function streamChat(
 						streamId,
 						model: modelId,
 						activeDocumentArtifactId,
+						personalityProfileId,
 					})
 				: JSON.stringify({
 						message,
@@ -182,6 +185,7 @@ export function streamChat(
 						skipPersistUserMessage,
 						attachmentIds,
 						activeDocumentArtifactId,
+						personalityProfileId,
 						reconnectToStreamId,
 						userMessage: reconnectUserMessage,
 					});

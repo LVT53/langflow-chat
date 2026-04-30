@@ -70,6 +70,7 @@ import {
 	getGenerateFileToolLanguage,
 } from "$lib/utils/generate-file-tool";
 import { estimateTokenCount } from "$lib/utils/tokens";
+import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
@@ -128,6 +129,13 @@ export function runChatStreamOrchestrator(
 	const safeAttachmentIds = turn.attachmentIds;
 	const activeDocumentArtifactId = turn.activeDocumentArtifactId;
 	const attachmentTraceId = turn.attachmentTraceId;
+	const personalityProfileId = turn.personalityProfileId;
+
+	let personalityPrompt: string | undefined;
+	if (personalityProfileId) {
+		const profile = await getPersonalityProfile(personalityProfileId).catch(() => null);
+		personalityPrompt = profile?.promptText || undefined;
+	}
 
 	const encoder = new TextEncoder();
 	let cancelStream = () => undefined;
@@ -472,6 +480,7 @@ export function runChatStreamOrchestrator(
 							systemPromptAppendix: usedUrlListRecovery
 								? URL_LIST_TOOL_RECOVERY_APPENDIX
 								: undefined,
+							personalityPrompt,
 						},
 					).catch(async (error) => {
 						if (

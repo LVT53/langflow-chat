@@ -7,12 +7,18 @@
 		canAttach = false,
 		attachmentsEnabled = false,
 		onClose,
-		onAttach
+		onAttach,
+		personalityProfiles = [],
+		selectedPersonalityId = null,
+		onPersonalityChange = undefined,
 	}: {
 		canAttach?: boolean;
 		attachmentsEnabled?: boolean;
 		onClose?: () => void;
 		onAttach?: () => void;
+		personalityProfiles?: Array<{ id: string; name: string; description: string }>;
+		selectedPersonalityId?: string | null;
+		onPersonalityChange?: ((id: string | null) => void) | undefined;
 	} = $props();
 
 	let root = $state<HTMLDivElement | undefined>(undefined);
@@ -56,6 +62,26 @@
 		<div class="menu-label">Model</div>
 		<ModelSelector onSelect={closeMenu} />
 	</div>
+
+	{#if personalityProfiles.length > 0}
+		<div class="menu-row menu-row--static">
+			<div class="menu-label">Style</div>
+			<select
+				class="personality-select"
+				value={selectedPersonalityId ?? ''}
+				onchange={(e) => {
+					const val = (e.target as HTMLSelectElement).value;
+					onPersonalityChange?.(val || null);
+					closeMenu();
+				}}
+			>
+				<option value="">Default</option>
+				{#each personalityProfiles as profile}
+					<option value={profile.id}>{profile.name}</option>
+				{/each}
+			</select>
+		</div>
+	{/if}
 
 	<div class="menu-row">
 		<button
@@ -127,8 +153,18 @@
 
 	.menu-row--button:hover:not(:disabled),
 	.menu-row--button:focus-visible {
-		background: color-mix(in srgb, var(--surface-page) 78%, var(--surface-elevated) 22%);
-		outline: none;
+		box-shadow: 0 0 0 2px var(--focus-ring);
+	}
+
+	.personality-select {
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-sm);
+		background: var(--surface-page);
+		color: var(--text-primary);
+		font-size: 0.76rem;
+		padding: 0.2rem 0.35rem;
+		cursor: pointer;
+		max-width: 8rem;
 	}
 
 	.menu-row--button:disabled {

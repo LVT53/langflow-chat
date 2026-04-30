@@ -25,6 +25,7 @@ type RequestBody = {
 	skipPersistUserMessage?: unknown;
 	attachmentIds?: unknown;
 	activeDocumentArtifactId?: unknown;
+	personalityProfileId?: unknown;
 };
 
 export async function parseChatTurnRequest(
@@ -48,6 +49,7 @@ export async function parseChatTurnRequest(
 		skipPersistUserMessage,
 		attachmentIds,
 		activeDocumentArtifactId,
+		personalityProfileId,
 	} = body;
 
 	// Allow empty message when reconnecting to an existing stream (streamId provided)
@@ -135,6 +137,10 @@ export async function parseChatTurnRequest(
 			activeDocumentArtifactId:
 				typeof activeDocumentArtifactId === 'string' && activeDocumentArtifactId.trim().length > 0
 					? activeDocumentArtifactId.trim()
+					: undefined,
+			personalityProfileId:
+				typeof personalityProfileId === 'string' && personalityProfileId.trim().length > 0
+					? personalityProfileId.trim()
 					: undefined,
 			skipPersistUserMessage: skipPersistUserMessage === true,
 			attachmentTraceId:
