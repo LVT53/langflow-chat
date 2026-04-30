@@ -1,6 +1,6 @@
 // src/lib/server/services/title-generator.ts
 import { getConfig } from '../config-store';
-import { normalizeVisibleAssistantText } from './chat-turn/thinking-normalizer';
+import { normalizeAssistantOutput } from './chat-turn/execute';
 
 // Common misspellings dictionary for post-processing correction
 const COMMON_MISSPELLINGS: Record<string, string> = {
@@ -380,7 +380,7 @@ async function generateTitleWithTemperature(
   const json = await response.json();
   const choice = json.choices?.[0]?.message;
   const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
-  const rawTitle = normalizeVisibleAssistantText(rawContent);
+  const rawTitle = normalizeAssistantOutput(rawContent);
   
   if (!rawTitle || isThinkingLeak(rawTitle)) {
     return null;
@@ -470,7 +470,7 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   const json = await response.json();
   const choice = json.choices?.[0]?.message;
   const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
-  const rawTitle = normalizeVisibleAssistantText(rawContent);
+  const rawTitle = normalizeAssistantOutput(rawContent);
 
   if (!rawTitle || isThinkingLeak(rawTitle)) {
     console.info('[TITLE_GENERATE] Fallback: empty rawTitle or thinking leak');

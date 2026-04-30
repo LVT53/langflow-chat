@@ -44,10 +44,6 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_COMPONENT_ID",
 	"MODEL_2_MAX_TOKENS",
 	"MODEL_2_ENABLED",
-	"TRANSLATOR_URL",
-	"TRANSLATOR_MODEL",
-	"TRANSLATION_MAX_TOKENS",
-	"TRANSLATION_TEMPERATURE",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
 	"TITLE_GEN_SYSTEM_PROMPT_EN",
@@ -81,11 +77,6 @@ export interface RuntimeConfig {
 	langflowFlowId: string;
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
-	translatorUrl: string;
-	translatorApiKey: string;
-	translatorModel: string;
-	translationMaxTokens: number;
-	translationTemperature: number;
 	titleGenUrl: string;
 	titleGenApiKey: string;
 	titleGenModel: string;
@@ -279,20 +270,6 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_ENABLED: (config, value) => {
 		config.model2Enabled = value === "true";
-	},
-	TRANSLATOR_URL: (config, value) => {
-		config.translatorUrl = value;
-	},
-	TRANSLATOR_MODEL: (config, value) => {
-		config.translatorModel = value;
-	},
-	TRANSLATION_MAX_TOKENS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.translationMaxTokens = Math.max(1, parsed);
-	},
-	TRANSLATION_TEMPERATURE: (config, value) => {
-		const parsed = Number(value);
-		if (Number.isFinite(parsed)) config.translationTemperature = parsed;
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -586,10 +563,6 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_MAX_TOKENS:
 			config.model2.maxTokens != null ? String(config.model2.maxTokens) : "",
 		MODEL_2_ENABLED: String(config.model2Enabled),
-		TRANSLATOR_URL: config.translatorUrl,
-		TRANSLATOR_MODEL: config.translatorModel,
-		TRANSLATION_MAX_TOKENS: String(config.translationMaxTokens),
-		TRANSLATION_TEMPERATURE: String(config.translationTemperature),
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: config.titleGenSystemPromptEn,
@@ -620,85 +593,7 @@ export function getResolvedAdminConfigValues(
 
 // Returns the env-var default value for each admin config key (for UI display)
 export function getEnvDefaults(): Record<AdminConfigKey, string> {
-	return {
-		MAX_MESSAGE_LENGTH: String(envConfig.maxMessageLength),
-		MAX_MODEL_CONTEXT: String(envConfig.maxModelContext),
-		COMPACTION_UI_THRESHOLD: String(envConfig.compactionUiThreshold),
-		TARGET_CONSTRUCTED_CONTEXT: String(envConfig.targetConstructedContext),
-		MODEL_1_MAX_MODEL_CONTEXT: String(envConfig.model1MaxModelContext),
-		MODEL_1_COMPACTION_UI_THRESHOLD: String(
-			envConfig.model1CompactionUiThreshold,
-		),
-		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: String(
-			envConfig.model1TargetConstructedContext,
-		),
-		MODEL_1_MAX_MESSAGE_LENGTH: String(envConfig.model1MaxMessageLength),
-		MODEL_2_MAX_MODEL_CONTEXT: String(envConfig.model2MaxModelContext),
-		MODEL_2_COMPACTION_UI_THRESHOLD: String(
-			envConfig.model2CompactionUiThreshold,
-		),
-		MODEL_2_TARGET_CONSTRUCTED_CONTEXT: String(
-			envConfig.model2TargetConstructedContext,
-		),
-		MODEL_2_MAX_MESSAGE_LENGTH: String(envConfig.model2MaxMessageLength),
-		WORKING_SET_DOCUMENT_TOKEN_BUDGET: String(
-			envConfig.workingSetDocumentTokenBudget,
-		),
-		WORKING_SET_PROMPT_TOKEN_BUDGET: String(
-			envConfig.workingSetPromptTokenBudget,
-		),
-		SMALL_FILE_THRESHOLD_CHARS: String(envConfig.smallFileThresholdChars),
-		MODEL_1_BASEURL: envConfig.model1.baseUrl,
-		MODEL_1_API_KEY: envConfig.model1.apiKey,
-		MODEL_1_NAME: envConfig.model1.modelName,
-		MODEL_1_DISPLAY_NAME: envConfig.model1.displayName,
-		MODEL_1_SYSTEM_PROMPT: envConfig.model1.systemPrompt,
-		MODEL_1_FLOW_ID: envConfig.model1.flowId,
-		MODEL_1_COMPONENT_ID: envConfig.model1.componentId,
-		MODEL_1_MAX_TOKENS:
-			envConfig.model1.maxTokens != null ? String(envConfig.model1.maxTokens) : "",
-		MODEL_2_BASEURL: envConfig.model2.baseUrl,
-		MODEL_2_API_KEY: envConfig.model2.apiKey,
-		MODEL_2_NAME: envConfig.model2.modelName,
-		MODEL_2_DISPLAY_NAME: envConfig.model2.displayName,
-		MODEL_2_SYSTEM_PROMPT: envConfig.model2.systemPrompt,
-		MODEL_2_FLOW_ID: envConfig.model2.flowId,
-		MODEL_2_COMPONENT_ID: envConfig.model2.componentId,
-		MODEL_2_MAX_TOKENS:
-			envConfig.model2.maxTokens != null ? String(envConfig.model2.maxTokens) : "",
-		MODEL_2_ENABLED: String(envConfig.model2Enabled),
-		TRANSLATOR_URL: envConfig.translatorUrl,
-		TRANSLATOR_MODEL: envConfig.translatorModel,
-		TRANSLATION_MAX_TOKENS: String(envConfig.translationMaxTokens),
-		TRANSLATION_TEMPERATURE: String(envConfig.translationTemperature),
-		TITLE_GEN_URL: envConfig.titleGenUrl,
-		TITLE_GEN_MODEL: envConfig.titleGenModel,
-		TITLE_GEN_SYSTEM_PROMPT_EN: envConfig.titleGenSystemPromptEn,
-		TITLE_GEN_SYSTEM_PROMPT_HU: envConfig.titleGenSystemPromptHu,
-		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN:
-			envConfig.titleGenSystemPromptCodeAppendixEn,
-		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_HU:
-			envConfig.titleGenSystemPromptCodeAppendixHu,
-		CONTEXT_SUMMARIZER_URL: envConfig.contextSummarizerUrl,
-		CONTEXT_SUMMARIZER_MODEL: envConfig.contextSummarizerModel,
-		TEI_EMBEDDER_URL: envConfig.teiEmbedderUrl,
-		TEI_EMBEDDER_MODEL: envConfig.teiEmbedderModel,
-		TEI_EMBEDDER_BATCH_SIZE: String(envConfig.teiEmbedderBatchSize),
-		TEI_RERANKER_URL: envConfig.teiRerankerUrl,
-		TEI_RERANKER_MODEL: envConfig.teiRerankerModel,
-		TEI_RERANKER_MAX_TEXTS: String(envConfig.teiRerankerMaxTexts),
-		HONCHO_ENABLED: String(envConfig.honchoEnabled),
-		HONCHO_CONTEXT_WAIT_MS: String(envConfig.honchoContextWaitMs),
-		HONCHO_PERSONA_CONTEXT_WAIT_MS: String(
-			envConfig.honchoPersonaContextWaitMs,
-		),
-		HONCHO_OVERVIEW_WAIT_MS: String(envConfig.honchoOverviewWaitMs),
-		MINERU_API_URL: envConfig.mineruApiUrl,
-		MINERU_TIMEOUT_MS: String(envConfig.mineruTimeoutMs),
-		SYSTEM_PROMPT: envConfig.systemPrompt,
-		MAX_FILE_UPLOAD_SIZE: String(envConfig.maxFileUploadSize),
-		REQUEST_TIMEOUT_MS: String(envConfig.requestTimeoutMs),
-	};
+	return getResolvedAdminConfigValues(envConfig);
 }
 
 let cachedProviders:

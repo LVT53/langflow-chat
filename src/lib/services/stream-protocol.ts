@@ -1,18 +1,14 @@
 export const THINKING_OPEN_TAG = "<thinking>";
 export const THINKING_CLOSE_TAG = "</thinking>";
-export const HERMES_THINKING_OPEN_TAG = "好吗";
-export const HERMES_THINKING_CLOSE_TAG = "吗";
 export const DEEPSEEK_THINKING_OPEN_TAG = "<think>";
 export const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
 
 const THINKING_OPEN_TAGS = [
 	THINKING_OPEN_TAG,
-	HERMES_THINKING_OPEN_TAG,
 	DEEPSEEK_THINKING_OPEN_TAG,
 ] as const;
 const THINKING_CLOSE_TAGS = [
 	THINKING_CLOSE_TAG,
-	HERMES_THINKING_CLOSE_TAG,
 	DEEPSEEK_THINKING_CLOSE_TAG,
 ] as const;
 
@@ -189,31 +185,6 @@ export function flushInlineThinkingState(
 	return emitChunk(emitters.onVisible, remainder);
 }
 
-export function extractVisibleTextFromModelResponse(value: string): string {
-	const state = createInlineThinkingState();
-	let visibleText = "";
-
-	processInlineThinkingChunk(state, value, {
-		onVisible(chunk) {
-			visibleText += chunk;
-		},
-		onThinking() {
-			// Non-stream callers only need the user-visible text.
-		},
-	});
-	flushInlineThinkingState(state, {
-		onVisible(chunk) {
-			visibleText += chunk;
-		},
-		onThinking() {
-			// Non-stream callers only need the user-visible text.
-		},
-	});
-
-	return visibleText.replace(/<\/?preserve>/gi, "");
-}
-
-// Shared friendly error map — used by server stream and client helpers
 export const FRIENDLY_STREAM_ERRORS = {
 	timeout: "The response is taking too long. Please try again.",
 	network:

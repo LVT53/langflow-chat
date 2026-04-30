@@ -7,7 +7,7 @@ import { getConfig } from '$lib/server/config-store';
 import { createMessage } from '$lib/server/services/messages';
 import { logAttachmentTrace } from '$lib/server/services/attachment-trace';
 import { isAttachmentReadinessError } from '$lib/server/services/knowledge';
-import { buildSendResponseText, buildUpstreamMessage } from '$lib/server/services/chat-turn/execute';
+import { normalizeAssistantOutput } from '$lib/server/services/chat-turn/execute';
 import {
 	persistAssistantEvidence,
 	persistAssistantTurnState,
@@ -75,7 +75,7 @@ export const POST: RequestHandler = async (event) => {
 	const turn = preflight.value;
 
 	try {
-		const upstreamMessage = await buildUpstreamMessage(turn);
+		const upstreamMessage = turn.normalizedMessage;
 		const modelUser = {
 			id: user.id,
 			displayName: user.displayName,
@@ -98,11 +98,7 @@ export const POST: RequestHandler = async (event) => {
 		const initialContextDebug = langflowResult.contextDebug;
 		const honchoContext = langflowResult.honchoContext;
 		const honchoSnapshot = langflowResult.honchoSnapshot;
-		const responseText = await buildSendResponseText({
-			responseText: text,
-			sourceLanguage: turn.sourceLanguage,
-			translationEnabled: turn.translationEnabled,
-		});
+		const responseText = normalizeAssistantOutput(text);
 
 		const userMessage = await createMessage(turn.conversationId, 'user', turn.normalizedMessage);
 		await persistUserTurnAttachments({

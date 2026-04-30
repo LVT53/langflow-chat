@@ -72,10 +72,6 @@ vi.mock('$lib/server/services/chat-turn/preflight', () => ({
 	})),
 }));
 
-vi.mock('$lib/server/services/chat-turn/execute', () => ({
-	buildUpstreamMessage: vi.fn(async (turn) => turn.normalizedMessage),
-}));
-
 vi.mock('$lib/server/services/chat-turn/stream-orchestrator', () => ({
 	runChatStreamOrchestrator: vi.fn(async () => new Response('retry stream')),
 }));

@@ -11,7 +11,6 @@ import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
 import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
 import { createJsonErrorResponse } from '$lib/server/api/responses';
 import { createStreamJsonErrorResponse } from '$lib/server/services/chat-turn/stream';
-import { buildUpstreamMessage } from '$lib/server/services/chat-turn/execute';
 import { runChatStreamOrchestrator } from '$lib/server/services/chat-turn/stream-orchestrator';
 
 export const POST: RequestHandler = async (event) => {
@@ -159,16 +158,7 @@ export const POST: RequestHandler = async (event) => {
 
 	const turn = preflight.value;
 
-	let upstreamMessage = turn.normalizedMessage;
-	try {
-		upstreamMessage = await buildUpstreamMessage(turn);
-	} catch (error) {
-		console.error('[RETRY] Input translation error:', error);
-		return createStreamJsonErrorResponse({
-			status: 502,
-			error: 'Failed to prepare the translated prompt.',
-		});
-	}
+	const upstreamMessage = turn.normalizedMessage;
 
 	const requestStartTime = Date.now();
 

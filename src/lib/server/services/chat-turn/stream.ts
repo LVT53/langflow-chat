@@ -2,7 +2,6 @@ import {
 	createInlineThinkingState,
 	FRIENDLY_STREAM_ERRORS,
 	flushInlineThinkingState,
-	getPartialTagPrefixLength,
 	getTextContent,
 	processInlineThinkingChunk,
 	type StreamErrorCode,
@@ -119,8 +118,6 @@ export function createServerChunkRuntime({
 	let fullResponse = "";
 	let thinkingContent = "";
 	const inlineThinkingState = createInlineThinkingState();
-	let preserveBuffer = "";
-	let insidePreserve = false;
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
 	let pendingThinkingBuffer = "";
@@ -246,90 +243,12 @@ export function createServerChunkRuntime({
 		});
 	};
 
-	const PRESERVE_OPEN_TAG = "<preserve>";
-	const PRESERVE_CLOSE_TAG = "</preserve>";
-
 	const emitChunkWithPreserveHandling = (chunk: string): boolean => {
-		if (!chunk) {
-			return true;
-		}
-
-		preserveBuffer += chunk;
-
-		while (preserveBuffer) {
-			if (insidePreserve) {
-				const closeIndex = preserveBuffer.indexOf(PRESERVE_CLOSE_TAG);
-				if (closeIndex !== -1) {
-					const content = preserveBuffer.slice(0, closeIndex);
-					if (!emitInlineToken(content)) {
-						return false;
-					}
-					preserveBuffer = preserveBuffer.slice(
-						closeIndex + PRESERVE_CLOSE_TAG.length,
-					);
-					insidePreserve = false;
-					continue;
-				}
-
-				const partialCloseLength = getPartialTagPrefixLength(
-					preserveBuffer,
-					PRESERVE_CLOSE_TAG,
-				);
-				if (partialCloseLength > 0) {
-					break;
-				}
-				break;
-			}
-
-			const openIndex = preserveBuffer.indexOf(PRESERVE_OPEN_TAG);
-			if (openIndex !== -1) {
-				const visibleChunk = preserveBuffer.slice(0, openIndex);
-				if (visibleChunk && !emitInlineToken(visibleChunk)) {
-					return false;
-				}
-				preserveBuffer = preserveBuffer.slice(
-					openIndex + PRESERVE_OPEN_TAG.length,
-				);
-				insidePreserve = true;
-				continue;
-			}
-
-			const partialOpenLength = getPartialTagPrefixLength(
-				preserveBuffer,
-				PRESERVE_OPEN_TAG,
-			);
-			const flushLength = preserveBuffer.length - partialOpenLength;
-			if (flushLength > 0) {
-				const visibleChunk = preserveBuffer.slice(0, flushLength);
-				if (!emitInlineToken(visibleChunk)) {
-					return false;
-				}
-				preserveBuffer = preserveBuffer.slice(flushLength);
-			}
-			break;
-		}
-
-		return true;
+		if (!chunk) return true;
+		return emitInlineToken(chunk);
 	};
 
-	const flushPreserveBuffer = (): boolean => {
-		if (!preserveBuffer) {
-			return true;
-		}
-
-		const remainder = preserveBuffer;
-		preserveBuffer = "";
-
-		if (insidePreserve) {
-			insidePreserve = false;
-			return emitInlineToken(remainder);
-		}
-
-		const isPartialOpenTag = PRESERVE_OPEN_TAG.startsWith(remainder);
-		if (isPartialOpenTag) return true;
-
-		return emitInlineToken(remainder);
-	};
+	const flushPreserveBuffer = (): boolean => true;
 
 	return {
 		emitChunkWithPreserveHandling,

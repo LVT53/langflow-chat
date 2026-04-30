@@ -10,7 +10,7 @@ import {
   getContextDebugState,
   getConversationTaskState,
 } from "$lib/server/services/task-state";
-import { StreamingHungarianTranslator } from "$lib/server/services/translator";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import {
   persistAssistantEvidence,
   persistAssistantTurnState,
@@ -44,7 +44,6 @@ import {
   getReasoningContent,
   isAbruptUpstreamTermination,
   isUrlListValidationError,
-  normalizeVisibleAssistantText,
   parseUpstreamEvents,
   processToolCallMarkers,
   streamErrorEvent,
@@ -63,7 +62,6 @@ import {
   getGenerateFileToolFilename,
   getGenerateFileToolLanguage,
 } from "$lib/utils/generate-file-tool";
-import { shouldTranslateHungarian } from "$lib/server/services/chat-turn/execute";
 import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
 
 function getStreamTimeoutMs(): number {
@@ -122,9 +120,6 @@ export function runChatStreamOrchestrator(options: StreamOrchestratorOptions): R
 
   const stream = new ReadableStream({
     async start(controller) {
-      const outputTranslator = shouldTranslateHungarian(turn)
-        ? new StreamingHungarianTranslator()
-        : null;
       let downstreamClosed = false;
       let ended = false;
       let lastAssistantSnapshot = "";
@@ -371,17 +366,7 @@ export function runChatStreamOrchestrator(options: StreamOrchestratorOptions): R
           return true;
         }
 
-        if (!outputTranslator) {
-          return emitChunkWithPreserveHandling(text);
-        }
-
-        for (const translatedChunk of await outputTranslator.addChunk(text)) {
-          if (!emitInlineToken(translatedChunk)) {
-            return false;
-          }
-        }
-
-        return true;
+        return emitChunkWithPreserveHandling(text);
       };
       let latestContextStatus:
         | import("$lib/types").ConversationContextStatus
@@ -744,13 +729,6 @@ const sendEndAndClose = async (
               return null;
             }
 
-            if (outputTranslator) {
-              for (const chunk of await outputTranslator.flush()) {
-                if (!emitInlineToken(chunk)) {
-                  return null;
-                }
-              }
-            }
             flushPendingThinking();
             if (!flushInlineThinkingBuffer()) {
               return null;
@@ -781,13 +759,6 @@ const sendEndAndClose = async (
               return;
             }
 
-            if (outputTranslator) {
-              for (const chunk of await outputTranslator.flush()) {
-                if (!emitInlineToken(chunk)) {
-                  return;
-                }
-              }
-            }
             flushPendingThinking();
             if (!flushInlineThinkingBuffer()) {
               return;
@@ -833,13 +804,6 @@ const sendEndAndClose = async (
               latestProviderUsage = eventUsage;
             }
             if (data === "[DONE]" || eventType === "end") {
-              if (outputTranslator) {
-                for (const chunk of await outputTranslator.flush()) {
-                  if (!emitInlineToken(chunk)) {
-                    return;
-                  }
-                }
-              }
               flushPendingThinking();
               if (!flushInlineThinkingBuffer()) {
                 return;
@@ -917,10 +881,10 @@ const sendEndAndClose = async (
             // toIncrementalChunk can't match them, so we guard here using fullResponse
             // with trimmed comparison to handle trailing newline/space differences.
             if (eventType !== "token" && previousEmittedAssistantText) {
-              const normalizedEmittedText = normalizeVisibleAssistantText(
+              const normalizedEmittedText = normalizeAssistantOutput(
                 previousEmittedAssistantText,
               );
-              const normalizedChunk = normalizeVisibleAssistantText(chunk);
+              const normalizedChunk = normalizeAssistantOutput(chunk);
               if (
                 normalizedChunk &&
                 (normalizedChunk === normalizedEmittedText ||
@@ -939,29 +903,11 @@ const sendEndAndClose = async (
 
             if (!cleanedChunk) continue;
 
-            if (!outputTranslator) {
-              if (!emitChunkWithPreserveHandling(cleanedChunk)) {
-                return;
-              }
-              continue;
-            }
-
-            for (const translatedChunk of await outputTranslator.addChunk(
-              cleanedChunk,
-            )) {
-              if (!emitInlineToken(translatedChunk)) {
-                return;
-              }
+            if (!emitChunkWithPreserveHandling(cleanedChunk)) {
+              return;
             }
           }
 
-          if (outputTranslator) {
-            for (const chunk of await outputTranslator.flush()) {
-              if (!emitInlineToken(chunk)) {
-                return;
-              }
-            }
-          }
           flushPendingThinking();
           if (!flushInlineThinkingBuffer()) {
             return;

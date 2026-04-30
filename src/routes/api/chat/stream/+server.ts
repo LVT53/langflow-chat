@@ -1,7 +1,7 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
-import { buildUpstreamMessage } from "$lib/server/services/chat-turn/execute";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
@@ -72,16 +72,7 @@ export const POST: RequestHandler = async (event) => {
 
   const turn = preflight.value;
 
-  let upstreamMessage = turn.normalizedMessage;
-  try {
-    upstreamMessage = await buildUpstreamMessage(turn);
-  } catch (error) {
-    console.error("Input translation error:", error);
-    return createStreamJsonErrorResponse({
-      status: 502,
-      error: "Failed to prepare the translated prompt.",
-    });
-  }
+  const upstreamMessage = turn.normalizedMessage;
 
   return runChatStreamOrchestrator({
     user: {

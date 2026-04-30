@@ -54,13 +54,6 @@ vi.mock('$lib/server/services/language', () => ({
 	detectLanguage: vi.fn()
 }));
 
-vi.mock('$lib/server/services/translator', () => ({
-	translateHungarianToEnglish: vi.fn(),
-	StreamingHungarianTranslator: class {
-		addChunk = vi.fn(async (chunk: string) => [`HU:${chunk}`]);
-		flush = vi.fn(async () => []);
-	}
-}));
 
 vi.mock('$lib/server/services/honcho', () => ({
 	listPersonaMemories: vi.fn(async () => []),
@@ -100,7 +93,6 @@ import { sendMessage, sendMessageStream } from '$lib/server/services/langflow';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 import { detectLanguage } from '$lib/server/services/language';
-import { translateHungarianToEnglish } from '$lib/server/services/translator';
 import { getConversationTaskState } from '$lib/server/services/task-state';
 import {
 	assignGeneratedFilesToAssistantMessage,
@@ -118,7 +110,6 @@ const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
 const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
-const mockTranslateHungarianToEnglish = translateHungarianToEnglish as ReturnType<typeof vi.fn>;
 const mockGetConversationTaskState = getConversationTaskState as ReturnType<typeof vi.fn>;
 const mockAssignGeneratedFilesToAssistantMessage =
 	assignGeneratedFilesToAssistantMessage as ReturnType<typeof vi.fn>;
@@ -211,7 +202,6 @@ describe('POST /api/chat/stream', () => {
 		}));
 		mockDetectLanguage.mockReturnValue('en');
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
-		mockTranslateHungarianToEnglish.mockImplementation(async (message: string) => `EN:${message}`);
 		mockSendMessage.mockReset();
 		mockAssignGeneratedFilesToAssistantMessage.mockResolvedValue(undefined);
 		mockGetChatFiles.mockResolvedValue([]);
@@ -788,7 +778,7 @@ describe('POST /api/chat/stream', () => {
 		);
 	});
 
-	it('translates Hungarian input before sending it to Langflow', async () => {
+	it('passes Hungarian input through without translation', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
 		mockDetectLanguage.mockReturnValue('hu');
@@ -799,21 +789,20 @@ describe('POST /api/chat/stream', () => {
 			])
 		);
 
-		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' }, { id: 'user-1', email: 'test@example.com', translationEnabled: true });
+		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });
 		const response = await POST(event);
 		const body = await readSseResponse(response);
 
-		expect(mockTranslateHungarianToEnglish).toHaveBeenCalledWith('Szia');
-			expect(mockSendMessageStream).toHaveBeenCalledWith('EN:Szia', 'conv-1', 'model1', {
-				signal: expect.any(Object),
-				user: {
-					id: 'user-1',
-					displayName: undefined,
-					email: 'test@example.com',
-				},
-				attachmentIds: []
-			});
-		expect(body).toContain('"text":"HU:Final English answer."');
+		expect(mockSendMessageStream).toHaveBeenCalledWith('Szia', 'conv-1', 'model1', {
+			signal: expect.any(Object),
+			user: {
+				id: 'user-1',
+				displayName: undefined,
+				email: 'test@example.com',
+			},
+			attachmentIds: []
+		});
+		expect(body).toContain('"text":"Final English answer."');
 	});
 
 	it('stream ends with end event after [DONE]', async () => {

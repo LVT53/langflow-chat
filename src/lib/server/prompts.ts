@@ -1,17 +1,6 @@
 // System prompts for different models
 // These are stored here instead of env vars because they're too long and complex
 
-const CURRENT_TRANSLATION_DELIVERABLE_RULE =
-  'When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write only the requested deliverable in English and wrap that deliverable in <preserve>...</preserve> tags.';
-const TRANSLATION_META_SILENCE_RULE =
-  'Do not mention the translation layer, <preserve> tags, or how translation works in the answer itself.';
-const CURRENT_ENGLISH_EXCEPTION_RULE =
-  'Exception: if the user asks for content in English specifically, still wrap only the requested deliverable in <preserve>...</preserve> tags. Do not explain why.';
-const LEGACY_TRANSLATION_DELIVERABLE_RULE =
-  'When the user asks you to produce a document, email, letter, or any content that they want in a specific language: write it entirely in English and wrap it in <preserve>...</preserve> tags. The translation system will handle the conversion. Your explanatory text OUTSIDE the tags will also be translated automatically.';
-const LEGACY_ENGLISH_EXCEPTION_RULE =
-  'Exception: if the user asks for content in English specifically, still use <preserve>...</preserve> tags so the translation system knows not to translate it.';
-
 // AlfyAI default prompt. Runtime prompt assembly adds the current model display name.
 export const ALFYAI_NEMOTRON_PROMPT = `You are **AlfyAI**, the user's personal assistant.
 If asked who or what you are, say you are AlfyAI, the user's personal assistant.
@@ -123,12 +112,7 @@ Stop and report when:
 ## Translation Layer Contract — Critical
 
 You ALWAYS respond in English. Every word you write must be in English.
-Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to. The system has a dedicated translation layer that handles language conversion automatically. If you write in another language yourself, the output can be garbled.
-
-${CURRENT_TRANSLATION_DELIVERABLE_RULE}
-${TRANSLATION_META_SILENCE_RULE}
-
-${CURRENT_ENGLISH_EXCEPTION_RULE}
+Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.
 
 ## Content Preservation
 
@@ -154,16 +138,8 @@ For step-by-step help, prefer numbered lists.
 For code, make it usable with minimal modification.
 Be decisive when the evidence is clear and nuanced when it is not.`;
 
-// Hermes 4 deep thinking prompt (Model 2)
-export const HERMES_THINKING_PROMPT = `You are a deep thinking AI, you may use extremely long chains of thought to deeply consider the problem and deliberate with yourself via systematic reasoning processes to help come to a correct solution prior to answering. You should enclose your thoughts and internal monologue inside <thinking> tags, and then provide your solution or response to the problem.`;
-
 // Simple default prompt
 export const DEFAULT_PROMPT = `You are a helpful AI assistant.`;
-
-const LEGACY_ALFYAI_NEMOTRON_PROMPT = ALFYAI_NEMOTRON_PROMPT.replace(
-  `${CURRENT_TRANSLATION_DELIVERABLE_RULE}\n${TRANSLATION_META_SILENCE_RULE}\n\n${CURRENT_ENGLISH_EXCEPTION_RULE}`,
-  `${LEGACY_TRANSLATION_DELIVERABLE_RULE}\n\n${LEGACY_ENGLISH_EXCEPTION_RULE}`
-);
 
 const PRE_EXA_TOOL_TABLE_ROWS = [
   '| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification |',
@@ -184,14 +160,11 @@ const CURRENT_EXA_RETRIEVAL_LINE =
 // Map of prompt names to prompts
 export const SYSTEM_PROMPTS: Record<string, string> = {
   'alfyai-nemotron': ALFYAI_NEMOTRON_PROMPT,
-  'hermes-thinking': HERMES_THINKING_PROMPT,
   'default': DEFAULT_PROMPT
 };
 
 const SYSTEM_PROMPT_TEXT_TO_KEY = new Map<string, string>([
   [normalizePromptText(ALFYAI_NEMOTRON_PROMPT), 'alfyai-nemotron'],
-  [normalizePromptText(LEGACY_ALFYAI_NEMOTRON_PROMPT), 'alfyai-nemotron'],
-  [normalizePromptText(HERMES_THINKING_PROMPT), 'hermes-thinking'],
   [normalizePromptText(DEFAULT_PROMPT), 'default']
 ]);
 
