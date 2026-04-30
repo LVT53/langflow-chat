@@ -49,6 +49,7 @@ import {
 	toIncrementalChunk,
 	URL_LIST_TOOL_RECOVERY_APPENDIX,
 } from "$lib/server/services/chat-turn/stream";
+import { completeStreamTurn } from "$lib/server/services/chat-turn/stream-completion";
 import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fallback";
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
 import type {
@@ -389,233 +390,51 @@ export function runChatStreamOrchestrator(
 			const completeSuccess = (wasStopped = false) => {
 				if (ended) return;
 				ended = true;
-				const thinkingTokenCount = estimateTokenCount(
-					chunkRuntime.thinkingContent,
-				);
-				const responseTokenCount = estimateTokenCount(
-					chunkRuntime.fullResponse,
-				);
-				const totalTokenCount = thinkingTokenCount + responseTokenCount;
-				const genTimeMs = Date.now() - requestStartTime;
-				const analyticsModel = modelId ?? "model1";
-				const persistUserMessage = !skipPersistUserMessage;
-				const toolCallSummary = chunkRuntime.toolCallRecords.map((record) => ({
-					name: record.name,
-					status: record.status,
-				}));
-				const hadGenerateFileToolCall = toolCallSummary.some(
-					(record) =>
-						record.name === "generate_file" ||
-						record.name === "export_document",
-				);
-
-				console.info("[CHAT_STREAM] Tool-call summary", {
+				completeStreamTurn({
+					wasStopped,
 					conversationId,
 					streamId,
-					wasStopped,
-					toolCallCount: toolCallSummary.length,
-					generateFileCallCount: toolCallSummary.filter(
-						(record) => record.name === "generate_file",
-					).length,
-					toolCalls: toolCallSummary,
+					modelId,
+					modelDisplayName,
+					userId: user.id,
+					normalizedMessage,
+					upstreamMessage,
+					skipPersistUserMessage,
+					isReconnect,
+					thinkingContent: chunkRuntime.thinkingContent,
+					fullResponse: chunkRuntime.fullResponse,
+					toolCallRecords: chunkRuntime.toolCallRecords,
+					serverSegments: chunkRuntime.serverSegments,
+					attachmentIds: safeAttachmentIds,
+					activeDocumentArtifactId,
+					requestStartTime,
+					generatedFileIdsAtStart,
+					latestContextStatus,
+					latestActiveWorkingSet,
+					latestTaskState,
+					latestContextDebug,
+					latestHonchoContext,
+					latestHonchoSnapshot,
+					latestProviderUsage,
+					initialContextStatus,
+					initialTaskState,
+					initialContextDebug,
+					createMessage,
+					persistUserTurnAttachments,
+					persistAssistantTurnState,
+					persistAssistantEvidence,
+					runPostTurnTasks,
+					touchConversation,
+					enqueueChunk,
+					closeDownstream,
+					clearStreamBuffer,
+					getStreamBuffer,
+					getChatFiles,
+					assignGeneratedFilesToAssistantMessage,
+					syncGeneratedFilesToMemory,
+					getChatFilesForAssistantMessage,
+					estimateTokenCount,
 				});
-
-				let userMessageToPersist = normalizedMessage;
-				if (isReconnect && streamId) {
-					const buffer = getStreamBuffer(streamId);
-					if (buffer?.userMessage) {
-						userMessageToPersist = buffer.userMessage;
-					}
-				}
-				const userMsgPromise = persistUserMessage
-					? createMessage(conversationId, "user", userMessageToPersist).catch(
-							() => undefined,
-						)
-					: Promise.resolve(undefined);
-				const assistantMsgPromise = chunkRuntime.fullResponse.trim()
-					? createMessage(
-							conversationId,
-							"assistant",
-							chunkRuntime.fullResponse,
-							chunkRuntime.thinkingContent || undefined,
-							chunkRuntime.serverSegments.length > 0
-								? chunkRuntime.serverSegments
-								: undefined,
-							{ evidenceStatus: "pending", modelDisplayName },
-						).catch(() => undefined)
-					: Promise.resolve(undefined);
-
-				const sendEndAndClose = async (
-					userMsgId?: string,
-					assistantMsgId?: string,
-				) => {
-					let generatedFiles: import("$lib/types").ChatGeneratedFile[] = [];
-					try {
-						if (assistantMsgId && hadGenerateFileToolCall) {
-							const allGeneratedFiles = await getChatFiles(conversationId);
-							const newGeneratedFileIds = allGeneratedFiles
-								.filter((file) => !generatedFileIdsAtStart.has(file.id))
-								.map((file) => file.id);
-
-							if (newGeneratedFileIds.length > 0) {
-								await assignGeneratedFilesToAssistantMessage(
-									conversationId,
-									assistantMsgId,
-									newGeneratedFileIds,
-								);
-
-								void syncGeneratedFilesToMemory({
-									userId: user.id,
-									conversationId,
-									assistantMessageId: assistantMsgId,
-									fileIds: newGeneratedFileIds,
-									assistantResponse: chunkRuntime.fullResponse,
-								}).catch((error) => {
-									console.error(
-										"[CHAT_STREAM] Background generated-file memory sync failed",
-										{
-											conversationId,
-											streamId,
-											assistantMessageId: assistantMsgId,
-											fileIds: newGeneratedFileIds,
-											error,
-										},
-									);
-								});
-							}
-
-							generatedFiles = await getChatFilesForAssistantMessage(
-								conversationId,
-								assistantMsgId,
-							);
-						}
-					} catch (error) {
-						console.error(
-							"[CHAT_STREAM] Failed to load generated files for end event",
-							{
-								conversationId,
-								streamId,
-								error,
-							},
-						);
-					}
-
-					enqueueChunk(
-						`event: end\ndata: ${JSON.stringify({
-							thinkingTokenCount,
-							responseTokenCount,
-							totalTokenCount,
-							thinking: chunkRuntime.thinkingContent || undefined,
-							wasStopped,
-							userMessageId: userMsgId,
-							assistantMessageId: assistantMsgId,
-							modelId,
-							modelDisplayName,
-							contextStatus: latestContextStatus,
-							activeWorkingSet: latestActiveWorkingSet,
-							taskState: latestTaskState,
-							contextDebug: latestContextDebug,
-							generatedFiles,
-						})}\n\n`,
-					);
-					touchConversation(user.id, conversationId).catch(() => undefined);
-					// Clear buffer AFTER broadcasting end event so reconnect listeners receive it.
-					if (streamId) clearStreamBuffer(streamId);
-					closeDownstream();
-				};
-
-				Promise.all([userMsgPromise, assistantMsgPromise])
-					.then(([userMsg, assistantMsg]) => {
-						const postPersistTasks: Promise<unknown>[] = [];
-						let uiStateTask: Promise<unknown> = Promise.resolve();
-						if (persistUserMessage && userMsg && safeAttachmentIds.length > 0) {
-							postPersistTasks.push(
-								persistUserTurnAttachments({
-									userId: user.id,
-									conversationId,
-									messageId: userMsg.id,
-									normalizedMessage,
-									attachmentIds: safeAttachmentIds,
-								}).then((workingSet) => {
-									latestActiveWorkingSet = workingSet ?? latestActiveWorkingSet;
-								}),
-							);
-						}
-
-						let latestWorkCapsule: WorkCapsuleSummary;
-						if (assistantMsg) {
-							uiStateTask = persistAssistantTurnState({
-								userId: user.id,
-								conversationId,
-								normalizedMessage,
-								assistantResponse: chunkRuntime.fullResponse,
-								attachmentIds: safeAttachmentIds,
-								activeDocumentArtifactId,
-								contextStatus: latestContextStatus,
-								initialTaskState,
-								initialContextDebug,
-								userMessageId: userMsg?.id ?? null,
-								assistantMessageId: assistantMsg.id,
-								analytics: {
-									model: analyticsModel,
-									modelDisplayName,
-									promptTokens: estimateTokenCount(upstreamMessage),
-									completionTokens: responseTokenCount,
-									reasoningTokens: thinkingTokenCount,
-									generationTimeMs: genTimeMs,
-									providerUsage: latestProviderUsage,
-								},
-								continuitySource: "stream",
-								honchoContext: latestHonchoContext,
-								honchoSnapshot: latestHonchoSnapshot,
-							}).then((turnState) => {
-								latestActiveWorkingSet = turnState.activeWorkingSet;
-								latestTaskState = turnState.taskState;
-								latestContextDebug = turnState.contextDebug;
-								latestWorkCapsule = turnState.workCapsule;
-							});
-							postPersistTasks.push(uiStateTask);
-
-							postPersistTasks.push(
-								(async () => {
-									await uiStateTask.catch(() => undefined);
-									await persistAssistantEvidence({
-										logPrefix: "[STREAM]",
-										userId: user.id,
-										conversationId,
-										assistantMessageId: assistantMsg.id,
-										normalizedMessage,
-										attachmentIds: safeAttachmentIds,
-										taskState: latestTaskState,
-										contextStatus:
-											latestContextStatus ?? initialContextStatus ?? null,
-										contextDebug: latestContextDebug,
-										initialTaskState,
-										initialContextDebug,
-										toolCalls: chunkRuntime.toolCallRecords,
-									});
-								})(),
-							);
-						}
-
-						void uiStateTask.finally(() => {
-							void sendEndAndClose(userMsg?.id, assistantMsg?.id);
-						});
-						Promise.allSettled(postPersistTasks).finally(() => {
-							void runPostTurnTasks({
-								logPrefix: "[STREAM]",
-								userId: user.id,
-								conversationId,
-								upstreamMessage,
-								assistantMirrorContent: chunkRuntime.fullResponse,
-								workCapsule: latestWorkCapsule,
-								maintenanceReason: "chat_stream",
-							});
-						});
-					})
-					.catch(() => {
-						void sendEndAndClose();
-					});
 			};
 
 			const failStream = (code: StreamErrorCode) => {
