@@ -22,6 +22,11 @@
 	} = $props();
 
 	let root = $state<HTMLDivElement | undefined>(undefined);
+	let styleOpen = $state(false);
+
+	let selectedProfile = $derived(
+		personalityProfiles.find((p) => p.id === selectedPersonalityId) ?? null,
+	);
 
 	function closeMenu() {
 		onClose?.();
@@ -35,6 +40,7 @@
 	onMount(() => {
 		const handlePointerDown = (event: MouseEvent | TouchEvent) => {
 			if (root && !root.contains(event.target as Node)) {
+				styleOpen = false;
 				onClose?.();
 			}
 		};
@@ -66,20 +72,53 @@
 	{#if personalityProfiles.length > 0}
 		<div class="menu-row menu-row--static">
 			<div class="menu-label">Style</div>
-			<select
-				class="personality-select"
-				value={selectedPersonalityId ?? ''}
-				onchange={(e) => {
-					const val = (e.target as HTMLSelectElement).value;
-					onPersonalityChange?.(val || null);
-					closeMenu();
-				}}
-			>
-				<option value="">AlfyAI</option>
-				{#each personalityProfiles as profile}
-					<option value={profile.id}>{profile.name}</option>
-				{/each}
-			</select>
+			<div class="style-selector">
+				<button
+					type="button"
+					class="style-selector__trigger"
+					onclick={() => styleOpen = !styleOpen}
+					aria-haspopup="listbox"
+					aria-expanded={styleOpen}
+				>
+					<span class="style-selector__text">
+						{selectedProfile?.name ?? 'AlfyAI'}
+					</span>
+					<svg
+						class="style-selector__chevron"
+						class:style-selector__chevron--open={styleOpen}
+						xmlns="http://www.w3.org/2000/svg"
+						width="14" height="14" viewBox="0 0 24 24"
+						fill="none" stroke="currentColor"
+						stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+					>
+						<polyline points="6 9 12 15 18 9" />
+					</svg>
+				</button>
+				{#if styleOpen}
+					<ul class="style-selector__dropdown" role="listbox">
+						<li
+							role="option"
+							aria-selected={!selectedPersonalityId}
+							class="style-selector__option"
+							class:style-selector__option--selected={!selectedPersonalityId}
+							onclick={() => { onPersonalityChange?.(null); styleOpen = false; closeMenu(); }}
+							onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(null), styleOpen = false, closeMenu())}
+							tabindex="0"
+						>AlfyAI</li>
+						{#each personalityProfiles as profile}
+							<li
+								role="option"
+								aria-selected={selectedPersonalityId === profile.id}
+								class="style-selector__option"
+								class:style-selector__option--selected={selectedPersonalityId === profile.id}
+								onclick={() => { onPersonalityChange?.(profile.id); styleOpen = false; closeMenu(); }}
+								onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(profile.id), styleOpen = false, closeMenu())}
+								tabindex="0"
+							>{profile.name}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -156,31 +195,86 @@
 		box-shadow: 0 0 0 2px var(--focus-ring);
 	}
 
-	.personality-select {
+	.style-selector {
+		position: relative;
+		display: inline-block;
+	}
+
+	.style-selector__trigger {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 0.35rem 0.55rem;
+		background: transparent;
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-sm);
-		background: var(--surface-page);
 		color: var(--text-primary);
-		font-size: 0.82rem;
 		font-family: 'Nimbus Sans L', sans-serif;
-		padding: 0.35rem 1.75rem 0.35rem 0.5rem;
+		font-size: 0.82rem;
+		font-weight: 400;
 		cursor: pointer;
-		max-width: 9rem;
-		appearance: none;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808080' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-		background-repeat: no-repeat;
-		background-position: right 0.4rem center;
-		transition: border-color var(--duration-standard);
+		transition: all 150ms ease-out;
+		min-height: 32px;
 	}
 
-	.personality-select:hover {
+	.style-selector__trigger:hover {
 		border-color: var(--accent);
 	}
 
-	.personality-select:focus-visible {
+	.style-selector__trigger:focus-visible {
 		outline: none;
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent);
+		box-shadow: 0 0 0 2px var(--focus-ring);
+	}
+
+	.style-selector__text {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100px;
+	}
+
+	.style-selector__chevron {
+		flex-shrink: 0;
+		transition: transform 200ms ease-out;
+		color: var(--text-secondary);
+	}
+
+	.style-selector__chevron--open {
+		transform: rotate(180deg);
+	}
+
+	.style-selector__dropdown {
+		position: absolute;
+		top: calc(100% + 4px);
+		right: 0;
+		z-index: 50;
+		min-width: 140px;
+		border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent 18%);
+		border-radius: 0.72rem;
+		background: color-mix(in srgb, var(--surface-overlay) 95%, var(--surface-page) 5%);
+		box-shadow: var(--shadow-lg);
+		padding: 0.35rem;
+		list-style: none;
+		margin: 0;
+		backdrop-filter: blur(14px);
+	}
+
+	.style-selector__option {
+		padding: 0.4rem 0.6rem;
+		border-radius: 0.5rem;
+		font-size: 0.82rem;
+		color: var(--text-primary);
+		cursor: pointer;
+		transition: background 100ms ease-out;
+	}
+
+	.style-selector__option:hover {
+		background: var(--surface-elevated);
+	}
+
+	.style-selector__option--selected {
+		color: var(--accent);
+		font-weight: 500;
 	}
 
 	.menu-row--button:disabled {
