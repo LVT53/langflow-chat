@@ -211,7 +211,7 @@ export function buildOutboundSystemPrompt(params: {
 		sections.push(
 			[
 				"## Response Style",
-				"Follow this style for the visible answer. It overrides default voice, length, and formatting preferences unless it conflicts with safety, tool, or source-citation requirements.",
+				"Apply this style strictly to every visible response. It overrides your default structure, length, formatting, and voice. Treat it as a hard rule, not a soft preference. Only deviate if it directly conflicts with safety, tool, or source-citation requirements.",
 				params.personalityPrompt.trim(),
 			].join("\n"),
 		);
