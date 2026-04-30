@@ -59,7 +59,6 @@ const requiredExistingColumns = [
 // Columns that should be auto-created if missing (safe defaults, no data loss)
 const autoCreateColumns: Array<[string, string, string]> = [
 	['users', 'title_language', "TEXT NOT NULL DEFAULT 'auto'"],
-	['users', 'preferred_personality_id', 'TEXT'],
 ];
 
 const ADOPTION_BASELINE_TAG = '0005_flaky_famine';
