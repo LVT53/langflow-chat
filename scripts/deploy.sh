@@ -71,7 +71,12 @@ else
   echo -e "${YELLOW}⚠ python3.11 and docker not found; Python sandbox file generation may be limited${NC}"
 fi
 
-echo -e "${YELLOW}3. Applying database migrations...${NC}"
+echo -e "${YELLOW}3. Verifying database migrations...${NC}"
+npm run check:migrations
+echo -e "${GREEN}✓ Migration check passed${NC}"
+echo ""
+
+echo -e "${YELLOW}4. Applying database migrations...${NC}"
 npm run db:prepare
 echo -e "${GREEN}✓ Database migrations complete${NC}"
 echo ""

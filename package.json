@@ -2,7 +2,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build && node scripts/patch-body-size-limit.mjs",
-		"start": "npm run db:prepare && node build",
+		"start": "npm run check:migrations && npm run db:prepare && node build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:migrations": "tsx scripts/verify-migrations.ts",
