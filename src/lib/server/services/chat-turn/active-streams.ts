@@ -36,14 +36,30 @@ const BUFFER_CLEANUP_MS = 5 * 60 * 1000;
 
 let bufferCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
+function unrefTimer(timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>) {
+	timer.unref?.();
+}
+
+function stopBufferCleanupTimer() {
+	if (!bufferCleanupTimer) return;
+	clearInterval(bufferCleanupTimer);
+	bufferCleanupTimer = null;
+}
+
 function startBufferCleanupTimer() {
 	if (bufferCleanupTimer) return;
 	bufferCleanupTimer = setInterval(() => {
+		if (streamBuffers.size === 0) {
+			stopBufferCleanupTimer();
+			return;
+		}
+
 		for (const [streamId, buffer] of streamBuffers) {
 			void streamId;
 			void buffer;
 		}
 	}, BUFFER_CLEANUP_MS);
+	unrefTimer(bufferCleanupTimer);
 }
 
 export function getStreamBuffer(streamId: string): StreamTokenBuffer | null {
@@ -105,6 +121,9 @@ export function appendToStreamBuffer(
 
 export function clearStreamBuffer(streamId: string) {
 	streamBuffers.delete(streamId);
+	if (streamBuffers.size === 0) {
+		stopBufferCleanupTimer();
+	}
 }
 
 export function subscribeToStream(streamId: string, listener: (chunk: string) => void) {
@@ -142,6 +161,7 @@ function markPendingStop(streamId: string) {
 	const timeoutId = setTimeout(() => {
 		pendingStops.delete(streamId);
 	}, STOP_REQUEST_TTL_MS);
+	unrefTimer(timeoutId);
 	pendingStops.set(streamId, timeoutId);
 }
 

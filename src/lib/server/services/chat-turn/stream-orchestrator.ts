@@ -76,6 +76,10 @@ function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
 }
 
+function unrefTimer(timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>) {
+	timer.unref?.();
+}
+
 function shouldFallbackToNonStreaming(error: unknown): boolean {
 	if (!(error instanceof Error)) {
 		return false;
@@ -325,6 +329,7 @@ export function runChatStreamOrchestrator(
 			const heartbeatIntervalId = setInterval(() => {
 				enqueueChunk(createSseHeartbeatComment());
 			}, 15000);
+			unrefTimer(heartbeatIntervalId);
 
 			enqueueChunk(createSsePreludeComment());
 
@@ -456,6 +461,7 @@ export function runChatStreamOrchestrator(
 			const timeoutId = setTimeout(() => {
 				failStream("timeout");
 			}, getStreamTimeoutMs());
+			unrefTimer(timeoutId);
 
 			try {
 				let usedUrlListRecovery = false;

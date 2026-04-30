@@ -27,6 +27,10 @@ export interface ReconnectDeps {
 	createSseHeartbeatComment: () => string;
 }
 
+function unrefTimer(timer: ReturnType<typeof setInterval>) {
+	timer.unref?.();
+}
+
 export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 	const {
 		enqueueChunk,
@@ -118,6 +122,7 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 		reconnectHeartbeatId = setInterval(() => {
 			enqueueChunk(createSseHeartbeatComment());
 		}, 10000);
+		unrefTimer(reconnectHeartbeatId);
 
 		console.info(
 			"[CHAT_STREAM] Reconnect done, subscribed to stream",
