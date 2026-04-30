@@ -342,6 +342,8 @@ function resetState() {
 	contextDebug = data.contextDebug ?? null;
 	conversationDraft = data.draft ?? null;
 	generatedFiles = data.generatedFiles ?? [];
+	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
+	totalTokens = data.totalTokens ?? 0;
 	workspaceDocuments = [];
 	activeWorkspaceDocumentId = null;
 	workspaceOpen = false;

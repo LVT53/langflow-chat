@@ -75,7 +75,7 @@
 					closeMenu();
 				}}
 			>
-				<option value="">Default</option>
+				<option value="">AlfyAI</option>
 				{#each personalityProfiles as profile}
 					<option value={profile.id}>{profile.name}</option>
 				{/each}
@@ -161,10 +161,26 @@
 		border-radius: var(--radius-sm);
 		background: var(--surface-page);
 		color: var(--text-primary);
-		font-size: 0.76rem;
-		padding: 0.2rem 0.35rem;
+		font-size: 0.82rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		padding: 0.35rem 1.75rem 0.35rem 0.5rem;
 		cursor: pointer;
-		max-width: 8rem;
+		max-width: 9rem;
+		appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808080' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0.4rem center;
+		transition: border-color var(--duration-standard);
+	}
+
+	.personality-select:hover {
+		border-color: var(--accent);
+	}
+
+	.personality-select:focus-visible {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent);
 	}
 
 	.menu-row--button:disabled {
