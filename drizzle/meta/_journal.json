@@ -141,6 +141,13 @@
       "when": 1777140000006,
       "tag": "1777140000006_immutable_usage_analytics",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777140000007,
+      "tag": "1777140000007_personality_profiles",
+      "breakpoints": true
     }
 
   ]
