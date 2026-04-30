@@ -147,20 +147,27 @@
 	let analyticsData = $state<any>(null);
 	let analyticsLoading = $state(false);
 	let analyticsError = $state('');
+	let analyticsMonth = $state<string | null>(null);
 
-	let showAvatarPicker = $state(false);
-	let showPictureEditor = $state(false);
-	let removingPhoto = $state(false);
-
-	async function checkHonchoHealth() {
-		honchoLoading = true;
+	async function loadAnalytics(month?: string | null, timeline?: string | null) {
+		analyticsLoading = true;
+		analyticsError = '';
 		try {
-			honchoHealth = await fetchHonchoHealth();
-		} catch {
-			honchoHealth = { enabled: false, connected: false, workspace: null };
+			analyticsData = await fetchAnalytics(import.meta.env.DEV, month ?? undefined, timeline ?? undefined);
+		} catch (error: any) {
+			analyticsError = error.message;
 		} finally {
-			honchoLoading = false;
+			analyticsLoading = false;
 		}
+	}
+
+	async function handleMonthChange(month: string | null) {
+		analyticsMonth = month;
+		await loadAnalytics(month, 'weekly');
+	}
+
+	async function handleTimelineChange(granularity: string) {
+		await loadAnalytics(analyticsMonth, granularity);
 	}
 
 	async function removePhoto() {
@@ -331,18 +338,6 @@
 		}
 	}
 
-	async function loadAnalytics() {
-		analyticsLoading = true;
-		analyticsError = '';
-		try {
-			analyticsData = await fetchAnalytics(import.meta.env.DEV);
-		} catch (error: any) {
-			analyticsError = error.message;
-		} finally {
-			analyticsLoading = false;
-		}
-	}
-
 	async function handleTabChange(tab: Tab) {
 		activeTab = tab;
 		if (tab === 'analytics' && !analyticsData && !analyticsLoading) {
@@ -439,6 +434,9 @@
 				{isAdmin}
 				{modelNames}
 				onRetry={loadAnalytics}
+				selectedMonth={analyticsMonth}
+				onMonthChange={handleMonthChange}
+				onTimelineChange={handleTimelineChange}
 			/>
 		{/if}
 
@@ -663,9 +661,93 @@
 		margin-top: 0.25rem;
 	}
 
-	:global(.analytics-table th),
-	:global(.analytics-table td) {
-		vertical-align: middle;
+	:global(.stat-card--hero) {
+		background: var(--surface-page);
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-md);
+		padding: 0.75rem;
+	}
+
+	:global(.stat-value-hero) {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--accent);
+		line-height: 1.1;
+	}
+
+	:global(.stat-comparison) {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+		margin-top: 0.35rem;
+	}
+
+	:global(.month-label) {
+		font-size: 0.82rem;
+		font-weight: 500;
+		color: var(--text-primary);
+		min-width: 7rem;
+		text-align: center;
+	}
+
+	:global(.month-nav-btn) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-full);
+		background: var(--surface-page);
+		color: var(--text-secondary);
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: border-color var(--duration-standard);
+	}
+
+	:global(.month-nav-btn:hover:not(:disabled)) {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	:global(.month-nav-btn:disabled) {
+		opacity: 0.35;
+		cursor: default;
+	}
+
+	:global(.month-alltime-btn) {
+		margin-left: 0.5rem;
+		font-size: 0.72rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		border: none;
+		background: none;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	:global(.month-alltime-btn:hover) {
+		color: var(--accent);
+	}
+
+	:global(.timeline-toggle-btn) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 26px;
+		border: none;
+		border-radius: var(--radius-full);
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 0.72rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background var(--duration-standard), color var(--duration-standard);
+	}
+
+	:global(.timeline-toggle-btn--active) {
+		background: var(--accent);
+		color: #fff;
 	}
 
 	.settings-shell {

@@ -113,8 +113,14 @@ export async function fetchHonchoHealth(): Promise<HonchoHealth> {
 	);
 }
 
-export async function fetchAnalytics(useMockData = false): Promise<AnalyticsResponse> {
-	const endpoint = useMockData ? '/api/analytics?mock=1' : '/api/analytics';
+export async function fetchAnalytics(useMockData = false, month?: string, timeline?: string): Promise<AnalyticsResponse> {
+	const base = useMockData ? '/api/analytics?mock=1' : '/api/analytics';
+	const params = new URLSearchParams();
+	if (useMockData) params.set('mock', '1');
+	if (month) params.set('month', month);
+	if (timeline) params.set('timeline', timeline);
+	const qs = params.toString();
+	const endpoint = qs ? `/api/analytics?${qs}` : '/api/analytics';
 	return requestJson<AnalyticsResponse>(endpoint, undefined, 'Failed to load analytics');
 }
 

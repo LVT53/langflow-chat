@@ -10,6 +10,8 @@
 		isAdmin = false,
 		modelNames,
 		onRetry,
+		selectedMonth = null,
+		onMonthChange = undefined,
 	}: {
 		analyticsData?: any;
 		analyticsLoading?: boolean;
@@ -17,12 +19,18 @@
 		isAdmin?: boolean;
 		modelNames: Record<string, string>;
 		onRetry: () => void | Promise<void>;
+		selectedMonth?: string | null;
+		onMonthChange?: ((month: string | null) => void) | undefined;
+		onTimelineChange?: ((granularity: string) => void) | undefined;
 	} = $props();
 
 	let modelChart = $state<any>(null);
 	let userChart = $state<any>(null);
+	let timelineChart = $state<any>(null);
 	let modelChartCanvas = $state<HTMLCanvasElement | null>(null);
 	let userChartCanvas = $state<HTMLCanvasElement | null>(null);
+	let timelineChartCanvas = $state<HTMLCanvasElement | null>(null);
+	let timelineGranularity = $state<'weekly' | 'monthly' | 'yearly'>('weekly');
 
 	const CHART_COLORS = [
 		'rgba(194, 166, 106, 0.88)',
@@ -38,6 +46,8 @@
 		modelChart = null;
 		userChart?.destroy();
 		userChart = null;
+		timelineChart?.destroy();
+		timelineChart = null;
 	}
 
 	function modelDisplayName(key: string): string {
@@ -58,6 +68,53 @@
 		return `$${Number(value ?? 0).toFixed(4)}`;
 	}
 
+	function formatMonth(ym: string): string {
+		const [y, m] = ym.split('-');
+		const date = new Date(Number(y), Number(m) - 1, 1);
+		return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+	}
+
+	let availableMonths = $derived(
+		(analyticsData?.personal?.monthly ?? [])
+			.map((m: any) => m.month)
+			.sort()
+			.reverse() as string[],
+	);
+
+	function prevMonth() {
+		if (!selectedMonth || availableMonths.length === 0) return;
+		const idx = availableMonths.indexOf(selectedMonth);
+		if (idx < availableMonths.length - 1) {
+			onMonthChange?.(availableMonths[idx + 1]);
+		}
+	}
+
+	function nextMonth() {
+		if (!selectedMonth || availableMonths.length === 0) return;
+		const idx = availableMonths.indexOf(selectedMonth);
+		if (idx > 0) {
+			onMonthChange?.(availableMonths[idx - 1]);
+		}
+	}
+
+	function selectAllTime() {
+		onMonthChange?.(null);
+	}
+
+	let comparisonHint = $derived.by(() => {
+		if (!selectedMonth || !analyticsData?.personal?.monthly) return '';
+		const months = analyticsData.personal.monthly;
+		const current = months.find((m: any) => m.month === selectedMonth);
+		if (!current) return '';
+		const idx = months.findIndex((m: any) => m.month === selectedMonth);
+		if (idx >= months.length - 1) return '';
+		const prev = months[idx + 1];
+		if (!prev || prev.totalCostUsd === 0) return '';
+		const diff = ((current.totalCostUsd - prev.totalCostUsd) / prev.totalCostUsd) * 100;
+		const arrow = diff > 0 ? '\u2191' : '\u2193';
+		return `${arrow} ${Math.abs(diff).toFixed(0)}% vs ${formatMonth(prev.month)}`;
+	});
+
 	async function initCharts(translateFn: (key: I18nKey, params?: Record<string, string | number>) => string) {
 		if (!analyticsData) return;
 		await tick();
@@ -71,32 +128,81 @@
 		if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
 			const byModel = analyticsData.personal.byModel;
 			modelChart = new Chart(modelChartCanvas, {
-				type: 'doughnut',
+				type: 'bar',
 				data: {
 					labels: byModel.map((row: any) => row.displayName ?? modelDisplayName(row.model)),
 					datasets: [{
-						data: byModel.map((row: any) => Number(row.msgCount)),
+						label: 'Cost (USD)',
+						data: byModel.map((row: any) => Number(row.totalCostUsd)),
 						backgroundColor: CHART_COLORS.slice(0, byModel.length),
-						borderWidth: 2,
-						borderColor: 'transparent',
-						hoverBorderColor: 'rgba(255,255,255,0.6)',
-						hoverOffset: 10,
+						borderWidth: 0,
+						borderRadius: 4,
 					}],
 				},
 				options: {
-					cutout: '66%',
+					indexAxis: 'y',
 					maintainAspectRatio: false,
-					animation: { animateRotate: true, duration: 700, easing: 'easeInOutQuart' },
+					animation: { duration: 700, easing: 'easeInOutQuart' },
 					plugins: {
-						legend: {
-							position: 'bottom',
-							labels: { padding: 18, font: { size: 12 }, color: 'rgba(128,128,128,0.9)' },
-						},
+						legend: { display: false },
 						tooltip: {
 							callbacks: {
 								label: (ctx: any) =>
-									` ${ctx.label}: ${ctx.raw} ${translateFn('analytics.tooltipMessages')}`,
+									` ${ctx.label}: ${formatUsd(ctx.raw)}`,
 							},
+						},
+					},
+					scales: {
+						x: {
+							grid: { color: 'rgba(128,128,128,0.1)' },
+							ticks: {
+								color: 'rgba(128,128,128,0.8)',
+								font: { size: 11 },
+								callback: (value: any) => formatUsd(value),
+							},
+						},
+						y: {
+							grid: { display: false },
+							ticks: { color: 'rgba(128,128,128,0.9)', font: { size: 12 } },
+						},
+					},
+				},
+			});
+		}
+
+		if (timelineChartCanvas && analyticsData.timeline?.length > 0) {
+			Chart.getChart(timelineChartCanvas)?.destroy();
+			const data = analyticsData.timeline;
+			timelineChart = new Chart(timelineChartCanvas, {
+				type: 'line',
+				data: {
+					labels: data.map((d: any) => d.label),
+					datasets: [{
+						label: 'Tokens',
+						data: data.map((d: any) => d.tokens),
+						borderColor: 'rgba(194, 166, 106, 0.88)',
+						backgroundColor: 'rgba(194, 166, 106, 0.08)',
+						fill: true,
+						tension: 0.3,
+						pointRadius: 2,
+						pointHoverRadius: 5,
+						borderWidth: 2,
+					}],
+				},
+				options: {
+					maintainAspectRatio: false,
+					animation: { duration: 600 },
+					plugins: {
+						legend: { display: false },
+					},
+					scales: {
+						x: {
+							grid: { display: false },
+							ticks: { color: 'rgba(128,128,128,0.8)', font: { size: 10 }, maxRotation: 0 },
+						},
+						y: {
+							grid: { color: 'rgba(128,128,128,0.1)' },
+							ticks: { color: 'rgba(128,128,128,0.8)', font: { size: 11 } },
 						},
 					},
 				},
@@ -186,8 +292,39 @@
 	</div>
 {:else if analyticsData}
 	<section class="settings-card mb-4">
-		<h2 class="settings-section-title">{$t('analytics.yourActivity')}</h2>
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="settings-section-title">{$t('analytics.yourActivity')}</h2>
+			<div class="flex items-center gap-1">
+				<button
+					class="month-nav-btn"
+					onclick={prevMonth}
+					disabled={!selectedMonth}
+					aria-label="Previous month"
+				>&larr;</button>
+				<span class="month-label">
+					{selectedMonth ? formatMonth(selectedMonth) : $t('analytics.allTime')}
+				</span>
+				<button
+					class="month-nav-btn"
+					onclick={nextMonth}
+					disabled={!selectedMonth}
+					aria-label="Next month"
+				>&rarr;</button>
+				{#if selectedMonth}
+					<button class="month-alltime-btn" onclick={selectAllTime}>
+						{$t('analytics.allTime')}
+					</button>
+				{/if}
+			</div>
+		</div>
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+			<div class="stat-card stat-card--hero">
+				<div class="stat-value-hero">{formatUsd(analyticsData.personal.totalCostUsd)}</div>
+				<div class="stat-label">{$t('totalCost')}</div>
+				{#if comparisonHint}
+					<div class="stat-comparison">{comparisonHint}</div>
+				{/if}
+			</div>
 			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.totalMessages)}</div>
 				<div class="stat-label">{$t('analytics.messagesSent')}</div>
@@ -201,30 +338,6 @@
 				<div class="stat-label">{$t('analytics.tokensUsed')}</div>
 			</div>
 			<div class="stat-card">
-				<div class="stat-value">{formatUsd(analyticsData.personal.totalCostUsd)}</div>
-				<div class="stat-label">{$t('totalCost')}</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-value">{formatNum(analyticsData.personal.promptTokens)}</div>
-				<div class="stat-label">{$t('promptTokens')}</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-value">{formatNum(analyticsData.personal.cachedInputTokens)}</div>
-				<div class="stat-label">{$t('cachedInput')}</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-value">{formatNum(analyticsData.personal.reasoningTokens)}</div>
-				<div class="stat-label">{$t('analytics.reasoningTokens')}</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-value">
-					{analyticsData.personal.favoriteModel
-						? modelDisplayName(analyticsData.personal.favoriteModel)
-						: '—'}
-				</div>
-				<div class="stat-label">{$t('analytics.favoriteModel')}</div>
-			</div>
-			<div class="stat-card">
 				<div class="stat-value">{formatNum(analyticsData.personal.chatCount)}</div>
 				<div class="stat-label">{$t('analytics.conversations')}</div>
 			</div>
@@ -232,9 +345,37 @@
 
 		{#if analyticsData.personal.byModel?.length > 0}
 			<div class="mt-5">
-				<p class="settings-label mb-3">{$t('analytics.modelUsage')}</p>
-				<div style="max-width: 300px; height: 280px; margin: 0 auto; position: relative;">
+				<p class="settings-label mb-3">Cost by model</p>
+				<div style="max-width: 480px; height: 200px; margin: 0 auto; position: relative;">
 					<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
+				</div>
+			</div>
+		{/if}
+
+		{#if analyticsData.timeline?.length > 0}
+			<div class="mt-5">
+				<div class="flex items-center justify-between mb-3">
+					<p class="settings-label">Token Usage</p>
+					<div class="flex items-center gap-0 rounded-full border border-border bg-surface-overlay p-0.5">
+						<button
+							class="timeline-toggle-btn"
+							class:timeline-toggle-btn--active={timelineGranularity === 'weekly'}
+							onclick={() => { timelineGranularity = 'weekly'; onTimelineChange?.('weekly'); }}
+						>W</button>
+						<button
+							class="timeline-toggle-btn"
+							class:timeline-toggle-btn--active={timelineGranularity === 'monthly'}
+							onclick={() => { timelineGranularity = 'monthly'; onTimelineChange?.('monthly'); }}
+						>M</button>
+						<button
+							class="timeline-toggle-btn"
+							class:timeline-toggle-btn--active={timelineGranularity === 'yearly'}
+							onclick={() => { timelineGranularity = 'yearly'; onTimelineChange?.('yearly'); }}
+						>Y</button>
+					</div>
+				</div>
+				<div style="height: 200px; position: relative;">
+					<canvas bind:this={timelineChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
 				</div>
 			</div>
 		{/if}

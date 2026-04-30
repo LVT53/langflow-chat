@@ -164,6 +164,36 @@ function monthlyBreakdown(rows: UsageRow[]) {
 		.sort((left, right) => left.month.localeCompare(right.month));
 }
 
+function computeTimeline(rows: UsageRow[], granularity: 'weekly' | 'monthly' | 'yearly') {
+	const grouped = new Map<string, { label: string; tokens: number }>();
+
+	for (const row of rows) {
+		const date = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt as any);
+		let key: string;
+		let label: string;
+
+		if (granularity === 'weekly') {
+			const startOfYear = new Date(date.getFullYear(), 0, 1);
+			const days = Math.floor((date.getTime() - startOfYear.getTime()) / 86400000);
+			const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+			key = `${date.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+			label = key;
+		} else if (granularity === 'monthly') {
+			key = row.billingMonth;
+			label = key;
+		} else {
+			key = row.billingMonth.slice(0, 4);
+			label = key;
+		}
+
+		const current = grouped.get(key) ?? { label, tokens: 0 };
+		current.tokens += row.totalTokens;
+		grouped.set(key, current);
+	}
+
+	return [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
 async function summarize(rows: UsageRow[], conversations: ConversationRow[]) {
 	const byModel = await modelBreakdown(rows);
 	const promptTokens = rows.reduce((sum, row) => sum + row.promptTokens, 0);
@@ -203,31 +233,46 @@ export const GET: RequestHandler = async (event) => {
 		db.select().from(analyticsConversations),
 	]);
 
-	const personalUsageRows = usageRows.filter((row) => row.userId === user.id);
-	const personalConversationRows = conversationRows.filter((row) => row.userId === user.id);
+	const monthParam = event.url.searchParams.get('month');
+	const filteredUsage = monthParam
+		? usageRows.filter((row) => row.billingMonth === monthParam)
+		: usageRows;
+	const filteredConversations = monthParam
+		? conversationRows.filter((row) => row.billingMonth === monthParam)
+		: conversationRows;
+
+	const personalUsageRows = filteredUsage.filter((row) => row.userId === user.id);
+	const personalConversationRows = filteredConversations.filter((row) => row.userId === user.id);
 	const personal = await summarize(personalUsageRows, personalConversationRows);
 
+	const timelineParam = event.url.searchParams.get('timeline') as 'weekly' | 'monthly' | 'yearly' | null;
+	let timeline: Array<{ label: string; tokens: number }> | null = null;
+
+	if (timelineParam && personalUsageRows.length > 0) {
+		timeline = computeTimeline(personalUsageRows, timelineParam);
+	}
+
 	if (!isAdmin) {
-		return json({ personal });
+		return json({ personal, ...(timeline ? { timeline } : {}) });
 	}
 
 	const system = {
-		...(await summarize(usageRows, conversationRows)),
+		...(await summarize(filteredUsage, filteredConversations)),
 		totalUsers: new Set([
-			...usageRows.map((row) => row.userId),
-			...conversationRows.map((row) => row.userId),
+			...filteredUsage.map((row) => row.userId),
+			...filteredConversations.map((row) => row.userId),
 		]).size,
-		totalConversations: new Set(conversationRows.map((row) => row.conversationId)).size,
+		totalConversations: new Set(filteredConversations.map((row) => row.conversationId)).size,
 	};
 
 	const userIds = new Set([
-		...usageRows.map((row) => row.userId),
-		...conversationRows.map((row) => row.userId),
+		...filteredUsage.map((row) => row.userId),
+		...filteredConversations.map((row) => row.userId),
 	]);
 	const perUser = (await Promise.all([...userIds]
 		.map(async (userId) => {
-			const rows = usageRows.filter((row) => row.userId === userId);
-			const convRows = conversationRows.filter((row) => row.userId === userId);
+			const rows = filteredUsage.filter((row) => row.userId === userId);
+			const convRows = filteredConversations.filter((row) => row.userId === userId);
 			const summary = await summarize(rows, convRows);
 			const latestSnapshot = rows[rows.length - 1] ?? null;
 			const latestConversationSnapshot = convRows[convRows.length - 1] ?? null;
