@@ -200,3 +200,67 @@ export async function validateProvider(id: string): Promise<ValidateResponse> {
 		"Failed to validate provider",
 	);
 }
+
+export interface PersonalityProfileSummary {
+	id: string;
+	name: string;
+	description: string;
+	promptText: string;
+	isBuiltIn: boolean;
+	createdAt: string;
+}
+
+interface AdminPersonalityListResponse { profiles: PersonalityProfileSummary[] }
+interface AdminPersonalityResponse { profile: PersonalityProfileSummary }
+
+export async function fetchPersonalityProfiles(): Promise<PersonalityProfileSummary[]> {
+	const res = await requestJson<AdminPersonalityListResponse>(
+		'/api/admin/personalities',
+		undefined,
+		'Failed to load personality profiles',
+	);
+	return res.profiles;
+}
+
+export async function createPersonalityProfileApi(params: {
+	name: string;
+	description: string;
+	promptText: string;
+}): Promise<PersonalityProfileSummary> {
+	const res = await requestJson<AdminPersonalityResponse>(
+		'/api/admin/personalities',
+		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) },
+		'Failed to create personality profile',
+	);
+	return res.profile;
+}
+
+export async function updatePersonalityProfileApi(id: string, params: {
+	name?: string;
+	description?: string;
+	promptText?: string;
+}): Promise<PersonalityProfileSummary> {
+	const res = await requestJson<AdminPersonalityResponse>(
+		`/api/admin/personalities/${id}`,
+		{ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) },
+		'Failed to update personality profile',
+	);
+	return res.profile;
+}
+
+export async function deletePersonalityProfileApi(id: string): Promise<void> {
+	await requestVoid(
+		`/api/admin/personalities/${id}`,
+		{ method: 'DELETE' },
+		'Failed to delete personality profile',
+	);
+}
+
+export async function fetchPublicPersonalityProfiles(): Promise<PersonalityProfileSummary[]> {
+	const res = await requestJson<AdminPersonalityListResponse>(
+		'/api/personalities',
+		undefined,
+		'Failed to load personality profiles',
+	);
+	return res.profiles;
+}

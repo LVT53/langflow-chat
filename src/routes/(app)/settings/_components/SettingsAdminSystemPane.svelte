@@ -5,6 +5,7 @@ import {
 	fetchProviders,
 	updateProvider,
 	validateProvider,
+	fetchPersonalityProfiles,
 	type InferenceProvider,
 } from "$lib/client/api/admin";
 import { get } from "svelte/store";
@@ -42,6 +43,11 @@ let {
 let providers = $state<InferenceProvider[]>([]);
 let providersLoading = $state(false);
 let providersError = $state("");
+let adminPersonalities = $state<any[]>([]);
+
+$effect(() => {
+	void fetchPersonalityProfiles().then(p => adminPersonalities = p).catch(() => {});
+});
 let providersMessage = $state("");
 let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -649,6 +655,24 @@ function placeholderFor(key: string): string {
 		onClose={closeModal}
 	/>
 {/if}
+
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">Personality Profiles</h2>
+	<div class="text-sm text-text-muted mb-3">Pre-made tone and style profiles that users can select in chat.</div>
+	<div class="flex flex-col gap-2">
+		{#each adminPersonalities ?? [] as profile}
+			<div class="flex items-center justify-between py-2 border-b border-border last:border-0">
+				<div>
+					<div class="text-sm font-medium text-text-primary">{profile.name}</div>
+					<div class="text-xs text-text-muted">{profile.description}</div>
+				</div>
+				<span class="text-xs text-text-muted">
+					{profile.isBuiltIn ? 'Built-in' : 'Custom'}
+				</span>
+			</div>
+		{/each}
+	</div>
+</section>
 
 <style>
 	:global(.btn-small) {

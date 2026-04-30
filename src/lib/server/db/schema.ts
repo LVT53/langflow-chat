@@ -503,3 +503,12 @@ export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	conversationIdx: index('chat_generated_files_conversation_idx').on(table.conversationId, table.createdAt),
 	userIdx: index('chat_generated_files_user_idx').on(table.userId, table.createdAt),
 }));
+
+export const personalityProfiles = sqliteTable('personality_profiles', {
+	id: text('id').primaryKey(),
+	name: text('name').notNull().unique(),
+	description: text('description').notNull().default(''),
+	promptText: text('prompt_text').notNull().default(''),
+	isBuiltIn: integer('is_built_in').notNull().default(0),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
