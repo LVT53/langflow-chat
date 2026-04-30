@@ -66,6 +66,7 @@ const HONCHO_PEER_VERSION_MIGRATION_TAG = '1775416800000_users_honcho_peer_versi
 const TITLE_LANGUAGE_MIGRATION_TAG = '1777140000003_users_title_language';
 const INFERENCE_PROVIDERS_CREATION_TAG = '1777140000000_inference_providers';
 const UI_LANGUAGE_MIGRATION_TAG = '1777140000005_users_ui_language';
+const PREFERRED_PERSONALITY_MIGRATION_TAG = '1777140000008_users_preferred_personality';
 const INFERENCE_PROVIDER_MIGRATION_TAGS = [
 	INFERENCE_PROVIDERS_CREATION_TAG,
 	'1777140000001_inference_provider_reasoning_options',
@@ -119,6 +120,17 @@ function listMigrationHashes(): Set<string> {
 		.prepare('SELECT hash FROM __drizzle_migrations')
 		.all() as { hash: string }[];
 	return new Set(rows.map((row) => row.hash));
+}
+
+function getLatestMigrationCreatedAt(): number | null {
+	if (!hasTable('__drizzle_migrations')) return null;
+	const row = sqlite
+		.prepare('SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1')
+		.get() as { created_at: string | number | null } | undefined;
+	if (row?.created_at == null) return null;
+
+	const createdAt = Number(row.created_at);
+	return Number.isFinite(createdAt) ? createdAt : null;
 }
 
 function hasApplicationTables(): boolean {
@@ -246,6 +258,37 @@ function insertMigrationRecordIfMissing(tag: string): number {
 	return 1;
 }
 
+function applyPendingMigrationsBeforeTag(tag: string): number {
+	ensureMigrationJournal();
+	const targetMigration = getMigrationMetaForTag(tag);
+	const latestCreatedAt = getLatestMigrationCreatedAt();
+	const pendingMigrations = readMigrationFiles({ migrationsFolder: './drizzle' }).filter(
+		(migrationMeta) =>
+			migrationMeta.folderMillis < targetMigration.folderMillis &&
+			(latestCreatedAt === null || latestCreatedAt < migrationMeta.folderMillis)
+	);
+
+	if (pendingMigrations.length === 0) {
+		return 0;
+	}
+
+	const insertMigration = sqlite.prepare(
+		'INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)'
+	);
+
+	sqlite.transaction(() => {
+		for (const migrationMeta of pendingMigrations) {
+			for (const statement of migrationMeta.sql) {
+				if (statement.trim().length === 0) continue;
+				sqlite.exec(statement);
+			}
+			insertMigration.run(migrationMeta.hash, String(migrationMeta.folderMillis));
+		}
+	})();
+
+	return pendingMigrations.length;
+}
+
 function ensureInferenceProvidersSchema(): { backfill: number; repair: boolean; created: boolean } {
 	let created = false;
 	let repaired = false;
@@ -310,9 +353,14 @@ function backfillColumnMigrationIfNeeded(params: {
 	table: string;
 	column: string;
 	tag: string;
+	applyPendingBefore?: boolean;
 }): number {
 	if (!hasTable(params.table) || !hasColumn(params.table, params.column)) {
 		return 0;
+	}
+
+	if (params.applyPendingBefore) {
+		applyPendingMigrationsBeforeTag(params.tag);
 	}
 
 	const journal = readMigrationJournalEntries();
@@ -418,6 +466,18 @@ try {
 		if (adoptedUiLanguageMigrationCount > 0) {
 			console.log(
 				`Backfilled ${adoptedUiLanguageMigrationCount} Drizzle migration record for existing users.ui_language column in ${databasePath}.`
+			);
+		}
+
+		const adoptedPreferredPersonalityMigrationCount = backfillColumnMigrationIfNeeded({
+			table: 'users',
+			column: 'preferred_personality_id',
+			tag: PREFERRED_PERSONALITY_MIGRATION_TAG,
+			applyPendingBefore: true,
+		});
+		if (adoptedPreferredPersonalityMigrationCount > 0) {
+			console.log(
+				`Backfilled ${adoptedPreferredPersonalityMigrationCount} Drizzle migration record for existing users.preferred_personality_id column in ${databasePath}.`
 			);
 		}
 
