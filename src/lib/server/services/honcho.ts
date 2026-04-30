@@ -433,6 +433,10 @@ export async function mirrorWorkCapsuleConclusion(params: {
 			sessionId: getHonchoSessionId(params.userId, params.conversationId, version),
 		});
 	} catch (error) {
+		if (isHonchoMissingError(error)) {
+			console.warn('[HONCHO] Skipped mirroring work capsule — session not found (may have been cleaned up during retry)');
+			return;
+		}
 		console.error('[HONCHO] Failed to mirror work capsule conclusion:', error);
 	}
 }
