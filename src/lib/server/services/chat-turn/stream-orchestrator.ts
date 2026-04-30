@@ -49,6 +49,7 @@ import {
 	toIncrementalChunk,
 	URL_LIST_TOOL_RECOVERY_APPENDIX,
 } from "$lib/server/services/chat-turn/stream";
+import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fallback";
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
 import type {
 	ChatTurnPreflight,
@@ -676,51 +677,50 @@ export function runChatStreamOrchestrator(
 							},
 						);
 
-						const fallbackResponse = await sendMessage(
-							upstreamMessage,
-							conversationId,
-							modelId,
-							{
-								id: user.id,
-								displayName: user.displayName,
-								email: user.email,
-							},
-							{
-								signal: upstreamAbortController.signal,
+						await runNonStreamFallback({
+							sendMessage,
+							sendParams: {
+								upstreamMessage,
+								conversationId,
+								modelId,
 								attachmentIds: safeAttachmentIds,
 								activeDocumentArtifactId,
 								attachmentTraceId,
-								systemPromptAppendix: usedUrlListRecovery
-									? URL_LIST_TOOL_RECOVERY_APPENDIX
-									: undefined,
 							},
-						);
+							user,
+							attachContinuityToTaskState,
+							emitResolvedAssistantText,
+							flushPendingThinking,
+							flushInlineThinkingBuffer,
+							flushPreserveBuffer,
+							completeSuccess,
+							signal: upstreamAbortController.signal,
+							systemPromptAppendix: usedUrlListRecovery
+								? URL_LIST_TOOL_RECOVERY_APPENDIX
+								: undefined,
+							onContextStatus: (status) => {
+								latestContextStatus = status;
+								initialContextStatus = status;
+							},
+							onTaskState: (state) => {
+								latestTaskState = state;
+								initialTaskState = state;
+							},
+							onContextDebug: (debug) => {
+								latestContextDebug = debug;
+								initialContextDebug = debug;
+							},
+							onHonchoContext: (ctx) => {
+								latestHonchoContext = ctx;
+							},
+							onHonchoSnapshot: (snap) => {
+								latestHonchoSnapshot = snap;
+							},
+							onProviderUsage: (usage) => {
+								latestProviderUsage = usage;
+							},
+						});
 
-						latestContextStatus = fallbackResponse.contextStatus;
-						initialContextStatus = latestContextStatus;
-						latestTaskState = await attachContinuityToTaskState(
-							user.id,
-							fallbackResponse.taskState ?? null,
-						).catch(() => fallbackResponse.taskState ?? null);
-						initialTaskState = latestTaskState;
-						latestContextDebug = fallbackResponse.contextDebug ?? null;
-						initialContextDebug = latestContextDebug;
-						latestHonchoContext = fallbackResponse.honchoContext ?? null;
-						latestHonchoSnapshot = fallbackResponse.honchoSnapshot ?? null;
-						latestProviderUsage = fallbackResponse.providerUsage ?? null;
-
-						if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
-							return null;
-						}
-
-						flushPendingThinking();
-						if (!flushInlineThinkingBuffer()) {
-							return null;
-						}
-						if (!flushPreserveBuffer()) {
-							return null;
-						}
-						completeSuccess();
 						return null;
 					});
 					if (!langflowResponse) {
