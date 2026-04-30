@@ -131,12 +131,6 @@ export function runChatStreamOrchestrator(
 	const attachmentTraceId = turn.attachmentTraceId;
 	const personalityProfileId = turn.personalityProfileId;
 
-	let personalityPrompt: string | undefined;
-	if (personalityProfileId) {
-		const profile = await getPersonalityProfile(personalityProfileId).catch(() => null);
-		personalityPrompt = profile?.promptText || undefined;
-	}
-
 	const encoder = new TextEncoder();
 	let cancelStream = () => undefined;
 
@@ -461,6 +455,11 @@ export function runChatStreamOrchestrator(
 
 			try {
 				let usedUrlListRecovery = false;
+				let personalityPrompt: string | undefined;
+				if (personalityProfileId) {
+					const profile = await getPersonalityProfile(personalityProfileId).catch(() => null);
+					personalityPrompt = profile?.promptText || undefined;
+				}
 
 				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
 					const langflowResponse = await sendMessageStream(

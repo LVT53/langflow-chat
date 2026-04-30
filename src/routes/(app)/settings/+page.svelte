@@ -148,6 +148,8 @@
 	let analyticsLoading = $state(false);
 	let analyticsError = $state('');
 	let analyticsMonth = $state<string | null>(null);
+let showAvatarPicker = $state(false);
+let showPictureEditor = $state(false);
 
 	async function loadAnalytics(month?: string | null, timeline?: string | null) {
 		analyticsLoading = true;
