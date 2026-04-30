@@ -453,6 +453,7 @@ Do not:
 - put schema mutation back into `db/index.ts`
 - create new mini repository layers for each table without a strong reason
 - spread one feature's persistence logic across route handlers, DB wrapper modules, and service files at the same time
+- add a table to `schema.ts` without a corresponding migration in `drizzle/` — every new `sqliteTable()` MUST have a matching `CREATE TABLE` migration file and a `_journal.json` entry. Run `npm run check:migrations` to verify this before committing.
 
 ### Browser API, Stores, And Session Handoff
 

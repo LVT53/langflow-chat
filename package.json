@@ -5,6 +5,7 @@
 		"start": "npm run db:prepare && node build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:migrations": "tsx scripts/verify-migrations.ts",
 		"lint": "biome check .",
 		"test": "vitest run",
 		"test:watch": "vitest",
