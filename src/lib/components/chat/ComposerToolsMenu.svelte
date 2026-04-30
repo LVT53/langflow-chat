@@ -72,22 +72,22 @@
 	{#if personalityProfiles.length > 0}
 		<div class="menu-row menu-row--static">
 			<div class="menu-label">Style</div>
-			<div class="style-selector">
+			<div class="model-selector">
 				<button
 					type="button"
-					class="style-selector__trigger"
+					class="model-selector__trigger"
 					onclick={() => styleOpen = !styleOpen}
 					aria-haspopup="listbox"
 					aria-expanded={styleOpen}
 				>
-					<span class="style-selector__text">
+					<span class="model-selector__text">
 						{selectedProfile?.name ?? 'AlfyAI'}
 					</span>
 					<svg
-						class="style-selector__chevron"
-						class:style-selector__chevron--open={styleOpen}
+						class="model-selector__chevron"
+						class:model-selector__chevron--open={styleOpen}
 						xmlns="http://www.w3.org/2000/svg"
-						width="14" height="14" viewBox="0 0 24 24"
+						width="16" height="16" viewBox="0 0 24 24"
 						fill="none" stroke="currentColor"
 						stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
 					>
@@ -95,12 +95,12 @@
 					</svg>
 				</button>
 				{#if styleOpen}
-					<ul class="style-selector__dropdown" role="listbox">
+					<ul class="model-selector__dropdown" role="listbox">
 						<li
 							role="option"
 							aria-selected={!selectedPersonalityId}
-							class="style-selector__option"
-							class:style-selector__option--selected={!selectedPersonalityId}
+							class="model-selector__option"
+							class:model-selector__option--selected={!selectedPersonalityId}
 							onclick={() => { onPersonalityChange?.(null); styleOpen = false; closeMenu(); }}
 							onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(null), styleOpen = false, closeMenu())}
 							tabindex="0"
@@ -109,8 +109,8 @@
 							<li
 								role="option"
 								aria-selected={selectedPersonalityId === profile.id}
-								class="style-selector__option"
-								class:style-selector__option--selected={selectedPersonalityId === profile.id}
+								class="model-selector__option"
+								class:model-selector__option--selected={selectedPersonalityId === profile.id}
 								onclick={() => { onPersonalityChange?.(profile.id); styleOpen = false; closeMenu(); }}
 								onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(profile.id), styleOpen = false, closeMenu())}
 								tabindex="0"
@@ -195,86 +195,8 @@
 		box-shadow: 0 0 0 2px var(--focus-ring);
 	}
 
-	.style-selector {
-		position: relative;
-		display: inline-block;
-	}
-
-	.style-selector__trigger {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 0.35rem 0.55rem;
-		background: transparent;
-		border: 1px solid var(--border-default);
-		border-radius: var(--radius-sm);
-		color: var(--text-primary);
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.82rem;
-		font-weight: 400;
-		cursor: pointer;
-		transition: all 150ms ease-out;
-		min-height: 32px;
-	}
-
-	.style-selector__trigger:hover {
-		border-color: var(--accent);
-	}
-
-	.style-selector__trigger:focus-visible {
-		outline: none;
+	.menu-row--button:focus-visible {
 		box-shadow: 0 0 0 2px var(--focus-ring);
-	}
-
-	.style-selector__text {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-width: 100px;
-	}
-
-	.style-selector__chevron {
-		flex-shrink: 0;
-		transition: transform 200ms ease-out;
-		color: var(--text-secondary);
-	}
-
-	.style-selector__chevron--open {
-		transform: rotate(180deg);
-	}
-
-	.style-selector__dropdown {
-		position: absolute;
-		top: calc(100% + 4px);
-		right: 0;
-		z-index: 50;
-		min-width: 140px;
-		border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent 18%);
-		border-radius: 0.72rem;
-		background: color-mix(in srgb, var(--surface-overlay) 95%, var(--surface-page) 5%);
-		box-shadow: var(--shadow-lg);
-		padding: 0.35rem;
-		list-style: none;
-		margin: 0;
-		backdrop-filter: blur(14px);
-	}
-
-	.style-selector__option {
-		padding: 0.4rem 0.6rem;
-		border-radius: 0.5rem;
-		font-size: 0.82rem;
-		color: var(--text-primary);
-		cursor: pointer;
-		transition: background 100ms ease-out;
-	}
-
-	.style-selector__option:hover {
-		background: var(--surface-elevated);
-	}
-
-	.style-selector__option--selected {
-		color: var(--accent);
-		font-weight: 500;
 	}
 
 	.menu-row--button:disabled {
