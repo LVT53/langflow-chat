@@ -54,6 +54,8 @@ describe("runNonStreamFallback", () => {
 			completeSuccess: mockCompleteSuccess,
 			signal: new AbortController().signal,
 			systemPromptAppendix: undefined,
+			personalityPrompt: undefined,
+			skipHonchoContext: undefined,
 			onContextStatus: mockOnContextStatus,
 			onTaskState: mockOnTaskState,
 			onContextDebug: mockOnContextDebug,
@@ -87,6 +89,26 @@ describe("runNonStreamFallback", () => {
 				attachmentIds: ["att-1"],
 				activeDocumentArtifactId: "doc-1",
 				attachmentTraceId: "trace-1",
+			}),
+		);
+	});
+
+	it("forwards prompt modifiers to sendMessage", async () => {
+		await callFallback({
+			systemPromptAppendix: "retry fresh",
+			personalityPrompt: "be terse",
+			skipHonchoContext: true,
+		});
+
+		expect(mockSendMessage).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.any(String),
+			expect.any(String),
+			expect.any(Object),
+			expect.objectContaining({
+				systemPromptAppendix: "retry fresh",
+				personalityPrompt: "be terse",
+				skipHonchoContext: true,
 			}),
 		);
 	});

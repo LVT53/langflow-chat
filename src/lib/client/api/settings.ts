@@ -74,6 +74,8 @@ export interface AnalyticsResponse {
 	personal: PersonalAnalytics;
 	system?: SystemAnalytics;
 	perUser?: PerUserAnalytics[];
+	availableMonths?: string[];
+	timeline?: Array<{ label: string; tokens: number }>;
 }
 
 interface ProfileUpdateParams {
@@ -115,7 +117,6 @@ export async function fetchHonchoHealth(): Promise<HonchoHealth> {
 }
 
 export async function fetchAnalytics(useMockData = false, month?: string, timeline?: string): Promise<AnalyticsResponse> {
-	const base = useMockData ? '/api/analytics?mock=1' : '/api/analytics';
 	const params = new URLSearchParams();
 	if (useMockData) params.set('mock', '1');
 	if (month) params.set('month', month);

@@ -479,12 +479,13 @@ export function runChatStreamOrchestrator(
 							},
 							attachmentIds: safeAttachmentIds,
 							activeDocumentArtifactId,
-						attachmentTraceId,
+							attachmentTraceId,
 							systemPromptAppendix: retryAppendix ??
 								(usedUrlListRecovery
 									? URL_LIST_TOOL_RECOVERY_APPENDIX
 									: undefined),
 							personalityPrompt,
+							skipHonchoContext,
 						},
 					).catch(async (error) => {
 						if (
@@ -527,9 +528,12 @@ export function runChatStreamOrchestrator(
 							flushPreserveBuffer,
 							completeSuccess,
 							signal: upstreamAbortController.signal,
-							systemPromptAppendix: usedUrlListRecovery
-								? URL_LIST_TOOL_RECOVERY_APPENDIX
-								: undefined,
+							systemPromptAppendix: retryAppendix ??
+								(usedUrlListRecovery
+									? URL_LIST_TOOL_RECOVERY_APPENDIX
+									: undefined),
+							personalityPrompt,
+							skipHonchoContext,
 							onContextStatus: (status) => {
 								latestContextStatus = status;
 								initialContextStatus = status;

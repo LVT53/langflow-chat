@@ -26,6 +26,7 @@ export const POST: RequestHandler = async (event) => {
 		activeDocumentArtifactId?: unknown;
 		streamId?: unknown;
 		model?: unknown;
+		personalityProfileId?: unknown;
 	};
 	try {
 		body = await event.request.json();
@@ -41,6 +42,7 @@ export const POST: RequestHandler = async (event) => {
 		activeDocumentArtifactId,
 		streamId,
 		model,
+		personalityProfileId,
 	} = body;
 	if (typeof conversationId !== 'string' || !conversationId.trim()) {
 		return createJsonErrorResponse('conversationId is required', 400);
@@ -138,6 +140,10 @@ export const POST: RequestHandler = async (event) => {
 					? streamId.trim()
 					: undefined,
 			model: typeof model === 'string' && model.trim() ? model.trim() : undefined,
+			personalityProfileId:
+				typeof personalityProfileId === 'string' && personalityProfileId.trim()
+					? personalityProfileId.trim()
+					: undefined,
 			skipPersistUserMessage: true,
 		}),
 	});

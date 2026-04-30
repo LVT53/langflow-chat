@@ -251,6 +251,9 @@ export const GET: RequestHandler = async (event) => {
 
 	const personalUsageRows = filteredUsage.filter((row) => row.userId === user.id);
 	const personalConversationRows = filteredConversations.filter((row) => row.userId === user.id);
+	const availableMonths = monthlyBreakdown(usageRows.filter((row) => row.userId === user.id)).map(
+		(row) => row.month,
+	);
 	const personal = await summarize(personalUsageRows, personalConversationRows);
 
 	const timelineParam = event.url.searchParams.get('timeline') as 'weekly' | 'monthly' | 'yearly' | null;
@@ -261,7 +264,7 @@ export const GET: RequestHandler = async (event) => {
 	}
 
 	if (!isAdmin) {
-		return json({ personal, ...(timeline ? { timeline } : {}) });
+		return json({ personal, availableMonths, ...(timeline ? { timeline } : {}) });
 	}
 
 	const system = {
@@ -307,5 +310,5 @@ export const GET: RequestHandler = async (event) => {
 		})))
 		.sort((left, right) => right.messageCount - left.messageCount);
 
-	return json({ personal, system, perUser });
+	return json({ personal, system, perUser, availableMonths });
 };

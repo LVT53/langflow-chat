@@ -12,6 +12,7 @@
 		onRetry,
 		selectedMonth = null,
 		onMonthChange = undefined,
+		onTimelineChange = undefined,
 	}: {
 		analyticsData?: any;
 		analyticsLoading?: boolean;
@@ -75,8 +76,7 @@
 	}
 
 	let availableMonths = $derived(
-		(analyticsData?.personal?.monthly ?? [])
-			.map((m: any) => m.month)
+		(analyticsData?.availableMonths ?? analyticsData?.personal?.monthly?.map((m: any) => m.month) ?? [])
 			.sort()
 			.reverse() as string[],
 	);

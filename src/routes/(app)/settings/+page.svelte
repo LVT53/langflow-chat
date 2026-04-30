@@ -166,7 +166,7 @@ let showAvatarPicker = $state(false);
 let showPictureEditor = $state(false);
 let removingPhoto = $state(false);
 
-	async function loadAnalytics(month?: string | null, timeline?: string | null) {
+	async function loadAnalytics(month?: string | null, timeline: string | null = 'weekly') {
 		analyticsLoading = true;
 		analyticsError = '';
 		try {
@@ -365,10 +365,13 @@ let removingPhoto = $state(false);
 		if (tab === 'analytics' && !analyticsData && !analyticsLoading) {
 			await loadAnalytics();
 		}
-		if (tab === 'profile' && personalityProfiles.length === 0) {
+	}
+
+	$effect(() => {
+		if (activeTab === 'profile' && personalityProfiles.length === 0) {
 			void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
 		}
-	}
+	});
 </script>
 
 <div class="flex h-full w-full flex-1 flex-col overflow-y-auto">

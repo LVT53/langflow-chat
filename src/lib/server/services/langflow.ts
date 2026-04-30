@@ -452,6 +452,7 @@ export async function sendMessage(
 		attachmentTraceId?: string;
 		systemPromptAppendix?: string;
 		personalityPrompt?: string;
+		skipHonchoContext?: boolean;
 	},
 ): Promise<{
 	text: string;
@@ -492,7 +493,7 @@ export async function sendMessage(
 			| import("$lib/types").HonchoContextSnapshot
 			| null
 			| undefined;
-		if (user?.id) {
+		if (user?.id && !options?.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: user.id,
 				conversationId: sessionId,
@@ -683,7 +684,7 @@ export async function sendMessageStream(
 			| import("$lib/types").HonchoContextSnapshot
 			| null
 			| undefined;
-		if (options?.user?.id) {
+		if (options?.user?.id && !options.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: options.user.id,
 				conversationId: sessionId,

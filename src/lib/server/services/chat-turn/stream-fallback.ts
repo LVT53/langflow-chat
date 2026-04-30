@@ -32,6 +32,8 @@ export interface NonStreamFallbackDeps {
 			activeDocumentArtifactId: string | null;
 			attachmentTraceId: string | null;
 			systemPromptAppendix?: string;
+			personalityPrompt?: string;
+			skipHonchoContext?: boolean;
 		},
 	) => Promise<NonStreamFallbackResponse>;
 	sendParams: NonStreamFallbackSendParams;
@@ -47,6 +49,8 @@ export interface NonStreamFallbackDeps {
 	completeSuccess: () => void;
 	signal: AbortSignal;
 	systemPromptAppendix: string | undefined;
+	personalityPrompt: string | undefined;
+	skipHonchoContext: boolean | undefined;
 	onContextStatus: (status: Record<string, unknown> | undefined) => void;
 	onTaskState: (state: Record<string, unknown> | null) => void;
 	onContextDebug: (debug: Record<string, unknown> | null) => void;
@@ -70,6 +74,8 @@ export async function runNonStreamFallback(
 		completeSuccess,
 		signal,
 		systemPromptAppendix,
+		personalityPrompt,
+		skipHonchoContext,
 		onContextStatus,
 		onTaskState,
 		onContextDebug,
@@ -89,6 +95,8 @@ export async function runNonStreamFallback(
 			activeDocumentArtifactId: sendParams.activeDocumentArtifactId,
 			attachmentTraceId: sendParams.attachmentTraceId,
 			systemPromptAppendix,
+			personalityPrompt,
+			skipHonchoContext,
 		},
 	);
 
