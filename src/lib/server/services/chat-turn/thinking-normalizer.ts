@@ -1,7 +1,7 @@
 import { getFirstChoice, getNestedObject } from "$lib/services/stream-protocol";
 
 const THINKING_BLOCK_RE =
-	/<thinking>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'"{}\u4e00-\u9fff-]*?<\/thinking>|<\/think>[\r\n]*[\r\n\ta-zA-Z0-9_./:,'"{}\u4e00-\u9fff-]*?<\/think>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
+	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
 const THINKING_TAG_RE = /<\/?thinking>|<\/?think>|\u597d|\u5417/gi;
 const PRESERVE_TAG_RE = /<\/?preserve>/gi;
 
@@ -52,8 +52,21 @@ export function getReasoningContent(value: unknown): string | null {
 		return payload.thinking.trim();
 	}
 
-	if ("data" in payload) {
-		return getReasoningContent(payload.data);
+	for (const key of [
+		"additional_kwargs",
+		"chunk",
+		"data",
+		"generation_info",
+		"kwargs",
+		"message",
+		"response_metadata",
+	]) {
+		if (key in payload) {
+			const nestedReasoning = getReasoningContent(payload[key]);
+			if (nestedReasoning) {
+				return nestedReasoning;
+			}
+		}
 	}
 
 	return null;

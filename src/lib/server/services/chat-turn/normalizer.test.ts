@@ -1,10 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeAssistantOutput } from './normalizer';
+import { getReasoningContent } from './thinking-normalizer';
 
 describe('normalizeAssistantOutput', () => {
 	it('strips <thinking> blocks from text', () => {
 		const result = normalizeAssistantOutput(
 			'<thinking>Internal reasoning</thinking>Visible text'
+		);
+		expect(result).toBe('Visible text');
+	});
+
+	it('strips Qwen/DeepSeek <think> blocks from text', () => {
+		const result = normalizeAssistantOutput(
+			'<think>Internal reasoning with punctuation, math: 2 > 1.</think>\nVisible text'
 		);
 		expect(result).toBe('Visible text');
 	});
@@ -52,5 +60,20 @@ describe('normalizeAssistantOutput', () => {
 	it('handles whitespace-only input', () => {
 		const result = normalizeAssistantOutput('   \n\t  ');
 		expect(result).toBe('');
+	});
+
+	it('extracts reasoning from LangChain chunk additional kwargs', () => {
+		const result = getReasoningContent({
+			data: {
+				chunk: {
+					content: '',
+					additional_kwargs: {
+						reasoning_content: 'Qwen hidden reasoning',
+					},
+				},
+			},
+		});
+
+		expect(result).toBe('Qwen hidden reasoning');
 	});
 });

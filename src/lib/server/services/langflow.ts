@@ -172,44 +172,52 @@ export function buildOutboundSystemPrompt(params: {
 		day: "numeric",
 	});
 	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for relative timeframes. Call a date/time tool only when exact current time, timezone, or freshness-sensitive tool behavior materially depends on it.]`;
-  const additions: string[] = [
-    explicitDateContext,
-    DATE_BEFORE_SEARCH_GUARD,
-  ];
+	const guidanceAdditions: string[] = [
+		explicitDateContext,
+		DATE_BEFORE_SEARCH_GUARD,
+	];
 
-  if (params.personalityPrompt?.trim()) {
-    additions.unshift(`## Personality & Voice\n${params.personalityPrompt.trim()}`);
-  }
+	if (containsHttpUrl(params.inputValue)) {
+		guidanceAdditions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
+	}
 
-  if (containsHttpUrl(params.inputValue)) {
-    additions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
-  }
-
-  additions.push(
-    FILE_GENERATION_GUARD,
-    IMAGE_SEARCH_GUARD,
-    EXA_SEARCH_GUARD,
-    PERSONA_MEMORY_GUARD,
-    SOURCE_AUTHORITY_GUARD,
-  );
+	guidanceAdditions.push(
+		FILE_GENERATION_GUARD,
+		IMAGE_SEARCH_GUARD,
+		EXA_SEARCH_GUARD,
+		PERSONA_MEMORY_GUARD,
+		SOURCE_AUTHORITY_GUARD,
+	);
 
 	if (
 		typeof params.systemPromptAppendix === "string" &&
 		params.systemPromptAppendix.trim()
 	) {
-		additions.push(params.systemPromptAppendix.trim());
+		guidanceAdditions.push(params.systemPromptAppendix.trim());
 	}
 
-	if (additions.length === 0) {
-		return basePrompt;
+	const uniqueGuidance = Array.from(new Set(guidanceAdditions));
+	const sections: string[] = [];
+
+	if (basePrompt) {
+		sections.push(basePrompt);
 	}
 
-	const uniqueAdditions = Array.from(new Set(additions));
-	if (!basePrompt) {
-		return `## Tool And Search Guidance\n${uniqueAdditions.join("\n\n")}`;
+	if (uniqueGuidance.length > 0) {
+		sections.push(`## Tool And Search Guidance\n${uniqueGuidance.join("\n\n")}`);
 	}
 
-	return `${basePrompt}\n\n## Tool And Search Guidance\n${uniqueAdditions.join("\n\n")}`;
+	if (params.personalityPrompt?.trim()) {
+		sections.push(
+			[
+				"## Selected Response Style",
+				"Follow this style for the visible answer. It overrides default voice, length, and formatting preferences unless it conflicts with safety, tool, or source-citation requirements.",
+				params.personalityPrompt.trim(),
+			].join("\n"),
+		);
+	}
+
+	return sections.join("\n\n");
 }
 
 async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowModelRunConfig> {
@@ -278,9 +286,6 @@ function buildLangflowTweaks(
 		...(modelConfig.maxTokens != null ? { max_tokens: modelConfig.maxTokens } : {}),
 		...(modelConfig.providerReasoningEffort
 			? { reasoning_effort: modelConfig.providerReasoningEffort }
-			: {}),
-		...(modelConfig.providerThinkingType
-			? { thinking_type: modelConfig.providerThinkingType }
 			: {}),
 		system_prompt: systemPrompt,
 	};

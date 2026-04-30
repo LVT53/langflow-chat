@@ -43,6 +43,7 @@ export const load: ServerLoad = async (event) => {
 		userTranslation: (userRow?.translationEnabled ?? 0) === 1,
 		userTitleLanguage: (userRow?.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
 		userUiLanguage: (userRow?.uiLanguage ?? 'en') as 'en' | 'hu',
+		userPersonality: userRow?.preferredPersonalityId ?? null,
 		userAvatarId: userRow?.avatarId ?? null,
 		modelNames,
 		availableModels,

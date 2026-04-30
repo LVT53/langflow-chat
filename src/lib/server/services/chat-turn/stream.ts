@@ -44,6 +44,7 @@ export {
 // ---------------------------------------------------------------------------
 import { getNestedObject } from "$lib/services/stream-protocol";
 import { parseMaybeJson } from "./stream-parser";
+import { PRESERVE_TAG_RE as PRESERVE_TAG_PATTERN } from "./thinking-normalizer";
 import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -237,15 +238,19 @@ export function createServerChunkRuntime({
 	};
 
 	const flushInlineThinkingBuffer = () => {
-		return flushInlineThinkingState(inlineThinkingState, {
+		const flushedInline = flushInlineThinkingState(inlineThinkingState, {
 			onVisible: emitVisibleToken,
 			onThinking: emitThinking,
 		});
+		if (!flushedInline) {
+			return false;
+		}
+		return flushPendingThinking();
 	};
 
 	const emitChunkWithPreserveHandling = (chunk: string): boolean => {
 		if (!chunk) return true;
-		return emitInlineToken(chunk);
+		return emitInlineToken(chunk.replace(PRESERVE_TAG_PATTERN, ""));
 	};
 
 	const flushPreserveBuffer = (): boolean => true;

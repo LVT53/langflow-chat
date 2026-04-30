@@ -97,6 +97,21 @@ describe('buildOutboundSystemPrompt', () => {
 		expect(prompt).toContain('Image search workflow');
 		expect(prompt).toContain('image_search');
 	});
+
+	it('places the selected personality style after generic tool guidance so it controls visible answer style', () => {
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: 'Base system prompt',
+			inputValue: 'Explain this briefly.',
+			personalityPrompt: 'Be extremely concise.',
+		});
+
+		expect(prompt).toContain('## Tool And Search Guidance');
+		expect(prompt).toContain('## Selected Response Style');
+		expect(prompt.indexOf('## Selected Response Style')).toBeGreaterThan(
+			prompt.indexOf('## Tool And Search Guidance')
+		);
+		expect(prompt).toContain('Be extremely concise.');
+	});
 });
 
 describe('sendMessage provider routing', () => {
@@ -149,9 +164,9 @@ describe('sendMessage provider routing', () => {
 				api_key: 'provider-secret',
 				max_tokens: 8192,
 				reasoning_effort: 'high',
-				thinking_type: 'enabled',
 			},
 		});
+		expect(body.tweaks['ModelNode-1']).not.toHaveProperty('thinking_type');
 		expect(body.tweaks['ModelNode-1'].system_prompt).toContain('[MODEL: Fireworks Model]');
 	});
 

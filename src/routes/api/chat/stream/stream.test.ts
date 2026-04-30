@@ -747,6 +747,26 @@ describe('POST /api/chat/stream', () => {
 		);
 	});
 
+	it('flushes short inline Qwen thinking before completing the stream', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"text":"<think>brief</think>Answer"}\n\n',
+				'data: [DONE]\n\n'
+			])
+		);
+
+		const event = makeEvent({ message: 'Hi', conversationId: 'conv-1' });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain('event: thinking');
+		expect(body).toContain('"text":"brief"');
+		expect(body).toContain('"text":"Answer"');
+		expect(body).toContain('"thinking":"brief"');
+	});
+
 	it('emits preserved prose once without wrapping it in code fences', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
@@ -888,11 +908,11 @@ describe('POST /api/chat/stream', () => {
 				'Hi',
 				'conv-1',
 				'model1',
-				{
+				expect.objectContaining({
 					id: 'user-1',
 					displayName: undefined,
 					email: 'test@example.com',
-				},
+				}),
 				expect.objectContaining({
 					signal: expect.any(Object),
 					attachmentIds: [],

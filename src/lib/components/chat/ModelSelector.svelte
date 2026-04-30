@@ -4,15 +4,25 @@
 	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
 	import { selectedModel, setSelectedModel, setSelectedModelAndSync, type ModelId } from '$lib/stores/settings';
 
-	let { onSelect }: {
+	let { onSelect, open = undefined, onOpenChange = undefined }: {
 		onSelect?: (payload: { modelId: ModelId }) => void;
+		open?: boolean | undefined;
+		onOpenChange?: ((open: boolean) => void) | undefined;
 	} = $props();
 
 	let models = $state<AvailableModel[]>([]);
-	let isOpen = $state(false);
+	let internalOpen = $state(false);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	let dropdownRef = $state<HTMLDivElement | undefined>(undefined);
+	let isOpen = $derived(open ?? internalOpen);
+
+	function setOpen(nextOpen: boolean) {
+		if (open === undefined) {
+			internalOpen = nextOpen;
+		}
+		onOpenChange?.(nextOpen);
+	}
 
 	onMount(async () => {
 		try {
@@ -33,8 +43,8 @@
 
 		// Close dropdown when clicking outside
 		const handleClickOutside = (event: MouseEvent) => {
-			if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
-				isOpen = false;
+			if (isOpen && dropdownRef && !dropdownRef.contains(event.target as Node)) {
+				setOpen(false);
 			}
 		};
 
@@ -44,17 +54,17 @@
 
 	function handleSelect(modelId: ModelId) {
 		void setSelectedModelAndSync(modelId);
-		isOpen = false;
+		setOpen(false);
 		onSelect?.({ modelId });
 	}
 
 	function toggleDropdown() {
-		isOpen = !isOpen;
+		setOpen(!isOpen);
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
-			isOpen = false;
+			setOpen(false);
 		}
 	}
 

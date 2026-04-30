@@ -106,7 +106,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	let fileDragActive = $state(false);
 	let fileDragRejected = $state(false);
 	let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
-	let selectedPersonalityId = $state<string | null>(null);
+	let selectedPersonalityId = $state<string | null>(data.userPersonality ?? null);
 	let dragEnterCount = 0;
 	let uploadFilesFn: ((files: FileList | null) => Promise<void>) | null = null;
 

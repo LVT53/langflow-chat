@@ -22,13 +22,15 @@
 	} = $props();
 
 	let root = $state<HTMLDivElement | undefined>(undefined);
-	let styleOpen = $state(false);
+	let activeDropdown = $state<'model' | 'style' | null>(null);
+	let styleOpen = $derived(activeDropdown === 'style');
 
 	let selectedProfile = $derived(
 		personalityProfiles.find((p) => p.id === selectedPersonalityId) ?? null,
 	);
 
 	function closeMenu() {
+		activeDropdown = null;
 		onClose?.();
 	}
 
@@ -40,7 +42,7 @@
 	onMount(() => {
 		const handlePointerDown = (event: MouseEvent | TouchEvent) => {
 			if (root && !root.contains(event.target as Node)) {
-				styleOpen = false;
+				activeDropdown = null;
 				onClose?.();
 			}
 		};
@@ -66,7 +68,11 @@
 <div bind:this={root} class="tools-menu" role="menu" aria-label={$t('composerTools.menu')}>
 	<div class="menu-row menu-row--static">
 		<div class="menu-label">Model</div>
-		<ModelSelector onSelect={closeMenu} />
+		<ModelSelector
+			open={activeDropdown === 'model'}
+			onOpenChange={(open) => activeDropdown = open ? 'model' : null}
+			onSelect={closeMenu}
+		/>
 	</div>
 
 	{#if personalityProfiles.length > 0}
@@ -76,7 +82,7 @@
 				<button
 					type="button"
 					class="model-selector__trigger"
-					onclick={() => styleOpen = !styleOpen}
+					onclick={() => activeDropdown = styleOpen ? null : 'style'}
 					aria-haspopup="listbox"
 					aria-expanded={styleOpen}
 				>
@@ -101,8 +107,8 @@
 							aria-selected={!selectedPersonalityId}
 							class="model-selector__option"
 							class:model-selector__option--selected={!selectedPersonalityId}
-							onclick={() => { onPersonalityChange?.(null); styleOpen = false; closeMenu(); }}
-							onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(null), styleOpen = false, closeMenu())}
+							onclick={() => { onPersonalityChange?.(null); closeMenu(); }}
+							onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(null), closeMenu())}
 							tabindex="0"
 						>AlfyAI</li>
 						{#each personalityProfiles as profile}
@@ -111,8 +117,8 @@
 								aria-selected={selectedPersonalityId === profile.id}
 								class="model-selector__option"
 								class:model-selector__option--selected={selectedPersonalityId === profile.id}
-								onclick={() => { onPersonalityChange?.(profile.id); styleOpen = false; closeMenu(); }}
-								onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(profile.id), styleOpen = false, closeMenu())}
+								onclick={() => { onPersonalityChange?.(profile.id); closeMenu(); }}
+								onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(profile.id), closeMenu())}
 								tabindex="0"
 							>{profile.name}</li>
 						{/each}

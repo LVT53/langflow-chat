@@ -62,9 +62,10 @@ function findFirstTagMatch(
 	tags: readonly string[],
 ): TagMatch | null {
 	let bestMatch: TagMatch | null = null;
+	const lowerValue = value.toLowerCase();
 
 	for (const tag of tags) {
-		const index = value.indexOf(tag);
+		const index = lowerValue.indexOf(tag.toLowerCase());
 		if (index === -1) {
 			continue;
 		}

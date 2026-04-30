@@ -33,6 +33,20 @@ describe('stream-protocol', () => {
 		expect(onThinking.mock.calls).toEqual([['Need to rea'], ['son']]);
 	});
 
+	it('handles mixed-case Qwen thinking tags', () => {
+		const state = createInlineThinkingState();
+		const onVisible = vi.fn();
+		const onThinking = vi.fn();
+
+		processInlineThinkingChunk(state, 'Before<Think>Need to reason</THINK>After', {
+			onVisible,
+			onThinking,
+		});
+
+		expect(onVisible.mock.calls).toEqual([['Before'], ['After']]);
+		expect(onThinking.mock.calls).toEqual([['Need to reason']]);
+	});
+
 	it('drops a trailing partial open tag when flushing visible content', () => {
 		const state = createInlineThinkingState();
 		const onVisible = vi.fn();

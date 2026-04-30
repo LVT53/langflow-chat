@@ -68,7 +68,7 @@ const BUILT_IN_PROFILES = [
 	{
 		name: 'Concise',
 		description: 'Terse, answer-first, minimal exposition. Engineer-to-engineer.',
-		promptText: 'Be extremely concise. Answer first, explain only when asked. Use short sentences and minimal prose. Skip pleasantries, intros, and sign-offs. Prefer code, data, or structured output over paragraphs. Only elaborate when the user explicitly asks for more detail.',
+		promptText: 'Be extremely concise. Default to 1-3 short paragraphs or at most 5 bullets. Answer first. Do not include background, caveats, summaries, or step-by-step explanation unless the user asks or correctness requires it. Skip pleasantries, intros, and sign-offs. Prefer code, data, or structured output over prose.',
 	},
 	{
 		name: 'Exploratory',
@@ -83,11 +83,27 @@ const BUILT_IN_PROFILES = [
 ];
 
 export async function seedPersonalityProfiles(): Promise<void> {
-	const existing = await db.select({ name: personalityProfiles.name }).from(personalityProfiles);
-	const existingNames = new Set(existing.map((r) => r.name));
+	const existing = await db.select().from(personalityProfiles);
+	const existingByName = new Map(existing.map((r) => [r.name, r]));
 
 	for (const profile of BUILT_IN_PROFILES) {
-		if (existingNames.has(profile.name)) continue;
+		const existingProfile = existingByName.get(profile.name);
+		if (existingProfile) {
+			if (
+				existingProfile.isBuiltIn &&
+				(existingProfile.description !== profile.description ||
+					existingProfile.promptText !== profile.promptText)
+			) {
+				await db
+					.update(personalityProfiles)
+					.set({
+						description: profile.description,
+						promptText: profile.promptText,
+					})
+					.where(eq(personalityProfiles.id, existingProfile.id));
+			}
+			continue;
+		}
 		await db.insert(personalityProfiles).values({
 			id: crypto.randomUUID(),
 			name: profile.name,
