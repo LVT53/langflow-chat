@@ -25,6 +25,7 @@ export interface UserPreferences {
   titleLanguage: 'auto' | 'en' | 'hu';
   uiLanguage: UiLanguage;
   avatarId: number | null;
+  preferredPersonalityId: string | null;
 }
 
 export interface UserSettings {

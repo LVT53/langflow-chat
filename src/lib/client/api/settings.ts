@@ -93,6 +93,7 @@ export async function updateUserPreferences(params: {
 	titleLanguage?: 'auto' | 'en' | 'hu';
 	uiLanguage?: 'en' | 'hu';
 	avatarId?: number | null;
+	preferredPersonalityId?: string | null;
 }): Promise<void> {
 	await requestJson<{ success?: boolean }>(
 		'/api/settings/preferences',

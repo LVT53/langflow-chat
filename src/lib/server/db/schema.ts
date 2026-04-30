@@ -13,6 +13,7 @@ export const users = sqliteTable('users', {
   theme: text('theme').notNull().default('system'),
   titleLanguage: text('title_language').notNull().default('auto'),
   uiLanguage: text('ui_language').notNull().default('en'),
+  preferredPersonalityId: text('preferred_personality_id'),
   avatarId: integer('avatar_id'),
   profilePicture: text('profile_picture'),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),

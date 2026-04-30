@@ -18,6 +18,7 @@ import { selectedModel } from '$lib/stores/settings';
 import { t } from '$lib/i18n';
 import MessageInput from '$lib/components/chat/MessageInput.svelte';
 import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
+import { fetchPublicPersonalityProfiles } from '$lib/client/api/admin';
 import type { ConversationDetail, ModelId } from '$lib/types';
 	import { onDestroy, onMount } from 'svelte';
 	import type {
@@ -104,6 +105,8 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	const activeGreeting = $derived(greetingOptions[greetingIndex % greetingOptions.length]);
 	let fileDragActive = $state(false);
 	let fileDragRejected = $state(false);
+	let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
+	let selectedPersonalityId = $state<string | null>(null);
 	let dragEnterCount = 0;
 	let uploadFilesFn: ((files: FileList | null) => Promise<void>) | null = null;
 
@@ -232,6 +235,8 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 
 		// Static random greeting per page load (no rotation)
 		greetingIndex = Math.floor(Math.random() * 7);
+
+		void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
 	});
 
 	onDestroy(() => {
@@ -277,6 +282,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 				attachmentIds: payload.attachmentIds,
 				attachments: payload.attachments,
 				modelId: payload.modelId ?? $selectedModel,
+				personalityProfileId: selectedPersonalityId,
 			});
 			await navigateToConversationFromLanding({
 				conversationId: id,
@@ -421,6 +427,9 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 					attachmentsEnabled={true}
 					ensureConversation={ensurePreparedConversation}
 					onUploadReady={handleUploadReady}
+					{personalityProfiles}
+					{selectedPersonalityId}
+					onPersonalityChange={(id) => selectedPersonalityId = id}
 				onUploadFiles={handleUploadFiles}
 				/>
 			</div>

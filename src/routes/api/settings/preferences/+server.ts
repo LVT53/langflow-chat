@@ -22,6 +22,7 @@ export const PATCH: RequestHandler = async (event) => {
     titleLanguage?: unknown;
     uiLanguage?: unknown;
     avatarId?: unknown;
+    preferredPersonalityId?: unknown;
   };
   try {
     body = await event.request.json();
@@ -66,6 +67,10 @@ export const PATCH: RequestHandler = async (event) => {
 
   if (body.avatarId !== undefined) {
     updates.avatarId = body.avatarId === null ? null : Number(body.avatarId);
+  }
+
+  if (body.preferredPersonalityId !== undefined) {
+    updates.preferredPersonalityId = body.preferredPersonalityId === null ? null : String(body.preferredPersonalityId);
   }
 
   await db.update(users).set(updates).where(eq(users.id, userId));

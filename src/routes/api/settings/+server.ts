@@ -26,6 +26,7 @@ export const GET: RequestHandler = async (event) => {
       translationEnabled: (user.translationEnabled ?? 0) === 1,
       theme: (user.theme ?? 'system') as 'system' | 'light' | 'dark',
       avatarId: user.avatarId ?? null,
+      preferredPersonalityId: user.preferredPersonalityId ?? null,
     },
     profilePicture: user.profilePicture ?? null,
   };

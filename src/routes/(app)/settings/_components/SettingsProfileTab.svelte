@@ -49,6 +49,9 @@
 		onChangeTheme,
 		onChangeTitleLanguage,
 		onChangeUiLanguage,
+		personalityProfiles = [],
+		selectedPersonalityId = null,
+		onChangePersonality = undefined,
 		onOpenResetModal,
 		onOpenDeleteModal,
 		onForgetEverything,
@@ -93,6 +96,9 @@
 		onChangeTheme: (theme: Theme) => void | Promise<void>;
 		onChangeTitleLanguage: (lang: TitleLanguage) => void | Promise<void>;
 		onChangeUiLanguage: (lang: UiLanguage) => void | Promise<void>;
+		personalityProfiles?: Array<{ id: string; name: string; description: string }>;
+		selectedPersonalityId?: string | null;
+		onChangePersonality?: ((id: string | null) => void) | undefined;
 		onOpenResetModal: () => void;
 		onOpenDeleteModal: () => void;
 		onForgetEverything: () => void | Promise<void>;
@@ -129,32 +135,15 @@
 					{removingPhoto ? $t('settings_removing') : $t('settings_removePhoto')}
 				</button>
 			{/if}
+			</div>
 		</div>
-	</div>
-	{#if showAvatarPicker}
-		<div class="mt-4 flex flex-wrap gap-3">
-			{#each Array.from({ length: avatarCount }, (_, i) => i) as avatarIndex}
-				<button
-					class={clsx('avatar-swatch', 'rounded-full', 'focus:outline-none', selectedAvatar === avatarIndex && 'avatar-selected')}
-					style={`background: ${avatarColors[avatarIndex]}; width: 44px; height: 44px;`}
-					onclick={() => onSelectAvatar(avatarIndex)}
-					aria-label={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
-					title={$t('settings_avatarNumber', { number: avatarIndex + 1 })}
-				>
-					<span class="block text-center text-lg font-semibold leading-none text-white">
-						{userDisplayName[0]?.toUpperCase() ?? userEmail[0]?.toUpperCase() ?? '?'}
-					</span>
-				</button>
-			{/each}
-		</div>
-	{/if}
-</section>
+	</section>
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">{$t('settings_profileInformation')}</h2>
-	<div class="flex flex-col gap-3">
-		<div>
-			<label class="settings-label" for="name">{$t('settings_displayName')}</label>
+	<section class="settings-card mb-4">
+		<h2 class="settings-section-title">{$t('settings_profileInformation')}</h2>
+		<div class="flex flex-col gap-3">
+			<div>
+				<label class="settings-label" for="name">{$t('settings_displayName')}</label>
 			<input id="name" type="text" class="settings-input" bind:value={name} placeholder={$t('settings_yourName')} />
 		</div>
 		<div>
@@ -232,6 +221,26 @@
 				{/each}
 			</div>
 		</div>
+
+		{#if personalityProfiles.length > 0}
+			<div>
+				<p class="settings-label">Default style</p>
+				<div class="flex gap-2">
+					<button
+						class="pref-pill"
+						class:pref-pill-active={!selectedPersonalityId}
+						onclick={() => onChangePersonality?.(null)}
+					>AlfyAI</button>
+					{#each personalityProfiles as profile}
+						<button
+							class="pref-pill"
+							class:pref-pill-active={selectedPersonalityId === profile.id}
+							onclick={() => onChangePersonality?.(profile.id)}
+						>{profile.name}</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<div>
 			<p class="settings-label">{$t('settings_theme')}</p>

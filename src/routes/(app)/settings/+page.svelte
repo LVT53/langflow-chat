@@ -15,6 +15,7 @@
 		updateUserPreferences,
 	} from '$lib/client/api/settings';
 	import { submitKnowledgeBulkAction } from '$lib/client/api/knowledge';
+	import { fetchPublicPersonalityProfiles } from '$lib/client/api/admin';
 	import { reconcileConversationSnapshot } from '$lib/stores/conversations';
 	import { avatarState, setAvatarRemoved, setAvatarUploaded } from '$lib/stores/avatar';
 	import { projects } from '$lib/stores/projects';
@@ -100,6 +101,8 @@
 	let selectedTitleLanguage = $state(initialPreferences.titleLanguage ?? 'auto');
 	let selectedUiLanguage = $state<UiLanguage>(initialPreferences.uiLanguage ?? 'en');
 	let selectedAvatar = $state(initialPreferences.avatarId);
+	let selectedPersonalityId = $state<string | null>(initialPreferences.preferredPersonalityId ?? null);
+	let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
 
 	let showDeleteModal = $state(false);
 	let deletePassword = $state('');
@@ -240,6 +243,11 @@ let removingPhoto = $state(false);
 		await updateUserPreferences({ avatarId }).catch(() => {});
 	}
 
+	async function changePersonality(id: string | null) {
+		selectedPersonalityId = id;
+		await updateUserPreferences({ preferredPersonalityId: id }).catch(() => {});
+	}
+
 	async function changeModel(model: ModelId) {
 		selectedModel = model;
 		await setSelectedModelAndSync(model);
@@ -357,6 +365,9 @@ let removingPhoto = $state(false);
 		if (tab === 'analytics' && !analyticsData && !analyticsLoading) {
 			await loadAnalytics();
 		}
+		if (tab === 'profile' && personalityProfiles.length === 0) {
+			void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
+		}
 	}
 </script>
 
@@ -432,6 +443,9 @@ let removingPhoto = $state(false);
 				onChangeTheme={changeTheme}
 				onChangeTitleLanguage={changeTitleLanguage}
 				onChangeUiLanguage={changeUiLanguage}
+				{personalityProfiles}
+				{selectedPersonalityId}
+				onChangePersonality={changePersonality}
 				onOpenResetModal={() => (showResetModal = true)}
 				onOpenDeleteModal={() => (showDeleteModal = true)}
 				forgetEverythingLoading={forgetEverythingLoading}

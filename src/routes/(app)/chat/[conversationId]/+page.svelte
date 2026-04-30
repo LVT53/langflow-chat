@@ -315,6 +315,9 @@ function maybeSendPendingInitialMessage() {
 	}
 	// Show loading state until streaming actually starts
 	initialStreamPending = true;
+	if (pendingDraft.personalityProfileId) {
+		selectedPersonalityId = pendingDraft.personalityProfileId;
+	}
 	handleSend({ ...pendingDraft, pendingAttachments: [] });
 }
 

@@ -15,6 +15,7 @@ export type PendingConversationMessage = {
 	attachmentIds: string[];
 	attachments: ArtifactSummary[];
 	modelId?: ModelId;
+	personalityProfileId?: string | null;
 };
 
 function getSessionStorage(): Storage | null {
@@ -80,6 +81,7 @@ export function storePendingConversationMessage(
 			attachmentIds: payload.attachmentIds,
 			attachments: payload.attachments,
 			modelId: payload.modelId,
+			personalityProfileId: payload.personalityProfileId,
 		})
 	);
 }
@@ -115,6 +117,10 @@ export function consumePendingConversationMessage(
 					parsed.modelId.startsWith('provider:'))
 					? (parsed.modelId as ModelId)
 					: undefined,
+			personalityProfileId:
+				typeof parsed.personalityProfileId === 'string'
+					? parsed.personalityProfileId
+					: null,
 		};
 	} catch {
 		return {
