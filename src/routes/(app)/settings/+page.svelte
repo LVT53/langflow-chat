@@ -130,6 +130,17 @@
 	} | null>(null);
 	let honchoLoading = $state(false);
 
+	async function checkHonchoHealth() {
+		honchoLoading = true;
+		try {
+			honchoHealth = await fetchHonchoHealth();
+		} catch {
+			honchoHealth = null;
+		} finally {
+			honchoLoading = false;
+		}
+	}
+
 	// Auto-dismiss success messages after 4 seconds
 	let messageTimers: ReturnType<typeof setTimeout>[] = [];
 	function showMessage(field: 'profileMessage' | 'passwordMessage' | 'adminMessage', text: string) {

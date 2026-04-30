@@ -5,6 +5,7 @@ import { db } from '$lib/server/db';
 import { analyticsConversations, usageEvents, inferenceProviders } from '$lib/server/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { isProviderModelId, getProviderIdFromModelId } from '$lib/types';
+import { getConfig } from '$lib/server/config-store';
 
 const MOCK_ANALYTICS = {
 	personal: {
@@ -54,6 +55,13 @@ function usd(micros: number): number {
 	return Math.round((micros / 1_000_000) * 10000) / 10000;
 }
 
+function fallbackModelDisplayName(modelId: string): string {
+	const config = getConfig();
+	if (modelId === 'model1') return config.model1.displayName;
+	if (modelId === 'model2') return config.model2.displayName;
+	return modelId;
+}
+
 function average(values: number[]): number {
 	const present = values.filter((value) => Number.isFinite(value) && value > 0);
 	if (present.length === 0) return 0;
@@ -98,7 +106,7 @@ async function modelBreakdown(rows: UsageRow[]) {
 	for (const row of rows) {
 		const key = row.modelId;
 		const pid = isProviderModelId(row.modelId) ? getProviderIdFromModelId(row.modelId as any) : null;
-		const resolvedName = row.modelDisplayName ?? (pid ? providerNames.get(pid) : null) ?? row.providerModelName ?? row.modelId;
+		const resolvedName = row.modelDisplayName ?? (pid ? providerNames.get(pid) : null) ?? row.providerModelName ?? fallbackModelDisplayName(row.modelId);
 		const current = grouped.get(key) ?? {
 			model: row.modelId,
 			displayName: resolvedName,
