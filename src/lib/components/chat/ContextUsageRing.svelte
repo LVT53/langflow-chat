@@ -17,6 +17,8 @@
 		contextDebug = null,
 		onSteer = undefined,
 		onManageEvidence = undefined,
+		totalCostUsd = 0,
+		totalTokens = 0,
 	}: {
 		contextStatus?: ConversationContextStatus | null;
 		attachedArtifacts?: ArtifactSummary[];
@@ -24,6 +26,8 @@
 		contextDebug?: ContextDebugState | null;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onManageEvidence?: (() => void) | undefined;
+		totalCostUsd?: number;
+		totalTokens?: number;
 	} = $props();
 
 	let root = $state<HTMLDivElement | null>(null);
@@ -90,32 +94,6 @@
 		}
 	}
 
-	function formatRoutingStage(stage: ContextDebugState['routingStage'] | undefined): string {
-		switch (stage) {
-			case 'semantic':
-				return 'Semantic';
-			case 'evidence_rerank':
-				return 'Evidence rerank';
-			case 'verification_fallback':
-				return 'Verification fallback';
-			default:
-				return 'Deterministic';
-		}
-	}
-
-	function formatVerificationStatus(status: ContextDebugState['verificationStatus'] | undefined): string {
-		switch (status) {
-			case 'passed':
-				return 'Passed';
-			case 'failed':
-				return 'Flagged';
-			case 'fallback':
-				return 'Fallback';
-			default:
-				return 'Skipped';
-		}
-	}
-
 	function steer(action: TaskSteeringAction, artifactId?: string, objective?: string) {
 		onSteer?.({ action, artifactId, objective });
 	}
@@ -133,11 +111,18 @@
 		}
 	}
 
-	function formatContinuityStatus(status: string | undefined): string {
-		if (status === 'dormant') return 'Dormant';
-		if (status === 'archived') return 'Archived';
-		return 'Active';
+	function formatCostUsd(costUsd: number): string {
+		return `$${costUsd.toFixed(costUsd < 1 ? 4 : 2)}`;
 	}
+
+	function formatTokenCount(tokens: number): string {
+		if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+		if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+		return tokens.toLocaleString();
+	}
+
+	let showCost = $derived(totalCostUsd > 0 || totalTokens > 0);
+	let costText = $derived(showCost ? `${formatCostUsd(totalCostUsd)} \u00b7 ${formatTokenCount(totalTokens)} ${$t('contextUsageRing.tokens')}` : '');
 
 	async function openNewTaskForm() {
 		showNewTaskForm = true;
@@ -178,7 +163,6 @@
 	let dashOffset = $derived(circumference * (1 - ratio));
 	let percent = $derived(Math.round(ratio * 100));
 	let activeObjective = $derived(contextDebug?.activeTaskObjective ?? taskState?.objective ?? null);
-	let continuity = $derived(taskState?.continuity ?? null);
 	let toneClass = $derived(
 		!contextStatus
 			? 'ring-button--idle'
@@ -298,21 +282,10 @@
 			</div>
 		</div>
 
-		{#if continuity}
+		{#if showCost}
 			<div class="popover-section">
-				<div class="popover-label">Across chats</div>
-				<div class="popover-copy">{continuity.name}</div>
-				{#if continuity.summary}
-					<div class="popover-copy popover-copy--muted">{continuity.summary}</div>
-				{/if}
-				<div class="popover-stat">
-					<span>Status</span>
-					<span>{formatContinuityStatus(continuity.status)}</span>
-				</div>
-				<div class="popover-stat">
-					<span>Linked chats</span>
-					<span>{continuity.linkedTaskCount}</span>
-				</div>
+				<div class="popover-label">Cost</div>
+				<div class="popover-cost">{costText}</div>
 			</div>
 		{/if}
 
@@ -324,24 +297,12 @@
 					<span>{contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.targetTokens.toLocaleString()}</span>
 				</div>
 				<div class="popover-stat">
-					<span>Pressure threshold</span>
-					<span>{contextStatus.thresholdTokens.toLocaleString()}</span>
-				</div>
-				<div class="popover-stat">
 					<span>Compaction</span>
 					<span class:compaction-active={contextStatus.compactionMode !== 'none'}>
 						{formatCompactionMode(contextStatus.compactionMode)}
 					</span>
 				</div>
 				{#if contextDebug}
-					<div class="popover-stat">
-						<span>Routing</span>
-						<span>{formatRoutingStage(contextDebug.routingStage)} · {Math.round(contextDebug.routingConfidence)}%</span>
-					</div>
-					<div class="popover-stat">
-						<span>Verification</span>
-						<span>{formatVerificationStatus(contextDebug.verificationStatus)}</span>
-					</div>
 					<div class="popover-stat">
 						<span>Selected evidence</span>
 						<span>{contextDebug.selectedEvidence.length}</span>
@@ -527,6 +488,13 @@
 		margin-top: 0.55rem;
 		font-size: 0.82rem;
 		color: var(--text-primary);
+	}
+
+	.popover-cost {
+		margin-top: 0.5rem;
+		font-size: 0.84rem;
+		font-weight: 500;
+		color: var(--accent);
 	}
 
 	.compaction-active {

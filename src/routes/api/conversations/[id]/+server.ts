@@ -15,6 +15,7 @@ import {
 } from '$lib/server/services/knowledge';
 import { getChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
+import { getConversationCostSummary } from '$lib/server/services/analytics';
 import {
 	attachContinuityToTaskState,
 	getContextDebugState,
@@ -56,6 +57,7 @@ export const GET: RequestHandler = async (event) => {
 			contextDebug,
 			draft,
 			generatedFiles,
+			costSummary,
 		] = await Promise.all([
 			listMessages(id),
 			listConversationArtifacts(user.id, id),
@@ -65,6 +67,7 @@ export const GET: RequestHandler = async (event) => {
 			getContextDebugState(user.id, id),
 			getConversationDraft(user.id, id),
 			getChatFiles(id),
+			getConversationCostSummary(id),
 		]);
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
@@ -80,6 +83,8 @@ export const GET: RequestHandler = async (event) => {
 			draft,
 			generatedFiles,
 			bootstrap: false,
+			totalCostUsdMicros: costSummary.totalCostUsdMicros,
+			totalTokens: costSummary.totalTokens,
 		});
 	} catch (err) {
 		console.error('Error loading conversation:', err);

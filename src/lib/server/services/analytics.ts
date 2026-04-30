@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import {
 	analyticsConversations,
@@ -379,4 +379,26 @@ export async function recordMessageAnalytics(params: AnalyticsParams): Promise<v
 		costUsd: microsToUsd(costUsdMicros),
 		providerId: isProviderModelId(params.model) ? model.providerId : null,
 	});
+}
+
+export interface ConversationCostSummary {
+	totalCostUsdMicros: number;
+	totalTokens: number;
+}
+
+export async function getConversationCostSummary(
+	conversationId: string,
+): Promise<ConversationCostSummary> {
+	const [row] = await db
+		.select({
+			totalCostUsdMicros: sql<number>`COALESCE(SUM(${usageEvents.costUsdMicros}), 0)`,
+			totalTokens: sql<number>`COALESCE(SUM(${usageEvents.totalTokens}), 0)`,
+		})
+		.from(usageEvents)
+		.where(eq(usageEvents.conversationId, conversationId));
+
+	return {
+		totalCostUsdMicros: row?.totalCostUsdMicros ?? 0,
+		totalTokens: row?.totalTokens ?? 0,
+	};
 }

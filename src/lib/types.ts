@@ -170,6 +170,8 @@ export interface ConversationDetail {
   draft?: ConversationDraft | null;
   bootstrap?: boolean;
   generatedFiles?: ChatGeneratedFile[];
+  totalCostUsdMicros?: number;
+  totalTokens?: number;
 }
 
 // ConversationListItem interface: id, title, updatedAt

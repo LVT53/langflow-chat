@@ -21,6 +21,7 @@ import {
 	generateConversationTitle,
 } from "$lib/client/api/conversations";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
+import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
 import { selectedModel } from "$lib/stores/settings";
 import EvidenceManager from "$lib/components/chat/EvidenceManager.svelte";
@@ -87,6 +88,8 @@ const getData = () => data;
 const initialMessages = getData().messages ?? [];
 const initialHasPersistedMessages = initialMessages.length > 0;
 const initialContextStatus = getData().contextStatus ?? null;
+const initialTotalCostUsdMicros = getData().totalCostUsdMicros ?? 0;
+const initialTotalTokens = getData().totalTokens ?? 0;
 const initialAttachedArtifacts = getData().attachedArtifacts ?? [];
 const initialActiveWorkingSet = getData().activeWorkingSet ?? [];
 const initialTaskState = getData().taskState ?? null;
@@ -119,6 +122,9 @@ let hasPersistedMessages = initialHasPersistedMessages;
 let contextStatus = $state<ConversationContextStatus | null>(
 	initialContextStatus,
 );
+let totalCostUsdMicros = $state(initialTotalCostUsdMicros);
+let totalTokens = $state(initialTotalTokens);
+let totalCostUsd = $derived(totalCostUsdMicros / 1_000_000);
 let attachedArtifacts = $state<ArtifactSummary[]>(initialAttachedArtifacts);
 let activeWorkingSet: ArtifactSummary[] = initialActiveWorkingSet;
 let taskState = $state<TaskState | null>(initialTaskState);
@@ -132,6 +138,8 @@ let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 let activeWorkspaceDocumentId = $state<string | null>(null);
 let workspaceOpen = $state(false);
 let evidenceManagerOpen = $state(false);
+let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
+let selectedPersonalityId = $state<string | null>(null);
 let bootstrapMode = initialBootstrapMode;
 let hydratingConversation = false;
 let suppressHydration = $state(false);
@@ -766,8 +774,8 @@ onMount(() => {
 	currentConversationId.set(data.conversation.id);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	void checkForOrphanedStreamOnMount();
-	// Recover any messages with pending evidence (e.g., if polling timed out)
 	void recoverPendingEvidence();
+	void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
 });
 
 onDestroy(() => {
@@ -990,6 +998,10 @@ async function refreshMessageCost(messageId: string) {
 				})),
 			);
 		}
+		if (detail.totalCostUsdMicros != null) {
+			totalCostUsdMicros = detail.totalCostUsdMicros;
+			totalTokens = detail.totalTokens ?? 0;
+		}
 	} catch {
 		// Silently ignore — cost will show after page refresh
 	}
@@ -1161,6 +1173,7 @@ function handleSend(
 			skipPersistUserMessage,
 			attachmentIds,
 			activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
+			personalityProfileId: selectedPersonalityId,
 			retryAssistantMessageId,
 			retryUserMessageId,
 			retryUserMessage: retryAssistantMessageId ? text : undefined,
@@ -1305,6 +1318,7 @@ function handleRetry() {
 			{
 				modelId: lastAssistantMsg?.modelId ?? $selectedModel,
 				activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
+				personalityProfileId: selectedPersonalityId,
 				retryAssistantMessageId: retryAssistantMessageId ?? undefined,
 				retryUserMessageId,
 				retryUserMessage: retryAssistantMessageId ? lastUserMessage : undefined,
@@ -1589,6 +1603,11 @@ function handleDrop(event: DragEvent) {
 				{attachedArtifacts}
 				{taskState}
 				{contextDebug}
+				{totalCostUsd}
+				{totalTokens}
+				{personalityProfiles}
+				{selectedPersonalityId}
+				onPersonalityChange={(id) => selectedPersonalityId = id}
 				draftText={conversationDraft?.draftText ?? ''}
 				draftAttachments={conversationDraft?.selectedAttachments ?? []}
 				draftVersion={conversationDraft?.updatedAt ?? 0}

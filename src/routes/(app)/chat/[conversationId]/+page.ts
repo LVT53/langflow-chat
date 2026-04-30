@@ -37,5 +37,7 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 		draft: detail.draft ?? null,
 		bootstrap: detail.bootstrap ?? false,
 		generatedFiles: detail.generatedFiles ?? [],
+		totalCostUsdMicros: detail.totalCostUsdMicros ?? 0,
+		totalTokens: detail.totalTokens ?? 0,
 	};
 };

@@ -20,6 +20,7 @@ type SendPayload = {
 	attachments: ArtifactSummary[];
 	pendingAttachments: PendingAttachment[];
 	conversationId: string | null;
+	personalityProfileId?: string | null;
 };
 
 type DraftPayload = {
@@ -93,6 +94,11 @@ let {
 				) => void;
 		  }) => void)
 		| undefined;
+	totalCostUsd?: number;
+	totalTokens?: number;
+	personalityProfiles?: Array<{ id: string; name: string; description: string }>;
+	selectedPersonalityId?: string | null;
+	onPersonalityChange?: ((id: string | null) => void) | undefined;
 } = $props();
 
 let textarea = $state<HTMLTextAreaElement | null>(null);
@@ -317,6 +323,7 @@ function buildSendPayload(): SendPayload {
 			...attachment,
 		})),
 		conversationId: resolvedConversationId,
+		personalityProfileId: selectedPersonalityId,
 	};
 }
 
@@ -665,6 +672,9 @@ async function emitDraftChange(force = false) {
 							{attachmentsEnabled}
 							onClose={closeToolsMenu}
 							onAttach={openFilePicker}
+							{personalityProfiles}
+							{selectedPersonalityId}
+							{onPersonalityChange}
 						/>
 					{/if}
 				</div>
@@ -676,6 +686,8 @@ async function emitDraftChange(force = false) {
 					{contextDebug}
 					onSteer={handleSteering}
 					onManageEvidence={handleManageEvidence}
+					{totalCostUsd}
+					{totalTokens}
 				/>
 			</div>
 
