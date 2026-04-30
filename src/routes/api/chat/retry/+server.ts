@@ -159,6 +159,7 @@ export const POST: RequestHandler = async (event) => {
 	const turn = preflight.value;
 
 	const upstreamMessage = turn.normalizedMessage;
+	const regenerationPromptAppendix = 'The user is regenerating their last request. Provide a completely fresh answer without referencing, acknowledging, or building upon your previous response to this same question. Do not mention that you answered this before. Start fresh as if this is the first time you are seeing this query.';
 
 	const requestStartTime = Date.now();
 
@@ -174,5 +175,6 @@ export const POST: RequestHandler = async (event) => {
 		downstreamAbortSignal: event.request.signal,
 		requestStartTime,
 		isReconnect: false,
+		systemPromptAppendix: regenerationPromptAppendix,
 	});
 };

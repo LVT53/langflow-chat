@@ -107,6 +107,8 @@ export interface StreamOrchestratorOptions {
 	downstreamAbortSignal: AbortSignal;
 	requestStartTime: number;
 	isReconnect?: boolean;
+	skipHonchoContext?: boolean;
+	systemPromptAppendix?: string;
 }
 
 export function runChatStreamOrchestrator(
@@ -119,6 +121,8 @@ export function runChatStreamOrchestrator(
 		downstreamAbortSignal,
 		requestStartTime,
 		isReconnect,
+		skipHonchoContext,
+		systemPromptAppendix: retryAppendix,
 	} = options;
 	const conversationId = turn.conversationId;
 	const normalizedMessage = turn.normalizedMessage;
@@ -475,10 +479,11 @@ export function runChatStreamOrchestrator(
 							},
 							attachmentIds: safeAttachmentIds,
 							activeDocumentArtifactId,
-							attachmentTraceId,
-							systemPromptAppendix: usedUrlListRecovery
-								? URL_LIST_TOOL_RECOVERY_APPENDIX
-								: undefined,
+						attachmentTraceId,
+							systemPromptAppendix: retryAppendix ??
+								(usedUrlListRecovery
+									? URL_LIST_TOOL_RECOVERY_APPENDIX
+									: undefined),
 							personalityPrompt,
 						},
 					).catch(async (error) => {

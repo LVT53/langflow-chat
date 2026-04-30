@@ -339,6 +339,7 @@ export async function prepareOutboundChatContext(params: {
 	attachmentTraceId?: string;
 	systemPromptAppendix?: string;
 	personalityPrompt?: string;
+	skipHonchoContext?: boolean;
 	modelId?: string;
 	contextLimits?: PromptContextLimits;
 	logLabel: "request" | "streaming bundle" | "provider request";
@@ -358,7 +359,7 @@ export async function prepareOutboundChatContext(params: {
 		| null
 		| undefined;
 
-	if (params.user?.id) {
+	if (params.user?.id && !params.skipHonchoContext) {
 		const constructed = await buildConstructedContext({
 			userId: params.user.id,
 			conversationId: params.sessionId,
@@ -626,6 +627,7 @@ export async function sendMessageStream(
 		attachmentTraceId?: string;
 		systemPromptAppendix?: string;
 		personalityPrompt?: string;
+		skipHonchoContext?: boolean;
 	},
 ): Promise<{
 	stream?: ReadableStream<Uint8Array>;
