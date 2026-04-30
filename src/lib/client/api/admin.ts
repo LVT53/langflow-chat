@@ -262,5 +262,5 @@ export async function fetchPublicPersonalityProfiles(): Promise<PersonalityProfi
 		undefined,
 		'Failed to load personality profiles',
 	);
-	return res.profiles;
+	return res.profiles.filter((profile) => !(profile.isBuiltIn && profile.name === 'Default'));
 }

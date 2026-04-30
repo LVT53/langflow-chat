@@ -187,16 +187,15 @@
 		padding: 0.5rem 0.62rem;
 		transition:
 			background-color var(--duration-standard) var(--ease-out),
-			color var(--duration-standard) var(--ease-out);
+			color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out);
 	}
 
 	.menu-row--button:hover:not(:disabled),
 	.menu-row--button:focus-visible {
+		background: color-mix(in srgb, var(--surface-page) 78%, var(--surface-elevated) 22%);
 		box-shadow: 0 0 0 2px var(--focus-ring);
-	}
-
-	.menu-row--button:focus-visible {
-		box-shadow: 0 0 0 2px var(--focus-ring);
+		outline: none;
 	}
 
 	.menu-row--button:disabled {
@@ -210,6 +209,97 @@
 		color: var(--text-primary);
 	}
 
+	.model-selector {
+		position: relative;
+		display: inline-block;
+	}
+
+	.model-selector__trigger {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 4px);
+		padding: var(--space-sm, 8px) 10px;
+		background: transparent;
+		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+		border-radius: var(--radius-md, 8px);
+		color: var(--text-primary, #1a1a1a);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 14px;
+		font-weight: 400;
+		cursor: pointer;
+		transition: all 150ms ease-out;
+		min-height: 36px;
+	}
+
+	.model-selector__trigger:hover:not(:disabled) {
+		background: var(--bg-hover, #eeedea);
+		border-color: var(--border, rgba(0, 0, 0, 0.08));
+	}
+
+	.model-selector__trigger:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--border-focus, #c15f3c);
+	}
+
+	.model-selector__text {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 120px;
+	}
+
+	.model-selector__chevron {
+		flex-shrink: 0;
+		transition: transform 200ms ease-out;
+		color: var(--text-secondary, #6b6b6b);
+		margin-left: 4px;
+	}
+
+	.model-selector__chevron--open {
+		transform: rotate(180deg);
+	}
+
+	.model-selector__dropdown {
+		position: absolute;
+		bottom: 100%;
+		left: 0;
+		margin: 0 0 var(--space-xs, 4px);
+		padding: var(--space-xs, 4px);
+		background: var(--bg-primary, #ffffff);
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+		border-radius: var(--radius-md, 8px);
+		box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.08));
+		list-style: none;
+		min-width: 100%;
+		z-index: 100;
+		animation: dropdownFadeIn 150ms ease-out;
+	}
+
+	.model-selector__option {
+		padding: var(--space-sm, 8px) var(--space-md, 16px);
+		border-radius: var(--radius-sm, 4px);
+		cursor: pointer;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 14px;
+		color: var(--text-primary, #1a1a1a);
+		transition: background-color 150ms ease-out;
+		white-space: nowrap;
+	}
+
+	.model-selector__option:hover,
+	.model-selector__option:focus {
+		background: var(--bg-hover, #eeedea);
+		outline: none;
+	}
+
+	.model-selector__option--selected {
+		background: var(--bg-hover, #eeedea);
+		font-weight: 500;
+	}
+
 	.menu-row :global(.model-selector__trigger) {
 		min-height: 32px;
 		padding: 0.35rem 0.55rem;
@@ -220,8 +310,54 @@
 		align-items: center;
 		justify-content: center;
 		color: var(--text-secondary);
+		transition:
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
+	.menu-row--button:hover:not(:disabled) .menu-icon,
+	.menu-row--button:focus-visible .menu-icon {
+		color: var(--accent);
+		transform: translateY(-1px);
+	}
+
+	:global(.dark) .model-selector__trigger {
+		color: var(--text-primary, #ececec);
+		border-color: var(--border, rgba(255, 255, 255, 0.08));
+	}
+
+	:global(.dark) .model-selector__trigger:hover:not(:disabled) {
+		background: var(--bg-hover, #333333);
+	}
+
+	:global(.dark) .model-selector__dropdown {
+		background: var(--bg-primary, #1a1a1a);
+		border-color: var(--border, rgba(255, 255, 255, 0.08));
+	}
+
+	:global(.dark) .model-selector__option {
+		color: var(--text-primary, #ececec);
+	}
+
+	:global(.dark) .model-selector__option:hover,
+	:global(.dark) .model-selector__option:focus {
+		background: var(--bg-hover, #333333);
+	}
+
+	:global(.dark) .model-selector__option--selected {
+		background: var(--bg-hover, #333333);
+	}
+
+	@keyframes dropdownFadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
 
 	@keyframes menuFadeIn {
 		from {
@@ -237,6 +373,18 @@
 	@media (prefers-reduced-motion: reduce) {
 		.tools-menu {
 			animation: none;
+		}
+
+		.model-selector__dropdown {
+			animation: none;
+		}
+
+		.menu-row--button,
+		.menu-icon,
+		.model-selector__trigger,
+		.model-selector__chevron,
+		.model-selector__option {
+			transition: none;
 		}
 	}
 </style>

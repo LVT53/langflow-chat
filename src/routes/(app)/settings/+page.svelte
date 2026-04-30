@@ -369,7 +369,18 @@ let removingPhoto = $state(false);
 
 	$effect(() => {
 		if (activeTab === 'profile' && personalityProfiles.length === 0) {
-			void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
+			void fetchPublicPersonalityProfiles()
+				.then((profiles) => {
+					personalityProfiles = profiles;
+					if (
+						selectedPersonalityId &&
+						!profiles.some((profile) => profile.id === selectedPersonalityId)
+					) {
+						selectedPersonalityId = null;
+						void updateUserPreferences({ preferredPersonalityId: null }).catch(() => {});
+					}
+				})
+				.catch(() => {});
 		}
 	});
 </script>
