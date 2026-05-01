@@ -1,8 +1,9 @@
 import { getFirstChoice, getNestedObject } from "$lib/services/stream-protocol";
 
 const THINKING_BLOCK_RE =
-	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
-const THINKING_TAG_RE = /<\/?thinking>|<\/?think>|\u597d|\u5417/gi;
+	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
+const THINKING_TAG_RE =
+	/<\/?thinking>|<\/?think>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
 const PRESERVE_TAG_RE = /<\/?preserve>/gi;
 
 export { PRESERVE_TAG_RE, THINKING_BLOCK_RE, THINKING_TAG_RE };
@@ -37,19 +38,24 @@ export function getReasoningContent(value: unknown): string | null {
 		}
 	}
 
-	if (typeof payload.reasoning === "string" && payload.reasoning.trim()) {
-		return payload.reasoning.trim();
-	}
-
-	if (
-		typeof payload.reasoning_content === "string" &&
-		payload.reasoning_content.trim()
-	) {
-		return payload.reasoning_content.trim();
-	}
-
-	if (typeof payload.thinking === "string" && payload.thinking.trim()) {
-		return payload.thinking.trim();
+	for (const key of [
+		"reasoning",
+		"reasoning_content",
+		"reasoningContent",
+		"reasoning_delta",
+		"reasoningDelta",
+		"reasoning_text",
+		"reasoningText",
+		"thinking",
+		"thinking_content",
+		"thinkingContent",
+		"thought",
+		"thoughts",
+	]) {
+		const candidate = payload[key];
+		if (typeof candidate === "string" && candidate.trim()) {
+			return candidate.trim();
+		}
 	}
 
 	for (const key of [

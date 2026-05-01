@@ -1,4 +1,4 @@
-<script lang=ts>
+<script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import { login } from '$lib/client/api/auth';
   import { clearClientAccountState } from '$lib/client/session-boundary';
@@ -15,7 +15,7 @@
     event.preventDefault();
 
     if (!email.trim() || !password.trim()) {
-      error = $t('loginPleaseFillAllFields');
+      error = $t('login.pleaseFillAllFields');
       return;
     }
 
@@ -30,7 +30,7 @@
     } catch (err) {
       error = err instanceof Error
         ? err.message
-        : $t('loginUnexpectedError');
+        : $t('login.unexpectedError');
     } finally {
       loading = false;
     }
@@ -50,21 +50,21 @@
 </script>
 
 <svelte:head>
-  <title>{$t('loginSignIn')}</title>
+  <title>{$t('login.signIn')}</title>
 </svelte:head>
 
 <div class="flex min-h-[100svh] w-full items-center justify-center bg-surface-page px-4 py-6 md:px-8 md:py-10">
   <div class="mx-auto w-full max-w-[448px] rounded-lg border border-border bg-surface-elevated p-lg md:p-xl shadow-lg">
     <div class="mb-6 text-center md:mb-8">
-      <h1 class="mb-2 text-2xl font-serif font-medium text-text-primary md:text-3xl">{$t('loginSignIn')}</h1>
-      <p class="text-sm text-text-muted">{$t('loginWelcomeBack')}</p>
+      <h1 class="mb-2 text-2xl font-serif font-medium text-text-primary md:text-3xl">{$t('login.signIn')}</h1>
+      <p class="text-sm text-text-muted">{$t('login.welcomeBack')}</p>
     </div>
 
     <form bind:this={formRef} onsubmit={handleSubmit} class="flex flex-col">
       <div class="flex flex-col gap-md">
         <div class="space-y-2">
           <label for="email" class="block text-sm font-medium text-text-primary">
-            {$t('loginEmailAddress')}
+            {$t('login.emailAddress')}
           </label>
           <input
             id="email"
@@ -83,14 +83,14 @@
         <div class="space-y-2">
           <div class="flex items-center justify-between">
             <label for="password" class="block text-sm font-medium text-text-primary">
-              {$t('loginPassword')}
+              {$t('login.password')}
             </label>
             <button
               type="button"
               class="flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors"
               onclick={() => showPassword = !showPassword}
               tabindex="-1"
-              aria-label={showPassword ? $t('loginHidePassword') : $t('loginShowPassword')}
+              aria-label={showPassword ? $t('login.hidePassword') : $t('login.showPassword')}
             >
               {#if showPassword}
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -135,9 +135,9 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          {$t('loginSigningIn')}
+          {$t('login.signingIn')}
         {:else}
-          {$t('loginSignIn')}
+          {$t('login.signIn')}
         {/if}
       </button>
     </form>

@@ -139,9 +139,9 @@
 
 <div
 	class='composer-layer'
-	style='padding-bottom: calc(0.75rem + env(safe-area-inset-bottom) + 16px + {keyboardOffset}px);'
+	style='padding-bottom: calc(0.35rem + env(safe-area-inset-bottom) + 8px + {keyboardOffset}px);'
 >
-	<div class='composer-shell mx-auto flex w-full max-w-[780px] flex-col gap-4 px-1'>
+	<div class='composer-shell mx-auto flex w-full max-w-[780px] flex-col gap-3'>
 		{#if sendError}
 			<ErrorMessage error={sendError} onRetry={onRetry} onClose={onErrorClose} />
 		{/if}
@@ -187,7 +187,7 @@
 		left: 0;
 		right: 0;
 		z-index: 10;
-		padding: 0.75rem 1rem;
+		padding: 0.5rem 0.75rem;
 		background: transparent;
 		border: 0;
 		box-shadow: none;
@@ -204,9 +204,9 @@
 
 	@media (max-width: 767px) {
 		.composer-layer {
-			padding-top: calc(0.75rem + env(safe-area-inset-top));
-			padding-left: max(1rem, env(safe-area-inset-left));
-			padding-right: max(1rem, env(safe-area-inset-right));
+			padding-top: 0.4rem;
+			padding-left: max(0.75rem, env(safe-area-inset-left));
+			padding-right: max(0.75rem, env(safe-area-inset-right));
 		}
 	}
 </style>

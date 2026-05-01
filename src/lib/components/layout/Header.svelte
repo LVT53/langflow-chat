@@ -5,7 +5,7 @@
 	import { clearClientAccountState } from '$lib/client/session-boundary';
 	import { t } from '$lib/i18n';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
-	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
+	import { portal, setMenuBaseBackground, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import {
 		sidebarOpen,
 		sidebarCollapsed,
@@ -16,7 +16,7 @@
 	let menuRef = $state<HTMLDivElement | undefined>(undefined);
 	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
 	let menuPositionStyle = $state('');
-	let menuBaseBackground = $state('');
+	let menuBaseBackground = $state('var(--surface-elevated)');
 
 	async function handleLogout() {
 		try {
@@ -53,6 +53,7 @@
 
 	function doUpdatePosition() {
 		if (!triggerRef) return;
+		menuBaseBackground = setMenuBaseBackground() || 'var(--surface-elevated)';
 		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 188);
 	}
 
@@ -139,7 +140,7 @@
 					bind:this={menuRef}
 					use:portal
 					class="header-menu z-[9999] overflow-hidden rounded-[0.75rem] border p-[5px]"
-					style={`${menuPositionStyle} --header-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+					style={`${menuPositionStyle} --header-menu-bg: ${menuBaseBackground};`}
 				>
 					<button
 						class="header-option header-option-accent flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -192,6 +193,7 @@
 	}
 
 	.header-menu {
+		background: var(--header-menu-bg, var(--surface-elevated));
 		border-color: color-mix(in srgb, var(--border-default) 76%, var(--surface-page) 24%);
 		isolation: isolate;
 		pointer-events: auto;

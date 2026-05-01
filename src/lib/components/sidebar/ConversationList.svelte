@@ -17,6 +17,7 @@
 		deleteProject
 	} from '$lib/stores/projects';
 	import { currentConversationId, sidebarOpen, SIDEBAR_DESKTOP_BREAKPOINT } from '$lib/stores/ui';
+	import { t } from '$lib/i18n';
 	import type { ConversationListItem, Project } from '$lib/types';
 	import ConversationItem from './ConversationItem.svelte';
 	import ProjectItem from './ProjectItem.svelte';
@@ -163,7 +164,7 @@
 			await renameConversation(id, title);
 		} catch (e) {
 			console.error('Rename failed', e);
-			alert('Failed to rename conversation. Please try again.');
+			alert($t('sidebar.failedRenameConversation'));
 		}
 	}
 
@@ -178,7 +179,7 @@
 			}
 		} catch (e) {
 			console.error('Delete failed', e);
-			alert('Failed to delete conversation. Please try again.');
+			alert($t('sidebar.failedDeleteConversation'));
 		}
 	}
 
@@ -190,7 +191,7 @@
 			await moveConversationToProject(id, projectId);
 		} catch (e) {
 			console.error('Move to project failed', e);
-			alert('Failed to move conversation. Please try again.');
+			alert($t('sidebar.failedMoveConversation'));
 		}
 	}
 
@@ -249,7 +250,7 @@
 			expandedProjects = { ...expandedProjects, [payload.projectId]: true };
 		} catch (e) {
 			console.error('Drag to project failed', e);
-			alert('Failed to move conversation. Please try again.');
+			alert($t('sidebar.failedMoveConversation'));
 		}
 	}
 
@@ -280,7 +281,7 @@
 			await moveConversationToProject(resolvedConversationId, null);
 		} catch (e) {
 			console.error('Drag to unorganized failed', e);
-			alert('Failed to move conversation. Please try again.');
+			alert($t('sidebar.failedMoveConversation'));
 		}
 	}
 
@@ -298,7 +299,7 @@
 			await renameProject(id, name);
 		} catch (e) {
 			console.error('Rename project failed', e);
-			alert('Failed to rename project. Please try again.');
+			alert($t('sidebar.failedRenameProject'));
 		}
 	}
 
@@ -310,7 +311,7 @@
 			await deleteProject(id);
 		} catch (e) {
 			console.error('Delete project failed', e);
-			alert('Failed to delete project. Please try again.');
+			alert($t('sidebar.failedDeleteProject'));
 		}
 	}
 
@@ -344,7 +345,7 @@
 			expandedProjects = { ...expandedProjects, [project.id]: true };
 		} catch (e) {
 			console.error('Create project failed', e);
-			alert('Failed to create project. Please try again.');
+			alert($t('sidebar.failedCreateProject'));
 		}
 	}
 
@@ -360,11 +361,11 @@
 		<div class="mb-0.5">
 			<!-- Section header -->
 			<div class="group flex items-center justify-between px-2 py-1">
-				<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Projects</span>
+				<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.projects')}</span>
 				<button
 					class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-icon-muted opacity-0 transition-opacity duration-100 hover:text-icon-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
-					title="New project"
-					aria-label="Create new project"
+					title={$t('sidebar.newProject')}
+					aria-label={$t('sidebar.createNewProject')}
 					onclick={startCreateProject}
 				>
 					<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -381,7 +382,7 @@
 						bind:value={newProjectName}
 						onblur={commitCreateProject}
 						onkeydown={handleNewProjectKeydown}
-						placeholder="Project name"
+						placeholder={$t('sidebar.projectName')}
 						class="w-full rounded-md border border-border bg-surface-page px-2.5 py-1.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-text-muted"
 					/>
 				</div>
@@ -394,7 +395,7 @@
 						class="project-drop-zone rounded-xl border border-transparent transition-colors duration-150"
 						class:project-drop-zone-active={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
 						role="group"
-						aria-label={`${project.name} project drop area`}
+						aria-label={$t('sidebar.projectDropArea', { name: project.name })}
 						ondragover={(event) => {
 							setMoveDropEffect(event);
 							handleProjectDragOver({ id: project.id });
@@ -463,11 +464,11 @@
 	{:else}
 		<!-- No projects yet: header + creative empty notice -->
 		<div class="group flex items-center justify-between px-2 py-1">
-			<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Projects</span>
+			<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.projects')}</span>
 			<button
 				class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-icon-muted opacity-0 transition-opacity duration-100 hover:text-icon-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
-				title="New project"
-				aria-label="Create new project"
+				title={$t('sidebar.newProject')}
+				aria-label={$t('sidebar.createNewProject')}
 				onclick={startCreateProject}
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -482,7 +483,7 @@
 					bind:value={newProjectName}
 					onblur={commitCreateProject}
 					onkeydown={handleNewProjectKeydown}
-					placeholder="Project name"
+					placeholder={$t('sidebar.projectName')}
 					class="w-full rounded-md border border-border bg-surface-page px-2.5 py-1.5 text-[13px] font-sans text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-text-muted"
 				/>
 			</div>
@@ -491,7 +492,7 @@
 			<button
 				class="empty-projects-btn mx-1 mb-2 flex w-[calc(100%-0.5rem)] cursor-pointer items-center gap-2.5 rounded-lg border border-dashed px-3 py-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 				onclick={startCreateProject}
-				aria-label="Create new project"
+				aria-label={$t('sidebar.createNewProject')}
 			>
 				<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-elevated text-icon-muted">
 					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -501,8 +502,8 @@
 					</svg>
 				</div>
 				<div>
-					<p class="text-[12px] font-medium text-text-secondary">No projects yet</p>
-					<p class="text-[11px] text-text-muted">Group your chats — click to create one</p>
+					<p class="text-[12px] font-medium text-text-secondary">{$t('sidebar.noProjectsYet')}</p>
+					<p class="text-[11px] text-text-muted">{$t('sidebar.groupChatsCreateOne')}</p>
 				</div>
 			</button>
 		{/if}
@@ -514,7 +515,7 @@
 		class="unorganized-drop-zone flex flex-col gap-0.5 rounded-xl border border-transparent px-1 transition-colors duration-150"
 		class:unorganized-drop-zone-active={dropTarget?.kind === 'unorganized'}
 		role="group"
-		aria-label="Unorganized conversations drop area"
+		aria-label={$t('sidebar.unorganizedDropArea')}
 		ondragover={(event) => {
 			setMoveDropEffect(event);
 			handleUnorganizedDragOver();
@@ -532,13 +533,13 @@
 		{#if allProjects.length > 0 || conversationsByProject.unorganized.length > 0 || canDropIntoUnorganized}
 				<div class="px-1 pb-1 pt-0.5">
 					<div class="flex items-center justify-between gap-2">
-						<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">Chats</span>
+						<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.chats')}</span>
 					</div>
 				</div>
 		{/if}
 		{#if visibleConversations.length === 0}
 			<div class="flex h-20 items-center justify-center p-4 text-sm text-text-muted">
-				No conversations yet
+				{$t('sidebar.noConversationsYet')}
 			</div>
 		{:else}
 			{#each conversationsByProject.unorganized as conversation (conversation.id)}

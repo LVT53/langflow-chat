@@ -46,8 +46,10 @@
 	async function handleNewConversation() {
 		markPreviousConversationId($currentConversationId);
 		currentConversationId.set(null);
+		if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) {
+			sidebarOpen.set(false);
+		}
 		await goto('/');
-
 	}
 
 	function openSearchModal() {

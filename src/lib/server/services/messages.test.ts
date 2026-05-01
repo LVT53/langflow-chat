@@ -8,7 +8,7 @@ type MessageRow = {
 	createdAt: Date;
 };
 
-const { mockRows, mockSelect, mockUpdate } = vi.hoisted(() => {
+const { mockRows, mockSelect, mockUpdate, mockDelete } = vi.hoisted(() => {
 	const mockRows: MessageRow[] = [];
 
 	const applySelection = (selection: Record<string, unknown>) =>
@@ -46,13 +46,22 @@ const { mockRows, mockSelect, mockUpdate } = vi.hoisted(() => {
 		return builder;
 	});
 
-	return { mockRows, mockSelect, mockUpdate };
+	const mockDelete = vi.fn(() => {
+		const builder = {
+			where: vi.fn(async () => undefined),
+		};
+
+		return builder;
+	});
+
+	return { mockRows, mockSelect, mockUpdate, mockDelete };
 });
 
 vi.mock('$lib/server/db', () => ({
 	db: {
 		select: mockSelect,
 		update: mockUpdate,
+		delete: mockDelete,
 	},
 }));
 
@@ -67,6 +76,9 @@ vi.mock('$lib/server/db/schema', () => ({
 	},
 	messageAnalytics: {
 		model: 'model',
+		messageId: 'messageId',
+	},
+	usageEvents: {
 		messageId: 'messageId',
 	},
 }));
@@ -86,6 +98,17 @@ describe('messages Honcho metadata', () => {
 	beforeEach(() => {
 		mockRows.length = 0;
 		vi.clearAllMocks();
+	});
+
+	it('deletes message rows without deleting immutable usage events', async () => {
+		const { deleteMessages } = await import('./messages');
+		const { messages, usageEvents } = await import('$lib/server/db/schema');
+
+		await deleteMessages(['assistant-1', 'assistant-2']);
+
+		expect(mockDelete).toHaveBeenCalledTimes(1);
+		expect(mockDelete).toHaveBeenCalledWith(messages);
+		expect(mockDelete).not.toHaveBeenCalledWith(usageEvents);
 	});
 
 	it('preserves Honcho metadata when evidence metadata is updated', async () => {

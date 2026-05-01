@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { ConversationListItem, Project } from '$lib/types';
+	import { t } from '$lib/i18n';
 	import { portal, setMenuBaseBackground, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 	import TypewriterText from '../ui/TypewriterText.svelte';
@@ -44,7 +45,7 @@
 	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
 	let showDeleteConfirm = $state(false);
 	let menuPositionStyle = $state('');
-	let menuBaseBackground = $state('');
+	let menuBaseBackground = $state('var(--surface-elevated)');
 	let showProjectSubmenu = $state(false);
 	let submenuRef = $state<HTMLDivElement | undefined>(undefined);
 	let submenuPositionStyle = $state('');
@@ -122,7 +123,7 @@
 
 	function doUpdatePosition() {
 		if (!triggerRef) return;
-		menuBaseBackground = setMenuBaseBackground();
+		menuBaseBackground = setMenuBaseBackground() || 'var(--surface-elevated)';
 		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 190);
 	}
 
@@ -141,7 +142,7 @@
 			triggerRef &&
 			!menuRef.contains(target) &&
 			!triggerRef.contains(target) &&
-			!(submenuRef && submenuRef.contains(target))
+			!submenuRef?.contains(target)
 		) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -254,7 +255,7 @@
 			class:opacity-100={menuOpen || active}
 			class:md:opacity-100={menuOpen || active}
 			onclick={toggleMenu}
-			aria-label="Conversation options"
+			aria-label={$t('sidebar.conversationOptions')}
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -278,7 +279,7 @@
 				bind:this={menuRef}
 				use:portal
 				class="conversation-menu z-[9999] overflow-hidden rounded-[0.75rem] border p-[5px]"
-				style={`${menuPositionStyle} --conversation-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+				style={`${menuPositionStyle} --conversation-menu-bg: ${menuBaseBackground};`}
 			>
 				<button
 					data-testid="rename-option"
@@ -289,7 +290,7 @@
 						<path d="M12 20h9" />
 						<path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
 					</svg>
-					<span>Rename</span>
+					<span>{$t('sidebar.rename')}</span>
 				</button>
 
 				{#if projects.length > 0 || conversation.projectId}
@@ -301,7 +302,7 @@
 						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
 						</svg>
-						<span class="flex-1">Move to project</span>
+						<span class="flex-1">{$t('sidebar.moveToProject')}</span>
 						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted mr-1">
 							<polyline points="9 18 15 12 9 6" />
 						</svg>
@@ -320,7 +321,7 @@
 						<path d="M10 11v6" />
 						<path d="M14 11v6" />
 					</svg>
-					<span>Delete</span>
+					<span>{$t('sidebar.delete')}</span>
 				</button>
 			</div>
 		{/if}
@@ -331,7 +332,7 @@
 				bind:this={submenuRef}
 				use:portal
 				class="conversation-menu z-[10000] overflow-hidden rounded-[0.75rem] border p-[5px]"
-				style={`${submenuPositionStyle} --conversation-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+				style={`${submenuPositionStyle} --conversation-menu-bg: ${menuBaseBackground};`}
 			>
 				{#each projects as proj (proj.id)}
 					<button
@@ -359,7 +360,7 @@
 						<svg class="conversation-option-icon opacity-60" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
 						</svg>
-						<span>Remove from project</span>
+						<span>{$t('sidebar.removeFromProject')}</span>
 					</button>
 				{/if}
 			</div>
@@ -369,10 +370,10 @@
 
 {#if showDeleteConfirm}
 	<ConfirmDialog
-		title="Delete this conversation?"
-		message="Are you sure you want to delete this conversation? This action cannot be undone."
-		confirmText="Delete"
-		cancelText="Cancel"
+		title={$t('sidebar.deleteConversationTitle')}
+		message={$t('sidebar.deleteConversationMessage')}
+		confirmText={$t('common.delete')}
+		cancelText={$t('common.cancel')}
 		confirmVariant="danger"
 		onConfirm={confirmDelete}
 		onCancel={cancelDelete}
@@ -381,6 +382,7 @@
 
 <style>
 	.conversation-menu {
+		background: var(--conversation-menu-bg, var(--surface-elevated));
 		border-color: color-mix(in srgb, var(--border-default) 76%, var(--surface-page) 24%);
 		isolation: isolate;
 		pointer-events: auto;

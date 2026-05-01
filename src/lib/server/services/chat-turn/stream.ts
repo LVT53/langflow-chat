@@ -295,7 +295,8 @@ export function classifyStreamError(rawMessage: string): StreamErrorCode {
 		message.includes("econn") ||
 		message.includes("enotfound") ||
 		message.includes("socket") ||
-		message.includes("connection")
+		message.includes("connection") ||
+		message.includes("terminated")
 	) {
 		return "network";
 	}

@@ -39,11 +39,6 @@ describe('Environment Configuration', () => {
     delete process.env.LANGFLOW_FLOW_ID
     delete process.env.LANGFLOW_WEBHOOK_SECRET
     delete process.env.ALFYAI_API_SIGNING_KEY
-    delete process.env.TRANSLATOR_URL
-    delete process.env.TRANSLATOR_API_KEY
-    delete process.env.TRANSLATOR_MODEL
-    delete process.env.TRANSLATION_MAX_TOKENS
-    delete process.env.TRANSLATION_TEMPERATURE
     delete process.env.TITLE_GEN_URL
     delete process.env.TITLE_GEN_API_KEY
     delete process.env.TITLE_GEN_MODEL
@@ -72,11 +67,6 @@ describe('Environment Configuration', () => {
     expect(config.langflowFlowId).toBe('')
     expect(config.langflowWebhookSecret).toBe('')
     expect(config.alfyaiApiSigningKey).toBe('')
-    expect(config.translatorUrl).toBe('http://localhost:30002/v1')
-    expect(config.translatorApiKey).toBe('')
-    expect(config.translatorModel).toBe('translategemma')
-    expect(config.translationMaxTokens).toBe(256)
-    expect(config.translationTemperature).toBe(0.1)
     expect(config.titleGenUrl).toBe('http://localhost:30001/v1')
     expect(config.titleGenApiKey).toBe('')
     expect(config.titleGenModel).toBe('nemotron-nano')
@@ -107,11 +97,6 @@ describe('Environment Configuration', () => {
     process.env.LANGFLOW_FLOW_ID = 'test-flow-id'
     process.env.LANGFLOW_WEBHOOK_SECRET = 'test-webhook-secret'
     process.env.ALFYAI_API_SIGNING_KEY = 'test-signing-key'
-    process.env.TRANSLATOR_URL = 'http://test-translator:30002/v1'
-    process.env.TRANSLATOR_API_KEY = 'test-translator-key'
-    process.env.TRANSLATOR_MODEL = 'test-translator-model'
-    process.env.TRANSLATION_MAX_TOKENS = '512'
-    process.env.TRANSLATION_TEMPERATURE = '0.2'
     process.env.TITLE_GEN_URL = 'http://test-nemotron:9000/v1'
     process.env.TITLE_GEN_API_KEY = 'test-nemotron-key'
     process.env.TITLE_GEN_MODEL = 'test-model'
@@ -141,11 +126,6 @@ describe('Environment Configuration', () => {
     expect(config.langflowFlowId).toBe('test-flow-id')
     expect(config.langflowWebhookSecret).toBe('test-webhook-secret')
     expect(config.alfyaiApiSigningKey).toBe('test-signing-key')
-    expect(config.translatorUrl).toBe('http://test-translator:30002/v1')
-    expect(config.translatorApiKey).toBe('test-translator-key')
-    expect(config.translatorModel).toBe('test-translator-model')
-    expect(config.translationMaxTokens).toBe(512)
-    expect(config.translationTemperature).toBe(0.2)
     expect(config.titleGenUrl).toBe('http://test-nemotron:9000/v1')
     expect(config.titleGenApiKey).toBe('test-nemotron-key')
     expect(config.titleGenModel).toBe('test-model')

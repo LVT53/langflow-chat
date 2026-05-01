@@ -115,9 +115,78 @@ function createTokenStream(text: string): ReadableStream<Uint8Array> {
 	});
 }
 
+function createErroredStream(
+	blocks: string[],
+	error: Error,
+): ReadableStream<Uint8Array> {
+	const encoder = new TextEncoder();
+	let index = 0;
+	return new ReadableStream({
+		pull(controller) {
+			const block = blocks[index];
+			if (block !== undefined) {
+				index += 1;
+				controller.enqueue(encoder.encode(block));
+				return;
+			}
+			controller.error(error);
+		},
+	});
+}
+
+async function resetCompletionMocks() {
+	const { touchConversation } = await import(
+		"$lib/server/services/conversations"
+	);
+	const { createMessage } = await import("$lib/server/services/messages");
+	const {
+		persistAssistantEvidence,
+		persistAssistantTurnState,
+		persistUserTurnAttachments,
+		runPostTurnTasks,
+	} = await import("$lib/server/services/chat-turn/finalize");
+	const {
+		assignGeneratedFilesToAssistantMessage,
+		getChatFiles,
+		getChatFilesForAssistantMessage,
+		syncGeneratedFilesToMemory,
+	} = await import("$lib/server/services/chat-files");
+	const { estimateTokenCount } = await import("$lib/utils/tokens");
+
+	(touchConversation as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+	(createMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+		id: "msg-1",
+	});
+	(persistUserTurnAttachments as ReturnType<typeof vi.fn>).mockResolvedValue(
+		undefined,
+	);
+	(persistAssistantTurnState as ReturnType<typeof vi.fn>).mockResolvedValue({
+		activeWorkingSet: [],
+		taskState: null,
+		contextDebug: null,
+		workCapsule: undefined,
+	});
+	(persistAssistantEvidence as ReturnType<typeof vi.fn>).mockResolvedValue(
+		undefined,
+	);
+	(runPostTurnTasks as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+	(
+		assignGeneratedFilesToAssistantMessage as ReturnType<typeof vi.fn>
+	).mockResolvedValue(undefined);
+	(getChatFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+	(
+		getChatFilesForAssistantMessage as ReturnType<typeof vi.fn>
+	).mockResolvedValue([]);
+	(syncGeneratedFilesToMemory as ReturnType<typeof vi.fn>).mockResolvedValue(
+		undefined,
+	);
+	(estimateTokenCount as ReturnType<typeof vi.fn>).mockReturnValue(100);
+}
+
 describe("stream-orchestrator SSE contract", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.resetAllMocks();
+		await resetCompletionMocks();
 	});
 
 	it("produces SSE prelude comment as first chunk", async () => {
@@ -188,8 +257,9 @@ describe("stream-orchestrator SSE contract", () => {
 		const chunks = await readSseResponse(response);
 		const endChunk = chunks.find((c) => c.startsWith("event: end"));
 		expect(endChunk).toBeDefined();
+		if (!endChunk) throw new Error("Missing end chunk");
 
-		const jsonStr = endChunk!.replace("event: end\ndata: ", "");
+		const jsonStr = endChunk.replace("event: end\ndata: ", "");
 		const payload = JSON.parse(jsonStr);
 
 		expect(payload).toHaveProperty("thinkingTokenCount");
@@ -230,5 +300,95 @@ describe("stream-orchestrator SSE contract", () => {
 		const errorChunk = chunks.find((c) => c.startsWith("event: error"));
 		expect(errorChunk).toBeDefined();
 		expect(errorChunk).toContain('"code"');
+	});
+
+	it("falls back to non-streaming when the upstream body terminates before output", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		const terminatedError = new TypeError("terminated") as Error & {
+			cause?: unknown;
+		};
+		terminatedError.cause = { code: "UND_ERR_SOCKET" };
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createErroredStream([], terminatedError),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+		(sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+			text: "Recovered answer",
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+				translationEnabled: false,
+			},
+			turn: createTurn(),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain('event: token\ndata: {"text":"Recovered answer"}');
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps partial streamed output when the upstream body terminates after output starts", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		const terminatedError = new TypeError("terminated") as Error & {
+			cause?: unknown;
+		};
+		terminatedError.cause = { code: "UND_ERR_SOCKET" };
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createErroredStream(
+				['event: token\ndata: {"text":"Partial answer"}\n\n'],
+				terminatedError,
+			),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+				translationEnabled: false,
+			},
+			turn: createTurn(),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain('event: token\ndata: {"text":"Partial answer"}');
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).not.toHaveBeenCalled();
 	});
 });

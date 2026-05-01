@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Project } from '$lib/types';
-	import { portal, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
+	import { t } from '$lib/i18n';
+	import { portal, setMenuBaseBackground, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import ConfirmDialog from '../ui/ConfirmDialog.svelte';
 
 	let {
@@ -39,10 +40,11 @@
 	let triggerRef = $state<HTMLButtonElement | undefined>(undefined);
 	let showDeleteConfirm = $state(false);
 	let menuPositionStyle = $state('');
-	let menuBaseBackground = $state('');
+	let menuBaseBackground = $state('var(--surface-elevated)');
 
 	function doUpdatePosition() {
 		if (!triggerRef) return;
+		menuBaseBackground = setMenuBaseBackground() || 'var(--surface-elevated)';
 		updateMenuPosition(triggerRef, (style) => { menuPositionStyle = style; }, 176);
 	}
 
@@ -193,7 +195,7 @@
 		class="btn-icon-bare ml-1 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-icon-muted opacity-100 transition-colors duration-150 hover:bg-surface-page hover:text-icon-primary focus-visible:outline-none md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
 		class:md:opacity-100={menuOpen}
 		onclick={toggleMenu}
-		aria-label="Project options"
+		aria-label={$t('sidebar.projectOptions')}
 	>
 		<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 			<circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
@@ -205,7 +207,7 @@
 			bind:this={menuRef}
 			use:portal
 			class="project-menu z-[9999] overflow-hidden rounded-[0.75rem] border p-[5px]"
-			style={`${menuPositionStyle} --project-menu-bg: ${menuBaseBackground}; background: ${menuBaseBackground};`}
+			style={`${menuPositionStyle} --project-menu-bg: ${menuBaseBackground};`}
 		>
 			<button
 				class="project-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -214,7 +216,7 @@
 				<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>
 				</svg>
-				<span>Rename</span>
+				<span>{$t('sidebar.rename')}</span>
 			</button>
 			<button
 				class="project-option project-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -223,7 +225,7 @@
 				<svg class="project-option-icon project-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
 				</svg>
-				<span>Delete</span>
+				<span>{$t('sidebar.delete')}</span>
 			</button>
 		</div>
 	{/if}
@@ -231,10 +233,10 @@
 
 {#if showDeleteConfirm}
 	<ConfirmDialog
-		title="Delete this project?"
-		message="The project will be deleted. All chats inside will become unorganized."
-		confirmText="Delete"
-		cancelText="Cancel"
+		title={$t('sidebar.deleteProjectTitle')}
+		message={$t('sidebar.deleteProjectMessage')}
+		confirmText={$t('common.delete')}
+		cancelText={$t('common.cancel')}
 		confirmVariant="danger"
 		onConfirm={confirmDelete}
 		onCancel={() => (showDeleteConfirm = false)}
@@ -243,6 +245,7 @@
 
 <style>
 	.project-menu {
+		background: var(--project-menu-bg, var(--surface-elevated));
 		border-color: color-mix(in srgb, var(--border-default) 76%, var(--surface-page) 24%);
 		isolation: isolate;
 		pointer-events: auto;

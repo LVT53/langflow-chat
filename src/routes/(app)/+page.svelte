@@ -276,7 +276,13 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 			currentConversationId.set(id);
 			upsertConversationLocal(id, 'New Conversation', Date.now() / 1000);
 			setLandingDraftConversationId(null);
+			conversationDraft = null;
 			draftPersistence.clear();
+			void draftPersistence.persist({
+				conversationId: id,
+				draftText: '',
+				selectedAttachmentIds: [],
+			}, true);
 			storePendingConversationMessage(id, {
 				message: text,
 				attachmentIds: payload.attachmentIds,

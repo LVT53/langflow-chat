@@ -52,13 +52,11 @@ import {
 import { completeStreamTurn } from "$lib/server/services/chat-turn/stream-completion";
 import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fallback";
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
-import type {
-	ChatTurnPreflight,
-	WorkCapsuleSummary,
-} from "$lib/server/services/chat-turn/types";
+import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
 import { touchConversation } from "$lib/server/services/conversations";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
+import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
 import {
 	attachContinuityToTaskState,
 	getContextDebugState,
@@ -70,13 +68,14 @@ import {
 	getGenerateFileToolLanguage,
 } from "$lib/utils/generate-file-tool";
 import { estimateTokenCount } from "$lib/utils/tokens";
-import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
 }
 
-function unrefTimer(timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>) {
+function unrefTimer(
+	timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>,
+) {
 	timer.unref?.();
 }
 
@@ -320,7 +319,6 @@ export function runChatStreamOrchestrator(
 				}
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
 			};
-			const emitInlineToken = chunkRuntime.emitInlineToken;
 			const emitChunkWithPreserveHandling =
 				chunkRuntime.emitChunkWithPreserveHandling;
 			const flushPendingThinking = chunkRuntime.flushPendingThinking;
@@ -360,6 +358,13 @@ export function runChatStreamOrchestrator(
 
 				return emitChunkWithPreserveHandling(text);
 			};
+			const hasEmittedStreamOutput = () =>
+				Boolean(
+					chunkRuntime.fullResponse.trim() ||
+						chunkRuntime.thinkingContent.trim() ||
+						chunkRuntime.toolCallRecords.length > 0 ||
+						emittedAssistantText.trim(),
+				);
 			let latestContextStatus:
 				| import("$lib/types").ConversationContextStatus
 				| undefined;
@@ -460,18 +465,93 @@ export function runChatStreamOrchestrator(
 
 			const timeoutId = setTimeout(() => {
 				failStream("timeout");
+				upstreamAbortController.abort();
 			}, getStreamTimeoutMs());
 			unrefTimer(timeoutId);
 
+			let usedUrlListRecovery = false;
+			let personalityPrompt: string | undefined;
+			let latestUpstreamAttempt = 1;
+			let attemptedNonStreamFallback = false;
+			const currentSystemPromptAppendix = () =>
+				retryAppendix ??
+				(usedUrlListRecovery ? URL_LIST_TOOL_RECOVERY_APPENDIX : undefined);
+			const fallbackToNonStreaming = async (
+				reason: "stream_connect_failure" | "stream_read_failure",
+				attempt: number,
+				error: unknown,
+			): Promise<null> => {
+				attemptedNonStreamFallback = true;
+				console.warn(
+					reason === "stream_connect_failure"
+						? "[STREAM] Falling back to non-stream Langflow run after stream connect failure"
+						: "[STREAM] Falling back to non-stream Langflow run after stream body terminated before first output",
+					{
+						conversationId,
+						attempt,
+						errorName: error instanceof Error ? error.name : undefined,
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					},
+				);
+
+				await runNonStreamFallback({
+					sendMessage,
+					sendParams: {
+						upstreamMessage,
+						conversationId,
+						modelId,
+						attachmentIds: safeAttachmentIds,
+						activeDocumentArtifactId,
+						attachmentTraceId,
+					},
+					user,
+					attachContinuityToTaskState,
+					emitResolvedAssistantText,
+					flushPendingThinking,
+					flushInlineThinkingBuffer,
+					flushPreserveBuffer,
+					completeSuccess,
+					signal: upstreamAbortController.signal,
+					systemPromptAppendix: currentSystemPromptAppendix(),
+					personalityPrompt,
+					skipHonchoContext,
+					onContextStatus: (status) => {
+						latestContextStatus = status;
+						initialContextStatus = status;
+					},
+					onTaskState: (state) => {
+						latestTaskState = state;
+						initialTaskState = state;
+					},
+					onContextDebug: (debug) => {
+						latestContextDebug = debug;
+						initialContextDebug = debug;
+					},
+					onHonchoContext: (ctx) => {
+						latestHonchoContext = ctx;
+					},
+					onHonchoSnapshot: (snap) => {
+						latestHonchoSnapshot = snap;
+					},
+					onProviderUsage: (usage) => {
+						latestProviderUsage = usage;
+					},
+				});
+
+				return null;
+			};
+
 			try {
-				let usedUrlListRecovery = false;
-				let personalityPrompt: string | undefined;
 				if (personalityProfileId) {
-					const profile = await getPersonalityProfile(personalityProfileId).catch(() => null);
+					const profile = await getPersonalityProfile(
+						personalityProfileId,
+					).catch(() => null);
 					personalityPrompt = profile?.promptText || undefined;
 				}
 
 				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
+					latestUpstreamAttempt = attempt;
 					const langflowResponse = await sendMessageStream(
 						upstreamMessage,
 						conversationId,
@@ -486,10 +566,7 @@ export function runChatStreamOrchestrator(
 							attachmentIds: safeAttachmentIds,
 							activeDocumentArtifactId,
 							attachmentTraceId,
-							systemPromptAppendix: retryAppendix ??
-								(usedUrlListRecovery
-									? URL_LIST_TOOL_RECOVERY_APPENDIX
-									: undefined),
+							systemPromptAppendix: currentSystemPromptAppendix(),
 							personalityPrompt,
 							skipHonchoContext,
 						},
@@ -497,73 +574,16 @@ export function runChatStreamOrchestrator(
 						if (
 							wasActiveChatStreamStopRequested(streamId) ||
 							!shouldFallbackToNonStreaming(error) ||
-							chunkRuntime.fullResponse.trim() ||
-							chunkRuntime.thinkingContent.trim() ||
-							chunkRuntime.toolCallRecords.length > 0 ||
-							emittedAssistantText.trim()
+							hasEmittedStreamOutput()
 						) {
 							throw error;
 						}
 
-						console.warn(
-							"[STREAM] Falling back to non-stream Langflow run after stream connect failure",
-							{
-								conversationId,
-								attempt,
-								errorName: error instanceof Error ? error.name : undefined,
-								errorMessage:
-									error instanceof Error ? error.message : String(error),
-							},
+						return fallbackToNonStreaming(
+							"stream_connect_failure",
+							attempt,
+							error,
 						);
-
-						await runNonStreamFallback({
-							sendMessage,
-							sendParams: {
-								upstreamMessage,
-								conversationId,
-								modelId,
-								attachmentIds: safeAttachmentIds,
-								activeDocumentArtifactId,
-								attachmentTraceId,
-							},
-							user,
-							attachContinuityToTaskState,
-							emitResolvedAssistantText,
-							flushPendingThinking,
-							flushInlineThinkingBuffer,
-							flushPreserveBuffer,
-							completeSuccess,
-							signal: upstreamAbortController.signal,
-							systemPromptAppendix: retryAppendix ??
-								(usedUrlListRecovery
-									? URL_LIST_TOOL_RECOVERY_APPENDIX
-									: undefined),
-							personalityPrompt,
-							skipHonchoContext,
-							onContextStatus: (status) => {
-								latestContextStatus = status;
-								initialContextStatus = status;
-							},
-							onTaskState: (state) => {
-								latestTaskState = state;
-								initialTaskState = state;
-							},
-							onContextDebug: (debug) => {
-								latestContextDebug = debug;
-								initialContextDebug = debug;
-							},
-							onHonchoContext: (ctx) => {
-								latestHonchoContext = ctx;
-							},
-							onHonchoSnapshot: (snap) => {
-								latestHonchoSnapshot = snap;
-							},
-							onProviderUsage: (usage) => {
-								latestProviderUsage = usage;
-							},
-						});
-
-						return null;
 					});
 					if (!langflowResponse) {
 						return;
@@ -618,13 +638,11 @@ export function runChatStreamOrchestrator(
 					initialContextDebug = latestContextDebug;
 					latestHonchoContext = langflowResponse.honchoContext ?? null;
 					latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
-					let upstreamEventCount = 0;
 
 					for await (const upstreamEvent of parseUpstreamEvents(
 						langflowStream,
 					)) {
 						const { event: eventType, data } = upstreamEvent;
-						upstreamEventCount += 1;
 						const eventUsage = extractProviderUsage(data);
 						if (eventUsage) {
 							latestProviderUsage = eventUsage;
@@ -655,10 +673,7 @@ export function runChatStreamOrchestrator(
 							const canRetryUrlListValidation =
 								!usedUrlListRecovery &&
 								isUrlListValidationError(errorMessage) &&
-								!chunkRuntime.fullResponse.trim() &&
-								!chunkRuntime.thinkingContent.trim() &&
-								chunkRuntime.toolCallRecords.length === 0 &&
-								!emittedAssistantText.trim();
+								!hasEmittedStreamOutput();
 							if (canRetryUrlListValidation) {
 								usedUrlListRecovery = true;
 								lastAssistantSnapshot = "";
@@ -745,6 +760,9 @@ export function runChatStreamOrchestrator(
 					return;
 				}
 			} catch (error) {
+				if (ended) {
+					return;
+				}
 				if (
 					wasActiveChatStreamStopRequested(streamId) &&
 					error instanceof Error &&
@@ -752,6 +770,19 @@ export function runChatStreamOrchestrator(
 						error.message.toLowerCase().includes("abort"))
 				) {
 					completeSuccess(true);
+					return;
+				}
+				if (
+					!attemptedNonStreamFallback &&
+					!wasActiveChatStreamStopRequested(streamId) &&
+					shouldFallbackToNonStreaming(error) &&
+					!hasEmittedStreamOutput()
+				) {
+					await fallbackToNonStreaming(
+						"stream_read_failure",
+						latestUpstreamAttempt,
+						error,
+					);
 					return;
 				}
 				if (

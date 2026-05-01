@@ -75,11 +75,12 @@
 		return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 	}
 
-	let availableMonths = $derived(
-		(analyticsData?.availableMonths ?? analyticsData?.personal?.monthly?.map((m: any) => m.month) ?? [])
-			.sort()
-			.reverse() as string[],
-	);
+	let availableMonths = $derived.by(() => {
+		const months = analyticsData?.availableMonths ??
+			analyticsData?.personal?.monthly?.map((m: any) => m.month) ??
+			[];
+		return [...months].sort().reverse() as string[];
+	});
 
 	function prevMonth() {
 		if (availableMonths.length === 0) return;
@@ -120,7 +121,11 @@
 		if (!prev || prev.totalCostUsd === 0) return '';
 		const diff = ((current.totalCostUsd - prev.totalCostUsd) / prev.totalCostUsd) * 100;
 		const arrow = diff > 0 ? '\u2191' : '\u2193';
-		return `${arrow} ${Math.abs(diff).toFixed(0)}% vs ${formatMonth(prev.month)}`;
+		return $t('analytics.comparisonVsMonth', {
+			direction: arrow,
+			percent: Math.abs(diff).toFixed(0),
+			month: formatMonth(prev.month),
+		});
 	});
 
 	async function initCharts(translateFn: (key: I18nKey, params?: Record<string, string | number>) => string) {
@@ -140,7 +145,7 @@
 				data: {
 					labels: byModel.map((row: any) => row.displayName ?? modelDisplayName(row.model)),
 					datasets: [{
-						label: 'Cost (USD)',
+						label: translateFn('analytics.chartCostUsd'),
 						data: byModel.map((row: any) => Number(row.totalCostUsd)),
 						backgroundColor: CHART_COLORS.slice(0, byModel.length),
 						borderWidth: 0,
@@ -307,7 +312,7 @@
 					class="month-nav-btn"
 					onclick={prevMonth}
 					disabled={availableMonths.length === 0}
-					aria-label="Previous month"
+					aria-label={$t('analytics.previousMonth')}
 				>&larr;</button>
 				<span class="month-label">
 					{selectedMonth ? formatMonth(selectedMonth) : $t('analytics.allTime')}
@@ -316,7 +321,7 @@
 					class="month-nav-btn"
 					onclick={nextMonth}
 					disabled={availableMonths.length === 0}
-					aria-label="Next month"
+					aria-label={$t('analytics.nextMonth')}
 				>&rarr;</button>
 				{#if selectedMonth}
 					<button class="month-alltime-btn" onclick={selectAllTime}>
@@ -353,7 +358,7 @@
 
 		{#if analyticsData.personal.byModel?.length > 0}
 			<div class="mt-5">
-				<p class="settings-label mb-3">Cost by model</p>
+				<p class="settings-label mb-3">{$t('analytics.costByModel')}</p>
 				<div style="max-width: 480px; height: 200px; margin: 0 auto; position: relative;">
 					<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
 				</div>
@@ -363,22 +368,25 @@
 		{#if analyticsData.timeline?.length > 0}
 			<div class="mt-5">
 				<div class="flex items-center justify-between mb-3">
-					<p class="settings-label">Token Usage</p>
+					<p class="settings-label">{$t('analytics.tokenUsage')}</p>
 					<div class="flex items-center gap-0 rounded-full border border-border bg-surface-overlay p-0.5">
 						<button
 							class="timeline-toggle-btn"
 							class:timeline-toggle-btn--active={timelineGranularity === 'weekly'}
 							onclick={() => { timelineGranularity = 'weekly'; onTimelineChange?.('weekly'); }}
+							aria-label={$t('analytics.timelineWeekly')}
 						>W</button>
 						<button
 							class="timeline-toggle-btn"
 							class:timeline-toggle-btn--active={timelineGranularity === 'monthly'}
 							onclick={() => { timelineGranularity = 'monthly'; onTimelineChange?.('monthly'); }}
+							aria-label={$t('analytics.timelineMonthly')}
 						>M</button>
 						<button
 							class="timeline-toggle-btn"
 							class:timeline-toggle-btn--active={timelineGranularity === 'yearly'}
 							onclick={() => { timelineGranularity = 'yearly'; onTimelineChange?.('yearly'); }}
+							aria-label={$t('analytics.timelineYearly')}
 						>Y</button>
 					</div>
 				</div>

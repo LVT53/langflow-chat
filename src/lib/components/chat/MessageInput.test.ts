@@ -487,7 +487,12 @@ describe('MessageInput', () => {
 			attachments: [],
 			conversationId: null,
 		});
-		expect(draftSpy).not.toHaveBeenCalled();
+		expect(draftSpy).toHaveBeenCalledTimes(1);
+		expect(draftSpy).toHaveBeenCalledWith(expect.objectContaining({
+			conversationId: null,
+			draftText: '',
+			selectedAttachmentIds: [],
+		}));
 
 		resolveConversation?.('conv-race');
 		await waitFor(() => {
@@ -495,7 +500,7 @@ describe('MessageInput', () => {
 		});
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		expect(draftSpy).not.toHaveBeenCalled();
+		expect(draftSpy).toHaveBeenCalledTimes(1);
 	});
 
 	it('queues the next message on Enter while generation is in progress', async () => {

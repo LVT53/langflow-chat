@@ -59,6 +59,8 @@ describe('conversation-session', () => {
 			message: 'Hello there',
 			attachmentIds: ['artifact-1'],
 			attachments: [attachment],
+			modelId: undefined,
+			personalityProfileId: null,
 		});
 		expect(hasPendingConversationMessage('conv-123')).toBe(false);
 	});

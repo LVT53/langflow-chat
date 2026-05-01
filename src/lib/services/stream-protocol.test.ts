@@ -47,6 +47,24 @@ describe('stream-protocol', () => {
 		expect(onThinking.mock.calls).toEqual([['Need to reason']]);
 	});
 
+	it('routes Qwen ChatML thinking traces into thinking emissions', () => {
+		const state = createInlineThinkingState();
+		const onVisible = vi.fn();
+		const onThinking = vi.fn();
+
+		processInlineThinkingChunk(state, 'Before<|im_start|>analysis\nTrace', {
+			onVisible,
+			onThinking,
+		});
+		processInlineThinkingChunk(state, ' details<|im_end|>After', {
+			onVisible,
+			onThinking,
+		});
+
+		expect(onVisible.mock.calls).toEqual([['Before'], ['After']]);
+		expect(onThinking.mock.calls).toEqual([['\nTrace'], [' details']]);
+	});
+
 	it('drops a trailing partial open tag when flushing visible content', () => {
 		const state = createInlineThinkingState();
 		const onVisible = vi.fn();

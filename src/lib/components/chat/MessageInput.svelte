@@ -290,10 +290,10 @@ function adjustHeight() {
 	if (!textarea) return;
 	requestAnimationFrame(() => {
 		if (!textarea) return;
-		const minHeight = 90;
-		textarea.style.height = `${minHeight}px`;
 		const isMobileDevice = window.innerWidth < 768;
-		const maxHeight = isMobileDevice ? 120 : 240;
+		const minHeight = isMobileDevice ? 72 : 88;
+		textarea.style.height = `${minHeight}px`;
+		const maxHeight = isMobileDevice ? 112 : 240;
 		textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
 	});
 }
@@ -338,7 +338,7 @@ function clearComposerAfterSubmit() {
 		sentAttachmentIds.add(attachment.artifact.id);
 	}
 	// Trigger reactivity by reassigning the Set
-	sentAttachmentIds = sentAttachmentIds;
+	sentAttachmentIds = new Set(sentAttachmentIds);
 	message = "";
 	pendingAttachments = [];
 	attachmentError = "";
@@ -346,6 +346,7 @@ function clearComposerAfterSubmit() {
 	showToolsMenu = false;
 	lastEmittedDraftKey = "";
 	draftEmissionVersion += 1;
+	void emitDraftChange(true);
 	adjustHeight();
 	if (!isMobile()) {
 		textarea?.focus();
@@ -589,7 +590,7 @@ async function emitDraftChange(force = false) {
 </script>
 
 <div class="composer-root relative flex w-full flex-col">
-	<div class="message-composer flex min-h-[78px] flex-col rounded-[1.25rem] border border-border px-[10px] pt-[10px] pb-0 transition-all duration-150 focus-within:border-focus-ring">
+	<div class="message-composer flex min-h-[70px] flex-col rounded-[1.25rem] border border-border px-[8px] pt-[8px] pb-0 transition-all duration-150 focus-within:border-focus-ring md:min-h-[78px] md:px-[10px] md:pt-[10px]">
 		<input
 			bind:this={fileInput}
 			type="file"
@@ -604,7 +605,7 @@ async function emitDraftChange(force = false) {
 			oninput={handleInput}
 			onkeydown={handleKeydown}
 			placeholder={$t('chat.messagePlaceholder')}
-			class="composer-textarea min-h-[90px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[16px] py-[8px] text-left text-[14px] md:text-[15px] leading-[1.35] font-serif text-text-primary placeholder:font-sans placeholder:text-text-muted focus:outline-none focus:ring-0"
+			class="composer-textarea min-h-[72px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[13px] py-[7px] text-left text-[15px] leading-[1.42] font-serif text-text-primary placeholder:font-sans placeholder:text-[14px] placeholder:text-text-muted focus:outline-none focus:ring-0 md:min-h-[88px] md:px-[16px] md:py-[8px] md:text-[15px] md:leading-[1.35]"
 			rows="1"
 		></textarea>
 
@@ -655,12 +656,12 @@ async function emitDraftChange(force = false) {
 			</div>
 		{/if}
 
-		<div class="composer-actions flex items-center justify-between gap-3 pt-[4px] pb-[5px]">
+		<div class="composer-actions flex items-center justify-between gap-2 pt-[3px] pb-[4px] md:gap-3 md:pt-[4px] md:pb-[5px]">
 			<div class="flex items-center gap-2">
 				<div class="relative flex items-center">
 					<button
 						type="button"
-						class="btn-icon-bare composer-icon flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center text-text-muted"
+						class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
 						onclick={toggleToolsMenu}
 						aria-label={$t('chat.openComposerTools')}
 						aria-expanded={showToolsMenu}
@@ -696,7 +697,7 @@ async function emitDraftChange(force = false) {
 				/>
 			</div>
 
-			<div class="action-button-container flex min-h-[50px] items-center justify-end gap-2 flex-shrink-0">
+			<div class="action-button-container flex min-h-[42px] items-center justify-end gap-2 flex-shrink-0">
 				{#if isGenerating}
 					{#if !hasQueuedMessage && canQueue}
 						<button
@@ -704,7 +705,7 @@ async function emitDraftChange(force = false) {
 							type="button"
 							onclick={queue}
 							aria-label={$t('chat.queueMessage')}
-							class="queue-button flex h-[50px] items-center justify-center rounded-[15px] border border-border bg-surface-page px-4 text-[13px] font-sans font-medium text-text-primary shadow-sm animate-in"
+							class="queue-button flex h-[40px] items-center justify-center rounded-[10px] border border-border bg-surface-page px-3 text-[13px] font-sans font-medium text-text-primary shadow-sm animate-in"
 						>
 							{$t('chat.queueMessage')}
 						</button>
@@ -714,7 +715,7 @@ async function emitDraftChange(force = false) {
 						type="button"
 						onclick={stop}
 						aria-label={$t('chat.stop')}
-						class="composer-stop-accent flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm animate-in"
+						class="composer-stop-accent flex h-[40px] w-[40px] items-center justify-center rounded-[10px] shadow-sm animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
 							<rect x="6" y="6" width="12" height="12" rx="2" />
@@ -727,7 +728,7 @@ async function emitDraftChange(force = false) {
 						onclick={send}
 						disabled={!canSend || disabled}
 						aria-label={$t('chat.sendMessage')}
-						class="btn-primary composer-send flex h-[50px] w-[50px] items-center justify-center rounded-[15px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
+						class="btn-primary composer-send flex h-[40px] w-[40px] items-center justify-center rounded-[10px] shadow-sm disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-elevated disabled:text-icon-muted animate-in"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="22" x2="11" y1="2" y2="13" />

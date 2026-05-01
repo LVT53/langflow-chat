@@ -242,9 +242,9 @@ let dedupedGeneratedFiles = $derived(
 						rows={Math.min(10, Math.max(3, editText.split('\n').length))}
 					></textarea>
 					<div class="flex items-center gap-3 justify-end">
-						<span class="text-xs text-text-muted">⌘↵ to send</span>
-						<button type="button" class="btn-secondary" onclick={cancelEdit}>Cancel</button>
-						<button type="button" class="btn-primary" onclick={submitEdit} disabled={!editText.trim()}>Send</button>
+						<span class="text-xs text-text-muted">{$t('messageBubble.sendShortcut')}</span>
+						<button type="button" class="btn-secondary" onclick={cancelEdit}>{$t('common.cancel')}</button>
+						<button type="button" class="btn-primary" onclick={submitEdit} disabled={!editText.trim()}>{$t('chat.sendMessage')}</button>
 					</div>
 				</div>
 			{:else}
@@ -260,12 +260,12 @@ let dedupedGeneratedFiles = $derived(
 						{/each}
 					</div>
 				{/if}
-				<div class="whitespace-pre-wrap break-words text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
+				<div class="whitespace-pre-wrap break-words text-[15px] leading-[1.5] md:leading-[1.55]">
 					{message.content}
 				</div>
 			{/if}
 		{:else}
-			<div class="prose-container min-w-0 w-full overflow-hidden text-[14px] md:text-[15px] leading-[1.45] md:leading-[1.55]">
+			<div class="prose-container min-w-0 w-full overflow-hidden text-[15px] leading-[1.5] md:leading-[1.55]">
 				<MarkdownRenderer
 					content={message.content}
 					isDark={$isDark}
@@ -456,7 +456,7 @@ let dedupedGeneratedFiles = $derived(
 	}
 
 	.prose-container :global(.prose) {
-		font-size: 16px;
+		font-size: 15px;
 		line-height: 1.5;
 	}
 	@media (min-width: 768px) {

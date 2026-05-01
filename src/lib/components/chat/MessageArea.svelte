@@ -193,7 +193,7 @@ async function alignToBottomAfterRender() {
 	.scroll-clearance {
 		/* Extra height accounts for the absolutely-positioned floating composer
 		   overlaying the bottom of the scroll area. */
-		height: 13rem;
+		height: 10.5rem;
 		flex: 0 0 auto;
 	}
 
@@ -227,7 +227,7 @@ async function alignToBottomAfterRender() {
 
 	@media (min-width: 768px) {
 		.scroll-clearance {
-			height: 11rem;
+			height: 9.5rem;
 		}
 	}
 </style>

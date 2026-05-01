@@ -17,6 +17,13 @@ describe('normalizeAssistantOutput', () => {
 		expect(result).toBe('Visible text');
 	});
 
+	it('strips Qwen ChatML analysis blocks from text', () => {
+		const result = normalizeAssistantOutput(
+			'Before<|im_start|>analysis\nInternal reasoning<|im_end|>Visible text'
+		);
+		expect(result).toBe('BeforeVisible text');
+	});
+
 	it('treats unclosed thinking blocks as thinking content', () => {
 		const result = normalizeAssistantOutput(
 			'Before <thinking>unclosed thinking and <thinking>more'
@@ -75,5 +82,20 @@ describe('normalizeAssistantOutput', () => {
 		});
 
 		expect(result).toBe('Qwen hidden reasoning');
+	});
+
+	it('extracts reasoning from camelCase provider payloads', () => {
+		const result = getReasoningContent({
+			choices: [
+				{
+					delta: {
+						reasoningContent: 'Qwen 3 hidden reasoning',
+						content: '',
+					},
+				},
+			],
+		});
+
+		expect(result).toBe('Qwen 3 hidden reasoning');
 	});
 });

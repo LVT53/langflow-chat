@@ -2,14 +2,20 @@ export const THINKING_OPEN_TAG = "<thinking>";
 export const THINKING_CLOSE_TAG = "</thinking>";
 export const DEEPSEEK_THINKING_OPEN_TAG = "<think>";
 export const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
+export const QWEN_CHATML_THINKING_OPEN_TAG = "<|im_start|>think";
+export const QWEN_CHATML_ANALYSIS_OPEN_TAG = "<|im_start|>analysis";
+export const QWEN_CHATML_THINKING_CLOSE_TAG = "<|im_end|>";
 
 const THINKING_OPEN_TAGS = [
 	THINKING_OPEN_TAG,
 	DEEPSEEK_THINKING_OPEN_TAG,
+	QWEN_CHATML_THINKING_OPEN_TAG,
+	QWEN_CHATML_ANALYSIS_OPEN_TAG,
 ] as const;
 const THINKING_CLOSE_TAGS = [
 	THINKING_CLOSE_TAG,
 	DEEPSEEK_THINKING_CLOSE_TAG,
+	QWEN_CHATML_THINKING_CLOSE_TAG,
 ] as const;
 
 export interface InlineThinkingState {

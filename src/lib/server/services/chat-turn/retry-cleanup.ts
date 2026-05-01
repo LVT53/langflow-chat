@@ -8,7 +8,7 @@
  *   3. Delete generated_output artifacts + their links + working-set refs.
  *   4. Delete the work capsule artifact for the conversation.
  *   5. Delete Honcho session state (mirrored messages and conclusions).
- *   6. Delete the assistant message (analytics cascade via FK).
+ *   6. Delete the assistant message. Immutable usage_events rows intentionally remain.
  *
  * Limitations:
  *   - User messages are never touched.
@@ -188,8 +188,6 @@ export async function cleanupFailedTurn(params: {
 		log('delete assistant message', false, String(error));
 		warnings.push(`assistant-message: ${String(error)}`);
 	}
-
-	const allOk = steps.every((s) => s.ok);
 
 	return { steps, warnings };
 }
