@@ -211,6 +211,20 @@ describe("researchWeb", () => {
 			"https://prices.example.net/framework-x-pro",
 		]);
 		expect(result.evidence[0]?.quote).toContain("$799");
+		expect(result.answerBrief.markdown).toContain("Citation rules:");
+		expect(result.answerBrief.markdown).toContain(
+			"Do not cite URLs that are not listed",
+		);
+		expect(result.answerBrief.sources[0]).toMatchObject({
+			ref: "S1",
+			url: "https://www.example.com/products/x-pro?utm_source=test",
+			authorityClass: "standard",
+		});
+		expect(result.answerBrief.evidence[0]).toMatchObject({
+			ref: "E1",
+			sourceRef: "S1",
+		});
+		expect(result.answerBrief.evidence[0]?.quote).toContain("$799");
 		expect(result.diagnostics.openedPageCount).toBe(1);
 		expect(result.diagnostics.reranked).toBe(true);
 		expect(result.diagnostics.providerCalls).toHaveLength(12);

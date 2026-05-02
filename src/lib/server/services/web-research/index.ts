@@ -71,6 +71,36 @@ export interface ResearchEvidence {
 	authorityScore: number;
 }
 
+export interface ResearchBriefSource {
+	ref: string;
+	sourceId: string;
+	title: string;
+	url: string;
+	provider: ResearchProvider;
+	authorityClass: AuthorityClass;
+	authorityScore: number;
+	publishedAt: string | null;
+	updatedAt: string | null;
+}
+
+export interface ResearchBriefEvidence {
+	ref: string;
+	evidenceId: string;
+	sourceRef: string;
+	sourceId: string;
+	title: string;
+	url: string;
+	quote: string;
+	score: number;
+}
+
+export interface ResearchAnswerBrief {
+	markdown: string;
+	instructions: string[];
+	sources: ResearchBriefSource[];
+	evidence: ResearchBriefEvidence[];
+}
+
 export interface ResearchDiagnostics {
 	mode: ResearchMode;
 	freshness: ResearchFreshness;
@@ -92,6 +122,7 @@ export interface ResearchResult {
 	queries: PlannedResearchQuery[];
 	sources: ResearchSource[];
 	evidence: ResearchEvidence[];
+	answerBrief: ResearchAnswerBrief;
 	diagnostics: ResearchDiagnostics;
 }
 
@@ -895,6 +926,90 @@ async function rerankEvidence(
 	}
 }
 
+function dateLabel(
+	source: Pick<ResearchSource, "publishedAt" | "updatedAt">,
+): string {
+	if (source.updatedAt) return `updated ${source.updatedAt}`;
+	if (source.publishedAt) return `published ${source.publishedAt}`;
+	return "date not exposed";
+}
+
+function buildResearchAnswerBrief(params: {
+	query: string;
+	sources: ResearchSource[];
+	evidence: ResearchEvidence[];
+}): ResearchAnswerBrief {
+	const instructions = [
+		"Use only the sources and evidence in this brief for web-backed claims.",
+		"Cite every web-backed claim with markdown links using the listed source URLs.",
+		"For exact prices, dates, specs, policies, availability, or quotes, rely on evidence snippets; if the value is not in the snippets, say it was not found.",
+		"Do not cite URLs that are not listed in this brief.",
+	];
+	const sourceRefById = new Map<string, string>();
+	const sources: ResearchBriefSource[] = params.sources.map((source, index) => {
+		const ref = `S${index + 1}`;
+		sourceRefById.set(source.id, ref);
+		return {
+			ref,
+			sourceId: source.id,
+			title: source.title,
+			url: source.url,
+			provider: source.provider,
+			authorityClass: source.authorityClass,
+			authorityScore: source.authorityScore,
+			publishedAt: source.publishedAt,
+			updatedAt: source.updatedAt,
+		};
+	});
+	const evidence: ResearchBriefEvidence[] = params.evidence
+		.slice(0, Math.max(4, Math.min(12, params.sources.length * 2)))
+		.map((item, index) => ({
+			ref: `E${index + 1}`,
+			evidenceId: item.id,
+			sourceRef: sourceRefById.get(item.sourceId) ?? "S?",
+			sourceId: item.sourceId,
+			title: item.title,
+			url: item.url,
+			quote: truncate(item.quote, 700),
+			score: Math.round(item.score * 100) / 100,
+		}));
+
+	const sourceLines = sources.map((source) =>
+		[
+			`[${source.ref}] ${source.title}`,
+			`URL: ${source.url}`,
+			`Authority: ${source.authorityClass} (${source.authorityScore})`,
+			`Provider: ${source.provider}`,
+			`Date: ${dateLabel(source)}`,
+		].join("\n"),
+	);
+	const evidenceLines = evidence.map((item) =>
+		[
+			`[${item.ref}] Source [${item.sourceRef}] ${item.title}`,
+			`Quote: ${item.quote}`,
+			`Cite URL: ${item.url}`,
+		].join("\n"),
+	);
+	const markdown = [
+		`Research brief for: ${params.query}`,
+		"Citation rules:",
+		...instructions.map((instruction) => `- ${instruction}`),
+		sources.length > 0
+			? `Sources:\n${sourceLines.join("\n\n")}`
+			: "Sources: none returned.",
+		evidence.length > 0
+			? `Evidence snippets:\n${evidenceLines.join("\n\n")}`
+			: "Evidence snippets: none returned.",
+	].join("\n\n");
+
+	return {
+		markdown: truncate(markdown, 16000),
+		instructions,
+		sources,
+		evidence,
+	};
+}
+
 export async function researchWeb(
 	request: ResearchRequest,
 	deps: ResearchDeps = {},
@@ -1014,15 +1129,21 @@ export async function researchWeb(
 		deps.rerank ?? rerankItems<ResearchEvidence>,
 	);
 	diagnostics.reranked = rankedEvidence.reranked;
+	const evidence = rankedEvidence.evidence.slice(
+		0,
+		Math.max(4, normalized.maxSources * 2),
+	);
 
 	return {
 		query: normalized.query,
 		queries,
 		sources: selectedSources,
-		evidence: rankedEvidence.evidence.slice(
-			0,
-			Math.max(4, normalized.maxSources * 2),
-		),
+		evidence,
+		answerBrief: buildResearchAnswerBrief({
+			query: normalized.query,
+			sources: selectedSources,
+			evidence,
+		}),
 		diagnostics,
 	};
 }

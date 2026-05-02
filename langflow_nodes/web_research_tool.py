@@ -185,12 +185,14 @@ class WebResearchToolComponent(Component):
                 data = response.json()
                 sources = data.get("sources", [])
                 evidence = data.get("evidence", [])
+                answer_brief = data.get("answerBrief", {})
                 return {
                     "success": True,
                     "query": data.get("query", payload.get("query")),
                     "queries": data.get("queries", []),
                     "sources": sources,
                     "evidence": evidence,
+                    "answerBrief": answer_brief,
                     "diagnostics": data.get("diagnostics", {}),
                     "message": f"Found {len(sources)} source(s) and {len(evidence)} evidence snippet(s)",
                 }
@@ -276,6 +278,9 @@ class WebResearchToolComponent(Component):
         if result["success"]:
             sources = result.get("sources", [])
             evidence = result.get("evidence", [])
+            answer_brief = result.get("answerBrief", {})
+            if not isinstance(answer_brief, dict):
+                answer_brief = {}
             logger.info(
                 "Web research successful: found %s source(s), %s evidence snippet(s)",
                 len(sources),
@@ -293,15 +298,19 @@ class WebResearchToolComponent(Component):
                 "name": "research_web",
                 "sourceType": "web",
                 "message": result.get("message", "Research completed"),
+                "answerBrief": answer_brief,
+                "answerBriefMarkdown": answer_brief.get("markdown", ""),
                 "query": result.get("query", query),
                 "queries": result.get("queries", []),
                 "sources": sources,
                 "evidence": evidence,
                 "diagnostics": result.get("diagnostics", {}),
                 "instructions": (
-                    "Answer only from the returned sources/evidence. Use markdown links for citations. "
-                    "For exact values, quote or paraphrase the evidence snippet from the cited URL; "
-                    "if the evidence does not contain the value, say it was not found."
+                    "Read answerBriefMarkdown first. Answer only from the returned answerBrief, sources, "
+                    "and evidence. Use markdown links for citations with the listed source URLs. "
+                    "For exact values, quote or paraphrase an evidence snippet from the cited URL; "
+                    "if the evidence does not contain the value, say it was not found. "
+                    "Never cite URLs outside the returned source list."
                 ),
                 "conversationId": conversation_id,
             })
