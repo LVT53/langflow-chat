@@ -1,4 +1,5 @@
 import type { StreamMetadata } from '$lib/services/streaming';
+import type { I18nKey } from '$lib/i18n';
 import type {
 	ArtifactSummary,
 	ChatMessage,
@@ -41,32 +42,58 @@ export type StreamToolCallDetails = {
 	candidates?: ToolEvidenceCandidate[];
 };
 
-const FRIENDLY_SEND_ERRORS = {
-	timeout: 'The response is taking too long. Please try again.',
-	network: 'We could not reach the chat service. Check your connection and try again.',
-	backend_failure: 'We hit a temporary issue generating a response. Please try again.',
-	capacity_exceeded: 'Our servers are handling too many requests right now. Please wait a moment and try again.',
-	file_too_large: 'The uploaded file exceeds the maximum allowed size. Please upload a smaller file.',
-	message_too_long: 'Your message is too long. Please shorten it and try again.',
-	provider_tool_rounds: 'The AI needed too many tool-call rounds for this request. Please try a simpler request.',
-} as const;
+type Translate = (key: I18nKey) => string;
 
-export function toFriendlySendError(error: Error): string {
+const FRIENDLY_SEND_ERROR_KEYS = {
+	timeout: 'chat.error.timeout',
+	network: 'chat.error.network',
+	backend_failure: 'chat.error.backend',
+	capacity_exceeded: 'chat.error.capacity',
+	file_too_large: 'chat.error.fileTooLarge',
+	message_too_long: 'chat.error.messageTooLong',
+	provider_tool_rounds: 'chat.error.providerToolRounds',
+} as const satisfies Record<string, I18nKey>;
+
+const FALLBACK_SEND_ERRORS: Record<keyof typeof FRIENDLY_SEND_ERROR_KEYS, string> = {
+	timeout:
+		'The model stopped sending updates before it finished. This usually means the provider stream stalled or the request ran too long. Retry the message; if it repeats, try a shorter prompt or another model.',
+	network:
+		'The chat service could not stay connected to the model provider. Check the server connection and retry; if it keeps happening, the provider endpoint may be unavailable.',
+	backend_failure:
+		'The model provider or Langflow returned an error before a complete response was produced. Retry the message; if it repeats, check the model and provider logs.',
+	capacity_exceeded:
+		'The chat service is already handling the maximum number of active responses. Wait a moment, then retry.',
+	file_too_large:
+		'The uploaded file is larger than the configured upload limit. Upload a smaller file or raise the limit in admin settings.',
+	message_too_long:
+		'That message is longer than the configured model input limit. Shorten it or split the request into smaller parts.',
+	provider_tool_rounds:
+		'The provider needed too many tool-call rounds and the turn was stopped to avoid looping. Retry with a narrower request or fewer required sources.',
+};
+
+function friendlyError(
+	code: keyof typeof FRIENDLY_SEND_ERROR_KEYS,
+	translate?: Translate
+): string {
+	return translate?.(FRIENDLY_SEND_ERROR_KEYS[code]) ?? FALLBACK_SEND_ERRORS[code];
+}
+
+export function toFriendlySendError(error: Error, translate?: Translate): string {
 	const errorWithCode = error as Error & { code?: unknown };
 	if (errorWithCode.code === 'attachment_not_ready') {
 		return error.message;
 	}
-	if (errorWithCode.code === 'timeout') return FRIENDLY_SEND_ERRORS.timeout;
-	if (errorWithCode.code === 'network') return FRIENDLY_SEND_ERRORS.network;
-	if (errorWithCode.code === 'backend_failure') return FRIENDLY_SEND_ERRORS.backend_failure;
-	if (errorWithCode.code === 'capacity_exceeded') return FRIENDLY_SEND_ERRORS.capacity_exceeded;
-	if (errorWithCode.code === 'file_too_large') return FRIENDLY_SEND_ERRORS.file_too_large;
-	if (errorWithCode.code === 'message_too_long') return FRIENDLY_SEND_ERRORS.message_too_long;
-	if (errorWithCode.code === 'provider_tool_rounds') return FRIENDLY_SEND_ERRORS.provider_tool_rounds;
+	if (errorWithCode.code === 'timeout') return friendlyError('timeout', translate);
+	if (errorWithCode.code === 'network') return friendlyError('network', translate);
+	if (errorWithCode.code === 'backend_failure') return friendlyError('backend_failure', translate);
+	if (errorWithCode.code === 'capacity_exceeded') return friendlyError('capacity_exceeded', translate);
+	if (errorWithCode.code === 'file_too_large') return friendlyError('file_too_large', translate);
+	if (errorWithCode.code === 'message_too_long') return friendlyError('message_too_long', translate);
+	if (errorWithCode.code === 'provider_tool_rounds') return friendlyError('provider_tool_rounds', translate);
 
 	const message = (error.message ?? '').toLowerCase();
 	if (message.includes('timeout') || message.includes('timed out')) {
-		return FRIENDLY_SEND_ERRORS.timeout;
+		return friendlyError('timeout', translate);
 	}
 
 	if (
@@ -75,14 +102,14 @@ export function toFriendlySendError(error: Error): string {
 		message.includes('fetch') ||
 		message.includes('connection')
 	) {
-		return FRIENDLY_SEND_ERRORS.network;
+		return friendlyError('network', translate);
 	}
 
-	if (message.includes('capacity') || message.includes('server at capacity')) return FRIENDLY_SEND_ERRORS.capacity_exceeded;
+	if (message.includes('capacity') || message.includes('server at capacity')) return friendlyError('capacity_exceeded', translate);
 
-	if (message.includes('file too large') || message.includes('too large') || message.includes('maximum size')) return FRIENDLY_SEND_ERRORS.file_too_large;
+	if (message.includes('file too large') || message.includes('too large') || message.includes('maximum size')) return friendlyError('file_too_large', translate);
 
-	return FRIENDLY_SEND_ERRORS.backend_failure;
+	return friendlyError('backend_failure', translate);
 }
 
 export function mergeAttachedArtifacts(

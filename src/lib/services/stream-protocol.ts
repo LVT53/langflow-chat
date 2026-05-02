@@ -379,19 +379,20 @@ export function splitLeadingThinkingPreamble(
 }
 
 export const FRIENDLY_STREAM_ERRORS = {
-	timeout: "The response is taking too long. Please try again.",
+	timeout:
+		"The model stopped sending updates before it finished. This usually means the provider stream stalled or the request ran too long. Retry the message; if it repeats, try a shorter prompt or another model.",
 	network:
-		"We could not reach the chat service. Check your connection and try again.",
+		"The chat service could not stay connected to the model provider. Check the server connection and retry; if it keeps happening, the provider endpoint may be unavailable.",
 	backend_failure:
-		"We hit a temporary issue generating a response. Please try again.",
+		"The model provider or Langflow returned an error before a complete response was produced. Retry the message; if it repeats, check the model and provider logs.",
 	capacity_exceeded:
-		"Our servers are handling too many requests right now. Please wait a moment and try again.",
+		"The chat service is already handling the maximum number of active responses. Wait a moment, then retry.",
 	file_too_large:
-		"The uploaded file exceeds the maximum allowed size. Please upload a smaller file.",
+		"The uploaded file is larger than the configured upload limit. Upload a smaller file or raise the limit in admin settings.",
 	message_too_long:
-		"Your message is too long. Please shorten it and try again.",
+		"That message is longer than the configured model input limit. Shorten it or split the request into smaller parts.",
 	provider_tool_rounds:
-		"The AI needed too many tool-call rounds for this request. Please try a simpler request.",
+		"The provider needed too many tool-call rounds and the turn was stopped to avoid looping. Retry with a narrower request or fewer required sources.",
 } as const;
 
 export type StreamErrorCode = keyof typeof FRIENDLY_STREAM_ERRORS;

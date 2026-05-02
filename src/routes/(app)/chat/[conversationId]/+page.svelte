@@ -1169,7 +1169,7 @@ function handleSend(
 					return;
 				}
 
-				sendError = toFriendlySendError(err);
+				sendError = toFriendlySendError(err, $t);
 				canRetry = true;
 			},
 		},
@@ -1316,7 +1316,7 @@ function handleRetry() {
 						return;
 					}
 
-					sendError = toFriendlySendError(err);
+					sendError = toFriendlySendError(err, $t);
 					canRetry = true;
 				},
 			},

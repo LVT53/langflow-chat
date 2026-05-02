@@ -39,7 +39,7 @@
 <style>
 	.error-toast {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		gap: var(--space-sm);
 		margin-bottom: var(--space-lg);
 		padding: var(--space-md);
@@ -51,9 +51,11 @@
 	}
 
 	.error-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
 		color: var(--danger);
-		padding-top: 2px;
 	}
 
 	.error-content {
@@ -77,9 +79,14 @@
 	}
 
 	.error-retry {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 13px;
+		line-height: 1;
 		font-weight: 500;
+		min-height: 28px;
 		padding: var(--space-xs) var(--space-sm);
 		background: var(--danger);
 		color: white;

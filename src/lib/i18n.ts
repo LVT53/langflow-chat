@@ -231,6 +231,7 @@ const dictionary = {
 		// Common
 		"common.cancel": "Cancel",
 		"common.close": "Close",
+		"common.retry": "Retry",
 		"common.save": "Save",
 		"common.saving": "Saving…",
 		"common.delete": "Delete",
@@ -241,6 +242,20 @@ const dictionary = {
 		"common.created": "Created",
 		"common.updated": "Updated",
 		"common.confirm": "Confirm",
+		"chat.error.timeout":
+			"The model stopped sending updates before it finished. This usually means the provider stream stalled or the request ran too long. Retry the message; if it repeats, try a shorter prompt or another model.",
+		"chat.error.network":
+			"The chat service could not stay connected to the model provider. Check the server connection and retry; if it keeps happening, the provider endpoint may be unavailable.",
+		"chat.error.backend":
+			"The model provider or Langflow returned an error before a complete response was produced. Retry the message; if it repeats, check the model and provider logs.",
+		"chat.error.capacity":
+			"The chat service is already handling the maximum number of active responses. Wait a moment, then retry.",
+		"chat.error.fileTooLarge":
+			"The uploaded file is larger than the configured upload limit. Upload a smaller file or raise the limit in admin settings.",
+		"chat.error.messageTooLong":
+			"That message is longer than the configured model input limit. Shorten it or split the request into smaller parts.",
+		"chat.error.providerToolRounds":
+			"The provider needed too many tool-call rounds and the turn was stopped to avoid looping. Retry with a narrower request or fewer required sources.",
 		// Admin - Models section
 		"admin.models": "Models",
 		"admin.builtIn": "Built-in",
@@ -952,6 +967,7 @@ const dictionary = {
 		// Common
 		"common.cancel": "Mégse",
 		"common.close": "Bezárás",
+		"common.retry": "Újra",
 		"common.save": "Mentés",
 		"common.saving": "Mentés…",
 		"common.delete": "Törlés",
@@ -962,6 +978,20 @@ const dictionary = {
 		"common.created": "Létrehozva",
 		"common.updated": "Frissítve",
 		"common.confirm": "Megerősítés",
+		"chat.error.timeout":
+			"A modell a befejezés előtt nem küldött több frissítést. Ez általában szolgáltatói stream-elakadást vagy túl hosszú kérést jelent. Próbáld újra az üzenetet; ha megismétlődik, használj rövidebb promptot vagy másik modellt.",
+		"chat.error.network":
+			"A chat szolgáltatás nem tudta fenntartani a kapcsolatot a modell szolgáltatójával. Ellenőrizd a szerverkapcsolatot, majd próbáld újra; ha ismétlődik, lehet, hogy a szolgáltatói végpont nem elérhető.",
+		"chat.error.backend":
+			"A modell szolgáltatója vagy a Langflow hibát adott vissza, mielőtt teljes válasz készült volna. Próbáld újra az üzenetet; ha ismétlődik, ellenőrizd a modell- és szolgáltatói naplókat.",
+		"chat.error.capacity":
+			"A chat szolgáltatás már a maximális számú aktív választ kezeli. Várj egy kicsit, majd próbáld újra.",
+		"chat.error.fileTooLarge":
+			"A feltöltött fájl nagyobb a beállított feltöltési korlátnál. Tölts fel kisebb fájlt, vagy növeld a korlátot az admin beállításokban.",
+		"chat.error.messageTooLong":
+			"Az üzenet hosszabb a beállított modellbemeneti korlátnál. Rövidítsd le, vagy bontsd kisebb részekre a kérést.",
+		"chat.error.providerToolRounds":
+			"A szolgáltatónak túl sok eszközhívási körre volt szüksége, ezért a rendszer leállította a választ a végtelen kör elkerülésére. Próbáld újra szűkebb kéréssel vagy kevesebb kötelező forrással.",
 		// Admin - Models section
 		"admin.models": "Modellek",
 		"admin.builtIn": "Beépített",

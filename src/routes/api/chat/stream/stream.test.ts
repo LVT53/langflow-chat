@@ -1101,7 +1101,7 @@ describe("POST /api/chat/stream", () => {
 
 		expect(body).toContain("event: error");
 		expect(body).toContain('"code":"backend_failure"');
-		expect(body).toContain("temporary issue generating a response");
+		expect(body).toContain("model provider or Langflow returned an error");
 	});
 
 	it("falls back to the non-stream Langflow run when the streaming handshake aborts", async () => {
