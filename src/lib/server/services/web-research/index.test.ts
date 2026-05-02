@@ -322,4 +322,83 @@ describe("researchWeb", () => {
 		);
 		expect(openedUrls).toContain("https://github.com/example/framework");
 	});
+
+	it("treats user-provided URLs as mandatory opened sources", async () => {
+		const directUrl = "https://shop.example.com/products/widget-pro";
+		const openedUrls: string[] = [];
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = input.toString();
+				if (url === "https://api.exa.ai/search") {
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									title: "Official Documentation",
+									url: "https://docs.example.com/widget-pro",
+									summary:
+										"High-authority documentation, but not the requested page.",
+									highlights: ["Documentation for Widget Pro."],
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				if (url === "https://api.exa.ai/contents") {
+					const body = JSON.parse(String(init?.body));
+					openedUrls.push(...body.urls);
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									url: directUrl,
+									title: "Widget Pro Store Page",
+									text: "Widget Pro is currently listed at $249 on the store page.",
+									highlights: [
+										"Widget Pro is currently listed at $249 on the store page.",
+									],
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				throw new Error(`Unexpected fetch: ${url}`);
+			},
+		);
+
+		const result = await researchWeb(
+			{
+				query: `What price is shown on ${directUrl}?`,
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, braveSearchApiKey: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				rerank: async (params) => ({
+					items: params.items.map((item, index) => ({
+						item,
+						index,
+						score: item.quote.includes("$249") ? 0.99 : 0.1,
+					})),
+					confidence: 99,
+				}),
+			},
+		);
+
+		expect(result.diagnostics.mode).toBe("exact");
+		expect(openedUrls).toEqual([directUrl]);
+		expect(result.sources).toHaveLength(1);
+		expect(result.sources[0]).toMatchObject({
+			canonicalUrl: directUrl,
+			title: "Widget Pro Store Page",
+		});
+		expect(result.evidence[0]?.quote).toContain("$249");
+		expect(result.answerBrief.markdown).toContain("Widget Pro Store Page");
+		expect(result.answerBrief.markdown).toContain("$249");
+	});
 });

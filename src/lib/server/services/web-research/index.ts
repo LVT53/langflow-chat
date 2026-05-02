@@ -194,6 +194,8 @@ const NEWS_RE =
 const HIGH_STAKES_RE =
 	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
 const MAX_PLANNED_QUERIES = 6;
+const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
+const TRAILING_URL_PUNCTUATION_RE = /[.,;:!?]+$/;
 
 function toWebResearchConfig(
 	config: RuntimeConfig | WebResearchConfig,
@@ -215,7 +217,23 @@ function normalizeWhitespace(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
+function extractDirectUrls(value: string): string[] {
+	const urls = new Map<string, string>();
+	for (const match of value.matchAll(HTTP_URL_RE)) {
+		const rawUrl = match[0]?.replace(TRAILING_URL_PUNCTUATION_RE, "");
+		if (!rawUrl) continue;
+		const canonicalUrl = canonicalizeUrl(rawUrl);
+		urls.set(canonicalUrl, rawUrl);
+	}
+	return [...urls.values()];
+}
+
+function containsDirectUrl(value: string): boolean {
+	return extractDirectUrls(value).length > 0;
+}
+
 function inferMode(query: string): ResearchMode {
+	if (containsDirectUrl(query)) return "exact";
 	if (EXACT_FACT_RE.test(query)) return "exact";
 	if (
 		/\b(compare|research|detailed|sources|overview|pros and cons|best)\b/i.test(
@@ -265,7 +283,8 @@ function normalizeRequest(
 		freshness,
 		sourcePolicy,
 		maxSources,
-		quoteRequired: request.quoteRequired ?? mode === "exact",
+		quoteRequired:
+			request.quoteRequired ?? (mode === "exact" || containsDirectUrl(query)),
 	};
 }
 
@@ -432,6 +451,29 @@ function createSource(params: {
 		retrievedAt: params.retrievedAt,
 		...authority,
 	};
+}
+
+function createDirectUrlSources(params: {
+	request: NormalizedResearchRequest;
+	nowIso: string;
+}): ResearchSource[] {
+	return extractDirectUrls(params.request.query)
+		.map((url, index) =>
+			createSource({
+				provider: "exa",
+				title: `User-provided page: ${hostOf(url) || url}`,
+				url,
+				snippet: "User-provided URL to inspect directly.",
+				highlights: [],
+				text: null,
+				score: 100,
+				providerRank: index,
+				query: params.request.query,
+				retrievedAt: params.nowIso,
+				policy: params.request.sourcePolicy,
+			}),
+		)
+		.filter((source): source is ResearchSource => Boolean(source));
 }
 
 async function searchExa(
@@ -720,6 +762,7 @@ function lowAuthorityLimit(request: NormalizedResearchRequest): number {
 function selectResearchSources(
 	sources: ResearchSource[],
 	request: NormalizedResearchRequest,
+	options: { mandatoryCanonicalUrls?: Set<string> } = {},
 ): ResearchSource[] {
 	const limit = request.maxSources;
 	const selected: ResearchSource[] = [];
@@ -763,6 +806,11 @@ function selectResearchSources(
 	};
 
 	for (const source of sources) {
+		if (!options.mandatoryCanonicalUrls?.has(source.canonicalUrl)) continue;
+		addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
+	}
+
+	for (const source of sources) {
 		if (source.authorityScore < 70) continue;
 		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
 	}
@@ -783,7 +831,12 @@ async function openTopPagesWithExa(params: {
 	request: NormalizedResearchRequest;
 	config: WebResearchConfig;
 	fetch: typeof fetch;
-}): Promise<Map<string, { text: string | null; highlights: string[] }>> {
+}): Promise<
+	Map<
+		string,
+		{ title: string | null; text: string | null; highlights: string[] }
+	>
+> {
 	if (!params.config.exaApiKey.trim() || params.sources.length === 0) {
 		return new Map();
 	}
@@ -819,13 +872,14 @@ async function openTopPagesWithExa(params: {
 	};
 	const opened = new Map<
 		string,
-		{ text: string | null; highlights: string[] }
+		{ title: string | null; text: string | null; highlights: string[] }
 	>();
 	for (const result of data.results ?? []) {
 		const url =
 			typeof result.url === "string" ? canonicalizeUrl(result.url) : null;
 		if (!url) continue;
 		opened.set(url, {
+			title: typeof result.title === "string" ? result.title : null,
 			text: typeof result.text === "string" ? result.text : null,
 			highlights: Array.isArray(result.highlights)
 				? result.highlights.filter(
@@ -1039,6 +1093,13 @@ export async function researchWeb(
 		{ provider: "exa" as const, query },
 		{ provider: "brave" as const, query },
 	]);
+	const directUrlSources = createDirectUrlSources({
+		request: normalized,
+		nowIso,
+	});
+	const mandatoryCanonicalUrls = new Set(
+		directUrlSources.map((source) => source.canonicalUrl),
+	);
 
 	const sourceBatches = await Promise.all(
 		providerCalls.map(async (call) => {
@@ -1086,10 +1147,12 @@ export async function researchWeb(
 	diagnostics.providerCalls = sourceBatches.map((batch) => batch.providerCall);
 
 	const fused = fuseSources(
-		sourceBatches.flatMap((batch) => batch.sources),
+		[...directUrlSources, ...sourceBatches.flatMap((batch) => batch.sources)],
 		normalized,
 	);
-	const selectedSources = selectResearchSources(fused, normalized);
+	const selectedSources = selectResearchSources(fused, normalized, {
+		mandatoryCanonicalUrls,
+	});
 	if (selectedSources.length === 0) {
 		diagnostics.fallbackReasons.push("no_search_results");
 	}
@@ -1109,6 +1172,9 @@ export async function researchWeb(
 		for (const source of selectedSources) {
 			const openedContent = opened.get(source.canonicalUrl);
 			if (!openedContent) continue;
+			if (openedContent.title) {
+				source.title = truncate(openedContent.title, 300);
+			}
 			source.text = openedContent.text
 				? truncate(openedContent.text, config.webResearchContentChars)
 				: source.text;
