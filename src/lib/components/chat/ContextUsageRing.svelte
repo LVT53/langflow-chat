@@ -5,6 +5,7 @@
 		ArtifactSummary,
 		ContextDebugState,
 		ConversationContextStatus,
+		MemoryLayer,
 		TaskState,
 		TaskSteeringAction,
 		TaskSteeringPayload,
@@ -79,18 +80,31 @@
 		}
 	}
 
-	function formatLayer(layer: string): string {
-		return layer.replace(/_/g, ' ');
+	function formatLayer(layer: MemoryLayer): string {
+		switch (layer) {
+			case 'session':
+				return $t('contextUsageRing.layer.session');
+			case 'capsule':
+				return $t('contextUsageRing.layer.capsule');
+			case 'documents':
+				return $t('contextUsageRing.layer.documents');
+			case 'outputs':
+				return $t('contextUsageRing.layer.outputs');
+			case 'working_set':
+				return $t('contextUsageRing.layer.workingSet');
+			case 'task_state':
+				return $t('contextUsageRing.layer.taskState');
+		}
 	}
 
 	function formatCompactionMode(mode: ConversationContextStatus['compactionMode'] | undefined): string {
 		switch (mode) {
 			case 'deterministic':
-				return 'Deterministic';
+				return $t('contextUsageRing.compaction.deterministic');
 			case 'llm_fallback':
-				return 'LLM fallback';
+				return $t('contextUsageRing.compaction.llmFallback');
 			default:
-				return 'Not needed';
+				return $t('contextUsageRing.compaction.notNeeded');
 		}
 	}
 
@@ -185,7 +199,12 @@
 	<button
 		type="button"
 		class={`ring-button ${toneClass}`}
-		aria-label={contextStatus ? `Prompt budget usage ${percent}% (${contextStatus.estimatedTokens.toLocaleString()} tokens)` : $t('contextUsageRing.noContext')}
+		aria-label={contextStatus
+			? $t('contextUsageRing.promptBudgetUsage', {
+				percent,
+				tokens: contextStatus.estimatedTokens.toLocaleString(),
+			})
+			: $t('contextUsageRing.noContext')}
 		aria-expanded={isOpen}
 		onclick={handleClick}
 	>
@@ -219,11 +238,11 @@
 		aria-label={$t('contextUsageRing.focusPanel')}
 	>
 		<div class="popover-section">
-			<div class="popover-label">Focus</div>
+			<div class="popover-label">{$t('contextUsageRing.focus')}</div>
 			{#if activeObjective}
 				<div class="popover-copy">{activeObjective}</div>
 			{:else}
-				<div class="popover-empty">No active task yet.</div>
+				<div class="popover-empty">{$t('contextUsageRing.noActiveTask')}</div>
 			{/if}
 
 			<div class="popover-actions">
@@ -232,11 +251,11 @@
 					class="popover-action-button"
 					onclick={() => steer(contextDebug?.taskLocked ? 'unlock_task' : 'lock_task')}
 				>
-					{contextDebug?.taskLocked ? 'Unlock task' : 'Lock task'}
+					{contextDebug?.taskLocked ? $t('contextUsageRing.unlockTask') : $t('contextUsageRing.lockTask')}
 				</button>
 				{#if showNewTaskForm}
 					<div class="task-form">
-						<label class="task-form-label" for="new-task-objective">Optional task name</label>
+						<label class="task-form-label" for="new-task-objective">{$t('contextUsageRing.optionalTaskName')}</label>
 						<input
 							bind:this={newTaskInput}
 							id="new-task-objective"
@@ -252,14 +271,14 @@
 								class="popover-action-button"
 								onclick={submitNewTask}
 							>
-								Start
+								{$t('contextUsageRing.start')}
 							</button>
 							<button
 								type="button"
 								class="popover-action-button popover-action-button--ghost"
 								onclick={cancelNewTaskForm}
 							>
-								Cancel
+								{$t('common.cancel')}
 							</button>
 						</div>
 					</div>
@@ -269,7 +288,7 @@
 						class="popover-action-button"
 						onclick={openNewTaskForm}
 					>
-						Start new task
+						{$t('contextUsageRing.startNewTask')}
 					</button>
 				{/if}
 				<button
@@ -277,57 +296,57 @@
 					class="popover-action-button"
 					onclick={openEvidenceManager}
 				>
-					Manage evidence
+					{$t('contextUsageRing.manageEvidence')}
 				</button>
 			</div>
 		</div>
 
 		{#if showCost}
 			<div class="popover-section">
-				<div class="popover-label">Cost</div>
+				<div class="popover-label">{$t('contextUsageRing.cost')}</div>
 				<div class="popover-cost">{costText}</div>
 			</div>
 		{/if}
 
 		<div class="popover-section">
-			<div class="popover-label">Context</div>
+			<div class="popover-label">{$t('contextUsageRing.context')}</div>
 			{#if contextStatus}
 				<div class="popover-stat">
-					<span>Prompt budget</span>
+					<span>{$t('contextUsageRing.promptBudget')}</span>
 					<span>{contextStatus.estimatedTokens.toLocaleString()} / {contextStatus.targetTokens.toLocaleString()}</span>
 				</div>
 				<div class="popover-stat">
-					<span>Compaction</span>
+					<span>{$t('contextUsageRing.compaction')}</span>
 					<span class:compaction-active={contextStatus.compactionMode !== 'none'}>
 						{formatCompactionMode(contextStatus.compactionMode)}
 					</span>
 				</div>
 				{#if contextDebug}
 					<div class="popover-stat">
-						<span>Selected evidence</span>
+						<span>{$t('contextUsageRing.selectedEvidence')}</span>
 						<span>{contextDebug.selectedEvidence.length}</span>
 					</div>
 					{#if contextDebug.pinnedEvidence.length > 0}
 						<div class="popover-stat">
-							<span>Pinned</span>
+							<span>{$t('contextUsageRing.pinned')}</span>
 							<span>{contextDebug.pinnedEvidence.length}</span>
 						</div>
 					{/if}
 					{#if contextDebug.excludedEvidence.length > 0}
 						<div class="popover-stat">
-							<span>Excluded</span>
+							<span>{$t('contextUsageRing.excluded')}</span>
 							<span>{contextDebug.excludedEvidence.length}</span>
 						</div>
 					{/if}
 				{/if}
 				{#if attachedArtifacts.length > 0}
 					<div class="popover-stat">
-						<span>Attached files</span>
+						<span>{$t('contextUsageRing.attachedFiles')}</span>
 						<span>{attachedArtifacts.length}</span>
 					</div>
 				{/if}
 				<div class="popover-stat">
-					<span>Recent turns</span>
+					<span>{$t('contextUsageRing.recentTurns')}</span>
 					<span>{contextStatus.recentTurnCount}</span>
 				</div>
 				{#if contextStatus.layersUsed.length > 0}
@@ -338,7 +357,7 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="popover-empty">No context yet.</div>
+				<div class="popover-empty">{$t('contextUsageRing.noContext')}</div>
 			{/if}
 		</div>
 	</div>

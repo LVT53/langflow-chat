@@ -2,6 +2,10 @@
 	import clsx from 'clsx';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
 	import { t } from '$lib/i18n';
+	import {
+		getPersonalityProfileDisplayDescription,
+		getPersonalityProfileDisplayName,
+	} from '$lib/utils/personality-profile-labels';
 	import PasswordField from './PasswordField.svelte';
 	import type { ModelId } from '$lib/types';
 
@@ -224,19 +228,20 @@
 
 		{#if personalityProfiles.length > 0}
 			<div>
-				<p class="settings-label">Default style</p>
+				<p class="settings-label">{$t('composerTools.defaultStyleLabel')}</p>
 				<div class="flex gap-2">
 					<button
 						class="pref-pill"
 						class:pref-pill-active={!selectedPersonalityId}
 						onclick={() => onChangePersonality?.(null)}
-					>AlfyAI</button>
+					>{$t('composerTools.defaultStyle')}</button>
 					{#each personalityProfiles as profile}
 						<button
 							class="pref-pill"
 							class:pref-pill-active={selectedPersonalityId === profile.id}
+							title={getPersonalityProfileDisplayDescription(profile, $t)}
 							onclick={() => onChangePersonality?.(profile.id)}
-						>{profile.name}</button>
+						>{getPersonalityProfileDisplayName(profile, $t)}</button>
 					{/each}
 				</div>
 			</div>

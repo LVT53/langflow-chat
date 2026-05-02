@@ -2,6 +2,10 @@
 	import { onMount } from 'svelte';
 	import ModelSelector from './ModelSelector.svelte';
 	import { t } from '$lib/i18n';
+	import {
+		getPersonalityProfileDisplayDescription,
+		getPersonalityProfileDisplayName,
+	} from '$lib/utils/personality-profile-labels';
 
 	let {
 		canAttach = false,
@@ -67,7 +71,7 @@
 
 <div bind:this={root} class="tools-menu" role="menu" aria-label={$t('composerTools.menu')}>
 	<div class="menu-row menu-row--static">
-		<div class="menu-label">Model</div>
+		<div class="menu-label">{$t('composerTools.model')}</div>
 		<ModelSelector
 			open={activeDropdown === 'model'}
 			onOpenChange={(open) => activeDropdown = open ? 'model' : null}
@@ -77,7 +81,7 @@
 
 	{#if personalityProfiles.length > 0}
 		<div class="menu-row menu-row--static">
-			<div class="menu-label">Style</div>
+			<div class="menu-label">{$t('composerTools.style')}</div>
 			<div class="model-selector">
 				<button
 					type="button"
@@ -87,7 +91,9 @@
 					aria-expanded={styleOpen}
 				>
 					<span class="model-selector__text">
-						{selectedProfile?.name ?? 'AlfyAI'}
+						{selectedProfile
+							? getPersonalityProfileDisplayName(selectedProfile, $t)
+							: $t('composerTools.defaultStyle')}
 					</span>
 					<svg
 						class="model-selector__chevron"
@@ -110,17 +116,18 @@
 							onclick={() => { onPersonalityChange?.(null); closeMenu(); }}
 							onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(null), closeMenu())}
 							tabindex="0"
-						>AlfyAI</li>
+						>{$t('composerTools.defaultStyle')}</li>
 						{#each personalityProfiles as profile}
 							<li
 								role="option"
 								aria-selected={selectedPersonalityId === profile.id}
 								class="model-selector__option"
 								class:model-selector__option--selected={selectedPersonalityId === profile.id}
+								title={getPersonalityProfileDisplayDescription(profile, $t)}
 								onclick={() => { onPersonalityChange?.(profile.id); closeMenu(); }}
 								onkeydown={(e) => e.key === 'Enter' && (onPersonalityChange?.(profile.id), closeMenu())}
 								tabindex="0"
-							>{profile.name}</li>
+							>{getPersonalityProfileDisplayName(profile, $t)}</li>
 						{/each}
 					</ul>
 				{/if}
@@ -138,7 +145,7 @@
 			aria-label={$t('composerTools.attachFile')}
 			role="menuitem"
 		>
-			<span class="menu-label">Attach file</span>
+			<span class="menu-label">{$t('composerTools.attachFile')}</span>
 			<span class="menu-icon" aria-hidden="true">
 				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
