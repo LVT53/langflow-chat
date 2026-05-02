@@ -113,6 +113,7 @@ export interface ResearchDiagnostics {
 		error?: string;
 	}>;
 	openedPageCount: number;
+	sourceReranked: boolean;
 	reranked: boolean;
 	fallbackReasons: string[];
 }
@@ -138,14 +139,14 @@ interface WebResearchConfig {
 	webResearchFreshnessHours: number;
 }
 
-type ResearchRerankFn = (params: {
+type ResearchRerankFn<T> = (params: {
 	query: string;
-	items: ResearchEvidence[];
-	getText: (item: ResearchEvidence) => string;
+	items: T[];
+	getText: (item: T) => string;
 	maxTexts?: number;
 	truncate?: boolean;
 }) => Promise<{
-	items: Array<RankedTeiItem<ResearchEvidence>>;
+	items: Array<RankedTeiItem<T>>;
 	confidence: number;
 } | null>;
 
@@ -153,7 +154,8 @@ interface ResearchDeps {
 	config?: WebResearchConfig;
 	fetch?: typeof fetch;
 	now?: Date;
-	rerank?: ResearchRerankFn;
+	rerank?: ResearchRerankFn<ResearchEvidence>;
+	sourceRerank?: ResearchRerankFn<ResearchSource>;
 }
 
 interface ProviderSearchParams {
@@ -194,6 +196,7 @@ const NEWS_RE =
 const HIGH_STAKES_RE =
 	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
 const MAX_PLANNED_QUERIES = 6;
+const SOURCE_RERANK_CONFIDENCE_MIN = 40;
 const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
 const TRAILING_URL_PUNCTUATION_RE = /[.,;:!?]+$/;
 
@@ -762,7 +765,10 @@ function lowAuthorityLimit(request: NormalizedResearchRequest): number {
 function selectResearchSources(
 	sources: ResearchSource[],
 	request: NormalizedResearchRequest,
-	options: { mandatoryCanonicalUrls?: Set<string> } = {},
+	options: {
+		mandatoryCanonicalUrls?: Set<string>;
+		preferSourceOrder?: boolean;
+	} = {},
 ): ResearchSource[] {
 	const limit = request.maxSources;
 	const selected: ResearchSource[] = [];
@@ -810,6 +816,18 @@ function selectResearchSources(
 		addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
 	}
 
+	if (options.preferSourceOrder) {
+		for (const source of sources) {
+			addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
+		}
+
+		for (const source of sources) {
+			addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
+		}
+
+		return selected;
+	}
+
 	for (const source of sources) {
 		if (source.authorityScore < 70) continue;
 		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
@@ -824,6 +842,65 @@ function selectResearchSources(
 	}
 
 	return selected;
+}
+
+function sourceRerankText(source: ResearchSource): string {
+	return [
+		source.title,
+		source.snippet ?? "",
+		source.highlights.join("\n"),
+		source.text ? truncate(source.text, 3000) : "",
+		`URL: ${source.url}`,
+		`Authority: ${source.authorityClass}`,
+	]
+		.filter(Boolean)
+		.join("\n");
+}
+
+async function rerankSources(
+	query: string,
+	sources: ResearchSource[],
+	rerank: ResearchRerankFn<ResearchSource>,
+): Promise<{ sources: ResearchSource[]; reranked: boolean }> {
+	if (sources.length <= 1) return { sources, reranked: false };
+
+	try {
+		const reranked = await rerank({
+			query,
+			items: sources,
+			getText: sourceRerankText,
+			maxTexts: Math.min(48, sources.length),
+			truncate: true,
+		});
+		if (
+			!reranked ||
+			reranked.items.length === 0 ||
+			reranked.confidence < SOURCE_RERANK_CONFIDENCE_MIN
+		) {
+			return { sources, reranked: false };
+		}
+
+		const rerankedUrls = new Set<string>();
+		const ordered = reranked.items.map((entry) => {
+			rerankedUrls.add(entry.item.canonicalUrl);
+			return {
+				...entry.item,
+				score:
+					entry.score * 100 +
+					entry.item.authorityScore +
+					Math.min(20, entry.item.score / 10),
+			};
+		});
+		const remaining = sources.filter(
+			(source) => !rerankedUrls.has(source.canonicalUrl),
+		);
+		return {
+			sources: [...ordered, ...remaining],
+			reranked: true,
+		};
+	} catch {
+		return { sources, reranked: false };
+	}
 }
 
 async function openTopPagesWithExa(params: {
@@ -948,7 +1025,7 @@ function buildEvidenceChunks(
 async function rerankEvidence(
 	query: string,
 	evidence: ResearchEvidence[],
-	rerank: ResearchRerankFn,
+	rerank: ResearchRerankFn<ResearchEvidence>,
 ): Promise<{ evidence: ResearchEvidence[]; reranked: boolean }> {
 	if (evidence.length <= 1) return { evidence, reranked: false };
 
@@ -1085,6 +1162,7 @@ export async function researchWeb(
 		sourcePolicy: normalized.sourcePolicy,
 		providerCalls: [],
 		openedPageCount: 0,
+		sourceReranked: false,
 		reranked: false,
 		fallbackReasons: [],
 	};
@@ -1150,9 +1228,20 @@ export async function researchWeb(
 		[...directUrlSources, ...sourceBatches.flatMap((batch) => batch.sources)],
 		normalized,
 	);
-	const selectedSources = selectResearchSources(fused, normalized, {
-		mandatoryCanonicalUrls,
-	});
+	const sourceRanked = await rerankSources(
+		normalized.query,
+		fused,
+		deps.sourceRerank ?? rerankItems<ResearchSource>,
+	);
+	diagnostics.sourceReranked = sourceRanked.reranked;
+	const selectedSources = selectResearchSources(
+		sourceRanked.sources,
+		normalized,
+		{
+			mandatoryCanonicalUrls,
+			preferSourceOrder: sourceRanked.reranked,
+		},
+	);
 	if (selectedSources.length === 0) {
 		diagnostics.fallbackReasons.push("no_search_results");
 	}

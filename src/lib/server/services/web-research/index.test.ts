@@ -3,6 +3,7 @@ import {
 	classifySourceAuthority,
 	planResearchQueries,
 	type ResearchEvidence,
+	type ResearchSource,
 	researchWeb,
 } from "./index";
 
@@ -321,6 +322,112 @@ describe("researchWeb", () => {
 			}),
 		);
 		expect(openedUrls).toContain("https://github.com/example/framework");
+	});
+
+	it("uses semantic source reranking before choosing pages to open", async () => {
+		const relevantUrl = "https://case-study.example.org/form-action-fix";
+		const openedUrls: string[] = [];
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = input.toString();
+				if (url === "https://api.exa.ai/search") {
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									title: "Example Docs - General Routing",
+									url: "https://docs.example.com/routing",
+									summary:
+										"Official routing documentation with no form details.",
+									highlights: ["Routing docs for the framework."],
+									score: 0.99,
+								},
+								{
+									title: "Form Action Fix Case Study",
+									url: relevantUrl,
+									summary:
+										"Detailed report about nested submit failures in form actions.",
+									highlights: [
+										"The nested submit failure is fixed by preserving the action payload.",
+									],
+									score: 0.1,
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				if (url === "https://api.exa.ai/contents") {
+					const body = JSON.parse(String(init?.body));
+					openedUrls.push(...body.urls);
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									url: relevantUrl,
+									text: "The form action case study documents the exact nested submit failure and its fix.",
+									highlights: [
+										"The form action case study documents the exact nested submit failure and its fix.",
+									],
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				throw new Error(`Unexpected fetch: ${url}`);
+			},
+		);
+
+		const sourceRerank = vi.fn(
+			async (params: {
+				query: string;
+				items: ResearchSource[];
+				getText: (item: ResearchSource) => string;
+			}) => ({
+				items: params.items
+					.map((item, index) => ({
+						item,
+						index,
+						score: params.getText(item).includes("nested submit") ? 0.97 : 0.12,
+					}))
+					.sort((left, right) => right.score - left.score),
+				confidence: 97,
+			}),
+		);
+
+		const result = await researchWeb(
+			{
+				query: "SvelteKit form action nested submit failure",
+				mode: "research",
+				sourcePolicy: "technical",
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, braveSearchApiKey: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				sourceRerank,
+				rerank: async (params) => ({
+					items: params.items.map((item, index) => ({
+						item,
+						index,
+						score: 1 - index / 100,
+					})),
+					confidence: 90,
+				}),
+			},
+		);
+
+		expect(sourceRerank).toHaveBeenCalled();
+		expect(result.diagnostics.sourceReranked).toBe(true);
+		expect(result.sources.map((source) => source.canonicalUrl)).toEqual([
+			relevantUrl,
+		]);
+		expect(openedUrls).toEqual([relevantUrl]);
+		expect(result.evidence[0]?.quote).toContain("nested submit failure");
 	});
 
 	it("treats user-provided URLs as mandatory opened sources", async () => {

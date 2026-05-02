@@ -74,6 +74,7 @@ describe("POST /api/tools/research-web", () => {
 				sourcePolicy: "commerce",
 				providerCalls: [],
 				openedPageCount: 0,
+				sourceReranked: false,
 				reranked: false,
 				fallbackReasons: [],
 			},
