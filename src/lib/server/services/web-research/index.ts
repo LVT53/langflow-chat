@@ -31,7 +31,13 @@ export interface ResearchRequest {
 
 export interface PlannedResearchQuery {
 	query: string;
-	purpose: "broad" | "official" | "freshness" | "exact" | "technical";
+	purpose:
+		| "broad"
+		| "official"
+		| "freshness"
+		| "exact"
+		| "technical"
+		| "primary";
 }
 
 export interface ResearchSource {
@@ -156,6 +162,7 @@ const NEWS_RE =
 	/\b(news|latest|today|breaking|election|sports|market|stock|earnings)\b/i;
 const HIGH_STAKES_RE =
 	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
+const MAX_PLANNED_QUERIES = 6;
 
 function toWebResearchConfig(
 	config: RuntimeConfig | WebResearchConfig,
@@ -248,40 +255,60 @@ export function planResearchQueries(
 	};
 	const normalized = normalizeRequest(request, fallbackConfig);
 	const year = now.getUTCFullYear();
-	const queries: PlannedResearchQuery[] = [
-		{ query: normalized.query, purpose: "broad" },
-	];
+	const queries: PlannedResearchQuery[] = [];
+	const addQuery = (
+		query: string,
+		purpose: PlannedResearchQuery["purpose"],
+	) => {
+		const normalizedQuery = normalizeWhitespace(query);
+		if (!normalizedQuery) return;
+		if (
+			queries.some(
+				(entry) => entry.query.toLowerCase() === normalizedQuery.toLowerCase(),
+			)
+		) {
+			return;
+		}
+		queries.push({ query: normalizedQuery, purpose });
+	};
+
+	addQuery(normalized.query, "broad");
 
 	if (normalized.sourcePolicy === "technical") {
-		queries.push({
-			query: `${normalized.query} official documentation`,
-			purpose: "technical",
-		});
+		addQuery(`${normalized.query} official documentation`, "technical");
+		if (normalized.mode === "research" || normalized.quoteRequired) {
+			addQuery(`${normalized.query} GitHub README release notes`, "primary");
+		}
+	} else if (normalized.sourcePolicy === "medical_legal_financial") {
+		addQuery(`${normalized.query} official guidance`, "official");
+		addQuery(`${normalized.query} government primary source`, "primary");
+	} else if (normalized.sourcePolicy === "commerce") {
+		addQuery(`${normalized.query} official store specifications`, "official");
+		if (normalized.mode === "exact" || normalized.quoteRequired) {
+			addQuery(`${normalized.query} manufacturer price availability`, "exact");
+		}
+	} else if (normalized.sourcePolicy === "news") {
+		addQuery(`${normalized.query} Reuters AP primary source`, "primary");
+		if (normalized.mode === "research") {
+			addQuery(`${normalized.query} official statement`, "official");
+		}
 	} else {
-		queries.push({
-			query: `${normalized.query} official source`,
-			purpose: "official",
-		});
+		addQuery(`${normalized.query} official source`, "official");
+		if (normalized.mode === "research" || normalized.quoteRequired) {
+			addQuery(`${normalized.query} primary source report data`, "primary");
+		}
 	}
 
 	if (normalized.freshness === "live" || normalized.freshness === "recent") {
-		queries.push({
-			query: `${normalized.query} ${year}`,
-			purpose: "freshness",
-		});
+		addQuery(`${normalized.query} ${year}`, "freshness");
 	}
 
 	if (normalized.mode === "exact" || normalized.quoteRequired) {
-		queries.push({ query: `"${normalized.query}"`, purpose: "exact" });
+		addQuery(`"${normalized.query}"`, "exact");
+		addQuery(`${normalized.query} exact value source`, "exact");
 	}
 
-	const seen = new Set<string>();
-	return queries.filter((entry) => {
-		const key = entry.query.toLowerCase();
-		if (seen.has(key)) return false;
-		seen.add(key);
-		return true;
-	});
+	return queries.slice(0, MAX_PLANNED_QUERIES);
 }
 
 function canonicalizeUrl(value: string): string {
@@ -519,13 +546,12 @@ function sourceFusionScore(
 ): number {
 	const rankScore = 80 / (source.providerRank + 1);
 	const providerScore = source.provider === "exa" ? 8 : 5;
+	const sourceText = normalizeWhitespace(
+		`${source.title} ${source.snippet ?? ""} ${source.highlights.join(" ")}`,
+	).toLowerCase();
 	const exactBoost =
 		request.mode === "exact" &&
-		normalizeWhitespace(
-			`${source.title} ${source.snippet ?? ""} ${source.highlights.join(" ")}`,
-		)
-			.toLowerCase()
-			.includes(request.query.toLowerCase().slice(0, 80))
+		sourceText.includes(request.query.toLowerCase().slice(0, 80))
 			? 10
 			: 0;
 	const freshnessBoost =
@@ -534,12 +560,55 @@ function sourceFusionScore(
 				? 8
 				: 0
 			: 0;
+	const officialTextBoost =
+		/\b(official|primary source|documentation|manual|reference)\b/i.test(
+			sourceText,
+		)
+			? 8
+			: 0;
+	const commerceIntentBoost =
+		request.sourcePolicy === "commerce" &&
+		/\b(official|manufacturer|store|product page|specifications?|availability|in stock)\b/i.test(
+			sourceText,
+		)
+			? 12
+			: 0;
+	const technicalIntentBoost =
+		request.sourcePolicy === "technical" &&
+		/\b(docs?|documentation|api|reference|readme|release notes?|migration)\b/i.test(
+			sourceText,
+		)
+			? 10
+			: 0;
+	const lowIntentPenalty =
+		/\b(coupon|deal|affiliate|price tracker|forum thread|reddit|quora)\b/i.test(
+			sourceText,
+		)
+			? 12
+			: 0;
 	return (
 		rankScore +
 		providerScore +
 		source.authorityScore +
 		exactBoost +
-		freshnessBoost
+		freshnessBoost +
+		officialTextBoost +
+		commerceIntentBoost +
+		technicalIntentBoost -
+		lowIntentPenalty
+	);
+}
+
+function sourceCoverageBoost(params: {
+	providerCount: number;
+	queryCount: number;
+	occurrenceCount: number;
+}): number {
+	return Math.min(
+		14,
+		Math.max(0, params.providerCount - 1) * 4 +
+			Math.max(0, params.queryCount - 1) * 3 +
+			Math.max(0, params.occurrenceCount - 1),
 	);
 }
 
@@ -548,7 +617,21 @@ function fuseSources(
 	request: NormalizedResearchRequest,
 ): ResearchSource[] {
 	const byUrl = new Map<string, ResearchSource>();
+	const coverage = new Map<
+		string,
+		{ providers: Set<ResearchProvider>; queries: Set<string>; count: number }
+	>();
 	for (const source of sources) {
+		const sourceCoverage = coverage.get(source.canonicalUrl) ?? {
+			providers: new Set<ResearchProvider>(),
+			queries: new Set<string>(),
+			count: 0,
+		};
+		sourceCoverage.providers.add(source.provider);
+		sourceCoverage.queries.add(source.query);
+		sourceCoverage.count += 1;
+		coverage.set(source.canonicalUrl, sourceCoverage);
+
 		const existing = byUrl.get(source.canonicalUrl);
 		if (!existing) {
 			byUrl.set(source.canonicalUrl, source);
@@ -575,12 +658,93 @@ function fuseSources(
 	return [...byUrl.values()]
 		.map((source) => ({
 			...source,
-			score: sourceFusionScore(source, request),
+			score:
+				sourceFusionScore(source, request) +
+				sourceCoverageBoost({
+					providerCount: coverage.get(source.canonicalUrl)?.providers.size ?? 1,
+					queryCount: coverage.get(source.canonicalUrl)?.queries.size ?? 1,
+					occurrenceCount: coverage.get(source.canonicalUrl)?.count ?? 1,
+				}),
 		}))
 		.sort((left, right) => {
 			if (right.score !== left.score) return right.score - left.score;
 			return left.canonicalUrl.localeCompare(right.canonicalUrl);
 		});
+}
+
+function hostDiversityLimit(request: NormalizedResearchRequest): number {
+	return request.mode === "quick" ? 1 : 2;
+}
+
+function lowAuthorityLimit(request: NormalizedResearchRequest): number {
+	if (
+		request.sourcePolicy === "technical" ||
+		request.sourcePolicy === "medical_legal_financial"
+	) {
+		return 0;
+	}
+	return 1;
+}
+
+function selectResearchSources(
+	sources: ResearchSource[],
+	request: NormalizedResearchRequest,
+): ResearchSource[] {
+	const limit = request.maxSources;
+	const selected: ResearchSource[] = [];
+	const selectedUrls = new Set<string>();
+	const hostCounts = new Map<string, number>();
+	const hostLimit = hostDiversityLimit(request);
+	const lowLimit = lowAuthorityLimit(request);
+	const hasNonLowAuthority = sources.some(
+		(source) => source.authorityClass !== "low",
+	);
+
+	const addSource = (
+		source: ResearchSource,
+		options: { enforceHostLimit: boolean; enforceLowLimit: boolean },
+	): boolean => {
+		if (selected.length >= limit || selectedUrls.has(source.canonicalUrl)) {
+			return false;
+		}
+
+		const host = hostOf(source.canonicalUrl);
+		if (options.enforceHostLimit && host) {
+			const currentHostCount = hostCounts.get(host) ?? 0;
+			if (currentHostCount >= hostLimit) return false;
+		}
+
+		if (
+			options.enforceLowLimit &&
+			hasNonLowAuthority &&
+			source.authorityClass === "low"
+		) {
+			const currentLowCount = selected.filter(
+				(item) => item.authorityClass === "low",
+			).length;
+			if (currentLowCount >= lowLimit) return false;
+		}
+
+		selected.push(source);
+		selectedUrls.add(source.canonicalUrl);
+		if (host) hostCounts.set(host, (hostCounts.get(host) ?? 0) + 1);
+		return true;
+	};
+
+	for (const source of sources) {
+		if (source.authorityScore < 70) continue;
+		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
+	}
+
+	for (const source of sources) {
+		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
+	}
+
+	for (const source of sources) {
+		addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
+	}
+
+	return selected;
 }
 
 async function openTopPagesWithExa(params: {
@@ -810,7 +974,7 @@ export async function researchWeb(
 		sourceBatches.flatMap((batch) => batch.sources),
 		normalized,
 	);
-	const selectedSources = fused.slice(0, normalized.maxSources);
+	const selectedSources = selectResearchSources(fused, normalized);
 	if (selectedSources.length === 0) {
 		diagnostics.fallbackReasons.push("no_search_results");
 	}
