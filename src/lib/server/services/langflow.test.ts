@@ -186,11 +186,13 @@ describe("sendMessage provider routing", () => {
 				api_key: "provider-secret",
 				timeout: 300,
 				max_tokens: 8192,
-				enable_thinking: true,
-				reasoning_effort: "high",
+				enable_thinking: false,
 				thinking_type: "enabled",
 			},
 		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"reasoning_effort",
+		);
 		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
 			"[MODEL: Fireworks Model]",
 		);
@@ -226,8 +228,47 @@ describe("sendMessage provider routing", () => {
 				model_name: "accounts/fireworks/models/kimi-k2p5",
 				api_base: "https://api.fireworks.ai/inference/v1",
 				timeout: 300,
+				enable_thinking: false,
 			},
 		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"chat_template_kwargs",
+		);
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
+	it("sends provider reasoning effort only when thinking.type is not set", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "fireworks",
+			displayName: "Fireworks Model",
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "accounts/fireworks/models/kimi-k2p6",
+			reasoningEffort: "high",
+			thinkingType: null,
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		await sendMessage("Hello", "conv-1", "provider:provider-1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks).toMatchObject({
+			"ModelNode-1": {
+				enable_thinking: false,
+				reasoning_effort: "high",
+			},
+		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
 	it("enables reasoning capture for built-in Qwen models routed through the custom Langflow node", async () => {

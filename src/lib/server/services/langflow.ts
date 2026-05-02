@@ -294,9 +294,13 @@ async function resolveLangflowRunConfig(
 	return config.model1;
 }
 
-function shouldEnableReasoningCapture(
+function shouldSendVllmChatTemplateThinking(
 	modelConfig: LangflowModelRunConfig,
 ): boolean {
+	if (modelConfig.providerId) {
+		return false;
+	}
+
 	if (modelConfig.providerThinkingType === "enabled") {
 		return true;
 	}
@@ -326,12 +330,9 @@ function buildLangflowTweaks(
 		...(modelConfig.maxTokens != null
 			? { max_tokens: modelConfig.maxTokens }
 			: {}),
-		...(shouldEnableReasoningCapture(modelConfig)
-			? { enable_thinking: true }
-			: modelConfig.providerThinkingType === "disabled"
-				? { enable_thinking: false }
-				: {}),
-		...(modelConfig.providerReasoningEffort
+		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
+		...(modelConfig.providerReasoningEffort &&
+		!modelConfig.providerThinkingType
 			? { reasoning_effort: modelConfig.providerReasoningEffort }
 			: {}),
 		...(modelConfig.providerThinkingType

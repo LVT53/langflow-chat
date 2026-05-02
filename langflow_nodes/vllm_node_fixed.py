@@ -17,6 +17,21 @@ from lfx.log.logger import logger
 import requests
 
 
+def _clean_mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+
+    cleaned: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            continue
+        normalized_key = key.strip()
+        if not normalized_key:
+            continue
+        cleaned[normalized_key] = _clean_mapping(item) if isinstance(item, dict) else item
+    return cleaned
+
+
 def _normalize_openai_compatible_base_url(base_url: str) -> str:
     base = str(base_url or "").strip().rstrip("/")
     if not base:
@@ -37,6 +52,37 @@ def _normalize_openai_compatible_base_url(base_url: str) -> str:
         return base
 
     return f"{base}/v1"
+
+
+def _allows_chat_template_kwargs(base_url: str) -> bool:
+    normalized = str(base_url or "").strip().lower()
+    return (
+        "localhost" in normalized
+        or "127.0.0.1" in normalized
+        or "0.0.0.0" in normalized
+        or "://10." in normalized
+        or "://192.168." in normalized
+        or "://172.16." in normalized
+        or "://172.17." in normalized
+        or "://172.18." in normalized
+        or "://172.19." in normalized
+        or "://172.20." in normalized
+        or "://172.21." in normalized
+        or "://172.22." in normalized
+        or "://172.23." in normalized
+        or "://172.24." in normalized
+        or "://172.25." in normalized
+        or "://172.26." in normalized
+        or "://172.27." in normalized
+        or "://172.28." in normalized
+        or "://172.29." in normalized
+        or "://172.30." in normalized
+        or "://172.31." in normalized
+    )
+
+
+def _is_fireworks_base_url(base_url: str) -> bool:
+    return "api.fireworks.ai" in str(base_url or "").strip().lower()
 
 
 class NemotronReasoningChatOpenAI(ChatOpenAI):
@@ -63,13 +109,14 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     system_prompt: str = ""
     enable_thinking: bool = True
+    use_chat_template_kwargs: bool = True
     _last_reasoning_content: str = ""
 
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.enable_thinking:
+        if not self.enable_thinking or not self.use_chat_template_kwargs:
             return payload
 
-        extra_body = dict(payload.get("extra_body") or {})
+        extra_body = _clean_mapping(payload.get("extra_body") or {})
         chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
         chat_template_kwargs["enable_thinking"] = True
         extra_body["chat_template_kwargs"] = chat_template_kwargs
@@ -400,7 +447,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             name="enable_thinking",
             display_name="Enable Thinking",
             advanced=True,
-            info="When true, sends vLLM chat_template_kwargs.enable_thinking and preserves reasoning chunks in <thinking> tags.",
+            info="When true, local vLLM-style endpoints receive chat_template_kwargs.enable_thinking. Public providers use their own thinking/reasoning parameters while reasoning chunks are still preserved in <thinking> tags.",
             value=True,
         ),
         StrInput(
@@ -520,16 +567,20 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         
         logger.info(f"Building model with name={self.model_name}, base_url={normalized_api_base}")
 
-        user_extra_body = dict(self.extra_body or {})
-        if self.enable_thinking:
+        user_extra_body = _clean_mapping(self.extra_body or {})
+        use_chat_template_kwargs = bool(self.enable_thinking) and _allows_chat_template_kwargs(normalized_api_base)
+        if use_chat_template_kwargs:
             chat_template_kwargs = dict(user_extra_body.get("chat_template_kwargs") or {})
             chat_template_kwargs["enable_thinking"] = True
             user_extra_body["chat_template_kwargs"] = chat_template_kwargs
 
-        user_model_kwargs = dict(self.model_kwargs or {})
+        user_model_kwargs = _clean_mapping(self.model_kwargs or {})
         thinking_type = str(getattr(self, "thinking_type", "") or "").strip()
         if thinking_type:
-            user_model_kwargs["thinking"] = {"type": thinking_type}
+            thinking_config: dict[str, Any] = {"type": thinking_type}
+            if thinking_type == "enabled" and _is_fireworks_base_url(normalized_api_base):
+                thinking_config["budget_tokens"] = 4096
+            user_extra_body["thinking"] = thinking_config
 
         # top_k is vLLM-specific and not part of the OpenAI spec, so it goes in extra_body.
         # -1 is vLLM's default (no limit), so we only set it when the user has changed it.
@@ -547,10 +598,11 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "top_p": self.top_p if self.top_p is not None else 1.0,
             "system_prompt": self.system_prompt or "",
             "enable_thinking": bool(self.enable_thinking),
+            "use_chat_template_kwargs": use_chat_template_kwargs,
         }
 
         reasoning_effort = str(getattr(self, "reasoning_effort", "") or "").strip()
-        if reasoning_effort:
+        if reasoning_effort and not thinking_type:
             parameters["reasoning_effort"] = reasoning_effort
 
         if self.seed is not None and self.seed != -1:
@@ -564,6 +616,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         logger.info(f"model: {parameters.get('model')}")
         logger.info(f"base_url: {parameters.get('base_url')}")
         logger.info(f"enable_thinking: {parameters.get('enable_thinking')}")
+        logger.info(f"use_chat_template_kwargs: {parameters.get('use_chat_template_kwargs')}")
         logger.info(f"reasoning_effort set: {bool(parameters.get('reasoning_effort'))}")
         logger.info(f"thinking_type set: {bool(thinking_type)}")
         logger.info(f"========================")
