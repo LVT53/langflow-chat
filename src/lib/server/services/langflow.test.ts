@@ -184,6 +184,7 @@ describe("sendMessage provider routing", () => {
 				model_name: "accounts/fireworks/models/kimi-k2",
 				api_base: "https://api.fireworks.ai/inference/v1",
 				api_key: "provider-secret",
+				timeout: 300,
 				max_tokens: 8192,
 				enable_thinking: true,
 				reasoning_effort: "high",
@@ -224,6 +225,7 @@ describe("sendMessage provider routing", () => {
 			"ModelNode-1": {
 				model_name: "accounts/fireworks/models/kimi-k2p5",
 				api_base: "https://api.fireworks.ai/inference/v1",
+				timeout: 300,
 			},
 		});
 	});
@@ -237,6 +239,7 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks).toMatchObject({
 			"ModelNode-1": {
 				model_name: "qwen3-6-35b",
+				timeout: 300,
 				enable_thinking: true,
 			},
 		});

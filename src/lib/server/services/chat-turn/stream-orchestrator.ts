@@ -73,6 +73,11 @@ function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
 }
 
+function getUpstreamIdleTimeoutMs(): number {
+	const requestTimeoutMs = getConfig().requestTimeoutMs;
+	return Math.max(60_000, Math.min(150_000, Math.floor(requestTimeoutMs / 2)));
+}
+
 function unrefTimer(
 	timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>,
 ) {
@@ -468,6 +473,38 @@ export function runChatStreamOrchestrator(
 				upstreamAbortController.abort();
 			}, getStreamTimeoutMs());
 			unrefTimer(timeoutId);
+			const upstreamIdleTimeoutMs = getUpstreamIdleTimeoutMs();
+			let upstreamIdleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+			let lastUpstreamActivityAt = Date.now();
+			const clearUpstreamIdleTimeout = () => {
+				if (!upstreamIdleTimeoutId) return;
+				clearTimeout(upstreamIdleTimeoutId);
+				upstreamIdleTimeoutId = null;
+			};
+			const scheduleUpstreamIdleTimeout = (attempt: number) => {
+				clearUpstreamIdleTimeout();
+				upstreamIdleTimeoutId = setTimeout(() => {
+					const now = Date.now();
+					console.warn("[STREAM] Upstream stream idle timeout", {
+						conversationId,
+						streamId,
+						modelId,
+						attempt,
+						idleTimeoutMs: upstreamIdleTimeoutMs,
+						elapsedSinceLastUpstreamMs: now - lastUpstreamActivityAt,
+						responseLength: chunkRuntime.fullResponse.length,
+						thinkingLength: chunkRuntime.thinkingContent.length,
+						toolCallCount: chunkRuntime.toolCallRecords.length,
+					});
+					failStream("timeout");
+					upstreamAbortController.abort();
+				}, upstreamIdleTimeoutMs);
+				unrefTimer(upstreamIdleTimeoutId);
+			};
+			const markUpstreamActivity = (attempt: number) => {
+				lastUpstreamActivityAt = Date.now();
+				scheduleUpstreamIdleTimeout(attempt);
+			};
 
 			let usedUrlListRecovery = false;
 			let personalityPrompt: string | undefined;
@@ -639,114 +676,120 @@ export function runChatStreamOrchestrator(
 					latestHonchoContext = langflowResponse.honchoContext ?? null;
 					latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
 
-					for await (const upstreamEvent of parseUpstreamEvents(
-						langflowStream,
-					)) {
-						const { event: eventType, data } = upstreamEvent;
-						const eventUsage = extractProviderUsage(data);
-						if (eventUsage) {
-							latestProviderUsage = eventUsage;
-						}
-						if (data === "[DONE]" || eventType === "end") {
-							flushPendingThinking();
-							if (!flushInlineThinkingBuffer()) {
+					scheduleUpstreamIdleTimeout(attempt);
+					try {
+						for await (const upstreamEvent of parseUpstreamEvents(
+							langflowStream,
+						)) {
+							markUpstreamActivity(attempt);
+							const { event: eventType, data } = upstreamEvent;
+							const eventUsage = extractProviderUsage(data);
+							if (eventUsage) {
+								latestProviderUsage = eventUsage;
+							}
+							if (data === "[DONE]" || eventType === "end") {
+								flushPendingThinking();
+								if (!flushInlineThinkingBuffer()) {
+									return;
+								}
+								if (!flushOutputBuffer()) {
+									return;
+								}
+								completeSuccess();
 								return;
 							}
-							if (!flushOutputBuffer()) {
+
+							if (eventType === "error") {
+								const errorMessage = extractErrorMessage(data);
+								console.error("[STREAM] Upstream error event payload", {
+									conversationId,
+									attempt,
+									errorMessage,
+									data:
+										typeof data === "string"
+											? data
+											: JSON.stringify(data).slice(0, 2000),
+								});
+								const canRetryUrlListValidation =
+									!usedUrlListRecovery &&
+									isUrlListValidationError(errorMessage) &&
+									!hasEmittedStreamOutput();
+								if (canRetryUrlListValidation) {
+									usedUrlListRecovery = true;
+									lastAssistantSnapshot = "";
+									emittedAssistantText = "";
+									console.warn(
+										"[STREAM] Retrying upstream after URL list validation error",
+										{
+											conversationId,
+											attempt,
+											errorMessage,
+										},
+									);
+									continue upstreamAttempt;
+								}
+								failStream(classifyStreamError(errorMessage));
 								return;
 							}
-							completeSuccess();
-							return;
-						}
 
-						if (eventType === "error") {
-							const errorMessage = extractErrorMessage(data);
-							console.error("[STREAM] Upstream error event payload", {
-								conversationId,
-								attempt,
-								errorMessage,
-								data:
-									typeof data === "string"
-										? data
-										: JSON.stringify(data).slice(0, 2000),
-							});
-							const canRetryUrlListValidation =
-								!usedUrlListRecovery &&
-								isUrlListValidationError(errorMessage) &&
-								!hasEmittedStreamOutput();
-							if (canRetryUrlListValidation) {
-								usedUrlListRecovery = true;
-								lastAssistantSnapshot = "";
-								emittedAssistantText = "";
-								console.warn(
-									"[STREAM] Retrying upstream after URL list validation error",
-									{
-										conversationId,
-										attempt,
-										errorMessage,
-									},
-								);
-								continue upstreamAttempt;
+							const rawChunk = extractAssistantChunk(eventType, data);
+							const reasoningChunk = getReasoningContent(data);
+							if (reasoningChunk) {
+								if (!emitThinking(reasoningChunk)) {
+									return;
+								}
 							}
-							failStream(classifyStreamError(errorMessage));
-							return;
-						}
-
-						const rawChunk = extractAssistantChunk(eventType, data);
-						const reasoningChunk = getReasoningContent(data);
-						if (reasoningChunk) {
-							if (!emitThinking(reasoningChunk)) {
-								return;
-							}
-						}
-						if (!rawChunk) {
-							continue;
-						}
-
-						const previousEmittedAssistantText = emittedAssistantText;
-						const incremental = toIncrementalChunk(
-							eventType,
-							rawChunk,
-							lastAssistantSnapshot,
-							emittedAssistantText,
-						);
-						lastAssistantSnapshot = incremental.lastSnapshot;
-						emittedAssistantText = incremental.emittedText;
-						const chunk = incremental.chunk;
-						if (!chunk) continue;
-
-						// Suppress duplicate visible text from Langflow's final summary event.
-						// Nemotron streams tokens as "<thinking>...</thinking>visible" so
-						// emittedAssistantText includes thinking tags, but the final non-token
-						// 'message' event has only visible text (tags stripped by Langflow).
-						// toIncrementalChunk can't match them, so we guard here using fullResponse
-						// with trimmed comparison to handle trailing newline/space differences.
-						if (eventType !== "token" && previousEmittedAssistantText) {
-							const normalizedEmittedText = normalizeAssistantOutput(
-								previousEmittedAssistantText,
-							);
-							const normalizedChunk = normalizeAssistantOutput(chunk);
-							if (
-								normalizedChunk &&
-								(normalizedChunk === normalizedEmittedText ||
-									normalizedEmittedText.endsWith(normalizedChunk) ||
-									normalizedChunk.endsWith(normalizedEmittedText))
-							) {
+							if (!rawChunk) {
 								continue;
 							}
+
+							const previousEmittedAssistantText = emittedAssistantText;
+							const incremental = toIncrementalChunk(
+								eventType,
+								rawChunk,
+								lastAssistantSnapshot,
+								emittedAssistantText,
+							);
+							lastAssistantSnapshot = incremental.lastSnapshot;
+							emittedAssistantText = incremental.emittedText;
+							const chunk = incremental.chunk;
+							if (!chunk) continue;
+
+							// Suppress duplicate visible text from Langflow's final summary event.
+							// Nemotron streams tokens as "<thinking>...</thinking>visible" so
+							// emittedAssistantText includes thinking tags, but the final non-token
+							// 'message' event has only visible text (tags stripped by Langflow).
+							// toIncrementalChunk can't match them, so we guard here using fullResponse
+							// with trimmed comparison to handle trailing newline/space differences.
+							if (eventType !== "token" && previousEmittedAssistantText) {
+								const normalizedEmittedText = normalizeAssistantOutput(
+									previousEmittedAssistantText,
+								);
+								const normalizedChunk = normalizeAssistantOutput(chunk);
+								if (
+									normalizedChunk &&
+									(normalizedChunk === normalizedEmittedText ||
+										normalizedEmittedText.endsWith(normalizedChunk) ||
+										normalizedChunk.endsWith(normalizedEmittedText))
+								) {
+									continue;
+								}
+							}
+
+							// Strip tool call markers, emitting structured tool_call SSE events
+							const cleanedChunk = processToolCallMarkers(
+								chunk,
+								emitToolCallEventWithDebug,
+							);
+
+							if (!cleanedChunk) continue;
+
+							if (!emitChunkWithOutputHandling(cleanedChunk)) {
+								return;
+							}
 						}
-
-						// Strip tool call markers, emitting structured tool_call SSE events
-						const cleanedChunk = processToolCallMarkers(
-							chunk,
-							emitToolCallEventWithDebug,
-						);
-
-						if (!cleanedChunk) continue;
-
-						if (!emitChunkWithOutputHandling(cleanedChunk)) {
-							return;
-						}
+					} finally {
+						clearUpstreamIdleTimeout();
 					}
 
 					flushPendingThinking();
@@ -819,6 +862,7 @@ export function runChatStreamOrchestrator(
 			} finally {
 				clearInterval(heartbeatIntervalId);
 				clearTimeout(timeoutId);
+				clearUpstreamIdleTimeout();
 				if (streamId) {
 					unregisterActiveChatStream(streamId, upstreamAbortController);
 				}

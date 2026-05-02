@@ -1,5 +1,5 @@
 import { ReadableStream } from "node:stream/web";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runChatStreamOrchestrator } from "./stream-orchestrator";
 import type { ChatTurnPreflight } from "./types";
 
@@ -115,6 +115,14 @@ function createTokenStream(text: string): ReadableStream<Uint8Array> {
 	});
 }
 
+function createHangingStream(): ReadableStream<Uint8Array> {
+	return new ReadableStream({
+		start() {
+			/* keep upstream read pending */
+		},
+	});
+}
+
 function createErroredStream(
 	blocks: string[],
 	error: Error,
@@ -187,6 +195,10 @@ describe("stream-orchestrator SSE contract", () => {
 	beforeEach(async () => {
 		vi.resetAllMocks();
 		await resetCompletionMocks();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("produces SSE prelude comment as first chunk", async () => {
@@ -390,5 +402,44 @@ describe("stream-orchestrator SSE contract", () => {
 		expect(body).toContain("event: end");
 		expect(body).not.toContain("event: error");
 		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("fails predictably when upstream streaming goes idle", async () => {
+		vi.useFakeTimers();
+		const { getConfig } = await import("$lib/server/config-store");
+		(getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+			requestTimeoutMs: 120000,
+		});
+		const { sendMessageStream } = await import("$lib/server/services/langflow");
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createHangingStream(),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+				translationEnabled: false,
+			},
+			turn: createTurn(),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunksPromise = readSseResponse(response);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		const chunks = await chunksPromise;
+		const body = chunks.join("\n\n");
+		expect(body).toContain("event: error");
+		expect(body).toContain('"code":"timeout"');
 	});
 });

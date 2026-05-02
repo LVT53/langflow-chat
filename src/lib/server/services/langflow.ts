@@ -314,9 +314,14 @@ function buildLangflowTweaks(
 	systemPrompt: string,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
+	const requestTimeoutSeconds = Math.max(
+		1,
+		Math.ceil(getConfig().requestTimeoutMs / 1000),
+	);
 	const componentTweaks = {
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
+		...(componentId ? { timeout: requestTimeoutSeconds } : {}),
 		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
 		...(modelConfig.maxTokens != null
 			? { max_tokens: modelConfig.maxTokens }

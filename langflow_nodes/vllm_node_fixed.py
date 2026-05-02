@@ -471,7 +471,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             display_name="Timeout",
             info="Timeout for requests to vLLM completion API. Set to -1 to disable.",
             advanced=True,
-            value=-1,
+            value=300,
             required=False,
         ),
     ]
