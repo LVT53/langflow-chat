@@ -54,14 +54,24 @@ That script now runs `npm run db:prepare && node build`, so the standard product
 
 ### Web Research Deployment
 
-To enable the server-owned web research tool:
+The search overhaul routes web work through the server-owned `research_web` tool. Deploy it this way:
 
-1. Set `EXA_API_KEY` on the AlfyAI server. Exa remains the primary search and page-content provider.
-2. Set `BRAVE_SEARCH_API_KEY` on the AlfyAI server when Brave should supplement Exa with wider/fresher search breadth. This same key still powers image search.
-3. Set the same `ALFYAI_API_SIGNING_KEY` value on AlfyAI and on the Langflow `Web Research` custom node.
-4. Add `langflow_nodes/web_research_tool.py` to Langflow, configure `ALFYAI_API_URL` and `ALFYAI_API_SIGNING_KEY`, and connect its `Tool` output to the Agent node's tools input.
-5. Prefer the `research_web` tool for web facts. Keep the raw Exa node only as a fallback, or remove it from the Agent tools list to avoid duplicate search choices.
-6. Restart the AlfyAI process and reload or redeploy the Langflow flow after changing custom nodes or environment variables.
+1. Deploy the app code. `scripts/deploy.sh` pulls `origin main`, so merge `dev` to `main` first or use your manual deploy flow if you are testing directly from `dev`.
+2. Set these server env vars: `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `ALFYAI_API_SIGNING_KEY`. Exa is required for page opening. Brave is optional, but recommended for wider search coverage. `ALFYAI_API_SIGNING_KEY` must be the same value in AlfyAI and Langflow.
+3. Keep the existing file-generation custom node if you use generated files: `langflow_nodes/file_generator_tool.py`.
+4. Add or update the web-research custom node in Langflow: `langflow_nodes/web_research_tool.py`. Configure `ALFYAI_API_URL` to the AlfyAI server URL reachable from Langflow, and configure the same `ALFYAI_API_SIGNING_KEY`.
+5. Connect the `Web Research` node's `Tool` output to the Agent node's tools input.
+6. Disconnect the old/raw Exa search tool from the Agent tools input unless you intentionally want it as a fallback. Leaving both connected gives the model two competing search tools and can make behavior less predictable.
+7. Leave the optional `WEB_RESEARCH_*` env vars at their defaults unless you need different breadth or latency. They can also be changed later in Settings > Administration > System > Web Research.
+8. Keep `TEI_RERANKER_URL` configured if you want source and evidence reranking. Search still works without TEI reranking, but diagnostics will show `sourceReranked: false` when reranking is unavailable or not confident.
+9. Restart the AlfyAI process, then reload or redeploy the Langflow flow after changing custom nodes or environment variables.
+
+Post-deploy checks:
+
+- Ask for an exact page-backed value, for example a current price from a product URL.
+- In the `research_web` tool result diagnostics, expect `providers.exaConfigured: true`, `openedPageCount > 0`, `selectedSourceCount > 0`, and `evidenceCandidateCount > 0`.
+- For prices, dates, availability, specs, and similar exact values, `exactEvidenceCandidateCount` should usually be greater than `0`.
+- When TEI reranking is configured and confident, `sourceReranked` and `reranked` should usually be `true`.
 
 Deploy-script environment variables:
 
@@ -177,7 +187,7 @@ Notes before the tables:
 | `WEB_RESEARCH_BRAVE_NUM_RESULTS` | No | `10` | Results requested from Brave for each planned query | Raise for breadth when Brave quota allows it | Can also be overridden in admin config |
 | `WEB_RESEARCH_MAX_SOURCES` | No | `8` | Max deduplicated sources returned to the model | Raise for research-heavy responses, lower for concise answers | Can also be overridden in admin config |
 | `WEB_RESEARCH_HIGHLIGHT_CHARS` | No | `4000` | Max characters kept per evidence quote/snippet | Raise if quotes are too thin | Can also be overridden in admin config |
-| `WEB_RESEARCH_CONTENT_CHARS` | No | `12000` | Max fetched page text kept per source before chunking | Raise when long pages are being missed | Can also be overridden in admin config |
+| `WEB_RESEARCH_CONTENT_CHARS` | No | `12000` | Max fetched page text kept per source before chunking | Raise when long pages are being missed | Exact/quote-required searches use at least `12000` even if this is set lower; can also be overridden in admin config |
 | `WEB_RESEARCH_FRESHNESS_HOURS` | No | `24` | Exa cache age limit for recent page-content retrieval | Lower for more live crawling, raise for lower cost/latency | `0` forces live crawl for live requests; `-1` uses cache only |
 | `CONCURRENT_STREAM_LIMIT` | No | `3` | Max concurrent chat streams across all users | Lower it to reduce server load | Can also be overridden in admin config |
 | `PER_USER_STREAM_LIMIT` | No | `1` | Max concurrent chat streams per user | Lower it to reduce per-user load | Can also be overridden in admin config |
