@@ -17,6 +17,28 @@ from lfx.log.logger import logger
 import requests
 
 
+def _normalize_openai_compatible_base_url(base_url: str) -> str:
+    base = str(base_url or "").strip().rstrip("/")
+    if not base:
+        return base
+
+    lower = base.lower()
+    for suffix in ("/v1/chat/completions", "/chat/completions"):
+        if lower.endswith(suffix):
+            base = base[: -len(suffix)]
+            lower = base.lower()
+            break
+
+    if lower.endswith("/models"):
+        base = base[: -len("/models")]
+        lower = base.lower()
+
+    if lower.endswith("/v1"):
+        return base
+
+    return f"{base}/v1"
+
+
 class NemotronReasoningChatOpenAI(ChatOpenAI):
     """ChatOpenAI subclass for OpenAI-compatible models with optional reasoning capture.
 
@@ -481,20 +503,22 @@ class NemotronReasoningVllmComponent(LCModelComponent):
 
     def build_model(self) -> LanguageModel:  # type: ignore[type-var]
         # Debug: Log what values we received
+        normalized_api_base = _normalize_openai_compatible_base_url(self.api_base or "http://localhost:8000/v1")
         logger.info(f"=== OPENAI COMPATIBLE MODEL NODE DEBUG ===")
         logger.info(f"model_name field value: {self.model_name}")
         logger.info(f"api_base field value: {self.api_base}")
+        logger.info(f"normalized api_base value: {normalized_api_base}")
         logger.info(f"api_key is set: {bool(self.api_key)}")
         logger.info(f"system_prompt is set: {bool(self.system_prompt)}")
         
         # Optional: provider validation is normally handled by the AlfyAI admin UI.
-        if self.validate_model_on_build and not self._validate_model_exists(self.api_base, self.model_name, self.api_key or None):
+        if self.validate_model_on_build and not self._validate_model_exists(normalized_api_base, self.model_name, self.api_key or None):
             raise ValueError(
-                f"Model '{self.model_name}' does not exist on OpenAI-compatible server at {self.api_base}. "
+                f"Model '{self.model_name}' does not exist on OpenAI-compatible server at {normalized_api_base}. "
                 f"Check your provider settings and ensure the model is available."
             )
         
-        logger.info(f"Building model with name={self.model_name}, base_url={self.api_base}")
+        logger.info(f"Building model with name={self.model_name}, base_url={normalized_api_base}")
 
         user_extra_body = dict(self.extra_body or {})
         if self.enable_thinking:
@@ -518,7 +542,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "max_tokens": self.max_tokens or None,
             "model_kwargs": user_model_kwargs,
             "extra_body": user_extra_body,
-            "base_url": self.api_base or "http://localhost:8000/v1",
+            "base_url": normalized_api_base,
             "temperature": self.temperature if self.temperature is not None else 0.1,
             "top_p": self.top_p if self.top_p is not None else 1.0,
             "system_prompt": self.system_prompt or "",

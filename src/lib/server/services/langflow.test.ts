@@ -195,6 +195,39 @@ describe("sendMessage provider routing", () => {
 		);
 	});
 
+	it("normalizes provider API bases before sending Langflow model tweaks", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "fireworks",
+			displayName: "Fireworks Model",
+			baseUrl: "https://api.fireworks.ai/inference",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "accounts/fireworks/models/kimi-k2p5",
+			reasoningEffort: null,
+			thinkingType: null,
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		await sendMessage("Hello", "conv-1", "provider:provider-1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks).toMatchObject({
+			"ModelNode-1": {
+				model_name: "accounts/fireworks/models/kimi-k2p5",
+				api_base: "https://api.fireworks.ai/inference/v1",
+			},
+		});
+	});
+
 	it("enables reasoning capture for built-in Qwen models routed through the custom Langflow node", async () => {
 		mockConfig({ modelName: "qwen3-6-35b" });
 

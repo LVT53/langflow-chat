@@ -44,6 +44,29 @@ describe("createServerChunkRuntime", () => {
 		expect(tokenTexts(chunks).join("")).not.toContain("response");
 	});
 
+	it("strips a DeepSeek response marker glued to an inline thinking tag", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+			thinkingBatchMin: 1,
+		});
+
+		runtime.emitChunkWithOutputHandling("response<");
+		expect(chunks).toEqual([]);
+
+		runtime.emitChunkWithOutputHandling(
+			"think>The model is planning.</think>The visible answer.",
+		);
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe("The visible answer.");
+		expect(thinkingTexts(chunks).join("")).toBe("The model is planning.");
+		expect(tokenTexts(chunks).join("")).not.toContain("response");
+	});
+
 	it("strips leaked web research diagnostics from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

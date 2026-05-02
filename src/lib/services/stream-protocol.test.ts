@@ -163,6 +163,9 @@ describe("stream-protocol", () => {
 		expect(
 			stripLeadingResponseMarker("response\nThe user wants me to answer."),
 		).toBe("The user wants me to answer.");
+		expect(stripLeadingResponseMarker("response<think>reason</think>")).toBe(
+			"<think>reason</think>",
+		);
 		expect(stripLeadingResponseMarker("response time can be slow.")).toBe(
 			"response time can be slow.",
 		);
@@ -171,6 +174,8 @@ describe("stream-protocol", () => {
 	it("keeps buffering a partial response-prefixed thinking preamble", () => {
 		expect(mayStartLeadingThinkingPreamble("response Th")).toBe(true);
 		expect(mayStartLeadingThinkingPreamble("response The")).toBe(true);
+		expect(mayStartLeadingThinkingPreamble("response<")).toBe(true);
+		expect(mayStartLeadingThinkingPreamble("response<th")).toBe(true);
 		expect(mayStartLeadingThinkingPreamble("response time")).toBe(false);
 	});
 

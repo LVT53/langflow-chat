@@ -15,6 +15,7 @@ import {
 } from "./attachment-trace";
 import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
 import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
+import { normalizeOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -265,7 +266,7 @@ async function resolveLangflowRunConfig(
 
 		return {
 			...config.model1,
-			baseUrl: provider.baseUrl,
+			baseUrl: normalizeOpenAICompatibleBaseUrl(provider.baseUrl),
 			apiKey,
 			modelName: provider.modelName,
 			displayName: provider.displayName,

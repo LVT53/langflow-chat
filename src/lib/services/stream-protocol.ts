@@ -198,10 +198,10 @@ export function flushInlineThinkingState(
 }
 
 const LEADING_RESPONSE_MARKER_RE =
-	/^response(?:(?=[A-Z])|:\s*(?=\S)|[\t ]+(?=(?:the user|user|this is|okay,|i\s+(?:need|should|will|can|must|am going)|i'll|let me)\b)|\n+(?=\S)|$)/i;
+	/^response(?:(?=[A-Z])|(?=\s*<)|:\s*(?=\S)|[\t ]+(?=(?:the user|user|this is|okay,|i\s+(?:need|should|will|can|must|am going)|i'll|let me)\b)|\n+(?=\S)|$)/i;
 const LEADING_RESPONSE_SPACE_BEFORE_UPPER_RE = /^response[\t ]+(?=[A-Z])/;
 const TENTATIVE_LEADING_RESPONSE_MARKER_RE =
-	/^response(?:(?=[A-Z])|:\s*|[\t ]+|\n+)/i;
+	/^response(?:(?=[A-Z])|(?=\s*<)|:\s*|[\t ]+|\n+)/i;
 const WEB_RESEARCH_DIAGNOSTIC_RE =
 	/Found\s+\d+\s+source(?:\(s\)|s)?\s+and\s+\d+\s+evidence(?:\s+snippet(?:s|\(s\))?)?(?:\.|(?=$|\s|[A-Z]|[,;:!?]))/gi;
 const WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS = 180;
@@ -300,6 +300,18 @@ export function mayStartLeadingThinkingPreamble(value: string): boolean {
 		.trimStart()
 		.toLowerCase();
 	if (!candidate) {
+		return true;
+	}
+
+	if (
+		THINKING_OPEN_TAGS.some((tag) => {
+			const normalizedTag = tag.toLowerCase();
+			return (
+				normalizedTag.startsWith(candidate) ||
+				candidate.startsWith(normalizedTag)
+			);
+		})
+	) {
 		return true;
 	}
 
