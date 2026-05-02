@@ -219,6 +219,8 @@ const THINKING_PREAMBLE_START_RE =
 
 const THINKING_PREAMBLE_PARAGRAPH_RE =
 	/(?:\b(?:the user|user)\s+(?:wants|asked|asks|is asking)\s+me\b|\bi\s+(?:need|should|will|can|must|am going)\b|\bi'll\b|\bthis is (?:a )?(?:straightforward|simple|content request)\b|(?:okay,\s*)?let me\b|\bprovide it in english\b|\bwrap the content\b)/i;
+const DANGLING_THINKING_DELIMITER_RE =
+	/<\/?(?:thinking|think)>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>/gi;
 
 export function stripLeadingResponseMarker(value: string): string {
 	return value.replace(LEADING_RESPONSE_MARKER_RE, "");
@@ -250,6 +252,10 @@ function isThinkingPreambleParagraph(value: string): boolean {
 	return THINKING_PREAMBLE_PARAGRAPH_RE.test(value.trim());
 }
 
+function stripDanglingThinkingDelimiters(value: string): string {
+	return value.replace(DANGLING_THINKING_DELIMITER_RE, "").trim();
+}
+
 export function splitLeadingThinkingPreamble(
 	value: string,
 	options: { allowOpenEnded?: boolean } = {},
@@ -267,13 +273,15 @@ export function splitLeadingThinkingPreamble(
 
 		const boundaryEnd = match.index + match[0].length;
 		const thinkingCandidate = stripped.slice(0, match.index).trim();
+		const cleanedThinkingCandidate =
+			stripDanglingThinkingDelimiters(thinkingCandidate);
 		const visibleCandidate = stripped.slice(boundaryEnd).trimStart();
 		const nextParagraph = visibleCandidate.split(/\n{2,}/, 1)[0]?.trim() ?? "";
-		if (!thinkingCandidate || !nextParagraph) {
+		if (!cleanedThinkingCandidate || !nextParagraph) {
 			continue;
 		}
 
-		const thinkingParagraphs = thinkingCandidate
+		const thinkingParagraphs = cleanedThinkingCandidate
 			.split(/\n{2,}/)
 			.map((paragraph) => paragraph.trim())
 			.filter(Boolean);
@@ -284,7 +292,7 @@ export function splitLeadingThinkingPreamble(
 			!isThinkingPreambleParagraph(nextParagraph)
 		) {
 			return {
-				thinkingText: thinkingCandidate,
+				thinkingText: cleanedThinkingCandidate,
 				visibleText: visibleCandidate,
 			};
 		}
@@ -292,7 +300,7 @@ export function splitLeadingThinkingPreamble(
 
 	return options.allowOpenEnded
 		? {
-				thinkingText: stripped.trim(),
+				thinkingText: stripDanglingThinkingDelimiters(stripped),
 				visibleText: "",
 			}
 		: null;

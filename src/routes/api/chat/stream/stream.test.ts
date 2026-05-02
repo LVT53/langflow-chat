@@ -773,7 +773,7 @@ describe('POST /api/chat/stream', () => {
 		mockSendMessageStream.mockResolvedValue(
 			buildSseStream([
 				'event: token\ndata: {"text":"responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece."}\n\n',
-				'event: token\ndata: {"text":"\\n\\nI need to wrap the content in XML-style wrapper tags and provide it in English.\\n\\n"}\n\n',
+				'event: token\ndata: {"text":"\\n\\nI need to wrap the content in XML-style wrapper tags and provide it in English.\\n</think>\\n\\n"}\n\n',
 				'event: token\ndata: {"text":"The United States is a large and diverse country."}\n\n',
 				'data: [DONE]\n\n'
 			])
@@ -786,6 +786,7 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('event: thinking');
 		expect(body).toContain('The user wants me to write 500 words about the USA');
 		expect(body).toContain('provide it in English');
+		expect(body).not.toContain('</think>');
 		expect(body).toContain(
 			'"text":"The United States is a large and diverse country."'
 		);

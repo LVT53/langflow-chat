@@ -145,6 +145,19 @@ describe('stream-protocol', () => {
 		});
 	});
 
+	it('strips dangling thinking delimiters from Qwen planning preambles', () => {
+		const split = splitLeadingThinkingPreamble(
+			'The user is asking me to write 500 words about the USA. This is a straightforward content request. Let me aim for approximately 500 words.\n</think>\n\n' +
+				'The United States is a large and diverse country.'
+		);
+
+		expect(split).toEqual({
+			thinkingText:
+				'The user is asking me to write 500 words about the USA. This is a straightforward content request. Let me aim for approximately 500 words.',
+			visibleText: 'The United States is a large and diverse country.',
+		});
+	});
+
 	it('does not classify ordinary first-person answers as planning preambles', () => {
 		expect(
 			splitLeadingThinkingPreamble(
