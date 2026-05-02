@@ -228,6 +228,16 @@ describe("researchWeb", () => {
 		expect(result.answerBrief.evidence[0]?.quote).toContain("$799");
 		expect(result.diagnostics.openedPageCount).toBe(1);
 		expect(result.diagnostics.reranked).toBe(true);
+		expect(result.diagnostics.providers).toEqual({
+			exaConfigured: true,
+			braveConfigured: true,
+		});
+		expect(result.diagnostics.plannedQueryCount).toBe(6);
+		expect(result.diagnostics.fetchedSourceCount).toBe(18);
+		expect(result.diagnostics.fusedSourceCount).toBe(2);
+		expect(result.diagnostics.selectedSourceCount).toBe(2);
+		expect(result.diagnostics.evidenceCandidateCount).toBeGreaterThan(0);
+		expect(result.diagnostics.exactEvidenceCandidateCount).toBeGreaterThan(0);
 		expect(result.diagnostics.providerCalls).toHaveLength(12);
 	});
 
@@ -595,5 +605,7 @@ describe("researchWeb", () => {
 		expect(rerankQuotes.some((quote) => quote.includes("$1,299"))).toBe(true);
 		expect(result.evidence[0]?.quote).toContain("$1,299");
 		expect(result.answerBrief.markdown).toContain("$1,299");
+		expect(result.diagnostics.contentCharBudget).toBe(12_000);
+		expect(result.diagnostics.exactEvidenceCandidateCount).toBeGreaterThan(0);
 	});
 });

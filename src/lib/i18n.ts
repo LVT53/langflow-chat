@@ -87,12 +87,18 @@ const dictionary = {
 		"sidebar.deleteProjectTitle": "Delete this project?",
 		"sidebar.deleteProjectMessage":
 			"The project will be deleted. All chats inside will become unorganized.",
-		"sidebar.failedRenameConversation": "Failed to rename conversation. Please try again.",
-		"sidebar.failedDeleteConversation": "Failed to delete conversation. Please try again.",
-		"sidebar.failedMoveConversation": "Failed to move conversation. Please try again.",
-		"sidebar.failedRenameProject": "Failed to rename project. Please try again.",
-		"sidebar.failedDeleteProject": "Failed to delete project. Please try again.",
-		"sidebar.failedCreateProject": "Failed to create project. Please try again.",
+		"sidebar.failedRenameConversation":
+			"Failed to rename conversation. Please try again.",
+		"sidebar.failedDeleteConversation":
+			"Failed to delete conversation. Please try again.",
+		"sidebar.failedMoveConversation":
+			"Failed to move conversation. Please try again.",
+		"sidebar.failedRenameProject":
+			"Failed to rename project. Please try again.",
+		"sidebar.failedDeleteProject":
+			"Failed to delete project. Please try again.",
+		"sidebar.failedCreateProject":
+			"Failed to create project. Please try again.",
 		"header.newChat": "New chat",
 		"header.profileAndSettings": "Profile & Settings",
 		"header.logout": "Logout",
@@ -271,6 +277,16 @@ const dictionary = {
 			"OpenAI-compatible endpoint. Uses the same vLLM server as the title generator. Leave empty to disable.",
 		"admin.summarizerModelDescription":
 			"Model name served by the endpoint above.",
+		// Admin - Web Research
+		"admin.webResearch": "Web Research",
+		"admin.webResearchDescription":
+			"Server-owned search, page opening, source reranking, and citation evidence settings.",
+		"admin.webResearchProviderDescription":
+			"Exa is the search and page-content provider. Brave adds wider search-result breadth when configured.",
+		"admin.webResearchBreadthDescription":
+			"Raise result counts and max sources for broader research; lower them to reduce latency and provider usage.",
+		"admin.webResearchEvidenceDescription":
+			"Exact and quote-required searches fetch at least 12000 characters per opened page before evidence extraction.",
 		// Admin - Honcho
 		"admin.honchoMemory": "Honcho Memory",
 		"admin.enableHoncho": "Enable Honcho",
@@ -333,6 +349,15 @@ const dictionary = {
 		"admin.titleGenModel": "Title Generator Model",
 		"admin.contextSummarizerUrl": "Context Summarizer URL",
 		"admin.contextSummarizerModel": "Context Summarizer Model",
+		"admin.exaApiKey": "Exa API Key",
+		"admin.braveSearchApiKey": "Brave Search API Key",
+		"admin.webResearchExaSearchType": "Exa Search Type",
+		"admin.webResearchExaNumResults": "Exa Results Per Query",
+		"admin.webResearchBraveNumResults": "Brave Results Per Query",
+		"admin.webResearchMaxSources": "Max Returned Sources",
+		"admin.webResearchHighlightChars": "Evidence Quote Characters",
+		"admin.webResearchContentChars": "Page Content Characters",
+		"admin.webResearchFreshnessHours": "Freshness Cache Hours",
 		"admin.titleGenPromptEn": "Title Generator Prompt (English)",
 		"admin.titleGenPromptHu": "Title Generator Prompt (Hungarian)",
 		"admin.titleGenCodeAppendixEn": "Title Generator Code Appendix (English)",
@@ -549,7 +574,8 @@ const dictionary = {
 		"composerTools.uploadsUnavailable": "File uploads are unavailable",
 		"contextUsageRing.focusPanel": "Context focus panel",
 		"contextUsageRing.noContext": "No context yet",
-		"contextUsageRing.placeholder": "Leave empty to infer from your next message",
+		"contextUsageRing.placeholder":
+			"Leave empty to infer from your next message",
 		"contextUsageRing.cost": "Cost",
 		"contextUsageRing.tokens": "tokens",
 		"evidenceManager.title": "Evidence manager",
@@ -762,7 +788,8 @@ const dictionary = {
 		"sidebar.createNewProject": "Új projekt létrehozása",
 		"sidebar.projectName": "Projekt neve",
 		"sidebar.noProjectsYet": "Még nincsenek projektek",
-		"sidebar.groupChatsCreateOne": "Rendezd chatekbe - kattints a létrehozáshoz",
+		"sidebar.groupChatsCreateOne":
+			"Rendezd chatekbe - kattints a létrehozáshoz",
 		"sidebar.chats": "Chatek",
 		"sidebar.noConversationsYet": "Még nincsenek beszélgetések",
 		"sidebar.unorganizedDropArea": "Rendezetlen beszélgetések célterülete",
@@ -779,12 +806,18 @@ const dictionary = {
 		"sidebar.deleteProjectTitle": "Törlöd ezt a projektet?",
 		"sidebar.deleteProjectMessage":
 			"A projekt törlődik. A benne lévő chatek rendezetlenek lesznek.",
-		"sidebar.failedRenameConversation": "Nem sikerült átnevezni a beszélgetést. Próbáld újra.",
-		"sidebar.failedDeleteConversation": "Nem sikerült törölni a beszélgetést. Próbáld újra.",
-		"sidebar.failedMoveConversation": "Nem sikerült áthelyezni a beszélgetést. Próbáld újra.",
-		"sidebar.failedRenameProject": "Nem sikerült átnevezni a projektet. Próbáld újra.",
-		"sidebar.failedDeleteProject": "Nem sikerült törölni a projektet. Próbáld újra.",
-		"sidebar.failedCreateProject": "Nem sikerült létrehozni a projektet. Próbáld újra.",
+		"sidebar.failedRenameConversation":
+			"Nem sikerült átnevezni a beszélgetést. Próbáld újra.",
+		"sidebar.failedDeleteConversation":
+			"Nem sikerült törölni a beszélgetést. Próbáld újra.",
+		"sidebar.failedMoveConversation":
+			"Nem sikerült áthelyezni a beszélgetést. Próbáld újra.",
+		"sidebar.failedRenameProject":
+			"Nem sikerült átnevezni a projektet. Próbáld újra.",
+		"sidebar.failedDeleteProject":
+			"Nem sikerült törölni a projektet. Próbáld újra.",
+		"sidebar.failedCreateProject":
+			"Nem sikerült létrehozni a projektet. Próbáld újra.",
 		"header.newChat": "Új csevegés",
 		"header.profileAndSettings": "Profil és beállítások",
 		"header.logout": "Kijelentkezés",
@@ -914,7 +947,8 @@ const dictionary = {
 		"analytics.timelineWeekly": "Heti",
 		"analytics.timelineMonthly": "Havi",
 		"analytics.timelineYearly": "Éves",
-		"analytics.comparisonVsMonth": "{month} hónaphoz képest {direction} {percent}%",
+		"analytics.comparisonVsMonth":
+			"{month} hónaphoz képest {direction} {percent}%",
 		// Common
 		"common.cancel": "Mégse",
 		"common.close": "Bezárás",
@@ -965,6 +999,16 @@ const dictionary = {
 			"OpenAI-kompatibilis végpont. Ugyanazt a vLLM szervert használja, mint a címgenerátor. Hagyja üresen a letiltáshoz.",
 		"admin.summarizerModelDescription":
 			"A fenti végpont által kiszolgált modell neve.",
+		// Admin - Web Research
+		"admin.webResearch": "Webes kutatás",
+		"admin.webResearchDescription":
+			"Szerveroldali keresés, oldalmegnyitás, forrás-újrarangsorolás és idézési bizonyíték beállítások.",
+		"admin.webResearchProviderDescription":
+			"Az Exa a keresési és oldaltartalom-szolgáltató. A Brave szélesebb találati lefedettséget ad, ha be van állítva.",
+		"admin.webResearchBreadthDescription":
+			"Növelje a találatszámokat és a max forrásokat szélesebb kutatáshoz; csökkentse őket alacsonyabb késleltetéshez és szolgáltatóhasználathoz.",
+		"admin.webResearchEvidenceDescription":
+			"A pontos és idézetet igénylő keresések legalább 12000 karaktert kérnek le megnyitott oldalanként a bizonyítékkinyerés előtt.",
 		// Admin - Honcho
 		"admin.honchoMemory": "Honcho memória",
 		"admin.enableHoncho": "Honcho engedélyezése",
@@ -1028,6 +1072,15 @@ const dictionary = {
 		"admin.titleGenModel": "Címgenerátor modell",
 		"admin.contextSummarizerUrl": "Kontextus összefoglaló URL",
 		"admin.contextSummarizerModel": "Kontextus összefoglaló modell",
+		"admin.exaApiKey": "Exa API kulcs",
+		"admin.braveSearchApiKey": "Brave Search API kulcs",
+		"admin.webResearchExaSearchType": "Exa kereséstípus",
+		"admin.webResearchExaNumResults": "Exa találatok kérdésenként",
+		"admin.webResearchBraveNumResults": "Brave találatok kérdésenként",
+		"admin.webResearchMaxSources": "Max visszaadott források",
+		"admin.webResearchHighlightChars": "Bizonyíték idézet karakterei",
+		"admin.webResearchContentChars": "Oldaltartalom karakterei",
+		"admin.webResearchFreshnessHours": "Frissességi cache órák",
 		"admin.titleGenPromptEn": "Címgenerátor prompt (angol)",
 		"admin.titleGenPromptHu": "Címgenerátor prompt (magyar)",
 		"admin.titleGenCodeAppendixEn": "Címgenerátor kód függelék (angol)",
@@ -1211,7 +1264,8 @@ const dictionary = {
 		"composerTools.uploadsUnavailable": "A fajlfeltoltes nem erheto el",
 		"contextUsageRing.focusPanel": "Kontextus fokusz panel",
 		"contextUsageRing.noContext": "Meg nincs kontextus",
-		"contextUsageRing.placeholder": "Hagyja uresen a kovetkezo uzenetbol valo kovetkezteteshez",
+		"contextUsageRing.placeholder":
+			"Hagyja uresen a kovetkezo uzenetbol valo kovetkezteteshez",
 		"contextUsageRing.cost": "Koltseg",
 		"contextUsageRing.tokens": "token",
 		"evidenceManager.title": "Bizonyitek kezelo",
@@ -1368,8 +1422,10 @@ const dictionary = {
 		"memory.noTaskContinuity": "Még nem ellenőriztek feladat-folytonosságot.",
 		"memory.noAcrossChatContinuity":
 			"Még nem rögzítettek chatek közötti folytonosságot.",
-		"memory.noCheckpointSummary": "Még nincs tárolt ellenőrzőpont-összefoglaló.",
-		"memory.noContinuitySummary": "Még nincs tárolt folytonossági összefoglaló.",
+		"memory.noCheckpointSummary":
+			"Még nincs tárolt ellenőrzőpont-összefoglaló.",
+		"memory.noContinuitySummary":
+			"Még nincs tárolt folytonossági összefoglaló.",
 		"memory.personaMemoryUnavailable":
 			"A személyiség-emlékek kezelése nem elérhető, mert a Honcho le van tiltva.",
 		"memory.forgetSelected": "Kijelöltek elfelejtése ({count})",

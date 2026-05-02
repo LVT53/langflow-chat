@@ -7,6 +7,7 @@ import {
 	validateProvider,
 	fetchPersonalityProfiles,
 	type InferenceProvider,
+	type PersonalityProfileSummary,
 } from "$lib/client/api/admin";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
@@ -43,10 +44,12 @@ let {
 let providers = $state<InferenceProvider[]>([]);
 let providersLoading = $state(false);
 let providersError = $state("");
-let adminPersonalities = $state<any[]>([]);
+let adminPersonalities = $state<PersonalityProfileSummary[]>([]);
 
 $effect(() => {
-	void fetchPersonalityProfiles().then(p => adminPersonalities = p).catch(() => {});
+	void fetchPersonalityProfiles()
+		.then((p) => (adminPersonalities = p))
+		.catch(() => {});
 });
 let providersMessage = $state("");
 let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
@@ -57,6 +60,10 @@ function showProvidersMessage(text: string) {
 	providersMessageTimer = setTimeout(() => {
 		providersMessage = "";
 	}, 4000);
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+	return error instanceof Error ? error.message : fallback;
 }
 
 // Modal state
@@ -78,8 +85,8 @@ async function loadProviders() {
 	providersError = "";
 	try {
 		providers = await fetchProviders();
-	} catch (e: any) {
-		providersError = e.message ?? $t("admin.failedLoadProviders");
+	} catch (error: unknown) {
+		providersError = errorMessage(error, $t("admin.failedLoadProviders"));
 	} finally {
 		providersLoading = false;
 	}
@@ -156,7 +163,7 @@ async function handleModalSave(data: Record<string, unknown>) {
 	providersMessage = "";
 	try {
 		if (modalIsCreate) {
-			await createProvider(data as any);
+			await createProvider(data as Parameters<typeof createProvider>[0]);
 			showProvidersMessage($t("admin.providerAdded"));
 		} else if (modalModel?.isBuiltIn) {
 			// Save built-in model config via admin config keys
@@ -197,15 +204,20 @@ async function handleModalSave(data: Record<string, unknown>) {
 				adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`] =
 					data.maxMessageLength != null ? String(data.maxMessageLength) : "";
 			await onSaveAdminConfig?.();
-			showProvidersMessage(`${modalModel.displayName || modelNameDisplay(modalModel.name)} ${$t("common.updated").toLowerCase()}`);
+			showProvidersMessage(
+				`${modalModel.displayName || modelNameDisplay(modalModel.name)} ${$t("common.updated").toLowerCase()}`,
+			);
 		} else if (modalModel) {
-			await updateProvider(modalModel.id, data as any);
+			await updateProvider(
+				modalModel.id,
+				data as Parameters<typeof updateProvider>[1],
+			);
 			showProvidersMessage($t("admin.providerUpdated"));
 		}
 		closeModal();
 		await loadProviders();
-	} catch (e: any) {
-		modalError = e.message ?? $t("admin.failedSave");
+	} catch (error: unknown) {
+		modalError = errorMessage(error, $t("admin.failedSave"));
 	} finally {
 		modalSaving = false;
 	}
@@ -221,8 +233,8 @@ async function handleDelete(provider: InferenceProvider) {
 		await deleteProvider(provider.id);
 		showProvidersMessage($t("admin.providerDeleted"));
 		await loadProviders();
-	} catch (e: any) {
-		providersError = e.message ?? $t("admin.failedDeleteProvider");
+	} catch (error: unknown) {
+		providersError = errorMessage(error, $t("admin.failedDeleteProvider"));
 	}
 }
 
@@ -232,16 +244,18 @@ async function handleValidate(provider: InferenceProvider) {
 	try {
 		const result = await validateProvider(provider.id);
 		if (result.valid) {
-			showProvidersMessage($t("admin.providerValid", {
-				name: provider.displayName,
-			}));
+			showProvidersMessage(
+				$t("admin.providerValid", {
+					name: provider.displayName,
+				}),
+			);
 		} else {
 			providersError = $t("admin.validationFailed", {
 				error: result.error ?? "Unknown error",
 			});
 		}
-	} catch (e: any) {
-		providersError = e.message ?? $t("admin.failedValidateProvider");
+	} catch (error: unknown) {
+		providersError = errorMessage(error, $t("admin.failedValidateProvider"));
 	}
 }
 
@@ -290,6 +304,15 @@ function configLabelKey(key: string): string {
 		TITLE_GEN_MODEL: "admin.titleGenModel",
 		CONTEXT_SUMMARIZER_URL: "admin.contextSummarizerUrl",
 		CONTEXT_SUMMARIZER_MODEL: "admin.contextSummarizerModel",
+		EXA_API_KEY: "admin.exaApiKey",
+		BRAVE_SEARCH_API_KEY: "admin.braveSearchApiKey",
+		WEB_RESEARCH_EXA_SEARCH_TYPE: "admin.webResearchExaSearchType",
+		WEB_RESEARCH_EXA_NUM_RESULTS: "admin.webResearchExaNumResults",
+		WEB_RESEARCH_BRAVE_NUM_RESULTS: "admin.webResearchBraveNumResults",
+		WEB_RESEARCH_MAX_SOURCES: "admin.webResearchMaxSources",
+		WEB_RESEARCH_HIGHLIGHT_CHARS: "admin.webResearchHighlightChars",
+		WEB_RESEARCH_CONTENT_CHARS: "admin.webResearchContentChars",
+		WEB_RESEARCH_FRESHNESS_HOURS: "admin.webResearchFreshnessHours",
 		TITLE_GEN_SYSTEM_PROMPT_EN: "admin.titleGenPromptEn",
 		TITLE_GEN_SYSTEM_PROMPT_HU: "admin.titleGenPromptHu",
 		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN: "admin.titleGenCodeAppendixEn",
@@ -321,6 +344,12 @@ const NUMBER_KEYS = new Set([
 	"HONCHO_PERSONA_CONTEXT_WAIT_MS",
 	"TRANSLATION_MAX_TOKENS",
 	"TRANSLATION_TEMPERATURE",
+	"WEB_RESEARCH_EXA_NUM_RESULTS",
+	"WEB_RESEARCH_BRAVE_NUM_RESULTS",
+	"WEB_RESEARCH_MAX_SOURCES",
+	"WEB_RESEARCH_HIGHLIGHT_CHARS",
+	"WEB_RESEARCH_CONTENT_CHARS",
+	"WEB_RESEARCH_FRESHNESS_HOURS",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
 ]);
@@ -486,6 +515,73 @@ function placeholderFor(key: string): string {
 				<p class="mt-1 text-xs text-text-muted">{key === 'CONTEXT_SUMMARIZER_URL' ? $t('admin.summarizerUrlDescription') : $t('admin.summarizerModelDescription')}</p>
 			</div>
 		{/each}
+	</div>
+</section>
+
+<!-- Web Research -->
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('admin.webResearch')}</h2>
+	<p class="mb-3 text-xs text-text-muted">{$t('admin.webResearchDescription')}</p>
+	<div class="flex flex-col gap-4">
+		<div class="grid gap-3 md:grid-cols-2">
+			{#each ['EXA_API_KEY', 'BRAVE_SEARCH_API_KEY'] as key}
+				<div>
+					<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
+					<input
+						id={key}
+						type="password"
+						class="settings-input"
+						bind:value={adminConfig[key]}
+						placeholder={placeholderFor(key)}
+						autocomplete="off"
+					/>
+				</div>
+			{/each}
+		</div>
+		<p class="text-xs text-text-muted">{$t('admin.webResearchProviderDescription')}</p>
+
+		<div class="grid gap-3 md:grid-cols-3">
+			<div>
+				<label class="settings-label" for="WEB_RESEARCH_EXA_SEARCH_TYPE">{$t(configLabelKey('WEB_RESEARCH_EXA_SEARCH_TYPE'))}</label>
+				<input
+					id="WEB_RESEARCH_EXA_SEARCH_TYPE"
+					type="text"
+					class="settings-input"
+					bind:value={adminConfig.WEB_RESEARCH_EXA_SEARCH_TYPE}
+					placeholder={placeholderFor('WEB_RESEARCH_EXA_SEARCH_TYPE')}
+				/>
+			</div>
+			{#each ['WEB_RESEARCH_EXA_NUM_RESULTS', 'WEB_RESEARCH_BRAVE_NUM_RESULTS', 'WEB_RESEARCH_MAX_SOURCES'] as key}
+				<div>
+					<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
+					<input
+						id={key}
+						type="number"
+						min="1"
+						class="settings-input"
+						bind:value={adminConfig[key]}
+						placeholder={placeholderFor(key)}
+					/>
+				</div>
+			{/each}
+		</div>
+		<p class="text-xs text-text-muted">{$t('admin.webResearchBreadthDescription')}</p>
+
+		<div class="grid gap-3 md:grid-cols-3">
+			{#each ['WEB_RESEARCH_HIGHLIGHT_CHARS', 'WEB_RESEARCH_CONTENT_CHARS', 'WEB_RESEARCH_FRESHNESS_HOURS'] as key}
+				<div>
+					<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
+					<input
+						id={key}
+						type="number"
+						class="settings-input"
+						bind:value={adminConfig[key]}
+						placeholder={placeholderFor(key)}
+					/>
+				</div>
+			{/each}
+		</div>
+		<p class="text-xs text-text-muted">{$t('admin.webResearchEvidenceDescription')}</p>
 	</div>
 </section>
 

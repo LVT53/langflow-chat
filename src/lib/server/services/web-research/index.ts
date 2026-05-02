@@ -105,6 +105,15 @@ export interface ResearchDiagnostics {
 	mode: ResearchMode;
 	freshness: ResearchFreshness;
 	sourcePolicy: ResearchSourcePolicy;
+	providers: {
+		exaConfigured: boolean;
+		braveConfigured: boolean;
+	};
+	plannedQueryCount: number;
+	directUrlCount: number;
+	fetchedSourceCount: number;
+	fusedSourceCount: number;
+	selectedSourceCount: number;
 	providerCalls: Array<{
 		provider: ResearchProvider;
 		query: string;
@@ -112,8 +121,11 @@ export interface ResearchDiagnostics {
 		latencyMs: number;
 		error?: string;
 	}>;
+	contentCharBudget: number;
 	openedPageCount: number;
 	sourceReranked: boolean;
+	evidenceCandidateCount: number;
+	exactEvidenceCandidateCount: number;
 	reranked: boolean;
 	fallbackReasons: string[];
 }
@@ -1155,10 +1167,17 @@ function buildEvidenceChunks(
 	sources: ResearchSource[],
 	maxQuoteLength: number,
 	request: NormalizedResearchRequest,
-): ResearchEvidence[] {
+): { evidence: ResearchEvidence[]; exactCount: number } {
 	const chunks: ResearchEvidence[] = [];
+	let exactCount = 0;
 	for (const source of sources) {
-		chunks.push(...buildExactEvidenceChunks(source, request, maxQuoteLength));
+		const exactChunks = buildExactEvidenceChunks(
+			source,
+			request,
+			maxQuoteLength,
+		);
+		exactCount += exactChunks.length;
+		chunks.push(...exactChunks);
 
 		const sourceTextParts = [
 			...source.highlights,
@@ -1185,7 +1204,7 @@ function buildEvidenceChunks(
 			});
 		}
 	}
-	return chunks;
+	return { evidence: chunks, exactCount };
 }
 
 async function rerankEvidence(
@@ -1326,9 +1345,21 @@ export async function researchWeb(
 		mode: normalized.mode,
 		freshness: normalized.freshness,
 		sourcePolicy: normalized.sourcePolicy,
+		providers: {
+			exaConfigured: Boolean(config.exaApiKey.trim()),
+			braveConfigured: Boolean(config.braveSearchApiKey.trim()),
+		},
+		plannedQueryCount: queries.length,
+		directUrlCount: 0,
+		fetchedSourceCount: 0,
+		fusedSourceCount: 0,
+		selectedSourceCount: 0,
 		providerCalls: [],
+		contentCharBudget: contentCharacterBudget(normalized, config),
 		openedPageCount: 0,
 		sourceReranked: false,
+		evidenceCandidateCount: 0,
+		exactEvidenceCandidateCount: 0,
 		reranked: false,
 		fallbackReasons: [],
 	};
@@ -1341,6 +1372,7 @@ export async function researchWeb(
 		request: normalized,
 		nowIso,
 	});
+	diagnostics.directUrlCount = directUrlSources.length;
 	const mandatoryCanonicalUrls = new Set(
 		directUrlSources.map((source) => source.canonicalUrl),
 	);
@@ -1389,11 +1421,16 @@ export async function researchWeb(
 		}),
 	);
 	diagnostics.providerCalls = sourceBatches.map((batch) => batch.providerCall);
+	diagnostics.fetchedSourceCount = sourceBatches.reduce(
+		(total, batch) => total + batch.sources.length,
+		0,
+	);
 
 	const fused = fuseSources(
 		[...directUrlSources, ...sourceBatches.flatMap((batch) => batch.sources)],
 		normalized,
 	);
+	diagnostics.fusedSourceCount = fused.length;
 	const sourceRanked = await rerankSources(
 		normalized.query,
 		fused,
@@ -1408,6 +1445,7 @@ export async function researchWeb(
 			preferSourceOrder: sourceRanked.reranked,
 		},
 	);
+	diagnostics.selectedSourceCount = selectedSources.length;
 	if (selectedSources.length === 0) {
 		diagnostics.fallbackReasons.push("no_search_results");
 	}
@@ -1446,9 +1484,11 @@ export async function researchWeb(
 		config.webResearchHighlightChars,
 		normalized,
 	);
+	diagnostics.evidenceCandidateCount = rawEvidence.evidence.length;
+	diagnostics.exactEvidenceCandidateCount = rawEvidence.exactCount;
 	const rankedEvidence = await rerankEvidence(
 		normalized.query,
-		rawEvidence,
+		rawEvidence.evidence,
 		deps.rerank ?? rerankItems<ResearchEvidence>,
 	);
 	diagnostics.reranked = rankedEvidence.reranked;
