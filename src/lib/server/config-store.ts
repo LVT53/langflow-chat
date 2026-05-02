@@ -64,6 +64,15 @@ export const ADMIN_CONFIG_KEYS = [
 	"HONCHO_OVERVIEW_WAIT_MS",
 	"MINERU_API_URL",
 	"MINERU_TIMEOUT_MS",
+	"EXA_API_KEY",
+	"WEB_RESEARCH_EXA_SEARCH_TYPE",
+	"WEB_RESEARCH_EXA_NUM_RESULTS",
+	"WEB_RESEARCH_BRAVE_NUM_RESULTS",
+	"WEB_RESEARCH_MAX_SOURCES",
+	"WEB_RESEARCH_HIGHLIGHT_CHARS",
+	"WEB_RESEARCH_CONTENT_CHARS",
+	"WEB_RESEARCH_FRESHNESS_HOURS",
+	"BRAVE_SEARCH_API_KEY",
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
@@ -129,6 +138,14 @@ export interface RuntimeConfig {
 	memoryMaintenanceIntervalMinutes: number;
 	mineruApiUrl: string;
 	mineruTimeoutMs: number;
+	exaApiKey: string;
+	webResearchExaSearchType: string;
+	webResearchExaNumResults: number;
+	webResearchBraveNumResults: number;
+	webResearchMaxSources: number;
+	webResearchHighlightChars: number;
+	webResearchContentChars: number;
+	webResearchFreshnessHours: number;
 	braveSearchApiKey: string;
 	concurrentStreamLimit: number;
 	perUserStreamLimit: number;
@@ -343,18 +360,57 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 			config.mineruTimeoutMs = Math.max(10000, parsed);
 		}
 	},
+	EXA_API_KEY: (config, value) => {
+		config.exaApiKey = value;
+	},
+	WEB_RESEARCH_EXA_SEARCH_TYPE: (config, value) => {
+		config.webResearchExaSearchType = value || "auto";
+	},
+	WEB_RESEARCH_EXA_NUM_RESULTS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchExaNumResults = Math.max(1, parsed);
+	},
+	WEB_RESEARCH_BRAVE_NUM_RESULTS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchBraveNumResults = Math.max(1, parsed);
+	},
+	WEB_RESEARCH_MAX_SOURCES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchMaxSources = Math.max(1, parsed);
+	},
+	WEB_RESEARCH_HIGHLIGHT_CHARS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchHighlightChars = Math.max(200, parsed);
+	},
+	WEB_RESEARCH_CONTENT_CHARS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchContentChars = Math.max(1000, parsed);
+	},
+	WEB_RESEARCH_FRESHNESS_HOURS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.webResearchFreshnessHours = Math.max(-1, parsed);
+	},
+	BRAVE_SEARCH_API_KEY: (config, value) => {
+		config.braveSearchApiKey = value;
+	},
 	SYSTEM_PROMPT: (config, value) => {
 		config.systemPrompt = normalizeSystemPromptReference(value) ?? "";
 	},
 	MAX_FILE_UPLOAD_SIZE: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.maxFileUploadSize = Math.max(1048576, parsed);
+		if (parsed !== undefined)
+			config.maxFileUploadSize = Math.max(1048576, parsed);
 	},
 	REQUEST_TIMEOUT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
 	},
-
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -585,6 +641,15 @@ export function getResolvedAdminConfigValues(
 		HONCHO_OVERVIEW_WAIT_MS: String(config.honchoOverviewWaitMs),
 		MINERU_API_URL: config.mineruApiUrl,
 		MINERU_TIMEOUT_MS: String(config.mineruTimeoutMs),
+		EXA_API_KEY: config.exaApiKey,
+		WEB_RESEARCH_EXA_SEARCH_TYPE: config.webResearchExaSearchType,
+		WEB_RESEARCH_EXA_NUM_RESULTS: String(config.webResearchExaNumResults),
+		WEB_RESEARCH_BRAVE_NUM_RESULTS: String(config.webResearchBraveNumResults),
+		WEB_RESEARCH_MAX_SOURCES: String(config.webResearchMaxSources),
+		WEB_RESEARCH_HIGHLIGHT_CHARS: String(config.webResearchHighlightChars),
+		WEB_RESEARCH_CONTENT_CHARS: String(config.webResearchContentChars),
+		WEB_RESEARCH_FRESHNESS_HOURS: String(config.webResearchFreshnessHours),
+		BRAVE_SEARCH_API_KEY: config.braveSearchApiKey,
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
 		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),

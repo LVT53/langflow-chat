@@ -52,6 +52,17 @@ npm start
 
 That script now runs `npm run db:prepare && node build`, so the standard production entrypoint applies pending Drizzle migrations before serving the built app. SvelteKit adapter-node uses the `HOST` and `PORT` environment variables for the listen address, so container-reachable host setups should use `HOST=0.0.0.0` instead of `127.0.0.1`.
 
+### Web Research Deployment
+
+To enable the server-owned web research tool:
+
+1. Set `EXA_API_KEY` on the AlfyAI server. Exa remains the primary search and page-content provider.
+2. Set `BRAVE_SEARCH_API_KEY` on the AlfyAI server when Brave should supplement Exa with wider/fresher search breadth. This same key still powers image search.
+3. Set the same `ALFYAI_API_SIGNING_KEY` value on AlfyAI and on the Langflow `Web Research` custom node.
+4. Add `langflow_nodes/web_research_tool.py` to Langflow, configure `ALFYAI_API_URL` and `ALFYAI_API_SIGNING_KEY`, and connect its `Tool` output to the Agent node's tools input.
+5. Prefer the `research_web` tool for web facts. Keep the raw Exa node only as a fallback, or remove it from the Agent tools list to avoid duplicate search choices.
+6. Restart the AlfyAI process and reload or redeploy the Langflow flow after changing custom nodes or environment variables.
+
 Deploy-script environment variables:
 
 | Variable | Required? | Default | What it does | When to set it | Caveats |
@@ -146,7 +157,7 @@ Notes before the tables:
 | `LANGFLOW_API_KEY` | Yes | none | Authenticates Langflow API calls | Always set in real deployments | App boot fails if missing |
 | `LANGFLOW_FLOW_ID` | No | empty | Default Langflow flow used when a model-specific flow is not configured | Set it when you use one primary Langflow flow for chat | Model-specific flow IDs override it |
 | `LANGFLOW_WEBHOOK_SECRET` | No | empty | Shared secret for Langflow sentence webhook verification | Set it when webhook flows are exposed or shared across systems | Leave empty only in trusted/local setups |
-| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for `/api/chat/files/generate` | Set it on both AlfyAI and the Langflow file-generator node for out-of-browser signed calls | When unset, service assertions are rejected and only session-auth requests are allowed |
+| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for internal Langflow tool calls | Set it on both AlfyAI and Langflow custom nodes such as file generation and web research | When unset, service assertions are rejected and only session-auth requests are allowed |
 | `SESSION_SECRET` | Yes | none | Signs and protects session cookies | Always set to a long random secret in every environment | App boot fails if missing |
 | `DATABASE_PATH` | No | `./data/chat.db` | SQLite database location | Set it when the database should live outside the repo root or on a mounted volume | The parent directory must be writable |
 | `WEBHOOK_PORT` | No | `8090` | Port used by webhook-related server handling | Set it only if your deployment expects a different port | Must be numeric |
@@ -159,7 +170,15 @@ Notes before the tables:
 | `WORKING_SET_DOCUMENT_TOKEN_BUDGET` | No | `4000` | Token budget for working-set document snippets in prompts | Raise it if longer document excerpts should reach the model | Can also be overridden in admin config |
 | `WORKING_SET_PROMPT_TOKEN_BUDGET` | No | `20000` | Token budget for the overall working-set prompt section | Raise it if more documents should be included in context | Can also be overridden in admin config |
 | `SMALL_FILE_THRESHOLD_CHARS` | No | `5000` | Character threshold below which files are treated as small for extraction | Tune based on typical upload sizes | Can also be overridden in admin config |
-| `BRAVE_SEARCH_API_KEY` | No | empty | API key for Brave Search image-search tool | Set it when the image-search tool should be enabled | Empty disables the tool |
+| `EXA_API_KEY` | No | empty | API key for Exa search and page-content retrieval in `research_web` | Set it when the web research tool should be enabled | Empty disables Exa-backed web research |
+| `BRAVE_SEARCH_API_KEY` | No | empty | API key for Brave Search image search and `research_web` supplemental web search | Set it when image search or Brave-backed web breadth should be enabled | Empty disables Brave-backed features |
+| `WEB_RESEARCH_EXA_SEARCH_TYPE` | No | `auto` | Exa search type used by server-owned web research | Leave as `auto` unless testing `instant`, `fast`, or a deep-search Exa plan | Can also be overridden in admin config |
+| `WEB_RESEARCH_EXA_NUM_RESULTS` | No | `12` | Results requested from Exa for each planned query | Raise for broader searches, lower to reduce provider cost | Can also be overridden in admin config |
+| `WEB_RESEARCH_BRAVE_NUM_RESULTS` | No | `10` | Results requested from Brave for each planned query | Raise for breadth when Brave quota allows it | Can also be overridden in admin config |
+| `WEB_RESEARCH_MAX_SOURCES` | No | `8` | Max deduplicated sources returned to the model | Raise for research-heavy responses, lower for concise answers | Can also be overridden in admin config |
+| `WEB_RESEARCH_HIGHLIGHT_CHARS` | No | `4000` | Max characters kept per evidence quote/snippet | Raise if quotes are too thin | Can also be overridden in admin config |
+| `WEB_RESEARCH_CONTENT_CHARS` | No | `12000` | Max fetched page text kept per source before chunking | Raise when long pages are being missed | Can also be overridden in admin config |
+| `WEB_RESEARCH_FRESHNESS_HOURS` | No | `24` | Exa cache age limit for recent page-content retrieval | Lower for more live crawling, raise for lower cost/latency | `0` forces live crawl for live requests; `-1` uses cache only |
 | `CONCURRENT_STREAM_LIMIT` | No | `3` | Max concurrent chat streams across all users | Lower it to reduce server load | Can also be overridden in admin config |
 | `PER_USER_STREAM_LIMIT` | No | `1` | Max concurrent chat streams per user | Lower it to reduce per-user load | Can also be overridden in admin config |
 

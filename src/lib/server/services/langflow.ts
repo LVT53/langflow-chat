@@ -118,18 +118,19 @@ const IMAGE_SEARCH_GUARD = [
 	"- The user cannot see the raw tool output, so if you do not write the markdown tags, the images will be invisible.",
 ].join("\n");
 
-const EXA_SEARCH_GUARD = [
-		"Web search workflow (Exa):",
-		"- Use web retrieval only when the corresponding tool is actually listed in the runtime tool schema.",
-		"- If Exa Search is connected, its search tool is usually named `search` and expects a JSON argument: {`query`: `your search terms`}.",
-		"- For multi-hop research with Exa, chain `search` calls first, then use the connected content tool. In current Langflow Exa flows this is usually `get_contents`, not `fetch_content`.",
-		"- Use `find_similar` only when that tool is connected and the user provides a URL for similar-page discovery.",
-		"- The `get_contents` tool expects a JSON argument: {ids: [id1, id2, ...]} using IDs from search results.",
-		"- The `find_similar` tool expects a JSON argument: {url: target URL}.",
-		"- You MUST cite your sources using markdown links: [source title](url).",
-		"- Use the injected current date for temporal context before searching.",
-		"- Prefer `search` over `find_similar` unless the user explicitly provides a source URL and both tools are available.",
-	].join("\n");
+const WEB_RESEARCH_GUARD = [
+	"Web research workflow:",
+	"- Use web retrieval only when the corresponding tool is actually listed in the runtime tool schema.",
+	"- If `research_web` is available, prefer it over raw provider tools for current facts, prices, availability, specs, policies, page-backed claims, comparisons, and multi-source research.",
+	'- For `research_web`, pass at least {"query": "your exact research question"}. Use mode `exact` and freshness `live` for prices, availability, dates, specs, policies, or other volatile exact values.',
+	"- Treat `research_web.evidence` as the strongest source of page-backed facts. If an exact value is not present in evidence or fetched source text, say that the retrieved source did not expose it.",
+	"- Cite final web claims with markdown links using the returned source title and URL. Do not cite a source unless it supports the sentence.",
+	"- If `research_web` is unavailable and Exa Search is connected, its search tool is usually named `search` and expects a JSON argument: {`query`: `your search terms`}.",
+	"- For raw Exa follow-up retrieval, chain `search` calls first, then use the connected content tool. In current Langflow Exa flows this is usually `get_contents`, not `fetch_content`.",
+	'- Raw Exa `get_contents` expects a JSON argument like {urls: ["https://example.com/page"]}; use URLs from search results unless the tool schema says otherwise.',
+	"- Use `find_similar` only when that tool is connected and the user provides a URL for similar-page discovery.",
+	"- Use the injected current date for temporal context before searching.",
+].join("\n");
 
 const WEB_FACT_EXTRACTION_GUARD = [
 	"Exact web facts and prices:",
@@ -172,7 +173,9 @@ export function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 	personalityPrompt?: string;
 }): string {
-	const modelHeader = params.modelDisplayName ? `[MODEL: ${params.modelDisplayName}]\n` : '';
+	const modelHeader = params.modelDisplayName
+		? `[MODEL: ${params.modelDisplayName}]\n`
+		: "";
 	const basePrompt = modelHeader + params.basePrompt.trim();
 	const todayStr = new Date().toLocaleDateString("en-US", {
 		weekday: "long",
@@ -193,7 +196,7 @@ export function buildOutboundSystemPrompt(params: {
 	guidanceAdditions.push(
 		FILE_GENERATION_GUARD,
 		IMAGE_SEARCH_GUARD,
-		EXA_SEARCH_GUARD,
+		WEB_RESEARCH_GUARD,
 		WEB_FACT_EXTRACTION_GUARD,
 		PERSONA_MEMORY_GUARD,
 		SOURCE_AUTHORITY_GUARD,
@@ -214,7 +217,9 @@ export function buildOutboundSystemPrompt(params: {
 	}
 
 	if (uniqueGuidance.length > 0) {
-		sections.push(`## Tool And Search Guidance\n${uniqueGuidance.join("\n\n")}`);
+		sections.push(
+			`## Tool And Search Guidance\n${uniqueGuidance.join("\n\n")}`,
+		);
 	}
 
 	if (params.personalityPrompt?.trim()) {
@@ -230,7 +235,9 @@ export function buildOutboundSystemPrompt(params: {
 	return sections.join("\n\n");
 }
 
-async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowModelRunConfig> {
+async function resolveLangflowRunConfig(
+	modelId?: ModelId,
+): Promise<LangflowModelRunConfig> {
 	const config = getConfig();
 
 	if (modelId && isProviderModelId(modelId)) {
@@ -251,7 +258,9 @@ async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowMode
 		try {
 			apiKey = decryptApiKey(provider.apiKeyEncrypted, provider.apiKeyIv);
 		} catch {
-			throw new Error("Failed to decrypt provider API key. Check SESSION_SECRET and provider settings.");
+			throw new Error(
+				"Failed to decrypt provider API key. Check SESSION_SECRET and provider settings.",
+			);
 		}
 
 		return {
@@ -284,7 +293,9 @@ async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowMode
 	return config.model1;
 }
 
-function shouldEnableReasoningCapture(modelConfig: LangflowModelRunConfig): boolean {
+function shouldEnableReasoningCapture(
+	modelConfig: LangflowModelRunConfig,
+): boolean {
 	if (modelConfig.providerThinkingType === "enabled") {
 		return true;
 	}
@@ -306,7 +317,9 @@ function buildLangflowTweaks(
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
 		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
-		...(modelConfig.maxTokens != null ? { max_tokens: modelConfig.maxTokens } : {}),
+		...(modelConfig.maxTokens != null
+			? { max_tokens: modelConfig.maxTokens }
+			: {}),
 		...(shouldEnableReasoningCapture(modelConfig)
 			? { enable_thinking: true }
 			: modelConfig.providerThinkingType === "disabled"
@@ -381,15 +394,10 @@ export async function prepareOutboundChatContext(params: {
 	logLabel: "request" | "streaming bundle" | "provider request";
 }): Promise<PreparedOutboundChatContext> {
 	let inputValue = params.message;
-	let contextStatus:
-		| import("$lib/types").ConversationContextStatus
-		| undefined;
+	let contextStatus: import("$lib/types").ConversationContextStatus | undefined;
 	let taskState: import("$lib/types").TaskState | null | undefined;
 	let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
-	let honchoContext:
-		| import("$lib/types").HonchoContextInfo
-		| null
-		| undefined;
+	let honchoContext: import("$lib/types").HonchoContextInfo | null | undefined;
 	let honchoSnapshot:
 		| import("$lib/types").HonchoContextSnapshot
 		| null
@@ -425,12 +433,15 @@ export async function prepareOutboundChatContext(params: {
 			attachmentSectionPreviewHash: attachmentSection.previewHash,
 		});
 		if (!attachmentSection.hasMarker) {
-			console.warn("[LANGFLOW] Attachment marker missing from outgoing " + params.logLabel, {
-				sessionId: params.sessionId,
-				attachmentIds: params.attachmentIds ?? [],
-				traceId: params.attachmentTraceId ?? null,
-				inputValueLength: inputValue.length,
-			});
+			console.warn(
+				"[LANGFLOW] Attachment marker missing from outgoing " + params.logLabel,
+				{
+					sessionId: params.sessionId,
+					attachmentIds: params.attachmentIds ?? [],
+					traceId: params.attachmentTraceId ?? null,
+					inputValueLength: inputValue.length,
+				},
+			);
 		}
 	}
 
@@ -582,9 +593,9 @@ export async function sendMessage(
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			modelDisplayName: modelConfig.displayName,
-		systemPromptAppendix: options?.systemPromptAppendix,
-		personalityPrompt: options?.personalityPrompt,
-	});
+			systemPromptAppendix: options?.systemPromptAppendix,
+			personalityPrompt: options?.personalityPrompt,
+		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
 			input_value: inputValue,
@@ -773,9 +784,9 @@ export async function sendMessageStream(
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			modelDisplayName: modelConfig.displayName,
-		systemPromptAppendix: options?.systemPromptAppendix,
-		personalityPrompt: options?.personalityPrompt,
-	});
+			systemPromptAppendix: options?.systemPromptAppendix,
+			personalityPrompt: options?.personalityPrompt,
+		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
 			input_value: inputValue,

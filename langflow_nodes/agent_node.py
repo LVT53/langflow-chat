@@ -90,7 +90,7 @@ def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[di
         )
 
     def walk(node: Any) -> None:
-        if len(candidates) >= limit or node is None:
+        if len(candidates) >= effective_limit or node is None:
             return
 
         if isinstance(node, dict):

@@ -1,0 +1,864 @@
+import { getConfig, type RuntimeConfig } from "$lib/server/config-store";
+import {
+	type RankedTeiItem,
+	rerankItems,
+} from "$lib/server/services/tei-reranker";
+
+export type ResearchMode = "quick" | "research" | "exact";
+export type ResearchFreshness = "auto" | "live" | "recent" | "cache";
+export type ResearchSourcePolicy =
+	| "general"
+	| "technical"
+	| "news"
+	| "commerce"
+	| "medical_legal_financial";
+export type ResearchProvider = "exa" | "brave";
+export type AuthorityClass =
+	| "primary"
+	| "official"
+	| "authoritative"
+	| "standard"
+	| "low";
+
+export interface ResearchRequest {
+	query: string;
+	mode?: ResearchMode;
+	freshness?: ResearchFreshness;
+	sourcePolicy?: ResearchSourcePolicy;
+	maxSources?: number;
+	quoteRequired?: boolean;
+}
+
+export interface PlannedResearchQuery {
+	query: string;
+	purpose: "broad" | "official" | "freshness" | "exact" | "technical";
+}
+
+export interface ResearchSource {
+	id: string;
+	provider: ResearchProvider;
+	title: string;
+	url: string;
+	canonicalUrl: string;
+	snippet: string | null;
+	highlights: string[];
+	text: string | null;
+	score: number;
+	providerRank: number;
+	query: string;
+	publishedAt: string | null;
+	updatedAt: string | null;
+	retrievedAt: string;
+	authorityClass: AuthorityClass;
+	authorityScore: number;
+}
+
+export interface ResearchEvidence {
+	id: string;
+	sourceId: string;
+	title: string;
+	url: string;
+	provider: ResearchProvider;
+	quote: string;
+	surroundingText: string;
+	score: number;
+	authorityScore: number;
+}
+
+export interface ResearchDiagnostics {
+	mode: ResearchMode;
+	freshness: ResearchFreshness;
+	sourcePolicy: ResearchSourcePolicy;
+	providerCalls: Array<{
+		provider: ResearchProvider;
+		query: string;
+		resultCount: number;
+		latencyMs: number;
+		error?: string;
+	}>;
+	openedPageCount: number;
+	reranked: boolean;
+	fallbackReasons: string[];
+}
+
+export interface ResearchResult {
+	query: string;
+	queries: PlannedResearchQuery[];
+	sources: ResearchSource[];
+	evidence: ResearchEvidence[];
+	diagnostics: ResearchDiagnostics;
+}
+
+interface WebResearchConfig {
+	exaApiKey: string;
+	braveSearchApiKey: string;
+	webResearchExaSearchType: string;
+	webResearchExaNumResults: number;
+	webResearchBraveNumResults: number;
+	webResearchMaxSources: number;
+	webResearchHighlightChars: number;
+	webResearchContentChars: number;
+	webResearchFreshnessHours: number;
+}
+
+type ResearchRerankFn = (params: {
+	query: string;
+	items: ResearchEvidence[];
+	getText: (item: ResearchEvidence) => string;
+	maxTexts?: number;
+	truncate?: boolean;
+}) => Promise<{
+	items: Array<RankedTeiItem<ResearchEvidence>>;
+	confidence: number;
+} | null>;
+
+interface ResearchDeps {
+	config?: WebResearchConfig;
+	fetch?: typeof fetch;
+	now?: Date;
+	rerank?: ResearchRerankFn;
+}
+
+interface ProviderSearchParams {
+	query: PlannedResearchQuery;
+	request: NormalizedResearchRequest;
+	config: WebResearchConfig;
+	fetch: typeof fetch;
+	nowIso: string;
+}
+
+interface NormalizedResearchRequest {
+	query: string;
+	mode: ResearchMode;
+	freshness: ResearchFreshness;
+	sourcePolicy: ResearchSourcePolicy;
+	maxSources: number;
+	quoteRequired: boolean;
+}
+
+const OFFICIAL_HOST_RE =
+	/(^|\.)((gov|edu)$|who\.int$|cdc\.gov$|fda\.gov$|nih\.gov$|europa\.eu$)/i;
+const TECHNICAL_HOST_RE =
+	/(^|\.)((docs|developer|developers|support|help)\.|github\.com$|gitlab\.com$|npmjs\.com$|pypi\.org$|readthedocs\.io$)/i;
+const LOW_AUTHORITY_RE =
+	/(^|\.)((reddit|quora|pinterest|medium|substack)\.com$|facebook\.com$|x\.com$|twitter\.com$)/i;
+const NEWS_HOST_RE =
+	/(^|\.)(reuters\.com$|apnews\.com$|bbc\.com$|bbc\.co\.uk$|nytimes\.com$|theguardian\.com$|wsj\.com$|bloomberg\.com$)/i;
+const EXACT_FACT_RE =
+	/\b(price|cost|availability|available|address|phone|contact|spec|specification|date|deadline|policy|quote|exact|how much|current)\b/i;
+const FRESHNESS_RE =
+	/\b(today|now|current|latest|recent|news|2026|this week|this month|price|availability|deadline)\b/i;
+const TECHNICAL_RE =
+	/\b(api|docs?|documentation|sdk|error|config|library|package|github|readme|migration|version|release)\b/i;
+const COMMERCE_RE =
+	/\b(price|buy|shop|availability|in stock|spec|model|product|sku|discount|deal)\b/i;
+const NEWS_RE =
+	/\b(news|latest|today|breaking|election|sports|market|stock|earnings)\b/i;
+const HIGH_STAKES_RE =
+	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
+
+function toWebResearchConfig(
+	config: RuntimeConfig | WebResearchConfig,
+): WebResearchConfig {
+	return {
+		exaApiKey: config.exaApiKey,
+		braveSearchApiKey: config.braveSearchApiKey,
+		webResearchExaSearchType: config.webResearchExaSearchType,
+		webResearchExaNumResults: config.webResearchExaNumResults,
+		webResearchBraveNumResults: config.webResearchBraveNumResults,
+		webResearchMaxSources: config.webResearchMaxSources,
+		webResearchHighlightChars: config.webResearchHighlightChars,
+		webResearchContentChars: config.webResearchContentChars,
+		webResearchFreshnessHours: config.webResearchFreshnessHours,
+	};
+}
+
+function normalizeWhitespace(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
+
+function inferMode(query: string): ResearchMode {
+	if (EXACT_FACT_RE.test(query)) return "exact";
+	if (
+		/\b(compare|research|detailed|sources|overview|pros and cons|best)\b/i.test(
+			query,
+		)
+	) {
+		return "research";
+	}
+	return "quick";
+}
+
+function inferFreshness(query: string, mode: ResearchMode): ResearchFreshness {
+	if (
+		/\b(today|now|latest|breaking|current|price|availability|in stock)\b/i.test(
+			query,
+		)
+	) {
+		return "live";
+	}
+	if (mode === "exact" || FRESHNESS_RE.test(query)) return "recent";
+	return "auto";
+}
+
+function inferSourcePolicy(query: string): ResearchSourcePolicy {
+	if (HIGH_STAKES_RE.test(query)) return "medical_legal_financial";
+	if (TECHNICAL_RE.test(query)) return "technical";
+	if (COMMERCE_RE.test(query)) return "commerce";
+	if (NEWS_RE.test(query)) return "news";
+	return "general";
+}
+
+function normalizeRequest(
+	request: ResearchRequest,
+	config: WebResearchConfig,
+): NormalizedResearchRequest {
+	const query = normalizeWhitespace(request.query);
+	const mode = request.mode ?? inferMode(query);
+	const freshness = request.freshness ?? inferFreshness(query, mode);
+	const sourcePolicy = request.sourcePolicy ?? inferSourcePolicy(query);
+	const maxSources = Math.max(
+		1,
+		Math.min(12, request.maxSources ?? config.webResearchMaxSources),
+	);
+	return {
+		query,
+		mode,
+		freshness,
+		sourcePolicy,
+		maxSources,
+		quoteRequired: request.quoteRequired ?? mode === "exact",
+	};
+}
+
+export function planResearchQueries(
+	request: ResearchRequest,
+	now: Date = new Date(),
+): PlannedResearchQuery[] {
+	const fallbackConfig: WebResearchConfig = {
+		exaApiKey: "",
+		braveSearchApiKey: "",
+		webResearchExaSearchType: "auto",
+		webResearchExaNumResults: 12,
+		webResearchBraveNumResults: 10,
+		webResearchMaxSources: 8,
+		webResearchHighlightChars: 4000,
+		webResearchContentChars: 12000,
+		webResearchFreshnessHours: 24,
+	};
+	const normalized = normalizeRequest(request, fallbackConfig);
+	const year = now.getUTCFullYear();
+	const queries: PlannedResearchQuery[] = [
+		{ query: normalized.query, purpose: "broad" },
+	];
+
+	if (normalized.sourcePolicy === "technical") {
+		queries.push({
+			query: `${normalized.query} official documentation`,
+			purpose: "technical",
+		});
+	} else {
+		queries.push({
+			query: `${normalized.query} official source`,
+			purpose: "official",
+		});
+	}
+
+	if (normalized.freshness === "live" || normalized.freshness === "recent") {
+		queries.push({
+			query: `${normalized.query} ${year}`,
+			purpose: "freshness",
+		});
+	}
+
+	if (normalized.mode === "exact" || normalized.quoteRequired) {
+		queries.push({ query: `"${normalized.query}"`, purpose: "exact" });
+	}
+
+	const seen = new Set<string>();
+	return queries.filter((entry) => {
+		const key = entry.query.toLowerCase();
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+function canonicalizeUrl(value: string): string {
+	try {
+		const url = new URL(value);
+		url.hash = "";
+		for (const key of [...url.searchParams.keys()]) {
+			if (/^(utm_|fbclid|gclid|mc_cid|mc_eid)/i.test(key)) {
+				url.searchParams.delete(key);
+			}
+		}
+		url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+		return url.toString();
+	} catch {
+		return value.trim();
+	}
+}
+
+function hostOf(value: string): string {
+	try {
+		return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+	} catch {
+		return "";
+	}
+}
+
+export function classifySourceAuthority(
+	url: string,
+	policy: ResearchSourcePolicy,
+): { authorityClass: AuthorityClass; authorityScore: number } {
+	const host = hostOf(url);
+	if (!host) return { authorityClass: "standard", authorityScore: 20 };
+	if (OFFICIAL_HOST_RE.test(host))
+		return { authorityClass: "official", authorityScore: 95 };
+	if (policy === "technical" && TECHNICAL_HOST_RE.test(host)) {
+		return { authorityClass: "primary", authorityScore: 90 };
+	}
+	if (policy === "news" && NEWS_HOST_RE.test(host)) {
+		return { authorityClass: "authoritative", authorityScore: 78 };
+	}
+	if (LOW_AUTHORITY_RE.test(host))
+		return { authorityClass: "low", authorityScore: 8 };
+	if (TECHNICAL_HOST_RE.test(host))
+		return { authorityClass: "authoritative", authorityScore: 70 };
+	return { authorityClass: "standard", authorityScore: 35 };
+}
+
+function truncate(value: string, maxLength: number): string {
+	const normalized = normalizeWhitespace(value);
+	if (normalized.length <= maxLength) return normalized;
+	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function createSource(params: {
+	provider: ResearchProvider;
+	title: string;
+	url: string;
+	snippet?: string | null;
+	highlights?: string[];
+	text?: string | null;
+	score?: number;
+	providerRank: number;
+	query: string;
+	publishedAt?: string | null;
+	updatedAt?: string | null;
+	retrievedAt: string;
+	policy: ResearchSourcePolicy;
+}): ResearchSource | null {
+	const url = typeof params.url === "string" ? params.url.trim() : "";
+	if (!url || !/^https?:\/\//i.test(url)) return null;
+	const title = normalizeWhitespace(params.title || url);
+	const canonicalUrl = canonicalizeUrl(url);
+	const authority = classifySourceAuthority(canonicalUrl, params.policy);
+	return {
+		id: `${params.provider}:${canonicalUrl}`,
+		provider: params.provider,
+		title,
+		url,
+		canonicalUrl,
+		snippet: params.snippet ? truncate(params.snippet, 1200) : null,
+		highlights: (params.highlights ?? [])
+			.map((item) => truncate(item, 2000))
+			.filter(Boolean),
+		text: params.text ? truncate(params.text, 20000) : null,
+		score: params.score ?? 0,
+		providerRank: params.providerRank,
+		query: params.query,
+		publishedAt: params.publishedAt ?? null,
+		updatedAt: params.updatedAt ?? null,
+		retrievedAt: params.retrievedAt,
+		...authority,
+	};
+}
+
+async function searchExa(
+	params: ProviderSearchParams,
+): Promise<ResearchSource[]> {
+	if (!params.config.exaApiKey.trim()) return [];
+
+	const body = {
+		query: params.query.query,
+		type: params.config.webResearchExaSearchType || "auto",
+		numResults: Math.min(
+			100,
+			Math.max(1, params.config.webResearchExaNumResults),
+		),
+		contents: {
+			highlights: { query: params.query.query, numSentences: 5 },
+		},
+	};
+
+	const response = await params.fetch("https://api.exa.ai/search", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"x-api-key": params.config.exaApiKey,
+		},
+		body: JSON.stringify(body),
+	});
+
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`Exa search failed: ${response.status} ${response.statusText}${text ? ` - ${text.slice(0, 300)}` : ""}`,
+		);
+	}
+
+	const data = (await response.json()) as {
+		results?: Array<Record<string, unknown>>;
+	};
+	return (data.results ?? [])
+		.map((result, index) =>
+			createSource({
+				provider: "exa",
+				title: String(result.title ?? result.url ?? ""),
+				url: String(result.url ?? ""),
+				snippet: typeof result.summary === "string" ? result.summary : null,
+				highlights: Array.isArray(result.highlights)
+					? result.highlights.filter(
+							(item): item is string => typeof item === "string",
+						)
+					: [],
+				text: typeof result.text === "string" ? result.text : null,
+				score: typeof result.score === "number" ? result.score : 0,
+				providerRank: index + 1,
+				query: params.query.query,
+				publishedAt:
+					typeof result.publishedDate === "string"
+						? result.publishedDate
+						: typeof result.published_at === "string"
+							? result.published_at
+							: null,
+				retrievedAt: params.nowIso,
+				policy: params.request.sourcePolicy,
+			}),
+		)
+		.filter((source): source is ResearchSource => Boolean(source));
+}
+
+async function searchBrave(
+	params: ProviderSearchParams,
+): Promise<ResearchSource[]> {
+	if (!params.config.braveSearchApiKey.trim()) return [];
+
+	const url = new URL("https://api.search.brave.com/res/v1/web/search");
+	url.searchParams.set("q", params.query.query);
+	url.searchParams.set(
+		"count",
+		String(Math.min(20, Math.max(1, params.config.webResearchBraveNumResults))),
+	);
+	url.searchParams.set("country", "us");
+	url.searchParams.set("search_lang", "en");
+	url.searchParams.set("extra_snippets", "true");
+	url.searchParams.set("text_decorations", "false");
+
+	if (params.request.freshness === "live") {
+		url.searchParams.set("freshness", "pd");
+	} else if (params.request.freshness === "recent") {
+		url.searchParams.set("freshness", "pw");
+	}
+
+	const response = await params.fetch(url.toString(), {
+		method: "GET",
+		headers: {
+			Accept: "application/json",
+			"Accept-Encoding": "gzip",
+			"X-Subscription-Token": params.config.braveSearchApiKey,
+		},
+	});
+
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`Brave search failed: ${response.status} ${response.statusText}${text ? ` - ${text.slice(0, 300)}` : ""}`,
+		);
+	}
+
+	const data = (await response.json()) as {
+		web?: { results?: Array<Record<string, unknown>> };
+		results?: Array<Record<string, unknown>>;
+	};
+	const rawResults = data.web?.results ?? data.results ?? [];
+	return rawResults
+		.map((result, index) => {
+			const extraSnippets = Array.isArray(result.extra_snippets)
+				? result.extra_snippets.filter(
+						(item): item is string => typeof item === "string",
+					)
+				: [];
+			return createSource({
+				provider: "brave",
+				title: String(result.title ?? result.url ?? ""),
+				url: String(result.url ?? ""),
+				snippet:
+					typeof result.description === "string" ? result.description : null,
+				highlights: extraSnippets,
+				providerRank: index + 1,
+				query: params.query.query,
+				updatedAt:
+					typeof result.page_age === "string"
+						? result.page_age
+						: typeof result.age === "string"
+							? result.age
+							: null,
+				retrievedAt: params.nowIso,
+				policy: params.request.sourcePolicy,
+			});
+		})
+		.filter((source): source is ResearchSource => Boolean(source));
+}
+
+function sourceFusionScore(
+	source: ResearchSource,
+	request: NormalizedResearchRequest,
+): number {
+	const rankScore = 80 / (source.providerRank + 1);
+	const providerScore = source.provider === "exa" ? 8 : 5;
+	const exactBoost =
+		request.mode === "exact" &&
+		normalizeWhitespace(
+			`${source.title} ${source.snippet ?? ""} ${source.highlights.join(" ")}`,
+		)
+			.toLowerCase()
+			.includes(request.query.toLowerCase().slice(0, 80))
+			? 10
+			: 0;
+	const freshnessBoost =
+		request.freshness === "live" || request.freshness === "recent"
+			? source.updatedAt || source.publishedAt
+				? 8
+				: 0
+			: 0;
+	return (
+		rankScore +
+		providerScore +
+		source.authorityScore +
+		exactBoost +
+		freshnessBoost
+	);
+}
+
+function fuseSources(
+	sources: ResearchSource[],
+	request: NormalizedResearchRequest,
+): ResearchSource[] {
+	const byUrl = new Map<string, ResearchSource>();
+	for (const source of sources) {
+		const existing = byUrl.get(source.canonicalUrl);
+		if (!existing) {
+			byUrl.set(source.canonicalUrl, source);
+			continue;
+		}
+
+		byUrl.set(source.canonicalUrl, {
+			...existing,
+			provider:
+				existing.provider === "exa" ? existing.provider : source.provider,
+			snippet: existing.snippet ?? source.snippet,
+			highlights: [...existing.highlights, ...source.highlights].slice(0, 6),
+			text: existing.text ?? source.text,
+			score: Math.max(existing.score, source.score),
+			authorityScore: Math.max(existing.authorityScore, source.authorityScore),
+			authorityClass:
+				source.authorityScore > existing.authorityScore
+					? source.authorityClass
+					: existing.authorityClass,
+			providerRank: Math.min(existing.providerRank, source.providerRank),
+		});
+	}
+
+	return [...byUrl.values()]
+		.map((source) => ({
+			...source,
+			score: sourceFusionScore(source, request),
+		}))
+		.sort((left, right) => {
+			if (right.score !== left.score) return right.score - left.score;
+			return left.canonicalUrl.localeCompare(right.canonicalUrl);
+		});
+}
+
+async function openTopPagesWithExa(params: {
+	sources: ResearchSource[];
+	request: NormalizedResearchRequest;
+	config: WebResearchConfig;
+	fetch: typeof fetch;
+}): Promise<Map<string, { text: string | null; highlights: string[] }>> {
+	if (!params.config.exaApiKey.trim() || params.sources.length === 0) {
+		return new Map();
+	}
+
+	const urls = params.sources.map((source) => source.url);
+	const body = {
+		urls,
+		highlights: { query: params.request.query, numSentences: 5 },
+		text: { maxCharacters: params.config.webResearchContentChars },
+		maxAgeHours:
+			params.request.freshness === "live"
+				? 0
+				: params.request.freshness === "cache"
+					? -1
+					: params.config.webResearchFreshnessHours,
+	};
+
+	const response = await params.fetch("https://api.exa.ai/contents", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"x-api-key": params.config.exaApiKey,
+		},
+		body: JSON.stringify(body),
+	});
+
+	if (!response.ok) {
+		return new Map();
+	}
+
+	const data = (await response.json()) as {
+		results?: Array<Record<string, unknown>>;
+	};
+	const opened = new Map<
+		string,
+		{ text: string | null; highlights: string[] }
+	>();
+	for (const result of data.results ?? []) {
+		const url =
+			typeof result.url === "string" ? canonicalizeUrl(result.url) : null;
+		if (!url) continue;
+		opened.set(url, {
+			text: typeof result.text === "string" ? result.text : null,
+			highlights: Array.isArray(result.highlights)
+				? result.highlights.filter(
+						(item): item is string => typeof item === "string",
+					)
+				: [],
+		});
+	}
+	return opened;
+}
+
+function splitIntoChunks(value: string, maxLength = 1200): string[] {
+	const paragraphs = value
+		.split(/\n{2,}|(?<=\.)\s+(?=[A-Z0-9])/)
+		.map((item) => normalizeWhitespace(item))
+		.filter((item) => item.length > 40);
+	const chunks: string[] = [];
+	let current = "";
+
+	for (const paragraph of paragraphs) {
+		if (`${current} ${paragraph}`.trim().length > maxLength && current) {
+			chunks.push(current);
+			current = paragraph;
+		} else {
+			current = `${current} ${paragraph}`.trim();
+		}
+	}
+	if (current) chunks.push(current);
+	return chunks.slice(0, 8);
+}
+
+function buildEvidenceChunks(
+	sources: ResearchSource[],
+	maxQuoteLength: number,
+): ResearchEvidence[] {
+	const chunks: ResearchEvidence[] = [];
+	for (const source of sources) {
+		const sourceTextParts = [
+			...source.highlights,
+			source.snippet ?? "",
+			source.text ?? "",
+		].filter(Boolean);
+
+		const sourceChunks = sourceTextParts.flatMap((part) =>
+			splitIntoChunks(part),
+		);
+		for (const [index, chunk] of sourceChunks.entries()) {
+			const quote = truncate(chunk, maxQuoteLength);
+			if (!quote) continue;
+			chunks.push({
+				id: `${source.id}#${index}`,
+				sourceId: source.id,
+				title: source.title,
+				url: source.url,
+				provider: source.provider,
+				quote,
+				surroundingText: chunk,
+				score: source.score + source.authorityScore,
+				authorityScore: source.authorityScore,
+			});
+		}
+	}
+	return chunks;
+}
+
+async function rerankEvidence(
+	query: string,
+	evidence: ResearchEvidence[],
+	rerank: ResearchRerankFn,
+): Promise<{ evidence: ResearchEvidence[]; reranked: boolean }> {
+	if (evidence.length <= 1) return { evidence, reranked: false };
+
+	try {
+		const reranked = await rerank({
+			query,
+			items: evidence,
+			getText: (item) => `${item.title}\n${item.quote}`,
+			maxTexts: Math.min(48, evidence.length),
+		});
+		if (!reranked || reranked.items.length === 0) {
+			return {
+				evidence: evidence.sort((a, b) => b.score - a.score),
+				reranked: false,
+			};
+		}
+		return {
+			evidence: reranked.items.map((entry) => ({
+				...entry.item,
+				score: entry.score * 100 + entry.item.authorityScore,
+			})),
+			reranked: true,
+		};
+	} catch {
+		return {
+			evidence: evidence.sort((a, b) => b.score - a.score),
+			reranked: false,
+		};
+	}
+}
+
+export async function researchWeb(
+	request: ResearchRequest,
+	deps: ResearchDeps = {},
+): Promise<ResearchResult> {
+	const config = toWebResearchConfig(deps.config ?? getConfig());
+	const fetchImpl = deps.fetch ?? fetch;
+	const now = deps.now ?? new Date();
+	const nowIso = now.toISOString();
+	const normalized = normalizeRequest(request, config);
+
+	if (!normalized.query) {
+		throw new Error("query is required");
+	}
+
+	const queries = planResearchQueries(normalized, now);
+	const diagnostics: ResearchDiagnostics = {
+		mode: normalized.mode,
+		freshness: normalized.freshness,
+		sourcePolicy: normalized.sourcePolicy,
+		providerCalls: [],
+		openedPageCount: 0,
+		reranked: false,
+		fallbackReasons: [],
+	};
+
+	const providerCalls = queries.flatMap((query) => [
+		{ provider: "exa" as const, query },
+		{ provider: "brave" as const, query },
+	]);
+
+	const sourceBatches = await Promise.all(
+		providerCalls.map(async (call) => {
+			const startedAt = Date.now();
+			try {
+				const sources =
+					call.provider === "exa"
+						? await searchExa({
+								query: call.query,
+								request: normalized,
+								config,
+								fetch: fetchImpl,
+								nowIso,
+							})
+						: await searchBrave({
+								query: call.query,
+								request: normalized,
+								config,
+								fetch: fetchImpl,
+								nowIso,
+							});
+				return {
+					sources,
+					providerCall: {
+						provider: call.provider,
+						query: call.query.query,
+						resultCount: sources.length,
+						latencyMs: Date.now() - startedAt,
+					},
+				};
+			} catch (error) {
+				return {
+					sources: [],
+					providerCall: {
+						provider: call.provider,
+						query: call.query.query,
+						resultCount: 0,
+						latencyMs: Date.now() - startedAt,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				};
+			}
+		}),
+	);
+	diagnostics.providerCalls = sourceBatches.map((batch) => batch.providerCall);
+
+	const fused = fuseSources(
+		sourceBatches.flatMap((batch) => batch.sources),
+		normalized,
+	);
+	const selectedSources = fused.slice(0, normalized.maxSources);
+	if (selectedSources.length === 0) {
+		diagnostics.fallbackReasons.push("no_search_results");
+	}
+
+	if (
+		normalized.quoteRequired ||
+		normalized.mode === "research" ||
+		normalized.mode === "exact"
+	) {
+		const opened = await openTopPagesWithExa({
+			sources: selectedSources,
+			request: normalized,
+			config,
+			fetch: fetchImpl,
+		});
+		diagnostics.openedPageCount = opened.size;
+		for (const source of selectedSources) {
+			const openedContent = opened.get(source.canonicalUrl);
+			if (!openedContent) continue;
+			source.text = openedContent.text
+				? truncate(openedContent.text, config.webResearchContentChars)
+				: source.text;
+			source.highlights = [
+				...openedContent.highlights,
+				...source.highlights,
+			].slice(0, 8);
+		}
+	}
+
+	const rawEvidence = buildEvidenceChunks(
+		selectedSources,
+		config.webResearchHighlightChars,
+	);
+	const rankedEvidence = await rerankEvidence(
+		normalized.query,
+		rawEvidence,
+		deps.rerank ?? rerankItems<ResearchEvidence>,
+	);
+	diagnostics.reranked = rankedEvidence.reranked;
+
+	return {
+		query: normalized.query,
+		queries,
+		sources: selectedSources,
+		evidence: rankedEvidence.evidence.slice(
+			0,
+			Math.max(4, normalized.maxSources * 2),
+		),
+		diagnostics,
+	};
+}
