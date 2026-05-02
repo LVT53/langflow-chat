@@ -839,7 +839,7 @@ describe("POST /api/chat/stream", () => {
 		mockGetConversation.mockResolvedValue(conversation);
 		mockSendMessageStream.mockResolvedValue(
 			buildSseStream([
-				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"response","content":""}}]}\n\n',
+				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"response ","content":""}}]}\n\n',
 				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"The user wants me to answer directly.","content":"Final"}}]}\n\n',
 				'event: token\ndata: {"choices":[{"delta":{"content":" answer"}}]}\n\n',
 				"data: [DONE]\n\n",

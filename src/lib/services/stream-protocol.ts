@@ -197,7 +197,8 @@ export function flushInlineThinkingState(
 	return emitChunk(emitters.onVisible, remainder);
 }
 
-const LEADING_RESPONSE_MARKER_RE = /^response(?:(?=[A-Z])|:\s*(?=\S)|$)/;
+const LEADING_RESPONSE_MARKER_RE =
+	/^response(?:(?=[A-Z])|:\s*(?=\S)|[\t ]+(?=(?:the user|user|this is|okay,|i\s+(?:need|should|will|can|must|am going)|i'll|let me)\b)|\n+(?=\S)|$)/i;
 
 const THINKING_PREAMBLE_STARTS = [
 	"the user wants me",

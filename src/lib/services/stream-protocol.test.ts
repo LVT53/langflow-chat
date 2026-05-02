@@ -151,6 +151,15 @@ describe("stream-protocol", () => {
 		expect(
 			stripLeadingResponseMarker("response:The United States is large."),
 		).toBe("The United States is large.");
+		expect(
+			stripLeadingResponseMarker("response The user wants me to answer."),
+		).toBe("The user wants me to answer.");
+		expect(
+			stripLeadingResponseMarker("response\nThe user wants me to answer."),
+		).toBe("The user wants me to answer.");
+		expect(stripLeadingResponseMarker("response time can be slow.")).toBe(
+			"response time can be slow.",
+		);
 	});
 
 	it("splits an untagged Qwen planning preamble from visible prose", () => {
