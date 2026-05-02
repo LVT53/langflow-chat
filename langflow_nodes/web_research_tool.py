@@ -194,7 +194,6 @@ class WebResearchToolComponent(Component):
                     "evidence": evidence,
                     "answerBrief": answer_brief,
                     "diagnostics": data.get("diagnostics", {}),
-                    "message": f"Found {len(sources)} source(s) and {len(evidence)} evidence snippet(s)",
                 }
 
             if response.status_code == 401:
@@ -300,7 +299,7 @@ class WebResearchToolComponent(Component):
             self._emit_tool_marker("TOOL_END", {
                 "name": "research_web",
                 "sourceType": "web",
-                "outputSummary": result.get("message", "Research completed"),
+                "outputSummary": None,
                 "candidates": sources,
             })
 
@@ -308,7 +307,6 @@ class WebResearchToolComponent(Component):
                 "success": True,
                 "name": "research_web",
                 "sourceType": "web",
-                "message": result.get("message", "Research completed"),
                 "answerBrief": answer_brief,
                 "answerBriefMarkdown": answer_brief.get("markdown", ""),
                 "query": result.get("query", query),

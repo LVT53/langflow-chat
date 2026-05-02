@@ -3,6 +3,7 @@ import {
 	flushInlineThinkingState,
 	processInlineThinkingChunk,
 	splitLeadingThinkingPreamble,
+	stripLeakedToolDiagnostics,
 	stripLeadingResponseMarker,
 } from "$lib/services/stream-protocol";
 import { processToolCallMarkers } from "./tool-call-markers";
@@ -38,6 +39,7 @@ export function normalizeAssistantOutput(text: string): string {
 
 	let result = visibleText;
 	result = processToolCallMarkers(result, () => {});
+	result = stripLeakedToolDiagnostics(result);
 
 	return result.trim();
 }

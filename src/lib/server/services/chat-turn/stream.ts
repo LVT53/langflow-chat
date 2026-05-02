@@ -3,9 +3,11 @@ import {
 	FRIENDLY_STREAM_ERRORS,
 	flushInlineThinkingState,
 	getTextContent,
+	getLeakedToolDiagnosticPrefixLength,
 	looksLikeLeadingThinkingPreamble,
 	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
+	stripLeakedToolDiagnostics,
 	type StreamErrorCode,
 	splitLeadingThinkingPreamble,
 	stripLeadingResponseMarker,
@@ -126,6 +128,7 @@ export function createServerChunkRuntime({
 	let pendingThinkingBuffer = "";
 	let leadingOutputState: "pending" | "thinking" | "done" = "pending";
 	let leadingOutputBuffer = "";
+	let visibleTokenBuffer = "";
 
 	const flushPendingThinking = (): boolean => {
 		if (!pendingThinkingBuffer) return true;
@@ -164,16 +167,40 @@ export function createServerChunkRuntime({
 		return true;
 	};
 
+	const flushVisibleTokenBuffer = (force = false): boolean => {
+		if (!visibleTokenBuffer) {
+			return true;
+		}
+
+		const sanitizedBuffer = stripLeakedToolDiagnostics(visibleTokenBuffer);
+		const holdLength = force
+			? 0
+			: getLeakedToolDiagnosticPrefixLength(sanitizedBuffer);
+		const visibleChunk = holdLength
+			? sanitizedBuffer.slice(0, -holdLength)
+			: sanitizedBuffer;
+		visibleTokenBuffer = holdLength
+			? sanitizedBuffer.slice(-holdLength)
+			: "";
+
+		if (!visibleChunk) {
+			return true;
+		}
+
+		fullResponse += visibleChunk;
+		if (onToken) onToken(visibleChunk);
+		return enqueueChunk(
+			`event: token\ndata: ${JSON.stringify({ text: visibleChunk })}\n\n`,
+		);
+	};
+
 	const emitVisibleToken = (chunk: string) => {
 		if (!chunk) {
 			return true;
 		}
 
-		fullResponse += chunk;
-		if (onToken) onToken(chunk);
-		return enqueueChunk(
-			`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`,
-		);
+		visibleTokenBuffer += chunk;
+		return flushVisibleTokenBuffer(false);
 	};
 
 	const emitToolCallEvent = (
@@ -321,6 +348,9 @@ export function createServerChunkRuntime({
 			onThinking: emitThinking,
 		});
 		if (!flushedInline) {
+			return false;
+		}
+		if (!flushVisibleTokenBuffer(true)) {
 			return false;
 		}
 		return flushPendingThinking();

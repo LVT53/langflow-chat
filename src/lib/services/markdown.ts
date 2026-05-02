@@ -211,6 +211,22 @@ function createMarkdownRenderer(isDark: boolean) {
   const renderer = new marked.Renderer();
 
   renderer.code = ({ text, lang = '' }) => renderCodeBlock(text, lang, isDark);
+  renderer.link = ({ href, title, tokens }) => {
+    const text = renderer.parser.parseInline(tokens);
+    let parsedHref: URL;
+    try {
+      parsedHref = new URL(href, 'https://alfyai.local');
+    } catch {
+      return text;
+    }
+
+    if (!['http:', 'https:', 'mailto:'].includes(parsedHref.protocol)) {
+      return text;
+    }
+
+    const titleAttribute = title ? ` title="${escapeHtml(title)}"` : '';
+    return `<a href="${escapeHtml(href)}"${titleAttribute} target="_blank" rel="noopener noreferrer external">${text}</a>`;
+  };
 
   return renderer;
 }

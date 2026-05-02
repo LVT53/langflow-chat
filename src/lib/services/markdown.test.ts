@@ -33,4 +33,13 @@ describe('Markdown Rendering Service', () => {
     const mod = await import('./markdown');
     expect(typeof mod.initHighlighter).toBe('function');
   });
+
+  it('renders markdown links as new-tab external links', async () => {
+    const mod = await import('./markdown');
+    const html = await mod.renderMarkdown('[Source](https://example.com/page)', false);
+
+    expect(html).toContain('href="https://example.com/page"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer external"');
+  });
 });

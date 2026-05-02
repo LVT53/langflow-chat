@@ -199,6 +199,22 @@ export function flushInlineThinkingState(
 
 const LEADING_RESPONSE_MARKER_RE =
 	/^response(?:(?=[A-Z])|:\s*(?=\S)|[\t ]+(?=(?:the user|user|this is|okay,|i\s+(?:need|should|will|can|must|am going)|i'll|let me)\b)|\n+(?=\S)|$)/i;
+const LEADING_RESPONSE_SPACE_BEFORE_UPPER_RE = /^response[\t ]+(?=[A-Z])/;
+const TENTATIVE_LEADING_RESPONSE_MARKER_RE =
+	/^response(?:(?=[A-Z])|:\s*|[\t ]+|\n+)/i;
+const WEB_RESEARCH_DIAGNOSTIC_RE =
+	/Found\s+\d+\s+source(?:\(s\)|s)?\s+and\s+\d+\s+evidence(?:\s+snippet(?:s|\(s\))?)?(?:\.|(?=$|\s|[A-Z]|[,;:!?]))/gi;
+const WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS = 180;
+const WEB_RESEARCH_DIAGNOSTIC_PREFIX_WORDS = [
+	"found",
+	"source",
+	"sources",
+	"s",
+	"and",
+	"evidence",
+	"snippet",
+	"snippets",
+] as const;
 
 const THINKING_PREAMBLE_STARTS = [
 	"the user wants me",
@@ -224,7 +240,48 @@ const DANGLING_THINKING_DELIMITER_RE =
 	/<\/?(?:thinking|think)>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>/gi;
 
 export function stripLeadingResponseMarker(value: string): string {
-	return value.replace(LEADING_RESPONSE_MARKER_RE, "");
+	return value
+		.replace(LEADING_RESPONSE_SPACE_BEFORE_UPPER_RE, "")
+		.replace(LEADING_RESPONSE_MARKER_RE, "");
+}
+
+function stripTentativeLeadingResponseMarker(value: string): string {
+	return value.replace(TENTATIVE_LEADING_RESPONSE_MARKER_RE, "");
+}
+
+export function stripLeakedToolDiagnostics(value: string): string {
+	return value
+		.replace(WEB_RESEARCH_DIAGNOSTIC_RE, "")
+		.replace(/[ \t]+\n/g, "\n");
+}
+
+function isLeakedToolDiagnosticPrefix(value: string): boolean {
+	const candidate = value.trimStart();
+	if (!candidate) return false;
+	if (!/^found[\s\d()a-z]*$/i.test(candidate)) return false;
+
+	const words = candidate.toLowerCase().match(/[a-z]+/g) ?? [];
+	const [firstWord, ...restWords] = words;
+	if (!firstWord || !"found".startsWith(firstWord)) return false;
+
+	return restWords.every((word) =>
+		WEB_RESEARCH_DIAGNOSTIC_PREFIX_WORDS.some(
+			(allowed) => allowed.startsWith(word) || word.startsWith(allowed),
+		),
+	);
+}
+
+export function getLeakedToolDiagnosticPrefixLength(value: string): number {
+	const scanStart = Math.max(
+		0,
+		value.length - WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+	);
+	for (let index = scanStart; index < value.length; index += 1) {
+		if (isLeakedToolDiagnosticPrefix(value.slice(index))) {
+			return value.length - index;
+		}
+	}
+	return 0;
 }
 
 export function looksLikeLeadingThinkingPreamble(value: string): boolean {
@@ -239,7 +296,9 @@ export function mayStartLeadingThinkingPreamble(value: string): boolean {
 		return true;
 	}
 
-	const candidate = stripLeadingResponseMarker(value).trimStart().toLowerCase();
+	const candidate = stripTentativeLeadingResponseMarker(value)
+		.trimStart()
+		.toLowerCase();
 	if (!candidate) {
 		return true;
 	}

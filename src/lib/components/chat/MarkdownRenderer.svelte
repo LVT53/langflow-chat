@@ -277,6 +277,19 @@
     });
   }
 
+  function handleMarkdownClick(event: MouseEvent) {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest('a[href]');
+    if (!(link instanceof HTMLAnchorElement)) return;
+    if (!link.href) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.open(link.href, '_blank', 'noopener,noreferrer');
+  }
+
   function scheduleTableEnhancement() {
     if (resizeFrame) {
       cancelAnimationFrame(resizeFrame);
@@ -289,6 +302,8 @@
 
   onMount(() => {
     const handleViewportChange = () => scheduleTableEnhancement();
+    const clickContainer = container;
+    clickContainer?.addEventListener('click', handleMarkdownClick);
 
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
@@ -318,6 +333,7 @@
       window.removeEventListener('resize', handleViewportChange);
       window.removeEventListener('orientationchange', handleViewportChange);
       window.visualViewport?.removeEventListener('resize', handleViewportChange);
+      clickContainer?.removeEventListener('click', handleMarkdownClick);
     };
   });
 

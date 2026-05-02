@@ -57,6 +57,14 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("The United States is a large and diverse country.");
 	});
 
+	it("strips leaked research_web diagnostic text from assistant output", () => {
+		const result = normalizeAssistantOutput(
+			"Qudelix alternativesFound 8 source(s) and 16 evidence snippet(s)\n\nThe answer starts here.",
+		);
+
+		expect(result).toBe("Qudelix alternatives\n\nThe answer starts here.");
+	});
+
 	it("strips thinking and tool markers combined", () => {
 		const result = normalizeAssistantOutput(
 			"<thinking>reason</thinking>" +

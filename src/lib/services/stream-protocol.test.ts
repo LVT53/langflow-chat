@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createInlineThinkingState,
 	flushInlineThinkingState,
+	getLeakedToolDiagnosticPrefixLength,
 	getTextContent,
+	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
 	splitLeadingThinkingPreamble,
+	stripLeakedToolDiagnostics,
 	stripLeadingResponseMarker,
 } from "./stream-protocol";
 
@@ -152,6 +155,9 @@ describe("stream-protocol", () => {
 			stripLeadingResponseMarker("response:The United States is large."),
 		).toBe("The United States is large.");
 		expect(
+			stripLeadingResponseMarker("response The United States is large."),
+		).toBe("The United States is large.");
+		expect(
 			stripLeadingResponseMarker("response The user wants me to answer."),
 		).toBe("The user wants me to answer.");
 		expect(
@@ -160,6 +166,36 @@ describe("stream-protocol", () => {
 		expect(stripLeadingResponseMarker("response time can be slow.")).toBe(
 			"response time can be slow.",
 		);
+	});
+
+	it("keeps buffering a partial response-prefixed thinking preamble", () => {
+		expect(mayStartLeadingThinkingPreamble("response Th")).toBe(true);
+		expect(mayStartLeadingThinkingPreamble("response The")).toBe(true);
+		expect(mayStartLeadingThinkingPreamble("response time")).toBe(false);
+	});
+
+	it("strips leaked web research diagnostic result text", () => {
+		expect(
+			stripLeakedToolDiagnostics(
+				"Qudelix 5K alternatives that match itFound 8 source(s) and 16 evidence snippet(s)\n\nNext paragraph.",
+			),
+		).toBe("Qudelix 5K alternatives that match it\n\nNext paragraph.");
+		expect(
+			stripLeakedToolDiagnostics(
+				"Found 8 sources and 16 evidenceThe answer starts here.",
+			),
+		).toBe("The answer starts here.");
+	});
+
+	it("detects partial leaked web research diagnostics for streaming buffers", () => {
+		expect(getLeakedToolDiagnosticPrefixLength("Answer before Found 8 sour")).toBe(
+			13,
+		);
+		expect(
+			getLeakedToolDiagnosticPrefixLength(
+				"Answer before Found 8 source files were useful",
+			),
+		).toBe(0);
 	});
 
 	it("splits an untagged Qwen planning preamble from visible prose", () => {

@@ -7,6 +7,7 @@ export function sanitizeHtml(html: string): string {
 		USE_PROFILES: { html: true },
 		FORBID_TAGS: ['script', 'style'],
 		FORBID_ATTR: ['style'],
+		ADD_ATTR: ['target', 'rel'],
 		ALLOW_DATA_ATTR: false,
 		ALLOW_UNKNOWN_PROTOCOLS: false,
 	});
