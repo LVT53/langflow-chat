@@ -23,6 +23,11 @@ export interface InlineThinkingState {
 	insideThinking: boolean;
 }
 
+export interface LeadingThinkingPreambleSplit {
+	thinkingText: string;
+	visibleText: string;
+}
+
 interface InlineThinkingEmitters {
 	onVisible: (chunk: string) => boolean | undefined;
 	onThinking: (chunk: string) => boolean | undefined;
@@ -190,6 +195,107 @@ export function flushInlineThinkingState(
 	}
 
 	return emitChunk(emitters.onVisible, remainder);
+}
+
+const LEADING_RESPONSE_MARKER_RE = /^response(?:(?=[A-Z])|:\s*(?=\S)|$)/;
+
+const THINKING_PREAMBLE_STARTS = [
+	"the user wants me",
+	"the user asked me",
+	"the user asks me",
+	"the user is asking me",
+	"user wants me",
+	"user asked me",
+	"user asks me",
+	"this is a straightforward",
+	"this is straightforward",
+	"this is a simple",
+	"this is simple",
+	"okay, let me",
+] as const;
+
+const THINKING_PREAMBLE_START_RE =
+	/^(?:(?:the user|user)\s+(?:wants|asked|asks|is asking)\s+me\b|this is (?:a )?(?:straightforward|simple|content request)\b|okay,\s*let me\b)/i;
+
+const THINKING_PREAMBLE_PARAGRAPH_RE =
+	/(?:\b(?:the user|user)\s+(?:wants|asked|asks|is asking)\s+me\b|\bi\s+(?:need|should|will|can|must|am going)\b|\bi'll\b|\bthis is (?:a )?(?:straightforward|simple|content request)\b|(?:okay,\s*)?let me\b|\bprovide it in english\b|\bwrap the content\b)/i;
+
+export function stripLeadingResponseMarker(value: string): string {
+	return value.replace(LEADING_RESPONSE_MARKER_RE, "");
+}
+
+export function looksLikeLeadingThinkingPreamble(value: string): boolean {
+	return THINKING_PREAMBLE_START_RE.test(
+		stripLeadingResponseMarker(value).trimStart(),
+	);
+}
+
+export function mayStartLeadingThinkingPreamble(value: string): boolean {
+	const rawCandidate = value.trimStart().toLowerCase();
+	if ("response".startsWith(rawCandidate)) {
+		return true;
+	}
+
+	const candidate = stripLeadingResponseMarker(value).trimStart().toLowerCase();
+	if (!candidate) {
+		return true;
+	}
+
+	return THINKING_PREAMBLE_STARTS.some((start) =>
+		start.startsWith(candidate) || candidate.startsWith(start),
+	);
+}
+
+function isThinkingPreambleParagraph(value: string): boolean {
+	return THINKING_PREAMBLE_PARAGRAPH_RE.test(value.trim());
+}
+
+export function splitLeadingThinkingPreamble(
+	value: string,
+	options: { allowOpenEnded?: boolean } = {},
+): LeadingThinkingPreambleSplit | null {
+	const stripped = stripLeadingResponseMarker(value).trimStart();
+	if (!looksLikeLeadingThinkingPreamble(stripped)) {
+		return null;
+	}
+
+	const boundaryMatches = [...stripped.matchAll(/\n{2,}/g)];
+	for (const match of boundaryMatches) {
+		if (match.index === undefined) {
+			continue;
+		}
+
+		const boundaryEnd = match.index + match[0].length;
+		const thinkingCandidate = stripped.slice(0, match.index).trim();
+		const visibleCandidate = stripped.slice(boundaryEnd).trimStart();
+		const nextParagraph = visibleCandidate.split(/\n{2,}/, 1)[0]?.trim() ?? "";
+		if (!thinkingCandidate || !nextParagraph) {
+			continue;
+		}
+
+		const thinkingParagraphs = thinkingCandidate
+			.split(/\n{2,}/)
+			.map((paragraph) => paragraph.trim())
+			.filter(Boolean);
+
+		if (
+			thinkingParagraphs.length > 0 &&
+			thinkingParagraphs.every(isThinkingPreambleParagraph) &&
+			!isThinkingPreambleParagraph(nextParagraph)
+		) {
+			return {
+				thinkingText: thinkingCandidate,
+				visibleText: visibleCandidate,
+			};
+		}
+	}
+
+	return options.allowOpenEnded
+		? {
+				thinkingText: stripped.trim(),
+				visibleText: "",
+			}
+		: null;
 }
 
 export const FRIENDLY_STREAM_ERRORS = {

@@ -319,11 +319,11 @@ export function runChatStreamOrchestrator(
 				}
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
 			};
-			const emitChunkWithPreserveHandling =
-				chunkRuntime.emitChunkWithPreserveHandling;
+			const emitChunkWithOutputHandling =
+				chunkRuntime.emitChunkWithOutputHandling;
 			const flushPendingThinking = chunkRuntime.flushPendingThinking;
 			const flushInlineThinkingBuffer = chunkRuntime.flushInlineThinkingBuffer;
-			const flushPreserveBuffer = chunkRuntime.flushPreserveBuffer;
+			const flushOutputBuffer = chunkRuntime.flushOutputBuffer;
 			const heartbeatIntervalId = setInterval(() => {
 				enqueueChunk(createSseHeartbeatComment());
 			}, 15000);
@@ -356,7 +356,7 @@ export function runChatStreamOrchestrator(
 					return true;
 				}
 
-				return emitChunkWithPreserveHandling(text);
+				return emitChunkWithOutputHandling(text);
 			};
 			const hasEmittedStreamOutput = () =>
 				Boolean(
@@ -510,7 +510,7 @@ export function runChatStreamOrchestrator(
 					emitResolvedAssistantText,
 					flushPendingThinking,
 					flushInlineThinkingBuffer,
-					flushPreserveBuffer,
+					flushOutputBuffer,
 					completeSuccess,
 					signal: upstreamAbortController.signal,
 					systemPromptAppendix: currentSystemPromptAppendix(),
@@ -611,7 +611,7 @@ export function runChatStreamOrchestrator(
 						if (!flushInlineThinkingBuffer()) {
 							return;
 						}
-						if (!flushPreserveBuffer()) {
+						if (!flushOutputBuffer()) {
 							return;
 						}
 						completeSuccess();
@@ -652,7 +652,7 @@ export function runChatStreamOrchestrator(
 							if (!flushInlineThinkingBuffer()) {
 								return;
 							}
-							if (!flushPreserveBuffer()) {
+							if (!flushOutputBuffer()) {
 								return;
 							}
 							completeSuccess();
@@ -744,7 +744,7 @@ export function runChatStreamOrchestrator(
 
 						if (!cleanedChunk) continue;
 
-						if (!emitChunkWithPreserveHandling(cleanedChunk)) {
+						if (!emitChunkWithOutputHandling(cleanedChunk)) {
 							return;
 						}
 					}
@@ -753,7 +753,7 @@ export function runChatStreamOrchestrator(
 					if (!flushInlineThinkingBuffer()) {
 						return;
 					}
-					if (!flushPreserveBuffer()) {
+					if (!flushOutputBuffer()) {
 						return;
 					}
 					completeSuccess();

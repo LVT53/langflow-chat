@@ -157,6 +157,16 @@ const PRE_EXA_RETRIEVAL_LINE =
 const CURRENT_EXA_RETRIEVAL_LINE =
   'Use search for web research when it is connected. Use get_contents when Exa returned result IDs and snippets are not enough. If a different content-fetching tool is connected, use the exact runtime tool name shown by the tool schema instead of inventing fetch_content.';
 
+const DEPRECATED_WRAPPER_TAG_NAME = 'preserve';
+const DEPRECATED_PRESERVE_PROTOCOL_RE = new RegExp(
+  [
+    `<\\/?${DEPRECATED_WRAPPER_TAG_NAME}>`,
+    `\\b${DEPRECATED_WRAPPER_TAG_NAME}\\s+tags?\\b`,
+    '\\btranslation-preserved\\b'
+  ].join('|'),
+  'i'
+);
+
 // Map of prompt names to prompts
 export const SYSTEM_PROMPTS: Record<string, string> = {
   'alfyai-nemotron': ALFYAI_NEMOTRON_PROMPT,
@@ -169,10 +179,20 @@ const SYSTEM_PROMPT_TEXT_TO_KEY = new Map<string, string>([
 ]);
 
 function normalizePromptText(value: string): string {
-  return value
+  return stripDeprecatedPreserveProtocol(value)
     .replace(/\r\n/g, '\n')
     .replace(PRE_EXA_TOOL_TABLE_ROWS, CURRENT_EXA_TOOL_TABLE_ROWS)
     .replace(PRE_EXA_RETRIEVAL_LINE, CURRENT_EXA_RETRIEVAL_LINE)
+    .trim();
+}
+
+export function stripDeprecatedPreserveProtocol(value: string): string {
+  return value
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .filter((section) => !DEPRECATED_PRESERVE_PROTOCOL_RE.test(section))
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -183,7 +203,10 @@ export function normalizeSystemPromptReference(value: string | undefined): strin
   if (!trimmed) return undefined;
   if (trimmed in SYSTEM_PROMPTS) return trimmed;
 
-  return SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ?? trimmed;
+  return (
+    SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ??
+    stripDeprecatedPreserveProtocol(trimmed)
+  );
 }
 
 // Resolve legacy prompt keys or prompt bodies into concrete text.
@@ -192,5 +215,5 @@ export function normalizeSystemPromptReference(value: string | undefined): strin
 export function getSystemPrompt(name: string | undefined): string {
   const normalized = normalizeSystemPromptReference(name);
   if (!normalized) return '';
-  return SYSTEM_PROMPTS[normalized] ?? normalized;
+  return SYSTEM_PROMPTS[normalized] ?? stripDeprecatedPreserveProtocol(normalized);
 }

@@ -48,18 +48,20 @@ describe('normalizeAssistantOutput', () => {
 		expect(result).toBe('Before textduring searchAfter text');
 	});
 
-	it('strips <preserve> tags from text', () => {
+	it('strips untagged Qwen planning preambles from text', () => {
 		const result = normalizeAssistantOutput(
-			'Normal text <preserve>Protected content</preserve> More text'
+			'responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n' +
+				'I need to wrap the content in XML-style wrapper tags and provide it in English.\n\n' +
+				'The United States is a large and diverse country.'
 		);
-		expect(result).toBe('Normal text Protected content More text');
+		expect(result).toBe('The United States is a large and diverse country.');
 	});
 
-	it('strips thinking, tool markers, and preserve tags combined', () => {
+	it('strips thinking and tool markers combined', () => {
 		const result = normalizeAssistantOutput(
 			'<thinking>reason</thinking>' +
 			'\u0002TOOL_START\u001f{"name":"calc"}\u0003' +
-			'<preserve>hello</preserve>'
+			'hello'
 		);
 		expect(result).toBe('hello');
 	});

@@ -9,7 +9,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 | 1 | `task-state.ts` | ~1,558 | Facade + task routing, evidence selection, checkpointing, steering |
 | 2 | `honcho.ts` | ~1,517 | Honcho client lifecycle, session bootstrap, context construction |
 | 3 | `stream-orchestrator.ts` | ~558 | Full chat-turn streaming pipeline, upstream retry, downstream SSE framing |
-| 4 | `chat-turn/stream.ts` | ~247 | Re-export hub for stream sub-modules |
+| 4 | `chat-turn/stream.ts` | ~247 | Stream framing and cleanup helpers |
 | 5 | `knowledge/store/attachments.ts` | 583 | Upload dedupe, readiness checks, artifact linking |
 | 6 | `task-state/continuity.ts` | ~989 | Project memory, focus continuity, task-project linking |
 | 7 | `knowledge/context.ts` | ~680 | Working-set ranking, context status, compaction logic |
@@ -96,7 +96,7 @@ execute()  stream-orchestrator.ts ← diverge here; orchestrates full pipeline
    │    parseUpstreamEvents()  ← Langflow SSE/JSON stream → events
    │    processToolCallMarkers()
    │    normalizeVisibleAssistantText()
-   │    createServerChunkRuntime() → tokens, thinking, tool_calls, <preserve> chunks
+   │    createServerChunkRuntime() → tokens, thinking, tool_calls, output cleanup
    │         │
    └────┬────┘
         ▼
@@ -200,5 +200,3 @@ task-state.ts (facade — 1,535 lines)
 | `utils/json.ts` | `task-state/`, `knowledge/` | Safe JSON parsing for DB-stored arrays/records |
 | `utils/text.ts` | `task-state/`, `messages.ts` | Whitespace normalization, text clipping |
 | `utils/tokens.ts` | `prompt-context.ts`, `context.ts` | Token estimation for budget checks |
-
-

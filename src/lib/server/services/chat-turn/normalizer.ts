@@ -1,23 +1,29 @@
 import {
 	createInlineThinkingState,
 	flushInlineThinkingState,
-	processInlineThinkingChunk
+	processInlineThinkingChunk,
+	splitLeadingThinkingPreamble,
+	stripLeadingResponseMarker,
 } from '$lib/services/stream-protocol';
-import { PRESERVE_TAG_RE } from './thinking-normalizer';
 import { processToolCallMarkers } from './tool-call-markers';
 
 /**
  * Canonical text normalization for assistant output.
- * Strips thinking content, tool-call markers, and preserve tags.
+ * Strips thinking content, tool-call markers, and leading provider markers.
  * Used by both send and stream paths.
  */
 export function normalizeAssistantOutput(text: string): string {
 	if (!text) return '';
 
+	const split = splitLeadingThinkingPreamble(text, { allowOpenEnded: true });
+	const inputText = split
+		? split.visibleText
+		: stripLeadingResponseMarker(text);
+
 	const state = createInlineThinkingState();
 	let visibleText = '';
 
-	processInlineThinkingChunk(state, text, {
+	processInlineThinkingChunk(state, inputText, {
 		onVisible(chunk) { visibleText += chunk; },
 		onThinking() {},
 	});
@@ -26,7 +32,7 @@ export function normalizeAssistantOutput(text: string): string {
 		onThinking() {},
 	});
 
-	let result = visibleText.replace(PRESERVE_TAG_RE, '');
+	let result = visibleText;
 	result = processToolCallMarkers(result, () => {});
 
 	return result.trim();

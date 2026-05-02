@@ -7,7 +7,7 @@ describe("runNonStreamFallback", () => {
 	const mockEmitText = vi.fn();
 	const mockFlushPendingThinking = vi.fn();
 	const mockFlushInlineThinking = vi.fn();
-	const mockFlushPreserve = vi.fn();
+	const mockFlushOutput = vi.fn();
 	const mockCompleteSuccess = vi.fn();
 	const mockOnContextStatus = vi.fn();
 	const mockOnTaskState = vi.fn();
@@ -50,7 +50,7 @@ describe("runNonStreamFallback", () => {
 			emitResolvedAssistantText: mockEmitText,
 			flushPendingThinking: mockFlushPendingThinking,
 			flushInlineThinkingBuffer: mockFlushInlineThinking,
-			flushPreserveBuffer: mockFlushPreserve,
+			flushOutputBuffer: mockFlushOutput,
 			completeSuccess: mockCompleteSuccess,
 			signal: new AbortController().signal,
 			systemPromptAppendix: undefined,
@@ -71,7 +71,7 @@ describe("runNonStreamFallback", () => {
 		mockSendMessage.mockResolvedValue(defaultFallbackResponse);
 		mockEmitText.mockResolvedValue(true);
 		mockFlushInlineThinking.mockReturnValue(true);
-		mockFlushPreserve.mockReturnValue(true);
+		mockFlushOutput.mockReturnValue(true);
 		mockAttachContinuity.mockImplementation(
 			(_userId: string, taskState: unknown) => Promise.resolve(taskState),
 		);
@@ -144,7 +144,7 @@ describe("runNonStreamFallback", () => {
 
 		expect(mockFlushPendingThinking).toHaveBeenCalled();
 		expect(mockFlushInlineThinking).toHaveBeenCalled();
-		expect(mockFlushPreserve).toHaveBeenCalled();
+		expect(mockFlushOutput).toHaveBeenCalled();
 	});
 
 	it("calls completeSuccess after successful fallback", async () => {
@@ -167,12 +167,12 @@ describe("runNonStreamFallback", () => {
 
 		await callFallback();
 
-		expect(mockFlushPreserve).not.toHaveBeenCalled();
+		expect(mockFlushOutput).not.toHaveBeenCalled();
 		expect(mockCompleteSuccess).not.toHaveBeenCalled();
 	});
 
-	it("returns early if flushPreserveBuffer returns false", async () => {
-		mockFlushPreserve.mockReturnValue(false);
+	it("returns early if flushOutputBuffer returns false", async () => {
+		mockFlushOutput.mockReturnValue(false);
 
 		await callFallback();
 

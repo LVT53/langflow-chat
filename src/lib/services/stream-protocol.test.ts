@@ -4,6 +4,8 @@ import {
 	flushInlineThinkingState,
 	getTextContent,
 	processInlineThinkingChunk,
+	splitLeadingThinkingPreamble,
+	stripLeadingResponseMarker,
 } from './stream-protocol';
 
 describe('stream-protocol', () => {
@@ -117,5 +119,37 @@ describe('stream-protocol', () => {
 				],
 			})
 		).toBe('Part one and two');
+	});
+
+	it('strips a leading Langflow response marker before visible output', () => {
+		expect(stripLeadingResponseMarker('responseThe United States is large.')).toBe(
+			'The United States is large.'
+		);
+		expect(stripLeadingResponseMarker('response:The United States is large.')).toBe(
+			'The United States is large.'
+		);
+	});
+
+	it('splits an untagged Qwen planning preamble from visible prose', () => {
+		const split = splitLeadingThinkingPreamble(
+			'responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n' +
+				'I need to wrap the content in XML-style wrapper tags and provide it in English.\n\n' +
+				'The United States is a large and diverse country.'
+		);
+
+		expect(split).toEqual({
+			thinkingText:
+				'The user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n' +
+				'I need to wrap the content in XML-style wrapper tags and provide it in English.',
+			visibleText: 'The United States is a large and diverse country.',
+		});
+	});
+
+	it('does not classify ordinary first-person answers as planning preambles', () => {
+		expect(
+			splitLeadingThinkingPreamble(
+				'I need a clear thesis, strong evidence, and a concise conclusion.'
+			)
+		).toBeNull();
 	});
 });

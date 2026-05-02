@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { normalizeAssistantOutput } from './normalizer';
 
 describe('chat-turn execute', () => {
-	it('strips thinking and preserve tags from non-stream response text', () => {
+	it('strips thinking from non-stream response text', () => {
 		const result = normalizeAssistantOutput(
-			'<thinking>Internal reasoning</thinking>\n<preserve>terminal fresh send ok</preserve>'
+			'<thinking>Internal reasoning</thinking>\nterminal fresh send ok'
 		);
 		expect(result).toBe('terminal fresh send ok');
 	});

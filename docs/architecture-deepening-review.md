@@ -11,7 +11,7 @@
 
 | Date | Session | Candidate | Resolution |
 |------|---------|-----------|------------|
-| 2026-04-30 | grill-with-docs | **6** — Dual normalization | **RESOLVED** — Create unified `chat-turn/normalizer.ts`, delete translator service entirely, remove all `<preserve>` and Hermes traces. See candidate body for full scope. |
+| 2026-04-30 | grill-with-docs | **6** — Dual normalization | **RESOLVED** — Create unified `chat-turn/normalizer.ts`, delete translator service entirely, remove all legacy wrapper-tag and Hermes traces. See candidate body for full scope. |
 | 2026-04-30 | grill-with-docs | **5** — `stream.ts` split | **SKIPPED** — Simpler cleanup only. Candidate 6's preserve removal + normalization consolidation already addresses most of the file's complexity. No new file splits. |
 | 2026-04-30 | grill-with-docs | **4** — `config-store.ts` refactor | **SCALED BACK** — Collapse `getResolvedAdminConfigValues` + `getEnvDefaults` into a shared serializer. Remove translator keys. Keep override appliers as-is (grep-friendly, zero-risk). No metadata metaprogramming. |
 | 2026-04-30 | grill-with-docs | **3** — `stream-orchestrator.ts` god object | **FINISHED** — 3 targeted extractions (completeStreamTurn, doReconnect, runNonStreamFallback) + SSE contract integration test. 36 new tests across 4 test files. Orchestrator reduced from 977 to ~720 lines. All 4 issues (#13–#16) committed in atomic TDD slices. |
@@ -470,7 +470,7 @@ chat-turn/stream-errors.ts  (new, ~100 lines)
 
 ## Candidate 6: Dual Normalization Paths — Divergence Risk ✅ RESOLVED (2026-04-30)
 
-> **Decision**: Create unified `chat-turn/normalizer.ts` with single `normalizeAssistantOutput()`. Delete translator service entirely (unused). Remove all `<preserve>` and Hermes tag traces. Route `execute.ts`, `stream-orchestrator.ts`, and `title-generator.ts` through the unified normalizer. Delete `extractVisibleTextFromModelResponse` from the shared boundary.
+> **Decision**: Create unified `chat-turn/normalizer.ts` with single `normalizeAssistantOutput()`. Delete translator service entirely (unused). Remove all legacy wrapper-tag and Hermes traces. Route `execute.ts`, `stream-orchestrator.ts`, and `title-generator.ts` through the unified normalizer. Delete `extractVisibleTextFromModelResponse` from the shared boundary.
 > 
 > **Scope**: ~1,250 lines deleted (translator 913 + preserve handling ~100 + Hermes ~10 + dead code), ~150 lines added (normalizer + updated callers). 15 files touched.
 
@@ -485,16 +485,16 @@ The `/send` and `/stream` paths normalize assistant text through **different fun
 
 | Path | Function | Location | What It Strips |
 |------|----------|----------|---------------|
-| **Send** | `extractVisibleTextFromModelResponse()` | `stream-protocol.ts` | `<thinking>` blocks, `<preserve>` tags |
-| **Stream** | `normalizeVisibleAssistantText()` | `thinking-normalizer.ts` | `<thinking>/ thinking/好吗/吗` blocks, standalone tags, `<preserve>` tags |
+| **Send** | `extractVisibleTextFromModelResponse()` | `stream-protocol.ts` | Thinking blocks and legacy wrapper tags |
+| **Stream** | `normalizeVisibleAssistantText()` | `thinking-normalizer.ts` | Thinking blocks, standalone tags, and legacy wrapper tags |
 | **Stream** | `processToolCallMarkers()` | `tool-call-markers.ts` | `\x02TOOL_START\x1f...\x03`, `\x02TOOL_END\x1f...\x03` markers |
 
 The send path **does not** strip tool-call markers. If the non-stream Langflow response ever contains `\x02TOOL_START\x1f...\x03` markers, they would display raw to the user in the send path.
 
-The stream path strips tool-call markers inline during `processToolCallMarkers()` and at final flush via `normalizeVisibleAssistantText()`. The send path only strips thinking/preserve tags.
+The stream path strips tool-call markers inline during `processToolCallMarkers()` and at final flush via `normalizeVisibleAssistantText()`. The send path only strips thinking and legacy wrapper tags.
 
 The two regex approaches to thinking tag stripping are different:
-- `extractVisibleTextFromModelResponse`: Uses `processInlineThinkingChunk()` then `.replace()` for preserve tags
+- `extractVisibleTextFromModelResponse`: Uses `processInlineThinkingChunk()` then wrapper-tag cleanup
 - `normalizeVisibleAssistantText`: Uses regex-based approach with CJK character handling
 
 These **should** produce equivalent output, but they are different implementations with no shared verification.

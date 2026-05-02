@@ -4,9 +4,8 @@ const THINKING_BLOCK_RE =
 	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
 const THINKING_TAG_RE =
 	/<\/?thinking>|<\/?think>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
-const PRESERVE_TAG_RE = /<\/?preserve>/gi;
 
-export { PRESERVE_TAG_RE, THINKING_BLOCK_RE, THINKING_TAG_RE };
+export { THINKING_BLOCK_RE, THINKING_TAG_RE };
 
 /**
  * Strip thinking content and tags from visible assistant text.
@@ -15,7 +14,6 @@ export function normalizeVisibleAssistantText(value: string): string {
 	return value
 		.replace(THINKING_BLOCK_RE, "")
 		.replace(THINKING_TAG_RE, "")
-		.replace(PRESERVE_TAG_RE, "")
 		.trim();
 }
 

@@ -6,7 +6,7 @@ Client/server shared utilities and protocol definitions. These span both environ
 
 ```
 streaming.ts         - Browser stream transport (SSE parsing, token handling, abort/stop)
-stream-protocol.ts   - Shared stream tag parsing (thinking, tool_calls, preserve chunks)
+stream-protocol.ts   - Shared stream tag parsing (thinking, tool_calls, leading output cleanup)
 markdown.ts          - Markdown rendering with Shiki highlighting (lazy init)
 table-layout.ts      - Markdown table rendering
 ```
@@ -26,7 +26,6 @@ table-layout.ts      - Markdown table rendering
 |-----|---------|
 | `<thinking>...</thinking>` | Model thinking content |
 | `<tool_calls>...</tool_calls>` | Tool invocation markers |
-| `<preserve>...</preserve>` | Translation-preserved display content |
 | `[CONTEXT]`, `[MEMORY]`, `[KNOWLEDGE]` | Debug/observability tags |
 
 ## Conventions

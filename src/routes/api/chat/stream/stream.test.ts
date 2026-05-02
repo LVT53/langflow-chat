@@ -767,13 +767,14 @@ describe('POST /api/chat/stream', () => {
 		expect(body).toContain('"thinking":"brief"');
 	});
 
-	it('emits preserved prose once without wrapping it in code fences', async () => {
+	it('routes an untagged Qwen planning preamble into thinking', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
 		mockSendMessageStream.mockResolvedValue(
 			buildSseStream([
-				'event: token\ndata: {"text":"<preserve>The United States has a culture shaped by regional diversity, popular media, and civic traditions.</preserve>"}\n\n',
-				'event: add_message\ndata: {"text":"The United States has a culture shaped by regional diversity, popular media, and civic traditions."}\n\n',
+				'event: token\ndata: {"text":"responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece."}\n\n',
+				'event: token\ndata: {"text":"\\n\\nI need to wrap the content in XML-style wrapper tags and provide it in English.\\n\\n"}\n\n',
+				'event: token\ndata: {"text":"The United States is a large and diverse country."}\n\n',
 				'data: [DONE]\n\n'
 			])
 		);
@@ -782,18 +783,26 @@ describe('POST /api/chat/stream', () => {
 		const response = await POST(event);
 		const body = await readSseResponse(response);
 
+		expect(body).toContain('event: thinking');
+		expect(body).toContain('The user wants me to write 500 words about the USA');
+		expect(body).toContain('provide it in English');
 		expect(body).toContain(
-			'"text":"The United States has a culture shaped by regional diversity, popular media, and civic traditions."'
+			'"text":"The United States is a large and diverse country."'
 		);
-		expect(body.match(/event: token/g)?.length).toBe(1);
-		expect(body).not.toContain('```');
+		expect(body).not.toContain('"text":"responseThe user wants me');
 		expect(mockCreateMessage).toHaveBeenNthCalledWith(
 			2,
 			'conv-1',
 			'assistant',
-			'The United States has a culture shaped by regional diversity, popular media, and civic traditions.',
-			undefined,
-			undefined,
+			'The United States is a large and diverse country.',
+			'The user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\nI need to wrap the content in XML-style wrapper tags and provide it in English.',
+			[
+				{
+					type: 'text',
+					content:
+						'The user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\nI need to wrap the content in XML-style wrapper tags and provide it in English.'
+				}
+			],
 			{ evidenceStatus: 'pending', modelDisplayName: 'Model 1' }
 		);
 	});

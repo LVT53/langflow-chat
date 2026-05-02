@@ -3,7 +3,11 @@ import {
 	FRIENDLY_STREAM_ERRORS,
 	flushInlineThinkingState,
 	getTextContent,
+	looksLikeLeadingThinkingPreamble,
+	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
+	splitLeadingThinkingPreamble,
+	stripLeadingResponseMarker,
 	type StreamErrorCode,
 } from "$lib/services/stream-protocol";
 import type {
@@ -26,7 +30,6 @@ export {
 export {
 	getReasoningContent,
 	normalizeVisibleAssistantText,
-	PRESERVE_TAG_RE,
 	// thinking-normalizer
 	THINKING_BLOCK_RE,
 	THINKING_TAG_RE,
@@ -44,7 +47,6 @@ export {
 // ---------------------------------------------------------------------------
 import { getNestedObject } from "$lib/services/stream-protocol";
 import { parseMaybeJson } from "./stream-parser";
-import { PRESERVE_TAG_RE as PRESERVE_TAG_PATTERN } from "./thinking-normalizer";
 import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -122,6 +124,8 @@ export function createServerChunkRuntime({
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
 	let pendingThinkingBuffer = "";
+	let leadingOutputState: "pending" | "thinking" | "done" = "pending";
+	let leadingOutputBuffer = "";
 
 	const flushPendingThinking = (): boolean => {
 		if (!pendingThinkingBuffer) return true;
@@ -237,7 +241,78 @@ export function createServerChunkRuntime({
 		});
 	};
 
+	const flushLeadingOutputBuffer = (allowOpenEndedThinking = true): boolean => {
+		if (!leadingOutputBuffer) {
+			return true;
+		}
+
+		const buffered = leadingOutputBuffer;
+		leadingOutputBuffer = "";
+
+		if (
+			leadingOutputState === "thinking" ||
+			looksLikeLeadingThinkingPreamble(buffered)
+		) {
+			const split = splitLeadingThinkingPreamble(buffered, {
+				allowOpenEnded: allowOpenEndedThinking,
+			});
+			if (split) {
+				leadingOutputState = split.visibleText ? "done" : "thinking";
+				if (split.thinkingText && !emitThinking(split.thinkingText)) {
+					return false;
+				}
+				if (!flushPendingThinking()) {
+					return false;
+				}
+				return split.visibleText ? emitInlineToken(split.visibleText) : true;
+			}
+		}
+
+		leadingOutputState = "done";
+		return emitInlineToken(stripLeadingResponseMarker(buffered));
+	};
+
+	const emitOutputToken = (chunk: string): boolean => {
+		if (!chunk) return true;
+		if (leadingOutputState === "done") {
+			return emitInlineToken(chunk);
+		}
+
+		leadingOutputBuffer += chunk;
+
+		if (leadingOutputState === "pending") {
+			if (looksLikeLeadingThinkingPreamble(leadingOutputBuffer)) {
+				leadingOutputState = "thinking";
+			} else if (
+				leadingOutputBuffer.length < 80 &&
+				mayStartLeadingThinkingPreamble(leadingOutputBuffer)
+			) {
+				return true;
+			} else {
+				return flushLeadingOutputBuffer(false);
+			}
+		}
+
+		const split = splitLeadingThinkingPreamble(leadingOutputBuffer);
+		if (!split) {
+			return true;
+		}
+
+		leadingOutputBuffer = "";
+		leadingOutputState = "done";
+		if (split.thinkingText && !emitThinking(split.thinkingText)) {
+			return false;
+		}
+		if (!flushPendingThinking()) {
+			return false;
+		}
+		return split.visibleText ? emitInlineToken(split.visibleText) : true;
+	};
+
 	const flushInlineThinkingBuffer = () => {
+		if (!flushLeadingOutputBuffer()) {
+			return false;
+		}
 		const flushedInline = flushInlineThinkingState(inlineThinkingState, {
 			onVisible: emitVisibleToken,
 			onThinking: emitThinking,
@@ -248,21 +323,21 @@ export function createServerChunkRuntime({
 		return flushPendingThinking();
 	};
 
-	const emitChunkWithPreserveHandling = (chunk: string): boolean => {
+	const emitChunkWithOutputHandling = (chunk: string): boolean => {
 		if (!chunk) return true;
-		return emitInlineToken(chunk.replace(PRESERVE_TAG_PATTERN, ""));
+		return emitOutputToken(chunk);
 	};
 
-	const flushPreserveBuffer = (): boolean => true;
+	const flushOutputBuffer = (): boolean => flushLeadingOutputBuffer();
 
 	return {
-		emitChunkWithPreserveHandling,
+		emitChunkWithOutputHandling,
 		emitInlineToken,
 		emitThinking,
 		emitToolCallEvent,
 		flushInlineThinkingBuffer,
+		flushOutputBuffer,
 		flushPendingThinking,
-		flushPreserveBuffer,
 		get fullResponse() {
 			return fullResponse;
 		},

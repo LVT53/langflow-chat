@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ALFYAI_NEMOTRON_PROMPT,
   getSystemPrompt,
-  normalizeSystemPromptReference
+  normalizeSystemPromptReference,
+  stripDeprecatedPreserveProtocol
 } from './prompts';
 
 describe('prompts', () => {
@@ -36,5 +37,28 @@ describe('prompts', () => {
 
     expect(normalizeSystemPromptReference(customPrompt)).toBe(customPrompt);
     expect(getSystemPrompt(customPrompt)).toBe(customPrompt);
+  });
+
+  it('removes deprecated wrapper-tag instructions from custom prompt bodies', () => {
+    const legacyTagName = 'preserve';
+    const customPrompt = [
+      'You are a custom assistant.',
+      '',
+      `When writing final answers, use ${legacyTagName} tags around translated content.`,
+      '',
+      `Every final response must start with this marker: <${legacyTagName}>.`,
+      '',
+      'Keep answers concise.'
+    ].join('\n');
+
+    expect(stripDeprecatedPreserveProtocol(customPrompt)).toBe(
+      'You are a custom assistant.\n\nKeep answers concise.'
+    );
+    expect(normalizeSystemPromptReference(customPrompt)).toBe(
+      'You are a custom assistant.\n\nKeep answers concise.'
+    );
+    expect(getSystemPrompt(customPrompt)).toBe(
+      'You are a custom assistant.\n\nKeep answers concise.'
+    );
   });
 });
