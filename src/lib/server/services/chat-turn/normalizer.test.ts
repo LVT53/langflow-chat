@@ -98,4 +98,20 @@ describe('normalizeAssistantOutput', () => {
 
 		expect(result).toBe('Qwen 3 hidden reasoning');
 	});
+
+	it('extracts reasoning from nested LangChain kwargs payloads', () => {
+		const result = getReasoningContent({
+			data: {
+				chunk: {
+					kwargs: {
+						additional_kwargs: {
+							reasoning_content_delta: 'Nested Qwen reasoning',
+						},
+					},
+				},
+			},
+		});
+
+		expect(result).toBe('Nested Qwen reasoning');
+	});
 });

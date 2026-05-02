@@ -327,6 +327,25 @@ function resolveConfiguredTitleSystemPrompt(
     .join('\n');
 }
 
+function buildTitleRequestBody(params: {
+  model: string;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  temperature: number;
+}): Record<string, unknown> {
+  const qwenThinkingOff = { enable_thinking: false };
+
+  return {
+    model: params.model,
+    messages: params.messages,
+    max_tokens: 120,
+    temperature: params.temperature,
+    // vLLM exposes chat_template_kwargs as a request field. The OpenAI client
+    // spelling is kept too for compatible proxies that unpack extra_body.
+    chat_template_kwargs: qwenThinkingOff,
+    extra_body: { chat_template_kwargs: qwenThinkingOff },
+  };
+}
+
 /**
  * Internal function to generate title with specific temperature
  * @param userMessage The user's message
@@ -364,13 +383,11 @@ async function generateTitleWithTemperature(
   const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
+    body: JSON.stringify(buildTitleRequestBody({
       model: config.titleGenModel,
       messages,
-      max_tokens: 60,
       temperature,
-      extra_body: { chat_template_kwargs: { enable_thinking: false } },
-    }),
+    })),
   });
   
   if (!response.ok) {
@@ -454,13 +471,11 @@ export async function generateTitle(userMessage: string, assistantResponse: stri
   const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
+    body: JSON.stringify(buildTitleRequestBody({
       model: config.titleGenModel,
       messages,
-      max_tokens: 60,
       temperature: 0.2,
-      extra_body: { chat_template_kwargs: { enable_thinking: false } },
-    }),
+    })),
   });
 
   if (!response.ok) {

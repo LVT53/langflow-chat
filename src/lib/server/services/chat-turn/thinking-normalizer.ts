@@ -42,10 +42,14 @@ export function getReasoningContent(value: unknown): string | null {
 		"reasoning",
 		"reasoning_content",
 		"reasoningContent",
+		"reasoning_content_delta",
+		"reasoningContentDelta",
 		"reasoning_delta",
 		"reasoningDelta",
 		"reasoning_text",
 		"reasoningText",
+		"reasoning_summary",
+		"reasoningSummary",
 		"thinking",
 		"thinking_content",
 		"thinkingContent",
@@ -65,7 +69,9 @@ export function getReasoningContent(value: unknown): string | null {
 		"generation_info",
 		"kwargs",
 		"message",
+		"output",
 		"response_metadata",
+		"result",
 	]) {
 		if (key in payload) {
 			const nestedReasoning = getReasoningContent(payload[key]);

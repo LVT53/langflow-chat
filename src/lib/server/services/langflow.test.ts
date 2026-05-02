@@ -96,6 +96,8 @@ describe('buildOutboundSystemPrompt', () => {
 		expect(prompt).toContain('If the user asks for a downloadable file');
 		expect(prompt).toContain('Image search workflow');
 		expect(prompt).toContain('image_search');
+		expect(prompt).toContain('Exact web facts and prices');
+		expect(prompt).toContain('do not rely on search-result snippets alone');
 	});
 
 	it('places the selected personality style after generic tool guidance so it controls visible answer style', () => {
@@ -163,11 +165,26 @@ describe('sendMessage provider routing', () => {
 				api_base: 'https://api.fireworks.ai/inference/v1',
 				api_key: 'provider-secret',
 				max_tokens: 8192,
+				enable_thinking: true,
 				reasoning_effort: 'high',
+				thinking_type: 'enabled',
 			},
 		});
-		expect(body.tweaks['ModelNode-1']).not.toHaveProperty('thinking_type');
 		expect(body.tweaks['ModelNode-1'].system_prompt).toContain('[MODEL: Fireworks Model]');
+	});
+
+	it('enables reasoning capture for built-in Qwen models routed through the custom Langflow node', async () => {
+		mockConfig({ modelName: 'qwen3-6-35b' });
+
+		await sendMessage('Hello', 'conv-1', 'model1');
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks).toMatchObject({
+			'ModelNode-1': {
+				model_name: 'qwen3-6-35b',
+				enable_thinking: true,
+			},
+		});
 	});
 
 	it('fails clearly when provider routing has no shared Langflow component ID', async () => {

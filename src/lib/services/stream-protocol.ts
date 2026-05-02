@@ -295,6 +295,33 @@ function getTextFromContentBlocks(value: unknown): string {
 		.trim();
 }
 
+function getTextFromContentParts(value: unknown): string {
+	if (!Array.isArray(value)) {
+		return "";
+	}
+
+	return value
+		.map((part) => {
+			if (typeof part === "string") {
+				return part;
+			}
+
+			const partRecord = getNestedObject(part);
+			if (!partRecord) {
+				return "";
+			}
+
+			const text = partRecord.text;
+			if (typeof text === "string") {
+				return text;
+			}
+
+			return "";
+		})
+		.filter(Boolean)
+		.join("");
+}
+
 function getTextContent(value: unknown): string {
 	if (typeof value === "string") {
 		return value;
@@ -320,6 +347,12 @@ function getTextContent(value: unknown): string {
 		if (typeof candidate === "string" && candidate.length > 0) {
 			return candidate;
 		}
+		if (key === "content") {
+			const contentPartsText = getTextFromContentParts(candidate);
+			if (contentPartsText) {
+				return contentPartsText;
+			}
+		}
 	}
 
 	if ("content_blocks" in payload) {
@@ -329,8 +362,22 @@ function getTextContent(value: unknown): string {
 		}
 	}
 
-	if ("data" in payload) {
-		return getTextContent(payload.data);
+	for (const key of [
+		"delta",
+		"message",
+		"chunk",
+		"kwargs",
+		"output",
+		"response",
+		"result",
+		"data",
+	]) {
+		if (key in payload) {
+			const nestedText = getTextContent(payload[key]);
+			if (nestedText) {
+				return nestedText;
+			}
+		}
 	}
 
 	return "";

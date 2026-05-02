@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, SystemMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic.v1 import SecretStr
@@ -169,6 +169,37 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             return reasoning
         return None
 
+    def _merge_runtime_system_prompt(self, messages: Any) -> list[Any]:
+        """Ensure the AlfyAI runtime system prompt reaches the model.
+
+        Langflow Agent flows already pass a SystemMessage into the model. The
+        previous implementation skipped `self.system_prompt` in that case, which
+        meant app-side style, search, and source-authority guidance could be
+        configured but ineffective. Merge the runtime prompt into the first
+        existing SystemMessage instead.
+        """
+        runtime_prompt = str(self.system_prompt or "").strip()
+        message_list = list(messages)
+        if not runtime_prompt:
+            return message_list
+
+        for index, message in enumerate(message_list):
+            if not isinstance(message, SystemMessage):
+                continue
+
+            existing = str(getattr(message, "content", "") or "").strip()
+            if runtime_prompt in existing:
+                return message_list
+
+            combined = f"{runtime_prompt}\n\n{existing}" if existing else runtime_prompt
+            try:
+                message_list[index] = message.copy(update={"content": combined})
+            except Exception:
+                message_list[index] = SystemMessage(content=combined)
+            return message_list
+
+        return [SystemMessage(content=runtime_prompt)] + message_list
+
     def _get_request_payload(self, messages, stop=None, **kwargs: Any) -> dict[str, Any]:
         """Override to recover reasoning_content from <thinking> tags before sending to the API."""
         payload = super()._get_request_payload(messages, stop=stop, **kwargs)
@@ -176,10 +207,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     async def _astream(self, messages: Any, *args: Any, **kwargs: Any):
         """Stream model output while preserving reasoning in content tags."""
-        if self.system_prompt:
-            from langchain_core.messages import SystemMessage
-            if not any(isinstance(m, SystemMessage) for m in messages):
-                messages = [SystemMessage(content=self.system_prompt)] + list(messages)
+        messages = self._merge_runtime_system_prompt(messages)
         kwargs["stream"] = True
         payload = self._get_request_payload(messages, *args, **kwargs)
         payload = self._merge_reasoning_body(payload)
@@ -213,10 +241,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     def _generate(self, messages: Any, *args: Any, **kwargs: Any) -> ChatResult:
         """Inject system prompt for non-streaming calls."""
-        if self.system_prompt:
-            from langchain_core.messages import SystemMessage
-            if not any(isinstance(m, SystemMessage) for m in messages):
-                messages = [SystemMessage(content=self.system_prompt)] + list(messages)
+        messages = self._merge_runtime_system_prompt(messages)
         return super()._generate(messages, *args, **kwargs)
 
     def _create_chat_result(self, response: Any, generation_info: dict[str, Any] | None = None) -> ChatResult:

@@ -53,6 +53,11 @@ describe('generateTitle', () => {
     const callArgs = mockFetch.mock.calls[0]?.[1];
     const body = JSON.parse(typeof callArgs?.body === 'string' ? callArgs.body : '{}');
     expect(body.messages.some((message: { role: string }) => message.role === 'system')).toBe(false);
+    expect(body.max_tokens).toBe(120);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.extra_body).toEqual({
+      chat_template_kwargs: { enable_thinking: false },
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/chat/completions'),
       expect.objectContaining({

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	createInlineThinkingState,
 	flushInlineThinkingState,
+	getTextContent,
 	processInlineThinkingChunk,
 } from './stream-protocol';
 
@@ -87,5 +88,34 @@ describe('stream-protocol', () => {
 
 		expect(onVisible).not.toHaveBeenCalled();
 		expect(onThinking.mock.calls).toEqual([['Unfinished']]);
+	});
+
+	it('extracts assistant text from nested LangChain chunk payloads', () => {
+		expect(
+			getTextContent({
+				data: {
+					chunk: {
+						content: 'Nested assistant text',
+					},
+				},
+			})
+		).toBe('Nested assistant text');
+	});
+
+	it('extracts assistant text from OpenAI content part arrays', () => {
+		expect(
+			getTextContent({
+				choices: [
+					{
+						delta: {
+							content: [
+								{ type: 'text', text: 'Part one' },
+								{ type: 'text', text: ' and two' },
+							],
+						},
+					},
+				],
+			})
+		).toBe('Part one and two');
 	});
 });

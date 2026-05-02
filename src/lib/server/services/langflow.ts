@@ -131,6 +131,15 @@ const EXA_SEARCH_GUARD = [
 		"- Prefer `search` over `find_similar` unless the user explicitly provides a source URL and both tools are available.",
 	].join("\n");
 
+const WEB_FACT_EXTRACTION_GUARD = [
+	"Exact web facts and prices:",
+	"- For prices, availability, dates, specs, policies, contact details, addresses, numeric values, or claims from a specific webpage, do not rely on search-result snippets alone.",
+	"- After finding candidate pages, call the connected page/content retrieval tool for the relevant result before answering.",
+	"- Extract the exact value from the fetched page content and cite that page. If the fetched content does not contain the value, say that the page did not expose it instead of guessing.",
+	"- When fetched pages conflict, prefer the primary/original page over aggregators, ads, snippets, or third-party summaries, and mention the conflict briefly.",
+	"- Do not copy an old price, a nearby unrelated price, or a search-result preview into the final answer unless the fetched page content supports it.",
+].join("\n");
+
 const PERSONA_MEMORY_GUARD = [
 	"Persona Memory Usage:",
 	"- Persona memory describes the human user for personalization and direct address.",
@@ -185,6 +194,7 @@ export function buildOutboundSystemPrompt(params: {
 		FILE_GENERATION_GUARD,
 		IMAGE_SEARCH_GUARD,
 		EXA_SEARCH_GUARD,
+		WEB_FACT_EXTRACTION_GUARD,
 		PERSONA_MEMORY_GUARD,
 		SOURCE_AUTHORITY_GUARD,
 	);
@@ -211,7 +221,7 @@ export function buildOutboundSystemPrompt(params: {
 		sections.push(
 			[
 				"## Response Style",
-				"Apply this style strictly to every visible response. It overrides your default structure, length, formatting, and voice. Treat it as a hard rule, not a soft preference. Only deviate if it directly conflicts with safety, tool, or source-citation requirements.",
+				"Apply this style strictly to every visible response. It overrides your default structure, length, formatting, and voice. Treat it as a hard rule, not a soft preference. Before finalizing, revise the answer to match the selected style's length, format, and prose constraints. Only deviate if it directly conflicts with safety, tool, source-citation requirements, or an explicit user instruction in the current message.",
 				params.personalityPrompt.trim(),
 			].join("\n"),
 		);
@@ -274,6 +284,19 @@ async function resolveLangflowRunConfig(modelId?: ModelId): Promise<LangflowMode
 	return config.model1;
 }
 
+function shouldEnableReasoningCapture(modelConfig: LangflowModelRunConfig): boolean {
+	if (modelConfig.providerThinkingType === "enabled") {
+		return true;
+	}
+	if (modelConfig.providerThinkingType === "disabled") {
+		return false;
+	}
+
+	return /\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(
+		modelConfig.modelName,
+	);
+}
+
 function buildLangflowTweaks(
 	modelConfig: LangflowModelRunConfig,
 	systemPrompt: string,
@@ -284,8 +307,16 @@ function buildLangflowTweaks(
 		api_base: modelConfig.baseUrl,
 		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
 		...(modelConfig.maxTokens != null ? { max_tokens: modelConfig.maxTokens } : {}),
+		...(shouldEnableReasoningCapture(modelConfig)
+			? { enable_thinking: true }
+			: modelConfig.providerThinkingType === "disabled"
+				? { enable_thinking: false }
+				: {}),
 		...(modelConfig.providerReasoningEffort
 			? { reasoning_effort: modelConfig.providerReasoningEffort }
+			: {}),
+		...(modelConfig.providerThinkingType
+			? { thinking_type: modelConfig.providerThinkingType }
 			: {}),
 		system_prompt: systemPrompt,
 	};
