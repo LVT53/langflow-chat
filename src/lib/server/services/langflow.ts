@@ -8,11 +8,11 @@ import { isProviderModelId } from "$lib/types";
 import type { ModelConfig } from "../config-store";
 import { getConfig } from "../config-store";
 import { getSystemPrompt } from "../prompts";
+import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
 import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
 } from "./attachment-trace";
-import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
 import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
 import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
 

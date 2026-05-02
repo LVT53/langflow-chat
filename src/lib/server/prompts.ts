@@ -142,78 +142,82 @@ Be decisive when the evidence is clear and nuanced when it is not.`;
 export const DEFAULT_PROMPT = `You are a helpful AI assistant.`;
 
 const PRE_EXA_TOOL_TABLE_ROWS = [
-  '| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification |',
-  '| fetch_content | Fetch and read a specific URL | The user gives a link, search snippets are insufficient, or exact page details matter |'
-].join('\n');
+	"| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification |",
+	"| fetch_content | Fetch and read a specific URL | The user gives a link, search snippets are insufficient, or exact page details matter |",
+].join("\n");
 
 const CURRENT_EXA_TOOL_TABLE_ROWS = [
-  '| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification, when connected |',
-  '| get_contents | Fetch and read Exa search result content | Search snippets are insufficient or exact page details matter, when connected |',
-  '| find_similar | Find pages similar to a URL | The user gives a source URL and wants similar pages, when connected |'
-].join('\n');
+	"| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification, when connected |",
+	"| get_contents | Fetch and read Exa search result content | Search snippets are insufficient or exact page details matter, when connected |",
+	"| find_similar | Find pages similar to a URL | The user gives a source URL and wants similar pages, when connected |",
+].join("\n");
 
 const PRE_EXA_RETRIEVAL_LINE =
-  'Use search for web research. Use fetch_content when the user gives a URL or when snippets are not enough.';
+	"Use search for web research. Use fetch_content when the user gives a URL or when snippets are not enough.";
 const CURRENT_EXA_RETRIEVAL_LINE =
-  'Use search for web research when it is connected. Use get_contents when Exa returned result IDs and snippets are not enough. If a different content-fetching tool is connected, use the exact runtime tool name shown by the tool schema instead of inventing fetch_content.';
+	"Use search for web research when it is connected. Use get_contents when Exa returned result IDs and snippets are not enough. If a different content-fetching tool is connected, use the exact runtime tool name shown by the tool schema instead of inventing fetch_content.";
 
-const DEPRECATED_WRAPPER_TAG_NAME = 'preserve';
+const DEPRECATED_WRAPPER_TAG_NAME = "preserve";
 const DEPRECATED_PRESERVE_PROTOCOL_RE = new RegExp(
-  [
-    `<\\/?${DEPRECATED_WRAPPER_TAG_NAME}>`,
-    `\\b${DEPRECATED_WRAPPER_TAG_NAME}\\s+tags?\\b`,
-    '\\btranslation-preserved\\b'
-  ].join('|'),
-  'i'
+	[
+		`<\\/?${DEPRECATED_WRAPPER_TAG_NAME}>`,
+		`\\b${DEPRECATED_WRAPPER_TAG_NAME}\\s+tags?\\b`,
+		"\\btranslation-preserved\\b",
+	].join("|"),
+	"i",
 );
 
 // Map of prompt names to prompts
 export const SYSTEM_PROMPTS: Record<string, string> = {
-  'alfyai-nemotron': ALFYAI_NEMOTRON_PROMPT,
-  'default': DEFAULT_PROMPT
+	"alfyai-nemotron": ALFYAI_NEMOTRON_PROMPT,
+	default: DEFAULT_PROMPT,
 };
 
 const SYSTEM_PROMPT_TEXT_TO_KEY = new Map<string, string>([
-  [normalizePromptText(ALFYAI_NEMOTRON_PROMPT), 'alfyai-nemotron'],
-  [normalizePromptText(DEFAULT_PROMPT), 'default']
+	[normalizePromptText(ALFYAI_NEMOTRON_PROMPT), "alfyai-nemotron"],
+	[normalizePromptText(DEFAULT_PROMPT), "default"],
 ]);
 
 function normalizePromptText(value: string): string {
-  return stripDeprecatedPreserveProtocol(value)
-    .replace(/\r\n/g, '\n')
-    .replace(PRE_EXA_TOOL_TABLE_ROWS, CURRENT_EXA_TOOL_TABLE_ROWS)
-    .replace(PRE_EXA_RETRIEVAL_LINE, CURRENT_EXA_RETRIEVAL_LINE)
-    .trim();
+	return stripDeprecatedPreserveProtocol(value)
+		.replace(/\r\n/g, "\n")
+		.replace(PRE_EXA_TOOL_TABLE_ROWS, CURRENT_EXA_TOOL_TABLE_ROWS)
+		.replace(PRE_EXA_RETRIEVAL_LINE, CURRENT_EXA_RETRIEVAL_LINE)
+		.trim();
 }
 
 export function stripDeprecatedPreserveProtocol(value: string): string {
-  return value
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .filter((section) => !DEPRECATED_PRESERVE_PROTOCOL_RE.test(section))
-    .join('\n\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+	return value
+		.replace(/\r\n/g, "\n")
+		.split(/\n{2,}/)
+		.filter((section) => !DEPRECATED_PRESERVE_PROTOCOL_RE.test(section))
+		.join("\n\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }
 
-export function normalizeSystemPromptReference(value: string | undefined): string | undefined {
-  if (!value) return undefined;
+export function normalizeSystemPromptReference(
+	value: string | undefined,
+): string | undefined {
+	if (!value) return undefined;
 
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  if (trimmed in SYSTEM_PROMPTS) return trimmed;
+	const trimmed = value.trim();
+	if (!trimmed) return undefined;
+	if (trimmed in SYSTEM_PROMPTS) return trimmed;
 
-  return (
-    SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ??
-    stripDeprecatedPreserveProtocol(trimmed)
-  );
+	return (
+		SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ??
+		stripDeprecatedPreserveProtocol(trimmed)
+	);
 }
 
 // Resolve legacy prompt keys or prompt bodies into concrete text.
 // Empty input now stays empty so the admin settings UI can be the default
 // place where prompts are set.
 export function getSystemPrompt(name: string | undefined): string {
-  const normalized = normalizeSystemPromptReference(name);
-  if (!normalized) return '';
-  return SYSTEM_PROMPTS[normalized] ?? stripDeprecatedPreserveProtocol(normalized);
+	const normalized = normalizeSystemPromptReference(name);
+	if (!normalized) return "";
+	return (
+		SYSTEM_PROMPTS[normalized] ?? stripDeprecatedPreserveProtocol(normalized)
+	);
 }

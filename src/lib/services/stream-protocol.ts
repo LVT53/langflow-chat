@@ -243,8 +243,8 @@ export function mayStartLeadingThinkingPreamble(value: string): boolean {
 		return true;
 	}
 
-	return THINKING_PREAMBLE_STARTS.some((start) =>
-		start.startsWith(candidate) || candidate.startsWith(start),
+	return THINKING_PREAMBLE_STARTS.some(
+		(start) => start.startsWith(candidate) || candidate.startsWith(start),
 	);
 }
 

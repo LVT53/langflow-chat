@@ -1,119 +1,119 @@
-import { describe, it, expect } from 'vitest';
-import { normalizeAssistantOutput } from './normalizer';
-import { getReasoningContent } from './thinking-normalizer';
+import { describe, expect, it } from "vitest";
+import { normalizeAssistantOutput } from "./normalizer";
+import { getReasoningContent } from "./thinking-normalizer";
 
-describe('normalizeAssistantOutput', () => {
-	it('strips <thinking> blocks from text', () => {
+describe("normalizeAssistantOutput", () => {
+	it("strips <thinking> blocks from text", () => {
 		const result = normalizeAssistantOutput(
-			'<thinking>Internal reasoning</thinking>Visible text'
+			"<thinking>Internal reasoning</thinking>Visible text",
 		);
-		expect(result).toBe('Visible text');
+		expect(result).toBe("Visible text");
 	});
 
-	it('strips Qwen/DeepSeek <think> blocks from text', () => {
+	it("strips Qwen/DeepSeek <think> blocks from text", () => {
 		const result = normalizeAssistantOutput(
-			'<think>Internal reasoning with punctuation, math: 2 > 1.</think>\nVisible text'
+			"<think>Internal reasoning with punctuation, math: 2 > 1.</think>\nVisible text",
 		);
-		expect(result).toBe('Visible text');
+		expect(result).toBe("Visible text");
 	});
 
-	it('strips Qwen ChatML analysis blocks from text', () => {
+	it("strips Qwen ChatML analysis blocks from text", () => {
 		const result = normalizeAssistantOutput(
-			'Before<|im_start|>analysis\nInternal reasoning<|im_end|>Visible text'
+			"Before<|im_start|>analysis\nInternal reasoning<|im_end|>Visible text",
 		);
-		expect(result).toBe('BeforeVisible text');
+		expect(result).toBe("BeforeVisible text");
 	});
 
-	it('treats unclosed thinking blocks as thinking content', () => {
+	it("treats unclosed thinking blocks as thinking content", () => {
 		const result = normalizeAssistantOutput(
-			'Before <thinking>unclosed thinking and <thinking>more'
+			"Before <thinking>unclosed thinking and <thinking>more",
 		);
-		expect(result).toBe('Before');
+		expect(result).toBe("Before");
 	});
 
-	it('passes through text with no tags unchanged', () => {
-		const result = normalizeAssistantOutput('Plain text response');
-		expect(result).toBe('Plain text response');
+	it("passes through text with no tags unchanged", () => {
+		const result = normalizeAssistantOutput("Plain text response");
+		expect(result).toBe("Plain text response");
 	});
 
-	it('handles empty string', () => {
-		const result = normalizeAssistantOutput('');
-		expect(result).toBe('');
+	it("handles empty string", () => {
+		const result = normalizeAssistantOutput("");
+		expect(result).toBe("");
 	});
 
-	it('strips tool-call markers from text', () => {
+	it("strips tool-call markers from text", () => {
 		const result = normalizeAssistantOutput(
-			'Before text\u0002TOOL_START\u001f{"name":"search"}\u0003during search\u0002TOOL_END\u001f{"name":"search","outputSummary":"done"}\u0003After text'
+			'Before text\u0002TOOL_START\u001f{"name":"search"}\u0003during search\u0002TOOL_END\u001f{"name":"search","outputSummary":"done"}\u0003After text',
 		);
-		expect(result).toBe('Before textduring searchAfter text');
+		expect(result).toBe("Before textduring searchAfter text");
 	});
 
-	it('strips untagged Qwen planning preambles from text', () => {
+	it("strips untagged Qwen planning preambles from text", () => {
 		const result = normalizeAssistantOutput(
-			'responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n' +
-				'I need to wrap the content in XML-style wrapper tags and provide it in English.\n\n' +
-				'The United States is a large and diverse country.'
+			"responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n" +
+				"I need to wrap the content in XML-style wrapper tags and provide it in English.\n\n" +
+				"The United States is a large and diverse country.",
 		);
-		expect(result).toBe('The United States is a large and diverse country.');
+		expect(result).toBe("The United States is a large and diverse country.");
 	});
 
-	it('strips thinking and tool markers combined', () => {
+	it("strips thinking and tool markers combined", () => {
 		const result = normalizeAssistantOutput(
-			'<thinking>reason</thinking>' +
-			'\u0002TOOL_START\u001f{"name":"calc"}\u0003' +
-			'hello'
+			"<thinking>reason</thinking>" +
+				'\u0002TOOL_START\u001f{"name":"calc"}\u0003' +
+				"hello",
 		);
-		expect(result).toBe('hello');
+		expect(result).toBe("hello");
 	});
 
-	it('handles whitespace-only input', () => {
-		const result = normalizeAssistantOutput('   \n\t  ');
-		expect(result).toBe('');
+	it("handles whitespace-only input", () => {
+		const result = normalizeAssistantOutput("   \n\t  ");
+		expect(result).toBe("");
 	});
 
-	it('extracts reasoning from LangChain chunk additional kwargs', () => {
+	it("extracts reasoning from LangChain chunk additional kwargs", () => {
 		const result = getReasoningContent({
 			data: {
 				chunk: {
-					content: '',
+					content: "",
 					additional_kwargs: {
-						reasoning_content: 'Qwen hidden reasoning',
+						reasoning_content: "Qwen hidden reasoning",
 					},
 				},
 			},
 		});
 
-		expect(result).toBe('Qwen hidden reasoning');
+		expect(result).toBe("Qwen hidden reasoning");
 	});
 
-	it('extracts reasoning from camelCase provider payloads', () => {
+	it("extracts reasoning from camelCase provider payloads", () => {
 		const result = getReasoningContent({
 			choices: [
 				{
 					delta: {
-						reasoningContent: 'Qwen 3 hidden reasoning',
-						content: '',
+						reasoningContent: "Qwen 3 hidden reasoning",
+						content: "",
 					},
 				},
 			],
 		});
 
-		expect(result).toBe('Qwen 3 hidden reasoning');
+		expect(result).toBe("Qwen 3 hidden reasoning");
 	});
 
-	it('extracts reasoning from nested LangChain kwargs payloads', () => {
+	it("extracts reasoning from nested LangChain kwargs payloads", () => {
 		const result = getReasoningContent({
 			data: {
 				chunk: {
 					kwargs: {
 						additional_kwargs: {
-							reasoning_content_delta: 'Nested Qwen reasoning',
+							reasoning_content_delta: "Nested Qwen reasoning",
 						},
 					},
 				},
 			},
 		});
 
-		expect(result).toBe('Nested Qwen reasoning');
+		expect(result).toBe("Nested Qwen reasoning");
 	});
 });

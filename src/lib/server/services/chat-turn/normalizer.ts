@@ -4,8 +4,8 @@ import {
 	processInlineThinkingChunk,
 	splitLeadingThinkingPreamble,
 	stripLeadingResponseMarker,
-} from '$lib/services/stream-protocol';
-import { processToolCallMarkers } from './tool-call-markers';
+} from "$lib/services/stream-protocol";
+import { processToolCallMarkers } from "./tool-call-markers";
 
 /**
  * Canonical text normalization for assistant output.
@@ -13,7 +13,7 @@ import { processToolCallMarkers } from './tool-call-markers';
  * Used by both send and stream paths.
  */
 export function normalizeAssistantOutput(text: string): string {
-	if (!text) return '';
+	if (!text) return "";
 
 	const split = splitLeadingThinkingPreamble(text, { allowOpenEnded: true });
 	const inputText = split
@@ -21,14 +21,18 @@ export function normalizeAssistantOutput(text: string): string {
 		: stripLeadingResponseMarker(text);
 
 	const state = createInlineThinkingState();
-	let visibleText = '';
+	let visibleText = "";
 
 	processInlineThinkingChunk(state, inputText, {
-		onVisible(chunk) { visibleText += chunk; },
+		onVisible(chunk) {
+			visibleText += chunk;
+		},
 		onThinking() {},
 	});
 	flushInlineThinkingState(state, {
-		onVisible(chunk) { visibleText += chunk; },
+		onVisible(chunk) {
+			visibleText += chunk;
+		},
 		onThinking() {},
 	});
 

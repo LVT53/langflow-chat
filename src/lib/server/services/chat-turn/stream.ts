@@ -6,9 +6,9 @@ import {
 	looksLikeLeadingThinkingPreamble,
 	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
+	type StreamErrorCode,
 	splitLeadingThinkingPreamble,
 	stripLeadingResponseMarker,
-	type StreamErrorCode,
 } from "$lib/services/stream-protocol";
 import type {
 	EvidenceSourceType,

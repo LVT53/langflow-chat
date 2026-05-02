@@ -1,60 +1,61 @@
 // src/lib/server/services/title-generator.ts
-import { getConfig } from '../config-store';
-import { normalizeAssistantOutput } from './chat-turn/execute';
+import { getConfig } from "../config-store";
+import { normalizeAssistantOutput } from "./chat-turn/execute";
 
 // Common misspellings dictionary for post-processing correction
 const COMMON_MISSPELLINGS: Record<string, string> = {
-  'humantizing': 'humanizing',
-  'humantize': 'humanize',
-  'humantized': 'humanized',
-  'recieve': 'receive',
-  'recieved': 'received',
-  'seperate': 'separate',
-  'seperated': 'separated',
-  'occured': 'occurred',
-  'occurance': 'occurrence',
-  'definately': 'definitely',
-  'accomodate': 'accommodate',
-  'acheive': 'achieve',
-  'beleive': 'believe',
-  'calender': 'calendar',
-  'collegue': 'colleague',
-  'concious': 'conscious',
-  'existance': 'existence',
-  'goverment': 'government',
-  'independant': 'independent',
-  'maintainance': 'maintenance',
-  'neccessary': 'necessary',
-  'noticable': 'noticeable',
-  'occassion': 'occasion',
-  'paralell': 'parallel',
-  'persistant': 'persistent',
-  'posession': 'possession',
-  'prefered': 'preferred',
-  'proffesional': 'professional',
-  'publically': 'publicly',
-  'recomend': 'recommend',
-  'refering': 'referring',
-  'relevent': 'relevant',
-  'succesful': 'successful',
-  'supercede': 'supersede',
-  'tommorow': 'tomorrow',
-  'untill': 'until',
-  'wich': 'which',
+	humantizing: "humanizing",
+	humantize: "humanize",
+	humantized: "humanized",
+	recieve: "receive",
+	recieved: "received",
+	seperate: "separate",
+	seperated: "separated",
+	occured: "occurred",
+	occurance: "occurrence",
+	definately: "definitely",
+	accomodate: "accommodate",
+	acheive: "achieve",
+	beleive: "believe",
+	calender: "calendar",
+	collegue: "colleague",
+	concious: "conscious",
+	existance: "existence",
+	goverment: "government",
+	independant: "independent",
+	maintainance: "maintenance",
+	neccessary: "necessary",
+	noticable: "noticeable",
+	occassion: "occasion",
+	paralell: "parallel",
+	persistant: "persistent",
+	posession: "possession",
+	prefered: "preferred",
+	proffesional: "professional",
+	publically: "publicly",
+	recomend: "recommend",
+	refering: "referring",
+	relevent: "relevant",
+	succesful: "successful",
+	supercede: "supersede",
+	tommorow: "tomorrow",
+	untill: "until",
+	wich: "which",
 };
 
 // Hungarian-specific characters and common words for language detection
 const HUNGARIAN_CHARS = /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/;
 // Strong indicators - words that are distinctly Hungarian (not common English words)
-const STRONG_HUNGARIAN_WORDS = /\b(és|hogy|nem|van|meg|ez|egy|kell|azt|volt)\b/i;
+const STRONG_HUNGARIAN_WORDS =
+	/\b(és|hogy|nem|van|meg|ez|egy|kell|azt|volt)\b/i;
 
 // Code-related keywords and patterns
 const CODE_PATTERNS = [
-  /```[\s\S]*?```/,  // Code blocks
-  /`[^`]+`/,          // Inline code
-  /\b(function|class|import|export|const|let|var|def|if|for|while|return)\b/,
-  /\b(console|print|log|error|debug)\b/,
-  /\b(html|css|javascript|python|java|typescript|react|vue|svelte)\b/i,
+	/```[\s\S]*?```/, // Code blocks
+	/`[^`]+`/, // Inline code
+	/\b(function|class|import|export|const|let|var|def|if|for|while|return)\b/,
+	/\b(console|print|log|error|debug)\b/,
+	/\b(html|css|javascript|python|java|typescript|react|vue|svelte)\b/i,
 ];
 
 // Thinking/chain-of-thought patterns that indicate the model leaked its
@@ -63,30 +64,33 @@ const CODE_PATTERNS = [
 // "Here's a thinking process: 1. **Analyze User Input:** ..." as plain
 // text in the content field.  These patterns never describe valid titles.
 const THINKING_LEAK_RE =
-  /^(Here's (a thinking|my) process|Let me (think about|work through|break (this|it) down)|I('ll| will) (approach|break (this|it) down)|First,? let me (think|analyze|break down)|Okay,? let me (think|analyze|work through)|Let's think about|I need to think about|Hmm,? let me|Alright,? let me)/i;
+	/^(Here's (a thinking|my) process|Let me (think about|work through|break (this|it) down)|I('ll| will) (approach|break (this|it) down)|First,? let me (think|analyze|break down)|Okay,? let me (think|analyze|work through)|Let's think about|I need to think about|Hmm,? let me|Alright,? let me)/i;
 
-function detectLanguage(text: string): 'en' | 'hu' {
-  if (HUNGARIAN_CHARS.test(text)) {
-    return 'hu';
-  }
-  const strongMatches = text.match(STRONG_HUNGARIAN_WORDS);
-  if (strongMatches && strongMatches.length >= 2) {
-    return 'hu';
-  }
-  return 'en';
+function detectLanguage(text: string): "en" | "hu" {
+	if (HUNGARIAN_CHARS.test(text)) {
+		return "hu";
+	}
+	const strongMatches = text.match(STRONG_HUNGARIAN_WORDS);
+	if (strongMatches && strongMatches.length >= 2) {
+		return "hu";
+	}
+	return "en";
 }
 
 const EXPLICIT_ENGLISH_HINT_RE =
-  /\b(in english|english title|respond in english|answer in english)\b|angolul/i;
+	/\b(in english|english title|respond in english|answer in english)\b|angolul/i;
 const EXPLICIT_HUNGARIAN_HINT_RE =
-  /\b(in hungarian|hungarian title|respond in hungarian|answer in hungarian)\b|magyarul/i;
+	/\b(in hungarian|hungarian title|respond in hungarian|answer in hungarian)\b|magyarul/i;
 
-function resolveTitleLanguage(userMessage: string, userPreference?: 'auto' | 'en' | 'hu'): 'en' | 'hu' {
-  if (userPreference === 'en') return 'en';
-  if (userPreference === 'hu') return 'hu';
-  if (EXPLICIT_ENGLISH_HINT_RE.test(userMessage)) return 'en';
-  if (EXPLICIT_HUNGARIAN_HINT_RE.test(userMessage)) return 'hu';
-  return detectLanguage(userMessage);
+function resolveTitleLanguage(
+	userMessage: string,
+	userPreference?: "auto" | "en" | "hu",
+): "en" | "hu" {
+	if (userPreference === "en") return "en";
+	if (userPreference === "hu") return "hu";
+	if (EXPLICIT_ENGLISH_HINT_RE.test(userMessage)) return "en";
+	if (EXPLICIT_HUNGARIAN_HINT_RE.test(userMessage)) return "hu";
+	return detectLanguage(userMessage);
 }
 
 /**
@@ -95,9 +99,12 @@ function resolveTitleLanguage(userMessage: string, userPreference?: 'auto' | 'en
  * @param assistantResponse The assistant's response
  * @returns true if code-related
  */
-function isCodeRelated(userMessage: string, assistantResponse: string): boolean {
-  const combinedText = `${userMessage} ${assistantResponse}`;
-  return CODE_PATTERNS.some(pattern => pattern.test(combinedText));
+function isCodeRelated(
+	userMessage: string,
+	assistantResponse: string,
+): boolean {
+	const combinedText = `${userMessage} ${assistantResponse}`;
+	return CODE_PATTERNS.some((pattern) => pattern.test(combinedText));
 }
 
 /**
@@ -106,8 +113,11 @@ function isCodeRelated(userMessage: string, assistantResponse: string): boolean 
  * @returns true if short message
  */
 function isShortMessage(message: string): boolean {
-  const words = message.trim().split(/\s+/).filter(w => w.length > 0);
-  return words.length <= 3;
+	const words = message
+		.trim()
+		.split(/\s+/)
+		.filter((w) => w.length > 0);
+	return words.length <= 3;
 }
 
 /**
@@ -116,29 +126,31 @@ function isShortMessage(message: string): boolean {
  * @returns Title with corrected spellings
  */
 function correctSpelling(title: string): string {
-  if (!title || typeof title !== 'string') {
-    return title;
-  }
+	if (!title || typeof title !== "string") {
+		return title;
+	}
 
-  // Split into words and correct each one
-  return title
-    .split(/\s+/)
-    .map(word => {
-      // Check for exact match (case-insensitive)
-      const lowerWord = word.toLowerCase();
-      if (COMMON_MISSPELLINGS[lowerWord]) {
-        // Preserve original capitalization pattern
-        if (word === word.toUpperCase()) {
-          return COMMON_MISSPELLINGS[lowerWord].toUpperCase();
-        } else if (word[0] === word[0]?.toUpperCase()) {
-          return COMMON_MISSPELLINGS[lowerWord].charAt(0).toUpperCase() +
-                 COMMON_MISSPELLINGS[lowerWord].slice(1);
-        }
-        return COMMON_MISSPELLINGS[lowerWord];
-      }
-      return word;
-    })
-    .join(' ');
+	// Split into words and correct each one
+	return title
+		.split(/\s+/)
+		.map((word) => {
+			// Check for exact match (case-insensitive)
+			const lowerWord = word.toLowerCase();
+			if (COMMON_MISSPELLINGS[lowerWord]) {
+				// Preserve original capitalization pattern
+				if (word === word.toUpperCase()) {
+					return COMMON_MISSPELLINGS[lowerWord].toUpperCase();
+				} else if (word[0] === word[0]?.toUpperCase()) {
+					return (
+						COMMON_MISSPELLINGS[lowerWord].charAt(0).toUpperCase() +
+						COMMON_MISSPELLINGS[lowerWord].slice(1)
+					);
+				}
+				return COMMON_MISSPELLINGS[lowerWord];
+			}
+			return word;
+		})
+		.join(" ");
 }
 
 /**
@@ -152,40 +164,40 @@ function correctSpelling(title: string): string {
  * @returns Cleaned title
  */
 function cleanTitle(title: string): string {
-  if (!title || typeof title !== 'string') {
-    return '';
-  }
+	if (!title || typeof title !== "string") {
+		return "";
+	}
 
-  let cleaned = title.trim();
+	let cleaned = title.trim();
 
-  // Remove surrounding quotes (single and double)
-  cleaned = cleaned.replace(/^["']+|["']+$/g, '');
+	// Remove surrounding quotes (single and double)
+	cleaned = cleaned.replace(/^["']+|["']+$/g, "");
 
-  // Remove common prefixes (case-insensitive)
-  const prefixes = [
-    /^title[:\s-]+/i,
-    /^conversation[:\s-]+/i,
-    /^chat[:\s-]+/i,
-    /^topic[:\s-]+/i,
-    /^subject[:\s-]+/i,
-    /^cím[:\s-]+/i,
-    /^beszélgetés[:\s-]+/i,
-  ];
-  
-  for (const prefix of prefixes) {
-    cleaned = cleaned.replace(prefix, '');
-  }
+	// Remove common prefixes (case-insensitive)
+	const prefixes = [
+		/^title[:\s-]+/i,
+		/^conversation[:\s-]+/i,
+		/^chat[:\s-]+/i,
+		/^topic[:\s-]+/i,
+		/^subject[:\s-]+/i,
+		/^cím[:\s-]+/i,
+		/^beszélgetés[:\s-]+/i,
+	];
 
-  // Remove trailing periods (but keep other punctuation)
-  cleaned = cleaned.replace(/\.+$/, '');
+	for (const prefix of prefixes) {
+		cleaned = cleaned.replace(prefix, "");
+	}
 
-  // Trim again after all replacements
-  cleaned = cleaned.trim();
+	// Remove trailing periods (but keep other punctuation)
+	cleaned = cleaned.replace(/\.+$/, "");
 
-  // Apply spell correction
-  cleaned = correctSpelling(cleaned);
+	// Trim again after all replacements
+	cleaned = cleaned.trim();
 
-  return cleaned;
+	// Apply spell correction
+	cleaned = correctSpelling(cleaned);
+
+	return cleaned;
 }
 
 /**
@@ -194,7 +206,7 @@ function cleanTitle(title: string): string {
  * `enable_thinking: false` and emit their chain-of-thought as plain text.
  */
 function isThinkingLeak(text: string): boolean {
-  return THINKING_LEAK_RE.test(text.trim());
+	return THINKING_LEAK_RE.test(text.trim());
 }
 
 /**
@@ -203,13 +215,13 @@ function isThinkingLeak(text: string): boolean {
  * @returns A fallback title
  */
 function fallbackTitle(userMessage: string): string {
-  const normalized = userMessage.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return 'New Conversation';
-  }
+	const normalized = userMessage.replace(/\s+/g, " ").trim();
+	if (!normalized) {
+		return "New Conversation";
+	}
 
-  const words = normalized.split(' ').slice(0, 8);
-  return words.join(' ');
+	const words = normalized.split(" ").slice(0, 8);
+	return words.join(" ");
 }
 
 /**
@@ -218,132 +230,153 @@ function fallbackTitle(userMessage: string): string {
  * @param isCodeRelated Whether the conversation is code-related
  * @returns Array of example messages
  */
-function buildFewShotExamples(language: 'en' | 'hu', isCodeRelated: boolean): Array<{ role: 'user' | 'assistant'; content: string }> {
-  if (language === 'hu') {
-    const examples = [
-      {
-        user: 'Hogyan tudok React komponenst létrehozni?',
-        assistant: 'A React komponensek funkcionális komponensek vagy osztályok formájában hozhatók létre...',
-        title: 'React komponens létrehozási alapok',
-      },
-      {
-        user: 'Mi a különbség a let és const között?',
-        assistant: 'A let változó deklarálására szolgál, amelynek értéke megváltoztatható...',
-        title: 'Let és const használati különbségek',
-      },
-      {
-        user: 'Segítség a Python függvényekkel',
-        assistant: 'A Python függvények a def kulcsszóval definiálhatók...',
-        title: 'Python függvények gyakorlati áttekintése',
-      },
-      {
-        user: 'Szeretnék tanácsot adatbázis tervezéshez',
-        assistant: 'Az adatbázis tervezésnél fontos a normalizálás és a kapcsolatok...',
-        title: 'Adatbázis tervezési tanácsok kezdéshez',
-      },
-    ];
+function buildFewShotExamples(
+	language: "en" | "hu",
+	isCodeRelated: boolean,
+): Array<{ role: "user" | "assistant"; content: string }> {
+	if (language === "hu") {
+		const examples = [
+			{
+				user: "Hogyan tudok React komponenst létrehozni?",
+				assistant:
+					"A React komponensek funkcionális komponensek vagy osztályok formájában hozhatók létre...",
+				title: "React komponens létrehozási alapok",
+			},
+			{
+				user: "Mi a különbség a let és const között?",
+				assistant:
+					"A let változó deklarálására szolgál, amelynek értéke megváltoztatható...",
+				title: "Let és const használati különbségek",
+			},
+			{
+				user: "Segítség a Python függvényekkel",
+				assistant: "A Python függvények a def kulcsszóval definiálhatók...",
+				title: "Python függvények gyakorlati áttekintése",
+			},
+			{
+				user: "Szeretnék tanácsot adatbázis tervezéshez",
+				assistant:
+					"Az adatbázis tervezésnél fontos a normalizálás és a kapcsolatok...",
+				title: "Adatbázis tervezési tanácsok kezdéshez",
+			},
+		];
 
-    return examples.flatMap(ex => [
-      { role: 'user' as const, content: `User: ${ex.user}\nAssistant: ${ex.assistant}` },
-      { role: 'assistant' as const, content: ex.title },
-    ]);
-  } else {
-    const examples = [
-      {
-        user: 'How do I create a React component?',
-        assistant: 'React components can be created as functional components or classes...',
-        title: 'How to Create React Components',
-      },
-      {
-        user: "What's the difference between let and const?",
-        assistant: 'let is used for variable declarations that can be reassigned...',
-        title: 'Key Differences Between Let and Const',
-      },
-      {
-        user: 'Help with Python functions',
-        assistant: 'Python functions are defined using the def keyword...',
-        title: 'Help With Python Function Basics',
-      },
-      {
-        user: 'I need advice on database design',
-        assistant: 'Database design involves normalization and establishing relationships...',
-        title: 'Practical Database Design Advice',
-      },
-    ];
+		return examples.flatMap((ex) => [
+			{
+				role: "user" as const,
+				content: `User: ${ex.user}\nAssistant: ${ex.assistant}`,
+			},
+			{ role: "assistant" as const, content: ex.title },
+		]);
+	} else {
+		const examples = [
+			{
+				user: "How do I create a React component?",
+				assistant:
+					"React components can be created as functional components or classes...",
+				title: "How to Create React Components",
+			},
+			{
+				user: "What's the difference between let and const?",
+				assistant:
+					"let is used for variable declarations that can be reassigned...",
+				title: "Key Differences Between Let and Const",
+			},
+			{
+				user: "Help with Python functions",
+				assistant: "Python functions are defined using the def keyword...",
+				title: "Help With Python Function Basics",
+			},
+			{
+				user: "I need advice on database design",
+				assistant:
+					"Database design involves normalization and establishing relationships...",
+				title: "Practical Database Design Advice",
+			},
+		];
 
-    // Add code-specific example if code-related
-    if (isCodeRelated) {
-      examples.push({
-        user: 'How do I fix this JavaScript error?',
-        assistant: 'The error occurs because you are trying to access a property of undefined...',
-        title: 'Debugging a JavaScript Undefined Error',
-      });
-    }
+		// Add code-specific example if code-related
+		if (isCodeRelated) {
+			examples.push({
+				user: "How do I fix this JavaScript error?",
+				assistant:
+					"The error occurs because you are trying to access a property of undefined...",
+				title: "Debugging a JavaScript Undefined Error",
+			});
+		}
 
-    return examples.flatMap(ex => [
-      { role: 'user' as const, content: `User: ${ex.user}\nAssistant: ${ex.assistant}` },
-      { role: 'assistant' as const, content: ex.title },
-    ]);
-  }
+		return examples.flatMap((ex) => [
+			{
+				role: "user" as const,
+				content: `User: ${ex.user}\nAssistant: ${ex.assistant}`,
+			},
+			{ role: "assistant" as const, content: ex.title },
+		]);
+	}
 }
 
 function buildTitleMessages(
-  systemPrompt: string,
-  language: 'en' | 'hu',
-  isCodeRelated: boolean,
-  userMessage: string,
-  assistantResponse: string
-): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+	systemPrompt: string,
+	language: "en" | "hu",
+	isCodeRelated: boolean,
+	userMessage: string,
+	assistantResponse: string,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+	const messages: Array<{
+		role: "system" | "user" | "assistant";
+		content: string;
+	}> = [];
 
-  if (systemPrompt.trim()) {
-    messages.push({ role: 'system', content: systemPrompt.trim() });
-  }
+	if (systemPrompt.trim()) {
+		messages.push({ role: "system", content: systemPrompt.trim() });
+	}
 
-  return [
-    ...messages,
-    ...buildFewShotExamples(language, isCodeRelated),
-    {
-      role: 'user',
-      content: `User: ${userMessage}\nAssistant: ${assistantResponse.slice(0, 200)}`
-    },
-  ];
+	return [
+		...messages,
+		...buildFewShotExamples(language, isCodeRelated),
+		{
+			role: "user",
+			content: `User: ${userMessage}\nAssistant: ${assistantResponse.slice(0, 200)}`,
+		},
+	];
 }
 
 function resolveConfiguredTitleSystemPrompt(
-  language: 'en' | 'hu',
-  isCodeRelated: boolean
+	language: "en" | "hu",
+	isCodeRelated: boolean,
 ): string {
-  const config = getConfig();
-  const basePrompt =
-    language === 'hu' ? config.titleGenSystemPromptHu : config.titleGenSystemPromptEn;
-  const codeAppendix =
-    language === 'hu'
-      ? config.titleGenSystemPromptCodeAppendixHu
-      : config.titleGenSystemPromptCodeAppendixEn;
+	const config = getConfig();
+	const basePrompt =
+		language === "hu"
+			? config.titleGenSystemPromptHu
+			: config.titleGenSystemPromptEn;
+	const codeAppendix =
+		language === "hu"
+			? config.titleGenSystemPromptCodeAppendixHu
+			: config.titleGenSystemPromptCodeAppendixEn;
 
-  return [basePrompt.trim(), isCodeRelated ? codeAppendix.trim() : '']
-    .filter(Boolean)
-    .join('\n');
+	return [basePrompt.trim(), isCodeRelated ? codeAppendix.trim() : ""]
+		.filter(Boolean)
+		.join("\n");
 }
 
 function buildTitleRequestBody(params: {
-  model: string;
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-  temperature: number;
+	model: string;
+	messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+	temperature: number;
 }): Record<string, unknown> {
-  const qwenThinkingOff = { enable_thinking: false };
+	const qwenThinkingOff = { enable_thinking: false };
 
-  return {
-    model: params.model,
-    messages: params.messages,
-    max_tokens: 120,
-    temperature: params.temperature,
-    // vLLM exposes chat_template_kwargs as a request field. The OpenAI client
-    // spelling is kept too for compatible proxies that unpack extra_body.
-    chat_template_kwargs: qwenThinkingOff,
-    extra_body: { chat_template_kwargs: qwenThinkingOff },
-  };
+	return {
+		model: params.model,
+		messages: params.messages,
+		max_tokens: 120,
+		temperature: params.temperature,
+		// vLLM exposes chat_template_kwargs as a request field. The OpenAI client
+		// spelling is kept too for compatible proxies that unpack extra_body.
+		chat_template_kwargs: qwenThinkingOff,
+		extra_body: { chat_template_kwargs: qwenThinkingOff },
+	};
 }
 
 /**
@@ -354,59 +387,62 @@ function buildTitleRequestBody(params: {
  * @returns Generated title or null on failure
  */
 async function generateTitleWithTemperature(
-  userMessage: string,
-  assistantResponse: string,
-  temperature: number,
-  titleLanguage?: 'auto' | 'en' | 'hu'
+	userMessage: string,
+	assistantResponse: string,
+	temperature: number,
+	titleLanguage?: "auto" | "en" | "hu",
 ): Promise<string | null> {
-  const config = getConfig();
-  
-  const language = resolveTitleLanguage(userMessage, titleLanguage);
-  const codeRelated = isCodeRelated(userMessage, assistantResponse);
-  const messages = buildTitleMessages(
-    resolveConfiguredTitleSystemPrompt(language, codeRelated),
-    language,
-    codeRelated,
-    userMessage,
-    assistantResponse
-  );
+	const config = getConfig();
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+	const language = resolveTitleLanguage(userMessage, titleLanguage);
+	const codeRelated = isCodeRelated(userMessage, assistantResponse);
+	const messages = buildTitleMessages(
+		resolveConfiguredTitleSystemPrompt(language, codeRelated),
+		language,
+		codeRelated,
+		userMessage,
+		assistantResponse,
+	);
 
-  if (config.titleGenApiKey) {
-    headers.Authorization = `Bearer ${config.titleGenApiKey}`;
-  }
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 
-  // Make POST request to title generation service
-  const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(buildTitleRequestBody({
-      model: config.titleGenModel,
-      messages,
-      temperature,
-    })),
-  });
-  
-  if (!response.ok) {
-    return null;
-  }
-  
-  const json = await response.json();
-  const choice = json.choices?.[0]?.message;
-  const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
-  const rawTitle = normalizeAssistantOutput(rawContent);
-  
-  if (!rawTitle || isThinkingLeak(rawTitle)) {
-    return null;
-  }
-  
-  // Apply post-processing
-  const cleanedTitle = cleanTitle(rawTitle);
-  
-  return cleanedTitle || null;
+	if (config.titleGenApiKey) {
+		headers.Authorization = `Bearer ${config.titleGenApiKey}`;
+	}
+
+	// Make POST request to title generation service
+	const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(
+			buildTitleRequestBody({
+				model: config.titleGenModel,
+				messages,
+				temperature,
+			}),
+		),
+	});
+
+	if (!response.ok) {
+		return null;
+	}
+
+	const json = await response.json();
+	const choice = json.choices?.[0]?.message;
+	const rawContent =
+		typeof choice?.content === "string" ? choice.content.trim() : "";
+	const rawTitle = normalizeAssistantOutput(rawContent);
+
+	if (!rawTitle || isThinkingLeak(rawTitle)) {
+		return null;
+	}
+
+	// Apply post-processing
+	const cleanedTitle = cleanTitle(rawTitle);
+
+	return cleanedTitle || null;
 }
 
 /**
@@ -417,94 +453,110 @@ async function generateTitleWithTemperature(
  * @returns Generated title or null if all retries fail
  */
 async function generateTitleWithRetry(
-  userMessage: string,
-  assistantResponse: string,
-  titleLanguage?: 'auto' | 'en' | 'hu'
+	userMessage: string,
+	assistantResponse: string,
+	titleLanguage?: "auto" | "en" | "hu",
 ): Promise<string | null> {
-  const temperatures = [0.1, 0.3, 0.5];
-  
-  for (const temperature of temperatures) {
-    try {
-      const title = await generateTitleWithTemperature(
-        userMessage,
-        assistantResponse,
-        temperature,
-        titleLanguage
-      );
-      
-      if (title && title.length > 0) {
-        return title;
-      }
-    } catch (error) {
-      // Continue to next temperature
-      console.warn(`Title generation failed with temperature ${temperature}:`, error);
-    }
-  }
-  
-  return null;
+	const temperatures = [0.1, 0.3, 0.5];
+
+	for (const temperature of temperatures) {
+		try {
+			const title = await generateTitleWithTemperature(
+				userMessage,
+				assistantResponse,
+				temperature,
+				titleLanguage,
+			);
+
+			if (title && title.length > 0) {
+				return title;
+			}
+		} catch (error) {
+			// Continue to next temperature
+			console.warn(
+				`Title generation failed with temperature ${temperature}:`,
+				error,
+			);
+		}
+	}
+
+	return null;
 }
 
-export async function generateTitle(userMessage: string, assistantResponse: string, titleLanguage?: 'auto' | 'en' | 'hu'): Promise<string> {
-  const config = getConfig();
-  const language = resolveTitleLanguage(userMessage, titleLanguage);
-  const codeRelated = isCodeRelated(userMessage, assistantResponse);
-  const systemPrompt = resolveConfiguredTitleSystemPrompt(language, codeRelated);
+export async function generateTitle(
+	userMessage: string,
+	assistantResponse: string,
+	titleLanguage?: "auto" | "en" | "hu",
+): Promise<string> {
+	const config = getConfig();
+	const language = resolveTitleLanguage(userMessage, titleLanguage);
+	const codeRelated = isCodeRelated(userMessage, assistantResponse);
+	const systemPrompt = resolveConfiguredTitleSystemPrompt(
+		language,
+		codeRelated,
+	);
 
-  console.info('[TITLE_GENERATE] Resolved generation params', {
-    requestedLanguage: titleLanguage,
-    resolvedLanguage: language,
-    codeRelated,
-    hasSystemPrompt: systemPrompt.trim().length > 0,
-  });
+	console.info("[TITLE_GENERATE] Resolved generation params", {
+		requestedLanguage: titleLanguage,
+		resolvedLanguage: language,
+		codeRelated,
+		hasSystemPrompt: systemPrompt.trim().length > 0,
+	});
 
-  const messages = buildTitleMessages(
-    systemPrompt,
-    language,
-    codeRelated,
-    userMessage,
-    assistantResponse
-  );
+	const messages = buildTitleMessages(
+		systemPrompt,
+		language,
+		codeRelated,
+		userMessage,
+		assistantResponse,
+	);
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (config.titleGenApiKey) headers.Authorization = `Bearer ${config.titleGenApiKey}`;
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
+	if (config.titleGenApiKey)
+		headers.Authorization = `Bearer ${config.titleGenApiKey}`;
 
-  const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(buildTitleRequestBody({
-      model: config.titleGenModel,
-      messages,
-      temperature: 0.2,
-    })),
-  });
+	const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(
+			buildTitleRequestBody({
+				model: config.titleGenModel,
+				messages,
+				temperature: 0.2,
+			}),
+		),
+	});
 
-  if (!response.ok) {
-    throw new Error(`Title generation failed: ${response.status}`);
-  }
+	if (!response.ok) {
+		throw new Error(`Title generation failed: ${response.status}`);
+	}
 
-  const json = await response.json();
-  const choice = json.choices?.[0]?.message;
-  const rawContent = typeof choice?.content === 'string' ? choice.content.trim() : '';
-  const rawTitle = normalizeAssistantOutput(rawContent);
+	const json = await response.json();
+	const choice = json.choices?.[0]?.message;
+	const rawContent =
+		typeof choice?.content === "string" ? choice.content.trim() : "";
+	const rawTitle = normalizeAssistantOutput(rawContent);
 
-  if (!rawTitle || isThinkingLeak(rawTitle)) {
-    console.info('[TITLE_GENERATE] Fallback: empty rawTitle or thinking leak');
-    return fallbackTitle(userMessage);
-  }
-  const cleanedTitle = cleanTitle(rawTitle);
-  if (!cleanedTitle) {
-    console.info('[TITLE_GENERATE] Fallback: empty cleanedTitle');
-    return fallbackTitle(userMessage);
-  }
-  const detectedLang = detectLanguage(cleanedTitle);
-  if (detectedLang !== language) {
-    console.info('[TITLE_GENERATE] Fallback: language mismatch', {
-      expected: language,
-      detected: detectedLang,
-      cleanedTitle,
-    });
-    return fallbackTitle(userMessage);
-  }
+	if (!rawTitle || isThinkingLeak(rawTitle)) {
+		console.info("[TITLE_GENERATE] Fallback: empty rawTitle or thinking leak");
+		return fallbackTitle(userMessage);
+	}
+	const cleanedTitle = cleanTitle(rawTitle);
+	if (!cleanedTitle) {
+		console.info("[TITLE_GENERATE] Fallback: empty cleanedTitle");
+		return fallbackTitle(userMessage);
+	}
+	const detectedLang = detectLanguage(cleanedTitle);
+	if (detectedLang !== language) {
+		console.info("[TITLE_GENERATE] Fallback: language mismatch", {
+			expected: language,
+			detected: detectedLang,
+			cleanedTitle,
+		});
+		return fallbackTitle(userMessage);
+	}
 
-  return cleanedTitle;
+	return cleanedTitle;
 }
