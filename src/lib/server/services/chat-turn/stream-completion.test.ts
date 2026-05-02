@@ -164,6 +164,58 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
+	it("appends a source-check notice when web research citations fail", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		await completeStreamTurn({
+			...defaultParams,
+			fullResponse: "The current price is $799.",
+			toolCallRecords: [
+				{
+					name: "research_web",
+					input: { query: "current price" },
+					status: "done",
+					sourceType: "web",
+					candidates: [
+						{
+							id: "src-1",
+							title: "Official Product",
+							url: "https://example.com/product",
+							sourceType: "web",
+						},
+					],
+				},
+			],
+		});
+
+		const noticeCall = mockEnqueueChunk.mock.calls.find((call: string[]) =>
+			call[0]?.includes("Source check:"),
+		);
+		expect(noticeCall).toBeDefined();
+		const assistantCreateCall = mockCreateMessage.mock.calls.find(
+			(call: unknown[]) => call[1] === "assistant",
+		);
+		expect(assistantCreateCall?.[2]).toEqual(
+			expect.stringContaining("Source check:"),
+		);
+		expect(mockPersistAssistantTurnState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assistantResponse: expect.stringContaining("Source check:"),
+			}),
+		);
+		expect(mockPersistAssistantEvidence).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assistantResponse: expect.stringContaining("Source check:"),
+				webCitationAudit: expect.objectContaining({
+					status: "missing_citations",
+					noticeAppended: true,
+				}),
+			}),
+		);
+
+		warnSpy.mockRestore();
+	});
+
 	it("runs post-turn tasks after persistence", async () => {
 		await completeStreamTurn(defaultParams);
 

@@ -241,10 +241,13 @@ export async function persistAssistantEvidence(
 			toolCalls: doneToolCalls,
 			currentAttachments,
 		});
-		const webCitationAudit = buildWebCitationAudit({
-			assistantResponse: params.assistantResponse,
-			toolCalls: doneToolCalls,
-		});
+		const webCitationAudit =
+			params.webCitationAudit === undefined
+				? buildWebCitationAudit({
+						assistantResponse: params.assistantResponse,
+						toolCalls: doneToolCalls,
+					})
+				: params.webCitationAudit;
 		await updateMessageEvidence(params.assistantMessageId, {
 			evidenceSummary: messageEvidence,
 			evidenceStatus: messageEvidence ? "ready" : "none",

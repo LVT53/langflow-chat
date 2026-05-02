@@ -1,4 +1,5 @@
-import type { ToolCallEntry } from "$lib/types";
+import { applyWebCitationQualityGate } from "$lib/server/services/web-citation-audit";
+import type { ToolCallEntry, WebCitationAudit } from "$lib/types";
 import type { WorkCapsuleSummary } from "./types";
 
 export interface CompleteStreamTurnParams {
@@ -89,6 +90,7 @@ export interface CompleteStreamTurnParams {
 		initialTaskState: unknown;
 		initialContextDebug: unknown;
 		toolCalls: ToolCallEntry[];
+		webCitationAudit?: WebCitationAudit | null;
 	}) => Promise<void>;
 	runPostTurnTasks: (params: {
 		logPrefix: string;
@@ -178,8 +180,26 @@ export async function completeStreamTurn(
 		estimateTokenCount,
 	} = params;
 
+	const citationGate = wasStopped
+		? null
+		: applyWebCitationQualityGate({
+				assistantResponse: fullResponse,
+				toolCalls: toolCallRecords,
+			});
+	const finalResponse = citationGate?.response ?? fullResponse;
+	if (citationGate?.appendedNotice) {
+		enqueueChunk(
+			`event: token\ndata: ${JSON.stringify({ text: `\n\n${citationGate.appendedNotice}` })}\n\n`,
+		);
+		console.warn("[CHAT_STREAM] Appended web citation quality notice", {
+			conversationId,
+			streamId,
+			status: citationGate.audit?.status,
+		});
+	}
+
 	const thinkingTokenCount = estimateTokenCount(thinkingContent);
-	const responseTokenCount = estimateTokenCount(fullResponse);
+	const responseTokenCount = estimateTokenCount(finalResponse);
 	const totalTokenCount = thinkingTokenCount + responseTokenCount;
 	const genTimeMs = Date.now() - requestStartTime;
 	const analyticsModel = modelId ?? "model1";
@@ -216,11 +236,11 @@ export async function completeStreamTurn(
 				() => undefined,
 			)
 		: Promise.resolve(undefined);
-	const assistantMsgPromise = fullResponse.trim()
+	const assistantMsgPromise = finalResponse.trim()
 		? createMessage(
 				conversationId,
 				"assistant",
-				fullResponse,
+				finalResponse,
 				thinkingContent || undefined,
 				serverSegments.length > 0 ? serverSegments : undefined,
 				{
@@ -254,7 +274,7 @@ export async function completeStreamTurn(
 						conversationId,
 						assistantMessageId: assistantMsgId,
 						fileIds: newGeneratedFileIds,
-						assistantResponse: fullResponse,
+						assistantResponse: finalResponse,
 					}).catch((error) => {
 						console.error(
 							"[CHAT_STREAM] Background generated-file memory sync failed",
@@ -330,7 +350,7 @@ export async function completeStreamTurn(
 					userId,
 					conversationId,
 					normalizedMessage,
-					assistantResponse: fullResponse,
+					assistantResponse: finalResponse,
 					attachmentIds,
 					activeDocumentArtifactId,
 					contextStatus: latestContextStatus,
@@ -364,7 +384,7 @@ export async function completeStreamTurn(
 							conversationId,
 							assistantMessageId: assistantMsg.id,
 							normalizedMessage,
-							assistantResponse: fullResponse,
+							assistantResponse: finalResponse,
 							attachmentIds,
 							taskState: latestTaskState,
 							contextStatus:
@@ -375,6 +395,7 @@ export async function completeStreamTurn(
 							initialTaskState,
 							initialContextDebug,
 							toolCalls: toolCallRecords,
+							webCitationAudit: citationGate?.audit,
 						});
 					})(),
 				);
@@ -389,7 +410,7 @@ export async function completeStreamTurn(
 							userId,
 							conversationId,
 							upstreamMessage,
-							assistantMirrorContent: fullResponse,
+							assistantMirrorContent: finalResponse,
 							workCapsule: latestWorkCapsule,
 							maintenanceReason: "chat_stream",
 						}),

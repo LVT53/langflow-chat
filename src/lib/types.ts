@@ -282,6 +282,7 @@ export interface WebCitationAudit {
 	citedUrlCount: number;
 	supportedCitationCount: number;
 	unsupportedCitationCount: number;
+	noticeAppended?: boolean;
 	citations: WebCitationAuditCitation[];
 }
 

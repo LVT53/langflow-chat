@@ -7,6 +7,7 @@ import type {
 	ModelId,
 	TaskState,
 	ToolCallEntry,
+	WebCitationAudit,
 } from "$lib/types";
 
 export type ChatTurnRoute = "send" | "stream";
@@ -106,6 +107,7 @@ export type PersistAssistantEvidenceParams = {
 	initialTaskState?: TaskState | null;
 	initialContextDebug?: ContextDebugState | null;
 	toolCalls?: ToolCallEntry[];
+	webCitationAudit?: WebCitationAudit | null;
 };
 
 export type RunPostTurnTasksParams = {

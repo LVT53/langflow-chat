@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCallEntry } from "$lib/types";
-import { buildWebCitationAudit } from "./web-citation-audit";
+import {
+	applyWebCitationQualityGate,
+	buildWebCitationAudit,
+} from "./web-citation-audit";
 
 function researchTool(candidates: ToolCallEntry["candidates"]): ToolCallEntry {
 	return {
@@ -98,5 +101,79 @@ describe("buildWebCitationAudit", () => {
 				toolCalls: [],
 			}),
 		).toBeNull();
+	});
+});
+
+describe("applyWebCitationQualityGate", () => {
+	it("appends a source-check notice when researched answers omit citations", () => {
+		const result = applyWebCitationQualityGate({
+			assistantResponse: "The current price is $799.",
+			toolCalls: [
+				researchTool([
+					{
+						id: "src-1",
+						title: "Official Product",
+						url: "https://example.com/product",
+						sourceType: "web",
+					},
+				]),
+			],
+		});
+
+		expect(result.audit).toMatchObject({
+			status: "missing_citations",
+			noticeAppended: true,
+		});
+		expect(result.appendedNotice).toContain("Source check:");
+		expect(result.response).toContain(
+			"[Official Product](https://example.com/product)",
+		);
+	});
+
+	it("appends a caution notice when citations were not retrieved sources", () => {
+		const result = applyWebCitationQualityGate({
+			assistantResponse: "See [wrong page](https://example.com/wrong).",
+			toolCalls: [
+				researchTool([
+					{
+						id: "src-1",
+						title: "Official Product",
+						url: "https://example.com/product",
+						sourceType: "web",
+					},
+				]),
+			],
+		});
+
+		expect(result.audit).toMatchObject({
+			status: "unsupported_citations",
+			unsupportedCitationCount: 1,
+			noticeAppended: true,
+		});
+		expect(result.response).toContain("Treat unsupported links cautiously");
+		expect(result.response).toContain(
+			"[Official Product](https://example.com/product)",
+		);
+	});
+
+	it("leaves clean citations unchanged", () => {
+		const response = "See [official page](https://example.com/product).";
+		const result = applyWebCitationQualityGate({
+			assistantResponse: response,
+			toolCalls: [
+				researchTool([
+					{
+						id: "src-1",
+						title: "Official Product",
+						url: "https://example.com/product",
+						sourceType: "web",
+					},
+				]),
+			],
+		});
+
+		expect(result.audit?.status).toBe("passed");
+		expect(result.appendedNotice).toBeNull();
+		expect(result.response).toBe(response);
 	});
 });
