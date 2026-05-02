@@ -1,7 +1,13 @@
-import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { conversations, messages, messageAnalytics, usageEvents } from '$lib/server/db/schema';
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { getConfig } from "$lib/server/config-store";
+import { db } from "$lib/server/db";
+import {
+	conversations,
+	messageAnalytics,
+	messages,
+	usageEvents,
+} from "$lib/server/db/schema";
 import type {
 	ChatMessage,
 	HonchoContextInfo,
@@ -10,9 +16,9 @@ import type {
 	MessageEvidenceSummary,
 	MessageRole,
 	ThinkingSegment,
-} from '$lib/types';
-import { getConfig } from '$lib/server/config-store';
-import { listMessageAttachments } from './knowledge';
+	WebCitationAudit,
+} from "$lib/types";
+import { listMessageAttachments } from "./knowledge";
 
 type PersistedMessageMetadata = {
 	evidenceSummary?: MessageEvidenceSummary | null;
@@ -20,13 +26,14 @@ type PersistedMessageMetadata = {
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;
 	modelDisplayName?: string | null;
+	webCitationAudit?: WebCitationAudit | null;
 };
 
 function getModelDisplayName(modelId?: string | null): string | undefined {
 	if (!modelId) return undefined;
 	const config = getConfig();
-	if (modelId === 'model1') return config.model1.displayName;
-	if (modelId === 'model2') return config.model2.displayName;
+	if (modelId === "model1") return config.model1.displayName;
+	if (modelId === "model2") return config.model2.displayName;
 	return undefined;
 }
 
@@ -34,12 +41,12 @@ function mapRowToChatMessage(
 	row: typeof messages.$inferSelect,
 	modelId?: string | null,
 	generationTimeMs?: number | null,
-	costUsdMicros?: number | null
+	costUsdMicros?: number | null,
 ): ChatMessage {
 	// Restore full interleaved thinkingSegments from persisted JSON.
 	// The column stores the complete segment array (text + tool_call entries in order)
 	// so the expanded ThinkingBlock view is identical to what was shown during streaming.
-	let thinkingSegments: ChatMessage['thinkingSegments'];
+	let thinkingSegments: ChatMessage["thinkingSegments"];
 	if (row.toolCalls) {
 		try {
 			const parsed = JSON.parse(row.toolCalls) as ThinkingSegment[];
@@ -56,7 +63,8 @@ function mapRowToChatMessage(
 		metadata?.evidenceSummary && Array.isArray(metadata.evidenceSummary.groups)
 			? metadata.evidenceSummary
 			: undefined;
-	const evidencePending = metadata?.evidenceStatus === 'pending' && !evidenceSummary;
+	const evidencePending =
+		metadata?.evidenceStatus === "pending" && !evidenceSummary;
 
 	return {
 		id: row.id,
@@ -66,11 +74,13 @@ function mapRowToChatMessage(
 		thinking: row.thinking ?? undefined,
 		thinkingSegments,
 		timestamp: row.createdAt.getTime(),
-		modelId: modelId as ChatMessage['modelId'],
-		modelDisplayName: metadata?.modelDisplayName ?? getModelDisplayName(modelId),
+		modelId: modelId as ChatMessage["modelId"],
+		modelDisplayName:
+			metadata?.modelDisplayName ?? getModelDisplayName(modelId),
 		generationDurationMs: generationTimeMs ?? undefined,
 		costUsd: costUsdMicros != null ? costUsdMicros / 1_000_000 : undefined,
 		evidenceSummary,
+		webCitationAudit: metadata?.webCitationAudit ?? undefined,
 		evidencePending,
 		honchoContext: metadata?.honchoContext ?? undefined,
 	};
@@ -80,13 +90,15 @@ function parseMetadata(value: string | null): PersistedMessageMetadata | null {
 	if (!value) return null;
 	try {
 		const parsed = JSON.parse(value) as PersistedMessageMetadata;
-		return parsed && typeof parsed === 'object' ? parsed : null;
+		return parsed && typeof parsed === "object" ? parsed : null;
 	} catch {
 		return null;
 	}
 }
 
-export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
+export async function listMessages(
+	conversationId: string,
+): Promise<ChatMessage[]> {
 	const [result, attachmentMap] = await Promise.all([
 		db
 			.select({
@@ -118,7 +130,7 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 			row.message,
 			row.model ?? row.legacyModel,
 			row.generationTimeMs ?? row.legacyGenerationTimeMs,
-			row.costUsdMicros
+			row.costUsdMicros,
 		);
 		return {
 			...mapped,
@@ -139,7 +151,7 @@ export async function createMessage(
 	content: string,
 	thinking?: string,
 	thinkingSegments?: ThinkingSegment[],
-	metadata?: PersistedMessageMetadata
+	metadata?: PersistedMessageMetadata,
 ): Promise<ChatMessage> {
 	const [message] = await db
 		.insert(messages)
@@ -149,9 +161,10 @@ export async function createMessage(
 			role,
 			content,
 			thinking: thinking ?? null,
-			toolCalls: thinkingSegments && thinkingSegments.length > 0
-				? JSON.stringify(thinkingSegments)
-				: null,
+			toolCalls:
+				thinkingSegments && thinkingSegments.length > 0
+					? JSON.stringify(thinkingSegments)
+					: null,
 			metadataJson: metadata ? JSON.stringify(metadata) : null,
 		})
 		.returning();
@@ -161,7 +174,7 @@ export async function createMessage(
 
 export async function getMessageEvidenceState(
 	conversationId: string,
-	messageId: string
+	messageId: string,
 ): Promise<{
 	status: MessageEvidenceStatusState;
 	evidenceSummary: MessageEvidenceSummary | null;
@@ -169,7 +182,12 @@ export async function getMessageEvidenceState(
 	const [row] = await db
 		.select({ metadataJson: messages.metadataJson })
 		.from(messages)
-		.where(and(eq(messages.id, messageId), eq(messages.conversationId, conversationId)))
+		.where(
+			and(
+				eq(messages.id, messageId),
+				eq(messages.conversationId, conversationId),
+			),
+		)
 		.limit(1);
 
 	if (!row) return null;
@@ -181,7 +199,7 @@ export async function getMessageEvidenceState(
 			: null;
 
 	return {
-		status: metadata?.evidenceStatus ?? (evidenceSummary ? 'ready' : 'none'),
+		status: metadata?.evidenceStatus ?? (evidenceSummary ? "ready" : "none"),
 		evidenceSummary,
 	};
 }
@@ -191,7 +209,7 @@ export async function updateMessageEvidence(
 	params: {
 		evidenceSummary?: MessageEvidenceSummary | null;
 		evidenceStatus: MessageEvidenceStatusState;
-	}
+	},
 ): Promise<void> {
 	const [row] = await db
 		.select({ metadataJson: messages.metadataJson })
@@ -209,8 +227,8 @@ export async function updateMessageEvidence(
 
 	if (params.evidenceSummary && params.evidenceSummary.groups.length > 0) {
 		next.evidenceSummary = params.evidenceSummary;
-		next.evidenceStatus = 'ready';
-	} else if (params.evidenceStatus !== 'ready') {
+		next.evidenceStatus = "ready";
+	} else if (params.evidenceStatus !== "ready") {
 		delete next.evidenceSummary;
 	}
 
@@ -222,12 +240,41 @@ export async function updateMessageEvidence(
 		.where(eq(messages.id, messageId));
 }
 
+export async function updateMessageWebCitationAudit(
+	messageId: string,
+	webCitationAudit: WebCitationAudit | null,
+): Promise<void> {
+	const [row] = await db
+		.select({ metadataJson: messages.metadataJson })
+		.from(messages)
+		.where(eq(messages.id, messageId))
+		.limit(1);
+
+	if (!row) return;
+
+	const next: PersistedMessageMetadata = {
+		...(parseMetadata(row.metadataJson) ?? {}),
+	};
+	if (webCitationAudit && webCitationAudit.status !== "none") {
+		next.webCitationAudit = webCitationAudit;
+	} else {
+		delete next.webCitationAudit;
+	}
+
+	await db
+		.update(messages)
+		.set({
+			metadataJson: Object.keys(next).length > 0 ? JSON.stringify(next) : null,
+		})
+		.where(eq(messages.id, messageId));
+}
+
 export async function updateMessageHonchoMetadata(
 	messageId: string,
 	params: {
 		honchoContext?: HonchoContextInfo | null;
 		honchoSnapshot?: HonchoContextSnapshot | null;
-	}
+	},
 ): Promise<void> {
 	const [row] = await db
 		.select({ metadataJson: messages.metadataJson })
@@ -270,7 +317,12 @@ export async function getLatestHonchoMetadata(conversationId: string): Promise<{
 	const rows = await db
 		.select({ metadataJson: messages.metadataJson })
 		.from(messages)
-		.where(and(eq(messages.conversationId, conversationId), eq(messages.role, 'assistant')))
+		.where(
+			and(
+				eq(messages.conversationId, conversationId),
+				eq(messages.role, "assistant"),
+			),
+		)
 		.orderBy(desc(messages.createdAt));
 
 	let honchoContext: HonchoContextInfo | null = null;
@@ -295,7 +347,9 @@ export async function getLatestHonchoMetadata(conversationId: string): Promise<{
 	return { honchoContext, honchoSnapshot };
 }
 
-export async function clearMessageEvidenceForUser(userId: string): Promise<void> {
+export async function clearMessageEvidenceForUser(
+	userId: string,
+): Promise<void> {
 	const conversationRows = await db
 		.select({ id: conversations.id })
 		.from(conversations)
@@ -310,18 +364,25 @@ export async function clearMessageEvidenceForUser(userId: string): Promise<void>
 
 	for (const row of rows) {
 		const metadata = parseMetadata(row.metadataJson);
-		if (!metadata || (!('evidenceSummary' in metadata) && !('evidenceStatus' in metadata))) {
+		if (
+			!metadata ||
+			(!("evidenceSummary" in metadata) &&
+				!("evidenceStatus" in metadata) &&
+				!("webCitationAudit" in metadata))
+		) {
 			continue;
 		}
 
 		const next = { ...metadata };
 		delete next.evidenceSummary;
 		delete next.evidenceStatus;
+		delete next.webCitationAudit;
 
 		await db
 			.update(messages)
 			.set({
-				metadataJson: Object.keys(next).length > 0 ? JSON.stringify(next) : null,
+				metadataJson:
+					Object.keys(next).length > 0 ? JSON.stringify(next) : null,
 			})
 			.where(eq(messages.id, row.id));
 	}

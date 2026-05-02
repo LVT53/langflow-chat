@@ -1,27 +1,28 @@
-import { recordMessageAnalytics } from '$lib/server/services/analytics';
-import { clearConversationDraft } from '$lib/server/services/conversation-drafts';
-import { hasRecentUserCorrectionSignal } from '$lib/server/services/active-state';
+import { hasRecentUserCorrectionSignal } from "$lib/server/services/active-state";
+import { recordMessageAnalytics } from "$lib/server/services/analytics";
+import { clearConversationDraft } from "$lib/server/services/conversation-drafts";
 import {
-  mirrorMessage,
-  mirrorWorkCapsuleConclusion,
-} from '$lib/server/services/honcho';
+	mirrorMessage,
+	mirrorWorkCapsuleConclusion,
+} from "$lib/server/services/honcho";
 import {
 	attachArtifactsToMessage,
 	createGeneratedOutputArtifact,
-	getConversationWorkingSet,
 	getArtifactsForUser,
+	getConversationWorkingSet,
 	listConversationSourceArtifactIds,
 	refreshConversationWorkingSet,
 	upsertWorkCapsule,
-} from '$lib/server/services/knowledge';
-import { parseWorkingDocumentMetadata } from '$lib/server/services/knowledge/store';
-import { runUserMemoryMaintenance } from '$lib/server/services/memory-maintenance';
-import { recordMemoryEvent } from '$lib/server/services/memory-events';
-import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
+} from "$lib/server/services/knowledge";
+import { parseWorkingDocumentMetadata } from "$lib/server/services/knowledge/store";
+import { recordMemoryEvent } from "$lib/server/services/memory-events";
+import { runUserMemoryMaintenance } from "$lib/server/services/memory-maintenance";
+import { buildAssistantEvidenceSummary } from "$lib/server/services/message-evidence";
 import {
 	updateMessageEvidence,
 	updateMessageHonchoMetadata,
-} from '$lib/server/services/messages';
+	updateMessageWebCitationAudit,
+} from "$lib/server/services/messages";
 import {
 	applyProjectContinuitySignalFromMessage,
 	attachContinuityToTaskState,
@@ -29,7 +30,8 @@ import {
 	getConversationTaskState,
 	syncTaskContinuityFromTaskState,
 	updateTaskStateCheckpoint,
-} from '$lib/server/services/task-state';
+} from "$lib/server/services/task-state";
+import { buildWebCitationAudit } from "$lib/server/services/web-citation-audit";
 import type {
 	PersistAssistantEvidenceParams,
 	PersistAssistantTurnStateParams,
@@ -37,7 +39,7 @@ import type {
 	RunPostTurnTasksParams,
 	WorkCapsuleSummary,
 	WorkingSetItem,
-} from './types';
+} from "./types";
 
 async function refreshWorkingSetWithAttachments(params: {
 	userId: string;
@@ -74,7 +76,7 @@ export async function persistUserTurnAttachments(params: {
 }
 
 export async function persistAssistantTurnState(
-	params: PersistAssistantTurnStateParams
+	params: PersistAssistantTurnStateParams,
 ): Promise<PersistAssistantTurnStateResult> {
 	const analytics = params.analytics ?? null;
 	if (analytics) {
@@ -90,14 +92,17 @@ export async function persistAssistantTurnState(
 			generationTimeMs: analytics.generationTimeMs,
 			providerUsage: analytics.providerUsage,
 		}).catch((err) => {
-			console.error('[ANALYTICS] Failed to record message analytics:', err);
+			console.error("[ANALYTICS] Failed to record message analytics:", err);
 		});
 	}
 
 	const sourceArtifactIds =
 		params.attachmentIds.length > 0
 			? params.attachmentIds
-			: await listConversationSourceArtifactIds(params.userId, params.conversationId);
+			: await listConversationSourceArtifactIds(
+					params.userId,
+					params.conversationId,
+				);
 	const outputArtifact = await createGeneratedOutputArtifact({
 		userId: params.userId,
 		conversationId: params.conversationId,
@@ -110,7 +115,11 @@ export async function persistAssistantTurnState(
 		conversationId: params.conversationId,
 	})) as WorkCapsuleSummary;
 	const activeDocumentArtifact = params.activeDocumentArtifactId
-		? (await getArtifactsForUser(params.userId, [params.activeDocumentArtifactId]).catch(() => []))[0] ?? null
+		? ((
+				await getArtifactsForUser(params.userId, [
+					params.activeDocumentArtifactId,
+				]).catch(() => [])
+			)[0] ?? null)
 		: null;
 	const activeWorkingSet = await refreshConversationWorkingSet({
 		userId: params.userId,
@@ -118,7 +127,9 @@ export async function persistAssistantTurnState(
 		message: params.normalizedMessage,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		selectedGeneratedArtifactId: outputArtifact?.id ?? null,
-	}).catch(async () => getConversationWorkingSet(params.userId, params.conversationId));
+	}).catch(async () =>
+		getConversationWorkingSet(params.userId, params.conversationId),
+	);
 	let taskState = await updateTaskStateCheckpoint({
 		userId: params.userId,
 		conversationId: params.conversationId,
@@ -128,7 +139,9 @@ export async function persistAssistantTurnState(
 		promptArtifactIds: params.contextStatus?.workingSetArtifactIds ?? [],
 		userMessageId: params.userMessageId ?? null,
 		assistantMessageId: params.assistantMessageId,
-	}).catch(async () => getConversationTaskState(params.userId, params.conversationId));
+	}).catch(async () =>
+		getConversationTaskState(params.userId, params.conversationId),
+	);
 
 	if (taskState) {
 		await syncTaskContinuityFromTaskState({
@@ -137,8 +150,8 @@ export async function persistAssistantTurnState(
 		}).catch((error) =>
 			console.error(
 				`[CONTINUITY] Failed to sync focus continuity from ${params.continuitySource}:`,
-				error
-			)
+				error,
+			),
 		);
 		await applyProjectContinuitySignalFromMessage({
 			userId: params.userId,
@@ -147,46 +160,59 @@ export async function persistAssistantTurnState(
 		}).catch((error) =>
 			console.error(
 				`[CONTINUITY] Failed to apply project continuity signal from ${params.continuitySource}:`,
-				error
-			)
+				error,
+			),
 		);
 	}
 
-	taskState = await attachContinuityToTaskState(params.userId, taskState ?? null).catch(
-		() => taskState ?? null
-	);
+	taskState = await attachContinuityToTaskState(
+		params.userId,
+		taskState ?? null,
+	).catch(() => taskState ?? null);
 	if (activeDocumentArtifact) {
-		const documentMetadata = parseWorkingDocumentMetadata(activeDocumentArtifact.metadata);
-		const behaviorSubjectId = documentMetadata.documentFamilyId ?? activeDocumentArtifact.id;
+		const documentMetadata = parseWorkingDocumentMetadata(
+			activeDocumentArtifact.metadata,
+		);
+		const behaviorSubjectId =
+			documentMetadata.documentFamilyId ?? activeDocumentArtifact.id;
 		await recordMemoryEvent({
 			eventKey: `document_refined:${behaviorSubjectId}:${params.assistantMessageId}`,
 			userId: params.userId,
 			conversationId: params.conversationId,
 			messageId: params.assistantMessageId,
-			domain: 'document',
-			eventType: 'document_refined',
+			domain: "document",
+			eventType: "document_refined",
 			subjectId: behaviorSubjectId,
 			relatedId: activeDocumentArtifact.id,
 			payload: {
 				artifactId: activeDocumentArtifact.id,
 				documentFamilyId: documentMetadata.documentFamilyId ?? null,
-				documentLabel: documentMetadata.documentLabel ?? activeDocumentArtifact.name,
+				documentLabel:
+					documentMetadata.documentLabel ?? activeDocumentArtifact.name,
 				documentRole: documentMetadata.documentRole ?? null,
-				explicitCorrection: hasRecentUserCorrectionSignal(params.normalizedMessage),
+				explicitCorrection: hasRecentUserCorrectionSignal(
+					params.normalizedMessage,
+				),
 				generatedOutputArtifactId: outputArtifact?.id ?? null,
 			},
 		}).catch((error) =>
-			console.error('[MEMORY_EVENTS] Failed to record document refinement event:', error)
+			console.error(
+				"[MEMORY_EVENTS] Failed to record document refinement event:",
+				error,
+			),
 		);
 	}
 	await updateMessageHonchoMetadata(params.assistantMessageId, {
 		honchoContext: params.honchoContext,
 		honchoSnapshot: params.honchoSnapshot,
 	}).catch(() => undefined);
-	const contextDebug = await getContextDebugState(params.userId, params.conversationId).catch(
-		() => null
+	const contextDebug = await getContextDebugState(
+		params.userId,
+		params.conversationId,
+	).catch(() => null);
+	await clearConversationDraft(params.userId, params.conversationId).catch(
+		() => undefined,
 	);
-	await clearConversationDraft(params.userId, params.conversationId).catch(() => undefined);
 
 	return {
 		activeWorkingSet,
@@ -197,9 +223,11 @@ export async function persistAssistantTurnState(
 }
 
 export async function persistAssistantEvidence(
-	params: PersistAssistantEvidenceParams
+	params: PersistAssistantEvidenceParams,
 ): Promise<void> {
 	try {
+		const doneToolCalls =
+			params.toolCalls?.filter((tool) => tool.status === "done") ?? [];
 		const currentAttachments =
 			params.attachmentIds.length > 0
 				? await getArtifactsForUser(params.userId, params.attachmentIds)
@@ -210,25 +238,57 @@ export async function persistAssistantEvidence(
 			taskState: params.taskState ?? params.initialTaskState ?? null,
 			contextStatus: params.contextStatus ?? null,
 			contextDebug: params.contextDebug ?? params.initialContextDebug ?? null,
-			toolCalls: params.toolCalls?.filter((tool) => tool.status === 'done'),
+			toolCalls: doneToolCalls,
 			currentAttachments,
+		});
+		const webCitationAudit = buildWebCitationAudit({
+			assistantResponse: params.assistantResponse,
+			toolCalls: doneToolCalls,
 		});
 		await updateMessageEvidence(params.assistantMessageId, {
 			evidenceSummary: messageEvidence,
-			evidenceStatus: messageEvidence ? 'ready' : 'none',
+			evidenceStatus: messageEvidence ? "ready" : "none",
 		});
+		await updateMessageWebCitationAudit(
+			params.assistantMessageId,
+			webCitationAudit,
+		);
+		if (
+			webCitationAudit &&
+			webCitationAudit.status !== "passed" &&
+			webCitationAudit.status !== "none"
+		) {
+			console.warn(`${params.logPrefix} Web citation audit warning`, {
+				conversationId: params.conversationId,
+				assistantMessageId: params.assistantMessageId,
+				status: webCitationAudit.status,
+				retrievedSourceCount: webCitationAudit.retrievedSourceCount,
+				citedUrlCount: webCitationAudit.citedUrlCount,
+				unsupportedCitationCount: webCitationAudit.unsupportedCitationCount,
+			});
+		}
 	} catch (error) {
-		console.error(`${params.logPrefix} Failed to persist assistant evidence summary:`, error);
+		console.error(
+			`${params.logPrefix} Failed to persist assistant evidence summary:`,
+			error,
+		);
 		await updateMessageEvidence(params.assistantMessageId, {
-			evidenceStatus: 'failed',
+			evidenceStatus: "failed",
 		}).catch(() => undefined);
 	}
 }
 
-export async function runPostTurnTasks(params: RunPostTurnTasksParams): Promise<void> {
+export async function runPostTurnTasks(
+	params: RunPostTurnTasksParams,
+): Promise<void> {
 	const honchoTasks: Promise<unknown>[] = [
-		mirrorMessage(params.userId, params.conversationId, 'user', params.upstreamMessage).catch(
-			(err) => console.error('[HONCHO] Mirror user message failed:', err)
+		mirrorMessage(
+			params.userId,
+			params.conversationId,
+			"user",
+			params.upstreamMessage,
+		).catch((err) =>
+			console.error("[HONCHO] Mirror user message failed:", err),
 		),
 	];
 
@@ -237,9 +297,11 @@ export async function runPostTurnTasks(params: RunPostTurnTasksParams): Promise<
 			mirrorMessage(
 				params.userId,
 				params.conversationId,
-				'assistant',
-				params.assistantMirrorContent
-			).catch((err) => console.error('[HONCHO] Mirror assistant message failed:', err))
+				"assistant",
+				params.assistantMirrorContent,
+			).catch((err) =>
+				console.error("[HONCHO] Mirror assistant message failed:", err),
+			),
 		);
 	}
 
@@ -249,7 +311,9 @@ export async function runPostTurnTasks(params: RunPostTurnTasksParams): Promise<
 				userId: params.userId,
 				conversationId: params.conversationId,
 				content: `${params.workCapsule.taskSummary ?? params.workCapsule.artifact.name}\n${params.workCapsule.workflowSummary}`,
-			}).catch((err) => console.error('[HONCHO] Mirror work capsule failed:', err))
+			}).catch((err) =>
+				console.error("[HONCHO] Mirror work capsule failed:", err),
+			),
 		);
 	}
 
@@ -257,6 +321,9 @@ export async function runPostTurnTasks(params: RunPostTurnTasksParams): Promise<
 		await Promise.allSettled(honchoTasks);
 		await runUserMemoryMaintenance(params.userId, params.maintenanceReason);
 	} catch (error) {
-		console.error(`${params.logPrefix} Post-turn memory maintenance failed:`, error);
+		console.error(
+			`${params.logPrefix} Post-turn memory maintenance failed:`,
+			error,
+		);
 	}
 }

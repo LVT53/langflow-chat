@@ -1,3 +1,4 @@
+import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
@@ -6,10 +7,9 @@ import type {
 	ModelId,
 	TaskState,
 	ToolCallEntry,
-} from '$lib/types';
-import type { ProviderUsageSnapshot } from '$lib/server/services/analytics';
+} from "$lib/types";
 
-export type ChatTurnRoute = 'send' | 'stream';
+export type ChatTurnRoute = "send" | "stream";
 
 export type ChatTurnRequestError = {
 	status: number;
@@ -82,7 +82,7 @@ export type PersistAssistantTurnStateParams = {
 	userMessageId?: string | null;
 	assistantMessageId: string;
 	analytics?: AssistantAnalytics | null;
-	continuitySource: 'send' | 'stream';
+	continuitySource: "send" | "stream";
 };
 
 export type PersistAssistantTurnStateResult = {
@@ -93,11 +93,12 @@ export type PersistAssistantTurnStateResult = {
 };
 
 export type PersistAssistantEvidenceParams = {
-	logPrefix: '[SEND]' | '[STREAM]';
+	logPrefix: "[SEND]" | "[STREAM]";
 	userId: string;
 	conversationId: string;
 	assistantMessageId: string;
 	normalizedMessage: string;
+	assistantResponse: string;
 	attachmentIds: string[];
 	taskState?: TaskState | null;
 	contextStatus?: ConversationContextStatus | null;
@@ -108,11 +109,11 @@ export type PersistAssistantEvidenceParams = {
 };
 
 export type RunPostTurnTasksParams = {
-	logPrefix: '[SEND]' | '[STREAM]';
+	logPrefix: "[SEND]" | "[STREAM]";
 	userId: string;
 	conversationId: string;
 	upstreamMessage: string;
 	assistantMirrorContent?: string;
 	workCapsule?: WorkCapsuleSummary;
-	maintenanceReason: 'chat_send' | 'chat_stream';
+	maintenanceReason: "chat_send" | "chat_stream";
 };

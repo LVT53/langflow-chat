@@ -1,33 +1,36 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { requireAuth } from '$lib/server/auth/hooks';
-import { touchConversation } from '$lib/server/services/conversations';
-import { sendMessage } from '$lib/server/services/langflow';
-import { getConfig } from '$lib/server/config-store';
-import { createMessage } from '$lib/server/services/messages';
-import { logAttachmentTrace } from '$lib/server/services/attachment-trace';
-import { isAttachmentReadinessError } from '$lib/server/services/knowledge';
-import { normalizeAssistantOutput } from '$lib/server/services/chat-turn/execute';
+import { json } from "@sveltejs/kit";
+import { requireAuth } from "$lib/server/auth/hooks";
+import { getConfig } from "$lib/server/config-store";
+import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
+import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import {
 	persistAssistantEvidence,
 	persistAssistantTurnState,
 	persistUserTurnAttachments,
 	runPostTurnTasks,
-} from '$lib/server/services/chat-turn/finalize';
-import { preflightChatTurn } from '$lib/server/services/chat-turn/preflight';
-import { parseChatTurnRequest } from '$lib/server/services/chat-turn/request';
-import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
-import { estimateTokenCount } from '$lib/utils/tokens';
-import { getPersonalityProfile } from '$lib/server/services/personality-profiles';
+} from "$lib/server/services/chat-turn/finalize";
+import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
+import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
+import { touchConversation } from "$lib/server/services/conversations";
+import { isAttachmentReadinessError } from "$lib/server/services/knowledge";
+import { sendMessage } from "$lib/server/services/langflow";
+import { createMessage } from "$lib/server/services/messages";
+import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
+import { estimateTokenCount } from "$lib/utils/tokens";
+import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
-	const user = event.locals.user!;
+	const user = event.locals.user;
+	if (!user) {
+		return json({ error: "Unauthorized" }, { status: 401 });
+	}
 
 	// Check capacity limits before processing
 	const capacity = checkStreamCapacity(user.id);
 	if (!capacity.allowed) {
-		console.warn('[CHAT_SEND] Rejected due to capacity', {
+		console.warn("[CHAT_SEND] Rejected due to capacity", {
 			userId: user.id,
 			reason: capacity.reason,
 			retryAfterSeconds: capacity.retryAfterSeconds,
@@ -37,24 +40,31 @@ export const POST: RequestHandler = async (event) => {
 
 		return json(
 			{
-				error: 'Server at capacity. Please try again later.',
-				code: 'CAPACITY_EXCEEDED',
+				error: "Server at capacity. Please try again later.",
+				code: "CAPACITY_EXCEEDED",
 				reason: capacity.reason,
 				retryAfter: capacity.retryAfterSeconds,
 			},
 			{
 				status: 503,
 				headers: {
-					'Retry-After': String(capacity.retryAfterSeconds ?? 10),
-					'Cache-Control': 'no-store',
+					"Retry-After": String(capacity.retryAfterSeconds ?? 10),
+					"Cache-Control": "no-store",
 				},
-			}
+			},
 		);
 	}
 
-	const parsedRequest = await parseChatTurnRequest(event.request, getConfig(), 'send');
+	const parsedRequest = await parseChatTurnRequest(
+		event.request,
+		getConfig(),
+		"send",
+	);
 	if (!parsedRequest.ok) {
-		return json({ error: parsedRequest.error.error }, { status: parsedRequest.error.status });
+		return json(
+			{ error: parsedRequest.error.error },
+			{ status: parsedRequest.error.status },
+		);
 	}
 
 	const preflight = await preflightChatTurn({
@@ -69,7 +79,7 @@ export const POST: RequestHandler = async (event) => {
 				code: preflight.error.code,
 				attachmentIds: preflight.error.attachmentIds,
 			},
-			{ status: preflight.error.status }
+			{ status: preflight.error.status },
 		);
 	}
 
@@ -85,7 +95,9 @@ export const POST: RequestHandler = async (event) => {
 
 		let personalityPrompt: string | undefined;
 		if (turn.personalityProfileId) {
-			const profile = await getPersonalityProfile(turn.personalityProfileId).catch(() => null);
+			const profile = await getPersonalityProfile(
+				turn.personalityProfileId,
+			).catch(() => null);
 			personalityPrompt = profile?.promptText || undefined;
 		}
 
@@ -99,9 +111,9 @@ export const POST: RequestHandler = async (event) => {
 				activeDocumentArtifactId: turn.activeDocumentArtifactId,
 				attachmentTraceId: turn.attachmentTraceId,
 				personalityPrompt,
-			}
+			},
 		);
-		const text = langflowResult.text ?? '';
+		const text = langflowResult.text ?? "";
 		const contextStatus = langflowResult.contextStatus;
 		const initialTaskState = langflowResult.taskState;
 		const initialContextDebug = langflowResult.contextDebug;
@@ -109,7 +121,11 @@ export const POST: RequestHandler = async (event) => {
 		const honchoSnapshot = langflowResult.honchoSnapshot;
 		const responseText = normalizeAssistantOutput(text);
 
-		const userMessage = await createMessage(turn.conversationId, 'user', turn.normalizedMessage);
+		const userMessage = await createMessage(
+			turn.conversationId,
+			"user",
+			turn.normalizedMessage,
+		);
 		await persistUserTurnAttachments({
 			userId: user.id,
 			conversationId: turn.conversationId,
@@ -120,11 +136,11 @@ export const POST: RequestHandler = async (event) => {
 
 		const assistantMessage = await createMessage(
 			turn.conversationId,
-			'assistant',
+			"assistant",
 			responseText,
 			undefined,
 			undefined,
-			{ evidenceStatus: 'pending', modelDisplayName: turn.modelDisplayName }
+			{ evidenceStatus: "pending", modelDisplayName: turn.modelDisplayName },
 		);
 		const turnState = await persistAssistantTurnState({
 			userId: user.id,
@@ -139,25 +155,28 @@ export const POST: RequestHandler = async (event) => {
 			userMessageId: userMessage.id,
 			assistantMessageId: assistantMessage.id,
 			analytics: {
-				model: turn.modelId ?? 'model1',
+				model: turn.modelId ?? "model1",
 				modelDisplayName: turn.modelDisplayName,
 				promptTokens: estimateTokenCount(upstreamMessage),
 				completionTokens: estimateTokenCount(responseText),
 				generationTimeMs: undefined,
 				providerUsage: langflowResult.providerUsage,
 			},
-			continuitySource: 'send',
+			continuitySource: "send",
 			honchoContext,
 			honchoSnapshot,
 		});
-		await touchConversation(user.id, turn.conversationId).catch(() => undefined);
+		await touchConversation(user.id, turn.conversationId).catch(
+			() => undefined,
+		);
 
 		void persistAssistantEvidence({
-			logPrefix: '[SEND]',
+			logPrefix: "[SEND]",
 			userId: user.id,
 			conversationId: turn.conversationId,
 			assistantMessageId: assistantMessage.id,
 			normalizedMessage: turn.normalizedMessage,
+			assistantResponse: responseText,
 			attachmentIds: turn.attachmentIds,
 			taskState: turnState.taskState,
 			contextStatus,
@@ -166,13 +185,13 @@ export const POST: RequestHandler = async (event) => {
 			initialContextDebug,
 		});
 		void runPostTurnTasks({
-			logPrefix: '[SEND]',
+			logPrefix: "[SEND]",
 			userId: user.id,
 			conversationId: turn.conversationId,
 			upstreamMessage,
 			assistantMirrorContent: text,
 			workCapsule: turnState.workCapsule,
-			maintenanceReason: 'chat_send',
+			maintenanceReason: "chat_send",
 		});
 
 		return json({
@@ -184,28 +203,32 @@ export const POST: RequestHandler = async (event) => {
 			contextDebug: turnState.contextDebug,
 		});
 	} catch (error) {
-		console.error('Langflow sendMessage error:', error);
+		console.error("Langflow sendMessage error:", error);
 		if (turn.attachmentTraceId) {
-			logAttachmentTrace('send_failure', {
+			logAttachmentTrace("send_failure", {
 				traceId: turn.attachmentTraceId,
 				conversationId: turn.conversationId,
 				attachmentIds: turn.attachmentIds,
 				errorMessage: error instanceof Error ? error.message : String(error),
 				errorCode:
-					typeof error === 'object' && error !== null && 'code' in error
-						? (error as { code?: unknown }).code ?? null
+					typeof error === "object" && error !== null && "code" in error
+						? ((error as { code?: unknown }).code ?? null)
 						: null,
 			});
 		}
 		if (isAttachmentReadinessError(error)) {
 			return json(
-				{ error: error.message, code: error.code, attachmentIds: error.attachmentIds },
-				{ status: error.status }
+				{
+					error: error.message,
+					code: error.code,
+					attachmentIds: error.attachmentIds,
+				},
+				{ status: error.status },
 			);
 		}
 		return json(
-			{ error: 'Failed to get response from AI. Please try again.' },
-			{ status: 502 }
+			{ error: "Failed to get response from AI. Please try again." },
+			{ status: 502 },
 		);
 	}
 };

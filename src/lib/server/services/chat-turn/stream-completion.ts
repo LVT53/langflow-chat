@@ -1,3 +1,4 @@
+import type { ToolCallEntry } from "$lib/types";
 import type { WorkCapsuleSummary } from "./types";
 
 export interface CompleteStreamTurnParams {
@@ -13,7 +14,7 @@ export interface CompleteStreamTurnParams {
 	isReconnect: boolean | undefined;
 	thinkingContent: string;
 	fullResponse: string;
-	toolCallRecords: Array<{ name: string; status: string }>;
+	toolCallRecords: ToolCallEntry[];
 	serverSegments: Array<unknown>;
 	attachmentIds: string[];
 	activeDocumentArtifactId: string | null;
@@ -80,13 +81,14 @@ export interface CompleteStreamTurnParams {
 		conversationId: string;
 		assistantMessageId: string;
 		normalizedMessage: string;
+		assistantResponse: string;
 		attachmentIds: string[];
 		taskState: unknown;
 		contextStatus: unknown;
 		contextDebug: unknown;
 		initialTaskState: unknown;
 		initialContextDebug: unknown;
-		toolCalls: Array<{ name: string; status: string }>;
+		toolCalls: ToolCallEntry[];
 	}) => Promise<void>;
 	runPostTurnTasks: (params: {
 		logPrefix: string;
@@ -362,6 +364,7 @@ export async function completeStreamTurn(
 							conversationId,
 							assistantMessageId: assistantMsg.id,
 							normalizedMessage,
+							assistantResponse: fullResponse,
 							attachmentIds,
 							taskState: latestTaskState,
 							contextStatus:
