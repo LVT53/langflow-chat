@@ -66,6 +66,25 @@ describe("web research planning", () => {
 		]);
 	});
 
+	it("plans a YouTube transcript query for product review research", () => {
+		const queries = planResearchQueries({
+			query: "Framework Laptop 16 review",
+			mode: "research",
+		});
+
+		expect(queries).toEqual([
+			{ query: "Framework Laptop 16 review", purpose: "broad" },
+			{
+				query: "Framework Laptop 16 review official store specifications",
+				purpose: "official",
+			},
+			{
+				query: "Framework Laptop 16 review YouTube review transcript",
+				purpose: "primary",
+			},
+		]);
+	});
+
 	it("promotes official technical sources above generic pages", () => {
 		expect(
 			classifySourceAuthority(
@@ -213,6 +232,9 @@ describe("researchWeb", () => {
 		]);
 		expect(result.evidence[0]?.quote).toContain("$799");
 		expect(result.answerBrief.markdown).toContain("Citation rules:");
+		expect(result.answerBrief.markdown).toContain(
+			"It is not a response-language instruction",
+		);
 		expect(result.answerBrief.markdown).toContain(
 			"Do not cite URLs that are not listed",
 		);
@@ -607,5 +629,203 @@ describe("researchWeb", () => {
 		expect(result.answerBrief.markdown).toContain("$1,299");
 		expect(result.diagnostics.contentCharBudget).toBe(12_000);
 		expect(result.diagnostics.exactEvidenceCandidateCount).toBeGreaterThan(0);
+	});
+
+	it("enriches selected YouTube review results with transcript evidence", async () => {
+		const videoId = "dQw4w9WgXcQ";
+		const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+		const captionUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`;
+		const playerResponse = {
+			videoDetails: { title: "Framework Laptop 16 Long-Term Review" },
+			captions: {
+				playerCaptionsTracklistRenderer: {
+					captionTracks: [
+						{
+							baseUrl: captionUrl,
+							name: { simpleText: "English" },
+							languageCode: "en",
+							kind: "asr",
+							isTranslatable: true,
+						},
+					],
+					translationLanguages: [{ languageCode: "en" }],
+				},
+			},
+		};
+
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input.toString();
+			if (url.startsWith("https://api.search.brave.com/res/v1/web/search")) {
+				return new Response(
+					JSON.stringify({
+						web: {
+							results: [
+								{
+									title: "Framework Laptop 16 Long-Term Review",
+									url: videoUrl,
+									description:
+										"Video review covering battery life, fan noise, and buying advice.",
+									extra_snippets: [
+										"The review says battery life and repairability are the deciding factors.",
+									],
+								},
+							],
+						},
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			}
+
+			if (url.startsWith("https://youtube.com/watch")) {
+				return new Response(
+					`<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`,
+					{ status: 200, headers: { "Content-Type": "text/html" } },
+				);
+			}
+
+			if (url.startsWith(captionUrl)) {
+				const transcriptRequest = new URL(url);
+				expect(transcriptRequest.searchParams.get("fmt")).toBe("json3");
+				return new Response(
+					JSON.stringify({
+						events: [
+							{
+								tStartMs: 0,
+								dDurationMs: 4200,
+								segs: [
+									{
+										utf8: "This is a hands-on review after three months with the Framework Laptop 16.",
+									},
+								],
+							},
+							{
+								tStartMs: 4300,
+								dDurationMs: 5000,
+								segs: [
+									{
+										utf8: "Battery life lasted around eleven hours in mixed office work, while fan noise stayed low.",
+									},
+								],
+							},
+							{
+								tStartMs: 9400,
+								dDurationMs: 4300,
+								segs: [
+									{
+										utf8: "The main reason to buy it is repairability, not the lowest price.",
+									},
+								],
+							},
+						],
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			}
+
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const result = await researchWeb(
+			{
+				query: "Framework Laptop 16 review",
+				mode: "research",
+				sourcePolicy: "commerce",
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, exaApiKey: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				rerank: async (params) => ({
+					items: params.items
+						.map((item, index) => ({
+							item,
+							index,
+							score: item.quote.includes("eleven hours") ? 0.99 : 0.2,
+						}))
+						.sort((left, right) => right.score - left.score),
+					confidence: 99,
+				}),
+			},
+		);
+
+		expect(result.queries.map((entry) => entry.query)).toContain(
+			"Framework Laptop 16 review YouTube review transcript",
+		);
+		expect(result.sources).toHaveLength(1);
+		expect(result.sources[0]).toMatchObject({
+			canonicalUrl: `https://youtube.com/watch?v=${videoId}`,
+			title: "Framework Laptop 16 Long-Term Review",
+			youtubeTranscript: {
+				videoId,
+				language: "English",
+				languageCode: "en",
+				isGenerated: true,
+				isTranslated: false,
+				snippetCount: 3,
+			},
+		});
+		expect(result.evidence[0]?.quote).toContain("eleven hours");
+		expect(result.answerBrief.markdown).toContain("Media: YouTube transcript");
+		expect(result.diagnostics.youtubeTranscriptCandidateCount).toBe(1);
+		expect(result.diagnostics.youtubeTranscriptFetchedCount).toBe(1);
+		expect(result.diagnostics.youtubeTranscriptFailedCount).toBe(0);
+		expect(result.diagnostics.fallbackReasons).not.toContain(
+			"youtube_transcript_unavailable",
+		);
+	});
+
+	it("keeps YouTube video sources when transcripts are unavailable", async () => {
+		const videoId = "dQw4w9WgXcQ";
+		const videoUrl = `https://youtu.be/${videoId}`;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input.toString();
+			if (url.startsWith("https://youtube.com/watch")) {
+				return new Response(
+					`<html><script>var ytInitialPlayerResponse = ${JSON.stringify({
+						videoDetails: { title: "Transcript Disabled Review" },
+					})};</script></html>`,
+					{ status: 200, headers: { "Content-Type": "text/html" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		const result = await researchWeb(
+			{
+				query: `What does this review say? ${videoUrl}`,
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, exaApiKey: "", braveSearchApiKey: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				rerank: async (params) => ({
+					items: params.items.map((item, index) => ({
+						item,
+						index,
+						score: 1 - index / 100,
+					})),
+					confidence: 90,
+				}),
+			},
+		);
+
+		expect(result.sources).toHaveLength(1);
+		expect(result.sources[0]?.canonicalUrl).toBe(
+			`https://youtube.com/watch?v=${videoId}`,
+		);
+		expect(result.sources[0]?.youtubeTranscript).toBeUndefined();
+		expect(result.diagnostics.youtubeTranscriptCandidateCount).toBe(1);
+		expect(result.diagnostics.youtubeTranscriptFetchedCount).toBe(0);
+		expect(result.diagnostics.youtubeTranscriptFailedCount).toBe(1);
+		expect(result.diagnostics.youtubeTranscriptErrors[0]).toMatchObject({
+			videoId,
+			url: videoUrl,
+			error: "transcript_unavailable",
+		});
+		expect(result.diagnostics.fallbackReasons).toContain(
+			"youtube_transcript_unavailable",
+		);
 	});
 });

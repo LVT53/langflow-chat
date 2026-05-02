@@ -54,7 +54,7 @@ That script now runs `npm run db:prepare && node build`, so the standard product
 
 ### Web Research Deployment
 
-The search overhaul routes web work through the server-owned `research_web` tool. Deploy it this way:
+The search overhaul routes web work through the server-owned `research_web` tool. It can also enrich selected YouTube video results with transcript evidence for reviews, hands-on comparisons, and other video-backed research. Deploy it this way:
 
 1. Deploy the app code. `scripts/deploy.sh` pulls `origin main`, so merge `dev` to `main` first or use your manual deploy flow if you are testing directly from `dev`.
 2. Set these server env vars: `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `ALFYAI_API_SIGNING_KEY`. Exa is required for page opening. Brave is optional, but recommended for wider search coverage. `ALFYAI_API_SIGNING_KEY` must be the same value in AlfyAI and Langflow.
@@ -69,8 +69,10 @@ The search overhaul routes web work through the server-owned `research_web` tool
 Post-deploy checks:
 
 - Ask for an exact page-backed value, for example a current price from a product URL.
+- Ask for a product review summary that should include video evidence; if YouTube videos are selected and transcripts are exposed, diagnostics should show `youtubeTranscriptFetchedCount > 0`.
 - In the `research_web` tool result diagnostics, expect `providers.exaConfigured: true`, `openedPageCount > 0`, `selectedSourceCount > 0`, and `evidenceCandidateCount > 0`.
 - For prices, dates, availability, specs, and similar exact values, `exactEvidenceCandidateCount` should usually be greater than `0`.
+- YouTube transcript access is best-effort because some videos disable captions, require age/cookie access, or block server IPs. In those cases the video can still be returned as a source, and diagnostics include `youtube_transcript_unavailable`.
 - When TEI reranking is configured and confident, `sourceReranked` and `reranked` should usually be `true`.
 
 Deploy-script environment variables:

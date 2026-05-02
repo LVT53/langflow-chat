@@ -88,6 +88,10 @@ describe("POST /api/tools/research-web", () => {
 				evidenceCandidateCount: 0,
 				exactEvidenceCandidateCount: 0,
 				reranked: false,
+				youtubeTranscriptCandidateCount: 0,
+				youtubeTranscriptFetchedCount: 0,
+				youtubeTranscriptFailedCount: 0,
+				youtubeTranscriptErrors: [],
 				fallbackReasons: [],
 			},
 		});

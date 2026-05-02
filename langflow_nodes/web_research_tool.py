@@ -4,7 +4,8 @@ Web Research Tool for Langflow Agents.
 This component routes web research through AlfyAI's server-side research endpoint
 instead of letting each agent improvise provider calls. The endpoint plans
 multiple queries, searches Exa plus Brave when configured, fetches page content
-for quote-sensitive answers, deduplicates sources, and reranks evidence chunks.
+and selected YouTube transcripts for quote-sensitive answers, deduplicates
+sources, and reranks evidence chunks.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import Any
 import requests
 
 from lfx.custom.custom_component.component import Component
-from lfx.inputs.inputs import BoolInput, DropdownInput, StrInput
+from lfx.inputs.inputs import BoolInput, DropdownInput, IntInput, StrInput
 from lfx.io import Output
 from lfx.log.logger import logger
 from lfx.schema.data import Data
@@ -30,7 +31,7 @@ class WebResearchToolComponent(Component):
     """Tool component for source-ranked web research via AlfyAI."""
 
     display_name = "Web Research"
-    description = "Search the web with Exa and Brave, fetch relevant pages, and return ranked evidence with source URLs."
+    description = "Search the web with Exa and Brave, fetch relevant pages and YouTube transcripts, and return ranked evidence with source URLs."
     documentation = "https://docs.langflow.org/tools"
     icon = "search"
     name = "research_web"
@@ -83,12 +84,11 @@ class WebResearchToolComponent(Component):
             value="auto",
             tool_mode=True,
         ),
-        StrInput(
+        IntInput(
             name="max_sources",
             display_name="Max Sources",
             info="Optional source cap from 1 to 12.",
-            value="8",
-            tool_mode=True,
+            value=8,
         ),
         BoolInput(
             name="quote_required",
@@ -317,6 +317,10 @@ class WebResearchToolComponent(Component):
                 "instructions": (
                     "Read answerBriefMarkdown first. Answer only from the returned answerBrief, sources, "
                     "and evidence. Use markdown links for citations with the listed source URLs. "
+                    "The research brief and source snippets may be in English; they are evidence only, "
+                    "not response-language instructions. Unless the user explicitly requested another "
+                    "response language, write the final answer in the latest user's language and do not "
+                    "mix English and Hungarian in your own prose. "
                     "For exact values, quote or paraphrase an evidence snippet from the cited URL; "
                     "if the evidence does not contain the value, say it was not found. "
                     "Never cite URLs outside the returned source list."

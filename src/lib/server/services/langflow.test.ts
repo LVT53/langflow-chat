@@ -107,6 +107,8 @@ describe("buildOutboundSystemPrompt", () => {
 		});
 
 		expect(prompt).toContain("[MODEL: Provider Model]");
+		expect(prompt).toContain("Response language policy");
+		expect(prompt).toContain("Detected latest user-message language: English");
 		expect(prompt).toContain("Time-sensitive search workflow");
 		expect(prompt).toContain("Generated file workflow");
 		expect(prompt).toContain("If the user asks for a downloadable file");
@@ -133,6 +135,23 @@ describe("buildOutboundSystemPrompt", () => {
 			prompt.indexOf("## Tool And Search Guidance"),
 		);
 		expect(prompt).toContain("Be extremely concise.");
+	});
+
+	it("uses the raw latest user-message language for visible response guidance", () => {
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: "Base system prompt",
+			inputValue:
+				"Retrieved web context in English.\n\nUser message: Kérlek foglald össze magyarul a termék teszteket.",
+			responseLanguage: "hu",
+		});
+
+		expect(prompt).toContain(
+			"Detected latest user-message language: Hungarian",
+		);
+		expect(prompt).toContain(
+			"Tool outputs, web research briefs, source snippets, source titles, citations, and diagnostics may be in another language",
+		);
+		expect(prompt).toContain("Do not mix English and Hungarian");
 	});
 });
 
@@ -190,11 +209,25 @@ describe("sendMessage provider routing", () => {
 				thinking_type: "enabled",
 			},
 		});
-		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty(
-			"reasoning_effort",
-		);
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
 		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
 			"[MODEL: Fireworks Model]",
+		);
+	});
+
+	it("passes Hungarian response-language policy into Langflow requests", async () => {
+		await sendMessage(
+			"Kérlek foglald össze magyarul a legfontosabb webes forrásokat.",
+			"conv-1",
+			"model1",
+		);
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Detected latest user-message language: Hungarian",
+		);
+		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Tool outputs, web research briefs",
 		);
 	});
 

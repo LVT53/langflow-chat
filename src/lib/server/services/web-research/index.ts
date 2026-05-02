@@ -3,6 +3,12 @@ import {
 	type RankedTeiItem,
 	rerankItems,
 } from "$lib/server/services/tei-reranker";
+import {
+	canonicalYouTubeUrl,
+	extractYouTubeVideoId,
+	fetchYouTubeTranscript,
+	isYouTubeVideoUrl,
+} from "./youtube";
 
 export type ResearchMode = "quick" | "research" | "exact";
 export type ResearchFreshness = "auto" | "live" | "recent" | "cache";
@@ -57,6 +63,15 @@ export interface ResearchSource {
 	retrievedAt: string;
 	authorityClass: AuthorityClass;
 	authorityScore: number;
+	youtubeTranscript?: {
+		videoId: string;
+		language: string;
+		languageCode: string;
+		isGenerated: boolean;
+		isTranslated: boolean;
+		snippetCount: number;
+		fetchedAt: string;
+	};
 }
 
 export interface ResearchEvidence {
@@ -81,6 +96,7 @@ export interface ResearchBriefSource {
 	authorityScore: number;
 	publishedAt: string | null;
 	updatedAt: string | null;
+	youtubeTranscript?: ResearchSource["youtubeTranscript"];
 }
 
 export interface ResearchBriefEvidence {
@@ -127,6 +143,14 @@ export interface ResearchDiagnostics {
 	evidenceCandidateCount: number;
 	exactEvidenceCandidateCount: number;
 	reranked: boolean;
+	youtubeTranscriptCandidateCount: number;
+	youtubeTranscriptFetchedCount: number;
+	youtubeTranscriptFailedCount: number;
+	youtubeTranscriptErrors: Array<{
+		videoId: string;
+		url: string;
+		error: string;
+	}>;
 	fallbackReasons: string[];
 }
 
@@ -202,15 +226,19 @@ const FRESHNESS_RE =
 const TECHNICAL_RE =
 	/\b(api|docs?|documentation|sdk|error|config|library|package|github|readme|migration|version|release)\b/i;
 const COMMERCE_RE =
-	/\b(price|buy|shop|availability|in stock|spec|model|product|sku|discount|deal)\b/i;
+	/\b(price|buy|shop|availability|in stock|spec|model|product|sku|discount|deal|review|reviews?|unboxing|hands-on|vs)\b/i;
 const NEWS_RE =
 	/\b(news|latest|today|breaking|election|sports|market|stock|earnings)\b/i;
 const HIGH_STAKES_RE =
 	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
+const VIDEO_RESEARCH_RE =
+	/\b(youtube|video|review|reviews?|unboxing|hands-on|hands on|comparison|versus|vs|pros and cons|worth it|best)\b/i;
 const MAX_PLANNED_QUERIES = 6;
 const SOURCE_RERANK_CONFIDENCE_MIN = 40;
 const EXACT_CONTENT_CHARS_MIN = 12_000;
 const RESEARCH_CONTENT_CHARS_MIN = 8_000;
+const MAX_YOUTUBE_TRANSCRIPTS = 3;
+const YOUTUBE_TRANSCRIPT_TIMEOUT_MS = 12_000;
 const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
 const TRAILING_URL_PUNCTUATION_RE = /[.,;:!?]+$/;
 const EXACT_VALUE_RE =
@@ -277,7 +305,7 @@ function inferMode(query: string): ResearchMode {
 	if (containsDirectUrl(query)) return "exact";
 	if (EXACT_FACT_RE.test(query)) return "exact";
 	if (
-		/\b(compare|research|detailed|sources|overview|pros and cons|best)\b/i.test(
+		/\b(compare|comparison|research|detailed|sources|overview|pros and cons|best|review|reviews?|unboxing|hands-on|worth it)\b/i.test(
 			query,
 		)
 	) {
@@ -304,6 +332,17 @@ function inferSourcePolicy(query: string): ResearchSourcePolicy {
 	if (COMMERCE_RE.test(query)) return "commerce";
 	if (NEWS_RE.test(query)) return "news";
 	return "general";
+}
+
+function shouldPlanYouTubeQuery(request: NormalizedResearchRequest): boolean {
+	if (
+		request.sourcePolicy === "technical" ||
+		request.sourcePolicy === "medical_legal_financial" ||
+		request.sourcePolicy === "news"
+	) {
+		return false;
+	}
+	return request.mode !== "quick" && VIDEO_RESEARCH_RE.test(request.query);
 }
 
 function normalizeRequest(
@@ -375,6 +414,9 @@ export function planResearchQueries(
 		addQuery(`${normalized.query} government primary source`, "primary");
 	} else if (normalized.sourcePolicy === "commerce") {
 		addQuery(`${normalized.query} official store specifications`, "official");
+		if (shouldPlanYouTubeQuery(normalized)) {
+			addQuery(`${normalized.query} YouTube review transcript`, "primary");
+		}
 		if (normalized.mode === "exact" || normalized.quoteRequired) {
 			addQuery(`${normalized.query} manufacturer price availability`, "exact");
 		}
@@ -385,6 +427,9 @@ export function planResearchQueries(
 		}
 	} else {
 		addQuery(`${normalized.query} official source`, "official");
+		if (shouldPlanYouTubeQuery(normalized)) {
+			addQuery(`${normalized.query} YouTube review transcript`, "primary");
+		}
 		if (normalized.mode === "research" || normalized.quoteRequired) {
 			addQuery(`${normalized.query} primary source report data`, "primary");
 		}
@@ -403,6 +448,9 @@ export function planResearchQueries(
 }
 
 function canonicalizeUrl(value: string): string {
+	const youtubeVideoId = extractYouTubeVideoId(value);
+	if (youtubeVideoId) return canonicalYouTubeUrl(youtubeVideoId);
+
 	try {
 		const url = new URL(value);
 		url.hash = "";
@@ -687,6 +735,11 @@ function sourceFusionScore(
 		)
 			? 12
 			: 0;
+	const videoIntentBoost =
+		isYouTubeVideoUrl(source.url) && VIDEO_RESEARCH_RE.test(request.query)
+			? 18
+			: 0;
+	const transcriptBoost = source.youtubeTranscript ? 12 : 0;
 	const technicalIntentBoost =
 		request.sourcePolicy === "technical" &&
 		/\b(docs?|documentation|api|reference|readme|release notes?|migration)\b/i.test(
@@ -708,6 +761,8 @@ function sourceFusionScore(
 		freshnessBoost +
 		officialTextBoost +
 		commerceIntentBoost +
+		videoIntentBoost +
+		transcriptBoost +
 		technicalIntentBoost -
 		lowIntentPenalty
 	);
@@ -890,6 +945,9 @@ function sourceRerankText(source: ResearchSource): string {
 		source.text ? truncate(source.text, 3000) : "",
 		`URL: ${source.url}`,
 		`Authority: ${source.authorityClass}`,
+		source.youtubeTranscript
+			? `YouTube transcript: ${source.youtubeTranscript.language} (${source.youtubeTranscript.languageCode}), generated=${source.youtubeTranscript.isGenerated}`
+			: "",
 	]
 		.filter(Boolean)
 		.join("\n");
@@ -1057,6 +1115,111 @@ function termHitCount(value: string, terms: string[]): number {
 	if (terms.length === 0) return 0;
 	const lowerValue = value.toLowerCase();
 	return terms.filter((term) => lowerValue.includes(term)).length;
+}
+
+function buildTranscriptHighlights(
+	transcriptText: string,
+	request: NormalizedResearchRequest,
+): string[] {
+	const terms = queryTerms(request.query);
+	const paragraphs = transcriptText
+		.split(/\n{2,}/)
+		.map((item) => normalizeWhitespace(item))
+		.filter((item) => item.length > 40);
+	if (paragraphs.length === 0) return [];
+
+	return paragraphs
+		.map((paragraph, index) => ({
+			paragraph,
+			score:
+				termHitCount(paragraph, terms) * 10 +
+				(VIDEO_RESEARCH_RE.test(paragraph) ? 4 : 0) -
+				index / 100,
+		}))
+		.sort((left, right) => right.score - left.score)
+		.slice(0, 5)
+		.map((item) => truncate(item.paragraph, 1600));
+}
+
+async function enrichYouTubeTranscriptSources(params: {
+	sources: ResearchSource[];
+	request: NormalizedResearchRequest;
+	config: WebResearchConfig;
+	fetch: typeof fetch;
+	nowIso: string;
+}): Promise<{
+	candidateCount: number;
+	fetchedCount: number;
+	failedCount: number;
+	errors: Array<{ videoId: string; url: string; error: string }>;
+}> {
+	const youtubeSources = params.sources
+		.filter((source) => isYouTubeVideoUrl(source.url))
+		.slice(0, MAX_YOUTUBE_TRANSCRIPTS);
+	const errors: Array<{ videoId: string; url: string; error: string }> = [];
+	let fetchedCount = 0;
+
+	await Promise.all(
+		youtubeSources.map(async (source) => {
+			const videoId = extractYouTubeVideoId(source.url) ?? "";
+			try {
+				const transcript = await fetchYouTubeTranscript({
+					url: source.url,
+					fetch: params.fetch,
+					timeoutMs: YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
+				});
+				if (!transcript) return;
+
+				fetchedCount += 1;
+				if (transcript.title) {
+					source.title = truncate(transcript.title, 300);
+				}
+				source.text = truncate(
+					[
+						`YouTube transcript for ${source.title}.`,
+						`Language: ${transcript.language} (${transcript.languageCode}).`,
+						transcript.isGenerated
+							? "Transcript type: automatically generated captions."
+							: "Transcript type: manually created captions.",
+						transcript.isTranslated
+							? "Transcript was translated by YouTube captions."
+							: "",
+						transcript.text,
+					]
+						.filter(Boolean)
+						.join("\n\n"),
+					contentCharacterBudget(params.request, params.config),
+				);
+				source.highlights = [
+					...buildTranscriptHighlights(transcript.text, params.request),
+					...source.highlights,
+				].slice(0, 8);
+				source.score += 18;
+				source.youtubeTranscript = {
+					videoId: transcript.videoId,
+					language: transcript.language,
+					languageCode: transcript.languageCode,
+					isGenerated: transcript.isGenerated,
+					isTranslated: transcript.isTranslated,
+					snippetCount: transcript.snippetCount,
+					fetchedAt: params.nowIso,
+				};
+			} catch (error) {
+				errors.push({
+					videoId,
+					url: source.url,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}),
+	);
+
+	return {
+		candidateCount: youtubeSources.length,
+		fetchedCount,
+		failedCount: errors.length,
+		errors,
+	};
 }
 
 function previousSentenceStart(value: string, index: number): number {
@@ -1257,6 +1420,7 @@ function buildResearchAnswerBrief(params: {
 }): ResearchAnswerBrief {
 	const instructions = [
 		"Use only the sources and evidence in this brief for web-backed claims.",
+		"The brief may be written in English because it is tool context. It is not a response-language instruction; write the final visible answer in the latest user-message language unless the user explicitly requested another language.",
 		"Cite every web-backed claim with markdown links using the listed source URLs.",
 		"For exact prices, dates, specs, policies, availability, or quotes, rely on evidence snippets; if the value is not in the snippets, say it was not found.",
 		"Do not cite URLs that are not listed in this brief.",
@@ -1275,6 +1439,7 @@ function buildResearchAnswerBrief(params: {
 			authorityScore: source.authorityScore,
 			publishedAt: source.publishedAt,
 			updatedAt: source.updatedAt,
+			youtubeTranscript: source.youtubeTranscript,
 		};
 	});
 	const evidence: ResearchBriefEvidence[] = params.evidence
@@ -1296,8 +1461,13 @@ function buildResearchAnswerBrief(params: {
 			`URL: ${source.url}`,
 			`Authority: ${source.authorityClass} (${source.authorityScore})`,
 			`Provider: ${source.provider}`,
+			source.youtubeTranscript
+				? `Media: YouTube transcript, ${source.youtubeTranscript.language} (${source.youtubeTranscript.languageCode}), generated=${source.youtubeTranscript.isGenerated}, translated=${source.youtubeTranscript.isTranslated}`
+				: "",
 			`Date: ${dateLabel(source)}`,
-		].join("\n"),
+		]
+			.filter(Boolean)
+			.join("\n"),
 	);
 	const evidenceLines = evidence.map((item) =>
 		[
@@ -1361,6 +1531,10 @@ export async function researchWeb(
 		evidenceCandidateCount: 0,
 		exactEvidenceCandidateCount: 0,
 		reranked: false,
+		youtubeTranscriptCandidateCount: 0,
+		youtubeTranscriptFetchedCount: 0,
+		youtubeTranscriptFailedCount: 0,
+		youtubeTranscriptErrors: [],
 		fallbackReasons: [],
 	};
 
@@ -1477,6 +1651,27 @@ export async function researchWeb(
 				...source.highlights,
 			].slice(0, 8);
 		}
+	}
+
+	const youtubeTranscriptResult = await enrichYouTubeTranscriptSources({
+		sources: selectedSources,
+		request: normalized,
+		config,
+		fetch: fetchImpl,
+		nowIso,
+	});
+	diagnostics.youtubeTranscriptCandidateCount =
+		youtubeTranscriptResult.candidateCount;
+	diagnostics.youtubeTranscriptFetchedCount =
+		youtubeTranscriptResult.fetchedCount;
+	diagnostics.youtubeTranscriptFailedCount =
+		youtubeTranscriptResult.failedCount;
+	diagnostics.youtubeTranscriptErrors = youtubeTranscriptResult.errors;
+	if (
+		youtubeTranscriptResult.candidateCount > 0 &&
+		youtubeTranscriptResult.fetchedCount === 0
+	) {
+		diagnostics.fallbackReasons.push("youtube_transcript_unavailable");
 	}
 
 	const rawEvidence = buildEvidenceChunks(
