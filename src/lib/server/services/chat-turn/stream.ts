@@ -155,6 +155,9 @@ export function createServerChunkRuntime({
 		if (!reasoning) return true;
 		const cleanedReasoning = stripToolCallsFromThinking(reasoning);
 		pendingThinkingBuffer += cleanedReasoning;
+		if (!thinkingContent) {
+			pendingThinkingBuffer = stripLeadingResponseMarker(pendingThinkingBuffer);
+		}
 		if (pendingThinkingBuffer.length >= thinkingBatchMin) {
 			return flushPendingThinking();
 		}

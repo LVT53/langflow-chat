@@ -179,7 +179,7 @@ class WebResearchToolComponent(Component):
             headers["Authorization"] = f"Bearer {signed_assertion}"
 
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=90)
+            response = requests.post(url, headers=headers, json=payload, timeout=90, allow_redirects=False)
 
             if response.status_code == 200:
                 data = response.json()
@@ -203,14 +203,25 @@ class WebResearchToolComponent(Component):
                     "error": "Authentication failed. Check ALFYAI_API_SIGNING_KEY on both Langflow and AlfyAI.",
                 }
 
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("location", "")
+                return {
+                    "success": False,
+                    "error": (
+                        f"AlfyAI redirected research_web to {location or 'another route'} instead of accepting the service call. "
+                        "Make sure the deployed app includes /api/tools/research-web in PUBLIC_PATHS and restart AlfyAI."
+                    ),
+                }
+
             error_data = (
                 response.json()
                 if response.headers.get("content-type", "").startswith("application/json")
                 else {}
             )
+            response_text = "" if error_data else response.text[:500]
             return {
                 "success": False,
-                "error": error_data.get("error", f"API error: {response.status_code}"),
+                "error": error_data.get("error", f"API error: {response.status_code} from {url}. {response_text}".strip()),
             }
 
         except requests.exceptions.Timeout:

@@ -829,6 +829,36 @@ describe("POST /api/chat/stream", () => {
 		expect(body).toContain('"thinking":"Need to break this down."');
 	});
 
+	it("strips a leading Langflow response marker from streamed reasoning", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"response","content":""}}]}\n\n',
+				'event: token\ndata: {"choices":[{"delta":{"reasoning_content":"The user wants me to answer directly.","content":"Final"}}]}\n\n',
+				'event: token\ndata: {"choices":[{"delta":{"content":" answer"}}]}\n\n',
+				"data: [DONE]\n\n",
+			]),
+		);
+
+		const event = makeEvent({ message: "Hi", conversationId: "conv-1" });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain("event: thinking");
+		expect(body).toContain("The user wants me to answer directly.");
+		expect(body).not.toContain('"text":"response');
+		expect(body).toContain('"text":"Final"');
+		expect(body).toContain(
+			'"thinking":"The user wants me to answer directly."',
+		);
+	});
+
 	it("extracts reasoning from OpenAI-compatible final message payloads", async () => {
 		const conversation = {
 			id: "conv-1",
