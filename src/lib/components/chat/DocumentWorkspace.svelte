@@ -159,12 +159,14 @@ function validateAndJumpToPage() {
 	const pageNum = parseInt(pageInputValue, 10);
 
 	if (Number.isNaN(pageNum)) {
-		pageInputError = $t('documentWorkspace.invalidNumber');
+		pageInputError = $t("documentWorkspace.invalidNumber");
 		return;
 	}
 
 	if (pageNum < 1 || pageNum > totalPages) {
-		pageInputError = $t('documentWorkspace.invalidPageRange', { total: totalPages });
+		pageInputError = $t("documentWorkspace.invalidPageRange", {
+			total: totalPages,
+		});
 		return;
 	}
 
@@ -283,7 +285,9 @@ function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
 function getDocumentLifecycleLabel(
 	document: DocumentWorkspaceItem,
 ): string | null {
-	return document.documentFamilyStatus === "historical" ? $t('documentWorkspace.historical') : null;
+	return document.documentFamilyStatus === "historical"
+		? $t("documentWorkspace.historical")
+		: null;
 }
 
 let familyDocuments = $derived.by(() => {
@@ -1054,221 +1058,6 @@ $effect(() => {
 				</button>
 		</div>
 
-{/if}
-		{#if canJumpToSource(activeDocument)}
-			<div class="workspace-actions">
-				{#if canCompareActiveDocument}
-					<button
-						type="button"
-						class="workspace-source-button"
-						onclick={() => {
-							compareMode = !compareMode;
-						}}
-					>
-						{compareMode ? 'Close compare' : 'Compare versions'}
-					</button>
-				{/if}
-				<button
-					type="button"
-					class="workspace-source-button"
-					onclick={() => onJumpToSource?.(activeDocument)}
-				>
-					View source message
-				</button>
-			</div>
-		{/if}
-
-		{#if !canJumpToSource(activeDocument) && canCompareActiveDocument}
-			<div class="workspace-actions">
-				<button
-					type="button"
-					class="workspace-source-button"
-					onclick={() => {
-						compareMode = !compareMode;
-					}}
-				>
-					{compareMode ? 'Close compare' : 'Compare versions'}
-				</button>
-			</div>
-		{/if}
-
-		{#if documents.length > 1}
-			<div class="workspace-tabs" role="tablist" aria-label="Open documents">
-				{#each documents as document (document.id)}
-					<div class="workspace-tab-wrapper">
-						<button
-							type="button"
-							role="tab"
-							class="workspace-tab"
-							class:workspace-tab-active={document.id === activeDocument.id}
-							aria-selected={document.id === activeDocument.id}
-							onclick={() => onSelectDocument(document.id)}
-						>
-							<span class="workspace-tab-label">{getDocumentTitle(document)}</span>
-							{#if getDocumentVersionLabel(document)}
-								<span class="workspace-tab-version">{getDocumentVersionLabel(document)}</span>
-							{/if}
-						</button>
-						<button
-							type="button"
-							class="btn-icon-bare workspace-tab-close"
-							onclick={() => onCloseDocument(document.id)}
-							aria-label={`Close ${getDocumentTitle(document)}`}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="18" x2="6" y1="6" y2="18" />
-								<line x1="6" x2="18" y1="6" y2="18" />
-							</svg>
-						</button>
-					</div>
-				{/each}
-			</div>
-		{/if}
-
-		{#if familyDocuments.length > 1}
-			<div class="workspace-history" aria-label="Document version history">
-				<div class="workspace-history-label">Version History</div>
-				<div class="workspace-history-list">
-					{#each familyDocuments as document (document.id)}
-						<button
-							type="button"
-							class="workspace-history-item"
-							class:workspace-history-item-current={isCurrentFamilyDocument(document)}
-							onclick={() => handleFamilyDocumentOpen(document)}
-						>
-							<div class="workspace-history-topline">
-								<span class="workspace-history-version">
-									{getDocumentVersionLabel(document) ?? $t('documentWorkspace.version')}
-								</span>
-								{#if isLatestFamilyDocument(document)}
-									<span class="workspace-history-badge">{$t('documentWorkspace.latest')}</span>
-								{/if}
-								{#if isCurrentFamilyDocument(document)}
-									<span class="workspace-history-badge workspace-history-badge-current">{$t('documentWorkspace.current')}</span>
-								{/if}
-							</div>
-							<div class="workspace-history-title">{getDocumentTitle(document)}</div>
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		<div class="workspace-body" data-testid="page-scroll-container">
-			{#if isMultiPageDocument(activeDocument)}
-				<div class="workspace-page-nav">
-					<div class="workspace-page-input-wrap">
-						<label class="workspace-page-input-label" for="page-input-desktop">Page</label>
-						<input
-							id="page-input-desktop"
-							type="text"
-							class="workspace-page-input"
-							class:workspace-page-input-error={pageInputError !== null}
-							bind:value={pageInputValue}
-							oninput={handlePageInputChange}
-							onkeydown={handlePageInputKeyDown}
-							data-testid="page-input"
-							aria-invalid={pageInputError !== null}
-							aria-describedby={pageInputError ? 'page-input-error-desktop' : undefined}
-						/>
-						<span class="workspace-page-total">of {currentTotalPages}</span>
-					</div>
-					{#if pageInputError}
-						<span class="workspace-page-error" data-testid="page-input-error" id="page-input-error-desktop">
-							{pageInputError}
-						</span>
-					{/if}
-				</div>
-			{/if}
-			{#if compareMode && comparedDocument}
-				<div class="workspace-compare">
-					<div class="workspace-compare-header">
-						<div>
-							<div class="workspace-compare-title">{$t('documentWorkspace.compareVersionsTitle')}</div>
-							{#if compareSummary}
-								<div class="workspace-compare-summary">
-									{$t('documentWorkspace.compareSummary', { changed: compareSummary.changedLines, added: compareSummary.addedLines, removed: compareSummary.removedLines })}
-								</div>
-							{/if}
-						</div>
-						<label class="workspace-compare-select-wrap">
-							<span class="workspace-compare-select-label">{$t('documentWorkspace.against')}</span>
-							<select class="workspace-compare-select" bind:value={compareDocumentId}>
-								{#each familyDocuments.filter((document) => document.id !== activeDocument.id) as document (document.id)}
-									<option value={document.id}>
-										{getDocumentVersionLabel(document) ?? getDocumentTitle(document)}
-									</option>
-								{/each}
-							</select>
-						</label>
-					</div>
-
-					{#if compareLoading}
-						<div class="workspace-compare-state">Loading comparison…</div>
-					{:else if compareError}
-						<div class="workspace-compare-state workspace-compare-state-error">{compareError}</div>
-					{:else if compareCurrentTextHtml && compareOtherTextHtml}
-						<div class="workspace-compare-grid">
-							<section class="workspace-compare-panel">
-								<div class="workspace-compare-panel-head">
-									<span class="workspace-compare-panel-label">Current</span>
-									<span class="workspace-compare-panel-meta">{getDocumentTitle(activeDocument)} {getDocumentVersionLabel(activeDocument) ?? ''}</span>
-								</div>
-								<div class="workspace-compare-panel-body">
-									{@html compareCurrentTextHtml}
-								</div>
-							</section>
-							<section class="workspace-compare-panel">
-								<div class="workspace-compare-panel-head">
-									<span class="workspace-compare-panel-label">Compared</span>
-									<span class="workspace-compare-panel-meta">{getDocumentTitle(comparedDocument)} {getDocumentVersionLabel(comparedDocument) ?? ''}</span>
-								</div>
-								<div class="workspace-compare-panel-body">
-									{@html compareOtherTextHtml}
-								</div>
-							</section>
-						</div>
-					{/if}
-				</div>
-			{:else}
-					{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-						<FilePreviewComponent
-							open={true}
-							variant="embedded"
-							showHeader={false}
-							artifactId={activeDocument.artifactId ?? null}
-							previewUrl={activeDocument.previewUrl ?? null}
-							filename={activeDocument.filename}
-							mimeType={activeDocument.mimeType}
-							onClose={onCloseWorkspace}
-							bind:currentPage={currentPage}
-							bind:totalPages={currentTotalPages}
-						/>
-					{:catch}
-					<div class="workspace-compare-state workspace-compare-state-error">
-						Failed to load document preview.
-					</div>
-				{/await}
-			{/if}
-		</div>
-
-	{#if fullscreenPreviewOpen}
-		{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-			<FilePreviewComponent
-				open={true}
-				variant="modal"
-				showHeader={true}
-				artifactId={activeDocument.artifactId ?? null}
-				previewUrl={activeDocument.previewUrl ?? null}
-				filename={activeDocument.filename}
-				mimeType={activeDocument.mimeType}
-				onClose={closeFullscreenPreview}
-			/>
-		{:catch}
-			<div class="workspace-fullscreen-fallback" role="status" aria-live="polite">
-				Failed to load fullscreen preview.
-			</div>
-		{/await}
 	{/if}
 {/if}
 

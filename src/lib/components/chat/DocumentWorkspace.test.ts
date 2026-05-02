@@ -21,6 +21,37 @@ describe("DocumentWorkspace", () => {
 		global.fetch = vi.fn();
 	});
 
+	it("renders a single desktop preview body for one open document", async () => {
+		const { container } = render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents: [
+					{
+						id: "generated-file-1",
+						source: "chat_generated_file",
+						filename: "generated.txt",
+						title: "Generated notes",
+						mimeType: "text/plain",
+						artifactId: null,
+						previewUrl: "/api/chat/files/generated-file-1/preview",
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "generated-file-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		await waitFor(() => {
+			expect(
+				container.querySelectorAll('[data-testid="page-scroll-container"]'),
+			).toHaveLength(1);
+		});
+	});
+
 	describe("Multi-page document navigation", () => {
 		it("renders scrollable page container for multi-page documents", async () => {
 			render(DocumentWorkspace, {
