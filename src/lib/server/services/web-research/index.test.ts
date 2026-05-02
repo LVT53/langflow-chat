@@ -508,4 +508,92 @@ describe("researchWeb", () => {
 		expect(result.answerBrief.markdown).toContain("Widget Pro Store Page");
 		expect(result.answerBrief.markdown).toContain("$249");
 	});
+
+	it("extracts exact value quotes from deep opened page text before generic chunk caps", async () => {
+		const productUrl = "https://store.example.com/products/laptop-ultra";
+		const filler = Array.from(
+			{ length: 8 },
+			(_, index) =>
+				`Background section ${index + 1}. ${"Warranty terms and generic product copy. ".repeat(32)}`,
+		);
+		const deepText = [
+			...filler,
+			"The current checkout price is $1,299 before taxes and shipping.",
+		].join("\n\n");
+		const rerankQuotes: string[] = [];
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = input.toString();
+				if (url === "https://api.exa.ai/search") {
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									title: "Laptop Ultra Store",
+									url: productUrl,
+									summary:
+										"Official product page with a long configuration section.",
+									highlights: ["Laptop Ultra store listing."],
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				if (url === "https://api.exa.ai/contents") {
+					const body = JSON.parse(String(init?.body));
+					expect(body.urls).toEqual([productUrl]);
+					expect(body.text.maxCharacters).toBeGreaterThanOrEqual(12_000);
+					return new Response(
+						JSON.stringify({
+							results: [
+								{
+									url: productUrl,
+									title: "Laptop Ultra Store",
+									text: deepText,
+									highlights: [],
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				throw new Error(`Unexpected fetch: ${url}`);
+			},
+		);
+
+		const result = await researchWeb(
+			{
+				query: "current Laptop Ultra price",
+				mode: "exact",
+				sourcePolicy: "commerce",
+				maxSources: 1,
+				quoteRequired: true,
+			},
+			{
+				config: { ...webConfig, braveSearchApiKey: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				rerank: async (params) => {
+					rerankQuotes.push(...params.items.map((item) => item.quote));
+					return {
+						items: params.items
+							.map((item, index) => ({
+								item,
+								index,
+								score: item.quote.includes("$1,299") ? 0.99 : 0.1,
+							}))
+							.sort((left, right) => right.score - left.score),
+						confidence: 99,
+					};
+				},
+			},
+		);
+
+		expect(rerankQuotes.some((quote) => quote.includes("$1,299"))).toBe(true);
+		expect(result.evidence[0]?.quote).toContain("$1,299");
+		expect(result.answerBrief.markdown).toContain("$1,299");
+	});
 });

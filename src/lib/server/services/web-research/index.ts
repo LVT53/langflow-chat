@@ -197,8 +197,34 @@ const HIGH_STAKES_RE =
 	/\b(medical|medicine|legal|law|financial|finance|tax|health|drug|treatment|court|regulation)\b/i;
 const MAX_PLANNED_QUERIES = 6;
 const SOURCE_RERANK_CONFIDENCE_MIN = 40;
+const EXACT_CONTENT_CHARS_MIN = 12_000;
+const RESEARCH_CONTENT_CHARS_MIN = 8_000;
 const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
 const TRAILING_URL_PUNCTUATION_RE = /[.,;:!?]+$/;
+const EXACT_VALUE_RE =
+	/(?:[$\u20ac\u00a3\u00a5]\s?\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{1,2})?\s?(?:USD|EUR|GBP|JPY|dollars?|euros?|pounds?)\b|\b(?:in stock|out of stock|available|unavailable|sold out|pre[- ]?order|ships?\s+(?:by|in|within)\s+[^.!?]{1,48})\b|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d+(?:\.\d+)?\s?(?:%|percent|GB|TB|MB|kg|g|lbs?|inches|inch|cm|mm|mAh|W|V|Hz|kWh)\b|\+?\d[\d\s().-]{7,}\d)/gi;
+const QUERY_STOP_WORDS = new Set([
+	"about",
+	"after",
+	"also",
+	"from",
+	"have",
+	"into",
+	"latest",
+	"much",
+	"price",
+	"show",
+	"shown",
+	"that",
+	"their",
+	"there",
+	"this",
+	"what",
+	"when",
+	"where",
+	"which",
+	"with",
+]);
 
 function toWebResearchConfig(
 	config: RuntimeConfig | WebResearchConfig,
@@ -918,11 +944,15 @@ async function openTopPagesWithExa(params: {
 		return new Map();
 	}
 
+	const contentCharacters = contentCharacterBudget(
+		params.request,
+		params.config,
+	);
 	const urls = params.sources.map((source) => source.url);
 	const body = {
 		urls,
 		highlights: { query: params.request.query, numSentences: 5 },
-		text: { maxCharacters: params.config.webResearchContentChars },
+		text: { maxCharacters: contentCharacters },
 		maxAgeHours:
 			params.request.freshness === "live"
 				? 0
@@ -968,6 +998,20 @@ async function openTopPagesWithExa(params: {
 	return opened;
 }
 
+function contentCharacterBudget(
+	request: NormalizedResearchRequest,
+	config: WebResearchConfig,
+): number {
+	const configured = Math.max(1000, config.webResearchContentChars);
+	if (request.mode === "exact" || request.quoteRequired) {
+		return Math.max(configured, EXACT_CONTENT_CHARS_MIN);
+	}
+	if (request.mode === "research") {
+		return Math.max(configured, RESEARCH_CONTENT_CHARS_MIN);
+	}
+	return configured;
+}
+
 function splitIntoChunks(value: string, maxLength = 1200): string[] {
 	const paragraphs = value
 		.split(/\n{2,}|(?<=\.)\s+(?=[A-Z0-9])/)
@@ -988,12 +1032,134 @@ function splitIntoChunks(value: string, maxLength = 1200): string[] {
 	return chunks.slice(0, 8);
 }
 
+function queryTerms(query: string): string[] {
+	const terms = query
+		.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.map((term) => term.trim())
+		.filter((term) => term.length >= 3 && !QUERY_STOP_WORDS.has(term));
+	return [...new Set(terms)].slice(0, 12);
+}
+
+function termHitCount(value: string, terms: string[]): number {
+	if (terms.length === 0) return 0;
+	const lowerValue = value.toLowerCase();
+	return terms.filter((term) => lowerValue.includes(term)).length;
+}
+
+function previousSentenceStart(value: string, index: number): number {
+	const candidates = [". ", "! ", "? "]
+		.map((marker) => value.lastIndexOf(marker, index))
+		.filter((candidate) => candidate >= 0);
+	const boundary = candidates.length > 0 ? Math.max(...candidates) + 2 : -1;
+	if (boundary >= 0 && index - boundary <= 360) return boundary;
+	return Math.max(0, index - 260);
+}
+
+function nextSentenceEnd(value: string, index: number): number {
+	const rest = value.slice(index);
+	const match = /[.!?](?:\s|$)/.exec(rest);
+	if (match?.index != null) {
+		const boundary = index + match.index + 1;
+		if (boundary - index <= 360) return boundary;
+	}
+	return Math.min(value.length, index + 260);
+}
+
+function exactQuoteWindow(
+	value: string,
+	matchIndex: number,
+	matchLength: number,
+	maxQuoteLength: number,
+): string {
+	const start = previousSentenceStart(value, matchIndex);
+	const end = nextSentenceEnd(value, matchIndex + matchLength);
+	return truncate(value.slice(start, end), maxQuoteLength);
+}
+
+function shouldExtractExactEvidence(
+	request: NormalizedResearchRequest,
+): boolean {
+	return (
+		request.quoteRequired ||
+		request.mode !== "quick" ||
+		request.sourcePolicy === "commerce" ||
+		request.sourcePolicy === "medical_legal_financial"
+	);
+}
+
+function buildExactEvidenceChunks(
+	source: ResearchSource,
+	request: NormalizedResearchRequest,
+	maxQuoteLength: number,
+): ResearchEvidence[] {
+	if (!shouldExtractExactEvidence(request)) return [];
+
+	const terms = queryTerms(request.query);
+	const candidates = new Map<string, ResearchEvidence>();
+	const parts = [
+		...source.highlights,
+		source.snippet ?? "",
+		source.text ?? "",
+	].filter(Boolean);
+
+	for (const [partIndex, part] of parts.entries()) {
+		const normalizedPart = normalizeWhitespace(part);
+		EXACT_VALUE_RE.lastIndex = 0;
+		for (const match of normalizedPart.matchAll(EXACT_VALUE_RE)) {
+			const matchIndex = match.index ?? -1;
+			const rawMatch = match[0] ?? "";
+			if (matchIndex < 0 || !rawMatch.trim()) continue;
+
+			const quote = exactQuoteWindow(
+				normalizedPart,
+				matchIndex,
+				rawMatch.length,
+				maxQuoteLength,
+			);
+			if (!quote) continue;
+
+			const key = quote.toLowerCase();
+			const score =
+				source.score +
+				source.authorityScore +
+				60 +
+				termHitCount(quote, terms) * 6 -
+				partIndex;
+			const existing = candidates.get(key);
+			if (existing && existing.score >= score) continue;
+
+			candidates.set(key, {
+				id: `${source.id}#exact-${partIndex}-${matchIndex}`,
+				sourceId: source.id,
+				title: source.title,
+				url: source.url,
+				provider: source.provider,
+				quote,
+				surroundingText: quote,
+				score,
+				authorityScore: source.authorityScore,
+			});
+		}
+	}
+
+	return [...candidates.values()]
+		.sort((left, right) => {
+			if (right.score !== left.score) return right.score - left.score;
+			return left.id.localeCompare(right.id);
+		})
+		.slice(0, 6);
+}
+
 function buildEvidenceChunks(
 	sources: ResearchSource[],
 	maxQuoteLength: number,
+	request: NormalizedResearchRequest,
 ): ResearchEvidence[] {
 	const chunks: ResearchEvidence[] = [];
 	for (const source of sources) {
+		chunks.push(...buildExactEvidenceChunks(source, request, maxQuoteLength));
+
 		const sourceTextParts = [
 			...source.highlights,
 			source.snippet ?? "",
@@ -1007,7 +1173,7 @@ function buildEvidenceChunks(
 			const quote = truncate(chunk, maxQuoteLength);
 			if (!quote) continue;
 			chunks.push({
-				id: `${source.id}#${index}`,
+				id: `${source.id}#chunk-${index}`,
 				sourceId: source.id,
 				title: source.title,
 				url: source.url,
@@ -1264,8 +1430,9 @@ export async function researchWeb(
 			if (openedContent.title) {
 				source.title = truncate(openedContent.title, 300);
 			}
+			const contentCharacters = contentCharacterBudget(normalized, config);
 			source.text = openedContent.text
-				? truncate(openedContent.text, config.webResearchContentChars)
+				? truncate(openedContent.text, contentCharacters)
 				: source.text;
 			source.highlights = [
 				...openedContent.highlights,
@@ -1277,6 +1444,7 @@ export async function researchWeb(
 	const rawEvidence = buildEvidenceChunks(
 		selectedSources,
 		config.webResearchHighlightChars,
+		normalized,
 	);
 	const rankedEvidence = await rerankEvidence(
 		normalized.query,
