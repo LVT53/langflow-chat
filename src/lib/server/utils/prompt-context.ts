@@ -10,8 +10,18 @@ export type PromptContextSection = {
 	title: string;
 	body: string;
 	layer?: MemoryLayer;
-	essential?: boolean;
+	protected?: boolean;
 	llmCompactible?: boolean;
+};
+
+export type PromptContextSectionSelection = {
+	title: string;
+	body: string;
+	layer?: MemoryLayer;
+	protected: boolean;
+	trimmed: boolean;
+	inclusionLevel: 'full' | 'trimmed' | 'omitted';
+	estimatedTokens: number;
 };
 
 type HistoricalSectionReranker = (params: {
@@ -207,7 +217,7 @@ export async function rerankHistoricalSections(params: {
 
 	const candidateSections = params.sections.filter(
 		(section) =>
-			!section.essential &&
+			!section.protected &&
 			section.llmCompactible &&
 			(section.layer === 'session' || section.layer === 'capsule') &&
 			section.body.trim()
@@ -243,7 +253,7 @@ export async function rerankHistoricalSections(params: {
 
 		return params.sections.filter(
 			(section) =>
-				section.essential ||
+				section.protected ||
 				!candidateSections.includes(section) ||
 				selectedTitles.has(section.title)
 		);
@@ -265,44 +275,120 @@ export function compactContextSections(params: {
 	compactionMode: ConversationContextStatus['compactionMode'];
 	layersUsed: MemoryLayer[];
 	estimatedTokens: number;
+	sectionSelections: PromptContextSectionSelection[];
 } {
 	const bodyParts: string[] = [];
+	const sectionSelections: PromptContextSectionSelection[] = [];
 	const layersUsed = new Set<MemoryLayer>();
-	let usedTokens = estimateTokenCount(params.message) + 12;
 	let compactionApplied = false;
 	let compactionMode = params.initialCompactionMode ?? 'none';
+	const userMessageSection = buildContextSection('Current User Message', params.message);
+
+	function estimateWithSection(sectionText?: string): number {
+		return estimateTokenCount(
+			[
+				params.intro,
+				...bodyParts,
+				sectionText,
+				userMessageSection,
+			]
+				.filter((value): value is string => Boolean(value))
+				.join('\n\n')
+		);
+	}
+
+	function buildTrimmedProtectedSection(section: PromptContextSection): string {
+		const fallback = buildContextSection(section.title, '[truncated]');
+		if (estimateWithSection(fallback) > params.targetTokens) return '';
+
+		const suffix = '\n...[truncated]';
+		let low = 0;
+		let high = section.body.length;
+		let best = fallback;
+
+		while (low <= high) {
+			const mid = Math.floor((low + high) / 2);
+			const candidateBody = section.body.slice(0, mid).trim();
+			const body = candidateBody ? `${candidateBody}${suffix}` : '[truncated]';
+			const candidate = buildContextSection(section.title, body);
+			if (estimateWithSection(candidate) <= params.targetTokens) {
+				best = candidate;
+				low = mid + 1;
+			} else {
+				high = mid - 1;
+			}
+		}
+
+		return best;
+	}
 
 	for (const section of params.sections) {
 		const candidate = buildContextSection(section.title, section.body);
 		if (!candidate) continue;
 		const candidateTokens = estimateTokenCount(candidate);
-		const nextTotal = usedTokens + candidateTokens;
-		if (!section.essential && nextTotal > params.targetTokens) {
+		const nextTotal = estimateWithSection(candidate);
+		if (nextTotal <= params.targetTokens) {
+			bodyParts.push(candidate);
+			sectionSelections.push({
+				title: section.title,
+				body: section.body,
+				layer: section.layer,
+				protected: section.protected ?? false,
+				trimmed: false,
+				inclusionLevel: 'full',
+				estimatedTokens: candidateTokens,
+			});
+			if (section.layer) layersUsed.add(section.layer);
+			continue;
+		}
+
+		if (section.protected) {
+			const truncated = buildTrimmedProtectedSection(section);
+			if (truncated) {
+				bodyParts.push(truncated);
+				sectionSelections.push({
+					title: section.title,
+					body: truncated.replace(/^## .+\n/, ''),
+					layer: section.layer,
+					protected: true,
+					trimmed: true,
+					inclusionLevel: 'trimmed',
+					estimatedTokens: estimateTokenCount(truncated),
+				});
+				if (section.layer) layersUsed.add(section.layer);
+			} else {
+				sectionSelections.push({
+					title: section.title,
+					body: '',
+					layer: section.layer,
+					protected: true,
+					trimmed: false,
+					inclusionLevel: 'omitted',
+					estimatedTokens: 0,
+				});
+			}
 			compactionApplied = true;
 			if (compactionMode === 'none') compactionMode = 'deterministic';
 			continue;
 		}
-		if (section.essential && nextTotal > params.targetTokens) {
-			const remaining = Math.max(400, params.targetTokens - usedTokens - 200);
-			const truncated = buildContextSection(
-				section.title,
-				truncateToTokenBudget(section.body, remaining)
-			);
-			bodyParts.push(truncated);
-			usedTokens += estimateTokenCount(truncated);
-			compactionApplied = true;
-			if (compactionMode === 'none') compactionMode = 'deterministic';
-		} else {
-			bodyParts.push(candidate);
-			usedTokens = nextTotal;
-		}
-		if (section.layer) layersUsed.add(section.layer);
+
+		sectionSelections.push({
+			title: section.title,
+			body: '',
+			layer: section.layer,
+			protected: false,
+			trimmed: false,
+			inclusionLevel: 'omitted',
+			estimatedTokens: 0,
+		});
+		compactionApplied = true;
+		if (compactionMode === 'none') compactionMode = 'deterministic';
 	}
 
 	const inputValue = [
 		params.intro,
 		...bodyParts,
-		buildContextSection('Current User Message', params.message),
+		userMessageSection,
 	].join('\n\n');
 
 	return {
@@ -311,5 +397,6 @@ export function compactContextSections(params: {
 		compactionMode,
 		layersUsed: Array.from(layersUsed),
 		estimatedTokens: estimateTokenCount(inputValue),
+		sectionSelections,
 	};
 }

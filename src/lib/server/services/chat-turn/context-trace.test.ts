@@ -76,4 +76,47 @@ describe("Context Trace", () => {
 			"private attachment body",
 		);
 	});
+
+	it("preserves protected context inclusion levels from context selection", () => {
+		const trace = buildLegacyContextTrace({
+			conversationId: "conv-1",
+			userId: "user-1",
+			modelId: "model1",
+			modelName: "local-model",
+			attempt: 1,
+			phase: "context_selection",
+			contextSource: "live",
+			budget: {
+				maxModelContext: 10_000,
+				targetConstructedContext: 6_000,
+				reservedEstimate: 500,
+				promptEstimate: 2_000,
+				outputReserve: 1_000,
+				wasBudgetEnforced: true,
+			},
+			sections: [
+				{
+					name: "Task State",
+					source: "task_state",
+					body: "",
+					protected: true,
+					trimmed: false,
+					inclusionLevel: "omitted",
+				} as never,
+			],
+			limitations: [],
+			warnings: [],
+			fallbacks: [],
+		});
+
+		expect(trace.sections[0]).toEqual(
+			expect.objectContaining({
+				name: "Task State",
+				protected: true,
+				trimmed: false,
+				inclusionLevel: "omitted",
+				estimatedTokens: 0,
+			}),
+		);
+	});
 });

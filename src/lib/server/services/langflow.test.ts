@@ -352,6 +352,63 @@ describe("sendMessage provider routing", () => {
 		expect(JSON.stringify(traceCall)).not.toContain("Private attachment body");
 	});
 
+	it("emits protected section inclusion decisions from context selection", async () => {
+		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: [
+				"Context from your conversation history:",
+				"## Current User Message\nCan you help?",
+			].join("\n\n"),
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: { source: "live" },
+			honchoSnapshot: null,
+			contextTraceSections: [
+				{
+					name: "Task State",
+					source: "task_state",
+					body: "",
+					protected: true,
+					trimmed: false,
+					inclusionLevel: "omitted",
+				},
+				{
+					name: "Current User Message",
+					source: "user",
+					body: "Can you help?",
+					protected: false,
+					trimmed: false,
+					inclusionLevel: "legacy_full",
+				},
+			],
+		});
+
+		await sendMessage("Can you help?", "conv-1", "model1", { id: "user-1" });
+
+		const traceCall = info.mock.calls.find(
+			(call) => call[0] === "[CONTEXT_TRACE]",
+		);
+		expect(traceCall?.[1]).toMatchObject({
+			sections: expect.arrayContaining([
+				expect.objectContaining({
+					name: "Task State",
+					source: "task_state",
+					protected: true,
+					trimmed: false,
+					inclusionLevel: "omitted",
+					estimatedTokens: 0,
+				}),
+				expect.objectContaining({
+					name: "Current User Message",
+					source: "user",
+					protected: false,
+					inclusionLevel: "legacy_full",
+				}),
+			]),
+		});
+	});
+
 	it("normalizes provider API bases before sending Langflow model tweaks", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",

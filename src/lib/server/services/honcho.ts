@@ -33,7 +33,12 @@ import {
 	selectRecentRoleTurns,
 	truncateToTokenBudget,
 	type PromptContextSection,
+	type PromptContextSectionSelection,
 } from '$lib/server/utils/prompt-context';
+import type {
+	ContextTraceSource,
+	LegacyContextTraceSectionInput,
+} from './chat-turn/context-trace';
 import {
 	AttachmentReadinessError,
 	findRelevantKnowledgeArtifacts,
@@ -92,6 +97,54 @@ const HONCHO_ID_HASH_LENGTH = 32;
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
 // - local persona-memory, task-state, and document-resolution remain authoritative for freshness-sensitive
 //   truth, task continuity, and working-document identity
+
+function inferContextTraceSourceForSection(
+	section: Pick<PromptContextSectionSelection, 'title' | 'layer'>
+): ContextTraceSource {
+	const normalizedTitle = section.title.toLowerCase();
+	if (normalizedTitle.includes('attachment')) return 'attachment';
+	if (normalizedTitle.includes('user memory')) return 'memory';
+	if (normalizedTitle.includes('session')) return 'session';
+	if (normalizedTitle.includes('task')) return 'task_state';
+	if (normalizedTitle.includes('evidence') || section.layer === 'working_set') {
+		return 'working_set';
+	}
+	if (section.layer === 'documents') return 'document';
+	if (section.layer === 'task_state') return 'task_state';
+	if (section.layer === 'session') return 'session';
+	return 'session';
+}
+
+function buildContextTraceSections(params: {
+	sections: PromptContextSectionSelection[];
+	message: string;
+}): LegacyContextTraceSectionInput[] {
+	return [
+		...params.sections.map((section) => ({
+			name: section.title,
+			source: inferContextTraceSourceForSection(section),
+			body: section.body,
+			inclusionLevel:
+				section.inclusionLevel === 'omitted'
+					? ('omitted' as const)
+					: section.trimmed
+						? ('legacy_truncated' as const)
+						: ('legacy_full' as const),
+			trimmed: section.trimmed,
+			protected: section.protected,
+			signalReasons: [],
+		})),
+		{
+			name: 'Current User Message',
+			source: 'user',
+			body: params.message,
+			inclusionLevel: 'legacy_full',
+			trimmed: false,
+			protected: false,
+			signalReasons: ['current_user_message'],
+		},
+	];
+}
 
 function normalizePeerIdFragment(rawId: string): string {
 	const trimmed = rawId.trim();
@@ -1100,6 +1153,7 @@ export async function buildConstructedContext(params: {
 	contextDebug: ContextDebugState | null;
 	honchoContext: HonchoContextInfo | null;
 	honchoSnapshot: HonchoContextSnapshot | null;
+	contextTraceSections: LegacyContextTraceSectionInput[];
 }> {
 	const attachmentIds = params.attachmentIds ?? [];
 	const [
@@ -1270,7 +1324,7 @@ export async function buildConstructedContext(params: {
 			title: 'Task State',
 			body: formatTaskStateForPrompt(taskState),
 			layer: 'task_state',
-			essential: true,
+			protected: true,
 		});
 	}
 
@@ -1305,7 +1359,7 @@ export async function buildConstructedContext(params: {
 			title: 'Current Attachments',
 			body: serializedCurrentAttachments,
 			layer: 'documents',
-			essential: true,
+			protected: true,
 		});
 	}
 	if (attachmentIds.length > 0) {
@@ -1367,7 +1421,7 @@ export async function buildConstructedContext(params: {
 				HONCHO_LIVE_CONTEXT_TOKENS
 			),
 			layer: 'session',
-			essential: true,
+			protected: true,
 			llmCompactible: true,
 		});
 	}
@@ -1573,6 +1627,10 @@ export async function buildConstructedContext(params: {
 		contextDebug: await getContextDebugState(params.userId, params.conversationId).catch(() => null),
 		honchoContext,
 		honchoSnapshot,
+		contextTraceSections: buildContextTraceSections({
+			sections: compacted.sectionSelections,
+			message: params.message,
+		}),
 	};
 }
 

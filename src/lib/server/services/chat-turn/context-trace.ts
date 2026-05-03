@@ -27,6 +27,7 @@ export type LegacyContextTraceSectionInput = {
 	name: string;
 	source: ContextTraceSource;
 	body: string;
+	inclusionLevel?: ContextTraceSection["inclusionLevel"];
 	itemIds?: string[];
 	itemTitles?: string[];
 	signalReasons?: string[];
@@ -99,9 +100,11 @@ export function buildLegacyContextTrace(params: {
 		return {
 			name: section.name,
 			source: section.source,
-			inclusionLevel: section.trimmed
-				? ("legacy_truncated" as const)
-				: ("legacy_full" as const),
+			inclusionLevel:
+				section.inclusionLevel ??
+				(section.trimmed
+					? ("legacy_truncated" as const)
+					: ("legacy_full" as const)),
 			estimatedTokens,
 			itemCount: section.itemIds?.length ?? 0,
 			itemIds: section.itemIds ?? [],

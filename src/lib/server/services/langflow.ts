@@ -24,6 +24,7 @@ import {
 	emitContextTrace,
 	type ContextTraceContextSource,
 	type ContextTraceSource,
+	type LegacyContextTraceSectionInput,
 } from "./chat-turn/context-trace";
 
 export type AuthenticatedPromptUser = {
@@ -40,6 +41,7 @@ export type PreparedOutboundChatContext = {
 	contextDebug?: import("$lib/types").ContextDebugState | null;
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
 	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
+	contextTraceSections?: LegacyContextTraceSectionInput[];
 };
 
 export type PromptContextLimits = {
@@ -503,6 +505,7 @@ function emitOutboundContextTrace(params: {
 	providerId?: string | null;
 	modelName: string;
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
+	contextTraceSections?: LegacyContextTraceSectionInput[];
 }): void {
 	try {
 		emitContextTrace(
@@ -532,7 +535,9 @@ function emitOutboundContextTrace(params: {
 						estimateTokenCount(params.inputValue) >=
 						params.contextLimits.targetConstructedContext,
 				},
-				sections: parseLegacyContextSections(params.inputValue),
+				sections:
+					params.contextTraceSections ??
+					parseLegacyContextSections(params.inputValue),
 				limitations: [],
 				warnings: [],
 				fallbacks: [],
@@ -702,6 +707,7 @@ export async function prepareOutboundChatContext(params: {
 		| import("$lib/types").HonchoContextSnapshot
 		| null
 		| undefined;
+	let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
 
 	if (params.user?.id && !params.skipHonchoContext) {
 		const constructed = await buildConstructedContext({
@@ -720,6 +726,7 @@ export async function prepareOutboundChatContext(params: {
 		contextDebug = constructed.contextDebug;
 		honchoContext = constructed.honchoContext;
 		honchoSnapshot = constructed.honchoSnapshot;
+		contextTraceSections = constructed.contextTraceSections;
 	}
 
 	const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
@@ -786,6 +793,7 @@ export async function prepareOutboundChatContext(params: {
 		contextDebug,
 		honchoContext,
 		honchoSnapshot,
+		contextTraceSections,
 	};
 }
 
@@ -858,6 +866,7 @@ export async function sendMessage(
 			| import("$lib/types").HonchoContextSnapshot
 			| null
 			| undefined;
+		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
 		if (user?.id && !options?.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: user.id,
@@ -875,6 +884,7 @@ export async function sendMessage(
 			contextDebug = constructed.contextDebug;
 			honchoContext = constructed.honchoContext;
 			honchoSnapshot = constructed.honchoSnapshot;
+			contextTraceSections = constructed.contextTraceSections;
 		}
 
 		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
@@ -943,6 +953,7 @@ export async function sendMessage(
 			providerId: modelConfig.providerId ?? null,
 			modelName,
 			honchoContext,
+			contextTraceSections,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -1079,6 +1090,7 @@ export async function sendMessageStream(
 			| import("$lib/types").HonchoContextSnapshot
 			| null
 			| undefined;
+		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
 		if (options?.user?.id && !options.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: options.user.id,
@@ -1096,6 +1108,7 @@ export async function sendMessageStream(
 			contextDebug = constructed.contextDebug;
 			honchoContext = constructed.honchoContext;
 			honchoSnapshot = constructed.honchoSnapshot;
+			contextTraceSections = constructed.contextTraceSections;
 		}
 
 		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
@@ -1164,6 +1177,7 @@ export async function sendMessageStream(
 			providerId: modelConfig.providerId ?? null,
 			modelName,
 			honchoContext,
+			contextTraceSections,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
