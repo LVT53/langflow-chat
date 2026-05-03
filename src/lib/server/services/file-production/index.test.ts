@@ -223,6 +223,102 @@ describe('file production service', () => {
 		});
 	});
 
+	it('reuses a durable production job for the same idempotency key', async () => {
+		const { createOrReuseFileProductionJob } = await import('./index');
+
+		const first = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'CSV export',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:file-1',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/data.csv").write_text("a,b\\n1,2")',
+					filename: 'data.csv',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T19:31:30.000Z'),
+		});
+		const second = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'CSV export duplicate',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:file-1',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'duplicate',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T19:31:31.000Z'),
+		});
+
+		expect(first.reused).toBe(false);
+		expect(second.reused).toBe(true);
+		expect(second.job).toMatchObject({
+			id: first.job.id,
+			title: 'CSV export',
+			status: 'queued',
+		});
+	});
+
+	it('persists a failed production job for validation failures', async () => {
+		const { createFailedFileProductionJob, listConversationFileProductionJobs } = await import(
+			'./index'
+		);
+
+		const failed = await createFailedFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Broken export',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:bad-file',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'ruby',
+					sourceCode: 'puts "bad"',
+				},
+			},
+			errorCode: 'invalid_program_language',
+			errorMessage: 'program.language must be python or javascript',
+			retryable: false,
+			now: new Date('2026-05-03T19:31:40.000Z'),
+		});
+
+		expect(failed).toMatchObject({
+			title: 'Broken export',
+			status: 'failed',
+			error: {
+				code: 'invalid_program_language',
+				message: 'program.language must be python or javascript',
+				retryable: false,
+			},
+		});
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((job) => job.id === failed.id)).toMatchObject({
+			status: 'failed',
+			error: {
+				code: 'invalid_program_language',
+			},
+		});
+	});
+
 	it('claims the oldest queued job and records the running attempt', async () => {
 		const {
 			claimNextFileProductionJob,
@@ -516,5 +612,112 @@ describe('file production service', () => {
 		const jobs = await listConversationFileProductionJobs('user-1', 'conv-1');
 		expect(jobs.find((row) => row.id === queuedJob.id)?.status).toBe('cancelled');
 		expect(jobs.find((row) => row.id === runningJob.id)?.status).toBe('cancelled');
+	});
+
+	it('executes a queued program job after creation and links produced files', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+		} = await import('./index');
+		const created = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Executable CSV export',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:exec-file',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/data.csv").write_text("a,b\\n1,2")',
+					filename: 'data.csv',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T20:04:00.000Z'),
+		});
+		const executeCode = vi.fn(async () => ({
+			files: [
+				{
+					filename: 'data.csv',
+					mimeType: 'text/csv',
+					content: Buffer.from('a,b\n1,2'),
+					sizeBytes: 7,
+				},
+			],
+			stdout: '',
+			stderr: '',
+			error: null,
+		}));
+		const storeGeneratedFile = vi.fn(async () => {
+			const now = new Date('2026-05-03T20:05:00.000Z');
+			await db.insert(schema.chatGeneratedFiles).values({
+				id: 'file-produced-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				userId: 'user-1',
+				filename: 'data.csv',
+				mimeType: 'text/csv',
+				sizeBytes: 7,
+				storagePath: 'conv-1/file-produced-1.csv',
+				createdAt: now,
+			});
+			return {
+				id: 'file-produced-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				artifactId: null,
+				userId: 'user-1',
+				filename: 'data.csv',
+				mimeType: 'text/csv',
+				sizeBytes: 7,
+				storagePath: 'conv-1/file-produced-1.csv',
+				createdAt: now.getTime(),
+			};
+		});
+
+		const result = await executeNextFileProductionJob({
+			workerId: 'worker-exec',
+			executeCode,
+			storeGeneratedFile,
+			now: new Date('2026-05-03T20:05:00.000Z'),
+		});
+
+		expect(result).toMatchObject({
+			job: {
+				id: created.job.id,
+				status: 'succeeded',
+			},
+			files: [
+				expect.objectContaining({
+					id: 'file-produced-1',
+					filename: 'data.csv',
+				}),
+			],
+		});
+		expect(executeCode).toHaveBeenCalledWith(
+			'from pathlib import Path\nPath("/output/data.csv").write_text("a,b\\n1,2")',
+			'python'
+		);
+		expect(storeGeneratedFile).toHaveBeenCalledWith('conv-1', 'user-1', {
+			assistantMessageId: 'assistant-1',
+			filename: 'data.csv',
+			mimeType: 'text/csv',
+			content: expect.any(Buffer),
+		});
+
+		const links = await db
+			.select()
+			.from(schema.fileProductionJobFiles)
+			.where(eq(schema.fileProductionJobFiles.jobId, created.job.id));
+		expect(links).toHaveLength(1);
+		expect(links[0]).toMatchObject({
+			chatGeneratedFileId: 'file-produced-1',
+			sortOrder: 0,
+		});
 	});
 });

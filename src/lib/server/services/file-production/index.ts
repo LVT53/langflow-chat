@@ -1,5 +1,9 @@
 import type { FileProductionJob } from '$lib/types';
-import { getChatFiles } from '$lib/server/services/chat-files';
+import {
+	getChatFiles,
+	storeGeneratedFile as storeChatGeneratedFile,
+	type FileInput,
+} from '$lib/server/services/chat-files';
 import { db } from '$lib/server/db';
 import {
 	fileProductionJobAttempts,
@@ -9,6 +13,7 @@ import {
 import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { ChatFile } from '$lib/server/services/chat-files';
 import { randomUUID } from 'node:crypto';
+import { executeCode as executeSandboxCode } from '$lib/server/services/sandbox-execution';
 
 export interface CreateFileProductionJobInput {
 	userId: string;
@@ -16,7 +21,28 @@ export interface CreateFileProductionJobInput {
 	assistantMessageId?: string | null;
 	title: string;
 	origin: string;
+	idempotencyKey?: string | null;
+	requestJson?: unknown;
+	sourceMode?: string | null;
+	documentIntent?: string | null;
 	now?: Date;
+}
+
+export interface CreateOrReuseFileProductionJobInput extends CreateFileProductionJobInput {
+	idempotencyKey: string;
+	requestJson: unknown;
+	sourceMode: string;
+}
+
+export interface CreateOrReuseFileProductionJobResult {
+	job: FileProductionJob;
+	reused: boolean;
+}
+
+export interface CreateFailedFileProductionJobInput extends CreateFileProductionJobInput {
+	errorCode: string;
+	errorMessage: string;
+	retryable: boolean;
 }
 
 export interface FileProductionJobAttempt {
@@ -74,6 +100,41 @@ export interface ClaimedFileProductionJob {
 	job: FileProductionJob;
 	attempt: FileProductionJobAttempt;
 }
+
+interface ProgramExecutionFile {
+	filename: string;
+	mimeType?: string;
+	content: Buffer | Uint8Array;
+	sizeBytes?: number;
+}
+
+interface ProgramExecutionResult {
+	files: ProgramExecutionFile[];
+	stdout: string;
+	stderr: string;
+	error?: string | null;
+}
+
+export interface ExecuteNextFileProductionJobInput {
+	workerId: string;
+	now?: Date;
+	executeCode?: (sourceCode: string, language: 'python' | 'javascript') => Promise<ProgramExecutionResult>;
+	storeGeneratedFile?: (
+		conversationId: string,
+		userId: string,
+		file: FileInput
+	) => Promise<ChatFile>;
+}
+
+export interface ExecuteNextFileProductionJobResult {
+	job: FileProductionJob;
+	files: FileProductionJob['files'];
+}
+
+const DEFAULT_WORKER_ID = `file-production:${process.pid}:${randomUUID()}`;
+const DEFAULT_STALE_ATTEMPT_MS = 10 * 60 * 1000;
+let workerInitialized = false;
+let drainPromise: Promise<void> | null = null;
 
 function legacyJobId(fileId: string): string {
 	return `legacy-file:${fileId}`;
@@ -167,6 +228,10 @@ export async function createFileProductionJob(
 		errorMessage: null,
 		completedAt: null,
 		cancelRequestedAt: null,
+		idempotencyKey: input.idempotencyKey ?? null,
+		requestJson: input.requestJson === undefined ? null : JSON.stringify(input.requestJson),
+		sourceMode: input.sourceMode ?? null,
+		documentIntent: input.documentIntent ?? null,
 		createdAt: now,
 		updatedAt: now,
 	});
@@ -183,6 +248,97 @@ export async function createFileProductionJob(
 		files: [],
 		warnings: [],
 		error: null,
+	};
+}
+
+export async function createOrReuseFileProductionJob(
+	input: CreateOrReuseFileProductionJobInput
+): Promise<CreateOrReuseFileProductionJobResult> {
+	const existingJobs = await db
+		.select()
+		.from(fileProductionJobs)
+		.where(
+			and(
+				eq(fileProductionJobs.userId, input.userId),
+				eq(fileProductionJobs.conversationId, input.conversationId),
+				eq(fileProductionJobs.idempotencyKey, input.idempotencyKey)
+			)
+		)
+		.limit(1);
+
+	if (existingJobs[0]) {
+		return {
+			job: mapJobRow(existingJobs[0], []),
+			reused: true,
+		};
+	}
+
+	const job = await createFileProductionJob(input);
+	return { job, reused: false };
+}
+
+export async function createFailedFileProductionJob(
+	input: CreateFailedFileProductionJobInput
+): Promise<FileProductionJob> {
+	if (input.idempotencyKey) {
+		const existingJobs = await db
+			.select()
+			.from(fileProductionJobs)
+			.where(
+				and(
+					eq(fileProductionJobs.userId, input.userId),
+					eq(fileProductionJobs.conversationId, input.conversationId),
+					eq(fileProductionJobs.idempotencyKey, input.idempotencyKey)
+				)
+			)
+			.limit(1);
+
+		if (existingJobs[0]) {
+			return mapJobRow(existingJobs[0], []);
+		}
+	}
+
+	const now = input.now ?? new Date();
+	const id = randomUUID();
+	await db.insert(fileProductionJobs).values({
+		id,
+		conversationId: input.conversationId,
+		assistantMessageId: input.assistantMessageId ?? null,
+		userId: input.userId,
+		title: input.title,
+		status: 'failed',
+		stage: null,
+		origin: input.origin,
+		currentAttemptId: null,
+		retryable: input.retryable,
+		errorCode: input.errorCode,
+		errorMessage: input.errorMessage,
+		completedAt: now,
+		cancelRequestedAt: null,
+		idempotencyKey: input.idempotencyKey ?? null,
+		requestJson: input.requestJson === undefined ? null : JSON.stringify(input.requestJson),
+		sourceMode: input.sourceMode ?? null,
+		documentIntent: input.documentIntent ?? null,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	return {
+		id,
+		conversationId: input.conversationId,
+		assistantMessageId: input.assistantMessageId ?? null,
+		title: input.title,
+		status: 'failed',
+		stage: null,
+		createdAt: now.getTime(),
+		updatedAt: now.getTime(),
+		files: [],
+		warnings: [],
+		error: {
+			code: input.errorCode,
+			message: input.errorMessage,
+			retryable: input.retryable,
+		},
 	};
 }
 
@@ -214,6 +370,72 @@ function mapJobRow(
 		files,
 		warnings: [],
 		error: mapError(job),
+	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function parseProgramJobRequest(requestJson: string | null): {
+	ok: true;
+	value: {
+		language: 'python' | 'javascript';
+		sourceCode: string;
+		filename?: string;
+	};
+} | {
+	ok: false;
+	errorCode: string;
+	errorMessage: string;
+} {
+	if (!requestJson) {
+		return {
+			ok: false,
+			errorCode: 'missing_file_production_request',
+			errorMessage: 'File production request details are missing.',
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(requestJson) as unknown;
+	} catch {
+		return {
+			ok: false,
+			errorCode: 'invalid_file_production_request',
+			errorMessage: 'File production request details are invalid.',
+		};
+	}
+
+	if (!isRecord(parsed) || parsed.sourceMode !== 'program' || !isRecord(parsed.program)) {
+		return {
+			ok: false,
+			errorCode: 'unsupported_file_production_request',
+			errorMessage: 'Only program file production jobs can run in this path.',
+		};
+	}
+
+	const language = parsed.program.language;
+	const sourceCode = parsed.program.sourceCode;
+	if ((language !== 'python' && language !== 'javascript') || typeof sourceCode !== 'string') {
+		return {
+			ok: false,
+			errorCode: 'invalid_file_production_request',
+			errorMessage: 'Program file production request details are invalid.',
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			language,
+			sourceCode,
+			filename:
+				typeof parsed.program.filename === 'string' && parsed.program.filename.trim()
+					? parsed.program.filename.trim()
+					: undefined,
+		},
 	};
 }
 
@@ -644,6 +866,260 @@ export async function cancelFileProductionJob(
 	});
 
 	return cancelled ? mapJobRow(cancelled, []) : null;
+}
+
+async function linkProducedFileToJob(params: {
+	jobId: string;
+	chatGeneratedFileId: string;
+	sortOrder: number;
+	createdAt: Date;
+}): Promise<void> {
+	await db
+		.insert(fileProductionJobFiles)
+		.values({
+			id: randomUUID(),
+			jobId: params.jobId,
+			chatGeneratedFileId: params.chatGeneratedFileId,
+			sortOrder: params.sortOrder,
+			createdAt: params.createdAt,
+		})
+		.onConflictDoNothing({ target: fileProductionJobFiles.chatGeneratedFileId });
+}
+
+async function completeFileProductionJobAttempt(input: {
+	jobId: string;
+	attemptId: string;
+	workerId: string;
+	now: Date;
+}): Promise<boolean> {
+	return db.transaction((tx) => {
+		const [job] = tx
+			.select({ id: fileProductionJobs.id })
+			.from(fileProductionJobs)
+			.where(
+				and(
+					eq(fileProductionJobs.id, input.jobId),
+					eq(fileProductionJobs.status, 'running'),
+					eq(fileProductionJobs.currentAttemptId, input.attemptId)
+				)
+			)
+			.limit(1)
+			.all();
+
+		if (!job) {
+			return false;
+		}
+
+		const attemptResult = tx
+			.update(fileProductionJobAttempts)
+			.set({
+				status: 'succeeded',
+				finishedAt: input.now,
+				updatedAt: input.now,
+			})
+			.where(
+				and(
+					eq(fileProductionJobAttempts.id, input.attemptId),
+					eq(fileProductionJobAttempts.jobId, input.jobId),
+					eq(fileProductionJobAttempts.workerId, input.workerId),
+					eq(fileProductionJobAttempts.status, 'running')
+				)
+			)
+			.run();
+
+		if (attemptResult.changes === 0) {
+			return false;
+		}
+
+		tx.update(fileProductionJobs)
+			.set({
+				status: 'succeeded',
+				stage: null,
+				retryable: false,
+				errorCode: null,
+				errorMessage: null,
+				completedAt: input.now,
+				updatedAt: input.now,
+			})
+			.where(
+				and(
+					eq(fileProductionJobs.id, input.jobId),
+					eq(fileProductionJobs.status, 'running'),
+					eq(fileProductionJobs.currentAttemptId, input.attemptId)
+				)
+			)
+			.run();
+
+		return true;
+	});
+}
+
+export async function executeNextFileProductionJob(
+	input: ExecuteNextFileProductionJobInput
+): Promise<ExecuteNextFileProductionJobResult | null> {
+	const now = input.now ?? new Date();
+	const claimed = await claimNextFileProductionJob({
+		workerId: input.workerId,
+		now,
+	});
+	if (!claimed) {
+		return null;
+	}
+
+	const [jobRow] = await db
+		.select()
+		.from(fileProductionJobs)
+		.where(eq(fileProductionJobs.id, claimed.job.id))
+		.limit(1);
+	const request = parseProgramJobRequest(jobRow?.requestJson ?? null);
+	if (!jobRow || !request.ok) {
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: request.ok ? 'missing_file_production_job' : request.errorCode,
+			errorMessage: request.ok ? 'File production job is missing.' : request.errorMessage,
+			retryable: false,
+			now,
+		});
+		return null;
+	}
+
+	const executeCode = input.executeCode ?? executeSandboxCode;
+	const storeGeneratedFile = input.storeGeneratedFile ?? storeChatGeneratedFile;
+	let executionResult: ProgramExecutionResult;
+	try {
+		executionResult = await executeCode(request.value.sourceCode, request.value.language);
+	} catch (error) {
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: 'program_execution_threw',
+			errorMessage: error instanceof Error ? error.message : 'Program execution failed.',
+			retryable: true,
+			now: new Date(),
+		});
+		return null;
+	}
+	if (executionResult.error) {
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: 'program_execution_failed',
+			errorMessage: executionResult.error,
+			retryable: true,
+			now: new Date(),
+		});
+		return null;
+	}
+
+	if (executionResult.files.length === 0) {
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: 'program_no_outputs',
+			errorMessage: 'The program finished without producing files.',
+			retryable: false,
+			now: new Date(),
+		});
+		return null;
+	}
+
+	const producedFiles: FileProductionJob['files'] = [];
+	try {
+		for (const [index, file] of executionResult.files.entries()) {
+			const filename =
+				request.value.filename && executionResult.files.length === 1
+					? request.value.filename
+					: file.filename;
+			const storedFile = await storeGeneratedFile(jobRow.conversationId, jobRow.userId, {
+				assistantMessageId: jobRow.assistantMessageId,
+				filename,
+				mimeType: file.mimeType,
+				content: Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content),
+			});
+			await linkProducedFileToJob({
+				jobId: jobRow.id,
+				chatGeneratedFileId: storedFile.id,
+				sortOrder: index,
+				createdAt: now,
+			});
+			producedFiles.push(mapChatFileToProducedFile(storedFile));
+		}
+	} catch (error) {
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: 'program_output_storage_failed',
+			errorMessage: error instanceof Error ? error.message : 'Program output storage failed.',
+			retryable: true,
+			now: new Date(),
+		});
+		return null;
+	}
+
+	const completed = await completeFileProductionJobAttempt({
+		jobId: claimed.job.id,
+		attemptId: claimed.attempt.id,
+		workerId: input.workerId,
+		now: new Date(),
+	});
+
+	if (!completed) {
+		return null;
+	}
+
+	return {
+		job: {
+			...claimed.job,
+			status: 'succeeded',
+			stage: null,
+			updatedAt: Date.now(),
+			files: producedFiles,
+		},
+		files: producedFiles,
+	};
+}
+
+async function drainFileProductionWorker(): Promise<void> {
+	for (;;) {
+		const result = await executeNextFileProductionJob({
+			workerId: DEFAULT_WORKER_ID,
+		});
+		if (!result) {
+			return;
+		}
+	}
+}
+
+export function wakeFileProductionWorker(): void {
+	if (drainPromise) {
+		return;
+	}
+
+	drainPromise = Promise.resolve()
+		.then(drainFileProductionWorker)
+		.catch((error) => {
+			console.error('[FILE_PRODUCTION] Worker drain failed', { error });
+		})
+		.finally(() => {
+			drainPromise = null;
+		});
+}
+
+export async function ensureFileProductionWorker(): Promise<void> {
+	if (workerInitialized) {
+		return;
+	}
+	workerInitialized = true;
+	await recoverStaleFileProductionAttempts({
+		staleBefore: new Date(Date.now() - DEFAULT_STALE_ATTEMPT_MS),
+	});
+	wakeFileProductionWorker();
 }
 
 export async function listConversationFileProductionJobs(

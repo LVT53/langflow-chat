@@ -526,6 +526,10 @@ export const fileProductionJobs = sqliteTable('file_production_jobs', {
 	errorMessage: text('error_message'),
 	completedAt: integer('completed_at', { mode: 'timestamp' }),
 	cancelRequestedAt: integer('cancel_requested_at', { mode: 'timestamp' }),
+	idempotencyKey: text('idempotency_key'),
+	requestJson: text('request_json'),
+	sourceMode: text('source_mode'),
+	documentIntent: text('document_intent'),
 	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (table) => ({
@@ -538,6 +542,13 @@ export const fileProductionJobs = sqliteTable('file_production_jobs', {
 		table.createdAt
 	),
 	userIdx: index('file_production_jobs_user_idx').on(table.userId, table.createdAt),
+	idempotencyUniqueIdx: uniqueIndex('file_production_jobs_idempotency_unique_idx')
+		.on(table.userId, table.conversationId, table.idempotencyKey)
+		.where(sql`${table.idempotencyKey} IS NOT NULL`),
+	sourceModeIdx: index('file_production_jobs_source_mode_idx').on(
+		table.sourceMode,
+		table.createdAt
+	),
 }));
 
 export const fileProductionJobAttempts = sqliteTable('file_production_job_attempts', {

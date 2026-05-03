@@ -6,6 +6,7 @@ import { db } from "$lib/server/db";
 import { ensureRuntimeSchemaCompatibility } from "$lib/server/db/compat";
 import { users } from "$lib/server/db/schema";
 import { prewarmSandboxImageInBackground } from "$lib/server/sandbox/config";
+import { ensureFileProductionWorker } from "$lib/server/services/file-production";
 import { validateSession } from "$lib/server/services/auth";
 import { ensureMemoryMaintenanceScheduler } from "$lib/server/services/memory-maintenance";
 import { webhookBuffer } from "$lib/server/services/webhook-buffer";
@@ -21,6 +22,7 @@ const PUBLIC_PATHS = [
 	"/api/webhook/sentence",
 	"/api/chat/files/generate",
 	"/api/chat/files/export",
+	"/api/chat/files/produce",
 	"/api/tools/image-search",
 	"/api/tools/research-web",
 	"/api/health",
@@ -45,6 +47,7 @@ function touchLastSeenAt(userId: string): void {
 
 export const init: ServerInit = async () => {
 	await ensureRuntimeSchemaCompatibility();
+	await ensureFileProductionWorker();
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
