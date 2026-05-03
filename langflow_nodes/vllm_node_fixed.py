@@ -284,6 +284,11 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             return reasoning
         return None
 
+    @staticmethod
+    def _has_stream_choices(raw_chunk: dict[str, Any]) -> bool:
+        choices = raw_chunk.get("choices")
+        return isinstance(choices, list) and len(choices) > 0
+
     def _merge_runtime_system_prompt(self, messages: Any) -> list[Any]:
         """Ensure the AlfyAI runtime system prompt reaches the model.
 
@@ -343,6 +348,10 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                     message=AIMessageChunk(content=self._reasoning_to_tagged_content(reasoning)),
                     generation_info={},
                 )
+
+            if not self._has_stream_choices(raw_chunk):
+                logger.debug("[REASONING_STREAM] Skipping provider stream chunk without choices")
+                continue
 
             generation_chunk = self._convert_chunk_to_generation_chunk(
                 raw_chunk,
