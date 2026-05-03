@@ -23,6 +23,7 @@ import {
 	renderStandardReportPdf,
 	StandardReportPdfRenderError,
 } from './renderers/standard-report-pdf';
+import { createDefaultGeneratedDocumentImageLoader } from './image-loader';
 import {
 	validateGeneratedDocumentSource,
 	type GeneratedDocumentSource,
@@ -1095,7 +1096,12 @@ export async function executeNextFileProductionJob(
 		}
 	} else {
 		try {
-			const rendered = await renderStandardReportPdf(request.value.documentSource);
+			const rendered = await renderStandardReportPdf(request.value.documentSource, {
+				imageLoader: createDefaultGeneratedDocumentImageLoader({
+					userId: jobRow.userId,
+					conversationId: jobRow.conversationId,
+				}),
+			});
 			executionResult = {
 				files: [
 					{

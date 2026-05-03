@@ -8,6 +8,9 @@ import {
 } from '../source-schema';
 import { renderStandardReportPdf } from './standard-report-pdf';
 
+const ONE_BY_ONE_PNG_BASE64 =
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+
 function readFixtureSource(filename: string): GeneratedDocumentSource {
 	const fixture = JSON.parse(
 		readFileSync(
@@ -150,5 +153,93 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		await expect(renderStandardReportPdf(validation.source)).rejects.toMatchObject({
 			code: 'table_limit_exceeded',
 		});
+	});
+
+	it('renders image figures with captions and records noncritical placeholders', async () => {
+		const validation = validateGeneratedDocumentSource({
+			title: 'Image figure report',
+			blocks: [
+				{
+					type: 'image',
+					source: {
+						kind: 'data',
+						mimeType: 'image/png',
+						data: `data:image/png;base64,${ONE_BY_ONE_PNG_BASE64}`,
+					},
+					altText: 'One pixel diagram.',
+					caption: 'A compact test figure.',
+					critical: true,
+				},
+				{
+					type: 'image',
+					source: { kind: 'generated_file', fileId: 'missing-file' },
+					altText: 'Missing noncritical figure.',
+					caption: 'Renderer should show a placeholder.',
+					critical: false,
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source, {
+			imageLoader: async (source) => {
+				if (source.kind === 'data') {
+					return {
+						ok: true,
+						image: {
+							bytes: Buffer.from(ONE_BY_ONE_PNG_BASE64, 'base64'),
+							mimeType: 'image/png',
+							sourceDescription: 'data image',
+						},
+					};
+				}
+				return {
+					ok: false,
+					code: 'image_limit_exceeded',
+					message: 'Generated image file could not be resolved.',
+				};
+			},
+		});
+		const pdfDoc = await PDFDocument.load(new Uint8Array(rendered.content));
+
+		expect(pdfDoc.getPageCount()).toBeGreaterThanOrEqual(1);
+		expect(rendered.diagnostics.images).toEqual([
+			expect.objectContaining({
+				caption: 'A compact test figure.',
+				placeholder: false,
+			}),
+			expect.objectContaining({
+				caption: 'Renderer should show a placeholder.',
+				placeholder: true,
+				warningCode: 'image_limit_exceeded',
+			}),
+		]);
+	});
+
+	it('fails critical image blocks when image loading fails', async () => {
+		const validation = validateGeneratedDocumentSource({
+			title: 'Critical image report',
+			blocks: [
+				{
+					type: 'image',
+					source: { kind: 'generated_file', fileId: 'missing-file' },
+					altText: 'Required image.',
+					critical: true,
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		await expect(
+			renderStandardReportPdf(validation.source, {
+				imageLoader: async () => ({
+					ok: false,
+					code: 'image_limit_exceeded',
+					message: 'Generated image file could not be resolved.',
+				}),
+			})
+		).rejects.toMatchObject({ code: 'image_limit_exceeded' });
 	});
 });

@@ -5,10 +5,15 @@ import {
 	PageSizes,
 	rgb,
 	type PDFFont,
+	type PDFImage,
 	type PDFPage,
 	type RGB,
 } from 'pdf-lib';
 import type { GeneratedDocumentBlock, GeneratedDocumentSource } from '../source-schema';
+import {
+	loadGeneratedDocumentImage,
+	type GeneratedDocumentImageLoadResult,
+} from '../image-loader';
 
 const MM_TO_PT = 72 / 25.4;
 const A4 = PageSizes.A4;
@@ -66,7 +71,20 @@ export interface StandardReportPdfRenderResult {
 			repeatedHeaderCount: number;
 			clipped: false;
 		}>;
+		images: Array<{
+			altText: string;
+			caption: string | null;
+			critical: boolean;
+			placeholder: boolean;
+			warningCode: string | null;
+		}>;
 	};
+}
+
+export interface StandardReportPdfRenderOptions {
+	imageLoader?: (
+		source: Extract<GeneratedDocumentBlock, { type: 'image' }>['source']
+	) => Promise<GeneratedDocumentImageLoadResult>;
 }
 
 export class StandardReportPdfRenderError extends Error {
@@ -179,6 +197,7 @@ class StandardReportPdfLayout {
 	private page: PDFPage;
 	private y: number;
 	private readonly tableDiagnostics: StandardReportPdfRenderResult['diagnostics']['tables'] = [];
+	private readonly imageDiagnostics: StandardReportPdfRenderResult['diagnostics']['images'] = [];
 
 	constructor(
 		private readonly pdfDoc: PDFDocument,
@@ -780,6 +799,134 @@ class StandardReportPdfLayout {
 		});
 	}
 
+	private async embedImage(image: GeneratedDocumentImageLoadResult & { ok: true }): Promise<PDFImage> {
+		const bytes = new Uint8Array(image.image.bytes);
+		if (image.image.mimeType === 'image/png') {
+			return this.pdfDoc.embedPng(bytes);
+		}
+		if (image.image.mimeType === 'image/jpeg') {
+			return this.pdfDoc.embedJpg(bytes);
+		}
+		throw new StandardReportPdfRenderError(
+			'image_limit_exceeded',
+			'PDF rendering supports PNG and JPEG images.'
+		);
+	}
+
+	private drawImagePlaceholder(block: Extract<GeneratedDocumentBlock, { type: 'image' }>, code: string): void {
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const height = 96;
+		this.ensureSpace(height + 36);
+		const top = this.y + 4;
+		this.page.drawRectangle({
+			x,
+			y: top - height,
+			width,
+			height,
+			color: hexColor(THEME.panelBackground),
+			borderColor: hexColor(THEME.rule),
+			borderWidth: 0.8,
+		});
+		this.page.drawText('Image unavailable', {
+			x: x + 14,
+			y: top - 34,
+			size: 10,
+			font: this.fonts.bold,
+			color: hexColor(THEME.secondaryText),
+		});
+		this.page.drawText(block.altText, {
+			x: x + 14,
+			y: top - 54,
+			size: 9,
+			font: this.fonts.regular,
+			color: hexColor(THEME.secondaryText),
+		});
+		this.y = top - height - 8;
+		if (block.caption) {
+			this.drawWrapped({
+				text: block.caption,
+				font: this.fonts.regular,
+				size: 9,
+				color: hexColor(THEME.secondaryText),
+				lineHeight: 12,
+			});
+		}
+		this.y -= 10;
+		this.imageDiagnostics.push({
+			altText: block.altText,
+			caption: block.caption ?? null,
+			critical: block.critical === true,
+			placeholder: true,
+			warningCode: code,
+		});
+	}
+
+	async drawImageBlock(
+		block: Extract<GeneratedDocumentBlock, { type: 'image' }>,
+		imageLoader: NonNullable<StandardReportPdfRenderOptions['imageLoader']>
+	): Promise<void> {
+		const loaded = await imageLoader(block.source);
+		if (!loaded.ok) {
+			if (block.critical) {
+				throw new StandardReportPdfRenderError(loaded.code, loaded.message);
+			}
+			this.drawImagePlaceholder(block, loaded.code);
+			return;
+		}
+
+		let embedded: PDFImage;
+		try {
+			embedded = await this.embedImage(loaded);
+		} catch (error) {
+			const code =
+				error instanceof StandardReportPdfRenderError ? error.code : 'image_limit_exceeded';
+			if (block.critical) {
+				throw error instanceof StandardReportPdfRenderError
+					? error
+					: new StandardReportPdfRenderError(code, 'Image could not be embedded.');
+			}
+			this.drawImagePlaceholder(block, code);
+			return;
+		}
+
+		const maxWidth = this.contentWidth();
+		const maxHeight = 280;
+		const scale = Math.min(maxWidth / embedded.width, maxHeight / embedded.height, 1);
+		const width = embedded.width * scale;
+		const height = embedded.height * scale;
+		const captionLines = block.caption
+			? wrapText(block.caption, this.fonts.regular, 9, this.contentWidth())
+			: [];
+		this.ensureSpace(height + captionLines.length * 12 + 24);
+		const x = this.contentX() + (this.contentWidth() - width) / 2;
+		this.page.drawImage(embedded, {
+			x,
+			y: this.y - height,
+			width,
+			height,
+		});
+		this.y -= height + 8;
+		for (const line of captionLines) {
+			this.page.drawText(line, {
+				x: this.contentX(),
+				y: this.y,
+				size: 9,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+			this.y -= 12;
+		}
+		this.y -= 12;
+		this.imageDiagnostics.push({
+			altText: block.altText,
+			caption: block.caption ?? null,
+			critical: block.critical === true,
+			placeholder: false,
+			warningCode: null,
+		});
+	}
+
 	drawUnsupported(blockType: string): never {
 		throw new StandardReportPdfRenderError(
 			'unsupported_pdf_block',
@@ -827,6 +974,10 @@ class StandardReportPdfLayout {
 	getTableDiagnostics(): StandardReportPdfRenderResult['diagnostics']['tables'] {
 		return this.tableDiagnostics;
 	}
+
+	getImageDiagnostics(): StandardReportPdfRenderResult['diagnostics']['images'] {
+		return this.imageDiagnostics;
+	}
 }
 
 async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
@@ -840,7 +991,8 @@ async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
 }
 
 export async function renderStandardReportPdf(
-	source: GeneratedDocumentSource
+	source: GeneratedDocumentSource,
+	options: StandardReportPdfRenderOptions = {}
 ): Promise<StandardReportPdfRenderResult> {
 	const pdfDoc = await PDFDocument.create();
 	pdfDoc.setTitle(source.title);
@@ -858,6 +1010,7 @@ export async function renderStandardReportPdf(
 		layout.drawDocumentTitle();
 	}
 
+	const imageLoader = options.imageLoader ?? loadGeneratedDocumentImage;
 	for (const block of source.blocks) {
 		switch (block.type) {
 			case 'heading':
@@ -887,8 +1040,10 @@ export async function renderStandardReportPdf(
 			case 'table':
 				layout.drawTable(block);
 				break;
-			case 'chart':
 			case 'image':
+				await layout.drawImageBlock(block, imageLoader);
+				break;
+			case 'chart':
 				layout.drawUnsupported(block.type);
 		}
 	}
@@ -914,6 +1069,7 @@ export async function renderStandardReportPdf(
 			blockTypes: source.blocks.map((block) => block.type),
 			pageCount: pdfDoc.getPageCount(),
 			tables: layout.getTableDiagnostics(),
+			images: layout.getImageDiagnostics(),
 		},
 	};
 }
