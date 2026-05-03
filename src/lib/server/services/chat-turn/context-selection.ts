@@ -15,6 +15,7 @@ export type ContextSelectionCandidate = {
 	source: ContextTraceSource;
 	layer?: MemoryLayer;
 	protected?: boolean;
+	budgetPriority?: "core" | "support" | "awareness";
 	itemIds?: string[];
 	itemTitles?: string[];
 	signalReasons?: string[];
@@ -37,6 +38,21 @@ function toTraceInclusionLevel(
 	return selection.trimmed ? "legacy_truncated" : "legacy_full";
 }
 
+function resolveBudgetPriority(
+	candidate: ContextSelectionCandidate,
+): "core" | "support" | "awareness" {
+	if (candidate.budgetPriority) return candidate.budgetPriority;
+	if (candidate.protected) return "core";
+	if (
+		candidate.source === "working_set" ||
+		candidate.source === "generated_output" ||
+		candidate.source === "document"
+	) {
+		return "support";
+	}
+	return "awareness";
+}
+
 export function selectPromptContext(params: {
 	intro: string;
 	message: string;
@@ -44,7 +60,17 @@ export function selectPromptContext(params: {
 	targetTokens: number;
 	initialCompactionMode?: Parameters<typeof compactContextSections>[0]["initialCompactionMode"];
 }): SelectedPromptContext {
-	const sections: PromptContextSection[] = params.candidates.map((candidate) => ({
+	const priorityOrder = { core: 0, support: 1, awareness: 2 } as const;
+	const orderedCandidates = params.candidates
+		.map((candidate, index) => ({ candidate, index }))
+		.sort((left, right) => {
+			const leftPriority = priorityOrder[resolveBudgetPriority(left.candidate)];
+			const rightPriority = priorityOrder[resolveBudgetPriority(right.candidate)];
+			if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+			return left.index - right.index;
+		})
+		.map(({ candidate }) => candidate);
+	const sections: PromptContextSection[] = orderedCandidates.map((candidate) => ({
 		title: candidate.title,
 		body: candidate.body,
 		layer: candidate.layer,
@@ -58,7 +84,7 @@ export function selectPromptContext(params: {
 		initialCompactionMode: params.initialCompactionMode,
 	});
 	const candidatesByTitle = new Map(
-		params.candidates.map((candidate) => [candidate.title, candidate]),
+		orderedCandidates.map((candidate) => [candidate.title, candidate]),
 	);
 	const contextTraceSections: LegacyContextTraceSectionInput[] = [
 		...compacted.sectionSelections.map((selection) => {

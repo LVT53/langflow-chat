@@ -73,4 +73,45 @@ describe("selectPromptContext", () => {
 			]),
 		);
 	});
+
+	it("drops weaker awareness context before stronger core context under pressure", () => {
+		const selected = selectPromptContext({
+			intro: "Context bundle:",
+			message: "Summarize the attached plan.",
+			targetTokens: 70,
+			candidates: [
+				{
+					title: "User Memory",
+					body: "Weak preference memory. ".repeat(5),
+					source: "memory",
+					layer: "session",
+					budgetPriority: "awareness",
+				},
+				{
+					title: "Current Attachments",
+					body: "Attachment: plan.md\nContext mode: Task Context\nCore attachment excerpt.",
+					source: "attachment",
+					layer: "documents",
+					protected: true,
+					budgetPriority: "core",
+					signalReasons: ["attachment_context:task"],
+				},
+			],
+		});
+
+		expect(selected.inputValue).toContain("## Current Attachments");
+		expect(selected.inputValue).not.toContain("## User Memory");
+		expect(selected.contextTraceSections).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Current Attachments",
+					inclusionLevel: "legacy_full",
+				}),
+				expect.objectContaining({
+					name: "User Memory",
+					inclusionLevel: "omitted",
+				}),
+			]),
+		);
+	});
 });
