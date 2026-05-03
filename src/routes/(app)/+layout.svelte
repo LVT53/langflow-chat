@@ -112,7 +112,6 @@
 		initTheme(data.userTheme as 'system' | 'light' | 'dark');
 		initSettings({
 			model: data.userModel,
-			translationEnabled: data.userTranslation,
 			titleLanguage: data.userTitleLanguage,
 			uiLanguage: data.userUiLanguage,
 		});

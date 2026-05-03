@@ -10,7 +10,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 | 2 | `honcho.ts` | ~1,517 | Honcho client lifecycle, session bootstrap, context construction |
 | 3 | `stream-orchestrator.ts` | ~558 | Full chat-turn streaming pipeline, upstream retry, downstream SSE framing |
 | 4 | `chat-turn/stream.ts` | ~247 | Stream framing and cleanup helpers |
-| 5 | `knowledge/store/attachments.ts` | 583 | Upload dedupe, readiness checks, artifact linking |
+| 5 | `knowledge/store/attachments.ts` | ~520 | Upload auto-rename, readiness checks, artifact linking |
 | 6 | `task-state/continuity.ts` | ~989 | Project memory, focus continuity, task-project linking |
 | 7 | `knowledge/context.ts` | ~680 | Working-set ranking, context status, compaction logic |
 | 8 | `knowledge/capsules.ts` | 347 | Workflow summarization, generated-output artifacts |
@@ -32,7 +32,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 - `honcho.ts` mirrors and enriches memory, but it is not the authority for local temporal truth, document lineage, or event history.
 - `src/lib/server/db/compat.ts` is the only allowed place for narrowly scoped runtime SQLite compatibility shims when production safety demands them. It is an emergency additive fallback, not a replacement for `npm run db:prepare`.
 - `tei-embedder.ts` and `tei-reranker.ts` are transport adapters only. They may improve shortlist and rerank quality, but they are not allowed to become a second authority for document identity, active focus, or temporal truth.
-- `semantic-embeddings.ts` owns the durable embedding substrate for artifacts, persona clusters, and task states. Keep source-text hashing, upsert semantics, and readback there instead of reimplementing per-domain mini stores.
+- `semantic-embeddings.ts` owns the durable embedding substrate for artifacts, legacy persona-cluster rows, and task states. Keep source-text hashing, upsert semantics, and readback there instead of reimplementing per-domain mini stores.
 - `semantic-embedding-refresh.ts` owns async refresh/backfill orchestration on top of that store. Artifact/task/persona writers may queue refreshes there, and `memory-maintenance.ts` may run user-scoped backfill there, but do not duplicate those loops in routes or domain-specific services.
 - `semantic-ranking.ts` owns generic shortlist math over stored embeddings. Domain retrieval services may consume it, but they should keep authority-specific weighting and suppression rules local instead of pushing those concerns down into the generic helper.
 - `task-state.ts` may also consume `semantic-ranking.ts` for query-time task routing, but it must keep task status transitions, locked-task precedence, and project continuity truth deterministic on its own side of the boundary.
@@ -45,13 +45,15 @@ Routes (api/chat/send, api/chat/stream)
   ▼
 chat-turn/request.ts ──► chat-turn/preflight.ts
                               │
-                    ┌─────────┼─────────┐
-                    ▼         ▼         ▼
-              chat-turn/   chat-turn/   translator.ts
-              execute.ts   stream.ts ──► stream-parser.ts, thinking-normalizer.ts, tool-call-markers.ts
-                    │         │
-                    └────┬────┘
-                         ▼
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+              chat send          stream-orchestrator.ts ──► stream-parser.ts, thinking-normalizer.ts, tool-call-markers.ts
+                    │                   │
+                    └─────────┬─────────┘
+                              ▼
+                         normalizer.ts
+                              │
+                              ▼
                   chat-turn/finalize.ts
                     │   │   │   │
                     ▼   ▼   ▼   ▼
@@ -64,18 +66,17 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
                        │
                   webhook-buffer.ts (feeds chat-turn streaming pipeline)
                        │
-                  language.ts (feeds chat-turn request/execute)
+                  language.ts (feeds chat-turn request/title prompts)
                        │
                   conversation-drafts.ts (feeds conversation routes)
 ```
 
 **Additional active services not shown above:**
 - `auth/hooks.ts` — `requireAuth`, `getBearerToken` (canonical auth boundary for API routes)
-- `prompts.ts` (src/lib/server/prompts.ts) — system prompt configs for translation rules (consumed by langflow, honcho)
+- `prompts.ts` (src/lib/server/prompts.ts) — shared prompt configuration helpers (consumed by langflow, honcho)
 - `analytics.ts` — analytics event ingestion (consumed by finalize.ts)
 - `pdf-generator.ts` — PDF artifact generation from chat content or file generation requests
 - `image-search.ts` — image search integration (tool endpoint at api/tools/image-search)
-- `ocr/paddle-adapter.ts` — PaddleOCR integration (endpoint at api/ocr/paddle)
 - `projects.ts` (src/lib/server/services/projects.ts) — project CRUD using db + schema.ts directly (active service, not legacy)
 - `server/api/responses.ts` — shared JSON response helpers for API routes (consumed across route files)
 - `webhook-buffer.ts` — sentence-level webhook buffering for streaming turns
@@ -91,14 +92,15 @@ preflightChatTurn()           ← conversation exists? attachments ready?
         │
    ┌────┴────┐
    ▼         ▼
-execute()  stream-orchestrator.ts ← diverge here; orchestrates full pipeline
+send route  stream-orchestrator.ts ← diverge here; orchestrates full pipeline
    │      │
    │    parseUpstreamEvents()  ← Langflow SSE/JSON stream → events
    │    processToolCallMarkers()
    │    normalizeVisibleAssistantText()
-   │    createServerChunkRuntime() → tokens, thinking, tool_calls, output cleanup
-   │         │
-   └────┬────┘
+   │    createServerChunkRuntime() → tokens, thinking, structured tool-call events, output cleanup
+   │      │
+   └──────► normalizer.ts
+          │
         ▼
 persistAssistantTurnState()   ← message, metadata, evidence
         │
@@ -114,14 +116,14 @@ retry-cleanup.ts              ← idempotent cleanup on turn failure (evidence l
 knowledge.ts (facade — re-exports from below)
   ├── store.ts (facade — re-exports from store/*)
   │     ├── store/core.ts         ← artifact CRUD, mapping, WORKING_SET_*_BUDGET
-  │     ├── store/attachments.ts  ← upload → extract → dedupe → link
+  │     ├── store/attachments.ts  ← upload → auto-rename → link
   │     ├── store/documents.ts    ← normalized docs, query matching
   │     └── store/cleanup.ts      ← cross-ref-aware deletion
   ├── context.ts                 ← working-set ranking, compaction status
   └── capsules.ts                ← work capsules, generated outputs
 ```
 
-**Call chain for attachment upload**: `saveUploadedArtifact()` → `document-extraction.ts` → `store/core.ts createArtifact()` → `store/core.ts syncArtifactChunks()` (delegates to `task-state/artifacts.ts`)
+**Call chain for attachment upload**: `saveUploadedArtifact()` → `store/core.ts createArtifact()` → `store/core.ts syncArtifactChunks()` (delegates to `task-state/artifacts.ts`). Text extraction for prompt readiness happens through normalized-document creation, not by turning duplicate uploads into versions.
 
 **Library upload note**: knowledge-page uploads may pass `conversationId = null`; `saveUploadedArtifact()` must skip `attached_to_conversation` link creation in that case, while `/api/knowledge/upload` validates any provided conversation id before insert and keeps Honcho sync conversation-bound.
 
@@ -143,11 +145,11 @@ Authenticated account-level personalization fields such as display name and emai
 
 **Langflow custom-tool note**: for the file generator node, follow Langflow's tool-mode custom-component pattern directly. The agent must see the actual `generate_file` action as the tool; do not expose an intermediate builder method like `build_tool`, or the model may call that method without ever hitting `/api/chat/files/generate`. Keep the source input named `source_code`, not `code`, because Langflow component internals already use `code` and the node can end up posting its own component source instead of the tool argument.
 
-**Persona-memory note**: `persona-memory.ts` now resolves relative-time phrasing such as `in two days` into temporal metadata stored in cluster `metadataJson`, derives `short_term_constraint` and `active_project_context` classes, converts expired temporal memories into historical phrasing on the read path, and performs same-topic temporal supersession before semantic reconcile. Keep those behaviors in the existing cluster pipeline rather than creating a second temporal-memory subsystem.
+**Persona-memory note**: persona memory is delegated to Honcho in the current codebase. Do not reintroduce a local `persona-memory.ts` cluster pipeline, route-local persona caches, or a second temporal-memory subsystem.
 
-**Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary. Local persona clusters remain the authority for temporal freshness and minimum profile readiness, so live/cached Honcho overviews that repeat expired temporal memories or try to speak when there is not enough local durable persona memory must be rejected in favor of the local fallback or empty state.
+**Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary and source-attributed. Live/cached Honcho overviews should degrade to stored Honcho conclusions or an empty state when unavailable; do not block Knowledge Memory on live overview generation.
 
-**Honcho reset note**: cleanup paths that promise a true memory reset must also rotate the per-user Honcho peer version. Deleting sessions, conclusions, cards, and local clusters is not enough if the next chat would still reuse the same Honcho peer id.
+**Honcho reset note**: cleanup paths that promise a true memory reset must also rotate the per-user Honcho peer version. Deleting sessions, conclusions, cards, or local rows is not enough if the next chat would still reuse the same Honcho peer id.
 **Honcho chat-context note**: the chat prompt path should keep Honcho `session.context(...)` session-limited. Do not send a `searchQuery` there without the required `peerTarget`, do not let live Honcho context quietly broaden into workspace-level retrieval when the intent is current-session recall, and do not call live session context at all for a genuinely empty/new session that has no stored turns or snapshot yet.
 **Artifact-ownership note**: artifact reads and cleanup should treat linked conversation ownership as stronger authority than `artifacts.userId` alone. Conversation-scoped working artifacts such as `generated_output` and `work_capsule` are invalid retrieval candidates once their conversation link is gone, even if a stale row still exists.
 
@@ -156,10 +158,10 @@ Authenticated account-level personalization fields such as display name and emai
 **Working-set behavior note**: if behavior learning influences prompt carryover, route it through `working-set.ts` with the same bounded event-derived scores used by retrieval. Do not add a second prompt-only behavior heuristic that can drift away from `document-resolution.ts`.
 **Workspace behavior note**: shared workspace opens may also emit `document_opened` events. Treat reopen counts as a smaller-than-refinement, smaller-than-focus signal and keep them on the same document-resolution/working-set rails instead of inventing a parallel “recent files” authority.
 **Historical-family note**: `documentFamilyStatus: historical` is a lifecycle signal, not a hard filter. Retrieval and prompt carryover may downrank historical families when the turn is otherwise weak/generic, but explicit query matches, active focus, and source-jump flows should still be able to surface them.
-**Correction-salience note**: persona-memory correction handling should stay in `persona-memory.ts` as deterministic cluster metadata plus repaired salience. If a newer persona memory clearly corrects an older overlapping statement, downrank the older cluster until a later reaffirmation updates `lastSeenAt`; do not create a second correction-ranking cache or a route-local override list.
+**Persona-correction note**: persona correction or deletion requests should go through the Honcho memory actions in `memory.ts`/`honcho.ts`; do not create a route-local override list or revive the removed local salience repair path.
 
 **Project-continuity note**: `task-state/continuity.ts` now interprets the newest `project_started` / `project_paused` / `project_resumed` event when resolving current continuity state. Explicit pause/resume phrasing from the user may write those events during turn finalization, and continuity reads should trust them before an older still-active row.
-**Persona-contradiction note**: `persona-memory.ts` now treats high-confidence fact slots such as current location or current role as deterministic contradiction candidates. Use slot metadata plus `supersessionReason`/`memory_events` there instead of broad “latest phrasing wins” heuristics.
+**Persona-contradiction note**: current persona contradiction handling belongs on the Honcho/memory boundary. Do not recreate broad “latest phrasing wins” heuristics in routes or prompt assembly.
 **Document-preference note**: task-state evidence preference writes should stay document-family aware. If a user pins or excludes one artifact version inside a working-document family, clear sibling user preference links for that same family so one version remains current for the task.
 **Active-state note**: structured live signals such as active workspace focus, explicit user correction phrasing, the most recently refined document family, and explicit move-on/reset phrasing should stay first-class in working-set/prompt selection. Prefer those signals over ad hoc semantic-only rescoring when the user is clearly revising or explicitly leaving a current document.
 **Active-state assembly note**: use `active-state.ts` as the shared source for live document focus/correction/current-output/recently-refined-family/reset signals. Avoid rebuilding that logic independently inside `knowledge/context.ts`, `task-state.ts`, or `honcho.ts`, because drift there will make prompt selection and evidence selection disagree about the “current” document.
@@ -171,12 +173,12 @@ Authenticated account-level personalization fields such as display name and emai
 **Embedding-refresh note**: live write paths should queue semantic refreshes asynchronously through `semantic-embedding-refresh.ts`, while slower user-wide backfill belongs in `memory-maintenance.ts`. Do not make artifact creation, task checkpointing, or persona dreaming wait on TEI round-trips.
 **TEI diagnostics note**: keep semantic observability compact and shared through `tei-observability.ts`. Document retrieval, persona prompt recall, and task routing may log one retrieval summary with latency/fallback/candidate counts/winner mode, but avoid duplicating those fields under domain-specific ad hoc log formats.
 **Document semantic note**: `knowledge/store/documents.ts` is now the artifact-level semantic retrieval path for Wave 5. Let it compose lexical candidate fetch, stored-embedding shortlist, and TEI rerank, then keep generated-family identity/focus/history enforcement in `document-resolution.ts` and `knowledge/context.ts`.
-**Persona semantic note**: `persona-memory.ts` may use stored persona-cluster embeddings and bounded rerank scores when selecting prompt-time persona context for a query, but do not turn the Knowledge Memory overview into a second semantic-search surface. Overview composition should still start from the deterministic classified persona items already filtered for freshness and supersession.
+**Persona semantic note**: the legacy `persona_cluster` embedding subject type may exist in persisted data, but current prompt-time persona recall should stay on the Honcho/memory boundary rather than a revived local semantic-search surface.
 **Task semantic note**: `task-state.ts` may use stored task-state embeddings and bounded rerank scores when deciding whether to continue, revive, or create a task for the current turn, but do not let those scores bypass deterministic status rules, locked-task precedence, or project continuity event truth in `task-state/continuity.ts`.
 **Preview-performance note**: keep heavy preview dependencies off the idle shell path. `DocumentWorkspace.svelte`, `GeneratedFile.svelte`, and `knowledge/FilePreview.svelte` now lazy-load the rich preview component, markdown renderer, and PDF worker URL; do not revert those paths back to eager imports unless you re-measure the client bundle cost.
 **Transport note**: preserve `activeDocumentArtifactId` end-to-end through `streaming.ts`, `/api/chat/stream`, `/api/chat/retry`, and `langflow.ts`. The server-side active-state and retrieval helpers cannot recover a workspace-focused document if the browser/request layer drops that id.
 **Repair-loop note**: Wave 5 repair work should reuse the existing generated-output duplicate classifier in `evidence-family.ts` and run it from `memory-maintenance.ts`. Do not invent a parallel “document cleanup” service when retrieval-class repair already compresses low-value duplicate drafts deterministically. The same repair surface now also owns dormant generated-document family downgrades to shared `documentFamilyStatus: "historical"` metadata.
-**Salience-repair note**: low-confidence or weakly supported persona memories should lose prominence through the existing `persona-memory.ts` cluster refresh path. Recompute repaired `salienceScore` from stored cluster metadata/support counts there; do not add a separate maintenance-only salience cache or a second persona-ranking subsystem.
+**Salience-repair note**: do not add a separate maintenance-only salience cache or a second persona-ranking subsystem while persona support is delegated to Honcho.
 
 ## Task-State Submodule Flow
 

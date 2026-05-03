@@ -49,11 +49,6 @@ vi.mock('$lib/server/services/task-state', () => ({
 	updateTaskStateCheckpoint: vi.fn(async () => null),
 }));
 
-vi.mock('$lib/server/services/language', () => ({
-	detectLanguage: vi.fn()
-}));
-
-
 vi.mock('$lib/server/services/honcho', () => ({
 	listPersonaMemories: vi.fn(async () => []),
 	mirrorMessage: vi.fn(async () => undefined),
@@ -75,7 +70,6 @@ import { getConversation, touchConversation } from '$lib/server/services/convers
 import { sendMessage } from '$lib/server/services/langflow';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
-import { detectLanguage } from '$lib/server/services/language';
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
@@ -83,7 +77,6 @@ const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
-const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 
 function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -110,7 +103,6 @@ describe('POST /api/chat/send', () => {
 			content: '',
 			timestamp: Date.now()
 		}));
-		mockDetectLanguage.mockReturnValue('en');
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 	});
 
@@ -176,10 +168,9 @@ describe('POST /api/chat/send', () => {
 		});
 	});
 
-	it('passes messages through without translation', async () => {
+	it('passes messages through unchanged', async () => {
 		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
 		mockGetConversation.mockResolvedValue(conversation);
-		mockDetectLanguage.mockReturnValue('hu');
 		mockSendMessage.mockResolvedValue({ text: 'Hello from AI!', rawResponse: {}, contextStatus: undefined });
 
 		const event = makeEvent({ message: 'Szia', conversationId: 'conv-1' });

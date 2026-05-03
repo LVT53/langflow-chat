@@ -64,11 +64,7 @@ vi.mock('$lib/server/services/chat-turn/request', () => ({
 vi.mock('$lib/server/services/chat-turn/preflight', () => ({
 	preflightChatTurn: vi.fn(async ({ request }) => ({
 		ok: true,
-		value: {
-			...request,
-			sourceLanguage: 'en',
-			translationEnabled: false,
-		},
+		value: request,
 	})),
 }));
 
@@ -92,7 +88,6 @@ function makeEvent(body: Record<string, unknown>) {
 				id: 'user-1',
 				email: 'user@example.com',
 				displayName: 'User',
-				translationEnabled: false,
 			},
 		},
 		params: {},

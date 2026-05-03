@@ -226,6 +226,65 @@ _Avoid_: demo slice, spike, partial path
 > **Dev:** "Should each subsystem add its own prompt text?"
 > **Domain expert:** "No. Subsystems supply **Available Context** and **Context Signals**; **Context Selection** decides what becomes **Prompt Context**."
 
+## Knowledge Library Context
+
+### Language
+
+**Library Document**:
+A document the user has uploaded, imported, or otherwise stored in the Knowledge Library.
+_Avoid_: artifact, file row, evidence item
+
+**Uploaded Document**:
+A **Library Document** created from a user-provided file.
+_Avoid_: source artifact, original file
+
+**Filename Conflict**:
+A Knowledge Library upload whose filename is already used by another **Library Document** for the same user.
+_Avoid_: duplicate version, overwrite candidate
+
+**Auto-Renamed Upload**:
+An **Uploaded Document** whose display name was changed to preserve both files after a **Filename Conflict**.
+_Avoid_: new version, replacement, overwrite
+
+**Generated Document**:
+A document produced by AlfyAI during chat or file generation.
+_Avoid_: uploaded document, attachment, report
+
+**Generated Document Family**:
+A set of **Generated Documents** that are iterations of the same AI-created work item.
+_Avoid_: duplicate upload group, file history
+
+**Generated Document Version**:
+One member of a **Generated Document Family**.
+_Avoid_: uploaded duplicate, library version
+
+**Working Document**:
+A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
+_Avoid_: active file, current artifact
+
+### Relationships
+
+- A **Library Document** may be an **Uploaded Document**.
+- A **Generated Document** is not an **Uploaded Document**.
+- A **Filename Conflict** creates an **Auto-Renamed Upload**.
+- A **Filename Conflict** does not create a **Generated Document Version**.
+- An **Auto-Renamed Upload** remains a separate **Uploaded Document**.
+- Uploaded documents do not form user-visible version history in v1.
+- A **Generated Document Family** may contain one or more **Generated Document Versions**.
+- A **Working Document** may point to either a **Library Document** or a **Generated Document**.
+- Opening a document can make it a **Working Document**, but it does not by itself make the whole body **Prompt Context**.
+
+### Example dialogue
+
+> **Dev:** "If the user uploads `report.pdf` twice, is the second file version 2?"
+> **Domain expert:** "No. That is a **Filename Conflict**, so the second file becomes an **Auto-Renamed Upload** such as `report_1.pdf`."
+>
+> **Dev:** "When do we show version history?"
+> **Domain expert:** "Only for a **Generated Document Family**, where each generated iteration is a **Generated Document Version**."
+>
+> **Dev:** "Can an uploaded PDF be the **Working Document**?"
+> **Domain expert:** "Yes. A **Working Document** can be uploaded or generated, but upload duplicates still stay separate documents."
+
 ## Deep Research Context
 
 ### Language

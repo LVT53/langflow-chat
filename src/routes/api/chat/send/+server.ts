@@ -3,13 +3,13 @@ import { requireAuth } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
-import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import {
 	persistAssistantEvidence,
 	persistAssistantTurnState,
 	persistUserTurnAttachments,
 	runPostTurnTasks,
 } from "$lib/server/services/chat-turn/finalize";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/normalizer";
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { touchConversation } from "$lib/server/services/conversations";
@@ -69,7 +69,6 @@ export const POST: RequestHandler = async (event) => {
 
 	const preflight = await preflightChatTurn({
 		userId: user.id,
-		translationEnabled: user.translationEnabled,
 		request: parsedRequest.value,
 	});
 	if (!preflight.ok) {

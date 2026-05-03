@@ -26,11 +26,11 @@ export const load: ServerLoad = async (event) => {
     role: userRow.role as 'user' | 'admin',
     preferences: {
       preferredModel: await normalizeModelSelectionWithProviders(userRow.preferredModel ?? 'model1'),
-      translationEnabled: (userRow.translationEnabled ?? 0) === 1,
       theme: (userRow.theme ?? 'system') as 'system' | 'light' | 'dark',
       titleLanguage: (userRow.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
       uiLanguage: (userRow.uiLanguage ?? 'en') as 'en' | 'hu',
       avatarId: userRow.avatarId ?? null,
+      preferredPersonalityId: userRow.preferredPersonalityId ?? null,
     },
     profilePicture: userRow.profilePicture ?? null,
   };

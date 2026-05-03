@@ -1,6 +1,6 @@
 # AlfyAI
 
-AlfyAI is a SvelteKit chat application for Langflow-backed AI workflows. It provides streaming chat, a user-scoped knowledge base, optional translation, optional Honcho-backed long-term memory, and SQLite persistence in a single Node deployment.
+AlfyAI is a SvelteKit chat application for Langflow-backed AI workflows. It provides streaming chat, a user-scoped knowledge base, optional Honcho-backed long-term memory, and SQLite persistence in a single Node deployment.
 
 ## Stack At A Glance
 
@@ -8,7 +8,7 @@ AlfyAI is a SvelteKit chat application for Langflow-backed AI workflows. It prov
 - `@sveltejs/adapter-node` for Node server deployment
 - SQLite with `better-sqlite3` and Drizzle ORM
 - Langflow as the primary orchestration backend
-- OpenAI-compatible endpoints for chat, title generation, translation, and optional context summarization
+- OpenAI-compatible endpoints for chat, title generation, and optional context summarization
 - Optional Hugging Face Text Embeddings Inference endpoints for embeddings and reranking
 - Optional Honcho integration for cross-conversation memory
 
@@ -134,7 +134,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - The shared preview/workspace path now lazy-loads the heavy rich-preview stack and markdown highlighter on first open, so idle chat and knowledge pages do not pay the full document-preview cost up front.
 - The working-document workspace now carries document identity and continuity affordances directly in the shell: version history for document families, source-message jump for generated outputs, compare mode for text-like versions, and a shared historical-status badge when a generated-document family has gone dormant.
 - Generated files now become first-class working documents backed by generated-output artifacts, shared family/version metadata, and Honcho sync.
-- The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, translation, memory/context updates, persistence, and response finalization.
+- The shared chat-turn pipeline handles request parsing, attachment readiness, Langflow execution, memory/context updates, persistence, and response finalization.
 - Outbound Langflow prompt assembly includes a centralized date-before-search guard for freshness-sensitive searches.
 - Knowledge-base operations, task-state continuity, and optional Honcho sync sit behind server service boundaries rather than directly in route files.
 - Runtime config comes from environment variables first, with selected values optionally overridden later through the admin settings UI and stored in SQLite.
@@ -145,7 +145,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Markdown responses are rendered with code highlighting and sanitization, so technical answers can mix prose, code blocks, and inline snippets safely.
 - The same app shell supports desktop, tablet, and mobile layouts, with the conversation view remaining the primary surface across breakpoints.
 - Sidebar conversations can be organized into project folders through the existing move flow and desktop drag/drop.
-- Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional translation/memory features are designed as additive layers around the core chat flow rather than separate products.
+- Persistent conversations, AI-generated titles, file-backed knowledge attachments, and optional memory features are designed as additive layers around the core chat flow rather than separate products.
 - Working-document planning and rollout details live in [docs/working-documents-architecture.md](./docs/working-documents-architecture.md) and [docs/working-documents-implementation-plan.md](./docs/working-documents-implementation-plan.md). The direction is to consolidate generated files and attachments onto one document system built on the existing artifact backbone rather than creating overlapping product concepts.
 
 ## Configuration Reference
@@ -220,15 +220,10 @@ Notes before the tables:
 | `MODEL_2_THINKING_TYPE` | No | empty | Optional thinking type passed to compatible providers | Set it only for providers that expect `thinking.type`; Mistral Medium 3.5 maps this to `reasoning_effort` | Valid values: `enabled`, `disabled` |
 | `MODEL_2_ENABLED` | No | `true` | Enables model 2 as a selectable option | Set it to `false` to hide model 2 and force fallback to model 1 | Can also be overridden in admin config |
 
-### Translation, Title Generation, And Summarization
+### Title Generation And Summarization
 
 | Variable | Required? | Default | What it does | When to set it | Caveats |
 |---|---|---:|---|---|---|
-| `TRANSLATOR_URL` | No | `http://localhost:30002/v1` | OpenAI-compatible translation endpoint | Set it when you want automatic translation support | Must be reachable from the app server |
-| `TRANSLATOR_API_KEY` | No | empty | API key for the translation endpoint | Set it if the translator requires auth | Empty is valid for local/private servers |
-| `TRANSLATOR_MODEL` | No | `translategemma` | Model name sent to the translation endpoint | Set it to the served translation model name | Can also be overridden in admin config |
-| `TRANSLATION_MAX_TOKENS` | No | `256` | Max output tokens per translation request | Raise it if translated outputs are getting clipped | Higher values may cost more or take longer |
-| `TRANSLATION_TEMPERATURE` | No | `0.1` | Sampling temperature for translation | Keep it low for deterministic translation | Can also be overridden in admin config |
 | `TITLE_GEN_URL` | No | `http://localhost:30001/v1` | OpenAI-compatible endpoint used for conversation title generation | Set it if titles should be generated by a dedicated model service | Auxiliary service; core chat can still work if it fails |
 | `TITLE_GEN_API_KEY` | No | empty | API key for the title generation endpoint | Set it if the title endpoint requires auth | Empty is valid for local/private servers |
 | `TITLE_GEN_MODEL` | No | `nemotron-nano` | Model name used for title generation | Set it to the exact served model name | Can also be overridden in admin config |
@@ -269,8 +264,7 @@ Notes before the tables:
 | `HONCHO_OVERVIEW_WAIT_MS` | No | `10000` | Timeout for the Knowledge Base live Honcho overview refresh path | Raise it if the overview is usually available but slower than chat-path persona enrichment | Can also be overridden in admin config |
 | `MEMORY_MAINTENANCE_INTERVAL_MINUTES` | No | `0` | Enables periodic maintenance for memory/task-state cleanup | Set it to a positive number to turn on the scheduler | `0` disables the scheduler entirely |
 | `DOCUMENT_PARSER_OCR_ENABLED` | No | `true` | Enables OCR during upload normalization via Liteparse | Set `false` if you want pure non-OCR extraction | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | empty | Liteparse OCR endpoint URL (expects Liteparse OCR API: multipart `file` + `language`) | Leave empty to use Liteparse built-in OCR (Tesseract path); set to your app’s local OCR proxy route only for Paddle integration | Can also be overridden in admin config |
-| `DOCUMENT_PARSER_PADDLE_BACKEND_URL` | No | empty | Upstream Paddle OCR backend URL that the local OCR proxy forwards to | Set to your Paddle service endpoint (for example `http://127.0.0.1:5000/ocr`) | Can also be overridden in admin config |
+| `DOCUMENT_PARSER_OCR_SERVER_URL` | No | empty | Liteparse OCR endpoint URL (expects Liteparse OCR API: multipart `file` + `language`) | Leave empty to use Liteparse built-in OCR (Tesseract path); set only when you run an external OCR server that already implements Liteparse's OCR contract | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_OCR_LANGUAGE` | No | `hun+eng+nld` | OCR language/profile passed to Liteparse OCR engine/server | For built-in Tesseract, prefer 3-letter codes (`hun+eng+nld`). For external OCR adapters, 2-letter profiles like `hu+en+nl` are also accepted. | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_NUM_WORKERS` | No | `4` | OCR worker parallelism used by Liteparse | Raise/lower based on CPU and OCR service capacity | Can also be overridden in admin config |
 | `DOCUMENT_PARSER_MAX_PAGES` | No | `1000` | Maximum pages Liteparse processes per document | Reduce to cap resource usage on large files | Can also be overridden in admin config |
@@ -298,9 +292,8 @@ Notes before the tables:
 - OCR/extraction quality still depends on conversion delegates installed on the host. For HEIC/HEIF/AVIF, verify ImageMagick delegate support explicitly (see AlmaLinux notes below).
 - Liteparse built-in OCR (Tesseract path) is active when `DOCUMENT_PARSER_OCR_SERVER_URL` is empty.
 - If you set `DOCUMENT_PARSER_OCR_SERVER_URL`, Liteparse expects an OCR server contract (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
-- This repo includes an optional local OCR proxy route at `POST /api/ocr/paddle`; use it only when routing to an external Paddle backend via `DOCUMENT_PARSER_PADDLE_BACKEND_URL`.
 - `GET /api/health` exists and returns `{"status":"OK"}`.
-- Auxiliary services such as title generation, translation, and summarization can fail independently without necessarily blocking core chat.
+- Auxiliary services such as title generation and summarization can fail independently without necessarily blocking core chat.
 - A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.

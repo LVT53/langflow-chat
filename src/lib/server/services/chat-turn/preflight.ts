@@ -1,5 +1,4 @@
 import { getConversation } from '$lib/server/services/conversations';
-import { detectLanguage } from '$lib/server/services/language';
 import {
 	assertPromptReadyAttachments,
 	isAttachmentReadinessError,
@@ -16,10 +15,9 @@ type PreflightResult =
 
 export async function preflightChatTurn(params: {
 	userId: string;
-	translationEnabled?: boolean;
 	request: ParsedChatTurnRequest;
 }): Promise<PreflightResult> {
-	const { userId, translationEnabled = false, request } = params;
+	const { userId, request } = params;
 	const conversation = await getConversation(userId, request.conversationId);
 	if (!conversation) {
 		return { ok: false, error: { status: 404, error: 'Conversation not found' } };
@@ -51,10 +49,6 @@ export async function preflightChatTurn(params: {
 
 	return {
 		ok: true,
-		value: {
-			...request,
-			sourceLanguage: detectLanguage(request.normalizedMessage),
-			translationEnabled,
-		},
+		value: request,
 	};
 }

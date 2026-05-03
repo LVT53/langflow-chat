@@ -32,10 +32,7 @@ export type ParsedChatTurnRequest = {
 	attachmentTraceId?: string;
 };
 
-export type PreflightedChatTurn = ParsedChatTurnRequest & {
-	sourceLanguage: string;
-	translationEnabled: boolean;
-};
+export type PreflightedChatTurn = ParsedChatTurnRequest;
 
 export type WorkingSetItem = {
 	id: string;

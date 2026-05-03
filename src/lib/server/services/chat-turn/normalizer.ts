@@ -3,8 +3,8 @@ import {
 	flushInlineThinkingState,
 	processInlineThinkingChunk,
 	splitLeadingThinkingPreamble,
-	stripLeakedToolDiagnostics,
 	stripLeadingResponseMarker,
+	stripLeakedToolDiagnostics,
 } from "$lib/services/stream-protocol";
 import { processToolCallMarkers } from "./tool-call-markers";
 

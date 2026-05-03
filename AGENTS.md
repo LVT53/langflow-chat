@@ -41,14 +41,14 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - TEI embedder/reranker transport belongs in thin server services. Do not bury retrieval authority or semantic tie-break logic inside the raw TEI clients.
 - `src/lib/server/env.ts` owns environment parsing, including `getDatabasePath()` for DB bootstrap-only access. Do not read `DATABASE_PATH` directly anywhere else.
 - `src/lib/server/db/index.ts` is connection/bootstrap only. Do not reintroduce runtime schema mutation there.
-- TEI embedding persistence belongs in the shared `semantic_embeddings` store, not in per-feature side tables. Keep artifact/persona/task semantic storage on the same substrate unless there is a measured reason to split it later.
+- TEI embedding persistence belongs in the shared `semantic_embeddings` store, not in per-feature side tables. Keep artifact and task semantic storage on the same substrate; legacy `persona_cluster` embedding rows may exist, but do not revive a local persona-cluster pipeline around them.
 - `src/lib/server/services/semantic-embedding-refresh.ts` owns async embedding refresh/backfill orchestration. Mutation boundaries may queue refresh work there, and maintenance may run the slower backfill sweep there, but routes should not open-code subject hashing, TEI embedding calls, or per-domain refresh loops.
 - `src/lib/server/services/semantic-ranking.ts` owns generic embedding-based shortlist math. Domain services such as `knowledge/store/documents.ts` may compose it with their own deterministic filters and rerank rules, but they should not each reimplement vector similarity from scratch.
 - `src/lib/server/services/tei-observability.ts` owns compact TEI retrieval summaries. Domain services may report shortlist/rerank latency, fallback reasons, candidate counts, and winner mode there, but do not create route-local debug spam or a second telemetry vocabulary for the same semantic paths.
 - `src/lib/server/services/task-state.ts` may use semantic shortlist and rerank signals when routing the current turn onto an existing task, but active/revived/candidate truth and project continuity state still remain deterministic there.
 - `src/lib/client/conversation-session.ts` owns landing-to-chat handoff state. Do not scatter raw `sessionStorage` keys across pages or components.
 - `src/lib/client/api/` owns reusable browser `fetch` logic. Stores should not become ad hoc HTTP clients.
-- `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/execute.ts`, and the chat stream route.
+- `src/lib/services/stream-protocol.ts` owns shared client/server stream-tag parsing helpers and completed-response control-tag cleanup. Do not duplicate inline thinking-tag parsing or final visible-text extraction across `streaming.ts`, `chat-turn/normalizer.ts`, and the chat stream route.
 - `src/lib/services/streaming.ts` owns the browser stream transport contract, including the distinction between a user-requested stop and a local detach during navigation/unmount. Do not collapse those paths back into one generic abort that marks background disconnects as explicit stops.
 - `src/lib/server/services/messages.ts` owns persisted assistant-message metadata such as evidence summaries and Honcho diagnostics/snapshots. Do not invent route-local shadow storage for those fields.
 - `src/lib/server/services/langflow.ts` owns outbound system-prompt assembly, including always-on date-before-search guidance. Do not reintroduce route-local prompt guards for freshness-sensitive search behavior.
@@ -56,7 +56,7 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - `src/lib/server/services/task-state.ts` is the continuity boundary. Do not reintroduce a parallel `project-memory` architecture.
 - `src/lib/server/services/honcho.ts` is for Honcho-specific behavior only. Do not let it become a second generic prompt/memory engine.
 - `src/lib/server/services/task-state/control-model.ts` is still for structured control-model work such as routing, verification, and semantic JSON tasks. Do not route TEI reranking back through that chat-completions path.
-- `src/lib/server/services/semantic-embeddings.ts` owns durable embedding persistence for artifacts, persona clusters, and task states. Do not hide embedding upserts or source-text hashing in route files or domain-specific side helpers.
+- `src/lib/server/services/semantic-embeddings.ts` owns durable embedding persistence for artifacts, legacy persona-cluster rows, and task states. Do not hide embedding upserts or source-text hashing in route files or domain-specific side helpers.
 
 ## App Map
 
@@ -119,30 +119,29 @@ Do not:
   - [`src/routes/api/chat/stream/+server.ts`](./src/routes/api/chat/stream/+server.ts)
   - [`src/routes/api/chat/stream/stop/+server.ts`](./src/routes/api/chat/stream/stop/+server.ts)
 - Shared pipeline:
-	- [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
-	- [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
-	- [`src/lib/server/services/chat-turn/execute.ts`](./src/lib/server/services/chat-turn/execute.ts)
-		- Utility-only: `buildUpstreamMessage`, `buildSendResponseText`. Not a pipeline stage.
-	- [`src/lib/server/services/chat-turn/stream-orchestrator.ts`](./src/lib/server/services/chat-turn/stream-orchestrator.ts)
-		- Orchestrates the full chat-turn streaming pipeline: upstream event parsing, tool-call marker handling, token/thinking framing, stream buffer management.
-		- Imported by: `src/routes/api/chat/stream/+server.ts`, `src/routes/api/chat/retry/+server.ts`
-	- [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
-		- Re-export hub for stream sub-modules:
-			- [`stream-parser.ts`](./src/lib/server/services/chat-turn/stream-parser.ts)
-			- [`thinking-normalizer.ts`](./src/lib/server/services/chat-turn/thinking-normalizer.ts)
-			- [`tool-call-markers.ts`](./src/lib/server/services/chat-turn/tool-call-markers.ts)
-	- [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
-	- [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
-	- [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
+  - [`src/lib/server/services/chat-turn/request.ts`](./src/lib/server/services/chat-turn/request.ts)
+  - [`src/lib/server/services/chat-turn/preflight.ts`](./src/lib/server/services/chat-turn/preflight.ts)
+  - [`src/lib/server/services/chat-turn/normalizer.ts`](./src/lib/server/services/chat-turn/normalizer.ts)
+    - Canonical assistant-output normalization for send, stream, retry, and title generation.
+  - [`src/lib/server/services/chat-turn/stream-orchestrator.ts`](./src/lib/server/services/chat-turn/stream-orchestrator.ts)
+    - Orchestrates the full chat-turn streaming pipeline: upstream event parsing, tool-call marker handling, token/thinking framing, stream buffer management.
+    - Imported by: `src/routes/api/chat/stream/+server.ts`, `src/routes/api/chat/retry/+server.ts`
+  - [`src/lib/server/services/chat-turn/stream.ts`](./src/lib/server/services/chat-turn/stream.ts)
+    - Re-export hub for stream sub-modules:
+      - [`stream-parser.ts`](./src/lib/server/services/chat-turn/stream-parser.ts)
+      - [`thinking-normalizer.ts`](./src/lib/server/services/chat-turn/thinking-normalizer.ts)
+      - [`tool-call-markers.ts`](./src/lib/server/services/chat-turn/tool-call-markers.ts)
+  - [`src/lib/server/services/chat-turn/active-streams.ts`](./src/lib/server/services/chat-turn/active-streams.ts)
+  - [`src/lib/server/services/chat-turn/finalize.ts`](./src/lib/server/services/chat-turn/finalize.ts)
+  - [`src/lib/server/services/chat-turn/types.ts`](./src/lib/server/services/chat-turn/types.ts)
 - Upstream integrations:
-- [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
-  - Owns model-facing prompt assembly and outbound search/date guidance.
-  - Also owns authenticated account-level prompt personalization fields such as display name and email; pass them once at this boundary instead of rebuilding user identity text in routes or memory services.
-  - [`src/lib/server/services/translator.ts`](./src/lib/server/services/translator.ts)
+  - [`src/lib/server/services/langflow.ts`](./src/lib/server/services/langflow.ts)
+    - Owns model-facing prompt assembly and outbound search/date guidance.
+    - Also owns authenticated account-level prompt personalization fields such as display name and email; pass them once at this boundary instead of rebuilding user identity text in routes or memory services.
   - [`src/lib/server/services/title-generator.ts`](./src/lib/server/services/title-generator.ts)
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)
   - [`src/lib/server/services/message-evidence.ts`](./src/lib/server/services/message-evidence.ts)
-  - Owns evidence channel types for document-backed artifacts
+    - Owns evidence channel types for document-backed artifacts
 - Chat-generated files:
   - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
   - [`src/routes/api/chat/files/[id]/download/+server.ts`](./src/routes/api/chat/files/[id]/download/+server.ts)
@@ -163,8 +162,8 @@ Do not:
 Do:
 
 - put shared request parsing, attachment preflight, model normalization, stream framing, and finalization in `chat-turn/`
-- let `src/lib/server/services/chat-turn/stream.ts` own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and leading-output cleanup
-- let `src/lib/server/services/chat-turn/execute.ts` normalize non-stream assistant text through the shared stream-protocol helpers so `/send` returns the same visible content shape that `/stream` would show
+- let `src/lib/server/services/chat-turn/stream-orchestrator.ts` and the stream submodules own shared upstream event parsing, tool-call marker handling, downstream token/thinking framing, and leading-output cleanup
+- let `src/lib/server/services/chat-turn/normalizer.ts` normalize assistant text through the shared stream-protocol helpers so `/send`, `/stream`, retries, and title generation use the same visible content shape
 - use `src/routes/api/chat/stream/stop/+server.ts` plus `chat-turn/active-streams.ts` for explicit user-requested aborts; do not overload passive disconnect handling for that purpose
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
@@ -296,11 +295,13 @@ Do not:
   - [`src/lib/server/services/task-state/control-model.ts`](./src/lib/server/services/task-state/control-model.ts)
   - [`src/lib/server/services/task-state/continuity.ts`](./src/lib/server/services/task-state/continuity.ts)
   - [`src/lib/server/services/task-state/artifacts.ts`](./src/lib/server/services/task-state/artifacts.ts)
+  - [`src/lib/server/services/task-state/chunk-sync.ts`](./src/lib/server/services/task-state/chunk-sync.ts)
+  - [`src/lib/server/services/task-state/document-preferences.ts`](./src/lib/server/services/task-state/document-preferences.ts)
   - [`src/lib/server/services/task-state/mappers.ts`](./src/lib/server/services/task-state/mappers.ts)
 - Honcho adapter:
   - [`src/lib/server/services/honcho.ts`](./src/lib/server/services/honcho.ts)
--- Persona support:
-	- Delegated to Honcho when enabled; local persona clustering has been removed.
+- Persona support:
+  - Delegated to Honcho when enabled; local persona clustering has been removed.
 - Event log:
   - [`src/lib/server/services/memory-events.ts`](./src/lib/server/services/memory-events.ts)
 - Maintenance/orchestration:
@@ -309,7 +310,7 @@ Do not:
 - Shared helpers:
   - [`src/lib/server/utils/json.ts`](./src/lib/server/utils/json.ts)
   - [`src/lib/server/utils/text.ts`](./src/lib/server/utils/text.ts)
-	- [`src/lib/utils/tokens.ts`](./src/lib/utils/tokens.ts)
+  - [`src/lib/utils/tokens.ts`](./src/lib/utils/tokens.ts)
   - [`src/lib/server/utils/prompt-context.ts`](./src/lib/server/utils/prompt-context.ts)
 
 Rules:
@@ -324,7 +325,11 @@ Rules:
   - task memory and project continuity internals
   - keep project continuity status/event truth deterministic even when task routing gets smarter semantically
 - `task-state/artifacts.ts`
-  - artifact chunking, prompt snippet selection, and historical-context summarization helpers
+  - task-state prompt formatting, prompt snippet selection, and historical-context summarization helpers
+- `task-state/chunk-sync.ts`
+  - artifact chunk splitting and persistence
+- `task-state/document-preferences.ts`
+  - family-aware working-document preference conflict detection
 - `task-state/mappers.ts`
   - task-state row mappers shared by task-state internals
 - `honcho.ts` should stay an integration adapter for Honcho sessions, peers, mirrored messages, and Honcho-specific context.
@@ -332,30 +337,30 @@ Rules:
 - Read-side Honcho session memory should prefer Honcho’s canonical `session.queueStatus()` plus `session.context(...)` flow over manual multi-call fanout, but the chat-path call must stay session-limited. Do not pass `searchQuery` there without the required `peerTarget`, do not let live Honcho context widen into workspace-level retrieval when the intent is current-session recall, and skip live session-context reads entirely for genuinely empty/new sessions that have no stored turns or snapshot yet.
 - Per-turn Honcho diagnostics and last-good Honcho snapshots belong in assistant-message metadata via `messages.ts`, not ad hoc route state.
 - `buildConstructedContext` must degrade gracefully when Honcho is disabled, unavailable, or slow. Core chat cannot block on Honcho connectivity or empty-session bootstrap, but the chosen Honcho source for each turn must remain measurable and source-attributed.
-- `getKnowledgeMemory` and other knowledge-memory reads should use the latest stored persona clusters immediately and treat Honcho overview generation as auxiliary. Do not block the entire Memory Profile on cluster refresh or a live `peer.chat(...)` summary.
-- `memory.ts` owns Memory Profile overview source selection, cached Honcho overview reuse, and overview refresh backoff. Prefer a live Honcho overview only when enough local durable persona memory exists to justify an overview at all, then a matching cached Honcho overview, then a local durable-persona summary before showing an empty-state message.
-- `memory.ts` must apply local temporal truth before trusting Honcho overview text. Expired short-term constraints and other historical temporal memories should not re-enter the Memory Profile just because Honcho returned stale summary prose.
+- `getKnowledgeMemory` and other knowledge-memory reads should treat Honcho conclusions and snapshots as the current persona-memory source. Do not block the Memory Profile on live Honcho overview generation.
+- `memory.ts` owns Memory Profile overview source selection, cached Honcho overview reuse, and overview refresh backoff. Prefer source-attributed Honcho data when available, then degrade to stored conclusions or an empty state.
+- Local persona clustering has been removed. Do not add new local temporal-truth, salience, or supersession logic outside the Honcho/memory boundary.
 - Artifact retrieval and cleanup should treat linked conversation ownership as stronger authority than `artifacts.userId` alone. Conversation-scoped working artifacts such as `generated_output` and `work_capsule` are not valid retrieval candidates once their conversation link is gone, even if a stale row survives in SQLite.
 - `memory-events.ts` owns the persisted normalized event log for important state changes such as deadlines, preference updates, persona fact replacement, project continuity transitions, and document supersession. Add new event types there and emit them from the existing state-change boundaries; do not create ad hoc side logs or route-local event tables.
 - `task-state/continuity.ts` now also consumes the latest task-domain project events on the read path. If a newer `project_paused` or `project_resumed` event exists, continuity summaries should prefer that signal over an older still-active row.
 - User-selected task evidence preferences should stay family-aware for working documents. If a user pins or excludes one version inside a document family, clear contradictory user preference links for sibling versions in that same family instead of letting multiple versions stay preferred at once.
 - Live document-state signals (active workspace focus, current generated document, correction/refinement, move-on/reset) belong in `src/lib/server/services/active-state.ts`. Recompute carryover per turn rather than trusting stale reason codes.
-- `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger full cluster recomputation directly from routes or UI code.
-- `memory-maintenance.ts` is also the lazy semantic-embedding backfill path. Missing or stale artifact/persona/task embeddings should be repaired there rather than blocking chat routes or artifact writes.
+- `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger heavy continuity or embedding repair directly from routes or UI code.
+- `memory-maintenance.ts` is also the lazy semantic-embedding backfill path. Missing or stale artifact/task embeddings should be repaired there rather than blocking chat routes or artifact writes. Treat legacy persona embedding repair as migration cleanup, not a new local persona-memory feature.
 - Generated-output duplicate repair should also run through `memory-maintenance.ts`, not as a separate ad hoc sweep. Reuse `evidence-family.ts` retrieval-class repair so low-value near-duplicate drafts stay compressed out of broad retrieval while document history still remains available through the working-document system.
 - Generated-document lifecycle state should stay on the existing working-document metadata contract. If a generated-document family becomes dormant, let `memory-maintenance.ts` and `evidence-family.ts` mark the latest family representative as `historical`; do not create a second document-lifecycle table or route-local stale-document cache for that purpose.
 - keep Knowledge Memory observability on the existing overview boundary. `memory.ts` now logs a single `[KNOWLEDGE_MEMORY] Selected overview source` summary; do not add route-local overview-source logging when the source decision already happened there.
 - Historical working-document families are soft-deprioritized, not hidden. If maintenance has already marked a family `historical`, retrieval and prompt carryover may apply a bounded ranking penalty, but explicit query/document matches and direct source navigation must still work.
 - Project continuity contradiction handling should stay in the existing continuity boundary: explicit pause/resume language may record task-domain events and update continuity state immediately, but the authoritative current status still belongs to `task-state/continuity.ts`, not Honcho or a route-local heuristic.
-- Prompt-time persona recall may blend lexical and semantic query scoring, but the Knowledge Memory Overview remains a deterministic classified summary of already-filtered persona items rather than an embedding-search result.
-- Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Persona-memory canonicalization must not invent "today/now" timing for undated events.
+- Prompt-time persona recall belongs on the Honcho/memory boundary; do not build a second lexical/semantic persona search surface beside Honcho conclusions.
+- Treat Honcho conclusion `createdAt` values as storage/observation timestamps, not proof of the real-world date of the remembered event. Prompt text must not invent "today/now" timing for undated persona events.
 
 Do not:
 
 - create a new top-level continuity service when `task-state.ts` can own the behavior
 - copy `clip`, token estimation, JSON parsing, or prompt-compaction helpers into another service
 - move generic prompt-section rendering into `honcho.ts`
-- import or extend `project-memory.ts`; if it still exists on disk, treat it as legacy and non-authoritative
+- create or restore `project-memory.ts`; project continuity belongs in `task-state.ts` and `task-state/continuity.ts`
 
 ### Config And Environment
 
@@ -383,7 +388,7 @@ Notes:
   - `MAX_MODEL_CONTEXT` (default: 262144) - Maximum tokens the model context window supports
   - `COMPACTION_UI_THRESHOLD` (default: 209715) - UI warning threshold at 80% of max
   - `TARGET_CONSTRUCTED_CONTEXT` (default: 157286) - Target context size at 60% of max
-  - Use getter functions in `config-store.ts` (e.g., `getMaxModelContext()`, `getCompactionUIThreshold()`, `getTargetConstructedContext()`) to read these values with admin overrides applied.
+  - Use getter functions in `config-store.ts` (e.g., `getMaxModelContext()`, `getCompactionUiThreshold()`, `getTargetConstructedContext()`) to read these values with admin overrides applied.
 
 If you add a new runtime-configurable setting:
 
@@ -444,8 +449,7 @@ Do not:
 
 Legacy/avoidance notes:
 
-
-Treat those `src/lib/server/db/*.ts` wrappers as legacy compatibility leftovers unless you verify a real active need. New persistence logic should normally live in the relevant service and use `db` plus `schema.ts` directly.
+`src/lib/server/db/compat.ts` is a narrow compatibility shim. Do not add new DB wrapper modules unless there is a verified compatibility need; new persistence logic should normally live in the relevant service and use `db` plus `schema.ts` directly.
 
 Do not:
 
@@ -502,31 +506,31 @@ Do not:
 
 These services are actively imported but not documented in the feature sections above:
 
--- Server utilities and helpers:
+- Server utilities and helpers:
   - [`src/lib/server/auth/hooks.ts`](./src/lib/server/auth/hooks.ts) — `requireAuth`, `getBearerToken` helpers. Canonical auth enforcement point for API routes; mirrors `hooks.server.ts` logic in a reusable form.
   - [`src/lib/server/services/attachment-trace.ts`](./src/lib/server/services/attachment-trace.ts) — logging helper for langflow/chat-file tracing. Adds `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]` correlation context. Consumed by stream-orchestrator and langflow.
-  - [`src/lib/server/services/language.ts`](./src/lib/server/services/language.ts) — language detection utilities. Consumed by chat-turn request/execute pipeline for input language checks.
+  - [`src/lib/server/services/language.ts`](./src/lib/server/services/language.ts) — language detection utilities. Consumed by chat-turn request handling and title prompt selection.
   - [`src/lib/server/services/conversation-drafts.ts`](./src/lib/server/services/conversation-drafts.ts) — draft management for conversations. Used by conversation routes for draft save/load.
   - [`src/lib/server/services/webhook-buffer.ts`](./src/lib/server/services/webhook-buffer.ts) — sentence-level webhook buffering for streaming turns. Consumed by hooks.server.ts.
-  - [`src/lib/server/prompts.ts`](./src/lib/server/prompts.ts) — system prompt configuration for translation rules. Consumed by langflow and honcho.
+  - [`src/lib/server/prompts.ts`](./src/lib/server/prompts.ts) — shared prompt configuration helpers. Consumed by langflow and honcho.
   - [`src/lib/server/api/responses.ts`](./src/lib/server/api/responses.ts) — shared JSON response helpers (`createJsonErrorResponse`, `createJsonResponse`) for API routes. Used across route files for consistent error/success formatting.
   - [`src/lib/server/services/analytics.ts`](./src/lib/server/services/analytics.ts) — analytics event ingestion. Consumed by chat-turn finalize.ts. Event ingestion endpoint at `src/routes/api/analytics/+server.ts`.
   - [`src/lib/server/services/pdf-generator.ts`](./src/lib/server/services/pdf-generator.ts) — PDF artifact generation from chat content or file generation requests.
 
--- Tool endpoints:
+- Tool endpoints:
   - [`src/routes/api/tools/image-search/+server.ts`](./src/routes/api/tools/image-search/+server.ts) — image search tool endpoint
-  - [`src/routes/api/ocr/paddle/+server.ts`](./src/routes/api/ocr/paddle/+server.ts) — PaddleOCR endpoint; adapter at `src/lib/server/services/ocr/paddle-adapter.ts`
+  - [`src/routes/api/tools/research-web/+server.ts`](./src/routes/api/tools/research-web/+server.ts) — signed web research tool endpoint
 
--- Webhook endpoints:
+- Webhook endpoints:
   - [`src/routes/api/webhook/sentence/+server.ts`](./src/routes/api/webhook/sentence/+server.ts) — sentence webhook endpoint
   - [`src/routes/api/stream/webhook/[sessionId]/+server.ts`](./src/routes/api/stream/webhook/[sessionId]/+server.ts) — stream webhook endpoint
 
--- Other API endpoints:
+- Other API endpoints:
   - [`src/routes/api/chat/files/export/+server.ts`](./src/routes/api/chat/files/export/+server.ts) — conversation file export
   - [`src/routes/api/chat/stream/buffer/+server.ts`](./src/routes/api/chat/stream/buffer/+server.ts) — stream buffer replay for reconnection
   - [`src/routes/api/chat/stream/status/+server.ts`](./src/routes/api/chat/stream/status/+server.ts) — stream capacity/status check
 
--- Active project service:
+- Active project service:
   - [`src/lib/server/services/projects.ts`](./src/lib/server/services/projects.ts) — project CRUD using `db` + `schema.ts` directly. Not a legacy DB wrapper; active service.
 
 - Chat rendering components live under [`src/lib/components/chat/`](./src/lib/components/chat/).
@@ -596,8 +600,8 @@ Do not:
   - browser stream consumer
   - related tests
 - Admin settings can override env-backed defaults. A change that looks correct in `.env` may still be superseded at runtime.
-- Auxiliary services such as translation, title generation, context summarization, and Honcho should degrade gracefully. Do not make them hard dependencies of the core chat path unless that behavior change is intentional.
-- `project-memory.ts` and the DB wrapper files exist on disk but are not the intended architectural direction. Do not revive them as active boundaries.
+- Auxiliary services such as title generation, context summarization, and Honcho should degrade gracefully. Do not make them hard dependencies of the core chat path unless that behavior change is intentional.
+- Do not restore deleted `project-memory.ts`-style architecture or add duplicate DB wrapper files. New persistence should stay in the owning service unless a narrow compatibility shim belongs in `db/compat.ts`.
 
 ## Change Placement Guide
 
@@ -623,8 +627,7 @@ Do not:
 - New landing/chat handoff behavior:
   - `src/lib/client/conversation-session.ts`
 - New environment-backed runtime setting:
-- New environment-backed runtime setting:
-	- `src/lib/server/env.ts` and `src/lib/server/config-store.ts`
+  - `src/lib/server/env.ts` and `src/lib/server/config-store.ts`
 
 ## Commit and Push Discipline
 

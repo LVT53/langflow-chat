@@ -52,10 +52,6 @@ vi.mock("$lib/server/services/task-state", () => ({
 	updateTaskStateCheckpoint: vi.fn(async () => null),
 }));
 
-vi.mock("$lib/server/services/language", () => ({
-	detectLanguage: vi.fn(),
-}));
-
 vi.mock("$lib/server/services/honcho", () => ({
 	listPersonaMemories: vi.fn(async () => []),
 	mirrorMessage: vi.fn(async () => undefined),
@@ -100,7 +96,6 @@ import {
 } from "$lib/server/services/conversations";
 import { assertPromptReadyAttachments } from "$lib/server/services/knowledge";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
-import { detectLanguage } from "$lib/server/services/language";
 import {
 	createMessage,
 	updateMessageHonchoMetadata,
@@ -118,7 +113,6 @@ const mockUpdateMessageHonchoMetadata =
 	updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments =
 	assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
-const mockDetectLanguage = detectLanguage as ReturnType<typeof vi.fn>;
 const mockGetConversationTaskState = getConversationTaskState as ReturnType<
 	typeof vi.fn
 >;
@@ -133,7 +127,7 @@ const mockSyncGeneratedFilesToMemory = syncGeneratedFilesToMemory as ReturnType<
 
 function makeEvent(
 	body: unknown,
-	user = { id: "user-1", email: "test@example.com", translationEnabled: false },
+	user = { id: "user-1", email: "test@example.com" },
 	signal?: AbortSignal,
 ) {
 	return {
@@ -212,7 +206,6 @@ describe("POST /api/chat/stream", () => {
 			content: "",
 			timestamp: Date.now(),
 		}));
-		mockDetectLanguage.mockReturnValue("en");
 		mockAssertPromptReadyAttachments.mockResolvedValue({
 			displayArtifacts: [],
 			promptArtifacts: [],
@@ -1001,7 +994,7 @@ describe("POST /api/chat/stream", () => {
 		);
 	});
 
-	it("passes Hungarian input through without translation", async () => {
+	it("passes input through unchanged", async () => {
 		const conversation = {
 			id: "conv-1",
 			title: "Test",
@@ -1009,7 +1002,6 @@ describe("POST /api/chat/stream", () => {
 			updatedAt: 0,
 		};
 		mockGetConversation.mockResolvedValue(conversation);
-		mockDetectLanguage.mockReturnValue("hu");
 		mockSendMessageStream.mockResolvedValue(
 			buildSseStream([
 				'{"event":"add_message","data":{"sender":"Machine","text":"Final English answer."}}\n\n',

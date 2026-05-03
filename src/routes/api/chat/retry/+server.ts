@@ -155,7 +155,6 @@ export const POST: RequestHandler = async (event) => {
 
 	const preflight = await preflightChatTurn({
 		userId: user.id,
-		translationEnabled: user.translationEnabled,
 		request: parsedRequest.value,
 	});
 	if (!preflight.ok) {
@@ -174,7 +173,6 @@ export const POST: RequestHandler = async (event) => {
 			id: user.id,
 			displayName: user.displayName,
 			email: user.email,
-			translationEnabled: user.translationEnabled,
 		},
 		turn,
 		upstreamMessage,

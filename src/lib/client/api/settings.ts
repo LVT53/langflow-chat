@@ -1,5 +1,5 @@
 import type { ModelId } from '$lib/types';
-import { requestJson, requestVoid } from './http';
+import { requestJson } from './http';
 
 // Re-export admin functions for backward compatibility
 export {
@@ -90,7 +90,6 @@ interface PasswordUpdateParams {
 
 export async function updateUserPreferences(params: {
 	preferredModel?: ModelId;
-	translationEnabled?: boolean;
 	theme?: 'system' | 'light' | 'dark';
 	titleLanguage?: 'auto' | 'en' | 'hu';
 	uiLanguage?: 'en' | 'hu';

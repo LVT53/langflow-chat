@@ -127,7 +127,6 @@ describe('validateSession', () => {
       role: 'user',
       avatarId: null,
       profilePicture: null,
-      translationEnabled: false,
       titleLanguage: 'auto',
       uiLanguage: 'en'
     });

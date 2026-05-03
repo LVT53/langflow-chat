@@ -1,7 +1,6 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
-import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { checkStreamCapacity } from '$lib/server/services/chat-turn/active-streams';
@@ -63,7 +62,6 @@ export const POST: RequestHandler = async (event) => {
 
   const preflight = await preflightChatTurn({
     userId: user.id,
-    translationEnabled: user.translationEnabled,
     request: parsedRequest.value,
   });
   if (!preflight.ok) {
@@ -79,7 +77,6 @@ export const POST: RequestHandler = async (event) => {
       id: user.id,
       displayName: user.displayName,
       email: user.email,
-      translationEnabled: user.translationEnabled,
     },
     turn,
     upstreamMessage,

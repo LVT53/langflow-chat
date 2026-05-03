@@ -40,7 +40,6 @@ export const load: ServerLoad = async (event) => {
 		maxMessageLength: config.maxMessageLength,
 		userTheme: userRow?.theme ?? 'system',
 		userModel,
-		userTranslation: (userRow?.translationEnabled ?? 0) === 1,
 		userTitleLanguage: (userRow?.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
 		userUiLanguage: (userRow?.uiLanguage ?? 'en') as 'en' | 'hu',
 		userPersonality: userRow?.preferredPersonalityId ?? null,

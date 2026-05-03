@@ -30,17 +30,17 @@ api/                   # API endpoints
   knowledge/           # Upload, search, documents, memory, actions
   admin/               # Config, users, sessions, honcho
   models/              # Available model list
-  ocr/                 # OCR proxy
   projects/            # Project CRUD
   settings/            # Account, profile, password, avatar
   stream/webhook/      # Stream webhook endpoint
-  tools/               # Image search
+  tools/               # Image search, signed web research
   webhook/             # Sentence webhook
   analytics/           # Analytics ingestion
   health/              # Health check
 
 login/                 # Login page
 logout/                # Logout page
+```
 
 ## Where to Look
 
@@ -77,13 +77,13 @@ logout/                # Logout page
 | `api/auth/login/+server.ts` | Login endpoint |
 | `api/auth/logout/+server.ts` | Logout endpoint |
 | `api/models/+server.ts` | Available models |
-| `api/ocr/paddle/+server.ts` | OCR proxy |
 | `api/projects/+server.ts` | Project list |
 | `api/projects/[id]/+server.ts` | Project CRUD |
 | `api/avatar/[userId]/+server.ts` | Avatar endpoint |
 | `api/analytics/+server.ts` | Analytics ingestion |
 | `api/health/+server.ts` | Health check |
 | `api/tools/image-search/+server.ts` | Image search tool |
+| `api/tools/research-web/+server.ts` | Signed web research tool |
 | `api/webhook/sentence/+server.ts` | Sentence webhook |
 | `api/stream/webhook/[sessionId]/+server.ts` | Stream webhook |
 | `(app)/chat/+page.server.ts` | Chat page server data |

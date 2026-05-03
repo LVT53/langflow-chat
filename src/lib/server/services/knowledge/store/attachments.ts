@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   artifactChunks,
@@ -25,7 +25,6 @@ import {
   mapArtifact,
   withAttachmentDisplayName,
 } from "./core";
-import { linkDuplicateDocument } from "./document-versioning";
 
 type PromptArtifactDiagnostics = {
   contentLength: number;
@@ -495,29 +494,6 @@ export async function saveUploadedArtifact(params: {
       artifactId: artifact.id,
       conversationId: params.conversationId,
     });
-  }
-
-  if (nameResolution.wasRenamed) {
-    const existing = await findExistingArtifactByName({
-      userId: params.userId,
-      name: nameResolution.originalName,
-    });
-
-    if (existing) {
-      try {
-        await linkDuplicateDocument({
-          userId: params.userId,
-          originalArtifactId: existing.id,
-          duplicateArtifactId: artifact.id,
-        });
-      } catch (error) {
-        console.error("[ATTACHMENTS] Failed to link duplicate document", {
-          originalArtifactId: existing.id,
-          duplicateArtifactId: artifact.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
   }
 
   return {

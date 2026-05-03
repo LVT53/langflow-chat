@@ -239,10 +239,11 @@ describe('Attachments - Auto-Rename on Conflict', () => {
 				file: mockFile,
 			});
 
-		expect(result.artifact.name).toBe('report_1.pdf');
-		expect(result.renameInfo).toBeDefined();
-		expect(result.renameInfo?.wasRenamed).toBe(true);
-		expect(result.renameInfo?.originalName).toBe('report.pdf');
+			expect(result.artifact.name).toBe('report_1.pdf');
+			expect(result.renameInfo).toBeDefined();
+			expect(result.renameInfo?.wasRenamed).toBe(true);
+			expect(result.renameInfo?.originalName).toBe('report.pdf');
+			expect(mockDb.update).not.toHaveBeenCalled();
 		});
 
 		it('should increment counter for multiple duplicates', async () => {

@@ -1,6 +1,6 @@
 // src/lib/server/services/title-generator.ts
 import { getConfig } from "../config-store";
-import { normalizeAssistantOutput } from "./chat-turn/execute";
+import { normalizeAssistantOutput } from "./chat-turn/normalizer";
 
 // Common misspellings dictionary for post-processing correction
 const COMMON_MISSPELLINGS: Record<string, string> = {
@@ -105,19 +105,6 @@ function isCodeRelated(
 ): boolean {
 	const combinedText = `${userMessage} ${assistantResponse}`;
 	return CODE_PATTERNS.some((pattern) => pattern.test(combinedText));
-}
-
-/**
- * Check if the message is very short (≤3 words)
- * @param message The message to check
- * @returns true if short message
- */
-function isShortMessage(message: string): boolean {
-	const words = message
-		.trim()
-		.split(/\s+/)
-		.filter((w) => w.length > 0);
-	return words.length <= 3;
 }
 
 /**
@@ -377,110 +364,6 @@ function buildTitleRequestBody(params: {
 		chat_template_kwargs: qwenThinkingOff,
 		extra_body: { chat_template_kwargs: qwenThinkingOff },
 	};
-}
-
-/**
- * Internal function to generate title with specific temperature
- * @param userMessage The user's message
- * @param assistantResponse The assistant's response
- * @param temperature The temperature for generation
- * @returns Generated title or null on failure
- */
-async function generateTitleWithTemperature(
-	userMessage: string,
-	assistantResponse: string,
-	temperature: number,
-	titleLanguage?: "auto" | "en" | "hu",
-): Promise<string | null> {
-	const config = getConfig();
-
-	const language = resolveTitleLanguage(userMessage, titleLanguage);
-	const codeRelated = isCodeRelated(userMessage, assistantResponse);
-	const messages = buildTitleMessages(
-		resolveConfiguredTitleSystemPrompt(language, codeRelated),
-		language,
-		codeRelated,
-		userMessage,
-		assistantResponse,
-	);
-
-	const headers: Record<string, string> = {
-		"Content-Type": "application/json",
-	};
-
-	if (config.titleGenApiKey) {
-		headers.Authorization = `Bearer ${config.titleGenApiKey}`;
-	}
-
-	// Make POST request to title generation service
-	const response = await fetch(`${config.titleGenUrl}/chat/completions`, {
-		method: "POST",
-		headers,
-		body: JSON.stringify(
-			buildTitleRequestBody({
-				model: config.titleGenModel,
-				messages,
-				temperature,
-			}),
-		),
-	});
-
-	if (!response.ok) {
-		return null;
-	}
-
-	const json = await response.json();
-	const choice = json.choices?.[0]?.message;
-	const rawContent =
-		typeof choice?.content === "string" ? choice.content.trim() : "";
-	const rawTitle = normalizeAssistantOutput(rawContent);
-
-	if (!rawTitle || isThinkingLeak(rawTitle)) {
-		return null;
-	}
-
-	// Apply post-processing
-	const cleanedTitle = cleanTitle(rawTitle);
-
-	return cleanedTitle || null;
-}
-
-/**
- * Generate title with retry logic and temperature escalation
- * Tries with temperatures: 0.1, 0.3, 0.5
- * @param userMessage The user's message
- * @param assistantResponse The assistant's response
- * @returns Generated title or null if all retries fail
- */
-async function generateTitleWithRetry(
-	userMessage: string,
-	assistantResponse: string,
-	titleLanguage?: "auto" | "en" | "hu",
-): Promise<string | null> {
-	const temperatures = [0.1, 0.3, 0.5];
-
-	for (const temperature of temperatures) {
-		try {
-			const title = await generateTitleWithTemperature(
-				userMessage,
-				assistantResponse,
-				temperature,
-				titleLanguage,
-			);
-
-			if (title && title.length > 0) {
-				return title;
-			}
-		} catch (error) {
-			// Continue to next temperature
-			console.warn(
-				`Title generation failed with temperature ${temperature}:`,
-				error,
-			);
-		}
-	}
-
-	return null;
 }
 
 export async function generateTitle(

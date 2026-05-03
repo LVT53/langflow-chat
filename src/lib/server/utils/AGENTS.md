@@ -8,7 +8,8 @@ Low-level utilities consumed across server services. Pure functions, no side eff
 |------|---------|
 | `json.ts` | Safe JSON parsing with fallback defaults |
 | `text.ts` | Whitespace normalization, text clipping |
-| `tokens.ts` | Token estimation for budget calculations |
+| `constants.ts` | Shared retrieval/context thresholds |
+| `math.ts` | Numeric helpers such as cosine similarity |
 | `markdown-parser.ts` | Frontmatter + markdown body splitting |
 | `prompt-context.ts` | Context section building, compaction, serialization to token budget |
 | `token-budget.ts` | Context window budget management with compaction thresholds |
@@ -23,7 +24,7 @@ Low-level utilities consumed across server services. Pure functions, no side eff
 |------|---------|
 | `json.ts` | `task-state/`, `knowledge/` |
 | `text.ts` | `task-state/`, `messages.ts` |
-| `tokens.ts` | `prompt-context.ts`, `context.ts` |
+| `$lib/utils/tokens.ts` | `prompt-context.ts`, `token-budget.ts`, chat/title/token accounting services |
 | `prompt-context.ts` | `honcho.ts`, `task-state.ts` |
 | `token-budget.ts` | Context compaction decisions |
 | `artifact-decay.ts` | Knowledge retrieval ranking |
@@ -34,7 +35,7 @@ Low-level utilities consumed across server services. Pure functions, no side eff
 
 - **No side effects**: Pure functions only
 - **No external I/O**: No network calls, file access, or DB access
-- **No server-only APIs**: Safe to import in shared/client code with proper guards
+- **Server-only location**: Keep these helpers free of network/DB side effects, but do not import `$lib/server/*` modules into client bundles. Shared client-safe helpers belong in `src/lib/utils/`.
 - **Typed defaults**: JSON parsing returns typed defaults on failure, never throws
 
 ## Anti-Patterns

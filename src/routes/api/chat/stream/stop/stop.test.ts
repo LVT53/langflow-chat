@@ -24,7 +24,6 @@ function makeEvent(body: unknown, userId = 'user-1') {
 			user: {
 				id: userId,
 				email: 'test@example.com',
-				translationEnabled: false,
 			},
 		},
 		params: {},

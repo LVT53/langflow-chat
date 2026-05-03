@@ -21,7 +21,6 @@
 	import { projects } from '$lib/stores/projects';
 	import {
 		setSelectedModelAndSync,
-		setTranslationAndSync,
 		setTitleLanguageAndSync,
 		setUiLanguageAndSync,
 		type TitleLanguage,
@@ -48,7 +47,6 @@
 			role: 'user' | 'admin';
 			preferences: {
 				preferredModel: ModelId;
-				translationEnabled: boolean;
 				theme: 'system' | 'light' | 'dark';
 				titleLanguage: 'auto' | 'en' | 'hu';
 				uiLanguage: 'en' | 'hu';
@@ -96,7 +94,6 @@
 	let showConfirmPw = $state(false);
 
 	let selectedModel = $state(initialPreferences.preferredModel);
-	let translationEnabled = $state(initialPreferences.translationEnabled);
 	let selectedTheme = $state(initialPreferences.theme);
 	let selectedTitleLanguage = $state(initialPreferences.titleLanguage ?? 'auto');
 	let selectedUiLanguage = $state<UiLanguage>(initialPreferences.uiLanguage ?? 'en');
@@ -251,11 +248,6 @@ let removingPhoto = $state(false);
 	async function changeModel(model: ModelId) {
 		selectedModel = model;
 		await setSelectedModelAndSync(model);
-	}
-
-	async function changeTranslation(enabled: boolean) {
-		translationEnabled = enabled;
-		await setTranslationAndSync(enabled);
 	}
 
 	async function changeTheme(theme: 'system' | 'light' | 'dark') {
@@ -448,12 +440,10 @@ let removingPhoto = $state(false);
 				onSavePassword={savePassword}
 				{availableModels}
 				{selectedModel}
-				{translationEnabled}
 				{selectedTheme}
 				{selectedTitleLanguage}
 				{selectedUiLanguage}
 				onChangeModel={changeModel}
-				onChangeTranslation={changeTranslation}
 				onChangeTheme={changeTheme}
 				onChangeTitleLanguage={changeTitleLanguage}
 				onChangeUiLanguage={changeUiLanguage}

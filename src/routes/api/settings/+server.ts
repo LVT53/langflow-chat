@@ -23,8 +23,9 @@ export const GET: RequestHandler = async (event) => {
     role: user.role as 'user' | 'admin',
     preferences: {
       preferredModel: await normalizeModelSelectionWithProviders(user.preferredModel ?? 'model1'),
-      translationEnabled: (user.translationEnabled ?? 0) === 1,
       theme: (user.theme ?? 'system') as 'system' | 'light' | 'dark',
+      titleLanguage: (user.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',
+      uiLanguage: (user.uiLanguage ?? 'en') as 'en' | 'hu',
       avatarId: user.avatarId ?? null,
       preferredPersonalityId: user.preferredPersonalityId ?? null,
     },

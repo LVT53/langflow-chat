@@ -16,7 +16,7 @@ layout/
 chat/
   MessageInput.svelte               ← composer UI, attachments, local draft, onUploadReady callback
     ├── chat/ContextUsageRing.svelte     ← context usage % ring
-    ├── chat/ComposerToolsMenu.svelte    ← translation toggle
+    ├── chat/ComposerToolsMenu.svelte    ← model selector, personality style picker, attach action
     ├── chat/FileAttachment.svelte       ← attachment chip (viewable prop, onView callback)
     └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
@@ -32,13 +32,13 @@ chat/
   EvidenceManager.svelte            ← evidence management sidebar
   ErrorMessage.svelte               ← error display
   LogoMark.svelte                   ← animated brand logo (used by MessageBubble)
-  FileTypeIcon.svelte               ← file type icon display
-  DialogShell.svelte                ← reusable dialog shell wrapper
 
 ui/
   AvatarCircle.svelte               ← user avatar display
   ProfilePictureEditor.svelte       ← avatar upload/crop
   ConfirmDialog.svelte              ← confirmation modal
+  DialogShell.svelte                ← reusable dialog shell wrapper
+  FileTypeIcon.svelte               ← file type icon display
   TypewriterText.svelte             ← animated text display
 ```
 
@@ -56,7 +56,7 @@ ui/
 | `MessageInput.svelte` | `ui` | `currentConversationId` (draft clear on switch), `onUploadReady` callback |
 | `MessageBubble.svelte` | `theme` | `isDark` (markdown dark mode), attachment open handoff to the route-owned workspace |
 | `ModelSelector.svelte` | `settings` | `selectedModel`, `setSelectedModel` |
-| `ComposerToolsMenu.svelte` | `settings` | `translationState`, `toggleTranslationState` |
+| `ComposerToolsMenu.svelte` | props + child components | `ModelSelector`, personality-profile props, attach callback |
 | `SearchModal.svelte` | `conversations` | `conversations` (conversation search source) |
 | `SearchModal.svelte` | `projects` | `projects` (search source) |
 | `SearchModal.svelte` | `ui` | `currentConversationId`, `sidebarOpen` |
@@ -78,12 +78,12 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `KnowledgeMemoryModal`, `KnowledgeUploadView`, and page-scoped library components
+- Route-local `_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`, `KnowledgeDocumentPreviewModal`
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
 - `ui/ConfirmDialog.svelte` — account deletion
-- Route-local `_components/` — tab components (ProfileTab, AdminSystemTab, AdminUsersTab, AnalyticsTab, etc.)
+- Route-local `_components/` — `SettingsProfileTab`, `SettingsAdministrationTab`, `SettingsAdminSystemPane`, `SettingsAdminUsersPane`, `SettingsAnalyticsTab`, and account/user modals
 
 ### Shell (`src/routes/(app)/+layout.svelte`)
 - `layout/Sidebar.svelte` — navigation
@@ -119,8 +119,8 @@ ui/
 
 Pages may have `_components/` directories for page-scoped UI:
 - `src/routes/(app)/chat/[conversationId]/_components/` — `ChatComposerPanel`, `ChatMessagePane`
-- `src/routes/(app)/knowledge/_components/` — `KnowledgeLibrary`, `KnowledgeMemoryModal`, `KnowledgeUploadView`
-- `src/routes/(app)/settings/_components/` — tab components
+- `src/routes/(app)/knowledge/_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`, `KnowledgeDocumentPreviewModal`
+- `src/routes/(app)/settings/_components/` — settings tabs, admin panes, password field, and account/user modals
 
 These are **page-internal** — do not import them from other pages. If logic becomes shared, move to `src/lib/components/` or `src/lib/client/api/`.
 

@@ -78,21 +78,6 @@ describe("hooks.server.ts", () => {
 		expect(event.locals.user).toBeNull();
 	});
 
-	it("allows the OCR proxy route without a session", async () => {
-		const { handle } = await import("./hooks.server");
-		const resolve = vi.fn(async () => new Response("ok"));
-		const event = {
-			cookies: { get: vi.fn(() => undefined) },
-			locals: {},
-			url: new URL("http://localhost/api/ocr/paddle"),
-		} as any;
-
-		await handle({ event, resolve });
-
-		expect(resolve).toHaveBeenCalledOnce();
-		expect(event.locals.user).toBeNull();
-	});
-
 	it("allows the signed web research tool route without a browser session", async () => {
 		const { handle } = await import("./hooks.server");
 		const resolve = vi.fn(async () => new Response("ok"));
@@ -131,7 +116,6 @@ describe("hooks.server.ts", () => {
 			role: "user",
 			avatarId: null,
 			profilePicture: null,
-			translationEnabled: false,
 		};
 		mockValidateSession.mockResolvedValue(sessionUser);
 		const resolve = vi.fn(async () => new Response("ok"));
@@ -161,7 +145,6 @@ describe("hooks.server.ts", () => {
 			role: "user",
 			avatarId: null,
 			profilePicture: null,
-			translationEnabled: false,
 		});
 		const event = {
 			cookies: { get: vi.fn(() => "session-token") },

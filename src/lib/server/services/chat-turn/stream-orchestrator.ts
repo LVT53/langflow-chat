@@ -24,13 +24,13 @@ import {
 	unsubscribeFromStream,
 	wasActiveChatStreamStopRequested,
 } from "$lib/server/services/chat-turn/active-streams";
-import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/execute";
 import {
 	persistAssistantEvidence,
 	persistAssistantTurnState,
 	persistUserTurnAttachments,
 	runPostTurnTasks,
 } from "$lib/server/services/chat-turn/finalize";
+import { normalizeAssistantOutput } from "$lib/server/services/chat-turn/normalizer";
 import {
 	classifyStreamError,
 	createEventStreamResponse,
@@ -108,7 +108,6 @@ export interface StreamOrchestratorOptions {
 		id: string;
 		displayName: string | null;
 		email: string | null;
-		translationEnabled: boolean;
 	};
 	turn: ChatTurnPreflight;
 	upstreamMessage: string;

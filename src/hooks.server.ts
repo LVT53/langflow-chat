@@ -23,7 +23,6 @@ const PUBLIC_PATHS = [
 	"/api/chat/files/export",
 	"/api/tools/image-search",
 	"/api/tools/research-web",
-	"/api/ocr/paddle",
 	"/api/health",
 ];
 

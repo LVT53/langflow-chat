@@ -8,6 +8,7 @@ SQLite persistence with Drizzle ORM. Schema definitions and connection bootstrap
 |------|---------|
 | `schema.ts` | Table definitions: users, sessions, conversations, messages, artifacts, chunks, projects, task states, memory events, semantic embeddings |
 | `index.ts` | Connection bootstrap - exports `db` instance |
+| `compat.ts` | Narrow compatibility helpers for bounded DB repair/cleanup cases |
 
 ## Schema Overview
 
@@ -20,12 +21,12 @@ SQLite persistence with Drizzle ORM. Schema definitions and connection bootstrap
 **Knowledge Tables:**
 - `artifacts` - Files, generated outputs, work capsules with retrieval class
 - `artifact_chunks` - Text chunks for semantic search
-- `semantic_embeddings` - TEI embeddings for artifacts/personas/tasks
+- `semantic_embeddings` - TEI embeddings for artifacts, task states, and legacy persona-cluster rows during migration cleanup
 
 **Memory Tables:**
 - `task_states` - Project continuity, checkpoints, evidence links
 - `memory_events` - State change log (deadlines, preferences, supersession)
-- `persona_clusters` - Grouped persona memories with salience scores
+- `memory_projects` / `memory_project_task_links` - Continuity buckets and task associations
 
 **Config Tables:**
 - `runtime_config` - Admin UI overrides for env vars
@@ -46,5 +47,3 @@ SQLite persistence with Drizzle ORM. Schema definitions and connection bootstrap
 - Do NOT create mini repository wrappers - use services + schema directly
 - Do NOT read `DATABASE_PATH` directly - use `getDatabasePath()` from `env.ts`
 - Do NOT bypass foreign keys - pragma is enabled
-
-

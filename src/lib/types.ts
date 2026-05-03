@@ -22,7 +22,6 @@ export function getProviderIdFromModelId(modelId: ModelId): string | null {
 
 export interface UserPreferences {
 	preferredModel: ModelId;
-	translationEnabled: boolean;
 	theme: Theme;
 	titleLanguage: "auto" | "en" | "hu";
 	uiLanguage: UiLanguage;
@@ -75,7 +74,6 @@ export interface SessionUser {
 	role: UserRole;
 	avatarId: number | null;
 	profilePicture: string | null;
-	translationEnabled: boolean;
 	titleLanguage: "auto" | "en" | "hu";
 	uiLanguage: UiLanguage;
 }

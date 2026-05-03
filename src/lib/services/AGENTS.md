@@ -5,8 +5,8 @@ Client/server shared utilities and protocol definitions. These span both environ
 ## Structure
 
 ```
-streaming.ts         - Browser stream transport (SSE parsing, token handling, abort/stop)
-stream-protocol.ts   - Shared stream tag parsing (thinking, tool_calls, leading output cleanup)
+streaming.ts         - Browser stream transport (SSE parsing, token/thinking/tool_call/end handling, abort/stop)
+stream-protocol.ts   - Shared stream text normalization (thinking tags, provider content extraction, leading output/tool diagnostic cleanup)
 markdown.ts          - Markdown rendering with Shiki highlighting (lazy init)
 table-layout.ts      - Markdown table rendering
 ```
@@ -20,13 +20,15 @@ table-layout.ts      - Markdown table rendering
 | Markdown with highlighting | `markdown.ts` |
 | Markdown table rendering | `table-layout.ts` |
 
-## Stream Protocol Tags
+## Stream Text Normalization
 
-| Tag | Purpose |
-|-----|---------|
-| `<thinking>...</thinking>` | Model thinking content |
-| `<tool_calls>...</tool_calls>` | Tool invocation markers |
-| `[CONTEXT]`, `[MEMORY]`, `[KNOWLEDGE]` | Debug/observability tags |
+| Shape | Purpose |
+|-------|---------|
+| `<thinking>`, `<think>`, ChatML thinking/analysis, `[THINK]` | Inline model thinking delimiters normalized into thinking vs visible output |
+| Provider payload text/content fields | Extract assistant text from OpenAI-style choices, Langflow payloads, content parts, and content blocks |
+| Leading `response` markers and leaked web-research diagnostics | Strip provider/tool artifacts from visible assistant output |
+| `tool_call` SSE events | Browser-facing structured tool-call updates emitted by `chat-turn/tool-call-markers.ts`; do not introduce textual `<tool_calls>` as a new protocol |
+| `[CONTEXT]`, `[MEMORY]`, `[KNOWLEDGE]` | Log prefixes only, not stream payload syntax |
 
 ## Conventions
 

@@ -17,7 +17,6 @@ export const PATCH: RequestHandler = async (event) => {
 
   let body: {
     preferredModel?: unknown;
-    translationEnabled?: unknown;
     theme?: unknown;
     titleLanguage?: unknown;
     uiLanguage?: unknown;
@@ -38,10 +37,6 @@ export const PATCH: RequestHandler = async (event) => {
       return json({ error: 'Invalid preferredModel' }, { status: 400 });
     }
     updates.preferredModel = body.preferredModel;
-  }
-
-  if (body.translationEnabled !== undefined) {
-    updates.translationEnabled = body.translationEnabled ? 1 : 0;
   }
 
   if (body.theme !== undefined) {
