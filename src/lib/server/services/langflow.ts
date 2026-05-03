@@ -339,6 +339,25 @@ function isMistralMedium35Model(modelName: string): boolean {
 	return /mistral.*medium.*3[._-]?5|medium.*3[._-]?5.*mistral/.test(normalized);
 }
 
+function getProviderReasoningEffort(
+	modelConfig: LangflowModelRunConfig,
+): string | null {
+	if (modelConfig.providerReasoningEffort) {
+		return modelConfig.providerReasoningEffort;
+	}
+
+	if (isMistralMedium35Model(modelConfig.modelName)) {
+		if (modelConfig.providerThinkingType === "enabled") {
+			return "high";
+		}
+		if (modelConfig.providerThinkingType === "disabled") {
+			return "none";
+		}
+	}
+
+	return null;
+}
+
 function buildLangflowTweaks(
 	modelConfig: LangflowModelRunConfig,
 	systemPrompt: string,
@@ -348,6 +367,7 @@ function buildLangflowTweaks(
 		1,
 		Math.ceil(getConfig().requestTimeoutMs / 1000),
 	);
+	const reasoningEffort = getProviderReasoningEffort(modelConfig);
 	const componentTweaks = {
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
@@ -357,10 +377,10 @@ function buildLangflowTweaks(
 			? { max_tokens: modelConfig.maxTokens }
 			: {}),
 		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
-		...(modelConfig.providerReasoningEffort &&
+		...(reasoningEffort &&
 		(!modelConfig.providerThinkingType ||
 			isMistralMedium35Model(modelConfig.modelName))
-			? { reasoning_effort: modelConfig.providerReasoningEffort }
+			? { reasoning_effort: reasoningEffort }
 			: {}),
 		...(modelConfig.providerThinkingType &&
 		!isMistralMedium35Model(modelConfig.modelName)

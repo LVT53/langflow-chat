@@ -340,6 +340,70 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
+	it("maps enabled Mistral Medium 3.5 thinking.type to high reasoning_effort", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "local-vllm",
+			displayName: "Mistral Medium 3.5",
+			baseUrl: "http://localhost:8000/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "mistralai/Mistral-Medium-3.5-128B",
+			reasoningEffort: null,
+			thinkingType: "enabled",
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		await sendMessage("Think carefully", "conv-1", "provider:provider-1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks["ModelNode-1"]).toMatchObject({
+			enable_thinking: false,
+			reasoning_effort: "high",
+		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
+	it("maps disabled Mistral Medium 3.5 thinking.type to none reasoning_effort", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "local-vllm",
+			displayName: "Mistral Medium 3.5",
+			baseUrl: "http://localhost:8000/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "mistralai/Mistral-Medium-3.5-128B",
+			reasoningEffort: null,
+			thinkingType: "disabled",
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		await sendMessage("Answer directly", "conv-1", "provider:provider-1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks["ModelNode-1"]).toMatchObject({
+			enable_thinking: false,
+			reasoning_effort: "none",
+		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
 	it("enables reasoning capture for built-in Qwen models routed through the custom Langflow node", async () => {
 		mockConfig({ modelName: "qwen3-6-35b" });
 

@@ -94,6 +94,20 @@ def _is_mistral_medium_35_model(model_name: str) -> bool:
     )
 
 
+def _mistral_reasoning_effort(reasoning_effort: str, thinking_type: str) -> str:
+    effort = str(reasoning_effort or "").strip()
+    if effort:
+        return effort
+
+    thinking = str(thinking_type or "").strip()
+    if thinking == "enabled":
+        return "high"
+    if thinking == "disabled":
+        return "none"
+
+    return ""
+
+
 class NemotronReasoningChatOpenAI(ChatOpenAI):
     """ChatOpenAI subclass for OpenAI-compatible models with optional reasoning capture.
 
@@ -118,12 +132,25 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     system_prompt: str = ""
     reasoning_effort: str = ""
+    thinking_type: str = ""
+    mistral_reasoning_compat: bool = False
     enable_thinking: bool = True
     use_chat_template_kwargs: bool = True
     _last_reasoning_content: str = ""
 
+    @staticmethod
+    def _strip_blank_reasoning_fields(payload: dict[str, Any]) -> dict[str, Any]:
+        if not str(payload.get("reasoning_effort") or "").strip():
+            payload.pop("reasoning_effort", None)
+        return payload
+
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
-        reasoning_effort = str(self.reasoning_effort or "").strip()
+        payload = self._strip_blank_reasoning_fields(payload)
+        reasoning_effort = (
+            _mistral_reasoning_effort(self.reasoning_effort, self.thinking_type)
+            if self.mistral_reasoning_compat
+            else str(self.reasoning_effort or "").strip()
+        )
         if reasoning_effort:
             payload["reasoning_effort"] = reasoning_effort
 
@@ -286,6 +313,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     def _get_request_payload(self, messages, stop=None, **kwargs: Any) -> dict[str, Any]:
         """Override to recover reasoning_content from <thinking> tags before sending to the API."""
         payload = super()._get_request_payload(messages, stop=stop, **kwargs)
+        payload = self._strip_blank_reasoning_fields(payload)
         return self._recover_reasoning_in_payload(payload)
 
     async def _astream(self, messages: Any, *args: Any, **kwargs: Any):
@@ -618,11 +646,17 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "system_prompt": self.system_prompt or "",
             "enable_thinking": bool(self.enable_thinking),
             "use_chat_template_kwargs": use_chat_template_kwargs,
+            "mistral_reasoning_compat": is_mistral_medium_35,
         }
 
         reasoning_effort = str(getattr(self, "reasoning_effort", "") or "").strip()
+        if is_mistral_medium_35:
+            reasoning_effort = _mistral_reasoning_effort(reasoning_effort, thinking_type)
+
         if reasoning_effort and (not thinking_type or is_mistral_medium_35):
             parameters["reasoning_effort"] = reasoning_effort
+        if thinking_type:
+            parameters["thinking_type"] = thinking_type
 
         if self.seed is not None and self.seed != -1:
             parameters["seed"] = self.seed
