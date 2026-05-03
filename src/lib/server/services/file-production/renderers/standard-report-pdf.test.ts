@@ -242,4 +242,20 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 			})
 		).rejects.toMatchObject({ code: 'image_limit_exceeded' });
 	});
+
+	it('renders the first chart SVG path into PDF diagnostics', async () => {
+		const source = readFixtureSource('chart-heavy-report.json');
+		const rendered = await renderStandardReportPdf(source);
+		const pdfDoc = await PDFDocument.load(new Uint8Array(rendered.content));
+
+		expect(pdfDoc.getPageCount()).toBeGreaterThanOrEqual(1);
+		expect(rendered.diagnostics.charts).toEqual([
+			expect.objectContaining({
+				title: 'Weekly active users',
+				chartType: 'line',
+				dataPointCount: 3,
+				svg: expect.stringContaining('<polyline'),
+			}),
+		]);
+	});
 });

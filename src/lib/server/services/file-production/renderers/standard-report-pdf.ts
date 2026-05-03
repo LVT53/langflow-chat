@@ -9,11 +9,16 @@ import {
 	type PDFPage,
 	type RGB,
 } from 'pdf-lib';
-import type { GeneratedDocumentBlock, GeneratedDocumentSource } from '../source-schema';
+import type {
+	GeneratedDocumentBlock,
+	GeneratedDocumentChartBlock,
+	GeneratedDocumentSource,
+} from '../source-schema';
 import {
 	loadGeneratedDocumentImage,
 	type GeneratedDocumentImageLoadResult,
 } from '../image-loader';
+import { renderChartSvg } from './chart-svg';
 
 const MM_TO_PT = 72 / 25.4;
 const A4 = PageSizes.A4;
@@ -77,6 +82,12 @@ export interface StandardReportPdfRenderResult {
 			critical: boolean;
 			placeholder: boolean;
 			warningCode: string | null;
+		}>;
+		charts: Array<{
+			title: string | null;
+			chartType: GeneratedDocumentChartBlock['chartType'];
+			dataPointCount: number;
+			svg: string;
 		}>;
 	};
 }
@@ -198,6 +209,7 @@ class StandardReportPdfLayout {
 	private y: number;
 	private readonly tableDiagnostics: StandardReportPdfRenderResult['diagnostics']['tables'] = [];
 	private readonly imageDiagnostics: StandardReportPdfRenderResult['diagnostics']['images'] = [];
+	private readonly chartDiagnostics: StandardReportPdfRenderResult['diagnostics']['charts'] = [];
 
 	constructor(
 		private readonly pdfDoc: PDFDocument,
@@ -927,6 +939,138 @@ class StandardReportPdfLayout {
 		});
 	}
 
+	drawChart(block: Extract<GeneratedDocumentBlock, { type: 'chart' }>): void {
+		if (block.chartType !== 'line' && block.chartType !== 'area') {
+			throw new StandardReportPdfRenderError(
+				'unsupported_chart_type',
+				`AlfyAI Standard Report chart rendering does not yet support ${block.chartType} charts.`
+			);
+		}
+		if (!block.xKey || !block.yKey) {
+			throw new StandardReportPdfRenderError(
+				'unsupported_chart_data',
+				'Line charts require xKey and yKey.'
+			);
+		}
+
+		const renderedSvg = renderChartSvg(block);
+		const rows = block.data
+			.map((row) => ({
+				label: String(row[block.xKey!] ?? ''),
+				value: typeof row[block.yKey!] === 'number' ? (row[block.yKey!] as number) : null,
+			}))
+			.filter((row): row is { label: string; value: number } => row.value !== null);
+		if (rows.length === 0) {
+			throw new StandardReportPdfRenderError(
+				'unsupported_chart_data',
+				'Chart data has no numeric values.'
+			);
+		}
+
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const height = 260;
+		this.ensureSpace(height + 34);
+		const top = this.y + 6;
+		this.page.drawRectangle({
+			x,
+			y: top - height,
+			width,
+			height,
+			color: hexColor(THEME.panelBackground),
+			borderColor: hexColor(THEME.rule),
+			borderWidth: 0.8,
+		});
+		this.page.drawText(block.title ?? 'Chart', {
+			x: x + 14,
+			y: top - 24,
+			size: 12,
+			font: this.fonts.bold,
+			color: hexColor(THEME.text),
+		});
+		if (block.caption) {
+			this.page.drawText(block.caption, {
+				x: x + 14,
+				y: top - 42,
+				size: 9,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+		}
+
+		const plot = {
+			x: x + 48,
+			y: top - height + 40,
+			width: width - 78,
+			height: height - 96,
+		};
+		const values = rows.map((row) => row.value);
+		const max = Math.max(...values);
+		const min = Math.min(0, ...values);
+		const span = max - min || 1;
+		const point = (row: { value: number }, index: number) => ({
+			x: plot.x + (rows.length === 1 ? plot.width / 2 : (index / (rows.length - 1)) * plot.width),
+			y: plot.y + ((row.value - min) / span) * plot.height,
+		});
+		for (let index = 0; index <= 4; index += 1) {
+			const y = plot.y + (index / 4) * plot.height;
+			this.page.drawLine({
+				start: { x: plot.x, y },
+				end: { x: plot.x + plot.width, y },
+				thickness: 0.4,
+				color: hexColor(THEME.rule),
+			});
+		}
+		this.page.drawLine({
+			start: { x: plot.x, y: plot.y },
+			end: { x: plot.x + plot.width, y: plot.y },
+			thickness: 0.7,
+			color: hexColor(THEME.secondaryText),
+		});
+		this.page.drawLine({
+			start: { x: plot.x, y: plot.y },
+			end: { x: plot.x, y: plot.y + plot.height },
+			thickness: 0.7,
+			color: hexColor(THEME.secondaryText),
+		});
+		const points = rows.map(point);
+		if (block.chartType === 'area' && points.length > 1) {
+			for (const [index, current] of Array.from(points.entries()).slice(1)) {
+				const previous = points[index - 1];
+				this.page.drawLine({
+					start: { x: previous.x, y: plot.y },
+					end: current,
+					thickness: 1,
+					color: hexColor(THEME.accent),
+					opacity: 0.18,
+				});
+			}
+		}
+		for (let index = 1; index < points.length; index += 1) {
+			this.page.drawLine({
+				start: points[index - 1],
+				end: points[index],
+				thickness: 2.2,
+				color: hexColor(THEME.accent),
+			});
+		}
+		for (const current of points) {
+			this.page.drawCircle({
+				x: current.x,
+				y: current.y,
+				size: 3,
+				color: hexColor(THEME.accent),
+			});
+		}
+		this.y = top - height - 14;
+		this.chartDiagnostics.push({
+			title: block.title ?? null,
+			chartType: block.chartType,
+			dataPointCount: renderedSvg.dataPointCount,
+			svg: renderedSvg.svg,
+		});
+	}
+
 	drawUnsupported(blockType: string): never {
 		throw new StandardReportPdfRenderError(
 			'unsupported_pdf_block',
@@ -977,6 +1121,10 @@ class StandardReportPdfLayout {
 
 	getImageDiagnostics(): StandardReportPdfRenderResult['diagnostics']['images'] {
 		return this.imageDiagnostics;
+	}
+
+	getChartDiagnostics(): StandardReportPdfRenderResult['diagnostics']['charts'] {
+		return this.chartDiagnostics;
 	}
 }
 
@@ -1044,7 +1192,8 @@ export async function renderStandardReportPdf(
 				await layout.drawImageBlock(block, imageLoader);
 				break;
 			case 'chart':
-				layout.drawUnsupported(block.type);
+				layout.drawChart(block);
+				break;
 		}
 	}
 	layout.drawHeadersAndFooters();
@@ -1070,6 +1219,7 @@ export async function renderStandardReportPdf(
 			pageCount: pdfDoc.getPageCount(),
 			tables: layout.getTableDiagnostics(),
 			images: layout.getImageDiagnostics(),
+			charts: layout.getChartDiagnostics(),
 		},
 	};
 }

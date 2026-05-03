@@ -210,6 +210,17 @@ function normalizeChartBlock(block: Record<string, unknown>): BlockNormalization
 	const yKey = cleanKey(block.yKey);
 	const labelKey = cleanKey(block.labelKey);
 	const valueKey = cleanKey(block.valueKey);
+	const title = cleanText(block.title);
+	const caption = cleanText(block.caption);
+	const altText = cleanText(block.altText);
+	const units = cleanText(block.units);
+	if (!title || !caption || !altText || !units) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_data',
+			message: 'Generated document charts require title, caption, units, and alt text.',
+		};
+	}
 	if ((chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') && !(labelKey && valueKey)) {
 		return {
 			ok: false,
@@ -230,16 +241,16 @@ function normalizeChartBlock(block: Record<string, unknown>): BlockNormalization
 		block: {
 			type: 'chart',
 			chartType,
-			title: cleanText(block.title),
-			caption: cleanText(block.caption),
-			altText: cleanText(block.altText),
+			title,
+			caption,
+			altText,
 			xKey,
 			yKey,
 			labelKey,
 			valueKey,
 			seriesKey: cleanKey(block.seriesKey),
 			radiusKey: cleanKey(block.radiusKey),
-			units: cleanText(block.units),
+			units,
 			data,
 		},
 	};

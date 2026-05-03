@@ -51,4 +51,24 @@ describe('generated document source schema', () => {
 			code: 'unsupported_document_block',
 		});
 	});
+
+	it('requires chart title, caption, units, and alt text for accessible chart blocks', () => {
+		const result = validateGeneratedDocumentSource({
+			title: 'Incomplete chart report',
+			blocks: [
+				{
+					type: 'chart',
+					chartType: 'line',
+					xKey: 'week',
+					yKey: 'users',
+					data: [{ week: '2026-W01', users: 1200 }],
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: 'unsupported_chart_data',
+		});
+	});
 });
