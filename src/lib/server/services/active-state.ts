@@ -4,6 +4,10 @@ import { resolveCurrentGeneratedDocumentSelection } from "./document-resolution"
 
 const DOCUMENT_FOCUS_RE =
 	/\b(document|doc|file|pdf|attachment|attached|resume|cv|recipe|job description|contract|report)\b/i;
+const DOCUMENT_ACTION_RE =
+	/\b(summarize|summarise|summary|review|analyze|analyse|rewrite|revise|refine|edit|update|fix|correct|shorten|shorter|expand|polish|translate|extract|compare|convert|format|make)\b/i;
+const DOCUMENT_REFERENCE_RE =
+	/\b(this|that|it|same|current|open|opened|selected|previous|earlier)\b/i;
 const USER_CORRECTION_RE =
 	/\b(actually|instead|rather than|use the previous|use the earlier|change it to|revise this|refine this|update this|fix this|correct this|replace that|not that one)\b/i;
 const CONTEXT_RESET_RE =
@@ -35,8 +39,28 @@ const LIVE_DOCUMENT_REASON_CODES: WorkingSetReasonCode[] = [
 function isDocumentFocusedTurn(
 	message: string,
 	attachmentIds: string[] = [],
+	options: {
+		hasActiveDocument?: boolean;
+		hasContinuityDocument?: boolean;
+	} = {},
 ): boolean {
-	return attachmentIds.length > 0 || DOCUMENT_FOCUS_RE.test(message);
+	return (
+		attachmentIds.length > 0 ||
+		DOCUMENT_FOCUS_RE.test(message) ||
+		(Boolean(options.hasActiveDocument || options.hasContinuityDocument) &&
+			hasDocumentFollowUpSignal(message))
+	);
+}
+
+function hasActiveDocumentFocusSignal(message: string): boolean {
+	return DOCUMENT_FOCUS_RE.test(message) || hasDocumentFollowUpSignal(message);
+}
+
+function hasDocumentFollowUpSignal(message: string): boolean {
+	return (
+		hasRecentUserCorrectionSignal(message) ||
+		(DOCUMENT_ACTION_RE.test(message) && DOCUMENT_REFERENCE_RE.test(message))
+	);
 }
 
 export function hasRecentUserCorrectionSignal(
@@ -189,11 +213,19 @@ export function buildActiveDocumentState(params: {
 }): ActiveDocumentState {
 	const hasContextResetSignal = hasActiveContextResetSignal(params.message);
 	const shouldContinueDocumentState = !hasContextResetSignal;
+	const hasRecentUserCorrection = hasRecentUserCorrectionSignal(params.message);
+	const hasActiveDocument =
+		typeof params.activeDocumentArtifactId === "string" &&
+		params.activeDocumentArtifactId.trim().length > 0;
+	const activeDocumentFocused =
+		shouldContinueDocumentState &&
+		hasActiveDocument &&
+		hasActiveDocumentFocusSignal(params.message);
 	const recentRefinedState = shouldContinueDocumentState
 		? resolveRecentlyRefinedGeneratedFamily({
 				artifacts: params.artifacts,
 				preferredArtifactId:
-					params.activeDocumentArtifactId ??
+					(activeDocumentFocused ? params.activeDocumentArtifactId : null) ??
 					params.preferredGeneratedArtifactId ??
 					null,
 				currentConversationId: params.currentConversationId ?? null,
@@ -202,15 +234,22 @@ export function buildActiveDocumentState(params: {
 				familyId: null,
 				latestArtifactIds: [],
 			};
+	const documentFocused =
+		shouldContinueDocumentState &&
+		isDocumentFocusedTurn(params.message, params.attachmentIds ?? [], {
+			hasActiveDocument,
+			hasContinuityDocument: Boolean(recentRefinedState.familyId),
+		});
 	const selection = shouldContinueDocumentState
 		? resolveCurrentGeneratedDocumentSelection({
 				artifacts: params.artifacts,
 				preferredArtifactId:
-					params.activeDocumentArtifactId ??
+					(activeDocumentFocused ? params.activeDocumentArtifactId : null) ??
 					params.preferredGeneratedArtifactId,
-				preferredFamilyId: recentRefinedState.familyId,
+				preferredFamilyId: documentFocused ? recentRefinedState.familyId : null,
 				query: params.message.trim(),
 				currentConversationId: params.currentConversationId ?? null,
+				allowFallbackToLatest: documentFocused,
 			})
 		: {
 				primaryArtifactId: null,
@@ -218,13 +257,8 @@ export function buildActiveDocumentState(params: {
 				latestArtifacts: [],
 				primaryReasonCodes: [],
 			};
-	const documentFocused =
-		shouldContinueDocumentState &&
-		(Boolean(params.activeDocumentArtifactId) ||
-			isDocumentFocusedTurn(params.message, params.attachmentIds ?? []));
-	const hasRecentUserCorrection = hasRecentUserCorrectionSignal(params.message);
 	const activeDocumentIds = new Set(
-		shouldContinueDocumentState && params.activeDocumentArtifactId
+		activeDocumentFocused && params.activeDocumentArtifactId
 			? [params.activeDocumentArtifactId]
 			: [],
 	);

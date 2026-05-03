@@ -344,6 +344,7 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
   preferredFamilyId?: string | null;
   query?: string;
   currentConversationId?: string | null;
+  allowFallbackToLatest?: boolean;
 }): CurrentGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
     (artifact) => artifact.type === "generated_output",
@@ -397,6 +398,15 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
         primaryReasonCodes: ["recently_refined_document_family"],
       };
     }
+  }
+
+  if (params.allowFallbackToLatest === false) {
+    return {
+      primaryArtifactId: null,
+      latestArtifactIds,
+      latestArtifacts,
+      primaryReasonCodes: [],
+    };
   }
 
   return {

@@ -56,6 +56,42 @@ describe("active-state signals", () => {
 		});
 		expect(state2.hasContextResetSignal).toBe(false);
 	});
+
+	it("treats an open workspace document as a weak signal on unrelated turns", () => {
+		const state = buildActiveDocumentState({
+			message: "What is the capital of France?",
+			activeDocumentArtifactId: "brief-v1",
+			currentConversationId: "conv-1",
+			artifacts: [
+				{
+					id: "brief-v1",
+					userId: "user-1",
+					type: "generated_output",
+					retrievalClass: "durable",
+					name: "brief-v1.pdf",
+					mimeType: "application/pdf",
+					sizeBytes: 100,
+					conversationId: "conv-1",
+					summary: "A project brief.",
+					createdAt: 1,
+					updatedAt: 1,
+					extension: "pdf",
+					storagePath: null,
+					contentText: "Long project brief body.",
+					metadata: {
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+				},
+			],
+		});
+
+		expect(state.documentFocused).toBe(false);
+		expect(Array.from(state.activeDocumentIds)).toEqual([]);
+		expect(state.currentGeneratedArtifactId).toBe(null);
+	});
+
 	it("assembles active document state from workspace focus, current output, and correction phrasing", () => {
 		const state = buildActiveDocumentState({
 			message: "Actually, refine this brief instead.",
