@@ -58,9 +58,9 @@ The search overhaul routes web work through the server-owned `research_web` tool
 
 1. Deploy the app code. `scripts/deploy.sh` pulls `origin main`, so merge `dev` to `main` first or use your manual deploy flow if you are testing directly from `dev`.
 2. Set these server env vars: `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `ALFYAI_API_SIGNING_KEY`. Exa is required for page opening. Brave is optional, but recommended for wider search coverage. `ALFYAI_API_SIGNING_KEY` must be the same value in AlfyAI and Langflow.
-3. Keep the existing file-generation custom node if you use generated files: `langflow_nodes/file_generator_tool.py`.
+3. Use the unified file-production custom node for generated files: `langflow_nodes/file_production_tool.py`. It exposes `produce_file` and sends durable jobs to `/api/chat/files/produce`.
 4. Add or update the web-research custom node in Langflow: `langflow_nodes/web_research_tool.py`. Configure `ALFYAI_API_URL` to the AlfyAI server URL reachable from Langflow, and configure the same `ALFYAI_API_SIGNING_KEY`.
-5. Connect the `Web Research` node's `Tool` output to the Agent node's tools input.
+5. Connect the `File Production` and `Web Research` nodes' `Tool` outputs to the Agent node's tools input.
 6. Disconnect the old/raw Exa search tool from the Agent tools input unless you intentionally want it as a fallback. Leaving both connected gives the model two competing search tools and can make behavior less predictable.
 7. Leave the optional `WEB_RESEARCH_*` env vars at their defaults unless you need different breadth or latency. They can also be changed later in Settings > Administration > System > Web Research.
 8. Keep `TEI_RERANKER_URL` configured if you want source and evidence reranking. Search still works without TEI reranking, but diagnostics will show `sourceReranked: false` when reranking is unavailable or not confident.
@@ -169,7 +169,7 @@ Notes before the tables:
 | `LANGFLOW_API_KEY` | Yes | none | Authenticates Langflow API calls | Always set in real deployments | App boot fails if missing |
 | `LANGFLOW_FLOW_ID` | No | empty | Default Langflow flow used when a model-specific flow is not configured | Set it when you use one primary Langflow flow for chat | Model-specific flow IDs override it |
 | `LANGFLOW_WEBHOOK_SECRET` | No | empty | Shared secret for Langflow sentence webhook verification | Set it when webhook flows are exposed or shared across systems | Leave empty only in trusted/local setups |
-| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for internal Langflow tool calls | Set it on both AlfyAI and Langflow custom nodes such as file generation and web research | When unset, service assertions are rejected and only session-auth requests are allowed |
+| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for internal Langflow tool calls | Set it on both AlfyAI and Langflow custom nodes such as file production and web research | When unset, service assertions are rejected and only session-auth requests are allowed |
 | `SESSION_SECRET` | Yes | none | Signs and protects session cookies | Always set to a long random secret in every environment | App boot fails if missing |
 | `DATABASE_PATH` | No | `./data/chat.db` | SQLite database location | Set it when the database should live outside the repo root or on a mounted volume | The parent directory must be writable |
 | `WEBHOOK_PORT` | No | `8090` | Port used by webhook-related server handling | Set it only if your deployment expects a different port | Must be numeric |
@@ -294,7 +294,7 @@ Notes before the tables:
 - If you set `DOCUMENT_PARSER_OCR_SERVER_URL`, Liteparse expects an OCR server contract (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation and summarization can fail independently without necessarily blocking core chat.
-- A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
+- A sandboxed file-production run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
 

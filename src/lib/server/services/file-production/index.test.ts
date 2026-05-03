@@ -223,6 +223,61 @@ describe('file production service', () => {
 		});
 	});
 
+	it('assigns newly produced jobs and linked files to the assistant message after stream completion', async () => {
+		const { db } = await import('$lib/server/db');
+		const { assignFileProductionJobsToAssistantMessage } = await import('./index');
+		const now = new Date('2026-05-03T19:32:00.000Z');
+		await db.insert(schema.chatGeneratedFiles).values({
+			id: 'file-produced-null',
+			conversationId: 'conv-1',
+			assistantMessageId: null,
+			userId: 'user-1',
+			filename: 'analysis.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 8192,
+			storagePath: 'conv-1/file-produced-null.pdf',
+			createdAt: now,
+		});
+		await db.insert(schema.fileProductionJobs).values({
+			id: 'job-produced-null',
+			conversationId: 'conv-1',
+			assistantMessageId: null,
+			userId: 'user-1',
+			title: 'Analysis report',
+			status: 'succeeded',
+			stage: null,
+			origin: 'unified_produce',
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(schema.fileProductionJobFiles).values({
+			id: 'link-produced-null',
+			jobId: 'job-produced-null',
+			chatGeneratedFileId: 'file-produced-null',
+			sortOrder: 0,
+			createdAt: now,
+		});
+
+		await assignFileProductionJobsToAssistantMessage(
+			'user-1',
+			'conv-1',
+			'assistant-1',
+			['job-produced-null']
+		);
+
+		const [job] = await db
+			.select()
+			.from(schema.fileProductionJobs)
+			.where(eq(schema.fileProductionJobs.id, 'job-produced-null'));
+		const [file] = await db
+			.select()
+			.from(schema.chatGeneratedFiles)
+			.where(eq(schema.chatGeneratedFiles.id, 'file-produced-null'));
+
+		expect(job.assistantMessageId).toBe('assistant-1');
+		expect(file.assistantMessageId).toBe('assistant-1');
+	});
+
 	it('reuses a durable production job for the same idempotency key', async () => {
 		const { createOrReuseFileProductionJob } = await import('./index');
 

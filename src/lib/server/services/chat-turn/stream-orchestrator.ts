@@ -5,8 +5,6 @@ import {
 } from "$lib/server/services/analytics";
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import {
-	assignGeneratedFilesToAssistantMessage,
-	getChatFiles,
 	getChatFilesForAssistantMessage,
 	syncGeneratedFilesToMemory,
 } from "$lib/server/services/chat-files";
@@ -54,6 +52,10 @@ import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fall
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
 import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
 import { touchConversation } from "$lib/server/services/conversations";
+import {
+	assignFileProductionJobsToAssistantMessage,
+	listConversationFileProductionJobs,
+} from "$lib/server/services/file-production";
 import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
@@ -62,11 +64,6 @@ import {
 	getContextDebugState,
 	getConversationTaskState,
 } from "$lib/server/services/task-state";
-import {
-	getGenerateFileToolCode,
-	getGenerateFileToolFilename,
-	getGenerateFileToolLanguage,
-} from "$lib/utils/generate-file-tool";
 import { estimateTokenCount } from "$lib/utils/tokens";
 
 function getStreamTimeoutMs(): number {
@@ -308,19 +305,6 @@ export function runChatStreamOrchestrator(
 					candidates?: import("$lib/types").ToolEvidenceCandidate[];
 				},
 			) => {
-				if (name === "generate_file") {
-					const code = getGenerateFileToolCode(input);
-					console.info("[CHAT_STREAM] File-generation tool event", {
-						conversationId,
-						streamId,
-						status,
-						language: getGenerateFileToolLanguage(input),
-						filename: getGenerateFileToolFilename(input),
-						codeLength: code?.length ?? 0,
-						writesToOutput: code?.includes("/output") ?? false,
-						outputSummary: details?.outputSummary ?? null,
-					});
-				}
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
 			};
 			const emitChunkWithOutputHandling =
@@ -335,14 +319,19 @@ export function runChatStreamOrchestrator(
 
 			enqueueChunk(createSsePreludeComment());
 
-			let generatedFileIdsAtStart = new Set<string>();
+			let fileProductionJobIdsAtStart = new Set<string>();
 			try {
-				generatedFileIdsAtStart = new Set(
-					(await getChatFiles(conversationId)).map((file) => file.id),
+				fileProductionJobIdsAtStart = new Set(
+					(
+						await listConversationFileProductionJobs(
+							user.id,
+							conversationId,
+						)
+					).map((job) => job.id),
 				);
 			} catch (error) {
 				console.warn(
-					"[CHAT_STREAM] Failed to snapshot generated files at stream start",
+					"[CHAT_STREAM] Failed to snapshot file-production jobs at stream start",
 					{
 						conversationId,
 						streamId,
@@ -445,7 +434,7 @@ export function runChatStreamOrchestrator(
 					attachmentIds: safeAttachmentIds,
 					activeDocumentArtifactId,
 					requestStartTime,
-					generatedFileIdsAtStart,
+					fileProductionJobIdsAtStart,
 					latestContextStatus,
 					latestActiveWorkingSet,
 					latestTaskState,
@@ -466,10 +455,10 @@ export function runChatStreamOrchestrator(
 					closeDownstream,
 					clearStreamBuffer,
 					getStreamBuffer,
-					getChatFiles,
-					assignGeneratedFilesToAssistantMessage,
 					syncGeneratedFilesToMemory,
 					getChatFilesForAssistantMessage,
+					getFileProductionJobs: listConversationFileProductionJobs,
+					assignFileProductionJobsToAssistantMessage,
 					estimateTokenCount,
 				});
 			};

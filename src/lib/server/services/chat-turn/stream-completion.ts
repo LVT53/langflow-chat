@@ -20,7 +20,7 @@ export interface CompleteStreamTurnParams {
 	attachmentIds: string[];
 	activeDocumentArtifactId: string | null;
 	requestStartTime: number;
-	generatedFileIdsAtStart: Set<string>;
+	fileProductionJobIdsAtStart: Set<string>;
 	latestContextStatus: unknown;
 	latestActiveWorkingSet: unknown;
 	latestTaskState: unknown;
@@ -109,14 +109,6 @@ export interface CompleteStreamTurnParams {
 	closeDownstream: () => void;
 	clearStreamBuffer: (streamId: string) => void;
 	getStreamBuffer: (streamId: string) => { userMessage?: string } | null;
-	getChatFiles: (
-		conversationId: string,
-	) => Promise<Array<{ id: string; name: string }>>;
-	assignGeneratedFilesToAssistantMessage: (
-		conversationId: string,
-		assistantMessageId: string,
-		fileIds: string[],
-	) => Promise<void>;
 	syncGeneratedFilesToMemory: (params: {
 		userId: string;
 		conversationId: string;
@@ -128,6 +120,16 @@ export interface CompleteStreamTurnParams {
 		conversationId: string,
 		assistantMessageId: string,
 	) => Promise<Array<{ id: string; name: string }>>;
+	getFileProductionJobs: (
+		userId: string,
+		conversationId: string,
+	) => Promise<Array<{ id: string; files?: Array<{ id: string }> }>>;
+	assignFileProductionJobsToAssistantMessage: (
+		userId: string,
+		conversationId: string,
+		assistantMessageId: string,
+		jobIds: string[],
+	) => Promise<void>;
 	estimateTokenCount: (text: string) => number;
 }
 
@@ -152,7 +154,7 @@ export async function completeStreamTurn(
 		attachmentIds,
 		activeDocumentArtifactId,
 		requestStartTime,
-		generatedFileIdsAtStart,
+		fileProductionJobIdsAtStart,
 		latestContextStatus,
 		latestActiveWorkingSet,
 		latestTaskState,
@@ -173,10 +175,10 @@ export async function completeStreamTurn(
 		closeDownstream,
 		clearStreamBuffer,
 		getStreamBuffer,
-		getChatFiles,
-		assignGeneratedFilesToAssistantMessage,
 		syncGeneratedFilesToMemory,
 		getChatFilesForAssistantMessage,
+		getFileProductionJobs,
+		assignFileProductionJobsToAssistantMessage,
 		estimateTokenCount,
 	} = params;
 
@@ -208,9 +210,8 @@ export async function completeStreamTurn(
 		name: record.name,
 		status: record.status,
 	}));
-	const hadGenerateFileToolCall = toolCallSummary.some(
-		(record) =>
-			record.name === "generate_file" || record.name === "export_document",
+	const hadFileProductionToolCall = toolCallSummary.some(
+		(record) => record.name === "produce_file",
 	);
 
 	console.info("[CHAT_STREAM] Tool-call summary", {
@@ -218,8 +219,8 @@ export async function completeStreamTurn(
 		streamId,
 		wasStopped,
 		toolCallCount: toolCallSummary.length,
-		generateFileCallCount: toolCallSummary.filter(
-			(record) => record.name === "generate_file",
+		fileProductionCallCount: toolCallSummary.filter(
+			(record) => record.name === "produce_file",
 		).length,
 		toolCalls: toolCallSummary,
 	});
@@ -256,19 +257,36 @@ export async function completeStreamTurn(
 	) => {
 		let generatedFiles: Array<{ id: string; name: string }> = [];
 		try {
-			if (assistantMsgId && hadGenerateFileToolCall) {
-				const allGeneratedFiles = await getChatFiles(conversationId);
-				const newGeneratedFileIds = allGeneratedFiles
-					.filter((file) => !generatedFileIdsAtStart.has(file.id))
-					.map((file) => file.id);
+			if (assistantMsgId && hadFileProductionToolCall) {
+				const fileProductionJobs = await getFileProductionJobs(
+					userId,
+					conversationId,
+				);
+				const newFileProductionJobs = fileProductionJobs.filter(
+					(job) => !fileProductionJobIdsAtStart.has(job.id),
+				);
+				const newFileProductionJobIds = newFileProductionJobs.map(
+					(job) => job.id,
+				);
 
-				if (newGeneratedFileIds.length > 0) {
-					await assignGeneratedFilesToAssistantMessage(
+				if (newFileProductionJobIds.length > 0) {
+					await assignFileProductionJobsToAssistantMessage(
+						userId,
 						conversationId,
 						assistantMsgId,
-						newGeneratedFileIds,
+						newFileProductionJobIds,
 					);
+				}
 
+				const newGeneratedFileIds = Array.from(
+					new Set(
+						newFileProductionJobs.flatMap((job) =>
+							(job.files ?? []).map((file) => file.id),
+						),
+					),
+				);
+
+				if (newGeneratedFileIds.length > 0) {
 					void syncGeneratedFilesToMemory({
 						userId,
 						conversationId,

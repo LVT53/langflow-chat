@@ -19,7 +19,7 @@ export function getBearerToken(authorizationHeader: string | null): string | nul
 	return token;
 }
 
-type ServiceFileGenerateClaims = {
+type FileProductionServiceClaims = {
 	conversationId: string;
 	userId?: string;
 	exp: number;
@@ -38,7 +38,9 @@ function decodeBase64Url(input: string): string | null {
 	}
 }
 
-function isValidServiceFileGenerateClaims(value: unknown): value is ServiceFileGenerateClaims {
+function isValidFileProductionServiceClaims(
+	value: unknown
+): value is FileProductionServiceClaims {
 	if (!value || typeof value !== 'object') return false;
 	const claims = value as Record<string, unknown>;
 
@@ -52,9 +54,9 @@ function isValidServiceFileGenerateClaims(value: unknown): value is ServiceFileG
 	);
 }
 
-export function verifyFileGenerateServiceAssertion(
+export function verifyFileProductionServiceAssertion(
 	authorizationHeader: string | null
-): { valid: true; claims: ServiceFileGenerateClaims } | { valid: false; reason: string } {
+): { valid: true; claims: FileProductionServiceClaims } | { valid: false; reason: string } {
 	const signingKey = config.alfyaiApiSigningKey.trim();
 	if (!signingKey) {
 		return { valid: false, reason: 'signing_key_missing' };
@@ -96,7 +98,7 @@ export function verifyFileGenerateServiceAssertion(
 		return { valid: false, reason: 'invalid_payload_json' };
 	}
 
-	if (!isValidServiceFileGenerateClaims(parsed)) {
+	if (!isValidFileProductionServiceClaims(parsed)) {
 		return { valid: false, reason: 'invalid_claims' };
 	}
 

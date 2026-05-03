@@ -145,19 +145,6 @@ interface OutputReadbackFile {
 	contentBase64: string;
 }
 
-function stripCreatePdfRedeclarations(code: string): string {
-	// Strip any line that re-declares createPDF via require().
-	// The bootstrap already provides createPDF from the helper module.
-	// Matches both:
-	//   const createPDF = require('/workspace/helpers/create-pdf');
-	//   const { createPDF } = require('pdf-lib');
-	//   const { createPDF, PDFDocument } = require("pdf-lib");
-	return code.replace(
-		/^[ \t]*(?:const|let|var)\s+(?:\{[^}]*\bcreatePDF\b[^}]*\}|createPDF)\s*=\s*require\s*\([^)]*\)\s*;?\s*$/gm,
-		"// (createPDF is pre-loaded by the sandbox)",
-	);
-}
-
 function fixDoubleEscapedQuotes(code: string): string {
 	// Fix the most common model escaping error: writing \\' instead of \'
 	// inside single-quoted strings.  e.g. 'Alföldy\\'s' → SyntaxError
@@ -171,13 +158,10 @@ function buildSandboxBootstrapCode(
 	language: SandboxLanguage,
 ): string {
 	if (language === "javascript") {
-		const sanitized = fixDoubleEscapedQuotes(
-			stripCreatePdfRedeclarations(code),
-		);
+		const sanitized = fixDoubleEscapedQuotes(code);
 		return `
 const sandboxFs = require('fs');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
-const createPDF = require('/workspace/helpers/create-pdf');
 
 (async () => {
 	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
@@ -327,7 +311,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Reject dangerous entry types (symlinks, hardlinks, devices)
 				if (isDangerousEntryType(header)) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -345,7 +329,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Reject path traversal attempts
 				if (isPathTraversalAttempt(name)) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -357,7 +341,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Check max files limit
 				if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -383,7 +367,7 @@ async function extractFilesFromContainer(
 				stream.on("end", () => {
 					// SECURITY: Skip files that exceed per-file size limit
 					if (fileSize > maxFileSizeBytes) {
-						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+						console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
@@ -398,7 +382,7 @@ async function extractFilesFromContainer(
 
 					// SECURITY: Check total output size limit
 					if (totalBytes + content.length > maxTotalBytes) {
-						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+						console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
@@ -425,7 +409,7 @@ async function extractFilesFromContainer(
 				});
 
 				stream.on("error", (error) => {
-					console.warn("[FILE_GENERATE] Sandbox archive entry read failed", {
+					console.warn("[FILE_PRODUCTION] Sandbox archive entry read failed", {
 						containerId: container.id,
 						name,
 						type,
@@ -442,7 +426,7 @@ async function extractFilesFromContainer(
 			archiveStream.pipe(extract);
 		});
 	} catch (error) {
-		console.error("[FILE_GENERATE] Failed to read sandbox output archive", {
+		console.error("[FILE_PRODUCTION] Failed to read sandbox output archive", {
 			containerId: container.id,
 			outputDir: OUTPUT_DIR,
 			error,
@@ -513,7 +497,7 @@ async function inspectOutputDirectory(
 	);
 
 	if (inspection.exitCode !== 0) {
-		console.warn("[FILE_GENERATE] In-container output inspection failed", {
+		console.warn("[FILE_PRODUCTION] In-container output inspection failed", {
 			containerId: container.id,
 			exitCode: inspection.exitCode,
 			stdoutPreview: inspection.stdout || null,
@@ -524,7 +508,7 @@ async function inspectOutputDirectory(
 
 	if (!inspection.stdout) {
 		console.warn(
-			"[FILE_GENERATE] In-container output inspection returned no stdout",
+			"[FILE_PRODUCTION] In-container output inspection returned no stdout",
 			{
 				containerId: container.id,
 				stderrPreview: inspection.stderr || null,
@@ -537,7 +521,7 @@ async function inspectOutputDirectory(
 		return JSON.parse(inspection.stdout) as OutputInspectionResult;
 	} catch (error) {
 		console.warn(
-			"[FILE_GENERATE] In-container output inspection parse failed",
+			"[FILE_PRODUCTION] In-container output inspection parse failed",
 			{
 				containerId: container.id,
 				stdoutPreview: inspection.stdout.slice(0, 500),
@@ -586,7 +570,7 @@ async function readFilesFromInsideContainer(
 
 	for (const file of parsed.files) {
 		if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-files-limit",
@@ -597,7 +581,7 @@ async function readFilesFromInsideContainer(
 
 		const content = Buffer.from(file.contentBase64, "base64");
 		if (content.length !== file.sizeBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "size-mismatch",
@@ -608,7 +592,7 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (content.length > maxFileSizeBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-file-size-limit",
@@ -619,7 +603,7 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (totalBytes + content.length > maxTotalBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-total-size-limit",
@@ -701,7 +685,7 @@ export async function executeCode(
 			files = await extractFilesFromContainer(sandbox.container);
 			if (files.length === 0 && (outputInspection?.files.length ?? 0) > 0) {
 				console.warn(
-					"[FILE_GENERATE] Archive extraction missed in-container output files; falling back to in-container read",
+					"[FILE_PRODUCTION] Archive extraction missed in-container output files; falling back to in-container read",
 					{
 						containerId: sandbox.container.id,
 						fileCount: outputInspection?.files.length ?? 0,
@@ -732,7 +716,7 @@ export async function executeCode(
 				extractionError === undefined
 			) {
 				console.warn(
-					"[FILE_GENERATE] Re-inspection found output files after initial empty result; retrying collection",
+					"[FILE_PRODUCTION] Re-inspection found output files after initial empty result; retrying collection",
 					{
 						containerId: sandbox.container.id,
 						fileCount: reInspection.files.length,

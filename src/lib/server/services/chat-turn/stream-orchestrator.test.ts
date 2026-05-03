@@ -43,10 +43,13 @@ vi.mock("$lib/server/services/chat-turn/finalize", () => ({
 }));
 
 vi.mock("$lib/server/services/chat-files", () => ({
-	assignGeneratedFilesToAssistantMessage: vi.fn(),
-	getChatFiles: vi.fn(() => Promise.resolve([])),
 	getChatFilesForAssistantMessage: vi.fn(() => Promise.resolve([])),
 	syncGeneratedFilesToMemory: vi.fn(),
+}));
+
+vi.mock("$lib/server/services/file-production", () => ({
+	assignFileProductionJobsToAssistantMessage: vi.fn(),
+	listConversationFileProductionJobs: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock("$lib/server/services/analytics", () => ({
@@ -55,12 +58,6 @@ vi.mock("$lib/server/services/analytics", () => ({
 
 vi.mock("$lib/utils/tokens", () => ({
 	estimateTokenCount: vi.fn(() => 100),
-}));
-
-vi.mock("$lib/utils/generate-file-tool", () => ({
-	getGenerateFileToolCode: vi.fn(() => null),
-	getGenerateFileToolFilename: vi.fn(() => null),
-	getGenerateFileToolLanguage: vi.fn(() => null),
 }));
 
 async function readSseResponse(response: Response): Promise<string[]> {
@@ -153,12 +150,8 @@ async function resetCompletionMocks() {
 		persistUserTurnAttachments,
 		runPostTurnTasks,
 	} = await import("$lib/server/services/chat-turn/finalize");
-	const {
-		assignGeneratedFilesToAssistantMessage,
-		getChatFiles,
-		getChatFilesForAssistantMessage,
-		syncGeneratedFilesToMemory,
-	} = await import("$lib/server/services/chat-files");
+	const { getChatFilesForAssistantMessage, syncGeneratedFilesToMemory } =
+		await import("$lib/server/services/chat-files");
 	const { estimateTokenCount } = await import("$lib/utils/tokens");
 
 	(touchConversation as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
@@ -178,10 +171,6 @@ async function resetCompletionMocks() {
 		undefined,
 	);
 	(runPostTurnTasks as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-	(
-		assignGeneratedFilesToAssistantMessage as ReturnType<typeof vi.fn>
-	).mockResolvedValue(undefined);
-	(getChatFiles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 	(
 		getChatFilesForAssistantMessage as ReturnType<typeof vi.fn>
 	).mockResolvedValue([]);

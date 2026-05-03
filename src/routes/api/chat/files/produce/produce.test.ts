@@ -12,7 +12,7 @@ vi.mock('$lib/server/services/file-production', () => ({
 }));
 
 vi.mock('$lib/server/auth/hooks', () => ({
-	verifyFileGenerateServiceAssertion: vi.fn(),
+	verifyFileProductionServiceAssertion: vi.fn(),
 }));
 
 import { POST } from './+server';

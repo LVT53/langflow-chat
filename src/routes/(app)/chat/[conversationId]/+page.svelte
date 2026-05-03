@@ -49,7 +49,6 @@ import {
 	getStreamBufferInfo,
 } from "$lib/services/streaming";
 import type { StreamHandle } from "$lib/services/streaming";
-import { inferGeneratedFilenameFromToolInput } from "$lib/utils/generate-file-tool";
 import {
 	buildChatSourceMessageHref,
 	clearChatFocusMessageParam,
@@ -81,7 +80,6 @@ import {
 	updateMessageById,
 	cloneSendPayload,
 	isOsFileDropEvent,
-	reducePendingGeneratedFiles,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
 	type DraftChangePayload,
@@ -143,7 +141,6 @@ let conversationDraft = $state<ConversationDraft | null>(
 );
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
-let pendingGeneratedFiles = $state<ChatGeneratedFileListItem[]>([]);
 let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 let activeWorkspaceDocumentId = $state<string | null>(null);
 let workspaceOpen = $state(false);
@@ -177,7 +174,6 @@ let generatedFileCards = $derived([
 				status: "success",
 			}) satisfies ChatGeneratedFileListItem,
 	),
-	...pendingGeneratedFiles,
 ]);
 let availableWorkspaceDocuments = $derived(
 	generatedFiles.map((file) => ({
@@ -200,27 +196,6 @@ let availableWorkspaceDocuments = $derived(
 		downloadUrl: `/api/chat/files/${file.id}/download`,
 	})),
 );
-
-function inferGeneratedFilename(input: Record<string, unknown>): string {
-	return inferGeneratedFilenameFromToolInput(input);
-}
-
-function addPendingGeneratedFile(
-	input: Record<string, unknown>,
-	assistantMessageId: string,
-) {
-	const filename = inferGeneratedFilename(input);
-	pendingGeneratedFiles = reducePendingGeneratedFiles(
-		pendingGeneratedFiles,
-		filename,
-		assistantMessageId,
-		data.conversation.id,
-	);
-}
-
-function resetPendingGeneratedFiles() {
-	pendingGeneratedFiles = [];
-}
 
 function openWorkspaceDocument(document: DocumentWorkspaceItem) {
 	const result = reduceWorkspaceDocumentOpen(workspaceDocuments, document);
@@ -361,7 +336,6 @@ function resetState() {
 	workspaceDocuments = [];
 	activeWorkspaceDocumentId = null;
 	workspaceOpen = false;
-	resetPendingGeneratedFiles();
 	queuedTurn = null;
 	bootstrapMode = data.bootstrap ?? false;
 	hydratingConversation = false;
@@ -593,12 +567,6 @@ async function reconnectToOrphanedStream(
 				);
 			},
 			onToolCall(name, input, status, details) {
-				if (
-					(name === "generate_file" || name === "export_document") &&
-					status === "running"
-				) {
-					addPendingGeneratedFile(input, placeholderId);
-				}
 				messages.update((list) =>
 					applyToolCallUpdateToMessageList(list, {
 						placeholderId,
@@ -643,7 +611,6 @@ async function reconnectToOrphanedStream(
 				if (metadata?.generatedFiles) {
 					void hydrateConversationDetail(data.conversation.id);
 				}
-				resetPendingGeneratedFiles();
 				const serverAssistantId = metadata?.assistantMessageId;
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
@@ -659,7 +626,6 @@ async function reconnectToOrphanedStream(
 					void pollMessageEvidence(serverAssistantId);
 					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
 				}
-				resetPendingGeneratedFiles();
 
 				const isBrowserAbort =
 					err.name === "AbortError" &&
@@ -848,7 +814,6 @@ async function hydrateConversationDetail(conversationId: string) {
 		conversationDraft = payload.draft ?? conversationDraft;
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
 		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
-		resetPendingGeneratedFiles();
 		bootstrapMode = false;
 
 		if (
@@ -917,7 +882,6 @@ $effect(() => {
 			);
 			generatedFiles = [...currentFiles, ...newFiles];
 		}
-		resetPendingGeneratedFiles();
 	}
 });
 
@@ -1155,12 +1119,6 @@ function handleSend(
 				);
 			},
 			onToolCall(name, input, status, details) {
-				if (
-					(name === "generate_file" || name === "export_document") &&
-					status === "running"
-				) {
-					addPendingGeneratedFile(input, placeholderId);
-				}
 				messages.update((list) =>
 					applyToolCallUpdateToMessageList(list, {
 						placeholderId,
@@ -1188,7 +1146,6 @@ function handleSend(
 					generatedFiles = [...generatedFiles, ...newFiles];
 					void hydrateConversationDetail(data.conversation.id);
 				}
-				resetPendingGeneratedFiles();
 				const serverAssistantId = metadata?.assistantMessageId;
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
@@ -1225,7 +1182,6 @@ function handleSend(
 				messages.update((list) => removeMessageById(list, placeholderId));
 				activeStream = null;
 				isSending = false;
-				resetPendingGeneratedFiles();
 				restoreQueuedTurnToDraft();
 
 				const isBrowserAbort =
@@ -1298,12 +1254,6 @@ function handleRetry() {
 					);
 				},
 				onToolCall(name, input, status, details) {
-					if (
-						(name === "generate_file" || name === "export_document") &&
-						status === "running"
-					) {
-						addPendingGeneratedFile(input, placeholderId);
-					}
 					messages.update((list) =>
 						applyToolCallUpdateToMessageList(list, {
 							placeholderId,
@@ -1338,7 +1288,6 @@ function handleRetry() {
 						generatedFiles = [...generatedFiles, ...newFiles];
 						void hydrateConversationDetail(data.conversation.id);
 					}
-					resetPendingGeneratedFiles();
 					const serverAssistantId = metadata?.assistantMessageId;
 					messages.update((list) =>
 						finalizeStreamingMessageList(list, {
@@ -1373,7 +1322,6 @@ function handleRetry() {
 					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
-					resetPendingGeneratedFiles();
 					restoreQueuedTurnToDraft();
 
 					const isBrowserAbort =

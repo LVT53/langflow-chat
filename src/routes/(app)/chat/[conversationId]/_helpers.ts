@@ -7,7 +7,6 @@ import type {
 	EvidenceSourceType,
 	PendingAttachment,
 	ToolEvidenceCandidate,
-	ChatGeneratedFileListItem,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 	ModelId,
@@ -352,30 +351,6 @@ export function finalizeStreamingMessageList(
 
 export function removeMessageById(list: ChatMessage[], messageId: string): ChatMessage[] {
 	return list.filter((message) => message.id !== messageId);
-}
-
-export function reducePendingGeneratedFiles(
-	list: ChatGeneratedFileListItem[],
-	filename: string,
-	assistantMessageId: string,
-	conversationId: string
-): ChatGeneratedFileListItem[] {
-	if (list.some((f) => f.assistantMessageId === assistantMessageId && f.filename === filename)) {
-		return list;
-	}
-	return [
-		...list,
-		{
-			id: `pending-${crypto.randomUUID()}`,
-			conversationId,
-			assistantMessageId,
-			filename,
-			mimeType: 'application/octet-stream',
-			sizeBytes: 0,
-			createdAt: Date.now(),
-			status: 'generating',
-		},
-	];
 }
 
 export function cloneSendPayload(payload: SendPayload): SendPayload {

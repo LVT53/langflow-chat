@@ -93,7 +93,7 @@ ui/
 
 - `ConversationList.svelte` owns drag/drop state — `ConversationItem` and `ProjectItem` are **event emitters**, not persistence actors
 - `MessageArea.svelte` is the **sole scroll owner** for conversation content — do not add `overflow-y: auto` elsewhere
-- `MessageArea.svelte` must also keep newly appended generated-file cards, including temporary `generate_file` loading placeholders, visible when the user remained near the bottom of the chat
+- `MessageArea.svelte` must also keep newly appended file-production cards visible when the user remained near the bottom of the chat
 - `MessageArea.svelte` also owns the quiet empty-conversation ready state for chat detail routes; do not reintroduce the landing-page hero copy inside the message pane
 - `MessageInput.svelte` emits drafts and `onQueue` events — the **chat page** decides auto-send and restore behavior
 - `MessageInput.svelte` must mirror a cleared `conversationId` prop back into its local `resolvedConversationId`; do not keep stale landing-page conversation ids alive inside the component after the parent resets them

@@ -17,7 +17,7 @@ vi.mock('$lib/server/env', () => ({
 
 import {
 	getBearerToken,
-	verifyFileGenerateServiceAssertion,
+	verifyFileProductionServiceAssertion,
 } from './hooks';
 
 function signPayload(payload: Record<string, unknown>, signingKey: string): string {
@@ -51,7 +51,7 @@ describe('auth hooks', () => {
 		};
 		const token = signPayload(payload, 'test-signing-key');
 
-		const result = verifyFileGenerateServiceAssertion(`Bearer ${token}`);
+		const result = verifyFileProductionServiceAssertion(`Bearer ${token}`);
 		expect(result.valid).toBe(true);
 		if (result.valid) {
 			expect(result.claims.conversationId).toBe('conv-1');
@@ -67,7 +67,7 @@ describe('auth hooks', () => {
 		};
 		const token = signPayload(payload, 'test-signing-key');
 
-		const result = verifyFileGenerateServiceAssertion(`Bearer ${token}`);
+		const result = verifyFileProductionServiceAssertion(`Bearer ${token}`);
 		expect(result.valid).toBe(true);
 		if (result.valid) {
 			expect(result.claims.conversationId).toBe('conv-1');
@@ -82,7 +82,7 @@ describe('auth hooks', () => {
 		};
 		const token = signPayload(payload, 'test-signing-key');
 
-		const result = verifyFileGenerateServiceAssertion(`Bearer ${token}`);
+		const result = verifyFileProductionServiceAssertion(`Bearer ${token}`);
 		expect(result.valid).toBe(false);
 		if ('reason' in result) {
 			expect(result.reason).toBe('expired');
@@ -96,7 +96,7 @@ describe('auth hooks', () => {
 		};
 		const token = signPayload(payload, 'different-signing-key');
 
-		const result = verifyFileGenerateServiceAssertion(`Bearer ${token}`);
+		const result = verifyFileProductionServiceAssertion(`Bearer ${token}`);
 		expect(result.valid).toBe(false);
 		if ('reason' in result) {
 			expect(['invalid_signature', 'invalid_signature_length']).toContain(result.reason);

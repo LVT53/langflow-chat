@@ -6,11 +6,12 @@ import {
 } from '$lib/server/services/chat-files';
 import { db } from '$lib/server/db';
 import {
+	chatGeneratedFiles,
 	fileProductionJobAttempts,
 	fileProductionJobFiles,
 	fileProductionJobs,
 } from '$lib/server/db/schema';
-import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { ChatFile } from '$lib/server/services/chat-files';
 import { randomUUID } from 'node:crypto';
 import { executeCode as executeSandboxCode } from '$lib/server/services/sandbox-execution';
@@ -1372,4 +1373,51 @@ export async function listConversationFileProductionJobs(
 			);
 		})
 		.filter((job) => job.files.length > 0 || job.status !== 'succeeded');
+}
+
+export async function assignFileProductionJobsToAssistantMessage(
+	userId: string,
+	conversationId: string,
+	assistantMessageId: string,
+	jobIds: string[]
+): Promise<void> {
+	const uniqueJobIds = Array.from(new Set(jobIds.filter((jobId) => jobId.trim().length > 0)));
+	if (uniqueJobIds.length === 0) {
+		return;
+	}
+
+	await db
+		.update(fileProductionJobs)
+		.set({
+			assistantMessageId,
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(fileProductionJobs.userId, userId),
+				eq(fileProductionJobs.conversationId, conversationId),
+				inArray(fileProductionJobs.id, uniqueJobIds),
+				isNull(fileProductionJobs.assistantMessageId)
+			)
+		);
+
+	const links = await db
+		.select({ chatGeneratedFileId: fileProductionJobFiles.chatGeneratedFileId })
+		.from(fileProductionJobFiles)
+		.where(inArray(fileProductionJobFiles.jobId, uniqueJobIds));
+	const linkedFileIds = Array.from(new Set(links.map((link) => link.chatGeneratedFileId)));
+	if (linkedFileIds.length === 0) {
+		return;
+	}
+
+	await db
+		.update(chatGeneratedFiles)
+		.set({ assistantMessageId })
+		.where(
+			and(
+				eq(chatGeneratedFiles.conversationId, conversationId),
+				inArray(chatGeneratedFiles.id, linkedFileIds),
+				isNull(chatGeneratedFiles.assistantMessageId)
+			)
+		);
 }

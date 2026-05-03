@@ -142,22 +142,27 @@ Do not:
   - [`src/lib/server/services/messages.ts`](./src/lib/server/services/messages.ts)
   - [`src/lib/server/services/message-evidence.ts`](./src/lib/server/services/message-evidence.ts)
     - Owns evidence channel types for document-backed artifacts
-- Chat-generated files:
-  - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
+- Chat-generated files and durable file production:
+  - [`src/routes/api/chat/files/produce/+server.ts`](./src/routes/api/chat/files/produce/+server.ts)
+  - [`src/routes/api/chat/files/jobs/[id]/retry/+server.ts`](./src/routes/api/chat/files/jobs/[id]/retry/+server.ts)
+  - [`src/routes/api/chat/files/jobs/[id]/cancel/+server.ts`](./src/routes/api/chat/files/jobs/[id]/cancel/+server.ts)
   - [`src/routes/api/chat/files/[id]/download/+server.ts`](./src/routes/api/chat/files/[id]/download/+server.ts)
+  - [`src/routes/api/chat/files/[id]/preview/+server.ts`](./src/routes/api/chat/files/[id]/preview/+server.ts)
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
-- [`src/routes/api/chat/files/[id]/preview/+server.ts`](./src/routes/api/chat/files/[id]/preview/+server.ts)
+- [`src/lib/server/services/file-production/`](./src/lib/server/services/file-production/)
 - [`src/lib/components/chat/GeneratedFile.svelte`](./src/lib/components/chat/GeneratedFile.svelte)
+- [`src/lib/components/chat/FileProductionCard.svelte`](./src/lib/components/chat/FileProductionCard.svelte)
 - [`src/lib/components/chat/DocumentWorkspace.svelte`](./src/lib/components/chat/DocumentWorkspace.svelte)
-- Generated files refresh:
+- Generated files and production job refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
-  - Stream end event includes the current `generatedFiles` array fetched via `getChatFiles()`, including an empty array when the conversation no longer has chat-scoped generated files
-  - Chat page `onEnd` callback refreshes `generatedFiles` state from metadata and clears any temporary `generate_file` loading placeholders
-  - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts) must reject sandbox runs that finish without writing a file to `/output`; do not silently treat zero generated files as success
+  - Stream completion links new file-production jobs and any produced chat files to the persisted assistant message so job-backed cards survive refreshes
+  - Conversation detail returns `fileProductionJobs` alongside `generatedFiles`; legacy chat files are backfilled into succeeded job rows by the file-production service
+  - Chat page refreshes conversation detail after file-producing turns and while queued/running production jobs exist
+  - [`src/routes/api/chat/files/produce/+server.ts`](./src/routes/api/chat/files/produce/+server.ts) creates durable jobs and persists validation failures as failed job cards
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the sandbox runtime images exist before container creation, warms them in the background at app startup, and supports both the Python runtime (`python:3.11-slim`) and the JavaScript runtime (`node:22-bookworm-slim`)
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) must wait for exec inspection to report `Running === false` before the archive reader inspects `/output`; do not treat an early stream close as proof that the sandbox command has finished
   - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts) must surface output-archive read failures as explicit execution errors instead of collapsing them into the same empty-file 422 path used for real zero-output runs
-  - Generated-file/server tracing now mainly uses `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]`, `[LANGFLOW]`, `[HONCHO]`, and `[MEMORY_MAINTENANCE]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
+  - File-production/server tracing now mainly uses `[FILE_PRODUCTION]`, `[CHAT_STREAM]`, `[CHAT_FILES]`, `[LANGFLOW]`, `[HONCHO]`, and `[MEMORY_MAINTENANCE]`; preserve those prefixes when extending the debugging path so node logs stay grep-friendly
 
 Do:
 
@@ -171,14 +176,12 @@ Do:
 - use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
 - use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
 - keep the shared rich-preview stack lazy-loaded from `DocumentWorkspace.svelte`, `GeneratedFile.svelte`, and `knowledge/FilePreview.svelte`; do not static-import the heavy preview path back into the idle chat or knowledge shell
-- use temporary `generate_file` UI placeholders only in the chat page/message-area flow; do not fake persisted generated-file rows in server payloads or chat-file storage
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
-- `/api/chat/files/generate` may authenticate with either the signed-in session or a signed service assertion validated with `ALFYAI_API_SIGNING_KEY`; keep that service path conversation-scoped and internal
-- keep outbound file-generation guidance in `langflow.ts` aligned with the Langflow file-generator tool contract: write outputs to `/output`, and generated files show up in chat
-- keep outbound file-generation guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call the tool rather than merely describing a file in prose
-- keep the Langflow custom file-generator component aligned with Langflow tool-mode docs: expose the actual `generate_file` output method as the tool instead of surfacing a builder method like `build_tool`
-- keep the Langflow custom file-generator component's source input named `source_code`, not `code`; `code` collides with Langflow component internals and can cause the node to send its own component source to `/api/chat/files/generate`
-- keep `generate_file` runtime guidance accurate: use `language: "python"` for standard-library-friendly text/data exports and `language: "javascript"` for `.xlsx` via `exceljs`, `.pdf` via `pdf-lib`, `.pptx` via `pptxgenjs`, `.docx` via `docx`, and `.odt` via `jszip` packaging
+- `/api/chat/files/produce` may authenticate with either the signed-in session or a signed service assertion validated with `ALFYAI_API_SIGNING_KEY`; keep that service path conversation-scoped and internal
+- keep outbound file-production guidance in `langflow.ts` aligned with the unified `produce_file` tool contract: source-first documents use `document_source`, program artifacts write final files to `/output`, and generated files show up as durable job-backed cards
+- keep outbound file-production guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call `produce_file` rather than merely describing a file in prose
+- keep the Langflow custom `File Production` component aligned with Langflow tool-mode docs: expose the actual `produce_file` output method as the tool and keep `conversationId` resolved from the Langflow session, not as a model-facing field
+- keep `produce_file` runtime guidance accurate: use `sourceMode: "document_source"` for PDF/DOCX/HTML reports from structured document source and `sourceMode: "program"` for code-generated data/office artifacts
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 - working-document continuity should continue to build on generated-output artifacts plus Honcho sync.
 - working-document continuity should prefer the shared resolver’s “current generated document” signal over generic latest-output heuristics. If a generated document is selected because of active focus or a query match, do not layer a second recency-only boost on top.
@@ -405,14 +408,14 @@ Do not:
 - document a config variable publicly without confirming it exists in real code paths
 - add admin-configurable behavior in the UI without threading it through `config-store.ts`
 
-### Sandbox Execution (AI File Generation)
+### Sandbox Execution And File Production
 
 - Sandbox configuration:
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts)
 - Sandbox execution service:
   - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts)
-- File generation API:
-  - [`src/routes/api/chat/files/generate/+server.ts`](./src/routes/api/chat/files/generate/+server.ts)
+- File production API:
+  - [`src/routes/api/chat/files/produce/+server.ts`](./src/routes/api/chat/files/produce/+server.ts)
 - Chat-linked file storage:
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
 
@@ -508,14 +511,14 @@ These services are actively imported but not documented in the feature sections 
 
 - Server utilities and helpers:
   - [`src/lib/server/auth/hooks.ts`](./src/lib/server/auth/hooks.ts) — `requireAuth`, `getBearerToken` helpers. Canonical auth enforcement point for API routes; mirrors `hooks.server.ts` logic in a reusable form.
-  - [`src/lib/server/services/attachment-trace.ts`](./src/lib/server/services/attachment-trace.ts) — logging helper for langflow/chat-file tracing. Adds `[FILE_GENERATE]`, `[CHAT_STREAM]`, `[CHAT_FILES]` correlation context. Consumed by stream-orchestrator and langflow.
+  - [`src/lib/server/services/attachment-trace.ts`](./src/lib/server/services/attachment-trace.ts) — logging helper for langflow/chat-file tracing. Adds `[FILE_PRODUCTION]`, `[CHAT_STREAM]`, `[CHAT_FILES]` correlation context. Consumed by stream-orchestrator and langflow.
   - [`src/lib/server/services/language.ts`](./src/lib/server/services/language.ts) — language detection utilities. Consumed by chat-turn request handling and title prompt selection.
   - [`src/lib/server/services/conversation-drafts.ts`](./src/lib/server/services/conversation-drafts.ts) — draft management for conversations. Used by conversation routes for draft save/load.
   - [`src/lib/server/services/webhook-buffer.ts`](./src/lib/server/services/webhook-buffer.ts) — sentence-level webhook buffering for streaming turns. Consumed by hooks.server.ts.
   - [`src/lib/server/prompts.ts`](./src/lib/server/prompts.ts) — shared prompt configuration helpers. Consumed by langflow and honcho.
   - [`src/lib/server/api/responses.ts`](./src/lib/server/api/responses.ts) — shared JSON response helpers (`createJsonErrorResponse`, `createJsonResponse`) for API routes. Used across route files for consistent error/success formatting.
   - [`src/lib/server/services/analytics.ts`](./src/lib/server/services/analytics.ts) — analytics event ingestion. Consumed by chat-turn finalize.ts. Event ingestion endpoint at `src/routes/api/analytics/+server.ts`.
-  - [`src/lib/server/services/pdf-generator.ts`](./src/lib/server/services/pdf-generator.ts) — PDF artifact generation from chat content or file generation requests.
+  - [`src/lib/server/services/file-production/`](./src/lib/server/services/file-production/) — durable file-production jobs, source validation, renderers, sandbox execution, retry/cancel, and legacy generated-file backfill.
 
 - Tool endpoints:
   - [`src/routes/api/tools/image-search/+server.ts`](./src/routes/api/tools/image-search/+server.ts) — image search tool endpoint
@@ -526,7 +529,6 @@ These services are actively imported but not documented in the feature sections 
   - [`src/routes/api/stream/webhook/[sessionId]/+server.ts`](./src/routes/api/stream/webhook/[sessionId]/+server.ts) — stream webhook endpoint
 
 - Other API endpoints:
-  - [`src/routes/api/chat/files/export/+server.ts`](./src/routes/api/chat/files/export/+server.ts) — conversation file export
   - [`src/routes/api/chat/stream/buffer/+server.ts`](./src/routes/api/chat/stream/buffer/+server.ts) — stream buffer replay for reconnection
   - [`src/routes/api/chat/stream/status/+server.ts`](./src/routes/api/chat/stream/status/+server.ts) — stream capacity/status check
 

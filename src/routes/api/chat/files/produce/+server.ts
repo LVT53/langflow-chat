@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { verifyFileGenerateServiceAssertion } from '$lib/server/auth/hooks';
+import { verifyFileProductionServiceAssertion } from '$lib/server/auth/hooks';
 import { getConversation, getConversationUserId } from '$lib/server/services/conversations';
 import {
 	createFailedFileProductionJob,
@@ -210,7 +210,7 @@ async function resolveOwnerUserId(event: Parameters<RequestHandler>[0], conversa
 		return { ok: true as const, userId: user.id };
 	}
 
-	const serviceAssertion = verifyFileGenerateServiceAssertion(
+	const serviceAssertion = verifyFileProductionServiceAssertion(
 		event.request.headers.get('authorization')
 	);
 	if (!serviceAssertion?.valid || serviceAssertion.claims.conversationId !== conversationId) {
