@@ -1,11 +1,51 @@
 import { describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	getConfig: vi.fn(() => ({ contextDiagnosticsDebug: true })),
+}));
+
+vi.mock("../../config-store", () => ({
+	getConfig: mocks.getConfig,
+}));
+
 import {
 	buildLegacyContextTrace,
 	emitContextTrace,
 } from "./context-trace";
 
 describe("Context Trace", () => {
+	it("does not emit traces unless context diagnostics are enabled", () => {
+		mocks.getConfig.mockReturnValueOnce({ contextDiagnosticsDebug: false });
+		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const trace = buildLegacyContextTrace({
+			conversationId: "conv-1",
+			userId: "user-1",
+			modelId: "model1",
+			modelName: "local-model",
+			attempt: 1,
+			phase: "context_selection",
+			contextSource: "live",
+			budget: {
+				maxModelContext: 10_000,
+				targetConstructedContext: 6_000,
+				reservedEstimate: 500,
+				promptEstimate: 2_000,
+				outputReserve: 1_000,
+				wasBudgetEnforced: false,
+			},
+			sections: [],
+			limitations: [],
+			warnings: [],
+			fallbacks: [],
+		});
+
+		emitContextTrace(trace);
+
+		expect(info).not.toHaveBeenCalled();
+	});
+
 	it("emits one compact structured trace without prompt body text", () => {
+		mocks.getConfig.mockReturnValueOnce({ contextDiagnosticsDebug: true });
 		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 		const trace = buildLegacyContextTrace({
 			conversationId: "conv-1",

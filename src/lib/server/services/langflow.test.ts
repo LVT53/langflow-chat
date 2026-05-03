@@ -287,6 +287,7 @@ describe("sendMessage provider routing", () => {
 	});
 
 	it("emits a compact Context Trace for the outbound turn without prompt body text", async () => {
+		mockConfig({}, { contextDiagnosticsDebug: true });
 		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 		mocks.buildConstructedContext.mockResolvedValueOnce({
 			inputValue: [
@@ -353,6 +354,7 @@ describe("sendMessage provider routing", () => {
 	});
 
 	it("emits protected section inclusion decisions from context selection", async () => {
+		mockConfig({}, { contextDiagnosticsDebug: true });
 		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 		mocks.buildConstructedContext.mockResolvedValueOnce({
 			inputValue: [

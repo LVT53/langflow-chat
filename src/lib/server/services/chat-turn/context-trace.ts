@@ -1,4 +1,5 @@
 import { estimateTokenCount } from "$lib/utils/tokens";
+import { getConfig } from "../../config-store";
 
 export type ContextTracePhase =
 	| "context_selection"
@@ -146,5 +147,6 @@ export function buildLegacyContextTrace(params: {
 }
 
 export function emitContextTrace(trace: ContextTrace): void {
+	if (!getConfig().contextDiagnosticsDebug) return;
 	console.info("[CONTEXT_TRACE]", trace);
 }
