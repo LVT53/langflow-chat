@@ -111,6 +111,7 @@ const messages = writable<ChatMessage[]>(initialMessages);
 const draftPersistence = createDraftPersistence();
 let sendError = $state<string | null>(null);
 let isSending = $state(false);
+let isEditResendPending = $state(false);
 let activeStream = $state<StreamHandle | null>(null);
 let queuedTurn = $state<SendPayload | null>(null);
 let titleGenerationTriggered = false;
@@ -1024,7 +1025,7 @@ function handleSend(
 	const attachmentIds = payload.attachmentIds ?? [];
 	const newAttachments = payload.attachments ?? [];
 	const modelIdForTurn = payload.modelId ?? $selectedModel;
-	if (!text.trim() || isSending) return;
+	if (!text.trim() || isSending || isEditResendPending) return;
 
 	sendError = null;
 	isSending = true;
@@ -1333,7 +1334,7 @@ function handleRetry() {
 }
 
 function handleRegenerate(payload: MessageRegeneratePayload) {
-	if (isSending) return;
+	if (isSending || isEditResendPending) return;
 	const { messageId } = payload;
 	const msgs = $messages;
 	const assistantIdx = msgs.findIndex((m) => m.id === messageId);
@@ -1363,8 +1364,8 @@ function handleRegenerate(payload: MessageRegeneratePayload) {
 	);
 }
 
-function handleEdit(payload: MessageEditPayload) {
-	if (isSending) return;
+async function handleEdit(payload: MessageEditPayload) {
+	if (isSending || isEditResendPending) return;
 	const { messageId, newText } = payload;
 	const msgs = $messages;
 	const editIdx = msgs.findIndex((m) => m.id === messageId);
@@ -1375,12 +1376,19 @@ function handleEdit(payload: MessageEditPayload) {
 	// Remove all messages from the edited one onwards
 	messages.update((m) => m.slice(0, editIdx));
 
-	// Delete from DB (fire-and-forget, non-critical)
-	void deleteConversationMessages(data.conversation.id, idsToDelete).catch(
-		() => {},
-	);
-
 	sendError = null;
+	isEditResendPending = true;
+	try {
+		await deleteConversationMessages(data.conversation.id, idsToDelete);
+	} catch (error) {
+		messages.set(msgs);
+		sendError =
+			error instanceof Error ? error.message : "Failed to delete messages";
+		isEditResendPending = false;
+		return;
+	}
+
+	isEditResendPending = false;
 	handleSend({
 		message: newText,
 		attachmentIds: [],
@@ -1535,7 +1543,7 @@ function handleDrop(event: DragEvent) {
 	fileDragRejected = false;
 	if (!isOsFileDropEvent(event)) return;
 	event.preventDefault();
-	if (isSending) return;
+	if (isSending || isEditResendPending) return;
 	const files = event.dataTransfer?.files;
 	if (!files || files.length === 0) return;
 	void uploadFilesFn?.(files);
@@ -1591,8 +1599,8 @@ function handleDrop(event: DragEvent) {
 				onDraftChange={handleDraftChange}
 				onEditQueuedMessage={editQueuedTurn}
 				onDeleteQueuedMessage={clearQueuedTurn}
-				disabled={isSending}
-				isGenerating={isSending}
+				disabled={isSending || isEditResendPending}
+				isGenerating={isSending || isEditResendPending}
 				hasQueuedMessage={Boolean(queuedTurn)}
 				queuedMessagePreview={queuedTurn?.message ?? ''}
 				maxLength={data.maxMessageLength}

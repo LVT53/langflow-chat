@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
-	import { selectedModel, setSelectedModel, setSelectedModelAndSync, type ModelId } from '$lib/stores/settings';
+	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
 
 	let { onSelect, open = undefined, onOpenChange = undefined }: {
 		onSelect?: (payload: { modelId: ModelId }) => void;
@@ -53,7 +53,7 @@
 	});
 
 	function handleSelect(modelId: ModelId) {
-		void setSelectedModelAndSync(modelId);
+		setSelectedModel(modelId);
 		setOpen(false);
 		onSelect?.({ modelId });
 	}

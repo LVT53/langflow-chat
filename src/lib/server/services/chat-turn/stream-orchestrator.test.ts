@@ -358,6 +358,56 @@ describe("stream-orchestrator SSE contract", () => {
 		expect(sendMessage).toHaveBeenCalledTimes(1);
 	});
 
+	it("falls back to non-streaming when termination leaves only buffered output", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		const terminatedError = new TypeError("terminated") as Error & {
+			cause?: unknown;
+		};
+		terminatedError.cause = { code: "UND_ERR_SOCKET" };
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createErroredStream(
+				['event: token\ndata: {"text":"Response"}\n\n'],
+				terminatedError,
+			),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+		(sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+			text: "Recovered answer",
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn(),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain('event: token\ndata: {"text":"Recovered answer"}');
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps partial streamed output when the upstream body terminates after output starts", async () => {
 		const { sendMessage, sendMessageStream } = await import(
 			"$lib/server/services/langflow"

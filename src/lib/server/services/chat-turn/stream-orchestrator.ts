@@ -369,6 +369,23 @@ export function runChatStreamOrchestrator(
 						chunkRuntime.toolCallRecords.length > 0 ||
 						emittedAssistantText.trim(),
 				);
+			const hasPersistableStreamOutput = () =>
+				Boolean(
+					chunkRuntime.fullResponse.trim() ||
+						chunkRuntime.toolCallRecords.some(
+							(record) => record.status === "done",
+						),
+				);
+			const flushBufferedStreamOutput = () => {
+				flushPendingThinking();
+				if (!flushInlineThinkingBuffer()) {
+					return false;
+				}
+				if (!flushOutputBuffer()) {
+					return false;
+				}
+				return true;
+			};
 			let latestContextStatus:
 				| import("$lib/types").ConversationContextStatus
 				| undefined;
@@ -521,7 +538,7 @@ export function runChatStreamOrchestrator(
 				console.warn(
 					reason === "stream_connect_failure"
 						? "[STREAM] Falling back to non-stream Langflow run after stream connect failure"
-						: "[STREAM] Falling back to non-stream Langflow run after stream body terminated before first output",
+						: "[STREAM] Falling back to non-stream Langflow run after stream body terminated before usable output",
 					{
 						conversationId,
 						attempt,
@@ -827,12 +844,24 @@ export function runChatStreamOrchestrator(
 					);
 					return;
 				}
-				if (
-					isAbruptUpstreamTermination(error) &&
-					chunkRuntime.fullResponse.trim()
-				) {
-					completeSuccess();
-					return;
+				if (isAbruptUpstreamTermination(error)) {
+					if (flushBufferedStreamOutput() && hasPersistableStreamOutput()) {
+						completeSuccess();
+						return;
+					}
+					if (
+						!attemptedNonStreamFallback &&
+						!wasActiveChatStreamStopRequested(streamId) &&
+						shouldFallbackToNonStreaming(error) &&
+						chunkRuntime.toolCallRecords.length === 0
+					) {
+						await fallbackToNonStreaming(
+							"stream_read_failure",
+							latestUpstreamAttempt,
+							error,
+						);
+						return;
+					}
 				}
 				console.error("[STREAM] Chat stream error", {
 					conversationId,
