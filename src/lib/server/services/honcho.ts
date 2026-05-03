@@ -6,23 +6,13 @@ import { Honcho } from '@honcho-ai/sdk';
 import type { Message, Peer } from '@honcho-ai/sdk';
 import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
 import type { Session } from '@honcho-ai/sdk/dist/session';
-import { DAY_MS } from '$lib/server/utils/constants';
 import { getConfig } from '../config-store';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
 import { estimateTokenCount } from '$lib/utils/tokens';
-import { TokenBudget } from '$lib/server/utils/token-budget';
-import { extractiveCompress } from '$lib/server/utils/extractive-compression';
-import { computeDecayScore, computeCrossConversationDecay } from '$lib/server/utils/artifact-decay';
 import { detectTopicShift, shouldSuppressCarryover } from '$lib/server/utils/topic-shift-detector';
 import {
-	isCrossConversationArtifactEligible,
-	applyConversationBoundaryPenalty,
-	shouldIncludePersonaMemoryInGeneratedContext,
-} from '$lib/server/utils/conversation-boundary-filter';
-import {
-	buildContextSection,
 	dedupeById,
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
@@ -1493,11 +1483,6 @@ export async function buildConstructedContext(params: {
 		}).catch(() => sections)),
 	];
 
-	const sectionTotalEstimate = effectiveSections.reduce(
-		(total, section) =>
-			total + estimateTokenCount(buildContextSection(section.title, section.body)),
-		estimateTokenCount(params.message) + 12
-	);
 	const targetBudget =
 		params.contextLimits?.targetConstructedContext ??
 		getTargetConstructedContext(params.modelId);
@@ -1506,104 +1491,8 @@ export async function buildConstructedContext(params: {
 		getCompactionUiThreshold(params.modelId);
 	const maxModelContext =
 		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
-	const budget = new TokenBudget(targetBudget);
 
-	budget.reserve('system', params.message);
-
-	const personaSection = effectiveSections.find((s) => s.title === 'User Memory');
-	if (personaSection && personaSection.body.trim()) {
-		const queryOverlap = estimateTokenCount(
-			personaSection.body.substring(0, 200)
-		);
-		const include = shouldIncludePersonaMemoryInGeneratedContext({
-			memoryCanonicalText: personaSection.body,
-			currentQuery: params.message,
-			queryOverlap,
-			isGeneratedDocumentRequest: activeDocumentState.documentFocused,
-		});
-		if (include) {
-			budget.reserve('persona', personaSection.body);
-		}
-	}
-
-	const historySections = effectiveSections.filter(
-		(section) =>
-			section.title !== 'User Memory' &&
-			section.title !== 'Current Attachments' &&
-			section.title !== 'Retrieved Evidence'
-	);
-	for (const section of historySections) {
-		const sectionText = buildContextSection(section.title, section.body);
-		budget.reserve(`history:${section.title}`, sectionText);
-	}
-
-	const attachmentSection = effectiveSections.find((s) => s.title === 'Current Attachments');
-	if (attachmentSection) {
-		const sectionText = buildContextSection(attachmentSection.title, attachmentSection.body);
-		budget.reserve('attachments', sectionText);
-	}
-
-	const documentSection = effectiveSections.find((s) => s.title === 'Retrieved Evidence');
-	let compactionApplied = false;
-
-	if (documentSection && documentSection.body.trim().length >= 500) {
-		const docCharBudget = budget.remaining() * 4;
-		if (docCharBudget > 0) {
-			const compressed = extractiveCompress({
-				chunks: [documentSection.body],
-				query: params.message,
-				maxChars: Math.max(200, docCharBudget),
-			});
-			if (compressed.compressionRatio > 0.05) {
-				compactionApplied = true;
-				documentSection.body = compressed.text;
-			}
-		}
-	}
-
-	if (documentSection) {
-		const sectionText = buildContextSection(documentSection.title, documentSection.body);
-		budget.reserve('documents', sectionText);
-	}
-
-	for (const artifact of selectedEvidence) {
-		const daysSinceAccess = artifact.updatedAt
-			? Math.floor((Date.now() - (typeof artifact.updatedAt === 'number' ? artifact.updatedAt : (artifact.updatedAt as unknown as Date).getTime())) / DAY_MS)
-			: 0;
-		const isSameConversation = artifact.conversationId === params.conversationId;
-		const matchScore = scoreMatch(params.message, `${artifact.name}\n${artifact.summary ?? ''}`);
-		const eligible = isCrossConversationArtifactEligible({
-			artifactConversationId: artifact.conversationId,
-			currentConversationId: params.conversationId,
-			matchScore,
-			explicitlyRequested: false,
-		});
-		if (!eligible) {
-			continue;
-		}
-		const penalty = applyConversationBoundaryPenalty({
-			score: 1,
-			isSameConversation,
-			daysSinceLastAccess: daysSinceAccess,
-		});
-		if (penalty <= 0) {
-			continue;
-		}
-		const decayScore = computeDecayScore({
-			importance: 1,
-			ageSeconds: daysSinceAccess * 86_400,
-			staleSeconds: 0,
-			queryOverlap: matchScore,
-			queryLength: estimateTokenCount(params.message),
-		});
-		const crossDecay = computeCrossConversationDecay({
-			baseScore: decayScore,
-			daysSinceLastAccess: daysSinceAccess,
-			isSameConversation,
-		});
-	}
-
-	const intro = suppressCarryover || compactionApplied
+	const intro = suppressCarryover
 		? 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.'
 		: 'Context from your conversation history:';
 
@@ -1620,7 +1509,7 @@ export async function buildConstructedContext(params: {
 			})),
 		}),
 		targetTokens: targetBudget,
-		initialCompactionMode: compactionApplied ? 'deterministic' : 'none',
+		initialCompactionMode: 'none',
 	});
 
 	const status = await updateConversationContextStatus({
