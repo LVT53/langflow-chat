@@ -249,13 +249,92 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		const pdfDoc = await PDFDocument.load(new Uint8Array(rendered.content));
 
 		expect(pdfDoc.getPageCount()).toBeGreaterThanOrEqual(1);
-		expect(rendered.diagnostics.charts).toEqual([
+		expect(rendered.diagnostics.charts).toContainEqual(
 			expect.objectContaining({
 				title: 'Weekly active users',
 				chartType: 'line',
 				dataPointCount: 3,
 				svg: expect.stringContaining('<polyline'),
-			}),
+			})
+		);
+	});
+
+	it('renders every v1 chart type into PDF diagnostics', async () => {
+		const validation = validateGeneratedDocumentSource({
+			title: 'All charts report',
+			blocks: [
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'Bar chart',
+					caption: 'Caption',
+					altText: 'Bar alt.',
+					units: 'items',
+					xKey: 'label',
+					yKey: 'value',
+					data: [{ label: 'A', value: 10 }],
+				},
+				{
+					type: 'chart',
+					chartType: 'stackedBar',
+					title: 'Stacked bar chart',
+					caption: 'Caption',
+					altText: 'Stacked alt.',
+					units: 'items',
+					xKey: 'label',
+					yKey: 'value',
+					seriesKey: 'series',
+					data: [
+						{ label: 'A', series: 'North', value: 10 },
+						{ label: 'A', series: 'South', value: 6 },
+					],
+				},
+				{
+					type: 'chart',
+					chartType: 'scatter',
+					title: 'Scatter chart',
+					caption: 'Caption',
+					altText: 'Scatter alt.',
+					units: 'items',
+					xKey: 'x',
+					yKey: 'y',
+					data: [{ x: 1, y: 10 }],
+				},
+				{
+					type: 'chart',
+					chartType: 'pie',
+					title: 'Pie chart',
+					caption: 'Caption',
+					altText: 'Pie alt.',
+					units: 'share',
+					labelKey: 'label',
+					valueKey: 'value',
+					data: [{ label: 'A', value: 10 }],
+				},
+				{
+					type: 'chart',
+					chartType: 'donut',
+					title: 'Donut chart',
+					caption: 'Caption',
+					altText: 'Donut alt.',
+					units: 'share',
+					labelKey: 'label',
+					valueKey: 'value',
+					data: [{ label: 'A', value: 10 }],
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+
+		expect(rendered.diagnostics.charts.map((chart) => chart.chartType)).toEqual([
+			'bar',
+			'stackedBar',
+			'scatter',
+			'pie',
+			'donut',
 		]);
 	});
 });

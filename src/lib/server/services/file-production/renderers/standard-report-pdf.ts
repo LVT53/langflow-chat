@@ -940,33 +940,7 @@ class StandardReportPdfLayout {
 	}
 
 	drawChart(block: Extract<GeneratedDocumentBlock, { type: 'chart' }>): void {
-		if (block.chartType !== 'line' && block.chartType !== 'area') {
-			throw new StandardReportPdfRenderError(
-				'unsupported_chart_type',
-				`AlfyAI Standard Report chart rendering does not yet support ${block.chartType} charts.`
-			);
-		}
-		if (!block.xKey || !block.yKey) {
-			throw new StandardReportPdfRenderError(
-				'unsupported_chart_data',
-				'Line charts require xKey and yKey.'
-			);
-		}
-
 		const renderedSvg = renderChartSvg(block);
-		const rows = block.data
-			.map((row) => ({
-				label: String(row[block.xKey!] ?? ''),
-				value: typeof row[block.yKey!] === 'number' ? (row[block.yKey!] as number) : null,
-			}))
-			.filter((row): row is { label: string; value: number } => row.value !== null);
-		if (rows.length === 0) {
-			throw new StandardReportPdfRenderError(
-				'unsupported_chart_data',
-				'Chart data has no numeric values.'
-			);
-		}
-
 		const x = this.contentX();
 		const width = this.contentWidth();
 		const height = 260;
@@ -996,6 +970,84 @@ class StandardReportPdfLayout {
 				font: this.fonts.regular,
 				color: hexColor(THEME.secondaryText),
 			});
+		}
+
+		if (block.chartType === 'pie' || block.chartType === 'donut') {
+			if (!block.labelKey || !block.valueKey) {
+				throw new StandardReportPdfRenderError(
+					'unsupported_chart_data',
+					'Pie and donut charts require labelKey and valueKey.'
+				);
+			}
+			const rows = block.data
+				.map((row) => ({
+					label: String(row[block.labelKey!] ?? ''),
+					value: typeof row[block.valueKey!] === 'number' ? (row[block.valueKey!] as number) : null,
+				}))
+				.filter((row): row is { label: string; value: number } => row.value !== null && row.value > 0);
+			const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
+			const centerX = x + 130;
+			const centerY = top - 145;
+			this.page.drawCircle({
+				x: centerX,
+				y: centerY,
+				size: block.chartType === 'donut' ? 58 : 68,
+				color: hexColor(THEME.accent),
+				opacity: 0.2,
+			});
+			if (block.chartType === 'donut') {
+				this.page.drawCircle({
+					x: centerX,
+					y: centerY,
+					size: 26,
+					color: hexColor(THEME.panelBackground),
+				});
+			}
+			for (const [index, row] of rows.entries()) {
+				const legendY = top - 92 - index * 20;
+				this.page.drawRectangle({
+					x: x + 250,
+					y: legendY - 8,
+					width: 34 + (row.value / total) * 90,
+					height: 9,
+					color: hexColor(['#B65F3D', '#4D7188', '#7A7F42', '#C29A3D', '#6F6860'][index % 5]),
+				});
+				this.page.drawText(`${row.label} ${Math.round((row.value / total) * 100)}%`, {
+					x: x + 250,
+					y: legendY + 4,
+					size: 8.5,
+					font: this.fonts.regular,
+					color: hexColor(THEME.text),
+				});
+			}
+			this.y = top - height - 14;
+			this.chartDiagnostics.push({
+				title: block.title ?? null,
+				chartType: block.chartType,
+				dataPointCount: renderedSvg.dataPointCount,
+				svg: renderedSvg.svg,
+			});
+			return;
+		}
+
+		if (!block.xKey || !block.yKey) {
+			throw new StandardReportPdfRenderError(
+				'unsupported_chart_data',
+				'Line charts require xKey and yKey.'
+			);
+		}
+
+		const rows = block.data
+			.map((row) => ({
+				label: String(row[block.xKey!] ?? ''),
+				value: typeof row[block.yKey!] === 'number' ? (row[block.yKey!] as number) : null,
+			}))
+			.filter((row): row is { label: string; value: number } => row.value !== null);
+		if (rows.length === 0) {
+			throw new StandardReportPdfRenderError(
+				'unsupported_chart_data',
+				'Chart data has no numeric values.'
+			);
 		}
 
 		const plot = {
@@ -1046,19 +1098,32 @@ class StandardReportPdfLayout {
 				});
 			}
 		}
-		for (let index = 1; index < points.length; index += 1) {
-			this.page.drawLine({
-				start: points[index - 1],
-				end: points[index],
-				thickness: 2.2,
-				color: hexColor(THEME.accent),
-			});
+		if (block.chartType === 'bar' || block.chartType === 'stackedBar') {
+			const barWidth = Math.max(12, plot.width / Math.max(points.length, 1) * 0.5);
+			for (const [index, current] of points.entries()) {
+				this.page.drawRectangle({
+					x: current.x - barWidth / 2,
+					y: plot.y,
+					width: barWidth,
+					height: Math.max(1, current.y - plot.y),
+					color: hexColor(index % 2 === 0 ? THEME.accent : '#4D7188'),
+				});
+			}
+		} else if (block.chartType === 'line' || block.chartType === 'area') {
+			for (let index = 1; index < points.length; index += 1) {
+				this.page.drawLine({
+					start: points[index - 1],
+					end: points[index],
+					thickness: 2.2,
+					color: hexColor(THEME.accent),
+				});
+			}
 		}
 		for (const current of points) {
 			this.page.drawCircle({
 				x: current.x,
 				y: current.y,
-				size: 3,
+				size: block.chartType === 'scatter' ? 4 : 3,
 				color: hexColor(THEME.accent),
 			});
 		}

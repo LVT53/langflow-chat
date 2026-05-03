@@ -7,6 +7,38 @@
     "blocks": [
       {
         "type": "chart",
+        "chartType": "bar",
+        "title": "Revenue by region",
+        "caption": "Bar chart with numeric values.",
+        "xKey": "region",
+        "yKey": "revenue",
+        "units": "USD",
+        "altText": "Central Europe had the highest revenue.",
+        "data": [
+          { "region": "Central Europe", "revenue": 139000 },
+          { "region": "Nordics", "revenue": 106500 },
+          { "region": "Magyar piac", "revenue": 84500 }
+        ]
+      },
+      {
+        "type": "chart",
+        "chartType": "stackedBar",
+        "title": "Orders by channel",
+        "caption": "Stacked bar chart with two series.",
+        "xKey": "week",
+        "yKey": "orders",
+        "seriesKey": "channel",
+        "units": "orders",
+        "altText": "Direct orders were larger than partner orders in both weeks.",
+        "data": [
+          { "week": "2026-W01", "channel": "Direct", "orders": 820 },
+          { "week": "2026-W01", "channel": "Partner", "orders": 410 },
+          { "week": "2026-W02", "channel": "Direct", "orders": 900 },
+          { "week": "2026-W02", "channel": "Partner", "orders": 470 }
+        ]
+      },
+      {
+        "type": "chart",
         "chartType": "line",
         "title": "Weekly active users",
         "caption": "Line chart with units and alt text.",
@@ -18,6 +50,66 @@
           { "week": "2026-W01", "users": 1200 },
           { "week": "2026-W02", "users": 1480 },
           { "week": "2026-W03", "users": 1630 }
+        ]
+      },
+      {
+        "type": "chart",
+        "chartType": "area",
+        "title": "Cumulative responses",
+        "caption": "Area chart with a small data series.",
+        "xKey": "day",
+        "yKey": "responses",
+        "units": "responses",
+        "altText": "Responses accumulated steadily across the three days.",
+        "data": [
+          { "day": "Mon", "responses": 40 },
+          { "day": "Tue", "responses": 76 },
+          { "day": "Wed", "responses": 103 }
+        ]
+      },
+      {
+        "type": "chart",
+        "chartType": "scatter",
+        "title": "Latency versus load",
+        "caption": "Scatter chart with numeric x and y values.",
+        "xKey": "load",
+        "yKey": "latency",
+        "units": "ms",
+        "altText": "Latency increased as load increased.",
+        "data": [
+          { "load": 20, "latency": 140 },
+          { "load": 45, "latency": 180 },
+          { "load": 70, "latency": 260 }
+        ]
+      },
+      {
+        "type": "chart",
+        "chartType": "pie",
+        "title": "Segment mix",
+        "caption": "Pie chart with share labels.",
+        "labelKey": "segment",
+        "valueKey": "share",
+        "units": "share",
+        "altText": "Enterprise was the largest segment.",
+        "data": [
+          { "segment": "Enterprise", "share": 48 },
+          { "segment": "SMB", "share": 34 },
+          { "segment": "Individual", "share": 18 }
+        ]
+      },
+      {
+        "type": "chart",
+        "chartType": "donut",
+        "title": "Issue status",
+        "caption": "Donut chart with status values.",
+        "labelKey": "status",
+        "valueKey": "count",
+        "units": "issues",
+        "altText": "Most issues were closed.",
+        "data": [
+          { "status": "Closed", "count": 31 },
+          { "status": "Open", "count": 9 },
+          { "status": "Blocked", "count": 3 }
         ]
       }
     ]

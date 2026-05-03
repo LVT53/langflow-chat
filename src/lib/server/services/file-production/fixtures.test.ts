@@ -89,6 +89,17 @@ describe('AlfyAI Standard Report fixtures', () => {
 		expect(wideTableFixture.documentSource.blocks[0].columns).toHaveLength(9);
 	});
 
+	it('covers every v1 chart type in the chart-heavy fixture', () => {
+		const chartFixture = readFixture('positive', 'chart-heavy-report.json') as {
+			documentSource: { blocks: Array<Record<string, unknown>> };
+		};
+		const chartTypes = chartFixture.documentSource.blocks
+			.filter((block) => block.type === 'chart')
+			.map((block) => block.chartType);
+
+		expect(chartTypes).toEqual(['bar', 'stackedBar', 'line', 'area', 'scatter', 'pie', 'donut']);
+	});
+
 	it('maps schema-level negative fixtures to their expected validation codes', () => {
 		const schemaFailures = new Map([
 			['disallowed-image-url.json', 'image_limit_exceeded'],

@@ -29,14 +29,12 @@ export interface GeneratedDocumentTableBlock {
 
 export type GeneratedDocumentChartType =
 	| 'bar'
+	| 'stackedBar'
 	| 'line'
 	| 'area'
 	| 'pie'
-	| 'doughnut'
 	| 'scatter'
-	| 'bubble'
-	| 'radar'
-	| 'polarArea';
+	| 'donut';
 
 export interface GeneratedDocumentChartBlock {
 	type: 'chart';
@@ -174,14 +172,12 @@ function normalizeTableBlock(block: Record<string, unknown>): BlockNormalization
 function normalizeChartBlock(block: Record<string, unknown>): BlockNormalizationResult {
 	const chartType =
 		block.chartType === 'bar' ||
+		block.chartType === 'stackedBar' ||
 		block.chartType === 'line' ||
 		block.chartType === 'area' ||
 		block.chartType === 'pie' ||
-		block.chartType === 'doughnut' ||
 		block.chartType === 'scatter' ||
-		block.chartType === 'bubble' ||
-		block.chartType === 'radar' ||
-		block.chartType === 'polarArea'
+		block.chartType === 'donut'
 			? block.chartType
 			: null;
 
@@ -221,18 +217,25 @@ function normalizeChartBlock(block: Record<string, unknown>): BlockNormalization
 			message: 'Generated document charts require title, caption, units, and alt text.',
 		};
 	}
-	if ((chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') && !(labelKey && valueKey)) {
+	if ((chartType === 'pie' || chartType === 'donut') && !(labelKey && valueKey)) {
 		return {
 			ok: false,
 			code: 'unsupported_chart_data',
 			message: 'Pie-style charts require labelKey and valueKey fields.',
 		};
 	}
-	if (chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'polarArea' && !(xKey && yKey)) {
+	if (chartType !== 'pie' && chartType !== 'donut' && !(xKey && yKey)) {
 		return {
 			ok: false,
 			code: 'unsupported_chart_data',
 			message: 'Generated document charts require xKey and yKey fields.',
+		};
+	}
+	if (chartType === 'stackedBar' && !cleanKey(block.seriesKey)) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_data',
+			message: 'Stacked bar charts require a seriesKey field.',
 		};
 	}
 
