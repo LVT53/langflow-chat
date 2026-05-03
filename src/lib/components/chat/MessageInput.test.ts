@@ -573,6 +573,66 @@ describe('MessageInput', () => {
 		expect(uploadFilesSpy.mock.calls[0][0].done).toBeInstanceOf(Function);
 	});
 
+	it('uses the registered upload handler to show progress for dropped files', async () => {
+		let registeredUpload:
+			| ((files: FileList | null) => Promise<void>)
+			| null = null;
+		let doneCallback: ((result: unknown) => void) | null = null;
+		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {
+			doneCallback = payload.done;
+		});
+
+		const { findByText, queryByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			onUploadReady: (uploadFn) => {
+				registeredUpload = uploadFn;
+			},
+			onUploadFiles: uploadFilesHandler,
+		});
+
+		await waitFor(() => {
+			expect(registeredUpload).toBeInstanceOf(Function);
+		});
+		const file = new File(['# dropped'], 'dropped.md', { type: 'text/markdown' });
+		await registeredUpload!([file] as unknown as FileList);
+
+		expect(uploadFilesHandler).toHaveBeenCalledTimes(1);
+		expect(uploadFilesHandler).toHaveBeenCalledWith(
+			expect.objectContaining({
+				files: [file],
+				conversationId: 'conv-1',
+			})
+		);
+		expect(await findByText('Uploading file...')).toBeDefined();
+
+		doneCallback!({
+			success: true,
+			attachment: {
+				artifact: {
+					id: 'artifact-dropped',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'dropped.md',
+					mimeType: 'text/markdown',
+					sizeBytes: 9,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+				promptReady: true,
+				promptArtifactId: 'artifact-dropped',
+				readinessError: null,
+			},
+		});
+
+		await waitFor(() => {
+			expect(queryByText('Uploading file...')).toBeNull();
+		});
+		expect(await findByText('dropped.md')).toBeDefined();
+	});
+
 	it('adds attachment to list when done callback is called with success', async () => {
 		let doneCallback: ((result: unknown) => void) | null = null;
 		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {

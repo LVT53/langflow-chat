@@ -415,9 +415,10 @@ function closeToolsMenu() {
 
 async function uploadFiles(files: FileList | null) {
 	if (!files) return;
+	const selectedFiles = Array.from(files);
+	if (selectedFiles.length === 0) return;
 	uploadState = "uploading";
 	attachmentError = "";
-	const selectedFiles = Array.from(files);
 	const failures: string[] = [];
 	if (typeof window !== "undefined") {
 		preparingTimer = window.setTimeout(() => {

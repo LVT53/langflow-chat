@@ -19,6 +19,7 @@ import { t } from '$lib/i18n';
 import MessageInput from '$lib/components/chat/MessageInput.svelte';
 import DropZoneOverlay from '$lib/components/chat/DropZoneOverlay.svelte';
 import { fetchPublicPersonalityProfiles } from '$lib/client/api/admin';
+import { isOsFileDropEvent } from '$lib/utils/file-drag';
 import type { ConversationDetail, ModelId } from '$lib/types';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import type {
@@ -87,7 +88,6 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	let conversationDraft = $state<ConversationDraft | null>(null);
 	const draftPersistence = createDraftPersistence();
 
-	const INTERNAL_MIME = 'application/x-alfyai-conversation';
 	const greetingName = $derived(
 		data.user?.displayName?.trim() ||
 			data.user?.email?.split('@')[0]?.trim() ||
@@ -117,8 +117,6 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	type UploadFileResult =
 		| { success: true; attachment: import('$lib/types').PendingAttachment }
 		| { success: false; fileName: string; error: string };
-
-	let addToComponentFn: ((result: UploadFileResult) => void) | null = null;
 
 	async function uploadSingleFile(
 		file: File,
@@ -159,20 +157,13 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		conversationId: string;
 		done: (result: UploadFileResult) => void;
 	}) {
-		addToComponentFn = payload.done;
 		for (const file of payload.files) {
 			uploadSingleFile(file, payload.conversationId).then(payload.done);
 		}
 	}
 
-	function isOsFileDrop(event: DragEvent): boolean {
-		const types = event.dataTransfer?.types;
-		if (!types) return false;
-		return types.includes('Files') && !types.includes(INTERNAL_MIME);
-	}
-
 	function handleDragEnter(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		dragEnterCount += 1;
 		fileDragActive = true;
@@ -180,7 +171,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	}
 
 	function handleDragOver(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = 'copy';
@@ -188,7 +179,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 	}
 
 	function handleDragLeave(event: DragEvent) {
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		dragEnterCount -= 1;
 		if (dragEnterCount <= 0) {
 			dragEnterCount = 0;
@@ -197,20 +188,15 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		}
 	}
 
-	async function handleDrop(event: DragEvent) {
+	function handleDrop(event: DragEvent) {
 		dragEnterCount = 0;
 		fileDragActive = false;
 		fileDragRejected = false;
-		if (!isOsFileDrop(event)) return;
+		if (!isOsFileDropEvent(event)) return;
 		event.preventDefault();
 		const files = event.dataTransfer?.files;
 		if (!files || files.length === 0) return;
-		const targetId = preparedConversationId ?? (await ensurePreparedConversation());
-		for (const file of Array.from(files)) {
-			uploadSingleFile(file, targetId).then((result) => {
-				addToComponentFn?.(result);
-			});
-		}
+		void uploadFilesFn?.(files);
 	}
 
 	onMount(() => {

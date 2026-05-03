@@ -1,5 +1,6 @@
 import type { StreamMetadata } from '$lib/services/streaming';
 import type { I18nKey } from '$lib/i18n';
+import { isOsFileDropEvent } from '$lib/utils/file-drag';
 import type {
 	ArtifactSummary,
 	ChatMessage,
@@ -10,6 +11,8 @@ import type {
 	DocumentWorkspaceItem,
 	ModelId,
 } from '$lib/types';
+
+export { isOsFileDropEvent };
 
 export type SendPayload = {
 	message: string;
@@ -369,13 +372,6 @@ export function cloneSendPayload(payload: SendPayload): SendPayload {
 		conversationId: payload.conversationId ?? null,
 		modelId: payload.modelId,
 	};
-}
-
-export function isOsFileDropEvent(event: DragEvent): boolean {
-	const types = event.dataTransfer?.types;
-	if (!types) return false;
-	// Must have Files type (OS file drop), not internal conversation DnD
-	return types.includes('Files') && !types.includes('application/x-alfyai-conversation');
 }
 
 export function reduceWorkspaceDocumentOpen(

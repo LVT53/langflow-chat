@@ -1459,8 +1459,6 @@ type UploadFileResult =
 	| { success: true; attachment: import('$lib/types').PendingAttachment }
 	| { success: false; fileName: string; error: string };
 
-let addToComponentFn: ((result: UploadFileResult) => void) | null = null;
-
 async function uploadSingleFile(
 	file: File,
 	conversationId: string,
@@ -1500,7 +1498,6 @@ function handleUploadFiles(payload: {
 	conversationId: string;
 	done: (result: UploadFileResult) => void;
 }) {
-	addToComponentFn = payload.done;
 	for (const file of payload.files) {
 		uploadSingleFile(file, payload.conversationId).then(payload.done);
 	}
@@ -1541,11 +1538,7 @@ function handleDrop(event: DragEvent) {
 	if (isSending) return;
 	const files = event.dataTransfer?.files;
 	if (!files || files.length === 0) return;
-	for (const file of Array.from(files)) {
-		uploadSingleFile(file, data.conversation.id).then((result) => {
-			addToComponentFn?.(result);
-		});
-	}
+	void uploadFilesFn?.(files);
 }
 </script>
 
