@@ -227,4 +227,53 @@ describe('POST /api/chat/files/produce', () => {
 			status: 'failed',
 		});
 	});
+
+	it('persists malformed document-source requests as failed jobs before renderer work', async () => {
+		mockCreateFailedFileProductionJob.mockResolvedValueOnce({
+			id: 'job-document-source-failed',
+			conversationId: 'conv-1',
+			assistantMessageId: null,
+			title: 'Unsafe report',
+			status: 'failed',
+			stage: null,
+			createdAt: 1,
+			updatedAt: 1,
+			files: [],
+			warnings: [],
+			error: {
+				code: 'unsupported_document_block',
+				message: 'Generated document source contains an unsupported block.',
+				retryable: false,
+			},
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				idempotencyKey: 'turn-1:unsafe-doc',
+				requestTitle: 'Unsafe report',
+				sourceMode: 'document_source',
+				outputs: [{ type: 'pdf' }],
+				documentSource: {
+					title: 'Unsafe report',
+					blocks: [{ type: 'rawHtml', html: '<script>alert(1)</script>' }],
+				},
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(mockCreateFailedFileProductionJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceMode: 'document_source',
+				errorCode: 'unsupported_document_block',
+				errorMessage: 'Generated document source contains an unsupported block.',
+			})
+		);
+		expect(mockWakeFileProductionWorker).not.toHaveBeenCalled();
+		expect(data.job).toMatchObject({
+			id: 'job-document-source-failed',
+			status: 'failed',
+		});
+	});
 });

@@ -797,4 +797,48 @@ describe('file production service', () => {
 			unit: 'bytes',
 		});
 	});
+
+	it('persists generated-document source JSON and readable projection on a generated_output artifact', async () => {
+		const { db } = await import('$lib/server/db');
+		const { persistGeneratedDocumentSourceArtifact } = await import('./source-persistence');
+
+		const artifact = await persistGeneratedDocumentSourceArtifact({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			fileProductionJobId: 'job-document-source',
+			title: 'Quarterly report',
+			source: {
+				title: 'Quarterly report',
+				subtitle: 'Executive summary',
+				blocks: [
+					{ type: 'heading', level: 2, text: 'Revenue' },
+					{ type: 'paragraph', text: 'Revenue increased by 12%.' },
+				],
+			},
+		});
+
+		const [row] = await db
+			.select()
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.id, artifact.id));
+		const metadata = JSON.parse(row.metadataJson ?? '{}');
+
+		expect(row).toMatchObject({
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: 'Quarterly report',
+			contentText: 'Quarterly report\nExecutive summary\n\n## Revenue\nRevenue increased by 12%.',
+		});
+		expect(metadata).toMatchObject({
+			generatedDocumentSourceVersion: 1,
+			fileProductionJobId: 'job-document-source',
+			originAssistantMessageId: 'assistant-1',
+			generatedDocumentSource: {
+				version: 1,
+				template: 'alfyai_standard_report',
+				title: 'Quarterly report',
+			},
+		});
+	});
 });

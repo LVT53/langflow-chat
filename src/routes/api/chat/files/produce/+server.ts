@@ -8,6 +8,7 @@ import {
 	wakeFileProductionWorker,
 } from '$lib/server/services/file-production';
 import { validateFileProductionStaticLimits } from '$lib/server/services/file-production/limits';
+import { validateGeneratedDocumentSource } from '$lib/server/services/file-production/source-schema';
 
 type ProduceProgramLanguage = 'python' | 'javascript';
 
@@ -16,14 +17,15 @@ interface ProduceProgramRequest {
 	assistantMessageId?: string | null;
 	idempotencyKey: string;
 	requestTitle: string;
-	sourceMode: 'program';
+	sourceMode: 'program' | 'document_source';
 	outputs?: Array<{ type: string }>;
 	documentIntent?: string | null;
-	program: {
+	program?: {
 		language: ProduceProgramLanguage;
 		sourceCode: string;
 		filename?: string;
 	};
+	documentSource?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,9 +59,48 @@ function validateProgramRequest(
 	if (!requestTitle) {
 		return { ok: false, error: 'requestTitle is required', code: 'missing_request_title', status: 400 };
 	}
-	if (sourceMode !== 'program') {
-		return { ok: false, error: 'sourceMode must be program', code: 'unsupported_source_mode', status: 422 };
+	if (sourceMode !== 'program' && sourceMode !== 'document_source') {
+		return { ok: false, error: 'sourceMode must be program or document_source', code: 'unsupported_source_mode', status: 422 };
 	}
+
+	if (sourceMode === 'document_source') {
+		const documentValidation = validateGeneratedDocumentSource(body.documentSource);
+		if (!documentValidation.ok) {
+			return {
+				ok: false,
+				error: documentValidation.message,
+				code: documentValidation.code,
+				status: 422,
+			};
+		}
+
+		return {
+			ok: true,
+			value: {
+				conversationId,
+				assistantMessageId:
+					typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
+						? body.assistantMessageId.trim()
+						: null,
+				idempotencyKey,
+				requestTitle,
+				sourceMode: 'document_source',
+				outputs: Array.isArray(body.outputs)
+					? body.outputs
+							.filter((output): output is Record<string, unknown> => isRecord(output))
+							.map((output) => ({
+								type: typeof output.type === 'string' ? output.type.trim() : 'file',
+							}))
+					: [],
+				documentIntent:
+					typeof body.documentIntent === 'string' && body.documentIntent.trim()
+						? body.documentIntent.trim()
+						: null,
+				documentSource: documentValidation.source,
+			},
+		};
+	}
+
 	if (language !== 'python' && language !== 'javascript') {
 		return {
 			ok: false,
@@ -135,6 +176,7 @@ function extractFailureDraft(body: unknown) {
 					outputs: Array.isArray(body.outputs) ? body.outputs : [],
 					documentIntent: typeof body.documentIntent === 'string' ? body.documentIntent : null,
 					program: isRecord(body.program) ? body.program : null,
+					documentSource: isRecord(body.documentSource) ? body.documentSource : null,
 				}
 			: null,
 	};
@@ -214,7 +256,8 @@ export const POST: RequestHandler = async (event) => {
 		sourceMode: request.sourceMode,
 		outputs: request.outputs ?? [],
 		documentIntent: request.documentIntent ?? null,
-		program: request.program,
+		program: request.program ?? null,
+		documentSource: request.documentSource ?? null,
 	};
 	const staticLimit = validateFileProductionStaticLimits({
 		outputCount: request.outputs?.length ?? 0,
