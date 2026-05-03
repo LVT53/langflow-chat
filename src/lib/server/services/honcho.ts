@@ -30,6 +30,7 @@ import {
 	serializeBudgetedAttachments,
 	serializeRoleMessages,
 	serializeWorkingSetArtifacts,
+	selectPromptSessionTurns,
 	selectRecentRoleTurns,
 	truncateToTokenBudget,
 	type BudgetedAttachmentContext,
@@ -96,6 +97,7 @@ const HONCHO_ID_HASH_LENGTH = 32;
 const ATTACHMENT_PROMPT_TOKEN_BUDGET = 6_000;
 const ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET = 2_400;
 const ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET = 600;
+const UNMATCHED_RECENT_TURN_TOKEN_LIMIT = 480;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -147,6 +149,8 @@ function buildContextTraceSections(params: {
 				signalReasons:
 					isAttachmentSection && params.attachmentContext
 						? [`attachment_context:${params.attachmentContext.mode}`]
+						: section.title === 'Honcho Session Context'
+							? ['recent_turn_context:budgeted']
 						: [],
 			};
 		}),
@@ -1322,13 +1326,13 @@ export async function buildConstructedContext(params: {
 		sessionMessages.length
 	);
 
-	const filteredTurns = allTurns.filter((turn, index) => {
-		const isRecent = index >= allTurns.length - 3;
-		if (isRecent) return true;
-
-		const turnContent = turn.messages.map((m) => m.content).join(' ');
-		const score = scoreMatch(params.message, turnContent);
-		return score >= 1;
+	const filteredTurns = selectPromptSessionTurns({
+		turns: allTurns,
+		message: params.message,
+		resolveContent: (turn) => turn.messages.map((m) => m.content).join(' '),
+		scoreTurn: (message, turnContent) => scoreMatch(message, turnContent),
+		recentTurnCount: 3,
+		maxUnmatchedRecentTurnTokens: UNMATCHED_RECENT_TURN_TOKEN_LIMIT,
 	});
 
 	const recentTurnCount = filteredTurns.length;

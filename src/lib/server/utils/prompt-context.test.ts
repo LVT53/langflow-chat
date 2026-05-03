@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import {
 	compactContextSections,
+	selectPromptSessionTurns,
 	serializeBudgetedAttachments,
 } from "./prompt-context";
 import type { Artifact } from "$lib/types";
@@ -179,5 +180,59 @@ describe("serializeBudgetedAttachments", () => {
 			expect(item.inclusionLevel).toBe("excerpt");
 			expect(item.estimatedTokens).toBeLessThanOrEqual(300);
 		}
+	});
+});
+
+describe("selectPromptSessionTurns", () => {
+	it("does not keep a large recent turn only because it is recent", () => {
+		const turns = [
+			{
+				messages: [
+					{ role: "user" as const, content: "Previous unrelated request" },
+					{
+						role: "assistant" as const,
+						content: "UNRELATED_LARGE_TURN ".repeat(3_000),
+					},
+				],
+			},
+		];
+
+		const selected = selectPromptSessionTurns({
+			turns,
+			message: "What is the capital of France?",
+			resolveContent: (turn) =>
+				turn.messages.map((message) => message.content).join(" "),
+			scoreTurn: () => 0,
+			recentTurnCount: 3,
+			maxUnmatchedRecentTurnTokens: 200,
+		});
+
+		expect(selected).toEqual([]);
+	});
+
+	it("keeps a large recent turn when it matches the current question", () => {
+		const turns = [
+			{
+				messages: [
+					{ role: "user" as const, content: "Draft the launch plan" },
+					{
+						role: "assistant" as const,
+						content: "Launch plan details. ".repeat(3_000),
+					},
+				],
+			},
+		];
+
+		const selected = selectPromptSessionTurns({
+			turns,
+			message: "Continue the launch plan.",
+			resolveContent: (turn) =>
+				turn.messages.map((message) => message.content).join(" "),
+			scoreTurn: () => 2,
+			recentTurnCount: 3,
+			maxUnmatchedRecentTurnTokens: 200,
+		});
+
+		expect(selected).toEqual(turns);
 	});
 });

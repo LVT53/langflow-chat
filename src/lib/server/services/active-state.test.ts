@@ -92,6 +92,40 @@ describe("active-state signals", () => {
 		expect(state.currentGeneratedArtifactId).toBe(null);
 	});
 
+	it("does not promote the latest generated output for an unrelated turn", () => {
+		const state = buildActiveDocumentState({
+			message: "What is the capital of France?",
+			currentConversationId: "conv-1",
+			artifacts: [
+				{
+					id: "brief-v1",
+					userId: "user-1",
+					type: "generated_output",
+					retrievalClass: "durable",
+					name: "brief-v1.pdf",
+					mimeType: "application/pdf",
+					sizeBytes: 100,
+					conversationId: "conv-1",
+					summary: "A project brief.",
+					createdAt: 1,
+					updatedAt: 10,
+					extension: "pdf",
+					storagePath: null,
+					contentText: "Long generated output body.",
+					metadata: {
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+				},
+			],
+		});
+
+		expect(state.documentFocused).toBe(false);
+		expect(state.currentGeneratedArtifactId).toBe(null);
+		expect(Array.from(state.currentGeneratedReasonCodes)).toEqual([]);
+	});
+
 	it("assembles active document state from workspace focus, current output, and correction phrasing", () => {
 		const state = buildActiveDocumentState({
 			message: "Actually, refine this brief instead.",

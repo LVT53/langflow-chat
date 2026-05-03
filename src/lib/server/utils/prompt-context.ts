@@ -113,6 +113,29 @@ export function selectRecentRoleTurns<T>(
 	return turns.slice(-limit);
 }
 
+export function selectPromptSessionTurns<T>(params: {
+	turns: T[];
+	message: string;
+	resolveContent: (turn: T) => string;
+	scoreTurn: (message: string, turnContent: string) => number;
+	recentTurnCount?: number;
+	maxUnmatchedRecentTurnTokens?: number;
+	matchThreshold?: number;
+}): T[] {
+	const recentTurnCount = params.recentTurnCount ?? 3;
+	const maxUnmatchedRecentTurnTokens = params.maxUnmatchedRecentTurnTokens ?? 480;
+	const matchThreshold = params.matchThreshold ?? 1;
+
+	return params.turns.filter((turn, index) => {
+		const turnContent = params.resolveContent(turn);
+		const score = params.scoreTurn(params.message, turnContent);
+		if (score >= matchThreshold) return true;
+
+		const isRecent = index >= params.turns.length - recentTurnCount;
+		return isRecent && estimateTokenCount(turnContent) <= maxUnmatchedRecentTurnTokens;
+	});
+}
+
 export function serializePeerContext(peerContext: {
 	representation: string | null;
 	peerCard: string[] | null;
