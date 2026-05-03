@@ -62,6 +62,41 @@ describe('extractDocumentText', () => {
 		expect(result.normalizedName).toBe('file.md');
 	});
 
+	it('reads markdown files directly without sending them to MinerU', async () => {
+		readFileMock.mockResolvedValueOnce(Buffer.from('# Notes\n\nDirect markdown.'));
+		const fetchSpy = vi.fn();
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const result = await extractDocumentText(
+			'/path/to/notes.md',
+			'text/markdown',
+			'notes.md'
+		);
+
+		expect(result).toEqual({
+			text: '# Notes\n\nDirect markdown.',
+			normalizedName: 'notes.md',
+			mimeType: 'text/markdown',
+		});
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	it('reads plain text files directly without sending them to MinerU', async () => {
+		readFileMock.mockResolvedValueOnce(Buffer.from('Plain text notes.'));
+		const fetchSpy = vi.fn();
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const result = await extractDocumentText(
+			'/path/to/notes.txt',
+			'text/plain',
+			'notes.txt'
+		);
+
+		expect(result.text).toBe('Plain text notes.');
+		expect(result.normalizedName).toBe('notes.md');
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
 	it('returns null text when MinerU returns empty md_content', async () => {
 		vi.stubGlobal(
 			'fetch',

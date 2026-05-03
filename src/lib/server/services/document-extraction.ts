@@ -68,6 +68,33 @@ function toNormalizedName(originalName: string): string {
 	return `${stem || 'document'}.md`;
 }
 
+function isDirectTextExtractionFile(ext: string, mimeType: string | null): boolean {
+	const normalizedMime = mimeType?.toLowerCase() ?? '';
+	return (
+		normalizedMime.startsWith('text/') ||
+		normalizedMime === 'application/json' ||
+		normalizedMime === 'application/xml' ||
+		normalizedMime === 'application/yaml' ||
+		normalizedMime === 'application/typescript' ||
+		[
+			'.txt',
+			'.md',
+			'.markdown',
+			'.html',
+			'.htm',
+			'.csv',
+			'.json',
+			'.py',
+			'.js',
+			'.ts',
+			'.css',
+			'.yaml',
+			'.yml',
+			'.xml',
+		].includes(ext)
+	);
+}
+
 export function resetDocumentExtractionExecutableCache(): void {
 	// No persistent state with MinerU — each call is stateless HTTP.
 	// Kept as a no-op to preserve the existing public API contract.
@@ -91,6 +118,15 @@ export async function extractDocumentText(
 
 		const ext = extname(originalName).toLowerCase();
 		const mime = mimeFromExtension(ext) ?? 'application/octet-stream';
+		if (isDirectTextExtractionFile(ext, _mimeType ?? mime)) {
+			const text = fileBuffer.toString('utf8').trim();
+			return {
+				text: text || null,
+				normalizedName,
+				mimeType: 'text/markdown',
+			};
+		}
+
 		const file = new File([fileBuffer], originalName, { type: mime });
 		const formData = new FormData();
 		formData.append('files', file);
