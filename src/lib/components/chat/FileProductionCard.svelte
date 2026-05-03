@@ -130,7 +130,7 @@
 						class="file-open"
 						disabled={!file.previewUrl}
 						onclick={() => openFile(file)}
-						aria-label={$t('generatedFile.previewLabel', { filename: file.filename })}
+						aria-label={$t('fileProduction.previewLabel', { filename: file.filename })}
 					>
 						<span class="file-name" title={file.filename}>{file.filename}</span>
 						<span class="file-size">{formatByteSize(file.sizeBytes)}</span>
@@ -139,8 +139,8 @@
 						class="file-download"
 						href={file.downloadUrl}
 						download={file.filename}
-						aria-label={$t('generatedFile.downloadLabel', { filename: file.filename })}
-						title={$t('generatedFile.downloadLabel', { filename: file.filename })}
+						aria-label={$t('fileProduction.downloadLabel', { filename: file.filename })}
+						title={$t('fileProduction.downloadLabel', { filename: file.filename })}
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"

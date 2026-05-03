@@ -4,7 +4,6 @@
 	import { estimateTokenCount } from '$lib/utils/tokens';
 	import type {
 		ArtifactSummary,
-		ChatGeneratedFileListItem,
 		ChatMessage,
 		DocumentWorkspaceItem,
 		FileProductionJob,
@@ -14,7 +13,6 @@
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
-	import GeneratedFile from './GeneratedFile.svelte';
 	import FileProductionCard from './FileProductionCard.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
@@ -24,7 +22,6 @@
 		isLast = false,
 		pinnedArtifactIds = [],
 		excludedArtifactIds = [],
-		generatedFiles = [],
 		fileProductionJobs = [],
 		conversationId = null,
 		onRegenerate = undefined,
@@ -38,7 +35,6 @@
 		isLast?: boolean;
 		pinnedArtifactIds?: string[];
 		excludedArtifactIds?: string[];
-		generatedFiles?: ChatGeneratedFileListItem[];
 		fileProductionJobs?: FileProductionJob[];
 		conversationId?: string | null;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
@@ -55,30 +51,18 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
-let dedupedGeneratedFiles = $derived(
-	generatedFiles.reduce(
-		(acc, file) => {
-			if (!acc.seen.has(file.id)) {
-				acc.seen.add(file.id);
-				acc.list.push(file);
-			}
-			return acc;
-		},
-		{ seen: new Set<string>(), list: [] as ChatGeneratedFileListItem[] }
-	).list
-);
-let dedupedFileProductionJobs = $derived(
-	fileProductionJobs.reduce(
-		(acc, job) => {
-			if (!acc.seen.has(job.id)) {
-				acc.seen.add(job.id);
-				acc.list.push(job);
-			}
-			return acc;
-		},
-		{ seen: new Set<string>(), list: [] as FileProductionJob[] }
-	).list
-);
+	let dedupedFileProductionJobs = $derived(
+		fileProductionJobs.reduce(
+			(acc, job) => {
+				if (!acc.seen.has(job.id)) {
+					acc.seen.add(job.id);
+					acc.list.push(job);
+				}
+				return acc;
+			},
+			{ seen: new Set<string>(), list: [] as FileProductionJob[] },
+		).list,
+	);
 	let isUser = $derived(message.role === 'user');
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 	let hasThinking = $derived(Boolean(message.thinking?.trim()));
@@ -293,29 +277,13 @@ let dedupedFileProductionJobs = $derived(
 				/>
 			</div>
 			{#if fileProductionJobs.length > 0 && conversationId}
-				<div class="generated-files-inline" data-testid="message-file-production-jobs">
+				<div class="file-production-inline" data-testid="message-file-production-jobs">
 					{#each dedupedFileProductionJobs as job (job.id)}
 						<FileProductionCard
 							{job}
 							onOpenDocument={onOpenDocument}
 							onRetry={onRetryFileProductionJob}
 							onCancel={onCancelFileProductionJob}
-						/>
-					{/each}
-				</div>
-			{:else if generatedFiles.length > 0 && conversationId}
-				<div class="generated-files-inline" data-testid="message-generated-files">
-					{#each dedupedGeneratedFiles as file (file.id)}
-						<GeneratedFile
-							fileId={file.id}
-							{conversationId}
-							filename={file.filename}
-							size={file.sizeBytes}
-							mimeType={file.mimeType ?? 'application/octet-stream'}
-							downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
-							status={file.status}
-							error={file.error}
-							onOpen={onOpenDocument}
 						/>
 					{/each}
 				</div>
@@ -584,7 +552,7 @@ let dedupedFileProductionJobs = $derived(
 		margin-top: var(--space-sm);
 	}
 
-	.generated-files-inline {
+	.file-production-inline {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-xs);

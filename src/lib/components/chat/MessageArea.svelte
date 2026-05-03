@@ -2,7 +2,6 @@
 import { tick } from "svelte";
 import { t } from "$lib/i18n";
 import type {
-	ChatGeneratedFileListItem,
 	ChatMessage,
 	ContextDebugState,
 	DocumentWorkspaceItem,
@@ -16,7 +15,6 @@ let {
 	conversationId = null,
 	isThinkingActive = false,
 	contextDebug = null,
-	generatedFiles = [],
 	fileProductionJobs = [],
 	onRegenerate = undefined,
 	onEdit = undefined,
@@ -29,7 +27,6 @@ let {
 	conversationId?: string | null;
 	isThinkingActive?: boolean;
 	contextDebug?: ContextDebugState | null;
-	generatedFiles?: ChatGeneratedFileListItem[];
 	fileProductionJobs?: FileProductionJob[];
 	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 	onEdit?:
@@ -44,7 +41,7 @@ let {
 let scrollContainer = $state<HTMLDivElement | null>(null);
 let shouldAutoScroll = true;
 let lastMessageCount = 0;
-let lastGeneratedFileCount = 0;
+let lastFileProductionJobCount = 0;
 let lastConversationId: string | null = null;
 let shouldJumpToConversationBottom = false;
 
@@ -53,7 +50,7 @@ $effect(() => {
 		lastConversationId = conversationId;
 		shouldAutoScroll = true;
 		lastMessageCount = 0;
-		lastGeneratedFileCount = 0;
+		lastFileProductionJobCount = 0;
 		shouldJumpToConversationBottom = true;
 	}
 });
@@ -70,12 +67,6 @@ function hasNewMessage(currentMessages: ChatMessage[]): boolean {
 	return currentMessages.length > lastMessageCount;
 }
 
-function getGeneratedFilesForMessage(
-	messageId: string,
-): ChatGeneratedFileListItem[] {
-	return generatedFiles.filter((file) => file.assistantMessageId === messageId);
-}
-
 function getFileProductionJobsForMessage(messageId: string): FileProductionJob[] {
 	return fileProductionJobs.filter((job) => job.assistantMessageId === messageId);
 }
@@ -84,7 +75,6 @@ $effect.pre(() => {
 	messages;
 	scrollContainer;
 	isThinkingActive;
-	generatedFiles.length;
 	fileProductionJobs.length;
 
 	if (!scrollContainer) return;
@@ -95,12 +85,13 @@ $effect.pre(() => {
 			shouldJumpToConversationBottom = false;
 		}
 		lastMessageCount = 0;
-		lastGeneratedFileCount = generatedFiles.length;
+		lastFileProductionJobCount = fileProductionJobs.length;
 		return;
 	}
 
 	const isNewMessage = hasNewMessage(dedupedMessages);
-	const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
+	const hasNewFileProductionJobs =
+		fileProductionJobs.length > lastFileProductionJobCount;
 
 	if (shouldJumpToConversationBottom) {
 		// Switching to another conversation should always reveal the latest response.
@@ -109,8 +100,8 @@ $effect.pre(() => {
 	} else if (isNewMessage) {
 		// New message added: jump directly to the latest content.
 		void alignToBottomAfterRender();
-	} else if (hasNewGeneratedFiles && shouldAutoScroll) {
-		// Generated files render inside the latest assistant message; keep that expanded area visible.
+	} else if (hasNewFileProductionJobs && shouldAutoScroll) {
+		// File-production cards render inside the latest assistant message; keep that expanded area visible.
 		void alignToBottomAfterRender();
 	} else if (shouldAutoScroll && isThinkingActive) {
 		// Only follow during thinking phase; stop once content streaming begins.
@@ -118,7 +109,7 @@ $effect.pre(() => {
 	}
 
 	lastMessageCount = dedupedMessages.length;
-	lastGeneratedFileCount = generatedFiles.length;
+	lastFileProductionJobCount = fileProductionJobs.length;
 });
 
 function instantScrollToBottom() {
@@ -182,7 +173,6 @@ async function alignToBottomAfterRender() {
 					isLast={i === dedupedMessages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					generatedFiles={getGeneratedFilesForMessage(message.id)}
 					fileProductionJobs={getFileProductionJobsForMessage(message.id)}
 					{conversationId}
 					{onRegenerate}

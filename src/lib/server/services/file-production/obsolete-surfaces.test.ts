@@ -11,6 +11,8 @@ const obsoletePaths = [
 	'langflow_nodes/file_generator_tool.py',
 	'langflow_nodes/export_document_tool.py',
 	'sandbox-helpers/create-pdf.js',
+	'src/lib/components/chat/GeneratedFile.svelte',
+	'src/lib/components/chat/GeneratedFile.test.ts',
 	'src/lib/utils/generate-file-tool.ts',
 	'src/lib/utils/generate-file-tool.test.ts',
 	'scripts/verify-pdf-layout.mjs',
@@ -25,6 +27,8 @@ const obsoleteText = [
 	'create-pdf',
 	'/api/chat/files/generate',
 	'/api/chat/files/export',
+	'ChatGeneratedFileListItem',
+	'generatedFile.',
 	'Terracotta Crown',
 ];
 

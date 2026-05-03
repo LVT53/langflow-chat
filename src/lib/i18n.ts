@@ -24,7 +24,7 @@ import { uiLanguage } from "$lib/stores/settings";
  *   - analytics (analytics tab)
  *   - login (login page)
  *   - common (shared UI components like ConfirmDialog, ErrorMessage)
- *   - generatedFile (chat-generated file components)
+ *   - fileProduction (job-backed produced-file components)
  *   - pageTitle (HTML <title> tags)
  *
  * All keys must exist in BOTH en and hu dictionaries.
@@ -501,14 +501,6 @@ const dictionary = {
 			"This wipes your chats, Knowledge Base, memories, and generated files, but keeps your login credentials, profile preferences, avatar, and historical analytics. You will need to sign in again after the reset finishes.",
 		"admin.resetting": "Resetting…",
 		"admin.resetAccountButton": "Reset account",
-		"generatedFile.download": "Download",
-		"generatedFile.preview": "Preview",
-		"generatedFile.generating": "Generating...",
-		"generatedFile.fileReady": "File ready",
-		"generatedFile.generationFailed": "Generation failed",
-		"generatedFile.previewLoadFailed": "Failed to load preview.",
-		"generatedFile.previewLabel": "Preview {filename}",
-		"generatedFile.downloadLabel": "Download {filename}",
 		"fileProduction.ready": "Ready",
 		"fileProduction.queued": "Queued",
 		"fileProduction.running": "Building",
@@ -525,6 +517,8 @@ const dictionary = {
 		"fileProduction.cancel": "Cancel",
 		"fileProduction.retryLabel": "Retry file production",
 		"fileProduction.cancelLabel": "Cancel file production",
+		"fileProduction.previewLabel": "Preview {filename}",
+		"fileProduction.downloadLabel": "Download {filename}",
 		"fileProduction.error.too_many_outputs": "Too many outputs were requested.",
 		"fileProduction.error.source_too_large": "The file production source is too large.",
 		"fileProduction.error.projection_too_large": "The document text projection is too large.",
@@ -1422,14 +1416,6 @@ const dictionary = {
 		"modelSelector.selectModel": "Modell kivalasztasa",
 		"modelSelector.availableModels": "Elérheto modellek",
 		"chat.uploadAttachmentFailed": "A fájl csatolása nem sikerült.",
-		"generatedFile.download": "Letoltes",
-		"generatedFile.preview": "Elonezet",
-		"generatedFile.generating": "Generalas...",
-		"generatedFile.fileReady": "Fajl kesz",
-		"generatedFile.generationFailed": "Generalas sikertelen",
-		"generatedFile.previewLoadFailed": "Az elonezet betoltese sikertelen.",
-		"generatedFile.previewLabel": "{filename} elonezete",
-		"generatedFile.downloadLabel": "{filename} letoltese",
 		"fileProduction.ready": "Kesz",
 		"fileProduction.queued": "Sorban",
 		"fileProduction.running": "Keszul",
@@ -1446,6 +1432,8 @@ const dictionary = {
 		"fileProduction.cancel": "Megszakitas",
 		"fileProduction.retryLabel": "Fajl keszites ujraprobalasa",
 		"fileProduction.cancelLabel": "Fajl keszites megszakitasa",
+		"fileProduction.previewLabel": "{filename} elonezete",
+		"fileProduction.downloadLabel": "{filename} letoltese",
 		"fileProduction.error.too_many_outputs": "Tul sok kimenet lett kerelve.",
 		"fileProduction.error.source_too_large": "A fajl keszitesi forras tul nagy.",
 		"fileProduction.error.projection_too_large": "A dokumentum szoveges vetulete tul nagy.",

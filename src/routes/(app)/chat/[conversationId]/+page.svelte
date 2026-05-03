@@ -32,7 +32,6 @@ import EvidenceManager from "$lib/components/chat/EvidenceManager.svelte";
 import type {
 	ArtifactSummary,
 	ChatGeneratedFile,
-	ChatGeneratedFileListItem,
 	ChatMessage,
 	ConversationDraft,
 	ContextDebugState,
@@ -166,15 +165,6 @@ let isThinkingActive = $derived(
 let showInitialLoading = $derived(
 	(isSending || initialStreamPending) && $messages.length === 0,
 );
-let generatedFileCards = $derived([
-	...generatedFiles.map(
-		(file) =>
-			({
-				...file,
-				status: "success",
-			}) satisfies ChatGeneratedFileListItem,
-	),
-]);
 let availableWorkspaceDocuments = $derived(
 	generatedFiles.map((file) => ({
 		id: file.id,
@@ -1596,7 +1586,6 @@ function handleDrop(event: DragEvent) {
 						conversationId={data.conversation.id}
 						{isThinkingActive}
 						{contextDebug}
-						generatedFiles={generatedFileCards}
 						{fileProductionJobs}
 						onOpenDocument={openWorkspaceDocument}
 						onRegenerate={handleRegenerate}

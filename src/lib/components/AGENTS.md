@@ -20,7 +20,7 @@ chat/
     ├── chat/FileAttachment.svelte       ← attachment chip (viewable prop, onView callback)
     └── chat/DropZoneOverlay.svelte      ← full-page drag-and-drop overlay for file uploads
   MessageArea.svelte                ← message list scroll container (OWNS scroll)
-    ├── chat/GeneratedFile.svelte       ← generated-file preview and download actions
+    ├── chat/FileProductionCard.svelte  ← generated-file preview, retry/cancel, and download actions
     ├── chat/DocumentWorkspace.svelte   ← route-driven working-document pane using shared preview
     └── chat/MessageBubble.svelte       ← individual message (attachment open handoff)
           ├── chat/MarkdownRenderer.svelte    ← markdown + Shiki highlighting
@@ -103,8 +103,8 @@ ui/
 - `FileAttachment.svelte` accepts `viewable` boolean and `onView` callback for document opening
 - `SearchModal.svelte` pulls document hits through `client/api/knowledge.ts` and hands document opens off to the knowledge-page workspace instead of owning a parallel preview modal
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
-- `GeneratedFile.svelte` owns the compact generated-file row layout, preview/download UI, and the shimmer-style generating state
-- `GeneratedFile.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
+- `FileProductionCard.svelte` owns the generated-file job card layout, grouped output rows, preview/download UI, retry/cancel controls, and queued/running/failed/succeeded states
+- `FileProductionCard.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
 - Generated-file preview should reuse `knowledge/FilePreview.svelte` through the chat-file preview endpoint instead of maintaining a second lightweight preview modal, and the row should lazy-load that preview component only when the fallback dialog is actually opened
 - `DocumentWorkspace.svelte` is the shared shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
 - `DocumentWorkspace.svelte` should also lazy-load the embedded preview component and markdown highlighter so opening chat or knowledge pages does not eagerly pull the full rich-preview stack

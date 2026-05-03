@@ -117,27 +117,6 @@ export interface ChatGeneratedFile {
 	createdAt: number;
 }
 
-export interface ChatGeneratedFileListItem {
-	id: string;
-	conversationId: string;
-	assistantMessageId?: string | null;
-	artifactId?: string | null;
-	documentFamilyId?: string | null;
-	documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
-	documentLabel?: string | null;
-	documentRole?: string | null;
-	versionNumber?: number | null;
-	originConversationId?: string | null;
-	originAssistantMessageId?: string | null;
-	sourceChatFileId?: string | null;
-	filename: string;
-	mimeType: string | null;
-	sizeBytes: number;
-	createdAt: number;
-	status: "generating" | "success" | "failed";
-	error?: string;
-}
-
 export type FileProductionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
 export interface FileProductionJobFile {

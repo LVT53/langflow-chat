@@ -1,7 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import MessageArea from './MessageArea.svelte';
-import type { ChatGeneratedFileListItem, ChatMessage, FileProductionJob } from '$lib/types';
+import type { ChatMessage, FileProductionJob } from '$lib/types';
 
 Object.defineProperty(window, 'matchMedia', {
 	writable: true,
@@ -37,6 +37,35 @@ describe('MessageArea', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
+
+	function makeFileProductionJob(
+		assistantMessageId: string,
+		overrides: Partial<FileProductionJob> = {}
+	): FileProductionJob {
+		const now = Date.now();
+		return {
+			id: overrides.id ?? `job-${assistantMessageId}`,
+			conversationId: 'conv-1',
+			assistantMessageId,
+			title: overrides.title ?? 'Report',
+			status: overrides.status ?? 'succeeded',
+			stage: overrides.stage ?? null,
+			createdAt: overrides.createdAt ?? now,
+			updatedAt: overrides.updatedAt ?? now,
+			warnings: overrides.warnings ?? [],
+			error: overrides.error ?? null,
+			files: overrides.files ?? [
+				{
+					id: 'file-1',
+					filename: 'report.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 2048,
+					downloadUrl: '/api/chat/files/file-1/download',
+					previewUrl: '/api/chat/files/file-1/preview',
+				},
+			],
+		};
+	}
 
 	it('preserves the expanded thinking block when a streaming placeholder id is replaced', async () => {
 		const initialMessage: ChatMessage = {
@@ -84,7 +113,6 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [],
 		});
 
 		expect(getByText('Conversation Ready')).toBeInTheDocument();
@@ -93,7 +121,7 @@ describe('MessageArea', () => {
 		).toBeInTheDocument();
 	});
 
-	it('scrolls to reveal generated files when they appear at the end of the chat', async () => {
+	it('scrolls to reveal file-production cards when they appear at the end of the chat', async () => {
 		const initialMessage: ChatMessage = {
 			id: 'assistant-1',
 			renderKey: 'assistant-1',
@@ -103,23 +131,14 @@ describe('MessageArea', () => {
 			isStreaming: false,
 			isThinkingStreaming: false,
 		};
-		const generatedFile: ChatGeneratedFileListItem = {
-			id: 'file-1',
-			conversationId: 'conv-1',
-			assistantMessageId: 'assistant-1',
-			filename: 'report.pdf',
-			mimeType: 'application/pdf',
-			sizeBytes: 2048,
-			createdAt: Date.now(),
-			status: 'success',
-		};
+		const job = makeFileProductionJob('assistant-1', { title: 'Report' });
 
 		const { container, getByText, rerender } = render(MessageArea, {
 			messages: [initialMessage],
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [],
+			fileProductionJobs: [],
 		});
 
 		const scrollContainer = container.querySelector('[aria-live="polite"]') as HTMLDivElement;
@@ -144,7 +163,7 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [generatedFile],
+			fileProductionJobs: [job],
 		});
 
 		await waitFor(() => {
@@ -153,19 +172,15 @@ describe('MessageArea', () => {
 		});
 	});
 
-	it('renders a generating file card with the pending shimmer state', async () => {
-		const pendingGeneratedFile: ChatGeneratedFileListItem = {
-			id: 'pending-file-1',
-			conversationId: 'conv-1',
-			assistantMessageId: 'assistant-1',
-			filename: 'draft-report.pdf',
-			mimeType: 'application/octet-stream',
-			sizeBytes: 0,
-			createdAt: Date.now(),
-			status: 'generating',
-		};
+	it('renders a running file-production card instead of a temporary generated-file row', async () => {
+		const runningJob = makeFileProductionJob('assistant-1', {
+			id: 'job-running',
+			title: 'Draft report',
+			status: 'running',
+			files: [],
+		});
 
-		const { getByText, getByTestId, queryByLabelText } = render(MessageArea, {
+		const { getByText, queryByText } = render(MessageArea, {
 			messages: [
 				{
 					id: 'assistant-1',
@@ -180,16 +195,15 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [pendingGeneratedFile],
+			fileProductionJobs: [runningJob],
 		});
 
-		expect(getByText('draft-report.pdf')).toBeInTheDocument();
-		expect(getByText('Generating...')).toBeInTheDocument();
-		expect(getByTestId('generating-progress')).toBeInTheDocument();
-		expect(queryByLabelText('Download draft-report.pdf')).toBeNull();
+		expect(getByText('Draft report')).toBeInTheDocument();
+		expect(getByText('Building')).toBeInTheDocument();
+		expect(queryByText('Generating...')).toBeNull();
 	});
 
-	it('renders generated files above the evidence toggle inside the latest assistant response', () => {
+	it('renders file-production cards above the evidence toggle inside the latest assistant response', () => {
 		const messageTimestamp = Date.now();
 		const evidenceItem = {
 			id: 'evidence-1',
@@ -197,16 +211,20 @@ describe('MessageArea', () => {
 			sourceType: 'document' as const,
 			status: 'selected' as const,
 		};
-		const generatedFile: ChatGeneratedFileListItem = {
-			id: 'file-inline-1',
-			conversationId: 'conv-1',
-			assistantMessageId: 'assistant-inline-1',
-			filename: 'summary.txt',
-			mimeType: 'text/plain',
-			sizeBytes: 128,
-			createdAt: messageTimestamp,
-			status: 'success',
-		};
+		const job = makeFileProductionJob('assistant-inline-1', {
+			id: 'job-inline-1',
+			title: 'Summary',
+			files: [
+				{
+					id: 'file-inline-1',
+					filename: 'summary.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 128,
+					downloadUrl: '/api/chat/files/file-inline-1/download',
+					previewUrl: '/api/chat/files/file-inline-1/preview',
+				},
+			],
+		});
 
 		const { getByText, getByRole } = render(MessageArea, {
 			messages: [
@@ -234,29 +252,33 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [generatedFile],
+			fileProductionJobs: [job],
 		});
 
-		const generatedFileName = getByText('summary.txt');
+		const producedFileName = getByText('summary.txt');
 		const evidenceToggle = getByRole('button', { name: /Evidence/i });
 		expect(
-			generatedFileName.compareDocumentPosition(evidenceToggle) & Node.DOCUMENT_POSITION_FOLLOWING
+			producedFileName.compareDocumentPosition(evidenceToggle) & Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
 	});
 
-	it('keeps generated files attached to the assistant response that created them', () => {
+	it('keeps file-production cards attached to the assistant response that created them', () => {
 		const firstAssistantId = 'assistant-created-file';
 		const secondAssistantId = 'assistant-follow-up';
-		const generatedFile: ChatGeneratedFileListItem = {
-			id: 'file-scoped-1',
-			conversationId: 'conv-1',
-			assistantMessageId: firstAssistantId,
-			filename: 'scope.txt',
-			mimeType: 'text/plain',
-			sizeBytes: 32,
-			createdAt: Date.now(),
-			status: 'success',
-		};
+		const job = makeFileProductionJob(firstAssistantId, {
+			id: 'job-scoped-1',
+			title: 'Scoped file',
+			files: [
+				{
+					id: 'file-scoped-1',
+					filename: 'scope.txt',
+					mimeType: 'text/plain',
+					sizeBytes: 32,
+					downloadUrl: '/api/chat/files/file-scoped-1/download',
+					previewUrl: '/api/chat/files/file-scoped-1/preview',
+				},
+			],
+		});
 
 		const { container, getByText, rerender } = render(MessageArea, {
 			messages: [
@@ -282,7 +304,7 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [generatedFile],
+			fileProductionJobs: [job],
 		});
 
 		const assistantMessages = container.querySelectorAll('[data-testid="assistant-message"]');
@@ -314,7 +336,7 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [generatedFile],
+			fileProductionJobs: [job],
 		});
 
 		expect(getByText('scope.txt')).toBeInTheDocument();
@@ -370,7 +392,6 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [],
 			fileProductionJobs: [fileProductionJob],
 		});
 
@@ -425,7 +446,6 @@ describe('MessageArea', () => {
 			conversationId: 'conv-1',
 			isThinkingActive: false,
 			contextDebug: null,
-			generatedFiles: [],
 			fileProductionJobs: [failedJob, runningJob],
 			onRetryFileProductionJob,
 			onCancelFileProductionJob,

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import type {
-		ChatGeneratedFileListItem,
 		ChatMessage,
 		ContextDebugState,
 		DocumentWorkspaceItem,
@@ -15,7 +14,6 @@
 		conversationId,
 		isThinkingActive,
 		contextDebug,
-		generatedFiles,
 		fileProductionJobs = [],
 		onOpenDocument,
 		onRegenerate,
@@ -28,7 +26,6 @@
 		conversationId: string;
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
-		generatedFiles: ChatGeneratedFileListItem[];
 		fileProductionJobs?: FileProductionJob[];
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
@@ -45,7 +42,6 @@
 		{conversationId}
 		{isThinkingActive}
 		{contextDebug}
-		{generatedFiles}
 		{fileProductionJobs}
 		{onOpenDocument}
 		{onRegenerate}
