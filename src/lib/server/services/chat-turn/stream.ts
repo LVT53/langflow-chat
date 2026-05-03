@@ -2,15 +2,15 @@ import {
 	createInlineThinkingState,
 	FRIENDLY_STREAM_ERRORS,
 	flushInlineThinkingState,
-	getTextContent,
 	getLeakedToolDiagnosticPrefixLength,
+	getTextContent,
 	looksLikeLeadingThinkingPreamble,
 	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
-	stripLeakedToolDiagnostics,
 	type StreamErrorCode,
 	splitLeadingThinkingPreamble,
 	stripLeadingResponseMarker,
+	stripLeakedToolDiagnostics,
 } from "$lib/services/stream-protocol";
 import type {
 	EvidenceSourceType,
@@ -179,9 +179,7 @@ export function createServerChunkRuntime({
 		const visibleChunk = holdLength
 			? sanitizedBuffer.slice(0, -holdLength)
 			: sanitizedBuffer;
-		visibleTokenBuffer = holdLength
-			? sanitizedBuffer.slice(-holdLength)
-			: "";
+		visibleTokenBuffer = holdLength ? sanitizedBuffer.slice(-holdLength) : "";
 
 		if (!visibleChunk) {
 			return true;
@@ -404,7 +402,10 @@ export function classifyStreamError(rawMessage: string): StreamErrorCode {
 		message.includes("enotfound") ||
 		message.includes("socket") ||
 		message.includes("connection") ||
-		message.includes("terminated")
+		message.includes("terminated") ||
+		message.includes("apiconnectionerror") ||
+		message.includes("connect_tcp") ||
+		message.includes("connect tcp")
 	) {
 		return "network";
 	}
@@ -536,14 +537,64 @@ export function extractErrorMessage(rawData: unknown): string {
 	const payload = getNestedObject(data);
 	if (!payload) return "Streaming failed";
 
-	if (typeof payload.message === "string") return payload.message;
-	if (typeof payload.error === "string") return payload.error;
-	if (typeof payload.text === "string") return payload.text;
-	if (typeof payload.detail === "string") return payload.detail;
-	if (typeof payload.reason === "string") return payload.reason;
+	const direct = getDirectErrorText(payload);
+	if (direct && !isGenericLangflowErrorText(direct)) return direct;
+
+	const nested = collectNestedErrorText(payload);
+	if (nested) {
+		return direct ? `${direct}\n${nested}` : nested;
+	}
+
+	if (direct) return direct;
 	if ("data" in payload) return extractErrorMessage(payload.data);
 
 	return "Streaming failed";
+}
+
+function getDirectErrorText(payload: Record<string, unknown>): string | null {
+	for (const key of ["message", "error", "text", "detail", "reason"]) {
+		const value = payload[key];
+		if (typeof value === "string" && value.trim()) {
+			return value;
+		}
+	}
+	return null;
+}
+
+function isGenericLangflowErrorText(value: string): boolean {
+	return /^code:\s*none\s*$/i.test(value.trim());
+}
+
+function collectNestedErrorText(value: unknown, depth = 0): string | null {
+	if (depth > 8 || !value || typeof value !== "object") return null;
+
+	if (Array.isArray(value)) {
+		return (
+			value
+				.map((item) => collectNestedErrorText(item, depth + 1))
+				.filter((item): item is string => Boolean(item))
+				.join("\n")
+				.trim() || null
+		);
+	}
+
+	const payload = value as Record<string, unknown>;
+	const parts: string[] = [];
+	for (const key of ["reason", "traceback", "message", "error", "detail"]) {
+		const candidate = payload[key];
+		if (typeof candidate === "string" && candidate.trim()) {
+			parts.push(candidate);
+		}
+	}
+
+	for (const key of ["data", "content_blocks", "contents", "properties"]) {
+		if (key in payload) {
+			const nested = collectNestedErrorText(payload[key], depth + 1);
+			if (nested) parts.push(nested);
+		}
+	}
+
+	return Array.from(new Set(parts)).join("\n").trim() || null;
 }
 
 export function isUrlListValidationError(rawMessage: string): boolean {

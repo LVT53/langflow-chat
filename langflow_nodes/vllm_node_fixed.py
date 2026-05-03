@@ -287,7 +287,11 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     @staticmethod
     def _has_stream_choices(raw_chunk: dict[str, Any]) -> bool:
         choices = raw_chunk.get("choices")
-        return isinstance(choices, list) and len(choices) > 0
+        if not isinstance(choices, list) or len(choices) == 0:
+            return False
+
+        first_choice = choices[0]
+        return isinstance(first_choice, dict)
 
     def _merge_runtime_system_prompt(self, messages: Any) -> list[Any]:
         """Ensure the AlfyAI runtime system prompt reaches the model.
@@ -353,11 +357,18 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 logger.debug("[REASONING_STREAM] Skipping provider stream chunk without choices")
                 continue
 
-            generation_chunk = self._convert_chunk_to_generation_chunk(
-                raw_chunk,
-                default_chunk_class,
-                {},
-            )
+            try:
+                generation_chunk = self._convert_chunk_to_generation_chunk(
+                    raw_chunk,
+                    default_chunk_class,
+                    {},
+                )
+            except (IndexError, KeyError, TypeError) as exc:
+                logger.warning(
+                    "[REASONING_STREAM] Skipping malformed provider stream chunk: %s",
+                    exc,
+                )
+                continue
             if generation_chunk is None:
                 continue
 

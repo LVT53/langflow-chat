@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createServerChunkRuntime } from "./stream";
+import {
+	classifyStreamError,
+	createServerChunkRuntime,
+	extractErrorMessage,
+} from "./stream";
 
 function tokenTexts(chunks: string[]): string[] {
 	return chunks
@@ -86,5 +90,33 @@ describe("createServerChunkRuntime", () => {
 		expect(tokenTexts(chunks).join("")).toBe(
 			"Qudelix alternatives\n\nThe answer starts here.",
 		);
+	});
+});
+
+describe("stream error extraction", () => {
+	it("keeps nested Langflow API connection diagnostics instead of only Code: None", () => {
+		const message = extractErrorMessage({
+			text_key: "text",
+			data: {
+				text: "Code: None\n",
+				content_blocks: [
+					{
+						title: "Error",
+						contents: [
+							{
+								reason: "**APIConnectionError**\n - **Code: None**\n",
+								traceback:
+									"Traceback...\nhttpcore connect_tcp failed: All connection attempts failed",
+							},
+						],
+					},
+				],
+			},
+		});
+
+		expect(message).toContain("Code: None");
+		expect(message).toContain("APIConnectionError");
+		expect(message).toContain("connect_tcp");
+		expect(classifyStreamError(message)).toBe("network");
 	});
 });
