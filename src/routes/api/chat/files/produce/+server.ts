@@ -7,6 +7,7 @@ import {
 	createOrReuseFileProductionJob,
 	wakeFileProductionWorker,
 } from '$lib/server/services/file-production';
+import { validateFileProductionStaticLimits } from '$lib/server/services/file-production/limits';
 
 type ProduceProgramLanguage = 'python' | 'javascript';
 
@@ -209,6 +210,40 @@ export const POST: RequestHandler = async (event) => {
 	const request = validation.value;
 	const owner = await resolveOwnerUserId(event, request.conversationId);
 	if (!owner.ok) return owner.response;
+	const requestJson = {
+		sourceMode: request.sourceMode,
+		outputs: request.outputs ?? [],
+		documentIntent: request.documentIntent ?? null,
+		program: request.program,
+	};
+	const staticLimit = validateFileProductionStaticLimits({
+		outputCount: request.outputs?.length ?? 0,
+		sourceJsonBytes: Buffer.byteLength(JSON.stringify(requestJson), 'utf8'),
+	});
+	if (!staticLimit.ok) {
+		const job = await createFailedFileProductionJob({
+			userId: owner.userId,
+			conversationId: request.conversationId,
+			assistantMessageId: request.assistantMessageId ?? null,
+			title: request.requestTitle,
+			origin: 'unified_produce',
+			idempotencyKey: request.idempotencyKey,
+			sourceMode: request.sourceMode,
+			documentIntent: request.documentIntent ?? null,
+			requestJson,
+			errorCode: staticLimit.code,
+			errorMessage: staticLimit.message,
+			retryable: staticLimit.retryable,
+		});
+		console.warn('[FILE_PRODUCTION] Static limit failed', {
+			jobId: job.id,
+			code: staticLimit.code,
+			limit: staticLimit.limit,
+			actual: staticLimit.actual,
+			unit: staticLimit.unit,
+		});
+		return json({ error: staticLimit.message, job }, { status: 422 });
+	}
 
 	const result = await createOrReuseFileProductionJob({
 		userId: owner.userId,
@@ -219,12 +254,7 @@ export const POST: RequestHandler = async (event) => {
 		idempotencyKey: request.idempotencyKey,
 		sourceMode: request.sourceMode,
 		documentIntent: request.documentIntent ?? null,
-		requestJson: {
-			sourceMode: request.sourceMode,
-			outputs: request.outputs ?? [],
-			documentIntent: request.documentIntent ?? null,
-			program: request.program,
-		},
+		requestJson,
 	});
 
 	if (result.job.status === 'queued' || result.job.status === 'running') {

@@ -135,4 +135,24 @@ describe('GET /api/chat/files/[id]/download', () => {
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe('hello');
 	});
+
+	it('rejects mismatched generated-file MIME type and extension before download', async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: 'file-1',
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			filename: 'report.pdf',
+			mimeType: 'text/plain',
+			sizeBytes: 11,
+			storagePath: 'conv-1/file-1.pdf',
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from('hello world'));
+
+		const response = await GET(makeEvent());
+		const body = await response.json();
+
+		expect(response.status).toBe(415);
+		expect(body.error).toBe('Unsupported generated file type');
+	});
 });

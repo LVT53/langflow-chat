@@ -720,4 +720,81 @@ describe('file production service', () => {
 			sortOrder: 0,
 		});
 	});
+
+	it('fails oversized program outputs before storage and without produced-file links', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const created = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Oversized CSV export',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:oversized-file',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/data.csv").write_text("too large")',
+					filename: 'data.csv',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T20:06:00.000Z'),
+		});
+		const storeGeneratedFile = vi.fn();
+
+		const result = await executeNextFileProductionJob({
+			workerId: 'worker-limit',
+			executeCode: vi.fn(async () => ({
+				files: [
+					{
+						filename: 'data.csv',
+						mimeType: 'text/csv',
+						content: Buffer.from('too large'),
+						sizeBytes: 9,
+					},
+				],
+				stdout: '',
+				stderr: '',
+				error: null,
+			})),
+			storeGeneratedFile,
+			limits: {
+				maxOutputFileBytes: 4,
+				maxTotalOutputBytes: 20,
+			},
+			now: new Date('2026-05-03T20:07:00.000Z'),
+		});
+
+		expect(result).toBeNull();
+		expect(storeGeneratedFile).not.toHaveBeenCalled();
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((job) => job.id === created.job.id)).toMatchObject({
+			status: 'failed',
+			error: {
+				code: 'output_file_too_large',
+				retryable: false,
+			},
+		});
+		const links = await db
+			.select()
+			.from(schema.fileProductionJobFiles)
+			.where(eq(schema.fileProductionJobFiles.jobId, created.job.id));
+		expect(links).toHaveLength(0);
+		const attempts = await db
+			.select()
+			.from(schema.fileProductionJobAttempts)
+			.where(eq(schema.fileProductionJobAttempts.jobId, created.job.id));
+		expect(JSON.parse(attempts[0].diagnosticsJson ?? '{}')).toMatchObject({
+			limit: 4,
+			actual: 9,
+			unit: 'bytes',
+		});
+	});
 });

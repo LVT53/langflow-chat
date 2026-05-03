@@ -170,4 +170,61 @@ describe('POST /api/chat/files/produce', () => {
 			status: 'failed',
 		});
 	});
+
+	it('persists static limit failures before creating or running a queued job', async () => {
+		mockCreateFailedFileProductionJob.mockResolvedValueOnce({
+			id: 'job-limit',
+			conversationId: 'conv-1',
+			assistantMessageId: null,
+			title: 'Too many files',
+			status: 'failed',
+			stage: null,
+			createdAt: 1,
+			updatedAt: 1,
+			files: [],
+			warnings: [],
+			error: {
+				code: 'too_many_outputs',
+				message: 'Too many outputs were requested.',
+				retryable: false,
+			},
+		});
+
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				idempotencyKey: 'turn-1:too-many',
+				requestTitle: 'Too many files',
+				sourceMode: 'program',
+				outputs: [
+					{ type: 'csv' },
+					{ type: 'json' },
+					{ type: 'txt' },
+					{ type: 'xlsx' },
+					{ type: 'html' },
+					{ type: 'zip' },
+				],
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/data.csv").write_text("a,b\\n1,2")',
+				},
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(422);
+		expect(mockCreateOrReuseFileProductionJob).not.toHaveBeenCalled();
+		expect(mockCreateFailedFileProductionJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				errorCode: 'too_many_outputs',
+				errorMessage: 'Too many outputs were requested.',
+				retryable: false,
+			})
+		);
+		expect(mockWakeFileProductionWorker).not.toHaveBeenCalled();
+		expect(data.job).toMatchObject({
+			id: 'job-limit',
+			status: 'failed',
+		});
+	});
 });

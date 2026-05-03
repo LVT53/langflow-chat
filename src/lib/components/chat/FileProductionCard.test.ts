@@ -52,10 +52,26 @@ describe('FileProductionCard', () => {
 		});
 
 		expect(getByText('Needs attention')).toBeInTheDocument();
-		expect(getByText('Renderer timed out.')).toBeInTheDocument();
+		expect(getByText('Document rendering timed out.')).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Retry file production' }));
 
 		expect(onRetry).toHaveBeenCalledWith('job-1');
+	});
+
+	it('uses localized safe text for known limit errors instead of raw diagnostics', () => {
+		const { getByText, queryByText } = render(FileProductionCard, {
+			job: makeJob({
+				status: 'failed',
+				error: {
+					code: 'too_many_outputs',
+					message: 'limit=5 actual=6',
+					retryable: false,
+				},
+			}),
+		});
+
+		expect(getByText('Too many outputs were requested.')).toBeInTheDocument();
+		expect(queryByText('limit=5 actual=6')).toBeNull();
 	});
 });

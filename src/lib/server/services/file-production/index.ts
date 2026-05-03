@@ -14,6 +14,11 @@ import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { ChatFile } from '$lib/server/services/chat-files';
 import { randomUUID } from 'node:crypto';
 import { executeCode as executeSandboxCode } from '$lib/server/services/sandbox-execution';
+import {
+	getFileProductionLimits,
+	validateFileProductionOutputLimits,
+	type FileProductionLimits,
+} from './limits';
 
 export interface CreateFileProductionJobInput {
 	userId: string;
@@ -77,6 +82,7 @@ export interface FailFileProductionAttemptInput extends OwnedFileProductionAttem
 	errorCode: string;
 	errorMessage: string;
 	retryable: boolean;
+	diagnostics?: unknown;
 }
 
 export interface RecoverStaleFileProductionAttemptsInput {
@@ -124,6 +130,7 @@ export interface ExecuteNextFileProductionJobInput {
 		userId: string,
 		file: FileInput
 	) => Promise<ChatFile>;
+	limits?: Partial<FileProductionLimits>;
 }
 
 export interface ExecuteNextFileProductionJobResult {
@@ -625,6 +632,7 @@ export async function failFileProductionJobAttempt(
 				errorCode: input.errorCode,
 				errorMessage: input.errorMessage,
 				retryable: input.retryable,
+				diagnosticsJson: input.diagnostics === undefined ? null : JSON.stringify(input.diagnostics),
 				updatedAt: now,
 			})
 			.where(
@@ -1023,6 +1031,42 @@ export async function executeNextFileProductionJob(
 			errorCode: 'program_no_outputs',
 			errorMessage: 'The program finished without producing files.',
 			retryable: false,
+			now: new Date(),
+		});
+		return null;
+	}
+
+	const effectiveLimits = {
+		...getFileProductionLimits(),
+		...(input.limits ?? {}),
+	};
+	const outputLimit = validateFileProductionOutputLimits({
+		fileSizes: executionResult.files.map((file) =>
+			Buffer.isBuffer(file.content) ? file.content.length : Buffer.byteLength(file.content)
+		),
+		limits: effectiveLimits,
+	});
+	if (!outputLimit.ok) {
+		console.warn('[FILE_PRODUCTION] Output limit failed', {
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			code: outputLimit.code,
+			limit: outputLimit.limit,
+			actual: outputLimit.actual,
+			unit: outputLimit.unit,
+		});
+		await failFileProductionJobAttempt({
+			jobId: claimed.job.id,
+			attemptId: claimed.attempt.id,
+			workerId: input.workerId,
+			errorCode: outputLimit.code,
+			errorMessage: outputLimit.message,
+			retryable: outputLimit.retryable,
+			diagnostics: {
+				limit: outputLimit.limit,
+				actual: outputLimit.actual,
+				unit: outputLimit.unit,
+			},
 			now: new Date(),
 		});
 		return null;

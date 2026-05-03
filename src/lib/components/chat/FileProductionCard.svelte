@@ -1,7 +1,22 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import type { I18nKey } from '$lib/i18n';
 	import type { DocumentWorkspaceItem, FileProductionJob, FileProductionJobFile } from '$lib/types';
 	import { formatByteSize } from '$lib/utils/format';
+
+	const ERROR_MESSAGE_KEYS: Partial<Record<string, I18nKey>> = {
+		too_many_outputs: 'fileProduction.error.too_many_outputs',
+		source_too_large: 'fileProduction.error.source_too_large',
+		projection_too_large: 'fileProduction.error.projection_too_large',
+		page_limit_exceeded: 'fileProduction.error.page_limit_exceeded',
+		table_limit_exceeded: 'fileProduction.error.table_limit_exceeded',
+		chart_limit_exceeded: 'fileProduction.error.chart_limit_exceeded',
+		image_limit_exceeded: 'fileProduction.error.image_limit_exceeded',
+		renderer_timeout: 'fileProduction.error.renderer_timeout',
+		sandbox_timeout: 'fileProduction.error.sandbox_timeout',
+		output_file_too_large: 'fileProduction.error.output_file_too_large',
+		job_outputs_too_large: 'fileProduction.error.job_outputs_too_large',
+	};
 
 	let {
 		job,
@@ -42,7 +57,8 @@
 
 	function statusDescription(job: FileProductionJob): string | null {
 		if (job.error?.message) {
-			return job.error.message;
+			const key = ERROR_MESSAGE_KEYS[job.error.code];
+			return key ? $t(key) : job.error.message;
 		}
 		switch (job.status) {
 			case 'queued':

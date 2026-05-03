@@ -80,6 +80,21 @@ export const ADMIN_CONFIG_KEYS = [
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
+	"FILE_PRODUCTION_MAX_OUTPUTS",
+	"FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES",
+	"FILE_PRODUCTION_MAX_PROJECTION_BYTES",
+	"FILE_PRODUCTION_MAX_PDF_PAGES",
+	"FILE_PRODUCTION_MAX_TABLE_ROWS",
+	"FILE_PRODUCTION_MAX_TABLE_COLUMNS",
+	"FILE_PRODUCTION_MAX_CHART_DATA_POINTS",
+	"FILE_PRODUCTION_MAX_CHART_SERIES",
+	"FILE_PRODUCTION_MAX_IMAGE_COUNT",
+	"FILE_PRODUCTION_MAX_IMAGE_BYTES",
+	"FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES",
+	"FILE_PRODUCTION_SANDBOX_TIMEOUT_MS",
+	"FILE_PRODUCTION_RENDERER_TIMEOUT_MS",
+	"FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES",
+	"FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES",
 	"CONTEXT_DIAGNOSTICS_DEBUG",
 ] as const;
 
@@ -157,6 +172,21 @@ export interface RuntimeConfig {
 	perUserStreamLimit: number;
 	systemPrompt: string;
 	maxFileUploadSize: number;
+	fileProductionMaxOutputs: number;
+	fileProductionMaxSourceJsonBytes: number;
+	fileProductionMaxProjectionBytes: number;
+	fileProductionMaxPdfPages: number;
+	fileProductionMaxTableRows: number;
+	fileProductionMaxTableColumns: number;
+	fileProductionMaxChartDataPoints: number;
+	fileProductionMaxChartSeries: number;
+	fileProductionMaxImageCount: number;
+	fileProductionMaxImageBytes: number;
+	fileProductionMaxTotalImageBytes: number;
+	fileProductionSandboxTimeoutMs: number;
+	fileProductionRendererTimeoutMs: number;
+	fileProductionMaxOutputFileBytes: number;
+	fileProductionMaxTotalOutputBytes: number;
 }
 
 function buildDefaultConfig(): RuntimeConfig {
@@ -447,6 +477,66 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
 	},
+	FILE_PRODUCTION_MAX_OUTPUTS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxOutputs = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxSourceJsonBytes = Math.max(1024, parsed);
+	},
+	FILE_PRODUCTION_MAX_PROJECTION_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxProjectionBytes = Math.max(1024, parsed);
+	},
+	FILE_PRODUCTION_MAX_PDF_PAGES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxPdfPages = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_TABLE_ROWS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxTableRows = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_TABLE_COLUMNS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxTableColumns = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_CHART_DATA_POINTS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxChartDataPoints = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_CHART_SERIES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxChartSeries = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_IMAGE_COUNT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxImageCount = Math.max(1, parsed);
+	},
+	FILE_PRODUCTION_MAX_IMAGE_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxImageBytes = Math.max(1024, parsed);
+	},
+	FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxTotalImageBytes = Math.max(1024, parsed);
+	},
+	FILE_PRODUCTION_SANDBOX_TIMEOUT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionSandboxTimeoutMs = Math.max(1000, parsed);
+	},
+	FILE_PRODUCTION_RENDERER_TIMEOUT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionRendererTimeoutMs = Math.max(1000, parsed);
+	},
+	FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxOutputFileBytes = Math.max(1024, parsed);
+	},
+	FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) config.fileProductionMaxTotalOutputBytes = Math.max(1024, parsed);
+	},
 	CONTEXT_DIAGNOSTICS_DEBUG: (config, value) => {
 		config.contextDiagnosticsDebug = value === "true";
 	},
@@ -696,6 +786,21 @@ export function getResolvedAdminConfigValues(
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
 		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),
+		FILE_PRODUCTION_MAX_OUTPUTS: String(config.fileProductionMaxOutputs),
+		FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: String(config.fileProductionMaxSourceJsonBytes),
+		FILE_PRODUCTION_MAX_PROJECTION_BYTES: String(config.fileProductionMaxProjectionBytes),
+		FILE_PRODUCTION_MAX_PDF_PAGES: String(config.fileProductionMaxPdfPages),
+		FILE_PRODUCTION_MAX_TABLE_ROWS: String(config.fileProductionMaxTableRows),
+		FILE_PRODUCTION_MAX_TABLE_COLUMNS: String(config.fileProductionMaxTableColumns),
+		FILE_PRODUCTION_MAX_CHART_DATA_POINTS: String(config.fileProductionMaxChartDataPoints),
+		FILE_PRODUCTION_MAX_CHART_SERIES: String(config.fileProductionMaxChartSeries),
+		FILE_PRODUCTION_MAX_IMAGE_COUNT: String(config.fileProductionMaxImageCount),
+		FILE_PRODUCTION_MAX_IMAGE_BYTES: String(config.fileProductionMaxImageBytes),
+		FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES: String(config.fileProductionMaxTotalImageBytes),
+		FILE_PRODUCTION_SANDBOX_TIMEOUT_MS: String(config.fileProductionSandboxTimeoutMs),
+		FILE_PRODUCTION_RENDERER_TIMEOUT_MS: String(config.fileProductionRendererTimeoutMs),
+		FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES: String(config.fileProductionMaxOutputFileBytes),
+		FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES: String(config.fileProductionMaxTotalOutputBytes),
 		CONTEXT_DIAGNOSTICS_DEBUG: String(config.contextDiagnosticsDebug),
 	};
 }

@@ -7,6 +7,7 @@ import {
 	readChatFileContentByConversationOwner,
 	readChatFileContentByUser,
 } from '$lib/server/services/chat-files';
+import { isGeneratedFileTypeAllowed } from '$lib/server/services/file-production/output-validation';
 import { getPreviewContentType } from '$lib/utils/file-preview';
 
 export const GET: RequestHandler = async (event) => {
@@ -23,6 +24,10 @@ export const GET: RequestHandler = async (event) => {
 		(await getChatFileByConversationOwner(fileId, user.id));
 	if (!chatFile) {
 		return json({ error: 'File not found' }, { status: 404 });
+	}
+
+	if (!isGeneratedFileTypeAllowed(chatFile.filename, chatFile.mimeType)) {
+		return json({ error: 'Unsupported generated file type' }, { status: 415 });
 	}
 
 	const fileContent =
