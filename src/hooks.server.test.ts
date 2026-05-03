@@ -5,6 +5,7 @@ const mockRefreshConfig = vi.fn(async () => undefined);
 const mockEnsureMemoryMaintenanceScheduler = vi.fn();
 const mockPrewarmSandboxImageInBackground = vi.fn();
 const mockEnsureRuntimeSchemaCompatibility = vi.fn(async () => undefined);
+const mockEnsureFileProductionWorker = vi.fn(async () => undefined);
 
 vi.mock("$lib/server/services/auth", () => ({
 	validateSession: mockValidateSession,
@@ -28,6 +29,10 @@ vi.mock("$lib/server/sandbox/config", () => ({
 
 vi.mock("$lib/server/db/compat", () => ({
 	ensureRuntimeSchemaCompatibility: mockEnsureRuntimeSchemaCompatibility,
+}));
+
+vi.mock("$lib/server/services/file-production", () => ({
+	ensureFileProductionWorker: mockEnsureFileProductionWorker,
 }));
 
 describe("hooks.server.ts", () => {
@@ -61,6 +66,10 @@ describe("hooks.server.ts", () => {
 		await init();
 
 		expect(mockEnsureRuntimeSchemaCompatibility).toHaveBeenCalledOnce();
+		expect(mockEnsureFileProductionWorker).toHaveBeenCalledOnce();
+		expect(
+			mockEnsureRuntimeSchemaCompatibility.mock.invocationCallOrder[0],
+		).toBeLessThan(mockEnsureFileProductionWorker.mock.invocationCallOrder[0]);
 	});
 
 	it("allows the health check route without a session", async () => {
