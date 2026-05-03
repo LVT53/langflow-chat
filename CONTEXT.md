@@ -112,7 +112,7 @@ _Avoid_: demo slice, spike, partial path
 - A direct attachment or explicitly targeted document may become **Protected Context**.
 - Passive workspace state alone does not create **Protected Context**.
 - **Context Selection** is the source of truth for promoting **Available Context** into **Prompt Context**.
-- **Context Selection** considers conversation, memory, attachment, workspace, task, generated-document, and retrieval signals together.
+- **Context Selection** considers conversation, memory, attachment, workspace, task, generated-file, generated-document, and retrieval signals together.
 - Individual subsystems may supply **Available Context** and **Context Signals**, but should not independently force large text into **Prompt Context**.
 - Every promoted context item has a **Context Inclusion Level**.
 - **Reference Context** preserves awareness without sending body content.
@@ -158,7 +158,8 @@ _Avoid_: demo slice, spike, partial path
 - The immediately previous exchange may receive limited protection for conversational continuity.
 - Older turns should compete through relevance and budget rather than transcript recency alone.
 - Large previous outputs should not become **Prompt Context** only because they are recent.
-- Generated outputs are **Available Context** but not automatically **Prompt Context**.
+- **Generated Files** and **Generated Documents** are **Available Context** but not automatically **Prompt Context**.
+- Generated-output prompt inclusion must happen through **Context Selection**, not through a separate latest-file or file-generation prompt shortcut.
 - A generated output may become **Protected Context** when the user clearly continues work on it.
 - A recent or visible generated output alone should usually receive no more than **Reference Context**.
 - A semantically relevant generated output may receive **Excerpt Context**.
@@ -246,9 +247,21 @@ _Avoid_: duplicate version, overwrite candidate
 An **Uploaded Document** whose display name was changed to preserve both files after a **Filename Conflict**.
 _Avoid_: new version, replacement, overwrite
 
+**File Production Request**:
+A user request for AlfyAI to create one or more downloadable **Generated Files**.
+_Avoid_: export task, PDF tool call, sandbox job
+
+**Generated File**:
+A downloadable file produced by AlfyAI during chat.
+_Avoid_: uploaded document, attachment, artifact
+
 **Generated Document**:
-A document produced by AlfyAI during chat or file generation.
-_Avoid_: uploaded document, attachment, report
+A **Generated File** whose content is a document-like work item that can be opened, revised, or versioned.
+_Avoid_: uploaded document, attachment, report, raw export
+
+**Generated Document Source**:
+The normalized semantic structure AlfyAI uses to render a **Generated Document**.
+_Avoid_: PDF code, layout script, binary file bytes, raw HTML
 
 **Generated Document Family**:
 A set of **Generated Documents** that are iterations of the same AI-created work item.
@@ -258,6 +271,10 @@ _Avoid_: duplicate upload group, file history
 One member of a **Generated Document Family**.
 _Avoid_: uploaded duplicate, library version
 
+**Generated Document Template**:
+A reusable presentation policy for rendering a **Generated Document Source**.
+_Avoid_: generated document source, PDF script, style prompt
+
 **Working Document**:
 A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
 _Avoid_: active file, current artifact
@@ -265,7 +282,19 @@ _Avoid_: active file, current artifact
 ### Relationships
 
 - A **Library Document** may be an **Uploaded Document**.
-- A **Generated Document** is not an **Uploaded Document**.
+- A **Generated Document** is a **Generated File**.
+- A **Generated File** is not an **Uploaded Document**.
+- A **Generated File** does not automatically become a **Generated Document**.
+- A **File Production Request** may produce one or more **Generated Files**.
+- A **File Production Request** is one user-facing capability even when AlfyAI uses different internal production methods.
+- A **Generated Document** may have a **Generated Document Source**.
+- A **Generated Document Source** is **Available Context**.
+- The rendered binary file is the downloadable **Generated File**.
+- A **Generated Document Template** renders a **Generated Document Source** into one or more downloadable formats.
+- A **File Production Request** may name a **Generated Document Template**.
+- When no template is named, AlfyAI chooses an appropriate **Generated Document Template**.
+- AlfyAI owns document layout and rendering; the assistant supplies semantic content, not PDF layout code.
+- Non-document outputs such as raw data files, code files, images, or bundles may remain **Generated Files** without entering generated-document version history.
 - A **Filename Conflict** creates an **Auto-Renamed Upload**.
 - A **Filename Conflict** does not create a **Generated Document Version**.
 - An **Auto-Renamed Upload** remains a separate **Uploaded Document**.
@@ -281,6 +310,15 @@ _Avoid_: active file, current artifact
 >
 > **Dev:** "When do we show version history?"
 > **Domain expert:** "Only for a **Generated Document Family**, where each generated iteration is a **Generated Document Version**."
+>
+> **Dev:** "If AlfyAI creates `data.csv`, is that a **Generated Document**?"
+> **Domain expert:** "No. It is a **Generated File**. It becomes a **Generated Document** only if the user treats it as a work item to open, revise, or version."
+>
+> **Dev:** "Should the assistant choose between a PDF export feature and a sandbox file generator?"
+> **Domain expert:** "No. The user made one **File Production Request**. AlfyAI chooses the internal production path."
+>
+> **Dev:** "Should the assistant write PDF styling code?"
+> **Domain expert:** "No. The assistant provides a **Generated Document Source**; AlfyAI applies a **Generated Document Template** when rendering."
 >
 > **Dev:** "Can an uploaded PDF be the **Working Document**?"
 > **Domain expert:** "Yes. A **Working Document** can be uploaded or generated, but upload duplicates still stay separate documents."
