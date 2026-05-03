@@ -96,6 +96,8 @@ describe('POST /api/chat/files/produce', () => {
 				idempotencyKey: 'turn-1:file-1',
 				requestTitle: 'CSV export',
 				sourceMode: 'program',
+				documentIntent: 'data_export',
+				templateHint: 'compact',
 				outputs: [{ type: 'csv' }],
 				program: {
 					language: 'python',
@@ -116,8 +118,11 @@ describe('POST /api/chat/files/produce', () => {
 				title: 'CSV export',
 				idempotencyKey: 'turn-1:file-1',
 				sourceMode: 'program',
+				documentIntent: 'data_export',
 				requestJson: expect.objectContaining({
 					sourceMode: 'program',
+					documentIntent: 'data_export',
+					templateHint: 'compact',
 					program: expect.objectContaining({
 						language: 'python',
 						filename: 'data.csv',

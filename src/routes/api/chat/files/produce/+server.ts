@@ -20,6 +20,7 @@ interface ProduceProgramRequest {
 	sourceMode: 'program' | 'document_source';
 	outputs?: Array<{ type: string }>;
 	documentIntent?: string | null;
+	templateHint?: string | null;
 	program?: {
 		language: ProduceProgramLanguage;
 		sourceCode: string;
@@ -96,6 +97,10 @@ function validateProgramRequest(
 					typeof body.documentIntent === 'string' && body.documentIntent.trim()
 						? body.documentIntent.trim()
 						: null,
+				templateHint:
+					typeof body.templateHint === 'string' && body.templateHint.trim()
+						? body.templateHint.trim()
+						: null,
 				documentSource: documentValidation.source,
 			},
 		};
@@ -134,6 +139,10 @@ function validateProgramRequest(
 			documentIntent:
 				typeof body.documentIntent === 'string' && body.documentIntent.trim()
 					? body.documentIntent.trim()
+					: null,
+			templateHint:
+				typeof body.templateHint === 'string' && body.templateHint.trim()
+					? body.templateHint.trim()
 					: null,
 			program: {
 				language: language as ProduceProgramLanguage,
@@ -175,6 +184,7 @@ function extractFailureDraft(body: unknown) {
 					sourceMode: typeof body.sourceMode === 'string' ? body.sourceMode : null,
 					outputs: Array.isArray(body.outputs) ? body.outputs : [],
 					documentIntent: typeof body.documentIntent === 'string' ? body.documentIntent : null,
+					templateHint: typeof body.templateHint === 'string' ? body.templateHint : null,
 					program: isRecord(body.program) ? body.program : null,
 					documentSource: isRecord(body.documentSource) ? body.documentSource : null,
 				}
@@ -256,6 +266,7 @@ export const POST: RequestHandler = async (event) => {
 		sourceMode: request.sourceMode,
 		outputs: request.outputs ?? [],
 		documentIntent: request.documentIntent ?? null,
+		templateHint: request.templateHint ?? null,
 		program: request.program ?? null,
 		documentSource: request.documentSource ?? null,
 	};

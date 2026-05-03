@@ -118,7 +118,7 @@ describe("buildOutboundSystemPrompt", () => {
 		vi.clearAllMocks();
 	});
 
-	it("keeps always-on date, generated-file, and image-search guidance with custom prompts", () => {
+	it("keeps always-on date, unified file-production, and image-search guidance with custom prompts", () => {
 		const prompt = buildOutboundSystemPrompt({
 			basePrompt: "Custom system prompt",
 			inputValue: "Create a downloadable PDF with photos of Amsterdam.",
@@ -131,6 +131,14 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("Time-sensitive search workflow");
 		expect(prompt).toContain("Generated file workflow");
 		expect(prompt).toContain("If the user asks for a downloadable file");
+		expect(prompt).toContain("produce_file");
+		expect(prompt).toContain("sourceMode");
+		expect(prompt).toContain("document_source");
+		expect(prompt).toContain("documentSource");
+		expect(prompt).toContain("program");
+		expect(prompt).toContain("idempotencyKey");
+		expect(prompt).toContain("requestTitle");
+		expect(prompt).toContain("documentIntent");
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");
 		expect(prompt).toContain("research_web");
@@ -139,6 +147,10 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain(
 			"get_contents` expects a JSON argument like {urls:",
 		);
+		expect(prompt).not.toContain("generate_file");
+		expect(prompt).not.toContain("export_document");
+		expect(prompt).not.toContain("createPDF");
+		expect(prompt).not.toContain("Terracotta Crown");
 	});
 
 	it("places the selected personality style after generic tool guidance so it controls visible answer style", () => {

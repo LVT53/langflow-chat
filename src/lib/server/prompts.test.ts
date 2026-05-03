@@ -41,6 +41,21 @@ describe("prompts", () => {
 		expect(getSystemPrompt(customPrompt)).toBe(customPrompt);
 	});
 
+	it("teaches the unified produce_file contract in the built-in assistant prompt", () => {
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("produce_file");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("sourceMode");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("document_source");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentSource");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("program");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("idempotencyKey");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestTitle");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentIntent");
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("generate_file");
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("export_document");
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("createPDF");
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("Terracotta Crown");
+	});
+
 	it("removes deprecated wrapper-tag instructions from custom prompt bodies", () => {
 		const legacyTagName = "preserve";
 		const customPrompt = [
