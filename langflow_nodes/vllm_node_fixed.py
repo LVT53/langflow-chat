@@ -90,7 +90,12 @@ def _is_mistral_medium_35_model(model_name: str) -> bool:
     return (
         "mistral" in normalized
         and "medium" in normalized
-        and ("3.5" in normalized or "3-5" in normalized or "3_5" in normalized)
+        and (
+            "3.5" in normalized
+            or "3-5" in normalized
+            or "3_5" in normalized
+            or "3p5" in normalized
+        )
     )
 
 

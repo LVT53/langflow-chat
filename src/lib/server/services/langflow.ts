@@ -336,7 +336,9 @@ function shouldSendVllmChatTemplateThinking(
 
 function isMistralMedium35Model(modelName: string): boolean {
 	const normalized = modelName.toLowerCase();
-	return /mistral.*medium.*3[._-]?5|medium.*3[._-]?5.*mistral/.test(normalized);
+	return /mistral.*medium.*3[._-p]?5|medium.*3[._-p]?5.*mistral/.test(
+		normalized,
+	);
 }
 
 function getProviderReasoningEffort(
