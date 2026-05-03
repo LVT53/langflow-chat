@@ -23,6 +23,8 @@ import {
 	renderStandardReportPdf,
 	StandardReportPdfRenderError,
 } from './renderers/standard-report-pdf';
+import { renderStandardReportDocx } from './renderers/standard-report-docx';
+import { renderStandardReportHtml } from './renderers/standard-report-html';
 import { createDefaultGeneratedDocumentImageLoader } from './image-loader';
 import {
 	validateGeneratedDocumentSource,
@@ -403,7 +405,7 @@ type ParsedFileProductionJobRequest =
 	| {
 			sourceMode: 'document_source';
 			documentSource: GeneratedDocumentSource;
-			outputs: string[];
+			outputs: Array<'pdf' | 'docx' | 'html'>;
 	  };
 
 function normalizeOutputTypes(value: unknown): string[] {
@@ -414,12 +416,27 @@ function normalizeOutputTypes(value: unknown): string[] {
 		.filter(Boolean);
 }
 
-function requestsPdf(outputs: string[]): boolean {
-	return (
-		outputs.length === 0 ||
-		outputs.includes('pdf') ||
-		outputs.includes('application/pdf')
-	);
+function normalizeDocumentOutput(type: string): 'pdf' | 'docx' | 'html' | null {
+	switch (type) {
+		case 'pdf':
+		case 'application/pdf':
+			return 'pdf';
+		case 'docx':
+		case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+			return 'docx';
+		case 'html':
+		case 'text/html':
+			return 'html';
+		default:
+			return null;
+	}
+}
+
+function selectDocumentOutputs(outputs: string[]): Array<'pdf' | 'docx' | 'html'> | null {
+	if (outputs.length === 0) return ['pdf'];
+	const normalized = outputs.map(normalizeDocumentOutput);
+	if (normalized.some((output) => output === null)) return null;
+	return Array.from(new Set(normalized)) as Array<'pdf' | 'docx' | 'html'>;
 }
 
 function parseFileProductionJobRequest(requestJson: string | null): {
@@ -467,11 +484,12 @@ function parseFileProductionJobRequest(requestJson: string | null): {
 			};
 		}
 		const outputs = normalizeOutputTypes(parsed.outputs);
-		if (!requestsPdf(outputs)) {
+		const documentOutputs = selectDocumentOutputs(outputs);
+		if (!documentOutputs) {
 			return {
 				ok: false,
 				errorCode: 'unsupported_output_type',
-				errorMessage: 'AlfyAI Standard Report rendering supports PDF output in this path.',
+				errorMessage: 'AlfyAI Standard Report rendering supports PDF, DOCX, and HTML outputs.',
 			};
 		}
 
@@ -480,7 +498,7 @@ function parseFileProductionJobRequest(requestJson: string | null): {
 			value: {
 				sourceMode: 'document_source',
 				documentSource: documentValidation.source,
-				outputs,
+				outputs: documentOutputs,
 			},
 		};
 	}
@@ -1096,21 +1114,41 @@ export async function executeNextFileProductionJob(
 		}
 	} else {
 		try {
-			const rendered = await renderStandardReportPdf(request.value.documentSource, {
-				imageLoader: createDefaultGeneratedDocumentImageLoader({
-					userId: jobRow.userId,
-					conversationId: jobRow.conversationId,
-				}),
-			});
+			const files: ProgramExecutionFile[] = [];
+			if (request.value.outputs.includes('pdf')) {
+				const rendered = await renderStandardReportPdf(request.value.documentSource, {
+					imageLoader: createDefaultGeneratedDocumentImageLoader({
+						userId: jobRow.userId,
+						conversationId: jobRow.conversationId,
+					}),
+				});
+				files.push({
+					filename: rendered.filename,
+					mimeType: rendered.mimeType,
+					content: rendered.content,
+					sizeBytes: rendered.content.length,
+				});
+			}
+			if (request.value.outputs.includes('docx')) {
+				const rendered = await renderStandardReportDocx(request.value.documentSource);
+				files.push({
+					filename: rendered.filename,
+					mimeType: rendered.mimeType,
+					content: rendered.content,
+					sizeBytes: rendered.content.length,
+				});
+			}
+			if (request.value.outputs.includes('html')) {
+				const rendered = renderStandardReportHtml(request.value.documentSource);
+				files.push({
+					filename: rendered.filename,
+					mimeType: rendered.mimeType,
+					content: rendered.content,
+					sizeBytes: rendered.content.length,
+				});
+			}
 			executionResult = {
-				files: [
-					{
-						filename: rendered.filename,
-						mimeType: rendered.mimeType,
-						content: rendered.content,
-						sizeBytes: rendered.content.length,
-					},
-				],
+				files,
 				stdout: '',
 				stderr: '',
 				error: null,

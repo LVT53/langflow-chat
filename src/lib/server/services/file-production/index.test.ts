@@ -891,6 +891,79 @@ describe('file production service', () => {
 		});
 	});
 
+	it('executes one document source into PDF, DOCX, and HTML outputs', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+		} = await import('./index');
+		const created = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Multi output report',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:document-source-multi',
+			sourceMode: 'document_source',
+			documentIntent: 'A multi-output report',
+			requestJson: {
+				sourceMode: 'document_source',
+				outputs: [{ type: 'pdf' }, { type: 'docx' }, { type: 'html' }],
+				documentSource: {
+					version: 1,
+					template: 'alfyai_standard_report',
+					title: 'Multi output report',
+					blocks: [{ type: 'paragraph', text: 'Shared source.' }],
+				},
+			},
+			now: new Date('2026-05-03T20:10:00.000Z'),
+		});
+		let fileIndex = 0;
+		const storeGeneratedFile = vi.fn(async (_conversationId, _userId, file) => {
+			fileIndex += 1;
+			const id = `file-document-multi-${fileIndex}`;
+			const now = new Date('2026-05-03T20:11:00.000Z');
+			await db.insert(schema.chatGeneratedFiles).values({
+				id,
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: `conv-1/${id}`,
+				createdAt: now,
+			});
+			return {
+				id,
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				artifactId: null,
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: `conv-1/${id}`,
+				createdAt: now.getTime(),
+			};
+		});
+
+		const result = await executeNextFileProductionJob({
+			workerId: 'worker-document-multi',
+			executeCode: vi.fn(),
+			storeGeneratedFile,
+			now: new Date('2026-05-03T20:11:00.000Z'),
+		});
+
+		expect(result?.job.id).toBe(created.job.id);
+		expect(result?.files.map((file) => file.mimeType)).toEqual([
+			'application/pdf',
+			'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			'text/html',
+		]);
+		expect(storeGeneratedFile).toHaveBeenCalledTimes(3);
+	});
+
 	it('persists generated-document source JSON and readable projection on a generated_output artifact', async () => {
 		const { db } = await import('$lib/server/db');
 		const { persistGeneratedDocumentSourceArtifact } = await import('./source-persistence');
