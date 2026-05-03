@@ -1,0 +1,664 @@
+import { existsSync, readFileSync } from 'node:fs';
+import fontkit from '@pdf-lib/fontkit';
+import {
+	PDFDocument,
+	PageSizes,
+	rgb,
+	type PDFFont,
+	type PDFPage,
+	type RGB,
+} from 'pdf-lib';
+import type { GeneratedDocumentBlock, GeneratedDocumentSource } from '../source-schema';
+
+const MM_TO_PT = 72 / 25.4;
+const A4 = PageSizes.A4;
+const FONT_PATHS = {
+	regular: [
+		'/usr/share/fonts/TTF/DejaVuSans.ttf',
+		'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+	],
+	bold: [
+		'/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+		'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+	],
+	mono: [
+		'/usr/share/fonts/TTF/DejaVuSansMono.ttf',
+		'/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+	],
+};
+
+const THEME = {
+	text: '#1B1815',
+	secondaryText: '#6F6860',
+	accent: '#B65F3D',
+	pageBackground: '#FAF8F4',
+	panelBackground: '#F0EAE2',
+	rule: '#DED6CB',
+	codeBackground: '#ECE6DC',
+	calloutBackground: '#F5EFE6',
+} as const;
+
+const LAYOUT = {
+	marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
+	headerHeightPt: 26,
+	footerHeightPt: 22,
+	bodyFontPt: 11,
+	lineHeight: 1.45,
+} as const;
+
+export interface StandardReportPdfRenderResult {
+	filename: string;
+	mimeType: 'application/pdf';
+	content: Buffer;
+	diagnostics: {
+		template: 'alfyai_standard_report';
+		pageFormat: 'A4';
+		bodyFontPt: 11;
+		marginMm: typeof LAYOUT.marginMm;
+		colors: Pick<typeof THEME, 'text' | 'secondaryText' | 'accent' | 'pageBackground'>;
+		coverPage: boolean;
+		blockTypes: GeneratedDocumentBlock['type'][];
+		pageCount: number;
+	};
+}
+
+export class StandardReportPdfRenderError extends Error {
+	constructor(
+		public readonly code: string,
+		message: string
+	) {
+		super(message);
+		this.name = 'StandardReportPdfRenderError';
+	}
+}
+
+interface FontSet {
+	regular: PDFFont;
+	bold: PDFFont;
+	mono: PDFFont;
+}
+
+function mm(value: number): number {
+	return value * MM_TO_PT;
+}
+
+function hexColor(hex: string): RGB {
+	const value = hex.replace('#', '');
+	const red = Number.parseInt(value.slice(0, 2), 16) / 255;
+	const green = Number.parseInt(value.slice(2, 4), 16) / 255;
+	const blue = Number.parseInt(value.slice(4, 6), 16) / 255;
+	return rgb(red, green, blue);
+}
+
+function findFont(paths: readonly string[]): Uint8Array {
+	const path = paths.find((candidate) => existsSync(candidate));
+	if (!path) {
+		throw new StandardReportPdfRenderError(
+			'pdf_font_missing',
+			'AlfyAI Standard Report PDF rendering requires DejaVu fonts.'
+		);
+	}
+	const buffer = readFileSync(path);
+	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+}
+
+function slugifyFilename(title: string): string {
+	const slug = title
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 80);
+	return `${slug || 'document'}.pdf`;
+}
+
+function sanitizePdfText(text: string): string {
+	return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
+}
+
+function breakLongWord(word: string, font: PDFFont, size: number, maxWidth: number): string[] {
+	const parts: string[] = [];
+	let current = '';
+	for (const char of Array.from(word)) {
+		const next = `${current}${char}`;
+		if (current && font.widthOfTextAtSize(next, size) > maxWidth) {
+			parts.push(current);
+			current = char;
+		} else {
+			current = next;
+		}
+	}
+	if (current) parts.push(current);
+	return parts;
+}
+
+function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+	const paragraphs = sanitizePdfText(text)
+		.split(/\n/)
+		.map((line) => line.trimEnd());
+	const lines: string[] = [];
+
+	for (const paragraph of paragraphs) {
+		const words = paragraph.split(/\s+/).filter(Boolean);
+		if (words.length === 0) {
+			lines.push('');
+			continue;
+		}
+
+		let current = '';
+		for (const word of words) {
+			const pieces =
+				font.widthOfTextAtSize(word, size) > maxWidth
+					? breakLongWord(word, font, size, maxWidth)
+					: [word];
+			for (const piece of pieces) {
+				const next = current ? `${current} ${piece}` : piece;
+				if (current && font.widthOfTextAtSize(next, size) > maxWidth) {
+					lines.push(current);
+					current = piece;
+				} else {
+					current = next;
+				}
+			}
+		}
+		if (current) lines.push(current);
+	}
+
+	return lines;
+}
+
+class StandardReportPdfLayout {
+	private page: PDFPage;
+	private y: number;
+
+	constructor(
+		private readonly pdfDoc: PDFDocument,
+		private readonly source: GeneratedDocumentSource,
+		private readonly fonts: FontSet
+	) {
+		this.page = this.createPage();
+		this.y = this.contentTop();
+	}
+
+	private contentTop(): number {
+		return A4[1] - mm(LAYOUT.marginMm.top) - LAYOUT.headerHeightPt;
+	}
+
+	private contentBottom(): number {
+		return mm(LAYOUT.marginMm.bottom) + LAYOUT.footerHeightPt;
+	}
+
+	private contentX(): number {
+		return mm(LAYOUT.marginMm.left);
+	}
+
+	private contentWidth(): number {
+		return A4[0] - mm(LAYOUT.marginMm.left) - mm(LAYOUT.marginMm.right);
+	}
+
+	private createPage(): PDFPage {
+		const page = this.pdfDoc.addPage(A4);
+		page.drawRectangle({
+			x: 0,
+			y: 0,
+			width: A4[0],
+			height: A4[1],
+			color: hexColor(THEME.pageBackground),
+		});
+		return page;
+	}
+
+	private addPage(): void {
+		this.page = this.createPage();
+		this.y = this.contentTop();
+	}
+
+	private ensureSpace(height: number): void {
+		if (this.y - height < this.contentBottom()) {
+			this.addPage();
+		}
+	}
+
+	private drawWrapped(params: {
+		text: string;
+		font: PDFFont;
+		size: number;
+		color: RGB;
+		x?: number;
+		width?: number;
+		lineHeight?: number;
+	}): number {
+		const x = params.x ?? this.contentX();
+		const width = params.width ?? this.contentWidth();
+		const lineHeight = params.lineHeight ?? params.size * LAYOUT.lineHeight;
+		const lines = wrapText(params.text, params.font, params.size, width);
+		const height = lines.length * lineHeight;
+		this.ensureSpace(height);
+
+		for (const line of lines) {
+			this.page.drawText(line, {
+				x,
+				y: this.y,
+				size: params.size,
+				font: params.font,
+				color: params.color,
+			});
+			this.y -= lineHeight;
+		}
+		return height;
+	}
+
+	drawCover(): void {
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const top = A4[1] - mm(42);
+		this.y = top;
+		this.page.drawRectangle({
+			x,
+			y: top - 9,
+			width: 58,
+			height: 3,
+			color: hexColor(THEME.accent),
+		});
+		const eyebrow = this.source.cover?.eyebrow ?? 'AlfyAI Standard Report';
+		this.page.drawText(eyebrow.toUpperCase(), {
+			x,
+			y: top - 38,
+			size: 9,
+			font: this.fonts.bold,
+			color: hexColor(THEME.accent),
+		});
+		this.y = top - 78;
+		this.drawWrapped({
+			text: this.source.title,
+			font: this.fonts.bold,
+			size: 28,
+			color: hexColor(THEME.text),
+			width,
+			lineHeight: 36,
+		});
+		if (this.source.subtitle) {
+			this.y -= 8;
+			this.drawWrapped({
+				text: this.source.subtitle,
+				font: this.fonts.regular,
+				size: 13,
+				color: hexColor(THEME.secondaryText),
+				width,
+				lineHeight: 20,
+			});
+		}
+		const dateLabel = this.source.cover?.dateLabel;
+		if (dateLabel) {
+			this.page.drawText(dateLabel, {
+				x,
+				y: mm(58),
+				size: 10,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+		}
+		this.addPage();
+	}
+
+	drawDocumentTitle(): void {
+		this.page.drawRectangle({
+			x: this.contentX(),
+			y: this.y + 8,
+			width: 46,
+			height: 3,
+			color: hexColor(THEME.accent),
+		});
+		this.y -= 22;
+		this.drawWrapped({
+			text: this.source.title,
+			font: this.fonts.bold,
+			size: 22,
+			color: hexColor(THEME.text),
+			lineHeight: 30,
+		});
+		if (this.source.subtitle) {
+			this.y -= 2;
+			this.drawWrapped({
+				text: this.source.subtitle,
+				font: this.fonts.regular,
+				size: 12,
+				color: hexColor(THEME.secondaryText),
+				lineHeight: 18,
+			});
+		}
+		this.y -= 18;
+	}
+
+	drawHeading(level: 1 | 2 | 3, text: string): void {
+		const size = level === 1 ? 20 : level === 2 ? 15 : 13;
+		const gap = level === 1 ? 16 : 13;
+		const lines = wrapText(text, this.fonts.bold, size, this.contentWidth());
+		this.ensureSpace(lines.length * size * 1.35 + 34);
+		this.y -= gap;
+		for (const line of lines) {
+			this.page.drawText(line, {
+				x: this.contentX(),
+				y: this.y,
+				size,
+				font: this.fonts.bold,
+				color: hexColor(THEME.text),
+			});
+			this.y -= size * 1.35;
+		}
+		this.y -= 6;
+	}
+
+	drawParagraph(text: string): void {
+		this.drawWrapped({
+			text,
+			font: this.fonts.regular,
+			size: LAYOUT.bodyFontPt,
+			color: hexColor(THEME.text),
+		});
+		this.y -= 8;
+	}
+
+	drawList(style: 'bullet' | 'numbered', items: string[]): void {
+		const indent = 18;
+		const lineHeight = LAYOUT.bodyFontPt * LAYOUT.lineHeight;
+		for (const [index, item] of items.entries()) {
+			const marker = style === 'numbered' ? `${index + 1}.` : '•';
+			const lines = wrapText(item, this.fonts.regular, LAYOUT.bodyFontPt, this.contentWidth() - indent);
+			this.ensureSpace(lines.length * lineHeight + 4);
+			this.page.drawText(marker, {
+				x: this.contentX(),
+				y: this.y,
+				size: LAYOUT.bodyFontPt,
+				font: this.fonts.bold,
+				color: hexColor(THEME.accent),
+			});
+			for (const line of lines) {
+				this.page.drawText(line, {
+					x: this.contentX() + indent,
+					y: this.y,
+					size: LAYOUT.bodyFontPt,
+					font: this.fonts.regular,
+					color: hexColor(THEME.text),
+				});
+				this.y -= lineHeight;
+			}
+			this.y -= 2;
+		}
+		this.y -= 6;
+	}
+
+	drawCallout(block: Extract<GeneratedDocumentBlock, { type: 'callout' }>): void {
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const padding = 12;
+		const title = block.title ? `${block.title}` : block.tone.toUpperCase();
+		const titleLines = wrapText(title, this.fonts.bold, 10, width - padding * 2);
+		const bodyLines = wrapText(block.text, this.fonts.regular, 10.5, width - padding * 2);
+		const height = 18 + titleLines.length * 14 + bodyLines.length * 15 + padding;
+		this.ensureSpace(height + 8);
+		const top = this.y + 6;
+		this.page.drawRectangle({
+			x,
+			y: top - height,
+			width,
+			height,
+			color: hexColor(THEME.calloutBackground),
+		});
+		this.page.drawRectangle({
+			x,
+			y: top - height,
+			width: 3,
+			height,
+			color: hexColor(THEME.accent),
+		});
+		let textY = top - padding - 8;
+		for (const line of titleLines) {
+			this.page.drawText(line, {
+				x: x + padding,
+				y: textY,
+				size: 10,
+				font: this.fonts.bold,
+				color: hexColor(THEME.accent),
+			});
+			textY -= 14;
+		}
+		for (const line of bodyLines) {
+			this.page.drawText(line, {
+				x: x + padding,
+				y: textY,
+				size: 10.5,
+				font: this.fonts.regular,
+				color: hexColor(THEME.text),
+			});
+			textY -= 15;
+		}
+		this.y = top - height - 14;
+	}
+
+	drawCode(text: string, language?: string | null): void {
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const padding = 10;
+		const size = 8.8;
+		const lineHeight = 13;
+		const lines = wrapText(text, this.fonts.mono, size, width - padding * 2);
+		const labelHeight = language ? 16 : 0;
+		const height = labelHeight + lines.length * lineHeight + padding * 2;
+		this.ensureSpace(height + 8);
+		const top = this.y + 6;
+		this.page.drawRectangle({
+			x,
+			y: top - height,
+			width,
+			height,
+			color: hexColor(THEME.codeBackground),
+		});
+		let textY = top - padding - 4;
+		if (language) {
+			this.page.drawText(language, {
+				x: x + padding,
+				y: textY,
+				size: 8,
+				font: this.fonts.bold,
+				color: hexColor(THEME.secondaryText),
+			});
+			textY -= labelHeight;
+		}
+		for (const line of lines) {
+			this.page.drawText(line || ' ', {
+				x: x + padding,
+				y: textY,
+				size,
+				font: this.fonts.mono,
+				color: hexColor(THEME.text),
+			});
+			textY -= lineHeight;
+		}
+		this.y = top - height - 14;
+	}
+
+	drawQuote(text: string, citation?: string | null): void {
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const paddingLeft = 14;
+		const lines = wrapText(text, this.fonts.regular, 11.5, width - paddingLeft);
+		const citationLines = citation ? wrapText(citation, this.fonts.regular, 9.5, width - paddingLeft) : [];
+		const height = lines.length * 17 + citationLines.length * 13 + 14;
+		this.ensureSpace(height + 8);
+		this.page.drawRectangle({
+			x,
+			y: this.y - height + 8,
+			width: 3,
+			height,
+			color: hexColor(THEME.accent),
+		});
+		for (const line of lines) {
+			this.page.drawText(line, {
+				x: x + paddingLeft,
+				y: this.y,
+				size: 11.5,
+				font: this.fonts.regular,
+				color: hexColor(THEME.text),
+			});
+			this.y -= 17;
+		}
+		for (const line of citationLines) {
+			this.page.drawText(`— ${line}`, {
+				x: x + paddingLeft,
+				y: this.y,
+				size: 9.5,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+			this.y -= 13;
+		}
+		this.y -= 12;
+	}
+
+	drawDivider(): void {
+		this.ensureSpace(22);
+		this.page.drawLine({
+			start: { x: this.contentX(), y: this.y },
+			end: { x: this.contentX() + this.contentWidth(), y: this.y },
+			thickness: 0.8,
+			color: hexColor(THEME.rule),
+		});
+		this.y -= 22;
+	}
+
+	drawPageBreak(): void {
+		this.addPage();
+	}
+
+	drawUnsupported(blockType: string): never {
+		throw new StandardReportPdfRenderError(
+			'unsupported_pdf_block',
+			`AlfyAI Standard Report PDF rendering does not yet support ${blockType} blocks.`
+		);
+	}
+
+	drawHeadersAndFooters(): void {
+		const pages = this.pdfDoc.getPages();
+		for (const [index, page] of pages.entries()) {
+			const pageNumber = index + 1;
+			const headerY = A4[1] - mm(10);
+			page.drawText('AlfyAI', {
+				x: this.contentX(),
+				y: headerY,
+				size: 8.5,
+				font: this.fonts.bold,
+				color: hexColor(THEME.accent),
+			});
+			page.drawText(this.source.title, {
+				x: this.contentX() + 42,
+				y: headerY,
+				size: 8.5,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+			page.drawLine({
+				start: { x: this.contentX(), y: headerY - 9 },
+				end: { x: this.contentX() + this.contentWidth(), y: headerY - 9 },
+				thickness: 0.5,
+				color: hexColor(THEME.rule),
+			});
+			const footerText = `${pageNumber} / ${pages.length}`;
+			const footerWidth = this.fonts.regular.widthOfTextAtSize(footerText, 8.5);
+			page.drawText(footerText, {
+				x: A4[0] - mm(LAYOUT.marginMm.right) - footerWidth,
+				y: mm(10),
+				size: 8.5,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+		}
+	}
+}
+
+async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
+	pdfDoc.registerFontkit(fontkit);
+	const [regular, bold, mono] = await Promise.all([
+		pdfDoc.embedFont(findFont(FONT_PATHS.regular), { subset: true }),
+		pdfDoc.embedFont(findFont(FONT_PATHS.bold), { subset: true }),
+		pdfDoc.embedFont(findFont(FONT_PATHS.mono), { subset: true }),
+	]);
+	return { regular, bold, mono };
+}
+
+export async function renderStandardReportPdf(
+	source: GeneratedDocumentSource
+): Promise<StandardReportPdfRenderResult> {
+	const pdfDoc = await PDFDocument.create();
+	pdfDoc.setTitle(source.title);
+	pdfDoc.setAuthor('AlfyAI');
+	pdfDoc.setCreator('AlfyAI file production');
+	pdfDoc.setProducer('pdf-lib');
+	pdfDoc.setSubject('AlfyAI Standard Report');
+	pdfDoc.setKeywords(['AlfyAI', 'generated document', 'standard report']);
+
+	const fonts = await embedFonts(pdfDoc);
+	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts);
+	if (source.cover) {
+		layout.drawCover();
+	} else {
+		layout.drawDocumentTitle();
+	}
+
+	for (const block of source.blocks) {
+		switch (block.type) {
+			case 'heading':
+				layout.drawHeading(block.level, block.text);
+				break;
+			case 'paragraph':
+				layout.drawParagraph(block.text);
+				break;
+			case 'list':
+				layout.drawList(block.style, block.items);
+				break;
+			case 'callout':
+				layout.drawCallout(block);
+				break;
+			case 'code':
+				layout.drawCode(block.text, block.language);
+				break;
+			case 'quote':
+				layout.drawQuote(block.text, block.citation);
+				break;
+			case 'divider':
+				layout.drawDivider();
+				break;
+			case 'pageBreak':
+				layout.drawPageBreak();
+				break;
+			case 'table':
+			case 'chart':
+			case 'image':
+				layout.drawUnsupported(block.type);
+		}
+	}
+	layout.drawHeadersAndFooters();
+
+	const content = Buffer.from(await pdfDoc.save());
+	return {
+		filename: slugifyFilename(source.title),
+		mimeType: 'application/pdf',
+		content,
+		diagnostics: {
+			template: 'alfyai_standard_report',
+			pageFormat: 'A4',
+			bodyFontPt: LAYOUT.bodyFontPt,
+			marginMm: LAYOUT.marginMm,
+			colors: {
+				text: THEME.text,
+				secondaryText: THEME.secondaryText,
+				accent: THEME.accent,
+				pageBackground: THEME.pageBackground,
+			},
+			coverPage: Boolean(source.cover),
+			blockTypes: source.blocks.map((block) => block.type),
+			pageCount: pdfDoc.getPageCount(),
+		},
+	};
+}

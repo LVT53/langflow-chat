@@ -798,6 +798,99 @@ describe('file production service', () => {
 		});
 	});
 
+	it('executes a queued document-source PDF job without using the sandbox', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+		} = await import('./index');
+		const created = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Quarterly PDF report',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:document-source-pdf',
+			sourceMode: 'document_source',
+			documentIntent: 'A styled PDF report',
+			requestJson: {
+				sourceMode: 'document_source',
+				outputs: [{ type: 'pdf' }],
+				documentSource: {
+					version: 1,
+					template: 'alfyai_standard_report',
+					title: 'Quarterly PDF report',
+					blocks: [
+						{ type: 'heading', level: 2, text: 'Summary' },
+						{ type: 'paragraph', text: 'Revenue increased by 12%.' },
+					],
+				},
+			},
+			now: new Date('2026-05-03T20:08:00.000Z'),
+		});
+		const executeCode = vi.fn();
+		const storeGeneratedFile = vi.fn(async (_conversationId, _userId, file) => {
+			expect(file.filename).toBe('quarterly-pdf-report.pdf');
+			expect(file.mimeType).toBe('application/pdf');
+			expect(file.content.subarray(0, 4).toString('ascii')).toBe('%PDF');
+			const now = new Date('2026-05-03T20:09:00.000Z');
+			await db.insert(schema.chatGeneratedFiles).values({
+				id: 'file-document-pdf-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: 'conv-1/file-document-pdf-1.pdf',
+				createdAt: now,
+			});
+			return {
+				id: 'file-document-pdf-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				artifactId: null,
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: 'conv-1/file-document-pdf-1.pdf',
+				createdAt: now.getTime(),
+			};
+		});
+
+		const result = await executeNextFileProductionJob({
+			workerId: 'worker-document-source',
+			executeCode,
+			storeGeneratedFile,
+			now: new Date('2026-05-03T20:09:00.000Z'),
+		});
+
+		expect(result).toMatchObject({
+			job: {
+				id: created.job.id,
+				status: 'succeeded',
+			},
+			files: [
+				expect.objectContaining({
+					id: 'file-document-pdf-1',
+					filename: 'quarterly-pdf-report.pdf',
+					mimeType: 'application/pdf',
+				}),
+			],
+		});
+		expect(executeCode).not.toHaveBeenCalled();
+		const links = await db
+			.select()
+			.from(schema.fileProductionJobFiles)
+			.where(eq(schema.fileProductionJobFiles.jobId, created.job.id));
+		expect(links).toHaveLength(1);
+		expect(links[0]).toMatchObject({
+			chatGeneratedFileId: 'file-document-pdf-1',
+			sortOrder: 0,
+		});
+	});
+
 	it('persists generated-document source JSON and readable projection on a generated_output artifact', async () => {
 		const { db } = await import('$lib/server/db');
 		const { persistGeneratedDocumentSourceArtifact } = await import('./source-persistence');

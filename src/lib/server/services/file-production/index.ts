@@ -19,6 +19,14 @@ import {
 	validateFileProductionOutputLimits,
 	type FileProductionLimits,
 } from './limits';
+import {
+	renderStandardReportPdf,
+	StandardReportPdfRenderError,
+} from './renderers/standard-report-pdf';
+import {
+	validateGeneratedDocumentSource,
+	type GeneratedDocumentSource,
+} from './source-schema';
 
 export interface CreateFileProductionJobInput {
 	userId: string;
@@ -384,13 +392,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
 }
 
-function parseProgramJobRequest(requestJson: string | null): {
+type ParsedFileProductionJobRequest =
+	| {
+			sourceMode: 'program';
+			language: 'python' | 'javascript';
+			sourceCode: string;
+			filename?: string;
+	  }
+	| {
+			sourceMode: 'document_source';
+			documentSource: GeneratedDocumentSource;
+			outputs: string[];
+	  };
+
+function normalizeOutputTypes(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter((output): output is Record<string, unknown> => isRecord(output))
+		.map((output) => (typeof output.type === 'string' ? output.type.trim().toLowerCase() : ''))
+		.filter(Boolean);
+}
+
+function requestsPdf(outputs: string[]): boolean {
+	return (
+		outputs.length === 0 ||
+		outputs.includes('pdf') ||
+		outputs.includes('application/pdf')
+	);
+}
+
+function parseFileProductionJobRequest(requestJson: string | null): {
 	ok: true;
-	value: {
-		language: 'python' | 'javascript';
-		sourceCode: string;
-		filename?: string;
-	};
+	value: ParsedFileProductionJobRequest;
 } | {
 	ok: false;
 	errorCode: string;
@@ -415,11 +448,47 @@ function parseProgramJobRequest(requestJson: string | null): {
 		};
 	}
 
-	if (!isRecord(parsed) || parsed.sourceMode !== 'program' || !isRecord(parsed.program)) {
+	if (!isRecord(parsed)) {
 		return {
 			ok: false,
 			errorCode: 'unsupported_file_production_request',
-			errorMessage: 'Only program file production jobs can run in this path.',
+			errorMessage: 'File production request mode is not supported.',
+		};
+	}
+
+	if (parsed.sourceMode === 'document_source') {
+		const documentValidation = validateGeneratedDocumentSource(parsed.documentSource);
+		if (!documentValidation.ok) {
+			return {
+				ok: false,
+				errorCode: documentValidation.code,
+				errorMessage: documentValidation.message,
+			};
+		}
+		const outputs = normalizeOutputTypes(parsed.outputs);
+		if (!requestsPdf(outputs)) {
+			return {
+				ok: false,
+				errorCode: 'unsupported_output_type',
+				errorMessage: 'AlfyAI Standard Report rendering supports PDF output in this path.',
+			};
+		}
+
+		return {
+			ok: true,
+			value: {
+				sourceMode: 'document_source',
+				documentSource: documentValidation.source,
+				outputs,
+			},
+		};
+	}
+
+	if (parsed.sourceMode !== 'program' || !isRecord(parsed.program)) {
+		return {
+			ok: false,
+			errorCode: 'unsupported_file_production_request',
+			errorMessage: 'File production request mode is not supported.',
 		};
 	}
 
@@ -436,6 +505,7 @@ function parseProgramJobRequest(requestJson: string | null): {
 	return {
 		ok: true,
 		value: {
+			sourceMode: 'program',
 			language,
 			sourceCode,
 			filename:
@@ -979,7 +1049,7 @@ export async function executeNextFileProductionJob(
 		.from(fileProductionJobs)
 		.where(eq(fileProductionJobs.id, claimed.job.id))
 		.limit(1);
-	const request = parseProgramJobRequest(jobRow?.requestJson ?? null);
+	const request = parseFileProductionJobRequest(jobRow?.requestJson ?? null);
 	if (!jobRow || !request.ok) {
 		await failFileProductionJobAttempt({
 			jobId: claimed.job.id,
@@ -993,34 +1063,71 @@ export async function executeNextFileProductionJob(
 		return null;
 	}
 
-	const executeCode = input.executeCode ?? executeSandboxCode;
 	const storeGeneratedFile = input.storeGeneratedFile ?? storeChatGeneratedFile;
 	let executionResult: ProgramExecutionResult;
-	try {
-		executionResult = await executeCode(request.value.sourceCode, request.value.language);
-	} catch (error) {
-		await failFileProductionJobAttempt({
-			jobId: claimed.job.id,
-			attemptId: claimed.attempt.id,
-			workerId: input.workerId,
-			errorCode: 'program_execution_threw',
-			errorMessage: error instanceof Error ? error.message : 'Program execution failed.',
-			retryable: true,
-			now: new Date(),
-		});
-		return null;
-	}
-	if (executionResult.error) {
-		await failFileProductionJobAttempt({
-			jobId: claimed.job.id,
-			attemptId: claimed.attempt.id,
-			workerId: input.workerId,
-			errorCode: 'program_execution_failed',
-			errorMessage: executionResult.error,
-			retryable: true,
-			now: new Date(),
-		});
-		return null;
+	if (request.value.sourceMode === 'program') {
+		const executeCode = input.executeCode ?? executeSandboxCode;
+		try {
+			executionResult = await executeCode(request.value.sourceCode, request.value.language);
+		} catch (error) {
+			await failFileProductionJobAttempt({
+				jobId: claimed.job.id,
+				attemptId: claimed.attempt.id,
+				workerId: input.workerId,
+				errorCode: 'program_execution_threw',
+				errorMessage: error instanceof Error ? error.message : 'Program execution failed.',
+				retryable: true,
+				now: new Date(),
+			});
+			return null;
+		}
+		if (executionResult.error) {
+			await failFileProductionJobAttempt({
+				jobId: claimed.job.id,
+				attemptId: claimed.attempt.id,
+				workerId: input.workerId,
+				errorCode: 'program_execution_failed',
+				errorMessage: executionResult.error,
+				retryable: true,
+				now: new Date(),
+			});
+			return null;
+		}
+	} else {
+		try {
+			const rendered = await renderStandardReportPdf(request.value.documentSource);
+			executionResult = {
+				files: [
+					{
+						filename: rendered.filename,
+						mimeType: rendered.mimeType,
+						content: rendered.content,
+						sizeBytes: rendered.content.length,
+					},
+				],
+				stdout: '',
+				stderr: '',
+				error: null,
+			};
+		} catch (error) {
+			await failFileProductionJobAttempt({
+				jobId: claimed.job.id,
+				attemptId: claimed.attempt.id,
+				workerId: input.workerId,
+				errorCode:
+					error instanceof StandardReportPdfRenderError
+						? error.code
+						: 'document_render_failed',
+				errorMessage:
+					error instanceof Error ? error.message : 'Generated document rendering failed.',
+				retryable:
+					error instanceof StandardReportPdfRenderError
+						? error.code === 'pdf_font_missing'
+						: true,
+				now: new Date(),
+			});
+			return null;
+		}
 	}
 
 	if (executionResult.files.length === 0) {
@@ -1076,7 +1183,9 @@ export async function executeNextFileProductionJob(
 	try {
 		for (const [index, file] of executionResult.files.entries()) {
 			const filename =
-				request.value.filename && executionResult.files.length === 1
+				request.value.sourceMode === 'program' &&
+				request.value.filename &&
+				executionResult.files.length === 1
 					? request.value.filename
 					: file.filename;
 			const storedFile = await storeGeneratedFile(jobRow.conversationId, jobRow.userId, {

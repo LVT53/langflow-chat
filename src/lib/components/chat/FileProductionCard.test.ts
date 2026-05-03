@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import FileProductionCard from './FileProductionCard.svelte';
 import type { FileProductionJob } from '$lib/types';
+import { uiLanguage } from '$lib/stores/settings';
 
 function makeJob(overrides: Partial<FileProductionJob>): FileProductionJob {
 	return {
@@ -73,5 +74,25 @@ describe('FileProductionCard', () => {
 
 		expect(getByText('Too many outputs were requested.')).toBeInTheDocument();
 		expect(queryByText('limit=5 actual=6')).toBeNull();
+	});
+
+	it('uses Hungarian safe text for document render failures when the UI language is Hungarian', () => {
+		uiLanguage.set('hu');
+		const { getByText, queryByText, unmount } = render(FileProductionCard, {
+			job: makeJob({
+				status: 'failed',
+				error: {
+					code: 'unsupported_pdf_block',
+					message: 'table details leaked',
+					retryable: false,
+				},
+			}),
+		});
+
+		expect(getByText('Ez a PDF-renderelő még nem támogatja ezt a blokkot.')).toBeInTheDocument();
+		expect(queryByText('table details leaked')).toBeNull();
+
+		unmount();
+		uiLanguage.set('en');
 	});
 });

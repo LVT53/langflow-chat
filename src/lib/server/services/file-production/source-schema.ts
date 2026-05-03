@@ -5,6 +5,7 @@ export type GeneratedDocumentBlock =
 	| { type: 'callout'; tone: 'info' | 'warning' | 'tip' | 'note'; title?: string | null; text: string }
 	| { type: 'code'; language?: string | null; text: string }
 	| { type: 'quote'; text: string; citation?: string | null }
+	| { type: 'divider' }
 	| GeneratedDocumentTableBlock
 	| GeneratedDocumentChartBlock
 	| GeneratedDocumentImageBlock
@@ -72,6 +73,7 @@ export interface GeneratedDocumentSource {
 	template: 'alfyai_standard_report';
 	title: string;
 	subtitle?: string | null;
+	cover?: { enabled: true; eyebrow?: string | null; dateLabel?: string | null };
 	blocks: GeneratedDocumentBlock[];
 }
 
@@ -378,6 +380,8 @@ function normalizeBlock(block: unknown): BlockNormalizationResult {
 						message: 'Generated document source contains an unsupported block.',
 					};
 		}
+		case 'divider':
+			return { ok: true, block: { type: 'divider' } };
 		case 'table':
 			return normalizeTableBlock(block);
 		case 'chart':
@@ -435,6 +439,14 @@ export function validateGeneratedDocumentSource(
 		}
 		blocks.push(normalized.block);
 	}
+	const cover =
+		isRecord(value.cover) && value.cover.enabled === true
+			? {
+					enabled: true as const,
+					eyebrow: cleanText(value.cover.eyebrow),
+					dateLabel: cleanText(value.cover.dateLabel),
+				}
+			: undefined;
 
 	return {
 		ok: true,
@@ -443,6 +455,7 @@ export function validateGeneratedDocumentSource(
 			template: 'alfyai_standard_report',
 			title,
 			subtitle: cleanText(value.subtitle),
+			...(cover ? { cover } : {}),
 			blocks,
 		},
 	};
@@ -452,6 +465,10 @@ export function buildGeneratedDocumentProjection(source: GeneratedDocumentSource
 	const lines: string[] = [source.title];
 	if (source.subtitle) {
 		lines.push(source.subtitle);
+	}
+	if (source.cover) {
+		lines.push(source.cover.eyebrow ? `Cover: ${source.cover.eyebrow}` : 'Cover');
+		if (source.cover.dateLabel) lines.push(source.cover.dateLabel);
 	}
 	lines.push('');
 
@@ -480,6 +497,9 @@ export function buildGeneratedDocumentProjection(source: GeneratedDocumentSource
 				break;
 			case 'quote':
 				lines.push(block.citation ? `> ${block.text} -- ${block.citation}` : `> ${block.text}`);
+				break;
+			case 'divider':
+				lines.push('---');
 				break;
 			case 'table':
 				if (block.title) lines.push(`Table: ${block.title}`);
