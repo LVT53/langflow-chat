@@ -27,11 +27,12 @@ import {
 	dedupeById,
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
-	serializeArtifacts,
+	serializeBudgetedAttachments,
 	serializeRoleMessages,
 	serializeWorkingSetArtifacts,
 	selectRecentRoleTurns,
 	truncateToTokenBudget,
+	type BudgetedAttachmentContext,
 	type PromptContextSection,
 	type PromptContextSectionSelection,
 } from '$lib/server/utils/prompt-context';
@@ -92,6 +93,9 @@ const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES = ['text/'];
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set(['application/pdf', 'application/json']);
 const HONCHO_ID_HASH_LENGTH = 32;
+const ATTACHMENT_PROMPT_TOKEN_BUDGET = 6_000;
+const ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET = 2_400;
+const ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET = 600;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -118,22 +122,34 @@ function inferContextTraceSourceForSection(
 function buildContextTraceSections(params: {
 	sections: PromptContextSectionSelection[];
 	message: string;
+	attachmentContext?: BudgetedAttachmentContext | null;
 }): LegacyContextTraceSectionInput[] {
 	return [
-		...params.sections.map((section) => ({
-			name: section.title,
-			source: inferContextTraceSourceForSection(section),
-			body: section.body,
-			inclusionLevel:
-				section.inclusionLevel === 'omitted'
-					? ('omitted' as const)
-					: section.trimmed
-						? ('legacy_truncated' as const)
-						: ('legacy_full' as const),
-			trimmed: section.trimmed,
-			protected: section.protected,
-			signalReasons: [],
-		})),
+		...params.sections.map((section) => {
+			const isAttachmentSection = section.title === 'Current Attachments';
+			const attachmentItems = isAttachmentSection
+				? (params.attachmentContext?.items ?? [])
+				: [];
+			return {
+				name: section.title,
+				source: inferContextTraceSourceForSection(section),
+				body: section.body,
+				inclusionLevel:
+					section.inclusionLevel === 'omitted'
+						? ('omitted' as const)
+						: section.trimmed
+							? ('legacy_truncated' as const)
+							: ('legacy_full' as const),
+				itemIds: attachmentItems.map((item) => item.id),
+				itemTitles: attachmentItems.map((item) => item.title),
+				trimmed: section.trimmed || attachmentItems.some((item) => item.trimmed),
+				protected: section.protected,
+				signalReasons:
+					isAttachmentSection && params.attachmentContext
+						? [`attachment_context:${params.attachmentContext.mode}`]
+						: [],
+			};
+		}),
 		{
 			name: 'Current User Message',
 			source: 'user',
@@ -1328,15 +1344,18 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
-	const serializedCurrentAttachments =
+	const attachmentContext =
 		currentAttachments.length > 0
-			? serializeArtifacts({
+			? serializeBudgetedAttachments({
 					artifacts: currentAttachments,
-					label: 'Attachment',
 					snippets: artifactSnippets,
-					excerptTokenBudget: 20_000,
+					message: params.message,
+					totalBudget: ATTACHMENT_PROMPT_TOKEN_BUDGET,
+					taskPerAttachmentBudget: ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET,
+					excerptPerAttachmentBudget: ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET,
 				})
-			: '';
+			: null;
+	const serializedCurrentAttachments = attachmentContext?.body ?? '';
 	const serializedAttachmentBody = extractSerializedAttachmentBody(serializedCurrentAttachments);
 
 	if (currentAttachments.length > 0) {
@@ -1630,6 +1649,7 @@ export async function buildConstructedContext(params: {
 		contextTraceSections: buildContextTraceSections({
 			sections: compacted.sectionSelections,
 			message: params.message,
+			attachmentContext,
 		}),
 	};
 }

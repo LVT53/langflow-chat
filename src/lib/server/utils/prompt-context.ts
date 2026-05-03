@@ -167,6 +167,120 @@ export function serializeArtifacts(params: {
 		.join('\n\n');
 }
 
+export type BudgetedAttachmentContextMode = 'excerpt' | 'task';
+
+export type BudgetedAttachmentContextItem = {
+	id: string;
+	title: string;
+	inclusionLevel: BudgetedAttachmentContextMode | 'omitted';
+	estimatedTokens: number;
+	trimmed: boolean;
+};
+
+export type BudgetedAttachmentContext = {
+	body: string;
+	mode: BudgetedAttachmentContextMode;
+	estimatedTokens: number;
+	items: BudgetedAttachmentContextItem[];
+};
+
+const ATTACHMENT_TASK_ACTION_RE =
+	/\b(summarize|summarise|summary|review|analyze|analyse|rewrite|revise|edit|extract|compare|translate|convert|format)\b/i;
+const ATTACHMENT_TASK_REFERENCE_RE =
+	/\b(attachment|attached|file|document|doc|pdf|this|these|it|them)\b/i;
+
+export function selectAttachmentContextMode(params: {
+	message: string;
+	attachmentCount: number;
+}): BudgetedAttachmentContextMode {
+	if (params.attachmentCount === 0) return 'excerpt';
+	return ATTACHMENT_TASK_ACTION_RE.test(params.message) &&
+		ATTACHMENT_TASK_REFERENCE_RE.test(params.message)
+		? 'task'
+		: 'excerpt';
+}
+
+export function serializeBudgetedAttachments(params: {
+	artifacts: Artifact[];
+	snippets?: Map<string, string>;
+	message: string;
+	totalBudget: number;
+	taskPerAttachmentBudget?: number;
+	excerptPerAttachmentBudget?: number;
+}): BudgetedAttachmentContext {
+	const snippets = params.snippets ?? new Map<string, string>();
+	const mode = selectAttachmentContextMode({
+		message: params.message,
+		attachmentCount: params.artifacts.length,
+	});
+	const perAttachmentBudget = Math.max(
+		80,
+		Math.floor(params.totalBudget / Math.max(1, params.artifacts.length))
+	);
+	const modeBudget =
+		mode === 'task'
+			? (params.taskPerAttachmentBudget ?? 2400)
+			: (params.excerptPerAttachmentBudget ?? 600);
+	let remainingBudget = params.totalBudget;
+	const parts: string[] = [];
+	const items: BudgetedAttachmentContextItem[] = [];
+
+	for (const artifact of params.artifacts) {
+		if (remainingBudget <= 0) {
+			items.push({
+				id: artifact.id,
+				title: artifact.name,
+				inclusionLevel: 'omitted',
+				estimatedTokens: 0,
+				trimmed: false,
+			});
+			continue;
+		}
+
+		const itemBudget = Math.min(modeBudget, perAttachmentBudget, remainingBudget);
+		const header = [
+			`Attachment: ${artifact.name}`,
+			`Context mode: ${mode === 'task' ? 'Task Context' : 'Excerpt Context'}`,
+		].join('\n');
+		const headerTokens = estimateTokenCount(header);
+		const contentBudget = Math.max(0, itemBudget - headerTokens);
+		const source =
+			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
+		const excerpt = truncateToTokenBudget(source, contentBudget);
+		const itemText = `${header}\n${excerpt}`;
+		const estimatedTokens = estimateTokenCount(itemText);
+
+		if (estimatedTokens > remainingBudget) {
+			items.push({
+				id: artifact.id,
+				title: artifact.name,
+				inclusionLevel: 'omitted',
+				estimatedTokens: 0,
+				trimmed: false,
+			});
+			continue;
+		}
+
+		parts.push(itemText);
+		remainingBudget -= estimatedTokens;
+		items.push({
+			id: artifact.id,
+			title: artifact.name,
+			inclusionLevel: mode,
+			estimatedTokens,
+			trimmed: estimateTokenCount(source) > estimateTokenCount(excerpt),
+		});
+	}
+
+	const body = parts.join('\n\n');
+	return {
+		body,
+		mode,
+		estimatedTokens: estimateTokenCount(body),
+		items,
+	};
+}
+
 export function extractSerializedAttachmentBody(serialized: string): string {
 	return serialized
 		.split('\n')
