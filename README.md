@@ -206,6 +206,8 @@ Notes before the tables:
 | `MODEL_1_FLOW_ID` | No | falls back to `LANGFLOW_FLOW_ID` | Model-specific Langflow flow override for model 1 | Set it when model 1 should route to a different flow | Overrides the global flow only for model 1 |
 | `MODEL_1_COMPONENT_ID` | No | empty | Langflow component/node ID that receives model 1 runtime tweaks | Set it when the flow requires component-scoped `tweaks` overrides | If unset, the app falls back to the older flat `tweaks` shape |
 | `MODEL_1_MAX_TOKENS` | No | empty | Max generation tokens passed to the Langflow model node as `max_tokens` | Set it to cap model output length | Empty leaves the Langflow node default in control |
+| `MODEL_1_REASONING_EFFORT` | No | empty | Optional reasoning effort passed to the Langflow model node | Set it for reasoning models such as Mistral Medium 3.5 | Valid values: `low`, `medium`, `high`, `max`, `xhigh` |
+| `MODEL_1_THINKING_TYPE` | No | empty | Optional thinking type passed to compatible providers | Set it only for providers that expect `thinking.type`; Mistral Medium 3.5 maps this to `reasoning_effort` | Valid values: `enabled`, `disabled` |
 | `MODEL_2_BASEURL` | No | empty | OpenAI-compatible base URL for the secondary model | Set it only if you want a second selectable model | If unset, model 2 is not useful even if enabled |
 | `MODEL_2_API_KEY` | No | empty | API key for model 2 | Set it when model 2 requires auth | Empty is valid for unauthenticated local servers |
 | `MODEL_2_NAME` | No | empty | Model identifier sent to model 2 | Set it to the exact served model name | Must match the upstream endpoint |
@@ -214,6 +216,8 @@ Notes before the tables:
 | `MODEL_2_FLOW_ID` | No | falls back to `LANGFLOW_FLOW_ID` | Model-specific Langflow flow override for model 2 | Set it when model 2 should route differently | Overrides the global flow only for model 2 |
 | `MODEL_2_COMPONENT_ID` | No | empty | Langflow component/node ID that receives model 2 runtime tweaks | Set it when the flow uses component-scoped `tweaks` overrides | If unset, the app falls back to the older flat `tweaks` shape |
 | `MODEL_2_MAX_TOKENS` | No | empty | Max generation tokens passed to the Langflow model node as `max_tokens` | Set it to cap model 2 output length | Empty leaves the Langflow node default in control |
+| `MODEL_2_REASONING_EFFORT` | No | empty | Optional reasoning effort passed to the Langflow model node | Set it for reasoning models such as Mistral Medium 3.5 | Valid values: `low`, `medium`, `high`, `max`, `xhigh` |
+| `MODEL_2_THINKING_TYPE` | No | empty | Optional thinking type passed to compatible providers | Set it only for providers that expect `thinking.type`; Mistral Medium 3.5 maps this to `reasoning_effort` | Valid values: `enabled`, `disabled` |
 | `MODEL_2_ENABLED` | No | `true` | Enables model 2 as a selectable option | Set it to `false` to hide model 2 and force fallback to model 1 | Can also be overridden in admin config |
 
 ### Translation, Title Generation, And Summarization

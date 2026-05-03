@@ -1,7 +1,7 @@
 // src/lib/server/env.ts
 // Centralized environment configuration module
-import { createHash } from "crypto";
-import { resolve } from "path";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 
 export interface ModelConfig {
 	baseUrl: string;
@@ -12,6 +12,8 @@ export interface ModelConfig {
 	flowId: string;
 	componentId: string;
 	maxTokens: number | null;
+	reasoningEffort: "low" | "medium" | "high" | "max" | "xhigh" | null;
+	thinkingType: "enabled" | "disabled" | null;
 }
 
 interface Config {
@@ -92,6 +94,24 @@ export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
 	return env.DATABASE_PATH || "./data/chat.db";
 }
 
+function normalizeModelReasoningEffort(
+	value: string | undefined,
+): ModelConfig["reasoningEffort"] {
+	return value === "low" ||
+		value === "medium" ||
+		value === "high" ||
+		value === "max" ||
+		value === "xhigh"
+		? value
+		: null;
+}
+
+function normalizeModelThinkingType(
+	value: string | undefined,
+): ModelConfig["thinkingType"] {
+	return value === "enabled" || value === "disabled" ? value : null;
+}
+
 function buildDefaultHonchoIdentityNamespace(
 	databasePath: string,
 	honchoWorkspace: string,
@@ -101,12 +121,6 @@ function buildDefaultHonchoIdentityNamespace(
 		.digest("hex")
 		.slice(0, 16);
 	return `db_${digest}`;
-}
-
-function parseFloatEnv(value: string | undefined, fallback: number): number {
-	if (!value?.trim()) return fallback;
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 // Read and validate environment variables
@@ -119,7 +133,7 @@ function readConfig(): Config {
 
 	// Optional variables with defaults
 	const webhookPort = parseInt(process.env.WEBHOOK_PORT || "8090", 10);
-	if (isNaN(webhookPort)) {
+	if (Number.isNaN(webhookPort)) {
 		throw new Error("Invalid WEBHOOK_PORT: must be a valid number");
 	}
 	const databasePath = getDatabasePath();
@@ -288,6 +302,12 @@ function readConfig(): Config {
 			maxTokens: process.env.MODEL_1_MAX_TOKENS
 				? Math.max(1, parseInt(process.env.MODEL_1_MAX_TOKENS, 10) || 1)
 				: null,
+			reasoningEffort: normalizeModelReasoningEffort(
+				process.env.MODEL_1_REASONING_EFFORT,
+			),
+			thinkingType: normalizeModelThinkingType(
+				process.env.MODEL_1_THINKING_TYPE,
+			),
 		},
 		model2: {
 			baseUrl: process.env.MODEL_2_BASEURL || "",
@@ -301,6 +321,12 @@ function readConfig(): Config {
 			maxTokens: process.env.MODEL_2_MAX_TOKENS
 				? Math.max(1, parseInt(process.env.MODEL_2_MAX_TOKENS, 10) || 1)
 				: null,
+			reasoningEffort: normalizeModelReasoningEffort(
+				process.env.MODEL_2_REASONING_EFFORT,
+			),
+			thinkingType: normalizeModelThinkingType(
+				process.env.MODEL_2_THINKING_TYPE,
+			),
 		},
 		model2Enabled: process.env.MODEL_2_ENABLED !== "false",
 		honchoApiKey: process.env.HONCHO_API_KEY || "",

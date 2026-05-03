@@ -109,8 +109,17 @@ function openEditBuiltIn(modelName: string) {
 		baseUrl: adminConfig[`${prefix}_BASEURL`] ?? "",
 		apiKey: adminConfig[`${prefix}_API_KEY`] ?? "",
 		modelName: adminConfig[`${prefix}_NAME`] ?? "",
-		reasoningEffort: null,
-		thinkingType: null,
+		reasoningEffort:
+			(adminConfig[`${prefix}_REASONING_EFFORT`] as
+				| "low"
+				| "medium"
+				| "high"
+				| "max"
+				| "xhigh"
+				| "") || null,
+		thinkingType:
+			(adminConfig[`${prefix}_THINKING_TYPE`] as "enabled" | "disabled" | "") ||
+			null,
 		enabled:
 			modelName === "model2" ? adminConfig.MODEL_2_ENABLED !== "false" : true,
 		sortOrder: 0,
@@ -183,6 +192,12 @@ async function handleModalSave(data: Record<string, unknown>) {
 			if (data.maxTokens !== undefined)
 				adminConfig[`${prefix}_MAX_TOKENS`] =
 					data.maxTokens != null ? String(data.maxTokens) : "";
+			if (data.reasoningEffort !== undefined)
+				adminConfig[`${prefix}_REASONING_EFFORT`] =
+					data.reasoningEffort != null ? String(data.reasoningEffort) : "";
+			if (data.thinkingType !== undefined)
+				adminConfig[`${prefix}_THINKING_TYPE`] =
+					data.thinkingType != null ? String(data.thinkingType) : "";
 			if (data.enabled !== undefined)
 				adminConfig[`${prefix}_ENABLED`] = (data.enabled as boolean)
 					? "true"

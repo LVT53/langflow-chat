@@ -45,6 +45,8 @@ const model1 = {
 	flowId: "shared-flow",
 	componentId: "ModelNode-1",
 	maxTokens: 4096,
+	reasoningEffort: null,
+	thinkingType: null,
 };
 
 function mockConfig(overrides: Partial<typeof model1> = {}) {
@@ -66,6 +68,8 @@ function mockConfig(overrides: Partial<typeof model1> = {}) {
 			flowId: "",
 			componentId: "",
 			maxTokens: null,
+			reasoningEffort: null,
+			thinkingType: null,
 		},
 	});
 }
@@ -450,6 +454,26 @@ describe("sendMessage provider routing", () => {
 				enable_thinking: true,
 			},
 		});
+	});
+
+	it("sends configured reasoning_effort for built-in Mistral Medium 3p5 models", async () => {
+		mockConfig({
+			modelName: "mistral-medium-3p5",
+			reasoningEffort: "high",
+			thinkingType: null,
+		});
+
+		await sendMessage("Think carefully", "conv-1", "model1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks).toMatchObject({
+			"ModelNode-1": {
+				model_name: "mistral-medium-3p5",
+				enable_thinking: false,
+				reasoning_effort: "high",
+			},
+		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
 	it("fails clearly when provider routing has no shared Langflow component ID", async () => {

@@ -322,10 +322,12 @@ function shouldSendVllmChatTemplateThinking(
 		return false;
 	}
 
-	if (modelConfig.providerThinkingType === "enabled") {
+	const thinkingType =
+		modelConfig.providerThinkingType ?? modelConfig.thinkingType;
+	if (thinkingType === "enabled") {
 		return true;
 	}
-	if (modelConfig.providerThinkingType === "disabled") {
+	if (thinkingType === "disabled") {
 		return false;
 	}
 
@@ -344,15 +346,20 @@ function isMistralMedium35Model(modelName: string): boolean {
 function getProviderReasoningEffort(
 	modelConfig: LangflowModelRunConfig,
 ): string | null {
-	if (modelConfig.providerReasoningEffort) {
-		return modelConfig.providerReasoningEffort;
+	const configuredReasoningEffort =
+		modelConfig.providerReasoningEffort ?? modelConfig.reasoningEffort;
+	const configuredThinkingType =
+		modelConfig.providerThinkingType ?? modelConfig.thinkingType;
+
+	if (configuredReasoningEffort) {
+		return configuredReasoningEffort;
 	}
 
 	if (isMistralMedium35Model(modelConfig.modelName)) {
-		if (modelConfig.providerThinkingType === "enabled") {
+		if (configuredThinkingType === "enabled") {
 			return "high";
 		}
-		if (modelConfig.providerThinkingType === "disabled") {
+		if (configuredThinkingType === "disabled") {
 			return "none";
 		}
 	}
@@ -370,6 +377,8 @@ function buildLangflowTweaks(
 		Math.ceil(getConfig().requestTimeoutMs / 1000),
 	);
 	const reasoningEffort = getProviderReasoningEffort(modelConfig);
+	const thinkingType =
+		modelConfig.providerThinkingType ?? modelConfig.thinkingType;
 	const componentTweaks = {
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
@@ -380,13 +389,11 @@ function buildLangflowTweaks(
 			: {}),
 		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
 		...(reasoningEffort &&
-		(!modelConfig.providerThinkingType ||
-			isMistralMedium35Model(modelConfig.modelName))
+		(!thinkingType || isMistralMedium35Model(modelConfig.modelName))
 			? { reasoning_effort: reasoningEffort }
 			: {}),
-		...(modelConfig.providerThinkingType &&
-		!isMistralMedium35Model(modelConfig.modelName)
-			? { thinking_type: modelConfig.providerThinkingType }
+		...(thinkingType && !isMistralMedium35Model(modelConfig.modelName)
+			? { thinking_type: thinkingType }
 			: {}),
 		system_prompt: systemPrompt,
 	};

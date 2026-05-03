@@ -35,6 +35,8 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_1_FLOW_ID",
 	"MODEL_1_COMPONENT_ID",
 	"MODEL_1_MAX_TOKENS",
+	"MODEL_1_REASONING_EFFORT",
+	"MODEL_1_THINKING_TYPE",
 	"MODEL_2_BASEURL",
 	"MODEL_2_API_KEY",
 	"MODEL_2_NAME",
@@ -43,6 +45,8 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_FLOW_ID",
 	"MODEL_2_COMPONENT_ID",
 	"MODEL_2_MAX_TOKENS",
+	"MODEL_2_REASONING_EFFORT",
+	"MODEL_2_THINKING_TYPE",
 	"MODEL_2_ENABLED",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
@@ -171,6 +175,24 @@ function parseIntOverride(value: string): number | undefined {
 	return Number.isNaN(parsed) ? undefined : parsed;
 }
 
+function normalizeReasoningEffortOverride(
+	value: string,
+): ModelConfig["reasoningEffort"] {
+	return value === "low" ||
+		value === "medium" ||
+		value === "high" ||
+		value === "max" ||
+		value === "xhigh"
+		? value
+		: null;
+}
+
+function normalizeThinkingTypeOverride(
+	value: string,
+): ModelConfig["thinkingType"] {
+	return value === "enabled" || value === "disabled" ? value : null;
+}
+
 const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MAX_MESSAGE_LENGTH: (config, value) => {
 		const parsed = parseIntOverride(value);
@@ -260,6 +282,12 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		config.model1.maxTokens = parsed !== undefined ? Math.max(1, parsed) : null;
 	},
+	MODEL_1_REASONING_EFFORT: (config, value) => {
+		config.model1.reasoningEffort = normalizeReasoningEffortOverride(value);
+	},
+	MODEL_1_THINKING_TYPE: (config, value) => {
+		config.model1.thinkingType = normalizeThinkingTypeOverride(value);
+	},
 	MODEL_2_BASEURL: (config, value) => {
 		config.model2.baseUrl = value;
 	},
@@ -284,6 +312,12 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MODEL_2_MAX_TOKENS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		config.model2.maxTokens = parsed !== undefined ? Math.max(1, parsed) : null;
+	},
+	MODEL_2_REASONING_EFFORT: (config, value) => {
+		config.model2.reasoningEffort = normalizeReasoningEffortOverride(value);
+	},
+	MODEL_2_THINKING_TYPE: (config, value) => {
+		config.model2.thinkingType = normalizeThinkingTypeOverride(value);
 	},
 	MODEL_2_ENABLED: (config, value) => {
 		config.model2Enabled = value === "true";
@@ -609,6 +643,8 @@ export function getResolvedAdminConfigValues(
 		MODEL_1_COMPONENT_ID: config.model1.componentId,
 		MODEL_1_MAX_TOKENS:
 			config.model1.maxTokens != null ? String(config.model1.maxTokens) : "",
+		MODEL_1_REASONING_EFFORT: config.model1.reasoningEffort ?? "",
+		MODEL_1_THINKING_TYPE: config.model1.thinkingType ?? "",
 		MODEL_2_BASEURL: config.model2.baseUrl,
 		MODEL_2_API_KEY: config.model2.apiKey,
 		MODEL_2_NAME: config.model2.modelName,
@@ -618,6 +654,8 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_COMPONENT_ID: config.model2.componentId,
 		MODEL_2_MAX_TOKENS:
 			config.model2.maxTokens != null ? String(config.model2.maxTokens) : "",
+		MODEL_2_REASONING_EFFORT: config.model2.reasoningEffort ?? "",
+		MODEL_2_THINKING_TYPE: config.model2.thinkingType ?? "",
 		MODEL_2_ENABLED: String(config.model2Enabled),
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
