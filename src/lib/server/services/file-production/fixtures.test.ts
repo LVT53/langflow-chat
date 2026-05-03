@@ -21,6 +21,7 @@ const expectedNegativeFixtures = [
 	'oversized-data.json',
 	'raw-html-block.json',
 	'unsupported-chart.json',
+	'wide-table.json',
 ];
 
 function readFixture(kind: 'positive' | 'negative', filename: string) {
@@ -59,6 +60,48 @@ describe('AlfyAI Standard Report fixtures', () => {
 			const fixture = readFixture('negative', filename);
 			expect(typeof fixture.expectedErrorCode).toBe('string');
 			expect(fixture.expectedErrorCode).not.toBe('');
+		}
+	});
+
+	it('covers production table cases in deterministic fixtures', () => {
+		const tableFixture = readFixture('positive', 'table-heavy-report.json') as {
+			documentSource: { blocks: Array<Record<string, unknown>> };
+		};
+		const tableBlock = tableFixture.documentSource.blocks.find((block) => block.type === 'table') as
+			| {
+					columns: Array<{ kind?: string }>;
+					rows: Array<Record<string, unknown>>;
+			  }
+			| undefined;
+
+		expect(tableBlock).toBeTruthy();
+		expect(tableBlock?.rows.length).toBeGreaterThanOrEqual(12);
+		expect(tableBlock?.columns.map((column) => column.kind)).toEqual(
+			expect.arrayContaining(['date', 'number', 'percent', 'text'])
+		);
+		expect(tableBlock?.rows.some((row) => String(row.notes).includes('hosszútávú'))).toBe(true);
+
+		const wideTableFixture = readFixture('negative', 'wide-table.json') as {
+			expectedErrorCode: string;
+			documentSource: { blocks: Array<{ columns?: unknown[] }> };
+		};
+		expect(wideTableFixture.expectedErrorCode).toBe('table_limit_exceeded');
+		expect(wideTableFixture.documentSource.blocks[0].columns).toHaveLength(9);
+	});
+
+	it('maps schema-level negative fixtures to their expected validation codes', () => {
+		const schemaFailures = new Map([
+			['disallowed-image-url.json', 'image_limit_exceeded'],
+			['injection-attempts.json', 'unsupported_document_block'],
+			['merged-nested-table.json', 'unsupported_table_structure'],
+			['raw-html-block.json', 'unsupported_document_block'],
+			['unsupported-chart.json', 'unsupported_chart_type'],
+		]);
+
+		for (const [filename, expectedCode] of schemaFailures) {
+			const fixture = readFixture('negative', filename);
+			const result = validateGeneratedDocumentSource(fixture.documentSource);
+			expect(result).toMatchObject({ ok: false, code: expectedCode });
 		}
 	});
 

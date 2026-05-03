@@ -1,0 +1,27 @@
+{
+  "fixtureId": "wide-table",
+  "expectedErrorCode": "table_limit_exceeded",
+  "documentSource": {
+    "title": "Wide Table Attempt",
+    "blocks": [
+      {
+        "type": "table",
+        "title": "Nine columns do not fit the v1 portrait template",
+        "columns": [
+          { "key": "c0", "label": "Column 1", "kind": "text" },
+          { "key": "c1", "label": "Column 2", "kind": "text" },
+          { "key": "c2", "label": "Column 3", "kind": "text" },
+          { "key": "c3", "label": "Column 4", "kind": "text" },
+          { "key": "c4", "label": "Column 5", "kind": "text" },
+          { "key": "c5", "label": "Column 6", "kind": "text" },
+          { "key": "c6", "label": "Column 7", "kind": "text" },
+          { "key": "c7", "label": "Column 8", "kind": "text" },
+          { "key": "c8", "label": "Column 9", "kind": "text" }
+        ],
+        "rows": [
+          { "c0": "value", "c1": "value", "c2": "value", "c3": "value", "c4": "value", "c5": "value", "c6": "value", "c7": "value", "c8": "value" }
+        ]
+      }
+    ]
+  }
+}

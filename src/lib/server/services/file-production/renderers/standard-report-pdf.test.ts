@@ -82,4 +82,73 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		expect(rendered.diagnostics.coverPage).toBe(true);
 		expect(rendered.diagnostics.blockTypes).toEqual(['heading', 'paragraph', 'divider', 'quote']);
 	});
+
+	it('renders long table blocks with repeated headers and safe pagination', async () => {
+		const validation = validateGeneratedDocumentSource({
+			title: 'Long table report',
+			blocks: [
+				{
+					type: 'table',
+					title: 'Fulfillment details',
+					caption: 'Long Hungarian labels should wrap without clipping.',
+					columns: [
+						{ key: 'date', label: 'Date', kind: 'date' },
+						{ key: 'region', label: 'Region', kind: 'text' },
+						{ key: 'orders', label: 'Orders', kind: 'number' },
+						{ key: 'change', label: 'Change', kind: 'percent' },
+						{ key: 'notes', label: 'Notes', kind: 'text' },
+					],
+					rows: Array.from({ length: 42 }, (_, index) => ({
+						date: `2026-05-${String((index % 28) + 1).padStart(2, '0')}`,
+						region: index % 2 === 0 ? 'Central Europe' : 'Magyar piac',
+						orders: 1200 + index * 37,
+						change: 0.05 + index / 1000,
+						notes:
+							'Long-cell wrapping check with hosszútávúfolyamatfolytonosság and dense operational text.',
+					})),
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+		const pdfDoc = await PDFDocument.load(new Uint8Array(rendered.content));
+
+		expect(pdfDoc.getPageCount()).toBeGreaterThan(1);
+		expect(rendered.diagnostics.tables).toEqual([
+			expect.objectContaining({
+				title: 'Fulfillment details',
+				columnCount: 5,
+				rowCount: 42,
+				clipped: false,
+				repeatedHeaderCount: expect.any(Number),
+			}),
+		]);
+		expect(rendered.diagnostics.tables[0].repeatedHeaderCount).toBeGreaterThan(0);
+	});
+
+	it('rejects tables that are too wide for the v1 portrait template', async () => {
+		const validation = validateGeneratedDocumentSource({
+			title: 'Wide table report',
+			blocks: [
+				{
+					type: 'table',
+					title: 'Too many columns',
+					columns: Array.from({ length: 9 }, (_, index) => ({
+						key: `c${index}`,
+						label: `Column ${index + 1}`,
+						kind: 'text',
+					})),
+					rows: [{ c0: 'value' }],
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		await expect(renderStandardReportPdf(validation.source)).rejects.toMatchObject({
+			code: 'table_limit_exceeded',
+		});
+	});
 });

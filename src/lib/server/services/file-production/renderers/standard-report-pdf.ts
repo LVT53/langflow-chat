@@ -59,6 +59,13 @@ export interface StandardReportPdfRenderResult {
 		coverPage: boolean;
 		blockTypes: GeneratedDocumentBlock['type'][];
 		pageCount: number;
+		tables: Array<{
+			title: string | null;
+			columnCount: number;
+			rowCount: number;
+			repeatedHeaderCount: number;
+			clipped: false;
+		}>;
 	};
 }
 
@@ -171,6 +178,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 class StandardReportPdfLayout {
 	private page: PDFPage;
 	private y: number;
+	private readonly tableDiagnostics: StandardReportPdfRenderResult['diagnostics']['tables'] = [];
 
 	constructor(
 		private readonly pdfDoc: PDFDocument,
@@ -532,6 +540,246 @@ class StandardReportPdfLayout {
 		this.addPage();
 	}
 
+	private formatTableValue(
+		value: unknown,
+		kind: Extract<GeneratedDocumentBlock, { type: 'table' }>['columns'][number]['kind']
+	): string {
+		if (value === null || value === undefined) return '';
+		if (kind === 'boolean') return value === true ? 'Yes' : value === false ? 'No' : String(value);
+		if (typeof value === 'number') {
+			if (kind === 'percent') return `${(value * 100).toFixed(1)}%`;
+			if (kind === 'currency') {
+				return new Intl.NumberFormat('en-US', {
+					style: 'currency',
+					currency: 'USD',
+					maximumFractionDigits: 0,
+				}).format(value);
+			}
+			if (kind === 'number') return new Intl.NumberFormat('en-US').format(value);
+		}
+		if (kind === 'date' && typeof value === 'string') {
+			const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
+				? new Date(`${value}T00:00:00.000Z`)
+				: null;
+			if (parsed && !Number.isNaN(parsed.getTime())) {
+				return new Intl.DateTimeFormat('en-US', {
+					year: 'numeric',
+					month: 'short',
+					day: 'numeric',
+					timeZone: 'UTC',
+				}).format(parsed);
+			}
+		}
+		return sanitizePdfText(String(value));
+	}
+
+	private drawTableTextCell(params: {
+		lines: string[];
+		x: number;
+		yTop: number;
+		width: number;
+		padding: number;
+		size: number;
+		lineHeight: number;
+		font: PDFFont;
+		color: RGB;
+		align: 'left' | 'right' | 'center';
+	}): void {
+		let textY = params.yTop - params.padding - params.size;
+		for (const line of params.lines) {
+			const lineWidth = params.font.widthOfTextAtSize(line, params.size);
+			const textX =
+				params.align === 'right'
+					? params.x + params.width - params.padding - lineWidth
+					: params.align === 'center'
+						? params.x + (params.width - lineWidth) / 2
+						: params.x + params.padding;
+			this.page.drawText(line, {
+				x: textX,
+				y: textY,
+				size: params.size,
+				font: params.font,
+				color: params.color,
+			});
+			textY -= params.lineHeight;
+		}
+	}
+
+	drawTable(block: Extract<GeneratedDocumentBlock, { type: 'table' }>): void {
+		if (block.columns.length > 8) {
+			throw new StandardReportPdfRenderError(
+				'table_limit_exceeded',
+				'Tables with more than 8 columns are not supported in the v1 portrait template.'
+			);
+		}
+
+		const x = this.contentX();
+		const width = this.contentWidth();
+		const padding = 5;
+		const headerSize = 8.5;
+		const bodySize = 8.8;
+		const headerLineHeight = 11;
+		const bodyLineHeight = 12;
+		const weights = block.columns.map((column) =>
+			column.kind === 'text' ? 1.35 : column.kind === 'date' ? 0.95 : 0.8
+		);
+		const totalWeight = weights.reduce((total, value) => total + value, 0);
+		const columnWidths = weights.map((weight) => (width * weight) / totalWeight);
+		const titleLines = block.title ? wrapText(block.title, this.fonts.bold, 11, width) : [];
+		const captionLines = block.caption
+			? wrapText(block.caption, this.fonts.regular, 9.2, width)
+			: [];
+		const headerLines = block.columns.map((column, index) =>
+			wrapText(column.label, this.fonts.bold, headerSize, columnWidths[index] - padding * 2)
+		);
+		const headerHeight =
+			Math.max(...headerLines.map((lines) => lines.length), 1) * headerLineHeight + padding * 2;
+		const firstRowLines = block.rows[0]
+			? block.columns.map((column, index) =>
+					wrapText(
+						this.formatTableValue(block.rows[0][column.key], column.kind),
+						this.fonts.regular,
+						bodySize,
+						columnWidths[index] - padding * 2
+					)
+				)
+			: [[]];
+		const firstRowHeight =
+			Math.max(...firstRowLines.map((lines) => lines.length), 1) * bodyLineHeight + padding * 2;
+		const captionHeight = captionLines.length * 12;
+		const titleHeight = titleLines.length * 15;
+		this.ensureSpace(titleHeight + captionHeight + headerHeight + firstRowHeight + 24);
+
+		if (titleLines.length > 0) {
+			for (const line of titleLines) {
+				this.page.drawText(line, {
+					x,
+					y: this.y,
+					size: 11,
+					font: this.fonts.bold,
+					color: hexColor(THEME.text),
+				});
+				this.y -= 15;
+			}
+		}
+		if (captionLines.length > 0) {
+			for (const line of captionLines) {
+				this.page.drawText(line, {
+					x,
+					y: this.y,
+					size: 9.2,
+					font: this.fonts.regular,
+					color: hexColor(THEME.secondaryText),
+				});
+				this.y -= 12;
+			}
+		}
+		this.y -= 4;
+
+		let repeatedHeaderCount = 0;
+		const drawHeader = (repeated: boolean) => {
+			if (repeated) repeatedHeaderCount += 1;
+			const top = this.y;
+			this.page.drawRectangle({
+				x,
+				y: top - headerHeight,
+				width,
+				height: headerHeight,
+				color: hexColor(THEME.panelBackground),
+			});
+			let cellX = x;
+			for (const [index, column] of block.columns.entries()) {
+				this.drawTableTextCell({
+					lines: headerLines[index],
+					x: cellX,
+					yTop: top,
+					width: columnWidths[index],
+					padding,
+					size: headerSize,
+					lineHeight: headerLineHeight,
+					font: this.fonts.bold,
+					color: hexColor(THEME.text),
+					align: column.kind === 'text' ? 'left' : 'right',
+				});
+				cellX += columnWidths[index];
+			}
+			this.page.drawLine({
+				start: { x, y: top - headerHeight },
+				end: { x: x + width, y: top - headerHeight },
+				thickness: 0.6,
+				color: hexColor(THEME.rule),
+			});
+			this.y -= headerHeight;
+		};
+
+		drawHeader(false);
+		const maxRowHeight = this.contentTop() - this.contentBottom() - headerHeight - 12;
+		for (const [rowIndex, row] of block.rows.entries()) {
+			const rowLines = block.columns.map((column, index) =>
+				wrapText(
+					this.formatTableValue(row[column.key], column.kind),
+					this.fonts.regular,
+					bodySize,
+					columnWidths[index] - padding * 2
+				)
+			);
+			const rowHeight =
+				Math.max(...rowLines.map((lines) => lines.length), 1) * bodyLineHeight + padding * 2;
+			if (rowHeight > maxRowHeight) {
+				throw new StandardReportPdfRenderError(
+					'table_limit_exceeded',
+					'A table row is too tall to render safely without clipping.'
+				);
+			}
+			if (this.y - rowHeight < this.contentBottom()) {
+				this.addPage();
+				drawHeader(true);
+			}
+			const top = this.y;
+			if (rowIndex % 2 === 1) {
+				this.page.drawRectangle({
+					x,
+					y: top - rowHeight,
+					width,
+					height: rowHeight,
+					color: hexColor('#F6F2EB'),
+				});
+			}
+
+			let cellX = x;
+			for (const [index, column] of block.columns.entries()) {
+				this.drawTableTextCell({
+					lines: rowLines[index],
+					x: cellX,
+					yTop: top,
+					width: columnWidths[index],
+					padding,
+					size: bodySize,
+					lineHeight: bodyLineHeight,
+					font: this.fonts.regular,
+					color: hexColor(THEME.text),
+					align: column.kind === 'text' || column.kind === 'date' ? 'left' : 'right',
+				});
+				cellX += columnWidths[index];
+			}
+			this.page.drawLine({
+				start: { x, y: top - rowHeight },
+				end: { x: x + width, y: top - rowHeight },
+				thickness: 0.4,
+				color: hexColor(THEME.rule),
+			});
+			this.y -= rowHeight;
+		}
+		this.y -= 14;
+		this.tableDiagnostics.push({
+			title: block.title ?? null,
+			columnCount: block.columns.length,
+			rowCount: block.rows.length,
+			repeatedHeaderCount,
+			clipped: false,
+		});
+	}
+
 	drawUnsupported(blockType: string): never {
 		throw new StandardReportPdfRenderError(
 			'unsupported_pdf_block',
@@ -574,6 +822,10 @@ class StandardReportPdfLayout {
 				color: hexColor(THEME.secondaryText),
 			});
 		}
+	}
+
+	getTableDiagnostics(): StandardReportPdfRenderResult['diagnostics']['tables'] {
+		return this.tableDiagnostics;
 	}
 }
 
@@ -633,6 +885,8 @@ export async function renderStandardReportPdf(
 				layout.drawPageBreak();
 				break;
 			case 'table':
+				layout.drawTable(block);
+				break;
 			case 'chart':
 			case 'image':
 				layout.drawUnsupported(block.type);
@@ -659,6 +913,7 @@ export async function renderStandardReportPdf(
 			coverPage: Boolean(source.cover),
 			blockTypes: source.blocks.map((block) => block.type),
 			pageCount: pdfDoc.getPageCount(),
+			tables: layout.getTableDiagnostics(),
 		},
 	};
 }
