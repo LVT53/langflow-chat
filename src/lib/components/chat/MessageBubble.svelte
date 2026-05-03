@@ -7,6 +7,7 @@
 		ChatGeneratedFileListItem,
 		ChatMessage,
 		DocumentWorkspaceItem,
+		FileProductionJob,
 	} from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
@@ -14,6 +15,7 @@
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
 	import GeneratedFile from './GeneratedFile.svelte';
+	import FileProductionCard from './FileProductionCard.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
 
@@ -23,6 +25,7 @@
 		pinnedArtifactIds = [],
 		excludedArtifactIds = [],
 		generatedFiles = [],
+		fileProductionJobs = [],
 		conversationId = null,
 		onRegenerate = undefined,
 		onEdit = undefined,
@@ -34,6 +37,7 @@
 		pinnedArtifactIds?: string[];
 		excludedArtifactIds?: string[];
 		generatedFiles?: ChatGeneratedFileListItem[];
+		fileProductionJobs?: FileProductionJob[];
 		conversationId?: string | null;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
@@ -57,6 +61,18 @@ let dedupedGeneratedFiles = $derived(
 			return acc;
 		},
 		{ seen: new Set<string>(), list: [] as ChatGeneratedFileListItem[] }
+	).list
+);
+let dedupedFileProductionJobs = $derived(
+	fileProductionJobs.reduce(
+		(acc, job) => {
+			if (!acc.seen.has(job.id)) {
+				acc.seen.add(job.id);
+				acc.list.push(job);
+			}
+			return acc;
+		},
+		{ seen: new Set<string>(), list: [] as FileProductionJob[] }
 	).list
 );
 	let isUser = $derived(message.role === 'user');
@@ -272,7 +288,13 @@ let dedupedGeneratedFiles = $derived(
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
-			{#if generatedFiles.length > 0 && conversationId}
+			{#if fileProductionJobs.length > 0 && conversationId}
+				<div class="generated-files-inline" data-testid="message-file-production-jobs">
+					{#each dedupedFileProductionJobs as job (job.id)}
+						<FileProductionCard {job} onOpenDocument={onOpenDocument} />
+					{/each}
+				</div>
+			{:else if generatedFiles.length > 0 && conversationId}
 				<div class="generated-files-inline" data-testid="message-generated-files">
 					{#each dedupedGeneratedFiles as file (file.id)}
 						<GeneratedFile

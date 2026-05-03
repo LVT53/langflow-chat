@@ -34,6 +34,7 @@ import type {
 	ContextDebugState,
 	ConversationContextStatus,
 	DocumentWorkspaceItem,
+	FileProductionJob,
 	TaskState,
 	TaskSteeringPayload,
 } from "$lib/types";
@@ -97,6 +98,7 @@ const initialContextDebug = getData().contextDebug ?? null;
 const initialConversationDraft = getData().draft ?? null;
 const initialBootstrapMode = getData().bootstrap ?? false;
 const initialGeneratedFiles = getData().generatedFiles ?? [];
+const initialFileProductionJobs = getData().fileProductionJobs ?? [];
 
 // Track conversation title reactively - use $derived to keep in sync with page data
 let conversationTitle = $derived(data.conversation?.title ?? "");
@@ -134,6 +136,7 @@ let conversationDraft = $state<ConversationDraft | null>(
 	initialConversationDraft,
 );
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
+let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
 let pendingGeneratedFiles = $state<ChatGeneratedFileListItem[]>([]);
 let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 let activeWorkspaceDocumentId = $state<string | null>(null);
@@ -346,6 +349,7 @@ function resetState() {
 	contextDebug = data.contextDebug ?? null;
 	conversationDraft = data.draft ?? null;
 	generatedFiles = data.generatedFiles ?? [];
+	fileProductionJobs = data.fileProductionJobs ?? [];
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
 	workspaceDocuments = [];
@@ -499,6 +503,9 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 		if (detail.generatedFiles) {
 			generatedFiles = [...(detail.generatedFiles ?? [])];
 		}
+		if (detail.fileProductionJobs) {
+			fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
+		}
 
 		// Poll for evidence
 		if (newAssistant.id) {
@@ -525,6 +532,7 @@ async function loadPersistedData() {
 	if (detail) {
 		messages.set([...(detail.messages ?? [])]);
 		generatedFiles = [...(detail.generatedFiles ?? [])];
+		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		conversationDraft = null;
 		const pending = consumePendingConversationMessage(data.conversation.id);
 		void pending;
@@ -626,6 +634,9 @@ async function reconnectToOrphanedStream(
 					);
 					generatedFiles = [...generatedFiles, ...newFiles];
 				}
+				if (metadata?.generatedFiles) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 				resetPendingGeneratedFiles();
 				const serverAssistantId = metadata?.assistantMessageId;
 				messages.update((list) =>
@@ -714,6 +725,7 @@ async function reconnectToOrphanedStream(
 						// Update stores directly - don't call invalidateAll as it can overwrite our fresh data
 						messages.set([...(detail.messages ?? [])]); // Create new array to trigger reactivity
 						generatedFiles = [...(detail.generatedFiles ?? [])];
+						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
 						const pending = consumePendingConversationMessage(
@@ -829,6 +841,7 @@ async function hydrateConversationDetail(conversationId: string) {
 		contextDebug = payload.contextDebug ?? contextDebug;
 		conversationDraft = payload.draft ?? conversationDraft;
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
+		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
 		resetPendingGeneratedFiles();
 		bootstrapMode = false;
 
@@ -866,6 +879,20 @@ $effect(() => {
 			generatedFiles = [...currentFiles, ...newFiles];
 		}
 		resetPendingGeneratedFiles();
+	}
+});
+
+let initializedFileProductionJobsData = false;
+let prevFileProductionJobsData: typeof data.fileProductionJobs;
+$effect(() => {
+	if (!initializedFileProductionJobsData) {
+		prevFileProductionJobsData = data.fileProductionJobs;
+		initializedFileProductionJobsData = true;
+		return;
+	}
+	if (data.fileProductionJobs !== prevFileProductionJobsData) {
+		prevFileProductionJobsData = data.fileProductionJobs;
+		fileProductionJobs = [...(data.fileProductionJobs ?? [])];
 	}
 });
 
@@ -1120,6 +1147,7 @@ function handleSend(
 						(f) => !existingIds.has(f.id),
 					);
 					generatedFiles = [...generatedFiles, ...newFiles];
+					void hydrateConversationDetail(data.conversation.id);
 				}
 				resetPendingGeneratedFiles();
 				const serverAssistantId = metadata?.assistantMessageId;
@@ -1269,6 +1297,7 @@ function handleRetry() {
 							(f) => !existingIds.has(f.id),
 						);
 						generatedFiles = [...generatedFiles, ...newFiles];
+						void hydrateConversationDetail(data.conversation.id);
 					}
 					resetPendingGeneratedFiles();
 					const serverAssistantId = metadata?.assistantMessageId;
@@ -1581,6 +1610,7 @@ function handleDrop(event: DragEvent) {
 						{isThinkingActive}
 						{contextDebug}
 						generatedFiles={generatedFileCards}
+						{fileProductionJobs}
 						onOpenDocument={openWorkspaceDocument}
 						onRegenerate={handleRegenerate}
 						onEdit={handleEdit}

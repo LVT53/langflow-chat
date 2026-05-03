@@ -1,0 +1,169 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$lib/server/auth/hooks', () => ({
+	requireAuth: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/conversations', () => ({
+	getConversation: vi.fn(),
+	updateConversationTitle: vi.fn(),
+	moveConversationToProject: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/messages', () => ({
+	listMessages: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/knowledge', () => ({
+	getConversationWorkingSet: vi.fn(),
+	getConversationContextStatus: vi.fn(),
+	listConversationArtifacts: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/task-state', () => ({
+	attachContinuityToTaskState: vi.fn(async (_userId: string, taskState: unknown) => taskState),
+	getContextDebugState: vi.fn(),
+	getConversationTaskState: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/chat-files', () => ({
+	getChatFiles: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/conversation-drafts', () => ({
+	getConversationDraft: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/analytics', () => ({
+	getConversationCostSummary: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/file-production', () => ({
+	listConversationFileProductionJobs: vi.fn(),
+}));
+
+import { GET } from './+server';
+import { requireAuth } from '$lib/server/auth/hooks';
+import { getConversation } from '$lib/server/services/conversations';
+import { listMessages } from '$lib/server/services/messages';
+import {
+	getConversationWorkingSet,
+	getConversationContextStatus,
+	listConversationArtifacts,
+} from '$lib/server/services/knowledge';
+import {
+	attachContinuityToTaskState,
+	getContextDebugState,
+	getConversationTaskState,
+} from '$lib/server/services/task-state';
+import { getChatFiles } from '$lib/server/services/chat-files';
+import { getConversationDraft } from '$lib/server/services/conversation-drafts';
+import { getConversationCostSummary } from '$lib/server/services/analytics';
+import { listConversationFileProductionJobs } from '$lib/server/services/file-production';
+
+const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
+const mockListMessages = listMessages as ReturnType<typeof vi.fn>;
+const mockListConversationArtifacts = listConversationArtifacts as ReturnType<typeof vi.fn>;
+const mockGetConversationWorkingSet = getConversationWorkingSet as ReturnType<typeof vi.fn>;
+const mockGetConversationContextStatus = getConversationContextStatus as ReturnType<typeof vi.fn>;
+const mockGetConversationTaskState = getConversationTaskState as ReturnType<typeof vi.fn>;
+const mockGetContextDebugState = getContextDebugState as ReturnType<typeof vi.fn>;
+const mockAttachContinuityToTaskState = attachContinuityToTaskState as ReturnType<typeof vi.fn>;
+const mockGetChatFiles = getChatFiles as ReturnType<typeof vi.fn>;
+const mockGetConversationDraft = getConversationDraft as ReturnType<typeof vi.fn>;
+const mockGetConversationCostSummary = getConversationCostSummary as ReturnType<typeof vi.fn>;
+const mockListConversationFileProductionJobs =
+	listConversationFileProductionJobs as ReturnType<typeof vi.fn>;
+
+function makeEvent(user = { id: 'user-1' }, id = 'conv-1') {
+	return {
+		request: new Request(`http://localhost/api/conversations/${id}`),
+		locals: { user },
+		params: { id },
+		url: new URL(`http://localhost/api/conversations/${id}`),
+		route: { id: '/api/conversations/[id]' },
+	} as any;
+}
+
+describe('GET /api/conversations/[id]', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockRequireAuth.mockReturnValue(undefined);
+		mockGetConversation.mockResolvedValue({
+			id: 'conv-1',
+			title: 'Quarterly report',
+			projectId: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		mockListMessages.mockResolvedValue([]);
+		mockListConversationArtifacts.mockResolvedValue([]);
+		mockGetConversationWorkingSet.mockResolvedValue([]);
+		mockGetConversationContextStatus.mockResolvedValue(null);
+		mockGetConversationTaskState.mockResolvedValue(null);
+		mockGetContextDebugState.mockResolvedValue(null);
+		mockAttachContinuityToTaskState.mockImplementation(async (_userId: string, taskState: unknown) => taskState);
+		mockGetConversationDraft.mockResolvedValue(null);
+		mockGetChatFiles.mockResolvedValue([]);
+		mockGetConversationCostSummary.mockResolvedValue({
+			totalCostUsdMicros: 0,
+			totalTokens: 0,
+		});
+		mockListConversationFileProductionJobs.mockResolvedValue([
+			{
+				id: 'job-file-1',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				title: 'report.pdf',
+				status: 'succeeded',
+				stage: null,
+				createdAt: 1_777_140_001_000,
+				updatedAt: 1_777_140_001_000,
+				files: [
+					{
+						id: 'file-1',
+						filename: 'report.pdf',
+						mimeType: 'application/pdf',
+						sizeBytes: 2048,
+						downloadUrl: '/api/chat/files/file-1/download',
+						previewUrl: '/api/chat/files/file-1/preview',
+						artifactId: 'artifact-1',
+						documentFamilyId: 'family-1',
+						documentFamilyStatus: 'active',
+						documentLabel: 'Quarterly report',
+						documentRole: null,
+						versionNumber: 1,
+						originConversationId: 'conv-1',
+						originAssistantMessageId: 'assistant-1',
+						sourceChatFileId: 'file-1',
+					},
+				],
+				warnings: [],
+				error: null,
+			},
+		]);
+	});
+
+	it('returns file-production jobs with the conversation detail', async () => {
+		const response = await GET(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockListConversationFileProductionJobs).toHaveBeenCalledWith('user-1', 'conv-1');
+		expect(data.generatedFiles).toEqual([]);
+		expect(data.fileProductionJobs).toEqual([
+			expect.objectContaining({
+				id: 'job-file-1',
+				status: 'succeeded',
+				files: [
+					expect.objectContaining({
+						id: 'file-1',
+						filename: 'report.pdf',
+						downloadUrl: '/api/chat/files/file-1/download',
+					}),
+				],
+			}),
+		]);
+	});
+});

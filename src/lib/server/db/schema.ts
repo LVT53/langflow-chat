@@ -505,6 +505,52 @@ export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	userIdx: index('chat_generated_files_user_idx').on(table.userId, table.createdAt),
 }));
 
+export const fileProductionJobs = sqliteTable('file_production_jobs', {
+	id: text('id').primaryKey(),
+	conversationId: text('conversation_id')
+		.notNull()
+		.references(() => conversations.id, { onDelete: 'cascade' }),
+	assistantMessageId: text('assistant_message_id').references(() => messages.id, {
+		onDelete: 'set null',
+	}),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	status: text('status').notNull().default('succeeded'),
+	stage: text('stage'),
+	origin: text('origin').notNull().default('legacy_generated_file'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	conversationIdx: index('file_production_jobs_conversation_idx').on(
+		table.conversationId,
+		table.createdAt
+	),
+	assistantMessageIdx: index('file_production_jobs_assistant_message_idx').on(
+		table.assistantMessageId,
+		table.createdAt
+	),
+	userIdx: index('file_production_jobs_user_idx').on(table.userId, table.createdAt),
+}));
+
+export const fileProductionJobFiles = sqliteTable('file_production_job_files', {
+	id: text('id').primaryKey(),
+	jobId: text('job_id')
+		.notNull()
+		.references(() => fileProductionJobs.id, { onDelete: 'cascade' }),
+	chatGeneratedFileId: text('chat_generated_file_id')
+		.notNull()
+		.references(() => chatGeneratedFiles.id, { onDelete: 'cascade' }),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	chatFileUniqueIdx: uniqueIndex('file_production_job_files_chat_file_unique_idx').on(
+		table.chatGeneratedFileId
+	),
+	jobOrderIdx: index('file_production_job_files_job_order_idx').on(table.jobId, table.sortOrder),
+}));
+
 export const personalityProfiles = sqliteTable('personality_profiles', {
 	id: text('id').primaryKey(),
 	name: text('name').notNull().unique(),

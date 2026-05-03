@@ -138,6 +138,44 @@ export interface ChatGeneratedFileListItem {
 	error?: string;
 }
 
+export type FileProductionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface FileProductionJobFile {
+	id: string;
+	filename: string;
+	mimeType: string | null;
+	sizeBytes: number;
+	downloadUrl: string;
+	previewUrl: string | null;
+	artifactId?: string | null;
+	documentFamilyId?: string | null;
+	documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
+	documentLabel?: string | null;
+	documentRole?: string | null;
+	versionNumber?: number | null;
+	originConversationId?: string | null;
+	originAssistantMessageId?: string | null;
+	sourceChatFileId?: string | null;
+}
+
+export interface FileProductionJob {
+	id: string;
+	conversationId: string;
+	assistantMessageId?: string | null;
+	title: string;
+	status: FileProductionJobStatus;
+	stage?: string | null;
+	createdAt: number;
+	updatedAt: number;
+	files: FileProductionJobFile[];
+	warnings: string[];
+	error?: {
+		code: string;
+		message: string;
+		retryable: boolean;
+	} | null;
+}
+
 export type DocumentWorkspaceSource =
 	| "chat_generated_file"
 	| "knowledge_artifact";
@@ -173,6 +211,7 @@ export interface ConversationDetail {
 	draft?: ConversationDraft | null;
 	bootstrap?: boolean;
 	generatedFiles?: ChatGeneratedFile[];
+	fileProductionJobs?: FileProductionJob[];
 	totalCostUsdMicros?: number;
 	totalTokens?: number;
 }

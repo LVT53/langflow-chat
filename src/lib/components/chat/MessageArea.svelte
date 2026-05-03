@@ -6,6 +6,7 @@ import type {
 	ChatMessage,
 	ContextDebugState,
 	DocumentWorkspaceItem,
+	FileProductionJob,
 	TaskSteeringPayload,
 } from "$lib/types";
 import MessageBubble from "./MessageBubble.svelte";
@@ -16,6 +17,7 @@ let {
 	isThinkingActive = false,
 	contextDebug = null,
 	generatedFiles = [],
+	fileProductionJobs = [],
 	onRegenerate = undefined,
 	onEdit = undefined,
 	onSteer = undefined,
@@ -26,6 +28,7 @@ let {
 	isThinkingActive?: boolean;
 	contextDebug?: ContextDebugState | null;
 	generatedFiles?: ChatGeneratedFileListItem[];
+	fileProductionJobs?: FileProductionJob[];
 	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 	onEdit?:
 		| ((payload: { messageId: string; newText: string }) => void)
@@ -69,11 +72,16 @@ function getGeneratedFilesForMessage(
 	return generatedFiles.filter((file) => file.assistantMessageId === messageId);
 }
 
+function getFileProductionJobsForMessage(messageId: string): FileProductionJob[] {
+	return fileProductionJobs.filter((job) => job.assistantMessageId === messageId);
+}
+
 $effect.pre(() => {
 	messages;
 	scrollContainer;
 	isThinkingActive;
 	generatedFiles.length;
+	fileProductionJobs.length;
 
 	if (!scrollContainer) return;
 
@@ -171,6 +179,7 @@ async function alignToBottomAfterRender() {
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
 					generatedFiles={getGeneratedFilesForMessage(message.id)}
+					fileProductionJobs={getFileProductionJobsForMessage(message.id)}
 					{conversationId}
 					{onRegenerate}
 					{onEdit}

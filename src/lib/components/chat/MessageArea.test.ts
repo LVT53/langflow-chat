@@ -1,7 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import MessageArea from './MessageArea.svelte';
-import type { ChatGeneratedFileListItem, ChatMessage } from '$lib/types';
+import type { ChatGeneratedFileListItem, ChatMessage, FileProductionJob } from '$lib/types';
 
 Object.defineProperty(window, 'matchMedia', {
 	writable: true,
@@ -320,5 +320,64 @@ describe('MessageArea', () => {
 		expect(getByText('scope.txt')).toBeInTheDocument();
 		expect(assistantMessages[0]).toHaveTextContent('scope.txt');
 		expect(assistantMessages[1]).not.toHaveTextContent('scope.txt');
+	});
+
+	it('renders file-production jobs as grouped cards for the assistant response', () => {
+		const messageTimestamp = Date.now();
+		const fileProductionJob: FileProductionJob = {
+			id: 'job-grouped-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-job-1',
+			title: 'Quarterly report package',
+			status: 'succeeded',
+			stage: null,
+			createdAt: messageTimestamp,
+			updatedAt: messageTimestamp,
+			warnings: [],
+			error: null,
+			files: [
+				{
+					id: 'file-pdf',
+					filename: 'quarterly-report.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 2048,
+					downloadUrl: '/api/chat/files/file-pdf/download',
+					previewUrl: '/api/chat/files/file-pdf/preview',
+				},
+				{
+					id: 'file-html',
+					filename: 'quarterly-report.html',
+					mimeType: 'text/html',
+					sizeBytes: 4096,
+					downloadUrl: '/api/chat/files/file-html/download',
+					previewUrl: '/api/chat/files/file-html/preview',
+				},
+			],
+		};
+
+		const { container, getByText } = render(MessageArea, {
+			messages: [
+				{
+					id: 'assistant-job-1',
+					renderKey: 'assistant-job-1',
+					role: 'assistant',
+					content: 'I created the report package.',
+					timestamp: messageTimestamp,
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [],
+			fileProductionJobs: [fileProductionJob],
+		});
+
+		expect(container.querySelectorAll('[data-testid="file-production-card"]')).toHaveLength(1);
+		expect(getByText('Quarterly report package')).toBeInTheDocument();
+		expect(getByText('quarterly-report.pdf')).toBeInTheDocument();
+		expect(getByText('quarterly-report.html')).toBeInTheDocument();
+		expect(getByText('2 files')).toBeInTheDocument();
 	});
 });

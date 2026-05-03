@@ -5,6 +5,7 @@
 		ChatMessage,
 		ContextDebugState,
 		DocumentWorkspaceItem,
+		FileProductionJob,
 		TaskSteeringPayload
 	} from '$lib/types';
 	import type { MessageEditPayload, MessageRegeneratePayload } from '../_helpers';
@@ -15,6 +16,7 @@
 		isThinkingActive,
 		contextDebug,
 		generatedFiles,
+		fileProductionJobs = [],
 		onOpenDocument,
 		onRegenerate,
 		onEdit,
@@ -25,6 +27,7 @@
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
 		generatedFiles: ChatGeneratedFileListItem[];
+		fileProductionJobs?: FileProductionJob[];
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
@@ -39,6 +42,7 @@
 		{isThinkingActive}
 		{contextDebug}
 		{generatedFiles}
+		{fileProductionJobs}
 		{onOpenDocument}
 		{onRegenerate}
 		{onEdit}
