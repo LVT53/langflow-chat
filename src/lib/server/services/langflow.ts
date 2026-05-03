@@ -261,7 +261,7 @@ async function resolveLangflowRunConfig(
 	if (modelId && isProviderModelId(modelId)) {
 		const providerId = modelId.slice("provider:".length);
 		const provider = await getProviderWithSecrets(providerId);
-		if (!provider || !provider.enabled) {
+		if (!provider?.enabled) {
 			throw new Error("Selected provider model is not available");
 		}
 
@@ -314,6 +314,10 @@ async function resolveLangflowRunConfig(
 function shouldSendVllmChatTemplateThinking(
 	modelConfig: LangflowModelRunConfig,
 ): boolean {
+	if (isMistralMedium35Model(modelConfig.modelName)) {
+		return false;
+	}
+
 	if (modelConfig.providerId) {
 		return false;
 	}
@@ -328,6 +332,11 @@ function shouldSendVllmChatTemplateThinking(
 	return /\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(
 		modelConfig.modelName,
 	);
+}
+
+function isMistralMedium35Model(modelName: string): boolean {
+	const normalized = modelName.toLowerCase();
+	return /mistral.*medium.*3[._-]?5|medium.*3[._-]?5.*mistral/.test(normalized);
 }
 
 function buildLangflowTweaks(
@@ -348,10 +357,13 @@ function buildLangflowTweaks(
 			? { max_tokens: modelConfig.maxTokens }
 			: {}),
 		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
-		...(modelConfig.providerReasoningEffort && !modelConfig.providerThinkingType
+		...(modelConfig.providerReasoningEffort &&
+		(!modelConfig.providerThinkingType ||
+			isMistralMedium35Model(modelConfig.modelName))
 			? { reasoning_effort: modelConfig.providerReasoningEffort }
 			: {}),
-		...(modelConfig.providerThinkingType
+		...(modelConfig.providerThinkingType &&
+		!isMistralMedium35Model(modelConfig.modelName)
 			? { thinking_type: modelConfig.providerThinkingType }
 			: {}),
 		system_prompt: systemPrompt,
@@ -457,7 +469,7 @@ export async function prepareOutboundChatContext(params: {
 		});
 		if (!attachmentSection.hasMarker) {
 			console.warn(
-				"[LANGFLOW] Attachment marker missing from outgoing " + params.logLabel,
+				`[LANGFLOW] Attachment marker missing from outgoing ${params.logLabel}`,
 				{
 					sessionId: params.sessionId,
 					attachmentIds: params.attachmentIds ?? [],
@@ -680,8 +692,6 @@ export async function sendMessage(
 			honchoSnapshot,
 			providerUsage,
 		};
-	} catch (error) {
-		throw error;
 	} finally {
 		clearTimeout(timeoutId);
 	}

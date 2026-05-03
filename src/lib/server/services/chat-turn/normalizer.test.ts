@@ -17,6 +17,13 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("Visible text");
 	});
 
+	it("strips Mistral [THINK] blocks from text", () => {
+		const result = normalizeAssistantOutput(
+			"[THINK]Internal reasoning[/THINK]\nVisible text",
+		);
+		expect(result).toBe("Visible text");
+	});
+
 	it("strips Qwen ChatML analysis blocks from text", () => {
 		const result = normalizeAssistantOutput(
 			"Before<|im_start|>analysis\nInternal reasoning<|im_end|>Visible text",

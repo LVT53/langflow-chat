@@ -304,6 +304,42 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
+	it("sends reasoning_effort for Mistral Medium 3.5 even when thinking.type is configured", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "local-vllm",
+			displayName: "Mistral Medium 3.5",
+			baseUrl: "http://localhost:8000/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "mistralai/Mistral-Medium-3.5-128B",
+			reasoningEffort: "high",
+			thinkingType: "enabled",
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+
+		await sendMessage("Think carefully", "conv-1", "provider:provider-1");
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks).toMatchObject({
+			"ModelNode-1": {
+				model_name: "mistralai/Mistral-Medium-3.5-128B",
+				api_base: "http://localhost:8000/v1",
+				enable_thinking: false,
+				reasoning_effort: "high",
+			},
+		});
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
 	it("enables reasoning capture for built-in Qwen models routed through the custom Langflow node", async () => {
 		mockConfig({ modelName: "qwen3-6-35b" });
 

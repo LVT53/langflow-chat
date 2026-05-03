@@ -5,17 +5,21 @@ export const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
 export const QWEN_CHATML_THINKING_OPEN_TAG = "<|im_start|>think";
 export const QWEN_CHATML_ANALYSIS_OPEN_TAG = "<|im_start|>analysis";
 export const QWEN_CHATML_THINKING_CLOSE_TAG = "<|im_end|>";
+export const MISTRAL_THINKING_OPEN_TAG = "[THINK]";
+export const MISTRAL_THINKING_CLOSE_TAG = "[/THINK]";
 
 const THINKING_OPEN_TAGS = [
 	THINKING_OPEN_TAG,
 	DEEPSEEK_THINKING_OPEN_TAG,
 	QWEN_CHATML_THINKING_OPEN_TAG,
 	QWEN_CHATML_ANALYSIS_OPEN_TAG,
+	MISTRAL_THINKING_OPEN_TAG,
 ] as const;
 const THINKING_CLOSE_TAGS = [
 	THINKING_CLOSE_TAG,
 	DEEPSEEK_THINKING_CLOSE_TAG,
 	QWEN_CHATML_THINKING_CLOSE_TAG,
+	MISTRAL_THINKING_CLOSE_TAG,
 ] as const;
 
 export interface InlineThinkingState {
@@ -237,7 +241,7 @@ const THINKING_PREAMBLE_START_RE =
 const THINKING_PREAMBLE_PARAGRAPH_RE =
 	/(?:\b(?:the user|user)\s+(?:wants|asked|asks|is asking)\s+me\b|\bi\s+(?:need|should|will|can|must|am going)\b|\bi'll\b|\bthis is (?:a )?(?:straightforward|simple|content request)\b|(?:okay,\s*)?let me\b|\bprovide it in english\b|\bwrap the content\b)/i;
 const DANGLING_THINKING_DELIMITER_RE =
-	/<\/?(?:thinking|think)>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>/gi;
+	/<\/?(?:thinking|think)>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\[\/?THINK\]/gi;
 
 export function stripLeadingResponseMarker(value: string): string {
 	return value

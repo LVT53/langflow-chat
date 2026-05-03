@@ -1,9 +1,9 @@
 import { getFirstChoice, getNestedObject } from "$lib/services/stream-protocol";
 
 const THINKING_BLOCK_RE =
-	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
+	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|\[THINK\][\s\S]*?\[\/THINK\]|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
 const THINKING_TAG_RE =
-	/<\/?thinking>|<\/?think>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
+	/<\/?thinking>|<\/?think>|\[\/?THINK\]|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
 
 export { THINKING_BLOCK_RE, THINKING_TAG_RE };
 

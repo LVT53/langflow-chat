@@ -7,8 +7,8 @@ import {
 	mayStartLeadingThinkingPreamble,
 	processInlineThinkingChunk,
 	splitLeadingThinkingPreamble,
-	stripLeakedToolDiagnostics,
 	stripLeadingResponseMarker,
+	stripLeakedToolDiagnostics,
 } from "./stream-protocol";
 
 describe("stream-protocol", () => {
@@ -86,6 +86,24 @@ describe("stream-protocol", () => {
 
 		expect(onVisible.mock.calls).toEqual([["Before"], ["After"]]);
 		expect(onThinking.mock.calls).toEqual([["\nTrace"], [" details"]]);
+	});
+
+	it("routes Mistral [THINK] traces into thinking emissions", () => {
+		const state = createInlineThinkingState();
+		const onVisible = vi.fn();
+		const onThinking = vi.fn();
+
+		processInlineThinkingChunk(state, "Before[TH", {
+			onVisible,
+			onThinking,
+		});
+		processInlineThinkingChunk(state, "INK]Mistral plan[/THINK]After", {
+			onVisible,
+			onThinking,
+		});
+
+		expect(onVisible.mock.calls).toEqual([["Before"], ["After"]]);
+		expect(onThinking.mock.calls).toEqual([["Mistral plan"]]);
 	});
 
 	it("drops a trailing partial open tag when flushing visible content", () => {
@@ -193,9 +211,9 @@ describe("stream-protocol", () => {
 	});
 
 	it("detects partial leaked web research diagnostics for streaming buffers", () => {
-		expect(getLeakedToolDiagnosticPrefixLength("Answer before Found 8 sour")).toBe(
-			13,
-		);
+		expect(
+			getLeakedToolDiagnosticPrefixLength("Answer before Found 8 sour"),
+		).toBe(13);
 		expect(
 			getLeakedToolDiagnosticPrefixLength(
 				"Answer before Found 8 source files were useful",

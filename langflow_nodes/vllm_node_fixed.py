@@ -85,6 +85,15 @@ def _is_fireworks_base_url(base_url: str) -> bool:
     return "api.fireworks.ai" in str(base_url or "").strip().lower()
 
 
+def _is_mistral_medium_35_model(model_name: str) -> bool:
+    normalized = str(model_name or "").strip().lower()
+    return (
+        "mistral" in normalized
+        and "medium" in normalized
+        and ("3.5" in normalized or "3-5" in normalized or "3_5" in normalized)
+    )
+
+
 class NemotronReasoningChatOpenAI(ChatOpenAI):
     """ChatOpenAI subclass for OpenAI-compatible models with optional reasoning capture.
 
@@ -108,11 +117,16 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     reasoning_close_tag: ClassVar[str] = "</thinking>"
 
     system_prompt: str = ""
+    reasoning_effort: str = ""
     enable_thinking: bool = True
     use_chat_template_kwargs: bool = True
     _last_reasoning_content: str = ""
 
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
+        reasoning_effort = str(self.reasoning_effort or "").strip()
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
+
         if not self.enable_thinking or not self.use_chat_template_kwargs:
             return payload
 
@@ -567,8 +581,13 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         
         logger.info(f"Building model with name={self.model_name}, base_url={normalized_api_base}")
 
+        is_mistral_medium_35 = _is_mistral_medium_35_model(self.model_name)
         user_extra_body = _clean_mapping(self.extra_body or {})
-        use_chat_template_kwargs = bool(self.enable_thinking) and _allows_chat_template_kwargs(normalized_api_base)
+        use_chat_template_kwargs = (
+            bool(self.enable_thinking)
+            and _allows_chat_template_kwargs(normalized_api_base)
+            and not is_mistral_medium_35
+        )
         if use_chat_template_kwargs:
             chat_template_kwargs = dict(user_extra_body.get("chat_template_kwargs") or {})
             chat_template_kwargs["enable_thinking"] = True
@@ -576,7 +595,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
 
         user_model_kwargs = _clean_mapping(self.model_kwargs or {})
         thinking_type = str(getattr(self, "thinking_type", "") or "").strip()
-        if thinking_type:
+        if thinking_type and not is_mistral_medium_35:
             thinking_config: dict[str, Any] = {"type": thinking_type}
             if thinking_type == "enabled" and _is_fireworks_base_url(normalized_api_base):
                 thinking_config["budget_tokens"] = 4096
@@ -602,7 +621,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         }
 
         reasoning_effort = str(getattr(self, "reasoning_effort", "") or "").strip()
-        if reasoning_effort and not thinking_type:
+        if reasoning_effort and (not thinking_type or is_mistral_medium_35):
             parameters["reasoning_effort"] = reasoning_effort
 
         if self.seed is not None and self.seed != -1:
