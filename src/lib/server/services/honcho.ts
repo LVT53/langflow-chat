@@ -23,7 +23,6 @@ import {
 } from '$lib/server/utils/conversation-boundary-filter';
 import {
 	buildContextSection,
-	compactContextSections,
 	dedupeById,
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
@@ -35,8 +34,11 @@ import {
 	truncateToTokenBudget,
 	type BudgetedAttachmentContext,
 	type PromptContextSection,
-	type PromptContextSectionSelection,
 } from '$lib/server/utils/prompt-context';
+import {
+	selectPromptContext,
+	type ContextSelectionCandidate,
+} from './chat-turn/context-selection';
 import type {
 	ContextTraceSource,
 	LegacyContextTraceSectionInput,
@@ -105,7 +107,7 @@ const UNMATCHED_RECENT_TURN_TOKEN_LIMIT = 480;
 //   truth, task continuity, and working-document identity
 
 function inferContextTraceSourceForSection(
-	section: Pick<PromptContextSectionSelection, 'title' | 'layer'>
+	section: Pick<PromptContextSection, 'title' | 'layer'>
 ): ContextTraceSource {
 	const normalizedTitle = section.title.toLowerCase();
 	if (normalizedTitle.includes('attachment')) return 'attachment';
@@ -121,62 +123,44 @@ function inferContextTraceSourceForSection(
 	return 'session';
 }
 
-function buildContextTraceSections(params: {
-	sections: PromptContextSectionSelection[];
-	message: string;
+function buildContextSelectionCandidates(params: {
+	sections: PromptContextSection[];
 	attachmentContext?: BudgetedAttachmentContext | null;
 	evidenceItems?: Array<{
 		id: string;
 		title: string;
 		pinned: boolean;
 	}>;
-}): LegacyContextTraceSectionInput[] {
-	return [
-		...params.sections.map((section) => {
-			const isAttachmentSection = section.title === 'Current Attachments';
-			const isEvidenceSection = section.title === 'Retrieved Evidence';
-			const attachmentItems = isAttachmentSection
-				? (params.attachmentContext?.items ?? [])
-				: [];
-			const evidenceItems = isEvidenceSection ? (params.evidenceItems ?? []) : [];
-			return {
-				name: section.title,
-				source: inferContextTraceSourceForSection(section),
-				body: section.body,
-				inclusionLevel:
-					section.inclusionLevel === 'omitted'
-						? ('omitted' as const)
-						: section.trimmed
-							? ('legacy_truncated' as const)
-							: ('legacy_full' as const),
-				itemIds: isEvidenceSection
-					? evidenceItems.map((item) => item.id)
-					: attachmentItems.map((item) => item.id),
-				itemTitles: isEvidenceSection
-					? evidenceItems.map((item) => item.title)
-					: attachmentItems.map((item) => item.title),
-				trimmed: section.trimmed || attachmentItems.some((item) => item.trimmed),
-				protected: section.protected,
-				signalReasons:
-					isAttachmentSection && params.attachmentContext
-						? [`attachment_context:${params.attachmentContext.mode}`]
-						: isEvidenceSection && evidenceItems.some((item) => item.pinned)
-							? ['pinned_evidence', 'working_set_context:budgeted']
-						: section.title === 'Honcho Session Context'
-							? ['recent_turn_context:budgeted']
-						: [],
-			};
-		}),
-		{
-			name: 'Current User Message',
-			source: 'user',
-			body: params.message,
-			inclusionLevel: 'legacy_full',
-			trimmed: false,
-			protected: false,
-			signalReasons: ['current_user_message'],
-		},
-	];
+}): ContextSelectionCandidate[] {
+	return params.sections.map((section) => {
+		const isAttachmentSection = section.title === 'Current Attachments';
+		const isEvidenceSection = section.title === 'Retrieved Evidence';
+		const attachmentItems = isAttachmentSection
+			? (params.attachmentContext?.items ?? [])
+			: [];
+		const evidenceItems = isEvidenceSection ? (params.evidenceItems ?? []) : [];
+		return {
+			title: section.title,
+			body: section.body,
+			source: inferContextTraceSourceForSection(section),
+			layer: section.layer,
+			protected: section.protected,
+			itemIds: isEvidenceSection
+				? evidenceItems.map((item) => item.id)
+				: attachmentItems.map((item) => item.id),
+			itemTitles: isEvidenceSection
+				? evidenceItems.map((item) => item.title)
+				: attachmentItems.map((item) => item.title),
+			signalReasons:
+				isAttachmentSection && params.attachmentContext
+					? [`attachment_context:${params.attachmentContext.mode}`]
+					: isEvidenceSection && evidenceItems.some((item) => item.pinned)
+						? ['pinned_evidence', 'working_set_context:budgeted']
+					: section.title === 'Honcho Session Context'
+						? ['recent_turn_context:budgeted']
+					: [],
+		};
+	});
 }
 
 function normalizePeerIdFragment(rawId: string): string {
@@ -1623,10 +1607,18 @@ export async function buildConstructedContext(params: {
 		? 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.'
 		: 'Context from your conversation history:';
 
-	const compacted = compactContextSections({
+	const selectedPromptContext = selectPromptContext({
 		intro,
 		message: params.message,
-		sections: effectiveSections,
+		candidates: buildContextSelectionCandidates({
+			sections: effectiveSections,
+			attachmentContext,
+			evidenceItems: selectedEvidence.map((artifact) => ({
+				id: artifact.id,
+				title: artifact.name,
+				pinned: pinnedArtifactIds.has(artifact.id),
+			})),
+		}),
 		targetTokens: targetBudget,
 		initialCompactionMode: compactionApplied ? 'deterministic' : 'none',
 	});
@@ -1634,21 +1626,21 @@ export async function buildConstructedContext(params: {
 	const status = await updateConversationContextStatus({
 		conversationId: params.conversationId,
 		userId: params.userId,
-		estimatedTokens: compacted.estimatedTokens,
+		estimatedTokens: selectedPromptContext.estimatedTokens,
 		compactionApplied:
-			compacted.compactionApplied ||
-			compacted.compactionMode !== 'none' ||
-			compacted.estimatedTokens >= compactionThreshold,
+			selectedPromptContext.compactionApplied ||
+			selectedPromptContext.compactionMode !== 'none' ||
+			selectedPromptContext.estimatedTokens >= compactionThreshold,
 		contextLimits: {
 			maxModelContext,
 			compactionUiThreshold: compactionThreshold,
 			targetConstructedContext: targetBudget,
 		},
-		compactionMode: compacted.compactionMode,
+		compactionMode: selectedPromptContext.compactionMode,
 		routingStage: preparedContext.routingStage,
 		routingConfidence: preparedContext.routingConfidence,
 		verificationStatus: preparedContext.verificationStatus,
-		layersUsed: compacted.layersUsed,
+		layersUsed: selectedPromptContext.layersUsed,
 		workingSetCount: selectedEvidence.length,
 		workingSetArtifactIds: selectedEvidence.map((artifact) => artifact.id),
 		workingSetApplied: selectedEvidence.length > 0,
@@ -1659,22 +1651,13 @@ export async function buildConstructedContext(params: {
 	});
 
 	return {
-		inputValue: compacted.inputValue,
+		inputValue: selectedPromptContext.inputValue,
 		contextStatus: status,
 		taskState,
 		contextDebug: await getContextDebugState(params.userId, params.conversationId).catch(() => null),
 		honchoContext,
 		honchoSnapshot,
-		contextTraceSections: buildContextTraceSections({
-			sections: compacted.sectionSelections,
-			message: params.message,
-			attachmentContext,
-			evidenceItems: selectedEvidence.map((artifact) => ({
-				id: artifact.id,
-				title: artifact.name,
-				pinned: pinnedArtifactIds.has(artifact.id),
-			})),
-		}),
+		contextTraceSections: selectedPromptContext.contextTraceSections,
 	};
 }
 
