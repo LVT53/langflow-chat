@@ -24,8 +24,30 @@ type HistoricalSectionReranker = (params: {
 
 export function truncateToTokenBudget(text: string, maxTokens: number): string {
 	if (estimateTokenCount(text) <= maxTokens) return text;
-	const chars = Math.max(300, maxTokens * 4);
-	return `${text.slice(0, chars).trim()}\n...[truncated]`;
+	if (maxTokens <= 0) return '';
+
+	const suffix = '\n...[truncated]';
+	const suffixTokens = estimateTokenCount(suffix);
+	const contentBudget = Math.max(0, maxTokens - suffixTokens);
+	if (contentBudget <= 0) return '[truncated]';
+
+	let low = 0;
+	let high = text.length;
+	let best = '';
+
+	while (low <= high) {
+		const mid = Math.floor((low + high) / 2);
+		const candidate = text.slice(0, mid).trim();
+		const candidateTokens = estimateTokenCount(candidate);
+		if (candidateTokens <= contentBudget) {
+			best = candidate;
+			low = mid + 1;
+		} else {
+			high = mid - 1;
+		}
+	}
+
+	return best ? `${best}${suffix}` : '[truncated]';
 }
 
 export function buildContextSection(title: string, body: string): string {

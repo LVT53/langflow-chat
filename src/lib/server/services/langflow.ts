@@ -5,9 +5,11 @@ import type {
 	ModelId,
 } from "$lib/types";
 import { isProviderModelId } from "$lib/types";
-import type { ModelConfig } from "../config-store";
+import { estimateTokenCount } from "$lib/utils/tokens";
+import type { ModelConfig, RuntimeConfig } from "../config-store";
 import { getConfig } from "../config-store";
 import { getSystemPrompt } from "../prompts";
+import { truncateToTokenBudget } from "../utils/prompt-context";
 import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
 import {
 	logAttachmentTrace,
@@ -47,6 +49,9 @@ type LangflowModelRunConfig = ModelConfig & {
 	providerThinkingType?: string | null;
 	requiresComponentTweaks?: boolean;
 };
+
+const CURRENT_USER_MESSAGE_MARKER = "## Current User Message\n";
+const LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS = 512;
 
 const URL_LIST_TOOL_ARGUMENT_GUARD = [
 	"Tool argument safety for URL-processing tools:",
@@ -311,6 +316,114 @@ async function resolveLangflowRunConfig(
 	return config.model1;
 }
 
+function resolvePromptContextLimits(
+	modelId: ModelId | string | undefined,
+	modelConfig: LangflowModelRunConfig,
+	config: RuntimeConfig,
+): PromptContextLimits {
+	if (modelConfig.contextLimits) {
+		return modelConfig.contextLimits;
+	}
+
+	if (modelId === "model2") {
+		return {
+			maxModelContext: config.model2MaxModelContext,
+			compactionUiThreshold: config.model2CompactionUiThreshold,
+			targetConstructedContext: config.model2TargetConstructedContext,
+		};
+	}
+
+	return {
+		maxModelContext: config.model1MaxModelContext,
+		compactionUiThreshold: config.model1CompactionUiThreshold,
+		targetConstructedContext: config.model1TargetConstructedContext,
+	};
+}
+
+function extractCurrentMessageSection(
+	inputValue: string,
+	message: string,
+): { contextPrefix: string; currentMessageSection: string } {
+	const markerIndex = inputValue.lastIndexOf(CURRENT_USER_MESSAGE_MARKER);
+	if (markerIndex >= 0) {
+		return {
+			contextPrefix: inputValue.slice(0, markerIndex).trim(),
+			currentMessageSection: inputValue.slice(markerIndex).trim(),
+		};
+	}
+
+	return {
+		contextPrefix: "",
+		currentMessageSection: message.trim()
+			? `${CURRENT_USER_MESSAGE_MARKER}${message.trim()}`
+			: inputValue.trim(),
+	};
+}
+
+function applyOutboundPromptBudget(params: {
+	inputValue: string;
+	message: string;
+	systemPrompt: string;
+	contextLimits: PromptContextLimits;
+	maxTokens?: number | null;
+	sessionId: string;
+	modelId: ModelId | string | undefined;
+	modelName: string;
+	providerId?: string | null;
+}): string {
+	const outputReserve = Math.max(0, params.maxTokens ?? 0);
+	const configuredPromptBudget = Math.min(
+		params.contextLimits.targetConstructedContext,
+		params.contextLimits.compactionUiThreshold,
+		Math.max(1, params.contextLimits.maxModelContext - outputReserve),
+	);
+	const systemTokens = estimateTokenCount(params.systemPrompt);
+	const inputTokenBudget =
+		configuredPromptBudget -
+		systemTokens -
+		LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS;
+	const currentInputTokens = estimateTokenCount(params.inputValue);
+
+	if (inputTokenBudget > 0 && currentInputTokens <= inputTokenBudget) {
+		return params.inputValue;
+	}
+
+	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
+		params.inputValue,
+		params.message,
+	);
+	const currentMessageTokens = estimateTokenCount(currentMessageSection);
+	const contextBudget = Math.max(0, inputTokenBudget - currentMessageTokens - 16);
+	const compactedContext = contextPrefix
+		? truncateToTokenBudget(contextPrefix, contextBudget)
+		: "";
+	const budgetedInputValue = [compactedContext, currentMessageSection]
+		.filter((part) => part.trim())
+		.join("\n\n");
+	const finalInputValue =
+		inputTokenBudget > 0
+			? truncateToTokenBudget(budgetedInputValue, inputTokenBudget)
+			: currentMessageSection;
+
+	console.warn("[LANGFLOW] Outbound prompt budget applied", {
+		sessionId: params.sessionId,
+		modelId: params.modelId ?? "model1",
+		providerId: params.providerId ?? null,
+		modelName: params.modelName,
+		maxModelContext: params.contextLimits.maxModelContext,
+		compactionUiThreshold: params.contextLimits.compactionUiThreshold,
+		targetConstructedContext: params.contextLimits.targetConstructedContext,
+		configuredPromptBudget,
+		systemTokens,
+		outputReserve,
+		inputTokenBudget,
+		beforeInputTokens: currentInputTokens,
+		afterInputTokens: estimateTokenCount(finalInputValue),
+	});
+
+	return finalInputValue;
+}
+
 function shouldSendVllmChatTemplateThinking(
 	modelConfig: LangflowModelRunConfig,
 ): boolean {
@@ -524,6 +637,23 @@ export async function prepareOutboundChatContext(params: {
 		systemPromptAppendix: params.systemPromptAppendix,
 		personalityPrompt: params.personalityPrompt,
 	});
+	inputValue = applyOutboundPromptBudget({
+		inputValue,
+		message: params.message,
+		systemPrompt,
+		contextLimits:
+			params.contextLimits ??
+			resolvePromptContextLimits(
+				params.modelId ?? "model1",
+				params.modelConfig,
+				getConfig(),
+			),
+		maxTokens: params.modelConfig.maxTokens,
+		sessionId: params.sessionId,
+		modelId: params.modelId ?? "model1",
+		modelName: params.modelConfig.modelName,
+		providerId: null,
+	});
 
 	return {
 		inputValue,
@@ -661,6 +791,21 @@ export async function sendMessage(
 			modelDisplayName: modelConfig.displayName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
+		});
+		inputValue = applyOutboundPromptBudget({
+			inputValue,
+			message,
+			systemPrompt,
+			contextLimits: resolvePromptContextLimits(
+				modelId ?? "model1",
+				modelConfig,
+				config,
+			),
+			maxTokens: modelConfig.maxTokens,
+			sessionId,
+			modelId: modelId ?? "model1",
+			modelName,
+			providerId: modelConfig.providerId ?? null,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -851,6 +996,21 @@ export async function sendMessageStream(
 			modelDisplayName: modelConfig.displayName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
+		});
+		inputValue = applyOutboundPromptBudget({
+			inputValue,
+			message,
+			systemPrompt,
+			contextLimits: resolvePromptContextLimits(
+				modelId ?? "model1",
+				modelConfig,
+				config,
+			),
+			maxTokens: modelConfig.maxTokens,
+			sessionId,
+			modelId: modelId ?? "model1",
+			modelName,
+			providerId: modelConfig.providerId ?? null,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {

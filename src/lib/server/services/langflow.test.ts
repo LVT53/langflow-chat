@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	buildConstructedContext: vi.fn(),
+	buildEnhancedSystemPrompt: vi.fn(),
 	decryptApiKey: vi.fn(),
 	getConfig: vi.fn(),
 	getProviderWithSecrets: vi.fn(),
@@ -16,8 +18,8 @@ vi.mock("../prompts", () => ({
 }));
 
 vi.mock("./honcho", () => ({
-	buildConstructedContext: vi.fn(),
-	buildEnhancedSystemPrompt: vi.fn(),
+	buildConstructedContext: mocks.buildConstructedContext,
+	buildEnhancedSystemPrompt: mocks.buildEnhancedSystemPrompt,
 }));
 
 vi.mock("./attachment-trace", () => ({
@@ -35,6 +37,7 @@ vi.mock("./inference-providers", () => ({
 }));
 
 import { buildOutboundSystemPrompt, sendMessage } from "./langflow";
+import { estimateTokenCount } from "$lib/utils/tokens";
 
 const model1 = {
 	baseUrl: "http://local-model/v1",
@@ -49,7 +52,10 @@ const model1 = {
 	thinkingType: null,
 };
 
-function mockConfig(overrides: Partial<typeof model1> = {}) {
+function mockConfig(
+	overrides: Partial<typeof model1> = {},
+	configOverrides: Record<string, unknown> = {},
+) {
 	mocks.getConfig.mockReturnValue({
 		langflowApiUrl: "http://langflow",
 		langflowApiKey: "langflow-key",
@@ -58,6 +64,14 @@ function mockConfig(overrides: Partial<typeof model1> = {}) {
 		maxModelContext: 262144,
 		compactionUiThreshold: 209715,
 		targetConstructedContext: 157286,
+		model1MaxModelContext: 262144,
+		model1CompactionUiThreshold: 209715,
+		model1TargetConstructedContext: 157286,
+		model1MaxMessageLength: 65536,
+		model2MaxModelContext: 262144,
+		model2CompactionUiThreshold: 209715,
+		model2TargetConstructedContext: 157286,
+		model2MaxMessageLength: 65536,
 		model1: { ...model1, ...overrides },
 		model2: {
 			baseUrl: "",
@@ -71,6 +85,7 @@ function mockConfig(overrides: Partial<typeof model1> = {}) {
 			reasoningEffort: null,
 			thinkingType: null,
 		},
+		...configOverrides,
 	});
 }
 
@@ -165,6 +180,7 @@ describe("sendMessage provider routing", () => {
 		mockConfig();
 		mockLangflowResponse();
 		mocks.getSystemPrompt.mockReturnValue("Base system prompt");
+		mocks.buildEnhancedSystemPrompt.mockResolvedValue("Base system prompt");
 		mocks.decryptApiKey.mockReturnValue("provider-secret");
 		mocks.getProviderWithSecrets.mockResolvedValue({
 			id: "provider-1",
@@ -233,6 +249,41 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
 			"Tool outputs, web research briefs",
 		);
+	});
+
+	it("applies the configured local model prompt budget to the final outbound payload", async () => {
+		mockConfig(
+			{ maxTokens: 512 },
+			{
+				model1MaxModelContext: 12_000,
+				model1CompactionUiThreshold: 9_000,
+				model1TargetConstructedContext: 8_000,
+			},
+		);
+		const oversizedContext = [
+			"Context from your conversation history:",
+			`## Retrieved Evidence\n${"large context ".repeat(30_000)}`,
+			"## Current User Message\nTiny question?",
+		].join("\n\n");
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: oversizedContext,
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+
+		await sendMessage("Tiny question?", "conv-1", "model1", { id: "user-1" });
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		const systemPrompt = body.tweaks["ModelNode-1"].system_prompt;
+		expect(body.input_value).toContain("## Current User Message\nTiny question?");
+		expect(body.input_value.length).toBeLessThan(oversizedContext.length);
+		expect(body.input_value).toContain("[truncated]");
+		expect(
+			estimateTokenCount(`${systemPrompt}\n\n${body.input_value}`),
+		).toBeLessThanOrEqual(8_000);
 	});
 
 	it("normalizes provider API bases before sending Langflow model tweaks", async () => {
