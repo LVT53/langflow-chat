@@ -322,6 +322,14 @@ export function serializeWorkingSetArtifacts(params: {
 	const snippets = params.snippets ?? new Map<string, string>();
 	let budgetRemaining = params.totalBudget;
 	const parts: string[] = [];
+	const separatorReserve = Math.max(0, params.artifacts.length - 1) * 16;
+	const fairShareBudget = Math.max(
+		80,
+		Math.floor(
+			Math.max(0, params.totalBudget - separatorReserve) /
+				Math.max(1, params.artifacts.length)
+		)
+	);
 
 	for (const artifact of params.artifacts) {
 		if (budgetRemaining <= 0) break;
@@ -329,7 +337,7 @@ export function serializeWorkingSetArtifacts(params: {
 			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
 		const perArtifactBudget =
 			artifact.type === 'generated_output' ? params.outputBudget : params.documentBudget;
-		const excerptBudget = Math.min(perArtifactBudget, budgetRemaining);
+		const excerptBudget = Math.min(perArtifactBudget, fairShareBudget, budgetRemaining);
 		const kind = artifact.type === 'generated_output' ? 'Result' : 'Document';
 		const section = `${kind}: ${artifact.name}\n${truncateToTokenBudget(
 			excerptSource,

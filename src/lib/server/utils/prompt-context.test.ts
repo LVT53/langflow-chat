@@ -4,6 +4,7 @@ import {
 	compactContextSections,
 	selectPromptSessionTurns,
 	serializeBudgetedAttachments,
+	serializeWorkingSetArtifacts,
 } from "./prompt-context";
 import type { Artifact } from "$lib/types";
 
@@ -234,5 +235,37 @@ describe("selectPromptSessionTurns", () => {
 		});
 
 		expect(selected).toEqual(turns);
+	});
+});
+
+describe("serializeWorkingSetArtifacts", () => {
+	it("preserves breadth across multiple selected evidence items within budget", () => {
+		const serialized = serializeWorkingSetArtifacts({
+			artifacts: [
+				makeAttachment({
+					id: "pin-1",
+					name: "alpha.md",
+					contentText: "Alpha evidence. ".repeat(1_000),
+				}),
+				makeAttachment({
+					id: "pin-2",
+					name: "beta.md",
+					contentText: "Beta evidence. ".repeat(1_000),
+				}),
+				makeAttachment({
+					id: "pin-3",
+					name: "gamma.md",
+					contentText: "Gamma evidence. ".repeat(1_000),
+				}),
+			],
+			totalBudget: 360,
+			documentBudget: 360,
+			outputBudget: 360,
+		});
+
+		expect(serialized).toContain("Document: alpha.md");
+		expect(serialized).toContain("Document: beta.md");
+		expect(serialized).toContain("Document: gamma.md");
+		expect(estimateTokenCount(serialized)).toBeLessThanOrEqual(360);
 	});
 });

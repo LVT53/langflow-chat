@@ -125,13 +125,20 @@ function buildContextTraceSections(params: {
 	sections: PromptContextSectionSelection[];
 	message: string;
 	attachmentContext?: BudgetedAttachmentContext | null;
+	evidenceItems?: Array<{
+		id: string;
+		title: string;
+		pinned: boolean;
+	}>;
 }): LegacyContextTraceSectionInput[] {
 	return [
 		...params.sections.map((section) => {
 			const isAttachmentSection = section.title === 'Current Attachments';
+			const isEvidenceSection = section.title === 'Retrieved Evidence';
 			const attachmentItems = isAttachmentSection
 				? (params.attachmentContext?.items ?? [])
 				: [];
+			const evidenceItems = isEvidenceSection ? (params.evidenceItems ?? []) : [];
 			return {
 				name: section.title,
 				source: inferContextTraceSourceForSection(section),
@@ -142,13 +149,19 @@ function buildContextTraceSections(params: {
 						: section.trimmed
 							? ('legacy_truncated' as const)
 							: ('legacy_full' as const),
-				itemIds: attachmentItems.map((item) => item.id),
-				itemTitles: attachmentItems.map((item) => item.title),
+				itemIds: isEvidenceSection
+					? evidenceItems.map((item) => item.id)
+					: attachmentItems.map((item) => item.id),
+				itemTitles: isEvidenceSection
+					? evidenceItems.map((item) => item.title)
+					: attachmentItems.map((item) => item.title),
 				trimmed: section.trimmed || attachmentItems.some((item) => item.trimmed),
 				protected: section.protected,
 				signalReasons:
 					isAttachmentSection && params.attachmentContext
 						? [`attachment_context:${params.attachmentContext.mode}`]
+						: isEvidenceSection && evidenceItems.some((item) => item.pinned)
+							? ['pinned_evidence', 'working_set_context:budgeted']
 						: section.title === 'Honcho Session Context'
 							? ['recent_turn_context:budgeted']
 						: [],
@@ -1306,6 +1319,7 @@ export async function buildConstructedContext(params: {
 	const selectedEvidence = preparedContext.selectedArtifacts.filter(
 		(artifact) => !currentAttachmentIds.has(artifact.id)
 	);
+	const pinnedArtifactIds = new Set(preparedContext.pinnedArtifactIds);
 
 	const promptArtifacts = new Map<string, Artifact>();
 	for (const artifact of [...currentAttachments, ...selectedEvidence]) {
@@ -1419,6 +1433,7 @@ export async function buildConstructedContext(params: {
 				outputBudget: WORKING_SET_OUTPUT_TOKEN_BUDGET,
 			}),
 			layer: 'working_set',
+			protected: selectedEvidence.some((artifact) => pinnedArtifactIds.has(artifact.id)),
 		});
 	}
 
@@ -1654,6 +1669,11 @@ export async function buildConstructedContext(params: {
 			sections: compacted.sectionSelections,
 			message: params.message,
 			attachmentContext,
+			evidenceItems: selectedEvidence.map((artifact) => ({
+				id: artifact.id,
+				title: artifact.name,
+				pinned: pinnedArtifactIds.has(artifact.id),
+			})),
 		}),
 	};
 }
