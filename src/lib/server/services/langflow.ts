@@ -19,6 +19,12 @@ import { buildConstructedContext, buildEnhancedSystemPrompt } from "./honcho";
 import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
 import { detectLanguage, type SupportedLanguage } from "./language";
 import { normalizeOpenAICompatibleBaseUrl } from "./openai-compatible-url";
+import {
+	buildLegacyContextTrace,
+	emitContextTrace,
+	type ContextTraceContextSource,
+	type ContextTraceSource,
+} from "./chat-turn/context-trace";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -424,6 +430,123 @@ function applyOutboundPromptBudget(params: {
 	return finalInputValue;
 }
 
+function inferContextTraceSource(sectionName: string): ContextTraceSource {
+	const normalized = sectionName.toLowerCase();
+	if (normalized.includes("attachment")) return "attachment";
+	if (normalized.includes("generated")) return "generated_output";
+	if (normalized.includes("user memory")) return "memory";
+	if (normalized.includes("session")) return "session";
+	if (normalized.includes("task")) return "task_state";
+	if (normalized.includes("current user message")) return "user";
+	if (normalized.includes("evidence") || normalized.includes("working")) {
+		return "working_set";
+	}
+	if (normalized.includes("document")) return "document";
+	return "session";
+}
+
+function parseLegacyContextSections(inputValue: string) {
+	const matches = Array.from(inputValue.matchAll(/^## (.+)$/gm));
+	if (matches.length === 0) {
+		return [
+			{
+				name: "Current User Message",
+				source: "user" as const,
+				body: inputValue,
+				signalReasons: ["current_user_message"],
+			},
+		];
+	}
+
+	return matches.map((match, index) => {
+		const name = match[1]?.trim() || "Context Section";
+		const bodyStart = (match.index ?? 0) + match[0].length;
+		const nextMatch = matches[index + 1];
+		const bodyEnd = nextMatch?.index ?? inputValue.length;
+		return {
+			name,
+			source: inferContextTraceSource(name),
+			body: inputValue.slice(bodyStart, bodyEnd).trim(),
+			signalReasons: [],
+			protected:
+				name === "Current Attachments" ||
+				name === "Honcho Session Context" ||
+				name === "Task State",
+		};
+	});
+}
+
+function normalizeContextTraceSource(
+	source: unknown,
+	hasUserContext: boolean,
+): ContextTraceContextSource {
+	if (
+		source === "live" ||
+		source === "snapshot" ||
+		source === "persisted_fallback" ||
+		source === "disabled"
+	) {
+		return source;
+	}
+	return hasUserContext ? "mixed" : "disabled";
+}
+
+function emitOutboundContextTrace(params: {
+	inputValue: string;
+	systemPrompt: string;
+	message: string;
+	contextLimits: PromptContextLimits;
+	maxTokens?: number | null;
+	sessionId: string;
+	userId?: string | null;
+	modelId: ModelId | string | undefined;
+	providerId?: string | null;
+	modelName: string;
+	honchoContext?: import("$lib/types").HonchoContextInfo | null;
+}): void {
+	try {
+		emitContextTrace(
+			buildLegacyContextTrace({
+				conversationId: params.sessionId,
+				streamId: null,
+				userId: params.userId ?? "anonymous",
+				modelId: params.modelId ?? "model1",
+				providerId: params.providerId ?? null,
+				modelName: params.modelName,
+				attempt: 1,
+				phase: "context_selection",
+				contextSource: normalizeContextTraceSource(
+					params.honchoContext?.source,
+					Boolean(params.userId),
+				),
+				budget: {
+					maxModelContext: params.contextLimits.maxModelContext,
+					targetConstructedContext:
+						params.contextLimits.targetConstructedContext,
+					reservedEstimate:
+						estimateTokenCount(params.systemPrompt) +
+						estimateTokenCount(params.message),
+					promptEstimate: estimateTokenCount(params.inputValue),
+					outputReserve: Math.max(0, params.maxTokens ?? 0),
+					wasBudgetEnforced:
+						estimateTokenCount(params.inputValue) >=
+						params.contextLimits.targetConstructedContext,
+				},
+				sections: parseLegacyContextSections(params.inputValue),
+				limitations: [],
+				warnings: [],
+				fallbacks: [],
+			}),
+		);
+	} catch (error) {
+		console.warn("[CONTEXT_TRACE] Failed to emit context trace", {
+			conversationId: params.sessionId,
+			modelId: params.modelId ?? "model1",
+			error,
+		});
+	}
+}
+
 function shouldSendVllmChatTemplateThinking(
 	modelConfig: LangflowModelRunConfig,
 ): boolean {
@@ -792,20 +915,34 @@ export async function sendMessage(
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 		});
+		const contextLimits = resolvePromptContextLimits(
+			modelId ?? "model1",
+			modelConfig,
+			config,
+		);
 		inputValue = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
-			contextLimits: resolvePromptContextLimits(
-				modelId ?? "model1",
-				modelConfig,
-				config,
-			),
+			contextLimits,
 			maxTokens: modelConfig.maxTokens,
 			sessionId,
 			modelId: modelId ?? "model1",
 			modelName,
 			providerId: modelConfig.providerId ?? null,
+		});
+		emitOutboundContextTrace({
+			inputValue,
+			systemPrompt,
+			message,
+			contextLimits,
+			maxTokens: modelConfig.maxTokens,
+			sessionId,
+			userId: user?.id ?? null,
+			modelId: modelId ?? "model1",
+			providerId: modelConfig.providerId ?? null,
+			modelName,
+			honchoContext,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -816,18 +953,20 @@ export async function sendMessage(
 			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
 		};
 
-		console.info("[LANGFLOW] Starting request", {
-			url,
-			flowId,
-			sessionId,
-			userId: user?.id ?? null,
-			modelId: modelId ?? "model1",
-			providerId: modelConfig.providerId ?? null,
-			modelName,
-			baseUrl,
-			attachmentCount: options?.attachmentIds?.length ?? 0,
-			inputLength: inputValue.length,
-		});
+		if (config.contextDiagnosticsDebug) {
+			console.info("[LANGFLOW] Starting request", {
+				url,
+				flowId,
+				sessionId,
+				userId: user?.id ?? null,
+				modelId: modelId ?? "model1",
+				providerId: modelConfig.providerId ?? null,
+				modelName,
+				baseUrl,
+				attachmentCount: options?.attachmentIds?.length ?? 0,
+				inputLength: inputValue.length,
+			});
+		}
 
 		const response = await fetch(url, {
 			method: "POST",
@@ -997,20 +1136,34 @@ export async function sendMessageStream(
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 		});
+		const contextLimits = resolvePromptContextLimits(
+			modelId ?? "model1",
+			modelConfig,
+			config,
+		);
 		inputValue = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
-			contextLimits: resolvePromptContextLimits(
-				modelId ?? "model1",
-				modelConfig,
-				config,
-			),
+			contextLimits,
 			maxTokens: modelConfig.maxTokens,
 			sessionId,
 			modelId: modelId ?? "model1",
 			modelName,
 			providerId: modelConfig.providerId ?? null,
+		});
+		emitOutboundContextTrace({
+			inputValue,
+			systemPrompt,
+			message,
+			contextLimits,
+			maxTokens: modelConfig.maxTokens,
+			sessionId,
+			userId: options?.user?.id ?? null,
+			modelId: modelId ?? "model1",
+			providerId: modelConfig.providerId ?? null,
+			modelName,
+			honchoContext,
 		});
 
 		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
@@ -1021,18 +1174,20 @@ export async function sendMessageStream(
 			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
 		};
 
-		console.info("[LANGFLOW] Starting streaming request", {
-			url,
-			flowId,
-			sessionId,
-			userId: options?.user?.id ?? null,
-			modelId: modelId ?? "model1",
-			providerId: modelConfig.providerId ?? null,
-			modelName,
-			baseUrl,
-			attachmentCount: options?.attachmentIds?.length ?? 0,
-			inputLength: inputValue.length,
-		});
+		if (config.contextDiagnosticsDebug) {
+			console.info("[LANGFLOW] Starting streaming request", {
+				url,
+				flowId,
+				sessionId,
+				userId: options?.user?.id ?? null,
+				modelId: modelId ?? "model1",
+				providerId: modelConfig.providerId ?? null,
+				modelName,
+				baseUrl,
+				attachmentCount: options?.attachmentIds?.length ?? 0,
+				inputLength: inputValue.length,
+			});
+		}
 
 		const response = await fetch(url, {
 			method: "POST",

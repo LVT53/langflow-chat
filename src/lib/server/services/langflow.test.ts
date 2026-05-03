@@ -286,6 +286,72 @@ describe("sendMessage provider routing", () => {
 		).toBeLessThanOrEqual(8_000);
 	});
 
+	it("emits a compact Context Trace for the outbound turn without prompt body text", async () => {
+		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: [
+				"Context from your conversation history:",
+				"## User Memory\nPrivate user memory body",
+				"## Current Attachments\nPrivate attachment body",
+				"## Current User Message\nCan you help?",
+			].join("\n\n"),
+			contextStatus: {
+				estimatedTokens: 120,
+				maxContextTokens: 10_000,
+				thresholdTokens: 8_000,
+				targetTokens: 6_000,
+				compactionApplied: false,
+				compactionMode: "none",
+				layersUsed: [],
+				workingSetCount: 0,
+				workingSetArtifactIds: [],
+				workingSetApplied: false,
+				taskStateApplied: false,
+				promptArtifactCount: 1,
+				recentTurnCount: 0,
+				routingStage: "deterministic",
+				routingConfidence: 0,
+				verificationStatus: "skipped",
+				summary: null,
+				updatedAt: Date.now(),
+			},
+			taskState: null,
+			contextDebug: null,
+			honchoContext: { source: "live" },
+			honchoSnapshot: null,
+		});
+
+		await sendMessage("Can you help?", "conv-1", "model1", { id: "user-1" });
+
+		const traceCall = info.mock.calls.find(
+			(call) => call[0] === "[CONTEXT_TRACE]",
+		);
+		expect(traceCall).toBeTruthy();
+		expect(traceCall?.[1]).toMatchObject({
+			traceVersion: 1,
+			conversationId: "conv-1",
+			userId: "user-1",
+			modelId: "model1",
+			providerId: null,
+			modelName: "local-model",
+			attempt: 1,
+			phase: "context_selection",
+			contextSource: "live",
+			sections: expect.arrayContaining([
+				expect.objectContaining({
+					name: "User Memory",
+					source: "memory",
+				}),
+				expect.objectContaining({
+					name: "Current Attachments",
+					source: "attachment",
+				}),
+			]),
+		});
+		expect(JSON.stringify(traceCall)).not.toContain("Private user memory body");
+		expect(JSON.stringify(traceCall)).not.toContain("Private attachment body");
+	});
+
 	it("normalizes provider API bases before sending Langflow model tweaks", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",

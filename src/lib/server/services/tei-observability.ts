@@ -1,3 +1,5 @@
+import { getConfig } from '../config-store';
+
 export type TeiWinningMode = 'deterministic' | 'lexical' | 'semantic' | 'rerank' | 'none';
 
 export type SemanticShortlistDiagnostics = {
@@ -44,6 +46,10 @@ export function logTeiRetrievalSummary(params: {
 	winnerId?: string | null;
 	extra?: Record<string, unknown>;
 }): void {
+	if (!getConfig().contextDiagnosticsDebug) {
+		return;
+	}
+
 	if (params.queryLength <= 0 || params.candidateCount <= 0) {
 		return;
 	}

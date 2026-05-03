@@ -1,0 +1,79 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+	buildLegacyContextTrace,
+	emitContextTrace,
+} from "./context-trace";
+
+describe("Context Trace", () => {
+	it("emits one compact structured trace without prompt body text", () => {
+		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const trace = buildLegacyContextTrace({
+			conversationId: "conv-1",
+			streamId: "stream-1",
+			userId: "user-1",
+			modelId: "model1",
+			providerId: null,
+			modelName: "local-model",
+			attempt: 1,
+			phase: "context_selection",
+			contextSource: "live",
+			budget: {
+				maxModelContext: 10_000,
+				targetConstructedContext: 6_000,
+				reservedEstimate: 500,
+				promptEstimate: 2_000,
+				outputReserve: 1_000,
+				wasBudgetEnforced: false,
+			},
+			sections: [
+				{
+					name: "Current Attachments",
+					source: "attachment",
+					body: "private attachment body that must never be logged",
+					itemIds: ["artifact-1"],
+					itemTitles: ["contract.pdf"],
+					signalReasons: ["attached_this_turn"],
+					trimmed: false,
+					protected: true,
+				},
+			],
+			limitations: [],
+			warnings: [],
+			fallbacks: [],
+		});
+
+		emitContextTrace(trace);
+
+		expect(info).toHaveBeenCalledTimes(1);
+		expect(info).toHaveBeenCalledWith(
+			"[CONTEXT_TRACE]",
+			expect.objectContaining({
+				traceVersion: 1,
+				conversationId: "conv-1",
+				streamId: "stream-1",
+				userId: "user-1",
+				modelId: "model1",
+				modelName: "local-model",
+				attempt: 1,
+				phase: "context_selection",
+				contextSource: "live",
+				sections: [
+					expect.objectContaining({
+						name: "Current Attachments",
+						source: "attachment",
+						estimatedTokens: expect.any(Number),
+						itemCount: 1,
+						itemIds: ["artifact-1"],
+						itemTitles: ["contract.pdf"],
+						signalReasons: ["attached_this_turn"],
+						trimmed: false,
+						protected: true,
+					}),
+				],
+			}),
+		);
+		expect(JSON.stringify(info.mock.calls[0])).not.toContain(
+			"private attachment body",
+		);
+	});
+});

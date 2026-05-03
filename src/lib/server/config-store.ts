@@ -80,6 +80,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
+	"CONTEXT_DIAGNOSTICS_DEBUG",
 ] as const;
 
 export type AdminConfigKey = (typeof ADMIN_CONFIG_KEYS)[number];
@@ -90,6 +91,7 @@ export interface RuntimeConfig {
 	langflowFlowId: string;
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
+	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
 	titleGenModel: string;
@@ -445,6 +447,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
 	},
+	CONTEXT_DIAGNOSTICS_DEBUG: (config, value) => {
+		config.contextDiagnosticsDebug = value === "true";
+	},
 };
 
 export async function refreshConfig(): Promise<void> {
@@ -691,6 +696,7 @@ export function getResolvedAdminConfigValues(
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
 		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),
+		CONTEXT_DIAGNOSTICS_DEBUG: String(config.contextDiagnosticsDebug),
 	};
 }
 

@@ -23,6 +23,7 @@ interface Config {
 	langflowWebhookSecret: string;
 	alfyaiApiSigningKey: string;
 	attachmentTraceDebug: boolean;
+	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
 	titleGenModel: string;
@@ -146,6 +147,8 @@ function readConfig(): Config {
 		langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || "",
 		alfyaiApiSigningKey: process.env.ALFYAI_API_SIGNING_KEY || "",
 		attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === "true",
+		contextDiagnosticsDebug:
+			process.env.CONTEXT_DIAGNOSTICS_DEBUG === "true",
 		titleGenUrl: process.env.TITLE_GEN_URL || "http://localhost:30001/v1",
 		titleGenApiKey: process.env.TITLE_GEN_API_KEY || "",
 		titleGenModel: process.env.TITLE_GEN_MODEL || "nemotron-nano",

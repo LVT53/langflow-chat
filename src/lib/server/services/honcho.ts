@@ -1131,7 +1131,7 @@ export async function buildConstructedContext(params: {
 	} = sessionContext;
 	const currentAttachments = resolvedAttachments.promptArtifacts;
 	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
-	if (attachmentIds.length > 0) {
+	if (attachmentIds.length > 0 && getConfig().contextDiagnosticsDebug) {
 		console.info('[CONTEXT] Attachment resolution', {
 			conversationId: params.conversationId,
 			requestedAttachmentIds: attachmentIds,
@@ -1309,11 +1309,13 @@ export async function buildConstructedContext(params: {
 		});
 	}
 	if (attachmentIds.length > 0) {
-		console.info('[CONTEXT] Attachment section emitted', {
-			conversationId: params.conversationId,
-			emitted: currentAttachments.length > 0,
-			promptArtifactCount: currentAttachments.length,
-		});
+		if (getConfig().contextDiagnosticsDebug) {
+			console.info('[CONTEXT] Attachment section emitted', {
+				conversationId: params.conversationId,
+				emitted: currentAttachments.length > 0,
+				promptArtifactCount: currentAttachments.length,
+			});
+		}
 		if (currentAttachments.length === 0) {
 			logAttachmentTrace('constructed_context', {
 				traceId: params.attachmentTraceId ?? null,
