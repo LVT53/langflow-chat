@@ -31,6 +31,8 @@
 		onEdit = undefined,
 		onSteer = undefined,
 		onOpenDocument = undefined,
+		onRetryFileProductionJob = undefined,
+		onCancelFileProductionJob = undefined,
 	}: {
 		message: ChatMessage;
 		isLast?: boolean;
@@ -43,6 +45,8 @@
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
+		onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 	} = $props();
 
 	let copied = $state(false);
@@ -291,7 +295,12 @@ let dedupedFileProductionJobs = $derived(
 			{#if fileProductionJobs.length > 0 && conversationId}
 				<div class="generated-files-inline" data-testid="message-file-production-jobs">
 					{#each dedupedFileProductionJobs as job (job.id)}
-						<FileProductionCard {job} onOpenDocument={onOpenDocument} />
+						<FileProductionCard
+							{job}
+							onOpenDocument={onOpenDocument}
+							onRetry={onRetryFileProductionJob}
+							onCancel={onCancelFileProductionJob}
+						/>
 					{/each}
 				</div>
 			{:else if generatedFiles.length > 0 && conversationId}

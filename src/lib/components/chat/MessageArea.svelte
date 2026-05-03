@@ -22,6 +22,8 @@ let {
 	onEdit = undefined,
 	onSteer = undefined,
 	onOpenDocument = undefined,
+	onRetryFileProductionJob = undefined,
+	onCancelFileProductionJob = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
@@ -35,6 +37,8 @@ let {
 		| undefined;
 	onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 	onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+	onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
+	onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -185,6 +189,8 @@ async function alignToBottomAfterRender() {
 					{onEdit}
 					{onSteer}
 					{onOpenDocument}
+					{onRetryFileProductionJob}
+					{onCancelFileProductionJob}
 				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>

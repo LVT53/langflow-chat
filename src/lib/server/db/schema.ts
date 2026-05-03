@@ -520,6 +520,12 @@ export const fileProductionJobs = sqliteTable('file_production_jobs', {
 	status: text('status').notNull().default('succeeded'),
 	stage: text('stage'),
 	origin: text('origin').notNull().default('legacy_generated_file'),
+	currentAttemptId: text('current_attempt_id'),
+	retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+	errorCode: text('error_code'),
+	errorMessage: text('error_message'),
+	completedAt: integer('completed_at', { mode: 'timestamp' }),
+	cancelRequestedAt: integer('cancel_requested_at', { mode: 'timestamp' }),
 	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (table) => ({
@@ -532,6 +538,41 @@ export const fileProductionJobs = sqliteTable('file_production_jobs', {
 		table.createdAt
 	),
 	userIdx: index('file_production_jobs_user_idx').on(table.userId, table.createdAt),
+}));
+
+export const fileProductionJobAttempts = sqliteTable('file_production_job_attempts', {
+	id: text('id').primaryKey(),
+	jobId: text('job_id')
+		.notNull()
+		.references(() => fileProductionJobs.id, { onDelete: 'cascade' }),
+	attemptNumber: integer('attempt_number').notNull(),
+	status: text('status').notNull().default('running'),
+	stage: text('stage'),
+	mode: text('mode'),
+	renderer: text('renderer'),
+	runtime: text('runtime'),
+	workerId: text('worker_id'),
+	claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+	heartbeatAt: integer('heartbeat_at', { mode: 'timestamp' }),
+	startedAt: integer('started_at', { mode: 'timestamp' }),
+	finishedAt: integer('finished_at', { mode: 'timestamp' }),
+	errorCode: text('error_code'),
+	errorMessage: text('error_message'),
+	retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+	diagnosticsJson: text('diagnostics_json'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	jobNumberUniqueIdx: uniqueIndex('file_production_job_attempts_job_number_unique_idx').on(
+		table.jobId,
+		table.attemptNumber
+	),
+	jobIdx: index('file_production_job_attempts_job_idx').on(table.jobId, table.createdAt),
+	workerIdx: index('file_production_job_attempts_worker_idx').on(
+		table.workerId,
+		table.status,
+		table.heartbeatAt
+	),
 }));
 
 export const fileProductionJobFiles = sqliteTable('file_production_job_files', {

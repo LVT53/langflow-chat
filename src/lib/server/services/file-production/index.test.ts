@@ -193,4 +193,328 @@ describe('file production service', () => {
 			],
 		});
 	});
+
+	it('lists a queued production job before it has produced files', async () => {
+		const { createFileProductionJob, listConversationFileProductionJobs } = await import('./index');
+
+		const created = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Research brief',
+			origin: 'unified_produce',
+		});
+
+		expect(created).toMatchObject({
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Research brief',
+			status: 'queued',
+			files: [],
+		});
+
+		const jobs = await listConversationFileProductionJobs('user-1', 'conv-1');
+
+		expect(jobs[0]).toMatchObject({
+			id: created.id,
+			title: 'Research brief',
+			status: 'queued',
+			files: [],
+		});
+	});
+
+	it('claims the oldest queued job and records the running attempt', async () => {
+		const {
+			claimNextFileProductionJob,
+			createFileProductionJob,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const first = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'First queued report',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:32:00.000Z'),
+		});
+		const second = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Second queued report',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:33:00.000Z'),
+		});
+
+		const claimed = await claimNextFileProductionJob({
+			workerId: 'worker-1',
+			now: new Date('2026-05-03T19:34:00.000Z'),
+		});
+
+		expect(claimed).toMatchObject({
+			job: {
+				id: first.id,
+				status: 'running',
+			},
+			attempt: {
+				jobId: first.id,
+				attemptNumber: 1,
+				status: 'running',
+				workerId: 'worker-1',
+				errorCode: null,
+				errorMessage: null,
+				retryable: false,
+			},
+		});
+		expect(claimed?.attempt.claimedAt).toBe(new Date('2026-05-03T19:34:00.000Z').getTime());
+		expect(claimed?.attempt.heartbeatAt).toBe(
+			new Date('2026-05-03T19:34:00.000Z').getTime()
+		);
+
+		const jobs = await listConversationFileProductionJobs('user-1', 'conv-1');
+		expect(jobs.find((job) => job.id === first.id)?.status).toBe('running');
+		expect(jobs.find((job) => job.id === second.id)?.status).toBe('queued');
+	});
+
+	it('only lets the claiming worker heartbeat or fail the current attempt', async () => {
+		const {
+			claimNextFileProductionJob,
+			createFileProductionJob,
+			failFileProductionJobAttempt,
+			heartbeatFileProductionJobAttempt,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const job = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Owned attempt',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:35:00.000Z'),
+		});
+		const claimed = await claimNextFileProductionJob({
+			workerId: 'worker-owner',
+			now: new Date('2026-05-03T19:36:00.000Z'),
+		});
+
+		expect(claimed?.job.id).toBe(job.id);
+		await expect(
+			heartbeatFileProductionJobAttempt({
+				jobId: job.id,
+				attemptId: claimed!.attempt.id,
+				workerId: 'worker-late',
+				now: new Date('2026-05-03T19:37:00.000Z'),
+			})
+		).resolves.toBe(false);
+		await expect(
+			failFileProductionJobAttempt({
+				jobId: job.id,
+				attemptId: claimed!.attempt.id,
+				workerId: 'worker-late',
+				errorCode: 'renderer_timeout',
+				errorMessage: 'Renderer timed out.',
+				retryable: true,
+				now: new Date('2026-05-03T19:38:00.000Z'),
+			})
+		).resolves.toBe(false);
+
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((row) => row.id === job.id)?.status).toBe('running');
+
+		await expect(
+			heartbeatFileProductionJobAttempt({
+				jobId: job.id,
+				attemptId: claimed!.attempt.id,
+				workerId: 'worker-owner',
+				now: new Date('2026-05-03T19:39:00.000Z'),
+			})
+		).resolves.toBe(true);
+		await expect(
+			failFileProductionJobAttempt({
+				jobId: job.id,
+				attemptId: claimed!.attempt.id,
+				workerId: 'worker-owner',
+				errorCode: 'renderer_timeout',
+				errorMessage: 'Renderer timed out.',
+				retryable: true,
+				now: new Date('2026-05-03T19:40:00.000Z'),
+			})
+		).resolves.toBe(true);
+
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((row) => row.id === job.id)).toMatchObject({
+			status: 'failed',
+			error: {
+				code: 'renderer_timeout',
+				message: 'Renderer timed out.',
+				retryable: true,
+			},
+		});
+	});
+
+	it('recovers stale running attempts as retryable infrastructure failures', async () => {
+		const {
+			claimNextFileProductionJob,
+			createFileProductionJob,
+			listConversationFileProductionJobs,
+			recoverStaleFileProductionAttempts,
+		} = await import('./index');
+		const job = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Stale running report',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:41:00.000Z'),
+		});
+		await claimNextFileProductionJob({
+			workerId: 'worker-stale',
+			now: new Date('2026-05-03T19:42:00.000Z'),
+		});
+
+		const recovered = await recoverStaleFileProductionAttempts({
+			staleBefore: new Date('2026-05-03T19:50:00.000Z'),
+			now: new Date('2026-05-03T19:51:00.000Z'),
+		});
+
+		expect(recovered).toEqual({ recovered: 1 });
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((row) => row.id === job.id)).toMatchObject({
+			status: 'failed',
+			error: {
+				code: 'worker_heartbeat_timeout',
+				message: 'File production worker stopped before finishing.',
+				retryable: true,
+			},
+		});
+	});
+
+	it('retries a retryable failed job under the same job identity with a new attempt number', async () => {
+		const {
+			claimNextFileProductionJob,
+			createFileProductionJob,
+			failFileProductionJobAttempt,
+			retryFileProductionJob,
+		} = await import('./index');
+		const job = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Retryable report',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:52:00.000Z'),
+		});
+		const firstClaim = await claimNextFileProductionJob({
+			workerId: 'worker-retry-1',
+			now: new Date('2026-05-03T19:53:00.000Z'),
+		});
+		await failFileProductionJobAttempt({
+			jobId: job.id,
+			attemptId: firstClaim!.attempt.id,
+			workerId: 'worker-retry-1',
+			errorCode: 'renderer_timeout',
+			errorMessage: 'Renderer timed out.',
+			retryable: true,
+			now: new Date('2026-05-03T19:54:00.000Z'),
+		});
+
+		const retried = await retryFileProductionJob({
+			userId: 'user-1',
+			jobId: job.id,
+			now: new Date('2026-05-03T19:55:00.000Z'),
+		});
+		const secondClaim = await claimNextFileProductionJob({
+			workerId: 'worker-retry-2',
+			now: new Date('2026-05-03T19:56:00.000Z'),
+		});
+
+		expect(retried).toMatchObject({
+			id: job.id,
+			status: 'queued',
+			error: null,
+		});
+		expect(secondClaim).toMatchObject({
+			job: {
+				id: job.id,
+				status: 'running',
+			},
+			attempt: {
+				jobId: job.id,
+				attemptNumber: 2,
+				status: 'running',
+				workerId: 'worker-retry-2',
+			},
+		});
+	});
+
+	it('cancels queued and running jobs as persisted terminal states', async () => {
+		const {
+			cancelFileProductionJob,
+			claimNextFileProductionJob,
+			createFileProductionJob,
+			failFileProductionJobAttempt,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const queuedJob = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Queued cancellation',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T19:57:00.000Z'),
+		});
+
+		await expect(
+			cancelFileProductionJob({
+				userId: 'user-1',
+				jobId: queuedJob.id,
+				now: new Date('2026-05-03T19:58:00.000Z'),
+			})
+		).resolves.toMatchObject({
+			id: queuedJob.id,
+			status: 'cancelled',
+		});
+		await expect(
+			claimNextFileProductionJob({
+				workerId: 'worker-cancel',
+				now: new Date('2026-05-03T19:59:00.000Z'),
+			})
+		).resolves.toBeNull();
+
+		const runningJob = await createFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Running cancellation',
+			origin: 'unified_produce',
+			now: new Date('2026-05-03T20:00:00.000Z'),
+		});
+		const claimed = await claimNextFileProductionJob({
+			workerId: 'worker-cancel',
+			now: new Date('2026-05-03T20:01:00.000Z'),
+		});
+
+		await expect(
+			cancelFileProductionJob({
+				userId: 'user-1',
+				jobId: runningJob.id,
+				now: new Date('2026-05-03T20:02:00.000Z'),
+			})
+		).resolves.toMatchObject({
+			id: runningJob.id,
+			status: 'cancelled',
+		});
+		await expect(
+			failFileProductionJobAttempt({
+				jobId: runningJob.id,
+				attemptId: claimed!.attempt.id,
+				workerId: 'worker-cancel',
+				errorCode: 'renderer_timeout',
+				errorMessage: 'Renderer timed out.',
+				retryable: true,
+				now: new Date('2026-05-03T20:03:00.000Z'),
+			})
+		).resolves.toBe(false);
+
+		const jobs = await listConversationFileProductionJobs('user-1', 'conv-1');
+		expect(jobs.find((row) => row.id === queuedJob.id)?.status).toBe('cancelled');
+		expect(jobs.find((row) => row.id === runningJob.id)?.status).toBe('cancelled');
+	});
 });

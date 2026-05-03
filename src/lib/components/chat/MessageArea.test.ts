@@ -380,4 +380,61 @@ describe('MessageArea', () => {
 		expect(getByText('quarterly-report.html')).toBeInTheDocument();
 		expect(getByText('2 files')).toBeInTheDocument();
 	});
+
+	it('emits retry and cancel actions from file-production cards', async () => {
+		const onRetryFileProductionJob = vi.fn();
+		const onCancelFileProductionJob = vi.fn();
+		const messageTimestamp = Date.now();
+		const failedJob: FileProductionJob = {
+			id: 'job-failed',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-job-actions',
+			title: 'Failed report',
+			status: 'failed',
+			stage: null,
+			createdAt: messageTimestamp,
+			updatedAt: messageTimestamp,
+			warnings: [],
+			error: {
+				code: 'renderer_timeout',
+				message: 'Renderer timed out.',
+				retryable: true,
+			},
+			files: [],
+		};
+		const runningJob: FileProductionJob = {
+			...failedJob,
+			id: 'job-running',
+			title: 'Running report',
+			status: 'running',
+			error: null,
+		};
+
+		const { getByRole } = render(MessageArea, {
+			messages: [
+				{
+					id: 'assistant-job-actions',
+					renderKey: 'assistant-job-actions',
+					role: 'assistant',
+					content: 'Working on files.',
+					timestamp: messageTimestamp,
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			generatedFiles: [],
+			fileProductionJobs: [failedJob, runningJob],
+			onRetryFileProductionJob,
+			onCancelFileProductionJob,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Retry file production' }));
+		await fireEvent.click(getByRole('button', { name: 'Cancel file production' }));
+
+		expect(onRetryFileProductionJob).toHaveBeenCalledWith('job-failed');
+		expect(onCancelFileProductionJob).toHaveBeenCalledWith('job-running');
+	});
 });

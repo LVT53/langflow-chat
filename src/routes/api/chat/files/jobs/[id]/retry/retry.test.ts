@@ -1,0 +1,63 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$lib/server/auth/hooks', () => ({
+	requireAuth: vi.fn(),
+}));
+
+vi.mock('$lib/server/services/file-production', () => ({
+	retryFileProductionJob: vi.fn(),
+}));
+
+import { POST } from './+server';
+import { requireAuth } from '$lib/server/auth/hooks';
+import { retryFileProductionJob } from '$lib/server/services/file-production';
+
+const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockRetryFileProductionJob = retryFileProductionJob as ReturnType<typeof vi.fn>;
+
+function makeEvent(user = { id: 'user-1' }, id = 'job-1') {
+	return {
+		request: new Request(`http://localhost/api/chat/files/jobs/${id}/retry`, {
+			method: 'POST',
+		}),
+		locals: { user },
+		params: { id },
+		url: new URL(`http://localhost/api/chat/files/jobs/${id}/retry`),
+		route: { id: '/api/chat/files/jobs/[id]/retry' },
+	} as any;
+}
+
+describe('POST /api/chat/files/jobs/[id]/retry', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockRequireAuth.mockReturnValue(undefined);
+		mockRetryFileProductionJob.mockResolvedValue({
+			id: 'job-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Report',
+			status: 'queued',
+			stage: null,
+			createdAt: 1,
+			updatedAt: 2,
+			files: [],
+			warnings: [],
+			error: null,
+		});
+	});
+
+	it('retries the requested job for the signed-in user', async () => {
+		const response = await POST(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockRetryFileProductionJob).toHaveBeenCalledWith({
+			userId: 'user-1',
+			jobId: 'job-1',
+		});
+		expect(data.job).toMatchObject({
+			id: 'job-1',
+			status: 'queued',
+		});
+	});
+});

@@ -6,15 +6,57 @@
 	let {
 		job,
 		onOpenDocument = undefined,
+		onRetry = undefined,
+		onCancel = undefined,
 	}: {
 		job: FileProductionJob;
 		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onRetry?: ((jobId: string) => void) | undefined;
+		onCancel?: ((jobId: string) => void) | undefined;
 	} = $props();
 
 	function fileCountLabel(count: number): string {
+		if (count === 0) {
+			return $t('fileProduction.noFiles');
+		}
 		return count === 1
 			? $t('fileProduction.oneFile')
 			: $t('fileProduction.fileCount', { count });
+	}
+
+	function statusLabel(status: FileProductionJob['status']): string {
+		switch (status) {
+			case 'queued':
+				return $t('fileProduction.queued');
+			case 'running':
+				return $t('fileProduction.running');
+			case 'failed':
+				return $t('fileProduction.failed');
+			case 'cancelled':
+				return $t('fileProduction.cancelled');
+			case 'succeeded':
+			default:
+				return $t('fileProduction.ready');
+		}
+	}
+
+	function statusDescription(job: FileProductionJob): string | null {
+		if (job.error?.message) {
+			return job.error.message;
+		}
+		switch (job.status) {
+			case 'queued':
+				return $t('fileProduction.queuedDescription');
+			case 'running':
+				return $t('fileProduction.runningDescription');
+			case 'failed':
+				return $t('fileProduction.failedDescription');
+			case 'cancelled':
+				return $t('fileProduction.cancelledDescription');
+			case 'succeeded':
+			default:
+				return null;
+		}
 	}
 
 	function openFile(file: FileProductionJobFile) {
@@ -44,52 +86,82 @@
 <div class="file-production-card" data-testid="file-production-card">
 	<div class="job-header">
 		<div class="job-title-group">
-			<div class="job-eyebrow">{$t('fileProduction.ready')}</div>
+			<div class="job-eyebrow">{statusLabel(job.status)}</div>
 			<div class="job-title" title={job.title}>{job.title}</div>
 		</div>
 		<div class="job-count">{fileCountLabel(job.files.length)}</div>
 	</div>
 
-	<div class="produced-files" data-testid="file-production-files">
-		{#each job.files as file (file.id)}
-			<div class="produced-file-row">
-				<button
-					type="button"
-					class="file-open"
-					disabled={!file.previewUrl}
-					onclick={() => openFile(file)}
-					aria-label={$t('generatedFile.previewLabel', { filename: file.filename })}
-				>
-					<span class="file-name" title={file.filename}>{file.filename}</span>
-					<span class="file-size">{formatByteSize(file.sizeBytes)}</span>
-				</button>
-				<a
-					class="file-download"
-					href={file.downloadUrl}
-					download={file.filename}
-					aria-label={$t('generatedFile.downloadLabel', { filename: file.filename })}
-					title={$t('generatedFile.downloadLabel', { filename: file.filename })}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="14"
-						height="14"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
+	{#if statusDescription(job)}
+		<div class="job-status-detail">{statusDescription(job)}</div>
+	{/if}
+
+	{#if job.files.length > 0}
+		<div class="produced-files" data-testid="file-production-files">
+			{#each job.files as file (file.id)}
+				<div class="produced-file-row">
+					<button
+						type="button"
+						class="file-open"
+						disabled={!file.previewUrl}
+						onclick={() => openFile(file)}
+						aria-label={$t('generatedFile.previewLabel', { filename: file.filename })}
 					>
-						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-						<polyline points="7 10 12 15 17 10" />
-						<line x1="12" x2="12" y1="15" y2="3" />
-					</svg>
-				</a>
-			</div>
-		{/each}
-	</div>
+						<span class="file-name" title={file.filename}>{file.filename}</span>
+						<span class="file-size">{formatByteSize(file.sizeBytes)}</span>
+					</button>
+					<a
+						class="file-download"
+						href={file.downloadUrl}
+						download={file.filename}
+						aria-label={$t('generatedFile.downloadLabel', { filename: file.filename })}
+						title={$t('generatedFile.downloadLabel', { filename: file.filename })}
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="14"
+							height="14"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+							<polyline points="7 10 12 15 17 10" />
+							<line x1="12" x2="12" y1="15" y2="3" />
+						</svg>
+					</a>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
+	{#if (job.status === 'queued' || job.status === 'running') && onCancel}
+		<div class="job-actions">
+			<button
+				type="button"
+				class="job-action"
+				onclick={() => onCancel?.(job.id)}
+				aria-label={$t('fileProduction.cancelLabel')}
+			>
+				{$t('fileProduction.cancel')}
+			</button>
+		</div>
+	{:else if job.status === 'failed' && job.error?.retryable && onRetry}
+		<div class="job-actions">
+			<button
+				type="button"
+				class="job-action"
+				onclick={() => onRetry?.(job.id)}
+				aria-label={$t('fileProduction.retryLabel')}
+			>
+				{$t('fileProduction.retry')}
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -141,6 +213,13 @@
 		color: var(--text-muted);
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 0.74rem;
+	}
+
+	.job-status-detail {
+		color: var(--text-secondary);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.78rem;
+		line-height: 1.35;
 	}
 
 	.produced-files {
@@ -211,5 +290,26 @@
 
 	.file-download:hover {
 		background: color-mix(in srgb, var(--accent) 15%, var(--surface-page) 85%);
+	}
+
+	.job-actions {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.job-action {
+		border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent 22%);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--surface-page) 86%, var(--accent) 14%);
+		color: var(--text-primary);
+		cursor: pointer;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.76rem;
+		font-weight: 700;
+		padding: 0.36rem 0.55rem;
+	}
+
+	.job-action:hover {
+		background: color-mix(in srgb, var(--surface-page) 78%, var(--accent) 22%);
 	}
 </style>

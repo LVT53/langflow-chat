@@ -21,6 +21,8 @@
 		onRegenerate,
 		onEdit,
 		onSteer,
+		onRetryFileProductionJob,
+		onCancelFileProductionJob,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
@@ -32,6 +34,8 @@
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
+		onRetryFileProductionJob?: (jobId: string) => void | Promise<void>;
+		onCancelFileProductionJob?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -47,6 +51,8 @@
 		{onRegenerate}
 		{onEdit}
 		{onSteer}
+		{onRetryFileProductionJob}
+		{onCancelFileProductionJob}
 	/>
 </div>
 

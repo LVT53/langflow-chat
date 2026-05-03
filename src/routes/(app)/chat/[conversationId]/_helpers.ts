@@ -9,6 +9,7 @@ import type {
 	ToolEvidenceCandidate,
 	ChatGeneratedFileListItem,
 	DocumentWorkspaceItem,
+	FileProductionJob,
 	ModelId,
 } from '$lib/types';
 
@@ -126,6 +127,22 @@ export function mergeAttachedArtifacts(
 		mergedArtifacts.set(artifact.id, artifact);
 	}
 	return Array.from(mergedArtifacts.values());
+}
+
+export function hasActiveFileProductionJobs(jobs: FileProductionJob[]): boolean {
+	return jobs.some((job) => job.status === 'queued' || job.status === 'running');
+}
+
+export function mergeFileProductionJob(
+	currentJobs: FileProductionJob[],
+	updatedJob: FileProductionJob
+): FileProductionJob[] {
+	const existingIndex = currentJobs.findIndex((job) => job.id === updatedJob.id);
+	if (existingIndex === -1) {
+		return [updatedJob, ...currentJobs];
+	}
+
+	return currentJobs.map((job, index) => (index === existingIndex ? updatedJob : job));
 }
 
 export function createAssistantPlaceholder(id: string, timestamp = Date.now()): ChatMessage {

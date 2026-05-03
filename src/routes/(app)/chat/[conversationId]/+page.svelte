@@ -20,6 +20,10 @@ import {
 	fetchMessageEvidence,
 	generateConversationTitle,
 } from "$lib/client/api/conversations";
+import {
+	cancelFileProductionJob as cancelFileProductionJobRequest,
+	retryFileProductionJob as retryFileProductionJobRequest,
+} from "$lib/client/api/file-production";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
@@ -69,6 +73,8 @@ import {
 	createAssistantPlaceholder,
 	createUserMessage,
 	finalizeStreamingMessageList,
+	hasActiveFileProductionJobs,
+	mergeFileProductionJob,
 	mergeAttachedArtifacts,
 	removeMessageById,
 	toFriendlySendError,
@@ -860,6 +866,39 @@ async function hydrateConversationDetail(conversationId: string) {
 	}
 }
 
+async function handleRetryFileProductionJob(jobId: string) {
+	try {
+		const job = await retryFileProductionJobRequest(jobId);
+		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to retry file production";
+	}
+}
+
+async function handleCancelFileProductionJob(jobId: string) {
+	try {
+		const job = await cancelFileProductionJobRequest(jobId);
+		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to cancel file production";
+	}
+}
+
+$effect(() => {
+	const conversationId = data.conversation?.id;
+	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
+		return;
+	}
+
+	const interval = setInterval(() => {
+		void hydrateConversationDetail(conversationId);
+	}, 2500);
+
+	return () => {
+		clearInterval(interval);
+	};
+});
+
 let initializedGeneratedFilesData = false;
 let prevGeneratedFilesData: typeof data.generatedFiles;
 $effect(() => {
@@ -1615,6 +1654,8 @@ function handleDrop(event: DragEvent) {
 						onRegenerate={handleRegenerate}
 						onEdit={handleEdit}
 						onSteer={handleSteering}
+						onRetryFileProductionJob={handleRetryFileProductionJob}
+						onCancelFileProductionJob={handleCancelFileProductionJob}
 					/>
 				{/if}
 			</div>

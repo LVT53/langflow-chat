@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import type { I18nKey } from '$lib/i18n';
-import { toFriendlySendError } from './_helpers';
+import {
+	hasActiveFileProductionJobs,
+	mergeFileProductionJob,
+	toFriendlySendError,
+} from './_helpers';
+import type { FileProductionJob } from '$lib/types';
+
+function makeJob(id: string, status: FileProductionJob['status']): FileProductionJob {
+	return {
+		id,
+		conversationId: 'conv-1',
+		assistantMessageId: 'assistant-1',
+		title: id,
+		status,
+		stage: null,
+		createdAt: 1,
+		updatedAt: 1,
+		files: [],
+		warnings: [],
+		error: null,
+	};
+}
 
 describe('toFriendlySendError', () => {
 	const translate = (key: I18nKey) => `translated:${key}`;
@@ -16,5 +37,41 @@ describe('toFriendlySendError', () => {
 		expect(toFriendlySendError(new Error('Langflow down'), translate)).toBe(
 			'translated:chat.error.backend'
 		);
+	});
+});
+
+describe('file production chat helpers', () => {
+	it('detects only queued and running jobs as active polling candidates', () => {
+		expect(hasActiveFileProductionJobs([makeJob('queued', 'queued')])).toBe(true);
+		expect(hasActiveFileProductionJobs([makeJob('running', 'running')])).toBe(true);
+		expect(
+			hasActiveFileProductionJobs([
+				makeJob('succeeded', 'succeeded'),
+				makeJob('failed', 'failed'),
+				makeJob('cancelled', 'cancelled'),
+			])
+		).toBe(false);
+	});
+
+	it('merges an updated job into the existing chat state without duplicating cards', () => {
+		const current = [makeJob('job-1', 'running'), makeJob('job-2', 'queued')];
+		const merged = mergeFileProductionJob(current, {
+			...makeJob('job-1', 'failed'),
+			error: {
+				code: 'renderer_timeout',
+				message: 'Renderer timed out.',
+				retryable: true,
+			},
+		});
+
+		expect(merged).toHaveLength(2);
+		expect(merged[0]).toMatchObject({
+			id: 'job-1',
+			status: 'failed',
+			error: {
+				code: 'renderer_timeout',
+			},
+		});
+		expect(merged[1].id).toBe('job-2');
 	});
 });
