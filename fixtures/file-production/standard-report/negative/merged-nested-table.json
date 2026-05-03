@@ -1,0 +1,10 @@
+{
+  "fixtureId": "merged-nested-table",
+  "expectedErrorCode": "unsupported_table_structure",
+  "documentSource": {
+    "title": "Merged Table Attempt",
+    "blocks": [
+      { "type": "table", "title": "Merged cells", "columns": [{ "key": "a", "label": "A" }], "rows": [{ "a": "value", "colspan": 2 }] }
+    ]
+  }
+}

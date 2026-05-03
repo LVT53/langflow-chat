@@ -5,7 +5,67 @@ export type GeneratedDocumentBlock =
 	| { type: 'callout'; tone: 'info' | 'warning' | 'tip' | 'note'; title?: string | null; text: string }
 	| { type: 'code'; language?: string | null; text: string }
 	| { type: 'quote'; text: string; citation?: string | null }
+	| GeneratedDocumentTableBlock
+	| GeneratedDocumentChartBlock
+	| GeneratedDocumentImageBlock
 	| { type: 'pageBreak' };
+
+export type GeneratedDocumentScalar = string | number | boolean | null;
+
+export interface GeneratedDocumentTableColumn {
+	key: string;
+	label: string;
+	kind: 'text' | 'number' | 'currency' | 'percent' | 'date' | 'boolean';
+}
+
+export interface GeneratedDocumentTableBlock {
+	type: 'table';
+	title?: string | null;
+	caption?: string | null;
+	columns: GeneratedDocumentTableColumn[];
+	rows: Record<string, GeneratedDocumentScalar>[];
+}
+
+export type GeneratedDocumentChartType =
+	| 'bar'
+	| 'line'
+	| 'area'
+	| 'pie'
+	| 'doughnut'
+	| 'scatter'
+	| 'bubble'
+	| 'radar'
+	| 'polarArea';
+
+export interface GeneratedDocumentChartBlock {
+	type: 'chart';
+	chartType: GeneratedDocumentChartType;
+	title?: string | null;
+	caption?: string | null;
+	altText?: string | null;
+	xKey?: string | null;
+	yKey?: string | null;
+	labelKey?: string | null;
+	valueKey?: string | null;
+	seriesKey?: string | null;
+	radiusKey?: string | null;
+	units?: string | null;
+	data: Record<string, GeneratedDocumentScalar>[];
+}
+
+export type GeneratedDocumentImageSource =
+	| { kind: 'https'; url: string }
+	| { kind: 'artifact'; artifactId: string }
+	| { kind: 'generated_file'; fileId: string }
+	| { kind: 'data'; mimeType: 'image/png' | 'image/jpeg' | 'image/webp'; data: string };
+
+export interface GeneratedDocumentImageBlock {
+	type: 'image';
+	source: GeneratedDocumentImageSource;
+	altText: string;
+	caption?: string | null;
+	critical?: boolean;
+}
 
 export interface GeneratedDocumentSource {
 	version: 1;
@@ -29,25 +89,254 @@ function cleanText(value: unknown): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeBlock(block: unknown): GeneratedDocumentBlock | null {
-	if (!isRecord(block) || typeof block.type !== 'string') return null;
+function cleanKey(value: unknown): string | null {
+	const text = cleanText(value);
+	return text && /^[A-Za-z0-9_.-]+$/.test(text) ? text : null;
+}
+
+function isScalar(value: unknown): value is GeneratedDocumentScalar {
+	return (
+		value === null ||
+		typeof value === 'string' ||
+		typeof value === 'number' ||
+		typeof value === 'boolean'
+	);
+}
+
+function normalizeScalarRecord(value: unknown): Record<string, GeneratedDocumentScalar> | null {
+	if (!isRecord(value)) return null;
+
+	const normalized: Record<string, GeneratedDocumentScalar> = {};
+	for (const [key, cellValue] of Object.entries(value)) {
+		if (key === 'colspan' || key === 'rowspan') return null;
+		if (!isScalar(cellValue)) return null;
+		normalized[key] = typeof cellValue === 'string' ? cellValue.replace(/\s+/g, ' ').trim() : cellValue;
+	}
+	return normalized;
+}
+
+type BlockNormalizationResult =
+	| { ok: true; block: GeneratedDocumentBlock }
+	| { ok: false; code: string; message: string };
+
+function normalizeTableBlock(block: Record<string, unknown>): BlockNormalizationResult {
+	const columns = Array.isArray(block.columns)
+		? block.columns
+				.map((column) => {
+					if (!isRecord(column)) return null;
+					const key = cleanKey(column.key);
+					const label = cleanText(column.label);
+					const kind =
+						column.kind === 'number' ||
+						column.kind === 'currency' ||
+						column.kind === 'percent' ||
+						column.kind === 'date' ||
+						column.kind === 'boolean'
+							? column.kind
+							: 'text';
+					return key && label ? { key, label, kind } : null;
+				})
+				.filter((column): column is GeneratedDocumentTableColumn => Boolean(column))
+		: [];
+	const rows = Array.isArray(block.rows)
+		? block.rows.map(normalizeScalarRecord).filter((row): row is Record<string, GeneratedDocumentScalar> =>
+				Boolean(row)
+			)
+		: [];
+
+	if (
+		columns.length === 0 ||
+		rows.length === 0 ||
+		!Array.isArray(block.rows) ||
+		rows.length !== block.rows.length
+	) {
+		return {
+			ok: false,
+			code: 'unsupported_table_structure',
+			message: 'Generated document source contains an unsupported table structure.',
+		};
+	}
+
+	return {
+		ok: true,
+		block: {
+			type: 'table',
+			title: cleanText(block.title),
+			caption: cleanText(block.caption),
+			columns,
+			rows,
+		},
+	};
+}
+
+function normalizeChartBlock(block: Record<string, unknown>): BlockNormalizationResult {
+	const chartType =
+		block.chartType === 'bar' ||
+		block.chartType === 'line' ||
+		block.chartType === 'area' ||
+		block.chartType === 'pie' ||
+		block.chartType === 'doughnut' ||
+		block.chartType === 'scatter' ||
+		block.chartType === 'bubble' ||
+		block.chartType === 'radar' ||
+		block.chartType === 'polarArea'
+			? block.chartType
+			: null;
+
+	if (!chartType) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_type',
+			message: 'Generated document source contains an unsupported chart type.',
+		};
+	}
+
+	const data = Array.isArray(block.data)
+		? block.data.map(normalizeScalarRecord).filter((row): row is Record<string, GeneratedDocumentScalar> =>
+				Boolean(row)
+			)
+		: [];
+	if (data.length === 0 || !Array.isArray(block.data) || data.length !== block.data.length) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_data',
+			message: 'Generated document source contains unsupported chart data.',
+		};
+	}
+
+	const xKey = cleanKey(block.xKey);
+	const yKey = cleanKey(block.yKey);
+	const labelKey = cleanKey(block.labelKey);
+	const valueKey = cleanKey(block.valueKey);
+	if ((chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') && !(labelKey && valueKey)) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_data',
+			message: 'Pie-style charts require labelKey and valueKey fields.',
+		};
+	}
+	if (chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'polarArea' && !(xKey && yKey)) {
+		return {
+			ok: false,
+			code: 'unsupported_chart_data',
+			message: 'Generated document charts require xKey and yKey fields.',
+		};
+	}
+
+	return {
+		ok: true,
+		block: {
+			type: 'chart',
+			chartType,
+			title: cleanText(block.title),
+			caption: cleanText(block.caption),
+			altText: cleanText(block.altText),
+			xKey,
+			yKey,
+			labelKey,
+			valueKey,
+			seriesKey: cleanKey(block.seriesKey),
+			radiusKey: cleanKey(block.radiusKey),
+			units: cleanText(block.units),
+			data,
+		},
+	};
+}
+
+function normalizeImageBlock(block: Record<string, unknown>): BlockNormalizationResult {
+	if (!isRecord(block.source)) {
+		return {
+			ok: false,
+			code: 'image_limit_exceeded',
+			message: 'Generated document image source is invalid.',
+		};
+	}
+
+	let source: GeneratedDocumentImageSource | null = null;
+	if (block.source.kind === 'https') {
+		const url = cleanText(block.source.url);
+		source = url && url.startsWith('https://') ? { kind: 'https', url } : null;
+	} else if (block.source.kind === 'artifact') {
+		const artifactId = cleanText(block.source.artifactId);
+		source = artifactId ? { kind: 'artifact', artifactId } : null;
+	} else if (block.source.kind === 'generated_file') {
+		const fileId = cleanText(block.source.fileId);
+		source = fileId ? { kind: 'generated_file', fileId } : null;
+	} else if (block.source.kind === 'data') {
+		const mimeType =
+			block.source.mimeType === 'image/png' ||
+			block.source.mimeType === 'image/jpeg' ||
+			block.source.mimeType === 'image/webp'
+				? block.source.mimeType
+				: null;
+		const data = typeof block.source.data === 'string' && block.source.data.length > 0 ? block.source.data : null;
+		source = mimeType && data ? { kind: 'data', mimeType, data } : null;
+	}
+
+	const altText = cleanText(block.altText);
+	if (!source || !altText) {
+		return {
+			ok: false,
+			code: 'image_limit_exceeded',
+			message: 'Generated document image source is invalid.',
+		};
+	}
+
+	return {
+		ok: true,
+		block: {
+			type: 'image',
+			source,
+			altText,
+			caption: cleanText(block.caption),
+			critical: block.critical === true,
+		},
+	};
+}
+
+function normalizeBlock(block: unknown): BlockNormalizationResult {
+	if (!isRecord(block) || typeof block.type !== 'string') {
+		return {
+			ok: false,
+			code: 'unsupported_document_block',
+			message: 'Generated document source contains an unsupported block.',
+		};
+	}
 
 	switch (block.type) {
 		case 'heading': {
 			const text = cleanText(block.text);
 			const level = block.level === 1 || block.level === 2 || block.level === 3 ? block.level : null;
-			return text && level ? { type: 'heading', level, text } : null;
+			return text && level
+				? { ok: true, block: { type: 'heading', level, text } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
 		case 'paragraph': {
 			const text = cleanText(block.text);
-			return text ? { type: 'paragraph', text } : null;
+			return text
+				? { ok: true, block: { type: 'paragraph', text } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
 		case 'list': {
 			const style = block.style === 'numbered' ? 'numbered' : 'bullet';
 			const items = Array.isArray(block.items)
 				? block.items.map(cleanText).filter((item): item is string => Boolean(item))
 				: [];
-			return items.length > 0 ? { type: 'list', style, items } : null;
+			return items.length > 0
+				? { ok: true, block: { type: 'list', style, items } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
 		case 'callout': {
 			const text = cleanText(block.text);
@@ -59,22 +348,50 @@ function normalizeBlock(block: unknown): GeneratedDocumentBlock | null {
 				block.tone === 'note'
 					? block.tone
 					: 'note';
-			return text ? { type: 'callout', tone, title, text } : null;
+			return text
+				? { ok: true, block: { type: 'callout', tone, title, text } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
 		case 'code': {
 			const text = typeof block.text === 'string' && block.text.trim() ? block.text.trimEnd() : null;
 			const language = cleanText(block.language);
-			return text ? { type: 'code', language, text } : null;
+			return text
+				? { ok: true, block: { type: 'code', language, text } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
 		case 'quote': {
 			const text = cleanText(block.text);
 			const citation = cleanText(block.citation);
-			return text ? { type: 'quote', text, citation } : null;
+			return text
+				? { ok: true, block: { type: 'quote', text, citation } }
+				: {
+						ok: false,
+						code: 'unsupported_document_block',
+						message: 'Generated document source contains an unsupported block.',
+					};
 		}
+		case 'table':
+			return normalizeTableBlock(block);
+		case 'chart':
+			return normalizeChartBlock(block);
+		case 'image':
+			return normalizeImageBlock(block);
 		case 'pageBreak':
-			return { type: 'pageBreak' };
+			return { ok: true, block: { type: 'pageBreak' } };
 		default:
-			return null;
+			return {
+				ok: false,
+				code: 'unsupported_document_block',
+				message: 'Generated document source contains an unsupported block.',
+			};
 	}
 }
 
@@ -109,14 +426,14 @@ export function validateGeneratedDocumentSource(
 	const blocks: GeneratedDocumentBlock[] = [];
 	for (const block of value.blocks) {
 		const normalized = normalizeBlock(block);
-		if (!normalized) {
+		if (!normalized.ok) {
 			return {
 				ok: false,
-				code: 'unsupported_document_block',
-				message: 'Generated document source contains an unsupported block.',
+				code: normalized.code,
+				message: normalized.message,
 			};
 		}
-		blocks.push(normalized);
+		blocks.push(normalized.block);
 	}
 
 	return {
@@ -163,6 +480,26 @@ export function buildGeneratedDocumentProjection(source: GeneratedDocumentSource
 				break;
 			case 'quote':
 				lines.push(block.citation ? `> ${block.text} -- ${block.citation}` : `> ${block.text}`);
+				break;
+			case 'table':
+				if (block.title) lines.push(`Table: ${block.title}`);
+				lines.push(block.columns.map((column) => column.label).join(' | '));
+				block.rows.forEach((row) => {
+					lines.push(block.columns.map((column) => String(row[column.key] ?? '')).join(' | '));
+				});
+				if (block.caption) lines.push(`Caption: ${block.caption}`);
+				break;
+			case 'chart': {
+				const label = block.title ? `${block.chartType}: ${block.title}` : block.chartType;
+				lines.push(`Chart: ${label}`);
+				if (block.altText) lines.push(`Alt text: ${block.altText}`);
+				if (block.caption) lines.push(`Caption: ${block.caption}`);
+				lines.push(`Data points: ${block.data.length}`);
+				break;
+			}
+			case 'image':
+				lines.push(`Image: ${block.altText}`);
+				if (block.caption) lines.push(`Caption: ${block.caption}`);
 				break;
 			case 'pageBreak':
 				lines.push('[Page break]');

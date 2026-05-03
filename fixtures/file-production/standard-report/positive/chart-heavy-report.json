@@ -1,0 +1,25 @@
+{
+  "fixtureId": "chart-heavy-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "title": "Chart Coverage Report",
+    "blocks": [
+      {
+        "type": "chart",
+        "chartType": "line",
+        "title": "Weekly active users",
+        "caption": "Line chart with units and alt text.",
+        "xKey": "week",
+        "yKey": "users",
+        "units": "users",
+        "altText": "Weekly active users rose from 1200 to 1630.",
+        "data": [
+          { "week": "2026-W01", "users": 1200 },
+          { "week": "2026-W02", "users": 1480 },
+          { "week": "2026-W03", "users": 1630 }
+        ]
+      }
+    ]
+  }
+}

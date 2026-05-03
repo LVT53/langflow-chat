@@ -1,0 +1,13 @@
+{
+  "fixtureId": "technical-note",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "title": "Technical Migration Note",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Migration Steps" },
+      { "type": "code", "language": "ts", "text": "export function migrate() {\n  return 'ok';\n}" },
+      { "type": "quote", "text": "Prefer source-first documents over extracted binary text.", "citation": "Architecture note" }
+    ]
+  }
+}

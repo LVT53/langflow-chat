@@ -1,0 +1,10 @@
+{
+  "fixtureId": "oversized-data",
+  "expectedErrorCode": "table_limit_exceeded",
+  "documentSource": {
+    "title": "Oversized Table",
+    "blocks": [
+      { "type": "table", "title": "Too many rows", "columns": [{ "key": "value", "label": "Value" }], "rows": [{ "value": "fixture marker for generated oversized data" }] }
+    ]
+  }
+}

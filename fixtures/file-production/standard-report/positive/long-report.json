@@ -1,0 +1,18 @@
+{
+  "fixtureId": "long-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "title": "Annual Program Review",
+    "subtitle": "Long-form fixture with explicit page breaks",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Program Context" },
+      { "type": "paragraph", "text": "This fixture contains repeated sections to exercise page flow, running headers, and orphan prevention." },
+      { "type": "pageBreak" },
+      { "type": "heading", "level": 2, "text": "Delivery" },
+      { "type": "paragraph", "text": "Delivery milestones are grouped by quarter with concise narrative text." },
+      { "type": "heading", "level": 2, "text": "Risks" },
+      { "type": "paragraph", "text": "The renderer should avoid leaving this heading alone at the bottom of a page." }
+    ]
+  }
+}

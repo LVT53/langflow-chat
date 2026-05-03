@@ -1,0 +1,8 @@
+{
+  "fixtureId": "injection-attempts",
+  "expectedErrorCode": "unsupported_document_block",
+  "documentSource": {
+    "title": "Injection Attempt",
+    "blocks": [{ "type": "script", "text": "alert(1)" }]
+  }
+}

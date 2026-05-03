@@ -1,0 +1,8 @@
+{
+  "fixtureId": "raw-html-block",
+  "expectedErrorCode": "unsupported_document_block",
+  "documentSource": {
+    "title": "Raw HTML Attempt",
+    "blocks": [{ "type": "rawHtml", "html": "<h1>Unsafe</h1>" }]
+  }
+}

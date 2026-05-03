@@ -1,0 +1,26 @@
+{
+  "fixtureId": "table-heavy-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "title": "Regional Revenue Detail",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Revenue Table" },
+      {
+        "type": "table",
+        "title": "Quarterly revenue by region",
+        "caption": "Numeric columns should align right and wrap safely.",
+        "columns": [
+          { "key": "region", "label": "Region", "kind": "text" },
+          { "key": "q1", "label": "Q1", "kind": "number" },
+          { "key": "q2", "label": "Q2", "kind": "number" },
+          { "key": "change", "label": "Change", "kind": "percent" }
+        ],
+        "rows": [
+          { "region": "Central Europe", "q1": 125000, "q2": 139000, "change": 0.112 },
+          { "region": "Nordics and Baltics", "q1": 99000, "q2": 106500, "change": 0.076 }
+        ]
+      }
+    ]
+  }
+}
