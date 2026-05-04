@@ -61,8 +61,14 @@ let imageDragStartY = $state(0);
 let imageDragOriginX = $state(0);
 let imageDragOriginY = $state(0);
 let imageDragging = $state(false);
+let pdfDragging = $state(false);
+let pdfDragStartX = $state(0);
+let pdfDragStartY = $state(0);
+let pdfDragOriginLeft = $state(0);
+let pdfDragOriginTop = $state(0);
 let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
 let scrollContainerRef = $state<HTMLDivElement | null>(null);
+let officePreviewRef = $state<HTMLDivElement | null>(null);
 let isRendering = $state(false);
 let pdfWorkerUrlPromise: Promise<string> | null = null;
 let pageObserver: IntersectionObserver | null = null;
@@ -102,6 +108,29 @@ $effect(() => {
 			objectUrl = null;
 		}
 	};
+});
+
+$effect(() => {
+	if (
+		fileType !== "pptx" ||
+		!htmlContent ||
+		!officePreviewRef ||
+		currentPage < 1 ||
+		totalPages <= 0
+	) {
+		return;
+	}
+
+	const targetPage = Math.max(1, Math.min(currentPage, totalPages));
+	void tick().then(() => {
+		if (fileType !== "pptx" || !officePreviewRef || currentPage !== targetPage) {
+			return;
+		}
+		const slide = officePreviewRef.querySelectorAll<HTMLElement>(".pptx-slide")[
+			targetPage - 1
+		];
+		slide?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+	});
 });
 
 // PDF.js rendering effect
@@ -383,8 +412,35 @@ async function fetchFile() {
 }
 
 function buildStaticHtmlPreview(content: string): string {
-	const safeHtml = sanitizeHtml(content);
-	return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"></head><body>${safeHtml}</body></html>`;
+	const { html, css } = extractLocalStyleBlocks(content);
+	const safeHtml = sanitizeHtml(html, {
+		allowStyleAttributes: true,
+	});
+	const safeCss = sanitizeLocalCss(css);
+	const styleBlock = safeCss ? `<style>${safeCss}</style>` : "";
+	return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8">${styleBlock}</head><body>${safeHtml}</body></html>`;
+}
+
+function extractLocalStyleBlocks(content: string): { html: string; css: string } {
+	let css = "";
+	const html = content.replace(
+		/<style\b[^>]*>([\s\S]*?)<\/style>/gi,
+		(_match, styleContent: string) => {
+			css += `\n${styleContent}`;
+			return "";
+		},
+	);
+	return { html, css };
+}
+
+function sanitizeLocalCss(css: string): string {
+	return css
+		.replace(/@import[^;]+;?/gi, "")
+		.replace(/url\s*\([^)]*\)/gi, "none")
+		.replace(/expression\s*\([^)]*\)/gi, "")
+		.replace(/javascript:/gi, "")
+		.replace(/[<>]/g, "")
+		.trim();
 }
 
 function isMarkdownPreview(): boolean {
@@ -713,12 +769,14 @@ function fitImage() {
 }
 
 function handleImageWheel(event: WheelEvent) {
+	if (imageZoom <= 1 && !event.ctrlKey && !event.metaKey) return;
 	event.preventDefault();
 	setImageZoomLevel(imageZoom + (event.deltaY < 0 ? 0.25 : -0.25));
 }
 
 function handleImagePointerDown(event: PointerEvent) {
 	if (imageZoom <= 1) return;
+	event.preventDefault();
 	imageDragging = true;
 	imageDragStartX = event.clientX;
 	imageDragStartY = event.clientY;
@@ -729,6 +787,7 @@ function handleImagePointerDown(event: PointerEvent) {
 
 function handleImagePointerMove(event: PointerEvent) {
 	if (!imageDragging) return;
+	event.preventDefault();
 	imagePanX = imageDragOriginX + event.clientX - imageDragStartX;
 	imagePanY = imageDragOriginY + event.clientY - imageDragStartY;
 }
@@ -745,6 +804,15 @@ function clampPdfScrollTop(nextScrollTop: number): number {
 		scrollContainerRef.scrollHeight - scrollContainerRef.clientHeight,
 	);
 	return Math.min(maxScrollTop, Math.max(0, nextScrollTop));
+}
+
+function clampPdfScrollLeft(nextScrollLeft: number): number {
+	if (!scrollContainerRef) return nextScrollLeft;
+	const maxScrollLeft = Math.max(
+		0,
+		scrollContainerRef.scrollWidth - scrollContainerRef.clientWidth,
+	);
+	return Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
 }
 
 function scrollPdfBy(deltaY: number) {
@@ -784,6 +852,32 @@ function handlePdfScrollKeydown(event: KeyboardEvent) {
 	if (delta === undefined) return;
 	event.preventDefault();
 	scrollPdfBy(delta);
+}
+
+function handlePdfPointerDown(event: PointerEvent) {
+	if (!scrollContainerRef || zoom <= 1) return;
+	pdfDragging = true;
+	pdfDragStartX = event.clientX;
+	pdfDragStartY = event.clientY;
+	pdfDragOriginLeft = scrollContainerRef.scrollLeft;
+	pdfDragOriginTop = scrollContainerRef.scrollTop;
+	(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+}
+
+function handlePdfPointerMove(event: PointerEvent) {
+	if (!scrollContainerRef || !pdfDragging) return;
+	event.preventDefault();
+	scrollContainerRef.scrollLeft = clampPdfScrollLeft(
+		pdfDragOriginLeft + pdfDragStartX - event.clientX,
+	);
+	scrollContainerRef.scrollTop = clampPdfScrollTop(
+		pdfDragOriginTop + pdfDragStartY - event.clientY,
+	);
+}
+
+function handlePdfPointerUp(event: PointerEvent) {
+	pdfDragging = false;
+	(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
 }
 
 async function renderDocx(blob: Blob) {
@@ -1117,6 +1211,8 @@ function downloadFile() {
 							<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 							<div
 								class="pdf-canvas-container"
+								class:pdf-canvas-container-pannable={zoom > 1}
+								class:pdf-canvas-container-panning={pdfDragging}
 								bind:this={scrollContainerRef}
 								role="region"
 								tabindex="0"
@@ -1124,6 +1220,10 @@ function downloadFile() {
 								data-testid="pdf-scroll-region"
 								onwheel={handlePdfWheel}
 								onkeydown={handlePdfScrollKeydown}
+								onpointerdown={handlePdfPointerDown}
+								onpointermove={handlePdfPointerMove}
+								onpointerup={handlePdfPointerUp}
+								onpointercancel={handlePdfPointerUp}
 							>
 								{#if isRendering}
 									<div class="pdf-rendering-overlay">
@@ -1157,6 +1257,8 @@ function downloadFile() {
 						/>
 						<div
 							class="image-preview-stage"
+							class:image-preview-stage-pannable={imageZoom > 1}
+							class:image-preview-stage-panning={imageDragging}
 							data-testid="image-preview-stage"
 							role="region"
 							aria-label={`${filename} image preview`}
@@ -1212,7 +1314,7 @@ function downloadFile() {
 								{totalPages}
 							/>
 						{/if}
-						<div class="p-6 docx-preview">
+						<div class="p-6 docx-preview" bind:this={officePreviewRef}>
 							{@html sanitizeHtml(htmlContent)}
 						</div>
 					{/if}
@@ -1423,12 +1525,18 @@ function downloadFile() {
 		overflow: hidden;
 		padding: 1rem;
 		background: var(--surface-page);
+		cursor: default;
+		touch-action: pan-y;
+	}
+
+	.image-preview-stage-pannable {
 		cursor: grab;
 		touch-action: none;
 	}
 
-	.image-preview-stage:active {
+	.image-preview-stage-panning {
 		cursor: grabbing;
+		user-select: none;
 	}
 
 	.image-preview-img {
@@ -1515,6 +1623,16 @@ function downloadFile() {
 		overscroll-behavior: contain;
 		-webkit-overflow-scrolling: touch;
 		touch-action: pan-y;
+	}
+
+	.pdf-canvas-container-pannable {
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.pdf-canvas-container-panning {
+		cursor: grabbing;
+		user-select: none;
 	}
 
 	.pdf-canvas-container:focus {

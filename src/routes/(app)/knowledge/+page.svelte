@@ -13,7 +13,7 @@
 	} from '$lib/client/api/knowledge';
 	import { browser } from '$app/environment';
 	import { isDark } from '$lib/stores/theme';
-	import { renderMarkdown } from '$lib/services/markdown';
+	import { renderMarkdown } from '$lib/utils/markdown-loader';
 	import { escapeHtml, sanitizeHtml } from '$lib/utils/html-sanitizer';
 	import { buildChatSourceMessageHref } from '$lib/client/document-workspace-navigation';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';

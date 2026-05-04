@@ -53,6 +53,11 @@ describe('file-preview utils', () => {
 		expect(getPreviewContentType('file.heif', null)).toBe('image/heif');
 	});
 
+	it('classifies extension-only HTML as a rendered HTML preview', () => {
+		expect(determinePreviewFileType(null, 'site-export.html')).toBe('html');
+		expect(determinePreviewFileType('', 'site-export.HTML')).toBe('html');
+	});
+
 	it('exposes syntax languages for code-like previewable formats', () => {
 		expect(getPreviewLanguage(null, 'script.py')).toBe('python');
 		expect(getPreviewLanguage(null, 'styles.css')).toBe('css');

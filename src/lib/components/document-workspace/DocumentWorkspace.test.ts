@@ -144,6 +144,14 @@ describe("DocumentWorkspace", () => {
 			}),
 		).toBeInTheDocument();
 		expect(within(rail).getByText(/research brief • v2/i)).toBeInTheDocument();
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		const main = within(desktopWorkspace).getByTestId("workspace-main");
+		expect(main).toContainElement(rail);
+		expect(main).toContainElement(
+			within(desktopWorkspace).getByTestId("workspace-document-column"),
+		);
 	});
 
 	it("uses a mobile documents sheet instead of the desktop rail in the mobile workspace", async () => {
@@ -206,6 +214,281 @@ describe("DocumentWorkspace", () => {
 			within(reopenedSheet).getByLabelText(/close second document/i),
 		);
 		expect(onCloseDocument).toHaveBeenCalledWith("doc-2");
+	});
+
+	it("does not replay the shell entrance animation when switching active documents", async () => {
+		const frames: FrameRequestCallback[] = [];
+		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+			frames.push(callback);
+			return frames.length;
+		});
+		vi.stubGlobal("cancelAnimationFrame", vi.fn());
+		const documents = [
+			{
+				id: "doc-1",
+				source: "knowledge_artifact" as const,
+				filename: "first.md",
+				title: "First document",
+				mimeType: "text/markdown",
+				artifactId: "artifact-1",
+			},
+			{
+				id: "doc-2",
+				source: "knowledge_artifact" as const,
+				filename: "second.md",
+				title: "Second document",
+				mimeType: "text/markdown",
+				artifactId: "artifact-2",
+			},
+		];
+
+		const { rerender } = render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents,
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		frames.shift()?.(0);
+		await tick();
+		expect(desktopWorkspace.style.opacity).toBe("1");
+
+		await rerender({ activeDocumentId: "doc-2" });
+		await tick();
+
+		expect(desktopWorkspace.style.opacity).toBe("1");
+	});
+
+	it("uses an expanded workspace layout with rail and preview column sharing the extra width", async () => {
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				presentation: "expanded",
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "first.pdf",
+						title: "First document",
+						mimeType: "application/pdf",
+						artifactId: "artifact-1",
+					},
+					{
+						id: "doc-2",
+						source: "knowledge_artifact",
+						filename: "second.pdf",
+						title: "Second document",
+						mimeType: "application/pdf",
+						artifactId: "artifact-2",
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		const main = within(desktopWorkspace).getByTestId("workspace-main");
+
+		expect(desktopWorkspace).toHaveClass("workspace-shell-expanded");
+		expect(main).toHaveAttribute("data-presentation", "expanded");
+		expect(main).toHaveAttribute("data-layout", "rail-and-preview");
+		expect(
+			within(main).getByTestId("workspace-document-column"),
+		).toBeInTheDocument();
+	});
+
+	it("opens chat-generated PPTX files through the shared docked workspace renderer", async () => {
+		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+			() => new Promise(() => undefined),
+		);
+
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				presentation: "docked",
+				documents: [
+					{
+						id: "chat-pptx",
+						source: "chat_generated_file",
+						filename: "slides.pptx",
+						title: "Slides",
+						mimeType:
+							"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+						artifactId: null,
+						previewUrl: "/api/chat/files/chat-pptx/preview",
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "chat-pptx",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		await waitFor(() => {
+			expect(global.fetch).toHaveBeenCalledWith(
+				"/api/chat/files/chat-pptx/preview",
+			);
+		});
+		expect(
+			screen.getAllByRole("region", { name: "slides.pptx" }).length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByRole("complementary", { name: /document workspace/i }),
+		).toHaveClass("workspace-shell-desktop");
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	});
+
+	it("opens Knowledge DOCX and XLSX files through the expanded shared workspace renderer", async () => {
+		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+			() => new Promise(() => undefined),
+		);
+
+		const documents = [
+			{
+				id: "knowledge-docx",
+				source: "knowledge_artifact" as const,
+				filename: "brief.docx",
+				title: "Brief",
+				mimeType:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				artifactId: "artifact-docx",
+			},
+			{
+				id: "knowledge-xlsx",
+				source: "knowledge_artifact" as const,
+				filename: "spreadsheet.xlsx",
+				title: "Spreadsheet",
+				mimeType:
+					"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				artifactId: "artifact-xlsx",
+			},
+		];
+
+		const { rerender } = render(DocumentWorkspace, {
+			props: {
+				open: true,
+				presentation: "expanded",
+				documents,
+				availableDocuments: [],
+				activeDocumentId: "knowledge-docx",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		await waitFor(() => {
+			expect(global.fetch).toHaveBeenCalledWith(
+				"/api/knowledge/artifact-docx/preview",
+			);
+		});
+		expect(
+			screen.getAllByRole("region", { name: "brief.docx" }).length,
+		).toBeGreaterThan(0);
+
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		await rerender({ activeDocumentId: "knowledge-xlsx" });
+
+		await waitFor(() => {
+			expect(global.fetch).toHaveBeenCalledWith(
+				"/api/knowledge/artifact-xlsx/preview",
+			);
+		});
+		expect(
+			screen.getAllByRole("region", { name: "spreadsheet.xlsx" }).length,
+		).toBeGreaterThan(0);
+		expect(desktopWorkspace).toHaveClass("workspace-shell-expanded");
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	});
+
+	it("opens image previews in docked Chat, expanded Chat, and expanded Knowledge workspace layouts", async () => {
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(new Blob(["image data"], { type: "image/png" })),
+		});
+		const chatImage = {
+			id: "chat-image",
+			source: "chat_generated_file" as const,
+			filename: "chart.png",
+			title: "Chart",
+			mimeType: "image/png",
+			artifactId: null,
+			previewUrl: "/api/chat/files/chat-image/preview",
+		};
+		const knowledgeImage = {
+			id: "knowledge-image",
+			source: "knowledge_artifact" as const,
+			filename: "scan.png",
+			title: "Scan",
+			mimeType: "image/png",
+			artifactId: "artifact-image",
+		};
+
+		const { rerender } = render(DocumentWorkspace, {
+			props: {
+				open: true,
+				presentation: "docked",
+				documents: [chatImage],
+				availableDocuments: [],
+				activeDocumentId: "chat-image",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getAllByAltText("chart.png").length).toBeGreaterThan(0);
+		});
+		expect(global.fetch).toHaveBeenCalledWith(
+			"/api/chat/files/chat-image/preview",
+		);
+		let desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		expect(desktopWorkspace).not.toHaveClass("workspace-shell-expanded");
+
+		await rerender({ presentation: "expanded" });
+		desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		expect(desktopWorkspace).toHaveClass("workspace-shell-expanded");
+		expect(screen.getAllByAltText("chart.png").length).toBeGreaterThan(0);
+
+		await rerender({
+			documents: [knowledgeImage],
+			activeDocumentId: "knowledge-image",
+			presentation: "expanded",
+		});
+		await waitFor(() => {
+			expect(screen.getAllByAltText("scan.png").length).toBeGreaterThan(0);
+		});
+		expect(global.fetch).toHaveBeenCalledWith(
+			"/api/knowledge/artifact-image/preview",
+		);
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 	});
 
 	describe("Multi-page document navigation", () => {
@@ -557,6 +840,11 @@ describe("DocumentWorkspace", () => {
 		expect(
 			desktopWorkspace.querySelector(".workspace-history-item"),
 		).not.toBeInTheDocument();
+		const versionBadges = within(desktopWorkspace).getAllByTestId(
+			"document-version-badge",
+		);
+		expect(versionBadges).toHaveLength(2);
+		expect(versionBadges[0]).toHaveClass("workspace-version-badge");
 		expect(
 			within(desktopWorkspace).getAllByText("Brief • v2").length,
 		).toBeGreaterThan(0);
@@ -620,6 +908,9 @@ describe("DocumentWorkspace", () => {
 		const desktopWorkspace = screen.getByRole("complementary", {
 			name: /document workspace/i,
 		});
+		expect(
+			within(desktopWorkspace).queryByTestId("open-documents-rail"),
+		).not.toBeInTheDocument();
 		await fireEvent.click(
 			within(desktopWorkspace).getByRole("button", { name: /v3/i }),
 		);

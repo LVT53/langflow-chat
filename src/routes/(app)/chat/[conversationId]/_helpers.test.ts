@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { I18nKey } from '$lib/i18n';
 import {
 	attachUnassignedFileProductionJobsToAssistant,
+	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
 	shouldHydrateFileProductionJobsOnToolCall,
@@ -50,6 +51,20 @@ describe('toFriendlySendError', () => {
 		expect(toFriendlySendError(new Error('Langflow down'), translate)).toBe(
 			'translated:chat.error.backend'
 		);
+	});
+});
+
+describe('workspace presentation helpers', () => {
+	it('defaults new document opens to the docked workspace from chat rows and cards', () => {
+		expect(getWorkspacePresentationAfterDocumentOpen('expanded')).toBe('docked');
+	});
+
+	it('preserves expanded presentation for document opens initiated inside the workspace', () => {
+		expect(
+			getWorkspacePresentationAfterDocumentOpen('expanded', {
+				preservePresentation: true,
+			})
+		).toBe('expanded');
 	});
 });
 

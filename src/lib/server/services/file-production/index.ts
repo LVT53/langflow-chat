@@ -1,6 +1,7 @@
 import type { FileProductionJob } from '$lib/types';
 import {
 	getChatFiles,
+	syncGeneratedFilesToMemory as syncChatGeneratedFilesToMemory,
 	storeGeneratedFile as storeChatGeneratedFile,
 	type FileInput,
 } from '$lib/server/services/chat-files';
@@ -10,6 +11,7 @@ import {
 	fileProductionJobAttempts,
 	fileProductionJobFiles,
 	fileProductionJobs,
+	messages,
 } from '$lib/server/db/schema';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { ChatFile } from '$lib/server/services/chat-files';
@@ -142,6 +144,7 @@ export interface ExecuteNextFileProductionJobInput {
 		userId: string,
 		file: FileInput
 	) => Promise<ChatFile>;
+	syncGeneratedFilesToMemory?: typeof syncChatGeneratedFilesToMemory;
 	limits?: Partial<FileProductionLimits>;
 }
 
@@ -1062,6 +1065,44 @@ async function completeFileProductionJobAttempt(input: {
 	});
 }
 
+async function getCurrentOwnedRunningJob(input: {
+	jobId: string;
+	attemptId: string;
+	workerId: string;
+}): Promise<typeof fileProductionJobs.$inferSelect | null> {
+	const [job] = await db
+		.select({ job: fileProductionJobs })
+		.from(fileProductionJobs)
+		.innerJoin(
+			fileProductionJobAttempts,
+			eq(fileProductionJobAttempts.id, fileProductionJobs.currentAttemptId)
+		)
+		.where(
+			and(
+				eq(fileProductionJobs.id, input.jobId),
+				eq(fileProductionJobs.status, 'running'),
+				eq(fileProductionJobs.currentAttemptId, input.attemptId),
+				eq(fileProductionJobAttempts.id, input.attemptId),
+				eq(fileProductionJobAttempts.jobId, input.jobId),
+				eq(fileProductionJobAttempts.workerId, input.workerId),
+				eq(fileProductionJobAttempts.status, 'running')
+			)
+		)
+		.limit(1);
+
+	return job?.job ?? null;
+}
+
+async function getAssistantMessageContent(assistantMessageId: string): Promise<string> {
+	const [message] = await db
+		.select({ content: messages.content })
+		.from(messages)
+		.where(eq(messages.id, assistantMessageId))
+		.limit(1);
+
+	return message?.content ?? '';
+}
+
 async function executeNextFileProductionJobStep(
 	input: ExecuteNextFileProductionJobInput
 ): Promise<ExecuteNextFileProductionJobStepResult> {
@@ -1234,6 +1275,15 @@ async function executeNextFileProductionJobStep(
 		return { processed: true, result: null };
 	}
 
+	const currentJobRow = await getCurrentOwnedRunningJob({
+		jobId: claimed.job.id,
+		attemptId: claimed.attempt.id,
+		workerId: input.workerId,
+	});
+	if (!currentJobRow) {
+		return { processed: true, result: null };
+	}
+
 	const producedFiles: FileProductionJob['files'] = [];
 	try {
 		for (const [index, file] of executionResult.files.entries()) {
@@ -1243,8 +1293,8 @@ async function executeNextFileProductionJobStep(
 				executionResult.files.length === 1
 					? request.value.filename
 					: file.filename;
-			const storedFile = await storeGeneratedFile(jobRow.conversationId, jobRow.userId, {
-				assistantMessageId: jobRow.assistantMessageId,
+			const storedFile = await storeGeneratedFile(currentJobRow.conversationId, currentJobRow.userId, {
+				assistantMessageId: currentJobRow.assistantMessageId,
 				filename,
 				mimeType: file.mimeType,
 				content: Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content),
@@ -1281,11 +1331,33 @@ async function executeNextFileProductionJobStep(
 		return { processed: true, result: null };
 	}
 
+	if (currentJobRow.assistantMessageId && producedFiles.length > 0) {
+		const syncGeneratedFilesToMemory =
+			input.syncGeneratedFilesToMemory ?? syncChatGeneratedFilesToMemory;
+		try {
+			await syncGeneratedFilesToMemory({
+				userId: currentJobRow.userId,
+				conversationId: currentJobRow.conversationId,
+				assistantMessageId: currentJobRow.assistantMessageId,
+				fileIds: producedFiles.map((file) => file.id),
+				assistantResponse: await getAssistantMessageContent(currentJobRow.assistantMessageId),
+			});
+		} catch (error) {
+			console.error('[FILE_PRODUCTION] Background generated-file memory sync failed', {
+				jobId: currentJobRow.id,
+				assistantMessageId: currentJobRow.assistantMessageId,
+				fileIds: producedFiles.map((file) => file.id),
+				error,
+			});
+		}
+	}
+
 	return {
 		processed: true,
 		result: {
 			job: {
 				...claimed.job,
+				assistantMessageId: currentJobRow.assistantMessageId,
 				status: 'succeeded',
 				stage: null,
 				updatedAt: Date.now(),

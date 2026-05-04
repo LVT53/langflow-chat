@@ -94,15 +94,16 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 <style>
 	.open-documents-rail {
 		display: flex;
+		flex: 0 0 clamp(11.5rem, 18vw, 15rem);
 		flex-direction: column;
 		gap: 0.35rem;
-		max-height: min(18rem, 34vh);
+		width: clamp(11.5rem, 18vw, 15rem);
+		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
 		padding: 0.65rem 0.75rem;
-		border-left: 1px solid var(--border-default);
-		border-bottom: 1px solid var(--border-default);
-		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
+		border-right: 1px solid var(--border-default);
+		background: color-mix(in srgb, var(--surface-elevated) 58%, var(--surface-page) 42%);
 		animation: rail-enter var(--duration-standard) ease-out;
 	}
 
@@ -187,13 +188,11 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 	@keyframes rail-enter {
 		from {
 			opacity: 0;
-			transform: translateX(0.75rem);
-			max-height: 0;
+			transform: translateX(0.5rem);
 		}
 		to {
 			opacity: 1;
 			transform: translateX(0);
-			max-height: min(18rem, 34vh);
 		}
 	}
 

@@ -210,6 +210,7 @@ async function renderMarkdown(
 
 	return sanitizeHtml(
 		`${frontmatter.html}${transformCalloutHtml(wrapMarkdownTables(html as string))}`,
+		{ allowStyleAttributes: true },
 	);
 }
 

@@ -113,6 +113,7 @@ export function determinePreviewFileType(
 		if (ext === "pptx") return "pptx";
 		if (ext === "odt") return "odt";
 		if (ext && IMAGE_EXTENSIONS.has(ext)) return "image";
+		if (ext === "html") return "html";
 		if (ext && TEXT_EXTENSIONS.has(ext)) return "text";
 		return "unsupported";
 	}

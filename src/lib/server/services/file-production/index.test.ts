@@ -449,10 +449,11 @@ describe('file production service', () => {
 		});
 
 		expect(claimed?.job.id).toBe(job.id);
+		if (!claimed) throw new Error('Expected worker to claim file production job');
 		await expect(
 			heartbeatFileProductionJobAttempt({
 				jobId: job.id,
-				attemptId: claimed!.attempt.id,
+				attemptId: claimed.attempt.id,
 				workerId: 'worker-late',
 				now: new Date('2026-05-03T19:37:00.000Z'),
 			})
@@ -460,7 +461,7 @@ describe('file production service', () => {
 		await expect(
 			failFileProductionJobAttempt({
 				jobId: job.id,
-				attemptId: claimed!.attempt.id,
+				attemptId: claimed.attempt.id,
 				workerId: 'worker-late',
 				errorCode: 'renderer_timeout',
 				errorMessage: 'Renderer timed out.',
@@ -474,7 +475,7 @@ describe('file production service', () => {
 		await expect(
 			heartbeatFileProductionJobAttempt({
 				jobId: job.id,
-				attemptId: claimed!.attempt.id,
+				attemptId: claimed.attempt.id,
 				workerId: 'worker-owner',
 				now: new Date('2026-05-03T19:39:00.000Z'),
 			})
@@ -482,7 +483,7 @@ describe('file production service', () => {
 		await expect(
 			failFileProductionJobAttempt({
 				jobId: job.id,
-				attemptId: claimed!.attempt.id,
+				attemptId: claimed.attempt.id,
 				workerId: 'worker-owner',
 				errorCode: 'renderer_timeout',
 				errorMessage: 'Renderer timed out.',
@@ -556,9 +557,10 @@ describe('file production service', () => {
 			workerId: 'worker-retry-1',
 			now: new Date('2026-05-03T19:53:00.000Z'),
 		});
+		if (!firstClaim) throw new Error('Expected first retry worker to claim job');
 		await failFileProductionJobAttempt({
 			jobId: job.id,
-			attemptId: firstClaim!.attempt.id,
+			attemptId: firstClaim.attempt.id,
 			workerId: 'worker-retry-1',
 			errorCode: 'renderer_timeout',
 			errorMessage: 'Renderer timed out.',
@@ -641,6 +643,7 @@ describe('file production service', () => {
 			workerId: 'worker-cancel',
 			now: new Date('2026-05-03T20:01:00.000Z'),
 		});
+		if (!claimed) throw new Error('Expected cancellation worker to claim job');
 
 		await expect(
 			cancelFileProductionJob({
@@ -655,7 +658,7 @@ describe('file production service', () => {
 		await expect(
 			failFileProductionJobAttempt({
 				jobId: runningJob.id,
-				attemptId: claimed!.attempt.id,
+				attemptId: claimed.attempt.id,
 				workerId: 'worker-cancel',
 				errorCode: 'renderer_timeout',
 				errorMessage: 'Renderer timed out.',
@@ -669,16 +672,86 @@ describe('file production service', () => {
 		expect(jobs.find((row) => row.id === runningJob.id)?.status).toBe('cancelled');
 	});
 
+	it('does not store outputs when a running job is cancelled while execution is finishing', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			cancelFileProductionJob,
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const created = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Cancelled CSV export',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:cancelled-file',
+			sourceMode: 'program',
+			documentIntent: null,
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/data.csv").write_text("a,b\\n1,2")',
+					filename: 'data.csv',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T20:03:30.000Z'),
+		});
+		const storeGeneratedFile = vi.fn();
+
+		const result = await executeNextFileProductionJob({
+			workerId: 'worker-cancel-after-exec',
+			executeCode: vi.fn(async () => {
+				await cancelFileProductionJob({
+					userId: 'user-1',
+					jobId: created.job.id,
+					now: new Date('2026-05-03T20:03:45.000Z'),
+				});
+				return {
+					files: [
+						{
+							filename: 'data.csv',
+							mimeType: 'text/csv',
+							content: Buffer.from('a,b\n1,2'),
+							sizeBytes: 7,
+						},
+					],
+					stdout: '',
+					stderr: '',
+					error: null,
+				};
+			}),
+			storeGeneratedFile,
+			now: new Date('2026-05-03T20:03:40.000Z'),
+		});
+
+		expect(result).toBeNull();
+		expect(storeGeneratedFile).not.toHaveBeenCalled();
+		expect((await listConversationFileProductionJobs('user-1', 'conv-1')).find((job) => job.id === created.job.id)).toMatchObject({
+			status: 'cancelled',
+			files: [],
+		});
+		const links = await db
+			.select()
+			.from(schema.fileProductionJobFiles)
+			.where(eq(schema.fileProductionJobFiles.jobId, created.job.id));
+		expect(links).toHaveLength(0);
+	});
+
 	it('executes a queued program job after creation and links produced files', async () => {
 		const { db } = await import('$lib/server/db');
 		const {
+			assignFileProductionJobsToAssistantMessage,
 			createOrReuseFileProductionJob,
 			executeNextFileProductionJob,
 		} = await import('./index');
 		const created = await createOrReuseFileProductionJob({
 			userId: 'user-1',
 			conversationId: 'conv-1',
-			assistantMessageId: 'assistant-1',
+			assistantMessageId: null,
 			title: 'Executable CSV export',
 			origin: 'unified_produce',
 			idempotencyKey: 'turn-1:exec-file',
@@ -708,6 +781,24 @@ describe('file production service', () => {
 			stderr: '',
 			error: null,
 		}));
+		executeCode.mockImplementationOnce(async () => {
+			await assignFileProductionJobsToAssistantMessage('user-1', 'conv-1', 'assistant-1', [
+				created.job.id,
+			]);
+			return {
+				files: [
+					{
+						filename: 'data.csv',
+						mimeType: 'text/csv',
+						content: Buffer.from('a,b\n1,2'),
+						sizeBytes: 7,
+					},
+				],
+				stdout: '',
+				stderr: '',
+				error: null,
+			};
+		});
 		const storeGeneratedFile = vi.fn(async () => {
 			const now = new Date('2026-05-03T20:05:00.000Z');
 			await db.insert(schema.chatGeneratedFiles).values({
@@ -734,11 +825,13 @@ describe('file production service', () => {
 				createdAt: now.getTime(),
 			};
 		});
+		const syncGeneratedFilesToMemory = vi.fn(async () => undefined);
 
 		const result = await executeNextFileProductionJob({
 			workerId: 'worker-exec',
 			executeCode,
 			storeGeneratedFile,
+			syncGeneratedFilesToMemory,
 			now: new Date('2026-05-03T20:05:00.000Z'),
 		});
 
@@ -763,6 +856,13 @@ describe('file production service', () => {
 			filename: 'data.csv',
 			mimeType: 'text/csv',
 			content: expect.any(Buffer),
+		});
+		expect(syncGeneratedFilesToMemory).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			fileIds: ['file-produced-1'],
+			assistantResponse: 'Here is the report.',
 		});
 
 		const links = await db

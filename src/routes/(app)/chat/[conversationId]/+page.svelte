@@ -76,6 +76,7 @@ import {
 	createAssistantPlaceholder,
 	createUserMessage,
 	finalizeStreamingMessageList,
+	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
 	mergeAttachedArtifacts,
@@ -192,12 +193,18 @@ let availableWorkspaceDocuments = $derived(
 	})),
 );
 
-function openWorkspaceDocument(document: DocumentWorkspaceItem) {
+function openWorkspaceDocument(
+	document: DocumentWorkspaceItem,
+	options: { preservePresentation?: boolean } = {},
+) {
 	const result = reduceWorkspaceDocumentOpen(workspaceDocuments, document);
 	workspaceDocuments = result.documents;
 	activeWorkspaceDocumentId = result.activeDocumentId;
 	workspaceOpen = result.isOpen;
-	workspacePresentation = "docked";
+	workspacePresentation = getWorkspacePresentationAfterDocumentOpen(
+		workspacePresentation,
+		options,
+	);
 	if (browser && document.artifactId) {
 		void recordDocumentWorkspaceOpen(document.artifactId).catch(
 			() => undefined,
@@ -1675,7 +1682,8 @@ function handleDrop(event: DragEvent) {
 			availableDocuments={availableWorkspaceDocuments}
 			activeDocumentId={activeWorkspaceDocumentId}
 			onSelectDocument={selectWorkspaceDocument}
-			onOpenDocument={openWorkspaceDocument}
+			onOpenDocument={(document) =>
+				openWorkspaceDocument(document, { preservePresentation: true })}
 			onJumpToSource={handleJumpToWorkspaceSource}
 			onCloseDocument={closeWorkspaceDocument}
 			onCloseWorkspace={closeWorkspace}

@@ -68,6 +68,7 @@ let documentPreviewRendererModulePromise: Promise<DocumentPreviewRendererModule>
 let isVisible = $state(false);
 let shouldRender = $state(false);
 let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+let shouldShowWorkspaceShell = $derived(open && documents.length > 0);
 
 // Page navigation state
 let currentPage = $state(1);
@@ -110,7 +111,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (open && activeDocument) {
+	if (shouldShowWorkspaceShell) {
 		if (closeAnimationTimer) {
 			clearTimeout(closeAnimationTimer);
 			closeAnimationTimer = null;
@@ -346,6 +347,14 @@ function getDocumentPreviewUrl(document: DocumentWorkspaceItem): string | null {
 	if (document.previewUrl) return document.previewUrl;
 	if (document.artifactId)
 		return `/api/knowledge/${document.artifactId}/preview`;
+	return null;
+}
+
+function getDocumentDownloadUrl(document: DocumentWorkspaceItem): string | null {
+	if (document.downloadUrl) return document.downloadUrl;
+	if (document.source === "knowledge_artifact" && document.artifactId) {
+		return `/api/knowledge/${document.artifactId}/download`;
+	}
 	return null;
 }
 
@@ -592,8 +601,9 @@ $effect(() => {
 						{#each familyDocuments as document (document.id)}
 							<button
 								type="button"
-								class="workspace-history-chip"
+								class="workspace-history-chip workspace-version-badge"
 								class:workspace-history-chip-current={isCurrentFamilyDocument(document)}
+								data-testid="document-version-badge"
 								onclick={() => handleFamilyDocumentOpen(document)}
 							>
 								<div class="workspace-history-topline">
@@ -732,6 +742,22 @@ $effect(() => {
 			{/if}
 		</div>
 		<div class="workspace-header-actions">
+			{#if getDocumentDownloadUrl(activeDocument)}
+				<a
+					class="btn-icon-bare workspace-download-button"
+					href={getDocumentDownloadUrl(activeDocument)}
+					target="_blank"
+					rel="noopener noreferrer"
+					aria-label={$t('filePreview.download', { filename: activeDocument.filename })}
+					title={$t('filePreview.download', { filename: activeDocument.filename })}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+						<polyline points="7 10 12 15 17 10" />
+						<line x1="12" x2="12" y1="15" y2="3" />
+					</svg>
+				</a>
+			{/if}
 				<button
 					type="button"
 					class="btn-icon-bare workspace-expand-button"
@@ -797,41 +823,50 @@ $effect(() => {
 		</div>
 	{/if}
 
-	<OpenDocumentsRail
-		{documents}
-		activeDocumentId={activeDocument.id}
-		{onSelectDocument}
-		{onCloseDocument}
-	/>
+	<div
+		class="workspace-main"
+		class:workspace-main-expanded={presentation === "expanded"}
+		data-testid="workspace-main"
+		data-presentation={presentation}
+		data-layout={documents.length > 1 ? "rail-and-preview" : "preview-only"}
+	>
+		<OpenDocumentsRail
+			{documents}
+			activeDocumentId={activeDocument.id}
+			{onSelectDocument}
+			{onCloseDocument}
+		/>
 
-	{#if familyDocuments.length > 1}
-		 <div class="workspace-history" data-testid="document-version-control" aria-label={$t('documentWorkspace.versionHistory')}>
-			<div class="workspace-history-label">{$t('documentWorkspace.versionHistory')}</div>
-			<div class="workspace-history-list">
-				{#each familyDocuments as document (document.id)}
-					<button
+		<div class="workspace-document-column" data-testid="workspace-document-column">
+			{#if familyDocuments.length > 1}
+				 <div class="workspace-history" data-testid="document-version-control" aria-label={$t('documentWorkspace.versionHistory')}>
+					<div class="workspace-history-label">{$t('documentWorkspace.versionHistory')}</div>
+					<div class="workspace-history-list">
+						{#each familyDocuments as document (document.id)}
+							<button
 						type="button"
-						class="workspace-history-chip"
+						class="workspace-history-chip workspace-version-badge"
 						class:workspace-history-chip-current={isCurrentFamilyDocument(document)}
+						data-testid="document-version-badge"
 						onclick={() => handleFamilyDocumentOpen(document)}
 					>
-						<div class="workspace-history-topline">
-							<span class="workspace-history-version">
-								{getDocumentVersionLabel(document) ?? $t('documentWorkspace.version')}
-							</span>
-							{#if isLatestFamilyDocument(document)}
-								<span class="workspace-history-badge">{$t('documentWorkspace.latest')}</span>
-							{/if}
-							{#if isCurrentFamilyDocument(document)}
-								<span class="workspace-history-badge workspace-history-badge-current">{$t('documentWorkspace.current')}</span>
-							{/if}
-						</div>
-						<div class="workspace-history-title">{getDocumentTitle(document)}</div>
-					</button>
-				{/each}
-			</div>
-		</div>
-	{/if}
+								<div class="workspace-history-topline">
+									<span class="workspace-history-version">
+										{getDocumentVersionLabel(document) ?? $t('documentWorkspace.version')}
+									</span>
+									{#if isLatestFamilyDocument(document)}
+										<span class="workspace-history-badge">{$t('documentWorkspace.latest')}</span>
+									{/if}
+									{#if isCurrentFamilyDocument(document)}
+										<span class="workspace-history-badge workspace-history-badge-current">{$t('documentWorkspace.current')}</span>
+									{/if}
+								</div>
+								<div class="workspace-history-title">{getDocumentTitle(document)}</div>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 	<div class="workspace-body" data-testid="page-scroll-container">
 		{#if compareMode && comparedDocument}
@@ -902,6 +937,8 @@ $effect(() => {
 				</div>
 			{/await}
 		{/if}
+	</div>
+		</div>
 	</div>
 </aside>
 {/if}
@@ -1077,6 +1114,30 @@ $effect(() => {
 		flex-direction: column;
 	}
 
+	.workspace-main {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+		min-width: 0;
+		border-left: 1px solid var(--border-default);
+	}
+
+	.workspace-main-expanded {
+		background: color-mix(in srgb, var(--surface-page) 94%, var(--surface-elevated) 6%);
+	}
+
+	.workspace-document-column {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+		min-width: 0;
+		flex-direction: column;
+	}
+
+	.workspace-main-expanded .workspace-document-column {
+		flex: 1 1 min(76rem, 100%);
+	}
+
 	.workspace-compare {
 		display: flex;
 		flex: 1 1 auto;
@@ -1233,11 +1294,11 @@ $effect(() => {
 		display: inline-flex;
 		align-items: center;
 		min-width: 0;
-		max-width: 14rem;
+		max-width: 12rem;
 		gap: 0.4rem;
-		padding: 0.38rem 0.55rem;
+		padding: 0.3rem 0.44rem;
 		border: 1px solid var(--border-default);
-		border-radius: 999px;
+		border-radius: 0.5rem;
 		background: var(--surface-elevated);
 		text-align: left;
 		color: var(--text-secondary);
@@ -1251,6 +1312,11 @@ $effect(() => {
 		border-color: var(--border-strong);
 		background: color-mix(in srgb, var(--surface-elevated) 86%, var(--surface-page) 14%);
 		color: var(--text-primary);
+	}
+
+	.workspace-version-badge {
+		flex: 0 0 auto;
+		box-shadow: none;
 	}
 
 	.workspace-history-chip-current {
@@ -1270,10 +1336,10 @@ $effect(() => {
 	.workspace-history-badge {
 		display: inline-flex;
 		align-items: center;
-		border-radius: 999px;
-		padding: 0.12rem 0.42rem;
+		border-radius: 0.35rem;
+		padding: 0.1rem 0.34rem;
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.64rem;
+		font-size: 0.62rem;
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;

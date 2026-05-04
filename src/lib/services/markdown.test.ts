@@ -61,4 +61,16 @@ describe("Markdown Rendering Service", () => {
 		expect(html).toContain("[[Wiki Link]]");
 		expect(html).toContain("![[Embed.png]]");
 	});
+
+	it("preserves Shiki inline styles for fenced code in rendered Markdown", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			"```ts\nconst answer: number = 42;\n```",
+			false,
+		);
+
+		expect(html).toContain("<pre");
+		expect(html).toContain("style=");
+		expect(html).toContain("answer");
+	});
 });

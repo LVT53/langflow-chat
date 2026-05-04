@@ -158,7 +158,16 @@ export function attachUnassignedFileProductionJobsToAssistant(
 		job.conversationId === params.conversationId && job.assistantMessageId === null
 			? { ...job, assistantMessageId: params.assistantMessageId }
 			: job
-	);
+		);
+}
+
+export type WorkspacePresentation = 'docked' | 'expanded';
+
+export function getWorkspacePresentationAfterDocumentOpen(
+	currentPresentation: WorkspacePresentation,
+	options: { preservePresentation?: boolean } = {}
+): WorkspacePresentation {
+	return options.preservePresentation ? currentPresentation : 'docked';
 }
 
 export function createAssistantPlaceholder(id: string, timestamp = Date.now()): ChatMessage {

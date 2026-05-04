@@ -460,6 +460,62 @@ describe("DocumentPreviewRenderer", () => {
 		expect(scrollRegion.scrollTop).toBeGreaterThan(120);
 	});
 
+	it("lets PDF users pan the zoomed preview by dragging inside the scroll region", async () => {
+		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-123",
+				filename: "document.pdf",
+				mimeType: "application/pdf",
+				onClose: mockOnClose,
+			},
+		});
+
+		const scrollRegion = await screen.findByTestId("pdf-scroll-region");
+		Object.defineProperty(scrollRegion, "clientHeight", {
+			value: 300,
+			configurable: true,
+		});
+		Object.defineProperty(scrollRegion, "scrollHeight", {
+			value: 1200,
+			configurable: true,
+		});
+		Object.defineProperty(scrollRegion, "clientWidth", {
+			value: 400,
+			configurable: true,
+		});
+		Object.defineProperty(scrollRegion, "scrollWidth", {
+			value: 1000,
+			configurable: true,
+		});
+		scrollRegion.scrollTop = 100;
+		scrollRegion.scrollLeft = 100;
+		scrollRegion.setPointerCapture = vi.fn();
+		scrollRegion.releasePointerCapture = vi.fn();
+
+		await fireEvent.click(await screen.findByLabelText("Zoom in"));
+		await fireEvent.pointerDown(scrollRegion, {
+			clientX: 120,
+			clientY: 120,
+			pointerId: 1,
+		});
+		await fireEvent.pointerMove(scrollRegion, {
+			clientX: 90,
+			clientY: 80,
+			pointerId: 1,
+		});
+		await fireEvent.pointerUp(scrollRegion, { pointerId: 1 });
+
+		expect(scrollRegion.scrollLeft).toBe(130);
+		expect(scrollRegion.scrollTop).toBe(140);
+	});
+
 	it("lets users change PDF pages from the shared preview toolbar", async () => {
 		vi.mocked(pdfjsLib.getDocument).mockReturnValueOnce({
 			promise: Promise.resolve({
@@ -659,6 +715,10 @@ describe("DocumentPreviewRenderer", () => {
 
 		await fireEvent.wheel(imageStage, { deltaY: -100 });
 		expect(image.getAttribute("style")).toContain("scale(1.5)");
+		expect(imageStage).toHaveClass("image-preview-stage-pannable");
+
+		await fireEvent.click(screen.getByLabelText("Zoom out"));
+		expect(image.getAttribute("style")).toContain("scale(1.25)");
 
 		await fireEvent.pointerDown(imageStage, {
 			clientX: 10,
@@ -673,9 +733,54 @@ describe("DocumentPreviewRenderer", () => {
 		await fireEvent.pointerUp(imageStage, { pointerId: 1 });
 		expect(image.getAttribute("style")).toContain("translate(25px, 15px)");
 
+		await fireEvent.click(screen.getByLabelText("Reset zoom"));
+		expect(image.getAttribute("style")).toContain(
+			"translate(0px, 0px) scale(1)",
+		);
+		expect(imageStage).not.toHaveClass("image-preview-stage-pannable");
+
+		await fireEvent.click(screen.getByLabelText("Zoom in"));
+		await fireEvent.click(screen.getByLabelText("Fit image"));
+		expect(image.getAttribute("style")).toContain(
+			"translate(0px, 0px) scale(1)",
+		);
+
 		expect(
 			screen.queryByRole("button", { name: /crop|rotate|annotate/i }),
 		).not.toBeInTheDocument();
+	});
+
+	it("lets normal workspace scrolling pass through an image before it is zoomed", async () => {
+		const mockBlob = new Blob(["image data"], { type: "image/png" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-image",
+				filename: "image.png",
+				mimeType: "image/png",
+				onClose: mockOnClose,
+			},
+		});
+
+		const imageStage = await screen.findByTestId("image-preview-stage");
+		const image = screen.getByAltText("image.png");
+		const wheelEvent = new WheelEvent("wheel", {
+			bubbles: true,
+			cancelable: true,
+			deltaY: 120,
+		});
+		const preventDefault = vi.spyOn(wheelEvent, "preventDefault");
+
+		imageStage.dispatchEvent(wheelEvent);
+
+		expect(preventDefault).not.toHaveBeenCalled();
+		expect(image.getAttribute("style")).toContain("scale(1)");
+		expect(imageStage).not.toHaveClass("image-preview-stage-pannable");
 	});
 
 	it("detects DOCX file type correctly", async () => {
@@ -783,6 +888,39 @@ describe("DocumentPreviewRenderer", () => {
 		});
 		expect(screen.getByLabelText("Next slide")).toBeInTheDocument();
 		expect(screen.getAllByText("Slide 1 of 2").length).toBeGreaterThan(0);
+	});
+
+	it("moves the visible PPTX slide when users use slide navigation", async () => {
+		const mockBlob = new Blob(["pptx content"], {
+			type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		});
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+		const scrollIntoView = vi.fn();
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-pptx",
+				filename: "slides.pptx",
+				mimeType:
+					"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+				onClose: mockOnClose,
+			},
+		});
+
+		const slideTwoImage = await screen.findByAltText("Slide 2");
+		const slideTwo = slideTwoImage.closest(".pptx-slide") as HTMLElement;
+		slideTwo.scrollIntoView = scrollIntoView;
+
+		await fireEvent.click(screen.getByLabelText("Next slide"));
+
+		expect(scrollIntoView).toHaveBeenCalledWith({
+			behavior: "smooth",
+			block: "start",
+		});
 	});
 
 	it("treats XML as text preview content", async () => {
@@ -902,6 +1040,36 @@ describe("DocumentPreviewRenderer", () => {
 		expect(
 			document.querySelector(".file-text-preview"),
 		).not.toBeInTheDocument();
+	});
+
+	it("preserves safe local HTML styling while blocking scripts", async () => {
+		const mockBlob = new Blob(
+			[
+				'<style>h1 { color: rgb(180, 30, 30); }</style><main><h1 style="font-weight: 700">Styled Export</h1></main><script>window.executed = true</script>',
+			],
+			{ type: "text/html" },
+		);
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-html-styled",
+				filename: "site.html",
+				mimeType: "text/html",
+				onClose: mockOnClose,
+			},
+		});
+
+		const frame = await screen.findByTitle("site.html preview");
+		const srcdoc = frame.getAttribute("srcdoc") ?? "";
+
+		expect(srcdoc).toContain("color: rgb(180, 30, 30)");
+		expect(srcdoc).toContain("font-weight: 700");
+		expect(srcdoc).not.toContain("<script");
 	});
 
 	it("renders ODT files as document preview content", async () => {

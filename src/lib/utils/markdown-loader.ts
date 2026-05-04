@@ -45,3 +45,17 @@ export async function renderMarkdown(
 	const { renderMarkdown: fn } = await getMarkdownModule();
 	return fn(content, isDark);
 }
+
+export async function renderCodeBlock(
+	content: string,
+	language: string | undefined,
+	isDark: boolean,
+): Promise<string> {
+	const { renderCodeBlock: fn } = await getMarkdownModule();
+	return fn(content, language, isDark);
+}
+
+export async function prepareCodeHighlighting(content: string): Promise<void> {
+	const { prepareCodeHighlighting: fn } = await getMarkdownModule();
+	await fn(content);
+}

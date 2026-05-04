@@ -64,4 +64,31 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 			expect(replaceStateMock).toHaveBeenCalled();
 		});
 	});
+
+	it("shows the active document download action in the expanded workspace", async () => {
+		render(KnowledgeWorkspaceCoordinator, {
+			props: {
+				documents: [
+					{
+						id: "doc-1",
+						name: "Notes.md",
+						type: "source_document",
+						mimeType: "text/markdown",
+						sizeBytes: 120,
+						createdAt: 1,
+						displayArtifactId: "artifact-1",
+					},
+				],
+			},
+		});
+
+		const download = await screen.findByRole("link", {
+			name: /download notes\.md/i,
+		});
+
+		expect(download).toHaveAttribute(
+			"href",
+			"/api/knowledge/artifact-1/download",
+		);
+	});
 });
