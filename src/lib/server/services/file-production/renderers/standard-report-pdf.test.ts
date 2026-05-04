@@ -65,6 +65,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('supports dividers and optional cover pages without accepting raw drawing commands', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Covered report',
 			subtitle: 'Safe source only',
 			cover: { enabled: true, eyebrow: 'Internal', dateLabel: 'May 2026' },
@@ -88,6 +90,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('renders long table blocks with repeated headers and safe pagination', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Long table report',
 			blocks: [
 				{
@@ -133,6 +137,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('rejects tables that are too wide for the v1 portrait template', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Wide table report',
 			blocks: [
 				{
@@ -157,6 +163,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('renders image figures with captions and records noncritical placeholders', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Image figure report',
 			blocks: [
 				{
@@ -219,6 +227,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('fails critical image blocks when image loading fails', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Critical image report',
 			blocks: [
 				{
@@ -261,6 +271,8 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 	it('renders every v1 chart type into PDF diagnostics', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'All charts report',
 			blocks: [
 				{

@@ -7,6 +7,8 @@ import {
 describe('generated document source schema', () => {
 	it('accepts semantic v1 blocks and creates a deterministic projection', () => {
 		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Quarterly report',
 			subtitle: 'Executive summary',
 			blocks: [
@@ -42,6 +44,8 @@ describe('generated document source schema', () => {
 
 	it('rejects raw HTML blocks instead of preserving arbitrary markup', () => {
 		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Unsafe report',
 			blocks: [{ type: 'rawHtml', html: '<script>alert(1)</script>' }],
 		});
@@ -54,6 +58,8 @@ describe('generated document source schema', () => {
 
 	it('requires chart title, caption, units, and alt text for accessible chart blocks', () => {
 		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Incomplete chart report',
 			blocks: [
 				{
@@ -74,6 +80,8 @@ describe('generated document source schema', () => {
 
 	it('accepts model-friendly table headers with array rows', () => {
 		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Our Chats - Conversation Retrospective',
 			blocks: [
 				{
@@ -162,6 +170,8 @@ describe('generated document source schema', () => {
 
 		for (const tableBlock of tableVariants) {
 			const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 				title: 'Table Alias Report',
 				blocks: [tableBlock],
 			});
@@ -180,6 +190,8 @@ describe('generated document source schema', () => {
 
 	it('accepts Chart.js-style bar chart data and normalizes it for renderers', () => {
 		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'Our Chats - Conversation Retrospective',
 			blocks: [
 				{
@@ -225,6 +237,8 @@ describe('generated document source schema', () => {
 	it('accepts the full v1 chart type set and rejects chart types outside it', () => {
 		for (const chartType of ['bar', 'stackedBar', 'line', 'area', 'scatter'] as const) {
 			const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 				title: `${chartType} report`,
 				blocks: [
 					{
@@ -249,6 +263,8 @@ describe('generated document source schema', () => {
 
 		for (const chartType of ['pie', 'donut'] as const) {
 			const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 				title: `${chartType} report`,
 				blocks: [
 					{
@@ -269,6 +285,8 @@ describe('generated document source schema', () => {
 
 		expect(
 			validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 				title: 'Radar report',
 				blocks: [
 					{

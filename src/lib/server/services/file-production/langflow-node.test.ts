@@ -34,5 +34,6 @@ describe('Langflow File Production tool node', () => {
 		expect(source).not.toContain('method="export_document"');
 		expect(source).not.toContain('/api/chat/files/generate');
 		expect(source).not.toContain('/api/chat/files/export');
+		expect(source).toContain('"requestedOutputs": requested_outputs');
 	});
 });
