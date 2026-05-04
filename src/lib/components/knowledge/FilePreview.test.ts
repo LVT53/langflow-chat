@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pdfjsLib from "pdfjs-dist";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import FilePreview from "./FilePreview.svelte";
 
 const mockJsZipLoadAsync = vi.fn();
@@ -471,6 +472,14 @@ describe("FilePreview", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
 		});
+
+		const componentSource = readFileSync(
+			"src/lib/components/knowledge/FilePreview.svelte",
+			"utf8",
+		);
+		expect(componentSource).toContain(
+			".pdf-canvas {\n\t\tdisplay: block;\n\t\tmax-width: none;",
+		);
 
 		const initialRenderCount = mockPdfRender.mock.calls.length;
 		await fireEvent.click(screen.getByLabelText("Zoom in"));

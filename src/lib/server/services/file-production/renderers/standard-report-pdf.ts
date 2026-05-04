@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
 import {
+	LineCapStyle,
 	PDFDocument,
 	PageSizes,
 	rgb,
@@ -10,15 +11,15 @@ import {
 	type PDFPage,
 	type RGB,
 } from 'pdf-lib';
+import {
+	loadGeneratedDocumentImage,
+	type GeneratedDocumentImageLoadResult,
+} from '../image-loader';
 import type {
 	GeneratedDocumentBlock,
 	GeneratedDocumentChartBlock,
 	GeneratedDocumentSource,
 } from '../source-schema';
-import {
-	loadGeneratedDocumentImage,
-	type GeneratedDocumentImageLoadResult,
-} from '../image-loader';
 import { renderChartSvg } from './chart-svg';
 
 const MM_TO_PT = 72 / 25.4;
@@ -28,18 +29,17 @@ const APP_FONT_ROOTS = [
 	resolve(process.cwd(), 'build/client/fonts'),
 	resolve(process.cwd(), 'client/fonts'),
 ] as const;
-const APP_ASSET_ROOTS = [
-	resolve(process.cwd(), 'static'),
-	resolve(process.cwd(), 'build/client'),
-	resolve(process.cwd(), 'client'),
-] as const;
 const APP_FONT_FILES = {
 	body: 'NimbusSanL-Regular.woff2',
 	bodyBold: 'NimbusSanL-Bold.woff2',
 	title: 'LibreBaskerville-Regular.woff2',
 	titleBold: 'LibreBaskerville-Bold.woff2',
 } as const;
-const APP_HEADER_LOGO_FILE = 'favicon-32x32.png';
+const APP_BRAND_LOGO_SOURCE = 'ui-vector-transparent-logo';
+const LOGO_VIEWBOX_HEIGHT = 112;
+const LOGO_VIEWBOX_WIDTH = 100;
+const COVER_LOGO_HEIGHT_PT = 52;
+const DOCUMENT_TITLE_LOGO_HEIGHT_PT = 42;
 const APP_FONT_DIAGNOSTICS = {
 	body: 'Nimbus Sans L',
 	bodyBold: 'Nimbus Sans L Bold',
@@ -79,7 +79,13 @@ export interface StandardReportPdfRenderResult {
 		bodyFontPt: typeof LAYOUT.bodyFontPt;
 		paragraphColor: typeof THEME.paragraphText;
 		lineHeight: typeof LAYOUT.lineHeight;
-		headerLogo: typeof APP_HEADER_LOGO_FILE;
+		brandLogo: {
+			source: typeof APP_BRAND_LOGO_SOURCE;
+			coverHeightPt: typeof COVER_LOGO_HEIGHT_PT;
+			documentTitleHeightPt: typeof DOCUMENT_TITLE_LOGO_HEIGHT_PT;
+			headerPlacement: 'text-only';
+		};
+		firstPageDateLabel: string | null;
 		marginMm: typeof LAYOUT.marginMm;
 		colors: Pick<typeof THEME, 'text' | 'secondaryText' | 'accent' | 'pageBackground'>;
 		fonts: typeof APP_FONT_DIAGNOSTICS;
@@ -160,19 +166,6 @@ function findBundledFont(filename: string): Uint8Array {
 	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
 
-function findBundledAsset(filename: string): Uint8Array {
-	const candidates = APP_ASSET_ROOTS.map((root) => resolve(root, filename));
-	const assetPath = candidates.find((candidate) => existsSync(candidate));
-	if (!assetPath) {
-		throw new StandardReportPdfRenderError(
-			'document_render_failed',
-			`AlfyAI Standard Report PDF rendering requires bundled asset ${filename}.`
-		);
-	}
-	const buffer = readFileSync(assetPath);
-	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-}
-
 function slugifyFilename(title: string): string {
 	const slug = title
 		.normalize('NFD')
@@ -187,6 +180,15 @@ function slugifyFilename(title: string): string {
 function sanitizePdfText(text: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: PDF text output must strip control characters.
 	return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
+}
+
+function normalizeDocumentDateLabel(value?: string | null): string | null {
+	const text = sanitizePdfText(value ?? '');
+	if (!text) return null;
+	const stripped = text
+		.replace(/^(?:generated\s+(?:on|at)|generated|created\s+(?:on|at)|created|date)\s*[:,-]?\s*/i, '')
+		.trim();
+	return stripped || text;
 }
 
 function breakLongWord(word: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -240,6 +242,87 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 	return lines;
 }
 
+function fitTextToWidth(text: string, font: PDFFont, size: number, maxWidth: number): string {
+	const cleanText = sanitizePdfText(text);
+	if (!cleanText || maxWidth <= 0) return '';
+	if (font.widthOfTextAtSize(cleanText, size) <= maxWidth) return cleanText;
+
+	const suffix = '...';
+	const suffixWidth = font.widthOfTextAtSize(suffix, size);
+	if (suffixWidth > maxWidth) return '';
+
+	let fitted = '';
+	for (const char of Array.from(cleanText)) {
+		const candidate = `${fitted}${char}`;
+		if (font.widthOfTextAtSize(candidate, size) + suffixWidth > maxWidth) break;
+		fitted = candidate;
+	}
+	return fitted.trimEnd() ? `${fitted.trimEnd()}${suffix}` : '';
+}
+
+function drawAlfyAiLogo(page: PDFPage, x: number, y: number, height: number, opacity = 1): number {
+	const scale = height / LOGO_VIEWBOX_HEIGHT;
+	const color = hexColor('#C8A882');
+	const pathOptions = {
+		x,
+		y: y + height,
+		scale,
+		borderColor: color,
+		borderLineCap: LineCapStyle.Round,
+		borderOpacity: opacity,
+	};
+	page.drawSvgPath('M50 19 C46 40 36 64 24 88', {
+		...pathOptions,
+		borderWidth: 4.2,
+	});
+	page.drawSvgPath('M50 19 C54 40 64 64 76 88', {
+		...pathOptions,
+		borderWidth: 4.2,
+	});
+	page.drawLine({
+		start: { x: x + 27 * scale, y: y + 55 * scale },
+		end: { x: x + 73 * scale, y: y + 55 * scale },
+		thickness: 2.2 * scale,
+		color,
+		opacity,
+		lineCap: LineCapStyle.Round,
+	});
+	for (const svgX of [27, 73]) {
+		page.drawLine({
+			start: { x: x + svgX * scale, y: y + 60 * scale },
+			end: { x: x + svgX * scale, y: y + 50 * scale },
+			thickness: 1.8 * scale,
+			color,
+			opacity: opacity * 0.75,
+			lineCap: LineCapStyle.Round,
+		});
+	}
+	page.drawLine({
+		start: { x: x + 14 * scale, y: y + 22 * scale },
+		end: { x: x + 36 * scale, y: y + 22 * scale },
+		thickness: 3.2 * scale,
+		color,
+		opacity,
+		lineCap: LineCapStyle.Round,
+	});
+	page.drawLine({
+		start: { x: x + 64 * scale, y: y + 22 * scale },
+		end: { x: x + 86 * scale, y: y + 22 * scale },
+		thickness: 3.2 * scale,
+		color,
+		opacity,
+		lineCap: LineCapStyle.Round,
+	});
+	page.drawCircle({
+		x: x + 50 * scale,
+		y: y + 93 * scale,
+		size: 3.5 * scale,
+		color,
+		opacity,
+	});
+	return LOGO_VIEWBOX_WIDTH * scale;
+}
+
 class StandardReportPdfLayout {
 	private page: PDFPage;
 	private y: number;
@@ -250,8 +333,7 @@ class StandardReportPdfLayout {
 	constructor(
 		private readonly pdfDoc: PDFDocument,
 		private readonly source: GeneratedDocumentSource,
-		private readonly fonts: FontSet,
-		private readonly headerLogo: PDFImage
+		private readonly fonts: FontSet
 	) {
 		this.page = this.createPage();
 		this.y = this.contentTop();
@@ -330,22 +412,24 @@ class StandardReportPdfLayout {
 		const width = this.contentWidth();
 		const top = A4[1] - mm(42);
 		this.y = top;
-		this.page.drawRectangle({
-			x,
-			y: top - 9,
-			width: 58,
-			height: 3,
+		const logoBottom = top - 2;
+		const logoWidth = drawAlfyAiLogo(this.page, x, logoBottom, COVER_LOGO_HEIGHT_PT);
+		this.page.drawText('AlfyAI', {
+			x: x + logoWidth + 10,
+			y: logoBottom + COVER_LOGO_HEIGHT_PT * 0.38,
+			size: 15,
+			font: this.fonts.bold,
 			color: hexColor(THEME.accent),
 		});
 		const eyebrow = this.source.cover?.eyebrow ?? 'AlfyAI Standard Report';
 		this.page.drawText(eyebrow.toUpperCase(), {
 			x,
-			y: top - 38,
+			y: logoBottom - 30,
 			size: 9,
 			font: this.fonts.bold,
 			color: hexColor(THEME.accent),
 		});
-		this.y = top - 78;
+		this.y = logoBottom - 80;
 		this.drawWrapped({
 			text: this.source.title,
 			font: this.fonts.titleBold,
@@ -365,22 +449,23 @@ class StandardReportPdfLayout {
 				lineHeight: 20,
 			});
 		}
-		const dateLabel = this.source.cover?.dateLabel;
-		if (dateLabel) {
-			this.page.drawText(dateLabel, {
-				x,
-				y: mm(58),
-				size: 10,
-				font: this.fonts.regular,
-				color: hexColor(THEME.secondaryText),
-			});
-		}
 		this.addPage();
 	}
 
 	drawDocumentTitle(): void {
+		const x = this.contentX();
+		const logoBottom = this.y - 18;
+		const logoWidth = drawAlfyAiLogo(this.page, x, logoBottom, DOCUMENT_TITLE_LOGO_HEIGHT_PT);
+		this.page.drawText('AlfyAI', {
+			x: x + logoWidth + 8,
+			y: logoBottom + DOCUMENT_TITLE_LOGO_HEIGHT_PT * 0.36,
+			size: 12.5,
+			font: this.fonts.bold,
+			color: hexColor(THEME.accent),
+		});
+		this.y -= 64;
 		this.page.drawRectangle({
-			x: this.contentX(),
+			x,
 			y: this.y + 8,
 			width: 46,
 			height: 3,
@@ -1202,33 +1287,57 @@ class StandardReportPdfLayout {
 
 	drawHeadersAndFooters(): void {
 		const pages = this.pdfDoc.getPages();
+		const firstPageDateLabel = normalizeDocumentDateLabel(
+			this.source.cover?.dateLabel ?? this.source.date
+		);
 		for (const [index, page] of pages.entries()) {
 			const pageNumber = index + 1;
 			const headerY = A4[1] - mm(10);
-			const logoHeight = 9;
-			const logoWidth = (this.headerLogo.width / this.headerLogo.height) * logoHeight;
-			const brandX = this.contentX() + logoWidth + 4;
-			const brandWidth = this.fonts.bold.widthOfTextAtSize('AlfyAI', 8.5);
-			page.drawImage(this.headerLogo, {
-				x: this.contentX(),
-				y: headerY - 1.2,
-				width: logoWidth,
-				height: logoHeight,
-			});
+			const headerX = this.contentX();
+			const headerRight = headerX + this.contentWidth();
+			const headerSize = 8.5;
+			const brandText = 'AlfyAI';
+			const brandWidth = this.fonts.bold.widthOfTextAtSize(brandText, headerSize);
+			const dateText = pageNumber === 1 ? firstPageDateLabel : null;
+			let titleRight = headerRight;
+			if (dateText) {
+				const fittedDate = fitTextToWidth(dateText, this.fonts.regular, headerSize, 132);
+				if (fittedDate) {
+					const dateWidth = this.fonts.regular.widthOfTextAtSize(fittedDate, headerSize);
+					const dateX = headerRight - dateWidth;
+					titleRight = dateX - 18;
+					page.drawText(fittedDate, {
+						x: dateX,
+						y: headerY,
+						size: headerSize,
+						font: this.fonts.regular,
+						color: hexColor(THEME.secondaryText),
+					});
+				}
+			}
 			page.drawText('AlfyAI', {
-				x: brandX,
+				x: headerX,
 				y: headerY,
-				size: 8.5,
+				size: headerSize,
 				font: this.fonts.bold,
 				color: hexColor(THEME.accent),
 			});
-			page.drawText(this.source.title, {
-				x: brandX + brandWidth + 28,
-				y: headerY,
-				size: 8.5,
-				font: this.fonts.regular,
-				color: hexColor(THEME.secondaryText),
-			});
+			const titleX = headerX + brandWidth + 28;
+			const title = fitTextToWidth(
+				this.source.title,
+				this.fonts.regular,
+				headerSize,
+				titleRight - titleX
+			);
+			if (title) {
+				page.drawText(title, {
+					x: titleX,
+					y: headerY,
+					size: headerSize,
+					font: this.fonts.regular,
+					color: hexColor(THEME.secondaryText),
+				});
+			}
 			page.drawLine({
 				start: { x: this.contentX(), y: headerY - 9 },
 				end: { x: this.contentX() + this.contentWidth(), y: headerY - 9 },
@@ -1272,10 +1381,6 @@ async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
 	return { regular, bold, mono: regular, title, titleBold };
 }
 
-async function embedHeaderLogo(pdfDoc: PDFDocument): Promise<PDFImage> {
-	return pdfDoc.embedPng(findBundledAsset(APP_HEADER_LOGO_FILE));
-}
-
 export async function renderStandardReportPdf(
 	source: GeneratedDocumentSource,
 	options: StandardReportPdfRenderOptions = {}
@@ -1288,8 +1393,8 @@ export async function renderStandardReportPdf(
 	pdfDoc.setSubject('AlfyAI Standard Report');
 	pdfDoc.setKeywords(['AlfyAI', 'generated document', 'standard report']);
 
-	const [fonts, headerLogo] = await Promise.all([embedFonts(pdfDoc), embedHeaderLogo(pdfDoc)]);
-	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts, headerLogo);
+	const fonts = await embedFonts(pdfDoc);
+	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts);
 	if (source.cover) {
 		layout.drawCover();
 	} else {
@@ -1347,7 +1452,13 @@ export async function renderStandardReportPdf(
 			bodyFontPt: LAYOUT.bodyFontPt,
 			paragraphColor: THEME.paragraphText,
 			lineHeight: LAYOUT.lineHeight,
-			headerLogo: APP_HEADER_LOGO_FILE,
+			brandLogo: {
+				source: APP_BRAND_LOGO_SOURCE,
+				coverHeightPt: COVER_LOGO_HEIGHT_PT,
+				documentTitleHeightPt: DOCUMENT_TITLE_LOGO_HEIGHT_PT,
+				headerPlacement: 'text-only',
+			},
+			firstPageDateLabel: normalizeDocumentDateLabel(source.cover?.dateLabel ?? source.date),
 			marginMm: LAYOUT.marginMm,
 			colors: {
 				text: THEME.text,

@@ -71,6 +71,7 @@ export interface GeneratedDocumentSource {
 	template: 'alfyai_standard_report';
 	title: string;
 	subtitle?: string | null;
+	date?: string | null;
 	cover?: { enabled: true; eyebrow?: string | null; dateLabel?: string | null };
 	blocks: GeneratedDocumentBlock[];
 }
@@ -722,6 +723,7 @@ export function validateGeneratedDocumentSource(
 			template: 'alfyai_standard_report',
 			title,
 			subtitle: cleanText(value.subtitle),
+			date: cleanText(value.date),
 			...(cover ? { cover } : {}),
 			blocks,
 		},
@@ -732,6 +734,9 @@ export function buildGeneratedDocumentProjection(source: GeneratedDocumentSource
 	const lines: string[] = [source.title];
 	if (source.subtitle) {
 		lines.push(source.subtitle);
+	}
+	if (source.date) {
+		lines.push(source.date);
 	}
 	if (source.cover) {
 		lines.push(source.cover.eyebrow ? `Cover: ${source.cover.eyebrow}` : 'Cover');

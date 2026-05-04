@@ -11,6 +11,7 @@ describe('generated document source schema', () => {
 			template: 'alfyai_standard_report',
 			title: 'Quarterly report',
 			subtitle: 'Executive summary',
+			date: 'Generated on May 4, 2026',
 			blocks: [
 				{ type: 'heading', level: 2, text: 'Revenue' },
 				{ type: 'paragraph', text: 'Revenue increased by 12%.' },
@@ -31,6 +32,7 @@ describe('generated document source schema', () => {
 			[
 				'Quarterly report',
 				'Executive summary',
+				'Generated on May 4, 2026',
 				'',
 				'## Revenue',
 				'Revenue increased by 12%.',

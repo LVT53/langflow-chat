@@ -3,8 +3,8 @@ import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import {
-	validateGeneratedDocumentSource,
 	type GeneratedDocumentSource,
+	validateGeneratedDocumentSource,
 } from '../source-schema';
 import { renderStandardReportPdf } from './standard-report-pdf';
 
@@ -44,7 +44,12 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 				pageFormat: 'A4',
 				bodyFontPt: 10.5,
 				paragraphColor: '#3E3933',
-				headerLogo: 'favicon-32x32.png',
+				brandLogo: {
+					source: 'ui-vector-transparent-logo',
+					coverHeightPt: 52,
+					documentTitleHeightPt: 42,
+					headerPlacement: 'text-only',
+				},
 				marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
 				colors: {
 					text: '#1B1815',
@@ -93,6 +98,34 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 			code: 'Nimbus Sans L',
 		});
 		expect(pdfBody).not.toContain('DejaVu');
+	});
+
+	it('uses the transparent UI logo mark and normalizes generated dates for the first-page header', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Branded date report',
+			date: 'Generated on May 4, 2026',
+			blocks: [
+				{
+					type: 'paragraph',
+					text: 'The document date should be rendered as a compact header value.',
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+
+		expect(rendered.diagnostics.brandLogo).toEqual({
+			source: 'ui-vector-transparent-logo',
+			coverHeightPt: 52,
+			documentTitleHeightPt: 42,
+			headerPlacement: 'text-only',
+		});
+		expect(rendered.diagnostics.firstPageDateLabel).toBe('May 4, 2026');
+		expect(rendered.content.toString('latin1')).not.toContain('favicon-32x32');
 	});
 
 	it('uses a quieter paragraph treatment so body copy does not compete with report structure', async () => {
