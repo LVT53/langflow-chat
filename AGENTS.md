@@ -180,6 +180,7 @@ Do:
 - keep outbound file-production guidance in `langflow.ts` aligned with the unified `produce_file` tool contract: source-first documents use `document_source`, program artifacts write final files to `/output`, and generated files show up as durable job-backed cards
 - keep outbound file-production guidance explicit: when the user asks for a downloadable file and the tool exists, the model should call `produce_file` rather than merely describing a file in prose
 - keep the Langflow custom `File Production` component aligned with Langflow tool-mode docs: expose the actual `produce_file` output method as the tool and keep `conversationId` resolved from the Langflow session, not as a model-facing field
+- keep the model-facing output-list input named `requestedOutputs`, not `outputs`; `outputs` collides with Langflow component internals and can make Langflow try to JSON-serialize `Output` objects before the `/api/chat/files/produce` request is sent
 - keep `produce_file` runtime guidance accurate: use `sourceMode: "document_source"` for PDF/DOCX/HTML reports from structured document source and `sourceMode: "program"` for code-generated data/office artifacts
 - generated files may offer an authenticated rich preview via `/api/chat/files/[id]/preview`; reuse the shared file viewer component instead of maintaining a second chat-only preview UI
 - working-document continuity should continue to build on generated-output artifacts plus Honcho sync.

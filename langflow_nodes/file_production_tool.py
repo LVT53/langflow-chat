@@ -76,7 +76,7 @@ class FileProductionToolComponent(Component):
             tool_mode=True,
         ),
         MultilineInput(
-            name="outputs",
+            name="requestedOutputs",
             display_name="Outputs",
             info='JSON array of requested outputs, for example [{"type":"pdf"}] or [{"type":"csv"}]',
             value='[{"type":"pdf"}]',
@@ -198,7 +198,10 @@ class FileProductionToolComponent(Component):
         source_mode = str(getattr(self, "sourceMode", "") or "").strip()
         document_intent = str(getattr(self, "documentIntent", "") or "").strip()
         template_hint = str(getattr(self, "templateHint", "") or "").strip()
-        outputs = self._parse_json_field(getattr(self, "outputs", None), fallback=None)
+        requested_outputs = self._parse_json_field(
+            getattr(self, "requestedOutputs", None),
+            fallback=None,
+        )
         document_source = self._parse_json_field(
             getattr(self, "documentSource", None),
             fallback=None,
@@ -209,8 +212,8 @@ class FileProductionToolComponent(Component):
             return "idempotencyKey is required."
         if not request_title:
             return "requestTitle is required."
-        if not isinstance(outputs, list) or not outputs:
-            return "outputs must be a non-empty JSON array."
+        if not isinstance(requested_outputs, list) or not requested_outputs:
+            return "requestedOutputs must be a non-empty JSON array."
         if source_mode not in {"document_source", "program"}:
             return 'sourceMode must be "document_source" or "program".'
         if not document_intent:
@@ -224,7 +227,7 @@ class FileProductionToolComponent(Component):
             "conversationId": conversation_id,
             "idempotencyKey": idempotency_key,
             "requestTitle": request_title,
-            "outputs": outputs,
+            "outputs": requested_outputs,
             "sourceMode": source_mode,
             "documentIntent": document_intent,
         }

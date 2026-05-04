@@ -138,6 +138,7 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("program");
 		expect(prompt).toContain("idempotencyKey");
 		expect(prompt).toContain("requestTitle");
+		expect(prompt).toContain("requestedOutputs");
 		expect(prompt).toContain("documentIntent");
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");

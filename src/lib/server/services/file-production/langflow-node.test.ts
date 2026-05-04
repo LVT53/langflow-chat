@@ -17,7 +17,7 @@ describe('Langflow File Production tool node', () => {
 		for (const field of [
 			'idempotencyKey',
 			'requestTitle',
-			'outputs',
+			'requestedOutputs',
 			'sourceMode',
 			'documentIntent',
 			'templateHint',
@@ -28,6 +28,8 @@ describe('Langflow File Production tool node', () => {
 		}
 
 		expect(source).not.toMatch(/name="conversationId"/);
+		expect(source).not.toMatch(/name="outputs"/);
+		expect(source).not.toContain('getattr(self, "outputs"');
 		expect(source).not.toContain('method="generate_file"');
 		expect(source).not.toContain('method="export_document"');
 		expect(source).not.toContain('/api/chat/files/generate');

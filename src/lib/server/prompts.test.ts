@@ -49,6 +49,7 @@ describe("prompts", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("program");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("idempotencyKey");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestTitle");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestedOutputs");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentIntent");
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("generate_file");
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("export_document");

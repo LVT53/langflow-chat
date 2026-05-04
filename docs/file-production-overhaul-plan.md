@@ -344,7 +344,7 @@ Scope:
 
 - Add the unified Langflow custom node/component named `File Production`.
 - Expose the model-facing tool method as `produce_file`.
-- Use a compact structured input contract with `idempotencyKey`, `requestTitle`, `outputs`, `sourceMode`, `documentIntent`, optional high-level `templateHint`, `documentSource`, and optional sandbox `program`.
+- Use a compact structured Langflow tool input contract with `idempotencyKey`, `requestTitle`, `requestedOutputs`, `sourceMode`, `documentIntent`, optional high-level `templateHint`, `documentSource`, and optional sandbox `program`. The node maps `requestedOutputs` to the server API's `outputs` field; do not expose a Langflow input named `outputs`, because that collides with Langflow component internals.
 - Resolve `conversationId` from the Langflow session/node context rather than exposing it as a normal model-facing input.
 - Support `sourceMode: "document_source"` for document-like outputs and `sourceMode: "program"` for genuinely programmatic/raw outputs.
 - Treat model-provided `documentIntent` as a hint; keep server-side file/document classification authoritative.
