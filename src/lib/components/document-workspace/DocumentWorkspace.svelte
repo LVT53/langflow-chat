@@ -1,6 +1,5 @@
 <script lang="ts">
 import { browser } from "$app/environment";
-import { untrack } from "svelte";
 import {
 	determinePreviewFileType,
 	getPreviewLanguage,
@@ -9,12 +8,16 @@ import { summarizeTextComparison } from "$lib/utils/text-compare";
 import { renderHighlightedText } from "$lib/utils/markdown-loader";
 import type { DocumentWorkspaceItem } from "$lib/types";
 import { t } from "$lib/i18n";
+import OpenDocumentsRail from "./OpenDocumentsRail.svelte";
+import MobileDocumentsSheet from "./MobileDocumentsSheet.svelte";
 
-type FilePreviewModule =
-	typeof import("$lib/components/knowledge/FilePreview.svelte");
+type DocumentPreviewRendererModule =
+	typeof import("$lib/components/document-workspace/DocumentPreviewRenderer.svelte");
 
 let {
 	open = false,
+	presentation = "docked",
+	returnToDockedOnExpandedClose = true,
 	documents = [],
 	availableDocuments = [],
 	activeDocumentId = null,
@@ -23,9 +26,11 @@ let {
 	onJumpToSource = undefined,
 	onCloseDocument,
 	onCloseWorkspace,
-	onPageChange = undefined,
+	onPresentationChange = undefined,
 }: {
 	open?: boolean;
+	presentation?: "docked" | "expanded";
+	returnToDockedOnExpandedClose?: boolean;
 	documents?: DocumentWorkspaceItem[];
 	availableDocuments?: DocumentWorkspaceItem[];
 	activeDocumentId?: string | null;
@@ -34,7 +39,9 @@ let {
 	onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	onCloseDocument: (documentId: string) => void;
 	onCloseWorkspace: () => void;
-	onPageChange?: ((page: number) => void) | undefined;
+	onPresentationChange?:
+		| ((presentation: "docked" | "expanded") => void)
+		| undefined;
 } = $props();
 
 let activeDocument = $derived.by(() => {
@@ -46,7 +53,7 @@ let activeDocument = $derived.by(() => {
 	);
 });
 let compareMode = $state(false);
-let fullscreenPreviewOpen = $state(false);
+let mobileDocumentsSheetOpen = $state(false);
 let compareDocumentId = $state<string | null>(null);
 let compareCurrentTextHtml = $state<string | null>(null);
 let compareOtherTextHtml = $state<string | null>(null);
@@ -55,7 +62,8 @@ let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(
 );
 let compareLoading = $state(false);
 let compareError = $state<string | null>(null);
-let filePreviewModulePromise: Promise<FilePreviewModule> | null = null;
+let documentPreviewRendererModulePromise: Promise<DocumentPreviewRendererModule> | null =
+	null;
 // Fade animation state
 let isVisible = $state(false);
 let shouldRender = $state(false);
@@ -64,8 +72,6 @@ let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 // Page navigation state
 let currentPage = $state(1);
 let currentTotalPages = $state(1);
-let pageInputValue = $state("1");
-let pageInputError = $state<string | null>(null);
 let lastDocumentId = $state<string | null>(null);
 
 // Resize state
@@ -81,7 +87,10 @@ let workspaceWidth = $state(
 	browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
 		? Math.max(
 				MIN_WIDTH,
-				parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || String(DEFAULT_WORKSPACE_WIDTH)),
+				parseFloat(
+					localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) ||
+						String(DEFAULT_WORKSPACE_WIDTH),
+				),
 			) || DEFAULT_WORKSPACE_WIDTH
 		: DEFAULT_WORKSPACE_WIDTH,
 );
@@ -97,18 +106,7 @@ $effect(() => {
 		lastDocumentId = activeDocument.id;
 		currentPage = activeDocument.currentPage ?? 1;
 		currentTotalPages = activeDocument.totalPages ?? 1;
-		pageInputValue = String(currentPage);
-		pageInputError = null;
 	}
-});
-
-$effect(() => {
-	const curr = currentPage;
-	untrack(() => {
-		if (String(curr) !== pageInputValue && !pageInputError) {
-			pageInputValue = String(curr);
-		}
-	});
 });
 
 $effect(() => {
@@ -135,46 +133,6 @@ $effect(() => {
 		}, 150);
 	}
 });
-
-$effect(() => {
-	if (!open || !activeDocument) {
-		fullscreenPreviewOpen = false;
-	}
-});
-
-function handlePageInputChange(event: Event) {
-	const input = event.target as HTMLInputElement;
-	pageInputValue = input.value;
-	pageInputError = null;
-}
-
-function handlePageInputKeyDown(event: KeyboardEvent) {
-	if (event.key === "Enter") {
-		event.preventDefault();
-		validateAndJumpToPage();
-	}
-}
-
-function validateAndJumpToPage() {
-	const totalPages = currentTotalPages;
-	const pageNum = parseInt(pageInputValue, 10);
-
-	if (Number.isNaN(pageNum)) {
-		pageInputError = $t("documentWorkspace.invalidNumber");
-		return;
-	}
-
-	if (pageNum < 1 || pageNum > totalPages) {
-		pageInputError = $t("documentWorkspace.invalidPageRange", {
-			total: totalPages,
-		});
-		return;
-	}
-
-	pageInputError = null;
-	currentPage = pageNum;
-	onPageChange?.(pageNum);
-}
 
 function startResize(event: MouseEvent) {
 	isResizing = true;
@@ -342,11 +300,6 @@ function isTextDocument(document: DocumentWorkspaceItem): boolean {
 	);
 }
 
-function isMultiPageDocument(document: DocumentWorkspaceItem | null): boolean {
-	if (!document) return false;
-	return currentTotalPages > 1;
-}
-
 function getDefaultCompareDocumentId(
 	documentsInFamily: DocumentWorkspaceItem[],
 ): string | null {
@@ -396,17 +349,25 @@ function getDocumentPreviewUrl(document: DocumentWorkspaceItem): string | null {
 	return null;
 }
 
-function openFullscreenPreview() {
-	fullscreenPreviewOpen = true;
+function requestExpandedPresentation() {
+	onPresentationChange?.("expanded");
 }
 
-function closeFullscreenPreview() {
-	fullscreenPreviewOpen = false;
+function requestDockedPresentation() {
+	onPresentationChange?.("docked");
+}
+
+function handleCloseWorkspace() {
+	if (presentation === "expanded" && returnToDockedOnExpandedClose) {
+		requestDockedPresentation();
+		return;
+	}
+	onCloseWorkspace();
 }
 
 function handleMobileBackdropClick(event: MouseEvent) {
 	if (event.target === event.currentTarget) {
-		onCloseWorkspace();
+		handleCloseWorkspace();
 	}
 }
 
@@ -427,21 +388,25 @@ async function loadComparePreview(
 	return text;
 }
 
-async function ensureFilePreviewModule() {
-	if (!filePreviewModulePromise) {
-		filePreviewModulePromise = import(
-			"$lib/components/knowledge/FilePreview.svelte"
+async function ensureDocumentPreviewRendererModule() {
+	if (!documentPreviewRendererModulePromise) {
+		documentPreviewRendererModulePromise = import(
+			"$lib/components/document-workspace/DocumentPreviewRenderer.svelte"
 		);
 	}
 
-	return filePreviewModulePromise;
+	return documentPreviewRendererModulePromise;
 }
 
 $effect(() => {
 	if (!browser) return;
-	if (open || documents.length > 0 || availableDocuments.some((document) => getDocumentPreviewUrl(document))) {
-		void ensureFilePreviewModule().catch(() => {
-			filePreviewModulePromise = null;
+	if (
+		open ||
+		documents.length > 0 ||
+		availableDocuments.some((document) => getDocumentPreviewUrl(document))
+	) {
+		void ensureDocumentPreviewRendererModule().catch(() => {
+			documentPreviewRendererModulePromise = null;
 		});
 	}
 });
@@ -547,9 +512,9 @@ $effect(() => {
 					<button
 						type="button"
 						class="btn-icon-bare workspace-expand-button"
-						onclick={openFullscreenPreview}
-						aria-label={$t('documentWorkspace.openFullscreenLabel', { title: getDocumentTitle(activeDocument) })}
-						title={$t('documentWorkspace.openFullscreen')}
+						onclick={requestExpandedPresentation}
+						aria-label={$t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+						title={$t('documentWorkspace.expandWorkspace')}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="15 3 21 3 21 9" />
@@ -561,7 +526,7 @@ $effect(() => {
 					<button
 						type="button"
 						class="btn-icon-bare workspace-close-button"
-						onclick={onCloseWorkspace}
+						onclick={handleCloseWorkspace}
 						aria-label={$t('documentWorkspace.closeWorkspace')}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -609,48 +574,26 @@ $effect(() => {
 				</div>
 			{/if}
 
-			{#if documents.length > 1}
-				<div class="workspace-tabs" role="tablist" aria-label={$t('documentWorkspace.openDocuments')}>
-					{#each documents as document (document.id)}
-						<div class="workspace-tab-wrapper">
-							<button
-								type="button"
-								role="tab"
-								class="workspace-tab"
-								class:workspace-tab-active={document.id === activeDocument.id}
-								aria-selected={document.id === activeDocument.id}
-								onclick={() => onSelectDocument(document.id)}
-							>
-								<span class="workspace-tab-label">{getDocumentTitle(document)}</span>
-								{#if getDocumentVersionLabel(document)}
-									<span class="workspace-tab-version">{getDocumentVersionLabel(document)}</span>
-								{/if}
-							</button>
-							<button
-								type="button"
-								class="btn-icon-bare workspace-tab-close"
-								onclick={() => onCloseDocument(document.id)}
-							aria-label={$t('documentWorkspace.closeDocumentLabel', { title: getDocumentTitle(document) })}
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="18" x2="6" y1="6" y2="18" />
-									<line x1="6" x2="18" y1="6" y2="18" />
-								</svg>
-							</button>
-						</div>
-					{/each}
-				</div>
-			{/if}
+			<MobileDocumentsSheet
+				{documents}
+				activeDocumentId={activeDocument.id}
+				open={mobileDocumentsSheetOpen}
+				onOpenChange={(open) => {
+					mobileDocumentsSheetOpen = open;
+				}}
+				{onSelectDocument}
+				{onCloseDocument}
+			/>
 
 			{#if familyDocuments.length > 1}
-				<div class="workspace-history" aria-label={$t('documentWorkspace.versionHistory')}>
+				 <div class="workspace-history" data-testid="document-version-control" aria-label={$t('documentWorkspace.versionHistory')}>
 					<div class="workspace-history-label">{$t('documentWorkspace.versionHistory')}</div>
 					<div class="workspace-history-list">
 						{#each familyDocuments as document (document.id)}
 							<button
 								type="button"
-								class="workspace-history-item"
-								class:workspace-history-item-current={isCurrentFamilyDocument(document)}
+								class="workspace-history-chip"
+								class:workspace-history-chip-current={isCurrentFamilyDocument(document)}
 								onclick={() => handleFamilyDocumentOpen(document)}
 							>
 								<div class="workspace-history-topline">
@@ -726,16 +669,14 @@ $effect(() => {
 						{/if}
 					</div>
 				{:else}
-					{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-						<FilePreviewComponent
+					{#await ensureDocumentPreviewRendererModule() then { default: DocumentPreviewRendererComponent }}
+						<DocumentPreviewRendererComponent
 							open={true}
-							variant="embedded"
-							showHeader={false}
 							artifactId={activeDocument.artifactId ?? null}
 							previewUrl={activeDocument.previewUrl ?? null}
 							filename={activeDocument.filename}
 							mimeType={activeDocument.mimeType}
-							onClose={onCloseWorkspace}
+							onClose={handleCloseWorkspace}
 							bind:currentPage={currentPage}
 							bind:totalPages={currentTotalPages}
 						/>
@@ -754,7 +695,8 @@ $effect(() => {
 		class="workspace-shell workspace-shell-desktop transition fade"
 		class:workspace-fade-in={isVisible}
 		class:workspace-resizing={isResizing}
-		style:width={workspaceWidth > 0 ? `${workspaceWidth}px` : undefined}
+		class:workspace-shell-expanded={presentation === "expanded"}
+		style:width={presentation === "docked" && workspaceWidth > 0 ? `${workspaceWidth}px` : undefined}
 		style:transition={
 			isResizing ? 'none' : 'opacity 150ms ease-out, transform 150ms ease-out'
 		}
@@ -790,13 +732,13 @@ $effect(() => {
 			{/if}
 		</div>
 		<div class="workspace-header-actions">
-			<button
-				type="button"
-				class="btn-icon-bare workspace-expand-button"
-				onclick={openFullscreenPreview}
-				aria-label={$t('documentWorkspace.openFullscreenLabel', { title: getDocumentTitle(activeDocument) })}
-				title={$t('documentWorkspace.openFullscreen')}
-			>
+				<button
+					type="button"
+					class="btn-icon-bare workspace-expand-button"
+					onclick={presentation === "expanded" ? requestDockedPresentation : requestExpandedPresentation}
+					aria-label={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspaceLabel', { title: getDocumentTitle(activeDocument) }) : $t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+					title={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspace') : $t('documentWorkspace.expandWorkspace')}
+				>
 				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<polyline points="15 3 21 3 21 9" />
 					<polyline points="9 21 3 21 3 15" />
@@ -807,7 +749,7 @@ $effect(() => {
 			<button
 				type="button"
 				class="btn-icon-bare workspace-close-button"
-				onclick={onCloseWorkspace}
+				onclick={handleCloseWorkspace}
 				aria-label={$t('documentWorkspace.closeWorkspace')}
 			>
 				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -855,48 +797,22 @@ $effect(() => {
 		</div>
 	{/if}
 
-	{#if documents.length > 1}
-		<div class="workspace-tabs" role="tablist" aria-label={$t('documentWorkspace.openDocuments')}>
-			{#each documents as document (document.id)}
-				<div class="workspace-tab-wrapper">
-					<button
-						type="button"
-						role="tab"
-						class="workspace-tab"
-						class:workspace-tab-active={document.id === activeDocument.id}
-						aria-selected={document.id === activeDocument.id}
-						onclick={() => onSelectDocument(document.id)}
-					>
-						<span class="workspace-tab-label">{getDocumentTitle(document)}</span>
-						{#if getDocumentVersionLabel(document)}
-							<span class="workspace-tab-version">{getDocumentVersionLabel(document)}</span>
-						{/if}
-					</button>
-					<button
-						type="button"
-						class="btn-icon-bare workspace-tab-close"
-						onclick={() => onCloseDocument(document.id)}
-						aria-label={$t('documentWorkspace.closeDocumentLabel', { title: getDocumentTitle(document) })}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18" />
-							<line x1="6" x2="18" y1="6" y2="18" />
-						</svg>
-					</button>
-				</div>
-			{/each}
-		</div>
-	{/if}
+	<OpenDocumentsRail
+		{documents}
+		activeDocumentId={activeDocument.id}
+		{onSelectDocument}
+		{onCloseDocument}
+	/>
 
 	{#if familyDocuments.length > 1}
-		<div class="workspace-history" aria-label={$t('documentWorkspace.versionHistory')}>
+		 <div class="workspace-history" data-testid="document-version-control" aria-label={$t('documentWorkspace.versionHistory')}>
 			<div class="workspace-history-label">{$t('documentWorkspace.versionHistory')}</div>
 			<div class="workspace-history-list">
 				{#each familyDocuments as document (document.id)}
 					<button
 						type="button"
-						class="workspace-history-item"
-						class:workspace-history-item-current={isCurrentFamilyDocument(document)}
+						class="workspace-history-chip"
+						class:workspace-history-chip-current={isCurrentFamilyDocument(document)}
 						onclick={() => handleFamilyDocumentOpen(document)}
 					>
 						<div class="workspace-history-topline">
@@ -918,31 +834,6 @@ $effect(() => {
 	{/if}
 
 	<div class="workspace-body" data-testid="page-scroll-container">
-		{#if isMultiPageDocument(activeDocument)}
-			<div class="workspace-page-nav">
-				<div class="workspace-page-input-wrap">
-					<label class="workspace-page-input-label" for="page-input-desktop">{$t('documentWorkspace.page')}</label>
-					<input
-						id="page-input-desktop"
-						type="text"
-						class="workspace-page-input"
-						class:workspace-page-input-error={pageInputError !== null}
-						bind:value={pageInputValue}
-						oninput={handlePageInputChange}
-						onkeydown={handlePageInputKeyDown}
-						data-testid="page-input"
-						aria-invalid={pageInputError !== null}
-						aria-describedby={pageInputError ? 'page-input-error-desktop' : undefined}
-					/>
-					<span class="workspace-page-total">{$t('documentWorkspace.pageOf', { total: currentTotalPages })}</span>
-				</div>
-				{#if pageInputError}
-					<span class="workspace-page-error" data-testid="page-input-error" id="page-input-error-desktop">
-						{pageInputError}
-					</span>
-				{/if}
-			</div>
-		{/if}
 		{#if compareMode && comparedDocument}
 			<div class="workspace-compare">
 				<div class="workspace-compare-header">
@@ -994,16 +885,14 @@ $effect(() => {
 				{/if}
 			</div>
 		{:else}
-				{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-					<FilePreviewComponent
+				{#await ensureDocumentPreviewRendererModule() then { default: DocumentPreviewRendererComponent }}
+					<DocumentPreviewRendererComponent
 						open={true}
-						variant="embedded"
-						showHeader={false}
 						artifactId={activeDocument.artifactId ?? null}
 						previewUrl={activeDocument.previewUrl ?? null}
 						filename={activeDocument.filename}
 						mimeType={activeDocument.mimeType}
-						onClose={onCloseWorkspace}
+						onClose={handleCloseWorkspace}
 						bind:currentPage={currentPage}
 						bind:totalPages={currentTotalPages}
 					/>
@@ -1015,60 +904,6 @@ $effect(() => {
 		{/if}
 	</div>
 </aside>
-
-{#if fullscreenPreviewOpen}
-	{#await ensureFilePreviewModule() then { default: FilePreviewComponent }}
-		<FilePreviewComponent
-			open={true}
-			variant="modal"
-			showHeader={true}
-			artifactId={activeDocument.artifactId ?? null}
-			previewUrl={activeDocument.previewUrl ?? null}
-			filename={activeDocument.filename}
-			mimeType={activeDocument.mimeType}
-			onClose={closeFullscreenPreview}
-		/>
-	{:catch}
-		<div class="workspace-fullscreen-fallback" role="status" aria-live="polite">
-			{$t('documentWorkspace.fullscreenPreviewLoadFailed')}
-		</div>
-	{/await}
-		{#if getDocumentLifecycleLabel(activeDocument)}
-			<div class="workspace-status-row">
-				<span class="workspace-status-badge">
-					{getDocumentLifecycleLabel(activeDocument)}
-				</span>
-			</div>
-		{/if}
-		<div class="workspace-header-actions">
-				<button
-					type="button"
-					class="btn-icon-bare workspace-expand-button"
-					onclick={openFullscreenPreview}
-					aria-label={$t('documentWorkspace.openFullscreenLabel', { title: getDocumentTitle(activeDocument) })}
-					title={$t('documentWorkspace.openFullscreen')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="15 3 21 3 21 9" />
-						<polyline points="9 21 3 21 3 15" />
-						<line x1="21" y1="3" x2="14" y2="10" />
-						<line x1="3" y1="21" x2="10" y2="14" />
-					</svg>
-				</button>
-				<button
-					type="button"
-					class="btn-icon-bare workspace-close-button"
-					onclick={onCloseWorkspace}
-					aria-label={$t('documentWorkspace.closeWorkspace')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="18" x2="6" y1="6" y2="18" />
-						<line x1="6" x2="18" y1="6" y2="18" />
-					</svg>
-				</button>
-		</div>
-
-	{/if}
 {/if}
 
 <style>
@@ -1197,34 +1032,6 @@ $effect(() => {
 		color: var(--text-primary);
 	}
 
-	.workspace-fullscreen-fallback {
-		position: fixed;
-		left: 1rem;
-		right: 1rem;
-		bottom: 1rem;
-		z-index: 140;
-		padding: 0.8rem 1rem;
-		border-radius: 0.75rem;
-		border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-		background: color-mix(in srgb, var(--surface-elevated) 90%, var(--danger) 10%);
-		color: var(--danger);
-		font-size: 0.84rem;
-	}
-
-	.workspace-tabs {
-		display: flex;
-		gap: 0.45rem;
-		padding: 0.7rem 1rem 0.8rem;
-		border-left: 1px solid var(--border-default);
-		border-bottom: 1px solid var(--border-default);
-		background: color-mix(in srgb, var(--surface-elevated) 82%, transparent 18%);
-		overflow-x: auto;
-	}
-
-	.workspace-shell-mobile .workspace-tabs {
-		border-left: none;
-	}
-
 	.workspace-actions {
 		display: flex;
 		justify-content: flex-start;
@@ -1260,64 +1067,6 @@ $effect(() => {
 		border-color: var(--border-strong);
 		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
 		color: var(--text-primary);
-	}
-
-	.workspace-tab-wrapper {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
-		min-width: 0;
-		max-width: 18rem;
-		padding-right: 0.15rem;
-		border: 1px solid var(--border-default);
-		border-radius: 999px;
-		background: var(--surface-page);
-	}
-
-	.workspace-tab {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		min-width: 0;
-		max-width: 100%;
-		padding: 0.6rem 0.78rem 0.6rem 0.85rem;
-		border: none;
-		background: transparent;
-		font-size: 0.82rem;
-		color: var(--text-secondary);
-	}
-
-	.workspace-tab-active {
-		color: var(--text-primary);
-		font-weight: 600;
-	}
-
-	.workspace-tab-label {
-		display: block;
-		min-width: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.workspace-tab-version {
-		flex: 0 0 auto;
-		border: 1px solid var(--border-default);
-		border-radius: 999px;
-		padding: 0.08rem 0.38rem;
-		font-size: 0.66rem;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--text-muted);
-		background: color-mix(in srgb, var(--surface-elevated) 82%, transparent 18%);
-	}
-
-	.workspace-tab-close {
-		flex-shrink: 0;
-		width: 1.9rem;
-		height: 1.9rem;
-		color: var(--icon-muted);
 	}
 
 	.workspace-body {
@@ -1451,9 +1200,9 @@ $effect(() => {
 
 	.workspace-history {
 		display: flex;
-		flex-direction: column;
-		gap: 0.55rem;
-		padding: 0.75rem 1rem 0.85rem;
+		align-items: center;
+		gap: 0.65rem;
+		padding: 0.55rem 0.75rem;
 		border-left: 1px solid var(--border-default);
 		border-bottom: 1px solid var(--border-default);
 		background: color-mix(in srgb, var(--surface-page) 94%, transparent 6%);
@@ -1465,46 +1214,46 @@ $effect(() => {
 
 	.workspace-history-label {
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.7rem;
+		font-size: 0.66rem;
 		font-weight: 600;
-		letter-spacing: 0.12em;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
 		color: var(--text-muted);
+		white-space: nowrap;
 	}
 
 	.workspace-history-list {
 		display: flex;
-		gap: 0.55rem;
+		min-width: 0;
+		gap: 0.35rem;
 		overflow-x: auto;
 	}
 
-	.workspace-history-item {
-		display: flex;
-		min-width: 10.5rem;
-		max-width: 13rem;
-		flex-direction: column;
-		gap: 0.35rem;
-		padding: 0.7rem 0.85rem;
+	.workspace-history-chip {
+		display: inline-flex;
+		align-items: center;
+		min-width: 0;
+		max-width: 14rem;
+		gap: 0.4rem;
+		padding: 0.38rem 0.55rem;
 		border: 1px solid var(--border-default);
-		border-radius: 0.95rem;
+		border-radius: 999px;
 		background: var(--surface-elevated);
 		text-align: left;
 		color: var(--text-secondary);
 		transition:
 			border-color var(--duration-fast) ease,
 			background-color var(--duration-fast) ease,
-			color var(--duration-fast) ease,
-			transform var(--duration-fast) ease;
+			color var(--duration-fast) ease;
 	}
 
-	.workspace-history-item:hover {
+	.workspace-history-chip:hover {
 		border-color: var(--border-strong);
 		background: color-mix(in srgb, var(--surface-elevated) 86%, var(--surface-page) 14%);
 		color: var(--text-primary);
-		transform: translateY(-1px);
 	}
 
-	.workspace-history-item-current {
+	.workspace-history-chip-current {
 		border-color: color-mix(in srgb, var(--text-primary) 18%, var(--border-default) 82%);
 		background: color-mix(in srgb, var(--surface-elevated) 78%, var(--surface-page) 22%);
 		color: var(--text-primary);
@@ -1547,13 +1296,13 @@ $effect(() => {
 	}
 
 	.workspace-history-title {
-		font-family: 'Libre Baskerville', serif;
-		font-size: 0.88rem;
-		line-height: 1.35;
+		min-width: 0;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.76rem;
+		line-height: 1.2;
 		color: inherit;
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 		overflow: hidden;
 	}
 
@@ -1569,6 +1318,22 @@ $effect(() => {
 			transition: opacity var(--duration-standard) ease-out, transform var(--duration-standard) ease-out;
 			opacity: 0;
 			transform: translateX(-20px);
+		}
+
+		.workspace-shell-expanded {
+			position: fixed;
+			inset: 1.25rem;
+			z-index: 115;
+			width: auto;
+			max-width: none;
+			min-width: 0;
+			border: 1px solid var(--border-default);
+			border-radius: 0.8rem;
+			box-shadow: var(--shadow-lg);
+		}
+
+		.workspace-shell-expanded .workspace-resize-handle {
+			display: none;
 		}
 
 		.workspace-fade-in {
@@ -1612,59 +1377,6 @@ $effect(() => {
 		}
 	}
 
-	.workspace-page-input {
-		width: 3rem;
-		padding: 0.25rem 0.5rem;
-		border: 1px solid var(--border-default);
-		border-radius: 0.375rem;
-		background: var(--surface-page);
-		color: var(--text-primary);
-		font-size: 0.78rem;
-		text-align: center;
-	}
-
-	.workspace-page-input:focus {
-		outline: none;
-		border-color: var(--accent);
-	}
-
-	.workspace-page-input-error {
-		border-color: var(--danger);
-	}
-
-	.workspace-page-total {
-		color: var(--text-muted);
-	}
-
-	.workspace-page-error {
-		display: block;
-		color: var(--danger);
-		font-size: 0.72rem;
-		margin-top: 0.25rem;
-	}
-
-	.workspace-page-nav {
-		padding: 0.75rem 1rem;
-		border-bottom: 1px solid var(--border-default);
-		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
-	}
-
-	.workspace-page-input-wrap {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-	}
-
-	.workspace-page-input-label {
-		color: var(--text-muted);
-		font-size: 0.72rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
 	.workspace-shell-mobile .workspace-expand-button {
 		display: none;
 	}

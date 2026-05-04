@@ -7,7 +7,6 @@ import type {
 	EvidenceSourceType,
 	PendingAttachment,
 	ToolEvidenceCandidate,
-	DocumentWorkspaceItem,
 	FileProductionJob,
 	ModelId,
 } from '$lib/types';
@@ -381,40 +380,5 @@ export function cloneSendPayload(payload: SendPayload): SendPayload {
 		})),
 		conversationId: payload.conversationId ?? null,
 		modelId: payload.modelId,
-	};
-}
-
-export function reduceWorkspaceDocumentOpen(
-	documents: DocumentWorkspaceItem[],
-	document: DocumentWorkspaceItem
-): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
-	const alreadyOpen = documents.some((entry) => entry.id === document.id);
-	const updatedDocuments = alreadyOpen
-		? documents.map((entry) => (entry.id === document.id ? { ...entry, ...document } : entry))
-		: [...documents, document];
-
-	return {
-		documents: updatedDocuments,
-		activeDocumentId: document.id,
-		isOpen: true,
-	};
-}
-
-export function reduceWorkspaceDocumentClose(
-	documents: DocumentWorkspaceItem[],
-	documentId: string,
-	activeWorkspaceDocumentId: string | null
-): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
-	const remainingDocuments = documents.filter((document) => document.id !== documentId);
-	let nextActiveId = activeWorkspaceDocumentId;
-
-	if (activeWorkspaceDocumentId === documentId) {
-		nextActiveId = remainingDocuments.at(-1)?.id ?? null;
-	}
-
-	return {
-		documents: remainingDocuments,
-		activeDocumentId: nextActiveId,
-		isOpen: remainingDocuments.length > 0,
 	};
 }

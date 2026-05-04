@@ -151,7 +151,7 @@ Do not:
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
 - [`src/lib/server/services/file-production/`](./src/lib/server/services/file-production/)
 - [`src/lib/components/chat/FileProductionCard.svelte`](./src/lib/components/chat/FileProductionCard.svelte)
-- [`src/lib/components/chat/DocumentWorkspace.svelte`](./src/lib/components/chat/DocumentWorkspace.svelte)
+- [`src/lib/components/document-workspace/DocumentWorkspace.svelte`](./src/lib/components/document-workspace/DocumentWorkspace.svelte)
 - Generated files and production job refresh:
   - [`src/lib/services/streaming.ts`](./src/lib/services/streaming.ts) — `StreamMetadata.generatedFiles` field
   - Stream completion links new file-production jobs and any produced chat files to the persisted assistant message so job-backed cards survive refreshes
@@ -172,9 +172,9 @@ Do:
 - keep route files thin and transport-oriented
 - preserve SSE event names and payload expectations unless the parser/UI/tests are intentionally updated together
 - use `FileProductionCard.svelte` for rendering AI-generated files in chat; legacy generated files should be backfilled into succeeded file-production jobs before display
-- use `DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `FilePreview.svelte`
+- use `document-workspace/DocumentWorkspace.svelte` plus route-owned state for in-chat document review; do not move active-document selection into generated-file rows or `DocumentPreviewRenderer.svelte`
 - use `DocumentWorkspace.svelte` as the single shell for generated files, chat attachments, library opens, and search-result opens; do not reintroduce separate modal viewers for those surfaces
-- keep the shared rich-preview stack lazy-loaded from `DocumentWorkspace.svelte`, `FileProductionCard.svelte`, and `knowledge/FilePreview.svelte`; do not static-import the heavy preview path back into the idle chat or knowledge shell
+- keep the shared rich-preview stack lazy-loaded from `document-workspace/DocumentWorkspace.svelte`, `FileProductionCard.svelte`, and `document-workspace/DocumentPreviewRenderer.svelte`; do not static-import the heavy preview path back into the idle chat or knowledge shell
 - keep generated-file downloads on the canonical `/api/chat/files/[id]/download` route; do not invent conversation-scoped download URLs
 - `/api/chat/files/produce` may authenticate with either the signed-in session or a signed service assertion validated with `ALFYAI_API_SIGNING_KEY`; keep that service path conversation-scoped and internal
 - keep outbound file-production guidance in `langflow.ts` aligned with the unified `produce_file` tool contract: source-first documents use `document_source`, program artifacts write final files to `/output`, and generated files show up as durable job-backed cards
@@ -269,8 +269,9 @@ Do not:
 
 ### Knowledge Library
 
-- File preview:
-  - [`src/lib/components/knowledge/FilePreview.svelte`](./src/lib/components/knowledge/FilePreview.svelte)
+- Document workspace preview:
+  - [`src/lib/components/document-workspace/DocumentWorkspace.svelte`](./src/lib/components/document-workspace/DocumentWorkspace.svelte)
+  - [`src/lib/components/document-workspace/DocumentPreviewRenderer.svelte`](./src/lib/components/document-workspace/DocumentPreviewRenderer.svelte)
 
 Rules:
 

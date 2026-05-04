@@ -54,6 +54,10 @@ import {
 	getChatFocusMessageIdFromUrl,
 } from "$lib/client/document-workspace-navigation";
 import {
+	reduceWorkspaceDocumentClose,
+	reduceWorkspaceDocumentOpen,
+} from "$lib/client/document-workspace-state";
+import {
 	removeConversationLocal,
 	updateConversationTitleLocal,
 	upsertConversationLocal,
@@ -61,7 +65,7 @@ import {
 import ChatComposerPanel from "./_components/ChatComposerPanel.svelte";
 import ChatMessagePane from "./_components/ChatMessagePane.svelte";
 import DropZoneOverlay from "$lib/components/chat/DropZoneOverlay.svelte";
-import DocumentWorkspace from "$lib/components/chat/DocumentWorkspace.svelte";
+import DocumentWorkspace from "$lib/components/document-workspace/DocumentWorkspace.svelte";
 import {
 	appendAssistantPlaceholder,
 	appendThinkingChunkToMessageList,
@@ -80,8 +84,6 @@ import {
 	updateMessageById,
 	cloneSendPayload,
 	isOsFileDropEvent,
-	reduceWorkspaceDocumentClose,
-	reduceWorkspaceDocumentOpen,
 	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
 	type MessageEditPayload,
@@ -145,6 +147,7 @@ let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
 let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
 let activeWorkspaceDocumentId = $state<string | null>(null);
 let workspaceOpen = $state(false);
+let workspacePresentation = $state<"docked" | "expanded">("docked");
 let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
 let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
@@ -194,6 +197,7 @@ function openWorkspaceDocument(document: DocumentWorkspaceItem) {
 	workspaceDocuments = result.documents;
 	activeWorkspaceDocumentId = result.activeDocumentId;
 	workspaceOpen = result.isOpen;
+	workspacePresentation = "docked";
 	if (browser && document.artifactId) {
 		void recordDocumentWorkspaceOpen(document.artifactId).catch(
 			() => undefined,
@@ -226,6 +230,7 @@ function closeWorkspaceDocument(documentId: string) {
 
 function closeWorkspace() {
 	workspaceOpen = false;
+	workspacePresentation = "docked";
 }
 
 async function focusMessage(messageId: string) {
@@ -328,6 +333,7 @@ function resetState() {
 	workspaceDocuments = [];
 	activeWorkspaceDocumentId = null;
 	workspaceOpen = false;
+	workspacePresentation = "docked";
 	queuedTurn = null;
 	bootstrapMode = data.bootstrap ?? false;
 	hydratingConversation = false;
@@ -1664,6 +1670,7 @@ function handleDrop(event: DragEvent) {
 
 		<DocumentWorkspace
 			open={workspaceOpen}
+			presentation={workspacePresentation}
 			documents={workspaceDocuments}
 			availableDocuments={availableWorkspaceDocuments}
 			activeDocumentId={activeWorkspaceDocumentId}
@@ -1672,6 +1679,9 @@ function handleDrop(event: DragEvent) {
 			onJumpToSource={handleJumpToWorkspaceSource}
 			onCloseDocument={closeWorkspaceDocument}
 			onCloseWorkspace={closeWorkspace}
+			onPresentationChange={(nextPresentation) => {
+				workspacePresentation = nextPresentation;
+			}}
 		/>
 	</div>
 

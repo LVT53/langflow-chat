@@ -7,10 +7,13 @@ import {
 	getPreviewLanguage,
 	type PreviewFileType,
 } from "$lib/utils/file-preview";
-	import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
-	import { renderHighlightedText } from "$lib/utils/markdown-loader";
-	import FileTypeIcon from "$lib/components/ui/FileTypeIcon.svelte";
-	import { t } from "$lib/i18n";
+import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
+import {
+	renderHighlightedText,
+	renderMarkdown,
+} from "$lib/utils/markdown-loader";
+import { t } from "$lib/i18n";
+import DocumentPreviewToolbar from "./DocumentPreviewToolbar.svelte";
 
 let {
 	open,
@@ -18,9 +21,7 @@ let {
 	previewUrl = null,
 	filename,
 	mimeType,
-	variant = "modal",
-	showHeader = true,
-	onClose,
+	onClose = () => undefined,
 	currentPage = $bindable(1),
 	totalPages = $bindable(0),
 }: {
@@ -29,9 +30,7 @@ let {
 	previewUrl?: string | null;
 	filename: string;
 	mimeType: string | null;
-	variant?: "modal" | "embedded";
-	showHeader?: boolean;
-	onClose: () => void;
+	onClose?: () => void;
 	currentPage?: number;
 	totalPages?: number;
 } = $props();
@@ -39,10 +38,12 @@ let {
 let content = $state<Blob | null>(null);
 let textContent = $state<string | null>(null);
 let highlightedTextHtml = $state<string | null>(null);
+let markdownHtml = $state<string | null>(null);
 let csvTableHtml = $state<string | null>(null);
 let isLoading = $state(false);
 let error = $state<string | null>(null);
 let htmlContent = $state<string | null>(null);
+let htmlPreviewSrcdoc = $state<string | null>(null);
 let fileType = $state<PreviewFileType>("unsupported");
 let objectUrl = $state<string | null>(null);
 
@@ -52,13 +53,17 @@ let pdfDoc = $state<PDFDocumentProxy | null>(null);
 let lastObservedPage = $state(1);
 let zoom = $state(1.0);
 let baseScale = $state(1.0);
+let imageZoom = $state(1.0);
+let imagePanX = $state(0);
+let imagePanY = $state(0);
+let imageDragStartX = $state(0);
+let imageDragStartY = $state(0);
+let imageDragOriginX = $state(0);
+let imageDragOriginY = $state(0);
+let imageDragging = $state(false);
 let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
 let scrollContainerRef = $state<HTMLDivElement | null>(null);
 let isRendering = $state(false);
-let isEmbedded = $derived(variant === "embedded");
-let titleElementId = $derived(
-	`file-preview-title-${artifactId ?? filename.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`,
-);
 let pdfWorkerUrlPromise: Promise<string> | null = null;
 let pageObserver: IntersectionObserver | null = null;
 let isProgrammaticScroll = $state(false);
@@ -142,7 +147,10 @@ $effect(() => {
 				programmaticScrollResetTimeout = null;
 			}
 			isProgrammaticScroll = true;
-			canvas.parentElement.scrollIntoView({ behavior: "auto", block: "start" });
+			canvas.parentElement.scrollIntoView?.({
+				behavior: "auto",
+				block: "start",
+			});
 			lastObservedPage = targetPage;
 			// Keep guard active long enough for observer callbacks
 			programmaticScrollResetTimeout = setTimeout(() => {
@@ -276,12 +284,18 @@ async function fetchFile() {
 	content = null;
 	textContent = null;
 	highlightedTextHtml = null;
+	markdownHtml = null;
 	csvTableHtml = null;
 	htmlContent = null;
+	htmlPreviewSrcdoc = null;
 	pdfDoc = null;
 	currentPage = 1;
 	totalPages = 0;
 	zoom = 1.0;
+	imageZoom = 1.0;
+	imagePanX = 0;
+	imagePanY = 0;
+	imageDragging = false;
 	canvasRefs = [];
 
 	// Cancel any in-progress PDF renders
@@ -344,6 +358,8 @@ async function fetchFile() {
 			textContent = await blob.text();
 			if (mimeType === "text/csv" || filename.toLowerCase().endsWith(".csv")) {
 				csvTableHtml = parseCsvToHtmlTable(textContent);
+			} else if (isMarkdownPreview()) {
+				markdownHtml = await renderMarkdownPreview(textContent);
 			} else {
 				highlightedTextHtml = await renderHighlightedPreviewText(textContent);
 			}
@@ -355,12 +371,33 @@ async function fetchFile() {
 			await renderPptx(blob);
 		} else if (fileType === "odt") {
 			await renderOdt(blob);
+		} else if (fileType === "html") {
+			textContent = await blob.text();
+			htmlPreviewSrcdoc = buildStaticHtmlPreview(textContent);
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : "Failed to load file";
 	} finally {
 		isLoading = false;
 	}
+}
+
+function buildStaticHtmlPreview(content: string): string {
+	const safeHtml = sanitizeHtml(content);
+	return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8"></head><body>${safeHtml}</body></html>`;
+}
+
+function isMarkdownPreview(): boolean {
+	return mimeType === "text/markdown" || filename.toLowerCase().endsWith(".md");
+}
+
+async function renderMarkdownPreview(content: string) {
+	return renderMarkdown(
+		content,
+		browser
+			? (document?.documentElement?.classList.contains("dark") ?? false)
+			: false,
+	);
 }
 
 /**
@@ -482,7 +519,11 @@ async function renderAllPages(zoomLevel = zoom, version?: number) {
 	}
 }
 
-async function renderRemainingPages(startPage: number, zoomLevel: number, version: number) {
+async function renderRemainingPages(
+	startPage: number,
+	zoomLevel: number,
+	version: number,
+) {
 	if (!pdfDoc) return;
 
 	for (let pageNumber = startPage; pageNumber <= totalPages; pageNumber += 1) {
@@ -615,7 +656,12 @@ function setZoomLevel(nextZoom: number) {
 	const clampedZoom = clampZoomLevel(nextZoom);
 	if (Math.abs(clampedZoom - zoom) < 0.01) return;
 	zoom = clampedZoom;
-	if (fileType === "pdf" && pdfDoc && canvasRefs.length > 0 && pdfInitialRenderInProgress) {
+	if (
+		fileType === "pdf" &&
+		pdfDoc &&
+		canvasRefs.length > 0 &&
+		pdfInitialRenderInProgress
+	) {
 		suppressNextPdfRenderEffect = false;
 		void renderAllPages(clampedZoom);
 	}
@@ -640,19 +686,77 @@ function resetZoom() {
 	setZoomLevel(1.0);
 }
 
+function clampImageZoom(nextZoom: number): number {
+	return Math.min(4, Math.max(0.5, Number.parseFloat(nextZoom.toFixed(2))));
+}
+
+function setImageZoomLevel(nextZoom: number) {
+	imageZoom = clampImageZoom(nextZoom);
+	if (imageZoom <= 1) {
+		imagePanX = 0;
+		imagePanY = 0;
+	}
+}
+
+function zoomImageIn() {
+	setImageZoomLevel(imageZoom + 0.25);
+}
+
+function zoomImageOut() {
+	setImageZoomLevel(imageZoom - 0.25);
+}
+
+function fitImage() {
+	imageZoom = 1;
+	imagePanX = 0;
+	imagePanY = 0;
+}
+
+function handleImageWheel(event: WheelEvent) {
+	event.preventDefault();
+	setImageZoomLevel(imageZoom + (event.deltaY < 0 ? 0.25 : -0.25));
+}
+
+function handleImagePointerDown(event: PointerEvent) {
+	if (imageZoom <= 1) return;
+	imageDragging = true;
+	imageDragStartX = event.clientX;
+	imageDragStartY = event.clientY;
+	imageDragOriginX = imagePanX;
+	imageDragOriginY = imagePanY;
+	(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+}
+
+function handleImagePointerMove(event: PointerEvent) {
+	if (!imageDragging) return;
+	imagePanX = imageDragOriginX + event.clientX - imageDragStartX;
+	imagePanY = imageDragOriginY + event.clientY - imageDragStartY;
+}
+
+function handleImagePointerUp(event: PointerEvent) {
+	imageDragging = false;
+	(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+}
+
 function clampPdfScrollTop(nextScrollTop: number): number {
 	if (!scrollContainerRef) return nextScrollTop;
-	const maxScrollTop = Math.max(0, scrollContainerRef.scrollHeight - scrollContainerRef.clientHeight);
+	const maxScrollTop = Math.max(
+		0,
+		scrollContainerRef.scrollHeight - scrollContainerRef.clientHeight,
+	);
 	return Math.min(maxScrollTop, Math.max(0, nextScrollTop));
 }
 
 function scrollPdfBy(deltaY: number) {
 	if (!scrollContainerRef || deltaY === 0) return;
-	scrollContainerRef.scrollTop = clampPdfScrollTop(scrollContainerRef.scrollTop + deltaY);
+	scrollContainerRef.scrollTop = clampPdfScrollTop(
+		scrollContainerRef.scrollTop + deltaY,
+	);
 }
 
 function handlePdfWheel(event: WheelEvent) {
-	if (!scrollContainerRef || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+	if (!scrollContainerRef || Math.abs(event.deltaY) <= Math.abs(event.deltaX))
+		return;
 	event.preventDefault();
 	scrollPdfBy(event.deltaY);
 }
@@ -745,6 +849,8 @@ async function renderPptx(blob: Blob) {
 		await viewer.loadFile(arrayBuffer);
 
 		const slideCount = viewer.getSlideCount();
+		totalPages = slideCount;
+		currentPage = 1;
 		let html = '<div class="pptx-container">';
 
 		// Render each slide and convert to image
@@ -878,22 +984,6 @@ function getObjectUrl(): string | null {
 	return objectUrl;
 }
 
-function handleKeydown(event: KeyboardEvent) {
-	if (event.key === "Escape" && !isEmbedded) {
-		onClose();
-	}
-}
-
-function handleBackdropClick(event: MouseEvent) {
-	if (event.target === event.currentTarget) {
-		onClose();
-	}
-}
-
-function handleModalClick(event: MouseEvent) {
-	event.stopPropagation();
-}
-
 function parseCsvToHtmlTable(csvText: string): string {
 	const rows: string[][] = [];
 	let currentRow: string[] = [];
@@ -965,65 +1055,15 @@ function downloadFile() {
 }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
 {#if open}
 	{#snippet PreviewPanel()}
 		<div
-			role={isEmbedded ? 'region' : 'dialog'}
-			aria-modal={isEmbedded ? undefined : 'true'}
-			aria-labelledby={isEmbedded ? undefined : titleElementId}
-			aria-label={isEmbedded || showHeader ? undefined : filename}
+			role="region"
+			aria-label={filename}
 			class:preview-panel={true}
-			class:preview-panel-modal={!isEmbedded}
-			class:preview-panel-embedded={isEmbedded}
-			onclick={isEmbedded ? undefined : handleModalClick}
+			class:preview-panel-embedded={true}
 		>
-			{#if showHeader}
-				<div class="preview-header">
-					<div class="flex items-center gap-3 min-w-0">
-						<div class="flex-shrink-0 text-icon-muted">
-							<FileTypeIcon type={fileType} />
-						</div>
-						<div class="min-w-0">
-							<div class="text-[0.72rem] font-sans uppercase tracking-[0.12em] text-text-muted">
-								{$t('filePreview.title')}
-							</div>
-							<h3 id={titleElementId} class="mt-1 text-lg font-serif tracking-[-0.02em] text-text-primary truncate">
-								{filename}
-							</h3>
-						</div>
-					</div>
-					<div class="flex items-center gap-2 flex-shrink-0">
-						{#if content}
-							<button
-								type="button"
-								class="preview-download-button"
-								onclick={downloadFile}
-								aria-label={$t('filePreview.download', { filename })}
-								title={$t('filePreview.download', { filename })}
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-								</svg>
-							</button>
-						{/if}
-						<button
-							type="button"
-							class="btn-icon-bare h-10 w-10 rounded-full text-icon-muted hover:text-text-primary"
-							onclick={onClose}
-							aria-label={$t('filePreview.close')}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="18" x2="6" y1="6" y2="18" />
-								<line x1="6" x2="18" y1="6" y2="18" />
-							</svg>
-						</button>
-					</div>
-				</div>
-			{/if}
-
-			<div class:preview-body={true} class:preview-body-modal={!isEmbedded} class:preview-body-embedded={isEmbedded}>
+			<div class:preview-body={true} class:preview-body-embedded={true}>
 				{#if isLoading}
 					<div class="flex flex-col items-center justify-center py-16 gap-4">
 						<div class="spinner"></div>
@@ -1063,43 +1103,17 @@ function downloadFile() {
 				{:else if fileType === 'pdf'}
 					{#if content}
 						<div class="pdf-viewer">
-							<div class="pdf-toolbar">
-								<div class="pdf-page-info">
-									{$t('filePreview.pageInfo', { current: currentPage, total: totalPages })}
-								</div>
-								<div class="pdf-zoom">
-									<button
-										type="button"
-										class="btn-icon-bare h-8 w-8"
-										onclick={zoomOut}
-										disabled={zoom <= 0.5}
-										aria-label={$t('filePreview.zoomOut')}
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>
-										</svg>
-									</button>
-									<button
-										type="button"
-										class="btn-zoom-reset"
-										onclick={resetZoom}
-										aria-label={$t('filePreview.resetZoom')}
-									>
-										{Math.round(zoom * 100)}%
-									</button>
-									<button
-										type="button"
-										class="btn-icon-bare h-8 w-8"
-										onclick={zoomIn}
-										disabled={zoom >= 3.0}
-										aria-label={$t('filePreview.zoomIn')}
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-										</svg>
-									</button>
-								</div>
-							</div>
+							{#if totalPages > 0}
+								<DocumentPreviewToolbar
+									pageKind="page"
+									bind:currentPage
+									{totalPages}
+									{zoom}
+									onZoomIn={zoomIn}
+									onZoomOut={zoomOut}
+									onResetZoom={resetZoom}
+								/>
+							{/if}
 							<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 							<div
 								class="pdf-canvas-container"
@@ -1134,11 +1148,29 @@ function downloadFile() {
 					{/if}
 				{:else if fileType === 'image'}
 					{#if content}
-						<div class="flex items-center justify-center p-6 bg-surface-page min-h-[50vh]">
+						<DocumentPreviewToolbar
+							zoom={imageZoom}
+							onZoomIn={zoomImageIn}
+							onZoomOut={zoomImageOut}
+							onResetZoom={fitImage}
+							onFit={fitImage}
+						/>
+						<div
+							class="image-preview-stage"
+							data-testid="image-preview-stage"
+							role="region"
+							aria-label={`${filename} image preview`}
+							onwheel={handleImageWheel}
+							onpointerdown={handleImagePointerDown}
+							onpointermove={handleImagePointerMove}
+							onpointerup={handleImagePointerUp}
+							onpointercancel={handleImagePointerUp}
+						>
 							<img
 								src={getObjectUrl()}
 								alt={filename}
-								class="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
+								class="image-preview-img"
+								style:transform={`translate(${imagePanX}px, ${imagePanY}px) scale(${imageZoom})`}
 							/>
 						</div>
 					{/if}
@@ -1149,6 +1181,10 @@ function downloadFile() {
 								<div class="csv-table-container">
 									{@html sanitizeHtml(csvTableHtml)}
 								</div>
+							{:else if markdownHtml}
+								<div class="markdown-document-preview">
+									{@html markdownHtml}
+								</div>
 							{:else}
 								<div class="file-text-preview">
 									{@html highlightedTextHtml ?? ''}
@@ -1156,8 +1192,26 @@ function downloadFile() {
 							{/if}
 						</div>
 					{/if}
+				{:else if fileType === 'html'}
+					{#if htmlPreviewSrcdoc}
+						<div class="html-preview-shell">
+							<iframe
+								class="html-preview-frame"
+								title={`${filename} preview`}
+								sandbox=""
+								srcdoc={htmlPreviewSrcdoc}
+							></iframe>
+						</div>
+					{/if}
 				{:else if fileType === 'docx' || fileType === 'xlsx' || fileType === 'pptx' || fileType === 'odt'}
 					{#if htmlContent}
+						{#if fileType === 'pptx' && totalPages > 0}
+							<DocumentPreviewToolbar
+								pageKind="slide"
+								bind:currentPage
+								{totalPages}
+							/>
+						{/if}
 						<div class="p-6 docx-preview">
 							{@html sanitizeHtml(htmlContent)}
 						</div>
@@ -1171,20 +1225,9 @@ function downloadFile() {
 		</div>
 	{/snippet}
 
-	{#if isEmbedded}
-		<div class="preview-embedded-shell">
-			{@render PreviewPanel()}
-		</div>
-	{:else}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div
-			class="fixed inset-0 z-[120] flex items-center justify-center bg-surface-overlay/65 p-4 backdrop-blur-sm"
-			role="presentation"
-			onclick={handleBackdropClick}
-		>
-			{@render PreviewPanel()}
-		</div>
-	{/if}
+	<div class="preview-embedded-shell">
+		{@render PreviewPanel()}
+	</div>
 {/if}
 
 <style>
@@ -1356,6 +1399,49 @@ function downloadFile() {
 		background: color-mix(in srgb, var(--surface-page) 50%, transparent);
 	}
 
+	.html-preview-shell {
+		display: flex;
+		min-height: 0;
+		flex: 1 1 auto;
+		padding: 1rem;
+		background: var(--surface-page);
+	}
+
+	.html-preview-frame {
+		min-height: 62vh;
+		width: 100%;
+		border: 1px solid var(--border-default);
+		border-radius: 0.5rem;
+		background: #ffffff;
+	}
+
+	.image-preview-stage {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 52vh;
+		overflow: hidden;
+		padding: 1rem;
+		background: var(--surface-page);
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.image-preview-stage:active {
+		cursor: grabbing;
+	}
+
+	.image-preview-img {
+		display: block;
+		max-width: 100%;
+		max-height: 72vh;
+		object-fit: contain;
+		border-radius: 0.5rem;
+		box-shadow: var(--shadow-md);
+		transform-origin: center center;
+		transition: transform var(--duration-fast) ease;
+	}
+
 	/* The embedded variant participates in a flex layout chain.
 	   Do NOT add height: 100% here or in .preview-panel-embedded /
 	   .preview-body-embedded. Percentage height requires an ancestor
@@ -1379,32 +1465,11 @@ function downloadFile() {
 		background: var(--surface-elevated);
 	}
 
-	.preview-panel-modal {
-		max-height: 90vh;
-		width: 100%;
-		max-width: 1000px;
-		overflow: hidden;
-		border: 1px solid var(--border-default);
-		border-radius: 1.6rem;
-		box-shadow: var(--shadow-lg);
-	}
-
 	.preview-panel-embedded {
 		flex: 1 1 auto;
 		border: none;
 		background: var(--surface-page);
 		min-height: 0;
-	}
-
-	.preview-header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 1rem 1.25rem;
-		border-bottom: 1px solid var(--border-default);
-		background:
-			linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent 8%), var(--surface-page));
 	}
 
 	.preview-body {
@@ -1415,42 +1480,10 @@ function downloadFile() {
 		-webkit-overflow-scrolling: touch;
 	}
 
-	.preview-body-modal {
-		max-height: calc(90vh - 80px);
-	}
-
 	.preview-body-embedded {
 		flex: 1 1 auto;
 		overflow-y: auto;
 		touch-action: pan-y;
-	}
-
-	.preview-download-button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		padding: 0;
-		border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent 28%);
-		border-radius: 9999px;
-		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
-		color: color-mix(in srgb, var(--accent) 64%, var(--text-primary) 36%);
-		cursor: pointer;
-		transition:
-			background var(--duration-standard) var(--ease-out),
-			border-color var(--duration-standard) var(--ease-out),
-			box-shadow var(--duration-standard) var(--ease-out);
-	}
-
-	.preview-download-button:hover {
-		background: color-mix(in srgb, var(--accent) 16%, var(--surface-page) 84%);
-		border-color: color-mix(in srgb, var(--border-default) 78%, transparent 22%);
-	}
-
-	.preview-download-button:focus-visible {
-		outline: none;
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 82%, transparent 18%);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -1467,49 +1500,6 @@ function downloadFile() {
 		flex: 1 1 auto;
 		min-height: 0;
 		min-width: 0;
-	}
-
-	.pdf-toolbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.75rem 1rem;
-		background: var(--surface-elevated);
-		border-bottom: 1px solid var(--border-default);
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.pdf-page-info {
-		font-size: 0.875rem;
-		color: var(--text-muted);
-		font-family: 'Nimbus Sans L', sans-serif;
-		min-width: 100px;
-		text-align: center;
-	}
-
-	.pdf-zoom {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.btn-zoom-reset {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.875rem;
-		color: var(--text-muted);
-		background: transparent;
-		border: 1px solid var(--border-default);
-		border-radius: 0.375rem;
-		cursor: pointer;
-		font-family: 'Nimbus Sans L', sans-serif;
-		min-width: 60px;
-		text-align: center;
-	}
-
-	.btn-zoom-reset:hover {
-		background: var(--surface-overlay);
-		color: var(--text-primary);
 	}
 
 	.pdf-canvas-container {

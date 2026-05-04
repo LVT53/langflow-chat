@@ -53,6 +53,161 @@ describe("DocumentWorkspace", () => {
 		});
 	});
 
+	it("requests expanded presentation instead of opening a separate viewer", async () => {
+		const onPresentationChange = vi.fn();
+
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				presentation: "docked",
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+				onPresentationChange,
+			},
+		});
+
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		await fireEvent.click(
+			within(desktopWorkspace).getByRole("button", {
+				name: /expand document workspace/i,
+			}),
+		);
+
+		expect(onPresentationChange).toHaveBeenCalledWith("expanded");
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	});
+
+	it("shows a readable open documents rail only when multiple working documents are open", async () => {
+		const documents = [
+			{
+				id: "doc-1",
+				source: "knowledge_artifact" as const,
+				filename: "short.md",
+				title: "Short note",
+				mimeType: "text/markdown",
+				artifactId: "artifact-1",
+			},
+			{
+				id: "doc-2",
+				source: "knowledge_artifact" as const,
+				filename: "very-long-research-brief-with-readable-name.md",
+				title: "Very long research brief with readable name",
+				documentRole: "research_brief",
+				versionNumber: 2,
+				mimeType: "text/markdown",
+				artifactId: "artifact-2",
+			},
+		];
+
+		const { rerender } = render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents: [documents[0]],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		expect(screen.queryByTestId("open-documents-rail")).not.toBeInTheDocument();
+
+		await rerender({
+			documents,
+			activeDocumentId: "doc-2",
+		});
+
+		const rail = screen.getByTestId("open-documents-rail");
+		expect(rail).toBeInTheDocument();
+		expect(rail).toHaveAttribute("role", "tablist");
+		expect(
+			within(rail).getByRole("tab", {
+				name: /very long research brief with readable name/i,
+			}),
+		).toBeInTheDocument();
+		expect(within(rail).getByText(/research brief • v2/i)).toBeInTheDocument();
+	});
+
+	it("uses a mobile documents sheet instead of the desktop rail in the mobile workspace", async () => {
+		const onSelectDocument = vi.fn();
+		const onCloseDocument = vi.fn();
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "first.md",
+						title: "First document",
+						mimeType: "text/markdown",
+						artifactId: "artifact-1",
+					},
+					{
+						id: "doc-2",
+						source: "knowledge_artifact",
+						filename: "second.md",
+						title: "Second document",
+						mimeType: "text/markdown",
+						artifactId: "artifact-2",
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument,
+				onOpenDocument: vi.fn(),
+				onCloseDocument,
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		const mobileWorkspace = document.querySelector(
+			".workspace-shell-mobile",
+		) as HTMLElement;
+		expect(
+			within(mobileWorkspace).queryByTestId("open-documents-rail"),
+		).not.toBeInTheDocument();
+
+		await fireEvent.click(
+			within(mobileWorkspace).getByRole("button", { name: /documents/i }),
+		);
+
+		const sheet = within(mobileWorkspace).getByTestId("mobile-documents-sheet");
+		await fireEvent.click(
+			within(sheet).getByRole("button", { name: /^second document$/i }),
+		);
+		expect(onSelectDocument).toHaveBeenCalledWith("doc-2");
+
+		await fireEvent.click(
+			within(mobileWorkspace).getByRole("button", { name: /documents/i }),
+		);
+		const reopenedSheet = within(mobileWorkspace).getByTestId(
+			"mobile-documents-sheet",
+		);
+		await fireEvent.click(
+			within(reopenedSheet).getByLabelText(/close second document/i),
+		);
+		expect(onCloseDocument).toHaveBeenCalledWith("doc-2");
+	});
+
 	describe("Multi-page document navigation", () => {
 		it("renders scrollable page container for multi-page documents", async () => {
 			render(DocumentWorkspace, {
@@ -96,163 +251,9 @@ describe("DocumentWorkspace", () => {
 			const nextArrow = within(desktopWorkspace).queryByLabelText(/next page/i);
 			expect(prevArrow).not.toBeInTheDocument();
 			expect(nextArrow).not.toBeInTheDocument();
-		});
-
-		it("renders page input that accepts numeric input and jumps to valid page", async () => {
-			const onPageChange = vi.fn();
-
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-pdf",
-							source: "knowledge_artifact",
-							filename: "report.pdf",
-							title: "Annual Report",
-							documentFamilyId: "family-report",
-							documentLabel: "Annual Report",
-							documentRole: "report",
-							versionNumber: 1,
-							mimeType: "application/pdf",
-							artifactId: "artifact-pdf",
-							totalPages: 10,
-							currentPage: 1,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-pdf",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-					onPageChange,
-				},
-			});
-
-			const desktopWorkspace = screen.getByRole("complementary", {
-				name: /document workspace/i,
-			});
-			const pageInput = within(desktopWorkspace).getByTestId(
-				"page-input",
-			) as HTMLInputElement;
-
-			// Directly set the value and dispatch input event for Svelte 5 bind:value
-			pageInput.value = "5";
-			await fireEvent.input(pageInput);
-			await tick();
-			await fireEvent.keyDown(pageInput, { key: "Enter" });
-			await tick();
-
-			expect(onPageChange).toHaveBeenCalledWith(5);
-		});
-
-		it("shows error state for invalid page number input", async () => {
-			const onPageChange = vi.fn();
-
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-pdf",
-							source: "knowledge_artifact",
-							filename: "report.pdf",
-							title: "Annual Report",
-							documentFamilyId: "family-report",
-							documentLabel: "Annual Report",
-							documentRole: "report",
-							versionNumber: 1,
-							mimeType: "application/pdf",
-							artifactId: "artifact-pdf",
-							totalPages: 10,
-							currentPage: 1,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-pdf",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-					onPageChange,
-				},
-			});
-
-			const desktopWorkspace = screen.getByRole("complementary", {
-				name: /document workspace/i,
-			});
-			const pageInput = within(desktopWorkspace).getByTestId(
-				"page-input",
-			) as HTMLInputElement;
-
-			// Directly set the value and dispatch input event for Svelte 5 bind:value
-			pageInput.value = "15";
-			await fireEvent.input(pageInput);
-			await tick();
-			await fireEvent.keyDown(pageInput, { key: "Enter" });
-			await tick();
-
-			const errorMessage =
-				within(desktopWorkspace).queryByTestId("page-input-error");
-			expect(errorMessage).toBeInTheDocument();
-			expect(errorMessage).toHaveTextContent(/invalid|number/i);
-
-			expect(onPageChange).not.toHaveBeenCalled();
-		});
-
-		it("shows error for non-numeric page input", async () => {
-			const onPageChange = vi.fn();
-
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-pdf",
-							source: "knowledge_artifact",
-							filename: "report.pdf",
-							title: "Annual Report",
-							documentFamilyId: "family-report",
-							documentLabel: "Annual Report",
-							documentRole: "report",
-							versionNumber: 1,
-							mimeType: "application/pdf",
-							artifactId: "artifact-pdf",
-							totalPages: 10,
-							currentPage: 1,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-pdf",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-					onPageChange,
-				},
-			});
-
-			const desktopWorkspace = screen.getByRole("complementary", {
-				name: /document workspace/i,
-			});
-			const pageInput = within(desktopWorkspace).getByTestId(
-				"page-input",
-			) as HTMLInputElement;
-
-			// Directly set the value and dispatch input event for Svelte 5 bind:value
-			pageInput.value = "abc";
-			await fireEvent.input(pageInput);
-			await tick();
-			await fireEvent.keyDown(pageInput, { key: "Enter" });
-			await tick();
-
-			const errorMessage =
-				within(desktopWorkspace).queryByTestId("page-input-error");
-			expect(errorMessage).toBeInTheDocument();
-			expect(errorMessage).toHaveTextContent(/invalid|number/i);
-
-			expect(onPageChange).not.toHaveBeenCalled();
+			expect(
+				within(desktopWorkspace).queryByTestId("page-input"),
+			).not.toBeInTheDocument();
 		});
 	});
 
@@ -551,8 +552,14 @@ describe("DocumentWorkspace", () => {
 			within(desktopWorkspace).getByText("Version History"),
 		).toBeInTheDocument();
 		expect(
-			within(desktopWorkspace).getByText("Brief • v2"),
+			within(desktopWorkspace).getByTestId("document-version-control"),
 		).toBeInTheDocument();
+		expect(
+			desktopWorkspace.querySelector(".workspace-history-item"),
+		).not.toBeInTheDocument();
+		expect(
+			within(desktopWorkspace).getAllByText("Brief • v2").length,
+		).toBeGreaterThan(0);
 		expect(
 			within(desktopWorkspace).getByText("Historical"),
 		).toBeInTheDocument();

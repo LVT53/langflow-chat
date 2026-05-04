@@ -68,7 +68,7 @@ ui/
 
 ### Chat (`src/routes/(app)/chat/[conversationId]/+page.svelte`)
 - `chat/MessageArea.svelte` — message list
-- `chat/DocumentWorkspace.svelte` — default-closed working-document pane/layer
+- `document-workspace/DocumentWorkspace.svelte` — route-driven working-document workspace shell
 - `chat/MessageInput.svelte` — composer with queued follow-up
 - `chat/ModelSelector.svelte` — model picker
 - `chat/EvidenceManager.svelte` — evidence panel
@@ -78,7 +78,7 @@ ui/
 
 ### Knowledge (`src/routes/(app)/knowledge/+page.svelte`)
 - `ui/ConfirmDialog.svelte` — delete confirmations
-- Route-local `_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`, `KnowledgeDocumentPreviewModal`
+- Route-local `_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`
 
 ### Settings (`src/routes/(app)/settings/+page.svelte`)
 - `ui/ProfilePictureEditor.svelte` — avatar management
@@ -105,8 +105,8 @@ ui/
 - `DropZoneOverlay.svelte` provides visual feedback during OS file manager drag operations
 - `FileProductionCard.svelte` owns the generated-file job card layout, grouped output rows, preview/download UI, retry/cancel controls, and queued/running/failed/succeeded states
 - `FileProductionCard.svelte` may delegate preview opening upward to the chat route so the route owns active-document selection for the working-document workspace
-- Generated-file preview should reuse `knowledge/FilePreview.svelte` through the chat-file preview endpoint instead of maintaining a second lightweight preview modal, and the row should lazy-load that preview component only when the fallback dialog is actually opened
-- `DocumentWorkspace.svelte` is the shared shell for working documents. It should stay route-driven, default closed, and reuse `knowledge/FilePreview.svelte` in embedded mode rather than creating a second viewer
+- Generated-file preview should open through `document-workspace/DocumentWorkspace.svelte` and `DocumentPreviewRenderer.svelte` instead of maintaining a second lightweight preview modal.
+- `DocumentWorkspace.svelte` is the shared shell for working documents. It should stay route-driven, default closed in Chat, expanded by default in Knowledge, and lazy-load `DocumentPreviewRenderer.svelte` rather than creating a second viewer
 - `DocumentWorkspace.svelte` should also lazy-load the embedded preview component and markdown highlighter so opening chat or knowledge pages does not eagerly pull the full rich-preview stack
 - `DocumentWorkspace.svelte` now owns version-history tabs/strips, source-message jump affordances, text-document compare mode, and the shared historical-status badge for dormant generated-document families. Keep those behaviors inside the shared workspace instead of rebuilding them in chat rows, search, or knowledge-page components
 - Workspace-open behavior tracking should stay in the route-owned open/select handlers, not inside `DocumentWorkspace.svelte` or row components. The shared workspace UI remains a pure callback consumer while document-open events flow through the existing browser API + `memory_events` rail.
@@ -119,7 +119,7 @@ ui/
 
 Pages may have `_components/` directories for page-scoped UI:
 - `src/routes/(app)/chat/[conversationId]/_components/` — `ChatComposerPanel`, `ChatMessagePane`
-- `src/routes/(app)/knowledge/_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`, `KnowledgeDocumentPreviewModal`
+- `src/routes/(app)/knowledge/_components/` — `DocumentsList`, `KnowledgeLibraryModal`, `KnowledgeMemoryModal`, `KnowledgeMemoryView`, `KnowledgeWorkspaceCoordinator`
 - `src/routes/(app)/settings/_components/` — settings tabs, admin panes, password field, and account/user modals
 
 These are **page-internal** — do not import them from other pages. If logic becomes shared, move to `src/lib/components/` or `src/lib/client/api/`.

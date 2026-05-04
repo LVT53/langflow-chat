@@ -287,6 +287,18 @@ _Avoid_: system font dependency, per-document custom font, host-installed PDF fo
 A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
 _Avoid_: active file, current artifact
 
+**Document Workspace**:
+The user-facing surface where one or more **Working Documents** can be opened, switched, inspected, compared, or closed.
+_Avoid_: working document sidebar, file preview modal, active document
+
+**Open Documents Rail**:
+The **Document Workspace** switcher that appears when multiple **Working Documents** are open.
+_Avoid_: tabs, document chips, file row
+
+**Expanded Document Workspace**:
+A larger **Document Workspace** presentation for focused reading or inspection of the same open **Working Documents**.
+_Avoid_: fullscreen modal, separate viewer
+
 ### Relationships
 
 - A **Library Document** may be an **Uploaded Document**.
@@ -318,6 +330,41 @@ _Avoid_: active file, current artifact
 - Uploaded documents do not form user-visible version history in v1.
 - A **Generated Document Family** may contain one or more **Generated Document Versions**.
 - A **Working Document** may point to either a **Library Document** or a **Generated Document**.
+- A **Document Workspace** may contain one or more **Working Documents**.
+- A **Document Workspace** has at most one selected **Working Document** at a time.
+- A **Document Workspace** should keep multiple open **Working Documents** readable and scannable even when more documents are open than fit at once.
+- An **Open Documents Rail** appears only when the **Document Workspace** contains more than one **Working Document**.
+- An **Open Documents Rail** lists open **Working Documents**, not unopened **Generated Document Versions**.
+- **Generated Document Versions** remain visible through generated-document version history, separate from the **Open Documents Rail**.
+- Generated-document version history should be visible only when the selected **Working Document** belongs to a multi-version **Generated Document Family**.
+- Generated-document version history should stay compact in the normal **Document Workspace** view.
+- Unopened **Generated Document Versions** should not show body content unless the user opens or compares that version.
+- A Markdown **Working Document** should render as a readable document by default.
+- Markdown **Working Document** rendering should support common reading features such as headings, lists, tables, task lists, fenced code, callouts, and frontmatter presentation.
+- Markdown **Working Document** rendering should not resolve Obsidian-style wiki links or embeds unless AlfyAI can map them to real documents.
+- Markdown **Working Document** rendering should keep safe external links clickable.
+- Markdown **Working Document** rendering should not make unresolved relative links, wiki links, or embeds behave like real workspace navigation.
+- A Markdown **Working Document** does not need a separate raw-text mode in the **Document Workspace**; the original file remains available through download.
+- A **Document Workspace** provides read-only previews for supported document formats.
+- Supported **Document Workspace** previews should preserve the natural reading shape of the format: paged PDF, readable Word/OpenDocument content, workbook tables, slide previews, rendered Markdown, rendered HTML, CSV tables, and source-style text/code previews.
+- HTML **Working Document** previews should be visual, static, and sandboxed rather than fully interactive pages.
+- Unsupported legacy or specialized file formats may remain download-only unless AlfyAI adds a dedicated preview path for them.
+- An **Expanded Document Workspace** keeps the same selected **Working Document**, open-document set, and document controls as the docked **Document Workspace**.
+- An **Expanded Document Workspace** should not be a separate preview surface with different behavior from the docked **Document Workspace**.
+- Chat and Knowledge should use the same **Document Workspace** for inspecting **Working Documents**.
+- Chat opens the **Document Workspace** docked by default so conversation remains primary.
+- Knowledge may open documents in the **Expanded Document Workspace** by default.
+- Knowledge opens the **Expanded Document Workspace** by default so document inspection remains primary.
+- Closing the **Expanded Document Workspace** in Knowledge should return to the same Knowledge Library state underneath.
+- Chat and Knowledge keep separate open **Working Document** sets even though they use the same **Document Workspace** surface.
+- Opening a **Working Document** in Knowledge should not automatically add it to the Chat **Document Workspace**.
+- AlfyAI should not maintain parallel document viewer surfaces with different controls or behavior for the same **Working Documents**.
+- Generated-document comparison belongs inside the **Document Workspace**, not in a separate viewer surface.
+- Document navigation and zoom controls belong with the preview inside the **Document Workspace**, not split across separate workspace and preview surfaces.
+- Document navigation and zoom controls should appear only for formats that benefit from them.
+- Page and slide navigation in the **Document Workspace** should start with compact controls rather than thumbnail strips.
+- Image previews in the **Document Workspace** should support intuitive zoom, fit, and pan interactions for inspection.
+- Image preview controls should remain read-only and should not introduce editing actions such as crop, rotate, or annotation.
 - Opening a document can make it a **Working Document**, but it does not by itself make the whole body **Prompt Context**.
 
 ### Example dialogue
@@ -339,6 +386,45 @@ _Avoid_: active file, current artifact
 >
 > **Dev:** "Can an uploaded PDF be the **Working Document**?"
 > **Domain expert:** "Yes. A **Working Document** can be uploaded or generated, but upload duplicates still stay separate documents."
+>
+> **Dev:** "Is the sidebar itself the **Working Document**?"
+> **Domain expert:** "No. The surface is the **Document Workspace**; the selected item inside it is the **Working Document**."
+>
+> **Dev:** "If many documents are open, should their names shrink until they are unreadable?"
+> **Domain expert:** "No. The **Document Workspace** should preserve readable document switching, even when the open set has to scroll."
+>
+> **Dev:** "Should the switcher always take space, even when only one document is open?"
+> **Domain expert:** "No. The **Open Documents Rail** appears when there are multiple **Working Documents**."
+>
+> **Dev:** "Should a Markdown file open as highlighted source code?"
+> **Domain expert:** "No. A Markdown **Working Document** should open as a rendered reading document; raw text is available through download."
+>
+> **Dev:** "Should Obsidian wiki links and embeds behave like real links immediately?"
+> **Domain expert:** "No. Render Markdown readably, but do not resolve workspace-specific links unless they can point to real documents."
+>
+> **Dev:** "Should every relative Markdown link become clickable in the workspace?"
+> **Domain expert:** "No. Keep safe external links clickable, and keep unresolved workspace links readable but non-navigating."
+>
+> **Dev:** "Should opening a spreadsheet or slide deck behave like editing it in an office suite?"
+> **Domain expert:** "No. The **Document Workspace** provides read-only previews for supported formats; editing is out of scope."
+>
+> **Dev:** "Should HTML previews run arbitrary page scripts?"
+> **Domain expert:** "No. HTML **Working Document** previews should be static and sandboxed."
+>
+> **Dev:** "Should fullscreen open a separate file-preview modal?"
+> **Domain expert:** "No. Focused reading should use an **Expanded Document Workspace** with the same documents and controls."
+>
+> **Dev:** "Should Knowledge keep its own document preview modal if Chat has the new workspace?"
+> **Domain expert:** "No. Chat and Knowledge should use the same **Document Workspace** surface, with different default presentation states when useful."
+>
+> **Dev:** "Should page and zoom controls be split between the workspace header and the preview renderer?"
+> **Domain expert:** "No. Navigation and zoom belong in one compact preview toolbar inside the **Document Workspace**."
+>
+> **Dev:** "Should the first-class navigation redesign include page thumbnails?"
+> **Domain expert:** "No. Start with compact controls; thumbnails can be added later if the need is proven."
+>
+> **Dev:** "Does better image zoom mean adding image editing?"
+> **Domain expert:** "No. Image zoom, fit, and pan are inspection controls inside the **Document Workspace**."
 
 ## Deep Research Context
 

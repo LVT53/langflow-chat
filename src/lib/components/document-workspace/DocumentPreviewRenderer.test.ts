@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import * as pdfjsLib from "pdfjs-dist";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import FilePreview from "./FilePreview.svelte";
+import DocumentPreviewRenderer from "./DocumentPreviewRenderer.svelte";
 
 const mockJsZipLoadAsync = vi.fn();
 const mockPptxLoadFile = vi.fn();
@@ -12,6 +12,10 @@ const mockPptxDestroy = vi.fn();
 vi.mock("$lib/services/markdown", () => ({
 	renderHighlightedText: vi.fn(
 		async (content: string) => `<pre><code>${content}</code></pre>`,
+	),
+	renderMarkdown: vi.fn(
+		async (content: string) =>
+			`<article><h1>${content.replace(/^#\s*/, "")}</h1></article>`,
 	),
 }));
 
@@ -118,7 +122,7 @@ interface MockWorksheet {
 	) => void;
 }
 
-describe("FilePreview", () => {
+describe("DocumentPreviewRenderer", () => {
 	const mockOnClose = vi.fn();
 
 	beforeEach(() => {
@@ -130,7 +134,7 @@ describe("FilePreview", () => {
 	});
 
 	it("renders nothing when closed", () => {
-		const { container } = render(FilePreview, {
+		const { container } = render(DocumentPreviewRenderer, {
 			props: {
 				open: false,
 				artifactId: "test-123",
@@ -148,7 +152,7 @@ describe("FilePreview", () => {
 			() => new Promise(() => {}),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -168,7 +172,7 @@ describe("FilePreview", () => {
 			status: 404,
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -188,7 +192,7 @@ describe("FilePreview", () => {
 			new Error("Network error"),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -203,12 +207,12 @@ describe("FilePreview", () => {
 		});
 	});
 
-	it("closes on backdrop click", async () => {
+	it("renders as an embedded preview region without a modal backdrop", async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
 			() => new Promise(() => {}),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -218,18 +222,19 @@ describe("FilePreview", () => {
 			},
 		});
 
-		const backdrop = screen.getByRole("presentation");
-		await fireEvent.click(backdrop);
-
-		expect(mockOnClose).toHaveBeenCalled();
+		expect(screen.queryByRole("presentation")).not.toBeInTheDocument();
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("region", { name: "test.pdf" }),
+		).toBeInTheDocument();
 	});
 
-	it("closes on close button click", async () => {
+	it("does not render standalone close chrome", async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
 			() => new Promise(() => {}),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -239,10 +244,9 @@ describe("FilePreview", () => {
 			},
 		});
 
-		const closeButton = screen.getByLabelText("Close file preview");
-		await fireEvent.click(closeButton);
-
-		expect(mockOnClose).toHaveBeenCalled();
+		expect(
+			screen.queryByLabelText("Close file preview"),
+		).not.toBeInTheDocument();
 	});
 
 	it("shows unsupported message for unknown file types", async () => {
@@ -254,7 +258,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -271,12 +275,12 @@ describe("FilePreview", () => {
 		});
 	});
 
-	it("displays filename in header", () => {
+	it("does not render a standalone preview header", () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
 			() => new Promise(() => {}),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -286,18 +290,17 @@ describe("FilePreview", () => {
 			},
 		});
 
-		expect(screen.getByText("document.pdf")).toBeInTheDocument();
-		expect(screen.getByText("File Preview")).toBeInTheDocument();
+		expect(screen.queryByText("File Preview")).not.toBeInTheDocument();
 	});
 
-	it("shows download button when content is loaded", async () => {
+	it("leaves supported-file downloads to the workspace shell", async () => {
 		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
 			ok: true,
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -308,8 +311,11 @@ describe("FilePreview", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByLabelText("Download test.pdf")).toBeInTheDocument();
+			expect(document.querySelector("canvas")).toBeInTheDocument();
 		});
+		expect(
+			screen.queryByLabelText("Download test.pdf"),
+		).not.toBeInTheDocument();
 	});
 
 	it("detects PDF file type correctly", async () => {
@@ -319,7 +325,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -343,7 +349,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -396,7 +402,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -411,7 +417,9 @@ describe("FilePreview", () => {
 		});
 		expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
 		await waitFor(() => {
-			expect(document.querySelector(".pdf-rendering-overlay")).not.toBeInTheDocument();
+			expect(
+				document.querySelector(".pdf-rendering-overlay"),
+			).not.toBeInTheDocument();
 		});
 
 		secondPageRenderResolve?.();
@@ -424,7 +432,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -452,6 +460,45 @@ describe("FilePreview", () => {
 		expect(scrollRegion.scrollTop).toBeGreaterThan(120);
 	});
 
+	it("lets users change PDF pages from the shared preview toolbar", async () => {
+		vi.mocked(pdfjsLib.getDocument).mockReturnValueOnce({
+			promise: Promise.resolve({
+				numPages: 3,
+				getPage: mockPdfGetPage,
+			}),
+		} as ReturnType<typeof pdfjsLib.getDocument>);
+		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-123",
+				filename: "document.pdf",
+				mimeType: "application/pdf",
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTestId("preview-toolbar")).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByLabelText("Next page"));
+		expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+
+		const pageInput = screen.getByTestId(
+			"preview-page-input",
+		) as HTMLInputElement;
+		pageInput.value = "3";
+		await fireEvent.input(pageInput);
+		await fireEvent.keyDown(pageInput, { key: "Enter" });
+		expect(screen.getByDisplayValue("3")).toBeInTheDocument();
+	});
+
 	it("re-renders the PDF page when zoom changes", async () => {
 		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -459,7 +506,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -474,7 +521,7 @@ describe("FilePreview", () => {
 		});
 
 		const componentSource = readFileSync(
-			"src/lib/components/knowledge/FilePreview.svelte",
+			"src/lib/components/document-workspace/DocumentPreviewRenderer.svelte",
 			"utf8",
 		);
 		expect(componentSource).toContain(
@@ -498,7 +545,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -534,7 +581,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -570,7 +617,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -586,6 +633,51 @@ describe("FilePreview", () => {
 		});
 	});
 
+	it("supports image zoom, fit reset, wheel zoom, and drag-to-pan", async () => {
+		const mockBlob = new Blob(["image data"], { type: "image/png" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-image",
+				filename: "image.png",
+				mimeType: "image/png",
+				onClose: mockOnClose,
+			},
+		});
+
+		const imageStage = await screen.findByTestId("image-preview-stage");
+		const image = screen.getByAltText("image.png");
+		expect(screen.getByTestId("preview-toolbar")).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByLabelText("Zoom in"));
+		expect(image.getAttribute("style")).toContain("scale(1.25)");
+
+		await fireEvent.wheel(imageStage, { deltaY: -100 });
+		expect(image.getAttribute("style")).toContain("scale(1.5)");
+
+		await fireEvent.pointerDown(imageStage, {
+			clientX: 10,
+			clientY: 10,
+			pointerId: 1,
+		});
+		await fireEvent.pointerMove(imageStage, {
+			clientX: 35,
+			clientY: 25,
+			pointerId: 1,
+		});
+		await fireEvent.pointerUp(imageStage, { pointerId: 1 });
+		expect(image.getAttribute("style")).toContain("translate(25px, 15px)");
+
+		expect(
+			screen.queryByRole("button", { name: /crop|rotate|annotate/i }),
+		).not.toBeInTheDocument();
+	});
+
 	it("detects DOCX file type correctly", async () => {
 		const mockBlob = new Blob(["docx content"], {
 			type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -595,7 +687,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -620,7 +712,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -646,7 +738,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-pptx",
@@ -666,6 +758,33 @@ describe("FilePreview", () => {
 		expect(mockPptxDestroy).toHaveBeenCalledTimes(1);
 	});
 
+	it("shows slide navigation in the shared preview toolbar for PPTX files", async () => {
+		const mockBlob = new Blob(["pptx content"], {
+			type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		});
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-pptx",
+				filename: "slides.pptx",
+				mimeType:
+					"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTestId("preview-toolbar")).toBeInTheDocument();
+		});
+		expect(screen.getByLabelText("Next slide")).toBeInTheDocument();
+		expect(screen.getAllByText("Slide 1 of 2").length).toBeGreaterThan(0);
+	});
+
 	it("treats XML as text preview content", async () => {
 		const mockBlob = new Blob(["<root><item>Hello</item></root>"], {
 			type: "application/xml",
@@ -675,7 +794,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-xml",
@@ -701,7 +820,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-rtf",
@@ -716,6 +835,73 @@ describe("FilePreview", () => {
 				screen.getByText("{\\rtf1\\ansi Hello world}"),
 			).toBeInTheDocument();
 		});
+	});
+
+	it("renders Markdown files as readable document HTML instead of highlighted source", async () => {
+		const mockBlob = new Blob(["# Project Notes"], {
+			type: "text/markdown",
+		});
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-md",
+				filename: "notes.md",
+				mimeType: "text/markdown",
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("heading", { name: "Project Notes" }),
+			).toBeInTheDocument();
+		});
+		expect(
+			document.querySelector(".markdown-document-preview"),
+		).toBeInTheDocument();
+		expect(
+			document.querySelector(".file-text-preview"),
+		).not.toBeInTheDocument();
+	});
+
+	it("renders HTML files in a sandboxed static preview instead of source highlighting", async () => {
+		const mockBlob = new Blob(
+			[
+				"<main><h1>Website Export</h1></main><script>document.body.dataset.executed = 'yes'</script>",
+			],
+			{ type: "text/html" },
+		);
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-html",
+				filename: "site.html",
+				mimeType: "text/html",
+				onClose: mockOnClose,
+			},
+		});
+
+		const frame = await screen.findByTitle("site.html preview");
+		expect(frame).toHaveAttribute("sandbox", "");
+		expect(frame).toHaveAttribute(
+			"srcdoc",
+			expect.stringContaining("Website Export"),
+		);
+		expect(frame.getAttribute("srcdoc")).not.toContain("<script>");
+		expect(document.body.dataset.executed).toBeUndefined();
+		expect(
+			document.querySelector(".file-text-preview"),
+		).not.toBeInTheDocument();
 	});
 
 	it("renders ODT files as document preview content", async () => {
@@ -749,7 +935,7 @@ describe("FilePreview", () => {
 			blob: () => Promise.resolve(mockBlob),
 		});
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-odt",
@@ -770,7 +956,7 @@ describe("FilePreview", () => {
 			new Error("Network error"),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -785,12 +971,12 @@ describe("FilePreview", () => {
 		});
 	});
 
-	it("closes on Escape key", async () => {
+	it("does not close on Escape because the workspace shell owns closing", async () => {
 		(global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
 			() => new Promise(() => {}),
 		);
 
-		render(FilePreview, {
+		render(DocumentPreviewRenderer, {
 			props: {
 				open: true,
 				artifactId: "test-123",
@@ -802,6 +988,6 @@ describe("FilePreview", () => {
 
 		await fireEvent.keyDown(window, { key: "Escape" });
 
-		expect(mockOnClose).toHaveBeenCalled();
+		expect(mockOnClose).not.toHaveBeenCalled();
 	});
 });
