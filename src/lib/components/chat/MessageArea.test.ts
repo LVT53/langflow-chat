@@ -199,7 +199,7 @@ describe('MessageArea', () => {
 		});
 
 		expect(getByText('Draft report')).toBeInTheDocument();
-		expect(getByText('Building')).toBeInTheDocument();
+		expect(getByText('In-progress')).toBeInTheDocument();
 		expect(queryByText('Generating...')).toBeNull();
 	});
 

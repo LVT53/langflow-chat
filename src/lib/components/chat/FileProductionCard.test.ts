@@ -52,7 +52,7 @@ describe('FileProductionCard', () => {
 			onRetry,
 		});
 
-		expect(getByText('Needs attention')).toBeInTheDocument();
+		expect(getByText('Error')).toBeInTheDocument();
 		expect(getByText('Document rendering timed out.')).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Retry file production' }));
