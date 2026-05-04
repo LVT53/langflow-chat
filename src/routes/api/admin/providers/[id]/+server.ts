@@ -59,7 +59,8 @@ export const PUT: RequestHandler = async (event) => {
         body.apiKey !== undefined ||
         limits.value.maxModelContext !== undefined ||
         limits.value.compactionUiThreshold !== undefined ||
-        limits.value.targetConstructedContext !== undefined
+        limits.value.targetConstructedContext !== undefined ||
+        limits.value.maxTokens !== undefined
       );
     const existing = needsExistingProvider ? await getProviderWithSecrets(id) : null;
     if (needsExistingProvider && !existing) {
@@ -78,6 +79,8 @@ export const PUT: RequestHandler = async (event) => {
           input.targetConstructedContext !== undefined
             ? input.targetConstructedContext
             : existing.targetConstructedContext,
+        maxTokens:
+          input.maxTokens !== undefined ? input.maxTokens : existing.maxTokens,
       });
       if (limitOrderingError) {
         return json({ error: limitOrderingError }, { status: 400 });

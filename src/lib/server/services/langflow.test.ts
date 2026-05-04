@@ -303,6 +303,67 @@ describe("sendMessage provider routing", () => {
 		).toBeLessThanOrEqual(8_000);
 	});
 
+	it("keeps usable prompt context when a switched provider has an impossible max token cap", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "fireworks",
+			displayName: "Fireworks Model",
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "accounts/fireworks/models/kimi-k2p6",
+			reasoningEffort: null,
+			thinkingType: null,
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: 146_000,
+			compactionUiThreshold: 131_400,
+			targetConstructedContext: 102_200,
+			maxMessageLength: null,
+			maxTokens: 262_000,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+		const switchedModelContext = [
+			"Context from your conversation history:",
+			`## Retrieved Evidence\nImportant retained context.\n${"large context ".repeat(5000)}`,
+			"## Current User Message\nTiny question?",
+		].join("\n\n");
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: switchedModelContext,
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+		try {
+			await sendMessage("Tiny question?", "conv-1", "provider:provider-1", {
+				id: "user-1",
+			});
+
+			const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+			const providerTweaks = body.tweaks["ModelNode-1"];
+			expect(providerTweaks.max_tokens).toBeLessThan(146_000);
+			expect(body.input_value).toContain("Important retained context.");
+			expect(body.input_value).toContain(
+				"## Current User Message\nTiny question?",
+			);
+			expect(warn).toHaveBeenCalledWith(
+				"[LANGFLOW] Output token cap clamped",
+				expect.objectContaining({
+					configuredMaxTokens: 262_000,
+					effectiveMaxTokens: providerTweaks.max_tokens,
+					outputReserveClamped: true,
+				}),
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	it("emits a compact Context Trace for the outbound turn without prompt body text", async () => {
 		mockConfig({}, { contextDiagnosticsDebug: true });
 		const info = vi.spyOn(console, "info").mockImplementation(() => undefined);

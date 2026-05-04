@@ -50,6 +50,13 @@ export type PromptContextLimits = {
 	targetConstructedContext: number;
 };
 
+type OutputTokenBudget = {
+	configuredMaxTokens: number | null;
+	effectiveMaxTokens: number | null;
+	outputReserve: number;
+	outputReserveClamped: boolean;
+};
+
 type LangflowModelRunConfig = ModelConfig & {
 	contextLimits?: PromptContextLimits;
 	providerId?: string;
@@ -374,6 +381,50 @@ function extractCurrentMessageSection(
 	};
 }
 
+function resolveOutputTokenBudget(params: {
+	maxTokens?: number | null;
+	contextLimits: PromptContextLimits;
+	systemPrompt: string;
+	currentMessageSection: string;
+}): OutputTokenBudget {
+	if (params.maxTokens == null) {
+		return {
+			configuredMaxTokens: null,
+			effectiveMaxTokens: null,
+			outputReserve: 0,
+			outputReserveClamped: false,
+		};
+	}
+
+	const configuredMaxTokens = Math.max(1, params.maxTokens);
+	const systemTokens = estimateTokenCount(params.systemPrompt);
+	const currentMessageTokens = estimateTokenCount(params.currentMessageSection);
+	const maxReserveForTargetContext = Math.max(
+		1,
+		params.contextLimits.maxModelContext -
+			params.contextLimits.targetConstructedContext,
+	);
+	const maxReserveForRequiredInput = Math.max(
+		1,
+		params.contextLimits.maxModelContext -
+			systemTokens -
+			currentMessageTokens -
+			LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS,
+	);
+	const effectiveMaxTokens = Math.min(
+		configuredMaxTokens,
+		maxReserveForTargetContext,
+		maxReserveForRequiredInput,
+	);
+
+	return {
+		configuredMaxTokens,
+		effectiveMaxTokens,
+		outputReserve: effectiveMaxTokens,
+		outputReserveClamped: effectiveMaxTokens < configuredMaxTokens,
+	};
+}
+
 function applyOutboundPromptBudget(params: {
 	inputValue: string;
 	message: string;
@@ -384,8 +435,18 @@ function applyOutboundPromptBudget(params: {
 	modelId: ModelId | string | undefined;
 	modelName: string;
 	providerId?: string | null;
-}): string {
-	const outputReserve = Math.max(0, params.maxTokens ?? 0);
+}): { inputValue: string; outputTokenBudget: OutputTokenBudget } {
+	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
+		params.inputValue,
+		params.message,
+	);
+	const outputTokenBudget = resolveOutputTokenBudget({
+		maxTokens: params.maxTokens,
+		contextLimits: params.contextLimits,
+		systemPrompt: params.systemPrompt,
+		currentMessageSection,
+	});
+	const outputReserve = outputTokenBudget.outputReserve;
 	const configuredPromptBudget = Math.min(
 		params.contextLimits.targetConstructedContext,
 		params.contextLimits.compactionUiThreshold,
@@ -397,15 +458,25 @@ function applyOutboundPromptBudget(params: {
 		systemTokens -
 		LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS;
 	const currentInputTokens = estimateTokenCount(params.inputValue);
-
-	if (inputTokenBudget > 0 && currentInputTokens <= inputTokenBudget) {
-		return params.inputValue;
+	if (outputTokenBudget.outputReserveClamped) {
+		console.warn("[LANGFLOW] Output token cap clamped", {
+			sessionId: params.sessionId,
+			modelId: params.modelId ?? "model1",
+			providerId: params.providerId ?? null,
+			modelName: params.modelName,
+			maxModelContext: params.contextLimits.maxModelContext,
+			targetConstructedContext: params.contextLimits.targetConstructedContext,
+			configuredMaxTokens: outputTokenBudget.configuredMaxTokens,
+			effectiveMaxTokens: outputTokenBudget.effectiveMaxTokens,
+			outputReserve: outputTokenBudget.outputReserve,
+			outputReserveClamped: true,
+		});
 	}
 
-	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
-		params.inputValue,
-		params.message,
-	);
+	if (inputTokenBudget > 0 && currentInputTokens <= inputTokenBudget) {
+		return { inputValue: params.inputValue, outputTokenBudget };
+	}
+
 	const currentMessageTokens = estimateTokenCount(currentMessageSection);
 	const contextBudget = Math.max(0, inputTokenBudget - currentMessageTokens - 16);
 	const compactedContext = contextPrefix
@@ -430,12 +501,15 @@ function applyOutboundPromptBudget(params: {
 		configuredPromptBudget,
 		systemTokens,
 		outputReserve,
+		configuredMaxTokens: outputTokenBudget.configuredMaxTokens,
+		effectiveMaxTokens: outputTokenBudget.effectiveMaxTokens,
+		outputReserveClamped: outputTokenBudget.outputReserveClamped,
 		inputTokenBudget,
 		beforeInputTokens: currentInputTokens,
 		afterInputTokens: estimateTokenCount(finalInputValue),
 	});
 
-	return finalInputValue;
+	return { inputValue: finalInputValue, outputTokenBudget };
 }
 
 function inferContextTraceSource(sectionName: string): ContextTraceSource {
@@ -504,7 +578,7 @@ function emitOutboundContextTrace(params: {
 	systemPrompt: string;
 	message: string;
 	contextLimits: PromptContextLimits;
-	maxTokens?: number | null;
+	outputReserve: number;
 	sessionId: string;
 	userId?: string | null;
 	modelId: ModelId | string | undefined;
@@ -536,7 +610,7 @@ function emitOutboundContextTrace(params: {
 						estimateTokenCount(params.systemPrompt) +
 						estimateTokenCount(params.message),
 					promptEstimate: estimateTokenCount(params.inputValue),
-					outputReserve: Math.max(0, params.maxTokens ?? 0),
+					outputReserve: params.outputReserve,
 					wasBudgetEnforced:
 						estimateTokenCount(params.inputValue) >=
 						params.contextLimits.targetConstructedContext,
@@ -617,6 +691,7 @@ function getProviderReasoningEffort(
 function buildLangflowTweaks(
 	modelConfig: LangflowModelRunConfig,
 	systemPrompt: string,
+	effectiveMaxTokens?: number | null,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
 	const requestTimeoutSeconds = Math.max(
@@ -631,8 +706,8 @@ function buildLangflowTweaks(
 		api_base: modelConfig.baseUrl,
 		...(componentId ? { timeout: requestTimeoutSeconds } : {}),
 		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
-		...(modelConfig.maxTokens != null
-			? { max_tokens: modelConfig.maxTokens }
+		...(effectiveMaxTokens != null
+			? { max_tokens: effectiveMaxTokens }
 			: {}),
 		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
 		...(reasoningEffort &&
@@ -773,7 +848,7 @@ export async function prepareOutboundChatContext(params: {
 		systemPromptAppendix: params.systemPromptAppendix,
 		personalityPrompt: params.personalityPrompt,
 	});
-	inputValue = applyOutboundPromptBudget({
+	const budgetedPrompt = applyOutboundPromptBudget({
 		inputValue,
 		message: params.message,
 		systemPrompt,
@@ -790,6 +865,7 @@ export async function prepareOutboundChatContext(params: {
 		modelName: params.modelConfig.modelName,
 		providerId: null,
 	});
+	inputValue = budgetedPrompt.inputValue;
 
 	return {
 		inputValue,
@@ -936,7 +1012,7 @@ export async function sendMessage(
 			modelConfig,
 			config,
 		);
-		inputValue = applyOutboundPromptBudget({
+		const budgetedPrompt = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
@@ -947,12 +1023,13 @@ export async function sendMessage(
 			modelName,
 			providerId: modelConfig.providerId ?? null,
 		});
+		inputValue = budgetedPrompt.inputValue;
 		emitOutboundContextTrace({
 			inputValue,
 			systemPrompt,
 			message,
 			contextLimits,
-			maxTokens: modelConfig.maxTokens,
+			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
 			sessionId,
 			userId: user?.id ?? null,
 			modelId: modelId ?? "model1",
@@ -967,7 +1044,11 @@ export async function sendMessage(
 			input_type: "chat",
 			output_type: "chat",
 			session_id: sessionId,
-			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
+			tweaks: buildLangflowTweaks(
+				modelConfig,
+				systemPrompt,
+				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			),
 		};
 
 		if (config.contextDiagnosticsDebug) {
@@ -1160,7 +1241,7 @@ export async function sendMessageStream(
 			modelConfig,
 			config,
 		);
-		inputValue = applyOutboundPromptBudget({
+		const budgetedPrompt = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
@@ -1171,12 +1252,13 @@ export async function sendMessageStream(
 			modelName,
 			providerId: modelConfig.providerId ?? null,
 		});
+		inputValue = budgetedPrompt.inputValue;
 		emitOutboundContextTrace({
 			inputValue,
 			systemPrompt,
 			message,
 			contextLimits,
-			maxTokens: modelConfig.maxTokens,
+			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
 			sessionId,
 			userId: options?.user?.id ?? null,
 			modelId: modelId ?? "model1",
@@ -1191,7 +1273,11 @@ export async function sendMessageStream(
 			input_type: "chat",
 			output_type: "chat",
 			session_id: sessionId,
-			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
+			tweaks: buildLangflowTweaks(
+				modelConfig,
+				systemPrompt,
+				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			),
 		};
 
 		if (config.contextDiagnosticsDebug) {

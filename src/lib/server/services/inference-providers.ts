@@ -147,8 +147,14 @@ export function validateProviderLimitOrdering(input: {
   maxModelContext: number | null;
   compactionUiThreshold: number | null;
   targetConstructedContext: number | null;
+  maxTokens?: number | null;
 }): string | null {
-  const { maxModelContext, compactionUiThreshold, targetConstructedContext } = input;
+  const {
+    maxModelContext,
+    compactionUiThreshold,
+    targetConstructedContext,
+    maxTokens = null,
+  } = input;
   if (
     maxModelContext !== null &&
     compactionUiThreshold !== null &&
@@ -169,6 +175,13 @@ export function validateProviderLimitOrdering(input: {
     targetConstructedContext >= maxModelContext
   ) {
     return 'Target constructed context must be less than max model context';
+  }
+  if (
+    maxModelContext !== null &&
+    maxTokens !== null &&
+    maxTokens >= maxModelContext
+  ) {
+    return 'Max tokens must be less than max model context';
   }
   return null;
 }
