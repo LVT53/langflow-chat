@@ -156,9 +156,14 @@ class FileProductionToolComponent(Component):
     def _get_conversation_id(self) -> str | None:
         """Get the conversation ID from the Langflow session."""
         try:
-            explicit = str(getattr(self, "conversation_id", "") or "").strip()
-            if explicit:
-                return explicit
+            explicit_snake = str(getattr(self, "conversation_id", "") or "").strip()
+            if explicit_snake:
+                return explicit_snake
+
+            explicit_camel = str(getattr(self, "conversationId", "") or "").strip()
+            if explicit_camel:
+                return explicit_camel
+
             if hasattr(self, "graph") and self.graph is not None:
                 return getattr(self.graph, "session_id", None)
         except Exception as exc:
