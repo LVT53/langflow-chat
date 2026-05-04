@@ -114,6 +114,7 @@
 	class:is-active={isActive}
 	class:is-resolved={isResolved}
 	data-testid="file-production-card"
+	data-motion={isActive ? 'smooth-shimmer' : undefined}
 	aria-busy={isActive}
 	aria-label={isActive ? $t('fileProduction.runningDescription') : undefined}
 >
@@ -231,21 +232,34 @@
 	}
 
 	.file-production-card.is-active {
-		background:
-			linear-gradient(
-				100deg,
-				color-mix(in srgb, var(--surface-elevated) 62%, transparent 38%) 0%,
-				color-mix(in srgb, var(--surface-page) 72%, var(--accent) 28%) 38%,
-				color-mix(in srgb, var(--surface-elevated) 62%, transparent 38%) 76%
-			);
-		background-size: 220% 100%;
-		animation: file-production-shimmer 1.35s ease-in-out infinite;
+		background: color-mix(in srgb, var(--surface-elevated) 68%, var(--surface-page) 32%);
+		border-color: color-mix(in srgb, var(--border-subtle) 70%, var(--accent) 30%);
+	}
+
+	.file-production-card.is-active::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			100deg,
+			transparent 0%,
+			transparent 32%,
+			color-mix(in srgb, var(--surface-page) 58%, var(--accent) 42%) 48%,
+			transparent 64%,
+			transparent 100%
+		);
+		opacity: 0.72;
+		transform: translate3d(-100%, 0, 0);
+		animation: file-production-shimmer 1.15s linear infinite;
+		will-change: transform;
+		pointer-events: none;
 	}
 
 	.active-cancel {
 		position: absolute;
 		top: 0.55rem;
 		right: 0.55rem;
+		z-index: 1;
 		display: inline-flex;
 		width: 1.75rem;
 		height: 1.75rem;
@@ -403,24 +417,24 @@
 	.file-production-card.is-resolved .job-status-detail,
 	.file-production-card.is-resolved .produced-files,
 	.file-production-card.is-resolved .job-actions {
-		animation: file-production-reveal 180ms ease-out both;
+		animation: file-production-reveal 260ms ease-out both;
 	}
 
 	.file-production-card.is-resolved .job-status-detail {
-		animation-delay: 35ms;
+		animation-delay: 70ms;
 	}
 
 	.file-production-card.is-resolved .produced-files,
 	.file-production-card.is-resolved .job-actions {
-		animation-delay: 70ms;
+		animation-delay: 140ms;
 	}
 
 	@keyframes file-production-shimmer {
 		from {
-			background-position: 120% 0;
+			transform: translate3d(-100%, 0, 0);
 		}
 		to {
-			background-position: -120% 0;
+			transform: translate3d(100%, 0, 0);
 		}
 	}
 

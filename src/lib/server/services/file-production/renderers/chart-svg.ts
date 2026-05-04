@@ -92,14 +92,16 @@ function renderCartesianChart(
 	if (!chart.xKey || !chart.yKey) {
 		throw new Error('Cartesian charts require xKey and yKey.');
 	}
+	const xKey = chart.xKey;
+	const yKey = chart.yKey;
 
 	const margin = { top: 54, right: 28, bottom: 54, left: 68 };
 	const plotWidth = width - margin.left - margin.right;
 	const plotHeight = height - margin.top - margin.bottom;
 	const rawRows = chart.data
 		.map((row) => ({
-			label: labelValue(row[chart.xKey!]),
-			value: numberValue(row[chart.yKey!]),
+			label: labelValue(row[xKey]),
+			value: numberValue(row[yKey]),
 			series: chart.seriesKey ? labelValue(row[chart.seriesKey]) : 'Value',
 		}))
 		.filter((row): row is { label: string; value: number; series: string } => row.value !== null);
@@ -120,23 +122,30 @@ function renderCartesianChart(
 	const minValue = Math.min(0, ...values);
 	const maxValue = Math.max(...values);
 	const ticks = niceTicks(minValue, maxValue);
+	const isBarChart = chart.chartType === 'bar' || chart.chartType === 'stackedBar';
+	const groupWidth = isBarChart ? Math.max(18, plotWidth / Math.max(labels.length, 1) * 0.66) : 0;
+	const pointInset = isBarChart ? groupWidth / 2 + 4 : chart.chartType === 'scatter' ? 6 : 5;
+	const drawablePlotWidth = Math.max(1, plotWidth - pointInset * 2);
+	const scaleIndex = (index: number, count: number) =>
+		margin.left +
+		pointInset +
+		(count === 1 ? drawablePlotWidth / 2 : (index / (count - 1)) * drawablePlotWidth);
 	const scaleY = (value: number) => {
 		const tickMin = ticks[0];
 		const tickMax = ticks[ticks.length - 1];
 		return margin.top + plotHeight - ((value - tickMin) / (tickMax - tickMin || 1)) * plotHeight;
 	};
-	const scaleX = (index: number) =>
-		margin.left + (rawRows.length === 1 ? plotWidth / 2 : (index / (rawRows.length - 1)) * plotWidth);
+	const scaleX = (index: number) => scaleIndex(index, rawRows.length);
 	const points = rawRows
 		.map((row, index) => `${scaleX(index).toFixed(1)},${scaleY(row.value).toFixed(1)}`)
 		.join(' ');
 	const areaPoints =
 		chart.chartType === 'area'
-			? `${margin.left.toFixed(1)},${(margin.top + plotHeight).toFixed(1)} ${points} ${(margin.left + plotWidth).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`
+			? `${scaleX(0).toFixed(1)},${(margin.top + plotHeight).toFixed(1)} ${points} ${scaleX(rawRows.length - 1).toFixed(1)},${(margin.top + plotHeight).toFixed(1)}`
 			: null;
 	const unitLabel = chart.units ? ` (${chart.units})` : '';
 	const xLabels = labels.map((label, index) => {
-		const x = margin.left + (labels.length === 1 ? plotWidth / 2 : (index / (labels.length - 1)) * plotWidth);
+		const x = scaleIndex(index, labels.length);
 		return `<text x="${x.toFixed(1)}" y="${height - 22}" text-anchor="middle" font-size="10" fill="${CHART_THEME.secondaryText}">${escapeXml(label)}</text>`;
 	});
 	const yGrid = ticks.map((tick) => {
@@ -152,13 +161,9 @@ function renderCartesianChart(
 		return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${CHART_THEME.accent}"><title>${escapeXml(`${row.label}: ${row.value}${unitLabel}`)}</title></circle>`;
 	});
 	const bars: string[] = [];
-	if (chart.chartType === 'bar' || chart.chartType === 'stackedBar') {
-		const groupWidth = Math.max(18, plotWidth / Math.max(labels.length, 1) * 0.66);
+	if (isBarChart) {
 		for (const [labelIndex, label] of labels.entries()) {
-			const groupX =
-				margin.left +
-				(labels.length === 1 ? plotWidth / 2 : (labelIndex / (labels.length - 1)) * plotWidth) -
-				groupWidth / 2;
+			const groupX = scaleIndex(labelIndex, labels.length) - groupWidth / 2;
 			if (chart.chartType === 'stackedBar') {
 				let stackedY = margin.top + plotHeight;
 				for (const [seriesIndex, seriesName] of series.entries()) {
@@ -183,10 +188,10 @@ function renderCartesianChart(
 	const scatterMarkers =
 		chart.chartType === 'scatter'
 			? rawRows.map((row, index) => {
-					const xNumber = numberValue(chart.data[index][chart.xKey!]) ?? index;
-					const xMin = Math.min(...chart.data.map((dataRow, rowIndex) => numberValue(dataRow[chart.xKey!]) ?? rowIndex));
-					const xMax = Math.max(...chart.data.map((dataRow, rowIndex) => numberValue(dataRow[chart.xKey!]) ?? rowIndex));
-					const x = margin.left + ((xNumber - xMin) / (xMax - xMin || 1)) * plotWidth;
+					const xNumber = numberValue(chart.data[index][xKey]) ?? index;
+					const xMin = Math.min(...chart.data.map((dataRow, rowIndex) => numberValue(dataRow[xKey]) ?? rowIndex));
+					const xMax = Math.max(...chart.data.map((dataRow, rowIndex) => numberValue(dataRow[xKey]) ?? rowIndex));
+					const x = margin.left + pointInset + ((xNumber - xMin) / (xMax - xMin || 1)) * drawablePlotWidth;
 					const y = scaleY(row.value);
 					return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${CHART_THEME.accent}"><title>${escapeXml(`${xNumber}: ${row.value}${unitLabel}`)}</title></circle>`;
 				})
@@ -233,10 +238,12 @@ function renderPieChart(
 	height: number
 ): RenderedChartSvg {
 	if (!chart.labelKey || !chart.valueKey) throw new Error('Pie charts require labelKey and valueKey.');
+	const labelKey = chart.labelKey;
+	const valueKey = chart.valueKey;
 	const rows = chart.data
 		.map((row) => ({
-			label: labelValue(row[chart.labelKey!]),
-			value: numberValue(row[chart.valueKey!]),
+			label: labelValue(row[labelKey]),
+			value: numberValue(row[valueKey]),
 		}))
 		.filter((row): row is { label: string; value: number } => row.value !== null && row.value > 0);
 	if (rows.length === 0) throw new Error('Pie chart data has no positive numeric values.');

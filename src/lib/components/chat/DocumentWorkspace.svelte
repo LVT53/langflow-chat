@@ -71,18 +71,19 @@ let lastDocumentId = $state<string | null>(null);
 // Resize state
 let isResizing = $state(false);
 let resizeStartX = $state(0);
-let resizeStartWidth = $state(400);
-const MIN_WIDTH = 320;
-const MAX_WIDTH_RATIO = 0.42;
+let resizeStartWidth = $state(560);
+const DEFAULT_WORKSPACE_WIDTH = 560;
+const MIN_WIDTH = 420;
+const MAX_WIDTH_RATIO = 0.58;
 const WORKSPACE_WIDTH_STORAGE_KEY = "document-workspace-width";
 
 let workspaceWidth = $state(
 	browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
 		? Math.max(
 				MIN_WIDTH,
-				parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || "400"),
-			) || 400
-		: 400,
+				parseFloat(localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) || String(DEFAULT_WORKSPACE_WIDTH)),
+			) || DEFAULT_WORKSPACE_WIDTH
+		: DEFAULT_WORKSPACE_WIDTH,
 );
 
 // Persist workspace width when it changes
@@ -435,6 +436,13 @@ async function ensureFilePreviewModule() {
 
 	return filePreviewModulePromise;
 }
+
+$effect(() => {
+	if (!browser) return;
+	if (open || documents.length > 0 || availableDocuments.some((document) => getDocumentPreviewUrl(document))) {
+		void ensureFilePreviewModule();
+	}
+});
 
 async function renderHighlightedCompareText(
 	document: DocumentWorkspaceItem,
@@ -1550,9 +1558,9 @@ $effect(() => {
 	@media (min-width: 768px) {
 		.workspace-shell-desktop {
 			display: flex;
-			width: min(38vw, 34rem);
-			max-width: 42%;
-			min-width: 20rem;
+			width: min(48vw, 46rem);
+			max-width: 58%;
+			min-width: 26rem;
 			flex: 0 0 auto;
 			border-left: 1px solid var(--border-subtle);
 			background: var(--surface-page);

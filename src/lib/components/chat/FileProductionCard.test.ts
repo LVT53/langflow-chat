@@ -30,6 +30,7 @@ describe('FileProductionCard', () => {
 		});
 
 		expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+		expect(container.querySelector('[data-motion="smooth-shimmer"]')).toBeInTheDocument();
 		expect(queryByText('Queued')).toBeNull();
 		expect(queryByText('Quarterly report')).toBeNull();
 		expect(queryByText('No files yet')).toBeNull();

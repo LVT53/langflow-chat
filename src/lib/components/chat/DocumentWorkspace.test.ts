@@ -18,6 +18,7 @@ vi.mock("$lib/services/markdown", () => ({
 describe("DocumentWorkspace", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		global.fetch = vi.fn();
 	});
 
@@ -256,6 +257,36 @@ describe("DocumentWorkspace", () => {
 	});
 
 	describe("Resizable panel", () => {
+		it("opens generated document previews at a wider PDF-friendly default width", async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: "doc-1",
+							source: "knowledge_artifact",
+							filename: "document.pdf",
+							title: "Document",
+							mimeType: "application/pdf",
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: "doc-1",
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole("complementary", {
+				name: /document workspace/i,
+			});
+
+			expect(desktopWorkspace.style.width).toBe("560px");
+		});
+
 		it("can be dragged to resize to a new width", async () => {
 			render(DocumentWorkspace, {
 				props: {
@@ -344,7 +375,7 @@ describe("DocumentWorkspace", () => {
 			await tick();
 
 			const width = parseInt(desktopWorkspace.style.width, 10);
-			expect(width).toBeGreaterThanOrEqual(320);
+			expect(width).toBeGreaterThanOrEqual(420);
 		});
 
 		it("respects maximum width constraint during resize", async () => {
@@ -390,7 +421,7 @@ describe("DocumentWorkspace", () => {
 			await tick();
 
 			const width = parseInt(desktopWorkspace.style.width, 10);
-			const maxWidth = window.innerWidth * 0.42;
+			const maxWidth = window.innerWidth * 0.58;
 			expect(width).toBeLessThanOrEqual(Math.ceil(maxWidth));
 		});
 	});

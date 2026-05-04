@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { browser } from "$app/environment";
+import { tick } from "svelte";
 import {
 	determinePreviewFileType,
 	getPreviewLanguage,
@@ -62,6 +63,8 @@ let pdfWorkerUrlPromise: Promise<string> | null = null;
 let pageObserver: IntersectionObserver | null = null;
 let isProgrammaticScroll = $state(false);
 let programmaticScrollResetTimeout: ReturnType<typeof setTimeout> | null = null;
+let pdfInitialRenderInProgress = false;
+let suppressNextPdfRenderEffect = false;
 
 // PDF render concurrency tracking
 let pdfRenderVersion = 0;
@@ -106,6 +109,10 @@ $effect(() => {
 // Re-render all pages when zoom changes
 $effect(() => {
 	if (fileType === "pdf" && pdfDoc && canvasRefs.length > 0) {
+		if (suppressNextPdfRenderEffect) {
+			suppressNextPdfRenderEffect = false;
+			return;
+		}
 		const activeZoom = zoom;
 		void renderAllPages(activeZoom);
 	}
@@ -380,6 +387,7 @@ async function renderPdf(blob: Blob) {
 
 	try {
 		isRendering = true;
+		pdfInitialRenderInProgress = true;
 
 		// Load PDF.js dynamically (avoids SSR issues)
 		if (!pdfjsLib) {
@@ -391,6 +399,7 @@ async function renderPdf(blob: Blob) {
 		if (pdfRenderVersion !== currentVersion) return;
 
 		const arrayBuffer = await blob.arrayBuffer();
+		suppressNextPdfRenderEffect = true;
 		pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 		totalPages = pdfDoc.numPages;
 		// Pre-size canvasRefs so Svelte 5 array reactivity fires before template render
@@ -401,6 +410,7 @@ async function renderPdf(blob: Blob) {
 		// Bail if a newer render cycle started during document loading
 		if (pdfRenderVersion !== currentVersion) return;
 
+		await tick();
 		// Allow flex layout to settle before measuring container width
 		await new Promise((resolve) => requestAnimationFrame(resolve));
 		if (pdfRenderVersion !== currentVersion) return;
@@ -418,12 +428,19 @@ async function renderPdf(blob: Blob) {
 			zoom = 1.0;
 		}
 
-		// Render all pages
-		await renderAllPages(zoom, currentVersion);
+		const firstCanvas = canvasRefs[0];
+		if (firstCanvas) {
+			await renderPage(1, zoom, firstCanvas, currentVersion);
+		}
+		if (pdfRenderVersion !== currentVersion) return;
+		isRendering = false;
+		pdfInitialRenderInProgress = false;
+		void renderRemainingPages(2, zoom, currentVersion);
 	} catch (err) {
 		error = "Failed to render PDF file";
 		console.error("PDF render error:", err);
 	} finally {
+		pdfInitialRenderInProgress = false;
 		if (pdfRenderVersion === currentVersion) {
 			isRendering = false;
 		}
@@ -439,6 +456,7 @@ async function renderAllPages(zoomLevel = zoom, version?: number) {
 		currentVersion = version;
 	} else {
 		cancelActivePdfRenderTasks();
+		pdfInitialRenderInProgress = false;
 		pdfRenderVersion++;
 		currentVersion = pdfRenderVersion;
 	}
@@ -461,6 +479,18 @@ async function renderAllPages(zoomLevel = zoom, version?: number) {
 	} catch (err) {
 		console.error("Pages render error:", err);
 		isRendering = false;
+	}
+}
+
+async function renderRemainingPages(startPage: number, zoomLevel: number, version: number) {
+	if (!pdfDoc) return;
+
+	for (let pageNumber = startPage; pageNumber <= totalPages; pageNumber += 1) {
+		if (pdfRenderVersion !== version) return;
+		const canvas = canvasRefs[pageNumber - 1];
+		if (canvas) {
+			await renderPage(pageNumber, zoomLevel, canvas, version);
+		}
 	}
 }
 
@@ -585,6 +615,10 @@ function setZoomLevel(nextZoom: number) {
 	const clampedZoom = clampZoomLevel(nextZoom);
 	if (Math.abs(clampedZoom - zoom) < 0.01) return;
 	zoom = clampedZoom;
+	if (fileType === "pdf" && pdfDoc && canvasRefs.length > 0 && pdfInitialRenderInProgress) {
+		suppressNextPdfRenderEffect = false;
+		void renderAllPages(clampedZoom);
+	}
 }
 
 function getTouchDistance(touches: TouchList): number {
@@ -604,6 +638,48 @@ function zoomOut() {
 
 function resetZoom() {
 	setZoomLevel(1.0);
+}
+
+function clampPdfScrollTop(nextScrollTop: number): number {
+	if (!scrollContainerRef) return nextScrollTop;
+	const maxScrollTop = Math.max(0, scrollContainerRef.scrollHeight - scrollContainerRef.clientHeight);
+	return Math.min(maxScrollTop, Math.max(0, nextScrollTop));
+}
+
+function scrollPdfBy(deltaY: number) {
+	if (!scrollContainerRef || deltaY === 0) return;
+	scrollContainerRef.scrollTop = clampPdfScrollTop(scrollContainerRef.scrollTop + deltaY);
+}
+
+function handlePdfWheel(event: WheelEvent) {
+	if (!scrollContainerRef || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+	event.preventDefault();
+	scrollPdfBy(event.deltaY);
+}
+
+function handlePdfScrollKeydown(event: KeyboardEvent) {
+	if (!scrollContainerRef) return;
+	const pageStep = Math.max(120, scrollContainerRef.clientHeight * 0.86);
+	const keyDeltas: Record<string, number> = {
+		ArrowDown: 48,
+		ArrowUp: -48,
+		PageDown: pageStep,
+		PageUp: -pageStep,
+	};
+	if (event.key === "Home") {
+		event.preventDefault();
+		scrollContainerRef.scrollTop = 0;
+		return;
+	}
+	if (event.key === "End") {
+		event.preventDefault();
+		scrollContainerRef.scrollTop = clampPdfScrollTop(Number.POSITIVE_INFINITY);
+		return;
+	}
+	const delta = keyDeltas[event.key];
+	if (delta === undefined) return;
+	event.preventDefault();
+	scrollPdfBy(delta);
 }
 
 async function renderDocx(blob: Blob) {
@@ -1024,7 +1100,17 @@ function downloadFile() {
 									</button>
 								</div>
 							</div>
-							<div class="pdf-canvas-container" bind:this={scrollContainerRef}>
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+							<div
+								class="pdf-canvas-container"
+								bind:this={scrollContainerRef}
+								role="region"
+								tabindex="0"
+								aria-label={$t('filePreview.pdfPagesRegion')}
+								data-testid="pdf-scroll-region"
+								onwheel={handlePdfWheel}
+								onkeydown={handlePdfScrollKeydown}
+							>
 								{#if isRendering}
 									<div class="pdf-rendering-overlay">
 										<div class="spinner-sm"></div>
@@ -1378,7 +1464,9 @@ function downloadFile() {
 		display: flex;
 		flex-direction: column;
 		background: var(--surface-page);
+		flex: 1 1 auto;
 		min-height: 0;
+		min-width: 0;
 	}
 
 	.pdf-toolbar {
@@ -1425,17 +1513,26 @@ function downloadFile() {
 	}
 
 	.pdf-canvas-container {
-		flex: 1;
+		flex: 1 1 auto;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		padding: 1.5rem;
-		overflow-y: auto;
-		min-height: 50vh;
+		align-items: stretch;
+		width: 100%;
+		padding: 1rem;
+		overflow: auto;
+		min-height: 0;
 		position: relative;
 		overscroll-behavior: contain;
 		-webkit-overflow-scrolling: touch;
 		touch-action: pan-y;
+	}
+
+	.pdf-canvas-container:focus {
+		outline: none;
+	}
+
+	.pdf-canvas-container:focus-visible {
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--focus-ring) 74%, transparent 26%);
 	}
 
 	.pdf-pages-scroll {
@@ -1449,12 +1546,13 @@ function downloadFile() {
 	.pdf-page-wrapper {
 		display: flex;
 		justify-content: center;
-		width: 100%;
+		width: fit-content;
+		min-width: 100%;
 	}
 
 	.pdf-canvas {
 		display: block;
-		max-width: none;
+		max-width: 100%;
 		width: auto;
 		height: auto;
 		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);

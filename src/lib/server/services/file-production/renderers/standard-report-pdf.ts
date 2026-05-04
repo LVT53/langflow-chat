@@ -28,12 +28,18 @@ const APP_FONT_ROOTS = [
 	resolve(process.cwd(), 'build/client/fonts'),
 	resolve(process.cwd(), 'client/fonts'),
 ] as const;
+const APP_ASSET_ROOTS = [
+	resolve(process.cwd(), 'static'),
+	resolve(process.cwd(), 'build/client'),
+	resolve(process.cwd(), 'client'),
+] as const;
 const APP_FONT_FILES = {
 	body: 'NimbusSanL-Regular.woff2',
 	bodyBold: 'NimbusSanL-Bold.woff2',
 	title: 'LibreBaskerville-Regular.woff2',
 	titleBold: 'LibreBaskerville-Bold.woff2',
 } as const;
+const APP_HEADER_LOGO_FILE = 'favicon-32x32.png';
 const APP_FONT_DIAGNOSTICS = {
 	body: 'Nimbus Sans L',
 	bodyBold: 'Nimbus Sans L Bold',
@@ -44,6 +50,7 @@ const APP_FONT_DIAGNOSTICS = {
 
 const THEME = {
 	text: '#1B1815',
+	paragraphText: '#3E3933',
 	secondaryText: '#6F6860',
 	accent: '#B65F3D',
 	pageBackground: '#FAF8F4',
@@ -57,8 +64,9 @@ const LAYOUT = {
 	marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
 	headerHeightPt: 26,
 	footerHeightPt: 22,
-	bodyFontPt: 11,
-	lineHeight: 1.45,
+	bodyFontPt: 10.5,
+	lineHeight: 1.38,
+	paragraphGapPt: 5,
 } as const;
 
 export interface StandardReportPdfRenderResult {
@@ -68,7 +76,10 @@ export interface StandardReportPdfRenderResult {
 	diagnostics: {
 		template: 'alfyai_standard_report';
 		pageFormat: 'A4';
-		bodyFontPt: 11;
+		bodyFontPt: typeof LAYOUT.bodyFontPt;
+		paragraphColor: typeof THEME.paragraphText;
+		lineHeight: typeof LAYOUT.lineHeight;
+		headerLogo: typeof APP_HEADER_LOGO_FILE;
 		marginMm: typeof LAYOUT.marginMm;
 		colors: Pick<typeof THEME, 'text' | 'secondaryText' | 'accent' | 'pageBackground'>;
 		fonts: typeof APP_FONT_DIAGNOSTICS;
@@ -93,6 +104,8 @@ export interface StandardReportPdfRenderResult {
 			title: string | null;
 			chartType: GeneratedDocumentChartBlock['chartType'];
 			dataPointCount: number;
+			edgeInsetPt: number;
+			clipped: false;
 			svg: string;
 		}>;
 	};
@@ -144,6 +157,19 @@ function findBundledFont(filename: string): Uint8Array {
 		);
 	}
 	const buffer = readFileSync(fontPath);
+	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+}
+
+function findBundledAsset(filename: string): Uint8Array {
+	const candidates = APP_ASSET_ROOTS.map((root) => resolve(root, filename));
+	const assetPath = candidates.find((candidate) => existsSync(candidate));
+	if (!assetPath) {
+		throw new StandardReportPdfRenderError(
+			'document_render_failed',
+			`AlfyAI Standard Report PDF rendering requires bundled asset ${filename}.`
+		);
+	}
+	const buffer = readFileSync(assetPath);
 	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
 
@@ -224,7 +250,8 @@ class StandardReportPdfLayout {
 	constructor(
 		private readonly pdfDoc: PDFDocument,
 		private readonly source: GeneratedDocumentSource,
-		private readonly fonts: FontSet
+		private readonly fonts: FontSet,
+		private readonly headerLogo: PDFImage
 	) {
 		this.page = this.createPage();
 		this.y = this.contentTop();
@@ -404,9 +431,10 @@ class StandardReportPdfLayout {
 			text,
 			font: this.fonts.regular,
 			size: LAYOUT.bodyFontPt,
-			color: hexColor(THEME.text),
+			color: hexColor(THEME.paragraphText),
+			lineHeight: LAYOUT.bodyFontPt * LAYOUT.lineHeight,
 		});
-		this.y -= 8;
+		this.y -= LAYOUT.paragraphGapPt;
 	}
 
 	drawList(style: 'bullet' | 'numbered', items: string[]): void {
@@ -1039,6 +1067,8 @@ class StandardReportPdfLayout {
 				title: block.title ?? null,
 				chartType: block.chartType,
 				dataPointCount: renderedSvg.dataPointCount,
+				edgeInsetPt: 0,
+				clipped: false,
 				svg: renderedSvg.svg,
 			});
 			return;
@@ -1078,8 +1108,16 @@ class StandardReportPdfLayout {
 		const max = Math.max(...values);
 		const min = Math.min(0, ...values);
 		const span = max - min || 1;
+		const isBarChart = block.chartType === 'bar' || block.chartType === 'stackedBar';
+		const pointRadius = block.chartType === 'scatter' ? 4 : 3;
+		const barWidth = isBarChart ? Math.max(12, plot.width / Math.max(rows.length, 1) * 0.5) : 0;
+		const edgeInset = isBarChart ? barWidth / 2 + 3 : pointRadius + 3;
+		const drawableWidth = Math.max(1, plot.width - edgeInset * 2);
 		const point = (row: { value: number }, index: number) => ({
-			x: plot.x + (rows.length === 1 ? plot.width / 2 : (index / (rows.length - 1)) * plot.width),
+			x:
+				plot.x +
+				edgeInset +
+				(rows.length === 1 ? drawableWidth / 2 : (index / (rows.length - 1)) * drawableWidth),
 			y: plot.y + ((row.value - min) / span) * plot.height,
 		});
 		for (let index = 0; index <= 4; index += 1) {
@@ -1116,8 +1154,7 @@ class StandardReportPdfLayout {
 				});
 			}
 		}
-		if (block.chartType === 'bar' || block.chartType === 'stackedBar') {
-			const barWidth = Math.max(12, plot.width / Math.max(points.length, 1) * 0.5);
+		if (isBarChart) {
 			for (const [index, current] of points.entries()) {
 				this.page.drawRectangle({
 					x: current.x - barWidth / 2,
@@ -1150,6 +1187,8 @@ class StandardReportPdfLayout {
 			title: block.title ?? null,
 			chartType: block.chartType,
 			dataPointCount: renderedSvg.dataPointCount,
+			edgeInsetPt: Number(edgeInset.toFixed(2)),
+			clipped: false,
 			svg: renderedSvg.svg,
 		});
 	}
@@ -1166,15 +1205,25 @@ class StandardReportPdfLayout {
 		for (const [index, page] of pages.entries()) {
 			const pageNumber = index + 1;
 			const headerY = A4[1] - mm(10);
-			page.drawText('AlfyAI', {
+			const logoHeight = 9;
+			const logoWidth = (this.headerLogo.width / this.headerLogo.height) * logoHeight;
+			const brandX = this.contentX() + logoWidth + 4;
+			const brandWidth = this.fonts.bold.widthOfTextAtSize('AlfyAI', 8.5);
+			page.drawImage(this.headerLogo, {
 				x: this.contentX(),
+				y: headerY - 1.2,
+				width: logoWidth,
+				height: logoHeight,
+			});
+			page.drawText('AlfyAI', {
+				x: brandX,
 				y: headerY,
 				size: 8.5,
 				font: this.fonts.bold,
 				color: hexColor(THEME.accent),
 			});
 			page.drawText(this.source.title, {
-				x: this.contentX() + 42,
+				x: brandX + brandWidth + 28,
 				y: headerY,
 				size: 8.5,
 				font: this.fonts.regular,
@@ -1223,6 +1272,10 @@ async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
 	return { regular, bold, mono: regular, title, titleBold };
 }
 
+async function embedHeaderLogo(pdfDoc: PDFDocument): Promise<PDFImage> {
+	return pdfDoc.embedPng(findBundledAsset(APP_HEADER_LOGO_FILE));
+}
+
 export async function renderStandardReportPdf(
 	source: GeneratedDocumentSource,
 	options: StandardReportPdfRenderOptions = {}
@@ -1235,8 +1288,8 @@ export async function renderStandardReportPdf(
 	pdfDoc.setSubject('AlfyAI Standard Report');
 	pdfDoc.setKeywords(['AlfyAI', 'generated document', 'standard report']);
 
-	const fonts = await embedFonts(pdfDoc);
-	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts);
+	const [fonts, headerLogo] = await Promise.all([embedFonts(pdfDoc), embedHeaderLogo(pdfDoc)]);
+	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts, headerLogo);
 	if (source.cover) {
 		layout.drawCover();
 	} else {
@@ -1292,6 +1345,9 @@ export async function renderStandardReportPdf(
 			template: 'alfyai_standard_report',
 			pageFormat: 'A4',
 			bodyFontPt: LAYOUT.bodyFontPt,
+			paragraphColor: THEME.paragraphText,
+			lineHeight: LAYOUT.lineHeight,
+			headerLogo: APP_HEADER_LOGO_FILE,
 			marginMm: LAYOUT.marginMm,
 			colors: {
 				text: THEME.text,

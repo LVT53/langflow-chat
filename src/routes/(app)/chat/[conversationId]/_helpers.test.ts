@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { I18nKey } from '$lib/i18n';
 import {
+	attachUnassignedFileProductionJobsToAssistant,
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
 	shouldHydrateFileProductionJobsOnToolCall,
@@ -21,6 +22,17 @@ function makeJob(id: string, status: FileProductionJob['status']): FileProductio
 		files: [],
 		warnings: [],
 		error: null,
+	};
+}
+
+function makeUnassignedJob(
+	id: string,
+	overrides: Partial<FileProductionJob> = {}
+): FileProductionJob {
+	return {
+		...makeJob(id, 'succeeded'),
+		assistantMessageId: null,
+		...overrides,
 	};
 }
 
@@ -80,5 +92,33 @@ describe('file production chat helpers', () => {
 		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'done')).toBe(true);
 		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'running')).toBe(false);
 		expect(shouldHydrateFileProductionJobsOnToolCall('web_search', 'done')).toBe(false);
+	});
+
+	it('keeps newly produced files attached when the streaming placeholder becomes the server assistant message', () => {
+		const jobs = [
+			makeUnassignedJob('job-new'),
+			makeUnassignedJob('job-other-conversation', { conversationId: 'conv-2' }),
+			makeJob('job-existing', 'succeeded'),
+		];
+
+		const attached = attachUnassignedFileProductionJobsToAssistant(jobs, {
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-server',
+		});
+
+		expect(attached).toEqual([
+			expect.objectContaining({
+				id: 'job-new',
+				assistantMessageId: 'assistant-server',
+			}),
+			expect.objectContaining({
+				id: 'job-other-conversation',
+				assistantMessageId: null,
+			}),
+			expect.objectContaining({
+				id: 'job-existing',
+				assistantMessageId: 'assistant-1',
+			}),
+		]);
 	});
 });

@@ -151,6 +151,17 @@ export function mergeFileProductionJob(
 	return currentJobs.map((job, index) => (index === existingIndex ? updatedJob : job));
 }
 
+export function attachUnassignedFileProductionJobsToAssistant(
+	currentJobs: FileProductionJob[],
+	params: { conversationId: string; assistantMessageId: string }
+): FileProductionJob[] {
+	return currentJobs.map((job) =>
+		job.conversationId === params.conversationId && job.assistantMessageId === null
+			? { ...job, assistantMessageId: params.assistantMessageId }
+			: job
+	);
+}
+
 export function createAssistantPlaceholder(id: string, timestamp = Date.now()): ChatMessage {
 	return {
 		id,

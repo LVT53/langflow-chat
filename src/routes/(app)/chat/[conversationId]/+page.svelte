@@ -68,6 +68,7 @@ import {
 	appendTokenChunkToMessageList,
 	appendUserMessageAndPlaceholder,
 	applyToolCallUpdateToMessageList,
+	attachUnassignedFileProductionJobsToAssistant,
 	createAssistantPlaceholder,
 	createUserMessage,
 	finalizeStreamingMessageList,
@@ -606,6 +607,9 @@ async function reconnectToOrphanedStream(
 					void hydrateConversationDetail(data.conversation.id);
 				}
 				const serverAssistantId = metadata?.assistantMessageId;
+				if (serverAssistantId) {
+					attachFileProductionJobsToAssistantMessage(serverAssistantId);
+				}
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
 						placeholderId,
@@ -823,6 +827,16 @@ async function hydrateConversationDetail(conversationId: string) {
 	} finally {
 		hydratingConversation = false;
 	}
+}
+
+function attachFileProductionJobsToAssistantMessage(assistantMessageId: string) {
+	fileProductionJobs = attachUnassignedFileProductionJobsToAssistant(
+		fileProductionJobs,
+		{
+			conversationId: data.conversation.id,
+			assistantMessageId,
+		},
+	);
 }
 
 async function handleRetryFileProductionJob(jobId: string) {
@@ -1144,6 +1158,9 @@ function handleSend(
 					void hydrateConversationDetail(data.conversation.id);
 				}
 				const serverAssistantId = metadata?.assistantMessageId;
+				if (serverAssistantId) {
+					attachFileProductionJobsToAssistantMessage(serverAssistantId);
+				}
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
 						placeholderId,
@@ -1289,6 +1306,9 @@ function handleRetry() {
 						void hydrateConversationDetail(data.conversation.id);
 					}
 					const serverAssistantId = metadata?.assistantMessageId;
+					if (serverAssistantId) {
+						attachFileProductionJobsToAssistantMessage(serverAssistantId);
+					}
 					messages.update((list) =>
 						finalizeStreamingMessageList(list, {
 							placeholderId,

@@ -42,7 +42,9 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 			expect(rendered.diagnostics).toMatchObject({
 				template: 'alfyai_standard_report',
 				pageFormat: 'A4',
-				bodyFontPt: 11,
+				bodyFontPt: 10.5,
+				paragraphColor: '#3E3933',
+				headerLogo: 'favicon-32x32.png',
 				marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
 				colors: {
 					text: '#1B1815',
@@ -91,6 +93,28 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 			code: 'Nimbus Sans L',
 		});
 		expect(pdfBody).not.toContain('DejaVu');
+	});
+
+	it('uses a quieter paragraph treatment so body copy does not compete with report structure', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Paragraph tone report',
+			blocks: [
+				{
+					type: 'paragraph',
+					text: 'Body copy should be readable without becoming the loudest visual element on the page.',
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+
+		expect(rendered.diagnostics.bodyFontPt).toBe(10.5);
+		expect(rendered.diagnostics.paragraphColor).toBe('#3E3933');
+		expect(rendered.diagnostics.lineHeight).toBe(1.38);
 	});
 
 	it('supports dividers and optional cover pages without accepting raw drawing commands', async () => {
@@ -294,9 +318,51 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 				title: 'Weekly active users',
 				chartType: 'line',
 				dataPointCount: 3,
+				edgeInsetPt: expect.any(Number),
+				clipped: false,
 				svg: expect.stringContaining('<polyline'),
 			})
 		);
+	});
+
+	it('keeps bar chart marks inside the plot area with a right-edge guard', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Guarded chart report',
+			blocks: [
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'Edge-safe bars',
+					caption: 'Bars should remain inside the plot edge.',
+					altText: 'A bar chart with end labels.',
+					units: 'items',
+					xKey: 'label',
+					yKey: 'value',
+					data: [
+						{ label: 'A', value: 10 },
+						{ label: 'B', value: 18 },
+						{ label: 'C', value: 13 },
+						{ label: 'D', value: 21 },
+					],
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+
+		expect(rendered.diagnostics.charts).toEqual([
+			expect.objectContaining({
+				title: 'Edge-safe bars',
+				chartType: 'bar',
+				edgeInsetPt: expect.any(Number),
+				clipped: false,
+			}),
+		]);
+		expect(rendered.diagnostics.charts[0].edgeInsetPt).toBeGreaterThan(8);
 	});
 
 	it('renders every v1 chart type into PDF diagnostics', async () => {

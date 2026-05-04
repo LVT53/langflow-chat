@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as pdfjsLib from "pdfjs-dist";
 import FilePreview from "./FilePreview.svelte";
 
 const mockJsZipLoadAsync = vi.fn();
@@ -356,8 +357,98 @@ describe("FilePreview", () => {
 		});
 
 		// With fit-to-width logic, the page may render multiple times as scale is calculated
-		expect(mockPdfGetPage).toHaveBeenCalled();
-		expect(mockPdfRender).toHaveBeenCalled();
+		await waitFor(() => {
+			expect(mockPdfGetPage).toHaveBeenCalled();
+			expect(mockPdfRender).toHaveBeenCalled();
+		});
+	});
+
+	it("shows the first PDF page before later pages finish rendering", async () => {
+		let secondPageRenderResolve: (() => void) | undefined;
+		const secondPageRenderPromise = new Promise<void>((resolve) => {
+			secondPageRenderResolve = resolve;
+		});
+		const firstPageRender = vi.fn(() => ({
+			promise: Promise.resolve(),
+			cancel: vi.fn(),
+		}));
+		const secondPageRender = vi.fn(() => ({
+			promise: secondPageRenderPromise,
+			cancel: vi.fn(),
+		}));
+		const getPage = vi.fn(async (pageNumber: number) => ({
+			getViewport: vi.fn(({ scale }: { scale: number }) => ({
+				width: 640 * scale,
+				height: 480 * scale,
+			})),
+			render: pageNumber === 2 ? secondPageRender : firstPageRender,
+		}));
+		vi.mocked(pdfjsLib.getDocument).mockReturnValueOnce({
+			promise: Promise.resolve({
+				numPages: 2,
+				getPage,
+			}),
+		} as ReturnType<typeof pdfjsLib.getDocument>);
+		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: "test-123",
+				filename: "document.pdf",
+				mimeType: "application/pdf",
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(firstPageRender).toHaveBeenCalled();
+		});
+		expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+		await waitFor(() => {
+			expect(document.querySelector(".pdf-rendering-overlay")).not.toBeInTheDocument();
+		});
+
+		secondPageRenderResolve?.();
+	});
+
+	it("lets PDF users scroll with wheel and keyboard input inside the preview region", async () => {
+		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(FilePreview, {
+			props: {
+				open: true,
+				artifactId: "test-123",
+				filename: "document.pdf",
+				mimeType: "application/pdf",
+				onClose: mockOnClose,
+			},
+		});
+
+		const scrollRegion = await screen.findByTestId("pdf-scroll-region");
+		Object.defineProperty(scrollRegion, "clientHeight", {
+			value: 300,
+			configurable: true,
+		});
+		Object.defineProperty(scrollRegion, "scrollHeight", {
+			value: 1200,
+			configurable: true,
+		});
+
+		await fireEvent.wheel(scrollRegion, { deltaY: 120 });
+		expect(scrollRegion.scrollTop).toBe(120);
+
+		scrollRegion.focus();
+		await fireEvent.keyDown(scrollRegion, { key: "ArrowDown" });
+		expect(scrollRegion.scrollTop).toBeGreaterThan(120);
 	});
 
 	it("re-renders the PDF page when zoom changes", async () => {
@@ -446,6 +537,9 @@ describe("FilePreview", () => {
 
 		await waitFor(() => {
 			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+		});
+		await waitFor(() => {
+			expect(mockPdfRender).toHaveBeenCalled();
 		});
 
 		// Trigger zoom change while render is still pending
