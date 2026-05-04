@@ -53,6 +53,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const OUTPUT_DIR = "/output";
+const MAX_ERROR_DETAIL_CHARS = 1600;
 const PYTHON_OUTPUT_INSPECTION_SCRIPT = `
 import json
 import os
@@ -246,6 +247,31 @@ function getMimeType(filename: string): string {
 	return MIME_TYPES[ext] || "application/octet-stream";
 }
 
+function compactErrorDetail(value: string): string | null {
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	return trimmed.length > MAX_ERROR_DETAIL_CHARS
+		? `${trimmed.slice(0, MAX_ERROR_DETAIL_CHARS)}...`
+		: trimmed;
+}
+
+function formatNonZeroExitError(
+	stderr: string,
+	stdout: string,
+	exitCode: number
+): string {
+	const stderrDetail = compactErrorDetail(stderr);
+	const stdoutDetail = compactErrorDetail(stdout);
+	const details = [
+		stderrDetail ? `stderr: ${stderrDetail}` : null,
+		stdoutDetail ? `stdout: ${stdoutDetail}` : null,
+	].filter((detail): detail is string => Boolean(detail));
+
+	return details.length > 0
+		? `Execution failed with exit code ${exitCode}: ${details.join(" | ")}`
+		: `Execution failed with exit code ${exitCode}`;
+}
+
 function isPathTraversalAttempt(name: string): boolean {
 	return (
 		name.includes("..") ||
@@ -435,7 +461,11 @@ async function extractFilesFromContainer(
 	}
 }
 
-function classifyError(stderr: string, exitCode: number): string | undefined {
+function classifyError(
+	stderr: string,
+	exitCode: number,
+	stdout = ""
+): string | undefined {
 	if (
 		exitCode === 137 ||
 		stderr.includes("MemoryError") ||
@@ -482,7 +512,7 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 	}
 
 	if (exitCode !== 0 && exitCode !== undefined) {
-		return `Execution failed with exit code ${exitCode}`;
+		return formatNonZeroExitError(stderr, stdout, exitCode);
 	}
 
 	return undefined;
@@ -746,7 +776,7 @@ export async function executeCode(
 		}
 
 		const error =
-			classifyError(result.stderr, result.exitCode) ??
+			classifyError(result.stderr, result.exitCode, result.stdout) ??
 			(extractionError
 				? `Failed to collect generated files: ${extractionError}`
 				: undefined);

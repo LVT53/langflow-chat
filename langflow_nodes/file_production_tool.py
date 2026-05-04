@@ -341,7 +341,7 @@ class FileProductionToolComponent(Component):
 
         if result.get("success"):
             job = result.get("job", {})
-            summary = f"File production job {job.get('id', 'unknown')} is {job.get('status', 'queued')}."
+            summary = "File production request accepted. The chat card will update when the file is ready."
             self._emit_tool_marker(
                 "TOOL_END",
                 {

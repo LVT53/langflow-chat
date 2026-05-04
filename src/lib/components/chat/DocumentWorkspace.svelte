@@ -440,7 +440,9 @@ async function ensureFilePreviewModule() {
 $effect(() => {
 	if (!browser) return;
 	if (open || documents.length > 0 || availableDocuments.some((document) => getDocumentPreviewUrl(document))) {
-		void ensureFilePreviewModule();
+		void ensureFilePreviewModule().catch(() => {
+			filePreviewModulePromise = null;
+		});
 	}
 });
 

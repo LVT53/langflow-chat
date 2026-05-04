@@ -150,6 +150,16 @@ export interface ExecuteNextFileProductionJobResult {
 	files: FileProductionJob['files'];
 }
 
+export interface DrainFileProductionWorkerInput
+	extends Omit<ExecuteNextFileProductionJobInput, 'workerId'> {
+	workerId?: string;
+}
+
+interface ExecuteNextFileProductionJobStepResult {
+	processed: boolean;
+	result: ExecuteNextFileProductionJobResult | null;
+}
+
 const DEFAULT_WORKER_ID = `file-production:${process.pid}:${randomUUID()}`;
 const DEFAULT_STALE_ATTEMPT_MS = 10 * 60 * 1000;
 let workerInitialized = false;
@@ -1052,16 +1062,16 @@ async function completeFileProductionJobAttempt(input: {
 	});
 }
 
-export async function executeNextFileProductionJob(
+async function executeNextFileProductionJobStep(
 	input: ExecuteNextFileProductionJobInput
-): Promise<ExecuteNextFileProductionJobResult | null> {
+): Promise<ExecuteNextFileProductionJobStepResult> {
 	const now = input.now ?? new Date();
 	const claimed = await claimNextFileProductionJob({
 		workerId: input.workerId,
 		now,
 	});
 	if (!claimed) {
-		return null;
+		return { processed: false, result: null };
 	}
 
 	const [jobRow] = await db
@@ -1080,7 +1090,7 @@ export async function executeNextFileProductionJob(
 			retryable: false,
 			now,
 		});
-		return null;
+		return { processed: true, result: null };
 	}
 
 	const storeGeneratedFile = input.storeGeneratedFile ?? storeChatGeneratedFile;
@@ -1099,7 +1109,7 @@ export async function executeNextFileProductionJob(
 				retryable: true,
 				now: new Date(),
 			});
-			return null;
+			return { processed: true, result: null };
 		}
 		if (executionResult.error) {
 			await failFileProductionJobAttempt({
@@ -1111,7 +1121,7 @@ export async function executeNextFileProductionJob(
 				retryable: true,
 				now: new Date(),
 			});
-			return null;
+			return { processed: true, result: null };
 		}
 	} else {
 		try {
@@ -1171,7 +1181,7 @@ export async function executeNextFileProductionJob(
 						: true,
 				now: new Date(),
 			});
-			return null;
+			return { processed: true, result: null };
 		}
 	}
 
@@ -1185,7 +1195,7 @@ export async function executeNextFileProductionJob(
 			retryable: false,
 			now: new Date(),
 		});
-		return null;
+		return { processed: true, result: null };
 	}
 
 	const effectiveLimits = {
@@ -1221,7 +1231,7 @@ export async function executeNextFileProductionJob(
 			},
 			now: new Date(),
 		});
-		return null;
+		return { processed: true, result: null };
 	}
 
 	const producedFiles: FileProductionJob['files'] = [];
@@ -1257,7 +1267,7 @@ export async function executeNextFileProductionJob(
 			retryable: true,
 			now: new Date(),
 		});
-		return null;
+		return { processed: true, result: null };
 	}
 
 	const completed = await completeFileProductionJobAttempt({
@@ -1268,27 +1278,40 @@ export async function executeNextFileProductionJob(
 	});
 
 	if (!completed) {
-		return null;
+		return { processed: true, result: null };
 	}
 
 	return {
-		job: {
-			...claimed.job,
-			status: 'succeeded',
-			stage: null,
-			updatedAt: Date.now(),
+		processed: true,
+		result: {
+			job: {
+				...claimed.job,
+				status: 'succeeded',
+				stage: null,
+				updatedAt: Date.now(),
+				files: producedFiles,
+			},
 			files: producedFiles,
 		},
-		files: producedFiles,
 	};
 }
 
-async function drainFileProductionWorker(): Promise<void> {
+export async function executeNextFileProductionJob(
+	input: ExecuteNextFileProductionJobInput
+): Promise<ExecuteNextFileProductionJobResult | null> {
+	const step = await executeNextFileProductionJobStep(input);
+	return step.result;
+}
+
+export async function drainFileProductionWorker(
+	input: DrainFileProductionWorkerInput = {}
+): Promise<void> {
 	for (;;) {
-		const result = await executeNextFileProductionJob({
-			workerId: DEFAULT_WORKER_ID,
+		const step = await executeNextFileProductionJobStep({
+			...input,
+			workerId: input.workerId ?? DEFAULT_WORKER_ID,
 		});
-		if (!result) {
+		if (!step.processed) {
 			return;
 		}
 	}

@@ -853,6 +853,125 @@ describe('file production service', () => {
 		});
 	});
 
+	it('keeps draining queued jobs after one program job fails', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			createOrReuseFileProductionJob,
+			drainFileProductionWorker,
+			listConversationFileProductionJobs,
+		} = await import('./index');
+		const failedJob = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Broken deck',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:broken-deck',
+			sourceMode: 'program',
+			documentIntent: 'slides',
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'javascript',
+					sourceCode: 'throw new TypeError("pptx write failed")',
+					filename: 'deck.pptx',
+				},
+				outputs: [{ type: 'pptx' }],
+			},
+			now: new Date('2026-05-03T20:12:00.000Z'),
+		});
+		const succeedingJob = await createOrReuseFileProductionJob({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-1',
+			title: 'Metrics CSV',
+			origin: 'unified_produce',
+			idempotencyKey: 'turn-1:metrics-csv',
+			sourceMode: 'program',
+			documentIntent: 'data_export',
+			requestJson: {
+				sourceMode: 'program',
+				program: {
+					language: 'python',
+					sourceCode: 'from pathlib import Path\nPath("/output/metrics.csv").write_text("name,value\\nok,1")',
+					filename: 'metrics.csv',
+				},
+				outputs: [{ type: 'csv' }],
+			},
+			now: new Date('2026-05-03T20:13:00.000Z'),
+		});
+		const executeCode = vi
+			.fn()
+			.mockResolvedValueOnce({
+				files: [],
+				stdout: '',
+				stderr: 'TypeError: pptx write failed',
+				error: 'Execution failed with exit code 1: TypeError: pptx write failed',
+			})
+			.mockResolvedValueOnce({
+				files: [
+					{
+						filename: 'metrics.csv',
+						mimeType: 'text/csv',
+						content: Buffer.from('name,value\nok,1'),
+						sizeBytes: 15,
+					},
+				],
+				stdout: '',
+				stderr: '',
+				error: null,
+			});
+		const storeGeneratedFile = vi.fn(async (_conversationId, _userId, file) => {
+			const now = new Date('2026-05-03T20:14:00.000Z');
+			await db.insert(schema.chatGeneratedFiles).values({
+				id: 'file-drain-success',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: 'conv-1/file-drain-success.csv',
+				createdAt: now,
+			});
+			return {
+				id: 'file-drain-success',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-1',
+				artifactId: null,
+				userId: 'user-1',
+				filename: file.filename,
+				mimeType: file.mimeType,
+				sizeBytes: file.content.length,
+				storagePath: 'conv-1/file-drain-success.csv',
+				createdAt: now.getTime(),
+			};
+		});
+
+		await drainFileProductionWorker({
+			workerId: 'worker-drain',
+			executeCode,
+			storeGeneratedFile,
+			now: new Date('2026-05-03T20:14:00.000Z'),
+		});
+
+		const jobs = await listConversationFileProductionJobs('user-1', 'conv-1');
+
+		expect(executeCode).toHaveBeenCalledTimes(2);
+		expect(jobs.find((job) => job.id === failedJob.job.id)).toMatchObject({
+			status: 'failed',
+			error: {
+				code: 'program_execution_failed',
+				message: expect.stringContaining('pptx write failed'),
+				retryable: true,
+			},
+		});
+		expect(jobs.find((job) => job.id === succeedingJob.job.id)).toMatchObject({
+			status: 'succeeded',
+			files: [expect.objectContaining({ filename: 'metrics.csv' })],
+		});
+	});
+
 	it('executes a queued document-source PDF job without using the sandbox', async () => {
 		const { db } = await import('$lib/server/db');
 		const {

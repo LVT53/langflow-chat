@@ -79,4 +79,15 @@ describe('obsolete file-generation surfaces', () => {
 
 		expect(hits).toEqual([]);
 	});
+
+	it('keeps model guidance aligned with queued file-production jobs', () => {
+		const source = readFileSync(join(root, 'src/lib/server/services/langflow.ts'), 'utf8');
+
+		expect(source).toContain('Tool success means the file-production request was accepted');
+		expect(source).toContain('Do not mention file-production job IDs');
+		expect(source).toContain('Prefer one `document_source` call with multiple `requestedOutputs`');
+		expect(source).toContain('`program` must be a nested JSON object');
+		expect(source).not.toContain('Only tell the user a file is ready after the tool succeeds.');
+		expect(source).not.toContain('Generated files appear in the chat UI after the response finishes.');
+	});
 });

@@ -167,6 +167,23 @@ describe("sandbox-execution", () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
+		it("includes stderr detail for generic non-zero exits", async () => {
+			const mockResult: SandboxResult = {
+				stdout: "Preparing presentation",
+				stderr: "TypeError: pptx.writeFile is not a function",
+				exitCode: 1,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+
+			const result = await executeCode("makeDeck()", "javascript");
+
+			expect(result.error).toContain("exit code 1");
+			expect(result.error).toContain("TypeError: pptx.writeFile is not a function");
+			expect(result.exitCode).toBe(1);
+			expect(mockSandbox.destroy).toHaveBeenCalled();
+		});
+
 		it("handles timeout errors gracefully", async () => {
 			mockSandbox.execute.mockImplementation(
 				() =>

@@ -40,4 +40,13 @@ describe('Langflow File Production tool node', () => {
 		expect(source).toContain('getattr(self, "conversation_id", "")');
 		expect(source).toContain('getattr(self, "conversationId", "")');
 	});
+
+	it('does not leak internal job identifiers or queue state into model-facing success text', () => {
+		const source = nodeSource();
+
+		expect(source).toContain('File production request accepted');
+		expect(source).not.toContain('File production job {job.get');
+		expect(source).not.toContain("job.get('id', 'unknown')");
+		expect(source).not.toContain("job.get('status', 'queued')");
+	});
 });
