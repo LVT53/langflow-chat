@@ -5,6 +5,8 @@ import { renderStandardReportHtml } from './standard-report-html';
 describe('AlfyAI Standard Report HTML renderer', () => {
 	it('renders source-owned HTML and escapes model text', () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'HTML report',
 			blocks: [
 				{ type: 'heading', level: 2, text: 'Summary' },

@@ -156,6 +156,9 @@ class FileProductionToolComponent(Component):
     def _get_conversation_id(self) -> str | None:
         """Get the conversation ID from the Langflow session."""
         try:
+            explicit = str(getattr(self, "conversation_id", "") or "").strip()
+            if explicit:
+                return explicit
             if hasattr(self, "graph") and self.graph is not None:
                 return getattr(self.graph, "session_id", None)
         except Exception as exc:
@@ -227,6 +230,8 @@ class FileProductionToolComponent(Component):
             "conversationId": conversation_id,
             "idempotencyKey": idempotency_key,
             "requestTitle": request_title,
+            "requestedOutputs": requested_outputs,
+            # Backward-compatible until all server instances read requestedOutputs.
             "outputs": requested_outputs,
             "sourceMode": source_mode,
             "documentIntent": document_intent,
@@ -313,7 +318,7 @@ class FileProductionToolComponent(Component):
                 "input": {
                     "requestTitle": payload.get("requestTitle"),
                     "sourceMode": payload.get("sourceMode"),
-                    "outputs": payload.get("outputs"),
+                    "requestedOutputs": payload.get("requestedOutputs"),
                 },
             },
         )

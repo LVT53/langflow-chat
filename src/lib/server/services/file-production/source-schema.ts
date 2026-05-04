@@ -655,6 +655,23 @@ export function validateGeneratedDocumentSource(
 	}
 
 	const title = cleanText(value.title);
+	const version = value.version;
+	const template = value.template;
+	if (version !== 1) {
+		return {
+			ok: false,
+			code: 'invalid_document_source',
+			message: 'Generated document source requires version: 1.',
+		};
+	}
+	if (template !== 'alfyai_standard_report') {
+		return {
+			ok: false,
+			code: 'invalid_document_source',
+			message:
+				'Generated document source requires template: "alfyai_standard_report".',
+		};
+	}
 	if (!title) {
 		return {
 			ok: false,

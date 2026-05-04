@@ -6,6 +6,8 @@ import { renderStandardReportDocx } from './standard-report-docx';
 describe('AlfyAI Standard Report DOCX renderer', () => {
 	it('renders the same source model into a valid DOCX package', async () => {
 		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
 			title: 'DOCX report',
 			blocks: [
 				{ type: 'heading', level: 2, text: 'Summary' },

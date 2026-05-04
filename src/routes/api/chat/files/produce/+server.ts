@@ -18,6 +18,7 @@ interface ProduceProgramRequest {
 	idempotencyKey: string;
 	requestTitle: string;
 	sourceMode: 'program' | 'document_source';
+	requestedOutputs?: Array<{ type: string }>;
 	outputs?: Array<{ type: string }>;
 	documentIntent?: string | null;
 	templateHint?: string | null;
@@ -64,6 +65,12 @@ function validateProgramRequest(
 		return { ok: false, error: 'sourceMode must be program or document_source', code: 'unsupported_source_mode', status: 422 };
 	}
 
+	const requestedOutputsRaw = Array.isArray(body.requestedOutputs)
+		? body.requestedOutputs
+		: Array.isArray(body.outputs)
+			? body.outputs
+			: [];
+
 	if (sourceMode === 'document_source') {
 		const documentValidation = validateGeneratedDocumentSource(body.documentSource);
 		if (!documentValidation.ok) {
@@ -86,13 +93,11 @@ function validateProgramRequest(
 				idempotencyKey,
 				requestTitle,
 				sourceMode: 'document_source',
-				outputs: Array.isArray(body.outputs)
-					? body.outputs
-							.filter((output): output is Record<string, unknown> => isRecord(output))
-							.map((output) => ({
-								type: typeof output.type === 'string' ? output.type.trim() : 'file',
-							}))
-					: [],
+				outputs: requestedOutputsRaw
+					.filter((output): output is Record<string, unknown> => isRecord(output))
+					.map((output) => ({
+						type: typeof output.type === 'string' ? output.type.trim() : 'file',
+					})),
 				documentIntent:
 					typeof body.documentIntent === 'string' && body.documentIntent.trim()
 						? body.documentIntent.trim()
@@ -129,13 +134,11 @@ function validateProgramRequest(
 			idempotencyKey,
 			requestTitle,
 			sourceMode: 'program',
-			outputs: Array.isArray(body.outputs)
-				? body.outputs
-						.filter((output): output is Record<string, unknown> => isRecord(output))
-						.map((output) => ({
-							type: typeof output.type === 'string' ? output.type.trim() : 'file',
-						}))
-				: [],
+			outputs: requestedOutputsRaw
+				.filter((output): output is Record<string, unknown> => isRecord(output))
+				.map((output) => ({
+					type: typeof output.type === 'string' ? output.type.trim() : 'file',
+				})),
 			documentIntent:
 				typeof body.documentIntent === 'string' && body.documentIntent.trim()
 					? body.documentIntent.trim()
@@ -182,7 +185,11 @@ function extractFailureDraft(body: unknown) {
 		requestJson: isRecord(body)
 			? {
 					sourceMode: typeof body.sourceMode === 'string' ? body.sourceMode : null,
-					outputs: Array.isArray(body.outputs) ? body.outputs : [],
+					outputs: Array.isArray(body.requestedOutputs)
+						? body.requestedOutputs
+						: Array.isArray(body.outputs)
+							? body.outputs
+							: [],
 					documentIntent: typeof body.documentIntent === 'string' ? body.documentIntent : null,
 					templateHint: typeof body.templateHint === 'string' ? body.templateHint : null,
 					program: isRecord(body.program) ? body.program : null,
