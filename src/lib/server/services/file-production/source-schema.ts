@@ -552,7 +552,13 @@ function normalizeBlock(block: unknown): BlockNormalizationResult {
 	switch (block.type) {
 		case 'heading': {
 			const text = cleanText(block.text);
-			const level = block.level === 1 || block.level === 2 || block.level === 3 ? block.level : null;
+			const hasExplicitLevel =
+				Object.hasOwn(block, 'level') && block.level !== undefined;
+			const level = !hasExplicitLevel
+				? 2
+				: block.level === 1 || block.level === 2 || block.level === 3
+					? block.level
+					: null;
 			return text && level
 				? { ok: true, block: { type: 'heading', level, text } }
 				: {

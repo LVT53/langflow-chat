@@ -137,6 +137,81 @@ describe('POST /api/chat/files/produce', () => {
 		});
 	});
 
+	it('accepts model-friendly document-source reports with omitted heading levels', async () => {
+		const response = await POST(
+			makeEvent({
+				conversationId: 'conv-1',
+				idempotencyKey: 'turn-1:our-chats-report',
+				requestTitle: 'Our Chats - PDF Report',
+				sourceMode: 'document_source',
+				documentIntent: 'report',
+				requestedOutputs: [{ type: 'pdf' }],
+				documentSource: {
+					version: 1,
+					template: 'alfyai_standard_report',
+					title: 'Our Chats: Interaction Analysis Report',
+					blocks: [
+						{ type: 'heading', text: 'Executive Summary' },
+						{ type: 'paragraph', text: 'This report summarizes the recent conversation.' },
+						{ type: 'heading', text: 'Session Metrics Overview' },
+						{
+							type: 'table',
+							title: 'Key Chat Metrics',
+							headers: ['Metric', 'Value', 'Benchmark', 'Status'],
+							rows: [
+								['Total Messages', '48', '40', 'Above'],
+								['Avg Response Time', '1.2s', '2.0s', 'Better'],
+								['Topics Covered', '6', '5', 'Above'],
+							],
+						},
+						{ type: 'heading', text: 'Topic Distribution' },
+						{
+							type: 'chart',
+							chartType: 'bar',
+							title: 'Topics Discussed by Message Count',
+							caption: 'Breakdown of conversation volume across main topics.',
+							altText: 'Bar chart showing message counts per topic',
+							data: {
+								labels: ['General', 'Technical', 'Files', 'Research', 'Feedback'],
+								datasets: [{ label: 'Messages', data: [12, 15, 8, 7, 6] }],
+							},
+						},
+					],
+				},
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(202);
+		expect(mockCreateOrReuseFileProductionJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceMode: 'document_source',
+				documentIntent: 'report',
+				requestJson: expect.objectContaining({
+					outputs: [{ type: 'pdf' }],
+					documentSource: expect.objectContaining({
+						version: 1,
+						template: 'alfyai_standard_report',
+						blocks: expect.arrayContaining([
+							{ type: 'heading', level: 2, text: 'Executive Summary' },
+							{ type: 'heading', level: 2, text: 'Session Metrics Overview' },
+							{ type: 'heading', level: 2, text: 'Topic Distribution' },
+							expect.objectContaining({ type: 'table' }),
+							expect.objectContaining({
+								type: 'chart',
+								chartType: 'bar',
+								xKey: 'label',
+								yKey: 'value',
+							}),
+						]),
+					}),
+				}),
+			})
+		);
+		expect(mockWakeFileProductionWorker).toHaveBeenCalledTimes(1);
+		expect(data.job).toMatchObject({ id: 'job-1', status: 'queued' });
+	});
+
 	it('persists source validation failures as failed jobs without waking the worker', async () => {
 		const response = await POST(
 			makeEvent({
@@ -260,6 +335,8 @@ describe('POST /api/chat/files/produce', () => {
 				sourceMode: 'document_source',
 				outputs: [{ type: 'pdf' }],
 				documentSource: {
+					version: 1,
+					template: 'alfyai_standard_report',
 					title: 'Unsafe report',
 					blocks: [{ type: 'rawHtml', html: '<script>alert(1)</script>' }],
 				},

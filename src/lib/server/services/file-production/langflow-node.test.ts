@@ -13,6 +13,8 @@ describe('Langflow File Production tool node', () => {
 		expect(source).toContain('method="produce_file"');
 		expect(source).toContain('def produce_file(self) -> Data:');
 		expect(source).toContain('/api/chat/files/produce');
+		expect(source).toContain('"alfyai_standard_report"');
+		expect(source).toContain('"level":2');
 
 		for (const field of [
 			'idempotencyKey',

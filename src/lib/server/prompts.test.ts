@@ -51,6 +51,8 @@ describe("prompts", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestTitle");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestedOutputs");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentIntent");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type": "heading"');
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"level": 2');
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("headers");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("Chart.js-style data");
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("generate_file");

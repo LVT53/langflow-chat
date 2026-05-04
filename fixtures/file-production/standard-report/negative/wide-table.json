@@ -2,6 +2,8 @@
   "fixtureId": "wide-table",
   "expectedErrorCode": "table_limit_exceeded",
   "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
     "title": "Wide Table Attempt",
     "blocks": [
       {

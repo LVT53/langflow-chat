@@ -69,6 +69,7 @@ The search overhaul routes web work through the server-owned `research_web` tool
 Post-deploy checks:
 
 - Ask for an exact page-backed value, for example a current price from a product URL.
+- Ask for a PDF report with headings, a table, and a bar chart. It should create a successful file-production card; `unsupported_document_block` means the running AlfyAI app or Langflow flow is stale or the document-source contract has drifted.
 - Ask for a product review summary that should include video evidence; if YouTube videos are selected and transcripts are exposed, diagnostics should show `youtubeTranscriptFetchedCount > 0`.
 - In the `research_web` tool result diagnostics, expect `providers.exaConfigured: true`, `openedPageCount > 0`, `selectedSourceCount > 0`, and `evidenceCandidateCount > 0`.
 - For prices, dates, availability, specs, and similar exact values, `exactEvidenceCandidateCount` should usually be greater than `0`.

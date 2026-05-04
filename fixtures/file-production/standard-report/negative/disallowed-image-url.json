@@ -2,6 +2,8 @@
   "fixtureId": "disallowed-image-url",
   "expectedErrorCode": "image_limit_exceeded",
   "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
     "title": "Disallowed Image URL",
     "blocks": [
       { "type": "image", "source": { "kind": "url", "url": "file:///etc/passwd" }, "altText": "Bad URL", "caption": "Should fail security validation." }

@@ -3,6 +3,8 @@
   "template": "alfyai_standard_report",
   "outputs": ["pdf", "docx", "html"],
   "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
     "title": "Technical Migration Note",
     "blocks": [
       { "type": "heading", "level": 2, "text": "Migration Steps" },

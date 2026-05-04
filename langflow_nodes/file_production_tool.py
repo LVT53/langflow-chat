@@ -111,7 +111,11 @@ class FileProductionToolComponent(Component):
         MultilineInput(
             name="documentSource",
             display_name="Document Source",
-            info="JSON object using the AlfyAI Standard Report source shape. Required when sourceMode is document_source.",
+            info=(
+                'JSON object using the AlfyAI Standard Report source shape. Required when sourceMode is document_source. '
+                'Include version: 1, template: "alfyai_standard_report", title, and blocks. '
+                'Heading blocks use {"type":"heading","level":2,"text":"Section title"}.'
+            ),
             value="",
             required=False,
             tool_mode=True,

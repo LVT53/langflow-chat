@@ -42,6 +42,24 @@ describe('generated document source schema', () => {
 		);
 	});
 
+	it('defaults omitted heading levels to section headings for model-friendly input', () => {
+		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Model report',
+			blocks: [{ type: 'heading', text: 'Executive Summary' }],
+		});
+
+		expect(result).toMatchObject({ ok: true });
+		if (!result.ok) return;
+
+		expect(result.source.blocks[0]).toEqual({
+			type: 'heading',
+			level: 2,
+			text: 'Executive Summary',
+		});
+	});
+
 	it('rejects raw HTML blocks instead of preserving arbitrary markup', () => {
 		const result = validateGeneratedDocumentSource({
 			version: 1,

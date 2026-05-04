@@ -1030,6 +1030,8 @@ describe('file production service', () => {
 			fileProductionJobId: 'job-document-source',
 			title: 'Quarterly report',
 			source: {
+				version: 1,
+				template: 'alfyai_standard_report',
 				title: 'Quarterly report',
 				subtitle: 'Executive summary',
 				blocks: [

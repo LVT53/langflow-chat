@@ -3,6 +3,8 @@
   "template": "alfyai_standard_report",
   "outputs": ["pdf", "docx", "html"],
   "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
     "title": "Quarterly Operating Snapshot",
     "subtitle": "Executive summary",
     "blocks": [
