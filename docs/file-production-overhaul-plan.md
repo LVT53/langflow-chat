@@ -403,6 +403,7 @@ Scope:
 - Validate and normalize generated-document source before creating a `running` render/runtime attempt.
 - Persist malformed source as a failed file-production job with localized validation detail instead of entering renderer/runtime work.
 - Use a constrained semantic block vocabulary for v1: `section`, `heading`, `paragraph`, `list`, `table`, `image`, `chart`, `callout`, `quote`, `code`, `divider`, and `pageBreak`.
+- Accept model-friendly source aliases at the boundary where they are unambiguous, such as table `headers` plus array `rows` and simple Chart.js-style chart data, then normalize them into the canonical renderer schema.
 - Treat tables as a first-class production block with captions, header rows, column alignment, number/date formatting, repeated headers across PDF page breaks, and safe pagination.
 - Exclude merged cells and nested tables from v1 unless a later slice explicitly designs and tests them.
 - Keep arbitrary HTML, CSS, absolute positioning, and PDF drawing commands out of generated-document source.

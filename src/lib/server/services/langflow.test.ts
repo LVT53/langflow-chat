@@ -140,6 +140,8 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("requestTitle");
 		expect(prompt).toContain("requestedOutputs");
 		expect(prompt).toContain("documentIntent");
+		expect(prompt).toContain("headers");
+		expect(prompt).toContain("Chart.js-style data");
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");
 		expect(prompt).toContain("research_web");

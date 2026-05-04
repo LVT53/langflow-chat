@@ -72,6 +72,156 @@ describe('generated document source schema', () => {
 		});
 	});
 
+	it('accepts model-friendly table headers with array rows', () => {
+		const result = validateGeneratedDocumentSource({
+			title: 'Our Chats - Conversation Retrospective',
+			blocks: [
+				{
+					type: 'table',
+					title: 'Key Conversation Topics',
+					headers: ['#', 'Topic', 'Approximate Date', 'Summary', 'Type'],
+					rows: [
+						[
+							'1',
+							'Dog Food Research',
+							'May 2, 2026',
+							'Researched suitable food options for Professor.',
+							'Task',
+						],
+						[
+							'2',
+							'Personal Profile Inquiry',
+							'April 25, 2026',
+							'Reviewed stored profile and memory.',
+							'Meta',
+						],
+					],
+				},
+			],
+		});
+
+		expect(result).toMatchObject({ ok: true });
+		if (!result.ok) return;
+
+		const table = result.source.blocks[0];
+		expect(table).toMatchObject({
+			type: 'table',
+			columns: [
+				{ key: 'col_1', label: '#', kind: 'text' },
+				{ key: 'topic', label: 'Topic', kind: 'text' },
+				{ key: 'approximate_date', label: 'Approximate Date', kind: 'text' },
+				{ key: 'summary', label: 'Summary', kind: 'text' },
+				{ key: 'type', label: 'Type', kind: 'text' },
+			],
+			rows: [
+				{
+					col_1: '1',
+					topic: 'Dog Food Research',
+					approximate_date: 'May 2, 2026',
+					summary: 'Researched suitable food options for Professor.',
+					type: 'Task',
+				},
+				{
+					col_1: '2',
+					topic: 'Personal Profile Inquiry',
+					approximate_date: 'April 25, 2026',
+					summary: 'Reviewed stored profile and memory.',
+					type: 'Meta',
+				},
+			],
+		});
+	});
+
+	it('accepts common model table aliases without exposing alternate internal schemas', () => {
+		const tableVariants = [
+			{
+				type: 'table',
+				columns: ['Topic', 'Score'],
+				rows: [['Dog Food Research', 8]],
+			},
+			{
+				type: 'table',
+				header: ['Topic', 'Score'],
+				rows: [{ Topic: 'Profile Inquiry', Score: 6 }],
+			},
+			{
+				type: 'table',
+				data: {
+					headers: ['Topic', 'Score'],
+					rows: [['Education & Career', 7]],
+				},
+			},
+			{
+				type: 'table',
+				data: [
+					['Topic', 'Score'],
+					['Family & Home', 7],
+				],
+			},
+		];
+
+		for (const tableBlock of tableVariants) {
+			const result = validateGeneratedDocumentSource({
+				title: 'Table Alias Report',
+				blocks: [tableBlock],
+			});
+
+			expect(result).toMatchObject({ ok: true });
+			if (!result.ok) continue;
+			expect(result.source.blocks[0]).toMatchObject({
+				type: 'table',
+				columns: [
+					{ key: 'topic', label: 'Topic', kind: 'text' },
+					{ key: 'score', label: 'Score', kind: 'text' },
+				],
+			});
+		}
+	});
+
+	it('accepts Chart.js-style bar chart data and normalizes it for renderers', () => {
+		const result = validateGeneratedDocumentSource({
+			title: 'Our Chats - Conversation Retrospective',
+			blocks: [
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'Conversation Depth by Topic',
+					caption: 'Estimated depth and detail of conversation per topic on a 1-10 scale.',
+					altText:
+						'Bar chart showing conversation depth across five chat topics: Dog Food Research 8, Profile Inquiry 6, Education and Career 7, Family and Home 7, Community Involvement 5.',
+					data: {
+						labels: [
+							'Dog Food\nResearch',
+							'Profile\nInquiry',
+							'Education &\nCareer',
+							'Family &\nHome',
+							'Community\nInvolvement',
+						],
+						datasets: [{ label: 'Detail Level (1-10)', data: [8, 6, 7, 7, 5] }],
+					},
+				},
+			],
+		});
+
+		expect(result).toMatchObject({ ok: true });
+		if (!result.ok) return;
+
+		expect(result.source.blocks[0]).toMatchObject({
+			type: 'chart',
+			chartType: 'bar',
+			xKey: 'label',
+			yKey: 'value',
+			units: 'Detail Level (1-10)',
+			data: [
+				{ label: 'Dog Food Research', value: 8 },
+				{ label: 'Profile Inquiry', value: 6 },
+				{ label: 'Education & Career', value: 7 },
+				{ label: 'Family & Home', value: 7 },
+				{ label: 'Community Involvement', value: 5 },
+			],
+		});
+	});
+
 	it('accepts the full v1 chart type set and rejects chart types outside it', () => {
 		for (const chartType of ['bar', 'stackedBar', 'line', 'area', 'scatter'] as const) {
 			const result = validateGeneratedDocumentSource({
