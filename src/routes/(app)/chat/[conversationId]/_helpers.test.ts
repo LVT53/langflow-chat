@@ -3,6 +3,7 @@ import type { I18nKey } from '$lib/i18n';
 import {
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
+	shouldHydrateFileProductionJobsOnToolCall,
 	toFriendlySendError,
 } from './_helpers';
 import type { FileProductionJob } from '$lib/types';
@@ -73,5 +74,11 @@ describe('file production chat helpers', () => {
 			},
 		});
 		expect(merged[1].id).toBe('job-2');
+	});
+
+	it('hydrates file-production jobs once the produce_file tool call has created a job', () => {
+		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'done')).toBe(true);
+		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'running')).toBe(false);
+		expect(shouldHydrateFileProductionJobsOnToolCall('web_search', 'done')).toBe(false);
 	});
 });

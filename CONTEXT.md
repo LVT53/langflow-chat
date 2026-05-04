@@ -251,6 +251,10 @@ _Avoid_: new version, replacement, overwrite
 A user request for AlfyAI to create one or more downloadable **Generated Files**.
 _Avoid_: export task, PDF tool call, sandbox job
 
+**File Production Card**:
+A chat card that presents the durable state and actions for a **File Production Request**.
+_Avoid_: stream placeholder, temporary generated-file row, tool-call log
+
 **Generated File**:
 A downloadable file produced by AlfyAI during chat.
 _Avoid_: uploaded document, attachment, artifact
@@ -275,6 +279,10 @@ _Avoid_: uploaded duplicate, library version
 A reusable presentation policy for rendering a **Generated Document Source**.
 _Avoid_: generated document source, PDF script, style prompt
 
+**App Typography Set**:
+The bundled Nimbus Sans L and Libre Baskerville fonts used by AlfyAI's product interface and generated-document presentation.
+_Avoid_: system font dependency, per-document custom font, host-installed PDF font
+
 **Working Document**:
 A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
 _Avoid_: active file, current artifact
@@ -287,12 +295,21 @@ _Avoid_: active file, current artifact
 - A **Generated File** does not automatically become a **Generated Document**.
 - A **File Production Request** may produce one or more **Generated Files**.
 - A **File Production Request** is one user-facing capability even when AlfyAI uses different internal production methods.
+- A **File Production Card** appears from persisted job state, not from a stream-only placeholder.
+- A **File Production Card** may present queued or running jobs with a generating visual treatment while the underlying job status remains `queued` or `running`.
+- A queued or running **File Production Card** may use a content-loading shimmer treatment instead of textual progress, a spinner, or a progress bar.
+- A queued or running **File Production Card** keeps cancellation available as a quiet icon-only affordance rather than a text action.
+- A **File Production Card** should resolve from generating to finished in place with a tight top-to-bottom reveal, not a large success flash or layout jump.
+- An unassigned active **File Production Card** may appear inside the current streaming assistant response as soon as the successful production job exists, then reconcile to the persisted assistant message when the stream completes.
 - A **Generated Document** may have a **Generated Document Source**.
 - A **Generated Document Source** is **Available Context**.
 - The rendered binary file is the downloadable **Generated File**.
 - A **Generated Document Template** renders a **Generated Document Source** into one or more downloadable formats.
 - A **File Production Request** may name a **Generated Document Template**.
 - When no template is named, AlfyAI chooses an appropriate **Generated Document Template**.
+- A **Generated Document Template** should use the **App Typography Set** rather than depending on host-installed PDF fonts.
+- Within the **App Typography Set**, Nimbus Sans L is the primary generated-document font; Libre Baskerville is reserved for restrained title or cover accents.
+- Missing **App Typography Set** font files are a packaging error for generated-document rendering and should fail visibly rather than falling back to host fonts.
 - AlfyAI owns document layout and rendering; the assistant supplies semantic content, not PDF layout code.
 - Non-document outputs such as raw data files, code files, images, or bundles may remain **Generated Files** without entering generated-document version history.
 - A **Filename Conflict** creates an **Auto-Renamed Upload**.

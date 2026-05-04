@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
 import {
 	PDFDocument,
@@ -22,20 +23,24 @@ import { renderChartSvg } from './chart-svg';
 
 const MM_TO_PT = 72 / 25.4;
 const A4 = PageSizes.A4;
-const FONT_PATHS = {
-	regular: [
-		'/usr/share/fonts/TTF/DejaVuSans.ttf',
-		'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-	],
-	bold: [
-		'/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
-		'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-	],
-	mono: [
-		'/usr/share/fonts/TTF/DejaVuSansMono.ttf',
-		'/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
-	],
-};
+const APP_FONT_ROOTS = [
+	resolve(process.cwd(), 'static/fonts'),
+	resolve(process.cwd(), 'build/client/fonts'),
+	resolve(process.cwd(), 'client/fonts'),
+] as const;
+const APP_FONT_FILES = {
+	body: 'NimbusSanL-Regular.woff2',
+	bodyBold: 'NimbusSanL-Bold.woff2',
+	title: 'LibreBaskerville-Regular.woff2',
+	titleBold: 'LibreBaskerville-Bold.woff2',
+} as const;
+const APP_FONT_DIAGNOSTICS = {
+	body: 'Nimbus Sans L',
+	bodyBold: 'Nimbus Sans L Bold',
+	title: 'Libre Baskerville',
+	titleBold: 'Libre Baskerville Bold',
+	code: 'Nimbus Sans L',
+} as const;
 
 const THEME = {
 	text: '#1B1815',
@@ -66,6 +71,7 @@ export interface StandardReportPdfRenderResult {
 		bodyFontPt: 11;
 		marginMm: typeof LAYOUT.marginMm;
 		colors: Pick<typeof THEME, 'text' | 'secondaryText' | 'accent' | 'pageBackground'>;
+		fonts: typeof APP_FONT_DIAGNOSTICS;
 		coverPage: boolean;
 		blockTypes: GeneratedDocumentBlock['type'][];
 		pageCount: number;
@@ -112,6 +118,8 @@ interface FontSet {
 	regular: PDFFont;
 	bold: PDFFont;
 	mono: PDFFont;
+	title: PDFFont;
+	titleBold: PDFFont;
 }
 
 function mm(value: number): number {
@@ -126,15 +134,16 @@ function hexColor(hex: string): RGB {
 	return rgb(red, green, blue);
 }
 
-function findFont(paths: readonly string[]): Uint8Array {
-	const path = paths.find((candidate) => existsSync(candidate));
-	if (!path) {
+function findBundledFont(filename: string): Uint8Array {
+	const candidates = APP_FONT_ROOTS.map((root) => resolve(root, filename));
+	const fontPath = candidates.find((candidate) => existsSync(candidate));
+	if (!fontPath) {
 		throw new StandardReportPdfRenderError(
 			'pdf_font_missing',
-			'AlfyAI Standard Report PDF rendering requires DejaVu fonts.'
+			`AlfyAI Standard Report PDF rendering requires bundled UI font ${filename}.`
 		);
 	}
-	const buffer = readFileSync(path);
+	const buffer = readFileSync(fontPath);
 	return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
 
@@ -150,6 +159,7 @@ function slugifyFilename(title: string): string {
 }
 
 function sanitizePdfText(text: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: PDF text output must strip control characters.
 	return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
 }
 
@@ -311,7 +321,7 @@ class StandardReportPdfLayout {
 		this.y = top - 78;
 		this.drawWrapped({
 			text: this.source.title,
-			font: this.fonts.bold,
+			font: this.fonts.titleBold,
 			size: 28,
 			color: hexColor(THEME.text),
 			width,
@@ -321,7 +331,7 @@ class StandardReportPdfLayout {
 			this.y -= 8;
 			this.drawWrapped({
 				text: this.source.subtitle,
-				font: this.fonts.regular,
+				font: this.fonts.title,
 				size: 13,
 				color: hexColor(THEME.secondaryText),
 				width,
@@ -352,7 +362,7 @@ class StandardReportPdfLayout {
 		this.y -= 22;
 		this.drawWrapped({
 			text: this.source.title,
-			font: this.fonts.bold,
+			font: this.fonts.titleBold,
 			size: 22,
 			color: hexColor(THEME.text),
 			lineHeight: 30,
@@ -361,7 +371,7 @@ class StandardReportPdfLayout {
 			this.y -= 2;
 			this.drawWrapped({
 				text: this.source.subtitle,
-				font: this.fonts.regular,
+				font: this.fonts.title,
 				size: 12,
 				color: hexColor(THEME.secondaryText),
 				lineHeight: 18,
@@ -973,17 +983,21 @@ class StandardReportPdfLayout {
 		}
 
 		if (block.chartType === 'pie' || block.chartType === 'donut') {
-			if (!block.labelKey || !block.valueKey) {
+			const { labelKey, valueKey } = block;
+			if (!labelKey || !valueKey) {
 				throw new StandardReportPdfRenderError(
 					'unsupported_chart_data',
 					'Pie and donut charts require labelKey and valueKey.'
 				);
 			}
 			const rows = block.data
-				.map((row) => ({
-					label: String(row[block.labelKey!] ?? ''),
-					value: typeof row[block.valueKey!] === 'number' ? (row[block.valueKey!] as number) : null,
-				}))
+				.map((row) => {
+					const value = row[valueKey];
+					return {
+						label: String(row[labelKey] ?? ''),
+						value: typeof value === 'number' ? value : null,
+					};
+				})
 				.filter((row): row is { label: string; value: number } => row.value !== null && row.value > 0);
 			const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
 			const centerX = x + 130;
@@ -1030,7 +1044,8 @@ class StandardReportPdfLayout {
 			return;
 		}
 
-		if (!block.xKey || !block.yKey) {
+		const { xKey, yKey } = block;
+		if (!xKey || !yKey) {
 			throw new StandardReportPdfRenderError(
 				'unsupported_chart_data',
 				'Line charts require xKey and yKey.'
@@ -1038,10 +1053,13 @@ class StandardReportPdfLayout {
 		}
 
 		const rows = block.data
-			.map((row) => ({
-				label: String(row[block.xKey!] ?? ''),
-				value: typeof row[block.yKey!] === 'number' ? (row[block.yKey!] as number) : null,
-			}))
+			.map((row) => {
+				const value = row[yKey];
+				return {
+					label: String(row[xKey] ?? ''),
+					value: typeof value === 'number' ? value : null,
+				};
+			})
 			.filter((row): row is { label: string; value: number } => row.value !== null);
 		if (rows.length === 0) {
 			throw new StandardReportPdfRenderError(
@@ -1195,12 +1213,14 @@ class StandardReportPdfLayout {
 
 async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
 	pdfDoc.registerFontkit(fontkit);
-	const [regular, bold, mono] = await Promise.all([
-		pdfDoc.embedFont(findFont(FONT_PATHS.regular), { subset: true }),
-		pdfDoc.embedFont(findFont(FONT_PATHS.bold), { subset: true }),
-		pdfDoc.embedFont(findFont(FONT_PATHS.mono), { subset: true }),
+	// The bundled UI fonts are WOFF2; fontkit's WOFF2 subset path can throw while saving.
+	const [regular, bold, title, titleBold] = await Promise.all([
+		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.body), { subset: false }),
+		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.bodyBold), { subset: false }),
+		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.title), { subset: false }),
+		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.titleBold), { subset: false }),
 	]);
-	return { regular, bold, mono };
+	return { regular, bold, mono: regular, title, titleBold };
 }
 
 export async function renderStandardReportPdf(
@@ -1279,6 +1299,7 @@ export async function renderStandardReportPdf(
 				accent: THEME.accent,
 				pageBackground: THEME.pageBackground,
 			},
+			fonts: APP_FONT_DIAGNOSTICS,
 			coverPage: Boolean(source.cover),
 			blockTypes: source.blocks.map((block) => block.type),
 			pageCount: pdfDoc.getPageCount(),

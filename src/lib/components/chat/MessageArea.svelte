@@ -67,10 +67,6 @@ function hasNewMessage(currentMessages: ChatMessage[]): boolean {
 	return currentMessages.length > lastMessageCount;
 }
 
-function getFileProductionJobsForMessage(messageId: string): FileProductionJob[] {
-	return fileProductionJobs.filter((job) => job.assistantMessageId === messageId);
-}
-
 $effect.pre(() => {
 	messages;
 	scrollContainer;
@@ -138,6 +134,23 @@ let dedupedMessages = $derived(
 	).list,
 );
 
+let currentStreamingAssistantMessageId = $derived(
+	[...dedupedMessages]
+		.reverse()
+		.find((message) => message.role === 'assistant' && (message.isStreaming || message.isThinkingStreaming))
+		?.id ?? null,
+);
+
+function getFileProductionJobsForMessage(message: ChatMessage): FileProductionJob[] {
+	return fileProductionJobs.filter((job) => {
+		if (job.assistantMessageId === message.id) return true;
+		if (job.assistantMessageId != null) return false;
+		if (message.role !== 'assistant' || message.id !== currentStreamingAssistantMessageId) return false;
+		if (conversationId && job.conversationId !== conversationId) return false;
+		return job.createdAt >= message.timestamp - 1000;
+	});
+}
+
 async function alignToBottomAfterRender() {
 	if (!scrollContainer) return;
 	await tick();
@@ -173,7 +186,7 @@ async function alignToBottomAfterRender() {
 					isLast={i === dedupedMessages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					fileProductionJobs={getFileProductionJobsForMessage(message.id)}
+					fileProductionJobs={getFileProductionJobsForMessage(message)}
 					{conversationId}
 					{onRegenerate}
 					{onEdit}

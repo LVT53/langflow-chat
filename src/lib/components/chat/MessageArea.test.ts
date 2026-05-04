@@ -39,7 +39,7 @@ describe('MessageArea', () => {
 	});
 
 	function makeFileProductionJob(
-		assistantMessageId: string,
+		assistantMessageId: string | null,
 		overrides: Partial<FileProductionJob> = {}
 	): FileProductionJob {
 		const now = Date.now();
@@ -180,7 +180,7 @@ describe('MessageArea', () => {
 			files: [],
 		});
 
-		const { getByText, queryByText } = render(MessageArea, {
+		const { container, queryByText } = render(MessageArea, {
 			messages: [
 				{
 					id: 'assistant-1',
@@ -198,9 +198,54 @@ describe('MessageArea', () => {
 			fileProductionJobs: [runningJob],
 		});
 
-		expect(getByText('Draft report')).toBeInTheDocument();
-		expect(getByText('In-progress')).toBeInTheDocument();
+		expect(container.querySelector('[data-testid="file-production-card"]')).toBeInTheDocument();
+		expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+		expect(queryByText('Draft report')).toBeNull();
+		expect(queryByText('In-progress')).toBeNull();
 		expect(queryByText('Generating...')).toBeNull();
+	});
+
+	it('attaches an unassigned active file-production job to the latest streaming assistant response', () => {
+		const runningJob = makeFileProductionJob(null, {
+			id: 'job-unassigned-running',
+			title: 'Immediate report',
+			status: 'running',
+			files: [],
+		});
+
+		const { container } = render(MessageArea, {
+			messages: [
+				{
+					id: 'assistant-earlier',
+					renderKey: 'assistant-earlier',
+					role: 'assistant',
+					content: 'Earlier response',
+					timestamp: Date.now(),
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+				{
+					id: 'assistant-streaming',
+					renderKey: 'assistant-streaming',
+					role: 'assistant',
+					content: 'I am generating the file now.',
+					timestamp: Date.now() + 1,
+					isStreaming: true,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			fileProductionJobs: [runningJob],
+		});
+
+		const assistantMessages = container.querySelectorAll('[data-testid="assistant-message"]');
+		const card = container.querySelector('[data-testid="file-production-card"]');
+
+		expect(card).toBeInTheDocument();
+		expect(assistantMessages[0].contains(card)).toBe(false);
+		expect(assistantMessages[1].contains(card)).toBe(true);
 	});
 
 	it('renders file-production cards above the evidence toggle inside the latest assistant response', () => {

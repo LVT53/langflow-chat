@@ -39,6 +39,9 @@
 		onCancel?: ((jobId: string) => void) | undefined;
 	} = $props();
 
+	let isActive = $derived(job.status === 'queued' || job.status === 'running');
+	let isResolved = $derived(!isActive);
+
 	function fileCountLabel(count: number): string {
 		if (count === 0) {
 			return $t('fileProduction.noFiles');
@@ -58,7 +61,6 @@
 				return $t('fileProduction.failed');
 			case 'cancelled':
 				return $t('fileProduction.cancelled');
-			case 'succeeded':
 			default:
 				return $t('fileProduction.ready');
 		}
@@ -78,7 +80,6 @@
 				return $t('fileProduction.failedDescription');
 			case 'cancelled':
 				return $t('fileProduction.cancelledDescription');
-			case 'succeeded':
 			default:
 				return null;
 		}
@@ -108,98 +109,158 @@
 	}
 </script>
 
-<div class="file-production-card" data-testid="file-production-card">
-	<div class="job-header">
-		<div class="job-title-group">
-			<div class="job-eyebrow">{statusLabel(job.status)}</div>
-			<div class="job-title" title={job.title}>{job.title}</div>
-		</div>
-		<div class="job-count">{fileCountLabel(job.files.length)}</div>
-	</div>
-
-	{#if statusDescription(job)}
-		<div class="job-status-detail">{statusDescription(job)}</div>
-	{/if}
-
-	{#if job.files.length > 0}
-		<div class="produced-files" data-testid="file-production-files">
-			{#each job.files as file (file.id)}
-				<div class="produced-file-row">
-					<button
-						type="button"
-						class="file-open"
-						disabled={!file.previewUrl}
-						onclick={() => openFile(file)}
-						aria-label={$t('fileProduction.previewLabel', { filename: file.filename })}
-					>
-						<span class="file-name" title={file.filename}>{file.filename}</span>
-						<span class="file-size">{formatByteSize(file.sizeBytes)}</span>
-					</button>
-					<a
-						class="file-download"
-						href={file.downloadUrl}
-						download={file.filename}
-						aria-label={$t('fileProduction.downloadLabel', { filename: file.filename })}
-						title={$t('fileProduction.downloadLabel', { filename: file.filename })}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="14"
-							height="14"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-							<polyline points="7 10 12 15 17 10" />
-							<line x1="12" x2="12" y1="15" y2="3" />
-						</svg>
-					</a>
-				</div>
-			{/each}
-		</div>
-	{/if}
-
-	{#if (job.status === 'queued' || job.status === 'running') && onCancel}
-		<div class="job-actions">
+<div
+	class="file-production-card"
+	class:is-active={isActive}
+	class:is-resolved={isResolved}
+	data-testid="file-production-card"
+	aria-busy={isActive}
+	aria-label={isActive ? $t('fileProduction.runningDescription') : undefined}
+>
+	{#if isActive}
+		{#if onCancel}
 			<button
 				type="button"
-				class="job-action"
+				class="active-cancel"
 				onclick={() => onCancel?.(job.id)}
 				aria-label={$t('fileProduction.cancelLabel')}
+				title={$t('fileProduction.cancelLabel')}
 			>
-				{$t('fileProduction.cancel')}
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M18 6 6 18" />
+					<path d="m6 6 12 12" />
+				</svg>
 			</button>
+		{/if}
+	{:else}
+		<div class="job-header">
+			<div class="job-title-group">
+				<div class="job-eyebrow">{statusLabel(job.status)}</div>
+				<div class="job-title" title={job.title}>{job.title}</div>
+			</div>
+			<div class="job-count">{fileCountLabel(job.files.length)}</div>
 		</div>
-	{:else if job.status === 'failed' && job.error?.retryable && onRetry}
-		<div class="job-actions">
-			<button
-				type="button"
-				class="job-action"
-				onclick={() => onRetry?.(job.id)}
-				aria-label={$t('fileProduction.retryLabel')}
-			>
-				{$t('fileProduction.retry')}
-			</button>
-		</div>
+
+		{#if statusDescription(job)}
+			<div class="job-status-detail">{statusDescription(job)}</div>
+		{/if}
+
+		{#if job.files.length > 0}
+			<div class="produced-files" data-testid="file-production-files">
+				{#each job.files as file (file.id)}
+					<div class="produced-file-row">
+						<button
+							type="button"
+							class="file-open"
+							disabled={!file.previewUrl}
+							onclick={() => openFile(file)}
+							aria-label={$t('fileProduction.previewLabel', { filename: file.filename })}
+						>
+							<span class="file-name" title={file.filename}>{file.filename}</span>
+							<span class="file-size">{formatByteSize(file.sizeBytes)}</span>
+						</button>
+						<a
+							class="file-download"
+							href={file.downloadUrl}
+							download={file.filename}
+							aria-label={$t('fileProduction.downloadLabel', { filename: file.filename })}
+							title={$t('fileProduction.downloadLabel', { filename: file.filename })}
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+								<polyline points="7 10 12 15 17 10" />
+								<line x1="12" x2="12" y1="15" y2="3" />
+							</svg>
+						</a>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		{#if job.status === 'failed' && job.error?.retryable && onRetry}
+			<div class="job-actions">
+				<button
+					type="button"
+					class="job-action"
+					onclick={() => onRetry?.(job.id)}
+					aria-label={$t('fileProduction.retryLabel')}
+				>
+					{$t('fileProduction.retry')}
+				</button>
+			</div>
+		{/if}
 	{/if}
 </div>
 
 <style>
 	.file-production-card {
 		display: flex;
+		position: relative;
 		width: 100%;
 		max-width: 100%;
+		min-height: 4.75rem;
 		flex-direction: column;
 		gap: var(--space-sm);
+		overflow: hidden;
 		border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent 22%);
 		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--surface-elevated) 60%, transparent 40%);
 		padding: 0.75rem;
+	}
+
+	.file-production-card.is-active {
+		background:
+			linear-gradient(
+				100deg,
+				color-mix(in srgb, var(--surface-elevated) 62%, transparent 38%) 0%,
+				color-mix(in srgb, var(--surface-page) 72%, var(--accent) 28%) 38%,
+				color-mix(in srgb, var(--surface-elevated) 62%, transparent 38%) 76%
+			);
+		background-size: 220% 100%;
+		animation: file-production-shimmer 1.35s ease-in-out infinite;
+	}
+
+	.active-cancel {
+		position: absolute;
+		top: 0.55rem;
+		right: 0.55rem;
+		display: inline-flex;
+		width: 1.75rem;
+		height: 1.75rem;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent 30%);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface-page) 72%, transparent 28%);
+		color: var(--text-secondary);
+		cursor: pointer;
+	}
+
+	.active-cancel:hover {
+		background: color-mix(in srgb, var(--surface-page) 84%, var(--accent) 16%);
+		color: var(--text-primary);
 	}
 
 	.job-header {
@@ -336,5 +397,51 @@
 
 	.job-action:hover {
 		background: color-mix(in srgb, var(--surface-page) 78%, var(--accent) 22%);
+	}
+
+	.file-production-card.is-resolved .job-header,
+	.file-production-card.is-resolved .job-status-detail,
+	.file-production-card.is-resolved .produced-files,
+	.file-production-card.is-resolved .job-actions {
+		animation: file-production-reveal 180ms ease-out both;
+	}
+
+	.file-production-card.is-resolved .job-status-detail {
+		animation-delay: 35ms;
+	}
+
+	.file-production-card.is-resolved .produced-files,
+	.file-production-card.is-resolved .job-actions {
+		animation-delay: 70ms;
+	}
+
+	@keyframes file-production-shimmer {
+		from {
+			background-position: 120% 0;
+		}
+		to {
+			background-position: -120% 0;
+		}
+	}
+
+	@keyframes file-production-reveal {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.file-production-card.is-active,
+		.file-production-card.is-resolved .job-header,
+		.file-production-card.is-resolved .job-status-detail,
+		.file-production-card.is-resolved .produced-files,
+		.file-production-card.is-resolved .job-actions {
+			animation: none;
+		}
 	}
 </style>

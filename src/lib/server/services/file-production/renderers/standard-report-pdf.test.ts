@@ -63,6 +63,36 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		}
 	});
 
+	it('embeds the bundled app typography fonts instead of host fallback fonts', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Unicode typography report',
+			subtitle: 'Árvíztűrő tükörfúrógép',
+			cover: { enabled: true, eyebrow: 'Typography', dateLabel: 'May 2026' },
+			blocks: [
+				{
+					type: 'paragraph',
+					text: 'The PDF renderer must carry the same Unicode-capable font family as the app UI.',
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+		const pdfBody = rendered.content.toString('latin1');
+
+		expect(rendered.diagnostics.fonts).toEqual({
+			body: 'Nimbus Sans L',
+			bodyBold: 'Nimbus Sans L Bold',
+			title: 'Libre Baskerville',
+			titleBold: 'Libre Baskerville Bold',
+			code: 'Nimbus Sans L',
+		});
+		expect(pdfBody).not.toContain('DejaVu');
+	});
+
 	it('supports dividers and optional cover pages without accepting raw drawing commands', async () => {
 		const validation = validateGeneratedDocumentSource({
 			version: 1,

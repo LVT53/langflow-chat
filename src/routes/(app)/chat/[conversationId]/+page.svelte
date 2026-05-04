@@ -81,6 +81,7 @@ import {
 	isOsFileDropEvent,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
+	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
 	type MessageEditPayload,
 	type MessageRegeneratePayload,
@@ -566,6 +567,9 @@ async function reconnectToOrphanedStream(
 						details,
 					}),
 				);
+				if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 			},
 			onWaiting() {
 				console.info("[CHAT] Reconnection waiting - polling for completion");
@@ -1118,6 +1122,9 @@ function handleSend(
 						details,
 					}),
 				);
+				if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 			},
 			onEnd(fullText, metadata) {
 				const completedUserMessage = lastUserMessage;
@@ -1253,6 +1260,9 @@ function handleRetry() {
 							details,
 						}),
 					);
+					if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+						void hydrateConversationDetail(data.conversation.id);
+					}
 				},
 				onWaiting() {
 					console.info(

@@ -132,6 +132,13 @@ export function hasActiveFileProductionJobs(jobs: FileProductionJob[]): boolean 
 	return jobs.some((job) => job.status === 'queued' || job.status === 'running');
 }
 
+export function shouldHydrateFileProductionJobsOnToolCall(
+	name: string,
+	status: 'running' | 'done'
+): boolean {
+	return name === 'produce_file' && status === 'done';
+}
+
 export function mergeFileProductionJob(
 	currentJobs: FileProductionJob[],
 	updatedJob: FileProductionJob

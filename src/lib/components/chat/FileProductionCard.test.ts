@@ -22,16 +22,18 @@ function makeJob(overrides: Partial<FileProductionJob>): FileProductionJob {
 }
 
 describe('FileProductionCard', () => {
-	it('renders a queued zero-file job with a cancel action', async () => {
+	it('renders an active job as a shimmer-only card with an icon cancel action', async () => {
 		const onCancel = vi.fn();
-		const { getByRole, getByText } = render(FileProductionCard, {
+		const { container, getByRole, queryByText } = render(FileProductionCard, {
 			job: makeJob({ status: 'queued' }),
 			onCancel,
 		});
 
-		expect(getByText('Queued')).toBeInTheDocument();
-		expect(getByText('No files yet')).toBeInTheDocument();
-		expect(getByText('Waiting for the file worker.')).toBeInTheDocument();
+		expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+		expect(queryByText('Queued')).toBeNull();
+		expect(queryByText('Quarterly report')).toBeNull();
+		expect(queryByText('No files yet')).toBeNull();
+		expect(queryByText('Waiting for the file worker.')).toBeNull();
 
 		await fireEvent.click(getByRole('button', { name: 'Cancel file production' }));
 
