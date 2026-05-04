@@ -35,5 +35,7 @@ describe('Langflow File Production tool node', () => {
 		expect(source).not.toContain('/api/chat/files/generate');
 		expect(source).not.toContain('/api/chat/files/export');
 		expect(source).toContain('"requestedOutputs": requested_outputs');
+		expect(source).toContain('getattr(self, "conversation_id", "")');
+		expect(source).toContain('getattr(self, "conversationId", "")');
 	});
 });
