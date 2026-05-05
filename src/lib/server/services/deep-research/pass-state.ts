@@ -185,31 +185,55 @@ export async function saveCoverageGapsForPass(
 
 	const { db } = await import("$lib/server/db");
 	const now = input.now ?? new Date();
-	const rows = await db
-		.insert(deepResearchCoverageGaps)
-		.values(
-			input.gaps.map((gap) => ({
-				id: randomUUID(),
-				jobId: input.jobId,
-				conversationId: input.conversationId,
-				userId: input.userId,
-				passCheckpointId: input.passCheckpointId,
-				lifecycleState: "open",
-				severity: gap.severity,
-				reason: normalizeText(gap.reason),
-				keyQuestion: gap.keyQuestion ?? null,
-				comparisonAxis: gap.comparisonAxis ?? null,
-				recommendedNextAction: normalizeText(gap.recommendedNextAction),
-				detail: gap.detail ? normalizeText(gap.detail) : null,
-				reviewedSourceCount: Math.max(
-					0,
-					Math.floor(gap.reviewedSourceCount),
-				),
-				createdAt: now,
-				updatedAt: now,
-			})),
-		)
-		.returning();
+	const existingRows = await db
+		.select()
+		.from(deepResearchCoverageGaps)
+		.where(
+			and(
+				eq(deepResearchCoverageGaps.userId, input.userId),
+				eq(deepResearchCoverageGaps.passCheckpointId, input.passCheckpointId),
+			),
+		);
+	const existingByKey = new Map(
+		existingRows.map((row) => [coverageGapIdempotencyKey(row), row]),
+	);
+	const rows: DeepResearchCoverageGapRow[] = [];
+	const rowsToInsert: Array<typeof deepResearchCoverageGaps.$inferInsert> = [];
+	for (const gap of input.gaps) {
+		const normalized = {
+			severity: gap.severity,
+			reason: normalizeText(gap.reason),
+			keyQuestion: gap.keyQuestion ?? null,
+			comparisonAxis: gap.comparisonAxis ?? null,
+			recommendedNextAction: normalizeText(gap.recommendedNextAction),
+			detail: gap.detail ? normalizeText(gap.detail) : null,
+			reviewedSourceCount: Math.max(0, Math.floor(gap.reviewedSourceCount)),
+		};
+		const key = coverageGapInputIdempotencyKey(normalized);
+		const existing = existingByKey.get(key);
+		if (existing) {
+			rows.push(existing);
+			continue;
+		}
+		rowsToInsert.push({
+			id: randomUUID(),
+			jobId: input.jobId,
+			conversationId: input.conversationId,
+			userId: input.userId,
+			passCheckpointId: input.passCheckpointId,
+			lifecycleState: "open",
+			...normalized,
+			createdAt: now,
+			updatedAt: now,
+		});
+	}
+	if (rowsToInsert.length > 0) {
+		const insertedRows = await db
+			.insert(deepResearchCoverageGaps)
+			.values(rowsToInsert)
+			.returning();
+		rows.push(...insertedRows);
+	}
 
 	return rows.map(mapResearchCoverageGapRow);
 }
@@ -358,6 +382,38 @@ function normalizePassNumber(passNumber: number): number {
 
 function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
+}
+
+function coverageGapIdempotencyKey(
+	row: Pick<
+		DeepResearchCoverageGapRow,
+		| "keyQuestion"
+		| "comparisonAxis"
+		| "reason"
+		| "recommendedNextAction"
+		| "severity"
+	>,
+): string {
+	return [
+		row.keyQuestion ?? "",
+		row.comparisonAxis ?? "",
+		row.reason,
+		row.recommendedNextAction,
+		row.severity,
+	].join("\u001f");
+}
+
+function coverageGapInputIdempotencyKey(
+	gap: Pick<
+		DeepResearchCoverageGapRow,
+		| "keyQuestion"
+		| "comparisonAxis"
+		| "reason"
+		| "recommendedNextAction"
+		| "severity"
+	>,
+): string {
+	return coverageGapIdempotencyKey(gap);
 }
 
 function stringifyOptionalJson(value: Record<string, unknown> | null | undefined) {

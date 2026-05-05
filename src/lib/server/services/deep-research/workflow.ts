@@ -36,8 +36,11 @@ import {
 	executeResearchTaskWithLlm,
 	reviewSourceWithLlm,
 } from "./llm-steps";
+import { buildSourceReviewEvidenceNotes } from "./evidence-notes";
 import {
 	completeResearchPassCheckpoint,
+	listResearchCoverageGaps,
+	listResearchPassCheckpoints,
 	resolveResearchCoverageGaps,
 	saveCoverageGapsForPass,
 	upsertResearchPassCheckpoint,
@@ -49,10 +52,22 @@ import {
 	evaluateResearchPassBarrier,
 	listResearchTasks,
 	recordResearchTaskFailure,
+	recoverExpiredResearchTasks,
 } from "./tasks";
-import { saveResearchTimelineEvent } from "./timeline";
+import {
+	saveResearchTimelineEvent,
+	saveResearchTimelineEventOnce,
+} from "./timeline";
+import {
+	completeResearchResumePoint,
+	getResearchResumePoint,
+	upsertResearchResumePoint,
+} from "./resume-points";
 import type { ResearchCoverageAssessment, CoverageGap } from "./coverage";
-import type { DeepResearchPassDecision } from "$lib/types";
+import type {
+	DeepResearchPassCheckpoint,
+	DeepResearchPassDecision,
+} from "$lib/types";
 
 export type RunDeepResearchWorkflowStepInput = {
 	userId: string;
@@ -143,6 +158,14 @@ export async function runDeepResearchWorkflowStep(
 	if (jobRow.status === "running" && jobRow.stage === "research_tasks") {
 		return runResearchTasksStep(jobRow, now, dependencies);
 	}
+	if (
+		jobRow.status === "running" &&
+		["synthesis", "citation_audit", "report_assembly"].includes(
+			jobRow.stage ?? "",
+		)
+	) {
+		return runSynthesisResumeStep(jobRow, now, dependencies);
+	}
 
 	const job = await reloadWorkflowJob(
 		jobRow.userId,
@@ -174,11 +197,36 @@ async function runResearchTasksStep(
 
 	const listTasks =
 		dependencies.tasks?.listResearchTasks ?? listResearchTasks;
-	const allTasks = await listTasks({
+	let allTasks = await listTasks({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
 	const passNumber = currentResearchPassNumber(allTasks);
+	const passResumeKey = `pass:${jobRow.id}:${passNumber}:research_tasks`;
+	await upsertResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		conversationId: jobRow.conversationId,
+		boundary: "running_pass",
+		resumeKey: passResumeKey,
+		stage: "research_tasks",
+		passNumber,
+		payload: { taskCount: allTasks.length },
+		now,
+	});
+	const workflowClaimToken = `workflow:${jobRow.id}:${passNumber}`;
+	await recoverExpiredResearchTasks({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		passNumber,
+		claimToken: workflowClaimToken,
+		expiredBefore: new Date(now.getTime() - 30 * 60_000),
+		now,
+	});
+	allTasks = await listTasks({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+	});
 	const passTasks = allTasks.filter((task) => task.passNumber === passNumber);
 	const pendingRequiredTasks = passTasks.filter(
 		(task) => task.required && task.status === "pending",
@@ -191,50 +239,94 @@ async function runResearchTasksStep(
 	});
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
 
+	let claimedTasks: DeepResearchTask[] = [];
 	if (pendingRequiredTasks.length > 0) {
-		const claimedTasks = await (
+		claimedTasks = await (
 			dependencies.tasks?.claimResearchTasks ?? claimResearchTasks
 		)({
 			userId: jobRow.userId,
 			jobId: jobRow.id,
 			passNumber,
 			limit: pendingRequiredTasks.length,
-			claimToken: `workflow:${jobRow.id}:${passNumber}`,
+			claimToken: workflowClaimToken,
 			now,
 		});
-		const executor =
-			dependencies.tasks?.executor ?? defaultResearchTaskExecutor(jobRow.userId);
+	}
+	const executor =
+		dependencies.tasks?.executor ?? defaultResearchTaskExecutor(jobRow.userId);
 
-		for (const task of claimedTasks) {
-			try {
-				const output = await executor({
-					job,
-					approvedPlan: approvedPlan as ResearchPlan,
-					task,
-					reviewedSources,
-					allSources: sources,
-					now,
-				});
-				await (
-					dependencies.tasks?.completeResearchTask ?? completeResearchTask
-				)({
-					userId: jobRow.userId,
-					taskId: task.id,
-					output,
-					now,
-				});
-			} catch (error) {
-				await (
-					dependencies.tasks?.recordResearchTaskFailure ??
-					recordResearchTaskFailure
-				)({
-					userId: jobRow.userId,
-					taskId: task.id,
-					failureKind: "permanent",
-					failureReason: getErrorMessage(error),
-					now,
-				});
-			}
+	const workflowRunningTasks = passTasks.filter(
+		(task) => task.status === "running" && task.claimToken === workflowClaimToken,
+	);
+	const tasksToExecute = dedupeTasksById([
+		...workflowRunningTasks,
+		...claimedTasks,
+	]);
+
+	for (const task of tasksToExecute) {
+		const taskResumeKey = `task:${task.id}`;
+		await upsertResearchResumePoint({
+			userId: jobRow.userId,
+			jobId: jobRow.id,
+			conversationId: jobRow.conversationId,
+			boundary: "research_task",
+			resumeKey: taskResumeKey,
+			stage: "research_tasks",
+			passNumber,
+			taskId: task.id,
+			payload: {
+				assignmentType: task.assignmentType,
+				coverageGapId: task.coverageGapId,
+			},
+			now,
+		});
+		try {
+			const output = await executor({
+				job,
+				approvedPlan: approvedPlan as ResearchPlan,
+				task,
+				reviewedSources,
+				allSources: sources,
+				now,
+			});
+			await (
+				dependencies.tasks?.completeResearchTask ?? completeResearchTask
+			)({
+				userId: jobRow.userId,
+				taskId: task.id,
+				output,
+				now,
+			});
+			await completeResearchResumePoint({
+				userId: jobRow.userId,
+				jobId: jobRow.id,
+				resumeKey: taskResumeKey,
+				result: {
+					sourceIds: output.sourceIds ?? [],
+				},
+				now,
+			});
+		} catch (error) {
+			await (
+				dependencies.tasks?.recordResearchTaskFailure ??
+				recordResearchTaskFailure
+			)({
+				userId: jobRow.userId,
+				taskId: task.id,
+				failureKind: "permanent",
+				failureReason: getErrorMessage(error),
+				now,
+			});
+			await completeResearchResumePoint({
+				userId: jobRow.userId,
+				jobId: jobRow.id,
+				resumeKey: taskResumeKey,
+				status: "failed",
+				result: {
+					error: getErrorMessage(error),
+				},
+				now,
+			});
 		}
 	}
 
@@ -285,8 +377,19 @@ async function runResearchTasksStep(
 		sources,
 		now,
 	});
+	await completeResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		resumeKey: passResumeKey,
+		result: {
+			nextDecision: "synthesize_report",
+			completedTasks: completedTasks.length,
+			limitedTasks: taskLimitations.length,
+		},
+		now,
+	});
 
-	await saveResearchTimelineEvent({
+	await saveResearchTimelineEventOnce({
 		jobId: jobRow.id,
 		conversationId: jobRow.conversationId,
 		userId: jobRow.userId,
@@ -334,18 +437,13 @@ async function runResearchTasksStep(
 			mapCompletedResearchTaskForSynthesis(task, sourceRefsById),
 		),
 	};
-	const synthesisNotes = dependencies.synthesis?.buildSynthesisNotes
-		? await dependencies.synthesis.buildSynthesisNotes(synthesisInput)
-		: await buildSynthesisNotesWithLlm({
-				context: {
-					jobId: jobRow.id,
-					conversationId: jobRow.conversationId,
-					userId: jobRow.userId,
-					now,
-				},
-				reviewedSources: synthesisInput.reviewedSources,
-				completedTasks: synthesisInput.completedTasks,
-			});
+	const synthesisNotes = await buildSynthesisNotesWithResumePoint({
+		jobRow,
+		passNumber,
+		now,
+		synthesisInput,
+		dependencies,
+	});
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -364,6 +462,180 @@ async function runResearchTasksStep(
 	};
 }
 
+async function runSynthesisResumeStep(
+	jobRow: typeof deepResearchJobs.$inferSelect,
+	now: Date,
+	dependencies: DeepResearchWorkflowDependencies,
+): Promise<RunDeepResearchWorkflowStepResult> {
+	const job = await reloadWorkflowJob(
+		jobRow.userId,
+		jobRow.conversationId,
+		jobRow.id,
+	);
+	const approvedPlan = job?.currentPlan?.rawPlan;
+	if (!job || !approvedPlan) {
+		return job ? { job, advanced: false, outcome: "not_eligible" } : null;
+	}
+
+	const allTasks = await (dependencies.tasks?.listResearchTasks ?? listResearchTasks)({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+	});
+	const passNumber = currentResearchPassNumber(allTasks);
+	const completedPassTasks = allTasks.filter(
+		(task) => task.passNumber === passNumber,
+	);
+	const completedTasks = completedPassTasks.filter(
+		(task) => task.status === "completed" && task.output,
+	);
+	const taskLimitations = completedPassTasks
+		.filter(
+			(task) =>
+				task.required &&
+				(task.status === "skipped" ||
+					(task.status === "failed" && !task.critical)),
+		)
+		.map(formatResearchTaskLimitation);
+	const sources = await (
+		dependencies.sources?.listResearchSources ?? listResearchSources
+	)({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+	});
+	const reviewedSources = sources.filter((source) => source.reviewedAt);
+	const synthesisResumeKey = `synthesis:${jobRow.id}:${passNumber}`;
+	const existingSynthesis = await getResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		resumeKey: synthesisResumeKey,
+	});
+	await upsertResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		conversationId: jobRow.conversationId,
+		boundary: "synthesis",
+		resumeKey: synthesisResumeKey,
+		stage: "synthesis",
+		passNumber,
+		payload: {
+			reviewedSources: reviewedSources.length,
+			completedTasks: completedTasks.length,
+		},
+		now,
+	});
+	const sourceRefsById = buildResearchSourceReferenceMap(reviewedSources);
+	const synthesisInput = {
+		jobId: jobRow.id,
+		reviewedSources: reviewedSources.map(mapReviewedSourceForSynthesis),
+		completedTasks: completedTasks.map((task) =>
+			mapCompletedResearchTaskForSynthesis(task, sourceRefsById),
+		),
+	};
+	const synthesisNotes =
+		existingSynthesis?.status === "completed" && existingSynthesis.result?.synthesisNotes
+			? (existingSynthesis.result.synthesisNotes as Awaited<
+					ReturnType<typeof buildSynthesisNotes>
+				>)
+			: dependencies.synthesis?.buildSynthesisNotes
+				? await dependencies.synthesis.buildSynthesisNotes(synthesisInput)
+				: await buildSynthesisNotesWithLlm({
+						context: {
+							jobId: jobRow.id,
+							conversationId: jobRow.conversationId,
+							userId: jobRow.userId,
+							now,
+						},
+						reviewedSources: synthesisInput.reviewedSources,
+						completedTasks: synthesisInput.completedTasks,
+					});
+	await completeResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		resumeKey: synthesisResumeKey,
+		result: {
+			synthesisNotes,
+		},
+		now,
+	});
+	const completedJob = await (
+		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
+		completeDeepResearchJobWithAuditedReport
+	)({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		synthesisNotes,
+		limitations: taskLimitations,
+		now,
+	});
+	if (!completedJob) return null;
+	return {
+		job: completedJob,
+		advanced: true,
+		outcome: "report_completed",
+	};
+}
+
+async function buildSynthesisNotesWithResumePoint(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	passNumber: number;
+	now: Date;
+	synthesisInput: {
+		jobId: string;
+		reviewedSources: ReturnType<typeof mapReviewedSourceForSynthesis>[];
+		completedTasks: CompletedResearchTaskOutput[];
+	};
+	dependencies: DeepResearchWorkflowDependencies;
+}): Promise<Awaited<ReturnType<typeof buildSynthesisNotes>>> {
+	const synthesisResumeKey = `synthesis:${input.jobRow.id}:${input.passNumber}`;
+	const existingSynthesis = await getResearchResumePoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		resumeKey: synthesisResumeKey,
+	});
+	await upsertResearchResumePoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		boundary: "synthesis",
+		resumeKey: synthesisResumeKey,
+		stage: "synthesis",
+		passNumber: input.passNumber,
+		payload: {
+			reviewedSources: input.synthesisInput.reviewedSources.length,
+			completedTasks: input.synthesisInput.completedTasks.length,
+		},
+		now: input.now,
+	});
+	if (
+		existingSynthesis?.status === "completed" &&
+		existingSynthesis.result?.synthesisNotes
+	) {
+		return existingSynthesis.result.synthesisNotes as Awaited<
+			ReturnType<typeof buildSynthesisNotes>
+		>;
+	}
+	const synthesisNotes = input.dependencies.synthesis?.buildSynthesisNotes
+		? await input.dependencies.synthesis.buildSynthesisNotes(input.synthesisInput)
+		: await buildSynthesisNotesWithLlm({
+				context: {
+					jobId: input.jobRow.id,
+					conversationId: input.jobRow.conversationId,
+					userId: input.jobRow.userId,
+					now: input.now,
+				},
+				reviewedSources: input.synthesisInput.reviewedSources,
+				completedTasks: input.synthesisInput.completedTasks,
+			});
+	await completeResearchResumePoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		resumeKey: synthesisResumeKey,
+		result: { synthesisNotes },
+		now: input.now,
+	});
+	return synthesisNotes;
+}
+
 async function runSourceReviewStep(
 	jobRow: typeof deepResearchJobs.$inferSelect,
 	now: Date,
@@ -377,6 +649,42 @@ async function runSourceReviewStep(
 	const approvedPlan = job?.currentPlan?.rawPlan;
 	if (!job || !approvedPlan) {
 		return job ? { job, advanced: false, outcome: "not_eligible" } : null;
+	}
+	const passResumeKey = `pass:${jobRow.id}:1:source_review`;
+	await upsertResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		conversationId: jobRow.conversationId,
+		boundary: "running_pass",
+		resumeKey: passResumeKey,
+		stage: "source_review",
+		passNumber: 1,
+		payload: {
+			planVersion: job.currentPlan?.version ?? null,
+		},
+		now,
+	});
+	const existingPassDecision = await getTerminalPassDecision({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		passNumber: 1,
+	});
+	if (existingPassDecision) {
+		await completeResearchResumePoint({
+			userId: jobRow.userId,
+			jobId: jobRow.id,
+			resumeKey: passResumeKey,
+			result: {
+				nextDecision: existingPassDecision.nextDecision,
+			},
+			now,
+		});
+		return resumeFromTerminalSourceReviewPass({
+			jobRow,
+			checkpoint: existingPassDecision,
+			now,
+			dependencies,
+		});
 	}
 
 	let sources = await (
@@ -395,6 +703,17 @@ async function runSourceReviewStep(
 	);
 	const reviewWarnings: string[] = [];
 	if (reviewLimit > 0) {
+		const sourceReviewCheckpoint = await upsertResearchPassCheckpoint({
+			userId: jobRow.userId,
+			jobId: jobRow.id,
+			conversationId: jobRow.conversationId,
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: sources
+				.filter((source) => source.reviewedAt)
+				.map((source) => source.id),
+			now,
+		});
 		try {
 			await (
 				dependencies.sourceReview?.triageAndReviewSources ??
@@ -452,6 +771,28 @@ async function runSourceReviewStep(
 										openedContentLength: notes.openedContentLength,
 									});
 
+							if (!notes.rejectedReason) {
+								await buildSourceReviewEvidenceNotes({
+									userId: jobRow.userId,
+									jobId: jobRow.id,
+									conversationId: jobRow.conversationId,
+									passCheckpointId: sourceReviewCheckpoint.id,
+									sourceId: reviewedSource.id,
+									title: reviewedSource.title ?? notes.title,
+									url: reviewedSource.url,
+									summary: notes.summary,
+									keyFindings:
+										notes.extractedClaims.length > 0
+											? notes.extractedClaims
+											: notes.keyFindings,
+									extractedText: notes.extractedText,
+									supportedKeyQuestions: notes.supportedKeyQuestions,
+									comparedEntity: notes.comparedEntity,
+									comparisonAxis: notes.comparisonAxis,
+									now,
+								});
+							}
+
 							return {
 								...notes,
 								id: reviewedSource.id,
@@ -498,7 +839,7 @@ async function runSourceReviewStep(
 			summary: reviewWarnings[0],
 		});
 	}
-	await saveResearchTimelineEvent({
+	await saveResearchTimelineEventOnce({
 		jobId: jobRow.id,
 		conversationId: jobRow.conversationId,
 		userId: jobRow.userId,
@@ -557,6 +898,16 @@ async function runSourceReviewStep(
 		reviewedSources,
 		sources,
 		coverageAssessment,
+		now,
+	});
+	await completeResearchResumePoint({
+		userId: jobRow.userId,
+		jobId: jobRow.id,
+		resumeKey: passResumeKey,
+		result: {
+			nextDecision: passDecisionState.checkpoint.nextDecision,
+			coverageGapIds: passDecisionState.gaps.map((gap) => gap.id),
+		},
 		now,
 	});
 
@@ -680,18 +1031,13 @@ async function completeSourceReviewReport(input: {
 		reviewedSources: input.reviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: [],
 	};
-	const synthesisNotes = input.dependencies.synthesis?.buildSynthesisNotes
-		? await input.dependencies.synthesis.buildSynthesisNotes(synthesisInput)
-		: await buildSynthesisNotesWithLlm({
-				context: {
-					jobId: input.jobRow.id,
-					conversationId: input.jobRow.conversationId,
-					userId: input.jobRow.userId,
-					now: input.now,
-				},
-				reviewedSources: synthesisInput.reviewedSources,
-				completedTasks: synthesisInput.completedTasks,
-			});
+	const synthesisNotes = await buildSynthesisNotesWithResumePoint({
+		jobRow: input.jobRow,
+		passNumber: 1,
+		now: input.now,
+		synthesisInput,
+		dependencies: input.dependencies,
+	});
 	const completedJob = await (
 		input.dependencies.reportCompletion
 			?.completeDeepResearchJobWithAuditedReport ??
@@ -709,6 +1055,106 @@ async function completeSourceReviewReport(input: {
 		advanced: true,
 		outcome: "report_completed",
 	};
+}
+
+async function resumeFromTerminalSourceReviewPass(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	checkpoint: DeepResearchPassCheckpoint;
+	now: Date;
+	dependencies: DeepResearchWorkflowDependencies;
+}): Promise<RunDeepResearchWorkflowStepResult> {
+	if (input.checkpoint.nextDecision === "continue_research") {
+		const allGaps = await listResearchCoverageGaps({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		});
+		const checkpointGaps = allGaps.filter((gap) =>
+			input.checkpoint.coverageGapIds.includes(gap.id),
+		);
+		await upsertResearchPassCheckpoint({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+			conversationId: input.jobRow.conversationId,
+			passNumber: 2,
+			searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+			reviewedSourceIds: input.checkpoint.reviewedSourceIds,
+			now: input.now,
+		});
+		await (
+			input.dependencies.tasks?.createResearchTasksFromCoverageGaps ??
+			createResearchTasksFromCoverageGaps
+		)({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+			conversationId: input.jobRow.conversationId,
+			passNumber: 2,
+			gaps: checkpointGaps.map((gap) => ({
+				id: gap.id,
+				keyQuestion: gap.keyQuestion,
+				summary: gap.recommendedNextAction,
+				severity: gap.severity,
+			})),
+			now: input.now,
+		});
+		await db
+			.update(deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: input.now,
+			})
+			.where(
+				and(
+					eq(deepResearchJobs.id, input.jobRow.id),
+					eq(deepResearchJobs.userId, input.jobRow.userId),
+					eq(deepResearchJobs.status, "running"),
+				),
+			);
+		const reloaded = await reloadWorkflowJob(
+			input.jobRow.userId,
+			input.jobRow.conversationId,
+			input.jobRow.id,
+		);
+		return reloaded
+			? {
+					job: reloaded,
+					advanced: true,
+					outcome: "coverage_continuation_created",
+				}
+			: null;
+	}
+	if (input.checkpoint.nextDecision === "synthesize_report") {
+		await db
+			.update(deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: input.now,
+			})
+			.where(
+				and(
+					eq(deepResearchJobs.id, input.jobRow.id),
+					eq(deepResearchJobs.userId, input.jobRow.userId),
+					eq(deepResearchJobs.status, "running"),
+				),
+			);
+		return runSynthesisResumeStep(
+			{ ...input.jobRow, stage: "synthesis", updatedAt: input.now },
+			input.now,
+			input.dependencies,
+		);
+	}
+	return completeCoverageExhaustedWithEvidenceLimitationMemo({
+		jobRow: input.jobRow,
+		now: input.now,
+		limitations: [input.checkpoint.decisionSummary ?? "Research evidence was insufficient."],
+		sourceCounts: {
+			discovered: 0,
+			reviewed: input.checkpoint.reviewedSourceIds.length,
+			cited: 0,
+		},
+		dependencies: input.dependencies,
+	});
 }
 
 async function completeCoverageExhaustedWithEvidenceLimitationMemo(input: {
@@ -929,7 +1375,7 @@ async function saveResearchPassDecisionTimeline(input: {
 	};
 	now: Date;
 }) {
-	await saveResearchTimelineEvent({
+	await saveResearchTimelineEventOnce({
 		jobId: input.jobRow.id,
 		conversationId: input.jobRow.conversationId,
 		userId: input.jobRow.userId,
@@ -1071,6 +1517,30 @@ const defaultResearchTaskExecutor =
 function currentResearchPassNumber(tasks: DeepResearchTask[]): number {
 	if (tasks.length === 0) return 1;
 	return Math.max(...tasks.map((task) => task.passNumber));
+}
+
+async function getTerminalPassDecision(input: {
+	userId: string;
+	jobId: string;
+	passNumber: number;
+}): Promise<DeepResearchPassCheckpoint | null> {
+	const checkpoints = await listResearchPassCheckpoints({
+		userId: input.userId,
+		jobId: input.jobId,
+	});
+	return (
+		checkpoints.find(
+			(checkpoint) =>
+				checkpoint.passNumber === input.passNumber &&
+				checkpoint.terminalDecision,
+		) ?? null
+	);
+}
+
+function dedupeTasksById(tasks: DeepResearchTask[]): DeepResearchTask[] {
+	const byId = new Map<string, DeepResearchTask>();
+	for (const task of tasks) byId.set(task.id, task);
+	return [...byId.values()];
 }
 
 function buildResearchSourceReferenceMap(

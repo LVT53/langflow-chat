@@ -65,6 +65,7 @@ describe('POST /api/deep-research/jobs/[id]/report-actions/discuss', () => {
 		expect(mockDiscussDeepResearchReport).toHaveBeenCalledWith({
 			userId: 'user-1',
 			jobId: 'research-job-1',
+			persistSeedMessage: true,
 		});
 	});
 

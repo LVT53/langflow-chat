@@ -13,6 +13,7 @@ export const POST: RequestHandler = async (event) => {
 	const action = await discussDeepResearchReport({
 		userId: user.id,
 		jobId: event.params.id,
+		persistSeedMessage: true,
 	});
 
 	if (!action) {

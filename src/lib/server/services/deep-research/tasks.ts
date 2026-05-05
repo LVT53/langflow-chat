@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { deepResearchTasks } from "$lib/server/db/schema";
 import type {
 	DeepResearchTask,
@@ -8,6 +8,7 @@ import type {
 	DeepResearchTaskOutput,
 	DeepResearchTaskStatus,
 } from "$lib/types";
+import { saveResearchTaskEvidenceNotes } from "./evidence-notes";
 
 type DeepResearchTaskRow = typeof deepResearchTasks.$inferSelect;
 
@@ -72,6 +73,15 @@ export type RecordResearchTaskFailureInput = {
 	now?: Date;
 };
 
+export type RecoverExpiredResearchTasksInput = {
+	userId: string;
+	jobId: string;
+	passNumber: number;
+	claimToken?: string;
+	expiredBefore: Date;
+	now?: Date;
+};
+
 export type EvaluateResearchPassBarrierInput = {
 	userId: string;
 	jobId: string;
@@ -101,10 +111,37 @@ export async function createResearchTasksFromCoverageGaps(
 	const { db } = await import("$lib/server/db");
 	const now = input.now ?? new Date();
 	const passNumber = normalizePassNumber(input.passNumber);
-	const rows = await db
-		.insert(deepResearchTasks)
-		.values(
-			input.gaps.map((gap, index) => ({
+	const existingRows = await db
+		.select()
+		.from(deepResearchTasks)
+		.where(
+			and(
+				eq(deepResearchTasks.userId, input.userId),
+				eq(deepResearchTasks.jobId, input.jobId),
+				eq(deepResearchTasks.passNumber, passNumber),
+			),
+		);
+	const existingByKey = new Map(
+		existingRows.map((row) => [researchTaskIdempotencyKey(row), row]),
+	);
+	const rows: DeepResearchTaskRow[] = [];
+	const rowsToInsert: Array<typeof deepResearchTasks.$inferInsert> = [];
+	input.gaps.forEach((gap, index) => {
+		const normalized = {
+			assignmentType: "coverage_gap" as const,
+			coverageGapId: gap.id,
+			keyQuestion: gap.keyQuestion ?? null,
+			assignment: normalizeText(gap.summary),
+			required: true,
+			critical: gap.severity === "critical",
+		};
+		const key = researchTaskInputIdempotencyKey(normalized);
+		const existing = existingByKey.get(key);
+		if (existing) {
+			rows.push(existing);
+			return;
+		}
+		rowsToInsert.push({
 				id: randomUUID(),
 				jobId: input.jobId,
 				conversationId: input.conversationId,
@@ -112,17 +149,18 @@ export async function createResearchTasksFromCoverageGaps(
 				passNumber,
 				passOrder: index,
 				status: "pending",
-				assignmentType: "coverage_gap",
-				coverageGapId: gap.id,
-				keyQuestion: gap.keyQuestion ?? null,
-				assignment: normalizeText(gap.summary),
-				required: true,
-				critical: gap.severity === "critical",
+				...normalized,
 				createdAt: now,
 				updatedAt: now,
-			})),
-		)
-		.returning();
+		});
+	});
+	if (rowsToInsert.length > 0) {
+		const insertedRows = await db
+			.insert(deepResearchTasks)
+			.values(rowsToInsert)
+			.returning();
+		rows.push(...insertedRows);
+	}
 
 	return rows.map(mapResearchTaskRow);
 }
@@ -217,6 +255,15 @@ export async function completeResearchTask(
 		)
 		.returning();
 
+	if (row) {
+		await saveResearchTaskEvidenceNotes({
+			userId: input.userId,
+			taskId: row.id,
+			output: input.output,
+			now,
+		});
+	}
+
 	return row ? mapResearchTaskRow(row) : null;
 }
 
@@ -267,6 +314,57 @@ export async function recordResearchTaskFailure(
 		.returning();
 
 	return row ? mapResearchTaskRow(row) : null;
+}
+
+export async function recoverExpiredResearchTasks(
+	input: RecoverExpiredResearchTasksInput,
+): Promise<DeepResearchTask[]> {
+	const { db } = await import("$lib/server/db");
+	const now = input.now ?? new Date();
+	const filters = [
+		eq(deepResearchTasks.userId, input.userId),
+		eq(deepResearchTasks.jobId, input.jobId),
+		eq(deepResearchTasks.passNumber, normalizePassNumber(input.passNumber)),
+		eq(deepResearchTasks.status, "running"),
+		lte(deepResearchTasks.claimedAt, input.expiredBefore),
+		input.claimToken ? eq(deepResearchTasks.claimToken, input.claimToken) : undefined,
+	].filter((filter) => filter !== undefined);
+	const runningRows = await db
+		.select()
+		.from(deepResearchTasks)
+		.where(and(...filters));
+	const rows: DeepResearchTaskRow[] = [];
+
+	for (const task of runningRows) {
+		if (task.critical) {
+			const [row] = await db
+				.update(deepResearchTasks)
+				.set({
+					status: "pending",
+					claimToken: null,
+					claimedAt: null,
+					updatedAt: now,
+				})
+				.where(eq(deepResearchTasks.id, task.id))
+				.returning();
+			if (row) rows.push(row);
+			continue;
+		}
+		const [row] = await db
+			.update(deepResearchTasks)
+			.set({
+				status: "failed",
+				failureKind: "transient",
+				failureReason: "Research Task claim expired before completion.",
+				failedAt: now,
+				updatedAt: now,
+			})
+			.where(eq(deepResearchTasks.id, task.id))
+			.returning();
+		if (row) rows.push(row);
+	}
+
+	return rows.map(mapResearchTaskRow);
 }
 
 export async function evaluateResearchPassBarrier(
@@ -349,6 +447,7 @@ function mapResearchTaskRow(row: DeepResearchTaskRow): DeepResearchTask {
 		assignment: row.assignment,
 		required: row.required,
 		critical: row.critical,
+		claimToken: row.claimToken,
 		output: parseOptionalJson<DeepResearchTaskOutput>(row.outputJson),
 		failureKind: row.failureKind as DeepResearchTaskFailureKind | null,
 		failureReason: row.failureReason,
@@ -367,6 +466,29 @@ function normalizePassNumber(passNumber: number): number {
 
 function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
+}
+
+function researchTaskIdempotencyKey(
+	row: Pick<
+		DeepResearchTaskRow,
+		"assignmentType" | "coverageGapId" | "keyQuestion" | "assignment"
+	>,
+): string {
+	return [
+		row.assignmentType,
+		row.coverageGapId ?? "",
+		row.keyQuestion ?? "",
+		row.assignment,
+	].join("\u001f");
+}
+
+function researchTaskInputIdempotencyKey(
+	task: Pick<
+		DeepResearchTaskRow,
+		"assignmentType" | "coverageGapId" | "keyQuestion" | "assignment"
+	>,
+): string {
+	return researchTaskIdempotencyKey(task);
 }
 
 function parseOptionalJson<T>(value: string | null): T | null {

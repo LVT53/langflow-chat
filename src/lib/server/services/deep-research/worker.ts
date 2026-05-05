@@ -3,6 +3,7 @@ import { db } from "$lib/server/db";
 import { deepResearchJobs } from "$lib/server/db/schema";
 import type { DeepResearchJob } from "$lib/types";
 import { listConversationDeepResearchJobs } from "./index";
+import { getLatestValidResearchResumePoint } from "./resume-points";
 import { saveResearchTimelineEvent } from "./timeline";
 import {
 	runDeepResearchWorkflowStep,
@@ -92,7 +93,13 @@ type WorkerConcurrencyTransition = {
 	toStatus: string;
 };
 
-const REAL_WORKFLOW_RUNNING_STAGES = ["source_review", "research_tasks"];
+const REAL_WORKFLOW_RUNNING_STAGES = [
+	"source_review",
+	"research_tasks",
+	"synthesis",
+	"citation_audit",
+	"report_assembly",
+];
 const DEFAULT_WORKER_INTERVAL_MS = 60_000;
 const DEFAULT_WORKER_STALE_TIMEOUT_MS = 30 * 60_000;
 
@@ -293,11 +300,18 @@ export async function recoverStaleDeepResearchJobs(
 	const recoveredJobs: DeepResearchJob[] = [];
 
 	for (const staleJob of staleJobs) {
+		const latestResumePoint = await getLatestValidResearchResumePoint({
+			userId: staleJob.userId,
+			jobId: staleJob.id,
+		});
+		const resumedStage = normalizeRecoverableStage(
+			latestResumePoint?.stage ?? staleJob.stage,
+		);
 		const [recoveredJob] = await db
 			.update(deepResearchJobs)
 			.set({
-				status: "failed",
-				stage: "stale_recovered_failed",
+				status: "running",
+				stage: resumedStage,
 				updatedAt: now,
 			})
 			.where(
@@ -332,7 +346,7 @@ export async function recoverStaleDeepResearchJobs(
 				`Worker timeout exceeded for stage ${staleJob.stage ?? "unknown"}.`,
 			],
 			summary:
-				"Deep Research job marked failed after exceeding the stale worker timeout.",
+				"Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.",
 		});
 
 		const mappedJob = await loadDeepResearchJobForWorker(recoveredJob);
@@ -497,6 +511,11 @@ function normalizePositiveMilliseconds(value: number): number | null {
 	if (!Number.isFinite(value)) return null;
 	const normalized = Math.floor(value);
 	return normalized > 0 ? normalized : null;
+}
+
+function normalizeRecoverableStage(stage: string | null | undefined): string {
+	if (stage && REAL_WORKFLOW_RUNNING_STAGES.includes(stage)) return stage;
+	return "source_review";
 }
 
 async function loadDeepResearchJobForWorker(

@@ -222,6 +222,9 @@ export interface DeepResearchTaskOutput {
 	summary: string;
 	findings?: string[];
 	sourceIds?: string[];
+	supportedKeyQuestion?: string | null;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 }
 
 export interface DeepResearchTask {
@@ -238,6 +241,7 @@ export interface DeepResearchTask {
 	assignment: string;
 	required: boolean;
 	critical: boolean;
+	claimToken?: string | null;
 	output?: DeepResearchTaskOutput | null;
 	failureKind?: DeepResearchTaskFailureKind | null;
 	failureReason?: string | null;
@@ -311,6 +315,58 @@ export interface DeepResearchCoverageGap {
 	createdAt: string;
 	updatedAt: string;
 	resolvedAt?: string | null;
+}
+
+export interface DeepResearchEvidenceNote {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	passCheckpointId: string;
+	passNumber: number;
+	sourceId?: string | null;
+	taskId?: string | null;
+	supportedKeyQuestion?: string | null;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
+	findingText: string;
+	sourceSupport: Record<string, unknown>;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type DeepResearchResumePointBoundary =
+	| "running_pass"
+	| "research_task"
+	| "synthesis"
+	| "citation_audit"
+	| "repair"
+	| "report_assembly";
+
+export type DeepResearchResumePointStatus =
+	| "running"
+	| "completed"
+	| "failed"
+	| "stale";
+
+export interface DeepResearchResumePoint {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	boundary: DeepResearchResumePointBoundary;
+	resumeKey: string;
+	status: DeepResearchResumePointStatus;
+	stage: string;
+	passNumber?: number | null;
+	taskId?: string | null;
+	payload?: Record<string, unknown> | null;
+	result?: Record<string, unknown> | null;
+	startedAt: string;
+	completedAt?: string | null;
+	expiresAt?: string | null;
+	createdAt: string;
+	updatedAt: string;
 }
 
 export interface DeepResearchTimelineEvent {
@@ -390,6 +446,8 @@ export interface DeepResearchJob {
 	timeline?: DeepResearchTimelineEvent[];
 	passCheckpoints?: DeepResearchPassCheckpoint[];
 	coverageGaps?: DeepResearchCoverageGap[];
+	evidenceNotes?: DeepResearchEvidenceNote[];
+	resumePoints?: DeepResearchResumePoint[];
 	sourceCounts?: DeepResearchSourceCounts;
 	sources?: DeepResearchSource[];
 	evidenceLimitationMemo?: DeepResearchEvidenceLimitationMemo | null;

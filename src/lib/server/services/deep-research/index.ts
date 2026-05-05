@@ -14,6 +14,7 @@ import type {
 	Conversation,
 	DeepResearchDepth,
 	DeepResearchEffortEstimate,
+	DeepResearchEvidenceNote,
 	DeepResearchEvidenceLimitationMemo,
 	DeepResearchJob,
 	DeepResearchRuntimeEstimate,
@@ -21,6 +22,7 @@ import type {
 	DeepResearchPlanSummary,
 	DeepResearchCoverageGap,
 	DeepResearchPassCheckpoint,
+	DeepResearchResumePoint,
 	DeepResearchSource,
 	DeepResearchSourceCounts,
 	DeepResearchTimelineEvent,
@@ -53,6 +55,13 @@ import {
 	listResearchCoverageGaps,
 	listResearchPassCheckpoints,
 } from './pass-state';
+import {
+	completeResearchResumePoint,
+	getResearchResumePoint,
+	listResearchResumePoints,
+	upsertResearchResumePoint,
+} from './resume-points';
+import { listDeepResearchEvidenceNotes } from './evidence-notes';
 import type { SynthesisNotes } from './synthesis';
 import {
 	buildCitationClaimReviewerWithLlm,
@@ -138,6 +147,7 @@ export type CompleteDeepResearchJobWithEvidenceLimitationMemoInput = {
 export type DiscussDeepResearchReportInput = {
 	userId: string;
 	jobId: string;
+	persistSeedMessage?: boolean;
 	now?: Date;
 };
 
@@ -402,6 +412,8 @@ export async function listConversationDeepResearchJobs(
 				evidenceLimitationMemo: evidenceLimitationMemos.get(row.id) ?? null,
 				passCheckpoints: passStates.get(row.id)?.passCheckpoints ?? [],
 				coverageGaps: passStates.get(row.id)?.coverageGaps ?? [],
+				evidenceNotes: passStates.get(row.id)?.evidenceNotes ?? [],
+				resumePoints: passStates.get(row.id)?.resumePoints ?? [],
 			}
 		)
 	);
@@ -634,6 +646,24 @@ export async function completeDeepResearchJobWithAuditedReport(
 	const currentPlans = await loadCurrentPlansByJobId([job.id]);
 	const currentPlan = currentPlans.get(job.id);
 	if (!currentPlan?.rawPlan) return null;
+	const reportAssemblyResumeKey = `report:${job.id}:audited`;
+	const existingReportAssembly = await getResearchResumePoint({
+		userId: input.userId,
+		jobId: job.id,
+		resumeKey: reportAssemblyResumeKey,
+	});
+	const existingReportArtifactId =
+		typeof existingReportAssembly?.result?.artifactId === 'string'
+			? existingReportAssembly.result.artifactId
+			: null;
+	if (existingReportArtifactId) {
+		return finalizeAuditedReportJobFromArtifact({
+			job,
+			currentPlan,
+			artifactId: existingReportArtifactId,
+			now,
+		});
+	}
 
 	const citedAt = now;
 	const initialSources = await listResearchSources({
@@ -670,6 +700,19 @@ export async function completeDeepResearchJobWithAuditedReport(
 		userId: input.userId,
 		jobId: job.id,
 	});
+	await upsertResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		conversationId: job.conversationId,
+		boundary: 'report_assembly',
+		resumeKey: reportAssemblyResumeKey,
+		stage: 'report_assembly',
+		payload: {
+			synthesisFindingCount: input.synthesisNotes.findings.length,
+			limitationCount: input.limitations?.length ?? 0,
+		},
+		now,
+	});
 	const reportDraft = await writeResearchReportWithLlm({
 		context: {
 			jobId: job.id,
@@ -687,6 +730,23 @@ export async function completeDeepResearchJobWithAuditedReport(
 		reportDraft,
 		input.synthesisNotes
 	);
+	const citationAuditResumeKey = `citation-audit:${job.id}:audited`;
+	await upsertResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		conversationId: job.conversationId,
+		boundary: 'citation_audit',
+		resumeKey: citationAuditResumeKey,
+		stage: 'citation_audit',
+		payload: {
+			claimCount: citationAuditReportDraft.sections.reduce(
+				(count, section) => count + section.claims.length,
+				0
+			),
+			sourceCount: sources.length,
+		},
+		now,
+	});
 	const citationAuditSources = sources.map((source) => ({
 		id: source.id,
 		status: source.status,
@@ -718,6 +778,43 @@ export async function completeDeepResearchJobWithAuditedReport(
 		reviewClaimSupport: llmClaimReviewer
 			? async ({ claim }) => llmClaimReviewer(claim.id)
 			: undefined,
+	});
+	await completeResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		resumeKey: citationAuditResumeKey,
+		result: {
+			status: auditResult.status,
+			canComplete: auditResult.canComplete,
+		},
+		now,
+	});
+	const repairResumeKey = `repair:${job.id}:audited`;
+	await upsertResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		conversationId: job.conversationId,
+		boundary: 'repair',
+		resumeKey: repairResumeKey,
+		stage: 'citation_audit',
+		payload: {
+			auditStatus: auditResult.status,
+		},
+		now,
+	});
+	await completeResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		resumeKey: repairResumeKey,
+		result: {
+			retainedClaims: auditResult.findings.filter((finding) =>
+				['supported', 'repaired'].includes(finding.status)
+			).length,
+			removedClaims: auditResult.findings.filter((finding) =>
+				['unsupported_source', 'unsupported_claim'].includes(finding.status)
+			).length,
+		},
+		now,
 	});
 	await saveResearchTimelineEvent({
 		jobId: job.id,
@@ -767,60 +864,98 @@ export async function completeDeepResearchJobWithAuditedReport(
 		job.title,
 		currentPlan.rawPlan.researchLanguage ?? 'en'
 	);
-	const reportArtifact = await createArtifact({
+	const reportArtifactId = `deep-research-report-${job.id}`;
+	const existingReportArtifact = await loadArtifactById({
 		userId: job.userId,
-		conversationId: job.conversationId,
-		type: 'generated_output',
-		retrievalClass: 'durable',
-		name: reportName,
-		mimeType: 'text/markdown',
-		extension: 'md',
-		sizeBytes: Buffer.byteLength(auditedMarkdown, 'utf8'),
-		contentText: auditedMarkdown,
-		summary:
-			(currentPlan.rawPlan.researchLanguage ?? 'en') === 'hu'
-				? `Ellenőrzött kutatási jelentés: ${job.title}`
-				: `Audited Research Report for ${job.title}`,
-		metadata: {
-			deepResearchReport: true,
-			deepResearchReportKind: 'audited',
-			deepResearchJobId: job.id,
-			deepResearchDepth: job.depth,
-			documentFamilyId: randomUUID(),
-			documentFamilyStatus: 'active',
-			documentLabel: reportName,
-			documentRole: 'research_report',
-			versionNumber: 1,
-			originConversationId: job.conversationId,
+		artifactId: reportArtifactId,
+	});
+	const reportArtifact =
+		existingReportArtifact ??
+		(await createArtifact({
+			id: reportArtifactId,
+			userId: job.userId,
+			conversationId: job.conversationId,
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: reportName,
+			mimeType: 'text/markdown',
+			extension: 'md',
+			sizeBytes: Buffer.byteLength(auditedMarkdown, 'utf8'),
+			contentText: auditedMarkdown,
+			summary:
+				(currentPlan.rawPlan.researchLanguage ?? 'en') === 'hu'
+					? `Ellenőrzött kutatási jelentés: ${job.title}`
+					: `Audited Research Report for ${job.title}`,
+			metadata: {
+				deepResearchReport: true,
+				deepResearchReportKind: 'audited',
+				deepResearchJobId: job.id,
+				deepResearchDepth: job.depth,
+				documentFamilyId: randomUUID(),
+				documentFamilyStatus: 'active',
+				documentLabel: reportName,
+				documentRole: 'research_report',
+				versionNumber: 1,
+				originConversationId: job.conversationId,
+				citationAuditStatus: auditResult.status,
+			},
+		}));
+	await completeResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		resumeKey: reportAssemblyResumeKey,
+		result: {
+			artifactId: reportArtifact.id,
 			citationAuditStatus: auditResult.status,
 		},
+		now,
 	});
 
+	return finalizeAuditedReportJobFromArtifact({
+		job,
+		currentPlan,
+		artifactId: reportArtifact.id,
+		now,
+	});
+}
+
+async function finalizeAuditedReportJobFromArtifact(input: {
+	job: DeepResearchJobRow;
+	currentPlan: DeepResearchPlanSummary;
+	artifactId: string;
+	now: Date;
+}): Promise<DeepResearchJob | null> {
 	const [updatedJob] = await db
 		.update(deepResearchJobs)
 		.set({
 			status: 'completed',
 			stage: 'report_ready',
-			reportArtifactId: reportArtifact.id,
-			completedAt: now,
-			updatedAt: now,
+			reportArtifactId: input.artifactId,
+			completedAt: input.now,
+			updatedAt: input.now,
 		})
-		.where(eq(deepResearchJobs.id, job.id))
+		.where(eq(deepResearchJobs.id, input.job.id))
 		.returning();
+	if (!updatedJob) return null;
 
 	await db
 		.update(conversations)
 		.set({
 			status: 'sealed',
-			sealedAt: now,
-			updatedAt: now,
+			sealedAt: input.now,
+			updatedAt: input.now,
 		})
-		.where(and(eq(conversations.id, job.conversationId), eq(conversations.userId, job.userId)));
+		.where(
+			and(
+				eq(conversations.id, input.job.conversationId),
+				eq(conversations.userId, input.job.userId)
+			)
+		);
 
-	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [updatedJob.id]);
+	const timelineEvents = await loadTimelineEventsByJobId(input.job.userId, [updatedJob.id]);
 	return mapDeepResearchJob(
 		updatedJob,
-		currentPlan,
+		input.currentPlan,
 		timelineEvents.get(updatedJob.id) ?? []
 	);
 }
@@ -878,10 +1013,41 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 	now: Date;
 }): Promise<DeepResearchJob | null> {
 	if (!input.currentPlan.rawPlan) return null;
+	const memoResumeKey = `report:${input.job.id}:evidence_limitation_memo`;
+	const existingMemoResumePoint = await getResearchResumePoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		resumeKey: memoResumeKey,
+	});
+	const existingMemoArtifactId =
+		typeof existingMemoResumePoint?.result?.artifactId === 'string'
+			? existingMemoResumePoint.result.artifactId
+			: null;
+	if (existingMemoArtifactId) {
+		return finalizeEvidenceLimitationMemoJobFromArtifact({
+			job: input.job,
+			currentPlan: input.currentPlan,
+			artifactId: existingMemoArtifactId,
+			now: input.now,
+		});
+	}
 	const researchLanguage = input.currentPlan.rawPlan.researchLanguage ?? 'en';
 	const reviewedScope = buildEvidenceLimitationReviewedScope({
 		plan: input.currentPlan.rawPlan,
 		sources: input.sources,
+	});
+	await upsertResearchResumePoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		boundary: 'report_assembly',
+		resumeKey: memoResumeKey,
+		stage: 'evidence_limitation_memo',
+		payload: {
+			limitationCount: input.limitations.length,
+			reviewedCount: reviewedScope.reviewedCount,
+		},
+		now: input.now,
 	});
 	const memo = writeEvidenceLimitationMemo({
 		jobId: input.job.id,
@@ -894,37 +1060,54 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 		}),
 	});
 	const memoName = buildEvidenceLimitationMemoArtifactName(input.job.title, researchLanguage);
-	const memoArtifact = await createArtifact({
+	const memoArtifactId = `deep-research-memo-${input.job.id}`;
+	const existingMemoArtifact = await loadArtifactById({
 		userId: input.job.userId,
-		conversationId: input.job.conversationId,
-		type: 'generated_output',
-		retrievalClass: 'durable',
-		name: memoName,
-		mimeType: 'text/markdown',
-		extension: 'md',
-		sizeBytes: Buffer.byteLength(memo.markdown, 'utf8'),
-		contentText: memo.markdown,
-		summary:
-			researchLanguage === 'hu'
-				? `Bizonyítékkorlát-memó: ${input.job.title}`
-				: `Evidence Limitation Memo for ${input.job.title}`,
-		metadata: {
-			deepResearchEvidenceLimitationMemo: true,
-			deepResearchReport: false,
-			deepResearchJobId: input.job.id,
-			deepResearchDepth: input.job.depth,
-			documentFamilyId: randomUUID(),
-			documentFamilyStatus: 'active',
-			documentLabel: memoName,
-			documentRole: 'evidence_limitation_memo',
-			memoTitle: memo.title,
-			versionNumber: 1,
-			originConversationId: input.job.conversationId,
-			reviewedScope: memo.reviewedScope,
-			groundedLimitationReasons: memo.limitations,
-			nextResearchDirection: memo.nextResearchDirection,
-			memoRecoveryActions: memo.recoveryActions,
+		artifactId: memoArtifactId,
+	});
+	const memoArtifact =
+		existingMemoArtifact ??
+		(await createArtifact({
+			id: memoArtifactId,
+			userId: input.job.userId,
+			conversationId: input.job.conversationId,
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: memoName,
+			mimeType: 'text/markdown',
+			extension: 'md',
+			sizeBytes: Buffer.byteLength(memo.markdown, 'utf8'),
+			contentText: memo.markdown,
+			summary:
+				researchLanguage === 'hu'
+					? `Bizonyítékkorlát-memó: ${input.job.title}`
+					: `Evidence Limitation Memo for ${input.job.title}`,
+			metadata: {
+				deepResearchEvidenceLimitationMemo: true,
+				deepResearchReport: false,
+				deepResearchJobId: input.job.id,
+				deepResearchDepth: input.job.depth,
+				documentFamilyId: randomUUID(),
+				documentFamilyStatus: 'active',
+				documentLabel: memoName,
+				documentRole: 'evidence_limitation_memo',
+				memoTitle: memo.title,
+				versionNumber: 1,
+				originConversationId: input.job.conversationId,
+				reviewedScope: memo.reviewedScope,
+				groundedLimitationReasons: memo.limitations,
+				nextResearchDirection: memo.nextResearchDirection,
+				memoRecoveryActions: memo.recoveryActions,
+			},
+		}));
+	await completeResearchResumePoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		resumeKey: memoResumeKey,
+		result: {
+			artifactId: memoArtifact.id,
 		},
+		now: input.now,
 	});
 
 	await saveResearchTimelineEvent({
@@ -970,6 +1153,32 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 	);
 }
 
+async function finalizeEvidenceLimitationMemoJobFromArtifact(input: {
+	job: DeepResearchJobRow;
+	currentPlan: DeepResearchPlanSummary;
+	artifactId: string;
+	now: Date;
+}): Promise<DeepResearchJob | null> {
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'completed',
+			stage: 'evidence_limitation_memo_ready',
+			reportArtifactId: input.artifactId,
+			completedAt: input.now,
+			updatedAt: input.now,
+		})
+		.where(eq(deepResearchJobs.id, input.job.id))
+		.returning();
+	if (!updatedJob) return null;
+	const timelineEvents = await loadTimelineEventsByJobId(input.job.userId, [updatedJob.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		input.currentPlan,
+		timelineEvents.get(updatedJob.id) ?? []
+	);
+}
+
 function toEvidenceLimitationMemoPayload(input: {
 	title: string;
 	reviewedScope: DeepResearchEvidenceLimitationMemo['reviewedScope'];
@@ -996,19 +1205,38 @@ export async function discussDeepResearchReport(
 		input.userId,
 		buildFollowupConversationTitle('Discuss', context.job.title)
 	);
+	const researchLanguage = resolveReportLanguage(context);
+	const seedMessage = buildDiscussReportSeedMessage(context, researchLanguage);
+	const message = input.persistSeedMessage
+		? await createMessage(
+				conversation.id,
+				'user',
+				seedMessage,
+				undefined,
+				undefined,
+				{
+					deepResearchReportContext: {
+						action: 'discuss',
+						sourceJobId: context.job.id,
+						sourceConversationId: context.job.conversationId,
+						reportArtifactId: context.report.id,
+					},
+				}
+			)
+		: null;
 	await createArtifactLink({
 		userId: input.userId,
 		artifactId: context.report.id,
 		linkType: 'attached_to_conversation',
 		conversationId: conversation.id,
+		messageId: message?.id,
 	});
-	const researchLanguage = resolveReportLanguage(context);
-	const seedMessage = buildDiscussReportSeedMessage(context, researchLanguage);
 
 	return {
 		sourceJobId: context.job.id,
 		reportArtifactId: context.report.id,
 		conversation,
+		messageId: message?.id,
 		seedMessage,
 		researchLanguage,
 	};
@@ -1103,6 +1331,18 @@ async function loadCompletedResearchReportContext(input: {
 		return null;
 	}
 	return row;
+}
+
+async function loadArtifactById(input: {
+	userId: string;
+	artifactId: string;
+}): Promise<typeof artifacts.$inferSelect | null> {
+	const [artifact] = await db
+		.select()
+		.from(artifacts)
+		.where(and(eq(artifacts.id, input.artifactId), eq(artifacts.userId, input.userId)))
+		.limit(1);
+	return artifact ?? null;
 }
 
 function isResearchReportArtifactMetadata(metadataJson: string | null): boolean {
@@ -1639,11 +1879,15 @@ type DeepResearchJobReadModel = {
 	evidenceLimitationMemo?: DeepResearchEvidenceLimitationMemo | null;
 	passCheckpoints?: DeepResearchPassCheckpoint[];
 	coverageGaps?: DeepResearchCoverageGap[];
+	evidenceNotes?: DeepResearchEvidenceNote[];
+	resumePoints?: DeepResearchResumePoint[];
 };
 
 type DeepResearchPassStateForCard = {
 	passCheckpoints: DeepResearchPassCheckpoint[];
 	coverageGaps: DeepResearchCoverageGap[];
+	evidenceNotes: DeepResearchEvidenceNote[];
+	resumePoints: DeepResearchResumePoint[];
 };
 
 async function loadPassStatesByJobId(
@@ -1653,11 +1897,18 @@ async function loadPassStatesByJobId(
 	const states = new Map<string, DeepResearchPassStateForCard>();
 	await Promise.all(
 		jobIds.map(async (jobId) => {
-			const [passCheckpoints, coverageGaps] = await Promise.all([
+			const [passCheckpoints, coverageGaps, evidenceNotes, resumePoints] = await Promise.all([
 				listResearchPassCheckpoints({ userId, jobId }),
 				listResearchCoverageGaps({ userId, jobId }),
+				listDeepResearchEvidenceNotes({ userId, jobId }),
+				listResearchResumePoints({ userId, jobId }),
 			]);
-			states.set(jobId, { passCheckpoints, coverageGaps });
+			states.set(jobId, {
+				passCheckpoints,
+				coverageGaps,
+				evidenceNotes,
+				resumePoints,
+			});
 		})
 	);
 	return states;
@@ -2002,6 +2253,8 @@ function mapDeepResearchJob(
 		timeline,
 		passCheckpoints: readModel.passCheckpoints ?? [],
 		coverageGaps: readModel.coverageGaps ?? [],
+		evidenceNotes: readModel.evidenceNotes ?? [],
+		resumePoints: readModel.resumePoints ?? [],
 		sourceCounts: sourceLedger?.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
 		sources: sourceLedger?.sources ?? [],
 		evidenceLimitationMemo: readModel.evidenceLimitationMemo ?? null,

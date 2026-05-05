@@ -344,7 +344,7 @@ describe("Deep Research worker cleanup and recovery", () => {
 		expect(worker).not.toHaveProperty("triggerMockDeepResearchWorkerForJob");
 	});
 
-	it("marks stale running workflow jobs failed after the configured timeout", async () => {
+	it("resumes stale running workflow jobs from their latest resume point after the configured timeout", async () => {
 		await seedAdditionalConversation({
 			userId: "user-1",
 			conversationId: "conv-2",
@@ -378,6 +378,27 @@ describe("Deep Research worker cleanup and recovery", () => {
 				updatedAt: new Date("2026-05-05T09:10:00.000Z"),
 			})
 			.where(eq(schema.deepResearchJobs.id, reportReadyJob.id));
+		const { upsertResearchResumePoint } = await import("./resume-points");
+		await upsertResearchResumePoint({
+			userId: "user-1",
+			jobId: runningJob.id,
+			conversationId: "conv-1",
+			boundary: "running_pass",
+			resumeKey: `pass:${runningJob.id}:1:source_review`,
+			stage: "source_review",
+			passNumber: 1,
+			now: new Date("2026-05-05T09:00:00.000Z"),
+		});
+		await upsertResearchResumePoint({
+			userId: "user-1",
+			jobId: reportReadyJob.id,
+			conversationId: "conv-2",
+			boundary: "research_task",
+			resumeKey: `task:${reportReadyJob.id}:stale`,
+			stage: "research_tasks",
+			passNumber: 2,
+			now: new Date("2026-05-05T09:10:00.000Z"),
+		});
 		const { recoverStaleDeepResearchJobs } = await import("./worker");
 		const { listResearchTimelineEvents } = await import("./timeline");
 
@@ -397,21 +418,21 @@ describe("Deep Research worker cleanup and recovery", () => {
 		expect(
 			result.recoveredJobs.map((job) => [job.id, job.status, job.stage]),
 		).toEqual([
-			[runningJob.id, "failed", "stale_recovered_failed"],
-			[reportReadyJob.id, "failed", "stale_recovered_failed"],
+			[runningJob.id, "running", "source_review"],
+			[reportReadyJob.id, "running", "research_tasks"],
 		]);
 		expect(
 			runningTimeline.map((event) => ({
 				stage: event.stage,
 				kind: event.kind,
 				summary: event.summary,
-				warnings: event.warnings,
+			warnings: event.warnings,
 			})),
 		).toContainEqual({
 			stage: "report_completion",
 			kind: "warning",
 			summary:
-				"Deep Research job marked failed after exceeding the stale worker timeout.",
+				"Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.",
 			warnings: ["Worker timeout exceeded for stage source_review."],
 		});
 		expect(
@@ -425,7 +446,7 @@ describe("Deep Research worker cleanup and recovery", () => {
 			stage: "report_completion",
 			kind: "warning",
 			summary:
-				"Deep Research job marked failed after exceeding the stale worker timeout.",
+				"Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.",
 			warnings: ["Worker timeout exceeded for stage research_tasks."],
 		});
 	});

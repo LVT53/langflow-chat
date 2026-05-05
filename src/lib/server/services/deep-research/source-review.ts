@@ -48,6 +48,8 @@ export type ReviewedResearchSourceNotes = {
 	topicRelevant: boolean;
 	topicRelevanceReason: string | null;
 	supportedKeyQuestions: string[];
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	extractedClaims: string[];
 	rejectedReason: string | null;
 	openedContentLength: number;
@@ -65,6 +67,8 @@ export type ReviewSourceResult = {
 	extractedText?: string | null;
 	relevanceScore?: number;
 	supportedKeyQuestions?: string[];
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	extractedClaims?: string[];
 	rejectedReason?: string | null;
 };
@@ -168,6 +172,8 @@ export async function triageAndReviewSources(
 			topicRelevant: topicRelevance.relevant,
 			topicRelevanceReason: buildTopicRelevanceReason(topicRelevance),
 			supportedKeyQuestions,
+			comparedEntity: normalizeOptionalText(review.comparedEntity),
+			comparisonAxis: normalizeOptionalText(review.comparisonAxis),
 			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
 			rejectedReason,
 			openedContentLength: sourceText.length,
@@ -421,6 +427,11 @@ function normalizeRelevanceScore(
 
 function normalizeRejectedReason(reason: string | null | undefined): string | null {
 	const normalized = reason?.replace(/\s+/g, " ").trim();
+	return normalized ? normalized : null;
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+	const normalized = value?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
 }
 

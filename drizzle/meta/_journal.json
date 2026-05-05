@@ -239,6 +239,20 @@
       "when": 1777140000020,
       "tag": "1777140000020_deep_research_pass_state",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1777140000021,
+      "tag": "1777140000021_deep_research_resume_points",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1777140000022,
+      "tag": "1777140000022_deep_research_evidence_notes",
+      "breakpoints": true
     }
 
   ]

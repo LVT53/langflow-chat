@@ -137,6 +137,28 @@ export async function saveResearchTimelineEvent(
 	return mapTimelineEventRow(row);
 }
 
+export async function saveResearchTimelineEventOnce(
+	event: ResearchTimelineEvent,
+): Promise<PersistedResearchTimelineEvent> {
+	const { db } = await import("$lib/server/db");
+	const [existing] = await db
+		.select()
+		.from(deepResearchTimelineEvents)
+		.where(
+			and(
+				eq(deepResearchTimelineEvents.jobId, event.jobId),
+				eq(deepResearchTimelineEvents.userId, event.userId),
+				eq(deepResearchTimelineEvents.stage, event.stage),
+				eq(deepResearchTimelineEvents.kind, event.kind),
+				eq(deepResearchTimelineEvents.messageKey, event.messageKey),
+			),
+		)
+		.limit(1);
+	if (existing) return mapTimelineEventRow(existing);
+
+	return saveResearchTimelineEvent(event);
+}
+
 export async function listResearchTimelineEvents(
 	input: ListResearchTimelineEventsInput,
 ): Promise<PersistedResearchTimelineEvent[]> {

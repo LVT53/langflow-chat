@@ -383,6 +383,87 @@ export const deepResearchCoverageGaps = sqliteTable('deep_research_coverage_gaps
   ),
 }));
 
+export const deepResearchResumePoints = sqliteTable('deep_research_resume_points', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  boundary: text('boundary').notNull(),
+  resumeKey: text('resume_key').notNull(),
+  status: text('status').notNull().default('running'),
+  stage: text('stage').notNull(),
+  passNumber: integer('pass_number'),
+  taskId: text('task_id'),
+  payloadJson: text('payload_json'),
+  resultJson: text('result_json'),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  userJobResumeUniqueIdx: uniqueIndex('deep_research_resume_points_user_job_key_idx').on(
+    table.userId,
+    table.jobId,
+    table.resumeKey
+  ),
+  jobStatusIdx: index('deep_research_resume_points_job_status_idx').on(
+    table.jobId,
+    table.status,
+    table.updatedAt
+  ),
+  jobBoundaryIdx: index('deep_research_resume_points_job_boundary_idx').on(
+    table.jobId,
+    table.boundary,
+    table.passNumber
+  ),
+  taskIdx: index('deep_research_resume_points_task_idx').on(table.taskId),
+}));
+
+export const deepResearchEvidenceNotes = sqliteTable('deep_research_evidence_notes', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passCheckpointId: text('pass_checkpoint_id')
+    .notNull()
+    .references(() => deepResearchPassCheckpoints.id, { onDelete: 'cascade' }),
+  sourceId: text('source_id').references(() => deepResearchSources.id, { onDelete: 'set null' }),
+  taskId: text('task_id').references(() => deepResearchTasks.id, { onDelete: 'set null' }),
+  supportedKeyQuestion: text('supported_key_question'),
+  comparedEntity: text('compared_entity'),
+  comparisonAxis: text('comparison_axis'),
+  findingText: text('finding_text').notNull(),
+  sourceSupportJson: text('source_support_json').notNull().default('{}'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobPassIdx: index('deep_research_evidence_notes_job_pass_idx').on(
+    table.jobId,
+    table.passCheckpointId,
+    table.createdAt
+  ),
+  sourceIdx: index('deep_research_evidence_notes_source_idx').on(table.sourceId),
+  taskIdx: index('deep_research_evidence_notes_task_idx').on(table.taskId),
+  userQuestionIdx: index('deep_research_evidence_notes_user_question_idx').on(
+    table.userId,
+    table.jobId,
+    table.supportedKeyQuestion
+  ),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')

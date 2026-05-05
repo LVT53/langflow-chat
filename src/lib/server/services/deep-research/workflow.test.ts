@@ -650,6 +650,101 @@ describe("real Deep Research workflow stepper", () => {
 		);
 	});
 
+	it("resumes a completed source-review pass without duplicating continuation work", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const { listResearchTasks } = await import("./tasks");
+		const { listResearchPassCheckpoints, listResearchCoverageGaps } =
+			await import("./pass-state");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { listResearchResumePoints } = await import("./resume-points");
+
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const firstResult = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:09:30.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const retryResult = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 2,
+		});
+		const checkpoints = await listResearchPassCheckpoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const gaps = await listResearchCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const resumePoints = await listResearchResumePoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(firstResult).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+		});
+		expect(retryResult).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(tasks).toHaveLength(3);
+		expect(new Set(tasks.map((task) => task.coverageGapId)).size).toBe(3);
+		expect(gaps).toHaveLength(3);
+		expect(checkpoints).toHaveLength(2);
+		expect(
+			timeline.filter(
+				(event) =>
+					event.stage === "coverage_assessment" &&
+					event.kind === "pass_decision",
+			),
+		).toHaveLength(1);
+		expect(resumePoints).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					boundary: "running_pass",
+					resumeKey: `pass:${approved.id}:1:source_review`,
+					status: "completed",
+				}),
+			]),
+		);
+	});
+
 	it("does not complete a report from high-confidence off-topic reviewed sources", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
@@ -1182,6 +1277,193 @@ describe("real Deep Research workflow stepper", () => {
 				failureReason: "regulator source unavailable",
 			}),
 		]);
+	});
+
+	it("resumes a workflow-owned running Research Task after a crash at claim time", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const {
+			claimResearchTasks,
+			createResearchTasksFromCoverageGaps,
+			listResearchTasks,
+		} = await import("./tasks");
+		const { listResearchResumePoints } = await import("./resume-points");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US rules both make source provenance central to AI training data risk review.",
+		});
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-task-claim-crash",
+					keyQuestion: "What practical implication should the report call out?",
+					summary: "Explain operational implications of provenance requirements.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await claimResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+			limit: 1,
+			claimToken: `workflow:${approved.id}:1`,
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+		const resumePoints = await listResearchResumePoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				status: "completed",
+				stage: "report_ready",
+			},
+		});
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				id: task.id,
+				status: "completed",
+				output: expect.objectContaining({
+					sourceIds: [source.id],
+				}),
+			}),
+		]);
+		expect(resumePoints).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					boundary: "research_task",
+					taskId: task.id,
+					status: "completed",
+				}),
+			]),
+		);
+	});
+
+	it("reattaches an assembled report artifact on retry without creating duplicates", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const firstResult = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "report_assembly",
+				reportArtifactId: null,
+				completedAt: null,
+				updatedAt: new Date("2026-05-05T10:20:30.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const retryResult = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:21:00.000Z"),
+		});
+		const reportArtifacts = await db
+			.select()
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.id, `deep-research-report-${approved.id}`));
+
+		expect(firstResult).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				reportArtifactId: `deep-research-report-${approved.id}`,
+			},
+		});
+		expect(retryResult).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				status: "completed",
+				stage: "report_ready",
+				reportArtifactId: `deep-research-report-${approved.id}`,
+			},
+		});
+		expect(reportArtifacts).toHaveLength(1);
 	});
 
 	it("does not complete a Research Task pass when required tasks remain pending", async () => {
