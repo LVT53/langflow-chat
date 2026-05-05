@@ -19,6 +19,7 @@ import {
 	isDeepResearchJobStartError,
 	startDeepResearchJobShell,
 } from "$lib/server/services/deep-research";
+import { buildDeepResearchPlanningContext } from "$lib/server/services/deep-research/planning-context";
 import { sendMessage } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
@@ -107,12 +108,20 @@ export const POST: RequestHandler = async (event) => {
 				normalizedMessage: turn.normalizedMessage,
 				attachmentIds: turn.attachmentIds,
 			});
+			const planningContext = await buildDeepResearchPlanningContext({
+				userId: user.id,
+				conversationId: turn.conversationId,
+				userRequest: turn.normalizedMessage,
+				attachmentIds: turn.attachmentIds,
+				activeDocumentArtifactId: turn.activeDocumentArtifactId,
+			});
 			const deepResearchJob = await startDeepResearchJobShell({
 				userId: user.id,
 				conversationId: turn.conversationId,
 				triggerMessageId: userMessage.id,
 				userRequest: turn.normalizedMessage,
 				depth: turn.deepResearchDepth,
+				planningContext,
 			});
 			await touchConversation(user.id, turn.conversationId).catch(
 				() => undefined,

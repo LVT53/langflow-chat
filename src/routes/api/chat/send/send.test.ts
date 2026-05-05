@@ -25,6 +25,10 @@ vi.mock('$lib/server/services/deep-research', () => ({
 	startDeepResearchJobShell: vi.fn(),
 }));
 
+vi.mock('$lib/server/services/deep-research/planning-context', () => ({
+	buildDeepResearchPlanningContext: vi.fn(),
+}));
+
 vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn(),
 	updateMessageEvidence: vi.fn(async () => undefined),
@@ -84,6 +88,7 @@ import {
 	assertCanStartDeepResearchJob,
 	startDeepResearchJobShell,
 } from '$lib/server/services/deep-research';
+import { buildDeepResearchPlanningContext } from '$lib/server/services/deep-research/planning-context';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
@@ -92,6 +97,7 @@ const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
 const mockAssertCanStartDeepResearchJob = assertCanStartDeepResearchJob as ReturnType<typeof vi.fn>;
 const mockStartDeepResearchJobShell = startDeepResearchJobShell as ReturnType<typeof vi.fn>;
+const mockBuildDeepResearchPlanningContext = buildDeepResearchPlanningContext as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
@@ -134,6 +140,7 @@ describe('POST /api/chat/send', () => {
 			updatedAt: Date.now(),
 		});
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
+		mockBuildDeepResearchPlanningContext.mockResolvedValue([]);
 	});
 
 	it('returns AI response text for a valid request', async () => {
@@ -240,6 +247,100 @@ describe('POST /api/chat/send', () => {
 			}),
 		);
 		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('passes prompt-ready attachment planning context into the Deep Research job shell', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockAssertPromptReadyAttachments.mockResolvedValue({
+			displayArtifacts: [{ id: 'source-attachment-1' }],
+			promptArtifacts: [{ id: 'normalized-attachment-1' }],
+		});
+		mockBuildDeepResearchPlanningContext.mockResolvedValue([
+			{
+				type: 'attachment',
+				artifactId: 'normalized-attachment-1',
+				title: 'Uploaded market brief.pdf',
+				summary: 'Prompt-ready attachment context for the research plan.',
+				includeAsResearchSource: true,
+			},
+		]);
+		mockCreateMessage.mockResolvedValueOnce({
+			id: 'user-msg',
+			role: 'user',
+			content: 'Research the market using my uploaded brief',
+			timestamp: Date.now(),
+		});
+		mockStartDeepResearchJobShell.mockResolvedValueOnce({
+			id: 'research-job-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg',
+			depth: 'focused',
+			status: 'awaiting_approval',
+			stage: 'plan_drafted',
+			title: 'Research the market using my uploaded brief',
+			currentPlan: {
+				renderedPlan:
+					'Research Plan\n\nPlanning context includes attached file: Uploaded market brief.pdf',
+				rawPlan: {
+					sourceScope: {
+						includedSources: [
+							{
+								type: 'attached_file',
+								artifactId: 'normalized-attachment-1',
+								title: 'Uploaded market brief.pdf',
+								summary: 'Prompt-ready attachment context for the research plan.',
+							},
+						],
+					},
+				},
+			},
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+
+		const response = await POST(
+			makeEvent({
+				message: '  Research the market using my uploaded brief  ',
+				conversationId: 'conv-1',
+				attachmentIds: ['source-attachment-1'],
+				activeDocumentArtifactId: 'active-doc-1',
+				deepResearch: { depth: 'focused' },
+			}),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.deepResearchJob.currentPlan.renderedPlan).toContain('Uploaded market brief.pdf');
+		expect(data.deepResearchJob.currentPlan.rawPlan.sourceScope.includedSources).toEqual([
+			expect.objectContaining({
+				type: 'attached_file',
+				artifactId: 'normalized-attachment-1',
+			}),
+		]);
+		expect(mockBuildDeepResearchPlanningContext).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userRequest: 'Research the market using my uploaded brief',
+			attachmentIds: ['source-attachment-1'],
+			activeDocumentArtifactId: 'active-doc-1',
+		});
+		expect(mockStartDeepResearchJobShell).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				conversationId: 'conv-1',
+				triggerMessageId: 'user-msg',
+				userRequest: 'Research the market using my uploaded brief',
+				depth: 'focused',
+				planningContext: [
+					expect.objectContaining({
+						type: 'attachment',
+						artifactId: 'normalized-attachment-1',
+						includeAsResearchSource: true,
+					}),
+				],
+			}),
+		);
 	});
 
 	it('rejects Deep Research in a sealed conversation before persisting the triggering message', async () => {

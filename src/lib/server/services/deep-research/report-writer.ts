@@ -62,6 +62,9 @@ const reportLabels: Record<
 		synthesisPassCeiling: string;
 		recommendationsBody: string;
 		noFindingSummary: string;
+		executiveSummaryBody: (goal: string, findingSummary: string) => string;
+		mainBodyGoal: (goal: string) => string;
+		emptyBullet: string;
 	}
 > = {
 	en: {
@@ -84,6 +87,10 @@ const reportLabels: Record<
 			"Use the supported findings above to choose next actions.",
 		noFindingSummary:
 			"The reviewed evidence did not produce a supported finding.",
+		executiveSummaryBody: (goal, findingSummary) => `${goal} ${findingSummary}`,
+		mainBodyGoal: (goal) =>
+			`This report addresses the approved Research Plan goal: ${goal}`,
+		emptyBullet: "None.",
 	},
 	hu: {
 		titlePrefix: "Kutatási jelentés",
@@ -105,6 +112,11 @@ const reportLabels: Record<
 			"A fenti alátámasztott megállapításokat használd a következő lépések kiválasztásához.",
 		noFindingSummary:
 			"Az áttekintett bizonyítékok nem eredményeztek alátámasztott megállapítást.",
+		executiveSummaryBody: (goal, findingSummary) =>
+			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal} ${findingSummary}`,
+		mainBodyGoal: (goal) =>
+			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal}`,
+		emptyBullet: "Nincs.",
 	},
 };
 
@@ -207,7 +219,10 @@ function buildExecutiveSummary(
 		keyFindings.length > 0
 			? keyFindings[0]
 			: reportLabels[researchLanguage].noFindingSummary;
-	return `${plan.goal} ${findingSummary}`;
+	return reportLabels[researchLanguage].executiveSummaryBody(
+		plan.goal,
+		findingSummary,
+	);
 }
 
 function buildMainBody(
@@ -217,7 +232,7 @@ function buildMainBody(
 ): string {
 	const labels = reportLabels[researchLanguage];
 	const body = [
-		`This report addresses the approved Research Plan goal: ${plan.goal}`,
+		labels.mainBodyGoal(plan.goal),
 		"",
 		`${labels.researchQuestions}:`,
 		...plan.keyQuestions.map((question) => `- ${question}`),
@@ -268,7 +283,11 @@ function normalizeSectionKind(section: string): ReportSectionKind | null {
 	if (normalized === "methodology" || normalized === "modszertan") {
 		return "methodology";
 	}
-	if (normalized === "comparison" || normalized === "osszehasonlitas") {
+	if (
+		normalized === "comparison" ||
+		normalized === "osszehasonlitas" ||
+		normalized === "fo osszehasonlitas"
+	) {
 		return "comparison";
 	}
 	if (normalized === "recommendations" || normalized === "javaslatok") {
@@ -303,13 +322,14 @@ function buildSectionBody(
 	}
 
 	if (sectionKind === "comparison") {
-		return renderBullets(keyFindings).join("\n");
+		return renderBullets(keyFindings, researchLanguage).join("\n");
 	}
 
 	if (sectionKind === "recommendations") {
-		return [labels.recommendationsBody, ...renderBullets(keyFindings)].join(
-			"\n",
-		);
+		return [
+			labels.recommendationsBody,
+			...renderBullets(keyFindings, researchLanguage),
+		].join("\n");
 	}
 
 	return buildMainBody(plan, keyFindings, researchLanguage);
@@ -373,7 +393,7 @@ function renderReportMarkdown(input: {
 		input.executiveSummary,
 		"",
 		`## ${labels.keyFindings}`,
-		...renderBullets(input.keyFindings),
+		...renderBullets(input.keyFindings, input.researchLanguage),
 		"",
 	];
 
@@ -392,16 +412,19 @@ function renderReportMarkdown(input: {
 		lines.push(
 			"",
 			`## ${labels.reportLimitations}`,
-			...renderBullets(input.limitations),
+			...renderBullets(input.limitations, input.researchLanguage),
 		);
 	}
 
 	return lines.join("\n");
 }
 
-function renderBullets(values: string[]): string[] {
+function renderBullets(
+	values: string[],
+	researchLanguage: ResearchLanguage = "en",
+): string[] {
 	if (values.length === 0) {
-		return ["- None."];
+		return [`- ${reportLabels[researchLanguage].emptyBullet}`];
 	}
 
 	return values.map((value) => `- ${value}`);

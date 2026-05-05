@@ -120,6 +120,54 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.renderedPlan).not.toContain("OpenAI Codex Árazás");
 	});
 
+	it("uses Hungarian default plan prose while preserving original included source titles", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-hu-prose",
+			userRequest:
+				"Kérlek foglald össze a privát AI kódoló asszisztensek beszerzési kockázatait.",
+			selectedDepth: "standard",
+			researchLanguage: "hu",
+			planningContext: [
+				{
+					type: "knowledge",
+					artifactId: "artifact-knowledge-1",
+					title: "GitHub Copilot Trust Center",
+					summary: "Original vendor trust-center notes.",
+					includeAsResearchSource: true,
+				},
+			],
+		});
+
+		expect(result.plan.keyQuestions).toEqual([
+			"Mi a téma jelenlegi állapota?",
+			"Mely hasonlóságok és különbségek a legfontosabbak?",
+			"Milyen gyakorlati következményeket emeljen ki a jelentés?",
+		]);
+		expect(result.plan.reportShape).toEqual([
+			"Vezetői összefoglaló",
+			"Fő megállapítások",
+			"Fő összehasonlítás",
+			"Forráslista",
+			"Korlátok",
+		]);
+		expect(result.plan.constraints).toEqual([
+			"Ne induljon forrásigényes kutatás a Kutatási terv jóváhagyása előtt.",
+		]);
+		expect(result.plan.deliverables).toEqual([
+			"Hivatkozásokkal ellátott kutatási jelentés",
+		]);
+		expect(result.renderedPlan).toContain("Eredménytermékek:");
+		expect(result.renderedPlan).toContain(
+			"Hivatkozásokkal ellátott kutatási jelentés",
+		);
+		expect(result.renderedPlan).toContain("GitHub Copilot Trust Center");
+		expect(result.renderedPlan).not.toContain(
+			"What is the current state of the topic?",
+		);
+		expect(result.renderedPlan).not.toContain("Executive summary");
+		expect(result.renderedPlan).not.toContain("Cited Research Report");
+	});
+
 	it("rejects a structured plan that exceeds the selected depth budget", async () => {
 		const repository = {
 			saveResearchPlanDraft: vi.fn(),

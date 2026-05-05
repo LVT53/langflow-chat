@@ -131,6 +131,7 @@ const planLabels: Record<
 		keyQuestions: string;
 		expectedReportShape: string;
 		constraints: string;
+		deliverables: string;
 	}
 > = {
 	en: {
@@ -144,6 +145,7 @@ const planLabels: Record<
 		keyQuestions: "Key questions",
 		expectedReportShape: "Expected report shape",
 		constraints: "Constraints",
+		deliverables: "Deliverables",
 	},
 	hu: {
 		title: "Kutatási terv",
@@ -157,6 +159,57 @@ const planLabels: Record<
 		keyQuestions: "Fő kérdések",
 		expectedReportShape: "Várt jelentésszerkezet",
 		constraints: "Korlátok",
+		deliverables: "Eredménytermékek",
+	},
+};
+
+const localizedDefaultPlanProse: Record<
+	ResearchLanguage,
+	{
+		keyQuestions: string[];
+		reportShape: string[];
+		constraints: string[];
+		deliverables: string[];
+		planEditPrefix: string;
+	}
+> = {
+	en: {
+		keyQuestions: [
+			"What is the current state of the topic?",
+			"Which similarities and differences matter most?",
+			"What practical implications should the report call out?",
+		],
+		reportShape: [
+			"Executive summary",
+			"Key findings",
+			"Main comparison",
+			"Source list",
+			"Limitations",
+		],
+		constraints: [
+			"Do not start source-heavy research until the Research Plan is approved.",
+		],
+		deliverables: ["Cited Research Report"],
+		planEditPrefix: "Plan edit",
+	},
+	hu: {
+		keyQuestions: [
+			"Mi a téma jelenlegi állapota?",
+			"Mely hasonlóságok és különbségek a legfontosabbak?",
+			"Milyen gyakorlati következményeket emeljen ki a jelentés?",
+		],
+		reportShape: [
+			"Vezetői összefoglaló",
+			"Fő megállapítások",
+			"Fő összehasonlítás",
+			"Forráslista",
+			"Korlátok",
+		],
+		constraints: [
+			"Ne induljon forrásigényes kutatás a Kutatási terv jóváhagyása előtt.",
+		],
+		deliverables: ["Hivatkozásokkal ellátott kutatási jelentés"],
+		planEditPrefix: "Tervmódosítás",
 	},
 };
 
@@ -316,32 +369,21 @@ function draftDefaultResearchPlan(
 	researchBudget: ResearchBudget,
 	contextDisclosure: string | null,
 ): ResearchPlan {
+	const defaultProse = localizedDefaultPlanProse[input.researchLanguage];
 	return {
 		goal: input.userRequest,
 		depth: input.selectedDepth,
 		researchLanguage: input.researchLanguage,
 		researchBudget,
-		keyQuestions: [
-			"What is the current state of the topic?",
-			"Which similarities and differences matter most?",
-			"What practical implications should the report call out?",
-		],
+		keyQuestions: defaultProse.keyQuestions,
 		sourceScope: {
 			includePublicWeb: true,
 			planningContextDisclosure: contextDisclosure,
 			includedSources: buildDefaultIncludedSources(input.planningContext ?? []),
 		},
-		reportShape: [
-			"Executive summary",
-			"Key findings",
-			"Main comparison",
-			"Source list",
-			"Limitations",
-		],
-		constraints: [
-			"Do not start source-heavy research until the Research Plan is approved.",
-		],
-		deliverables: ["Cited Research Report"],
+		reportShape: defaultProse.reportShape,
+		constraints: defaultProse.constraints,
+		deliverables: defaultProse.deliverables,
 	};
 }
 
@@ -359,7 +401,7 @@ function reviseDefaultResearchPlan(
 		},
 		constraints: [
 			...input.previousPlan.constraints,
-			`Plan edit: ${editInstruction}`,
+			`${localizedDefaultPlanProse[input.researchLanguage].planEditPrefix}: ${editInstruction}`,
 		],
 	};
 }
@@ -420,6 +462,13 @@ function renderResearchPlan(plan: ResearchPlan): string {
 		"",
 		`${labels.constraints}:`,
 		...plan.constraints.map((constraint) => `- ${constraint}`),
+		...(researchLanguage === "hu"
+			? [
+					"",
+					`${labels.deliverables}:`,
+					...plan.deliverables.map((deliverable) => `- ${deliverable}`),
+				]
+			: []),
 	].join("\n");
 }
 

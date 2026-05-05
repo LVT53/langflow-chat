@@ -59,7 +59,16 @@ vi.mock("$lib/server/services/deep-research/discovery", async (importOriginal) =
 	};
 });
 
+vi.mock("$lib/server/services/deep-research/planning-context", () => ({
+	buildDeepResearchPlanningContext: vi.fn(),
+}));
+
+import { buildDeepResearchPlanningContext } from "$lib/server/services/deep-research/planning-context";
+
 let dbPath: string;
+const mockBuildDeepResearchPlanningContext = buildDeepResearchPlanningContext as ReturnType<
+	typeof vi.fn
+>;
 
 const signedInUser = {
 	id: "user-1",
@@ -88,6 +97,61 @@ async function seedConversation() {
 			title: "Research conversation",
 			createdAt: now,
 			updatedAt: now,
+		})
+		.run();
+
+	sqlite.close();
+}
+
+async function seedPromptReadyAttachment() {
+	const sqlite = new Database(dbPath);
+	sqlite.pragma("foreign_keys = ON");
+	const db = drizzle(sqlite, { schema });
+	migrate(db, { migrationsFolder: "./drizzle" });
+
+	const now = new Date("2026-05-05T10:01:00.000Z");
+	db.insert(schema.artifacts)
+		.values([
+			{
+				id: "source-attachment-1",
+				userId: signedInUser.id,
+				conversationId: "conv-1",
+				type: "source_document",
+				retrievalClass: "document",
+				name: "Uploaded policy memo.pdf",
+				mimeType: "application/pdf",
+				extension: ".pdf",
+				sizeBytes: 2048,
+				summary: "Uploaded source memo about AI copyright policy.",
+				createdAt: now,
+				updatedAt: now,
+			},
+			{
+				id: "normalized-attachment-1",
+				userId: signedInUser.id,
+				conversationId: "conv-1",
+				type: "normalized_document",
+				retrievalClass: "document",
+				name: "Uploaded policy memo.pdf",
+				mimeType: "text/plain",
+				extension: ".txt",
+				sizeBytes: 4096,
+				contentText: "Normalized uploaded policy memo text. ".repeat(100),
+				summary: "Normalized prompt-ready memo about AI copyright policy.",
+				createdAt: now,
+				updatedAt: now,
+			},
+		])
+		.run();
+	db.insert(schema.artifactLinks)
+		.values({
+			id: randomUUID(),
+			userId: signedInUser.id,
+			artifactId: "normalized-attachment-1",
+			relatedArtifactId: "source-attachment-1",
+			conversationId: "conv-1",
+			linkType: "derived_from",
+			createdAt: now,
 		})
 		.run();
 
@@ -199,6 +263,7 @@ describe("Deep Research dev-control acceptance path", () => {
 		process.env.DATABASE_PATH = dbPath;
 		vi.resetModules();
 		await seedConversation();
+		mockBuildDeepResearchPlanningContext.mockResolvedValue([]);
 	});
 
 	afterEach(async () => {
@@ -276,6 +341,71 @@ describe("Deep Research dev-control acceptance path", () => {
 			status: "sealed",
 			sealedAt: expect.any(Date),
 		});
+	});
+
+	it("discloses attached planning context and persists it as approved Research Sources", async () => {
+		await seedPromptReadyAttachment();
+		mockBuildDeepResearchPlanningContext.mockResolvedValueOnce([
+			{
+				type: "attachment",
+				artifactId: "normalized-attachment-1",
+				title: "Uploaded policy memo.pdf",
+				summary: "Normalized prompt-ready memo about AI copyright policy.",
+				includeAsResearchSource: true,
+			},
+		]);
+
+		const { POST: sendChat } = await import("../chat/send/+server");
+		const { POST: approvePlan } = await import("./jobs/[id]/plan/approve/+server");
+		const { listResearchSources } = await import("$lib/server/services/deep-research/sources");
+
+		const startResponse = await sendChat(
+			makeJsonEvent("/api/chat/send", {
+				conversationId: "conv-1",
+				message: "  Compare EU and US AI copyright training data rules using my memo.  ",
+				attachmentIds: ["source-attachment-1"],
+				activeDocumentArtifactId: "active-document-1",
+				deepResearch: { depth: "focused" },
+			}),
+		);
+		const started = await readJson(startResponse);
+		const jobId = started.deepResearchJob.id as string;
+		const renderedPlan = started.deepResearchJob.currentPlan.renderedPlan as string;
+
+		expect(startResponse.status).toBe(200);
+		expect(mockBuildDeepResearchPlanningContext).toHaveBeenCalledWith({
+			userId: signedInUser.id,
+			conversationId: "conv-1",
+			userRequest: "Compare EU and US AI copyright training data rules using my memo.",
+			attachmentIds: ["source-attachment-1"],
+			activeDocumentArtifactId: "active-document-1",
+		});
+		expect(renderedPlan).toContain("Context considered: 1 attachment item.");
+		expect(renderedPlan).toContain("Uploaded policy memo.pdf");
+
+		const approvalResponse = await approvePlan(
+			makeJsonEvent(
+				`/api/deep-research/jobs/${jobId}/plan/approve`,
+				undefined,
+				{ id: jobId },
+			),
+		);
+		const sources = await listResearchSources({
+			userId: signedInUser.id,
+			jobId,
+		});
+
+		expect(approvalResponse.status).toBe(200);
+		expect(sources).toEqual([
+			expect.objectContaining({
+				jobId,
+				conversationId: "conv-1",
+				status: "discovered",
+				url: "artifact:normalized-attachment-1",
+				title: "Uploaded policy memo.pdf",
+				provider: "attached_file",
+			}),
+		]);
 	});
 
 	it("keeps the completed Research conversation sealed while Report Actions create new conversations", async () => {

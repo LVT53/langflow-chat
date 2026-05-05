@@ -230,4 +230,62 @@ describe("Deep Research report writer", () => {
 			"AI kódolási biztonsági dokumentáció",
 		);
 	});
+
+	it("uses Hungarian report boilerplate without translating source titles or cited finding text", () => {
+		const citedFinding =
+			"Repository-aware coding assistants differ most on index freshness and permission controls.";
+		const report = writeResearchReport({
+			jobId: "job-hu-default-body",
+			plan: {
+				...basePlan,
+				researchLanguage: "hu",
+				goal: "Privát AI kódoló asszisztensek összehasonlítása",
+				keyQuestions: [
+					"Mely termékek rendelkeznek erős repository-aware workflow-val?",
+					"Mely árképzési és megfelelőségi különbségek fontosak?",
+				],
+			},
+			synthesisNotes: {
+				...baseSynthesisNotes,
+				findings: [
+					{
+						...baseSynthesisNotes.findings[0],
+						statement: citedFinding,
+					},
+				],
+				supportedFindings: [
+					{
+						...baseSynthesisNotes.supportedFindings[0],
+						statement: citedFinding,
+					},
+				],
+			},
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+				},
+			],
+		});
+
+		expect(report.executiveSummary).toContain(
+			"Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol",
+		);
+		expect(report.markdown).toContain(
+			"Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: Privát AI kódoló asszisztensek összehasonlítása",
+		);
+		expect(report.markdown).toContain(citedFinding);
+		expect(report.markdown).toContain(
+			"[1] AI coding security documentation - https://docs.example.com/ai-coding/security",
+		);
+		expect(report.markdown).not.toContain(
+			"This report addresses the approved Research Plan goal",
+		);
+		expect(report.markdown).not.toContain("Research questions:");
+		expect(report.markdown).not.toContain("Synthesis:");
+		expect(report.markdown).not.toContain("- None.");
+	});
 });
