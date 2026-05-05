@@ -3,13 +3,16 @@ import type { KnowledgeDocumentItem, DocumentWorkspaceItem } from "$lib/types";
 import { page } from "$app/state";
 import { replaceState } from "$app/navigation";
 import { browser } from "$app/environment";
+import { onDestroy, onMount } from "svelte";
 import {
 	clearKnowledgeWorkspaceParams,
 	getKnowledgeWorkspaceDocumentFromUrl,
 } from "$lib/client/document-workspace-navigation";
 import {
+	reduceWorkspaceDocumentsForDeletedConversation,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
+	WORKSPACE_CONVERSATION_DELETED_EVENT,
 } from "$lib/client/document-workspace-state";
 import { recordDocumentWorkspaceOpen } from "$lib/client/api/knowledge";
 import DocumentWorkspace from "$lib/components/document-workspace/DocumentWorkspace.svelte";
@@ -101,6 +104,41 @@ function selectWorkspaceDocument(documentId: string) {
 function closeWorkspace() {
 	workspaceOpen = false;
 }
+
+function handleWorkspaceConversationDeleted(conversationId: string) {
+	const nextState = reduceWorkspaceDocumentsForDeletedConversation(
+		workspaceDocuments,
+		conversationId,
+		activeWorkspaceDocumentId,
+	);
+	if (nextState.documents.length === workspaceDocuments.length) return;
+
+	workspaceDocuments = nextState.documents;
+	activeWorkspaceDocumentId = nextState.activeDocumentId;
+	workspaceOpen = nextState.isOpen;
+}
+
+function handleWorkspaceConversationDeletedEvent(event: Event) {
+	const conversationId = (event as CustomEvent<{ conversationId?: unknown }>)
+		.detail?.conversationId;
+	if (typeof conversationId !== "string") return;
+	handleWorkspaceConversationDeleted(conversationId);
+}
+
+onMount(() => {
+	window.addEventListener(
+		WORKSPACE_CONVERSATION_DELETED_EVENT,
+		handleWorkspaceConversationDeletedEvent,
+	);
+});
+
+onDestroy(() => {
+	if (!browser) return;
+	window.removeEventListener(
+		WORKSPACE_CONVERSATION_DELETED_EVENT,
+		handleWorkspaceConversationDeletedEvent,
+	);
+});
 
 // Expose openDocument for external callers (via bind:this)
 export function handleOpenDocument(doc: DocumentWorkspaceItem) {

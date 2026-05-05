@@ -13,6 +13,7 @@
 		reconcileConversationSnapshot,
 	} from '$lib/stores/conversations';
 	import { conversationExists } from '$lib/client/api/conversations';
+	import { removeConversationFromPersistedWorkspaceDocumentState } from '$lib/client/document-workspace-state';
 	import { projects } from '$lib/stores/projects';
 	import { initSettings, uiLanguage } from '$lib/stores/settings';
 	import { initTheme } from '$lib/stores/theme';
@@ -82,6 +83,7 @@
 				if (!stillExists) {
 					const exists = await conversationExists(currentId);
 					if (exists === false) {
+						removeConversationFromPersistedWorkspaceDocumentState(window.sessionStorage, currentId);
 						goto('/');
 					}
 				}

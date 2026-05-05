@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { DocumentWorkspaceItem } from "$lib/types";
 import {
 	loadPersistedWorkspaceDocumentState,
+	reduceWorkspaceDocumentsForDeletedConversation,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
+	removeConversationFromPersistedWorkspaceDocumentState,
 	savePersistedWorkspaceDocumentState,
 } from "./document-workspace-state";
 
@@ -113,6 +115,59 @@ describe("document workspace state", () => {
 			presentation: "docked",
 		});
 
+		expect(loadPersistedWorkspaceDocumentState(storageAdapter)).toBeNull();
+	});
+
+	it("removes documents owned by a deleted conversation and keeps the remaining active document valid", () => {
+		const documents = [
+			{
+				...makeDocument("file-1"),
+				conversationId: "deleted-conversation",
+			},
+			{
+				...makeDocument("file-2"),
+				originConversationId: "deleted-conversation",
+			},
+			{
+				...makeDocument("file-3"),
+				conversationId: "kept-conversation",
+			},
+		];
+
+		const result = reduceWorkspaceDocumentsForDeletedConversation(
+			documents,
+			"deleted-conversation",
+			"file-2",
+		);
+
+		expect(result.documents.map((document) => document.id)).toEqual(["file-3"]);
+		expect(result.activeDocumentId).toBe("file-3");
+		expect(result.isOpen).toBe(true);
+	});
+
+	it("purges deleted-conversation documents from persisted workspace state", () => {
+		const storage = new Map<string, string>();
+		const storageAdapter = {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => storage.set(key, value),
+			removeItem: (key: string) => storage.delete(key),
+		};
+
+		savePersistedWorkspaceDocumentState(storageAdapter, {
+			documents: [
+				{ ...makeDocument("file-1"), conversationId: "deleted-conversation" },
+			],
+			activeDocumentId: "file-1",
+			isOpen: true,
+			presentation: "expanded",
+		});
+
+		expect(
+			removeConversationFromPersistedWorkspaceDocumentState(
+				storageAdapter,
+				"deleted-conversation",
+			),
+		).toBeNull();
 		expect(loadPersistedWorkspaceDocumentState(storageAdapter)).toBeNull();
 	});
 });

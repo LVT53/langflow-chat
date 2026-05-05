@@ -79,7 +79,7 @@ describe('FileProductionCard', () => {
 		expect(queryByText('limit=5 actual=6')).toBeNull();
 	});
 
-	it('opens produced files with a v1 fallback while background metadata sync catches up', async () => {
+	it('opens produced files with version and source fallbacks while background metadata sync catches up', async () => {
 		const onOpenDocument = vi.fn();
 		const { getByRole } = render(FileProductionCard, {
 			job: makeJob({
@@ -106,6 +106,9 @@ describe('FileProductionCard', () => {
 				id: 'file-1',
 				source: 'chat_generated_file',
 				versionNumber: 1,
+				originConversationId: 'conv-1',
+				originAssistantMessageId: 'assistant-1',
+				sourceChatFileId: 'file-1',
 			})
 		);
 	});

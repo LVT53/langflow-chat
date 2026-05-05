@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { WORKSPACE_CONVERSATION_DELETED_EVENT } from "$lib/client/document-workspace-state";
 import KnowledgeWorkspaceCoordinator from "./KnowledgeWorkspaceCoordinator.svelte";
 
 const { replaceStateMock } = vi.hoisted(() => ({
@@ -130,5 +131,42 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 					"/api/knowledge/display-docx-1/download",
 			),
 		).toBe(true);
+	});
+
+	it("closes open workspace documents owned by a deleted conversation", async () => {
+		render(KnowledgeWorkspaceCoordinator, {
+			props: {
+				documents: [
+					{
+						id: "doc-1",
+						name: "Notes.md",
+						type: "source_document",
+						mimeType: "text/markdown",
+						sizeBytes: 120,
+						createdAt: 1,
+						displayArtifactId: "artifact-1",
+						conversationId: "deleted-conversation",
+					},
+				],
+			},
+		});
+
+		await screen.findByRole("complementary", {
+			name: /document workspace/i,
+		});
+
+		window.dispatchEvent(
+			new CustomEvent(WORKSPACE_CONVERSATION_DELETED_EVENT, {
+				detail: { conversationId: "deleted-conversation" },
+			}),
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.queryByRole("complementary", {
+					name: /document workspace/i,
+				}),
+			).not.toBeInTheDocument();
+		});
 	});
 });

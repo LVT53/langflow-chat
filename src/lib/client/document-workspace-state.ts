@@ -16,6 +16,8 @@ export type PersistedWorkspaceDocumentState = WorkspaceDocumentState & {
 const CHAT_WORKSPACE_STATE_STORAGE_KEY = "alfyai-chat-document-workspace";
 const MAX_PERSISTED_DOCUMENTS = 12;
 const MAX_PERSISTED_STATE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const WORKSPACE_CONVERSATION_DELETED_EVENT =
+	"alfyai:workspace-conversation-deleted";
 
 export function reduceWorkspaceDocumentOpen(
 	documents: DocumentWorkspaceItem[],
@@ -52,6 +54,38 @@ export function reduceWorkspaceDocumentClose(
 	return {
 		documents: remainingDocuments,
 		activeDocumentId: nextActiveId,
+		isOpen: remainingDocuments.length > 0,
+	};
+}
+
+export function isWorkspaceDocumentFromConversation(
+	document: DocumentWorkspaceItem,
+	conversationId: string,
+): boolean {
+	return (
+		document.conversationId === conversationId ||
+		document.originConversationId === conversationId
+	);
+}
+
+export function reduceWorkspaceDocumentsForDeletedConversation(
+	documents: DocumentWorkspaceItem[],
+	deletedConversationId: string,
+	activeWorkspaceDocumentId: string | null,
+): WorkspaceDocumentState {
+	const remainingDocuments = documents.filter(
+		(document) =>
+			!isWorkspaceDocumentFromConversation(document, deletedConversationId),
+	);
+	const activeDocumentId =
+		activeWorkspaceDocumentId &&
+		remainingDocuments.some((document) => document.id === activeWorkspaceDocumentId)
+			? activeWorkspaceDocumentId
+			: (remainingDocuments.at(-1)?.id ?? null);
+
+	return {
+		documents: remainingDocuments,
+		activeDocumentId,
 		isOpen: remainingDocuments.length > 0,
 	};
 }
@@ -137,5 +171,52 @@ export function savePersistedWorkspaceDocumentState(
 			presentation: state.presentation,
 			updatedAt: now,
 		} satisfies PersistedWorkspaceDocumentState),
+	);
+}
+
+export function removeConversationFromPersistedWorkspaceDocumentState(
+	storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null | undefined,
+	conversationId: string,
+	now = Date.now(),
+): PersistedWorkspaceDocumentState | null {
+	const persisted = loadPersistedWorkspaceDocumentState(storage, now);
+	if (!persisted) return null;
+
+	const next = reduceWorkspaceDocumentsForDeletedConversation(
+		persisted.documents,
+		conversationId,
+		persisted.activeDocumentId,
+	);
+	const presentation = next.isOpen ? persisted.presentation : "docked";
+
+	savePersistedWorkspaceDocumentState(
+		storage,
+		{
+			...next,
+			presentation,
+		},
+		now,
+	);
+
+	return next.documents.length > 0
+		? {
+				...next,
+				presentation,
+				updatedAt: now,
+			}
+		: null;
+}
+
+export function dispatchWorkspaceConversationDeleted(
+	conversationId: string,
+	target: Pick<Window, "dispatchEvent"> | null | undefined =
+		typeof window === "undefined"
+		? null
+		: window,
+): void {
+	target?.dispatchEvent(
+		new CustomEvent(WORKSPACE_CONVERSATION_DELETED_EVENT, {
+			detail: { conversationId },
+		}),
 	);
 }

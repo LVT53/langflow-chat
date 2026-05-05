@@ -422,6 +422,48 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		expect(rendered.diagnostics.charts[0].edgeInsetPt).toBeGreaterThan(8);
 	});
 
+	it('wraps chart captions and records visible axis and category labels', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Chart label report',
+			blocks: [
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'Conversation category depth',
+					caption:
+						'This chart illustrates the relative depth of information shared across the main conversation categories, measured by distinct facts and specific recurring signals.',
+					altText: 'A bar chart showing category depth.',
+					units: 'distinct facts',
+					xKey: 'category',
+					yKey: 'facts',
+					data: [
+						{ category: 'Work preferences', facts: 12 },
+						{ category: 'Personal context', facts: 7 },
+						{ category: 'Project goals', facts: 10 },
+					],
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+
+		expect(rendered.diagnostics.charts[0]).toMatchObject({
+			title: 'Conversation category depth',
+			captionLineCount: expect.any(Number),
+			axisLabels: {
+				x: 'Category',
+				y: 'Distinct facts',
+			},
+			categoryLabels: ['Work preferences', 'Personal context', 'Project goals'],
+			clipped: false,
+		});
+		expect(rendered.diagnostics.charts[0].captionLineCount).toBeGreaterThan(1);
+	});
+
 	it('renders every v1 chart type into PDF diagnostics', async () => {
 		const validation = validateGeneratedDocumentSource({
 			version: 1,

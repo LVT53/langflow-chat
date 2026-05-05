@@ -55,9 +55,11 @@ import {
 } from "$lib/client/document-workspace-navigation";
 import {
 	loadPersistedWorkspaceDocumentState,
+	reduceWorkspaceDocumentsForDeletedConversation,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
 	savePersistedWorkspaceDocumentState,
+	WORKSPACE_CONVERSATION_DELETED_EVENT,
 } from "$lib/client/document-workspace-state";
 import {
 	removeConversationLocal,
@@ -191,9 +193,10 @@ let availableWorkspaceDocuments = $derived(
 		documentLabel: file.documentLabel ?? null,
 		documentRole: file.documentRole ?? null,
 		versionNumber: file.versionNumber ?? 1,
-		originConversationId: file.originConversationId ?? null,
-		originAssistantMessageId: file.originAssistantMessageId ?? null,
-		sourceChatFileId: file.sourceChatFileId ?? null,
+		originConversationId: file.originConversationId ?? file.conversationId,
+		originAssistantMessageId:
+			file.originAssistantMessageId ?? file.assistantMessageId ?? null,
+		sourceChatFileId: file.sourceChatFileId ?? file.id,
 		mimeType: file.mimeType,
 		previewUrl: `/api/chat/files/${file.id}/preview`,
 		artifactId: file.artifactId ?? null,
@@ -278,6 +281,29 @@ function closeWorkspaceDocument(documentId: string) {
 function closeWorkspace() {
 	workspaceOpen = false;
 	workspacePresentation = "docked";
+}
+
+function handleWorkspaceConversationDeleted(conversationId: string) {
+	const nextState = reduceWorkspaceDocumentsForDeletedConversation(
+		workspaceDocuments,
+		conversationId,
+		activeWorkspaceDocumentId,
+	);
+	if (nextState.documents.length === workspaceDocuments.length) return;
+
+	workspaceDocuments = nextState.documents;
+	activeWorkspaceDocumentId = nextState.activeDocumentId;
+	workspaceOpen = nextState.isOpen;
+	if (!nextState.isOpen) {
+		workspacePresentation = "docked";
+	}
+}
+
+function handleWorkspaceConversationDeletedEvent(event: Event) {
+	const conversationId = (event as CustomEvent<{ conversationId?: unknown }>)
+		.detail?.conversationId;
+	if (typeof conversationId !== "string") return;
+	handleWorkspaceConversationDeleted(conversationId);
 }
 
 async function focusMessage(messageId: string) {
@@ -811,14 +837,23 @@ async function checkForOrphanedStreamOnMount() {
 onMount(() => {
 	currentConversationId.set(data.conversation.id);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
+	window.addEventListener(
+		WORKSPACE_CONVERSATION_DELETED_EVENT,
+		handleWorkspaceConversationDeletedEvent,
+	);
 	void checkForOrphanedStreamOnMount();
 	void recoverPendingEvidence();
 	void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
 });
 
 onDestroy(() => {
-	if (browser)
+	if (browser) {
 		document.removeEventListener("visibilitychange", handleVisibilityChange);
+		window.removeEventListener(
+			WORKSPACE_CONVERSATION_DELETED_EVENT,
+			handleWorkspaceConversationDeletedEvent,
+		);
+	}
 	for (const controller of evidencePollControllers.values()) {
 		controller.abort();
 	}

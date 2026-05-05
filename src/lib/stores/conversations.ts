@@ -7,6 +7,10 @@ import {
 	moveConversationToProject as moveConversationRequest,
 	renameConversation as renameConversationRequest,
 } from '$lib/client/api/conversations';
+import {
+	dispatchWorkspaceConversationDeleted,
+	removeConversationFromPersistedWorkspaceDocumentState,
+} from '$lib/client/document-workspace-state';
 
 export const conversations = writable<ConversationListItem[]>([]);
 
@@ -119,6 +123,10 @@ export function removeConversationLocal(id: string): void {
 
 export async function deleteConversationById(id: string): Promise<void> {
 	await deleteConversation(id);
+	if (typeof window !== 'undefined') {
+		removeConversationFromPersistedWorkspaceDocumentState(window.sessionStorage, id);
+		dispatchWorkspaceConversationDeleted(id);
+	}
 	optimisticConversationIds.delete(id);
 	deletedConversationIds.add(id);
 	conversations.update((items) => items.filter((conversation) => conversation.id !== id));

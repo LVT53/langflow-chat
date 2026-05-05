@@ -11,6 +11,7 @@ import {
 	renameConversation,
 	upsertConversationLocal,
 } from './conversations';
+import { WORKSPACE_CONVERSATION_DELETED_EVENT } from '$lib/client/document-workspace-state';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
 	return new Response(JSON.stringify(body), {
@@ -24,6 +25,14 @@ describe('conversations store', () => {
 		clearConversationStore();
 		vi.restoreAllMocks();
 		vi.stubGlobal('fetch', vi.fn());
+		vi.stubGlobal('window', {
+			sessionStorage: {
+				getItem: vi.fn(() => null),
+				setItem: vi.fn(),
+				removeItem: vi.fn(),
+			},
+			dispatchEvent: vi.fn(() => true),
+		});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 	});
 
@@ -149,5 +158,11 @@ describe('conversations store', () => {
 		await deleteConversationById('conv-1');
 
 		expect(get(conversations)).toEqual([]);
+		expect(vi.mocked(window.dispatchEvent)).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: WORKSPACE_CONVERSATION_DELETED_EVENT,
+				detail: { conversationId: 'conv-1' },
+			})
+		);
 	});
 });

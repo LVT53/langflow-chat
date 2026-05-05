@@ -139,6 +139,12 @@ export interface StandardReportPdfRenderResult {
 			chartType: GeneratedDocumentChartBlock['chartType'];
 			dataPointCount: number;
 			edgeInsetPt: number;
+			captionLineCount: number;
+			axisLabels: {
+				x: string | null;
+				y: string | null;
+			};
+			categoryLabels: string[];
 			clipped: false;
 			svg: string;
 		}>;
@@ -326,6 +332,32 @@ function fitTextToWidth(text: string, font: PDFFont, size: number, maxWidth: num
 		fitted = candidate;
 	}
 	return fitted.trimEnd() ? `${fitted.trimEnd()}${suffix}` : '';
+}
+
+function formatChartLabel(value: string | null | undefined, fallback: string): string {
+	const text = sanitizePdfText(value ?? '')
+		.replace(/[_.-]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (!text || /^label$/i.test(text)) return fallback;
+	if (/^value$/i.test(text)) return fallback;
+
+	return text
+		.split(' ')
+		.filter(Boolean)
+		.map((word, index) => {
+			if (word.length <= 2 && word === word.toUpperCase()) return word;
+			const lower = word.toLowerCase();
+			return index === 0
+				? lower.charAt(0).toUpperCase() + lower.slice(1)
+				: lower;
+		})
+		.join(' ');
+}
+
+function formatChartNumber(value: number): string {
+	const rounded = Math.abs(value) >= 100 ? Math.round(value) : Number(value.toFixed(1));
+	return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(rounded);
 }
 
 function drawAlfyAiLogo(page: PDFPage, x: number, y: number, height: number, opacity = 1): number {
@@ -1117,7 +1149,20 @@ class StandardReportPdfLayout {
 		const renderedSvg = renderChartSvg(block);
 		const x = this.contentX();
 		const width = this.contentWidth();
-		const height = 260;
+		const titleLines = wrapText(block.title ?? 'Chart', this.fonts.bold, 12, width - 28);
+		const captionLines = block.caption
+			? wrapText(block.caption, this.fonts.regular, 9, width - 28)
+			: [];
+		const headerOffset =
+			24 + titleLines.length * 15 + (captionLines.length > 0 ? 4 + captionLines.length * 12 : 0) + 14;
+		const plotHeight = 142;
+		const tickLabelHeight = 18;
+		const axisLabelHeight = 14;
+		const bottomPadding = 18;
+		const height = Math.max(
+			260,
+			headerOffset + plotHeight + tickLabelHeight + axisLabelHeight + bottomPadding
+		);
 		this.ensureSpace(height + 34);
 		const top = this.y + 6;
 		this.page.drawRectangle({
@@ -1129,22 +1174,32 @@ class StandardReportPdfLayout {
 			borderColor: hexColor(THEME.rule),
 			borderWidth: 0.8,
 		});
-		this.page.drawText(block.title ?? 'Chart', {
-			x: x + 14,
-			y: top - 24,
-			size: 12,
-			font: this.fonts.bold,
-			color: hexColor(THEME.text),
-		});
-		if (block.caption) {
-			this.page.drawText(block.caption, {
+		let textY = top - 24;
+		for (const line of titleLines) {
+			this.page.drawText(line, {
 				x: x + 14,
-				y: top - 42,
-				size: 9,
-				font: this.fonts.regular,
-				color: hexColor(THEME.secondaryText),
+				y: textY,
+				size: 12,
+				font: this.fonts.bold,
+				color: hexColor(THEME.text),
 			});
+			textY -= 15;
 		}
+		if (captionLines.length > 0) {
+			textY -= 4;
+			for (const line of captionLines) {
+				this.page.drawText(line, {
+					x: x + 14,
+					y: textY,
+					size: 9,
+					font: this.fonts.regular,
+					color: hexColor(THEME.secondaryText),
+				});
+				textY -= 12;
+			}
+		}
+		const chartTop = top - headerOffset;
+		const chartBottom = chartTop - plotHeight;
 
 		if (block.chartType === 'pie' || block.chartType === 'donut') {
 			const { labelKey, valueKey } = block;
@@ -1165,7 +1220,7 @@ class StandardReportPdfLayout {
 				.filter((row): row is { label: string; value: number } => row.value !== null && row.value > 0);
 			const total = rows.reduce((sum, row) => sum + row.value, 0) || 1;
 			const centerX = x + 130;
-			const centerY = top - 145;
+			const centerY = chartBottom + plotHeight / 2;
 			this.page.drawCircle({
 				x: centerX,
 				y: centerY,
@@ -1182,7 +1237,7 @@ class StandardReportPdfLayout {
 				});
 			}
 			for (const [index, row] of rows.entries()) {
-				const legendY = top - 92 - index * 20;
+				const legendY = chartTop - 28 - index * 20;
 				this.page.drawRectangle({
 					x: x + 250,
 					y: legendY - 8,
@@ -1204,6 +1259,12 @@ class StandardReportPdfLayout {
 				chartType: block.chartType,
 				dataPointCount: renderedSvg.dataPointCount,
 				edgeInsetPt: 0,
+				captionLineCount: captionLines.length,
+				axisLabels: {
+					x: null,
+					y: formatChartLabel(block.units, 'Value'),
+				},
+				categoryLabels: rows.map((row) => row.label),
 				clipped: false,
 				svg: renderedSvg.svg,
 			});
@@ -1235,15 +1296,17 @@ class StandardReportPdfLayout {
 		}
 
 		const plot = {
-			x: x + 48,
-			y: top - height + 40,
-			width: width - 78,
-			height: height - 96,
+			x: x + 58,
+			y: chartBottom,
+			width: width - 92,
+			height: plotHeight,
 		};
 		const values = rows.map((row) => row.value);
 		const max = Math.max(...values);
 		const min = Math.min(0, ...values);
 		const span = max - min || 1;
+		const xAxisLabel = formatChartLabel(xKey, 'Category');
+		const yAxisLabel = formatChartLabel(block.units || yKey, 'Value');
 		const isBarChart = block.chartType === 'bar' || block.chartType === 'stackedBar';
 		const pointRadius = block.chartType === 'scatter' ? 4 : 3;
 		const barWidth = isBarChart ? Math.max(12, plot.width / Math.max(rows.length, 1) * 0.5) : 0;
@@ -1258,11 +1321,21 @@ class StandardReportPdfLayout {
 		});
 		for (let index = 0; index <= 4; index += 1) {
 			const y = plot.y + (index / 4) * plot.height;
+			const value = min + (span * index) / 4;
 			this.page.drawLine({
 				start: { x: plot.x, y },
 				end: { x: plot.x + plot.width, y },
 				thickness: 0.4,
 				color: hexColor(THEME.rule),
+			});
+			const label = formatChartNumber(value);
+			const labelWidth = this.fonts.regular.widthOfTextAtSize(label, 7.8);
+			this.page.drawText(label, {
+				x: plot.x - 8 - labelWidth,
+				y: y - 3,
+				size: 7.8,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
 			});
 		}
 		this.page.drawLine({
@@ -1275,6 +1348,21 @@ class StandardReportPdfLayout {
 			start: { x: plot.x, y: plot.y },
 			end: { x: plot.x, y: plot.y + plot.height },
 			thickness: 0.7,
+			color: hexColor(THEME.secondaryText),
+		});
+		this.page.drawText(yAxisLabel, {
+			x: plot.x,
+			y: plot.y + plot.height + 7,
+			size: 8,
+			font: this.fonts.bold,
+			color: hexColor(THEME.secondaryText),
+		});
+		const xAxisWidth = this.fonts.bold.widthOfTextAtSize(xAxisLabel, 8);
+		this.page.drawText(xAxisLabel, {
+			x: plot.x + plot.width / 2 - xAxisWidth / 2,
+			y: plot.y - tickLabelHeight - 12,
+			size: 8,
+			font: this.fonts.bold,
 			color: hexColor(THEME.secondaryText),
 		});
 		const points = rows.map(point);
@@ -1318,12 +1406,34 @@ class StandardReportPdfLayout {
 				color: hexColor(THEME.accent),
 			});
 		}
+		const maxVisibleLabels = Math.max(1, Math.floor(plot.width / 52));
+		const labelEvery = Math.max(1, Math.ceil(rows.length / maxVisibleLabels));
+		const categoryLabelWidth = Math.max(30, plot.width / Math.max(rows.length, 1) - 4);
+		for (const [index, row] of rows.entries()) {
+			if (index % labelEvery !== 0 && index !== rows.length - 1) continue;
+			const label = fitTextToWidth(row.label, this.fonts.regular, 7.6, categoryLabelWidth);
+			if (!label) continue;
+			const labelWidth = this.fonts.regular.widthOfTextAtSize(label, 7.6);
+			this.page.drawText(label, {
+				x: points[index].x - labelWidth / 2,
+				y: plot.y - 15,
+				size: 7.6,
+				font: this.fonts.regular,
+				color: hexColor(THEME.secondaryText),
+			});
+		}
 		this.y = top - height - 14;
 		this.chartDiagnostics.push({
 			title: block.title ?? null,
 			chartType: block.chartType,
 			dataPointCount: renderedSvg.dataPointCount,
 			edgeInsetPt: Number(edgeInset.toFixed(2)),
+			captionLineCount: captionLines.length,
+			axisLabels: {
+				x: xAxisLabel,
+				y: yAxisLabel,
+			},
+			categoryLabels: rows.map((row) => row.label),
 			clipped: false,
 			svg: renderedSvg.svg,
 		});

@@ -97,9 +97,10 @@
 			documentLabel: file.documentLabel ?? null,
 			documentRole: file.documentRole ?? null,
 			versionNumber: file.versionNumber ?? 1,
-			originConversationId: file.originConversationId ?? null,
-			originAssistantMessageId: file.originAssistantMessageId ?? null,
-			sourceChatFileId: file.sourceChatFileId ?? null,
+			originConversationId: file.originConversationId ?? job.conversationId,
+			originAssistantMessageId:
+				file.originAssistantMessageId ?? job.assistantMessageId ?? null,
+			sourceChatFileId: file.sourceChatFileId ?? file.id,
 			mimeType: file.mimeType,
 			previewUrl: file.previewUrl,
 			artifactId: file.artifactId ?? null,
