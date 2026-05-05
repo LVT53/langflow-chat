@@ -190,6 +190,27 @@ describe('GET /api/conversations/[id]', () => {
 				updatedAt: 1_777_140_002_000,
 				completedAt: null,
 				cancelledAt: null,
+				sourceCounts: {
+					discovered: 3,
+					reviewed: 2,
+					cited: 1,
+				},
+				sources: [
+					{
+						id: 'source-reviewed',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						status: 'reviewed',
+						url: 'https://example.com/reviewed',
+						title: 'Reviewed source',
+						provider: 'web_search',
+						reviewedNote: 'Relevant background source.',
+						citationNote: null,
+						discoveredAt: '2026-05-05T10:10:00.000Z',
+						reviewedAt: '2026-05-05T10:20:00.000Z',
+						citedAt: null,
+					},
+				],
 				timeline: [
 					{
 						id: 'timeline-1',
@@ -235,6 +256,18 @@ describe('GET /api/conversations/[id]', () => {
 					expect.objectContaining({
 						stage: 'plan_generation',
 						summary: 'Research Plan drafted for approval.',
+					}),
+				],
+				sourceCounts: {
+					discovered: 3,
+					reviewed: 2,
+					cited: 1,
+				},
+				sources: [
+					expect.objectContaining({
+						id: 'source-reviewed',
+						status: 'reviewed',
+						title: 'Reviewed source',
 					}),
 				],
 			}),

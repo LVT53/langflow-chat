@@ -113,6 +113,87 @@ describe('ResearchCard', () => {
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
 	});
 
+	it('shows source ledger progress with distinct discovered, reviewed, and cited counts', () => {
+		const { getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+				timeline: [],
+				sourceCounts: {
+					discovered: 12,
+					reviewed: 5,
+					cited: 2,
+				},
+			}),
+		});
+
+		expect(getByText('Sources')).toBeInTheDocument();
+		expect(getByText('12 discovered')).toBeInTheDocument();
+		expect(getByText('5 reviewed')).toBeInTheDocument();
+		expect(getByText('2 cited')).toBeInTheDocument();
+	});
+
+	it('lists only reviewed and cited sources without presenting discovered-only sources as evidence', () => {
+		const { getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'report_ready',
+				sourceCounts: {
+					discovered: 3,
+					reviewed: 2,
+					cited: 1,
+				},
+				sources: [
+					{
+						id: 'source-discovered',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						status: 'discovered',
+						url: 'https://example.com/discovered',
+						title: 'Discovered-only source',
+						provider: 'web_search',
+						discoveredAt: '2026-05-05T10:10:00.000Z',
+						reviewedAt: null,
+						citedAt: null,
+					},
+					{
+						id: 'source-reviewed',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						status: 'reviewed',
+						url: 'https://example.com/reviewed',
+						title: 'Reviewed source',
+						provider: 'web_search',
+						reviewedNote: 'Relevant background source.',
+						discoveredAt: '2026-05-05T10:11:00.000Z',
+						reviewedAt: '2026-05-05T10:20:00.000Z',
+						citedAt: null,
+					},
+					{
+						id: 'source-cited',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						status: 'cited',
+						url: 'https://example.com/cited',
+						title: 'Cited source',
+						provider: 'web_search',
+						citationNote: 'Supports a report claim.',
+						discoveredAt: '2026-05-05T10:12:00.000Z',
+						reviewedAt: '2026-05-05T10:21:00.000Z',
+						citedAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+			}),
+		});
+
+		expect(getByText('Reviewed sources')).toBeInTheDocument();
+		expect(getByText('Reviewed source')).toBeInTheDocument();
+		expect(getByText('Relevant background source.')).toBeInTheDocument();
+		expect(getByText('Cited source')).toBeInTheDocument();
+		expect(getByText('Supports a report claim.')).toBeInTheDocument();
+		expect(queryByText('Discovered-only source')).not.toBeInTheDocument();
+	});
+
 	it('does not render unexpected private reasoning fields from timeline payloads', () => {
 		const { container, getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({

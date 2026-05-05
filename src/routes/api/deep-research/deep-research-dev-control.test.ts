@@ -1,0 +1,319 @@
+import { randomUUID } from "node:crypto";
+import { unlinkSync } from "node:fs";
+import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as schema from "$lib/server/db/schema";
+
+let dbPath: string;
+
+const signedInUser = {
+	id: "user-1",
+	email: "user@example.com",
+	displayName: "Test User",
+};
+
+async function seedConversation() {
+	const sqlite = new Database(dbPath);
+	sqlite.pragma("foreign_keys = ON");
+	const db = drizzle(sqlite, { schema });
+	migrate(db, { migrationsFolder: "./drizzle" });
+
+	const now = new Date("2026-05-05T10:00:00.000Z");
+	db.insert(schema.users)
+		.values({
+			id: signedInUser.id,
+			email: signedInUser.email,
+			passwordHash: "hash",
+		})
+		.run();
+	db.insert(schema.conversations)
+		.values({
+			id: "conv-1",
+			userId: signedInUser.id,
+			title: "Research conversation",
+			createdAt: now,
+			updatedAt: now,
+		})
+		.run();
+
+	sqlite.close();
+}
+
+function makeJsonEvent(path: string, body?: unknown, params: Record<string, string> = {}) {
+	return {
+		request: new Request(`http://localhost${path}`, {
+			method: "POST",
+			headers: body === undefined ? undefined : { "content-type": "application/json" },
+			body: body === undefined ? undefined : JSON.stringify(body),
+		}),
+		locals: { user: signedInUser },
+		params,
+		url: new URL(`http://localhost${path}`),
+		route: { id: path },
+	} as any;
+}
+
+async function readJson(response: Response) {
+	return (await response.json()) as Record<string, any>;
+}
+
+async function loadConversationStatus(conversationId: string) {
+	const { db } = await import("$lib/server/db");
+	const [conversation] = await db
+		.select({
+			id: schema.conversations.id,
+			status: schema.conversations.status,
+			sealedAt: schema.conversations.sealedAt,
+		})
+		.from(schema.conversations)
+		.where(eq(schema.conversations.id, conversationId));
+	return conversation;
+}
+
+async function startApproveAndCompleteThroughDevRoutes() {
+	const { POST: sendChat } = await import("../chat/send/+server");
+	const { POST: approvePlan } = await import("./jobs/[id]/plan/approve/+server");
+	const { POST: advanceWorker } = await import("./jobs/[id]/worker/advance/+server");
+
+	const startResponse = await sendChat(
+		makeJsonEvent("/api/chat/send", {
+			conversationId: "conv-1",
+			message: "Compare EU and US AI copyright training data rules",
+			deepResearch: { depth: "focused" },
+		}),
+	);
+	const started = await readJson(startResponse);
+	const jobId = started.deepResearchJob.id as string;
+
+	const approvalResponse = await approvePlan(
+		makeJsonEvent(
+			`/api/deep-research/jobs/${jobId}/plan/approve`,
+			undefined,
+			{ id: jobId },
+		),
+	);
+	const approved = await readJson(approvalResponse);
+
+	const advanceSnapshots: Array<Record<string, any>> = [];
+	for (let index = 0; index < 4; index += 1) {
+		const response = await advanceWorker(
+			makeJsonEvent(
+				`/api/deep-research/jobs/${jobId}/worker/advance`,
+				undefined,
+				{ id: jobId },
+			),
+		);
+		advanceSnapshots.push(await readJson(response));
+	}
+
+	const completionResponse = await advanceWorker(
+		makeJsonEvent(
+			`/api/deep-research/jobs/${jobId}/worker/advance`,
+			undefined,
+			{ id: jobId },
+		),
+	);
+	const completed = await readJson(completionResponse);
+
+	return {
+		jobId,
+		startResponse,
+		started,
+		approvalResponse,
+		approved,
+		advanceSnapshots,
+		completionResponse,
+		completed,
+	};
+}
+
+describe("Deep Research dev-control acceptance path", () => {
+	beforeEach(async () => {
+		dbPath = `/tmp/alfyai-deep-research-dev-control-${randomUUID()}.db`;
+		process.env.DATABASE_PATH = dbPath;
+		vi.resetModules();
+		await seedConversation();
+	});
+
+	afterEach(async () => {
+		try {
+			const { sqlite } = await import("$lib/server/db");
+			sqlite.close();
+		} catch {
+			// The DB module may not have been imported if a test failed early.
+		}
+		try {
+			unlinkSync(dbPath);
+		} catch {
+			// Temporary DB cleanup is best-effort.
+		}
+	});
+
+	it("starts, approves, advances, and completes a report through public dev routes", async () => {
+		const {
+			jobId,
+			startResponse,
+			started,
+			approvalResponse,
+			approved,
+			advanceSnapshots,
+			completionResponse,
+			completed,
+		} = await startApproveAndCompleteThroughDevRoutes();
+
+		expect(startResponse.status).toBe(200);
+		expect(started).toMatchObject({
+			response: null,
+			conversationId: "conv-1",
+			deepResearchJob: {
+				status: "awaiting_approval",
+				stage: "plan_drafted",
+				currentPlan: {
+					version: 1,
+					status: "awaiting_approval",
+				},
+			},
+		});
+
+		expect(approvalResponse.status).toBe(200);
+		expect(approved.job).toMatchObject({
+			id: jobId,
+			status: "approved",
+			stage: "plan_approved",
+		});
+
+		expect(advanceSnapshots).toMatchObject([
+			{
+				advanced: true,
+				job: {
+					id: jobId,
+					status: "running",
+					stage: "source_discovery",
+				},
+			},
+			{
+				advanced: true,
+				job: {
+					id: jobId,
+					status: "running",
+					stage: "source_review",
+				},
+			},
+			{
+				advanced: true,
+				job: {
+					id: jobId,
+					status: "running",
+					stage: "synthesis",
+				},
+			},
+			{
+				advanced: true,
+				job: {
+					id: jobId,
+					status: "running",
+					stage: "report_ready",
+				},
+			},
+		]);
+		const sourceConversation = await loadConversationStatus("conv-1");
+
+		expect(completionResponse.status).toBe(200);
+		expect(completed).toMatchObject({
+			advanced: false,
+			completed: true,
+			job: {
+				id: jobId,
+				status: "completed",
+				stage: "report_ready",
+				reportArtifactId: expect.any(String),
+			},
+		});
+		expect(sourceConversation).toMatchObject({
+			id: "conv-1",
+			status: "sealed",
+			sealedAt: expect.any(Date),
+		});
+	});
+
+	it("keeps the completed Research conversation sealed while Report Actions create new conversations", async () => {
+		const { POST: discussReport } = await import(
+			"./jobs/[id]/report-actions/discuss/+server"
+		);
+		const { POST: researchFurther } = await import(
+			"./jobs/[id]/report-actions/research-further/+server"
+		);
+		const { jobId, completed } = await startApproveAndCompleteThroughDevRoutes();
+		const reportArtifactId = completed.job.reportArtifactId as string;
+
+		const discussResponse = await discussReport(
+			makeJsonEvent(
+				`/api/deep-research/jobs/${jobId}/report-actions/discuss`,
+				undefined,
+				{ id: jobId },
+			),
+		);
+		const discuss = await readJson(discussResponse);
+		const researchFurtherResponse = await researchFurther(
+			makeJsonEvent(
+				`/api/deep-research/jobs/${jobId}/report-actions/research-further`,
+				{ depth: "standard" },
+				{ id: jobId },
+			),
+		);
+		const further = await readJson(researchFurtherResponse);
+
+		const sourceConversation = await loadConversationStatus("conv-1");
+		const discussConversation = await loadConversationStatus(
+			discuss.conversation.id as string,
+		);
+		const furtherConversation = await loadConversationStatus(
+			further.conversation.id as string,
+		);
+
+		expect(discussResponse.status).toBe(201);
+		expect(discuss).toMatchObject({
+			sourceJobId: jobId,
+			reportArtifactId,
+			conversation: {
+				title: "Discuss: Compare EU and US AI copyright training data rules",
+			},
+			messageId: expect.any(String),
+		});
+		expect(researchFurtherResponse.status).toBe(201);
+		expect(further).toMatchObject({
+			sourceJobId: jobId,
+			reportArtifactId,
+			conversation: {
+				title: "Research further: Compare EU and US AI copyright training data rules",
+			},
+			messageId: expect.any(String),
+			job: {
+				status: "awaiting_approval",
+				stage: "plan_drafted",
+				depth: "standard",
+			},
+		});
+		expect(discuss.conversation.id).not.toBe("conv-1");
+		expect(further.conversation.id).not.toBe("conv-1");
+		expect(further.conversation.id).not.toBe(discuss.conversation.id);
+		expect(sourceConversation).toMatchObject({
+			id: "conv-1",
+			status: "sealed",
+			sealedAt: expect.any(Date),
+		});
+		expect(discussConversation).toMatchObject({
+			id: discuss.conversation.id,
+			status: "open",
+			sealedAt: null,
+		});
+		expect(furtherConversation).toMatchObject({
+			id: further.conversation.id,
+			status: "open",
+			sealedAt: null,
+		});
+	});
+});

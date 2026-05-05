@@ -331,8 +331,14 @@ export async function listConversationDeepResearchJobs(
 		.orderBy(asc(deepResearchJobs.createdAt));
 	const currentPlans = await loadCurrentPlansByJobId(rows.map((row) => row.id));
 	const timelineEvents = await loadTimelineEventsByJobId(userId, rows.map((row) => row.id));
+	const sourceLedgers = await loadSourceLedgersByJobId(userId, conversationId, rows.map((row) => row.id));
 	return rows.map((row) =>
-		mapDeepResearchJob(row, currentPlans.get(row.id) ?? null, timelineEvents.get(row.id) ?? [])
+		mapDeepResearchJob(
+			row,
+			currentPlans.get(row.id) ?? null,
+			timelineEvents.get(row.id) ?? [],
+			sourceLedgers.get(row.id)
+		)
 	);
 }
 
@@ -1082,6 +1088,44 @@ async function loadTimelineEventsByJobId(
 	return timelineByJobId;
 }
 
+type SourceLedgerForCard = {
+	sourceCounts: DeepResearchJob['sourceCounts'];
+	sources: DeepResearchSource[];
+};
+
+async function loadSourceLedgersByJobId(
+	userId: string,
+	conversationId: string,
+	jobIds: string[]
+): Promise<Map<string, SourceLedgerForCard>> {
+	if (jobIds.length === 0) return new Map();
+
+	const jobIdSet = new Set(jobIds);
+	const sources = (await listResearchSources({ userId, conversationId })).filter((source) =>
+		jobIdSet.has(source.jobId)
+	);
+	const ledgers = new Map<string, SourceLedgerForCard>();
+	for (const jobId of jobIds) {
+		ledgers.set(jobId, {
+			sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
+			sources: [],
+		});
+	}
+
+	for (const source of sources) {
+		const ledger = ledgers.get(source.jobId);
+		if (!ledger) continue;
+		ledger.sourceCounts.discovered += source.discoveredAt ? 1 : 0;
+		ledger.sourceCounts.reviewed += source.reviewedAt ? 1 : 0;
+		ledger.sourceCounts.cited += source.citedAt ? 1 : 0;
+		if (source.reviewedAt || source.citedAt) {
+			ledger.sources.push(mapSourceForCard(source));
+		}
+	}
+
+	return ledgers;
+}
+
 async function saveResearchPlanDraft(
 	draft: ResearchPlanDraftRecord,
 	now: Date
@@ -1172,7 +1216,8 @@ function parseJson<T>(value: string): T {
 function mapDeepResearchJob(
 	row: DeepResearchJobRow,
 	currentPlan: DeepResearchPlanSummary | null = null,
-	timeline: DeepResearchTimelineEvent[] = []
+	timeline: DeepResearchTimelineEvent[] = [],
+	sourceLedger: SourceLedgerForCard | undefined = undefined
 ): DeepResearchJob {
 	return {
 		id: row.id,
@@ -1187,10 +1232,32 @@ function mapDeepResearchJob(
 		plan: currentPlan,
 		currentPlan,
 		timeline,
+		sourceCounts: sourceLedger?.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
+		sources: sourceLedger?.sources ?? [],
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 		completedAt: row.completedAt ? row.completedAt.getTime() : null,
 		cancelledAt: row.cancelledAt ? row.cancelledAt.getTime() : null,
+	};
+}
+
+function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
+	return {
+		id: source.id,
+		jobId: source.jobId,
+		conversationId: source.conversationId,
+		status: source.status,
+		url: source.url,
+		title: source.title,
+		provider: source.provider,
+		snippet: source.snippet,
+		reviewedNote: source.reviewedNote,
+		citationNote: source.citationNote,
+		discoveredAt: source.discoveredAt,
+		reviewedAt: source.reviewedAt,
+		citedAt: source.citedAt,
+		createdAt: source.createdAt,
+		updatedAt: source.updatedAt,
 	};
 }
 

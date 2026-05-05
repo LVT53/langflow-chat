@@ -262,6 +262,8 @@ export interface DeepResearchJob {
 	plan?: DeepResearchPlanSummary | null;
 	currentPlan?: DeepResearchPlanSummary | null;
 	timeline?: DeepResearchTimelineEvent[];
+	sourceCounts?: DeepResearchSourceCounts;
+	sources?: DeepResearchSource[];
 	createdAt: number;
 	updatedAt: number;
 	completedAt?: number | null;

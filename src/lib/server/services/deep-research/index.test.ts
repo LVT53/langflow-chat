@@ -185,6 +185,97 @@ describe('deep research job shell service', () => {
 		expect('userId' in (reloaded.timeline?.[0] ?? {})).toBe(false);
 	});
 
+	it('reloads source ledger progress for the conversation detail Research Card', async () => {
+		const { listConversationDeepResearchJobs, startDeepResearchJobShell } = await import('./index');
+		const {
+			markResearchSourceCited,
+			markResearchSourceReviewed,
+			saveDiscoveredResearchSource,
+		} = await import('./sources');
+
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'standard',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+		await saveDiscoveredResearchSource({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			jobId: created.id,
+			url: 'https://example.com/discovered-only',
+			title: 'Discovered only source',
+			provider: 'web_search',
+			discoveredAt: new Date('2026-05-05T10:10:00.000Z'),
+		});
+		const reviewedSource = await saveDiscoveredResearchSource({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			jobId: created.id,
+			url: 'https://example.com/reviewed',
+			title: 'Reviewed source',
+			provider: 'web_search',
+			discoveredAt: new Date('2026-05-05T10:11:00.000Z'),
+		});
+		await markResearchSourceReviewed({
+			userId: 'user-1',
+			sourceId: reviewedSource.id,
+			reviewedAt: new Date('2026-05-05T10:20:00.000Z'),
+			reviewedNote: 'Relevant background source.',
+		});
+		const citedSource = await saveDiscoveredResearchSource({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			jobId: created.id,
+			url: 'https://example.com/cited',
+			title: 'Cited source',
+			provider: 'web_search',
+			discoveredAt: new Date('2026-05-05T10:12:00.000Z'),
+		});
+		await markResearchSourceReviewed({
+			userId: 'user-1',
+			sourceId: citedSource.id,
+			reviewedAt: new Date('2026-05-05T10:21:00.000Z'),
+		});
+		await markResearchSourceCited({
+			userId: 'user-1',
+			sourceId: citedSource.id,
+			citedAt: new Date('2026-05-05T10:30:00.000Z'),
+			citationNote: 'Supports a report claim.',
+		});
+
+		const [reloaded] = await listConversationDeepResearchJobs('user-1', 'conv-1');
+
+		expect(reloaded.sourceCounts).toEqual({
+			discovered: 3,
+			reviewed: 2,
+			cited: 1,
+		});
+		expect(reloaded.sources).toEqual([
+			expect.objectContaining({
+				id: reviewedSource.id,
+				status: 'reviewed',
+				title: 'Reviewed source',
+				url: 'https://example.com/reviewed',
+				reviewedNote: 'Relevant background source.',
+				citationNote: null,
+			}),
+			expect.objectContaining({
+				id: citedSource.id,
+				status: 'cited',
+				title: 'Cited source',
+				url: 'https://example.com/cited',
+				citationNote: 'Supports a report claim.',
+			}),
+		]);
+		expect(reloaded.sources?.map((source) => source.title)).not.toContain(
+			'Discovered only source'
+		);
+		expect('userId' in (reloaded.sources?.[0] ?? {})).toBe(false);
+	});
+
 	it('defaults Research Language from the latest user request when job start has no explicit language', async () => {
 		const { startDeepResearchJobShell } = await import('./index');
 

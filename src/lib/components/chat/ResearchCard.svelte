@@ -37,6 +37,15 @@
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
 	let reportDocument = $derived(buildReportDocument(job));
 	let timelineEvents = $derived((job.timeline ?? []).slice(-4));
+	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
+	let hasSourceLedgerProgress = $derived(
+		sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0
+	);
+	let visibleSources = $derived(
+		(job.sources ?? [])
+			.filter((source) => source.reviewedAt || source.citedAt)
+			.slice(0, 4)
+	);
 
 	const depthKeys: Record<DeepResearchDepth, I18nKey> = {
 		focused: 'deepResearch.depth.focused',
@@ -236,6 +245,41 @@
 				</form>
 			{:else if planEditError}
 				<p class="research-card__error" role="alert">{planEditError}</p>
+			{/if}
+		</section>
+	{/if}
+
+	{#if hasSourceLedgerProgress}
+		<section class="research-card__sources" aria-labelledby={`${job.id}-sources-heading`}>
+			<div class="research-card__section-header">
+				<h3 id={`${job.id}-sources-heading`}>{$t('deepResearch.sourcesHeading')}</h3>
+			</div>
+			<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
+				{#each sourceCountLabels(sourceCounts) as label}
+					<span>{label}</span>
+				{/each}
+			</div>
+			{#if visibleSources.length > 0}
+				<div class="research-card__reviewed-sources">
+					<strong>{$t('deepResearch.reviewedSourcesHeading')}</strong>
+					<ul>
+						{#each visibleSources as source (source.id)}
+							<li>
+								<a href={source.url} target="_blank" rel="noreferrer">
+									{source.title ?? source.url}
+								</a>
+								<span>
+									{source.citedAt
+										? $t('deepResearch.sourceStatus.cited')
+										: $t('deepResearch.sourceStatus.reviewed')}
+								</span>
+								{#if source.citationNote ?? source.reviewedNote}
+									<p>{source.citationNote ?? source.reviewedNote}</p>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</div>
 			{/if}
 		</section>
 	{/if}
@@ -441,6 +485,7 @@
 		padding-top: var(--space-sm);
 	}
 
+	.research-card__sources,
 	.research-card__timeline {
 		display: flex;
 		flex-direction: column;
@@ -487,6 +532,62 @@
 		border-radius: 999px;
 		background: var(--surface-elevated);
 		padding: 0.16rem 0.42rem;
+	}
+
+	.research-card__reviewed-sources {
+		font-size: 0.78rem;
+		line-height: 1.4;
+		color: var(--text-secondary);
+	}
+
+	.research-card__reviewed-sources strong {
+		display: block;
+		margin-bottom: 0.3rem;
+		color: var(--text-primary);
+	}
+
+	.research-card__reviewed-sources ul {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.research-card__reviewed-sources li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.15rem 0.45rem;
+		border-radius: 7px;
+		background: color-mix(in srgb, var(--surface-page) 72%, var(--surface-elevated) 28%);
+		padding: 0.45rem 0.55rem;
+	}
+
+	.research-card__reviewed-sources a {
+		overflow-wrap: anywhere;
+		font-weight: 700;
+		color: var(--text-primary);
+		text-decoration: none;
+	}
+
+	.research-card__reviewed-sources a:hover {
+		text-decoration: underline;
+	}
+
+	.research-card__reviewed-sources span {
+		border-radius: 999px;
+		background: var(--surface-elevated);
+		padding: 0.08rem 0.36rem;
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: var(--text-muted);
+	}
+
+	.research-card__reviewed-sources p {
+		grid-column: 1 / -1;
+		margin: 0;
+		color: var(--text-secondary);
 	}
 
 	.research-card__timeline-notes {
