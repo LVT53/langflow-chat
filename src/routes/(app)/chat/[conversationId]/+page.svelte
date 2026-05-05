@@ -128,6 +128,7 @@ const initialGeneratedFiles = getData().generatedFiles ?? [];
 const initialFileProductionJobs = getData().fileProductionJobs ?? [];
 const initialDeepResearchJobs = getData().deepResearchJobs ?? [];
 const initialConversationId = getData().conversation.id;
+const initialConversationStatus = getData().conversation.status ?? "open";
 const initialUserPersonality = getData().userPersonality ?? null;
 
 // Track conversation title reactively - use $derived to keep in sync with page data
@@ -168,7 +169,7 @@ let conversationDraft = $state<ConversationDraft | null>(
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
 let deepResearchJobs = $state<DeepResearchJob[]>(initialDeepResearchJobs);
-let conversationStatus = $state(data.conversation.status ?? "open");
+let conversationStatus = $state(initialConversationStatus);
 let isConversationReadOnlyForChat = $derived(
 	isConversationReadOnly({ status: conversationStatus }, deepResearchJobs),
 );
