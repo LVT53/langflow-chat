@@ -9,6 +9,7 @@ import type { FetchLike } from '$lib/client/api/http';
 const PREVIOUS_CONVERSATION_KEY = 'previous-conversation-id';
 const LANDING_DRAFT_CONVERSATION_KEY = 'landing-draft-conversation-id';
 const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
+const CONVERSATION_PERSONALITY_PREFIX = 'conversation-personality:';
 
 export type PendingConversationMessage = {
 	message: string;
@@ -29,6 +30,10 @@ function getSessionStorage(): Storage | null {
 
 function getPendingMessageKey(conversationId: string): string {
 	return `${PENDING_MESSAGE_PREFIX}${conversationId}`;
+}
+
+function getConversationPersonalityKey(conversationId: string): string {
+	return `${CONVERSATION_PERSONALITY_PREFIX}${conversationId}`;
 }
 
 function toArtifactSummaryList(value: unknown): ArtifactSummary[] {
@@ -68,6 +73,34 @@ export function setLandingDraftConversationId(conversationId: string | null): vo
 		return;
 	}
 	storage.removeItem(LANDING_DRAFT_CONVERSATION_KEY);
+}
+
+export function getConversationPersonalitySelection(
+	conversationId: string,
+	profileDefault: string | null
+): string | null {
+	const storage = getSessionStorage();
+	const key = getConversationPersonalityKey(conversationId);
+	if (!storage || storage.getItem(key) === null) {
+		return profileDefault;
+	}
+
+	try {
+		const parsed = JSON.parse(storage.getItem(key) ?? 'null') as unknown;
+		return typeof parsed === 'string' ? parsed : null;
+	} catch {
+		return profileDefault;
+	}
+}
+
+export function setConversationPersonalitySelection(
+	conversationId: string,
+	personalityProfileId: string | null
+): void {
+	getSessionStorage()?.setItem(
+		getConversationPersonalityKey(conversationId),
+		JSON.stringify(personalityProfileId)
+	);
 }
 
 export function storePendingConversationMessage(

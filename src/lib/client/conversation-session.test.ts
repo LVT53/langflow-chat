@@ -6,9 +6,11 @@ import {
 	consumePreviousConversationId,
 	createConversationDraftRecord,
 	createDraftPersistence,
+	getConversationPersonalitySelection,
 	getLandingDraftConversationId,
 	hasPendingConversationMessage,
 	markPreviousConversationId,
+	setConversationPersonalitySelection,
 	setLandingDraftConversationId,
 	storePendingConversationMessage,
 } from './conversation-session';
@@ -32,6 +34,17 @@ describe('conversation-session', () => {
 
 		setLandingDraftConversationId(null);
 		expect(getLandingDraftConversationId()).toBeNull();
+	});
+
+	it('keeps chat-local personality selection separate from the profile default', () => {
+		expect(getConversationPersonalitySelection('conv-123', 'creative')).toBe('creative');
+
+		setConversationPersonalitySelection('conv-123', 'concise');
+		expect(getConversationPersonalitySelection('conv-123', 'creative')).toBe('concise');
+
+		setConversationPersonalitySelection('conv-123', null);
+		expect(getConversationPersonalitySelection('conv-123', 'creative')).toBeNull();
+		expect(getConversationPersonalitySelection('conv-456', 'creative')).toBe('creative');
 	});
 
 	it('stores and consumes pending conversation messages', () => {

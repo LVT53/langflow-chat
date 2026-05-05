@@ -21,6 +21,7 @@ export type SendPayload = {
 	pendingAttachments: PendingAttachment[];
 	conversationId?: string | null;
 	modelId?: ModelId;
+	personalityProfileId?: string | null;
 };
 
 export type MessageEditPayload = {
