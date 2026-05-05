@@ -96,6 +96,34 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 		).toBe(true);
 	});
 
+	it("does not show a presentation toggle in the expanded Knowledge workspace", async () => {
+		render(KnowledgeWorkspaceCoordinator, {
+			props: {
+				documents: [
+					{
+						id: "doc-1",
+						name: "Notes.md",
+						type: "source_document",
+						mimeType: "text/markdown",
+						sizeBytes: 120,
+						createdAt: 1,
+						displayArtifactId: "artifact-1",
+					},
+				],
+			},
+		});
+
+		await screen.findByRole("complementary", {
+			name: /document workspace/i,
+		});
+
+		expect(
+			screen.queryByRole("button", {
+				name: /expand document workspace|collapse document workspace/i,
+			}),
+		).not.toBeInTheDocument();
+	});
+
 	it("resolves normalized handoff artifacts to the display artifact before previewing", async () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
