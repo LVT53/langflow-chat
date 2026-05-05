@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { deepResearchJobs } from "$lib/server/db/schema";
 import type { DeepResearchJob } from "$lib/types";
@@ -8,6 +8,7 @@ import { saveResearchTimelineEvent } from "./timeline";
 
 export type RunNextMockDeepResearchWorkerStepInput = {
 	now?: Date;
+	controls?: DeepResearchWorkerControls;
 };
 
 export type RunNextMockDeepResearchWorkerStepResult = {
@@ -19,12 +20,33 @@ export type TriggerMockDeepResearchWorkerForJobInput = {
 	userId: string;
 	jobId: string;
 	now?: Date;
+	controls?: DeepResearchWorkerControls;
 };
 
 export type TriggerMockDeepResearchWorkerForJobResult = {
 	job: DeepResearchJob;
 	advanced: boolean;
 } | null;
+
+export type RecoverStaleDeepResearchJobsInput = {
+	now?: Date;
+	timeoutMs: number;
+};
+
+export type RecoverStaleDeepResearchJobsResult = {
+	recoveredJobs: DeepResearchJob[];
+};
+
+export type RequestDeepResearchWorkerCancellationInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type DeepResearchWorkerControls = {
+	globalConcurrencyLimit?: number;
+	userConcurrencyLimit?: number;
+};
 
 type MockWorkerStage = {
 	fromStatus: string;
@@ -109,6 +131,15 @@ export async function runNextMockDeepResearchWorkerStep(
 		eligibleJob.stage,
 	);
 	if (!nextStage) return null;
+	if (
+		!(await canStartApprovedJobWithinConcurrency(
+			eligibleJob,
+			nextStage,
+			input.controls,
+		))
+	) {
+		return null;
+	}
 
 	return advanceMockWorkerJob(eligibleJob, nextStage, now);
 }
@@ -131,11 +162,21 @@ export async function triggerMockDeepResearchWorkerForJob(
 	if (!job) return null;
 	const nextStage = getNextMockWorkerStage(job.status, job.stage);
 	if (!nextStage) {
-		const jobs = await listConversationDeepResearchJobs(
-			job.userId,
-			job.conversationId,
-		);
-		const currentJob = jobs.find((candidate) => candidate.id === job.id);
+		const currentJob = await loadDeepResearchJobForWorker(job);
+		if (!currentJob) return null;
+		return {
+			job: currentJob,
+			advanced: false,
+		};
+	}
+	if (
+		!(await canStartApprovedJobWithinConcurrency(
+			job,
+			nextStage,
+			input.controls,
+		))
+	) {
+		const currentJob = await loadDeepResearchJobForWorker(job);
 		if (!currentJob) return null;
 		return {
 			job: currentJob,
@@ -144,6 +185,193 @@ export async function triggerMockDeepResearchWorkerForJob(
 	}
 
 	return advanceMockWorkerJob(job, nextStage, now);
+}
+
+export async function recoverStaleDeepResearchJobs(
+	input: RecoverStaleDeepResearchJobsInput,
+): Promise<RecoverStaleDeepResearchJobsResult> {
+	const now = input.now ?? new Date();
+	const cutoff = new Date(now.getTime() - Math.max(0, input.timeoutMs));
+	const staleJobs = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			and(
+				eq(deepResearchJobs.status, "running"),
+				lte(deepResearchJobs.updatedAt, cutoff),
+			),
+		)
+		.orderBy(asc(deepResearchJobs.updatedAt));
+	const recoveredJobs: DeepResearchJob[] = [];
+
+	for (const staleJob of staleJobs) {
+		const [recoveredJob] = await db
+			.update(deepResearchJobs)
+			.set({
+				status: "failed",
+				stage: "stale_recovered_failed",
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(deepResearchJobs.id, staleJob.id),
+					eq(deepResearchJobs.status, "running"),
+					lte(deepResearchJobs.updatedAt, cutoff),
+				),
+			)
+			.returning();
+		if (!recoveredJob) continue;
+
+		await saveResearchTimelineEvent({
+			jobId: recoveredJob.id,
+			conversationId: recoveredJob.conversationId,
+			userId: recoveredJob.userId,
+			taskId: null,
+			stage: "report_completion",
+			kind: "warning",
+			occurredAt: now.toISOString(),
+			messageKey: "deepResearch.timeline.workerStaleRecovered",
+			messageParams: {
+				stage: staleJob.stage ?? "unknown",
+			},
+			sourceCounts: {
+				discovered: 0,
+				reviewed: 0,
+				cited: 0,
+			},
+			assumptions: [],
+			warnings: [
+				`Worker timeout exceeded for stage ${staleJob.stage ?? "unknown"}.`,
+			],
+			summary:
+				"Deep Research job marked failed after exceeding the stale worker timeout.",
+		});
+
+		const mappedJob = await loadDeepResearchJobForWorker(recoveredJob);
+		if (mappedJob) recoveredJobs.push(mappedJob);
+	}
+
+	return { recoveredJobs };
+}
+
+export async function requestDeepResearchWorkerCancellation(
+	input: RequestDeepResearchWorkerCancellationInput,
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+			),
+		)
+		.limit(1);
+	if (!job) return null;
+
+	const previousStage = job.stage ?? "unknown";
+	const [cancelledJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: "cancelled",
+			stage: "cancelled_by_request",
+			cancelledAt: now,
+			updatedAt: now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, job.id),
+				eq(deepResearchJobs.userId, input.userId),
+				sql`${deepResearchJobs.status} IN ('awaiting_plan', 'awaiting_approval', 'approved', 'running')`,
+			),
+		)
+		.returning();
+	if (!cancelledJob) return loadDeepResearchJobForWorker(job);
+
+	await saveResearchTimelineEvent({
+		jobId: cancelledJob.id,
+		conversationId: cancelledJob.conversationId,
+		userId: cancelledJob.userId,
+		taskId: null,
+		stage: "report_completion",
+		kind: "warning",
+		occurredAt: now.toISOString(),
+		messageKey: "deepResearch.timeline.workerCancelled",
+		messageParams: {
+			stage: previousStage,
+		},
+		sourceCounts: {
+			discovered: 0,
+			reviewed: 0,
+			cited: 0,
+		},
+		assumptions: [],
+		warnings: [
+			`Cancellation requested while job was at stage ${previousStage}.`,
+		],
+		summary: "Deep Research job cancelled before further worker advancement.",
+	});
+
+	return loadDeepResearchJobForWorker(cancelledJob);
+}
+
+async function canStartApprovedJobWithinConcurrency(
+	job: typeof deepResearchJobs.$inferSelect,
+	nextStage: MockWorkerStage,
+	controls: DeepResearchWorkerControls | undefined,
+): Promise<boolean> {
+	if (nextStage.fromStatus !== "approved" || nextStage.toStatus !== "running") {
+		return true;
+	}
+	if (!controls) return true;
+
+	const globalLimit = normalizeConcurrencyLimit(
+		controls.globalConcurrencyLimit,
+	);
+	if (globalLimit !== null) {
+		const runningCount = await countRunningJobs();
+		if (runningCount >= globalLimit) return false;
+	}
+
+	const userLimit = normalizeConcurrencyLimit(controls.userConcurrencyLimit);
+	if (userLimit !== null) {
+		const runningCount = await countRunningJobs(job.userId);
+		if (runningCount >= userLimit) return false;
+	}
+
+	return true;
+}
+
+async function countRunningJobs(userId?: string): Promise<number> {
+	const where = userId
+		? and(
+				eq(deepResearchJobs.status, "running"),
+				eq(deepResearchJobs.userId, userId),
+			)
+		: eq(deepResearchJobs.status, "running");
+	const [result] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(deepResearchJobs)
+		.where(where);
+
+	return Number(result?.count ?? 0);
+}
+
+function normalizeConcurrencyLimit(value: number | undefined): number | null {
+	if (value === undefined) return null;
+	if (!Number.isFinite(value)) return null;
+	return Math.max(0, Math.floor(value));
+}
+
+async function loadDeepResearchJobForWorker(
+	job: typeof deepResearchJobs.$inferSelect,
+): Promise<DeepResearchJob | null> {
+	const jobs = await listConversationDeepResearchJobs(
+		job.userId,
+		job.conversationId,
+	);
+	return jobs.find((candidate) => candidate.id === job.id) ?? null;
 }
 
 async function advanceMockWorkerJob(

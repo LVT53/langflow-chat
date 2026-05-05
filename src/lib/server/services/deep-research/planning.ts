@@ -20,6 +20,7 @@ export type ResearchPlanIncludedSource = {
 export type ResearchPlan = {
 	goal: string;
 	depth: ResearchDepth;
+	researchLanguage?: ResearchLanguage;
 	researchBudget: ResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {
@@ -105,6 +106,94 @@ const depthLabels: Record<ResearchDepth, string> = {
 	max: "Max Deep Research",
 };
 
+const localizedDepthLabels: Record<
+	ResearchLanguage,
+	Record<ResearchDepth, string>
+> = {
+	en: depthLabels,
+	hu: {
+		focused: "Fókuszált mély kutatás",
+		standard: "Standard mély kutatás",
+		max: "Maximális mély kutatás",
+	},
+};
+
+const planLabels: Record<
+	ResearchLanguage,
+	{
+		title: string;
+		depth: string;
+		expectedTime: string;
+		sourceReviewCeiling: (count: number) => string;
+		cost: string;
+		goal: string;
+		includedSources: string;
+		keyQuestions: string;
+		expectedReportShape: string;
+		constraints: string;
+	}
+> = {
+	en: {
+		title: "Research Plan",
+		depth: "Depth",
+		expectedTime: "Expected time",
+		sourceReviewCeiling: (count) => `Source review ceiling: up to ${count}`,
+		cost: "Cost",
+		goal: "Goal",
+		includedSources: "Included sources",
+		keyQuestions: "Key questions",
+		expectedReportShape: "Expected report shape",
+		constraints: "Constraints",
+	},
+	hu: {
+		title: "Kutatási terv",
+		depth: "Mélység",
+		expectedTime: "Várható idő",
+		sourceReviewCeiling: (count) =>
+			`Forrás-áttekintési plafon: legfeljebb ${count}`,
+		cost: "Költség",
+		goal: "Cél",
+		includedSources: "Bevont források",
+		keyQuestions: "Fő kérdések",
+		expectedReportShape: "Várt jelentésszerkezet",
+		constraints: "Korlátok",
+	},
+};
+
+const localizedExpectedTimeBands: Record<
+	ResearchLanguage,
+	Record<ResearchDepth, string>
+> = {
+	en: {
+		focused: "10-20 minutes",
+		standard: "30-60 minutes",
+		max: "2-4 hours",
+	},
+	hu: {
+		focused: "10-20 perc",
+		standard: "30-60 perc",
+		max: "2-4 óra",
+	},
+};
+
+const localizedCostWarnings: Record<
+	ResearchLanguage,
+	Record<ResearchDepth, string>
+> = {
+	en: {
+		focused:
+			"Lowest relative cost; use for narrow questions that need a cited brief.",
+		standard: "Moderate relative cost; use for serious multi-source synthesis.",
+		max: "Highest relative cost; use for broad or high-stakes investigations.",
+	},
+	hu: {
+		focused:
+			"Legalacsonyabb relatív költség; szűk, hivatkozott összefoglalót igénylő kérdésekhez.",
+		standard: "Közepes relatív költség; komoly, többforrású szintézishez.",
+		max: "Legmagasabb relatív költség; széles vagy nagy tétű kutatáshoz.",
+	},
+};
+
 const depthBudgets: Record<ResearchDepth, ResearchBudget> = {
 	focused: {
 		sourceReviewCeiling: 12,
@@ -120,40 +209,29 @@ const depthBudgets: Record<ResearchDepth, ResearchBudget> = {
 	},
 };
 
-const effortEstimateByDepth: Record<
-	ResearchDepth,
-	Omit<ResearchEffortEstimate, "selectedDepth" | "sourceReviewCeiling">
-> = {
-	focused: {
-		expectedTimeBand: "10-20 minutes",
-		relativeCostWarning:
-			"Lowest relative cost; use for narrow questions that need a cited brief.",
-	},
-	standard: {
-		expectedTimeBand: "30-60 minutes",
-		relativeCostWarning:
-			"Moderate relative cost; use for serious multi-source synthesis.",
-	},
-	max: {
-		expectedTimeBand: "2-4 hours",
-		relativeCostWarning:
-			"Highest relative cost; use for broad or high-stakes investigations.",
-	},
-};
-
 export async function createFirstResearchPlanDraft(
 	input: CreateFirstResearchPlanDraftInput,
 	dependencies: CreateFirstResearchPlanDraftDependencies = {},
 ): Promise<ResearchPlanDraftResult> {
-	const contextDisclosure = buildContextDisclosure(input.planningContext ?? []);
+	const contextDisclosure = buildContextDisclosure(
+		input.planningContext ?? [],
+		input.researchLanguage,
+	);
 	const researchBudget = depthBudgets[input.selectedDepth];
-	const effortEstimate = buildEffortEstimate(input.selectedDepth);
-	const plan = dependencies.structuredPlanner
+	const effortEstimate = buildEffortEstimate(
+		input.selectedDepth,
+		input.researchLanguage,
+	);
+	const draftedPlan = dependencies.structuredPlanner
 		? await dependencies.structuredPlanner.draftPlan(input, {
 				selectedBudget: researchBudget,
 				contextDisclosure,
 			})
 		: draftDefaultResearchPlan(input, researchBudget, contextDisclosure);
+	const plan = {
+		...draftedPlan,
+		researchLanguage: input.researchLanguage,
+	};
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
 	const draft: ResearchPlanDraftRecord = {
@@ -185,8 +263,11 @@ export async function createRevisedResearchPlanDraft(
 	dependencies: CreateFirstResearchPlanDraftDependencies = {},
 ): Promise<ResearchPlanDraftResult> {
 	const researchBudget = depthBudgets[input.selectedDepth];
-	const effortEstimate = buildEffortEstimate(input.selectedDepth);
-	const plan = dependencies.structuredPlanner
+	const effortEstimate = buildEffortEstimate(
+		input.selectedDepth,
+		input.researchLanguage,
+	);
+	const draftedPlan = dependencies.structuredPlanner
 		? await dependencies.structuredPlanner.draftPlan(
 				{
 					jobId: input.jobId,
@@ -200,6 +281,10 @@ export async function createRevisedResearchPlanDraft(
 				},
 			)
 		: reviseDefaultResearchPlan(input);
+	const plan = {
+		...draftedPlan,
+		researchLanguage: input.researchLanguage,
+	};
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
 	const draft: ResearchPlanDraftRecord = {
@@ -234,6 +319,7 @@ function draftDefaultResearchPlan(
 	return {
 		goal: input.userRequest,
 		depth: input.selectedDepth,
+		researchLanguage: input.researchLanguage,
 		researchBudget,
 		keyQuestions: [
 			"What is the current state of the topic?",
@@ -301,41 +387,57 @@ function validatePlanAgainstSelectedDepth(
 }
 
 function renderResearchPlan(plan: ResearchPlan): string {
-	const effortEstimate = buildEffortEstimate(plan.depth);
+	const researchLanguage = plan.researchLanguage ?? "en";
+	const labels = planLabels[researchLanguage];
+	const effortEstimate = buildEffortEstimate(plan.depth, researchLanguage);
 	return [
-		"# Research Plan",
+		`# ${labels.title}`,
 		"",
-		`Depth: ${depthLabels[plan.depth]}`,
-		`Expected time: ${effortEstimate.expectedTimeBand}`,
-		`Source review ceiling: up to ${effortEstimate.sourceReviewCeiling}`,
-		`Cost: ${effortEstimate.relativeCostWarning}`,
+		`${labels.depth}: ${localizedDepthLabels[researchLanguage][plan.depth]}`,
+		`${labels.expectedTime}: ${effortEstimate.expectedTimeBand}`,
+		labels.sourceReviewCeiling(effortEstimate.sourceReviewCeiling),
+		`${labels.cost}: ${effortEstimate.relativeCostWarning}`,
 		"",
-		`Goal: ${plan.goal}`,
+		`${labels.goal}: ${plan.goal}`,
 		...(plan.sourceScope.planningContextDisclosure
 			? ["", plan.sourceScope.planningContextDisclosure]
 			: []),
+		...(plan.sourceScope.includedSources?.length
+			? [
+					"",
+					`${labels.includedSources}:`,
+					...plan.sourceScope.includedSources.map((source) =>
+						source.title ? `- ${source.title}` : `- ${source.artifactId}`,
+					),
+				]
+			: []),
 		"",
-		"Key questions:",
+		`${labels.keyQuestions}:`,
 		...plan.keyQuestions.map((question) => `- ${question}`),
 		"",
-		"Expected report shape:",
+		`${labels.expectedReportShape}:`,
 		...plan.reportShape.map((section) => `- ${section}`),
 		"",
-		"Constraints:",
+		`${labels.constraints}:`,
 		...plan.constraints.map((constraint) => `- ${constraint}`),
 	].join("\n");
 }
 
-function buildEffortEstimate(depth: ResearchDepth): ResearchEffortEstimate {
+function buildEffortEstimate(
+	depth: ResearchDepth,
+	researchLanguage: ResearchLanguage = "en",
+): ResearchEffortEstimate {
 	return {
 		selectedDepth: depth,
 		sourceReviewCeiling: depthBudgets[depth].sourceReviewCeiling,
-		...effortEstimateByDepth[depth],
+		expectedTimeBand: localizedExpectedTimeBands[researchLanguage][depth],
+		relativeCostWarning: localizedCostWarnings[researchLanguage][depth],
 	};
 }
 
 function buildContextDisclosure(
 	planningContext: PlanningContextItem[],
+	researchLanguage: ResearchLanguage,
 ): string | null {
 	if (planningContext.length === 0) {
 		return null;
@@ -346,12 +448,32 @@ function buildContextDisclosure(
 		counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
 	}
 
-	const parts = Array.from(counts.entries()).map(([type, count]) => {
-		const noun = type === "knowledge" ? "knowledge item" : `${type} item`;
-		return `${count} ${noun}${count === 1 ? "" : "s"}`;
-	});
+	const parts = Array.from(counts.entries()).map(([type, count]) =>
+		formatContextCount(type, count, researchLanguage),
+	);
 
-	return `Context considered: ${parts.join(", ")}.`;
+	return researchLanguage === "hu"
+		? `Figyelembe vett kontextus: ${parts.join(", ")}.`
+		: `Context considered: ${parts.join(", ")}.`;
+}
+
+function formatContextCount(
+	type: PlanningContextItem["type"],
+	count: number,
+	researchLanguage: ResearchLanguage,
+): string {
+	if (researchLanguage === "hu") {
+		const nouns: Record<PlanningContextItem["type"], string> = {
+			conversation: "beszélgetési elem",
+			knowledge: "tudáselem",
+			attachment: "csatolmány",
+			report: "jelentés",
+		};
+		return `${count} ${nouns[type]}`;
+	}
+
+	const noun = type === "knowledge" ? "knowledge item" : `${type} item`;
+	return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function buildDefaultIncludedSources(

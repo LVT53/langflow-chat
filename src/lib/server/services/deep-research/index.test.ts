@@ -185,6 +185,22 @@ describe('deep research job shell service', () => {
 		expect('userId' in (reloaded.timeline?.[0] ?? {})).toBe(false);
 	});
 
+	it('defaults Research Language from the latest user request when job start has no explicit language', async () => {
+		const { startDeepResearchJobShell } = await import('./index');
+
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+
+		expect(created.currentPlan?.rawPlan.researchLanguage).toBe('hu');
+		expect(created.currentPlan?.renderedPlan).toContain('# Kutatási terv');
+	});
+
 	it('writes plan-generation Research Usage when usage is available at job start', async () => {
 		const { startDeepResearchJobShell } = await import('./index');
 		const { listResearchUsageRecords } = await import('./usage');

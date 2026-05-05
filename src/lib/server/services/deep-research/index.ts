@@ -17,8 +17,13 @@ import type {
 	DeepResearchJob,
 	DeepResearchPlanRaw,
 	DeepResearchPlanSummary,
+	DeepResearchSource,
 	DeepResearchTimelineEvent,
 } from '$lib/types';
+import {
+	auditDeepResearchReportCitations,
+	type DeepResearchReportDraft,
+} from './citation-audit';
 import {
 	createFirstResearchPlanDraft,
 	createRevisedResearchPlanDraft,
@@ -27,7 +32,10 @@ import {
 	type ResearchPlanIncludedSource,
 	type ResearchPlanDraftRecord,
 } from './planning';
-import { saveDiscoveredResearchSource } from './sources';
+import { resolveResearchLanguage } from './language';
+import { writeResearchReport, type ResearchReportDraft } from './report-writer';
+import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
+import type { SynthesisNotes } from './synthesis';
 import {
 	createPlanGenerationTimelineEvent,
 	listResearchTimelineEventsForJobs,
@@ -90,6 +98,14 @@ export type ApproveDeepResearchPlanInput = {
 export type CompleteDeepResearchJobWithFakeReportInput = {
 	userId: string;
 	jobId: string;
+	now?: Date;
+};
+
+export type CompleteDeepResearchJobWithAuditedReportInput = {
+	userId: string;
+	jobId: string;
+	synthesisNotes: SynthesisNotes;
+	limitations?: string[];
 	now?: Date;
 };
 
@@ -170,6 +186,10 @@ export async function startDeepResearchJobShell(
 	await assertCanStartDeepResearchJob(input);
 
 	const now = input.now ?? new Date();
+	const researchLanguage = resolveResearchLanguage({
+		userRequest: input.userRequest,
+		explicitOutputLanguage: input.researchLanguage,
+	});
 	const [job] = await db
 		.insert(deepResearchJobs)
 		.values({
@@ -192,7 +212,7 @@ export async function startDeepResearchJobShell(
 			jobId: job.id,
 			userRequest: input.userRequest,
 			selectedDepth: input.depth,
-			researchLanguage: input.researchLanguage ?? 'en',
+			researchLanguage,
 			planningContext: input.planningContext,
 		},
 		{
@@ -219,7 +239,7 @@ export async function startDeepResearchJobShell(
 			conversationId: input.conversationId,
 			userId: input.userId,
 			stage: 'plan_generation',
-			researchLanguage: input.researchLanguage ?? 'en',
+			researchLanguage,
 			occurredAt: now,
 			assumptions: draft.rawPlan.constraints,
 		})
@@ -392,7 +412,8 @@ export async function editDeepResearchPlan(
 			previousVersion: currentPlan.version,
 			editInstruction: input.editInstruction,
 			selectedDepth: job.depth as DeepResearchDepth,
-			researchLanguage: input.researchLanguage ?? 'en',
+			researchLanguage:
+				input.researchLanguage ?? currentPlan.rawPlan.researchLanguage ?? 'en',
 			contextDisclosure: currentPlan.contextDisclosure ?? null,
 		},
 		{
@@ -574,6 +595,171 @@ export async function completeDeepResearchJobWithFakeReport(
 	);
 }
 
+export async function completeDeepResearchJobWithAuditedReport(
+	input: CompleteDeepResearchJobWithAuditedReportInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+
+	if (!job) return null;
+	if (job.status === 'completed' && job.reportArtifactId) {
+		const currentPlans = await loadCurrentPlansByJobId([job.id]);
+		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+		return mapDeepResearchJob(
+			job,
+			currentPlans.get(job.id) ?? null,
+			timelineEvents.get(job.id) ?? []
+		);
+	}
+	if (job.status !== 'approved' && job.status !== 'running') {
+		return null;
+	}
+
+	const currentPlans = await loadCurrentPlansByJobId([job.id]);
+	const currentPlan = currentPlans.get(job.id);
+	if (!currentPlan?.rawPlan) return null;
+
+	const citedAt = now;
+	const initialSources = await listResearchSources({
+		userId: input.userId,
+		jobId: job.id,
+	});
+	const sourceIdsNeededForReport = new Set(
+		input.synthesisNotes.findings.flatMap((finding) =>
+			finding.sourceRefs.flatMap((sourceRef) => [
+				sourceRef.discoveredSourceId,
+				sourceRef.reviewedSourceId,
+			])
+		)
+	);
+	await Promise.all(
+		initialSources
+			.filter(
+				(source) =>
+					sourceIdsNeededForReport.has(source.id) &&
+					source.reviewedAt &&
+					!source.citedAt
+			)
+			.map((source) =>
+				markResearchSourceCited({
+					userId: input.userId,
+					sourceId: source.id,
+					citedAt,
+					citationNote: `Cited in audited Research Report for ${job.title}`,
+				})
+			)
+	);
+
+	const sources = await listResearchSources({
+		userId: input.userId,
+		jobId: job.id,
+	});
+	const reportDraft = writeResearchReport({
+		jobId: job.id,
+		plan: currentPlan.rawPlan,
+		synthesisNotes: input.synthesisNotes,
+		sources: sources.map(mapSourceForReportWriter),
+		limitations: input.limitations,
+	});
+	const auditResult = await auditDeepResearchReportCitations({
+		jobId: job.id,
+		report: buildCitationAuditReportDraft(reportDraft, input.synthesisNotes),
+		citedSources: sources.map((source) => ({
+			id: source.id,
+			status: source.status,
+			title: source.title ?? source.url,
+			url: source.url,
+			reviewedAt: source.reviewedAt,
+			citedAt: source.citedAt,
+			reviewedNote: source.reviewedNote,
+			citationNote: source.citationNote,
+			snippet: source.snippet,
+		})),
+	});
+
+	if (!auditResult.canComplete) {
+		const [failedJob] = await db
+			.update(deepResearchJobs)
+			.set({
+				status: 'failed',
+				stage: 'citation_audit_failed',
+				updatedAt: now,
+			})
+			.where(eq(deepResearchJobs.id, job.id))
+			.returning();
+		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [failedJob.id]);
+		return mapDeepResearchJob(
+			failedJob,
+			currentPlan,
+			timelineEvents.get(failedJob.id) ?? []
+		);
+	}
+
+	const auditedMarkdown = renderAuditedReportMarkdown({
+		reportDraft,
+		auditedReport: auditResult.auditedReport,
+		sources: reportDraft.sources,
+	});
+	const reportName = buildReportArtifactName(job.title);
+	const reportArtifact = await createArtifact({
+		userId: job.userId,
+		conversationId: job.conversationId,
+		type: 'generated_output',
+		retrievalClass: 'durable',
+		name: reportName,
+		mimeType: 'text/markdown',
+		extension: 'md',
+		sizeBytes: Buffer.byteLength(auditedMarkdown, 'utf8'),
+		contentText: auditedMarkdown,
+		summary: `Audited Research Report for ${job.title}`,
+		metadata: {
+			deepResearchReport: true,
+			deepResearchReportKind: 'audited',
+			deepResearchJobId: job.id,
+			deepResearchDepth: job.depth,
+			documentFamilyId: randomUUID(),
+			documentFamilyStatus: 'active',
+			documentLabel: reportName,
+			documentRole: 'research_report',
+			versionNumber: 1,
+			originConversationId: job.conversationId,
+			citationAuditStatus: auditResult.status,
+		},
+	});
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'completed',
+			stage: 'report_ready',
+			reportArtifactId: reportArtifact.id,
+			completedAt: now,
+			updatedAt: now,
+		})
+		.where(eq(deepResearchJobs.id, job.id))
+		.returning();
+
+	await db
+		.update(conversations)
+		.set({
+			status: 'sealed',
+			sealedAt: now,
+			updatedAt: now,
+		})
+		.where(and(eq(conversations.id, job.conversationId), eq(conversations.userId, job.userId)));
+
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [updatedJob.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		currentPlan,
+		timelineEvents.get(updatedJob.id) ?? []
+	);
+}
+
 export async function discussDeepResearchReport(
 	input: DiscussDeepResearchReportInput
 ): Promise<DeepResearchReportActionResult | null> {
@@ -730,6 +916,108 @@ function buildResearchFurtherSeedMessage(context: ResearchReportContext): string
 		'',
 		'Use the attached Research Report as planning context and draft a new Deep Research Plan for approval.',
 	].join('\n');
+}
+
+function mapSourceForReportWriter(source: DeepResearchSource) {
+	return {
+		id: source.id,
+		reviewedSourceId: source.id,
+		status: source.status,
+		title: source.title ?? source.url,
+		url: source.url,
+		citationNote: source.citationNote,
+	};
+}
+
+function buildCitationAuditReportDraft(
+	reportDraft: ResearchReportDraft,
+	synthesisNotes: SynthesisNotes
+): DeepResearchReportDraft {
+	return {
+		title: reportDraft.title,
+		sections: [
+			{
+				heading: 'Key Findings',
+				claims: synthesisNotes.supportedFindings.map((finding, index) => ({
+					id: `finding-${index + 1}`,
+					text: finding.statement,
+					core: true,
+					citationSourceIds: uniqueValues(
+						finding.sourceRefs.flatMap((sourceRef) => [
+							sourceRef.discoveredSourceId,
+							sourceRef.reviewedSourceId,
+						])
+					),
+				})),
+			},
+		],
+		limitations: reportDraft.limitations,
+	};
+}
+
+function renderAuditedReportMarkdown(input: {
+	reportDraft: ResearchReportDraft;
+	auditedReport: DeepResearchReportDraft;
+	sources: ResearchReportDraft['sources'];
+}): string {
+	const retainedClaims = input.auditedReport.sections.flatMap((section) => section.claims);
+	const sourceById = new Map(input.sources.map((source) => [source.id, source]));
+	const citedSourceIds = new Set(retainedClaims.flatMap((claim) => claim.citationSourceIds));
+	const citedSources = input.sources.filter((source) => citedSourceIds.has(source.id));
+	const keyFindingLines =
+		retainedClaims.length > 0
+			? retainedClaims.map((claim) => `- ${formatAuditedClaim(claim, sourceById)}`)
+			: ['- None.'];
+	const lines = [
+		`# ${input.reportDraft.title}`,
+		'',
+		'## Executive Summary',
+		retainedClaims[0]?.text ?? 'The citation audit found no credible supported claims.',
+		'',
+		'## Key Findings',
+		...keyFindingLines,
+		'',
+	];
+
+	for (const section of input.reportDraft.sections) {
+		lines.push(`## ${section.heading}`, ...keyFindingLines, '');
+	}
+
+	lines.push(
+		'## Sources',
+		...(citedSources.length > 0
+			? citedSources.map(
+					(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`
+				)
+			: ['- None.'])
+	);
+
+	if (input.auditedReport.limitations.length > 0) {
+		lines.push(
+			'',
+			'## Report Limitations',
+			...input.auditedReport.limitations.map((limitation) => `- ${limitation}`)
+		);
+	}
+
+	return lines.join('\n');
+}
+
+function formatAuditedClaim(
+	claim: DeepResearchReportDraft['sections'][number]['claims'][number],
+	sourceById: Map<string, ResearchReportDraft['sources'][number]>
+): string {
+	const citationNumbers = claim.citationSourceIds
+		.map((sourceId) => sourceById.get(sourceId))
+		.filter((source): source is ResearchReportDraft['sources'][number] => Boolean(source))
+		.map((source) => `[${source.citationNumber}]`);
+	const citationSuffix =
+		citationNumbers.length > 0 ? ` ${uniqueValues(citationNumbers).join(' ')}` : '';
+	return `${claim.text}${citationSuffix}`;
+}
+
+function uniqueValues<T>(values: T[]): T[] {
+	return [...new Set(values)];
 }
 
 function buildReportArtifactName(jobTitle: string): string {

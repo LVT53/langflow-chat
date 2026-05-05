@@ -1,7 +1,8 @@
-import type { ResearchPlan } from "./planning";
+import type { DeepResearchSourceStatus } from "$lib/types";
+import type { ResearchLanguage, ResearchPlan } from "./planning";
 import type { SynthesisFinding, SynthesisNotes } from "./synthesis";
 
-export type ResearchReportSourceStatus = "reviewed" | "cited";
+export type ResearchReportSourceStatus = DeepResearchSourceStatus;
 
 export type ResearchReportSource = {
 	id: string;
@@ -40,15 +41,91 @@ export type WriteResearchReportInput = {
 	limitations?: string[];
 };
 
+type ReportSectionKind = "methodology" | "comparison" | "recommendations";
+
+const reportLabels: Record<
+	ResearchLanguage,
+	{
+		titlePrefix: string;
+		executiveSummary: string;
+		keyFindings: string;
+		mainBody: string;
+		sources: string;
+		reportLimitations: string;
+		methodology: string;
+		comparison: string;
+		recommendations: string;
+		researchQuestions: string;
+		synthesis: string;
+		methodologyScope: (depthLabel: string) => string;
+		sourceReviewCeiling: string;
+		synthesisPassCeiling: string;
+		recommendationsBody: string;
+		noFindingSummary: string;
+	}
+> = {
+	en: {
+		titlePrefix: "Research Report",
+		executiveSummary: "Executive Summary",
+		keyFindings: "Key Findings",
+		mainBody: "Main Body",
+		sources: "Sources",
+		reportLimitations: "Report Limitations",
+		methodology: "Methodology",
+		comparison: "Comparison",
+		recommendations: "Recommendations",
+		researchQuestions: "Research questions",
+		synthesis: "Synthesis",
+		methodologyScope: (depthLabel) =>
+			`Review scope followed the approved ${depthLabel} plan.`,
+		sourceReviewCeiling: "Source review ceiling",
+		synthesisPassCeiling: "Synthesis pass ceiling",
+		recommendationsBody:
+			"Use the supported findings above to choose next actions.",
+		noFindingSummary:
+			"The reviewed evidence did not produce a supported finding.",
+	},
+	hu: {
+		titlePrefix: "Kutatási jelentés",
+		executiveSummary: "Vezetői összefoglaló",
+		keyFindings: "Fő megállapítások",
+		mainBody: "Fő tartalom",
+		sources: "Források",
+		reportLimitations: "Jelentési korlátok",
+		methodology: "Módszertan",
+		comparison: "Összehasonlítás",
+		recommendations: "Javaslatok",
+		researchQuestions: "Kutatási kérdések",
+		synthesis: "Szintézis",
+		methodologyScope: (depthLabel) =>
+			`Az áttekintés hatóköre a jóváhagyott ${depthLabel} tervet követte.`,
+		sourceReviewCeiling: "Forrás-áttekintési plafon",
+		synthesisPassCeiling: "Szintézis kör plafonja",
+		recommendationsBody:
+			"A fenti alátámasztott megállapításokat használd a következő lépések kiválasztásához.",
+		noFindingSummary:
+			"Az áttekintett bizonyítékok nem eredményeztek alátámasztott megállapítást.",
+	},
+};
+
 export function writeResearchReport(
 	input: WriteResearchReportInput,
 ): ResearchReportDraft {
+	const researchLanguage = input.plan.researchLanguage ?? "en";
 	const citedSources = buildCitedSources(input.synthesisNotes, input.sources);
 	const keyFindings = input.synthesisNotes.supportedFindings.map((finding) =>
 		formatFindingWithCitations(finding, citedSources),
 	);
-	const executiveSummary = buildExecutiveSummary(input.plan, keyFindings);
-	const sections = buildReportSections(input.plan, keyFindings);
+	const executiveSummary = buildExecutiveSummary(
+		input.plan,
+		keyFindings,
+		researchLanguage,
+	);
+	const sections = buildReportSections(
+		input.plan,
+		keyFindings,
+		researchLanguage,
+	);
 	const limitations = [
 		...input.synthesisNotes.reportLimitations.map(
 			(limitation) => limitation.statement,
@@ -57,7 +134,7 @@ export function writeResearchReport(
 	]
 		.map(normalizeText)
 		.filter(Boolean);
-	const title = `Research Report: ${input.plan.goal}`;
+	const title = `${reportLabels[researchLanguage].titlePrefix}: ${input.plan.goal}`;
 	const markdown = renderReportMarkdown({
 		title,
 		executiveSummary,
@@ -65,6 +142,7 @@ export function writeResearchReport(
 		sections,
 		sources: citedSources,
 		limitations,
+		researchLanguage,
 	});
 
 	return {
@@ -123,26 +201,32 @@ function buildCitedSources(
 function buildExecutiveSummary(
 	plan: ResearchPlan,
 	keyFindings: string[],
+	researchLanguage: ResearchLanguage,
 ): string {
 	const findingSummary =
 		keyFindings.length > 0
 			? keyFindings[0]
-			: "The reviewed evidence did not produce a supported finding.";
+			: reportLabels[researchLanguage].noFindingSummary;
 	return `${plan.goal} ${findingSummary}`;
 }
 
-function buildMainBody(plan: ResearchPlan, keyFindings: string[]): string {
+function buildMainBody(
+	plan: ResearchPlan,
+	keyFindings: string[],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
 	const body = [
 		`This report addresses the approved Research Plan goal: ${plan.goal}`,
 		"",
-		"Research questions:",
+		`${labels.researchQuestions}:`,
 		...plan.keyQuestions.map((question) => `- ${question}`),
 	];
 
 	if (keyFindings.length > 0) {
 		body.push(
 			"",
-			"Synthesis:",
+			`${labels.synthesis}:`,
 			...keyFindings.map((finding) => `- ${finding}`),
 		);
 	}
@@ -153,82 +237,104 @@ function buildMainBody(plan: ResearchPlan, keyFindings: string[]): string {
 function buildReportSections(
 	plan: ResearchPlan,
 	keyFindings: string[],
+	researchLanguage: ResearchLanguage,
 ): ResearchReportSection[] {
 	const sections = plan.reportShape
-		.map((section) => normalizeSectionHeading(section))
-		.filter((section): section is ResearchReportSection => Boolean(section));
+		.map((section) => normalizeSectionKind(section))
+		.filter((section): section is ReportSectionKind => Boolean(section));
 
 	if (sections.length > 0) {
-		return sections.map((section) => ({
-			heading: section.heading,
-			body: buildSectionBody(section.heading, plan, keyFindings),
+		return sections.map((sectionKind) => ({
+			heading: formatSectionHeading(sectionKind, researchLanguage),
+			body: buildSectionBody(sectionKind, plan, keyFindings, researchLanguage),
 		}));
 	}
 
 	return [
 		{
-			heading: "Main Body",
-			body: buildMainBody(plan, keyFindings),
+			heading: reportLabels[researchLanguage].mainBody,
+			body: buildMainBody(plan, keyFindings, researchLanguage),
 		},
 	];
 }
 
-function normalizeSectionHeading(
-	section: string,
-): Pick<ResearchReportSection, "heading"> | null {
+function normalizeSectionKind(section: string): ReportSectionKind | null {
 	const normalized = section
 		.toLowerCase()
-		.replace(/[^a-z]+/g, " ")
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/[^\p{L}]+/gu, " ")
 		.trim();
-	if (normalized === "methodology") {
-		return { heading: "Methodology" };
+	if (normalized === "methodology" || normalized === "modszertan") {
+		return "methodology";
 	}
-	if (normalized === "comparison") {
-		return { heading: "Comparison" };
+	if (normalized === "comparison" || normalized === "osszehasonlitas") {
+		return "comparison";
 	}
-	if (normalized === "recommendations") {
-		return { heading: "Recommendations" };
+	if (normalized === "recommendations" || normalized === "javaslatok") {
+		return "recommendations";
 	}
 	return null;
 }
 
+function formatSectionHeading(
+	sectionKind: ReportSectionKind,
+	researchLanguage: ResearchLanguage,
+): string {
+	return reportLabels[researchLanguage][sectionKind];
+}
+
 function buildSectionBody(
-	heading: string,
+	sectionKind: ReportSectionKind,
 	plan: ResearchPlan,
 	keyFindings: string[],
+	researchLanguage: ResearchLanguage,
 ): string {
-	if (heading === "Methodology") {
+	const labels = reportLabels[researchLanguage];
+	if (sectionKind === "methodology") {
 		return [
-			`Review scope followed the approved ${formatDepthLabel(plan.depth)} plan.`,
-			`Source review ceiling: ${plan.researchBudget.sourceReviewCeiling}.`,
-			`Synthesis pass ceiling: ${plan.researchBudget.synthesisPassCeiling}.`,
+			labels.methodologyScope(formatDepthLabel(plan.depth, researchLanguage)),
+			`${labels.sourceReviewCeiling}: ${plan.researchBudget.sourceReviewCeiling}.`,
+			`${labels.synthesisPassCeiling}: ${plan.researchBudget.synthesisPassCeiling}.`,
 			"",
-			"Research questions:",
+			`${labels.researchQuestions}:`,
 			...plan.keyQuestions.map((question) => `- ${question}`),
 		].join("\n");
 	}
 
-	if (heading === "Comparison") {
+	if (sectionKind === "comparison") {
 		return renderBullets(keyFindings).join("\n");
 	}
 
-	if (heading === "Recommendations") {
-		return [
-			"Use the supported findings above to choose next actions.",
-			...renderBullets(keyFindings),
-		].join("\n");
+	if (sectionKind === "recommendations") {
+		return [labels.recommendationsBody, ...renderBullets(keyFindings)].join(
+			"\n",
+		);
 	}
 
-	return buildMainBody(plan, keyFindings);
+	return buildMainBody(plan, keyFindings, researchLanguage);
 }
 
-function formatDepthLabel(depth: ResearchPlan["depth"]): string {
-	const labels: Record<ResearchPlan["depth"], string> = {
-		focused: "Focused Deep Research",
-		standard: "Standard Deep Research",
-		max: "Max Deep Research",
+function formatDepthLabel(
+	depth: ResearchPlan["depth"],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels: Record<
+		ResearchLanguage,
+		Record<ResearchPlan["depth"], string>
+	> = {
+		en: {
+			focused: "Focused Deep Research",
+			standard: "Standard Deep Research",
+			max: "Max Deep Research",
+		},
+		hu: {
+			focused: "Fókuszált mély kutatás",
+			standard: "Standard mély kutatás",
+			max: "Maximális mély kutatás",
+		},
 	};
-	return labels[depth];
+	return labels[researchLanguage][depth];
 }
 
 function formatFindingWithCitations(
@@ -257,14 +363,16 @@ function renderReportMarkdown(input: {
 	sections: ResearchReportSection[];
 	sources: CitedResearchReportSource[];
 	limitations: string[];
+	researchLanguage: ResearchLanguage;
 }): string {
+	const labels = reportLabels[input.researchLanguage];
 	const lines = [
 		`# ${input.title}`,
 		"",
-		"## Executive Summary",
+		`## ${labels.executiveSummary}`,
 		input.executiveSummary,
 		"",
-		"## Key Findings",
+		`## ${labels.keyFindings}`,
 		...renderBullets(input.keyFindings),
 		"",
 	];
@@ -274,7 +382,7 @@ function renderReportMarkdown(input: {
 	}
 
 	lines.push(
-		"## Sources",
+		`## ${labels.sources}`,
 		...input.sources.map(
 			(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`,
 		),
@@ -283,7 +391,7 @@ function renderReportMarkdown(input: {
 	if (input.limitations.length > 0) {
 		lines.push(
 			"",
-			"## Report Limitations",
+			`## ${labels.reportLimitations}`,
 			...renderBullets(input.limitations),
 		);
 	}

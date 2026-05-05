@@ -92,6 +92,34 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.renderedPlan).toContain("Source review ceiling: up to 120");
 	});
 
+	it("renders Hungarian Research Plan labels without translating included source titles", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-hu",
+			userRequest:
+				"Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.",
+			selectedDepth: "focused",
+			researchLanguage: "hu",
+			planningContext: [
+				{
+					type: "attachment",
+					artifactId: "artifact-1",
+					title: "OpenAI Codex Pricing",
+					summary: "Vendor pricing export supplied by the user.",
+				},
+			],
+		});
+
+		expect(result.renderedPlan).toContain("# Kutatási terv");
+		expect(result.renderedPlan).toContain("Mélység: Fókuszált mély kutatás");
+		expect(result.renderedPlan).toContain("Várható idő: 10-20 perc");
+		expect(result.renderedPlan).toContain(
+			"Forrás-áttekintési plafon: legfeljebb 12",
+		);
+		expect(result.renderedPlan).toContain("Bevont források:");
+		expect(result.renderedPlan).toContain("OpenAI Codex Pricing");
+		expect(result.renderedPlan).not.toContain("OpenAI Codex Árazás");
+	});
+
 	it("rejects a structured plan that exceeds the selected depth budget", async () => {
 		const repository = {
 			saveResearchPlanDraft: vi.fn(),

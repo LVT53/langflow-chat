@@ -81,6 +81,10 @@ export function createPlanGenerationTimelineEvent(
 	input: CreatePlanGenerationTimelineEventInput,
 ): ResearchTimelineEvent {
 	const sourceCounts = normalizeSourceCounts(input.sourceCounts);
+	const summary =
+		input.researchLanguage === "hu"
+			? "A kutatási terv elkészült jóváhagyásra."
+			: "Research Plan drafted for approval.";
 
 	return {
 		jobId: input.jobId,
@@ -99,7 +103,7 @@ export function createPlanGenerationTimelineEvent(
 		sourceCounts,
 		assumptions: sanitizeUserVisibleNotes(input.assumptions ?? []),
 		warnings: sanitizeUserVisibleNotes(input.warnings ?? []),
-		summary: "Research Plan drafted for approval.",
+		summary,
 	};
 }
 

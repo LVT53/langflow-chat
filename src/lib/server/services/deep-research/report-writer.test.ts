@@ -191,4 +191,43 @@ describe("Deep Research report writer", () => {
 			"- Coverage for Hungarian-language procurement references remained incomplete.",
 		);
 	});
+
+	it("renders Hungarian report headings while preserving citation source titles and URLs", () => {
+		const report = writeResearchReport({
+			jobId: "job-hu",
+			plan: {
+				...basePlan,
+				researchLanguage: "hu",
+				goal: "Privát AI kódoló asszisztensek összehasonlítása",
+				reportShape: ["Methodology", "Comparison"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+				},
+			],
+			limitations: ["A piaci árak gyorsan változhatnak."],
+		});
+
+		expect(report.title).toBe(
+			"Kutatási jelentés: Privát AI kódoló asszisztensek összehasonlítása",
+		);
+		expect(report.markdown).toContain("## Vezetői összefoglaló");
+		expect(report.markdown).toContain("## Fő megállapítások");
+		expect(report.markdown).toContain("## Módszertan");
+		expect(report.markdown).toContain("## Összehasonlítás");
+		expect(report.markdown).toContain("## Források");
+		expect(report.markdown).toContain("## Jelentési korlátok");
+		expect(report.markdown).toContain(
+			"[1] AI coding security documentation - https://docs.example.com/ai-coding/security",
+		);
+		expect(report.markdown).not.toContain(
+			"AI kódolási biztonsági dokumentáció",
+		);
+	});
 });

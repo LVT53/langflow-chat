@@ -116,6 +116,20 @@ describe("createPlanGenerationTimelineEvent", () => {
 			"alternative source strategies",
 		);
 	});
+
+	it("renders Hungarian user-facing plan-generation timeline summary", () => {
+		const event = createPlanGenerationTimelineEvent({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			stage: "plan_generation",
+			researchLanguage: "hu",
+			occurredAt: new Date("2026-05-05T10:15:00.000Z"),
+		});
+
+		expect(event.messageKey).toBe("deepResearch.timeline.planGenerated");
+		expect(event.summary).toBe("A kutatási terv elkészült jóváhagyásra.");
+	});
 });
 
 describe("research timeline persistence", () => {
