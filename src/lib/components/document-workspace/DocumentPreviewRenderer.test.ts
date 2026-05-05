@@ -431,7 +431,7 @@ describe("DocumentPreviewRenderer", () => {
 		secondPageRenderResolve?.();
 	});
 
-	it("lets PDF users scroll with wheel and keyboard input inside the preview region", async () => {
+	it("lets browser wheel scrolling pass through PDFs while keyboard and Ctrl-wheel controls still work", async () => {
 		const mockBlob = new Blob(["PDF content"], { type: "application/pdf" });
 		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
 			ok: true,
@@ -458,10 +458,27 @@ describe("DocumentPreviewRenderer", () => {
 			configurable: true,
 		});
 
-		await fireEvent.wheel(scrollRegion, { deltaY: 120 });
-		expect(scrollRegion.scrollTop).toBe(120);
+		const wheelEvent = new WheelEvent("wheel", {
+			bubbles: true,
+			cancelable: true,
+			deltaY: 120,
+		});
+		const normalWheelPreventDefault = vi.spyOn(wheelEvent, "preventDefault");
+		scrollRegion.dispatchEvent(wheelEvent);
+		expect(normalWheelPreventDefault).not.toHaveBeenCalled();
 
-		await fireEvent.wheel(scrollRegion, { deltaY: -120, ctrlKey: true });
+		const zoomWheelEvent = new WheelEvent("wheel", {
+			bubbles: true,
+			cancelable: true,
+			deltaY: -120,
+			ctrlKey: true,
+		});
+		const zoomWheelPreventDefault = vi.spyOn(
+			zoomWheelEvent,
+			"preventDefault",
+		);
+		scrollRegion.dispatchEvent(zoomWheelEvent);
+		expect(zoomWheelPreventDefault).toHaveBeenCalled();
 		await waitFor(() => {
 			expect(screen.getByRole("button", { name: "Reset zoom" })).toHaveTextContent(
 				"112%",
@@ -470,7 +487,7 @@ describe("DocumentPreviewRenderer", () => {
 
 		scrollRegion.focus();
 		await fireEvent.keyDown(scrollRegion, { key: "ArrowDown" });
-		expect(scrollRegion.scrollTop).toBeGreaterThan(120);
+		expect(scrollRegion.scrollTop).toBe(48);
 	});
 
 	it("lets PDF users pan the zoomed preview by dragging inside the scroll region", async () => {

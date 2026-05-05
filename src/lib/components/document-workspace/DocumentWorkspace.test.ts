@@ -97,11 +97,12 @@ describe("DocumentWorkspace", () => {
 		const documents = [
 			{
 				id: "doc-1",
-				source: "knowledge_artifact" as const,
+				source: "chat_generated_file" as const,
 				filename: "short.md",
 				title: "Short note",
 				mimeType: "text/markdown",
-				artifactId: "artifact-1",
+				artifactId: null,
+				previewUrl: "/api/chat/files/doc-1/preview",
 			},
 			{
 				id: "doc-2",
@@ -146,10 +147,13 @@ describe("DocumentWorkspace", () => {
 		expect(within(rail).getByText("v2")).toHaveClass(
 			"open-documents-rail-version",
 		);
+		expect(within(rail).getByText("Knowledge Base")).toBeInTheDocument();
+		expect(within(rail).getByText(/text • research brief/i)).toBeInTheDocument();
+		expect(within(rail).getByText("AI")).toBeInTheDocument();
 		expect(
-			within(rail).getByText(/knowledge base • text • research brief/i),
+			rail.querySelector(".open-documents-rail-source-ai svg"),
 		).toBeInTheDocument();
-		expect(within(rail).getByText("2 open")).toBeInTheDocument();
+		expect(within(rail).getByText("2")).toHaveAccessibleName("2 open");
 		const desktopWorkspace = screen.getByRole("complementary", {
 			name: /document workspace/i,
 		});
@@ -157,6 +161,67 @@ describe("DocumentWorkspace", () => {
 		expect(main).toContainElement(rail);
 		expect(main).toContainElement(
 			within(desktopWorkspace).getByTestId("workspace-document-column"),
+		);
+	});
+
+	it("uses the document title as the source jump and keeps version metadata out of the header", async () => {
+		const onJumpToSource = vi.fn();
+
+		render(DocumentWorkspace, {
+			props: {
+				open: true,
+				documents: [
+					{
+						id: "generated-doc",
+						source: "chat_generated_file",
+						filename: "brief.pdf",
+						title: "Generated Brief",
+						documentRole: "brief",
+						versionNumber: 1,
+						mimeType: "application/pdf",
+						artifactId: null,
+						previewUrl: "/api/chat/files/generated-doc/preview",
+						originConversationId: "conversation-1",
+						originAssistantMessageId: "message-1",
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "generated-doc",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onJumpToSource,
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
+			},
+		});
+
+		const desktopWorkspace = screen.getByRole("complementary", {
+			name: /document workspace/i,
+		});
+		expect(
+			within(desktopWorkspace).getByText("Active document"),
+		).toBeInTheDocument();
+		expect(
+			within(desktopWorkspace).queryByText(/from assistant message/i),
+		).not.toBeInTheDocument();
+		expect(
+			within(desktopWorkspace).queryByText("v1"),
+		).not.toBeInTheDocument();
+		expect(within(desktopWorkspace).getByText("AI")).toBeInTheDocument();
+		expect(
+			desktopWorkspace.querySelector(".workspace-source-pill-ai svg"),
+		).toBeInTheDocument();
+		expect(
+			desktopWorkspace.querySelector(".workspace-title-row .workspace-header-actions"),
+		).toBeInTheDocument();
+
+		const sourceTitle = desktopWorkspace.querySelector(
+			".workspace-title-link",
+		) as HTMLElement;
+		await fireEvent.click(sourceTitle);
+
+		expect(onJumpToSource).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "generated-doc" }),
 		);
 	});
 
@@ -899,9 +964,9 @@ describe("DocumentWorkspace", () => {
 		);
 		expect(versionBadges).toHaveLength(2);
 		expect(versionBadges[0]).toHaveClass("workspace-version-badge");
-		expect(
-			within(desktopWorkspace).getAllByText("Brief • v2").length,
-		).toBeGreaterThan(0);
+		expect(within(desktopWorkspace).getAllByText("Brief").length).toBeGreaterThan(
+			0,
+		);
 		expect(
 			within(desktopWorkspace).getAllByText("Historical").length,
 		).toBeGreaterThan(0);
@@ -979,7 +1044,7 @@ describe("DocumentWorkspace", () => {
 		expect(onSelectDocument).not.toHaveBeenCalled();
 	});
 
-	it("renders source-message provenance in the document header for documents with origin metadata", async () => {
+	it("uses the header document title as the source-message affordance for origin metadata", async () => {
 		const onJumpToSource = vi.fn();
 
 		render(DocumentWorkspace, {
@@ -1020,20 +1085,18 @@ describe("DocumentWorkspace", () => {
 			}),
 		).not.toBeInTheDocument();
 		expect(
-			within(desktopWorkspace).getByText("From assistant message"),
-		).toBeInTheDocument();
+			within(desktopWorkspace).queryByText(/from assistant message/i),
+		).not.toBeInTheDocument();
+		expect(within(desktopWorkspace).getByText("Knowledge Base")).toBeInTheDocument();
 		expect(
-			within(desktopWorkspace).getByTestId("document-provenance"),
-		).toContainElement(
-			within(desktopWorkspace).getByRole("button", {
-				name: /view source message/i,
-			}),
-		);
-		await fireEvent.click(
-			within(desktopWorkspace).getByRole("button", {
-				name: /view source message/i,
-			}),
-		);
+			within(
+				within(desktopWorkspace).getByTestId("document-provenance"),
+			).queryByRole("button"),
+		).not.toBeInTheDocument();
+		const sourceTitle = desktopWorkspace.querySelector(
+			".workspace-title-link",
+		) as HTMLElement;
+		await fireEvent.click(sourceTitle);
 
 		expect(onJumpToSource).toHaveBeenCalledWith(
 			expect.objectContaining({

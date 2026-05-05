@@ -39,16 +39,19 @@ function getDocumentVersionLabel(
 		: null;
 }
 
+function isAiGeneratedDocument(document: DocumentWorkspaceItem): boolean {
+	return document.source === "chat_generated_file";
+}
+
 function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
-	return document.source === "chat_generated_file"
-		? $t("documentWorkspace.fromGeneratedFile")
+	return isAiGeneratedDocument(document)
+		? $t("documentWorkspace.aiSource")
 		: $t("documentWorkspace.fromKnowledgeBase");
 }
 
-function getDocumentMetadata(document: DocumentWorkspaceItem): string {
+function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 	return (
 		[
-			getDocumentSourceLabel(document),
 			determinePreviewFileType(document.mimeType, document.filename).toUpperCase(),
 			formatRoleLabel(document.documentRole),
 		]
@@ -68,7 +71,7 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 	>
 		<div class="open-documents-rail-head">
 			<span>{$t('documentWorkspace.openDocuments')}</span>
-			<span>{$t('documentWorkspace.openDocumentsCount', { count: documents.length })}</span>
+			<span aria-label={$t('documentWorkspace.openDocumentsCount', { count: documents.length })}>{documents.length}</span>
 		</div>
 		{#each documents as document (document.id)}
 			<div class="open-documents-rail-row" class:open-documents-rail-row-active={document.id === activeDocumentId}>
@@ -89,7 +92,20 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 								<span class="open-documents-rail-version">{getDocumentVersionLabel(document)}</span>
 							{/if}
 						</span>
-						<span class="open-documents-rail-meta">{getDocumentMetadata(document)}</span>
+						<span class="open-documents-rail-meta">
+							<span class="open-documents-rail-source" class:open-documents-rail-source-ai={isAiGeneratedDocument(document)}>
+								{#if isAiGeneratedDocument(document)}
+									<svg class="open-documents-rail-sparkle" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M9.94 14.6 8.5 18l-1.44-3.4L3.7 13.1l3.36-1.5L8.5 8.2l1.44 3.4 3.36 1.5-3.36 1.5Z" />
+										<path d="M17.5 8.7 16.7 11l-.8-2.3-2.3-.8 2.3-.8.8-2.3.8 2.3 2.3.8-2.3.8Z" />
+									</svg>
+								{/if}
+								<span>{getDocumentSourceLabel(document)}</span>
+							</span>
+							{#if getDocumentDetailMetadata(document)}
+								<span class="open-documents-rail-detail">{getDocumentDetailMetadata(document)}</span>
+							{/if}
+						</span>
 						{#if document.documentFamilyStatus === "historical"}
 							<span class="open-documents-rail-history">{$t('documentWorkspace.historical')}</span>
 						{/if}
@@ -148,6 +164,7 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 	}
 
 	.open-documents-rail-row {
+		position: relative;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: start;
@@ -155,9 +172,21 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 		border: 1px solid transparent;
 		border-radius: 0.5rem;
 		background: transparent;
+		overflow: hidden;
 		transition:
 			border-color var(--duration-fast) ease,
-			background-color var(--duration-fast) ease;
+			background-color var(--duration-fast) ease,
+			box-shadow var(--duration-fast) ease;
+	}
+
+	.open-documents-rail-row::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: color-mix(in srgb, var(--surface-page) 82%, var(--surface-elevated) 18%);
+		opacity: 0;
+		transition: opacity var(--duration-standard) ease;
+		pointer-events: none;
 	}
 
 	.open-documents-rail-row-active {
@@ -166,12 +195,17 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 		box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-primary) 42%, transparent 58%);
 	}
 
-	.open-documents-rail-row:hover {
-		border-color: var(--border-default);
-		background: color-mix(in srgb, var(--surface-page) 76%, transparent 24%);
+	.open-documents-rail-row:not(.open-documents-rail-row-active):hover {
+		border-color: color-mix(in srgb, var(--border-default) 84%, var(--text-primary) 16%);
+	}
+
+	.open-documents-rail-row:not(.open-documents-rail-row-active):hover::before {
+		opacity: 1;
 	}
 
 	.open-documents-rail-tab {
+		position: relative;
+		z-index: 1;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
 		align-items: start;
@@ -242,14 +276,45 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 	}
 
 	.open-documents-rail-meta {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		display: flex;
+		align-items: center;
+		gap: 0.32rem;
+		min-width: 0;
 		font-size: 0.68rem;
 		color: var(--text-muted);
 	}
 
+	.open-documents-rail-source {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.16rem;
+		min-width: 0;
+		flex: 0 1 auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.open-documents-rail-source-ai {
+		font-weight: 650;
+		color: var(--text-secondary);
+	}
+
+	.open-documents-rail-sparkle {
+		flex: 0 0 auto;
+		color: var(--text-primary);
+	}
+
+	.open-documents-rail-detail {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	.open-documents-rail-close {
+		position: relative;
+		z-index: 1;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -268,7 +333,8 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 			color var(--duration-fast) ease;
 	}
 
-	.open-documents-rail-row:hover .open-documents-rail-close,
+	.open-documents-rail-row:not(.open-documents-rail-row-active):hover .open-documents-rail-close,
+	.open-documents-rail-row-active .open-documents-rail-close,
 	.open-documents-rail-close:focus-visible {
 		opacity: 1;
 	}

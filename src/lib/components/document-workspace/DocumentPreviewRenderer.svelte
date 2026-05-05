@@ -830,10 +830,7 @@ function handlePdfWheel(event: WheelEvent) {
 	if (event.ctrlKey || event.metaKey) {
 		event.preventDefault();
 		setZoomLevel(zoom + (event.deltaY < 0 ? 0.12 : -0.12));
-		return;
 	}
-	event.preventDefault();
-	scrollPdfBy(event.deltaX, event.deltaY);
 }
 
 function handlePdfScrollKeydown(event: KeyboardEvent) {
@@ -1814,7 +1811,7 @@ function downloadFile() {
 		overflow: auto;
 		min-height: 0;
 		position: relative;
-		overscroll-behavior: contain;
+		overscroll-behavior: auto;
 		-webkit-overflow-scrolling: touch;
 		touch-action: pan-y;
 	}

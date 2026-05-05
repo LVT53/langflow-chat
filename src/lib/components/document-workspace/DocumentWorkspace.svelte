@@ -242,8 +242,7 @@ function getDocumentVersionLabel(
 
 function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
 	const roleLabel = formatRoleLabel(document.documentRole);
-	const versionLabel = getDocumentVersionLabel(document);
-	return [roleLabel, versionLabel].filter(Boolean).join(" • ") || null;
+	return roleLabel || null;
 }
 
 function getDocumentLifecycleLabel(
@@ -254,12 +253,13 @@ function getDocumentLifecycleLabel(
 		: null;
 }
 
-function getDocumentProvenanceLabel(document: DocumentWorkspaceItem): string {
-	if (canJumpToSource(document)) {
-		return $t("documentWorkspace.fromAssistantMessage");
-	}
-	return document.source === "chat_generated_file"
-		? $t("documentWorkspace.fromGeneratedFile")
+function isAiGeneratedDocument(document: DocumentWorkspaceItem): boolean {
+	return document.source === "chat_generated_file";
+}
+
+function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
+	return isAiGeneratedDocument(document)
+		? $t("documentWorkspace.aiSource")
 		: $t("documentWorkspace.fromKnowledgeBase");
 }
 
@@ -517,64 +517,89 @@ $effect(() => {
 		<section class="workspace-shell workspace-shell-mobile" aria-label={$t('documentWorkspace.documentWorkspace')}>
 			<div class="workspace-header">
 				<div class="workspace-heading">
-			<div class="workspace-eyebrow">{$t('documentWorkspace.workingDocument')}</div>
-					<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
-					{#if getDocumentSubtitle(activeDocument)}
-						<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
-					{/if}
-					<div class="workspace-provenance" data-testid="document-provenance">
+					<div class="workspace-eyebrow">{$t('documentWorkspace.workingDocument')}</div>
+					<div class="workspace-title-row">
 						{#if canJumpToSource(activeDocument)}
 							<button
 								type="button"
-								class="workspace-provenance-link"
+								class="workspace-title workspace-title-link"
 								onclick={() => onJumpToSource?.(activeDocument)}
-								aria-label={$t('documentWorkspace.viewSourceMessage')}
 								title={$t('documentWorkspace.viewSourceMessage')}
 							>
-								<span>{getDocumentProvenanceLabel(activeDocument)}</span>
-								<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<span>{getDocumentTitle(activeDocument)}</span>
+								<svg class="workspace-title-source-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 									<path d="M7 17 17 7" />
 									<path d="M7 7h10v10" />
 								</svg>
 							</button>
 						{:else}
-							<span class="workspace-provenance-text">{getDocumentProvenanceLabel(activeDocument)}</span>
+							<div class="workspace-title">
+								<span>{getDocumentTitle(activeDocument)}</span>
+							</div>
 						{/if}
+						<div class="workspace-header-actions">
+							{#if getDocumentDownloadUrl(activeDocument)}
+								<a
+									class="btn-icon-bare workspace-download-button"
+									href={getDocumentDownloadUrl(activeDocument)}
+									target="_blank"
+									rel="noopener noreferrer"
+									aria-label={$t('filePreview.download', { filename: activeDocument.filename })}
+									title={$t('filePreview.download', { filename: activeDocument.filename })}
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+										<polyline points="7 10 12 15 17 10" />
+										<line x1="12" x2="12" y1="15" y2="3" />
+									</svg>
+								</a>
+							{/if}
+							<button
+								type="button"
+								class="btn-icon-bare workspace-expand-button"
+								onclick={requestExpandedPresentation}
+								aria-label={$t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+								title={$t('documentWorkspace.expandWorkspace')}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="15 3 21 3 21 9" />
+									<polyline points="9 21 3 21 3 15" />
+									<line x1="21" y1="3" x2="14" y2="10" />
+									<line x1="3" y1="21" x2="10" y2="14" />
+								</svg>
+							</button>
+							<button
+								type="button"
+								class="btn-icon-bare workspace-close-button"
+								onclick={handleCloseWorkspace}
+								aria-label={$t('documentWorkspace.closeWorkspace')}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="18" x2="6" y1="6" y2="18" />
+									<line x1="6" x2="18" y1="6" y2="18" />
+								</svg>
+							</button>
+						</div>
 					</div>
-					{#if getDocumentLifecycleLabel(activeDocument)}
-						<div class="workspace-status-row">
+					{#if getDocumentSubtitle(activeDocument)}
+						<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+					{/if}
+					<div class="workspace-meta-row" data-testid="document-provenance">
+						<span class="workspace-source-pill" class:workspace-source-pill-ai={isAiGeneratedDocument(activeDocument)}>
+							{#if isAiGeneratedDocument(activeDocument)}
+								<svg class="workspace-source-sparkle" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M9.94 14.6 8.5 18l-1.44-3.4L3.7 13.1l3.36-1.5L8.5 8.2l1.44 3.4 3.36 1.5-3.36 1.5Z" />
+									<path d="M17.5 8.7 16.7 11l-.8-2.3-2.3-.8 2.3-.8.8-2.3.8 2.3 2.3.8-2.3.8Z" />
+								</svg>
+							{/if}
+							<span>{getDocumentSourceLabel(activeDocument)}</span>
+						</span>
+						{#if getDocumentLifecycleLabel(activeDocument)}
 							<span class="workspace-status-badge">
 								{getDocumentLifecycleLabel(activeDocument)}
 							</span>
-						</div>
-					{/if}
-				</div>
-				<div class="workspace-header-actions">
-					<button
-						type="button"
-						class="btn-icon-bare workspace-expand-button"
-						onclick={requestExpandedPresentation}
-						aria-label={$t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
-						title={$t('documentWorkspace.expandWorkspace')}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="15 3 21 3 21 9" />
-							<polyline points="9 21 3 21 3 15" />
-							<line x1="21" y1="3" x2="14" y2="10" />
-							<line x1="3" y1="21" x2="10" y2="14" />
-						</svg>
-					</button>
-					<button
-						type="button"
-						class="btn-icon-bare workspace-close-button"
-						onclick={handleCloseWorkspace}
-						aria-label={$t('documentWorkspace.closeWorkspace')}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18" />
-							<line x1="6" x2="18" y1="6" y2="18" />
-						</svg>
-					</button>
+						{/if}
+					</div>
 				</div>
 			</div>
 
@@ -738,82 +763,91 @@ $effect(() => {
 		></div>
 		<div class="workspace-header">
 			<div class="workspace-heading">
-			<div class="workspace-eyebrow">{$t('documentWorkspace.workingDocument')}</div>
-			<div class="workspace-title">{getDocumentTitle(activeDocument)}</div>
-			{#if getDocumentSubtitle(activeDocument)}
-				<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
-			{/if}
-			<div class="workspace-provenance" data-testid="document-provenance">
-				{#if canJumpToSource(activeDocument)}
-					<button
-						type="button"
-						class="workspace-provenance-link"
-						onclick={() => onJumpToSource?.(activeDocument)}
-						aria-label={$t('documentWorkspace.viewSourceMessage')}
-						title={$t('documentWorkspace.viewSourceMessage')}
-					>
-						<span>{getDocumentProvenanceLabel(activeDocument)}</span>
-						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M7 17 17 7" />
-							<path d="M7 7h10v10" />
-						</svg>
-					</button>
-				{:else}
-					<span class="workspace-provenance-text">{getDocumentProvenanceLabel(activeDocument)}</span>
-				{/if}
-			</div>
-			{#if getDocumentLifecycleLabel(activeDocument)}
-				<div class="workspace-status-row">
-					<span class="workspace-status-badge">
-						{getDocumentLifecycleLabel(activeDocument)}
-					</span>
+				<div class="workspace-eyebrow">{$t('documentWorkspace.workingDocument')}</div>
+				<div class="workspace-title-row">
+					{#if canJumpToSource(activeDocument)}
+						<button
+							type="button"
+							class="workspace-title workspace-title-link"
+							onclick={() => onJumpToSource?.(activeDocument)}
+							title={$t('documentWorkspace.viewSourceMessage')}
+						>
+							<span>{getDocumentTitle(activeDocument)}</span>
+							<svg class="workspace-title-source-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M7 17 17 7" />
+								<path d="M7 7h10v10" />
+							</svg>
+						</button>
+					{:else}
+						<div class="workspace-title">
+							<span>{getDocumentTitle(activeDocument)}</span>
+						</div>
+					{/if}
+					<div class="workspace-header-actions">
+						{#if getDocumentDownloadUrl(activeDocument)}
+							<a
+								class="btn-icon-bare workspace-download-button"
+								href={getDocumentDownloadUrl(activeDocument)}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label={$t('filePreview.download', { filename: activeDocument.filename })}
+								title={$t('filePreview.download', { filename: activeDocument.filename })}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+									<polyline points="7 10 12 15 17 10" />
+									<line x1="12" x2="12" y1="15" y2="3" />
+								</svg>
+							</a>
+						{/if}
+						<button
+							type="button"
+							class="btn-icon-bare workspace-expand-button"
+							onclick={presentation === "expanded" ? requestDockedPresentation : requestExpandedPresentation}
+							aria-label={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspaceLabel', { title: getDocumentTitle(activeDocument) }) : $t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+							title={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspace') : $t('documentWorkspace.expandWorkspace')}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<polyline points="15 3 21 3 21 9" />
+								<polyline points="9 21 3 21 3 15" />
+								<line x1="21" y1="3" x2="14" y2="10" />
+								<line x1="3" y1="21" x2="10" y2="14" />
+							</svg>
+						</button>
+						<button
+							type="button"
+							class="btn-icon-bare workspace-close-button"
+							onclick={handleCloseWorkspace}
+							aria-label={$t('documentWorkspace.closeWorkspace')}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+								<line x1="18" x2="6" y1="6" y2="18" />
+								<line x1="6" x2="18" y1="6" y2="18" />
+							</svg>
+						</button>
+					</div>
 				</div>
-			{/if}
+				{#if getDocumentSubtitle(activeDocument)}
+					<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
+				{/if}
+				<div class="workspace-meta-row" data-testid="document-provenance">
+					<span class="workspace-source-pill" class:workspace-source-pill-ai={isAiGeneratedDocument(activeDocument)}>
+						{#if isAiGeneratedDocument(activeDocument)}
+							<svg class="workspace-source-sparkle" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M9.94 14.6 8.5 18l-1.44-3.4L3.7 13.1l3.36-1.5L8.5 8.2l1.44 3.4 3.36 1.5-3.36 1.5Z" />
+								<path d="M17.5 8.7 16.7 11l-.8-2.3-2.3-.8 2.3-.8.8-2.3.8 2.3 2.3.8-2.3.8Z" />
+							</svg>
+						{/if}
+						<span>{getDocumentSourceLabel(activeDocument)}</span>
+					</span>
+					{#if getDocumentLifecycleLabel(activeDocument)}
+						<span class="workspace-status-badge">
+							{getDocumentLifecycleLabel(activeDocument)}
+						</span>
+					{/if}
+				</div>
+			</div>
 		</div>
-		<div class="workspace-header-actions">
-			{#if getDocumentDownloadUrl(activeDocument)}
-				<a
-					class="btn-icon-bare workspace-download-button"
-					href={getDocumentDownloadUrl(activeDocument)}
-					target="_blank"
-					rel="noopener noreferrer"
-					aria-label={$t('filePreview.download', { filename: activeDocument.filename })}
-					title={$t('filePreview.download', { filename: activeDocument.filename })}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-						<polyline points="7 10 12 15 17 10" />
-						<line x1="12" x2="12" y1="15" y2="3" />
-					</svg>
-				</a>
-			{/if}
-				<button
-					type="button"
-					class="btn-icon-bare workspace-expand-button"
-					onclick={presentation === "expanded" ? requestDockedPresentation : requestExpandedPresentation}
-					aria-label={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspaceLabel', { title: getDocumentTitle(activeDocument) }) : $t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
-					title={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspace') : $t('documentWorkspace.expandWorkspace')}
-				>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="15 3 21 3 21 9" />
-					<polyline points="9 21 3 21 3 15" />
-					<line x1="21" y1="3" x2="14" y2="10" />
-					<line x1="3" y1="21" x2="10" y2="14" />
-				</svg>
-			</button>
-			<button
-				type="button"
-				class="btn-icon-bare workspace-close-button"
-				onclick={handleCloseWorkspace}
-				aria-label={$t('documentWorkspace.closeWorkspace')}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="18" x2="6" y1="6" y2="18" />
-					<line x1="6" x2="18" y1="6" y2="18" />
-				</svg>
-			</button>
-		</div>
-	</div>
 
 	{#if canCompareActiveDocument}
 		<div class="workspace-actions">
@@ -988,10 +1022,7 @@ $effect(() => {
 	}
 
 	.workspace-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
+		display: block;
 		padding: 0.95rem 1rem;
 		border-left: 1px solid var(--border-default);
 		border-bottom: 1px solid var(--border-default);
@@ -1004,6 +1035,8 @@ $effect(() => {
 	}
 
 	.workspace-heading {
+		display: flex;
+		flex-direction: column;
 		min-width: 0;
 	}
 
@@ -1017,14 +1050,63 @@ $effect(() => {
 	}
 
 	.workspace-title {
-		margin-top: 0.25rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.38rem;
+		min-width: 0;
+		max-width: 100%;
+		margin-top: 0;
+		border: none;
+		background: transparent;
+		padding: 0;
 		font-family: 'Libre Baskerville', serif;
 		font-size: 1rem;
 		line-height: 1.35;
 		color: var(--text-primary);
+		text-align: left;
 		white-space: nowrap;
+	}
+
+	.workspace-title span {
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.workspace-title-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.8rem;
+		min-width: 0;
+		margin-top: 0.22rem;
+	}
+
+	.workspace-title-link {
+		cursor: pointer;
+		transition: color var(--duration-fast) ease;
+	}
+
+	.workspace-title-link:hover,
+	.workspace-title-link:focus-visible {
+		color: var(--text-secondary);
+	}
+
+	.workspace-title-source-icon {
+		flex: 0 0 auto;
+		color: var(--icon-muted);
+		opacity: 0.72;
+		transition:
+			color var(--duration-fast) ease,
+			opacity var(--duration-fast) ease,
+			transform var(--duration-fast) ease;
+	}
+
+	.workspace-title-link:hover .workspace-title-source-icon,
+	.workspace-title-link:focus-visible .workspace-title-source-icon {
+		color: var(--text-primary);
+		opacity: 1;
+		transform: translate(1px, -1px);
 	}
 
 	.workspace-subtitle {
@@ -1036,54 +1118,46 @@ $effect(() => {
 		color: var(--text-secondary);
 	}
 
-	.workspace-provenance {
+	.workspace-meta-row {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
+		gap: 0.4rem;
 		margin-top: 0.38rem;
 		min-width: 0;
 	}
 
-	.workspace-provenance-link,
-	.workspace-provenance-text {
+	.workspace-source-pill {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.28rem;
+		gap: 0.25rem;
 		min-width: 0;
-		border: none;
-		background: transparent;
-		padding: 0;
+		border: 1px solid var(--border-subtle);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface-elevated) 66%, var(--surface-page) 34%);
+		padding: 0.18rem 0.46rem;
 		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 0.72rem;
-		font-weight: 500;
+		font-size: 0.68rem;
+		font-weight: 650;
 		line-height: 1.25;
 		color: var(--text-muted);
 	}
 
-	.workspace-provenance-link {
-		cursor: pointer;
-		transition: color var(--duration-fast) ease;
+	.workspace-source-pill-ai {
+		border-color: color-mix(in srgb, var(--border-default) 72%, var(--text-primary) 28%);
+		color: var(--text-secondary);
 	}
 
-	.workspace-provenance-link:hover {
+	.workspace-source-sparkle {
+		flex: 0 0 auto;
 		color: var(--text-primary);
-	}
-
-	.workspace-provenance-link span,
-	.workspace-provenance-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.workspace-status-row {
-		margin-top: 0.48rem;
 	}
 
 	.workspace-status-badge {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		padding: 0.24rem 0.58rem;
+		padding: 0.18rem 0.46rem;
 		border-radius: 999px;
 		border: 1px solid color-mix(in srgb, var(--border-default) 76%, var(--accent) 24%);
 		background: color-mix(in srgb, var(--surface-elevated) 70%, var(--accent) 30%);
