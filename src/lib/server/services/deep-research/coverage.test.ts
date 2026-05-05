@@ -103,6 +103,47 @@ describe("assessResearchCoverage", () => {
 		expect(assessment.reportLimitations).toEqual([]);
 	});
 
+	it("does not count off-topic reviewed sources toward key-question coverage", () => {
+		const assessment = assessResearchCoverage({
+			jobId: "job-off-topic",
+			conversationId: "conversation-off-topic",
+			plan: standardPlan,
+			reviewedSources: [
+				reviewedSource({
+					id: "volkswagen-prices",
+					canonicalUrl: "https://cars.example/volkswagen-prices",
+					supportedKeyQuestions: standardPlan.keyQuestions,
+					topicRelevant: false,
+				}),
+				reviewedSource({
+					id: "washing-machine-tests",
+					canonicalUrl: "https://consumer.example/washing-machines",
+					supportedKeyQuestions: standardPlan.keyQuestions,
+					topicRelevant: false,
+				}),
+			],
+			remainingBudget: {
+				sourceReviews: 6,
+				synthesisPasses: 1,
+			},
+		});
+
+		expect(assessment.status).toBe("insufficient");
+		expect(assessment.canContinue).toBe(true);
+		expect(assessment.coverageGaps).toEqual([
+			expect.objectContaining({
+				keyQuestion: "What are the current capabilities?",
+				reason: "insufficient_reviewed_sources",
+				reviewedSourceCount: 0,
+			}),
+			expect.objectContaining({
+				keyQuestion: "Where do the platforms differ?",
+				reason: "insufficient_reviewed_sources",
+				reviewedSourceCount: 0,
+			}),
+		]);
+	});
+
 	it("returns Report Limitations instead of Coverage Gaps when budget is exhausted", () => {
 		const assessment = assessResearchCoverage({
 			jobId: "job-exhausted",
@@ -151,6 +192,7 @@ function reviewedSource(input: {
 	id: string;
 	canonicalUrl: string;
 	supportedKeyQuestions: string[];
+	topicRelevant?: boolean;
 }) {
 	return {
 		id: input.id,
@@ -162,5 +204,6 @@ function reviewedSource(input: {
 		keyFindings: input.supportedKeyQuestions.map(
 			(question) => `Finding for ${question}`,
 		),
+		topicRelevant: input.topicRelevant,
 	};
 }

@@ -139,4 +139,81 @@ describe("Deep Research source triage and review", () => {
 			}),
 		]);
 	});
+
+	it("rejects off-topic sources even when the reviewer returns strong key-question support", async () => {
+		const savedNotes: Array<{ discoveredSourceId: string; rejectedReason: string | null }> = [];
+		const keyQuestions = [
+			"How do Cube Kathmandu and Cube Nulane specifications differ?",
+			"Which model is better for commuting and touring?",
+		];
+
+		const result = await triageAndReviewSources(
+			{
+				jobId: "job-cube-comparison",
+				planGoal:
+					"Compare Cube Kathmandu and Cube Nulane bicycle models for 2025-2026.",
+				keyQuestions,
+				discoveredSources: [
+					{
+						id: "cube-bike-comparison",
+						url: "https://bike.example/cube-kathmandu-vs-nulane-2026",
+						title: "Cube Kathmandu vs Cube Nulane 2026 comparison",
+						snippet:
+							"Compares Cube Kathmandu and Cube Nulane frame, drivetrain, tires, and touring use.",
+						sourceText:
+							"Cube Kathmandu and Cube Nulane bicycle comparison with specifications and commuter touring tradeoffs.",
+					},
+					{
+						id: "volkswagen-ev-prices",
+						url: "https://cars.example/volkswagen-electric-car-prices-hungary",
+						title: "Volkswagen electric car prices in Hungary",
+						snippet:
+							"Durván csökkentek a Volkswagen elektromos autók árai Magyarországon.",
+						sourceText:
+							"Volkswagen ID electric car prices, dealer discounts, Hungarian EV market changes, and battery trim details.",
+					},
+				],
+				reviewLimit: 2,
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => ({
+						summary: `Reviewed ${source.title}`,
+						keyFindings: ["The source appears to answer the research request."],
+						extractedText: source.sourceText,
+						relevanceScore: 95,
+						supportedKeyQuestions: keyQuestions,
+						extractedClaims: [`Claim from ${source.title}`],
+					}),
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => {
+						savedNotes.push({
+							discoveredSourceId: notes.discoveredSourceId,
+							rejectedReason: notes.rejectedReason,
+						});
+						return {
+							...notes,
+							id: `reviewed-${notes.discoveredSourceId}`,
+							createdAt: "2026-05-05T12:00:00.000Z",
+						};
+					},
+				},
+			},
+		);
+
+		expect(result.reviewedSources.map((source) => source.discoveredSourceId)).toEqual([
+			"cube-bike-comparison",
+		]);
+		expect(result.reviewedCount).toBe(1);
+		expect(savedNotes).toEqual(
+			expect.arrayContaining([
+				{
+					discoveredSourceId: "volkswagen-ev-prices",
+					rejectedReason:
+						"Rejected because the source is off-topic for the approved Research Plan.",
+				},
+			]),
+		);
+	});
 });

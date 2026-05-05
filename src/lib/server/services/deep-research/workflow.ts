@@ -15,6 +15,7 @@ import {
 } from "./index";
 import type { ResearchPlan } from "./planning";
 import {
+	isSourceTopicRelevantToPlan,
 	type PersistedReviewedResearchSourceNotes,
 	type SourceReviewer,
 	triageAndReviewSources,
@@ -391,6 +392,7 @@ async function runSourceReviewStep(
 							sourceText: source.sourceText,
 						})),
 					reviewLimit,
+					planGoal: (approvedPlan as ResearchPlan).goal,
 					keyQuestions: (approvedPlan as ResearchPlan).keyQuestions,
 				},
 				{
@@ -962,6 +964,21 @@ function mapReviewedSourceForCoverage(
 					? [source.reviewedNote]
 					: [],
 		qualityScore: source.relevanceScore ?? 80,
+		topicRelevant: isSourceTopicRelevantToPlan({
+			planGoal: plan.goal,
+			keyQuestions: plan.keyQuestions,
+			source: {
+				title: source.title ?? source.url,
+				snippet: source.snippet,
+				sourceText: [
+					source.sourceText,
+					source.reviewedNote,
+					...(source.extractedClaims ?? []),
+				]
+					.filter(Boolean)
+					.join(" "),
+			},
+		}),
 	};
 }
 

@@ -12,6 +12,7 @@ export type TriageSourcesForReviewInput = {
 	jobId: string;
 	discoveredSources: DiscoveredResearchSource[];
 	reviewLimit: number;
+	planGoal?: string;
 	keyQuestions?: string[];
 };
 
@@ -118,6 +119,12 @@ export async function triageAndReviewSources(
 			? normalizeText(review.extractedText)
 			: null;
 		const sourceText = extractedText ?? source.sourceText ?? source.snippet ?? "";
+		const topicRelevance = evaluateTopicRelevance({
+			planGoal: input.planGoal,
+			keyQuestions: input.keyQuestions ?? [],
+			source,
+			sourceText,
+		});
 		const supportedKeyQuestions = normalizeSupportedKeyQuestions(
 			review.supportedKeyQuestions,
 			input.keyQuestions ?? [],
@@ -140,6 +147,7 @@ export async function triageAndReviewSources(
 				supportedKeyQuestions,
 				source,
 				sourceText,
+				topicRelevance,
 				requiresKeyQuestionSupport: (input.keyQuestions ?? []).length > 0,
 			});
 		const notes = await dependencies.repository.saveReviewedSourceNotes({
@@ -334,6 +342,55 @@ const STOP_WORDS = new Set([
 	"should",
 	"could",
 	"would",
+	"mely",
+	"milyen",
+	"mik",
+	"hol",
+	"hogyan",
+	"jelenlegi",
+	"forras",
+	"forrasok",
+	"kutatas",
+	"jelentes",
+]);
+
+const GENERIC_TOPIC_TERMS = new Set([
+	"compare",
+	"comparison",
+	"comparing",
+	"osszehasonlitas",
+	"osszehasonlitasa",
+	"atfogo",
+	"model",
+	"models",
+	"modell",
+	"modellek",
+	"modelljei",
+	"modelljeinek",
+	"bike",
+	"bikes",
+	"bicycle",
+	"bicycles",
+	"cycling",
+	"kerekpar",
+	"kerekparok",
+	"kerekparmodellek",
+	"muszaki",
+	"jellemzok",
+	"felhasznalasi",
+	"teruletek",
+	"tapasztalatok",
+	"alapjan",
+	"magyar",
+	"nyelvu",
+	"időszak",
+	"idoszak",
+	"vonatkozoan",
+	"arat",
+	"arak",
+	"price",
+	"pricing",
+	"value",
 ]);
 
 function normalizeRelevanceScore(
@@ -368,6 +425,7 @@ function defaultRejectedReason(input: {
 	supportedKeyQuestions: string[];
 	source: SourceReviewCandidate;
 	sourceText: string;
+	topicRelevance?: TopicRelevanceResult;
 	requiresKeyQuestionSupport?: boolean;
 }): string | null {
 	if (isBlockedOrNoiseSource(input.source)) {
@@ -378,6 +436,9 @@ function defaultRejectedReason(input: {
 	}
 	if (input.requiresKeyQuestionSupport && input.supportedKeyQuestions.length === 0) {
 		return "Rejected because the source does not support any approved key question.";
+	}
+	if (input.topicRelevance && !input.topicRelevance.relevant) {
+		return "Rejected because the source is off-topic for the approved Research Plan.";
 	}
 	if (input.relevanceScore < MIN_RELEVANCE_SCORE) {
 		return "Rejected because relevance was below the Deep Research threshold.";
@@ -391,6 +452,105 @@ function normalizeText(value: string): string {
 
 function normalizeTextList(values: string[]): string[] {
 	return values.map(normalizeText).filter(Boolean);
+}
+
+type TopicRelevanceResult = {
+	relevant: boolean;
+	anchors: string[];
+	matchedAnchors: string[];
+};
+
+export function isSourceTopicRelevantToPlan(input: {
+	planGoal?: string | null;
+	keyQuestions?: string[];
+	source: Pick<DiscoveredResearchSource, "title" | "snippet" | "sourceText">;
+}): boolean {
+	return evaluateTopicRelevance({
+		planGoal: input.planGoal ?? undefined,
+		keyQuestions: input.keyQuestions ?? [],
+		source: {
+			id: "",
+			url: "https://example.test",
+			title: input.source.title,
+			snippet: input.source.snippet,
+			sourceText: input.source.sourceText,
+		},
+		sourceText: input.source.sourceText ?? input.source.snippet ?? "",
+	}).relevant;
+}
+
+function evaluateTopicRelevance(input: {
+	planGoal?: string;
+	keyQuestions: string[];
+	source: Pick<DiscoveredResearchSource, "title" | "snippet" | "sourceText">;
+	sourceText: string;
+}): TopicRelevanceResult {
+	const anchors = extractTopicAnchors(
+		[input.planGoal, ...input.keyQuestions].filter(Boolean).join(" "),
+	);
+	if (anchors.length === 0) {
+		return { relevant: true, anchors, matchedAnchors: [] };
+	}
+
+	const searchableSourceText = normalizeTopicText(
+		[
+			input.source.title,
+			input.source.snippet,
+			input.source.sourceText,
+			input.sourceText,
+		]
+			.filter(Boolean)
+			.join(" "),
+	);
+	const matchedAnchors = anchors.filter((anchor) =>
+		searchableSourceText.includes(normalizeTopicText(anchor)),
+	);
+	const requiredMatches = anchors.length === 1 ? 1 : Math.min(2, anchors.length);
+	return {
+		relevant: matchedAnchors.length >= requiredMatches,
+		anchors,
+		matchedAnchors,
+	};
+}
+
+function extractTopicAnchors(value: string): string[] {
+	const normalizedTokens = value
+		.split(/[^a-z0-9áéíóöőúüű]+/iu)
+		.map((token) => token.trim())
+		.filter(Boolean);
+	const termCounts = new Map<string, number>();
+	for (const token of normalizedTokens) {
+		const normalized = normalizeTopicText(token);
+		if (!isTopicAnchorTerm(normalized)) continue;
+		termCounts.set(normalized, (termCounts.get(normalized) ?? 0) + 1);
+	}
+
+	const repeatedAnchors = [...termCounts.entries()]
+		.filter(([, count]) => count > 1)
+		.map(([term]) => term);
+	const uniqueAnchors = [...termCounts.keys()].filter(
+		(term) => !repeatedAnchors.includes(term),
+	);
+
+	return [...repeatedAnchors, ...uniqueAnchors].slice(0, 8);
+}
+
+function isTopicAnchorTerm(term: string): boolean {
+	return (
+		term.length >= 4 &&
+		!STOP_WORDS.has(term) &&
+		!GENERIC_TOPIC_TERMS.has(term) &&
+		!/^\d+$/.test(term)
+	);
+}
+
+function normalizeTopicText(value: string): string {
+	return value
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function normalizeResearchSourceUrl(url: string): string {

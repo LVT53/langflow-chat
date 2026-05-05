@@ -17,6 +17,7 @@ export type ReviewedCoverageSource = {
 	supportedKeyQuestions: string[];
 	keyFindings: string[];
 	qualityScore?: number;
+	topicRelevant?: boolean;
 };
 
 export type ResearchBudgetRemaining = {
@@ -231,11 +232,14 @@ function findSupportingSources(
 	sources: ReviewedCoverageSource[],
 	keyQuestion: string,
 ): ReviewedCoverageSource[] {
-	return sources.filter((source) =>
-		source.supportedKeyQuestions.some(
-			(supportedQuestion) =>
-				normalizeQuestion(supportedQuestion) === normalizeQuestion(keyQuestion),
-		),
+	return sources.filter(
+		(source) =>
+			source.topicRelevant !== false &&
+			source.supportedKeyQuestions.some(
+				(supportedQuestion) =>
+					normalizeQuestion(supportedQuestion) ===
+					normalizeQuestion(keyQuestion),
+			),
 	);
 }
 
