@@ -157,6 +157,27 @@ export interface DeepResearchSourceCounts {
 	cited: number;
 }
 
+export type DeepResearchSourceStatus = "discovered" | "reviewed" | "cited";
+
+export interface DeepResearchSource {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	status: DeepResearchSourceStatus;
+	url: string;
+	title?: string | null;
+	provider: string;
+	snippet?: string | null;
+	reviewedNote?: string | null;
+	citationNote?: string | null;
+	discoveredAt: string;
+	reviewedAt: string | null;
+	citedAt: string | null;
+	createdAt?: string;
+	updatedAt?: string;
+}
+
 export interface DeepResearchTimelineEvent {
 	id: string;
 	jobId?: string;

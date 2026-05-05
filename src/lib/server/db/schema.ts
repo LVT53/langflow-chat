@@ -201,6 +201,47 @@ export const deepResearchUsageRecords = sqliteTable('deep_research_usage_records
   ),
 }));
 
+export const deepResearchSources = sqliteTable('deep_research_sources', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('discovered'),
+  url: text('url').notNull(),
+  title: text('title'),
+  provider: text('provider').notNull(),
+  snippet: text('snippet'),
+  reviewedNote: text('reviewed_note'),
+  citationNote: text('citation_note'),
+  discoveredAt: integer('discovered_at', { mode: 'timestamp' }).notNull(),
+  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  citedAt: integer('cited_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobStatusIdx: index('deep_research_sources_job_status_idx').on(
+    table.jobId,
+    table.status,
+    table.discoveredAt
+  ),
+  conversationStatusIdx: index('deep_research_sources_conversation_status_idx').on(
+    table.conversationId,
+    table.status,
+    table.discoveredAt
+  ),
+  userJobUrlIdx: index('deep_research_sources_user_job_url_idx').on(
+    table.userId,
+    table.jobId,
+    table.url
+  ),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')
