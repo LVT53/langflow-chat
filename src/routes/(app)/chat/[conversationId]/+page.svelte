@@ -993,6 +993,51 @@ function mergeDeepResearchJob(
 	return jobs.map((job, index) => (index === existingIndex ? updatedJob : job));
 }
 
+function replaceOptimisticDeepResearchJob(
+	jobs: DeepResearchJob[],
+	optimisticJobId: string,
+	updatedJob: DeepResearchJob,
+): DeepResearchJob[] {
+	return mergeDeepResearchJob(
+		jobs.filter((job) => job.id !== optimisticJobId),
+		updatedJob,
+	);
+}
+
+function removeDeepResearchJob(jobs: DeepResearchJob[], jobId: string): DeepResearchJob[] {
+	return jobs.filter((job) => job.id !== jobId);
+}
+
+function createOptimisticDeepResearchJob(params: {
+	conversationId: string;
+	triggerMessageId: string | null;
+	depth: NonNullable<SendPayload["deepResearchDepth"]>;
+	message: string;
+}): DeepResearchJob {
+	const now = Date.now();
+	const title = params.message.trim().replace(/\s+/g, " ").slice(0, 96) || "Deep Research";
+	return {
+		id: `pending-deep-research-${crypto.randomUUID()}`,
+		conversationId: params.conversationId,
+		triggerMessageId: params.triggerMessageId,
+		depth: params.depth,
+		status: "awaiting_plan",
+		stage: "plan_generation",
+		title,
+		userRequest: params.message,
+		reportArtifactId: null,
+		plan: null,
+		currentPlan: null,
+		timeline: [],
+		sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
+		sources: [],
+		createdAt: now,
+		updatedAt: now,
+		completedAt: null,
+		cancelledAt: null,
+	};
+}
+
 async function handleRetryFileProductionJob(jobId: string) {
 	try {
 		const job = await retryFileProductionJobRequest(jobId);
@@ -1106,6 +1151,13 @@ async function startDeepResearchTurn(params: {
 	personalityProfileId: string | null;
 	clientUserMessageId: string | null;
 }) {
+	const optimisticJob = createOptimisticDeepResearchJob({
+		conversationId: data.conversation.id,
+		triggerMessageId: params.clientUserMessageId,
+		depth: params.depth,
+		message: params.message,
+	});
+	deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, optimisticJob);
 	try {
 		const job = await startDeepResearchChatJobRequest({
 			conversationId: data.conversation.id,
@@ -1125,7 +1177,11 @@ async function startDeepResearchTurn(params: {
 				})),
 			);
 		}
-		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
+		deepResearchJobs = replaceOptimisticDeepResearchJob(
+			deepResearchJobs,
+			optimisticJob.id,
+			job,
+		);
 		isSending = false;
 		initialStreamPending = false;
 		activeStream = null;
@@ -1136,6 +1192,7 @@ async function startDeepResearchTurn(params: {
 		isSending = false;
 		initialStreamPending = false;
 		activeStream = null;
+		deepResearchJobs = removeDeepResearchJob(deepResearchJobs, optimisticJob.id);
 		restoreQueuedTurnToDraft();
 		sendError = err instanceof Error ? err.message : "Failed to start Deep Research";
 		canRetry = false;

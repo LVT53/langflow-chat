@@ -14,6 +14,14 @@ _Avoid_: prompt, evidence, memory dump, active context
 The subset of **Available Context** actually sent to the model for a specific **Normal Chat** turn.
 _Avoid_: available context, all memory, workspace state
 
+**Context Sources**:
+The user-facing surface that shows documents, attachments, memory, prior turns, generated work, and other sources AlfyAI is considering or carrying forward.
+_Avoid_: evidence manager, manual retrieval setup, budget manager
+
+**Message Evidence**:
+The user-facing audit of sources used or cited for one assistant message.
+_Avoid_: context sources, carried-forward context, context manager
+
 **Protected Context**:
 Context that should survive budget pressure longer than ordinary context but still respects the **Context Budget**.
 _Avoid_: essential context, mandatory context, unlimited context
@@ -57,6 +65,18 @@ _Avoid_: guarantee, always include
 **Context Budget**:
 The turn-specific ceiling for how much **Prompt Context** may be sent to the model.
 _Avoid_: model limit, token dump
+
+**Max Model Context**:
+The model/provider-specific maximum context window AlfyAI may plan against.
+_Avoid_: target context, compaction threshold, evidence budget
+
+**Target Constructed Context**:
+The configured target size for a Normal Chat turn's **Prompt Context** before final model-call overhead and response space.
+_Avoid_: arbitrary evidence cap, fixed document limit, small-context mode
+
+**Compaction Threshold**:
+The configured point at which AlfyAI treats **Prompt Context** as large enough to show or record compaction pressure.
+_Avoid_: hard evidence limit, maximum context, token warning
 
 **Reserved Context Budget**:
 The portion of **Context Budget** held for the current user message, system instructions, tool overhead, and response space.
@@ -106,6 +126,31 @@ _Avoid_: demo slice, spike, partial path
 
 - **Available Context** is broader than **Prompt Context**.
 - **Prompt Context** is selected per **Normal Chat** turn.
+- **Context Sources** explains and steers automatic context selection; it should not make the user manually budget context.
+- **Context Sources** may expose pin and exclude controls as optional overrides.
+- Pinning or excluding a **Context Source** is scoped to the current conversation or task by default.
+- Global source preference is a separate future concept and should not be implied by ordinary pinning.
+- **Context Sources** may summarize or group sources for a cleaner UI, but it should preserve enough detail for users to understand which important sources are being carried forward.
+- **Context Sources** is conversation-level and compact.
+- **Context Sources** should subtly indicate when active sources were compacted, reduced, or omitted because of budget pressure.
+- **Message Evidence** is message-level and may stay attached to each assistant response.
+- **Context Sources** should show the broader carried-forward pool, while **Message Evidence** shows what supported a specific answer.
+- **Context Sources** should avoid unbounded lists by grouping, summarizing, or collapsing lower-priority sources.
+- **Context Sources** should separate active sources from inferred available sources.
+- Active **Context Sources** include current attachments, pinned sources, open or current documents, current generated documents, and strong task sources.
+- Memory may appear in **Context Sources** as a compact separate group.
+- Memory display should summarize source type or role rather than exposing long memory internals.
+- Inferred available sources may be grouped or collapsed with counts and representative names.
+- Active **Context Sources** should persist across turns until a clear topic shift, user reset, user exclusion, or task boundary change.
+- Retrieval may resize and reprioritize active **Context Sources** each turn, but retrieval should not be the only memory of which sources define the conversation.
+- Clear topic shifts may demote active **Context Sources** into inferred available sources.
+- User reset or exclusion is stronger than topic-shift decay and may remove sources from the active pool.
+- Smart decay or compaction may use a local control model when intelligence is useful.
+- Local-model decay or compaction should avoid slowing ordinary response generation; prefer cached, bounded, asynchronous, or fallback-safe decisions.
+- Smart compaction and decay are async-first and should usually run after a turn or during idle maintenance.
+- During a chat turn, use deterministic fast rules unless a high-impact decision requires a short-timeout local-model check.
+- Memory remains supporting context even for large-context models.
+- Memory should stay compact and summary-oriented rather than expanding into long history dumps by default.
 - **Protected Context** is not unlimited context.
 - **Protected Context** may be downgraded to a smaller **Context Inclusion Level** when needed to fit the **Context Budget**.
 - The current user message is reserved rather than merely protected.
@@ -114,6 +159,20 @@ _Avoid_: demo slice, spike, partial path
 - **Context Selection** is the source of truth for promoting **Available Context** into **Prompt Context**.
 - **Context Selection** considers conversation, memory, attachment, workspace, task, generated-file, generated-document, and retrieval signals together.
 - Individual subsystems may supply **Available Context** and **Context Signals**, but should not independently force large text into **Prompt Context**.
+- **Max Model Context** should be derived from provider/model metadata when available.
+- Explicit admin **Max Model Context** values override derived provider/model defaults.
+- If model capacity is unknown, AlfyAI should use a conservative known fallback or require admin configuration for that provider.
+- **Target Constructed Context** and **Compaction Threshold** are the primary product controls for prompt size.
+- **Target Constructed Context** and **Compaction Threshold** should be automatically derived from the selected model's usable context capacity by default.
+- A good default is **Target Constructed Context** at about 90% of usable context capacity and **Compaction Threshold** at about 80% of usable context capacity.
+- Derived context-size defaults are model- and provider-specific and should update when the active model changes.
+- Explicit admin values for **Target Constructed Context** and **Compaction Threshold** override derived defaults.
+- When those settings are unset, AlfyAI should use the model-derived defaults.
+- Fixed item-count limits should not override **Target Constructed Context** when the configured model has enough context capacity.
+- Candidate and rerank limits should scale with the configured context capacity or runtime policy instead of acting as hidden hard caps.
+- Candidate and rerank limits are performance safeguards, not the source of truth for how many sources may enter **Prompt Context**.
+- **Context Selection** may batch, widen, or bypass reranking for clearly active sources when model capacity allows.
+- Cost-saving behavior should be an explicit admin or runtime policy, not an accidental consequence of small fixed evidence limits.
 - Every promoted context item has a **Context Inclusion Level**.
 - **Reference Context** preserves awareness without sending body content.
 - **Excerpt Context** supports focused answers when only part of an item is relevant.
@@ -126,6 +185,10 @@ _Avoid_: demo slice, spike, partial path
 - Uncertainty should usually reduce the **Context Inclusion Level** rather than block the user.
 - A **Context Clarification** is reserved for cases where the answer would materially depend on choosing between ambiguous context items.
 - Attaching an item in the current turn is the strongest **Context Signal**.
+- Current-turn attachments should be treated as active **Context Sources**.
+- Current-turn attachments should receive near-full **Prompt Context** when they fit within model-scaled **Target Constructed Context**.
+- Current-turn attachments should degrade by document structure or meaningful chunks before falling back to tiny excerpts.
+- After the turn, uploaded or attached documents should remain active **Context Sources** for the conversation or task until they decay, are excluded, or a boundary change removes them.
 - Explicitly naming an item is stronger than relying on workspace state.
 - Deictic wording such as "this" or "it" is a **Strong Context Signal** only when paired with a clear available target.
 - Correction or refinement wording can promote the current work item into **Prompt Context**.
@@ -140,11 +203,13 @@ _Avoid_: demo slice, spike, partial path
 - When multiple items are relevant, AlfyAI should preserve breadth before depth.
 - Breadth means using **Reference Context** for plausible relevant items before spending large budget on any one item.
 - Depth means using **Excerpt Context** or **Task Context** for the strongest item or explicitly requested comparison set.
+- For explicitly supplied or active source sets, breadth means giving every source meaningful content before giving very deep content to the strongest sources.
+- Explicitly supplied or active source sets should not lose entire documents because of small fixed item-count limits when the model-scaled **Context Budget** has room.
 - By default, only one primary item should receive **Task Context** in a turn.
 - Multiple items may receive large context when the user explicitly asks to compare or jointly transform them.
 - Attaching an item makes it explicitly relevant but does not override the **Context Budget**.
-- Attached items should receive **Task Context** only when the user asks for work that requires substantial item content.
-- Large attached items may receive **Excerpt Context** when the user asks a targeted question.
+- Attached items should use model-scaled **Context Budget** before being reduced to **Excerpt Context**.
+- Large attached items may receive **Excerpt Context** only when the model-scaled budget is genuinely pressured or the user asks a narrowly targeted question.
 - Multiple attached items should preserve breadth unless the user explicitly asks for exhaustive joint analysis.
 - **Context Limitation** should appear only when partial context materially affects trust in the answer.
 - Routine answers should not narrate context-selection mechanics.

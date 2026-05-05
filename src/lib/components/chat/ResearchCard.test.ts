@@ -1,7 +1,8 @@
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ResearchCard from './ResearchCard.svelte';
 import type { DeepResearchJob, DocumentWorkspaceItem } from '$lib/types';
+import { uiLanguage } from '$lib/stores/settings';
 
 function makeDeepResearchJob(overrides: Partial<DeepResearchJob> = {}): DeepResearchJob {
 	const now = Date.now();
@@ -23,6 +24,10 @@ function makeDeepResearchJob(overrides: Partial<DeepResearchJob> = {}): DeepRese
 }
 
 describe('ResearchCard', () => {
+	afterEach(() => {
+		uiLanguage.set('en');
+	});
+
 	it('renders a shell-only card when no Research Plan is present', () => {
 		const { getByRole, getByText, queryByText, queryByRole } = render(ResearchCard, {
 			job: makeDeepResearchJob({
@@ -37,11 +42,54 @@ describe('ResearchCard', () => {
 		).toBeInTheDocument();
 		expect(getByText('Standard')).toBeInTheDocument();
 		expect(getByText('Awaiting plan')).toBeInTheDocument();
-		expect(getByText('job_shell_created')).toBeInTheDocument();
+		expect(getByText('Drafting research plan...')).toBeInTheDocument();
+		expect(getByText('Drafting plan')).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
 		expect(queryByText('Research Plan')).not.toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Approve Research Plan' })).not.toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Edit Research Plan' })).not.toBeInTheDocument();
+	});
+
+	it('localizes plan sections and timeline step labels in Hungarian', () => {
+		uiLanguage.set('hu');
+		const { getAllByText, getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				plan: {
+					version: 1,
+					renderedPlan: '',
+					rawPlan: {
+						goal: 'Hasonlítsd össze az akkumulátor-újrahasznosítási szabályokat.',
+						depth: 'standard',
+						researchBudget: {
+							sourceReviewCeiling: 40,
+							synthesisPassCeiling: 2,
+						},
+						keyQuestions: ['Mely szabályok változtak mostanában?'],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: [],
+						constraints: [],
+						deliverables: ['Rövid összehasonlító jelentés'],
+					},
+					contextDisclosure: null,
+					effortEstimate: {
+						selectedDepth: 'standard',
+						expectedTimeBand: '10-25 perc',
+						sourceReviewCeiling: 40,
+						relativeCostWarning: 'Közepes relatív költség.',
+					},
+				},
+			}),
+		});
+
+		expect(getByText('Kulcskérdések')).toBeInTheDocument();
+		expect(getByText('Eredmények')).toBeInTheDocument();
+		expect(getByText('Terv elkészült')).toBeInTheDocument();
+		expect(getAllByText('Jóváhagyásra vár').length).toBeGreaterThan(0);
+		expect(queryByText('Key questions')).not.toBeInTheDocument();
+		expect(queryByText('Plan drafted')).not.toBeInTheDocument();
 	});
 
 	it('shows a persisted Research Plan and approval affordances when awaiting approval', () => {

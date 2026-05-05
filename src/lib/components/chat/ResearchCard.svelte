@@ -20,7 +20,7 @@
 
 	type TimelineStep = {
 		id: string;
-		label: string;
+		labelKey: I18nKey;
 		stages: string[];
 		status: 'completed' | 'active' | 'pending';
 		events: DeepResearchJob['timeline'];
@@ -54,7 +54,10 @@
 	let planEditError = $state<string | null>(null);
 	let advanceError = $state<string | null>(null);
 
-	let canCancel = $derived(job.status === 'awaiting_plan' || job.status === 'awaiting_approval');
+	let isOptimisticJob = $derived(job.id.startsWith('pending-deep-research-'));
+	let canCancel = $derived(
+		!isOptimisticJob && (job.status === 'awaiting_plan' || job.status === 'awaiting_approval')
+	);
 	let canAdvanceResearch = $derived(job.status === 'approved' || job.status === 'running');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
@@ -113,12 +116,12 @@
 			const sections: VisiblePlanSection[] = [];
 			const keyQuestions = compactItems(rawPlan.keyQuestions);
 			if (keyQuestions.length > 0) {
-				sections.push({ heading: 'Key questions', items: keyQuestions });
+				sections.push({ heading: $t('deepResearch.plan.keyQuestions'), items: keyQuestions });
 			}
 
 			const deliverables = compactItems(rawPlan.deliverables);
 			if (deliverables.length > 0) {
-				sections.push({ heading: 'Deliverables', items: deliverables });
+				sections.push({ heading: $t('deepResearch.plan.deliverables'), items: deliverables });
 			}
 
 			return { sections };
@@ -136,24 +139,34 @@
 				if (/^#\s+/.test(line)) return false;
 				if (/^(Research Plan|Kutatási terv)$/i.test(line)) return false;
 				if (/^(Cost|Költség):/i.test(line)) return false;
+				if (/^(Key questions|Kulcskérdések|Deliverables|Eredmények|Research steps|Kutatási lépések):?$/i.test(line)) return false;
 				if (isInternalApprovalConstraint(line.replace(/^-\s*/, ''))) return false;
 				return true;
 			});
 		const goalIndex = lines.findIndex((line) => /^(Goal|Cél):/i.test(line));
 		const remaining = lines.filter((_, index) => index !== goalIndex);
+		const goalLine = goalIndex >= 0 ? lines[goalIndex]?.replace(/^(Goal|Cél):\s*/i, '').trim() : '';
+		const sections: VisiblePlanSection[] = [];
+		if (goalLine) {
+			sections.push({ heading: $t('deepResearch.plan.goal'), items: [goalLine] });
+		}
+		const keyQuestionItems = remaining.filter((line) => !/^(Goal|Cél|Expected report shape|Várt jelentésszerkezet):/i.test(line));
+		if (keyQuestionItems.length > 0) {
+			sections.push({
+				heading: $t('deepResearch.plan.keyQuestions'),
+				items: keyQuestionItems,
+			});
+		}
 		return {
-			sections: [
-				{
-					heading: 'Key questions',
-					items: remaining.filter((line) => !/^(Goal|Cél|Expected report shape|Várt jelentésszerkezet):/i.test(line)),
-				},
-			],
+			sections,
 		};
 	}
 
 	function formatCostLabel(costUsdMicros: number): string | null {
 		if (!Number.isFinite(costUsdMicros) || costUsdMicros <= 0) return null;
-		return `Est. $${(costUsdMicros / 1_000_000).toFixed(4)}`;
+		return $t('deepResearch.estimatedCost', {
+			cost: `$${(costUsdMicros / 1_000_000).toFixed(4)}`,
+		});
 	}
 
 	function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
@@ -172,23 +185,24 @@
 
 	function activeTimelineIndex(job: DeepResearchJob): number {
 		if (job.status === 'completed') return TIMELINE_STEP_DEFINITIONS.length - 1;
-		if (job.status === 'awaiting_approval') return 1;
+		if (job.status === 'awaiting_approval') return 2;
 		const stage = job.stage ?? '';
 		const index = TIMELINE_STEP_DEFINITIONS.findIndex((step) => step.stages.includes(stage));
 		return Math.max(0, index);
 	}
 
 	const TIMELINE_STEP_DEFINITIONS = [
-		{ id: 'plan', label: 'Plan drafted', stages: ['plan_generation', 'plan_drafted', 'plan_revised'] },
-		{ id: 'approval', label: 'Awaiting approval', stages: ['plan_approved'] },
-		{ id: 'discovery', label: 'Discovering sources', stages: ['source_discovery'] },
-		{ id: 'review', label: 'Reviewing sources', stages: ['source_review'] },
-		{ id: 'coverage', label: 'Checking coverage', stages: ['coverage_assessment'] },
-		{ id: 'gaps', label: 'Filling gaps', stages: ['research_tasks'] },
-		{ id: 'synthesis', label: 'Synthesizing', stages: ['synthesis'] },
-		{ id: 'audit', label: 'Auditing citations', stages: ['citation_audit', 'citation_audit_failed'] },
-		{ id: 'writing', label: 'Writing report', stages: ['report_writing', 'report_ready'] },
-		{ id: 'completed', label: 'Completed', stages: ['completed'] },
+		{ id: 'plan', labelKey: 'deepResearch.timeline.planDrafting', stages: ['plan_generation'] },
+		{ id: 'plan-drafted', labelKey: 'deepResearch.timeline.planDrafted', stages: ['plan_drafted', 'plan_revised'] },
+		{ id: 'approval', labelKey: 'deepResearch.timeline.awaitingApproval', stages: ['plan_approved'] },
+		{ id: 'discovery', labelKey: 'deepResearch.timeline.discoveringSources', stages: ['source_discovery'] },
+		{ id: 'review', labelKey: 'deepResearch.timeline.reviewingSources', stages: ['source_review'] },
+		{ id: 'coverage', labelKey: 'deepResearch.timeline.checkingCoverage', stages: ['coverage_assessment'] },
+		{ id: 'gaps', labelKey: 'deepResearch.timeline.fillingGaps', stages: ['research_tasks'] },
+		{ id: 'synthesis', labelKey: 'deepResearch.timeline.synthesizing', stages: ['synthesis'] },
+		{ id: 'audit', labelKey: 'deepResearch.timeline.auditingCitations', stages: ['citation_audit', 'citation_audit_failed'] },
+		{ id: 'writing', labelKey: 'deepResearch.timeline.writingReport', stages: ['report_writing', 'report_ready'] },
+		{ id: 'completed', labelKey: 'deepResearch.timeline.completed', stages: ['completed'] },
 	] satisfies Array<Omit<TimelineStep, 'status' | 'events'>>;
 
 	function cancelJob() {
@@ -395,6 +409,14 @@
 				<p class="research-card__error" role="alert">{planEditError}</p>
 			{/if}
 		</section>
+	{:else if job.status === 'awaiting_plan'}
+		<section class="research-card__planning" aria-live="polite">
+			<div class="research-card__planning-spinner" aria-hidden="true"></div>
+			<div>
+				<strong>{$t('deepResearch.planningInProgress')}</strong>
+				<p>{$t('deepResearch.planningInProgressDetail')}</p>
+			</div>
+		</section>
 	{/if}
 
 	{#if hasSourceLedgerProgress}
@@ -443,11 +465,11 @@
 					<li class={`research-card__timeline-item research-card__timeline-item--${step.status}`}>
 						<div class="research-card__timeline-marker" aria-hidden="true"></div>
 						<div class="research-card__timeline-body">
-							<p class="research-card__timeline-summary">{step.label}</p>
+							<p class="research-card__timeline-summary">{$t(step.labelKey)}</p>
 							{#each step.events ?? [] as event (event.id)}
 								<div class="research-card__timeline-event">
 									<p>{event.summary}</p>
-									<div class="research-card__source-counts" aria-label="Source counts">
+									<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
 										{#each sourceCountLabels(event.sourceCounts) as label}
 											<span>{label}</span>
 										{/each}
@@ -673,6 +695,39 @@
 		gap: var(--space-md);
 		border-top: 1px solid var(--border-subtle);
 		padding-top: var(--space-md);
+	}
+
+	.research-card__planning {
+		display: grid;
+		grid-template-columns: 1.25rem minmax(0, 1fr);
+		gap: var(--space-sm);
+		align-items: start;
+		border-top: 1px solid var(--border-subtle);
+		padding-top: var(--space-md);
+		color: var(--text-secondary);
+	}
+
+	.research-card__planning strong {
+		display: block;
+		font-size: 0.9rem;
+		color: var(--text-primary);
+	}
+
+	.research-card__planning p {
+		margin: 0.2rem 0 0;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		color: var(--text-muted);
+	}
+
+	.research-card__planning-spinner {
+		margin-top: 0.1rem;
+		width: 1rem;
+		height: 1rem;
+		border: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+		border-top-color: var(--accent);
+		border-radius: 999px;
+		animation: research-spin 0.9s linear infinite;
 	}
 
 	.research-card__sources,
@@ -1028,9 +1083,16 @@
 		}
 	}
 
+	@keyframes research-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.research-card__status-dot,
-		.research-card__timeline-marker {
+		.research-card__timeline-marker,
+		.research-card__planning-spinner {
 			animation: none !important;
 		}
 
