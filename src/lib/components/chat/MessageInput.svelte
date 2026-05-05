@@ -683,7 +683,7 @@ async function emitDraftChange(force = false) {
 				</div>
 
 				{#if deepResearchEnabled}
-					<div class="relative flex items-center">
+					<div class="deep-research-trigger relative flex items-center">
 						<button
 							type="button"
 							class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
@@ -910,6 +910,10 @@ async function emitDraftChange(force = false) {
 
 	.composer-actions {
 		border-top: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent 28%);
+	}
+
+	.deep-research-trigger {
+		margin-right: 3px;
 	}
 
 	.attachment-chip {

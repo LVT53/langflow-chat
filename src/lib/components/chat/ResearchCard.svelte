@@ -574,7 +574,7 @@
 		border-radius: 8px;
 		background: var(--surface-elevated);
 		padding: var(--space-lg);
-		box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 10%, transparent);
+		box-shadow: none;
 	}
 
 	.research-card__header {
@@ -695,17 +695,17 @@
 	.research-card__timeline-item {
 		position: relative;
 		display: grid;
-		grid-template-columns: 1rem minmax(0, 1fr);
-		gap: 0.6rem;
+		grid-template-columns: 0.7rem minmax(0, 1fr);
+		gap: 0.7rem;
 		padding: 0 0 var(--space-sm);
 	}
 
 	.research-card__timeline-item::before {
 		content: "";
 		position: absolute;
-		top: 0.9rem;
+		top: 0.72rem;
 		bottom: 0;
-		left: 0.44rem;
+		left: 0.28rem;
 		width: 1px;
 		background: var(--border-subtle);
 	}
@@ -721,9 +721,9 @@
 	.research-card__timeline-marker {
 		position: relative;
 		z-index: 1;
-		margin-top: 0.24rem;
-		width: 0.9rem;
-		height: 0.9rem;
+		margin-top: 0.32rem;
+		width: 0.58rem;
+		height: 0.58rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: 999px;
 		background: var(--surface-page);
@@ -1006,6 +1006,11 @@
 		font-weight: 600;
 		color: var(--text-secondary);
 		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
 	.research-card__action--primary {
@@ -1016,11 +1021,9 @@
 
 	@keyframes research-pulse {
 		0%, 100% {
-			transform: scale(1);
 			opacity: 1;
 		}
 		50% {
-			transform: scale(1.25);
 			opacity: 0.72;
 		}
 	}
@@ -1030,11 +1033,30 @@
 		.research-card__timeline-marker {
 			animation: none !important;
 		}
+
+		.research-card__action {
+			transition: none;
+		}
+
+		.research-card__action:hover:not(:disabled),
+		.research-card__action:focus-visible:not(:disabled) {
+			transform: none;
+		}
 	}
 
 	.research-card__action:hover:not(:disabled),
 	.research-card__action:focus-visible:not(:disabled) {
+		border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page));
+		color: var(--text-primary);
+		transform: translateY(-1px);
+	}
+
+	.research-card__action--primary:hover:not(:disabled),
+	.research-card__action--primary:focus-visible:not(:disabled) {
 		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 88%, black);
+		color: var(--text-on-accent);
 	}
 
 	.research-card__cancel:hover:not(:disabled),
