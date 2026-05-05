@@ -35,6 +35,7 @@ const requiredExistingTables = [
 	'deep_research_timeline_events',
 	'deep_research_usage_records',
 	'deep_research_sources',
+	'deep_research_tasks',
 	'conversation_task_states',
 	'task_state_evidence_links',
 	'task_checkpoints',

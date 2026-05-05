@@ -178,6 +178,52 @@ export interface DeepResearchSource {
 	updatedAt?: string;
 }
 
+export type DeepResearchTaskStatus =
+	| "pending"
+	| "running"
+	| "completed"
+	| "failed"
+	| "skipped";
+
+export type DeepResearchTaskAssignmentType =
+	| "coverage_gap"
+	| "key_question"
+	| "source_group"
+	| "synthesis";
+
+export type DeepResearchTaskFailureKind = "transient" | "permanent";
+
+export interface DeepResearchTaskOutput {
+	summary: string;
+	findings?: string[];
+	sourceIds?: string[];
+}
+
+export interface DeepResearchTask {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	passNumber: number;
+	passOrder: number;
+	status: DeepResearchTaskStatus;
+	assignmentType: DeepResearchTaskAssignmentType;
+	coverageGapId?: string | null;
+	keyQuestion?: string | null;
+	assignment: string;
+	required: boolean;
+	critical: boolean;
+	output?: DeepResearchTaskOutput | null;
+	failureKind?: DeepResearchTaskFailureKind | null;
+	failureReason?: string | null;
+	createdAt: string;
+	updatedAt: string;
+	claimedAt?: string | null;
+	completedAt?: string | null;
+	failedAt?: string | null;
+	skippedAt?: string | null;
+}
+
 export interface DeepResearchTimelineEvent {
 	id: string;
 	jobId?: string;

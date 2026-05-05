@@ -242,6 +242,50 @@ export const deepResearchSources = sqliteTable('deep_research_sources', {
   ),
 }));
 
+export const deepResearchTasks = sqliteTable('deep_research_tasks', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passNumber: integer('pass_number').notNull(),
+  passOrder: integer('pass_order').notNull().default(0),
+  status: text('status').notNull().default('pending'),
+  assignmentType: text('assignment_type').notNull(),
+  coverageGapId: text('coverage_gap_id'),
+  keyQuestion: text('key_question'),
+  assignment: text('assignment').notNull(),
+  required: integer('required', { mode: 'boolean' }).notNull().default(true),
+  critical: integer('critical', { mode: 'boolean' }).notNull().default(false),
+  claimToken: text('claim_token'),
+  outputJson: text('output_json'),
+  failureKind: text('failure_kind'),
+  failureReason: text('failure_reason'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  failedAt: integer('failed_at', { mode: 'timestamp' }),
+  skippedAt: integer('skipped_at', { mode: 'timestamp' }),
+}, (table) => ({
+  jobPassStatusIdx: index('deep_research_tasks_job_pass_status_idx').on(
+    table.jobId,
+    table.passNumber,
+    table.status,
+    table.passOrder
+  ),
+  userJobPassIdx: index('deep_research_tasks_user_job_pass_idx').on(
+    table.userId,
+    table.jobId,
+    table.passNumber
+  ),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')
