@@ -588,6 +588,244 @@ describe("real Deep Research workflow stepper", () => {
 		});
 	});
 
+	it("completes with report limitations when source review budget is exhausted after reviewed evidence", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/limited-ai-copyright-training-data",
+			title: "Limited agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				coverage: {
+					assessResearchCoverage: () => ({
+						jobId: approved.id,
+						conversationId: "conv-1",
+						status: "insufficient",
+						canContinue: false,
+						continuationRecommendation: null,
+						coverageGaps: [],
+						reportLimitations: [
+							{
+								keyQuestion: "Which differences matter most?",
+								limitation:
+									"Depth budget is exhausted before enough independent reviewed evidence could support this key question.",
+								reviewedSourceCount: 1,
+							},
+						],
+						budget: {
+							selectedDepth: "focused",
+							sourceReviewCeiling: 1,
+							reviewedSourceCount: 1,
+							remainingSourceReviews: 0,
+							synthesisPassCeiling: 0,
+							remainingSynthesisPasses: 0,
+							exhausted: true,
+						},
+						remainingBudget: {
+							sourceReviews: 0,
+							synthesisPasses: 0,
+						},
+						timelineSummary: {
+							stage: "coverage_assessment",
+							kind: "coverage_assessed",
+							messageKey: "deepResearch.timeline.coverageLimited",
+							messageParams: {
+								reviewedSources: 1,
+								coverageGaps: 0,
+								reportLimitations: 1,
+							},
+							sourceCounts: {
+								discovered: 1,
+								reviewed: 1,
+								cited: 0,
+							},
+							assumptions: [],
+							warnings: [
+								"Depth budget exhausted; unresolved coverage gaps must be disclosed as report limitations.",
+							],
+							summary:
+								"Depth budget is exhausted; incomplete coverage will be disclosed as report limitations.",
+						},
+					}),
+				},
+			},
+		);
+		const reportArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "report_ready",
+			},
+		});
+		expect(reportArtifact?.contentText).toContain("## Report Limitations");
+		expect(reportArtifact?.contentText).toContain(
+			"Depth budget is exhausted before enough independent reviewed evidence could support this key question.",
+		);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "coverage_assessment",
+					kind: "coverage_assessed",
+					warnings: [
+						"Depth budget exhausted; unresolved coverage gaps must be disclosed as report limitations.",
+					],
+				}),
+			]),
+		);
+	});
+
+	it("fails terminally when source review budget is exhausted without reviewed evidence", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				coverage: {
+					assessResearchCoverage: () => ({
+						jobId: approved.id,
+						conversationId: "conv-1",
+						status: "insufficient",
+						canContinue: false,
+						continuationRecommendation: null,
+						coverageGaps: [],
+						reportLimitations: [
+							{
+								keyQuestion: "What is the current state of the topic?",
+								limitation:
+									"Depth budget is exhausted before enough reviewed evidence could support this key question.",
+								reviewedSourceCount: 0,
+							},
+						],
+						budget: {
+							selectedDepth: "focused",
+							sourceReviewCeiling: 0,
+							reviewedSourceCount: 0,
+							remainingSourceReviews: 0,
+							synthesisPassCeiling: 0,
+							remainingSynthesisPasses: 0,
+							exhausted: true,
+						},
+						remainingBudget: {
+							sourceReviews: 0,
+							synthesisPasses: 0,
+						},
+						timelineSummary: {
+							stage: "coverage_assessment",
+							kind: "coverage_assessed",
+							messageKey: "deepResearch.timeline.coverageLimited",
+							messageParams: {
+								reviewedSources: 0,
+								coverageGaps: 0,
+								reportLimitations: 1,
+							},
+							sourceCounts: {
+								discovered: 0,
+								reviewed: 0,
+								cited: 0,
+							},
+							assumptions: [],
+							warnings: [
+								"Depth budget exhausted; unresolved coverage gaps must be disclosed as report limitations.",
+							],
+							summary:
+								"Depth budget is exhausted; incomplete coverage will be disclosed as report limitations.",
+						},
+					}),
+				},
+			},
+		);
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "coverage_failed",
+			job: {
+				id: approved.id,
+				status: "failed",
+				stage: "coverage_exhausted_failed",
+				reportArtifactId: null,
+			},
+		});
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "coverage_assessment",
+					kind: "warning",
+					warnings: [
+						"Depth budget exhausted before any reviewed evidence was available; no useful Research Report can be produced.",
+					],
+				}),
+			]),
+		);
+	});
+
 	it("completes pending Research Tasks and finishes an audited report from the task pass", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");

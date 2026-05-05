@@ -33,6 +33,7 @@ import {
 	discussDeepResearchReport as discussDeepResearchReportRequest,
 	editDeepResearchPlan as editDeepResearchPlanRequest,
 	researchFurtherFromDeepResearchReport as researchFurtherFromDeepResearchReportRequest,
+	startDeepResearchChatJob as startDeepResearchChatJobRequest,
 } from "$lib/client/api/deep-research";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
@@ -102,6 +103,7 @@ import {
 	cloneSendPayload,
 	isConversationReadOnly,
 	isOsFileDropEvent,
+	shouldStartDeepResearchJob,
 	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
 	type MessageEditPayload,
@@ -1060,6 +1062,50 @@ async function handleAdvanceDeepResearchWorkflow(jobId: string) {
 	}
 }
 
+async function startDeepResearchTurn(params: {
+	message: string;
+	depth: NonNullable<SendPayload["deepResearchDepth"]>;
+	attachmentIds: string[];
+	modelId: SendPayload["modelId"];
+	personalityProfileId: string | null;
+	clientUserMessageId: string | null;
+}) {
+	try {
+		const job = await startDeepResearchChatJobRequest({
+			conversationId: data.conversation.id,
+			message: params.message,
+			depth: params.depth,
+			modelId: params.modelId,
+			attachmentIds: params.attachmentIds,
+			activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
+			personalityProfileId: params.personalityProfileId,
+		});
+		if (params.clientUserMessageId && job.triggerMessageId) {
+			messages.update((list) =>
+				updateMessageById(list, params.clientUserMessageId!, (message) => ({
+					...message,
+					renderKey: message.renderKey ?? params.clientUserMessageId!,
+					id: job.triggerMessageId ?? message.id,
+				})),
+			);
+		}
+		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
+		isSending = false;
+		initialStreamPending = false;
+		activeStream = null;
+		canRetry = false;
+		queuedTurn = null;
+		void hydrateConversationDetail(data.conversation.id);
+	} catch (err) {
+		isSending = false;
+		initialStreamPending = false;
+		activeStream = null;
+		restoreQueuedTurnToDraft();
+		sendError = err instanceof Error ? err.message : "Failed to start Deep Research";
+		canRetry = false;
+	}
+}
+
 $effect(() => {
 	const conversationId = data.conversation?.id;
 	const shouldPollConversation =
@@ -1320,13 +1366,15 @@ function handleSend(
 		Date.now() / 1000,
 	);
 
-	const placeholderId = crypto.randomUUID();
-	const placeholder = createAssistantPlaceholder(placeholderId);
-
 	let clientUserMsgId: string | null = null;
-	if (skipUserMessage) {
-		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
-	} else {
+	const deepResearchDepthForTurn = shouldStartDeepResearchJob(
+		payload,
+		retryAssistantMessageId,
+	)
+		? payload.deepResearchDepth
+		: null;
+
+	if (!skipUserMessage) {
 		clientUserMsgId = crypto.randomUUID();
 		const userMessage = createUserMessage({
 			id: clientUserMsgId,
@@ -1335,8 +1383,28 @@ function handleSend(
 			attachedArtifacts: sentAttachments,
 		});
 		messages.update((list) =>
-			appendUserMessageAndPlaceholder(list, userMessage, placeholder),
+			[...list, userMessage],
 		);
+	}
+
+	if (deepResearchDepthForTurn) {
+		void startDeepResearchTurn({
+			message: text,
+			depth: deepResearchDepthForTurn,
+			attachmentIds,
+			modelId: modelIdForTurn,
+			personalityProfileId: personalityProfileIdForTurn,
+			clientUserMessageId: clientUserMsgId,
+		});
+		return;
+	}
+
+	const placeholderId = crypto.randomUUID();
+	const placeholder = createAssistantPlaceholder(placeholderId);
+	if (skipUserMessage) {
+		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
+	} else {
+		messages.update((list) => appendAssistantPlaceholder(list, placeholder));
 	}
 
 	activeStream = streamChat(

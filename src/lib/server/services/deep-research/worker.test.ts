@@ -273,17 +273,45 @@ describe("Deep Research worker tick and scheduler", () => {
 		expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
 	});
 
-	it("does not start a timer when the scheduler options are disabled", async () => {
-		const setIntervalSpy = vi.spyOn(global, "setInterval");
+	it("installs a safe scheduler while disabled and starts work after runtime enablement", async () => {
+		const intervalCallbacks: Array<() => void> = [];
+		const timer = { unref: vi.fn() };
+		const setIntervalSpy = vi
+			.spyOn(global, "setInterval")
+			.mockImplementation((callback: TimerHandler, _intervalMs?: number) => {
+				intervalCallbacks.push(callback as () => void);
+				return timer as ReturnType<typeof setInterval>;
+			});
+		let enabled = false;
+		const recoverStaleJobs = vi.fn(async () => ({ recoveredJobs: [] }));
+		const advanceWorkflowStep = vi.fn(async () => null);
 		const { ensureDeepResearchWorkerScheduler } = await import("./worker");
 
 		ensureDeepResearchWorkerScheduler(() => ({
-			enabled: false,
+			enabled,
 			intervalMs: 5_000,
 			staleTimeoutMs: 30_000,
+			now: new Date("2026-05-05T10:00:00.000Z"),
+			recoverStaleJobs,
+			advanceWorkflowStep,
 		}));
 
-		expect(setIntervalSpy).not.toHaveBeenCalled();
+		expect(setIntervalSpy).toHaveBeenCalledOnce();
+		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5_000);
+		expect(timer.unref).toHaveBeenCalledOnce();
+
+		intervalCallbacks[0]?.();
+		await Promise.resolve();
+
+		expect(recoverStaleJobs).not.toHaveBeenCalled();
+		expect(advanceWorkflowStep).not.toHaveBeenCalled();
+
+		enabled = true;
+		intervalCallbacks[0]?.();
+		await Promise.resolve();
+
+		expect(recoverStaleJobs).toHaveBeenCalledOnce();
+		expect(advanceWorkflowStep).toHaveBeenCalledOnce();
 	});
 });
 

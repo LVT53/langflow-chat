@@ -5,9 +5,67 @@ import {
 	discussDeepResearchReport,
 	editDeepResearchPlan,
 	researchFurtherFromDeepResearchReport,
+	startDeepResearchChatJob,
 } from "./deep-research";
 
 describe("deep-research client API", () => {
+	it("posts composer Deep Research sends to the non-streaming job-start path", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						response: null,
+						conversationId: "conv-1",
+						deepResearchJob: {
+							id: "job-1",
+							conversationId: "conv-1",
+							triggerMessageId: "message-1",
+							depth: "focused",
+							status: "awaiting_approval",
+							stage: "plan_drafted",
+							title: "Research battery recycling",
+							createdAt: 1,
+							updatedAt: 2,
+						},
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await expect(
+			startDeepResearchChatJob(
+				{
+					conversationId: "conv-1",
+					message: "Research battery recycling",
+					depth: "focused",
+					modelId: "model1",
+					attachmentIds: ["artifact-1"],
+					activeDocumentArtifactId: "artifact-active-1",
+					personalityProfileId: "personality-1",
+				},
+				fetchMock,
+			),
+		).resolves.toMatchObject({
+			id: "job-1",
+			conversationId: "conv-1",
+			triggerMessageId: "message-1",
+			depth: "focused",
+		});
+		expect(fetchMock).toHaveBeenCalledWith("/api/chat/send", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				conversationId: "conv-1",
+				message: "Research battery recycling",
+				model: "model1",
+				attachmentIds: ["artifact-1"],
+				deepResearch: { depth: "focused" },
+				activeDocumentArtifactId: "artifact-active-1",
+				personalityProfileId: "personality-1",
+			}),
+		});
+	});
+
 	it("posts a manual workflow advance request and returns the updated job", async () => {
 		const fetchMock = vi.fn(
 			async () =>

@@ -45,6 +45,7 @@ export type DeepResearchWorkflowOutcome =
 	| "discovery_completed"
 	| "report_completed"
 	| "coverage_continuation_created"
+	| "coverage_failed"
 	| "not_eligible";
 
 export type RunDeepResearchWorkflowStepResult = {
@@ -532,49 +533,79 @@ async function runSourceReviewStep(
 					}
 				: null;
 		}
-		const reloaded = await reloadWorkflowJob(
-			jobRow.userId,
-			jobRow.conversationId,
-			jobRow.id,
-		);
-		return reloaded
-			? { job: reloaded, advanced: false, outcome: "not_eligible" }
-			: null;
+		if (reviewedSources.length === 0) {
+			return failCoverageExhaustedWithoutEvidence({
+				jobRow,
+				now,
+				sourceCounts: {
+					discovered: sources.length,
+					reviewed: 0,
+					cited: sources.filter((source) => source.citedAt).length,
+				},
+			});
+		}
+
+		return completeSourceReviewReport({
+			jobRow,
+			now,
+			reviewedSources,
+			limitations: coverageAssessment.reportLimitations.map(
+				(limitation) => limitation.limitation,
+			),
+			dependencies,
+		});
 	}
 
+	return completeSourceReviewReport({
+		jobRow,
+		now,
+		reviewedSources,
+		limitations: coverageAssessment.reportLimitations.map(
+			(limitation) => limitation.limitation,
+		),
+		dependencies,
+	});
+}
+
+async function completeSourceReviewReport(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	now: Date;
+	reviewedSources: DeepResearchSource[];
+	limitations: string[];
+	dependencies: DeepResearchWorkflowDependencies;
+}): Promise<RunDeepResearchWorkflowStepResult> {
 	await db
 		.update(deepResearchJobs)
 		.set({
 			status: "running",
 			stage: "synthesis",
-			updatedAt: now,
+			updatedAt: input.now,
 		})
 		.where(
 			and(
-				eq(deepResearchJobs.id, jobRow.id),
-				eq(deepResearchJobs.userId, jobRow.userId),
+				eq(deepResearchJobs.id, input.jobRow.id),
+				eq(deepResearchJobs.userId, input.jobRow.userId),
 				eq(deepResearchJobs.status, "running"),
 				eq(deepResearchJobs.stage, "source_review"),
 			),
 		);
 	const synthesisNotes = await (
-		dependencies.synthesis?.buildSynthesisNotes ?? buildSynthesisNotes
+		input.dependencies.synthesis?.buildSynthesisNotes ?? buildSynthesisNotes
 	)({
-		jobId: jobRow.id,
-		reviewedSources: reviewedSources.map(mapReviewedSourceForSynthesis),
+		jobId: input.jobRow.id,
+		reviewedSources: input.reviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: [],
 	});
 	const completedJob = await (
-		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
+		input.dependencies.reportCompletion
+			?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
 	)({
-		userId: jobRow.userId,
-		jobId: jobRow.id,
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
 		synthesisNotes,
-		limitations: coverageAssessment.reportLimitations.map(
-			(limitation) => limitation.limitation,
-		),
-		now,
+		limitations: input.limitations,
+		now: input.now,
 	});
 	if (!completedJob) return null;
 	return {
@@ -582,6 +613,62 @@ async function runSourceReviewStep(
 		advanced: true,
 		outcome: "report_completed",
 	};
+}
+
+async function failCoverageExhaustedWithoutEvidence(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	now: Date;
+	sourceCounts: {
+		discovered: number;
+		reviewed: number;
+		cited: number;
+	};
+}): Promise<RunDeepResearchWorkflowStepResult> {
+	const warning =
+		"Depth budget exhausted before any reviewed evidence was available; no useful Research Report can be produced.";
+	await saveResearchTimelineEvent({
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		userId: input.jobRow.userId,
+		taskId: null,
+		stage: "coverage_assessment",
+		kind: "warning",
+		occurredAt: input.now.toISOString(),
+		messageKey: "deepResearch.timeline.coverageFailed",
+		messageParams: {
+			discoveredSources: input.sourceCounts.discovered,
+			reviewedSources: 0,
+		},
+		sourceCounts: input.sourceCounts,
+		assumptions: [],
+		warnings: [warning],
+		summary: warning,
+	});
+
+	await db
+		.update(deepResearchJobs)
+		.set({
+			status: "failed",
+			stage: "coverage_exhausted_failed",
+			updatedAt: input.now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobRow.id),
+				eq(deepResearchJobs.userId, input.jobRow.userId),
+				eq(deepResearchJobs.status, "running"),
+				eq(deepResearchJobs.stage, "source_review"),
+			),
+		);
+
+	const reloaded = await reloadWorkflowJob(
+		input.jobRow.userId,
+		input.jobRow.conversationId,
+		input.jobRow.id,
+	);
+	return reloaded
+		? { job: reloaded, advanced: true, outcome: "coverage_failed" }
+		: null;
 }
 
 const defaultSourceReviewer: SourceReviewer = {

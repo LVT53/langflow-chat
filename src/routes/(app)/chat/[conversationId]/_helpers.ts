@@ -145,6 +145,13 @@ export function hasActiveDeepResearchJobs(jobs: DeepResearchJob[]): boolean {
 	);
 }
 
+export function shouldStartDeepResearchJob(
+	payload: Pick<SendPayload, 'deepResearchDepth'>,
+	retryAssistantMessageId?: string
+): boolean {
+	return Boolean(payload.deepResearchDepth && !retryAssistantMessageId);
+}
+
 export function isConversationReadOnly(
 	conversation: { status?: 'open' | 'sealed' | null },
 	_deepResearchJobs: DeepResearchJob[] = []

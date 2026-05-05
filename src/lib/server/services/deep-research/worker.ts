@@ -149,25 +149,18 @@ export function ensureDeepResearchWorkerScheduler(
 	if (workerSchedulerHandle) return;
 
 	const initialOptions = optionsProvider();
-	if (!initialOptions.enabled) {
-		console.info("[DEEP_RESEARCH] Worker scheduler disabled");
-		return;
-	}
-
-	const intervalMs = normalizePositiveMilliseconds(initialOptions.intervalMs);
-	if (intervalMs === null) {
-		console.warn("[DEEP_RESEARCH] Worker scheduler disabled", {
-			reason: "invalid_interval",
-			intervalMs: initialOptions.intervalMs,
-		});
-		return;
-	}
+	const intervalMs =
+		normalizePositiveMilliseconds(initialOptions.intervalMs) ??
+		DEFAULT_WORKER_INTERVAL_MS;
 
 	workerSchedulerHandle = setInterval(() => {
 		if (workerSchedulerTickInFlight) return;
+		const currentOptions = optionsProvider();
+		if (!currentOptions.enabled) return;
+
 		workerSchedulerTickInFlight = true;
 
-		void runDeepResearchWorkerTick(optionsProvider())
+		void runDeepResearchWorkerTick(currentOptions)
 			.then((result) => {
 				if (result.recoveredCount > 0 || result.advanced) {
 					console.info("[DEEP_RESEARCH] Worker tick completed", {
@@ -186,7 +179,10 @@ export function ensureDeepResearchWorkerScheduler(
 	}, intervalMs);
 	workerSchedulerHandle.unref?.();
 
-	console.info("[DEEP_RESEARCH] Worker scheduler enabled", { intervalMs });
+	console.info("[DEEP_RESEARCH] Worker scheduler installed", {
+		enabled: initialOptions.enabled,
+		intervalMs,
+	});
 }
 
 export function stopDeepResearchWorkerScheduler(): void {

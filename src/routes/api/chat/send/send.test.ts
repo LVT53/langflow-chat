@@ -80,6 +80,27 @@ vi.mock('$lib/server/env', () => ({
 	}
 }));
 
+const configMockState = vi.hoisted(() => ({
+	deepResearchEnabled: true,
+}));
+
+vi.mock('$lib/server/config-store', () => ({
+	getConfig: vi.fn(() => ({
+		concurrentStreamLimit: 100,
+		perUserStreamLimit: 10,
+		deepResearchEnabled: configMockState.deepResearchEnabled,
+		model1: {
+			displayName: 'Model 1',
+		},
+		model2: {
+			displayName: 'Model 2',
+		},
+	})),
+	getProviderById: vi.fn(async () => null),
+	normalizeModelSelection: vi.fn((model: string) => model),
+	getMaxMessageLength: vi.fn(() => 10000),
+}));
+
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
@@ -119,6 +140,7 @@ function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.co
 describe('POST /api/chat/send', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		configMockState.deepResearchEnabled = true;
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
 		mockAssertCanStartDeepResearchJob.mockResolvedValue(undefined);
@@ -247,6 +269,59 @@ describe('POST /api/chat/send', () => {
 			}),
 		);
 		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('rejects Deep Research when the runtime feature flag is disabled', async () => {
+		configMockState.deepResearchEnabled = false;
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+
+		const event = makeEvent({
+			message: 'Research this policy area deeply',
+			conversationId: 'conv-1',
+			deepResearch: { depth: 'standard' },
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(403);
+		expect(data).toMatchObject({
+			error: 'Deep Research is disabled',
+			code: 'deep_research_disabled',
+		});
+		expect(mockAssertCanStartDeepResearchJob).not.toHaveBeenCalled();
+		expect(mockCreateMessage).not.toHaveBeenCalled();
+		expect(mockStartDeepResearchJobShell).not.toHaveBeenCalled();
+		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('allows normal chat when Deep Research is disabled', async () => {
+		configMockState.deepResearchEnabled = false;
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessage.mockResolvedValue({
+			text: 'Normal chat still works',
+			rawResponse: {},
+			contextStatus: undefined,
+		});
+
+		const event = makeEvent({
+			message: 'Answer normally',
+			conversationId: 'conv-1',
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.response.text).toBe('Normal chat still works');
+		expect(mockSendMessage).toHaveBeenCalledWith(
+			'Answer normally',
+			'conv-1',
+			'model1',
+			expect.any(Object),
+			expect.any(Object),
+		);
+		expect(mockStartDeepResearchJobShell).not.toHaveBeenCalled();
 	});
 
 	it('passes prompt-ready attachment planning context into the Deep Research job shell', async () => {

@@ -9,6 +9,7 @@ import {
 	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
 	isConversationReadOnly,
+	shouldStartDeepResearchJob,
 	mergeFileProductionJob,
 	shouldHydrateFileProductionJobsOnToolCall,
 	toFriendlySendError,
@@ -107,6 +108,21 @@ describe('send payload helpers', () => {
 				deepResearchDepth: 'focused',
 			})
 		);
+	});
+
+	it('routes composer-selected Deep Research through the job-start path', () => {
+		const payload = {
+			message: 'Research battery recycling',
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+			conversationId: 'conv-1',
+			deepResearchDepth: 'focused' as const,
+		};
+
+		expect(shouldStartDeepResearchJob(payload)).toBe(true);
+		expect(shouldStartDeepResearchJob({ ...payload, deepResearchDepth: null })).toBe(false);
+		expect(shouldStartDeepResearchJob(payload, 'assistant-retry-1')).toBe(false);
 	});
 });
 

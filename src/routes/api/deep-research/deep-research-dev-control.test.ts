@@ -66,6 +66,7 @@ vi.mock("$lib/server/services/deep-research/planning-context", () => ({
 import { buildDeepResearchPlanningContext } from "$lib/server/services/deep-research/planning-context";
 
 let dbPath: string;
+let previousDeepResearchEnabled: string | undefined;
 const mockBuildDeepResearchPlanningContext = buildDeepResearchPlanningContext as ReturnType<
 	typeof vi.fn
 >;
@@ -260,6 +261,8 @@ async function startApproveAndCompleteThroughDevRoutes() {
 describe("Deep Research dev-control acceptance path", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-dev-control-${randomUUID()}.db`;
+		previousDeepResearchEnabled = process.env.DEEP_RESEARCH_ENABLED;
+		process.env.DEEP_RESEARCH_ENABLED = "true";
 		process.env.DATABASE_PATH = dbPath;
 		vi.resetModules();
 		await seedConversation();
@@ -277,6 +280,11 @@ describe("Deep Research dev-control acceptance path", () => {
 			unlinkSync(dbPath);
 		} catch {
 			// Temporary DB cleanup is best-effort.
+		}
+		if (previousDeepResearchEnabled === undefined) {
+			delete process.env.DEEP_RESEARCH_ENABLED;
+		} else {
+			process.env.DEEP_RESEARCH_ENABLED = previousDeepResearchEnabled;
 		}
 	});
 

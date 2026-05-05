@@ -66,7 +66,7 @@ export type PublicWebDiscoveryResult = {
 
 export async function runPublicWebDiscoveryPass(
 	input: PublicWebDiscoveryInput,
-	dependencies: PublicWebDiscoveryDependencies,
+	dependencies: PublicWebDiscoveryDependencies = {},
 ): Promise<PublicWebDiscoveryResult> {
 	const now = input.now ?? new Date();
 	const occurredAt = now.toISOString();

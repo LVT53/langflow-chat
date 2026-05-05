@@ -1,12 +1,30 @@
 import type {
+	DeepResearchDepth,
 	DeepResearchJob,
 	DeepResearchReportActionResult,
 	DeepResearchResearchFurtherActionResult,
+	ModelId,
 } from "$lib/types";
 import { type FetchLike, requestJson } from "./http";
 
 interface DeepResearchJobResponse {
 	job: DeepResearchJob;
+}
+
+interface DeepResearchChatSendResponse {
+	conversationId: string;
+	response: null;
+	deepResearchJob: DeepResearchJob;
+}
+
+export interface StartDeepResearchChatJobInput {
+	conversationId: string;
+	message: string;
+	depth: DeepResearchDepth;
+	modelId?: ModelId;
+	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
+	personalityProfileId?: string | null;
 }
 
 export interface DeepResearchWorkflowAdvanceResult {
@@ -15,6 +33,31 @@ export interface DeepResearchWorkflowAdvanceResult {
 	status: DeepResearchJob["status"];
 	stage: string | null;
 	job: DeepResearchJob;
+}
+
+export async function startDeepResearchChatJob(
+	input: StartDeepResearchChatJobInput,
+	fetchImpl: FetchLike = fetch,
+): Promise<DeepResearchJob> {
+	const payload = await requestJson<DeepResearchChatSendResponse>(
+		"/api/chat/send",
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				conversationId: input.conversationId,
+				message: input.message,
+				model: input.modelId,
+				attachmentIds: input.attachmentIds ?? [],
+				deepResearch: { depth: input.depth },
+				activeDocumentArtifactId: input.activeDocumentArtifactId,
+				personalityProfileId: input.personalityProfileId,
+			}),
+		},
+		"Failed to start Deep Research",
+		fetchImpl,
+	);
+	return payload.deepResearchJob;
 }
 
 export async function advanceDeepResearchWorkflow(

@@ -1,6 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runPublicWebDiscoveryPass } from "./discovery";
 import type { ResearchPlan } from "./planning";
+
+const {
+	mockResearchWeb,
+	mockSaveDiscoveredResearchSource,
+	mockSaveResearchTimelineEvent,
+} = vi.hoisted(() => ({
+	mockResearchWeb: vi.fn(),
+	mockSaveDiscoveredResearchSource: vi.fn(),
+	mockSaveResearchTimelineEvent: vi.fn(),
+}));
+
+vi.mock("$lib/server/services/web-research", () => ({
+	researchWeb: mockResearchWeb,
+}));
+
+vi.mock("./sources", () => ({
+	saveDiscoveredResearchSource: mockSaveDiscoveredResearchSource,
+}));
+
+vi.mock("./timeline", () => ({
+	saveResearchTimelineEvent: mockSaveResearchTimelineEvent,
+}));
 
 const approvedPlan: ResearchPlan = {
 	goal: "Compare EU and US AI copyright training data rules",
@@ -23,6 +45,80 @@ const approvedPlan: ResearchPlan = {
 };
 
 describe("public web discovery", () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it("uses default discovery dependencies when none are injected", async () => {
+		mockResearchWeb.mockResolvedValue({
+			sources: [
+				{
+					url: "https://example.com/default-discovery",
+					canonicalUrl: "https://example.com/default-discovery",
+					title: "Default discovery source",
+					provider: "brave",
+					snippet: "A default dependency result.",
+					publishedAt: null,
+					authorityClass: "standard",
+					authorityScore: 55,
+				},
+			],
+			diagnostics: {
+				providerCalls: [],
+			},
+		});
+		mockSaveDiscoveredResearchSource.mockImplementation(async (source) => ({
+			...source,
+			id: "source-1",
+			status: "discovered",
+		}));
+		mockSaveResearchTimelineEvent.mockImplementation(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
+
+		const result = await runPublicWebDiscoveryPass({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			approvedPlan,
+			now: new Date("2026-05-05T12:00:00.000Z"),
+		});
+
+		expect(mockResearchWeb).toHaveBeenCalledWith(
+			expect.objectContaining({
+				query: "Compare EU and US AI copyright training data rules",
+				mode: "research",
+				sourcePolicy: "general",
+			}),
+		);
+		expect(mockSaveDiscoveredResearchSource).toHaveBeenCalledWith(
+			expect.objectContaining({
+				jobId: "job-1",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				url: "https://example.com/default-discovery",
+				title: "Default discovery source",
+				provider: "brave",
+				snippet: "A default dependency result.",
+			}),
+		);
+		expect(mockSaveResearchTimelineEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				stage: "source_discovery",
+				kind: "stage_completed",
+				sourceCounts: {
+					discovered: 1,
+					reviewed: 0,
+					cited: 0,
+				},
+			}),
+		);
+		expect(result.discoveredCount).toBe(1);
+		expect(result.savedSources).toHaveLength(1);
+	});
+
 	it("discovers public web candidates from an approved Research Plan", async () => {
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [

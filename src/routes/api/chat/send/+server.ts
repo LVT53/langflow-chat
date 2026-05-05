@@ -61,9 +61,10 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
+	const runtimeConfig = getConfig();
 	const parsedRequest = await parseChatTurnRequest(
 		event.request,
-		getConfig(),
+		runtimeConfig,
 		"send",
 	);
 	if (!parsedRequest.ok) {
@@ -92,6 +93,15 @@ export const POST: RequestHandler = async (event) => {
 
 	try {
 		if (turn.deepResearchDepth) {
+			if (!runtimeConfig.deepResearchEnabled) {
+				return json(
+					{
+						error: "Deep Research is disabled",
+						code: "deep_research_disabled",
+					},
+					{ status: 403 },
+				);
+			}
 			await assertCanStartDeepResearchJob({
 				userId: user.id,
 				conversationId: turn.conversationId,
