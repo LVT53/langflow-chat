@@ -14,6 +14,8 @@ export type DiscoveredResearchSource = {
 	snippet?: string | null;
 	sourceText?: string | null;
 	supportedKeyQuestions?: string[];
+	intendedComparedEntity?: string | null;
+	intendedComparisonAxis?: string | null;
 	extractedClaims?: string[];
 };
 
@@ -57,6 +59,8 @@ export type ReviewedResearchSourceNotes = {
 	topicRelevant: boolean;
 	topicRelevanceReason: string | null;
 	supportedKeyQuestions: string[];
+	intendedComparedEntity?: string | null;
+	intendedComparisonAxis?: string | null;
 	comparedEntity?: string | null;
 	comparisonAxis?: string | null;
 	extractedClaims: string[];
@@ -194,8 +198,18 @@ export async function triageAndReviewSources(
 			topicRelevant: topicRelevance.relevant,
 			topicRelevanceReason: buildTopicRelevanceReason(topicRelevance),
 			supportedKeyQuestions,
-			comparedEntity: normalizeOptionalText(review.comparedEntity),
-			comparisonAxis: normalizeOptionalText(review.comparisonAxis),
+			intendedComparedEntity: normalizeOptionalText(
+				source.intendedComparedEntity,
+			),
+			intendedComparisonAxis: normalizeOptionalText(
+				source.intendedComparisonAxis,
+			),
+			comparedEntity:
+				normalizeOptionalText(review.comparedEntity) ??
+				normalizeOptionalText(source.intendedComparedEntity),
+			comparisonAxis:
+				normalizeOptionalText(review.comparisonAxis) ??
+				normalizeOptionalText(source.intendedComparisonAxis),
 			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
 			sourceQualitySignals,
 			sourceAuthoritySummary: sourceAuthoritySummary ?? {

@@ -267,6 +267,20 @@
       "when": 1777140000024,
       "tag": "1777140000024_deep_research_synthesis_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1777140000025,
+      "tag": "1777140000025_deep_research_citation_audit_verdicts",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1777140000026,
+      "tag": "1777140000026_deep_research_comparison_axes",
+      "breakpoints": true
     }
 
   ]

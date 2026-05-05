@@ -256,6 +256,10 @@ export interface DeepResearchSource {
 	topicRelevant?: boolean | null;
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
+	intendedComparedEntity?: string | null;
+	intendedComparisonAxis?: string | null;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	extractedClaims?: string[];
 	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	sourceAuthoritySummary?: DeepResearchSourceAuthoritySummary | null;
@@ -367,6 +371,7 @@ export interface DeepResearchCoverageGap {
 	severity: DeepResearchCoverageGapSeverity;
 	reason: string;
 	keyQuestion?: string | null;
+	comparedEntity?: string | null;
 	comparisonAxis?: string | null;
 	recommendedNextAction: string;
 	detail?: string | null;
@@ -441,6 +446,26 @@ export interface DeepResearchSynthesisClaim {
 	statusReason?: string | null;
 	competingClaimGroupId?: string | null;
 	evidenceLinks: DeepResearchClaimEvidenceLink[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+export type DeepResearchCitationAuditVerdictStatus =
+	| "supported"
+	| "partially_supported"
+	| "unsupported"
+	| "contradicted"
+	| "needs_repair";
+
+export interface DeepResearchCitationAuditVerdict {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	claimId: string;
+	verdict: DeepResearchCitationAuditVerdictStatus;
+	evidenceNoteIds: string[];
+	reason: string;
 	createdAt: string;
 	updatedAt: string;
 }

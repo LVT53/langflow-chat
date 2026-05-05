@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { auditDeepResearchReportCitations } from "./citation-audit";
+import {
+	auditDeepResearchClaimGraph,
+	auditDeepResearchReportCitations,
+} from "./citation-audit";
 
 describe("Deep Research citation audit", () => {
 	it("passes a report with claims supported by reviewed cited sources", async () => {
@@ -614,5 +617,81 @@ describe("Deep Research citation audit", () => {
 					"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
 			}),
 		);
+	});
+
+	it("rejects a Markdown-looking citation when linked Evidence Notes do not support the claim", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-markdown-citation",
+			claims: [
+				{
+					id: "claim-markdown-citation",
+					jobId: "job-markdown-citation",
+					conversationId: "conversation-1",
+					userId: "user-1",
+					passCheckpointId: "pass-1",
+					synthesisPass: "synthesis-pass-1",
+					planQuestion: "Which US AI copyright cases remain unresolved?",
+					reportSection: "Litigation status",
+					statement:
+						"US courts have already settled every major AI training-data copyright lawsuit. [1]",
+					claimType: "general",
+					central: true,
+					status: "accepted",
+					statusReason: null,
+					competingClaimGroupId: null,
+					evidenceLinks: [
+						{
+							id: "link-1",
+							claimId: "claim-markdown-citation",
+							evidenceNoteId: "note-eu-exception",
+							jobId: "job-markdown-citation",
+							conversationId: "conversation-1",
+							userId: "user-1",
+							relation: "support",
+							rationale: null,
+							material: false,
+							createdAt: "2026-05-05T10:12:00.000Z",
+						},
+					],
+					createdAt: "2026-05-05T10:12:00.000Z",
+					updatedAt: "2026-05-05T10:12:00.000Z",
+				},
+			],
+			evidenceNotes: [
+				{
+					id: "note-eu-exception",
+					jobId: "job-markdown-citation",
+					conversationId: "conversation-1",
+					userId: "user-1",
+					passCheckpointId: "pass-1",
+					passNumber: 1,
+					sourceId: "source-1",
+					taskId: null,
+					supportedKeyQuestion: "How does EU law treat AI training data?",
+					comparedEntity: "European Union",
+					comparisonAxis: "copyright exception",
+					findingText:
+						"EU text-and-data mining exceptions require rights-reservation checks.",
+					sourceSupport: {
+						sourceId: "source-1",
+						title: "EU AI copyright briefing",
+					},
+					sourceQualitySignals: null,
+					sourceAuthoritySummary: null,
+					createdAt: "2026-05-05T10:11:00.000Z",
+					updatedAt: "2026-05-05T10:11:00.000Z",
+				},
+			],
+		});
+
+		expect(result.canRenderMarkdown).toBe(false);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-markdown-citation",
+				verdict: "needs_repair",
+				evidenceNoteIds: ["note-eu-exception"],
+				reason: expect.stringContaining("do not support"),
+			}),
+		]);
 	});
 });

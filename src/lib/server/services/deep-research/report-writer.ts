@@ -103,6 +103,8 @@ const reportLabels: Record<
 		analysisIntro: string;
 		comparisonIntro: string;
 		recommendationsIntro: string;
+		comparedEntities: string;
+		comparisonAxes: string;
 		evidenceBackedPoint: string;
 		evidence: string;
 		methodologyScope: (depthLabel: string) => string;
@@ -132,6 +134,8 @@ const reportLabels: Record<
 		analysisIntro: "Evidence-backed answer",
 		comparisonIntro: "At a glance",
 		recommendationsIntro: "Decision implications",
+		comparedEntities: "Compared entities",
+		comparisonAxes: "Central comparison axes",
 		evidenceBackedPoint: "Evidence-backed point",
 		evidence: "Evidence",
 		methodologyScope: (depthLabel) =>
@@ -164,6 +168,8 @@ const reportLabels: Record<
 		analysisIntro: "Bizonyítékokra épülő válasz",
 		comparisonIntro: "Gyors áttekintés",
 		recommendationsIntro: "Döntési következmények",
+		comparedEntities: "Összehasonlított entitások",
+		comparisonAxes: "Központi összehasonlítási tengelyek",
 		evidenceBackedPoint: "Bizonyítékkal alátámasztott pont",
 		evidence: "Bizonyíték",
 		methodologyScope: (depthLabel) =>
@@ -610,7 +616,7 @@ function buildSectionBody(
 	}
 
 	if (sectionKind === "comparison") {
-		return renderComparisonTable(keyFindings, researchLanguage);
+		return renderComparisonTable(plan, keyFindings, researchLanguage);
 	}
 
 	if (sectionKind === "recommendations") {
@@ -624,16 +630,21 @@ function buildSectionBody(
 }
 
 function renderComparisonTable(
+	plan: ResearchPlan,
 	keyFindings: string[],
 	researchLanguage: ResearchLanguage,
 ): string {
 	const labels = reportLabels[researchLanguage];
+	const comparisonScope = buildComparisonScopeLines(plan, researchLanguage);
 	if (keyFindings.length === 0) {
-		return renderBullets(keyFindings, researchLanguage).join("\n");
+		return [...comparisonScope, ...renderBullets(keyFindings, researchLanguage)].join(
+			"\n",
+		);
 	}
 
 	return [
 		labels.comparisonIntro,
+		...comparisonScope,
 		"",
 		`| # | ${labels.evidenceBackedPoint} |`,
 		"| --- | --- |",
@@ -642,6 +653,21 @@ function renderComparisonTable(
 				`| ${index + 1} | ${escapeMarkdownTableCell(finding)} |`,
 		),
 	].join("\n");
+}
+
+function buildComparisonScopeLines(
+	plan: ResearchPlan,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	const labels = reportLabels[researchLanguage];
+	const lines: string[] = [];
+	if (plan.comparedEntities?.length) {
+		lines.push(`${labels.comparedEntities}: ${plan.comparedEntities.join("; ")}`);
+	}
+	if (plan.comparisonAxes?.length) {
+		lines.push(`${labels.comparisonAxes}: ${plan.comparisonAxes.join("; ")}`);
+	}
+	return lines;
 }
 
 function formatDepthLabel(

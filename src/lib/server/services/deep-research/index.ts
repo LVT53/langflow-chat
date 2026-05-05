@@ -30,6 +30,7 @@ import type {
 	DeepResearchUsageSummary,
 } from '$lib/types';
 import {
+	auditAndPersistDeepResearchClaimGraph,
 	auditDeepResearchReportCitations,
 	type DeepResearchReportDraft,
 } from './citation-audit';
@@ -55,7 +56,9 @@ import { isSourceTopicRelevantToPlan } from './source-review';
 import {
 	listResearchCoverageGaps,
 	listResearchPassCheckpoints,
+	upsertResearchPassCheckpoint,
 } from './pass-state';
+import { createResearchTasksFromCoverageGaps } from './tasks';
 import {
 	completeResearchResumePoint,
 	getResearchResumePoint,
@@ -650,6 +653,7 @@ export async function completeDeepResearchJobWithAuditedReport(
 	const currentPlan = currentPlans.get(job.id);
 	if (!currentPlan?.rawPlan) return null;
 	const reportAssemblyResumeKey = `report:${job.id}:audited`;
+	const citationAuditResumeKey = `citation-audit:${job.id}:audited`;
 	const existingReportAssembly = await getResearchResumePoint({
 		userId: input.userId,
 		jobId: job.id,
@@ -668,19 +672,109 @@ export async function completeDeepResearchJobWithAuditedReport(
 		});
 	}
 
+	await upsertResearchResumePoint({
+		userId: job.userId,
+		jobId: job.id,
+		conversationId: job.conversationId,
+		boundary: 'citation_audit',
+		resumeKey: citationAuditResumeKey,
+		stage: 'citation_audit',
+		payload: {
+			source: 'claim_graph',
+		},
+		now,
+	});
+	const claimGraphAuditResult = await auditAndPersistDeepResearchClaimGraph({
+		userId: input.userId,
+		jobId: job.id,
+		now,
+	});
+	if (claimGraphAuditResult) {
+		await completeResearchResumePoint({
+			userId: job.userId,
+			jobId: job.id,
+			resumeKey: citationAuditResumeKey,
+			result: {
+				source: 'claim_graph',
+				status: claimGraphAuditResult.status,
+				canRenderMarkdown: claimGraphAuditResult.canRenderMarkdown,
+				verdictCount: claimGraphAuditResult.verdicts.length,
+			},
+			now,
+		});
+
+		if (claimGraphAuditResult.status === 'failed') {
+			await saveResearchTimelineEvent({
+				jobId: job.id,
+				conversationId: job.conversationId,
+				userId: job.userId,
+				taskId: null,
+				stage: 'citation_audit',
+				kind: 'warning',
+				occurredAt: now.toISOString(),
+				messageKey: 'deepResearch.timeline.citationAuditFailed',
+				messageParams: {
+					status: claimGraphAuditResult.status,
+					retainedClaims: 0,
+					removedClaims: claimGraphAuditResult.verdicts.length,
+				},
+				sourceCounts: sourceCountsFromSources(
+					await listResearchSources({ userId: input.userId, jobId: job.id })
+				),
+				assumptions: [],
+				warnings: claimGraphAuditWarnings(claimGraphAuditResult),
+				summary:
+					'Citation audit failed because no credible supported claims remained.',
+			});
+			return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
+				job,
+				currentPlan,
+				sources: await listResearchSources({
+					userId: input.userId,
+					jobId: job.id,
+				}),
+				limitations: [
+					...(input.limitations ?? []),
+					...claimGraphAuditWarnings(claimGraphAuditResult),
+				],
+				now,
+			});
+		}
+
+		if (claimGraphAuditResult.status === 'needs_repair') {
+			return createCitationAuditRepairPass({
+				job,
+				currentPlan,
+				auditResult: claimGraphAuditResult,
+				now,
+			});
+		}
+	}
+
 	const citedAt = now;
 	const initialSources = await listResearchSources({
 		userId: input.userId,
 		jobId: job.id,
 	});
+	const synthesisFindingsForCitations = [
+		...input.synthesisNotes.findings,
+		...input.synthesisNotes.supportedFindings,
+	];
 	const sourceIdsNeededForReport = new Set(
-		input.synthesisNotes.findings.flatMap((finding) =>
+		synthesisFindingsForCitations.flatMap((finding) =>
 			finding.sourceRefs.flatMap((sourceRef) => [
 				sourceRef.discoveredSourceId,
 				sourceRef.reviewedSourceId,
 			])
 		)
 	);
+	if (sourceIdsNeededForReport.size === 0) {
+		for (const source of initialSources) {
+			if (source.reviewedAt) {
+				sourceIdsNeededForReport.add(source.id);
+			}
+		}
+	}
 	await Promise.all(
 		initialSources
 			.filter(
@@ -733,7 +827,6 @@ export async function completeDeepResearchJobWithAuditedReport(
 		reportDraft,
 		input.synthesisNotes
 	);
-	const citationAuditResumeKey = `citation-audit:${job.id}:audited`;
 	await upsertResearchResumePoint({
 		userId: job.userId,
 		jobId: job.id,
@@ -780,7 +873,17 @@ export async function completeDeepResearchJobWithAuditedReport(
 		report: citationAuditReportDraft,
 		citedSources: citationAuditSources,
 		reviewClaimSupport: llmClaimReviewer
-			? async ({ claim }) => llmClaimReviewer(claim.id)
+			? async ({ claim }) => {
+					const review = llmClaimReviewer(claim.id);
+					if (review?.status === 'repaired') {
+						return {
+							status: 'unsupported',
+							reason:
+								'Citation audit repair requires an explicit Repair Pass before report rendering.',
+						};
+					}
+					return review;
+				}
 			: undefined,
 	});
 	await completeResearchResumePoint({
@@ -961,6 +1064,145 @@ async function finalizeAuditedReportJobFromArtifact(input: {
 		updatedJob,
 		input.currentPlan,
 		timelineEvents.get(updatedJob.id) ?? []
+	);
+}
+
+async function createCitationAuditRepairPass(input: {
+	job: DeepResearchJobRow;
+	currentPlan: DeepResearchPlanSummary;
+	auditResult: Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>;
+	now: Date;
+}): Promise<DeepResearchJob | null> {
+	if (!input.auditResult) return null;
+	const repairVerdicts = input.auditResult.verdicts.filter((verdict) =>
+		['needs_repair', 'contradicted'].includes(verdict.verdict)
+	);
+	if (repairVerdicts.length === 0) return null;
+	const [passCheckpoints, claims] = await Promise.all([
+		listResearchPassCheckpoints({
+			userId: input.job.userId,
+			jobId: input.job.id,
+		}),
+		listDeepResearchSynthesisClaims({
+			userId: input.job.userId,
+			jobId: input.job.id,
+		}),
+	]);
+	const claimsById = new Map(claims.map((claim) => [claim.id, claim]));
+	const passNumber =
+		Math.max(1, ...passCheckpoints.map((checkpoint) => checkpoint.passNumber)) +
+		1;
+	const repairResumeKey = `repair:${input.job.id}:citation-audit:${passNumber}`;
+	await upsertResearchResumePoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		boundary: 'repair',
+		resumeKey: repairResumeKey,
+		stage: 'repair',
+		passNumber,
+		payload: {
+			auditStatus: input.auditResult.status,
+			repairVerdicts: repairVerdicts.length,
+		},
+		now: input.now,
+	});
+	await upsertResearchPassCheckpoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		passNumber,
+		searchIntent:
+			'Citation audit repair pass for unsupported or contradicted Synthesis Claims',
+		reviewedSourceIds: [],
+		now: input.now,
+	});
+	const tasks = await createResearchTasksFromCoverageGaps({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		passNumber,
+		gaps: repairVerdicts.map((verdict) => {
+			const claim = claimsById.get(verdict.claimId);
+			return {
+				id: `citation-audit:${verdict.claimId}`,
+				keyQuestion: claim?.planQuestion ?? null,
+				summary: [
+					`Repair claim after citation audit: ${claim?.statement ?? verdict.claimId}`,
+					`Audit verdict: ${verdict.verdict}.`,
+					`Reason: ${verdict.reason}`,
+				].join(' '),
+				severity: claim?.central === false ? 'important' : 'critical',
+			};
+		}),
+		now: input.now,
+	});
+	await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'running',
+			stage: 'research_tasks',
+			updatedAt: input.now,
+		})
+		.where(eq(deepResearchJobs.id, input.job.id));
+	await completeResearchResumePoint({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		resumeKey: repairResumeKey,
+		result: {
+			passNumber,
+			taskIds: tasks.map((task) => task.id),
+		},
+		now: input.now,
+	});
+	await saveResearchTimelineEvent({
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		userId: input.job.userId,
+		taskId: null,
+		stage: 'repair',
+		kind: 'stage_started',
+		occurredAt: input.now.toISOString(),
+		messageKey: 'deepResearch.timeline.citationAuditRepairPassCreated',
+		messageParams: {
+			passNumber,
+			repairTasks: tasks.length,
+		},
+		sourceCounts: sourceCountsFromSources(
+			await listResearchSources({
+				userId: input.job.userId,
+				jobId: input.job.id,
+			})
+		),
+		assumptions: [],
+		warnings: claimGraphAuditWarnings(input.auditResult).slice(0, 6),
+		summary: `Citation audit created repair pass ${passNumber} with ${tasks.length} repair task${tasks.length === 1 ? '' : 's'}.`,
+	});
+	const [updatedJob] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(eq(deepResearchJobs.id, input.job.id))
+		.limit(1);
+	if (!updatedJob) return null;
+	const [timelineEvents, passStates, sourceLedgers] = await Promise.all([
+		loadTimelineEventsByJobId(input.job.userId, [input.job.id]),
+		loadPassStatesByJobId(input.job.userId, [input.job.id]),
+		loadSourceLedgersByJobId(input.job.userId, input.job.conversationId, [
+			input.job.id,
+		]),
+	]);
+	return mapDeepResearchJob(
+		updatedJob,
+		input.currentPlan,
+		timelineEvents.get(input.job.id) ?? [],
+		sourceLedgers.get(input.job.id),
+		{
+			passCheckpoints: passStates.get(input.job.id)?.passCheckpoints ?? [],
+			coverageGaps: passStates.get(input.job.id)?.coverageGaps ?? [],
+			evidenceNotes: passStates.get(input.job.id)?.evidenceNotes ?? [],
+			synthesisClaims: passStates.get(input.job.id)?.synthesisClaims ?? [],
+			resumePoints: passStates.get(input.job.id)?.resumePoints ?? [],
+		}
 	);
 }
 
@@ -1747,6 +1989,26 @@ function citationAuditWarnings(auditResult: Awaited<ReturnType<typeof auditDeepR
 	if (auditResult.limitations.length > 0) return auditResult.limitations.slice(0, 6);
 	if (!auditResult.canComplete) {
 		return ['No reviewed cited source supported the core claims strongly enough to publish a report.'];
+	}
+	return [];
+}
+
+function claimGraphAuditWarnings(
+	auditResult: NonNullable<
+		Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>
+	>
+): string[] {
+	const warnings = auditResult.verdicts
+		.filter((verdict) => verdict.verdict !== 'supported')
+		.map(
+			(verdict) =>
+				`Claim ${verdict.claimId} audit verdict ${verdict.verdict}: ${verdict.reason}`
+		);
+	if (warnings.length > 0) return warnings;
+	if (!auditResult.canRenderMarkdown) {
+		return [
+			'Claim graph verification did not find enough supported Synthesis Claims to render Markdown.',
+		];
 	}
 	return [];
 }

@@ -40,7 +40,10 @@ import {
 	buildSourceReviewEvidenceNotes,
 	listDeepResearchEvidenceNotes,
 } from "./evidence-notes";
-import { saveDeepResearchSynthesisClaimsFromNotes } from "./synthesis-claims";
+import {
+	listDeepResearchSynthesisClaims,
+	saveDeepResearchSynthesisClaimsFromNotes,
+} from "./synthesis-claims";
 import {
 	completeResearchPassCheckpoint,
 	listResearchCoverageGaps,
@@ -448,6 +451,17 @@ async function runResearchTasksStep(
 		synthesisInput,
 		dependencies,
 	});
+	const eligibilityResult = await assessReportEligibilityAfterSynthesis({
+		jobRow,
+		approvedPlan: approvedPlan as ResearchPlan,
+		passNumber,
+		reviewedSources,
+		allSources: sources,
+		taskLimitations,
+		now,
+		dependencies,
+	});
+	if (eligibilityResult) return eligibilityResult;
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -568,6 +582,17 @@ async function runSynthesisResumeStep(
 		},
 		now,
 	});
+	const eligibilityResult = await assessReportEligibilityAfterSynthesis({
+		jobRow,
+		approvedPlan: approvedPlan as ResearchPlan,
+		passNumber,
+		reviewedSources,
+		allSources: sources,
+		taskLimitations,
+		now,
+		dependencies,
+	});
+	if (eligibilityResult) return eligibilityResult;
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -584,6 +609,193 @@ async function runSynthesisResumeStep(
 		advanced: true,
 		outcome: "report_completed",
 	};
+}
+
+async function assessReportEligibilityAfterSynthesis(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	approvedPlan: ResearchPlan;
+	passNumber: number;
+	reviewedSources: DeepResearchSource[];
+	allSources: DeepResearchSource[];
+	taskLimitations: string[];
+	now: Date;
+	dependencies: DeepResearchWorkflowDependencies;
+}): Promise<RunDeepResearchWorkflowStepResult | null> {
+	const [evidenceNotes, synthesisClaims] = await Promise.all([
+		listDeepResearchEvidenceNotes({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+		listDeepResearchSynthesisClaims({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+	]);
+	if (evidenceNotes.length === 0) return null;
+	if (!hasReportBlockingClaimReadinessIssue(synthesisClaims)) return null;
+	const coverageAssessment = (
+		input.dependencies.coverage?.assessResearchCoverage ??
+		assessResearchCoverage
+	)({
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		plan: input.approvedPlan,
+		reviewedSources: input.reviewedSources.map((source) =>
+			mapReviewedSourceForCoverage(source, input.approvedPlan),
+		),
+		evidenceNotes,
+		synthesisClaims,
+		signals: {
+			freshnessRequired: false,
+		},
+		remainingBudget: {
+			sourceReviews: Math.max(
+				0,
+				input.approvedPlan.researchBudget.sourceReviewCeiling -
+					input.reviewedSources.length,
+			),
+			synthesisPasses: Math.max(
+				0,
+				input.approvedPlan.researchBudget.synthesisPassCeiling -
+					input.passNumber,
+			),
+		},
+	});
+	if (coverageAssessment.status === "sufficient") return null;
+
+	await saveResearchTimelineEvent({
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		userId: input.jobRow.userId,
+		taskId: null,
+		...coverageAssessment.timelineSummary,
+		occurredAt: input.now.toISOString(),
+	});
+
+	if (!coverageAssessment.canContinue) {
+		return completeCoverageExhaustedWithEvidenceLimitationMemo({
+			jobRow: input.jobRow,
+			now: input.now,
+			limitations: [
+				...input.taskLimitations,
+				...coverageAssessment.reportLimitations.map(
+					(limitation) => limitation.limitation,
+				),
+			],
+			sourceCounts: sourceCountsFromResearchSources(input.allSources),
+			dependencies: input.dependencies,
+		});
+	}
+
+	const repairPassNumber = input.passNumber + 1;
+	const checkpoint = await upsertResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: repairPassNumber,
+		searchIntent: `Report eligibility repair for pass ${input.passNumber} Claim Readiness gaps`,
+		reviewedSourceIds: input.reviewedSources.map((source) => source.id),
+		coverageResult: {
+			status: coverageAssessment.status,
+			canContinue: coverageAssessment.canContinue,
+			reviewedSourceCount: input.reviewedSources.length,
+			reportLimitationCount: coverageAssessment.reportLimitations.length,
+		},
+		now: input.now,
+	});
+	const persistedGaps = await saveCoverageGapsForPass({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passCheckpointId: checkpoint.id,
+		gaps: coverageAssessment.coverageGaps.map((gap) => ({
+			keyQuestion: gap.keyQuestion,
+			reason: gap.reason,
+			reviewedSourceCount: gap.reviewedSourceCount,
+			severity: coverageGapSeverity(gap),
+			recommendedNextAction: gap.recommendedNextAction,
+			detail: gap.detail,
+		})),
+		now: input.now,
+	});
+	const decisionSummary = sourceReviewDecisionSummary({
+		nextDecision: "continue_research",
+		gapCount: persistedGaps.length,
+		limitationCount: coverageAssessment.reportLimitations.length,
+	});
+	await completeResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		checkpointId: checkpoint.id,
+		coverageGapIds: persistedGaps.map((gap) => gap.id),
+		nextDecision: "continue_research",
+		decisionSummary,
+		now: input.now,
+	});
+	await saveResearchPassDecisionTimeline({
+		jobRow: input.jobRow,
+		stage: "coverage_assessment",
+		passNumber: repairPassNumber,
+		nextDecision: "continue_research",
+		decisionSummary,
+		sourceCounts: sourceCountsFromResearchSources(input.allSources),
+		now: input.now,
+	});
+	await (
+		input.dependencies.tasks?.createResearchTasksFromCoverageGaps ??
+		createResearchTasksFromCoverageGaps
+	)({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: repairPassNumber,
+		gaps: persistedGaps.map((gap) => ({
+			id: gap.id,
+			keyQuestion: gap.keyQuestion,
+			summary: gap.recommendedNextAction,
+			severity: gap.severity,
+		})),
+		now: input.now,
+	});
+	await db
+		.update(deepResearchJobs)
+		.set({
+			status: "running",
+			stage: "research_tasks",
+			updatedAt: input.now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobRow.id),
+				eq(deepResearchJobs.userId, input.jobRow.userId),
+				eq(deepResearchJobs.status, "running"),
+			),
+		);
+	const reloaded = await reloadWorkflowJob(
+		input.jobRow.userId,
+		input.jobRow.conversationId,
+		input.jobRow.id,
+	);
+	return reloaded
+		? {
+				job: reloaded,
+				advanced: true,
+				outcome: "coverage_continuation_created",
+			}
+		: null;
+}
+
+function hasReportBlockingClaimReadinessIssue(
+	synthesisClaims: Awaited<ReturnType<typeof listDeepResearchSynthesisClaims>>,
+): boolean {
+	return synthesisClaims.some(
+		(claim) =>
+			claim.central &&
+			(((claim.status === "needs-repair" || claim.status === "rejected") &&
+				claim.evidenceLinks.length > 0) ||
+				claim.evidenceLinks.some(
+					(link) => link.relation === "contradiction" && link.material,
+				)),
+	);
 }
 
 async function buildSynthesisNotesWithResumePoint(input: {
@@ -787,6 +999,8 @@ async function runSourceReviewStep(
 							title: source.title ?? source.url,
 							snippet: source.snippet,
 							sourceText: source.sourceText,
+							intendedComparedEntity: source.intendedComparedEntity,
+							intendedComparisonAxis: source.intendedComparisonAxis,
 						})),
 					reviewLimit,
 					planGoal: (approvedPlan as ResearchPlan).goal,
@@ -812,6 +1026,8 @@ async function runSourceReviewStep(
 										topicRelevant: notes.topicRelevant,
 										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
+										comparedEntity: notes.comparedEntity,
+										comparisonAxis: notes.comparisonAxis,
 										extractedClaims: notes.extractedClaims,
 										sourceQualitySignals: notes.sourceQualitySignals,
 										openedContentLength: notes.openedContentLength,
@@ -826,6 +1042,8 @@ async function runSourceReviewStep(
 										topicRelevant: notes.topicRelevant,
 										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
+										comparedEntity: notes.comparedEntity,
+										comparisonAxis: notes.comparisonAxis,
 										extractedClaims: notes.extractedClaims,
 										sourceQualitySignals: notes.sourceQualitySignals,
 										openedContentLength: notes.openedContentLength,
@@ -1294,6 +1512,8 @@ async function persistSourceReviewPassDecision(input: {
 		passCheckpointId: checkpoint.id,
 		gaps: input.coverageAssessment.coverageGaps.map((gap) => ({
 			keyQuestion: gap.keyQuestion,
+			comparedEntity: gap.comparedEntity,
+			comparisonAxis: gap.comparisonAxis,
 			reason: gap.reason,
 			reviewedSourceCount: gap.reviewedSourceCount,
 			severity: coverageGapSeverity(gap),
@@ -1491,6 +1711,7 @@ function sourceReviewDecisionSummary(input: {
 
 function coverageGapSeverity(gap: CoverageGap) {
 	if (gap.reason === "insufficient_reviewed_sources") return "critical";
+	if (gap.reason === "insufficient_supported_claims") return "critical";
 	if (gap.reason === "low_source_quality") return "important";
 	if (gap.reason === "unresolved_conflict") return "critical";
 	return "important";
@@ -1769,6 +1990,8 @@ function mapReviewedSourceForCoverage(
 					: [],
 		qualityScore: source.relevanceScore ?? 80,
 		sourceQualitySignals: source.sourceQualitySignals,
+		comparedEntity: source.comparedEntity,
+		comparisonAxis: source.comparisonAxis,
 		topicRelevant:
 			source.topicRelevant ??
 			isSourceTopicRelevantToPlan({
@@ -1820,6 +2043,10 @@ function mapReviewedSourceForSynthesis(
 		topicRelevant: source.topicRelevant ?? true,
 		topicRelevanceReason: source.topicRelevanceReason ?? null,
 		supportedKeyQuestions: source.supportedKeyQuestions ?? [],
+		intendedComparedEntity: source.intendedComparedEntity,
+		intendedComparisonAxis: source.intendedComparisonAxis,
+		comparedEntity: source.comparedEntity,
+		comparisonAxis: source.comparisonAxis,
 		extractedClaims: source.extractedClaims ?? [],
 		sourceQualitySignals: source.sourceQualitySignals ?? {
 			sourceType: "unknown",

@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq } from "drizzle-orm";
+import { deepResearchCitationAuditVerdicts } from "$lib/server/db/schema";
 import type {
+	DeepResearchCitationAuditVerdict as PersistedDeepResearchCitationAuditVerdict,
 	DeepResearchClaimType,
+	DeepResearchEvidenceNote,
 	DeepResearchSourceQualitySignals,
 	DeepResearchSourceStatus,
+	DeepResearchSynthesisClaim,
 } from "$lib/types";
 import { classifyDeepResearchClaimType } from "./source-quality";
+import { listDeepResearchEvidenceNotes } from "./evidence-notes";
+import { listDeepResearchSynthesisClaims } from "./synthesis-claims";
 
 export type DeepResearchReportClaim = {
 	id: string;
@@ -101,6 +109,148 @@ export type CitationAuditResult = {
 	limitations: string[];
 	findings: CitationAuditFinding[];
 };
+
+export type DeepResearchCitationAuditVerdictStatus =
+	| "supported"
+	| "partially_supported"
+	| "unsupported"
+	| "contradicted"
+	| "needs_repair";
+
+export type DeepResearchCitationAuditVerdict = {
+	claimId: string;
+	verdict: DeepResearchCitationAuditVerdictStatus;
+	evidenceNoteIds: string[];
+	reason: string;
+};
+
+export type DeepResearchClaimGraphAuditInput = {
+	jobId: string;
+	claims: DeepResearchSynthesisClaim[];
+	evidenceNotes: DeepResearchEvidenceNote[];
+};
+
+export type DeepResearchClaimGraphAuditResult = {
+	jobId: string;
+	status: "passed" | "needs_repair" | "failed";
+	canRenderMarkdown: boolean;
+	verdicts: DeepResearchCitationAuditVerdict[];
+};
+
+type DeepResearchCitationAuditVerdictRow =
+	typeof deepResearchCitationAuditVerdicts.$inferSelect;
+
+export type AuditAndPersistDeepResearchClaimGraphInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type ListDeepResearchCitationAuditVerdictsInput = {
+	userId: string;
+	jobId: string;
+};
+
+export async function auditDeepResearchClaimGraph(
+	input: DeepResearchClaimGraphAuditInput,
+): Promise<DeepResearchClaimGraphAuditResult> {
+	const evidenceById = new Map(
+		input.evidenceNotes.map((evidenceNote) => [evidenceNote.id, evidenceNote]),
+	);
+	const verdicts = input.claims.map((claim) =>
+		auditSynthesisClaim({ claim, evidenceById }),
+	);
+	const supportedCount = verdicts.filter((verdict) =>
+		["supported", "partially_supported"].includes(verdict.verdict),
+	).length;
+	const repairNeeded = verdicts.some((verdict) =>
+		["needs_repair", "contradicted"].includes(verdict.verdict),
+	);
+	const status =
+		repairNeeded
+			? "needs_repair"
+			: supportedCount === 0
+				? "failed"
+				: "passed";
+
+	return {
+		jobId: input.jobId,
+		status,
+		canRenderMarkdown: status === "passed",
+		verdicts,
+	};
+}
+
+export async function auditAndPersistDeepResearchClaimGraph(
+	input: AuditAndPersistDeepResearchClaimGraphInput,
+): Promise<DeepResearchClaimGraphAuditResult | null> {
+	const [claims, evidenceNotes] = await Promise.all([
+		listDeepResearchSynthesisClaims({
+			userId: input.userId,
+			jobId: input.jobId,
+		}),
+		listDeepResearchEvidenceNotes({
+			userId: input.userId,
+			jobId: input.jobId,
+		}),
+	]);
+	if (claims.length === 0) return null;
+
+	const result = await auditDeepResearchClaimGraph({
+		jobId: input.jobId,
+		claims,
+		evidenceNotes,
+	});
+	const { db } = await import("$lib/server/db");
+	const now = input.now ?? new Date();
+	await db
+		.delete(deepResearchCitationAuditVerdicts)
+		.where(
+			and(
+				eq(deepResearchCitationAuditVerdicts.userId, input.userId),
+				eq(deepResearchCitationAuditVerdicts.jobId, input.jobId),
+			),
+		);
+	await db.insert(deepResearchCitationAuditVerdicts).values(
+		result.verdicts.map((verdict) => {
+			const claim = claims.find((item) => item.id === verdict.claimId);
+			return {
+				id: randomUUID(),
+				jobId: input.jobId,
+				conversationId: claim?.conversationId ?? "",
+				userId: input.userId,
+				claimId: verdict.claimId,
+				verdict: verdict.verdict,
+				evidenceNoteIdsJson: JSON.stringify(verdict.evidenceNoteIds),
+				reason: verdict.reason,
+				createdAt: now,
+				updatedAt: now,
+			};
+		}),
+	);
+
+	return result;
+}
+
+export async function listDeepResearchCitationAuditVerdicts(
+	input: ListDeepResearchCitationAuditVerdictsInput,
+): Promise<PersistedDeepResearchCitationAuditVerdict[]> {
+	const { db } = await import("$lib/server/db");
+	const rows = await db
+		.select()
+		.from(deepResearchCitationAuditVerdicts)
+		.where(
+			and(
+				eq(deepResearchCitationAuditVerdicts.userId, input.userId),
+				eq(deepResearchCitationAuditVerdicts.jobId, input.jobId),
+			),
+		)
+		.orderBy(
+			asc(deepResearchCitationAuditVerdicts.createdAt),
+			asc(deepResearchCitationAuditVerdicts.id),
+		);
+	return rows.map(mapCitationAuditVerdictRow);
+}
 
 export async function auditDeepResearchReportCitations(
 	input: CitationAuditInput,
@@ -272,6 +422,195 @@ export async function auditDeepResearchReportCitations(
 		limitations,
 		findings,
 	};
+}
+
+function mapCitationAuditVerdictRow(
+	row: DeepResearchCitationAuditVerdictRow,
+): PersistedDeepResearchCitationAuditVerdict {
+	return {
+		id: row.id,
+		jobId: row.jobId,
+		conversationId: row.conversationId,
+		userId: row.userId,
+		claimId: row.claimId,
+		verdict: row.verdict as PersistedDeepResearchCitationAuditVerdict["verdict"],
+		evidenceNoteIds: parseStringArray(row.evidenceNoteIdsJson),
+		reason: row.reason,
+		createdAt: row.createdAt.toISOString(),
+		updatedAt: row.updatedAt.toISOString(),
+	};
+}
+
+function auditSynthesisClaim(input: {
+	claim: DeepResearchSynthesisClaim;
+	evidenceById: Map<string, DeepResearchEvidenceNote>;
+}): DeepResearchCitationAuditVerdict {
+	const linkedEvidence = input.claim.evidenceLinks
+		.map((link) => ({
+			link,
+			evidence: input.evidenceById.get(link.evidenceNoteId),
+		}))
+		.filter(
+			(item): item is {
+				link: DeepResearchSynthesisClaim["evidenceLinks"][number];
+				evidence: DeepResearchEvidenceNote;
+			} => Boolean(item.evidence),
+		);
+	const evidenceNoteIds = linkedEvidence.map((item) => item.evidence.id);
+
+	if (
+		input.claim.central &&
+		input.claim.status !== "accepted" &&
+		input.claim.status !== "limited"
+	) {
+		return {
+			claimId: input.claim.id,
+			verdict: "needs_repair",
+			evidenceNoteIds,
+			reason:
+				"Central Claim cannot be marked supported because its Claim Support Gate failed.",
+		};
+	}
+
+	const contradictionLinks = linkedEvidence.filter(
+		(item) => item.link.relation === "contradiction",
+	);
+	if (contradictionLinks.some((item) => item.link.material)) {
+		return {
+			claimId: input.claim.id,
+			verdict: "contradicted",
+			evidenceNoteIds: contradictionLinks.map((item) => item.evidence.id),
+			reason: "Material contradictory Evidence Notes remain unresolved.",
+		};
+	}
+
+	const supportLinks = linkedEvidence.filter(
+		(item) => item.link.relation === "support",
+	);
+	if (supportLinks.length === 0) {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds,
+			reason: "Synthesis Claim has no linked supporting Evidence Notes.",
+		});
+	}
+
+	const supportingNotes = supportLinks.filter((item) =>
+		evidenceNoteSupportsSynthesisClaim(item.evidence, input.claim),
+	);
+	if (supportingNotes.length === 0) {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds: supportLinks.map((item) => item.evidence.id),
+			reason: "Linked Evidence Notes do not support the Synthesis Claim.",
+		});
+	}
+
+	const qualityFitNotes = supportingNotes.filter((item) =>
+		evidenceNoteQualitySignalsFitClaim(item.evidence, input.claim),
+	);
+	if (qualityFitNotes.length === 0) {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds: supportingNotes.map((item) => item.evidence.id),
+			reason:
+				"Linked Evidence Notes support the claim text, but Claim Type Evidence Requirements were not met.",
+		});
+	}
+
+	const qualificationLinks = linkedEvidence.filter(
+		(item) => item.link.relation === "qualification",
+	);
+	if (qualificationLinks.length > 0 || input.claim.status === "limited") {
+		return {
+			claimId: input.claim.id,
+			verdict: "partially_supported",
+			evidenceNoteIds: uniqueValues([
+				...qualityFitNotes.map((item) => item.evidence.id),
+				...qualificationLinks.map((item) => item.evidence.id),
+			]),
+			reason:
+				"Synthesis Claim is supported with qualifying Evidence Notes or a limited claim status.",
+		};
+	}
+
+	return {
+		claimId: input.claim.id,
+		verdict: "supported",
+		evidenceNoteIds: qualityFitNotes.map((item) => item.evidence.id),
+		reason:
+			"Synthesis Claim is supported by linked Evidence Notes and satisfies Claim Type Evidence Requirements.",
+	};
+}
+
+function unsupportedClaimGraphVerdict(input: {
+	claim: DeepResearchSynthesisClaim;
+	evidenceNoteIds: string[];
+	reason: string;
+}): DeepResearchCitationAuditVerdict {
+	return {
+		claimId: input.claim.id,
+		verdict: input.claim.central ? "needs_repair" : "unsupported",
+		evidenceNoteIds: input.evidenceNoteIds,
+		reason: input.reason,
+	};
+}
+
+function evidenceNoteSupportsSynthesisClaim(
+	evidenceNote: DeepResearchEvidenceNote,
+	claim: DeepResearchSynthesisClaim,
+): boolean {
+	return sourceSupportsClaim(
+		{
+			id: evidenceNote.id,
+			status: "cited",
+			title: String(evidenceNote.sourceSupport.title ?? evidenceNote.id),
+			url: String(evidenceNote.sourceSupport.url ?? ""),
+			reviewedAt: evidenceNote.createdAt,
+			citedAt: evidenceNote.createdAt,
+			reviewedNote: evidenceNote.findingText,
+			citationNote: null,
+			snippet: [
+				evidenceNote.supportedKeyQuestion,
+				evidenceNote.comparedEntity,
+				evidenceNote.comparisonAxis,
+			]
+				.filter(Boolean)
+				.join(" "),
+			sourceQualitySignals: evidenceNote.sourceQualitySignals,
+		},
+		{
+			id: claim.id,
+			text: stripMarkdownCitationMarkers(claim.statement),
+			core: claim.central,
+			claimType: claim.claimType ?? undefined,
+			citationSourceIds: [],
+		},
+	);
+}
+
+function evidenceNoteQualitySignalsFitClaim(
+	evidenceNote: DeepResearchEvidenceNote,
+	claim: DeepResearchSynthesisClaim,
+): boolean {
+	return sourceQualitySignalsFitClaim(
+		{
+			id: evidenceNote.id,
+			status: "cited",
+			title: String(evidenceNote.sourceSupport.title ?? evidenceNote.id),
+			url: String(evidenceNote.sourceSupport.url ?? ""),
+			reviewedAt: evidenceNote.createdAt,
+			citedAt: evidenceNote.createdAt,
+			sourceQualitySignals: evidenceNote.sourceQualitySignals,
+		},
+		{
+			id: claim.id,
+			text: stripMarkdownCitationMarkers(claim.statement),
+			core: claim.central,
+			claimType: claim.claimType ?? undefined,
+			citationSourceIds: [],
+		},
+	);
 }
 
 function isReviewedCitedSource(source: CitationAuditSource): boolean {
@@ -501,8 +840,13 @@ function determineAuditStatus(input: {
 function normalizeForComparison(value: string): string {
 	return value
 		.toLowerCase()
+		.replace(/\[\d+(?:\s*,\s*\d+)*\]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+function stripMarkdownCitationMarkers(value: string): string {
+	return value.replace(/\s*\[\d+(?:\s*,\s*\d+)*\]/g, "").trim();
 }
 
 function contradictsClaim(evidence: string, claim: string): boolean {
@@ -570,3 +914,18 @@ const STOP_WORDS = new Set([
 	"mint",
 	"vagy",
 ]);
+
+function uniqueValues<T>(values: T[]): T[] {
+	return [...new Set(values)];
+}
+
+function parseStringArray(value: string): string[] {
+	try {
+		const parsed = JSON.parse(value);
+		return Array.isArray(parsed)
+			? parsed.filter((item): item is string => typeof item === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}

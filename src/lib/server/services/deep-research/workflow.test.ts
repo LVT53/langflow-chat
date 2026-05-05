@@ -281,6 +281,160 @@ describe("real Deep Research workflow stepper", () => {
 		]);
 	});
 
+	it("creates repair work instead of a normal report when reviewed sources lack supported Synthesis Claims", async () => {
+		const approved = await createApprovedResearchJob();
+		const approvedPlan = approved.currentPlan?.rawPlan;
+		if (!approvedPlan) throw new Error("Expected approved plan");
+		const primaryQuestion = approvedPlan.keyQuestions[0];
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { upsertResearchPassCheckpoint, listResearchCoverageGaps } =
+			await import("./pass-state");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { listResearchTasks } = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
+			...approved,
+			status: "completed",
+			stage: "report_ready",
+		}));
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+			supportedKeyQuestions: approvedPlan.keyQuestions,
+			extractedClaims: [
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+			],
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [source.id],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			notes: approvedPlan.keyQuestions.map((keyQuestion) => ({
+				sourceId: source.id,
+				supportedKeyQuestion: keyQuestion,
+				findingText:
+					"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+				sourceSupport: {
+					sourceId: source.id,
+				},
+			})),
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: [
+							{
+								kind: "supported",
+								statement:
+									"All Hungarian tax filing deadlines moved to 2030.",
+								sourceRefs: [
+									{
+										reviewedSourceId: source.id,
+										discoveredSourceId: source.id,
+										canonicalUrl: source.url,
+										title: source.title ?? source.url,
+									},
+								],
+								central: true,
+								claimType: "general",
+							},
+						],
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+				},
+			},
+		);
+		const gaps = await listResearchCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 2,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
+		expect(gaps).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					keyQuestion: primaryQuestion,
+					reason: "insufficient_supported_claims",
+					lifecycleState: "open",
+				}),
+			]),
+		);
+		expect(tasks).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					assignmentType: "coverage_gap",
+					keyQuestion: primaryQuestion,
+					status: "pending",
+				}),
+			]),
+		);
+	});
+
 	it("reviews discovered sources during the source review step and records timeline progress", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
@@ -331,7 +485,7 @@ describe("real Deep Research workflow stepper", () => {
 		expect(sources).toEqual([
 			expect.objectContaining({
 				id: discoveredSource.id,
-				status: "cited",
+				status: "reviewed",
 				reviewedAt: "2026-05-05T10:09:00.000Z",
 				reviewedNote:
 					"EU and US AI copyright training data rules require provenance records and rights-risk review.",

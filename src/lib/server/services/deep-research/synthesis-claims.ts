@@ -387,11 +387,12 @@ function assessClaimSupport(input: {
 function claimInputFromSupportedFinding(
 	finding: SynthesisFinding,
 	evidenceNotes: DeepResearchEvidenceNote[],
-): SaveDeepResearchSynthesisClaimInput {
+): SaveDeepResearchSynthesisClaimInput | null {
 	const supportingNotes = matchingEvidenceNotesForFinding(
 		finding,
 		evidenceNotes,
 	);
+	if (supportingNotes.length === 0) return null;
 	return {
 		statement: finding.statement,
 		planQuestion: firstNonNull(

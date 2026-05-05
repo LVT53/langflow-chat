@@ -86,6 +86,10 @@ export async function draftResearchPlanWithLlm(input: {
 						goal: "string",
 						reportIntent:
 							"comparison|recommendation|investigation|market_scan|product_scan|limitation_focused",
+						comparedEntities:
+							"string[] when reportIntent is comparison and entities are explicit",
+						comparisonAxes:
+							"string[] central axes when reportIntent is comparison and axes are explicit",
 						keyQuestions: ["string"],
 						reportShape: ["string"],
 						constraints: ["string"],
@@ -109,6 +113,8 @@ export async function draftResearchPlanWithLlm(input: {
 		depth: input.selectedDepth,
 		researchLanguage: input.researchLanguage,
 		reportIntent: reportIntent ?? "investigation",
+		comparedEntities: stringArrayValue(parsed.comparedEntities).slice(0, 6),
+		comparisonAxes: stringArrayValue(parsed.comparisonAxes).slice(0, 8),
 		researchBudget: input.selectedBudget,
 		keyQuestions,
 		sourceScope: {
@@ -151,6 +157,8 @@ export async function reviewSourceWithLlm(input: {
 						title: input.source.title,
 						url: input.source.canonicalUrl,
 						snippet: input.source.snippet,
+						intendedComparedEntity: input.source.intendedComparedEntity ?? null,
+						intendedComparisonAxis: input.source.intendedComparisonAxis ?? null,
 						sourceText: limitText(input.source.sourceText ?? "", 12000),
 					},
 					requiredShape: {
@@ -159,6 +167,10 @@ export async function reviewSourceWithLlm(input: {
 						extractedText: "string|null",
 						relevanceScore: "0-100",
 						supportedKeyQuestions: ["string"],
+						comparedEntity:
+							"string|null actual compared entity supported by this source",
+						comparisonAxis:
+							"string|null actual comparison axis supported by this source",
 						extractedClaims: ["string"],
 						rejectedReason: "string|null",
 					},
@@ -174,6 +186,8 @@ export async function reviewSourceWithLlm(input: {
 		extractedText: stringValue(parsed.extractedText),
 		relevanceScore: numberValue(parsed.relevanceScore) ?? undefined,
 		supportedKeyQuestions: stringArrayValue(parsed.supportedKeyQuestions),
+		comparedEntity: stringValue(parsed.comparedEntity),
+		comparisonAxis: stringValue(parsed.comparisonAxis),
 		extractedClaims: stringArrayValue(parsed.extractedClaims),
 		rejectedReason: stringValue(parsed.rejectedReason),
 	};

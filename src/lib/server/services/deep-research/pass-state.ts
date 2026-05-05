@@ -51,6 +51,7 @@ export type SaveCoverageGapsForPassInput = {
 	passCheckpointId: string;
 	gaps: Array<{
 		keyQuestion?: string | null;
+		comparedEntity?: string | null;
 		comparisonAxis?: string | null;
 		reason: string;
 		reviewedSourceCount: number;
@@ -204,6 +205,7 @@ export async function saveCoverageGapsForPass(
 			severity: gap.severity,
 			reason: normalizeText(gap.reason),
 			keyQuestion: gap.keyQuestion ?? null,
+			comparedEntity: gap.comparedEntity ?? null,
 			comparisonAxis: gap.comparisonAxis ?? null,
 			recommendedNextAction: normalizeText(gap.recommendedNextAction),
 			detail: gap.detail ? normalizeText(gap.detail) : null,
@@ -355,6 +357,7 @@ function mapResearchCoverageGapRow(
 		severity: row.severity as DeepResearchCoverageGapSeverity,
 		reason: row.reason,
 		keyQuestion: row.keyQuestion,
+		comparedEntity: row.comparedEntity,
 		comparisonAxis: row.comparisonAxis,
 		recommendedNextAction: row.recommendedNextAction,
 		detail: row.detail,
@@ -388,6 +391,7 @@ function coverageGapIdempotencyKey(
 	row: Pick<
 		DeepResearchCoverageGapRow,
 		| "keyQuestion"
+		| "comparedEntity"
 		| "comparisonAxis"
 		| "reason"
 		| "recommendedNextAction"
@@ -396,6 +400,7 @@ function coverageGapIdempotencyKey(
 ): string {
 	return [
 		row.keyQuestion ?? "",
+		row.comparedEntity ?? "",
 		row.comparisonAxis ?? "",
 		row.reason,
 		row.recommendedNextAction,
@@ -407,6 +412,7 @@ function coverageGapInputIdempotencyKey(
 	gap: Pick<
 		DeepResearchCoverageGapRow,
 		| "keyQuestion"
+		| "comparedEntity"
 		| "comparisonAxis"
 		| "reason"
 		| "recommendedNextAction"

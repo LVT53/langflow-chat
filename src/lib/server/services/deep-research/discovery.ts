@@ -22,6 +22,8 @@ export type DiscoveredResearchSourceCandidate = {
 	discoveredAt: string;
 	metadata: {
 		query: string;
+		intendedComparedEntity: string | null;
+		intendedComparisonAxis: string | null;
 		snippet: string | null;
 		text: string | null;
 		canonicalUrl: string;
@@ -71,7 +73,8 @@ export async function runPublicWebDiscoveryPass(
 ): Promise<PublicWebDiscoveryResult> {
 	const now = input.now ?? new Date();
 	const occurredAt = now.toISOString();
-	const queries = buildDiscoveryQueries(input.approvedPlan);
+	const discoveryQueries = buildDiscoveryQueries(input.approvedPlan);
+	const queries = discoveryQueries.map((query) => query.query);
 	const maxSources = maxSourcesPerDiscoveryQuery(
 		input.approvedPlan,
 		queries.length,
@@ -79,18 +82,20 @@ export async function runPublicWebDiscoveryPass(
 	const researchWeb = dependencies.researchWeb ?? defaultResearchWeb;
 	const sourceRepository =
 		dependencies.sourceRepository ?? defaultDiscoveredSourceRepository;
-	const researchResults: Array<{ query: string; sources: ResearchSource[] }> =
-		[];
+	const researchResults: Array<{
+		query: DiscoveryQuery;
+		sources: ResearchSource[];
+	}> = [];
 	const warnings: string[] = [];
-	for (const query of queries) {
+	for (const discoveryQuery of discoveryQueries) {
 		try {
 			const result = await researchWeb({
-				query,
+				query: discoveryQuery.query,
 				mode: "research",
 				sourcePolicy: "general",
 				maxSources,
 			});
-			researchResults.push({ query, sources: result.sources });
+			researchResults.push({ query: discoveryQuery, sources: result.sources });
 		} catch (error) {
 			warnings.push(`Public web discovery failed: ${errorMessage(error)}`);
 		}
@@ -181,6 +186,8 @@ const defaultDiscoveredSourceRepository = {
 					provider: source.provider,
 					snippet: source.metadata.snippet,
 					sourceText: source.metadata.text,
+					intendedComparedEntity: source.metadata.intendedComparedEntity,
+					intendedComparisonAxis: source.metadata.intendedComparisonAxis,
 					discoveredAt: new Date(source.discoveredAt),
 				}),
 			);
@@ -191,7 +198,7 @@ const defaultDiscoveredSourceRepository = {
 
 function mapResearchSourceToCandidate(input: {
 	source: ResearchSource;
-	query: string;
+	query: DiscoveryQuery;
 	jobId: string;
 	conversationId: string;
 	userId: string;
@@ -209,7 +216,9 @@ function mapResearchSourceToCandidate(input: {
 		provider: input.source.provider,
 		discoveredAt: input.discoveredAt,
 		metadata: {
-			query: input.query,
+			query: input.query.query,
+			intendedComparedEntity: input.query.comparedEntity,
+			intendedComparisonAxis: input.query.comparisonAxis,
 			snippet: input.source.snippet,
 			text: buildDiscoverySourceText(input.source),
 			canonicalUrl,
@@ -280,19 +289,58 @@ function errorMessage(error: unknown): string {
 	return "unknown error";
 }
 
-function buildDiscoveryQueries(plan: ResearchPlan): string[] {
+type DiscoveryQuery = {
+	query: string;
+	comparedEntity: string | null;
+	comparisonAxis: string | null;
+};
+
+function buildDiscoveryQueries(plan: ResearchPlan): DiscoveryQuery[] {
 	const maxQueryCount = maxDiscoveryQueryCount(plan.depth);
-	const candidates = [plan.goal, ...plan.keyQuestions]
-		.map((query) => query.replace(/\s+/g, " ").trim())
-		.filter(Boolean);
-	const uniqueQueries: string[] = [];
+	const comparisonQueries = buildComparisonDiscoveryQueries(plan);
+	const candidates = (
+		comparisonQueries.length > 0
+			? comparisonQueries
+			: [plan.goal, ...plan.keyQuestions].map((query) => ({
+					query,
+					comparedEntity: null,
+					comparisonAxis: null,
+				}))
+	)
+		.map((query) => ({
+			...query,
+			query: query.query.replace(/\s+/g, " ").trim(),
+		}))
+		.filter((query) => query.query);
+	const uniqueQueries: DiscoveryQuery[] = [];
+	const seen = new Set<string>();
 	for (const candidate of candidates) {
-		if (!uniqueQueries.includes(candidate)) {
+		const key = candidate.query.toLowerCase();
+		if (!seen.has(key)) {
+			seen.add(key);
 			uniqueQueries.push(candidate);
 		}
 		if (uniqueQueries.length >= maxQueryCount) break;
 	}
 	return uniqueQueries;
+}
+
+function buildComparisonDiscoveryQueries(plan: ResearchPlan): DiscoveryQuery[] {
+	if (
+		plan.reportIntent !== "comparison" ||
+		!plan.comparedEntities?.length ||
+		!plan.comparisonAxes?.length
+	) {
+		return [];
+	}
+	const comparedEntities = plan.comparedEntities;
+	return plan.comparisonAxes.flatMap((axis) =>
+		comparedEntities.map((entity) => ({
+			query: `${entity} ${axis}`,
+			comparedEntity: entity,
+			comparisonAxis: axis,
+		})),
+	);
 }
 
 function maxDiscoveryQueryCount(depth: ResearchPlan["depth"]): number {

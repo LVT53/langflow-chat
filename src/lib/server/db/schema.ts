@@ -225,6 +225,10 @@ export const deepResearchSources = sqliteTable('deep_research_sources', {
   topicRelevant: integer('topic_relevant', { mode: 'boolean' }),
   topicRelevanceReason: text('topic_relevance_reason'),
   supportedKeyQuestionsJson: text('supported_key_questions_json'),
+  intendedComparedEntity: text('intended_compared_entity'),
+  intendedComparisonAxis: text('intended_comparison_axis'),
+  comparedEntity: text('compared_entity'),
+  comparisonAxis: text('comparison_axis'),
   extractedClaimsJson: text('extracted_claims_json'),
   sourceQualitySignalsJson: text('source_quality_signals_json'),
   openedContentLength: integer('opened_content_length').notNull().default(0),
@@ -355,6 +359,7 @@ export const deepResearchCoverageGaps = sqliteTable('deep_research_coverage_gaps
   severity: text('severity').notNull(),
   reason: text('reason').notNull(),
   keyQuestion: text('key_question'),
+  comparedEntity: text('compared_entity'),
   comparisonAxis: text('comparison_axis'),
   recommendedNextAction: text('recommended_next_action').notNull(),
   detail: text('detail'),
@@ -539,6 +544,39 @@ export const deepResearchClaimEvidenceLinks = sqliteTable('deep_research_claim_e
   claimEvidenceRelationUniqueIdx: uniqueIndex(
     'deep_research_claim_evidence_links_claim_evidence_relation_idx'
   ).on(table.claimId, table.evidenceNoteId, table.relation),
+}));
+
+export const deepResearchCitationAuditVerdicts = sqliteTable('deep_research_citation_audit_verdicts', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  claimId: text('claim_id')
+    .notNull()
+    .references(() => deepResearchSynthesisClaims.id, { onDelete: 'cascade' }),
+  verdict: text('verdict').notNull(),
+  evidenceNoteIdsJson: text('evidence_note_ids_json').notNull().default('[]'),
+  reason: text('reason').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobVerdictIdx: index('deep_research_citation_audit_verdicts_job_verdict_idx').on(
+    table.jobId,
+    table.verdict,
+    table.createdAt
+  ),
+  userJobIdx: index('deep_research_citation_audit_verdicts_user_job_idx').on(
+    table.userId,
+    table.jobId,
+    table.createdAt
+  ),
+  claimUniqueIdx: uniqueIndex('deep_research_citation_audit_verdicts_claim_idx').on(table.claimId),
 }));
 
 export const artifacts = sqliteTable('artifacts', {

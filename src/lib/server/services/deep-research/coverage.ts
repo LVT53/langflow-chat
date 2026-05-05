@@ -21,6 +21,8 @@ export type ReviewedCoverageSource = {
 	qualityScore?: number;
 	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	topicRelevant?: boolean;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 };
 
 export type ResearchBudgetRemaining = {
@@ -30,12 +32,15 @@ export type ResearchBudgetRemaining = {
 
 export type CoverageGap = {
 	keyQuestion: string;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	reason:
 		| "insufficient_reviewed_sources"
 		| "insufficient_source_diversity"
 		| "stale_evidence"
 		| "unresolved_conflict"
-		| "low_source_quality";
+		| "low_source_quality"
+		| "insufficient_supported_claims";
 	reviewedSourceCount: number;
 	recommendedNextAction: string;
 	detail?: string;
@@ -43,6 +48,8 @@ export type CoverageGap = {
 
 export type ReportLimitation = {
 	keyQuestion: string;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	limitation: string;
 	reviewedSourceCount: number;
 };
@@ -76,8 +83,34 @@ export type AssessResearchCoverageInput = {
 	conversationId: string;
 	plan: ResearchPlan;
 	reviewedSources: ReviewedCoverageSource[];
+	evidenceNotes?: CoverageEvidenceNote[];
+	synthesisClaims?: CoverageSynthesisClaim[];
 	remainingBudget: ResearchBudgetRemaining;
 	signals?: ResearchCoverageSignals;
+};
+
+export type CoverageEvidenceNote = {
+	id: string;
+	supportedKeyQuestion?: string | null;
+	findingText: string;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
+};
+
+export type CoverageSynthesisClaim = {
+	id: string;
+	planQuestion?: string | null;
+	statement: string;
+	central: boolean;
+	status: "accepted" | "limited" | "rejected" | "needs-repair";
+	statusReason?: string | null;
+	competingClaimGroupId?: string | null;
+	evidenceLinks: CoverageClaimEvidenceLink[];
+};
+
+export type CoverageClaimEvidenceLink = {
+	evidenceNoteId: string;
+	relation: "support" | "qualification" | "contradiction";
+	material?: boolean;
 };
 
 export type ResearchCoverageSignals = {
@@ -114,9 +147,11 @@ export function assessResearchCoverage(
 				input.reviewedSources,
 				keyQuestion,
 			),
+			evidenceNotes: input.evidenceNotes,
+			synthesisClaims: input.synthesisClaims,
 			signals: input.signals ?? {},
 		}),
-	);
+	).concat(assessComparisonCoverage(input.plan, input.reviewedSources));
 
 	const status: ResearchCoverageStatus =
 		gaps.length === 0 ? "sufficient" : "insufficient";
@@ -159,6 +194,8 @@ function assessKeyQuestionCoverage(input: {
 	plan: ResearchPlan;
 	keyQuestion: string;
 	supportingSources: ReviewedCoverageSource[];
+	evidenceNotes?: CoverageEvidenceNote[];
+	synthesisClaims?: CoverageSynthesisClaim[];
 	signals: ResearchCoverageSignals;
 }): CoverageGap[] {
 	const gaps: CoverageGap[] = [];
@@ -228,7 +265,119 @@ function assessKeyQuestionCoverage(input: {
 		});
 	}
 
+	if (input.synthesisClaims) {
+		const claimGap = assessClaimReadinessForQuestion({
+			keyQuestion: input.keyQuestion,
+			reviewedSourceCount: input.supportingSources.length,
+			evidenceNotes: input.evidenceNotes ?? [],
+			synthesisClaims: input.synthesisClaims,
+		});
+		if (claimGap) gaps.push(claimGap);
+	}
+
 	return gaps;
+}
+
+function assessClaimReadinessForQuestion(input: {
+	keyQuestion: string;
+	reviewedSourceCount: number;
+	evidenceNotes: CoverageEvidenceNote[];
+	synthesisClaims: CoverageSynthesisClaim[];
+}): CoverageGap | null {
+	const centralClaims = input.synthesisClaims.filter(
+		(claim) =>
+			claim.central &&
+			normalizeQuestion(claim.planQuestion ?? "") ===
+				normalizeQuestion(input.keyQuestion),
+	);
+	const conflictGap = assessMaterialClaimConflict({
+		keyQuestion: input.keyQuestion,
+		reviewedSourceCount: input.reviewedSourceCount,
+		centralClaims,
+	});
+	if (conflictGap) return conflictGap;
+
+	const acceptedSupportedClaims = centralClaims.filter((claim) =>
+		isAcceptedSupportedClaim({
+			claim,
+			keyQuestion: input.keyQuestion,
+			evidenceNotes: input.evidenceNotes,
+		}),
+	);
+	if (acceptedSupportedClaims.length > 0) return null;
+
+	const repairableCentralClaim = centralClaims.find((claim) =>
+		["needs-repair", "rejected"].includes(claim.status),
+	);
+	return {
+		keyQuestion: input.keyQuestion,
+		reason: "insufficient_supported_claims",
+		reviewedSourceCount: input.reviewedSourceCount,
+		recommendedNextAction: repairableCentralClaim
+			? `Repair or replace unsupported central Synthesis Claims for: ${input.keyQuestion}`
+			: `Create a supported central Synthesis Claim for: ${input.keyQuestion}`,
+		detail: repairableCentralClaim?.statusReason
+			? `Claim Support Gate failed: ${sanitizeUserVisibleText(repairableCentralClaim.statusReason)}`
+			: "No accepted central Synthesis Claim is ready for this approved key question.",
+	};
+}
+
+function assessMaterialClaimConflict(input: {
+	keyQuestion: string;
+	reviewedSourceCount: number;
+	centralClaims: CoverageSynthesisClaim[];
+}): CoverageGap | null {
+	const groups = new Map<string, CoverageSynthesisClaim[]>();
+	for (const claim of input.centralClaims) {
+		const groupId = normalizeOptionalText(claim.competingClaimGroupId);
+		if (!groupId) continue;
+		const claims = groups.get(groupId) ?? [];
+		claims.push(claim);
+		groups.set(groupId, claims);
+	}
+
+	for (const [groupId, claims] of groups) {
+		if (claims.length < 2) continue;
+		if (claims.some((claim) => claim.status === "needs-repair")) {
+			return {
+				keyQuestion: input.keyQuestion,
+				reason: "unresolved_conflict",
+				reviewedSourceCount: input.reviewedSourceCount,
+				recommendedNextAction: `Resolve material Claim Conflicts for: ${input.keyQuestion}`,
+				detail: `Competing Synthesis Claims in ${groupId} remain unresolved.`,
+			};
+		}
+	}
+
+	return null;
+}
+
+function isAcceptedSupportedClaim(input: {
+	claim: CoverageSynthesisClaim;
+	keyQuestion: string;
+	evidenceNotes: CoverageEvidenceNote[];
+}): boolean {
+	if (input.claim.status !== "accepted") return false;
+	if (
+		input.claim.evidenceLinks.some(
+			(link) => link.relation === "contradiction" && link.material,
+		)
+	) {
+		return false;
+	}
+	const evidenceById = new Map(
+		input.evidenceNotes.map((note) => [note.id, note]),
+	);
+	return input.claim.evidenceLinks
+		.filter((link) => link.relation === "support")
+		.some((link) => {
+			const note = evidenceById.get(link.evidenceNoteId);
+			return (
+				note &&
+				normalizeQuestion(note.supportedKeyQuestion ?? "") ===
+					normalizeQuestion(input.keyQuestion)
+			);
+		});
 }
 
 function findSupportingSources(
@@ -243,7 +392,45 @@ function findSupportingSources(
 					normalizeQuestion(supportedQuestion) ===
 					normalizeQuestion(keyQuestion),
 			),
-	);
+		);
+}
+
+function assessComparisonCoverage(
+	plan: ResearchPlan,
+	reviewedSources: ReviewedCoverageSource[],
+): CoverageGap[] {
+	if (
+		plan.reportIntent !== "comparison" ||
+		!plan.comparedEntities?.length ||
+		!plan.comparisonAxes?.length
+	) {
+		return [];
+	}
+
+	const gaps: CoverageGap[] = [];
+	for (const axis of plan.comparisonAxes) {
+		for (const entity of plan.comparedEntities) {
+			const supportingSources = reviewedSources.filter(
+				(source) =>
+					source.topicRelevant !== false &&
+					normalizeComparisonTerm(source.comparedEntity) ===
+						normalizeComparisonTerm(entity) &&
+					normalizeComparisonTerm(source.comparisonAxis) ===
+						normalizeComparisonTerm(axis),
+			);
+			if (supportingSources.length > 0) continue;
+			gaps.push({
+				keyQuestion: findKeyQuestionForComparisonAxis(plan, axis),
+				comparedEntity: entity,
+				comparisonAxis: axis,
+				reason: "insufficient_reviewed_sources",
+				reviewedSourceCount: 0,
+				recommendedNextAction: `Review topic-relevant sources for ${entity} on ${axis}.`,
+			});
+		}
+	}
+
+	return gaps;
 }
 
 function minimumReviewedSources(plan: ResearchPlan): number {
@@ -371,14 +558,24 @@ function buildCoverageTimelineSummary(input: {
 }
 
 function buildReportLimitation(gap: CoverageGap): ReportLimitation {
-	return {
+	const limitation: ReportLimitation = {
 		keyQuestion: gap.keyQuestion,
 		limitation:
 			gap.reason === "insufficient_reviewed_sources"
-				? "Depth budget is exhausted before enough reviewed evidence could support this key question."
+				? buildInsufficientReviewedSourcesLimitation(gap)
 				: `Depth budget is exhausted before this coverage issue could be resolved: ${humanizeCoverageGapReason(gap.reason)}.`,
 		reviewedSourceCount: gap.reviewedSourceCount,
 	};
+	if (gap.comparedEntity) limitation.comparedEntity = gap.comparedEntity;
+	if (gap.comparisonAxis) limitation.comparisonAxis = gap.comparisonAxis;
+	return limitation;
+}
+
+function buildInsufficientReviewedSourcesLimitation(gap: CoverageGap): string {
+	if (gap.comparedEntity && gap.comparisonAxis) {
+		return `Depth budget is exhausted before enough reviewed evidence could support ${gap.comparedEntity} on ${gap.comparisonAxis}.`;
+	}
+	return "Depth budget is exhausted before enough reviewed evidence could support this key question.";
 }
 
 function getCoverageTimelineMessageKey(input: {
@@ -415,6 +612,29 @@ function buildContinuationRecommendation(
 
 function normalizeQuestion(question: string): string {
 	return question.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeComparisonTerm(value: string | null | undefined): string {
+	return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function findKeyQuestionForComparisonAxis(
+	plan: ResearchPlan,
+	axis: string,
+): string {
+	const normalizedAxis = normalizeComparisonTerm(axis);
+	return (
+		plan.keyQuestions.find((question) =>
+			normalizeComparisonTerm(question).includes(normalizedAxis),
+		) ??
+		plan.keyQuestions[0] ??
+		plan.goal
+	);
+}
+
+function normalizeOptionalText(text: string | null | undefined): string | null {
+	const normalized = text?.replace(/\s+/g, " ").trim();
+	return normalized ? normalized : null;
 }
 
 function humanizeCoverageGapReason(reason: CoverageGap["reason"]): string {

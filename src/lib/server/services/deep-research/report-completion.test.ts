@@ -317,6 +317,133 @@ describe("audited Deep Research report completion", () => {
 		});
 	});
 
+	it("creates a repair pass instead of rendering Markdown when claim-graph audit needs repair", async () => {
+		const { db } = await import("$lib/server/db");
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { saveDeepResearchSynthesisClaims } = await import(
+			"./synthesis-claims"
+		);
+		const { listResearchTasks } = await import("./tasks");
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Check Model X official specifications",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial official specification review",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		const [evidenceNote] = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			notes: [
+				{
+					findingText: "Model X officially includes 16 GB memory.",
+					supportedKeyQuestion: "What are Model X official specs?",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+		await saveDeepResearchSynthesisClaims({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			synthesisPass: "synthesis-pass-1",
+			claims: [
+				{
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					central: true,
+					status: "needs-repair",
+					evidenceLinks: [
+						{
+							evidenceNoteId: evidenceNote.id,
+							relation: "support",
+						},
+					],
+				},
+			],
+			now: new Date("2026-05-05T10:12:00.000Z"),
+		});
+
+		const result = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement: "Model X officially includes 16 GB memory.",
+					sourceId: "source-1",
+					url: "https://vendor.example.test/model-x",
+					title: "Model X official specifications",
+				},
+			]),
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: created.id,
+			passNumber: 2,
+		});
+		const generatedArtifacts = await db
+			.select({ id: schema.artifacts.id })
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+
+		expect(result).toMatchObject({
+			id: created.id,
+			status: "running",
+			stage: "research_tasks",
+			reportArtifactId: null,
+			passCheckpoints: expect.arrayContaining([
+				expect.objectContaining({
+					passNumber: 2,
+					searchIntent:
+						"Citation audit repair pass for unsupported or contradicted Synthesis Claims",
+				}),
+			]),
+		});
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				passNumber: 2,
+				status: "pending",
+				assignment: expect.stringContaining(
+					"Repair claim after citation audit",
+				),
+			}),
+		]);
+		expect(generatedArtifacts).toEqual([]);
+	});
+
 	it("keeps the final audited report in Hungarian when the research prompt is Hungarian", async () => {
 		const {
 			approveDeepResearchPlan,

@@ -206,6 +206,64 @@ describe("Deep Research source triage and review", () => {
 		]);
 	});
 
+	it("records intended and actual comparison entity-axis support", async () => {
+		const savedNotes: unknown[] = [];
+
+		await triageAndReviewSources(
+			{
+				jobId: "job-comparison-support",
+				planGoal: "Compare GitHub Copilot and Cursor for privacy.",
+				keyQuestions: ["How do the tools compare on privacy?"],
+				discoveredSources: [
+					{
+						id: "copilot-privacy",
+						url: "https://vendor.example/copilot/privacy",
+						title: "GitHub Copilot privacy documentation",
+						snippet: "GitHub Copilot privacy controls and data handling.",
+						sourceText:
+							"GitHub Copilot privacy controls, data retention, and enterprise policy details.",
+						intendedComparedEntity: "GitHub Copilot",
+						intendedComparisonAxis: "privacy",
+					},
+				],
+				reviewLimit: 1,
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => ({
+						summary: `Reviewed ${source.title}`,
+						keyFindings: ["Copilot privacy controls are documented."],
+						extractedText: source.sourceText,
+						relevanceScore: 95,
+						supportedKeyQuestions: ["How do the tools compare on privacy?"],
+						comparedEntity: "GitHub Copilot",
+						comparisonAxis: "privacy",
+					}),
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => {
+						savedNotes.push(notes);
+						return {
+							...notes,
+							id: "reviewed-copilot-privacy",
+							createdAt: "2026-05-05T12:00:00.000Z",
+						};
+					},
+				},
+			},
+		);
+
+		expect(savedNotes).toEqual([
+			expect.objectContaining({
+				discoveredSourceId: "copilot-privacy",
+				intendedComparedEntity: "GitHub Copilot",
+				intendedComparisonAxis: "privacy",
+				comparedEntity: "GitHub Copilot",
+				comparisonAxis: "privacy",
+			}),
+		]);
+	});
+
 	it("rejects off-topic sources even when the reviewer returns strong key-question support", async () => {
 		const savedNotes: Array<{
 			discoveredSourceId: string;

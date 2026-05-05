@@ -24,6 +24,8 @@ export type SaveDiscoveredResearchSourceInput = {
 	provider: string;
 	snippet?: string | null;
 	sourceText?: string | null;
+	intendedComparedEntity?: string | null;
+	intendedComparisonAxis?: string | null;
 	discoveredAt?: Date;
 };
 
@@ -51,6 +53,8 @@ export type MarkResearchSourceReviewedInput = {
 	topicRelevant?: boolean | null;
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	extractedClaims?: string[];
 	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	openedContentLength?: number;
@@ -64,6 +68,8 @@ export type MarkResearchSourceRejectedInput = {
 	topicRelevant?: boolean | null;
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
 	extractedClaims?: string[];
 	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	openedContentLength?: number;
@@ -88,6 +94,12 @@ export async function saveDiscoveredResearchSource(
 			provider: input.provider,
 			snippet: input.snippet ?? null,
 			sourceText: input.sourceText ?? null,
+			intendedComparedEntity: normalizeNullableText(
+				input.intendedComparedEntity,
+			),
+			intendedComparisonAxis: normalizeNullableText(
+				input.intendedComparisonAxis,
+			),
 			discoveredAt: now,
 			updatedAt: now,
 		})
@@ -164,6 +176,8 @@ export async function markResearchSourceReviewed(
 			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			comparedEntity: normalizeNullableText(input.comparedEntity),
+			comparisonAxis: normalizeNullableText(input.comparisonAxis),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			sourceQualitySignalsJson: stringifySourceQualitySignals(
 				input.sourceQualitySignals,
@@ -206,6 +220,8 @@ export async function markResearchSourceRejected(
 			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			comparedEntity: normalizeNullableText(input.comparedEntity),
+			comparisonAxis: normalizeNullableText(input.comparisonAxis),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			sourceQualitySignalsJson: stringifySourceQualitySignals(
 				input.sourceQualitySignals,
@@ -288,6 +304,10 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		topicRelevant: row.topicRelevant,
 		topicRelevanceReason: row.topicRelevanceReason,
 		supportedKeyQuestions: parseStringArray(row.supportedKeyQuestionsJson),
+		intendedComparedEntity: row.intendedComparedEntity,
+		intendedComparisonAxis: row.intendedComparisonAxis,
+		comparedEntity: row.comparedEntity,
+		comparisonAxis: row.comparisonAxis,
 		extractedClaims: parseStringArray(row.extractedClaimsJson),
 		sourceQualitySignals,
 		sourceAuthoritySummary: deriveSourceAuthoritySummary(sourceQualitySignals),

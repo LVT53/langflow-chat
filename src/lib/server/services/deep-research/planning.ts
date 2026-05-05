@@ -30,6 +30,8 @@ export type ResearchPlan = {
 	depth: ResearchDepth;
 	researchLanguage?: ResearchLanguage;
 	reportIntent: ReportIntent;
+	comparedEntities?: string[];
+	comparisonAxes?: string[];
 	researchBudget: ResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {
@@ -136,6 +138,8 @@ const planLabels: Record<
 		sourceReviewCeiling: (count: number) => string;
 		goal: string;
 		reportIntent: string;
+		comparedEntities: string;
+		comparisonAxes: string;
 		includedSources: string;
 		keyQuestions: string;
 		expectedReportShape: string;
@@ -149,6 +153,8 @@ const planLabels: Record<
 		sourceReviewCeiling: (count) => `Source review ceiling: up to ${count}`,
 		goal: "Goal",
 		reportIntent: "Report intent",
+		comparedEntities: "Compared entities",
+		comparisonAxes: "Central comparison axes",
 		includedSources: "Included sources",
 		keyQuestions: "Key questions",
 		expectedReportShape: "Expected report shape",
@@ -162,6 +168,8 @@ const planLabels: Record<
 			`Forrás-áttekintési plafon: legfeljebb ${count}`,
 		goal: "Cél",
 		reportIntent: "Jelentési szándék",
+		comparedEntities: "Összehasonlított entitások",
+		comparisonAxes: "Központi összehasonlítási tengelyek",
 		includedSources: "Bevont források",
 		keyQuestions: "Fő kérdések",
 		expectedReportShape: "Várt jelentésszerkezet",
@@ -302,6 +310,7 @@ export async function createFirstResearchPlanDraft(
 		researchLanguage: input.researchLanguage,
 		reportIntent: normalizeReportIntent(draftedPlan.reportIntent, input.userRequest),
 	};
+	normalizePlanComparisonMetadata(plan, input.userRequest);
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
 	const draft: ResearchPlanDraftRecord = {
@@ -360,6 +369,10 @@ export async function createRevisedResearchPlanDraft(
 			`${input.previousPlan.goal} ${input.editInstruction}`,
 		),
 	};
+	normalizePlanComparisonMetadata(
+		plan,
+		`${input.previousPlan.goal} ${input.editInstruction}`,
+	);
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
 	const draft: ResearchPlanDraftRecord = {
@@ -465,6 +478,20 @@ function renderResearchPlan(plan: ResearchPlan): string {
 	return [
 		`${labels.goal}: ${plan.goal}`,
 		`${labels.reportIntent}: ${localizedReportIntentLabels[researchLanguage][plan.reportIntent]}`,
+		...(plan.comparedEntities?.length
+			? [
+					"",
+					`${labels.comparedEntities}:`,
+					...plan.comparedEntities.map((entity) => `- ${entity}`),
+				]
+			: []),
+		...(plan.comparisonAxes?.length
+			? [
+					"",
+					`${labels.comparisonAxes}:`,
+					...plan.comparisonAxes.map((axis) => `- ${axis}`),
+				]
+			: []),
 		"",
 		`${labels.depth}: ${localizedDepthLabels[researchLanguage][plan.depth]}`,
 		`${labels.expectedTime}: ${effortEstimate.expectedTimeBand}`,
@@ -510,6 +537,87 @@ function normalizeReportIntent(
 ): ReportIntent {
 	if (isReportIntent(value)) return value;
 	return inferReportIntent(fallbackText);
+}
+
+function normalizePlanComparisonMetadata(
+	plan: ResearchPlan,
+	fallbackText: string,
+): void {
+	if (plan.reportIntent !== "comparison") {
+		delete plan.comparedEntities;
+		delete plan.comparisonAxes;
+		return;
+	}
+
+	const inferred = inferComparisonMetadata(fallbackText);
+	const comparedEntities = normalizeTextList(
+		plan.comparedEntities?.length ? plan.comparedEntities : inferred.entities,
+	).slice(0, 6);
+	const comparisonAxes = normalizeTextList(
+		plan.comparisonAxes?.length ? plan.comparisonAxes : inferred.axes,
+	).slice(0, 8);
+
+	if (comparedEntities.length >= 2) {
+		plan.comparedEntities = comparedEntities;
+	} else {
+		delete plan.comparedEntities;
+	}
+	if (comparisonAxes.length > 0) {
+		plan.comparisonAxes = comparisonAxes;
+	} else {
+		delete plan.comparisonAxes;
+	}
+}
+
+function inferComparisonMetadata(value: string): {
+	entities: string[];
+	axes: string[];
+} {
+	const normalized = value.replace(/\s+/g, " ").trim();
+	const entityMatch = normalized.match(
+		/\b(?:compare|comparison of|versus|vs\.?)\s+(.+?)(?:\s+(?:for|on|across|by|regarding|in terms of)\s+|[.!?]?$)/iu,
+	);
+	const axisMatch = normalized.match(
+		/\b(?:for|on|across|by|regarding|in terms of)\s+(.+?)[.!?]?$/iu,
+	);
+	return {
+		entities: entityMatch ? splitComparisonList(entityMatch[1]) : [],
+		axes: axisMatch ? splitComparisonList(axisMatch[1]).map(lowercaseFirst) : [],
+	};
+}
+
+function splitComparisonList(value: string): string[] {
+	return normalizeTextList(
+		value
+			.replace(/\bversus\b/giu, ",")
+			.replace(/\bvs\.?\b/giu, ",")
+			.replace(/\s+and\s+/giu, ",")
+			.split(",")
+			.map((part) =>
+				part
+					.replace(/^(?:the|a|an|current)\s+/iu, "")
+					.replace(/\s+(?:approaches?|models?|platforms?|tools?)$/iu, ""),
+			),
+	);
+}
+
+function lowercaseFirst(value: string): string {
+	if (!value) return value;
+	return `${value[0].toLocaleLowerCase()}${value.slice(1)}`;
+}
+
+function normalizeTextList(values: string[]): string[] {
+	const seen = new Set<string>();
+	const normalized: string[] = [];
+	for (const value of values) {
+		const item = value.replace(/\s+/g, " ").trim();
+		if (!item) continue;
+		const key = item.toLocaleLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		normalized.push(item);
+	}
+	return normalized;
 }
 
 function isReportIntent(value: unknown): value is ReportIntent {

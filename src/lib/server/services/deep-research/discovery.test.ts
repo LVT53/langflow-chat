@@ -27,6 +27,7 @@ vi.mock("./timeline", () => ({
 const approvedPlan: ResearchPlan = {
 	goal: "Compare EU and US AI copyright training data rules",
 	depth: "standard",
+	reportIntent: "comparison",
 	researchBudget: {
 		sourceReviewCeiling: 40,
 		synthesisPassCeiling: 2,
@@ -389,5 +390,77 @@ describe("public web discovery", () => {
 			"Compare EU and US AI copyright training data rules",
 			"Which primary law changed most recently?",
 		]);
+	});
+
+	it("creates targeted entity-axis queries for comparison plans", async () => {
+		const comparisonPlan: ResearchPlan = {
+			...approvedPlan,
+			comparedEntities: ["GitHub Copilot", "Cursor"],
+			comparisonAxes: ["privacy", "pricing"],
+			goal: "Compare GitHub Copilot and Cursor for privacy and pricing",
+		};
+		const researchWeb = vi.fn(async (request) => ({
+			sources: [
+				{
+					url: `https://example.com/${request.query.replace(/\s+/g, "-").toLowerCase()}`,
+					canonicalUrl: `https://example.com/${request.query.replace(/\s+/g, "-").toLowerCase()}`,
+					title: `Source for ${request.query}`,
+					provider: "exa",
+					snippet: "Comparison source.",
+					publishedAt: null,
+					authorityClass: "standard",
+					authorityScore: 50,
+				},
+			],
+			diagnostics: {
+				providerCalls: [],
+			},
+		}));
+		const saveDiscoveredSources = vi.fn(async (sources) => sources);
+		const saveTimelineEvent = vi.fn(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
+
+		const result = await runPublicWebDiscoveryPass(
+			{
+				jobId: "job-comparison-discovery",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				approvedPlan: comparisonPlan,
+				now: new Date("2026-05-05T12:00:00.000Z"),
+			},
+			{
+				researchWeb,
+				sourceRepository: { saveDiscoveredSources },
+				timelineRepository: { saveTimelineEvent },
+			},
+		);
+
+		expect(result.queries).toEqual([
+			"GitHub Copilot privacy",
+			"Cursor privacy",
+			"GitHub Copilot pricing",
+			"Cursor pricing",
+		]);
+		expect(saveDiscoveredSources).toHaveBeenCalledWith(
+			expect.arrayContaining([
+				expect.objectContaining({
+					metadata: expect.objectContaining({
+						query: "GitHub Copilot privacy",
+						intendedComparedEntity: "GitHub Copilot",
+						intendedComparisonAxis: "privacy",
+					}),
+				}),
+				expect.objectContaining({
+					metadata: expect.objectContaining({
+						query: "Cursor pricing",
+						intendedComparedEntity: "Cursor",
+						intendedComparisonAxis: "pricing",
+					}),
+				}),
+			]),
+		);
 	});
 });

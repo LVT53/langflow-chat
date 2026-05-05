@@ -78,6 +78,29 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(sourceResearch.discoverSources).not.toHaveBeenCalled();
 	});
 
+	it("exposes compared entities and central comparison axes for explicit comparison requests", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-comparison-axes",
+			userRequest:
+				"Compare GitHub Copilot and Cursor for privacy, pricing, and code review workflows.",
+			selectedDepth: "focused",
+			researchLanguage: "en",
+		});
+
+		expect(result.plan).toMatchObject({
+			reportIntent: "comparison",
+			comparedEntities: ["GitHub Copilot", "Cursor"],
+			comparisonAxes: ["privacy", "pricing", "code review workflows"],
+		});
+		expect(result.renderedPlan).toContain("Compared entities:");
+		expect(result.renderedPlan).toContain("- GitHub Copilot");
+		expect(result.renderedPlan).toContain("- Cursor");
+		expect(result.renderedPlan).toContain("Central comparison axes:");
+		expect(result.renderedPlan).toContain("- privacy");
+		expect(result.renderedPlan).toContain("- pricing");
+		expect(result.renderedPlan).toContain("- code review workflows");
+	});
+
 	it("includes a coarse Research Effort Estimate for the selected depth", async () => {
 		const result = await createFirstResearchPlanDraft({
 			jobId: "job-3",
