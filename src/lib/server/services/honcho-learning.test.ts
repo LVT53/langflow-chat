@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockHonchoPeerVersion = vi.hoisted(() => ({ value: 0 }));
+const mockPrepareTaskContext = vi.hoisted(() =>
+	vi.fn(async () => ({
+		taskState: null,
+		routingStage: 'deterministic' as const,
+		routingConfidence: 0,
+		verificationStatus: 'skipped' as const,
+		selectedArtifacts: [],
+		pinnedArtifactIds: [],
+		excludedArtifactIds: [],
+	}))
+);
 const now = Date.now();
 
 const userRows = [
@@ -227,14 +238,23 @@ vi.mock('$lib/server/utils/text', () => ({
 vi.mock('$lib/server/utils/prompt-context', () => ({
 	serializePeerContext: vi.fn((context: unknown) => 'serialized peer context'),
 	serializeArtifacts: vi.fn(() => []),
+	serializeBudgetedAttachments: vi.fn(() => ({ body: '', items: [], mode: 'none' })),
 	serializeRoleMessages: vi.fn(() => []),
 	serializeWorkingSetArtifacts: vi.fn(() => []),
 	dedupeById: vi.fn((items: unknown[]) => items),
 	buildContextSection: vi.fn(() => ({ type: 'text', content: '' })),
-	compactContextSections: vi.fn(() => []),
+	compactContextSections: vi.fn(({ message }: { message: string }) => ({
+		inputValue: message,
+		compactionApplied: false,
+		compactionMode: 'none',
+		layersUsed: [],
+		estimatedTokens: 0,
+		sectionSelections: [],
+	})),
 	extractSerializedAttachmentBody: vi.fn(() => null),
-	rerankHistoricalSections: vi.fn(() => []),
+	rerankHistoricalSections: vi.fn(async ({ sections }: { sections: unknown[] }) => sections),
 	selectRecentRoleTurns: vi.fn(() => []),
+	selectPromptSessionTurns: vi.fn(() => []),
 	truncateToTokenBudget: vi.fn((text: string) => text),
 }));
 
@@ -289,15 +309,7 @@ vi.mock('$lib/server/services/task-state', () => ({
 	formatTaskStateForPrompt: vi.fn((taskState: { objective: string }) => `Objective: ${taskState.objective}`),
 	getContextDebugState: vi.fn(async () => null),
 	getPromptArtifactSnippets: vi.fn(async () => new Map()),
-	prepareTaskContext: vi.fn(async () => ({
-		taskState: null,
-		routingStage: 'deterministic' as const,
-		routingConfidence: 0,
-		verificationStatus: 'skipped' as const,
-		selectedArtifacts: [],
-		pinnedArtifactIds: [],
-		excludedArtifactIds: [],
-	})),
+	prepareTaskContext: mockPrepareTaskContext,
 }));
 
 // Mock tei-reranker
@@ -457,6 +469,35 @@ describe('honcho learning - mirrorMessage', () => {
 		await mirrorMessage('user-1', 'conv-1', 'user', '');
 		
 		expect(mockSessionAddMessages.mock.calls.length).toBe(beforeCallCount);
+	});
+});
+
+describe('honcho learning - buildConstructedContext', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.resetModules();
+		mockConfig.honchoEnabled = false;
+	});
+
+	it('passes the active context target budget into task evidence selection', async () => {
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Use the provider budget for evidence.',
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 900_000,
+				targetConstructedContext: 720_000,
+			},
+		});
+
+		expect(mockPrepareTaskContext).toHaveBeenCalledWith(
+			expect.objectContaining({
+				targetConstructedContext: 720_000,
+			})
+		);
 	});
 });
 

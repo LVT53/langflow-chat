@@ -1308,6 +1308,7 @@ export async function buildConstructedContext(params: {
 		message: params.message,
 		attachmentIds,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		targetConstructedContext: targetBudget,
 		currentAttachments,
 		workingSetArtifacts,
 		relevantArtifacts,

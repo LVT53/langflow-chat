@@ -1017,6 +1017,7 @@ export async function prepareTaskContext(params: {
   message: string;
   attachmentIds?: string[];
   activeDocumentArtifactId?: string;
+  targetConstructedContext?: number | null;
   currentAttachments: Artifact[];
   workingSetArtifacts: Artifact[];
   relevantArtifacts: Artifact[];
@@ -1113,6 +1114,7 @@ export async function prepareTaskContext(params: {
     .sort((a, b) => b.score - a.score);
   const selectedEvidenceLimit = deriveBudgetedSelectedEvidenceLimit({
     candidates: rankedCandidates.map((entry) => entry.artifact),
+    targetConstructedContext: params.targetConstructedContext,
   });
   const rerankCandidateLimit = deriveEvidenceRerankCandidateLimit(
     selectedEvidenceLimit,
