@@ -674,6 +674,60 @@ describe('MessageInput', () => {
 		expect(await findByText('report.pdf')).toBeDefined();
 	});
 
+	it('does not reselect already attached conversation artifacts in the composer', async () => {
+		const { queryByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			attachedArtifacts: [
+				{
+					id: 'artifact-sent',
+					type: 'source_document',
+					retrievalClass: 'durable',
+					name: 'already-sent.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 7,
+					conversationId: 'conv-1',
+					summary: null,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+			],
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(queryByText('already-sent.pdf')).toBeNull();
+	});
+
+	it('still restores explicitly saved draft attachments', async () => {
+		const { findByText } = render(MessageInput, {
+			conversationId: 'conv-1',
+			attachmentsEnabled: true,
+			draftVersion: 1,
+			draftAttachments: [
+				{
+					artifact: {
+						id: 'artifact-draft',
+						type: 'source_document',
+						retrievalClass: 'durable',
+						name: 'draft-attachment.pdf',
+						mimeType: 'application/pdf',
+						sizeBytes: 7,
+						conversationId: 'conv-1',
+						summary: null,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					},
+					promptReady: true,
+					promptArtifactId: 'normalized-draft',
+					readinessError: null,
+				},
+			],
+		});
+
+		expect(await findByText('draft-attachment.pdf')).toBeDefined();
+	});
+
 	it('shows error when done callback is called with failure', async () => {
 		let doneCallback: ((result: unknown) => void) | null = null;
 		const uploadFilesHandler = vi.fn((payload: { done: (result: unknown) => void }) => {

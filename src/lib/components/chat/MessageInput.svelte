@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount, untrack } from "svelte";
+import { onMount } from "svelte";
 import { t } from "$lib/i18n";
 import { currentConversationId } from "$lib/stores/ui";
 import ContextUsageRing from "./ContextUsageRing.svelte";
@@ -119,8 +119,6 @@ let appliedDraftVersion = -1;
 let lastEmittedDraftKey = "";
 let ensureDraftConversationPromise: Promise<string> | null = null;
 let draftEmissionVersion = 0;
-// Track attachment IDs that have been sent to prevent re-merging
-let sentAttachmentIds = $state<Set<string>>(new Set());
 
 let isEmpty = $derived(message.trim().length === 0);
 let isOverMaxLength = $derived(message.length > maxLength);
@@ -167,37 +165,6 @@ $effect(() => {
 	if (!conversationId) {
 		ensureDraftConversationPromise = null;
 	}
-});
-
-$effect(() => {
-	// Always merge attachedArtifacts into pendingAttachments
-	// These are conversation-scoped artifacts that exist in the database
-	const currentAttached = attachedArtifacts;
-
-	// Use untrack to prevent subscribing to pendingAttachments changes
-	const currentPending = untrack(() => pendingAttachments);
-
-	// Merge into pendingAttachments, but exclude any that were already sent
-	const merged = new Map<string, PendingAttachment>();
-
-	// Add current pendingAttachments first (they might have newer readiness info)
-	for (const attachment of currentPending) {
-		merged.set(attachment.artifact.id, attachment);
-	}
-
-	// Add attachedArtifacts (only if not already present AND not already sent)
-	for (const artifact of currentAttached) {
-		if (!merged.has(artifact.id) && !sentAttachmentIds.has(artifact.id)) {
-			merged.set(artifact.id, {
-				artifact,
-				promptReady: true,
-				promptArtifactId: null,
-				readinessError: null,
-			});
-		}
-	}
-
-	pendingAttachments = Array.from(merged.values());
 });
 
 $effect(() => {
@@ -333,12 +300,6 @@ function buildSendPayload(): SendPayload {
 }
 
 function clearComposerAfterSubmit() {
-	// Track the IDs of attachments being sent so they don't re-appear
-	for (const attachment of pendingAttachments) {
-		sentAttachmentIds.add(attachment.artifact.id);
-	}
-	// Trigger reactivity by reassigning the Set
-	sentAttachmentIds = new Set(sentAttachmentIds);
 	message = "";
 	pendingAttachments = [];
 	attachmentError = "";

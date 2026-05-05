@@ -1163,8 +1163,7 @@ function handleSend(
 		void deleteConversationDraft(data.conversation.id);
 	}
 
-	// CRITICAL: Clear attachedArtifacts BEFORE anything else so the child component
-	// doesn't re-merge them after clearComposerAfterSubmit() runs.
+	// Keep route-level conversation artifacts out of the next composer frame.
 	const currentAttachedArtifacts = attachedArtifacts;
 	attachedArtifacts = [];
 

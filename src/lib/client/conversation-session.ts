@@ -218,13 +218,15 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 
 			lastPersistKey = key;
 			pendingRequest = request;
+			const shouldPersistImmediately =
+				immediate || !hasMeaningfulDraft(request.draftText, request.selectedAttachmentIds);
 
 			if (draftPersistTimer) {
 				clearTimeout(draftPersistTimer);
 				draftPersistTimer = null;
 			}
 
-			if (immediate) {
+			if (shouldPersistImmediately) {
 				const nextRequest = pendingRequest;
 				pendingRequest = null;
 				if (nextRequest) {

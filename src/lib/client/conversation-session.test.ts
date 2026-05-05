@@ -160,6 +160,22 @@ describe('conversation-session', () => {
 		});
 	});
 
+	it('deletes empty drafts immediately so cleared attachments do not restore on reload', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+		const persistence = createDraftPersistence(fetchMock, 400);
+
+		await persistence.persist({
+			conversationId: 'conv-123',
+			draftText: '',
+			selectedAttachmentIds: [],
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv-123/draft', {
+			method: 'DELETE',
+		});
+	});
+
 	it('cleans up empty prepared conversations through the shared helper', () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
 		const removeLocal = vi.fn();
