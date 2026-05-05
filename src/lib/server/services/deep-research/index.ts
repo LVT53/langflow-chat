@@ -644,8 +644,12 @@ export async function completeDeepResearchJobWithAuditedReport(
 		reportDraft,
 		auditedReport: auditResult.auditedReport,
 		sources: reportDraft.sources,
+		researchLanguage: currentPlan.rawPlan.researchLanguage ?? 'en',
 	});
-	const reportName = buildReportArtifactName(job.title);
+	const reportName = buildReportArtifactName(
+		job.title,
+		currentPlan.rawPlan.researchLanguage ?? 'en'
+	);
 	const reportArtifact = await createArtifact({
 		userId: job.userId,
 		conversationId: job.conversationId,
@@ -656,7 +660,10 @@ export async function completeDeepResearchJobWithAuditedReport(
 		extension: 'md',
 		sizeBytes: Buffer.byteLength(auditedMarkdown, 'utf8'),
 		contentText: auditedMarkdown,
-		summary: `Audited Research Report for ${job.title}`,
+		summary:
+			(currentPlan.rawPlan.researchLanguage ?? 'en') === 'hu'
+				? `Ellenőrzött kutatási jelentés: ${job.title}`
+				: `Audited Research Report for ${job.title}`,
 		metadata: {
 			deepResearchReport: true,
 			deepResearchReportKind: 'audited',
@@ -952,7 +959,9 @@ function renderAuditedReportMarkdown(input: {
 	reportDraft: ResearchReportDraft;
 	auditedReport: DeepResearchReportDraft;
 	sources: ResearchReportDraft['sources'];
+	researchLanguage: ResearchLanguage;
 }): string {
+	const labels = auditedReportLabels[input.researchLanguage];
 	const retainedClaims = input.auditedReport.sections.flatMap((section) => section.claims);
 	const sourceById = new Map(input.sources.map((source) => [source.id, source]));
 	const citedSourceIds = new Set(retainedClaims.flatMap((claim) => claim.citationSourceIds));
@@ -960,14 +969,16 @@ function renderAuditedReportMarkdown(input: {
 	const keyFindingLines =
 		retainedClaims.length > 0
 			? retainedClaims.map((claim) => `- ${formatAuditedClaim(claim, sourceById)}`)
-			: ['- None.'];
+			: [`- ${labels.none}`];
 	const lines = [
 		`# ${input.reportDraft.title}`,
 		'',
-		'## Executive Summary',
-		retainedClaims[0]?.text ?? 'The citation audit found no credible supported claims.',
+		`## ${labels.executiveSummary}`,
+		retainedClaims[0]
+			? labels.retainedSummary(retainedClaims[0].text)
+			: labels.noSupportedClaims,
 		'',
-		'## Key Findings',
+		`## ${labels.keyFindings}`,
 		...keyFindingLines,
 		'',
 	];
@@ -977,23 +988,85 @@ function renderAuditedReportMarkdown(input: {
 	}
 
 	lines.push(
-		'## Sources',
+		`## ${labels.sources}`,
 		...(citedSources.length > 0
 			? citedSources.map(
 					(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`
 				)
-			: ['- None.'])
+			: [`- ${labels.none}`])
 	);
 
 	if (input.auditedReport.limitations.length > 0) {
 		lines.push(
 			'',
-			'## Report Limitations',
-			...input.auditedReport.limitations.map((limitation) => `- ${limitation}`)
+			`## ${labels.reportLimitations}`,
+			...input.auditedReport.limitations.map(
+				(limitation) => `- ${localizeAuditedLimitation(limitation, input.researchLanguage)}`
+			)
 		);
 	}
 
 	return lines.join('\n');
+}
+
+const auditedReportLabels: Record<
+	ResearchLanguage,
+	{
+		executiveSummary: string;
+		keyFindings: string;
+		sources: string;
+		reportLimitations: string;
+		none: string;
+		noSupportedClaims: string;
+		retainedSummary: (claim: string) => string;
+	}
+> = {
+	en: {
+		executiveSummary: 'Executive Summary',
+		keyFindings: 'Key Findings',
+		sources: 'Sources',
+		reportLimitations: 'Report Limitations',
+		none: 'None.',
+		noSupportedClaims: 'The citation audit found no credible supported claims.',
+		retainedSummary: (claim) => `The citation audit retained this core finding: ${claim}`,
+	},
+	hu: {
+		executiveSummary: 'Vezetői összefoglaló',
+		keyFindings: 'Fő megállapítások',
+		sources: 'Források',
+		reportLimitations: 'Jelentési korlátok',
+		none: 'Nincs.',
+		noSupportedClaims:
+			'A hivatkozás-ellenőrzés nem talált hitelesen alátámasztott állítást.',
+		retainedSummary: (claim) =>
+			`A hivatkozás-ellenőrzés után megtartott fő megállapítás: ${claim}`,
+	},
+};
+
+function localizeAuditedLimitation(
+	limitation: string,
+	researchLanguage: ResearchLanguage
+): string {
+	if (researchLanguage !== 'hu') return limitation;
+	const removedUnsupported = limitation.match(
+		/^Removed unsupported core claim after citation audit:\s*(.+)$/i
+	);
+	if (removedUnsupported) {
+		return `A hivatkozás-ellenőrzés eltávolított egy nem alátámasztott alapállítást: ${removedUnsupported[1]}`;
+	}
+	const removedSource = limitation.match(
+		/^Removed claim because it cited sources that were not both reviewed and cited:\s*(.+)$/i
+	);
+	if (removedSource) {
+		return `A hivatkozás-ellenőrzés eltávolított egy állítást, mert nem áttekintett és idézett forrásra hivatkozott: ${removedSource[1]}`;
+	}
+	const repaired = limitation.match(
+		/^Repaired unsupported core claim during citation audit:\s*(.+)$/i
+	);
+	if (repaired) {
+		return `A hivatkozás-ellenőrzés javított egy nem alátámasztott alapállítást: ${repaired[1]}`;
+	}
+	return limitation;
 }
 
 function formatAuditedClaim(
@@ -1013,13 +1086,17 @@ function uniqueValues<T>(values: T[]): T[] {
 	return [...new Set(values)];
 }
 
-function buildReportArtifactName(jobTitle: string): string {
+function buildReportArtifactName(
+	jobTitle: string,
+	researchLanguage: ResearchLanguage = 'en'
+): string {
 	const safeTitle = jobTitle
 		.replace(/[\\/:*?"<>|]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim()
 		.slice(0, 96);
-	return `Research Report - ${safeTitle || 'Deep Research'}.md`;
+	const prefix = researchLanguage === 'hu' ? 'Kutatási jelentés' : 'Research Report';
+	return `${prefix} - ${safeTitle || 'Deep Research'}.md`;
 }
 
 async function loadCurrentPlansByJobId(

@@ -312,6 +312,81 @@ describe("audited Deep Research report completion", () => {
 		});
 	});
 
+	it("keeps the final audited report in Hungarian when the research prompt is Hungarian", async () => {
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Kérlek kutass a magyar AI piac 2025-os trendjeiről",
+			depth: "focused",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://kutatas.example.test/magyar-ai-piac",
+			title: "Magyar AI piaci attekintes",
+			provider: "public_web",
+			snippet: "A magyar AI piac 2025-ben novekedett.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote: "A magyar AI piac 2025-ben novekedett.",
+		});
+		const synthesisNotes = buildSynthesisNotes(created.id, [
+			{
+				statement: "A magyar AI piac 2025-ben novekedett.",
+				sourceId: reviewedSource.id,
+				url: reviewedSource.url,
+				title: reviewedSource.title ?? "Magyar AI piaci attekintes",
+			},
+		]);
+
+		const completed = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes,
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = completed?.reportArtifactId
+			? await getArtifactForUser("user-1", completed.reportArtifactId)
+			: null;
+
+		expect(created.currentPlan?.rawPlan?.researchLanguage).toBe("hu");
+		expect(reportArtifact?.name).toMatch(/^Kutatási jelentés - /);
+		expect(reportArtifact?.summary).toContain("Ellenőrzött kutatási jelentés");
+		expect(reportArtifact?.contentText).toContain("# Kutatási jelentés:");
+		expect(reportArtifact?.contentText).toContain("## Vezetői összefoglaló");
+		expect(reportArtifact?.contentText).toContain("## Fő megállapítások");
+		expect(reportArtifact?.contentText).toContain("## Források");
+		expect(reportArtifact?.contentText).toContain(
+			"A hivatkozás-ellenőrzés után megtartott fő megállapítás",
+		);
+		expect(reportArtifact?.contentText).not.toContain("## Executive Summary");
+		expect(reportArtifact?.contentText).not.toContain("## Key Findings");
+		expect(reportArtifact?.contentText).not.toContain("## Sources");
+	});
+
 	it("fails without sealing the conversation when no credible supported claims remain", async () => {
 		const { db } = await import("$lib/server/db");
 		const {
