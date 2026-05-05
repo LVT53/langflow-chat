@@ -135,6 +135,16 @@ export function hasActiveFileProductionJobs(jobs: FileProductionJob[]): boolean 
 	return jobs.some((job) => job.status === 'queued' || job.status === 'running');
 }
 
+export function hasActiveDeepResearchJobs(jobs: DeepResearchJob[]): boolean {
+	return jobs.some(
+		(job) =>
+			job.status === 'awaiting_plan' ||
+			job.status === 'awaiting_approval' ||
+			job.status === 'approved' ||
+			job.status === 'running'
+	);
+}
+
 export function isConversationReadOnly(
 	conversation: { status?: 'open' | 'sealed' | null },
 	_deepResearchJobs: DeepResearchJob[] = []

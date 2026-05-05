@@ -6,6 +6,7 @@ import {
 	cloneSendPayload,
 	createAssistantPlaceholder,
 	getWorkspacePresentationAfterDocumentOpen,
+	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
 	isConversationReadOnly,
 	mergeFileProductionJob,
@@ -228,5 +229,21 @@ describe('file production chat helpers', () => {
 				assistantMessageId: 'assistant-1',
 			}),
 		]);
+	});
+});
+
+describe('Deep Research chat helpers', () => {
+	it('detects research jobs that still need chat card refreshes', () => {
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('awaiting_plan')])).toBe(true);
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('awaiting_approval')])).toBe(true);
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('approved')])).toBe(true);
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('running')])).toBe(true);
+		expect(
+			hasActiveDeepResearchJobs([
+				makeDeepResearchJob('completed'),
+				makeDeepResearchJob('failed'),
+				makeDeepResearchJob('cancelled'),
+			])
+		).toBe(false);
 	});
 });

@@ -139,6 +139,154 @@ async function setResearchJobState(input: {
 		.where(eq(schema.deepResearchJobs.id, input.jobId));
 }
 
+describe("Deep Research worker tick and scheduler", () => {
+	afterEach(async () => {
+		const { stopDeepResearchWorkerScheduler } = await import("./worker");
+		stopDeepResearchWorkerScheduler();
+		vi.restoreAllMocks();
+		vi.useRealTimers();
+		vi.resetModules();
+	});
+
+	it("does nothing when the real workflow worker tick is disabled", async () => {
+		const recoverStaleJobs = vi.fn();
+		const advanceWorkflowStep = vi.fn();
+		const { runDeepResearchWorkerTick } = await import("./worker");
+
+		const result = await runDeepResearchWorkerTick({
+			enabled: false,
+			intervalMs: 5_000,
+			staleTimeoutMs: 30_000,
+			now: new Date("2026-05-05T10:00:00.000Z"),
+			recoverStaleJobs,
+			advanceWorkflowStep,
+		});
+
+		expect(result).toEqual({
+			enabled: false,
+			recoveredJobs: [],
+			recoveredCount: 0,
+			workerStep: null,
+			advanced: false,
+		});
+		expect(recoverStaleJobs).not.toHaveBeenCalled();
+		expect(advanceWorkflowStep).not.toHaveBeenCalled();
+	});
+
+	it("recovers stale jobs before advancing at most one real workflow step", async () => {
+		const now = new Date("2026-05-05T10:00:00.000Z");
+		const recoveredJob = { id: "recovered-job" };
+		const advancedJob = { id: "advanced-job" };
+		const recoverStaleJobs = vi.fn(async () => ({
+			recoveredJobs: [recoveredJob],
+		}));
+		const advanceWorkflowStep = vi.fn(async () => ({
+			job: advancedJob,
+			advanced: true,
+		}));
+		const { runDeepResearchWorkerTick } = await import("./worker");
+
+		const result = await runDeepResearchWorkerTick({
+			enabled: true,
+			intervalMs: 5_000,
+			staleTimeoutMs: 30_000,
+			controls: {
+				globalConcurrencyLimit: 2,
+				userConcurrencyLimit: 1,
+			},
+			now,
+			recoverStaleJobs,
+			advanceWorkflowStep,
+		});
+
+		expect(recoverStaleJobs).toHaveBeenCalledWith({
+			now,
+			timeoutMs: 30_000,
+		});
+		expect(advanceWorkflowStep).toHaveBeenCalledWith({
+			now,
+			controls: {
+				globalConcurrencyLimit: 2,
+				userConcurrencyLimit: 1,
+			},
+		});
+		expect(recoverStaleJobs.mock.invocationCallOrder[0]).toBeLessThan(
+			advanceWorkflowStep.mock.invocationCallOrder[0],
+		);
+		expect(result).toEqual({
+			enabled: true,
+			recoveredJobs: [recoveredJob],
+			recoveredCount: 1,
+			workerStep: {
+				job: advancedJob,
+				advanced: true,
+			},
+			advanced: true,
+		});
+	});
+
+	it("starts one idempotent scheduler, unrefs its timer, and can stop it", async () => {
+		const intervalCallbacks: Array<() => void> = [];
+		const timer = { unref: vi.fn() };
+		const setIntervalSpy = vi
+			.spyOn(global, "setInterval")
+			.mockImplementation((callback: TimerHandler, _intervalMs?: number) => {
+				intervalCallbacks.push(callback as () => void);
+				return timer as ReturnType<typeof setInterval>;
+			});
+		const clearIntervalSpy = vi
+			.spyOn(global, "clearInterval")
+			.mockImplementation(() => undefined);
+		const recoverStaleJobs = vi.fn(async () => ({ recoveredJobs: [] }));
+		const advanceWorkflowStep = vi.fn(async () => null);
+		const { ensureDeepResearchWorkerScheduler, stopDeepResearchWorkerScheduler } =
+			await import("./worker");
+
+		ensureDeepResearchWorkerScheduler(() => ({
+			enabled: true,
+			intervalMs: 5_000,
+			staleTimeoutMs: 30_000,
+			now: new Date("2026-05-05T10:00:00.000Z"),
+			recoverStaleJobs,
+			advanceWorkflowStep,
+		}));
+		ensureDeepResearchWorkerScheduler(() => ({
+			enabled: true,
+			intervalMs: 10_000,
+			staleTimeoutMs: 60_000,
+			recoverStaleJobs,
+			advanceWorkflowStep,
+		}));
+
+		expect(setIntervalSpy).toHaveBeenCalledOnce();
+		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5_000);
+		expect(timer.unref).toHaveBeenCalledOnce();
+
+		intervalCallbacks[0]?.();
+		await Promise.resolve();
+
+		expect(recoverStaleJobs).toHaveBeenCalledOnce();
+		expect(advanceWorkflowStep).toHaveBeenCalledOnce();
+
+		stopDeepResearchWorkerScheduler();
+
+		expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
+	});
+
+	it("does not start a timer when the scheduler options are disabled", async () => {
+		const setIntervalSpy = vi.spyOn(global, "setInterval");
+		const { ensureDeepResearchWorkerScheduler } = await import("./worker");
+
+		ensureDeepResearchWorkerScheduler(() => ({
+			enabled: false,
+			intervalMs: 5_000,
+			staleTimeoutMs: 30_000,
+		}));
+
+		expect(setIntervalSpy).not.toHaveBeenCalled();
+	});
+});
+
 describe("mock Deep Research worker", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-worker-${randomUUID()}.db`;

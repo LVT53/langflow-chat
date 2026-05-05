@@ -24,6 +24,11 @@ interface Config {
 	alfyaiApiSigningKey: string;
 	attachmentTraceDebug: boolean;
 	deepResearchEnabled: boolean;
+	deepResearchWorkerEnabled: boolean;
+	deepResearchWorkerIntervalMs: number;
+	deepResearchWorkerStaleTimeoutMs: number;
+	deepResearchWorkerGlobalConcurrency: number;
+	deepResearchWorkerUserConcurrency: number;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -129,6 +134,11 @@ function normalizeModelThinkingType(
 	return value === "enabled" || value === "disabled" ? value : null;
 }
 
+function parseIntegerEnv(value: string | undefined, fallback: number): number {
+	const parsed = parseInt(value ?? "", 10);
+	return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 function buildDefaultHonchoIdentityNamespace(
 	databasePath: string,
 	honchoWorkspace: string,
@@ -164,6 +174,27 @@ function readConfig(): Config {
 		alfyaiApiSigningKey: process.env.ALFYAI_API_SIGNING_KEY || "",
 		attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === "true",
 		deepResearchEnabled: process.env.DEEP_RESEARCH_ENABLED === "true",
+		deepResearchWorkerEnabled:
+			process.env.DEEP_RESEARCH_WORKER_ENABLED === "true",
+		deepResearchWorkerIntervalMs: Math.max(
+			1000,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_INTERVAL_MS, 5000),
+		),
+		deepResearchWorkerStaleTimeoutMs: Math.max(
+			60000,
+			parseIntegerEnv(
+				process.env.DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS,
+				1800000,
+			),
+		),
+		deepResearchWorkerGlobalConcurrency: Math.max(
+			0,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY, 1),
+		),
+		deepResearchWorkerUserConcurrency: Math.max(
+			0,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_USER_CONCURRENCY, 1),
+		),
 		contextDiagnosticsDebug:
 			process.env.CONTEXT_DIAGNOSTICS_DEBUG === "true",
 		titleGenUrl: process.env.TITLE_GEN_URL || "http://localhost:30001/v1",

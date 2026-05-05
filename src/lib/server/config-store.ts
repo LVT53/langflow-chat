@@ -49,6 +49,11 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_THINKING_TYPE",
 	"MODEL_2_ENABLED",
 	"DEEP_RESEARCH_ENABLED",
+	"DEEP_RESEARCH_WORKER_ENABLED",
+	"DEEP_RESEARCH_WORKER_INTERVAL_MS",
+	"DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS",
+	"DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY",
+	"DEEP_RESEARCH_WORKER_USER_CONCURRENCY",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
 	"TITLE_GEN_SYSTEM_PROMPT_EN",
@@ -108,6 +113,11 @@ export interface RuntimeConfig {
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
 	deepResearchEnabled: boolean;
+	deepResearchWorkerEnabled: boolean;
+	deepResearchWorkerIntervalMs: number;
+	deepResearchWorkerStaleTimeoutMs: number;
+	deepResearchWorkerGlobalConcurrency: number;
+	deepResearchWorkerUserConcurrency: number;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -359,6 +369,33 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	DEEP_RESEARCH_ENABLED: (config, value) => {
 		config.deepResearchEnabled = value === "true";
+	},
+	DEEP_RESEARCH_WORKER_ENABLED: (config, value) => {
+		config.deepResearchWorkerEnabled = value === "true";
+	},
+	DEEP_RESEARCH_WORKER_INTERVAL_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchWorkerIntervalMs = Math.max(1000, parsed);
+		}
+	},
+	DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchWorkerStaleTimeoutMs = Math.max(60000, parsed);
+		}
+	},
+	DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchWorkerGlobalConcurrency = Math.max(0, parsed);
+		}
+	},
+	DEEP_RESEARCH_WORKER_USER_CONCURRENCY: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchWorkerUserConcurrency = Math.max(0, parsed);
+		}
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -759,6 +796,19 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_THINKING_TYPE: config.model2.thinkingType ?? "",
 		MODEL_2_ENABLED: String(config.model2Enabled),
 		DEEP_RESEARCH_ENABLED: String(config.deepResearchEnabled),
+		DEEP_RESEARCH_WORKER_ENABLED: String(config.deepResearchWorkerEnabled),
+		DEEP_RESEARCH_WORKER_INTERVAL_MS: String(
+			config.deepResearchWorkerIntervalMs,
+		),
+		DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS: String(
+			config.deepResearchWorkerStaleTimeoutMs,
+		),
+		DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: String(
+			config.deepResearchWorkerGlobalConcurrency,
+		),
+		DEEP_RESEARCH_WORKER_USER_CONCURRENCY: String(
+			config.deepResearchWorkerUserConcurrency,
+		),
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: config.titleGenSystemPromptEn,

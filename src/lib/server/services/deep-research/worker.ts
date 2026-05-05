@@ -70,6 +70,35 @@ export type RecoverStaleDeepResearchJobsResult = {
 	recoveredJobs: DeepResearchJob[];
 };
 
+export type DeepResearchWorkerRecoverStaleJobs = (
+	input: RecoverStaleDeepResearchJobsInput,
+) => Promise<RecoverStaleDeepResearchJobsResult>;
+
+export type DeepResearchWorkerAdvanceWorkflowStep = (
+	input?: RunNextDeepResearchWorkflowWorkerStepInput,
+) => Promise<RunNextDeepResearchWorkflowWorkerStepResult>;
+
+export type RunDeepResearchWorkerTickOptions = {
+	enabled: boolean;
+	intervalMs: number;
+	staleTimeoutMs: number;
+	controls?: DeepResearchWorkerControls;
+	now?: Date;
+	recoverStaleJobs?: DeepResearchWorkerRecoverStaleJobs;
+	advanceWorkflowStep?: DeepResearchWorkerAdvanceWorkflowStep;
+};
+
+export type RunDeepResearchWorkerTickResult = {
+	enabled: boolean;
+	recoveredJobs: DeepResearchJob[];
+	recoveredCount: number;
+	workerStep: RunNextDeepResearchWorkflowWorkerStepResult;
+	advanced: boolean;
+};
+
+export type DeepResearchWorkerSchedulerOptionsProvider =
+	() => RunDeepResearchWorkerTickOptions;
+
 export type RequestDeepResearchWorkerCancellationInput = {
 	userId: string;
 	jobId: string;
@@ -136,6 +165,109 @@ const MOCK_STAGE_SEQUENCE: MockWorkerStage[] = [
 ];
 
 const REAL_WORKFLOW_RUNNING_STAGES = ["source_review", "research_tasks"];
+const DEFAULT_WORKER_INTERVAL_MS = 60_000;
+const DEFAULT_WORKER_STALE_TIMEOUT_MS = 30 * 60_000;
+
+let workerSchedulerHandle: ReturnType<typeof setInterval> | null = null;
+let workerSchedulerTickInFlight = false;
+
+function getDisabledDeepResearchWorkerSchedulerOptions(): RunDeepResearchWorkerTickOptions {
+	return {
+		enabled: false,
+		intervalMs: DEFAULT_WORKER_INTERVAL_MS,
+		staleTimeoutMs: DEFAULT_WORKER_STALE_TIMEOUT_MS,
+	};
+}
+
+export async function runDeepResearchWorkerTick(
+	options: RunDeepResearchWorkerTickOptions,
+): Promise<RunDeepResearchWorkerTickResult> {
+	if (!options.enabled) {
+		return {
+			enabled: false,
+			recoveredJobs: [],
+			recoveredCount: 0,
+			workerStep: null,
+			advanced: false,
+		};
+	}
+
+	const now = options.now ?? new Date();
+	const recoverStaleJobs =
+		options.recoverStaleJobs ?? recoverStaleDeepResearchJobs;
+	const advanceWorkflowStep =
+		options.advanceWorkflowStep ?? runNextDeepResearchWorkflowWorkerStep;
+	const recovered = await recoverStaleJobs({
+		now,
+		timeoutMs: options.staleTimeoutMs,
+	});
+	const workerStep = await advanceWorkflowStep({
+		now,
+		controls: options.controls,
+	});
+
+	return {
+		enabled: true,
+		recoveredJobs: recovered.recoveredJobs,
+		recoveredCount: recovered.recoveredJobs.length,
+		workerStep,
+		advanced: workerStep?.advanced ?? false,
+	};
+}
+
+export function ensureDeepResearchWorkerScheduler(
+	optionsProvider: DeepResearchWorkerSchedulerOptionsProvider = getDisabledDeepResearchWorkerSchedulerOptions,
+): void {
+	if (workerSchedulerHandle) return;
+
+	const initialOptions = optionsProvider();
+	if (!initialOptions.enabled) {
+		console.info("[DEEP_RESEARCH] Worker scheduler disabled");
+		return;
+	}
+
+	const intervalMs = normalizePositiveMilliseconds(initialOptions.intervalMs);
+	if (intervalMs === null) {
+		console.warn("[DEEP_RESEARCH] Worker scheduler disabled", {
+			reason: "invalid_interval",
+			intervalMs: initialOptions.intervalMs,
+		});
+		return;
+	}
+
+	workerSchedulerHandle = setInterval(() => {
+		if (workerSchedulerTickInFlight) return;
+		workerSchedulerTickInFlight = true;
+
+		void runDeepResearchWorkerTick(optionsProvider())
+			.then((result) => {
+				if (result.recoveredCount > 0 || result.advanced) {
+					console.info("[DEEP_RESEARCH] Worker tick completed", {
+						recoveredCount: result.recoveredCount,
+						advanced: result.advanced,
+						jobId: result.workerStep?.job.id ?? null,
+					});
+				}
+			})
+			.catch((error) => {
+				console.error("[DEEP_RESEARCH] Worker tick failed", { error });
+			})
+			.finally(() => {
+				workerSchedulerTickInFlight = false;
+			});
+	}, intervalMs);
+	workerSchedulerHandle.unref?.();
+
+	console.info("[DEEP_RESEARCH] Worker scheduler enabled", { intervalMs });
+}
+
+export function stopDeepResearchWorkerScheduler(): void {
+	if (workerSchedulerHandle) {
+		clearInterval(workerSchedulerHandle);
+		workerSchedulerHandle = null;
+	}
+	workerSchedulerTickInFlight = false;
+}
 
 export async function runNextMockDeepResearchWorkerStep(
 	input: RunNextMockDeepResearchWorkerStepInput = {},
@@ -520,6 +652,12 @@ function normalizeConcurrencyLimit(value: number | undefined): number | null {
 	if (value === undefined) return null;
 	if (!Number.isFinite(value)) return null;
 	return Math.max(0, Math.floor(value));
+}
+
+function normalizePositiveMilliseconds(value: number): number | null {
+	if (!Number.isFinite(value)) return null;
+	const normalized = Math.floor(value);
+	return normalized > 0 ? normalized : null;
 }
 
 async function loadDeepResearchJobForWorker(

@@ -92,6 +92,7 @@ import {
 	createUserMessage,
 	finalizeStreamingMessageList,
 	getWorkspacePresentationAfterDocumentOpen,
+	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
 	mergeAttachedArtifacts,
@@ -1061,7 +1062,10 @@ async function handleAdvanceDeepResearchWorkflow(jobId: string) {
 
 $effect(() => {
 	const conversationId = data.conversation?.id;
-	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
+	const shouldPollConversation =
+		hasActiveFileProductionJobs(fileProductionJobs) ||
+		hasActiveDeepResearchJobs(deepResearchJobs);
+	if (!browser || !conversationId || !shouldPollConversation) {
 		return;
 	}
 
