@@ -69,6 +69,7 @@ describe('deep research job shell service', () => {
 
 	it('creates and reloads a durable Deep Research Job with its first Research Plan', async () => {
 		const { startDeepResearchJobShell, listConversationDeepResearchJobs } = await import('./index');
+		const { countResearchSources } = await import('./sources');
 
 		const created = await startDeepResearchJobShell({
 			userId: 'user-1',
@@ -77,8 +78,24 @@ describe('deep research job shell service', () => {
 			userRequest: 'Compare EU and US AI copyright training data rules',
 			depth: 'standard',
 			now: new Date('2026-05-05T10:01:00.000Z'),
+			planningContext: [
+				{
+					type: 'conversation',
+					title: 'Earlier chat',
+					summary: 'The user cares about practical product compliance.',
+				},
+				{
+					type: 'knowledge',
+					title: 'Internal preference note',
+					summary: 'Prefer practical deployment risks over policy theory.',
+				},
+			],
 		});
 		const jobs = await listConversationDeepResearchJobs('user-1', 'conv-1');
+		const sourceCounts = await countResearchSources({
+			userId: 'user-1',
+			jobId: created.id,
+		});
 
 		expect(created).toMatchObject({
 			conversationId: 'conv-1',
@@ -91,7 +108,7 @@ describe('deep research job shell service', () => {
 			currentPlan: {
 				version: 1,
 				status: 'awaiting_approval',
-				contextDisclosure: null,
+				contextDisclosure: 'Context considered: 1 conversation item, 1 knowledge item.',
 				effortEstimate: {
 					selectedDepth: 'standard',
 					sourceReviewCeiling: 40,
@@ -99,10 +116,18 @@ describe('deep research job shell service', () => {
 			},
 		});
 		expect(created.currentPlan?.renderedPlan).toContain('# Research Plan');
+		expect(created.currentPlan?.renderedPlan).toContain(
+			'Context considered: 1 conversation item, 1 knowledge item.'
+		);
 		expect(created.currentPlan?.rawPlan.goal).toBe(
 			'Compare EU and US AI copyright training data rules'
 		);
 		expect(jobs).toEqual([created]);
+		expect(sourceCounts).toEqual({
+			discovered: 0,
+			reviewed: 0,
+			cited: 0,
+		});
 	});
 
 	it('writes a plan-drafted Activity Timeline event when the first Research Plan is created', async () => {
@@ -518,6 +543,171 @@ describe('deep research job shell service', () => {
 			updatedAt: new Date('2026-05-05T10:06:00.000Z').getTime(),
 		});
 		expect(reloaded).toEqual(approved);
+	});
+
+	it('adds attached files disclosed in the approved source scope to the Research Source ledger', async () => {
+		const { approveDeepResearchPlan, startDeepResearchJobShell } = await import('./index');
+		const { countResearchSources, listResearchSources } = await import('./sources');
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules using my uploaded memo.',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+			planningContext: [
+				{
+					type: 'attachment',
+					artifactId: 'artifact-upload-1',
+					title: 'Uploaded copyright memo.pdf',
+					summary: 'Internal memo with notes on AI training data disputes.',
+				},
+			],
+		});
+		const sourceScope = created.currentPlan?.rawPlan?.sourceScope as {
+			includedSources?: Array<Record<string, unknown>>;
+		};
+
+		expect(sourceScope.includedSources).toEqual([
+			{
+				type: 'attached_file',
+				artifactId: 'artifact-upload-1',
+				title: 'Uploaded copyright memo.pdf',
+				summary: 'Internal memo with notes on AI training data disputes.',
+			},
+		]);
+
+		await approveDeepResearchPlan({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:06:00.000Z'),
+		});
+		const sources = await listResearchSources({
+			userId: 'user-1',
+			jobId: created.id,
+		});
+		const counts = await countResearchSources({
+			userId: 'user-1',
+			jobId: created.id,
+		});
+
+		expect(counts).toEqual({
+			discovered: 1,
+			reviewed: 0,
+			cited: 0,
+		});
+		expect(sources).toEqual([
+			expect.objectContaining({
+				jobId: created.id,
+				conversationId: 'conv-1',
+				status: 'discovered',
+				url: 'artifact:artifact-upload-1',
+				title: 'Uploaded copyright memo.pdf',
+				provider: 'attached_file',
+				snippet: 'Internal memo with notes on AI training data disputes.',
+			}),
+		]);
+	});
+
+	it('does not add knowledge context as a Research Source unless the approved plan source scope includes it', async () => {
+		const { db } = await import('$lib/server/db');
+		const { approveDeepResearchPlan, startDeepResearchJobShell } = await import('./index');
+		const { countResearchSources, listResearchSources } = await import('./sources');
+		const now = new Date('2026-05-05T10:00:00.000Z');
+		await db.insert(schema.conversations).values({
+			id: 'conv-2',
+			userId: 'user-1',
+			title: 'Second research conversation',
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(schema.messages).values({
+			id: 'user-msg-2',
+			conversationId: 'conv-2',
+			role: 'user',
+			content: 'Research using approved knowledge source scope',
+			createdAt: now,
+		});
+
+		const contextOnlyJob = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules.',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+			planningContext: [
+				{
+					type: 'knowledge',
+					artifactId: 'artifact-knowledge-context',
+					title: 'Knowledge profile note',
+					summary: 'The user prefers concise compliance summaries.',
+				},
+			],
+		});
+		await approveDeepResearchPlan({
+			userId: 'user-1',
+			jobId: contextOnlyJob.id,
+			now: new Date('2026-05-05T10:02:00.000Z'),
+		});
+
+		const explicitlyScopedJob = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-2',
+			triggerMessageId: 'user-msg-2',
+			userRequest: 'Research using the selected library source.',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:03:00.000Z'),
+			planningContext: [
+				{
+					type: 'knowledge',
+					artifactId: 'artifact-knowledge-source',
+					title: 'Library source brief',
+					summary: 'A user-selected library item approved as evidence for this research.',
+					includeAsResearchSource: true,
+				},
+			],
+		});
+
+		expect(explicitlyScopedJob.currentPlan?.rawPlan?.sourceScope.includedSources).toEqual([
+			{
+				type: 'knowledge_artifact',
+				artifactId: 'artifact-knowledge-source',
+				title: 'Library source brief',
+				summary: 'A user-selected library item approved as evidence for this research.',
+			},
+		]);
+
+		await approveDeepResearchPlan({
+			userId: 'user-1',
+			jobId: explicitlyScopedJob.id,
+			now: new Date('2026-05-05T10:04:00.000Z'),
+		});
+		const contextOnlyCounts = await countResearchSources({
+			userId: 'user-1',
+			jobId: contextOnlyJob.id,
+		});
+		const explicitlyScopedSources = await listResearchSources({
+			userId: 'user-1',
+			jobId: explicitlyScopedJob.id,
+		});
+
+		expect(contextOnlyCounts).toEqual({
+			discovered: 0,
+			reviewed: 0,
+			cited: 0,
+		});
+		expect(explicitlyScopedSources).toEqual([
+			expect.objectContaining({
+				jobId: explicitlyScopedJob.id,
+				conversationId: 'conv-2',
+				status: 'discovered',
+				url: 'artifact:artifact-knowledge-source',
+				title: 'Library source brief',
+				provider: 'knowledge_artifact',
+				snippet: 'A user-selected library item approved as evidence for this research.',
+			}),
+		]);
 	});
 
 	it('rejects Plan Edits after the Research Plan is approved', async () => {

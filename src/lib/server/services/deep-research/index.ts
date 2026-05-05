@@ -24,8 +24,10 @@ import {
 	createRevisedResearchPlanDraft,
 	type PlanningContextItem,
 	type ResearchLanguage,
+	type ResearchPlanIncludedSource,
 	type ResearchPlanDraftRecord,
 } from './planning';
+import { saveDiscoveredResearchSource } from './sources';
 import {
 	createPlanGenerationTimelineEvent,
 	listResearchTimelineEventsForJobs,
@@ -475,6 +477,15 @@ export async function approveDeepResearchPlan(
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
 
+	await persistApprovedPlanSourceScope({
+		userId: input.userId,
+		conversationId: job.conversationId,
+		jobId: job.id,
+		includedSources:
+			parseJson<DeepResearchPlanRaw>(approvedPlanRow.rawPlanJson).sourceScope.includedSources ?? [],
+		discoveredAt: now,
+	});
+
 	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
 	return mapDeepResearchJob(
 		updatedJob,
@@ -809,6 +820,27 @@ async function saveResearchPlanDraft(
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 	};
+}
+
+async function persistApprovedPlanSourceScope(input: {
+	userId: string;
+	conversationId: string;
+	jobId: string;
+	includedSources: ResearchPlanIncludedSource[];
+	discoveredAt: Date;
+}): Promise<void> {
+	for (const source of input.includedSources) {
+		await saveDiscoveredResearchSource({
+			userId: input.userId,
+			conversationId: input.conversationId,
+			jobId: input.jobId,
+			url: `artifact:${source.artifactId}`,
+			title: source.title ?? null,
+			provider: source.type,
+			snippet: source.summary,
+			discoveredAt: input.discoveredAt,
+		});
+	}
 }
 
 function mapResearchPlanVersionRow(

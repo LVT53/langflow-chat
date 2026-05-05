@@ -4,6 +4,15 @@ export type ResearchLanguage = "en" | "hu";
 
 export type PlanningContextItem = {
 	type: "conversation" | "knowledge" | "attachment" | "report";
+	artifactId?: string;
+	title?: string;
+	summary: string;
+	includeAsResearchSource?: boolean;
+};
+
+export type ResearchPlanIncludedSource = {
+	type: "attached_file" | "knowledge_artifact";
+	artifactId: string;
 	title?: string;
 	summary: string;
 };
@@ -16,6 +25,7 @@ export type ResearchPlan = {
 	sourceScope: {
 		includePublicWeb: boolean;
 		planningContextDisclosure: string | null;
+		includedSources?: ResearchPlanIncludedSource[];
 	};
 	reportShape: string[];
 	constraints: string[];
@@ -233,6 +243,7 @@ function draftDefaultResearchPlan(
 		sourceScope: {
 			includePublicWeb: true,
 			planningContextDisclosure: contextDisclosure,
+			includedSources: buildDefaultIncludedSources(input.planningContext ?? []),
 		},
 		reportShape: [
 			"Executive summary",
@@ -300,6 +311,9 @@ function renderResearchPlan(plan: ResearchPlan): string {
 		`Cost: ${effortEstimate.relativeCostWarning}`,
 		"",
 		`Goal: ${plan.goal}`,
+		...(plan.sourceScope.planningContextDisclosure
+			? ["", plan.sourceScope.planningContextDisclosure]
+			: []),
 		"",
 		"Key questions:",
 		...plan.keyQuestions.map((question) => `- ${question}`),
@@ -338,4 +352,22 @@ function buildContextDisclosure(
 	});
 
 	return `Context considered: ${parts.join(", ")}.`;
+}
+
+function buildDefaultIncludedSources(
+	planningContext: PlanningContextItem[],
+): ResearchPlanIncludedSource[] {
+	return planningContext
+		.filter(
+			(item) =>
+				item.artifactId &&
+				(item.type === "attachment" ||
+					(item.type === "knowledge" && item.includeAsResearchSource)),
+		)
+		.map((item) => ({
+			type: item.type === "knowledge" ? "knowledge_artifact" : "attached_file",
+			artifactId: item.artifactId as string,
+			...(item.title ? { title: item.title } : {}),
+			summary: item.summary,
+		}));
 }

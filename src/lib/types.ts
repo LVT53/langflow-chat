@@ -132,10 +132,18 @@ export interface DeepResearchPlanRaw {
 	sourceScope: {
 		includePublicWeb: boolean;
 		planningContextDisclosure: string | null;
+		includedSources?: DeepResearchPlanIncludedSource[];
 	};
 	reportShape: string[];
 	constraints: string[];
 	deliverables: string[];
+}
+
+export interface DeepResearchPlanIncludedSource {
+	type: "attached_file" | "knowledge_artifact";
+	artifactId: string;
+	title?: string;
+	summary: string;
 }
 
 export interface DeepResearchPlanSummary {
