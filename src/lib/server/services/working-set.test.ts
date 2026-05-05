@@ -117,9 +117,9 @@ describe('working-set ranking', () => {
 		});
 	});
 
-	it('enforces per-type and total working-set caps', () => {
+	it('carries broad active document sets across turns', () => {
 		const ranked = rankWorkingSetCandidates([
-			...Array.from({ length: 6 }, (_, index) => ({
+			...Array.from({ length: 12 }, (_, index) => ({
 				artifactId: `doc-${index + 1}`,
 				artifactType: 'source_document' as const,
 				name: `Document ${index + 1}`,
@@ -128,7 +128,27 @@ describe('working-set ranking', () => {
 				updatedAt: Date.now(),
 				isAttachedThisTurn: true,
 			})),
-			...Array.from({ length: 3 }, (_, index) => ({
+		]);
+
+		const selected = ranked.filter((item) => item.selected);
+		expect(selected).toHaveLength(12);
+		expect(new Set(selected.map((item) => item.artifactId))).toEqual(
+			new Set(Array.from({ length: 12 }, (_, index) => `doc-${index + 1}`))
+		);
+	});
+
+	it('keeps a generous performance safeguard on active working-set size', () => {
+		const ranked = rankWorkingSetCandidates([
+			...Array.from({ length: 60 }, (_, index) => ({
+				artifactId: `doc-${index + 1}`,
+				artifactType: 'source_document' as const,
+				name: `Document ${index + 1}`,
+				summary: null,
+				contentText: null,
+				updatedAt: Date.now(),
+				isAttachedThisTurn: true,
+			})),
+			...Array.from({ length: 20 }, (_, index) => ({
 				artifactId: `out-${index + 1}`,
 				artifactType: 'generated_output' as const,
 				name: `Output ${index + 1}`,
@@ -137,13 +157,14 @@ describe('working-set ranking', () => {
 				updatedAt: Date.now(),
 				isCurrentGeneratedDocument: index === 0,
 				isActiveDocumentFocus: index === 1,
+				isRecentlyRefinedDocumentFamily: index > 1,
 			})),
 		]);
 
 		const selected = ranked.filter((item) => item.selected);
-		expect(selected).toHaveLength(6);
-		expect(selected.filter((item) => item.artifactType === 'source_document')).toHaveLength(4);
-		expect(selected.filter((item) => item.artifactType === 'generated_output')).toHaveLength(2);
+		expect(selected).toHaveLength(64);
+		expect(selected.filter((item) => item.artifactType === 'source_document')).toHaveLength(48);
+		expect(selected.filter((item) => item.artifactType === 'generated_output')).toHaveLength(16);
 	});
 
 	it('boosts message-matched documents above non-matched ones', () => {
