@@ -13,6 +13,11 @@ vi.mock('$lib/server/services/langflow', () => ({
 	sendMessage: vi.fn()
 }));
 
+vi.mock('$lib/server/services/deep-research', () => ({
+	isDeepResearchJobStartError: vi.fn(() => false),
+	startDeepResearchJobShell: vi.fn(),
+}));
+
 vi.mock('$lib/server/services/messages', () => ({
 	createMessage: vi.fn(),
 	updateMessageEvidence: vi.fn(async () => undefined),
@@ -68,12 +73,14 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
+import { startDeepResearchJobShell } from '$lib/server/services/deep-research';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
+const mockStartDeepResearchJobShell = startDeepResearchJobShell as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
@@ -103,6 +110,17 @@ describe('POST /api/chat/send', () => {
 			content: '',
 			timestamp: Date.now()
 		}));
+		mockStartDeepResearchJobShell.mockResolvedValue({
+			id: 'research-job-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg',
+			depth: 'standard',
+			status: 'awaiting_plan',
+			stage: 'job_shell_created',
+			title: 'Compare EU and US AI copyright training data rules',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
 		mockAssertPromptReadyAttachments.mockResolvedValue({ displayArtifacts: [], promptArtifacts: [] });
 	});
 
@@ -166,6 +184,50 @@ describe('POST /api/chat/send', () => {
 			honchoContext: expect.objectContaining({ source: 'live' }),
 			honchoSnapshot: expect.objectContaining({ summary: 'Latest Honcho summary' }),
 		});
+	});
+
+	it('starts a Deep Research job shell instead of a normal assistant answer', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockCreateMessage.mockResolvedValueOnce({
+			id: 'user-msg',
+			role: 'user',
+			content: 'Compare EU and US AI copyright training data rules',
+			timestamp: Date.now(),
+		});
+
+		const event = makeEvent({
+			message: 'Compare EU and US AI copyright training data rules',
+			conversationId: 'conv-1',
+			deepResearch: { depth: 'standard' },
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.response).toBeNull();
+		expect(data.deepResearchJob).toMatchObject({
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg',
+			depth: 'standard',
+			status: 'awaiting_plan',
+		});
+		expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+		expect(mockCreateMessage).toHaveBeenCalledWith(
+			'conv-1',
+			'user',
+			'Compare EU and US AI copyright training data rules',
+		);
+		expect(mockStartDeepResearchJobShell).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				conversationId: 'conv-1',
+				triggerMessageId: 'user-msg',
+				userRequest: 'Compare EU and US AI copyright training data rules',
+				depth: 'standard',
+			}),
+		);
+		expect(mockSendMessage).not.toHaveBeenCalled();
 	});
 
 	it('passes messages through unchanged', async () => {

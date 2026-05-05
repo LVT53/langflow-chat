@@ -36,9 +36,13 @@ export const conversations = sqliteTable('conversations', {
     .references(() => users.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   projectId: text('project_id'),
+  status: text('status').notNull().default('open'),
+  sealedAt: integer('sealed_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  userStatusIdx: index('conversations_user_status_idx').on(table.userId, table.status, table.updatedAt),
+}));
 
 export const messages = sqliteTable('messages', {
   id: text('id').primaryKey(),
@@ -52,6 +56,41 @@ export const messages = sqliteTable('messages', {
   metadataJson: text('metadata_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
+
+export const deepResearchJobs = sqliteTable('deep_research_jobs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  triggerMessageId: text('trigger_message_id').references(() => messages.id, {
+    onDelete: 'set null',
+  }),
+  depth: text('depth').notNull(),
+  status: text('status').notNull().default('awaiting_plan'),
+  stage: text('stage'),
+  title: text('title').notNull(),
+  userRequest: text('user_request').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
+}, (table) => ({
+  conversationIdx: index('deep_research_jobs_conversation_idx').on(
+    table.conversationId,
+    table.createdAt
+  ),
+  userStatusIdx: index('deep_research_jobs_user_status_idx').on(
+    table.userId,
+    table.status,
+    table.updatedAt
+  ),
+  activeConversationUniqueIdx: uniqueIndex('deep_research_jobs_active_conversation_unique_idx')
+    .on(table.conversationId)
+    .where(sql`${table.status} NOT IN ('completed', 'failed', 'cancelled')`),
+}));
 
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),

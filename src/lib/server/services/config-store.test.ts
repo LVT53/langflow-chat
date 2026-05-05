@@ -72,5 +72,10 @@ describe("Knowledge Store Config", () => {
 			const config = getConfig();
 			expect(config.smallFileThresholdChars).toBe(5000);
 		});
+
+		it("getConfig() should keep Deep Research disabled by default", () => {
+			const config = getConfig();
+			expect(config.deepResearchEnabled).toBe(false);
+		});
 	});
 });

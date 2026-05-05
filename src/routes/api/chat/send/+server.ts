@@ -14,6 +14,10 @@ import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { touchConversation } from "$lib/server/services/conversations";
 import { isAttachmentReadinessError } from "$lib/server/services/knowledge";
+import {
+	isDeepResearchJobStartError,
+	startDeepResearchJobShell,
+} from "$lib/server/services/deep-research";
 import { sendMessage } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
@@ -85,6 +89,37 @@ export const POST: RequestHandler = async (event) => {
 	const turn = preflight.value;
 
 	try {
+		if (turn.deepResearchDepth) {
+			const userMessage = await createMessage(
+				turn.conversationId,
+				"user",
+				turn.normalizedMessage,
+			);
+			await persistUserTurnAttachments({
+				userId: user.id,
+				conversationId: turn.conversationId,
+				messageId: userMessage.id,
+				normalizedMessage: turn.normalizedMessage,
+				attachmentIds: turn.attachmentIds,
+			});
+			const deepResearchJob = await startDeepResearchJobShell({
+				userId: user.id,
+				conversationId: turn.conversationId,
+				triggerMessageId: userMessage.id,
+				userRequest: turn.normalizedMessage,
+				depth: turn.deepResearchDepth,
+			});
+			await touchConversation(user.id, turn.conversationId).catch(
+				() => undefined,
+			);
+
+			return json({
+				response: null,
+				conversationId: turn.conversationId,
+				deepResearchJob,
+			});
+		}
+
 		const upstreamMessage = turn.normalizedMessage;
 		const modelUser = {
 			id: user.id,
@@ -202,6 +237,12 @@ export const POST: RequestHandler = async (event) => {
 			contextDebug: turnState.contextDebug,
 		});
 	} catch (error) {
+		if (isDeepResearchJobStartError(error)) {
+			return json(
+				{ error: error.message, code: error.code },
+				{ status: error.status },
+			);
+		}
 		console.error("Langflow sendMessage error:", error);
 		if (turn.attachmentTraceId) {
 			logAttachmentTrace("send_failure", {

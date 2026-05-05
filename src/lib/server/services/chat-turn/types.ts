@@ -4,6 +4,7 @@ import type {
 	ConversationContextStatus,
 	HonchoContextInfo,
 	HonchoContextSnapshot,
+	DeepResearchDepth,
 	ModelId,
 	TaskState,
 	ToolCallEntry,
@@ -28,6 +29,7 @@ export type ParsedChatTurnRequest = {
 	attachmentIds: string[];
 	activeDocumentArtifactId?: string;
 	personalityProfileId?: string;
+	deepResearchDepth?: DeepResearchDepth;
 	skipPersistUserMessage: boolean;
 	attachmentTraceId?: string;
 };

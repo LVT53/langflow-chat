@@ -21,6 +21,7 @@ type SendPayload = {
 	pendingAttachments: PendingAttachment[];
 	conversationId: string | null;
 	personalityProfileId?: string | null;
+	deepResearchDepth?: DeepResearchDepth | null;
 };
 
 type DraftPayload = {
@@ -29,6 +30,8 @@ type DraftPayload = {
 	selectedAttachmentIds: string[];
 	selectedAttachments: PendingAttachment[];
 };
+
+type DeepResearchDepth = "focused" | "standard" | "max";
 
 let {
 	disabled = false,
@@ -61,6 +64,7 @@ let {
 	personalityProfiles = [],
 	selectedPersonalityId = null,
 	onPersonalityChange = undefined,
+	deepResearchEnabled = false,
 }: {
 	disabled?: boolean;
 	maxLength?: number;
@@ -104,6 +108,7 @@ let {
 	personalityProfiles?: Array<{ id: string; name: string; description: string }>;
 	selectedPersonalityId?: string | null;
 	onPersonalityChange?: ((id: string | null) => void) | undefined;
+	deepResearchEnabled?: boolean;
 } = $props();
 
 let textarea = $state<HTMLTextAreaElement | null>(null);
@@ -114,6 +119,8 @@ let uploadState = $state<"idle" | "uploading" | "preparing">("idle");
 let attachmentError = $state("");
 let resolvedConversationId = $state<string | null>(null);
 let showToolsMenu = $state(false);
+let showDeepResearchMenu = $state(false);
+let selectedDeepResearchDepth = $state<DeepResearchDepth | null>(null);
 let queuedSendAfterProcessing = $state(false);
 let appliedDraftVersion = -1;
 let lastEmittedDraftKey = "";
@@ -199,6 +206,7 @@ $effect(() => {
 		uploadState = "idle";
 		queuedSendAfterProcessing = false;
 		showToolsMenu = false;
+		showDeepResearchMenu = false;
 		lastEmittedDraftKey = "";
 		draftEmissionVersion += 1;
 		adjustHeight();
@@ -296,6 +304,7 @@ function buildSendPayload(): SendPayload {
 		})),
 		conversationId: resolvedConversationId,
 		personalityProfileId: selectedPersonalityId,
+		deepResearchDepth: deepResearchEnabled ? selectedDeepResearchDepth : null,
 	};
 }
 
@@ -305,6 +314,8 @@ function clearComposerAfterSubmit() {
 	attachmentError = "";
 	queuedSendAfterProcessing = false;
 	showToolsMenu = false;
+	showDeepResearchMenu = false;
+	selectedDeepResearchDepth = null;
 	lastEmittedDraftKey = "";
 	draftEmissionVersion += 1;
 	void emitDraftChange(true);
@@ -343,6 +354,7 @@ function queue() {
 function stop() {
 	onStop?.();
 	showToolsMenu = false;
+	showDeepResearchMenu = false;
 	if (isMobile()) {
 		textarea.blur();
 	}
@@ -368,10 +380,25 @@ function openFilePicker() {
 
 function toggleToolsMenu() {
 	showToolsMenu = !showToolsMenu;
+	if (showToolsMenu) showDeepResearchMenu = false;
 }
 
 function closeToolsMenu() {
 	showToolsMenu = false;
+}
+
+function toggleDeepResearchMenu() {
+	if (selectedDeepResearchDepth) {
+		selectedDeepResearchDepth = null;
+		showDeepResearchMenu = false;
+		return;
+	}
+	showDeepResearchMenu = !showDeepResearchMenu;
+	if (showDeepResearchMenu) showToolsMenu = false;
+}
+
+function selectDeepResearchDepth(depth: DeepResearchDepth) {
+	selectedDeepResearchDepth = selectedDeepResearchDepth === depth ? null : depth;
 }
 
 async function uploadFiles(files: FileList | null) {
@@ -647,6 +674,68 @@ async function emitDraftChange(force = false) {
 					{/if}
 				</div>
 
+				{#if deepResearchEnabled}
+					<div class="relative flex items-center">
+						<button
+							type="button"
+							class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
+							class:composer-icon--active={selectedDeepResearchDepth}
+							onclick={toggleDeepResearchMenu}
+							aria-label={$t('composerTools.deepResearch')}
+							aria-expanded={showDeepResearchMenu}
+							title={$t('composerTools.deepResearch')}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="m10.5 14.5-4 4" />
+								<path d="m14 11 4-4" />
+								<path d="m8 16 1.5 1.5" />
+								<path d="m16.5 8.5 1.5 1.5" />
+								<circle cx="12" cy="12" r="4" />
+								<path d="M12 2v2" />
+								<path d="M12 20v2" />
+								<path d="M2 12h2" />
+								<path d="M20 12h2" />
+							</svg>
+						</button>
+
+						{#if showDeepResearchMenu}
+							<div
+								class="deep-research-menu"
+								role="group"
+								aria-label={$t('composerTools.deepResearchDepth')}
+							>
+								<button
+									type="button"
+									class="deep-research-option"
+									class:deep-research-option--selected={selectedDeepResearchDepth === 'focused'}
+									aria-pressed={selectedDeepResearchDepth === 'focused'}
+									onclick={() => selectDeepResearchDepth('focused')}
+								>
+									{$t('composerTools.deepResearchFocused')}
+								</button>
+								<button
+									type="button"
+									class="deep-research-option"
+									class:deep-research-option--selected={selectedDeepResearchDepth === 'standard'}
+									aria-pressed={selectedDeepResearchDepth === 'standard'}
+									onclick={() => selectDeepResearchDepth('standard')}
+								>
+									{$t('composerTools.deepResearchStandard')}
+								</button>
+								<button
+									type="button"
+									class="deep-research-option"
+									class:deep-research-option--selected={selectedDeepResearchDepth === 'max'}
+									aria-pressed={selectedDeepResearchDepth === 'max'}
+									onclick={() => selectDeepResearchDepth('max')}
+								>
+									{$t('composerTools.deepResearchMax')}
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<ContextUsageRing
 					{contextStatus}
 					attachedArtifacts={composerArtifacts}
@@ -759,6 +848,58 @@ async function emitDraftChange(force = false) {
 		align-self: center;
 	}
 
+	.composer-icon--active {
+		background: color-mix(in srgb, var(--accent) 12%, transparent 88%);
+		color: var(--accent);
+	}
+
+	.deep-research-menu {
+		position: absolute;
+		left: 0;
+		bottom: calc(100% + 10px);
+		z-index: 40;
+		display: flex;
+		width: min(14rem, calc(100vw - 2rem));
+		flex-direction: column;
+		gap: 0.25rem;
+		border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent 18%);
+		border-radius: 0.9rem;
+		background: color-mix(in srgb, var(--surface-overlay) 92%, var(--surface-page) 8%);
+		box-shadow: var(--shadow-lg);
+		padding: 0.45rem;
+		backdrop-filter: blur(14px);
+	}
+
+	.deep-research-option {
+		width: 100%;
+		border: 0;
+		border-radius: 0.72rem;
+		background: transparent;
+		padding: 0.58rem 0.68rem;
+		text-align: left;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.88rem;
+		color: var(--text-primary);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out);
+	}
+
+	.deep-research-option:hover,
+	.deep-research-option:focus-visible {
+		background: color-mix(in srgb, var(--surface-page) 78%, var(--surface-elevated) 22%);
+		box-shadow: 0 0 0 2px var(--focus-ring);
+		outline: none;
+	}
+
+	.deep-research-option--selected {
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface-elevated) 86%);
+		color: var(--accent);
+		font-weight: 600;
+	}
+
 	.composer-textarea {
 		align-self: stretch;
 	}
@@ -836,6 +977,10 @@ async function emitDraftChange(force = false) {
 		.animate-in {
 			animation: none;
 			opacity: 1;
+		}
+
+		.deep-research-option {
+			transition: none;
 		}
 	}
 </style>

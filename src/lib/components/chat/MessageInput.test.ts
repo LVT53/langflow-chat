@@ -29,6 +29,80 @@ describe('MessageInput', () => {
 		expect(button.disabled).toBe(false);
 	});
 
+	it('shows the Deep Research composer control only when enabled', () => {
+		const { queryByRole, rerender } = render(MessageInput);
+
+		expect(queryByRole('button', { name: /deep research/i })).toBeNull();
+
+		rerender({ deepResearchEnabled: true });
+
+		expect(queryByRole('button', { name: 'Deep Research' })).not.toBeNull();
+	});
+
+	it('opens Deep Research depth choices with no depth selected by default', async () => {
+		const { getByRole } = render(MessageInput, { deepResearchEnabled: true });
+
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+
+		expect(getByRole('button', { name: 'Focused Deep Research' })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
+		expect(getByRole('button', { name: 'Standard Deep Research' })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
+		expect(getByRole('button', { name: 'Max Deep Research' })).toHaveAttribute(
+			'aria-pressed',
+			'false'
+		);
+	});
+
+	it('sends the selected Deep Research depth with the next message', async () => {
+		const sendSpy = vi.fn();
+		const { getByPlaceholderText, getByRole } = render(MessageInput, {
+			deepResearchEnabled: true,
+			onSend: sendSpy,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+		await fireEvent.click(getByRole('button', { name: 'Standard Deep Research' }));
+		await fireEvent.input(getByPlaceholderText('Type a message...'), {
+			target: { value: 'Research EV battery recycling policy' },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Send message' }));
+
+		expect(sendSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: 'Research EV battery recycling policy',
+				deepResearchDepth: 'standard',
+			})
+		);
+	});
+
+	it('turns off Deep Research when the active control is clicked before sending', async () => {
+		const sendSpy = vi.fn();
+		const { getByPlaceholderText, getByRole } = render(MessageInput, {
+			deepResearchEnabled: true,
+			onSend: sendSpy,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+		await fireEvent.click(getByRole('button', { name: 'Max Deep Research' }));
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+		await fireEvent.input(getByPlaceholderText('Type a message...'), {
+			target: { value: 'Use normal chat instead' },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Send message' }));
+
+		expect(sendSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: 'Use normal chat instead',
+				deepResearchDepth: null,
+			})
+		);
+	});
+
 	it('clears stale conversation ids when the parent resets the prop to null', async () => {
 		const sendSpy = vi.fn();
 		const { getByPlaceholderText, getByLabelText, rerender } = render(MessageInput, {

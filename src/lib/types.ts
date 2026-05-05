@@ -93,8 +93,35 @@ export interface Conversation {
 	id: string; // Langflow session_id
 	title: string;
 	projectId?: string | null;
+	status?: "open" | "sealed";
+	sealedAt?: number | null;
 	createdAt: number; // Unix timestamp
 	updatedAt: number; // Unix timestamp
+}
+
+export type DeepResearchDepth = "focused" | "standard" | "max";
+
+export type DeepResearchJobStatus =
+	| "awaiting_plan"
+	| "awaiting_approval"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled";
+
+export interface DeepResearchJob {
+	id: string;
+	conversationId: string;
+	triggerMessageId: string | null;
+	depth: DeepResearchDepth;
+	status: DeepResearchJobStatus;
+	stage: string | null;
+	title: string;
+	userRequest?: string;
+	createdAt: number;
+	updatedAt: number;
+	completedAt?: number | null;
+	cancelledAt?: number | null;
 }
 
 // Generated file from chat (AI-generated files)
@@ -191,6 +218,7 @@ export interface ConversationDetail {
 	bootstrap?: boolean;
 	generatedFiles?: ChatGeneratedFile[];
 	fileProductionJobs?: FileProductionJob[];
+	deepResearchJobs?: DeepResearchJob[];
 	totalCostUsdMicros?: number;
 	totalTokens?: number;
 }

@@ -23,6 +23,7 @@ interface Config {
 	langflowWebhookSecret: string;
 	alfyaiApiSigningKey: string;
 	attachmentTraceDebug: boolean;
+	deepResearchEnabled: boolean;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -162,6 +163,7 @@ function readConfig(): Config {
 		langflowWebhookSecret: process.env.LANGFLOW_WEBHOOK_SECRET || "",
 		alfyaiApiSigningKey: process.env.ALFYAI_API_SIGNING_KEY || "",
 		attachmentTraceDebug: process.env.ATTACHMENT_TRACE_DEBUG === "true",
+		deepResearchEnabled: process.env.DEEP_RESEARCH_ENABLED === "true",
 		contextDiagnosticsDebug:
 			process.env.CONTEXT_DIAGNOSTICS_DEBUG === "true",
 		titleGenUrl: process.env.TITLE_GEN_URL || "http://localhost:30001/v1",

@@ -5,7 +5,7 @@ import {
 	getMaxMessageLength,
 	type RuntimeConfig,
 } from '$lib/server/config-store';
-import type { ModelId } from '$lib/types';
+import type { DeepResearchDepth, ModelId } from '$lib/types';
 import type {
 	ChatTurnRequestError,
 	ChatTurnRoute,
@@ -26,6 +26,8 @@ type RequestBody = {
 	attachmentIds?: unknown;
 	activeDocumentArtifactId?: unknown;
 	personalityProfileId?: unknown;
+	deepResearch?: unknown;
+	deepResearchDepth?: unknown;
 };
 
 export async function parseChatTurnRequest(
@@ -50,6 +52,8 @@ export async function parseChatTurnRequest(
 		attachmentIds,
 		activeDocumentArtifactId,
 		personalityProfileId,
+		deepResearch,
+		deepResearchDepth,
 	} = body;
 
 	// Allow empty message when reconnecting to an existing stream (streamId provided)
@@ -121,6 +125,7 @@ export async function parseChatTurnRequest(
 	const safeAttachmentIds = Array.isArray(attachmentIds)
 		? attachmentIds.filter((id): id is string => typeof id === 'string')
 		: [];
+	const selectedDeepResearchDepth = parseDeepResearchDepth(deepResearch, deepResearchDepth);
 
 	return {
 		ok: true,
@@ -142,9 +147,27 @@ export async function parseChatTurnRequest(
 				typeof personalityProfileId === 'string' && personalityProfileId.trim().length > 0
 					? personalityProfileId.trim()
 					: undefined,
+			deepResearchDepth: selectedDeepResearchDepth,
 			skipPersistUserMessage: skipPersistUserMessage === true,
 			attachmentTraceId:
 				safeAttachmentIds.length > 0 ? createAttachmentTraceId(route) : undefined,
 		},
 	};
+}
+
+function parseDeepResearchDepth(
+	deepResearch: unknown,
+	deepResearchDepth: unknown
+): DeepResearchDepth | undefined {
+	const directDepth = typeof deepResearchDepth === 'string' ? deepResearchDepth.trim() : '';
+	if (isDeepResearchDepth(directDepth)) return directDepth;
+
+	if (typeof deepResearch !== 'object' || deepResearch === null) return undefined;
+	const maybeDepth = (deepResearch as { depth?: unknown }).depth;
+	const nestedDepth = typeof maybeDepth === 'string' ? maybeDepth.trim() : '';
+	return isDeepResearchDepth(nestedDepth) ? nestedDepth : undefined;
+}
+
+function isDeepResearchDepth(value: string): value is DeepResearchDepth {
+	return value === 'focused' || value === 'standard' || value === 'max';
 }

@@ -106,6 +106,7 @@ export interface RuntimeConfig {
 	langflowFlowId: string;
 	langflowWebhookSecret: string;
 	attachmentTraceDebug: boolean;
+	deepResearchEnabled: boolean;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -195,6 +196,7 @@ function buildDefaultConfig(): RuntimeConfig {
 		model1: { ...envConfig.model1 },
 		model2: { ...envConfig.model2 },
 		braveSearchApiKey: envConfig.braveSearchApiKey,
+		deepResearchEnabled: envConfig.deepResearchEnabled ?? false,
 	};
 }
 

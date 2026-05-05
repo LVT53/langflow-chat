@@ -176,6 +176,13 @@
       "when": 1777140000011,
       "tag": "1777140000011_file_production_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1777140000012,
+      "tag": "1777140000012_deep_research_jobs",
+      "breakpoints": true
     }
 
   ]

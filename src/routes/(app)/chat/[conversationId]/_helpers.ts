@@ -21,6 +21,7 @@ export type SendPayload = {
 	pendingAttachments: PendingAttachment[];
 	conversationId?: string | null;
 	modelId?: ModelId;
+	deepResearchDepth?: 'focused' | 'standard' | 'max' | null;
 };
 
 export type MessageEditPayload = {

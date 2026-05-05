@@ -66,6 +66,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 		attachments: ArtifactSummary[];
 		conversationId: string | null;
 		modelId?: ModelId;
+		deepResearchDepth?: 'focused' | 'standard' | 'max' | null;
 	};
 
 	type MessageInputDraftPayload = {

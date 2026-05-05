@@ -30,6 +30,7 @@ const requiredExistingTables = [
 	'artifact_links',
 	'artifact_chunks',
 	'conversation_context_status',
+	'deep_research_jobs',
 	'conversation_task_states',
 	'task_state_evidence_links',
 	'task_checkpoints',
@@ -43,6 +44,8 @@ const requiredExistingTables = [
 
 const requiredExistingColumns = [
 	['conversations', 'project_id'],
+	['conversations', 'status'],
+	['conversations', 'sealed_at'],
 	['messages', 'thinking'],
 	['messages', 'tool_calls'],
 	['messages', 'metadata_json'],
