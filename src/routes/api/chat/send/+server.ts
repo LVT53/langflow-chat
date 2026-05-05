@@ -3,6 +3,7 @@ import { requireAuth } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
+import { buildContextSourcesState } from "$lib/server/services/chat-turn/context-sources";
 import {
 	persistAssistantEvidence,
 	persistAssistantTurnState,
@@ -251,11 +252,19 @@ export const POST: RequestHandler = async (event) => {
 			workCapsule: turnState.workCapsule,
 			maintenanceReason: "chat_send",
 		});
+		const contextSources = buildContextSourcesState({
+			userId: user.id,
+			conversationId: turn.conversationId,
+			contextStatus,
+			contextDebug: turnState.contextDebug,
+			activeWorkingSet: turnState.activeWorkingSet,
+		});
 
 		return json({
 			response: { text: responseText },
 			conversationId: turn.conversationId,
 			contextStatus,
+			contextSources,
 			activeWorkingSet: turnState.activeWorkingSet,
 			taskState: turnState.taskState,
 			contextDebug: turnState.contextDebug,

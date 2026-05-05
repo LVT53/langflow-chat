@@ -400,6 +400,7 @@ export interface ConversationDetail {
 	attachedArtifacts?: ArtifactSummary[];
 	activeWorkingSet?: ArtifactSummary[];
 	contextStatus?: ConversationContextStatus | null;
+	contextSources?: ContextSourcesState | null;
 	taskState?: TaskState | null;
 	contextDebug?: ContextDebugState | null;
 	draft?: ConversationDraft | null;
@@ -835,6 +836,54 @@ export interface ConversationContextStatus {
 	promptArtifactCount: number;
 	recentTurnCount: number;
 	summary: string | null;
+	updatedAt: number;
+}
+
+export type ContextSourceGroupKind =
+	| "attachments"
+	| "working_set"
+	| "task_evidence"
+	| "pinned"
+	| "excluded"
+	| "memory"
+	| "conversation";
+
+export type ContextSourceItemState =
+	| "active"
+	| "inferred"
+	| "pinned"
+	| "excluded";
+
+export interface ContextSourceItem {
+	id: string;
+	title: string;
+	state: ContextSourceItemState;
+	sourceType: EvidenceSourceType | "attachment" | "conversation";
+	artifactId?: string | null;
+	artifactType?: ArtifactType | null;
+	reason?: string | null;
+	reduced?: boolean;
+	compacted?: boolean;
+}
+
+export interface ContextSourceGroup {
+	kind: ContextSourceGroupKind;
+	state: ContextSourceItemState;
+	totalCount: number;
+	items: ContextSourceItem[];
+}
+
+export interface ContextSourcesState {
+	conversationId: string;
+	userId: string;
+	activeCount: number;
+	inferredCount: number;
+	selectedCount: number;
+	pinnedCount: number;
+	excludedCount: number;
+	reduced: boolean;
+	compacted: boolean;
+	groups: ContextSourceGroup[];
 	updatedAt: number;
 }
 

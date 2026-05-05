@@ -270,6 +270,7 @@ describe("stream-orchestrator SSE contract", () => {
 		expect(payload).toHaveProperty("modelId");
 		expect(payload).toHaveProperty("modelDisplayName");
 		expect(payload).toHaveProperty("contextStatus");
+		expect(payload).toHaveProperty("contextSources");
 		expect(payload).toHaveProperty("activeWorkingSet");
 		expect(payload).toHaveProperty("taskState");
 		expect(payload).toHaveProperty("contextDebug");

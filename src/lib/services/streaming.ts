@@ -15,6 +15,7 @@ export interface StreamMetadata {
 	modelId?: import('$lib/types').ModelId;
 	modelDisplayName?: string;
 	contextStatus?: import('$lib/types').ConversationContextStatus;
+	contextSources?: import('$lib/types').ContextSourcesState | null;
 	activeWorkingSet?: import('$lib/types').ArtifactSummary[];
 	taskState?: import('$lib/types').TaskState | null;
 	contextDebug?: import('$lib/types').ContextDebugState | null;
@@ -326,6 +327,7 @@ export function streamChat(
 								modelId: parsed.modelId,
 								modelDisplayName: parsed.modelDisplayName,
 								contextStatus: parsed.contextStatus,
+								contextSources: parsed.contextSources,
 								activeWorkingSet: parsed.activeWorkingSet,
 								taskState: parsed.taskState,
 								contextDebug: parsed.contextDebug,

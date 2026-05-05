@@ -18,6 +18,7 @@ import { listConversationFileProductionJobs } from '$lib/server/services/file-pr
 import { listConversationDeepResearchJobs } from '$lib/server/services/deep-research';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import { getConversationCostSummary } from '$lib/server/services/analytics';
+import { buildContextSourcesState } from '$lib/server/services/chat-turn/context-sources';
 import {
 	attachContinuityToTaskState,
 	getContextDebugState,
@@ -43,6 +44,7 @@ export const GET: RequestHandler = async (event) => {
 				attachedArtifacts: [],
 				activeWorkingSet: [],
 				contextStatus: null,
+				contextSources: null,
 				taskState: null,
 				contextDebug: null,
 				draft,
@@ -80,12 +82,21 @@ export const GET: RequestHandler = async (event) => {
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
 			() => taskState
 		);
+		const contextSources = buildContextSourcesState({
+			userId: user.id,
+			conversationId: id,
+			contextStatus,
+			contextDebug,
+			attachedArtifacts,
+			activeWorkingSet,
+		});
 		return json({
 			conversation,
 			messages: messageHistory,
 			attachedArtifacts,
 			activeWorkingSet,
 			contextStatus,
+			contextSources,
 			taskState: taskStateWithContinuity,
 			contextDebug,
 			draft,

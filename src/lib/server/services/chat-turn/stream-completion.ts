@@ -1,5 +1,12 @@
 import { applyWebCitationQualityGate } from "$lib/server/services/web-citation-audit";
-import type { ToolCallEntry, WebCitationAudit } from "$lib/types";
+import type {
+	ArtifactSummary,
+	ContextDebugState,
+	ConversationContextStatus,
+	ToolCallEntry,
+	WebCitationAudit,
+} from "$lib/types";
+import { buildContextSourcesState } from "./context-sources";
 import type { WorkCapsuleSummary } from "./types";
 
 export interface CompleteStreamTurnParams {
@@ -323,6 +330,16 @@ export async function completeStreamTurn(
 			);
 		}
 
+		const contextSources = buildContextSourcesState({
+			userId,
+			conversationId,
+			contextStatus: latestContextStatus as ConversationContextStatus | null,
+			contextDebug: latestContextDebug as ContextDebugState | null,
+			activeWorkingSet: Array.isArray(latestActiveWorkingSet)
+				? (latestActiveWorkingSet as ArtifactSummary[])
+				: [],
+		});
+
 		enqueueChunk(
 			`event: end\ndata: ${JSON.stringify({
 				thinkingTokenCount,
@@ -335,6 +352,7 @@ export async function completeStreamTurn(
 				modelId,
 				modelDisplayName,
 				contextStatus: latestContextStatus,
+				contextSources,
 				activeWorkingSet: latestActiveWorkingSet,
 				taskState: latestTaskState,
 				contextDebug: latestContextDebug,

@@ -211,7 +211,7 @@ describe('streamChat', () => {
 				'data: {"text":"Hello"}\n',
 				'\n',
 				'event: end\n',
-				'data: {"thinkingTokenCount":2,"responseTokenCount":3,"totalTokenCount":5,"wasStopped":false,"modelDisplayName":"Model 1"}\n',
+				'data: {"thinkingTokenCount":2,"responseTokenCount":3,"totalTokenCount":5,"wasStopped":false,"modelDisplayName":"Model 1","contextSources":{"conversationId":"conv-1","userId":"user-1","activeCount":1,"inferredCount":0,"selectedCount":1,"pinnedCount":0,"excludedCount":0,"reduced":false,"compacted":false,"groups":[],"updatedAt":1777140000000}}\n',
 				'\n'
 			])
 		);
@@ -226,7 +226,20 @@ describe('streamChat', () => {
 			responseTokenCount: 3,
 			totalTokenCount: 5,
 			wasStopped: false,
-			modelDisplayName: 'Model 1'
+			modelDisplayName: 'Model 1',
+			contextSources: {
+				conversationId: 'conv-1',
+				userId: 'user-1',
+				activeCount: 1,
+				inferredCount: 0,
+				selectedCount: 1,
+				pinnedCount: 0,
+				excludedCount: 0,
+				reduced: false,
+				compacted: false,
+				groups: [],
+				updatedAt: 1777140000000
+			}
 		});
 	});
 

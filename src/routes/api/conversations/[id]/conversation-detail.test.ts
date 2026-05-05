@@ -154,11 +154,100 @@ describe('GET /api/conversations/[id]', () => {
 	});
 
 	it('returns file-production jobs with the conversation detail', async () => {
+		mockListConversationArtifacts.mockResolvedValue([
+			{
+				id: 'artifact-attached-1',
+				type: 'document',
+				retrievalClass: 'durable',
+				name: 'Attached source',
+				mimeType: 'text/plain',
+				sizeBytes: 1024,
+				conversationId: 'conv-1',
+				summary: null,
+				createdAt: 1_777_140_000_000,
+				updatedAt: 1_777_140_000_000,
+			},
+		]);
+		mockGetConversationWorkingSet.mockResolvedValue([
+			{
+				id: 'artifact-working-1',
+				type: 'document',
+				retrievalClass: 'durable',
+				name: 'Working source',
+				mimeType: 'text/plain',
+				sizeBytes: 2048,
+				conversationId: 'conv-1',
+				summary: null,
+				createdAt: 1_777_140_000_000,
+				updatedAt: 1_777_140_000_000,
+			},
+		]);
+		mockGetConversationContextStatus.mockResolvedValue({
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			estimatedTokens: 70_000,
+			maxContextTokens: 100_000,
+			thresholdTokens: 80_000,
+			targetTokens: 90_000,
+			compactionApplied: true,
+			compactionMode: 'deterministic',
+			routingStage: 'semantic',
+			routingConfidence: 0.82,
+			verificationStatus: 'passed',
+			layersUsed: ['working_set'],
+			workingSetCount: 1,
+			workingSetArtifactIds: ['artifact-working-1'],
+			workingSetApplied: true,
+			taskStateApplied: false,
+			promptArtifactCount: 1,
+			recentTurnCount: 2,
+			summary: null,
+			updatedAt: 1_777_140_000_000,
+		});
+		mockGetContextDebugState.mockResolvedValue({
+			activeTaskId: null,
+			activeTaskObjective: null,
+			taskLocked: false,
+			routingStage: 'semantic',
+			routingConfidence: 0.82,
+			verificationStatus: 'passed',
+			selectedEvidence: [],
+			selectedEvidenceBySource: [],
+			pinnedEvidence: [
+				{
+					artifactId: 'artifact-pinned-1',
+					name: 'Pinned source',
+					artifactType: 'document',
+					sourceType: 'document',
+					role: 'pinned',
+					origin: 'user',
+					confidence: 1,
+					reason: 'Pinned by user',
+				},
+			],
+			excludedEvidence: [],
+			honcho: null,
+		});
+
 		const response = await GET(makeEvent());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(mockListConversationFileProductionJobs).toHaveBeenCalledWith('user-1', 'conv-1');
+		expect(data.contextSources).toMatchObject({
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			activeCount: 3,
+			pinnedCount: 1,
+			excludedCount: 0,
+			reduced: true,
+			compacted: true,
+		});
+		expect(data.contextSources.groups.map((group: { kind: string }) => group.kind)).toEqual([
+			'attachments',
+			'working_set',
+			'pinned',
+		]);
 		expect(data.generatedFiles).toEqual([]);
 		expect(data.fileProductionJobs).toEqual([
 			expect.objectContaining({
