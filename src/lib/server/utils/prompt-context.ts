@@ -332,12 +332,14 @@ export function serializeWorkingSetArtifacts(params: {
 	);
 
 	for (const artifact of params.artifacts) {
-		if (budgetRemaining <= 0) break;
 		const excerptSource =
 			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
 		const perArtifactBudget =
 			artifact.type === 'generated_output' ? params.outputBudget : params.documentBudget;
-		const excerptBudget = Math.min(perArtifactBudget, fairShareBudget, budgetRemaining);
+		const excerptBudget = Math.max(
+			40,
+			Math.min(perArtifactBudget, fairShareBudget, Math.max(0, budgetRemaining))
+		);
 		const kind = artifact.type === 'generated_output' ? 'Result' : 'Document';
 		const section = `${kind}: ${artifact.name}\n${truncateToTokenBudget(
 			excerptSource,

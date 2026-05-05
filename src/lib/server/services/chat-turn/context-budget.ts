@@ -36,6 +36,18 @@ export type CurrentTurnAttachmentBudget = {
 	excerptPerAttachmentBudget: number;
 };
 
+export type ExplicitSourceSetBudgetInput = {
+	contextBudget: Pick<ModelContextBudget, "supportBudget" | "targetConstructedContext">;
+	sourceCount: number;
+	minTotalBudget?: number;
+	minPerSourceBudget?: number;
+};
+
+export type ExplicitSourceSetBudget = {
+	totalBudget: number;
+	perSourceBudget: number;
+};
+
 const MIN_MODEL_CONTEXT_TOKENS = 1_000;
 const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
 const TARGET_CONTEXT_RATIO = 0.9;
@@ -151,6 +163,29 @@ export function deriveCurrentTurnAttachmentBudget(
 		totalBudget,
 		taskPerAttachmentBudget: perAttachmentBudget,
 		excerptPerAttachmentBudget: perAttachmentBudget,
+	};
+}
+
+export function deriveExplicitSourceSetBudget(
+	input: ExplicitSourceSetBudgetInput,
+): ExplicitSourceSetBudget {
+	const sourceCount = Math.max(1, Math.floor(input.sourceCount));
+	const minTotalBudget = Math.max(0, Math.floor(input.minTotalBudget ?? 0));
+	const minPerSourceBudget = Math.max(
+		80,
+		Math.floor(input.minPerSourceBudget ?? 80),
+	);
+	const totalBudget = Math.min(
+		input.contextBudget.targetConstructedContext,
+		Math.max(minTotalBudget, Math.floor(input.contextBudget.supportBudget * 0.85)),
+	);
+	const perSourceBudget = Math.max(
+		minPerSourceBudget,
+		Math.floor(totalBudget / sourceCount),
+	);
+	return {
+		totalBudget,
+		perSourceBudget,
 	};
 }
 

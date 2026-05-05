@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	deriveCurrentTurnAttachmentBudget,
+	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
 } from "./context-budget";
 
@@ -103,6 +104,24 @@ describe("deriveModelContextBudget", () => {
 			totalBudget: 364_500,
 			taskPerAttachmentBudget: 30_375,
 			excerptPerAttachmentBudget: 30_375,
+		});
+	});
+
+	it("scales explicit source-set budgets to preserve breadth", () => {
+		const contextBudget = deriveModelContextBudget({
+			maxModelContext: 1_000_000,
+		});
+
+		expect(
+			deriveExplicitSourceSetBudget({
+				contextBudget,
+				sourceCount: 12,
+				minTotalBudget: 9_000,
+				minPerSourceBudget: 1_600,
+			}),
+		).toEqual({
+			totalBudget: 240_975,
+			perSourceBudget: 20_081,
 		});
 	});
 });

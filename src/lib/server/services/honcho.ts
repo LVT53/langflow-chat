@@ -31,6 +31,7 @@ import {
 } from './chat-turn/context-selection';
 import {
 	deriveCurrentTurnAttachmentBudget,
+	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
 } from './chat-turn/context-budget';
 import type {
@@ -1436,14 +1437,23 @@ export async function buildConstructedContext(params: {
 	}
 
 	if (selectedEvidence.length > 0) {
+		const evidenceBudget = deriveExplicitSourceSetBudget({
+			contextBudget: modelContextBudget,
+			sourceCount: selectedEvidence.length,
+			minTotalBudget: WORKING_SET_PROMPT_TOKEN_BUDGET,
+			minPerSourceBudget: Math.min(
+				WORKING_SET_DOCUMENT_TOKEN_BUDGET,
+				WORKING_SET_OUTPUT_TOKEN_BUDGET
+			),
+		});
 		sections.push({
 			title: 'Retrieved Evidence',
 			body: serializeWorkingSetArtifacts({
 				artifacts: selectedEvidence,
 				snippets: artifactSnippets,
-				totalBudget: WORKING_SET_PROMPT_TOKEN_BUDGET,
-				documentBudget: WORKING_SET_DOCUMENT_TOKEN_BUDGET,
-				outputBudget: WORKING_SET_OUTPUT_TOKEN_BUDGET,
+				totalBudget: evidenceBudget.totalBudget,
+				documentBudget: evidenceBudget.perSourceBudget,
+				outputBudget: evidenceBudget.perSourceBudget,
 			}),
 			layer: 'working_set',
 			protected: selectedEvidence.some((artifact) => pinnedArtifactIds.has(artifact.id)),
