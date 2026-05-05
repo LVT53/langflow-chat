@@ -240,6 +240,10 @@ vi.mock('$lib/server/services/tei-reranker', () => ({
 	rerankItems: mockRerankItems,
 }));
 
+vi.mock('$lib/server/config-store', () => ({
+	getTargetConstructedContext: () => 30_000,
+}));
+
 describe('task-state learning - project continuity signals', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -412,6 +416,40 @@ describe('task-state learning - project continuity signals', () => {
 		});
 
 		expect(status).toBe('dormant');
+	});
+});
+
+describe('task-state selected evidence policy', () => {
+	it('scales selected evidence from budget instead of the old small fixed caps', async () => {
+		const { deriveBudgetedSelectedEvidenceLimit } = await import('./task-state');
+		const candidates = Array.from({ length: 20 }, (_, index) => ({
+			name: `Document ${index + 1}`,
+			summary: 'Concise relevant source summary.',
+			contentText: 'Short relevant evidence.',
+		}));
+
+		expect(
+			deriveBudgetedSelectedEvidenceLimit({
+				candidates,
+				targetConstructedContext: 30_000,
+			}),
+		).toBe(20);
+	});
+
+	it('keeps selected evidence bounded by the performance safeguard', async () => {
+		const { deriveBudgetedSelectedEvidenceLimit } = await import('./task-state');
+		const candidates = Array.from({ length: 100 }, (_, index) => ({
+			name: `Document ${index + 1}`,
+			summary: 'Relevant source summary.',
+			contentText: 'Evidence '.repeat(400),
+		}));
+
+		expect(
+			deriveBudgetedSelectedEvidenceLimit({
+				candidates,
+				targetConstructedContext: 1_000_000,
+			}),
+		).toBe(64);
 	});
 });
 

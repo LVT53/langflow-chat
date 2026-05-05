@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
+import { getTargetConstructedContext } from "$lib/server/config-store";
 import {
   artifacts,
   conversationContextStatus,
@@ -100,12 +101,19 @@ const CURRENT_TASK_STATUSES: TaskState["status"][] = [
   "candidate",
 ];
 const ROUTER_CONFIDENCE_MIN = 68;
-const MAX_RERANK_CANDIDATES = 8;
-const TASK_SEMANTIC_SHORTLIST_LIMIT = 8;
-const TASK_ROUTER_RERANK_LIMIT = 6;
-const MAX_SELECTED_EVIDENCE = 5;
-const MAX_DOCUMENT_FOCUSED_EVIDENCE = 3;
-const MAX_SELECTED_LINKS = 12;
+// These item limits are performance safeguards. Product inclusion should be
+// decided from the available prompt budget and source authority signals.
+const TASK_SEMANTIC_SHORTLIST_LIMIT = 32;
+const TASK_ROUTER_RERANK_LIMIT = 24;
+const MIN_SELECTED_EVIDENCE_ITEMS = 12;
+const MAX_SELECTED_EVIDENCE_ITEMS = 64;
+const MIN_EVIDENCE_RERANK_CANDIDATES = 24;
+const MAX_EVIDENCE_RERANK_CANDIDATES = 64;
+const MAX_SELECTED_LINKS = 64;
+const SELECTED_EVIDENCE_BUDGET_RATIO = 0.08;
+const SELECTED_EVIDENCE_MIN_BUDGET_TOKENS = 3_000;
+const SELECTED_EVIDENCE_MAX_ARTIFACT_TEXT_TOKENS = 1_200;
+const SELECTED_EVIDENCE_METADATA_TOKENS = 80;
 function toEvidenceSourceType(artifactType: ArtifactType): EvidenceSourceType {
   switch (artifactType) {
     case "source_document":
@@ -778,6 +786,73 @@ function getArtifactSearchBody(artifact: Artifact): string {
   ].join("\n");
 }
 
+type EvidenceSelectionPolicyArtifact = Pick<
+  Artifact,
+  "name" | "summary" | "contentText"
+>;
+
+function estimateSelectedEvidenceItemTokens(
+  artifact: EvidenceSelectionPolicyArtifact,
+): number {
+  const text = [
+    artifact.name,
+    artifact.summary ?? "",
+    clipText(artifact.contentText ?? "", 4_800),
+  ].join("\n");
+
+  return Math.min(
+    SELECTED_EVIDENCE_MAX_ARTIFACT_TEXT_TOKENS,
+    Math.max(
+      SELECTED_EVIDENCE_METADATA_TOKENS,
+      estimateTokenCount(text) + SELECTED_EVIDENCE_METADATA_TOKENS,
+    ),
+  );
+}
+
+export function deriveBudgetedSelectedEvidenceLimit(params: {
+  candidates: EvidenceSelectionPolicyArtifact[];
+  targetConstructedContext?: number | null;
+}): number {
+  if (params.candidates.length === 0) return 0;
+
+  const targetConstructedContext =
+    params.targetConstructedContext ?? getTargetConstructedContext();
+  const evidenceBudgetTokens = Math.max(
+    SELECTED_EVIDENCE_MIN_BUDGET_TOKENS,
+    Math.floor(targetConstructedContext * SELECTED_EVIDENCE_BUDGET_RATIO),
+  );
+  let usedTokens = 0;
+  let budgetedCount = 0;
+
+  for (const candidate of params.candidates) {
+    const itemTokens = estimateSelectedEvidenceItemTokens(candidate);
+    if (
+      budgetedCount >= MIN_SELECTED_EVIDENCE_ITEMS &&
+      usedTokens + itemTokens > evidenceBudgetTokens
+    ) {
+      break;
+    }
+
+    usedTokens += itemTokens;
+    budgetedCount += 1;
+
+    if (budgetedCount >= MAX_SELECTED_EVIDENCE_ITEMS) break;
+  }
+
+  return Math.min(
+    params.candidates.length,
+    Math.max(MIN_SELECTED_EVIDENCE_ITEMS, budgetedCount),
+    MAX_SELECTED_EVIDENCE_ITEMS,
+  );
+}
+
+function deriveEvidenceRerankCandidateLimit(selectedEvidenceLimit: number): number {
+  return Math.max(
+    MIN_EVIDENCE_RERANK_CANDIDATES,
+    Math.min(MAX_EVIDENCE_RERANK_CANDIDATES, selectedEvidenceLimit * 2),
+  );
+}
+
 async function replaceSystemSelectedEvidenceLinks(params: {
   userId: string;
   conversationId: string;
@@ -879,6 +954,7 @@ async function maybeRerankEvidence(params: {
   excludedIds: Set<string>;
   protectedIds?: Set<string>;
   selectedLimit: number;
+  candidateLimit: number;
 }): Promise<{
   artifacts: Artifact[];
   usedModel: boolean;
@@ -896,14 +972,14 @@ async function maybeRerankEvidence(params: {
       ]
         .filter((value): value is string => Boolean(value))
         .join("\n\n"),
-      items: params.candidates.slice(0, MAX_RERANK_CANDIDATES),
+      items: params.candidates.slice(0, params.candidateLimit),
       getText: (artifact) =>
         [
           artifact.name,
           artifact.type,
           clipText(artifact.summary ?? artifact.contentText ?? artifact.name, 320),
         ].join("\n"),
-      maxTexts: MAX_RERANK_CANDIDATES,
+      maxTexts: params.candidateLimit,
     });
 
     if (reranked && reranked.items.length > 0) {
@@ -1013,12 +1089,8 @@ export async function prepareTaskContext(params: {
       ? [activeDocumentState.currentGeneratedArtifactId]
       : [],
   );
-  const documentFocused = activeDocumentState.documentFocused;
   const hasCorrectionSignal = activeDocumentState.hasRecentUserCorrection;
   const activeDocumentIds = activeDocumentState.activeDocumentIds;
-  const selectedEvidenceLimit = documentFocused
-    ? MAX_DOCUMENT_FOCUSED_EVIDENCE
-    : MAX_SELECTED_EVIDENCE;
   const rankedCandidates = collapsedCandidates
     .map((artifact) => ({
       artifact,
@@ -1039,6 +1111,12 @@ export async function prepareTaskContext(params: {
     }))
     .filter((entry) => entry.score > 5)
     .sort((a, b) => b.score - a.score);
+  const selectedEvidenceLimit = deriveBudgetedSelectedEvidenceLimit({
+    candidates: rankedCandidates.map((entry) => entry.artifact),
+  });
+  const rerankCandidateLimit = deriveEvidenceRerankCandidateLimit(
+    selectedEvidenceLimit,
+  );
 
   let selectedArtifacts = dedupeById([
     ...rankedCandidates
@@ -1064,12 +1142,13 @@ export async function prepareTaskContext(params: {
     candidates: dedupeById([
       ...selectedArtifacts,
       ...rankedCandidates
-        .slice(0, MAX_RERANK_CANDIDATES)
+        .slice(0, rerankCandidateLimit)
         .map((entry) => entry.artifact),
     ]),
     pinnedIds,
     excludedIds,
     selectedLimit: selectedEvidenceLimit,
+    candidateLimit: rerankCandidateLimit,
     protectedIds: new Set([
       ...currentAttachmentIds,
       ...activeDocumentIds,
