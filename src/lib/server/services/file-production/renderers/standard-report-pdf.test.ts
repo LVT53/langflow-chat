@@ -11,6 +11,30 @@ import { renderStandardReportPdf } from './standard-report-pdf';
 const ONE_BY_ONE_PNG_BASE64 =
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
+async function extractPdfText(content: Buffer): Promise<string> {
+	const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+	const task = pdfjs.getDocument({
+		data: new Uint8Array(content),
+		disableWorker: true,
+		useSystemFonts: false,
+	});
+	const document = await task.promise;
+	const text: string[] = [];
+
+	for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+		const page = await document.getPage(pageNumber);
+		const textContent = await page.getTextContent();
+		for (const item of textContent.items) {
+			if ('str' in item && item.str) {
+				text.push(item.str);
+			}
+		}
+		page.cleanup();
+	}
+	await document.destroy();
+	return text.join(' ');
+}
+
 function readFixtureSource(filename: string): GeneratedDocumentSource {
 	const fixture = JSON.parse(
 		readFileSync(
@@ -71,7 +95,7 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		}
 	});
 
-	it('embeds the bundled app typography fonts instead of host fallback fonts', async () => {
+	it('embeds portable bundled TrueType fonts instead of UI WOFF2 fonts', async () => {
 		const validation = validateGeneratedDocumentSource({
 			version: 1,
 			template: 'alfyai_standard_report',
@@ -92,13 +116,81 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 		const pdfBody = rendered.content.toString('latin1');
 
 		expect(rendered.diagnostics.fonts).toEqual({
-			body: 'Nimbus Sans L',
-			bodyBold: 'Nimbus Sans L Bold',
-			title: 'Libre Baskerville',
-			titleBold: 'Libre Baskerville Bold',
-			code: 'Nimbus Sans L',
+			body: 'Liberation Sans',
+			bodyBold: 'Liberation Sans Bold',
+			title: 'Liberation Sans',
+			titleBold: 'Liberation Sans Bold',
+			code: 'Liberation Sans',
+			source: 'pdfjs-dist bundled TrueType fonts',
 		});
+		expect(pdfBody).not.toContain('wOF2');
 		expect(pdfBody).not.toContain('DejaVu');
+	});
+
+	it('keeps text from every supported document-source block extractable in downloaded PDFs', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Downloaded PDF integrity report',
+			subtitle: 'Árvíztűrő tükörfúrógép',
+			blocks: [
+				{ type: 'heading', level: 2, text: 'Executive summary' },
+				{
+					type: 'paragraph',
+					text: 'All generated text should remain readable outside the app viewer.',
+				},
+				{
+					type: 'list',
+					style: 'bullet',
+					items: ['Portable fonts', 'Visible chart labels'],
+				},
+				{
+					type: 'callout',
+					tone: 'info',
+					title: 'Renderer check',
+					text: 'Callout text remains visible.',
+				},
+				{
+					type: 'table',
+					title: 'Evidence table',
+					columns: [{ key: 'area', label: 'Area', kind: 'text' }],
+					rows: [{ area: 'Downloaded file' }],
+				},
+				{
+					type: 'quote',
+					text: 'Downloaded output is the artifact of record.',
+					citation: 'QA',
+				},
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'Format coverage',
+					caption: 'A chart with visible labels.',
+					altText: 'Bar chart showing format coverage.',
+					units: 'checks',
+					xKey: 'format',
+					yKey: 'checks',
+					data: [{ format: 'PDF', checks: 3 }],
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source);
+		const text = await extractPdfText(rendered.content);
+
+		expect(text).toContain('Downloaded PDF integrity report');
+		expect(text).toContain('Árvíztűrő tükörfúrógép');
+		expect(text).toContain('Executive summary');
+		expect(text).toContain('All generated text should remain readable outside the app viewer.');
+		expect(text).toContain('Portable fonts');
+		expect(text).toContain('Renderer check');
+		expect(text).toContain('Evidence table');
+		expect(text).toContain('Downloaded file');
+		expect(text).toContain('Downloaded output is the artifact of record.');
+		expect(text).toContain('Format coverage');
+		expect(text).toContain('PDF');
 	});
 
 	it('uses the transparent UI logo mark and normalizes generated dates for the first-page header', async () => {

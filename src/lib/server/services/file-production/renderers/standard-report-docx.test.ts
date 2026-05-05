@@ -12,11 +12,37 @@ describe('AlfyAI Standard Report DOCX renderer', () => {
 			blocks: [
 				{ type: 'heading', level: 2, text: 'Summary' },
 				{ type: 'paragraph', text: 'Revenue increased by 12%.' },
+				{ type: 'list', style: 'bullet', items: ['Portable document text'] },
+				{
+					type: 'callout',
+					tone: 'info',
+					title: 'Download check',
+					text: 'DOCX callout remains readable.',
+				},
+				{ type: 'code', language: 'json', text: '{"status":"ok"}' },
+				{ type: 'quote', text: 'DOCX quote text', citation: 'QA' },
 				{
 					type: 'table',
 					title: 'Small table',
 					columns: [{ key: 'region', label: 'Region', kind: 'text' }],
 					rows: [{ region: 'Central Europe' }],
+				},
+				{
+					type: 'chart',
+					chartType: 'bar',
+					title: 'DOCX chart fallback',
+					caption: 'Chart caption',
+					altText: 'Chart fallback text.',
+					units: 'checks',
+					xKey: 'label',
+					yKey: 'value',
+					data: [{ label: 'A', value: 1 }],
+				},
+				{
+					type: 'image',
+					source: { kind: 'https', url: 'https://example.com/image.png' },
+					altText: 'DOCX image fallback',
+					caption: 'Image caption',
 				},
 			],
 		});
@@ -34,6 +60,13 @@ describe('AlfyAI Standard Report DOCX renderer', () => {
 		expect(rendered.content.subarray(0, 2).toString('ascii')).toBe('PK');
 		expect(documentXml).toContain('DOCX report');
 		expect(documentXml).toContain('Revenue increased by 12%.');
+		expect(documentXml).toContain('Portable document text');
+		expect(documentXml).toContain('DOCX callout remains readable.');
+		expect(documentXml).toContain('{&quot;status&quot;:&quot;ok&quot;}');
+		expect(documentXml).toContain('DOCX quote text');
 		expect(documentXml).toContain('Central Europe');
+		expect(documentXml).toContain('DOCX chart fallback');
+		expect(documentXml).toContain('Chart fallback text.');
+		expect(documentXml).toContain('DOCX image fallback');
 	});
 });

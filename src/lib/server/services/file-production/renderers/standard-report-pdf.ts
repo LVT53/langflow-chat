@@ -25,26 +25,28 @@ import { renderChartSvg } from './chart-svg';
 const MM_TO_PT = 72 / 25.4;
 const A4 = PageSizes.A4;
 const APP_FONT_ROOTS = [
+	resolve(process.cwd(), 'node_modules/pdfjs-dist/standard_fonts'),
 	resolve(process.cwd(), 'static/fonts'),
 	resolve(process.cwd(), 'build/client/fonts'),
 	resolve(process.cwd(), 'client/fonts'),
 ] as const;
 const APP_FONT_FILES = {
-	body: 'NimbusSanL-Regular.woff2',
-	bodyBold: 'NimbusSanL-Bold.woff2',
-	title: 'LibreBaskerville-Regular.woff2',
-	titleBold: 'LibreBaskerville-Bold.woff2',
+	body: 'LiberationSans-Regular.ttf',
+	bodyBold: 'LiberationSans-Bold.ttf',
+	title: 'LiberationSans-Regular.ttf',
+	titleBold: 'LiberationSans-Bold.ttf',
 } as const;
 const APP_BRAND_LOGO_SOURCE = 'ui-vector-transparent-logo';
 const LOGO_VIEWBOX_HEIGHT = 112;
 const LOGO_VIEWBOX_WIDTH = 100;
 const HEADER_LOGO_HEIGHT_PT = 10;
 const APP_FONT_DIAGNOSTICS = {
-	body: 'Nimbus Sans L',
-	bodyBold: 'Nimbus Sans L Bold',
-	title: 'Libre Baskerville',
-	titleBold: 'Libre Baskerville Bold',
-	code: 'Nimbus Sans L',
+	body: 'Liberation Sans',
+	bodyBold: 'Liberation Sans Bold',
+	title: 'Liberation Sans',
+	titleBold: 'Liberation Sans Bold',
+	code: 'Liberation Sans',
+	source: 'pdfjs-dist bundled TrueType fonts',
 } as const;
 
 const THEME = {
@@ -194,7 +196,7 @@ function findBundledFont(filename: string): Uint8Array {
 	if (!fontPath) {
 		throw new StandardReportPdfRenderError(
 			'pdf_font_missing',
-			`AlfyAI Standard Report PDF rendering requires bundled UI font ${filename}.`
+			`AlfyAI Standard Report PDF rendering requires bundled PDF font ${filename}.`
 		);
 	}
 	const buffer = readFileSync(fontPath);
@@ -1541,7 +1543,8 @@ class StandardReportPdfLayout {
 
 async function embedFonts(pdfDoc: PDFDocument): Promise<FontSet> {
 	pdfDoc.registerFontkit(fontkit);
-	// The bundled UI fonts are WOFF2; fontkit's WOFF2 subset path can throw while saving.
+	// Use dependency-bundled TTF fonts for downloaded PDFs. WOFF2 can preview in
+	// PDF.js but has poor compatibility in external PDF readers.
 	const [regular, bold, title, titleBold] = await Promise.all([
 		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.body), { subset: false }),
 		pdfDoc.embedFont(findBundledFont(APP_FONT_FILES.bodyBold), { subset: false }),
