@@ -122,6 +122,23 @@ async function createApprovedResearchJob(
 	return approved;
 }
 
+async function setResearchJobState(input: {
+	jobId: string;
+	status: string;
+	stage: string;
+	updatedAt?: Date;
+}) {
+	const { db } = await import("$lib/server/db");
+	await db
+		.update(schema.deepResearchJobs)
+		.set({
+			status: input.status,
+			stage: input.stage,
+			updatedAt: input.updatedAt ?? new Date("2026-05-05T10:20:00.000Z"),
+		})
+		.where(eq(schema.deepResearchJobs.id, input.jobId));
+}
+
 describe("mock Deep Research worker", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-worker-${randomUUID()}.db`;
@@ -617,5 +634,260 @@ describe("mock Deep Research worker", () => {
 			["synthesis", "Mock synthesis completed."],
 			["report_completion", "Mock research is ready for report generation."],
 		]);
+	});
+});
+
+describe("real Deep Research workflow worker", () => {
+	beforeEach(async () => {
+		dbPath = `/tmp/alfyai-deep-research-workflow-worker-${randomUUID()}.db`;
+		process.env.DATABASE_PATH = dbPath;
+		vi.resetModules();
+		await seedConversation();
+	});
+
+	afterEach(async () => {
+		try {
+			const { sqlite } = await import("$lib/server/db");
+			sqlite.close();
+		} catch {
+			// The DB module may not have been imported if a test failed early.
+		}
+		try {
+			unlinkSync(dbPath);
+		} catch {
+			// Temporary DB cleanup is best-effort.
+		}
+	});
+
+	it("runs one workflow step for the oldest eligible real workflow job", async () => {
+		await seedAdditionalConversation({
+			userId: "user-1",
+			conversationId: "conv-2",
+			messageId: "user-msg-2",
+		});
+		const older = await createApprovedResearchJob({
+			createdAt: new Date("2026-05-05T10:01:00.000Z"),
+			approvedAt: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const newer = await createApprovedResearchJob({
+			conversationId: "conv-2",
+			triggerMessageId: "user-msg-2",
+			userRequest: "Research newer eligible work",
+			createdAt: new Date("2026-05-05T10:02:00.000Z"),
+			approvedAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const workflowStep = vi.fn(async (input: { userId: string; jobId: string }) => {
+			const { listConversationDeepResearchJobs } = await import("./index");
+			const conversationId = input.jobId === older.id ? "conv-1" : "conv-2";
+			const jobs = await listConversationDeepResearchJobs(
+				input.userId,
+				conversationId,
+			);
+			return {
+				job: jobs.find((job) => job.id === input.jobId) ?? older,
+				advanced: true,
+				outcome: "discovery_completed" as const,
+			};
+		});
+		const { runNextDeepResearchWorkflowWorkerStep } = await import("./worker");
+
+		const result = await runNextDeepResearchWorkflowWorkerStep({
+			now: new Date("2026-05-05T10:08:00.000Z"),
+			workflowStep,
+		});
+
+		expect(workflowStep).toHaveBeenCalledTimes(1);
+		expect(workflowStep).toHaveBeenCalledWith({
+			userId: "user-1",
+			jobId: older.id,
+			now: new Date("2026-05-05T10:08:00.000Z"),
+		});
+		expect(result).toMatchObject({
+			job: {
+				id: older.id,
+			},
+			advanced: true,
+		});
+		expect(result?.job.id).not.toBe(newer.id);
+	});
+
+	it("advances only a user-owned job by explicit workflow trigger", async () => {
+		await seedAdditionalConversation({
+			userId: "user-2",
+			conversationId: "conv-2",
+			messageId: "user-msg-2",
+			email: "second-user@example.com",
+			createUser: true,
+		});
+		const otherUserJob = await createApprovedResearchJob({
+			userId: "user-2",
+			conversationId: "conv-2",
+			triggerMessageId: "user-msg-2",
+			createdAt: new Date("2026-05-05T10:01:00.000Z"),
+			approvedAt: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const workflowStep = vi.fn(async () => ({
+			job: otherUserJob,
+			advanced: true,
+			outcome: "discovery_completed" as const,
+		}));
+		const { triggerDeepResearchWorkflowWorkerForJob } = await import(
+			"./worker"
+		);
+
+		await expect(
+			triggerDeepResearchWorkflowWorkerForJob({
+				userId: "user-1",
+				jobId: otherUserJob.id,
+				now: new Date("2026-05-05T10:07:00.000Z"),
+				workflowStep,
+			}),
+		).resolves.toBeNull();
+
+		const result = await triggerDeepResearchWorkflowWorkerForJob({
+			userId: "user-2",
+			jobId: otherUserJob.id,
+			now: new Date("2026-05-05T10:08:00.000Z"),
+			workflowStep,
+		});
+
+		expect(workflowStep).toHaveBeenCalledTimes(1);
+		expect(workflowStep).toHaveBeenCalledWith({
+			userId: "user-2",
+			jobId: otherUserJob.id,
+			now: new Date("2026-05-05T10:08:00.000Z"),
+		});
+		expect(result).toMatchObject({
+			job: {
+				id: otherUserJob.id,
+			},
+			advanced: true,
+		});
+	});
+
+	it("enforces concurrency only before starting approved workflow jobs", async () => {
+		await seedAdditionalConversation({
+			userId: "user-1",
+			conversationId: "conv-2",
+			messageId: "user-msg-2",
+		});
+		const running = await createApprovedResearchJob({
+			createdAt: new Date("2026-05-05T10:01:00.000Z"),
+			approvedAt: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await setResearchJobState({
+			jobId: running.id,
+			status: "running",
+			stage: "source_review",
+		});
+		const approved = await createApprovedResearchJob({
+			conversationId: "conv-2",
+			triggerMessageId: "user-msg-2",
+			userRequest: "Research queued approved work",
+			createdAt: new Date("2026-05-05T10:02:00.000Z"),
+			approvedAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const workflowStep = vi.fn(async (input: { userId: string; jobId: string }) => {
+			const { listConversationDeepResearchJobs } = await import("./index");
+			const conversationId = input.jobId === running.id ? "conv-1" : "conv-2";
+			const jobs = await listConversationDeepResearchJobs(
+				input.userId,
+				conversationId,
+			);
+			const job = jobs.find((candidate) => candidate.id === input.jobId);
+			if (!job) throw new Error("Expected job to reload");
+			return {
+				job,
+				advanced: true,
+				outcome: "report_completed" as const,
+			};
+		});
+		const {
+			triggerDeepResearchWorkflowWorkerForJob,
+			runNextDeepResearchWorkflowWorkerStep,
+		} = await import("./worker");
+
+		await expect(
+			triggerDeepResearchWorkflowWorkerForJob({
+				userId: "user-1",
+				jobId: approved.id,
+				controls: {
+					userConcurrencyLimit: 1,
+				},
+				workflowStep,
+			}),
+		).resolves.toMatchObject({
+			job: {
+				id: approved.id,
+				status: "approved",
+				stage: "plan_approved",
+			},
+			advanced: false,
+		});
+		expect(workflowStep).not.toHaveBeenCalled();
+
+		await expect(
+			triggerDeepResearchWorkflowWorkerForJob({
+				userId: "user-1",
+				jobId: running.id,
+				controls: {
+					globalConcurrencyLimit: 0,
+					userConcurrencyLimit: 0,
+				},
+				workflowStep,
+			}),
+		).resolves.toMatchObject({
+			job: {
+				id: running.id,
+				status: "running",
+				stage: "source_review",
+			},
+			advanced: true,
+		});
+
+		const nextResult = await runNextDeepResearchWorkflowWorkerStep({
+			controls: {
+				userConcurrencyLimit: 1,
+			},
+			workflowStep,
+		});
+
+		expect(nextResult).toMatchObject({
+			job: {
+				id: running.id,
+			},
+			advanced: true,
+		});
+		expect(workflowStep).toHaveBeenCalledTimes(2);
+	});
+
+	it("returns terminal workflow jobs without advancing them", async () => {
+		const approved = await createApprovedResearchJob();
+		await setResearchJobState({
+			jobId: approved.id,
+			status: "completed",
+			stage: "report_completed",
+		});
+		const workflowStep = vi.fn();
+		const { triggerDeepResearchWorkflowWorkerForJob } = await import(
+			"./worker"
+		);
+
+		const result = await triggerDeepResearchWorkflowWorkerForJob({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:08:00.000Z"),
+			workflowStep,
+		});
+
+		expect(workflowStep).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "report_completed",
+			},
+			advanced: false,
+		});
 	});
 });

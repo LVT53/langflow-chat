@@ -587,4 +587,358 @@ describe("real Deep Research workflow stepper", () => {
 			sealedAt: null,
 		});
 	});
+
+	it("completes pending Research Tasks and finishes an audited report from the task pass", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
+			await import("./tasks");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US rules both make source provenance central to AI training data risk review.",
+		});
+		await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-practical-implications",
+					keyQuestion: "What practical implications should the report call out?",
+					summary:
+						"Explain the operational implication of source provenance requirements.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:09:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const reportArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "report_ready",
+			},
+		});
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				status: "completed",
+				output: expect.objectContaining({
+					sourceIds: [source.id],
+				}),
+			}),
+		]);
+		expect(reportArtifact?.contentText).toContain(
+			"Explain the operational implication of source provenance requirements.",
+		);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "research_tasks",
+					kind: "stage_completed",
+					sourceCounts: {
+						discovered: 1,
+						reviewed: 1,
+						cited: 0,
+					},
+				}),
+			]),
+		);
+	});
+
+	it("does not complete a Research Task pass while required work is running or critically failed", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			claimResearchTasks,
+			createResearchTasksFromCoverageGaps,
+			listResearchTasks,
+		} = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const tasks = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-running",
+					keyQuestion: "Which regulator source is authoritative?",
+					summary: "Resolve regulator authority before synthesis.",
+					severity: "critical",
+				},
+				{
+					id: "gap-critical-failure",
+					keyQuestion: "Which litigation source is current?",
+					summary: "Resolve current litigation status before synthesis.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await claimResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+			limit: 1,
+			claimToken: "external-worker",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				tasks: {
+					executor: async () => {
+						throw new Error("regulator source unavailable");
+					},
+				},
+			},
+		);
+		const reloadedTasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+
+		expect(result).toMatchObject({
+			advanced: false,
+			outcome: "not_eligible",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+				reportArtifactId: null,
+			},
+		});
+		expect(reloadedTasks).toEqual([
+			expect.objectContaining({
+				id: tasks[0].id,
+				status: "running",
+			}),
+			expect.objectContaining({
+				id: tasks[1].id,
+				status: "failed",
+				failureReason: "regulator source unavailable",
+			}),
+		]);
+	});
+
+	it("does not complete a Research Task pass when required tasks remain pending", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
+			await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-pending",
+					keyQuestion: "Which source is still missing?",
+					summary: "Required source work still needs a worker claim.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				tasks: {
+					claimResearchTasks: async () => [],
+				},
+			},
+		);
+		const [reloadedTask] = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+
+		expect(result).toMatchObject({
+			advanced: false,
+			outcome: "not_eligible",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+				reportArtifactId: null,
+			},
+		});
+		expect(reloadedTask).toMatchObject({
+			id: task.id,
+			status: "pending",
+		});
+	});
+
+	it("turns non-critical failed Research Tasks into audited report limitations", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const {
+			createResearchTasksFromCoverageGaps,
+			recordResearchTaskFailure,
+		} = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+		});
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-market-commentary",
+					keyQuestion: "What market commentary exists?",
+					summary: "Optional market commentary gap.",
+					severity: "important",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await recordResearchTaskFailure({
+			userId: "user-1",
+			taskId: task.id,
+			failureKind: "permanent",
+			failureReason: "Low-quality duplicate sources only.",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "report_ready",
+			},
+		});
+		expect(reportArtifact?.contentText).toContain("## Report Limitations");
+		expect(reportArtifact?.contentText).toContain(
+			"Research Task failed: What market commentary exists? (Low-quality duplicate sources only.)",
+		);
+	});
 });

@@ -5,18 +5,18 @@ vi.mock('$lib/server/auth/hooks', () => ({
 }));
 
 vi.mock('$lib/server/services/deep-research/worker', () => ({
-	triggerMockDeepResearchWorkerForJob: vi.fn(),
+	triggerDeepResearchWorkflowWorkerForJob: vi.fn(),
 }));
 
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { triggerMockDeepResearchWorkerForJob } from '$lib/server/services/deep-research/worker';
+import { triggerDeepResearchWorkflowWorkerForJob } from '$lib/server/services/deep-research/worker';
 
 type AdvanceRouteEvent = Parameters<typeof POST>[0];
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockTriggerMockDeepResearchWorkerForJob =
-	triggerMockDeepResearchWorkerForJob as ReturnType<typeof vi.fn>;
+const mockTriggerDeepResearchWorkflowWorkerForJob =
+	triggerDeepResearchWorkflowWorkerForJob as ReturnType<typeof vi.fn>;
 
 function makeEvent(jobId = 'research-job-1', user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -37,38 +37,65 @@ describe('POST /api/deep-research/jobs/[id]/worker/advance', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
-		mockTriggerMockDeepResearchWorkerForJob.mockResolvedValue({
+		mockTriggerDeepResearchWorkflowWorkerForJob.mockResolvedValue({
 			job: {
 				id: 'research-job-1',
 				conversationId: 'conv-1',
 				triggerMessageId: 'user-msg-1',
 				depth: 'standard',
 				status: 'running',
-				stage: 'source_discovery',
+				stage: 'source_review',
 				title: 'Research AI copyright rules',
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
 			},
 			advanced: true,
+			outcome: 'discovery_completed',
+			workerRunId: 'manual-dev-run-1',
 		});
 	});
 
-	it('triggers one mock worker step for the signed-in user without an open chat stream', async () => {
+	it('triggers one real workflow worker step for the signed-in user without an open chat stream', async () => {
 		const response = await POST(makeEvent());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(data).toMatchObject({
 			advanced: true,
+			outcome: 'discovery_completed',
+			workerRunId: 'manual-dev-run-1',
 			job: {
 				id: 'research-job-1',
 				status: 'running',
-				stage: 'source_discovery',
+				stage: 'source_review',
 			},
 		});
-		expect(mockTriggerMockDeepResearchWorkerForJob).toHaveBeenCalledWith({
+		expect(mockTriggerDeepResearchWorkflowWorkerForJob).toHaveBeenCalledWith({
 			userId: 'user-1',
 			jobId: 'research-job-1',
 		});
+	});
+
+	it('preserves a not-found response for missing or unauthorized jobs', async () => {
+		mockTriggerDeepResearchWorkflowWorkerForJob.mockResolvedValue(null);
+
+		const response = await POST(makeEvent('other-user-job'));
+		const data = await response.json();
+
+		expect(response.status).toBe(404);
+		expect(data).toEqual({ error: 'Deep Research job not found' });
+		expect(mockTriggerDeepResearchWorkflowWorkerForJob).toHaveBeenCalledWith({
+			userId: 'user-1',
+			jobId: 'other-user-job',
+		});
+	});
+
+	it('requires an authenticated user before triggering the workflow worker', async () => {
+		const response = await POST(makeEvent('research-job-1', null));
+		const data = await response.json();
+
+		expect(response.status).toBe(401);
+		expect(data).toEqual({ error: 'Unauthorized' });
+		expect(mockTriggerDeepResearchWorkflowWorkerForJob).not.toHaveBeenCalled();
 	});
 });

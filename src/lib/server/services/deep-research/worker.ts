@@ -5,6 +5,11 @@ import type { DeepResearchJob } from "$lib/types";
 import { listConversationDeepResearchJobs } from "./index";
 import type { ResearchTimelineKind, ResearchTimelineStage } from "./timeline";
 import { saveResearchTimelineEvent } from "./timeline";
+import {
+	runDeepResearchWorkflowStep,
+	type RunDeepResearchWorkflowStepInput,
+	type RunDeepResearchWorkflowStepResult,
+} from "./workflow";
 
 export type RunNextMockDeepResearchWorkerStepInput = {
 	now?: Date;
@@ -12,6 +17,21 @@ export type RunNextMockDeepResearchWorkerStepInput = {
 };
 
 export type RunNextMockDeepResearchWorkerStepResult = {
+	job: DeepResearchJob;
+	advanced: boolean;
+} | null;
+
+export type DeepResearchWorkflowStepRunner = (
+	input: RunDeepResearchWorkflowStepInput,
+) => Promise<RunDeepResearchWorkflowStepResult>;
+
+export type RunNextDeepResearchWorkflowWorkerStepInput = {
+	now?: Date;
+	controls?: DeepResearchWorkerControls;
+	workflowStep?: DeepResearchWorkflowStepRunner;
+};
+
+export type RunNextDeepResearchWorkflowWorkerStepResult = {
 	job: DeepResearchJob;
 	advanced: boolean;
 } | null;
@@ -24,6 +44,19 @@ export type TriggerMockDeepResearchWorkerForJobInput = {
 };
 
 export type TriggerMockDeepResearchWorkerForJobResult = {
+	job: DeepResearchJob;
+	advanced: boolean;
+} | null;
+
+export type TriggerDeepResearchWorkflowWorkerForJobInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+	controls?: DeepResearchWorkerControls;
+	workflowStep?: DeepResearchWorkflowStepRunner;
+};
+
+export type TriggerDeepResearchWorkflowWorkerForJobResult = {
 	job: DeepResearchJob;
 	advanced: boolean;
 } | null;
@@ -101,6 +134,8 @@ const MOCK_STAGE_SEQUENCE: MockWorkerStage[] = [
 		summary: "Mock research is ready for report generation.",
 	},
 ];
+
+const REAL_WORKFLOW_RUNNING_STAGES = ["source_review", "research_tasks"];
 
 export async function runNextMockDeepResearchWorkerStep(
 	input: RunNextMockDeepResearchWorkerStepInput = {},
@@ -185,6 +220,88 @@ export async function triggerMockDeepResearchWorkerForJob(
 	}
 
 	return advanceMockWorkerJob(job, nextStage, now);
+}
+
+export async function runNextDeepResearchWorkflowWorkerStep(
+	input: RunNextDeepResearchWorkflowWorkerStepInput = {},
+): Promise<RunNextDeepResearchWorkflowWorkerStepResult> {
+	const now = input.now ?? new Date();
+	const workflowStep = input.workflowStep ?? runDeepResearchWorkflowStep;
+	const eligibleJobs = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			or(
+				and(
+					eq(deepResearchJobs.status, "approved"),
+					eq(deepResearchJobs.stage, "plan_approved"),
+				),
+				and(
+					eq(deepResearchJobs.status, "running"),
+					inArray(deepResearchJobs.stage, REAL_WORKFLOW_RUNNING_STAGES),
+				),
+			),
+		)
+		.orderBy(asc(deepResearchJobs.createdAt))
+		.limit(25);
+
+	let firstBlockedJob: typeof deepResearchJobs.$inferSelect | null = null;
+	for (const eligibleJob of eligibleJobs) {
+		if (
+			!(await canStartApprovedJobWithinConcurrency(
+				eligibleJob,
+				{
+					fromStatus: eligibleJob.status,
+					toStatus: "running",
+				},
+				input.controls,
+			))
+		) {
+			firstBlockedJob ??= eligibleJob;
+			continue;
+		}
+
+		return runRealWorkflowWorkerStep(eligibleJob, now, workflowStep);
+	}
+
+	if (!firstBlockedJob) return null;
+	return buildNotAdvancedWorkflowWorkerResult(firstBlockedJob);
+}
+
+export async function triggerDeepResearchWorkflowWorkerForJob(
+	input: TriggerDeepResearchWorkflowWorkerForJobInput,
+): Promise<TriggerDeepResearchWorkflowWorkerForJobResult> {
+	const now = input.now ?? new Date();
+	const workflowStep = input.workflowStep ?? runDeepResearchWorkflowStep;
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+			),
+		)
+		.limit(1);
+
+	if (!job) return null;
+	if (!isRealWorkflowWorkerEligibleJob(job)) {
+		return buildNotAdvancedWorkflowWorkerResult(job);
+	}
+	if (
+		!(await canStartApprovedJobWithinConcurrency(
+			job,
+			{
+				fromStatus: job.status,
+				toStatus: "running",
+			},
+			input.controls,
+		))
+	) {
+		return buildNotAdvancedWorkflowWorkerResult(job);
+	}
+
+	return runRealWorkflowWorkerStep(job, now, workflowStep);
 }
 
 export async function recoverStaleDeepResearchJobs(
@@ -318,7 +435,7 @@ export async function requestDeepResearchWorkerCancellation(
 
 async function canStartApprovedJobWithinConcurrency(
 	job: typeof deepResearchJobs.$inferSelect,
-	nextStage: MockWorkerStage,
+	nextStage: Pick<MockWorkerStage, "fromStatus" | "toStatus">,
 	controls: DeepResearchWorkerControls | undefined,
 ): Promise<boolean> {
 	if (nextStage.fromStatus !== "approved" || nextStage.toStatus !== "running") {
@@ -341,6 +458,47 @@ async function canStartApprovedJobWithinConcurrency(
 	}
 
 	return true;
+}
+
+function isRealWorkflowWorkerEligibleJob(
+	job: typeof deepResearchJobs.$inferSelect,
+): boolean {
+	if (job.status === "approved" && job.stage === "plan_approved") {
+		return true;
+	}
+	return (
+		job.status === "running" &&
+		!!job.stage &&
+		REAL_WORKFLOW_RUNNING_STAGES.includes(job.stage)
+	);
+}
+
+async function runRealWorkflowWorkerStep(
+	job: typeof deepResearchJobs.$inferSelect,
+	now: Date,
+	workflowStep: DeepResearchWorkflowStepRunner,
+): Promise<RunNextDeepResearchWorkflowWorkerStepResult> {
+	const result = await workflowStep({
+		userId: job.userId,
+		jobId: job.id,
+		now,
+	});
+	if (!result) return null;
+	return {
+		job: result.job,
+		advanced: result.advanced,
+	};
+}
+
+async function buildNotAdvancedWorkflowWorkerResult(
+	job: typeof deepResearchJobs.$inferSelect,
+): Promise<RunNextDeepResearchWorkflowWorkerStepResult> {
+	const currentJob = await loadDeepResearchJobForWorker(job);
+	if (!currentJob) return null;
+	return {
+		job: currentJob,
+		advanced: false,
+	};
 }
 
 async function countRunningJobs(userId?: string): Promise<number> {
