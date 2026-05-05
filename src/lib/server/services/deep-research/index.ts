@@ -14,10 +14,13 @@ import type {
 	Conversation,
 	DeepResearchDepth,
 	DeepResearchEffortEstimate,
+	DeepResearchEvidenceLimitationMemo,
 	DeepResearchJob,
 	DeepResearchRuntimeEstimate,
 	DeepResearchPlanRaw,
 	DeepResearchPlanSummary,
+	DeepResearchCoverageGap,
+	DeepResearchPassCheckpoint,
 	DeepResearchSource,
 	DeepResearchSourceCounts,
 	DeepResearchTimelineEvent,
@@ -31,6 +34,7 @@ import {
 	createFirstResearchPlanDraft,
 	createRevisedResearchPlanDraft,
 	type PlanningContextItem,
+	type ReportIntent,
 	type ResearchLanguage,
 	type ResearchPlanIncludedSource,
 	type ResearchPlanDraftRecord,
@@ -40,9 +44,15 @@ import { generateTitle } from '$lib/server/services/title-generator';
 import {
 	MAX_REPORT_KEY_FINDINGS,
 	selectResearchReportFindings,
+	writeEvidenceLimitationMemo,
 	type ResearchReportDraft,
 } from './report-writer';
 import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
+import { isSourceTopicRelevantToPlan } from './source-review';
+import {
+	listResearchCoverageGaps,
+	listResearchPassCheckpoints,
+} from './pass-state';
 import type { SynthesisNotes } from './synthesis';
 import {
 	buildCitationClaimReviewerWithLlm,
@@ -99,6 +109,7 @@ export type EditDeepResearchPlanInput = {
 	userId: string;
 	jobId: string;
 	editInstruction: string;
+	reportIntent?: ReportIntent;
 	researchLanguage?: ResearchLanguage;
 	now?: Date;
 };
@@ -114,6 +125,13 @@ export type CompleteDeepResearchJobWithAuditedReportInput = {
 	jobId: string;
 	synthesisNotes: SynthesisNotes;
 	limitations?: string[];
+	now?: Date;
+};
+
+export type CompleteDeepResearchJobWithEvidenceLimitationMemoInput = {
+	userId: string;
+	jobId: string;
+	limitations: string[];
 	now?: Date;
 };
 
@@ -370,6 +388,8 @@ export async function listConversationDeepResearchJobs(
 	const sourceLedgers = await loadSourceLedgersByJobId(userId, conversationId, rows.map((row) => row.id));
 	const usageSummaries = await loadUsageSummariesByJobId(userId, rows.map((row) => row.id));
 	const runtimeEstimates = await loadRuntimeEstimatesByJobId(rows);
+	const evidenceLimitationMemos = await loadEvidenceLimitationMemosByJobId(userId, rows);
+	const passStates = await loadPassStatesByJobId(userId, rows.map((row) => row.id));
 	return rows.map((row) =>
 		mapDeepResearchJob(
 			row,
@@ -379,6 +399,9 @@ export async function listConversationDeepResearchJobs(
 			{
 				usageSummary: usageSummaries.get(row.id),
 				runtimeEstimate: runtimeEstimates.get(row.id),
+				evidenceLimitationMemo: evidenceLimitationMemos.get(row.id) ?? null,
+				passCheckpoints: passStates.get(row.id)?.passCheckpoints ?? [],
+				coverageGaps: passStates.get(row.id)?.coverageGaps ?? [],
 			}
 		)
 	);
@@ -459,6 +482,7 @@ export async function editDeepResearchPlan(
 			previousPlan: currentPlan.rawPlan,
 			previousVersion: currentPlan.version,
 			editInstruction: input.editInstruction,
+			reportIntent: input.reportIntent,
 			selectedDepth: job.depth as DeepResearchDepth,
 			researchLanguage:
 				input.researchLanguage ?? currentPlan.rawPlan.researchLanguage ?? 'en',
@@ -482,6 +506,7 @@ export async function editDeepResearchPlan(
 						contextDisclosure: context.contextDisclosure,
 						previousPlan: currentPlan.rawPlan,
 						editInstruction: input.editInstruction,
+						reportIntent: input.reportIntent,
 					}),
 			},
 			repository: {
@@ -723,21 +748,13 @@ export async function completeDeepResearchJobWithAuditedReport(
 	});
 
 	if (!auditResult.canComplete) {
-		const [failedJob] = await db
-			.update(deepResearchJobs)
-			.set({
-				status: 'failed',
-				stage: 'citation_audit_failed',
-				updatedAt: now,
-			})
-			.where(eq(deepResearchJobs.id, job.id))
-			.returning();
-		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [failedJob.id]);
-		return mapDeepResearchJob(
-			failedJob,
+		return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
+			job,
 			currentPlan,
-			timelineEvents.get(failedJob.id) ?? []
-		);
+			sources,
+			limitations: [...(input.limitations ?? []), ...citationAuditWarnings(auditResult)],
+			now,
+		});
 	}
 
 	const auditedMarkdown = renderAuditedReportMarkdown({
@@ -806,6 +823,167 @@ export async function completeDeepResearchJobWithAuditedReport(
 		currentPlan,
 		timelineEvents.get(updatedJob.id) ?? []
 	);
+}
+
+export async function completeDeepResearchJobWithEvidenceLimitationMemo(
+	input: CompleteDeepResearchJobWithEvidenceLimitationMemoInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+
+	if (!job) return null;
+	if (
+		job.status === 'completed' &&
+		job.stage === 'evidence_limitation_memo_ready' &&
+		job.reportArtifactId
+	) {
+		const currentPlans = await loadCurrentPlansByJobId([job.id]);
+		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+		return mapDeepResearchJob(
+			job,
+			currentPlans.get(job.id) ?? null,
+			timelineEvents.get(job.id) ?? []
+		);
+	}
+	if (job.status !== 'approved' && job.status !== 'running') {
+		return null;
+	}
+
+	const currentPlans = await loadCurrentPlansByJobId([job.id]);
+	const currentPlan = currentPlans.get(job.id);
+	if (!currentPlan?.rawPlan) return null;
+	const sources = await listResearchSources({
+		userId: input.userId,
+		jobId: job.id,
+	});
+
+	return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
+		job,
+		currentPlan,
+		sources,
+		limitations: input.limitations,
+		now,
+	});
+}
+
+async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input: {
+	job: DeepResearchJobRow;
+	currentPlan: DeepResearchPlanSummary;
+	sources: DeepResearchSource[];
+	limitations: string[];
+	now: Date;
+}): Promise<DeepResearchJob | null> {
+	if (!input.currentPlan.rawPlan) return null;
+	const researchLanguage = input.currentPlan.rawPlan.researchLanguage ?? 'en';
+	const reviewedScope = buildEvidenceLimitationReviewedScope({
+		plan: input.currentPlan.rawPlan,
+		sources: input.sources,
+	});
+	const memo = writeEvidenceLimitationMemo({
+		jobId: input.job.id,
+		plan: input.currentPlan.rawPlan,
+		reviewedScope,
+		limitations: input.limitations,
+		nextResearchDirection: buildEvidenceLimitationNextResearchDirection({
+			limitations: input.limitations,
+			researchLanguage,
+		}),
+	});
+	const memoName = buildEvidenceLimitationMemoArtifactName(input.job.title, researchLanguage);
+	const memoArtifact = await createArtifact({
+		userId: input.job.userId,
+		conversationId: input.job.conversationId,
+		type: 'generated_output',
+		retrievalClass: 'durable',
+		name: memoName,
+		mimeType: 'text/markdown',
+		extension: 'md',
+		sizeBytes: Buffer.byteLength(memo.markdown, 'utf8'),
+		contentText: memo.markdown,
+		summary:
+			researchLanguage === 'hu'
+				? `Bizonyítékkorlát-memó: ${input.job.title}`
+				: `Evidence Limitation Memo for ${input.job.title}`,
+		metadata: {
+			deepResearchEvidenceLimitationMemo: true,
+			deepResearchReport: false,
+			deepResearchJobId: input.job.id,
+			deepResearchDepth: input.job.depth,
+			documentFamilyId: randomUUID(),
+			documentFamilyStatus: 'active',
+			documentLabel: memoName,
+			documentRole: 'evidence_limitation_memo',
+			memoTitle: memo.title,
+			versionNumber: 1,
+			originConversationId: input.job.conversationId,
+			reviewedScope: memo.reviewedScope,
+			groundedLimitationReasons: memo.limitations,
+			nextResearchDirection: memo.nextResearchDirection,
+			memoRecoveryActions: memo.recoveryActions,
+		},
+	});
+
+	await saveResearchTimelineEvent({
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		userId: input.job.userId,
+		taskId: null,
+		stage: 'evidence_limitation_memo',
+		kind: 'stage_completed',
+		occurredAt: input.now.toISOString(),
+		messageKey: 'deepResearch.timeline.evidenceLimitationMemoCompleted',
+		messageParams: {
+			topicRelevantSources: reviewedScope.topicRelevantCount,
+			rejectedOrOffTopicSources: reviewedScope.rejectedOrOffTopicCount,
+		},
+		sourceCounts: sourceCountsFromSources(input.sources),
+		assumptions: [],
+		warnings: memo.limitations,
+		summary:
+			researchLanguage === 'hu'
+				? 'A kutatás bizonyítékkorlát-memóval zárult, mert nem volt elég hiteles, témához illeszkedő bizonyíték.'
+				: 'Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.',
+	});
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'completed',
+			stage: 'evidence_limitation_memo_ready',
+			reportArtifactId: memoArtifact.id,
+			completedAt: input.now,
+			updatedAt: input.now,
+		})
+		.where(eq(deepResearchJobs.id, input.job.id))
+		.returning();
+	const timelineEvents = await loadTimelineEventsByJobId(input.job.userId, [updatedJob.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		input.currentPlan,
+		timelineEvents.get(updatedJob.id) ?? [],
+		undefined,
+		{ evidenceLimitationMemo: toEvidenceLimitationMemoPayload(memo) }
+	);
+}
+
+function toEvidenceLimitationMemoPayload(input: {
+	title: string;
+	reviewedScope: DeepResearchEvidenceLimitationMemo['reviewedScope'];
+	limitations: string[];
+	nextResearchDirection: string;
+	recoveryActions: DeepResearchEvidenceLimitationMemo['recoveryActions'];
+}): DeepResearchEvidenceLimitationMemo {
+	return {
+		title: input.title,
+		reviewedScope: input.reviewedScope,
+		limitations: input.limitations,
+		nextResearchDirection: input.nextResearchDirection,
+		recoveryActions: input.recoveryActions,
+	};
 }
 
 export async function discussDeepResearchReport(
@@ -921,7 +1099,27 @@ async function loadCompletedResearchReportContext(input: {
 		)
 		.limit(1);
 
-	return row ?? null;
+	if (!row || !isResearchReportArtifactMetadata(row.report.metadataJson)) {
+		return null;
+	}
+	return row;
+}
+
+function isResearchReportArtifactMetadata(metadataJson: string | null): boolean {
+	if (!metadataJson) return false;
+	let metadata: unknown;
+	try {
+		metadata = JSON.parse(metadataJson);
+	} catch {
+		return false;
+	}
+	if (!metadata || typeof metadata !== 'object') return false;
+	const record = metadata as Record<string, unknown>;
+	return (
+		record.deepResearchReport === true &&
+		record.documentRole === 'research_report' &&
+		record.deepResearchEvidenceLimitationMemo !== true
+	);
 }
 
 async function applyGeneratedResearchTitle(input: {
@@ -1325,6 +1523,78 @@ function buildReportArtifactName(
 	return `${prefix} - ${safeTitle || 'Deep Research'}.md`;
 }
 
+function buildEvidenceLimitationMemoArtifactName(
+	jobTitle: string,
+	researchLanguage: ResearchLanguage = 'en'
+): string {
+	const safeTitle = jobTitle
+		.replace(/[\\/:*?"<>|]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 96);
+	const prefix =
+		researchLanguage === 'hu' ? 'Bizonyítékkorlát-memó' : 'Evidence Limitation Memo';
+	return `${prefix} - ${safeTitle || 'Deep Research'}.md`;
+}
+
+function buildEvidenceLimitationReviewedScope(input: {
+	plan: DeepResearchPlanRaw;
+	sources: DeepResearchSource[];
+}) {
+	let topicRelevantCount = 0;
+	let rejectedOrOffTopicCount = 0;
+
+	for (const source of input.sources) {
+		if (source.rejectedReason) {
+			rejectedOrOffTopicCount += 1;
+			continue;
+		}
+		if (!source.reviewedAt) continue;
+		const topicRelevant = isSourceTopicRelevantToPlan({
+			planGoal: input.plan.goal,
+			keyQuestions: input.plan.keyQuestions,
+			source: {
+				title: source.title ?? source.url,
+				snippet: source.snippet,
+				sourceText: [
+					source.sourceText,
+					source.reviewedNote,
+					...(source.extractedClaims ?? []),
+				]
+					.filter(Boolean)
+					.join(' '),
+			},
+		});
+		if (topicRelevant) {
+			topicRelevantCount += 1;
+		} else {
+			rejectedOrOffTopicCount += 1;
+		}
+	}
+
+	return {
+		discoveredCount: input.sources.length,
+		reviewedCount: input.sources.filter((source) => Boolean(source.reviewedAt)).length,
+		topicRelevantCount,
+		rejectedOrOffTopicCount,
+	};
+}
+
+function buildEvidenceLimitationNextResearchDirection(input: {
+	limitations: string[];
+	researchLanguage: ResearchLanguage;
+}): string {
+	const primaryLimitation = input.limitations.map((value) => value.trim()).find(Boolean);
+	if (input.researchLanguage === 'hu') {
+		return primaryLimitation
+			? `Következőként ezt a korlátot kezeld célzott tervmódosítással vagy erősebb forrásokkal: ${primaryLimitation}`
+			: 'Módosítsd a kutatási tervet, vagy adj hozzá erősebb, témához illeszkedő forrásokat az új futás előtt.';
+	}
+	return primaryLimitation
+		? `Address this limitation with a targeted plan revision or stronger sources before requesting a report: ${primaryLimitation}`
+		: 'Revise the Research Plan or add stronger topic-relevant sources before starting a new run.';
+}
+
 async function loadCurrentPlansByJobId(
 	jobIds: string[]
 ): Promise<Map<string, DeepResearchPlanSummary>> {
@@ -1366,7 +1636,32 @@ type SourceLedgerForCard = {
 type DeepResearchJobReadModel = {
 	usageSummary?: DeepResearchUsageSummary;
 	runtimeEstimate?: DeepResearchRuntimeEstimate;
+	evidenceLimitationMemo?: DeepResearchEvidenceLimitationMemo | null;
+	passCheckpoints?: DeepResearchPassCheckpoint[];
+	coverageGaps?: DeepResearchCoverageGap[];
 };
+
+type DeepResearchPassStateForCard = {
+	passCheckpoints: DeepResearchPassCheckpoint[];
+	coverageGaps: DeepResearchCoverageGap[];
+};
+
+async function loadPassStatesByJobId(
+	userId: string,
+	jobIds: string[]
+): Promise<Map<string, DeepResearchPassStateForCard>> {
+	const states = new Map<string, DeepResearchPassStateForCard>();
+	await Promise.all(
+		jobIds.map(async (jobId) => {
+			const [passCheckpoints, coverageGaps] = await Promise.all([
+				listResearchPassCheckpoints({ userId, jobId }),
+				listResearchCoverageGaps({ userId, jobId }),
+			]);
+			states.set(jobId, { passCheckpoints, coverageGaps });
+		})
+	);
+	return states;
+}
 
 async function loadUsageSummariesByJobId(
 	userId: string,
@@ -1406,6 +1701,103 @@ async function loadRuntimeEstimatesByJobId(
 		});
 	}
 	return estimates;
+}
+
+async function loadEvidenceLimitationMemosByJobId(
+	userId: string,
+	rows: DeepResearchJobRow[]
+): Promise<Map<string, DeepResearchEvidenceLimitationMemo>> {
+	const memoRows = rows.filter(
+		(row) => row.stage === 'evidence_limitation_memo_ready' && row.reportArtifactId
+	);
+	if (memoRows.length === 0) return new Map();
+
+	const artifactIds = memoRows
+		.map((row) => row.reportArtifactId)
+		.filter((id): id is string => Boolean(id));
+	const artifactRows = await db
+		.select({
+			id: artifacts.id,
+			metadataJson: artifacts.metadataJson,
+		})
+		.from(artifacts)
+		.where(and(eq(artifacts.userId, userId), inArray(artifacts.id, artifactIds)));
+	const memoByArtifactId = new Map(
+		artifactRows
+			.map((row) => [row.id, parseEvidenceLimitationMemoMetadata(row.metadataJson)] as const)
+			.filter((entry): entry is readonly [string, DeepResearchEvidenceLimitationMemo] =>
+				Boolean(entry[1])
+			)
+	);
+	const memoByJobId = new Map<string, DeepResearchEvidenceLimitationMemo>();
+	for (const row of memoRows) {
+		const memo = row.reportArtifactId ? memoByArtifactId.get(row.reportArtifactId) : null;
+		if (memo) memoByJobId.set(row.id, memo);
+	}
+	return memoByJobId;
+}
+
+function parseEvidenceLimitationMemoMetadata(
+	metadataJson: string | null
+): DeepResearchEvidenceLimitationMemo | null {
+	if (!metadataJson) return null;
+	let metadata: unknown;
+	try {
+		metadata = JSON.parse(metadataJson);
+	} catch {
+		return null;
+	}
+	if (!metadata || typeof metadata !== 'object') return null;
+	const record = metadata as Record<string, unknown>;
+	if (record.deepResearchEvidenceLimitationMemo !== true) return null;
+	const reviewedScope = record.reviewedScope;
+	if (!reviewedScope || typeof reviewedScope !== 'object') return null;
+	const scopeRecord = reviewedScope as Record<string, unknown>;
+	const recoveryActions = Array.isArray(record.memoRecoveryActions)
+		? record.memoRecoveryActions.filter(isEvidenceLimitationMemoRecoveryAction)
+		: [];
+	return {
+		title:
+			readString(record.memoTitle) ??
+			readString(record.documentLabel) ??
+			'Evidence Limitation Memo',
+		reviewedScope: {
+			discoveredCount: readNumber(scopeRecord.discoveredCount),
+			reviewedCount: readNumber(scopeRecord.reviewedCount),
+			topicRelevantCount: readNumber(scopeRecord.topicRelevantCount),
+			rejectedOrOffTopicCount: readNumber(scopeRecord.rejectedOrOffTopicCount),
+		},
+		limitations: readStringArray(record.groundedLimitationReasons),
+		nextResearchDirection: readString(record.nextResearchDirection) ?? '',
+		recoveryActions,
+	};
+}
+
+function isEvidenceLimitationMemoRecoveryAction(
+	value: unknown
+): value is DeepResearchEvidenceLimitationMemo['recoveryActions'][number] {
+	if (!value || typeof value !== 'object') return false;
+	const record = value as Record<string, unknown>;
+	return (
+		typeof record.kind === 'string' &&
+		typeof record.label === 'string' &&
+		typeof record.description === 'string'
+	);
+}
+
+function readString(value: unknown): string | null {
+	return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function readNumber(value: unknown): number {
+	const parsed = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+}
+
+function readStringArray(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+		: [];
 }
 
 async function loadCalibratedRuntimeStats(
@@ -1608,8 +2000,11 @@ function mapDeepResearchJob(
 		plan: currentPlan,
 		currentPlan,
 		timeline,
+		passCheckpoints: readModel.passCheckpoints ?? [],
+		coverageGaps: readModel.coverageGaps ?? [],
 		sourceCounts: sourceLedger?.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
 		sources: sourceLedger?.sources ?? [],
+		evidenceLimitationMemo: readModel.evidenceLimitationMemo ?? null,
 		usageSummary: readModel.usageSummary ?? {
 			totalCostUsdMicros: 0,
 			totalTokens: 0,

@@ -1,6 +1,7 @@
 import type {
 	DeepResearchDepth,
 	DeepResearchJob,
+	DeepResearchReportIntent,
 	DeepResearchReportActionResult,
 	DeepResearchResearchFurtherActionResult,
 	ModelId,
@@ -88,17 +89,25 @@ export async function cancelDeepResearchJob(
 export async function editDeepResearchPlan(
 	jobId: string,
 	instructions: string,
+	reportIntentOrFetch: DeepResearchReportIntent | FetchLike | undefined = undefined,
 	fetchImpl: FetchLike = fetch,
 ): Promise<DeepResearchJob> {
+	const reportIntent =
+		typeof reportIntentOrFetch === "function" ? undefined : reportIntentOrFetch;
+	const requestFetch =
+		typeof reportIntentOrFetch === "function" ? reportIntentOrFetch : fetchImpl;
 	const payload = await requestJson<DeepResearchJobResponse>(
 		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/plan/edit`,
 		{
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ editInstruction: instructions }),
+			body: JSON.stringify({
+				editInstruction: instructions,
+				...(reportIntent ? { reportIntent } : {}),
+			}),
 		},
 		"Failed to edit Research Plan",
-		fetchImpl,
+		requestFetch,
 	);
 	return payload.job;
 }

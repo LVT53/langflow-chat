@@ -144,6 +144,50 @@ describe("assessResearchCoverage", () => {
 		]);
 	});
 
+	it("does not pass downloaded-report coverage from high-count unrelated reviewed sources", () => {
+		const unrelatedSources = Array.from({ length: 12 }, (_, index) =>
+			reviewedSource({
+				id: `unrelated-${index + 1}`,
+				canonicalUrl: `https://unrelated-${index + 1}.example/report`,
+				supportedKeyQuestions: standardPlan.keyQuestions,
+				topicRelevant: false,
+			}),
+		);
+
+		const assessment = assessResearchCoverage({
+			jobId: "job-downloaded-report-regression",
+			conversationId: "conversation-downloaded-report-regression",
+			plan: standardPlan,
+			reviewedSources: unrelatedSources,
+			remainingBudget: {
+				sourceReviews: 0,
+				synthesisPasses: 0,
+			},
+		});
+
+		expect(assessment.status).toBe("insufficient");
+		expect(assessment.canContinue).toBe(false);
+		expect(assessment.coverageGaps).toEqual([]);
+		expect(assessment.reportLimitations).toEqual([
+			expect.objectContaining({
+				keyQuestion: "What are the current capabilities?",
+				reviewedSourceCount: 0,
+			}),
+			expect.objectContaining({
+				keyQuestion: "Where do the platforms differ?",
+				reviewedSourceCount: 0,
+			}),
+		]);
+		expect(assessment.timelineSummary).toMatchObject({
+			messageKey: "deepResearch.timeline.coverageLimited",
+			messageParams: {
+				reviewedSources: 12,
+				coverageGaps: 0,
+				reportLimitations: 2,
+			},
+		});
+	});
+
 	it("returns Report Limitations instead of Coverage Gaps when budget is exhausted", () => {
 		const assessment = assessResearchCoverage({
 			jobId: "job-exhausted",

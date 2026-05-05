@@ -153,6 +153,39 @@ describe("deep-research client API", () => {
 		});
 	});
 
+	it("posts Report Intent revisions with Plan Edit requests", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						job: {
+							id: "job-1",
+							conversationId: "conv-1",
+							triggerMessageId: "message-1",
+							depth: "standard",
+							status: "awaiting_approval",
+							stage: "plan_revised",
+							title: "Research battery recycling policy",
+							createdAt: 1,
+							updatedAt: 2,
+						},
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await editDeepResearchPlan("job-1", "", "recommendation", fetchMock);
+
+		expect(fetchMock).toHaveBeenCalledWith("/api/deep-research/jobs/job-1/plan/edit", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				editInstruction: "",
+				reportIntent: "recommendation",
+			}),
+		});
+	});
+
 	it("posts plan approval and returns the updated job", async () => {
 		const fetchMock = vi.fn(
 			async () =>

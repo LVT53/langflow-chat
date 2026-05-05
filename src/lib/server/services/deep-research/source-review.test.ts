@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	isSourceTopicRelevantToPlan,
 	triageAndReviewSources,
 	triageSourcesForReview,
 } from "./source-review";
@@ -141,7 +142,12 @@ describe("Deep Research source triage and review", () => {
 	});
 
 	it("rejects off-topic sources even when the reviewer returns strong key-question support", async () => {
-		const savedNotes: Array<{ discoveredSourceId: string; rejectedReason: string | null }> = [];
+		const savedNotes: Array<{
+			discoveredSourceId: string;
+			rejectedReason: string | null;
+			topicRelevant?: boolean | null;
+			topicRelevanceReason?: string | null;
+		}> = [];
 		const keyQuestions = [
 			"How do Cube Kathmandu and Cube Nulane specifications differ?",
 			"Which model is better for commuting and touring?",
@@ -191,6 +197,8 @@ describe("Deep Research source triage and review", () => {
 						savedNotes.push({
 							discoveredSourceId: notes.discoveredSourceId,
 							rejectedReason: notes.rejectedReason,
+							topicRelevant: notes.topicRelevant,
+							topicRelevanceReason: notes.topicRelevanceReason,
 						});
 						return {
 							...notes,
@@ -208,12 +216,32 @@ describe("Deep Research source triage and review", () => {
 		expect(result.reviewedCount).toBe(1);
 		expect(savedNotes).toEqual(
 			expect.arrayContaining([
-				{
+				expect.objectContaining({
 					discoveredSourceId: "volkswagen-ev-prices",
+					topicRelevant: false,
 					rejectedReason:
 						"Rejected because the source is off-topic for the approved Research Plan.",
-				},
+				}),
 			]),
 		);
+	});
+
+	it("matches Hungarian topic anchors without requiring identical diacritics", () => {
+		expect(
+			isSourceTopicRelevantToPlan({
+				planGoal:
+					"Átfogó összehasonlítás Cube Kathmandu és Cube Nulane kerékpárokról.",
+				keyQuestions: [
+					"Miben különbözik a Cube Kathmandu és a Cube Nulane felszereltsége?",
+				],
+				source: {
+					title: "Cube Kathmandu es Cube Nulane kerekparok osszehasonlitasa",
+					snippet:
+						"Felszereltseg, hajtaslanc, varosi ingazas es turazas szempontjai.",
+					sourceText:
+						"Cube Kathmandu es Cube Nulane kerekpar modellek reszletes osszehasonlitasa.",
+				},
+			}),
+		).toBe(true);
 	});
 });

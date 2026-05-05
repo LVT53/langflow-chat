@@ -9,6 +9,7 @@ import {
 	countResearchSources,
 	listResearchSources,
 	markResearchSourceCited,
+	markResearchSourceRejected,
 	markResearchSourceReviewed,
 	saveDiscoveredResearchSource,
 } from "./sources";
@@ -211,6 +212,58 @@ describe("deep research source ledger", () => {
 			discovered: 1,
 			reviewed: 1,
 			cited: 1,
+		});
+	});
+
+	it("keeps off-topic rejection state inspectable in the source ledger", async () => {
+		const discovered = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices in Hungary",
+			provider: "web_search",
+			snippet: "Dealer discounts and electric car market pricing.",
+			discoveredAt: new Date("2026-05-05T10:30:00.000Z"),
+		});
+
+		const rejected = await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: discovered.id,
+			rejectedAt: new Date("2026-05-05T11:00:00.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			supportedKeyQuestions: [
+				"How do Cube Kathmandu and Cube Nulane specifications differ?",
+			],
+			extractedClaims: ["Volkswagen EV prices decreased in Hungary."],
+			openedContentLength: 740,
+			topicRelevant: false,
+			topicRelevanceReason:
+				"Source discusses Volkswagen EV prices, not Cube bicycle models.",
+		});
+		const [listed] = await listResearchSources({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(rejected).toMatchObject({
+			id: discovered.id,
+			status: "discovered",
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			topicRelevant: false,
+			topicRelevanceReason:
+				"Source discusses Volkswagen EV prices, not Cube bicycle models.",
+			reviewedAt: null,
+		});
+		expect(listed).toMatchObject({
+			id: discovered.id,
+			topicRelevant: false,
+			topicRelevanceReason:
+				"Source discusses Volkswagen EV prices, not Cube bicycle models.",
 		});
 	});
 });

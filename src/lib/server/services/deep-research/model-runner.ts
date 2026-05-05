@@ -1,14 +1,20 @@
-import { buildOpenAICompatibleUrl } from "$lib/server/services/openai-compatible-url";
 import { getConfig } from "$lib/server/config-store";
-import { decryptApiKey, getProviderWithSecrets } from "$lib/server/services/inference-providers";
-import { resolveDeepResearchModel, type DeepResearchModelRole } from "./model-config";
+import {
+	decryptApiKey,
+	getProviderWithSecrets,
+} from "$lib/server/services/inference-providers";
+import { buildOpenAICompatibleUrl } from "$lib/server/services/openai-compatible-url";
+import {
+	type DeepResearchModelRole,
+	resolveDeepResearchModel,
+} from "./model-config";
+import type { ResearchTimelineStage } from "./timeline";
 import {
 	buildResearchUsageRecord,
-	saveResearchUsageRecord,
 	type ResearchProviderUsageSnapshot,
 	type ResearchUsageOperation,
+	saveResearchUsageRecord,
 } from "./usage";
-import type { ResearchTimelineStage } from "./timeline";
 
 export type DeepResearchModelMessage = {
 	role: "system" | "user" | "assistant";
@@ -42,27 +48,37 @@ export async function runDeepResearchModel(input: {
 		throw new Error(`Deep Research model ${input.role} is not configured`);
 	}
 
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
-	if (credentials.apiKey) headers.Authorization = `Bearer ${credentials.apiKey}`;
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
+	if (credentials.apiKey)
+		headers.Authorization = `Bearer ${credentials.apiKey}`;
 	const startedAt = Date.now();
+	const body: Record<string, unknown> = {
+		model,
+		messages: input.messages,
+		temperature: input.temperature ?? 0.2,
+		max_tokens: input.maxTokens ?? resolved.limits.maxTokens ?? 1800,
+	};
+	if (!resolved.providerId) {
+		body.chat_template_kwargs = { enable_thinking: false };
+		body.extra_body = {
+			chat_template_kwargs: { enable_thinking: false },
+		};
+	}
 	const response = await (input.fetchImpl ?? fetch)(
 		buildOpenAICompatibleUrl(baseUrl, "/v1/chat/completions"),
 		{
 			method: "POST",
 			headers,
-			body: JSON.stringify({
-				model,
-				messages: input.messages,
-				temperature: input.temperature ?? 0.2,
-				max_tokens: input.maxTokens ?? resolved.limits.maxTokens ?? 1800,
-				chat_template_kwargs: { enable_thinking: false },
-				extra_body: { chat_template_kwargs: { enable_thinking: false } },
-			}),
+			body: JSON.stringify(body),
 			signal: AbortSignal.timeout(config.requestTimeoutMs),
 		},
 	);
 	if (!response.ok) {
-		throw new Error(`Deep Research model ${input.role} failed: ${response.status}`);
+		throw new Error(
+			`Deep Research model ${input.role} failed: ${response.status}`,
+		);
 	}
 	const json = await response.json();
 	const content = String(json?.choices?.[0]?.message?.content ?? "").trim();
@@ -147,7 +163,9 @@ async function resolveModelCredentials(modelId: string): Promise<{
 		};
 	}
 	if (modelId.startsWith("provider:")) {
-		const provider = await getProviderWithSecrets(modelId.slice("provider:".length));
+		const provider = await getProviderWithSecrets(
+			modelId.slice("provider:".length),
+		);
 		if (!provider) return { baseUrl: "", modelName: "", apiKey: "" };
 		return {
 			baseUrl: provider.baseUrl,
@@ -175,5 +193,7 @@ function mapUsage(value: unknown): ResearchProviderUsageSnapshot | null {
 }
 
 function readNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
 }

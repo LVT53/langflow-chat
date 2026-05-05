@@ -4,6 +4,7 @@
 		ChatMessage,
 		ContextDebugState,
 		DeepResearchJob,
+		DeepResearchReportIntent,
 		DocumentWorkspaceItem,
 		FileProductionJob,
 		TaskSteeringPayload
@@ -45,7 +46,11 @@
 		onRetryFileProductionJob?: (jobId: string) => void | Promise<void>;
 		onCancelFileProductionJob?: (jobId: string) => void | Promise<void>;
 		onCancelDeepResearchJob?: (jobId: string) => void | Promise<void>;
-		onEditDeepResearchPlan?: (jobId: string, instructions: string) => void | Promise<void>;
+		onEditDeepResearchPlan?: (
+			jobId: string,
+			instructions: string,
+			reportIntent?: DeepResearchReportIntent
+		) => void | Promise<void>;
 		onApproveDeepResearchPlan?: (jobId: string) => void | Promise<void>;
 		onDiscussDeepResearchReport?: (jobId: string) => void | Promise<void>;
 		onResearchFurtherFromDeepResearchReport?: (jobId: string) => void | Promise<void>;

@@ -10,6 +10,7 @@ import type {
 import { assessResearchCoverage } from "./coverage";
 import { runPublicWebDiscoveryPass } from "./discovery";
 import {
+	completeDeepResearchJobWithEvidenceLimitationMemo,
 	completeDeepResearchJobWithAuditedReport,
 	listConversationDeepResearchJobs,
 } from "./index";
@@ -36,6 +37,12 @@ import {
 	reviewSourceWithLlm,
 } from "./llm-steps";
 import {
+	completeResearchPassCheckpoint,
+	resolveResearchCoverageGaps,
+	saveCoverageGapsForPass,
+	upsertResearchPassCheckpoint,
+} from "./pass-state";
+import {
 	claimResearchTasks,
 	completeResearchTask,
 	createResearchTasksFromCoverageGaps,
@@ -44,6 +51,8 @@ import {
 	recordResearchTaskFailure,
 } from "./tasks";
 import { saveResearchTimelineEvent } from "./timeline";
+import type { ResearchCoverageAssessment, CoverageGap } from "./coverage";
+import type { DeepResearchPassDecision } from "$lib/types";
 
 export type RunDeepResearchWorkflowStepInput = {
 	userId: string;
@@ -55,7 +64,6 @@ export type DeepResearchWorkflowOutcome =
 	| "discovery_completed"
 	| "report_completed"
 	| "coverage_continuation_created"
-	| "coverage_failed"
 	| "not_eligible";
 
 export type RunDeepResearchWorkflowStepResult = {
@@ -83,6 +91,7 @@ export type DeepResearchWorkflowDependencies = {
 	};
 	reportCompletion?: {
 		completeDeepResearchJobWithAuditedReport: typeof completeDeepResearchJobWithAuditedReport;
+		completeDeepResearchJobWithEvidenceLimitationMemo?: typeof completeDeepResearchJobWithEvidenceLimitationMemo;
 	};
 	tasks?: {
 		createResearchTasksFromCoverageGaps?: typeof createResearchTasksFromCoverageGaps;
@@ -266,6 +275,17 @@ async function runResearchTasksStep(
 		)
 		.map(formatResearchTaskLimitation);
 
+	await persistResearchTaskPassDecision({
+		jobRow,
+		passNumber,
+		completedPassTasks,
+		completedTasks,
+		taskLimitations,
+		reviewedSources,
+		sources,
+		now,
+	});
+
 	await saveResearchTimelineEvent({
 		jobId: jobRow.id,
 		conversationId: jobRow.conversationId,
@@ -412,6 +432,8 @@ async function runSourceReviewStep(
 										rejectedAt: now,
 										rejectedReason: notes.rejectedReason,
 										relevanceScore: notes.relevanceScore,
+										topicRelevant: notes.topicRelevant,
+										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
 										extractedClaims: notes.extractedClaims,
 										openedContentLength: notes.openedContentLength,
@@ -423,6 +445,8 @@ async function runSourceReviewStep(
 										reviewedNote:
 											notes.keyFindings[0] ?? notes.summary ?? notes.extractedText,
 										relevanceScore: notes.relevanceScore,
+										topicRelevant: notes.topicRelevant,
+										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
 										extractedClaims: notes.extractedClaims,
 										openedContentLength: notes.openedContentLength,
@@ -527,8 +551,26 @@ async function runSourceReviewStep(
 		occurredAt: now.toISOString(),
 	});
 
+	const passDecisionState = await persistSourceReviewPassDecision({
+		jobRow,
+		passNumber: 1,
+		reviewedSources,
+		sources,
+		coverageAssessment,
+		now,
+	});
+
 	if (coverageAssessment.status !== "sufficient") {
 		if (coverageAssessment.canContinue) {
+			await upsertResearchPassCheckpoint({
+				userId: jobRow.userId,
+				jobId: jobRow.id,
+				conversationId: jobRow.conversationId,
+				passNumber: 2,
+				searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+				reviewedSourceIds: reviewedSources.map((source) => source.id),
+				now,
+			});
 			await (
 				dependencies.tasks?.createResearchTasksFromCoverageGaps ??
 				createResearchTasksFromCoverageGaps
@@ -536,15 +578,12 @@ async function runSourceReviewStep(
 				userId: jobRow.userId,
 				jobId: jobRow.id,
 				conversationId: jobRow.conversationId,
-				passNumber: 1,
-				gaps: coverageAssessment.coverageGaps.map((gap, index) => ({
-					id: `coverage-gap-${index + 1}`,
+				passNumber: 2,
+				gaps: passDecisionState.gaps.map((gap) => ({
+					id: gap.id,
 					keyQuestion: gap.keyQuestion,
 					summary: gap.recommendedNextAction,
-					severity:
-						gap.reason === "insufficient_reviewed_sources"
-							? "critical"
-							: "important",
+					severity: gap.severity,
 				})),
 				now,
 			});
@@ -577,14 +616,18 @@ async function runSourceReviewStep(
 				: null;
 		}
 		if (reviewedSources.length === 0) {
-			return failCoverageExhaustedWithoutEvidence({
+			return completeCoverageExhaustedWithEvidenceLimitationMemo({
 				jobRow,
 				now,
+				limitations: coverageAssessment.reportLimitations.map(
+					(limitation) => limitation.limitation,
+				),
 				sourceCounts: {
 					discovered: sources.length,
 					reviewed: 0,
 					cited: sources.filter((source) => source.citedAt).length,
 				},
+				dependencies,
 			});
 		}
 
@@ -668,14 +711,16 @@ async function completeSourceReviewReport(input: {
 	};
 }
 
-async function failCoverageExhaustedWithoutEvidence(input: {
+async function completeCoverageExhaustedWithEvidenceLimitationMemo(input: {
 	jobRow: typeof deepResearchJobs.$inferSelect;
 	now: Date;
+	limitations: string[];
 	sourceCounts: {
 		discovered: number;
 		reviewed: number;
 		cited: number;
 	};
+	dependencies: DeepResearchWorkflowDependencies;
 }): Promise<RunDeepResearchWorkflowStepResult> {
 	const warning =
 		"Depth budget exhausted before any reviewed evidence was available; no useful Research Report can be produced.";
@@ -698,30 +743,258 @@ async function failCoverageExhaustedWithoutEvidence(input: {
 		summary: warning,
 	});
 
-	await db
-		.update(deepResearchJobs)
-		.set({
-			status: "failed",
-			stage: "coverage_exhausted_failed",
-			updatedAt: input.now,
-		})
-		.where(
-			and(
-				eq(deepResearchJobs.id, input.jobRow.id),
-				eq(deepResearchJobs.userId, input.jobRow.userId),
-				eq(deepResearchJobs.status, "running"),
-				eq(deepResearchJobs.stage, "source_review"),
-			),
-		);
+	const completedJob = await (
+		input.dependencies.reportCompletion
+			?.completeDeepResearchJobWithEvidenceLimitationMemo ??
+		completeDeepResearchJobWithEvidenceLimitationMemo
+	)({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		limitations: input.limitations.length > 0 ? input.limitations : [warning],
+		now: input.now,
+	});
+	if (!completedJob) return null;
+	return { job: completedJob, advanced: true, outcome: "report_completed" };
+}
 
-	const reloaded = await reloadWorkflowJob(
-		input.jobRow.userId,
-		input.jobRow.conversationId,
-		input.jobRow.id,
-	);
-	return reloaded
-		? { job: reloaded, advanced: true, outcome: "coverage_failed" }
-		: null;
+async function persistSourceReviewPassDecision(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	passNumber: number;
+	reviewedSources: DeepResearchSource[];
+	sources: DeepResearchSource[];
+	coverageAssessment: ResearchCoverageAssessment;
+	now: Date;
+}) {
+	const checkpoint = await upsertResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: input.passNumber,
+		searchIntent: "Initial approved-plan source review",
+		reviewedSourceIds: input.reviewedSources.map((source) => source.id),
+		coverageResult: {
+			status: input.coverageAssessment.status,
+			canContinue: input.coverageAssessment.canContinue,
+			reviewedSourceCount: input.reviewedSources.length,
+			reportLimitationCount: input.coverageAssessment.reportLimitations.length,
+		},
+		now: input.now,
+	});
+	const persistedGaps = await saveCoverageGapsForPass({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passCheckpointId: checkpoint.id,
+		gaps: input.coverageAssessment.coverageGaps.map((gap) => ({
+			keyQuestion: gap.keyQuestion,
+			reason: gap.reason,
+			reviewedSourceCount: gap.reviewedSourceCount,
+			severity: coverageGapSeverity(gap),
+			recommendedNextAction: gap.recommendedNextAction,
+			detail: gap.detail,
+		})),
+		now: input.now,
+	});
+	const nextDecision = sourceReviewNextDecision({
+		coverageAssessment: input.coverageAssessment,
+		reviewedSources: input.reviewedSources,
+	});
+	const decisionSummary = sourceReviewDecisionSummary({
+		nextDecision,
+		gapCount: persistedGaps.length,
+		limitationCount: input.coverageAssessment.reportLimitations.length,
+	});
+	await completeResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		checkpointId: checkpoint.id,
+		coverageGapIds: persistedGaps.map((gap) => gap.id),
+		nextDecision,
+		decisionSummary,
+		now: input.now,
+	});
+	await saveResearchPassDecisionTimeline({
+		jobRow: input.jobRow,
+		stage: "coverage_assessment",
+		passNumber: input.passNumber,
+		nextDecision,
+		decisionSummary,
+		sourceCounts: sourceCountsFromResearchSources(input.sources),
+		now: input.now,
+	});
+
+	return { checkpoint, gaps: persistedGaps };
+}
+
+async function persistResearchTaskPassDecision(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	passNumber: number;
+	completedPassTasks: DeepResearchTask[];
+	completedTasks: DeepResearchTask[];
+	taskLimitations: string[];
+	reviewedSources: DeepResearchSource[];
+	sources: DeepResearchSource[];
+	now: Date;
+}) {
+	const checkpoint = await upsertResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: input.passNumber,
+		searchIntent:
+			input.passNumber === 1
+				? "Targeted follow-up for Coverage Gaps"
+				: `Targeted follow-up for pass ${input.passNumber - 1} Coverage Gaps`,
+		reviewedSourceIds: input.reviewedSources.map((source) => source.id),
+		coverageResult: {
+			status: "task_pass_completed",
+			completedTaskCount: input.completedTasks.length,
+			limitedTaskCount: input.taskLimitations.length,
+		},
+		now: input.now,
+	});
+	const completedGapIds = input.completedTasks
+		.map((task) => task.coverageGapId)
+		.filter((gapId) => gapId !== null && gapId !== undefined);
+	if (completedGapIds.length > 0) {
+		await resolveResearchCoverageGaps({
+			userId: input.jobRow.userId,
+			gapIds: completedGapIds,
+			lifecycleState: "resolved",
+			resolutionSummary: "Resolved by completed targeted Research Task output.",
+			resolvedByEvidence: {
+				taskIds: input.completedTasks.map((task) => task.id),
+				sourceIds: [
+					...new Set(
+						input.completedTasks.flatMap((task) => task.output?.sourceIds ?? []),
+					),
+				],
+			},
+			now: input.now,
+		});
+	}
+	const inheritedGapIds = input.completedPassTasks
+		.filter(
+			(task) =>
+				task.required &&
+				(task.status === "skipped" ||
+					(task.status === "failed" && !task.critical)) &&
+				task.coverageGapId,
+		)
+		.map((task) => task.coverageGapId as string);
+	if (inheritedGapIds.length > 0) {
+		await resolveResearchCoverageGaps({
+			userId: input.jobRow.userId,
+			gapIds: inheritedGapIds,
+			lifecycleState: "inherited",
+			resolutionSummary:
+				"Inherited into Report Limitations after targeted Research Task pass.",
+			resolvedByLimitations: {
+				limitations: input.taskLimitations,
+			},
+			now: input.now,
+		});
+	}
+	const decisionSummary = `Synthesize report from pass ${input.passNumber} after ${input.completedTasks.length} completed task${input.completedTasks.length === 1 ? "" : "s"}.`;
+	await completeResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		checkpointId: checkpoint.id,
+		coverageGapIds: input.completedPassTasks
+			.map((task) => task.coverageGapId)
+			.filter((gapId) => gapId !== null && gapId !== undefined),
+		nextDecision: "synthesize_report",
+		decisionSummary,
+		now: input.now,
+	});
+	await saveResearchPassDecisionTimeline({
+		jobRow: input.jobRow,
+		stage: "research_tasks",
+		passNumber: input.passNumber,
+		nextDecision: "synthesize_report",
+		decisionSummary,
+		sourceCounts: sourceCountsFromResearchSources(input.sources),
+		now: input.now,
+	});
+}
+
+async function saveResearchPassDecisionTimeline(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	stage: "coverage_assessment" | "research_tasks";
+	passNumber: number;
+	nextDecision: DeepResearchPassDecision;
+	decisionSummary: string;
+	sourceCounts: {
+		discovered: number;
+		reviewed: number;
+		cited: number;
+	};
+	now: Date;
+}) {
+	await saveResearchTimelineEvent({
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		userId: input.jobRow.userId,
+		taskId: null,
+		stage: input.stage,
+		kind: "pass_decision",
+		occurredAt: input.now.toISOString(),
+		messageKey: "deepResearch.timeline.passDecision",
+		messageParams: {
+			passNumber: input.passNumber,
+			nextDecision: input.nextDecision,
+		},
+		sourceCounts: input.sourceCounts,
+		assumptions: [],
+		warnings: [],
+		summary: input.decisionSummary,
+	});
+}
+
+function sourceReviewNextDecision(input: {
+	coverageAssessment: ResearchCoverageAssessment;
+	reviewedSources: DeepResearchSource[];
+}): DeepResearchPassDecision {
+	if (
+		input.coverageAssessment.status === "insufficient" &&
+		input.coverageAssessment.canContinue
+	) {
+		return "continue_research";
+	}
+	if (
+		input.coverageAssessment.status === "insufficient" &&
+		input.reviewedSources.length === 0
+	) {
+		return "publish_evidence_limitation_memo";
+	}
+	return "synthesize_report";
+}
+
+function sourceReviewDecisionSummary(input: {
+	nextDecision: DeepResearchPassDecision;
+	gapCount: number;
+	limitationCount: number;
+}): string {
+	if (input.nextDecision === "continue_research") {
+		return `Continue with targeted follow-up work for ${input.gapCount} unresolved Coverage Gap${input.gapCount === 1 ? "" : "s"}.`;
+	}
+	if (input.nextDecision === "publish_evidence_limitation_memo") {
+		return `Publish an Evidence Limitation Memo with ${input.limitationCount} limitation${input.limitationCount === 1 ? "" : "s"}.`;
+	}
+	return `Synthesize report after source review with ${input.limitationCount} limitation${input.limitationCount === 1 ? "" : "s"}.`;
+}
+
+function coverageGapSeverity(gap: CoverageGap) {
+	if (gap.reason === "insufficient_reviewed_sources") return "critical";
+	if (gap.reason === "low_source_quality") return "important";
+	if (gap.reason === "unresolved_conflict") return "critical";
+	return "important";
+}
+
+function sourceCountsFromResearchSources(sources: DeepResearchSource[]) {
+	return {
+		discovered: sources.length,
+		reviewed: sources.filter((source) => source.reviewedAt).length,
+		cited: sources.filter((source) => source.citedAt).length,
+	};
 }
 
 function buildDefaultSourceReviewer(input: {
@@ -964,21 +1237,23 @@ function mapReviewedSourceForCoverage(
 					? [source.reviewedNote]
 					: [],
 		qualityScore: source.relevanceScore ?? 80,
-		topicRelevant: isSourceTopicRelevantToPlan({
-			planGoal: plan.goal,
-			keyQuestions: plan.keyQuestions,
-			source: {
-				title: source.title ?? source.url,
-				snippet: source.snippet,
-				sourceText: [
-					source.sourceText,
-					source.reviewedNote,
-					...(source.extractedClaims ?? []),
-				]
-					.filter(Boolean)
-					.join(" "),
-			},
-		}),
+		topicRelevant:
+			source.topicRelevant ??
+			isSourceTopicRelevantToPlan({
+				planGoal: plan.goal,
+				keyQuestions: plan.keyQuestions,
+				source: {
+					title: source.title ?? source.url,
+					snippet: source.snippet,
+					sourceText: [
+						source.sourceText,
+						source.reviewedNote,
+						...(source.extractedClaims ?? []),
+					]
+						.filter(Boolean)
+						.join(" "),
+				},
+			}),
 	};
 }
 
@@ -1010,6 +1285,8 @@ function mapReviewedSourceForSynthesis(
 					],
 		extractedText: source.reviewedNote ?? null,
 		relevanceScore: source.relevanceScore ?? 80,
+		topicRelevant: source.topicRelevant ?? true,
+		topicRelevanceReason: source.topicRelevanceReason ?? null,
 		supportedKeyQuestions: source.supportedKeyQuestions ?? [],
 		extractedClaims: source.extractedClaims ?? [],
 		rejectedReason: source.rejectedReason ?? null,

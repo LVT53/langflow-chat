@@ -33,12 +33,49 @@ export type ResearchReportDraft = {
 	markdown: string;
 };
 
+export type EvidenceLimitationMemoRecoveryActionKind =
+	| "revise_plan"
+	| "add_sources"
+	| "choose_deeper_depth"
+	| "targeted_follow_up";
+
+export type EvidenceLimitationMemoRecoveryAction = {
+	kind: EvidenceLimitationMemoRecoveryActionKind;
+	label: string;
+	description: string;
+};
+
+export type EvidenceLimitationMemoReviewedScope = {
+	discoveredCount: number;
+	reviewedCount: number;
+	topicRelevantCount: number;
+	rejectedOrOffTopicCount: number;
+};
+
+export type EvidenceLimitationMemoDraft = {
+	jobId: string;
+	title: string;
+	reviewedScope: EvidenceLimitationMemoReviewedScope;
+	limitations: string[];
+	nextResearchDirection: string;
+	recoveryActions: EvidenceLimitationMemoRecoveryAction[];
+	markdown: string;
+};
+
 export type WriteResearchReportInput = {
 	jobId: string;
 	plan: ResearchPlan;
 	synthesisNotes: SynthesisNotes;
 	sources: ResearchReportSource[];
 	limitations?: string[];
+};
+
+export type WriteEvidenceLimitationMemoInput = {
+	jobId: string;
+	plan: ResearchPlan;
+	reviewedScope: EvidenceLimitationMemoReviewedScope;
+	limitations: string[];
+	nextResearchDirection?: string | null;
 };
 
 type ReportSectionKind = "methodology" | "comparison" | "recommendations";
@@ -144,6 +181,102 @@ const reportLabels: Record<
 	},
 };
 
+const evidenceLimitationMemoLabels: Record<
+	ResearchLanguage,
+	{
+		titlePrefix: string;
+		reviewedScope: string;
+		discoveredSources: string;
+		reviewedSources: string;
+		topicRelevantReviewedSources: string;
+		rejectedOrOffTopicSources: string;
+		groundedLimitationReasons: string;
+		nextResearchDirection: string;
+		recoveryActions: string;
+		defaultNextResearchDirection: string;
+		emptyLimitation: string;
+		actions: Record<
+			EvidenceLimitationMemoRecoveryActionKind,
+			{ label: string; description: string }
+		>;
+	}
+> = {
+	en: {
+		titlePrefix: "Evidence Limitation Memo",
+		reviewedScope: "Reviewed Scope",
+		discoveredSources: "Discovered sources",
+		reviewedSources: "Reviewed sources",
+		topicRelevantReviewedSources: "Topic-relevant reviewed sources",
+		rejectedOrOffTopicSources: "Rejected or off-topic sources",
+		groundedLimitationReasons: "Grounded Limitation Reasons",
+		nextResearchDirection: "Next Research Direction",
+		recoveryActions: "Memo Recovery Actions",
+		defaultNextResearchDirection:
+			"Revise the Research Plan or add more topic-relevant sources before requesting a report.",
+		emptyLimitation:
+			"The reviewed workspace did not contain enough topic-relevant evidence to support a credible Research Report.",
+		actions: {
+			revise_plan: {
+				label: "Revise plan",
+				description:
+					"Clarify the approved question or scope before running source-heavy research again.",
+			},
+			add_sources: {
+				label: "Add sources",
+				description:
+					"Attach or include stronger primary sources for the approved topic.",
+			},
+			choose_deeper_depth: {
+				label: "Choose deeper depth",
+				description:
+					"Start a new run at a deeper depth only after choosing that depth explicitly.",
+			},
+			targeted_follow_up: {
+				label: "Targeted follow-up",
+				description:
+					"Run focused follow-up research against the limitation or missing key question.",
+			},
+		},
+	},
+	hu: {
+		titlePrefix: "Bizonyítékkorlát-memó",
+		reviewedScope: "Áttekintett hatókör",
+		discoveredSources: "Felfedezett források",
+		reviewedSources: "Áttekintett források",
+		topicRelevantReviewedSources: "Témához illeszkedő áttekintett források",
+		rejectedOrOffTopicSources: "Elutasított vagy témán kívüli források",
+		groundedLimitationReasons: "Megalapozott korlátozási okok",
+		nextResearchDirection: "Következő kutatási irány",
+		recoveryActions: "Memó helyreállítási műveletek",
+		defaultNextResearchDirection:
+			"Módosítsd a kutatási tervet, vagy adj hozzá több témához illeszkedő forrást, mielőtt jelentést kérsz.",
+		emptyLimitation:
+			"Az áttekintett munkaterület nem tartalmazott elég témához illeszkedő bizonyítékot egy hiteles kutatási jelentéshez.",
+		actions: {
+			revise_plan: {
+				label: "Terv módosítása",
+				description:
+					"Pontosítsd a jóváhagyott kérdést vagy hatókört, mielőtt újra forrásigényes kutatás indul.",
+			},
+			add_sources: {
+				label: "Források hozzáadása",
+				description:
+					"Csatolj vagy jelölj ki erősebb elsődleges forrásokat a jóváhagyott témához.",
+			},
+			choose_deeper_depth: {
+				label: "Mélyebb szint választása",
+				description:
+					"Csak akkor induljon mélyebb új futás, ha ezt külön kiválasztod.",
+			},
+			targeted_follow_up: {
+				label: "Célzott utánkutatás",
+				description:
+					"Indíts fókuszált utánkutatást a korlátra vagy a hiányzó kulcskérdésre.",
+			},
+		},
+	},
+};
+
 export function writeResearchReport(
 	input: WriteResearchReportInput,
 ): ResearchReportDraft {
@@ -194,6 +327,41 @@ export function writeResearchReport(
 	};
 }
 
+export function writeEvidenceLimitationMemo(
+	input: WriteEvidenceLimitationMemoInput,
+): EvidenceLimitationMemoDraft {
+	const researchLanguage = input.plan.researchLanguage ?? "en";
+	const labels = evidenceLimitationMemoLabels[researchLanguage];
+	const title = `${labels.titlePrefix}: ${shortenTitleSubject(input.plan.goal)}`;
+	const limitations = input.limitations.map(normalizeText).filter(Boolean);
+	const visibleLimitations =
+		limitations.length > 0 ? limitations : [labels.emptyLimitation];
+	const nextResearchDirection =
+		normalizeText(input.nextResearchDirection ?? "") ||
+		labels.defaultNextResearchDirection;
+	const recoveryActions = buildEvidenceLimitationMemoRecoveryActions(
+		researchLanguage,
+	);
+	const markdown = renderEvidenceLimitationMemoMarkdown({
+		title,
+		reviewedScope: input.reviewedScope,
+		limitations: visibleLimitations,
+		nextResearchDirection,
+		recoveryActions,
+		researchLanguage,
+	});
+
+	return {
+		jobId: input.jobId,
+		title,
+		reviewedScope: input.reviewedScope,
+		limitations: visibleLimitations,
+		nextResearchDirection,
+		recoveryActions,
+		markdown,
+	};
+}
+
 export function selectResearchReportFindings(
 	synthesisNotes: SynthesisNotes,
 ): SynthesisFinding[] {
@@ -217,6 +385,55 @@ export function selectResearchReportFindings(
 	}
 
 	return findings;
+}
+
+function buildEvidenceLimitationMemoRecoveryActions(
+	researchLanguage: ResearchLanguage,
+): EvidenceLimitationMemoRecoveryAction[] {
+	const labels = evidenceLimitationMemoLabels[researchLanguage].actions;
+	return (
+		[
+			"revise_plan",
+			"add_sources",
+			"choose_deeper_depth",
+			"targeted_follow_up",
+		] satisfies EvidenceLimitationMemoRecoveryActionKind[]
+	).map((kind) => ({
+		kind,
+		label: labels[kind].label,
+		description: labels[kind].description,
+	}));
+}
+
+function renderEvidenceLimitationMemoMarkdown(input: {
+	title: string;
+	reviewedScope: EvidenceLimitationMemoReviewedScope;
+	limitations: string[];
+	nextResearchDirection: string;
+	recoveryActions: EvidenceLimitationMemoRecoveryAction[];
+	researchLanguage: ResearchLanguage;
+}): string {
+	const labels = evidenceLimitationMemoLabels[input.researchLanguage];
+	return [
+		`# ${input.title}`,
+		"",
+		`## ${labels.reviewedScope}`,
+		`- ${labels.discoveredSources}: ${input.reviewedScope.discoveredCount}`,
+		`- ${labels.reviewedSources}: ${input.reviewedScope.reviewedCount}`,
+		`- ${labels.topicRelevantReviewedSources}: ${input.reviewedScope.topicRelevantCount}`,
+		`- ${labels.rejectedOrOffTopicSources}: ${input.reviewedScope.rejectedOrOffTopicCount}`,
+		"",
+		`## ${labels.groundedLimitationReasons}`,
+		...input.limitations.map((limitation) => `- ${limitation}`),
+		"",
+		`## ${labels.nextResearchDirection}`,
+		input.nextResearchDirection,
+		"",
+		`## ${labels.recoveryActions}`,
+		...input.recoveryActions.map(
+			(action) => `- **${action.label}**: ${action.description}`,
+		),
+	].join("\n");
 }
 
 function buildCitedSources(

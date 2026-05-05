@@ -682,6 +682,7 @@ describe('deep research job shell service', () => {
 			userId: 'user-1',
 			jobId: created.id,
 			editInstruction: 'Focus more on practical startup compliance risks and exclude policy blogs.',
+			reportIntent: 'recommendation',
 			now: new Date('2026-05-05T10:05:00.000Z'),
 		});
 		const [reloaded] = await listConversationDeepResearchJobs('user-1', 'conv-1');
@@ -693,8 +694,12 @@ describe('deep research job shell service', () => {
 			currentPlan: {
 				version: 2,
 				status: 'awaiting_approval',
+				rawPlan: {
+					reportIntent: 'recommendation',
+				},
 			},
 		});
+		expect(edited.currentPlan?.renderedPlan).toContain('Report intent: Recommendation');
 		expect(edited.currentPlan?.renderedPlan).toContain(
 			'Focus more on practical startup compliance risks and exclude policy blogs.'
 		);

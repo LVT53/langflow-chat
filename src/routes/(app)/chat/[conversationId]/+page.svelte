@@ -51,6 +51,7 @@ import type {
 	ContextSourcesState,
 	ConversationContextStatus,
 	DeepResearchJob,
+	DeepResearchReportIntent,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 	TaskState,
@@ -1111,9 +1112,13 @@ async function handleCancelDeepResearchJob(jobId: string) {
 	}
 }
 
-async function handleEditDeepResearchPlan(jobId: string, instructions: string) {
+async function handleEditDeepResearchPlan(
+	jobId: string,
+	instructions: string,
+	reportIntent?: DeepResearchReportIntent,
+) {
 	try {
-		const job = await editDeepResearchPlanRequest(jobId, instructions);
+		const job = await editDeepResearchPlanRequest(jobId, instructions, reportIntent);
 		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
 	} catch (err) {
 		sendError = err instanceof Error ? err.message : "Failed to edit Research Plan";

@@ -5,6 +5,7 @@
 		DeepResearchDepth,
 		DeepResearchJob,
 		DeepResearchJobStatus,
+		DeepResearchReportIntent,
 		DeepResearchSourceCounts,
 		DeepResearchTimelineEvent,
 		DeepResearchPlanSummary,
@@ -44,7 +45,13 @@
 	}: {
 		job: DeepResearchJob;
 		onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
-		onEdit?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
+		onEdit?:
+			| ((
+					jobId: string,
+					instructions: string,
+					reportIntent?: DeepResearchReportIntent
+				) => void | Promise<void>)
+			| undefined;
 		onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
 		onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
@@ -54,6 +61,7 @@
 
 	let isEditingPlan = $state(false);
 	let planEditInstructions = $state('');
+	let selectedPlanReportIntent = $state<DeepResearchReportIntent | ''>('');
 	let planEditPending = $state(false);
 	let planApprovalPending = $state(false);
 	let advancePending = $state(false);
@@ -66,7 +74,16 @@
 	);
 	let canAdvanceResearch = $derived(job.status === 'approved' || job.status === 'running');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
+	let activeReportIntent = $derived(activePlan?.rawPlan?.reportIntent ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
+	let hasReportIntentEdit = $derived(
+		Boolean(selectedPlanReportIntent && selectedPlanReportIntent !== activeReportIntent)
+	);
+	let evidenceLimitationMemo = $derived(job.evidenceLimitationMemo ?? null);
+	let isEvidenceLimitationMemo = $derived(
+		job.status === 'completed' &&
+			(job.stage === 'evidence_limitation_memo_ready' || Boolean(evidenceLimitationMemo))
+	);
 	let reportDocument = $derived(buildReportDocument(job));
 	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
 	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
@@ -97,12 +114,39 @@
 		cancelled: 'deepResearch.status.cancelled',
 	};
 
+	const reportIntentKeys: Record<DeepResearchReportIntent, I18nKey> = {
+		comparison: 'deepResearch.reportIntent.comparison',
+		recommendation: 'deepResearch.reportIntent.recommendation',
+		investigation: 'deepResearch.reportIntent.investigation',
+		market_scan: 'deepResearch.reportIntent.marketScan',
+		product_scan: 'deepResearch.reportIntent.productScan',
+		limitation_focused: 'deepResearch.reportIntent.limitationFocused',
+	};
+
+	const reportIntentOptions = [
+		'comparison',
+		'recommendation',
+		'investigation',
+		'market_scan',
+		'product_scan',
+		'limitation_focused',
+	] satisfies DeepResearchReportIntent[];
+
+	function statusLabelKey(job: DeepResearchJob): I18nKey {
+		if (isEvidenceLimitationMemo) return 'deepResearch.status.insufficientEvidence';
+		return statusKeys[job.status];
+	}
+
 	function sourceCountLabels(sourceCounts: DeepResearchSourceCounts) {
 		return [
 			$t('deepResearch.timeline.discovered', { count: sourceCounts.discovered }),
 			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
 			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
 		];
+	}
+
+	function formatReportIntent(intent: DeepResearchReportIntent): string {
+		return $t(reportIntentKeys[intent]);
 	}
 
 	function isInternalApprovalConstraint(value: string): boolean {
@@ -251,6 +295,7 @@
 
 	function buildReportDocument(job: DeepResearchJob): DocumentWorkspaceItem | null {
 		if (job.status !== 'completed' || !job.reportArtifactId) return null;
+		if (job.stage === 'evidence_limitation_memo_ready' || job.evidenceLimitationMemo) return null;
 		const filename = buildReportFilename(job.title);
 		return {
 			id: `artifact:${job.reportArtifactId}`,
@@ -310,6 +355,7 @@
 
 	function editPlan() {
 		if (!canApprovePlan || !onEdit) return;
+		selectedPlanReportIntent = activeReportIntent ?? '';
 		isEditingPlan = true;
 		planEditError = null;
 	}
@@ -318,13 +364,19 @@
 		event.preventDefault();
 		if (!canApprovePlan || !onEdit || planEditPending || planApprovalPending) return;
 		const trimmedInstructions = planEditInstructions.trim();
-		if (!trimmedInstructions) return;
+		const reportIntent = hasReportIntentEdit ? selectedPlanReportIntent : undefined;
+		if (!trimmedInstructions && !reportIntent) return;
 
 		planEditPending = true;
 		planEditError = null;
 		try {
-			await onEdit(job.id, trimmedInstructions);
+			if (reportIntent) {
+				await onEdit(job.id, trimmedInstructions, reportIntent);
+			} else {
+				await onEdit(job.id, trimmedInstructions);
+			}
 			planEditInstructions = '';
+			selectedPlanReportIntent = '';
 			isEditingPlan = false;
 		} catch (err) {
 			planEditError = err instanceof Error ? err.message : $t('deepResearch.editPlanFailed');
@@ -349,7 +401,7 @@
 	<div class="research-card__meta">
 		<span class={`research-card__status research-card__status--${job.status}`}>
 			<span class="research-card__status-dot" aria-hidden="true"></span>
-			{$t(statusKeys[job.status])}
+			{$t(statusLabelKey(job))}
 		</span>
 		{#if job.status === 'completed' && costLabel}
 			<span class="research-card__cost">{costLabel}</span>
@@ -382,6 +434,13 @@
 				</p>
 			{/if}
 
+			{#if activeReportIntent}
+				<p class="research-card__intent">
+					<strong>{$t('deepResearch.reportIntentLabel')}:</strong>
+					{formatReportIntent(activeReportIntent)}
+				</p>
+			{/if}
+
 			{#if visiblePlan}
 				<div class="research-card__plan-text">
 					{#each visiblePlan.sections as section}
@@ -399,6 +458,21 @@
 
 			{#if isEditingPlan}
 				<form class="research-card__edit-form" onsubmit={submitPlanEdit}>
+					{#if activeReportIntent}
+						<label class="research-card__edit-label" for={`${job.id}-plan-report-intent`}>
+							{$t('deepResearch.reportIntentLabel')}
+						</label>
+						<select
+							id={`${job.id}-plan-report-intent`}
+							class="research-card__edit-select"
+							bind:value={selectedPlanReportIntent}
+							disabled={planEditPending}
+						>
+							{#each reportIntentOptions as intent}
+								<option value={intent}>{formatReportIntent(intent)}</option>
+							{/each}
+						</select>
+					{/if}
 					<label class="research-card__edit-label" for={`${job.id}-plan-edit`}>
 						{$t('deepResearch.planEditInstructions')}
 					</label>
@@ -416,7 +490,7 @@
 						<button
 							type="submit"
 							class="research-card__action research-card__action--primary"
-							disabled={planEditPending || !planEditInstructions.trim()}
+							disabled={planEditPending || (!planEditInstructions.trim() && !hasReportIntentEdit)}
 						>
 							{planEditPending
 								? $t('deepResearch.submittingPlanEdit')
@@ -429,6 +503,7 @@
 							onclick={() => {
 								isEditingPlan = false;
 								planEditError = null;
+								selectedPlanReportIntent = '';
 							}}
 						>
 							{$t('common.cancel')}
@@ -481,6 +556,50 @@
 					</ul>
 				</div>
 			{/if}
+		</section>
+	{/if}
+
+	{#if isEvidenceLimitationMemo && evidenceLimitationMemo}
+		<section class="research-card__memo" aria-labelledby={`${job.id}-memo-heading`}>
+			<div class="research-card__section-header">
+				<h3 id={`${job.id}-memo-heading`}>{$t('deepResearch.memo.heading')}</h3>
+			</div>
+
+			<div class="research-card__memo-group">
+				<strong>{$t('deepResearch.memo.reviewedScope')}</strong>
+				<div class="research-card__source-counts" aria-label={$t('deepResearch.memo.reviewedScope')}>
+					<span>{$t('deepResearch.timeline.discovered', { count: evidenceLimitationMemo.reviewedScope.discoveredCount })}</span>
+					<span>{$t('deepResearch.timeline.reviewed', { count: evidenceLimitationMemo.reviewedScope.reviewedCount })}</span>
+					<span>{$t('deepResearch.memo.topicRelevant', { count: evidenceLimitationMemo.reviewedScope.topicRelevantCount })}</span>
+					<span>{$t('deepResearch.memo.rejectedOrOffTopic', { count: evidenceLimitationMemo.reviewedScope.rejectedOrOffTopicCount })}</span>
+				</div>
+			</div>
+
+			<div class="research-card__memo-group">
+				<strong>{$t('deepResearch.memo.limitations')}</strong>
+				<ul>
+					{#each evidenceLimitationMemo.limitations as limitation}
+						<li>{limitation}</li>
+					{/each}
+				</ul>
+			</div>
+
+			<div class="research-card__memo-group">
+				<strong>{$t('deepResearch.memo.nextDirection')}</strong>
+				<p>{evidenceLimitationMemo.nextResearchDirection}</p>
+			</div>
+
+			<div class="research-card__memo-group">
+				<strong>{$t('deepResearch.memo.recoveryActions')}</strong>
+				<ul class="research-card__memo-actions">
+					{#each evidenceLimitationMemo.recoveryActions as action}
+						<li>
+							<span>{action.label}</span>
+							<p>{action.description}</p>
+						</li>
+					{/each}
+				</ul>
+			</div>
 		</section>
 	{/if}
 
@@ -763,6 +882,7 @@
 	}
 
 	.research-card__sources,
+	.research-card__memo,
 	.research-card__timeline {
 		display: flex;
 		flex-direction: column;
@@ -864,6 +984,49 @@
 		margin: 0 0 0.35rem;
 		font-size: 0.8rem;
 		color: var(--text-secondary);
+	}
+
+	.research-card__memo-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.8rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
+	}
+
+	.research-card__memo-group strong {
+		font-size: 0.78rem;
+		color: var(--text-primary);
+	}
+
+	.research-card__memo-group p {
+		margin: 0;
+	}
+
+	.research-card__memo-group ul {
+		display: flex;
+		flex-direction: column;
+		gap: 0.32rem;
+		margin: 0;
+		padding-left: 1rem;
+	}
+
+	.research-card__memo-actions {
+		padding-left: 0 !important;
+		list-style: none;
+	}
+
+	.research-card__memo-actions li {
+		border-radius: 7px;
+		background: var(--surface-page);
+		padding: 0.45rem 0.55rem;
+	}
+
+	.research-card__memo-actions span {
+		display: block;
+		font-weight: 600;
+		color: var(--text-primary);
 	}
 
 	.research-card__source-counts {
@@ -996,14 +1159,16 @@
 		color: var(--text-primary);
 	}
 
-	.research-card__context {
+	.research-card__context,
+	.research-card__intent {
 		margin: 0;
 		font-size: 0.82rem;
 		line-height: 1.45;
 		color: var(--text-secondary);
 	}
 
-	.research-card__context strong {
+	.research-card__context strong,
+	.research-card__intent strong {
 		color: var(--text-primary);
 	}
 
@@ -1061,9 +1226,9 @@
 		color: var(--text-primary);
 	}
 
-	.research-card__edit-textarea {
+	.research-card__edit-textarea,
+	.research-card__edit-select {
 		min-height: 5rem;
-		resize: vertical;
 		border: 1px solid var(--border-subtle);
 		border-radius: 7px;
 		background: var(--surface-page);
@@ -1074,7 +1239,16 @@
 		color: var(--text-primary);
 	}
 
-	.research-card__edit-textarea:focus {
+	.research-card__edit-textarea {
+		resize: vertical;
+	}
+
+	.research-card__edit-select {
+		min-height: 2.4rem;
+	}
+
+	.research-card__edit-textarea:focus,
+	.research-card__edit-select:focus {
 		outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
 		outline-offset: 2px;
 	}

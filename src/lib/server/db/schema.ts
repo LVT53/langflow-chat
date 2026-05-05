@@ -222,6 +222,8 @@ export const deepResearchSources = sqliteTable('deep_research_sources', {
   citationNote: text('citation_note'),
   relevanceScore: integer('relevance_score'),
   rejectedReason: text('rejected_reason'),
+  topicRelevant: integer('topic_relevant', { mode: 'boolean' }),
+  topicRelevanceReason: text('topic_relevance_reason'),
   supportedKeyQuestionsJson: text('supported_key_questions_json'),
   extractedClaimsJson: text('extracted_claims_json'),
   openedContentLength: integer('opened_content_length').notNull().default(0),
@@ -289,6 +291,95 @@ export const deepResearchTasks = sqliteTable('deep_research_tasks', {
     table.userId,
     table.jobId,
     table.passNumber
+  ),
+}));
+
+export const deepResearchPassCheckpoints = sqliteTable('deep_research_pass_checkpoints', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passNumber: integer('pass_number').notNull(),
+  lifecycleState: text('lifecycle_state').notNull().default('running'),
+  searchIntent: text('search_intent').notNull(),
+  reviewedSourceIdsJson: text('reviewed_source_ids_json').notNull().default('[]'),
+  coverageResultJson: text('coverage_result_json'),
+  coverageGapIdsJson: text('coverage_gap_ids_json').notNull().default('[]'),
+  usageSummaryJson: text('usage_summary_json'),
+  nextDecision: text('next_decision'),
+  decisionSummary: text('decision_summary'),
+  terminalDecision: integer('terminal_decision', { mode: 'boolean' }).notNull().default(false),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  userJobPassUniqueIdx: uniqueIndex('deep_research_pass_checkpoints_user_job_pass_idx').on(
+    table.userId,
+    table.jobId,
+    table.passNumber
+  ),
+  jobPassIdx: index('deep_research_pass_checkpoints_job_pass_idx').on(
+    table.jobId,
+    table.passNumber
+  ),
+  userJobDecisionIdx: index('deep_research_pass_checkpoints_user_job_decision_idx').on(
+    table.userId,
+    table.jobId,
+    table.nextDecision
+  ),
+}));
+
+export const deepResearchCoverageGaps = sqliteTable('deep_research_coverage_gaps', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passCheckpointId: text('pass_checkpoint_id')
+    .notNull()
+    .references(() => deepResearchPassCheckpoints.id, { onDelete: 'cascade' }),
+  lifecycleState: text('lifecycle_state').notNull().default('open'),
+  severity: text('severity').notNull(),
+  reason: text('reason').notNull(),
+  keyQuestion: text('key_question'),
+  comparisonAxis: text('comparison_axis'),
+  recommendedNextAction: text('recommended_next_action').notNull(),
+  detail: text('detail'),
+  reviewedSourceCount: integer('reviewed_source_count').notNull().default(0),
+  resolvedByEvidenceJson: text('resolved_by_evidence_json'),
+  resolvedByClaimsJson: text('resolved_by_claims_json'),
+  resolvedByLimitationsJson: text('resolved_by_limitations_json'),
+  resolutionSummary: text('resolution_summary'),
+  inheritedFromGapId: text('inherited_from_gap_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
+}, (table) => ({
+  jobStateIdx: index('deep_research_coverage_gaps_job_state_idx').on(
+    table.jobId,
+    table.lifecycleState,
+    table.createdAt
+  ),
+  checkpointIdx: index('deep_research_coverage_gaps_checkpoint_idx').on(
+    table.passCheckpointId,
+    table.createdAt
+  ),
+  userQuestionIdx: index('deep_research_coverage_gaps_user_question_idx').on(
+    table.userId,
+    table.jobId,
+    table.keyQuestion
   ),
 }));
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResearchPlan } from "./planning";
-import { writeResearchReport } from "./report-writer";
+import { writeEvidenceLimitationMemo, writeResearchReport } from "./report-writer";
 import type { SynthesisNotes } from "./synthesis";
 
 const basePlan: ResearchPlan = {
@@ -67,6 +67,93 @@ const baseSynthesisNotes: SynthesisNotes = {
 };
 
 describe("Deep Research report writer", () => {
+	it("writes an Evidence Limitation Memo with reviewed scope, counts, limitations, and recovery actions", () => {
+		const memo = writeEvidenceLimitationMemo({
+			jobId: "job-weak-evidence",
+			plan: basePlan,
+			reviewedScope: {
+				discoveredCount: 5,
+				reviewedCount: 2,
+				topicRelevantCount: 1,
+				rejectedOrOffTopicCount: 3,
+			},
+			limitations: [
+				"Only one reviewed source matched the approved key questions.",
+				"Two opened sources were rejected as off-topic.",
+			],
+			nextResearchDirection:
+				"Revise the plan toward official enforcement guidance and add primary sources before requesting a report.",
+		});
+
+		expect(memo.title).toBe(
+			"Evidence Limitation Memo: Compare private AI coding assistants for a small engineering team",
+		);
+		expect(memo.markdown).toContain("# Evidence Limitation Memo:");
+		expect(memo.markdown).not.toContain("# Research Report:");
+		expect(memo.markdown).toContain("## Reviewed Scope");
+		expect(memo.markdown).toContain("- Discovered sources: 5");
+		expect(memo.markdown).toContain("- Reviewed sources: 2");
+		expect(memo.markdown).toContain("- Topic-relevant reviewed sources: 1");
+		expect(memo.markdown).toContain("- Rejected or off-topic sources: 3");
+		expect(memo.markdown).toContain("## Grounded Limitation Reasons");
+		expect(memo.markdown).toContain(
+			"- Only one reviewed source matched the approved key questions.",
+		);
+		expect(memo.markdown).toContain("## Next Research Direction");
+		expect(memo.markdown).toContain(
+			"Revise the plan toward official enforcement guidance and add primary sources before requesting a report.",
+		);
+		expect(memo.recoveryActions).toEqual([
+			expect.objectContaining({ kind: "revise_plan" }),
+			expect.objectContaining({ kind: "add_sources" }),
+			expect.objectContaining({ kind: "choose_deeper_depth" }),
+			expect.objectContaining({ kind: "targeted_follow_up" }),
+		]);
+	});
+
+	it("renders Hungarian Evidence Limitation Memo labels and recovery actions", () => {
+		const memo = writeEvidenceLimitationMemo({
+			jobId: "job-hu-weak-evidence",
+			plan: {
+				...basePlan,
+				goal: "Hasonlítsd össze a magyar AI piac friss trendjeit",
+				researchLanguage: "hu",
+			},
+			reviewedScope: {
+				discoveredCount: 4,
+				reviewedCount: 1,
+				topicRelevantCount: 0,
+				rejectedOrOffTopicCount: 2,
+			},
+			limitations: ["Nem volt elég témához illeszkedő forrás."],
+			nextResearchDirection:
+				"Adj hozzá elsődleges magyar piaci forrásokat, majd indíts célzott utánkutatást.",
+		});
+
+		expect(memo.title).toBe(
+			"Bizonyítékkorlát-memó: Hasonlítsd össze a magyar AI piac friss trendjeit",
+		);
+		expect(memo.markdown).toContain("# Bizonyítékkorlát-memó:");
+		expect(memo.markdown).toContain("## Áttekintett hatókör");
+		expect(memo.markdown).toContain("- Felfedezett források: 4");
+		expect(memo.markdown).toContain("- Áttekintett források: 1");
+		expect(memo.markdown).toContain(
+			"- Témához illeszkedő áttekintett források: 0",
+		);
+		expect(memo.markdown).toContain(
+			"- Elutasított vagy témán kívüli források: 2",
+		);
+		expect(memo.markdown).toContain("## Megalapozott korlátozási okok");
+		expect(memo.markdown).toContain("## Következő kutatási irány");
+		expect(memo.markdown).toContain("## Memó helyreállítási műveletek");
+		expect(memo.recoveryActions.map((action) => action.label)).toEqual([
+			"Terv módosítása",
+			"Források hozzáadása",
+			"Mélyebb szint választása",
+			"Célzott utánkutatás",
+		]);
+	});
+
 	it("writes a durable markdown report from supported synthesis notes with citations and source list", () => {
 		const report = writeResearchReport({
 			jobId: "job-1",

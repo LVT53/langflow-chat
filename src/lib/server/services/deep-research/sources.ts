@@ -42,6 +42,8 @@ export type MarkResearchSourceReviewedInput = {
 	reviewedAt?: Date;
 	reviewedNote?: string | null;
 	relevanceScore?: number | null;
+	topicRelevant?: boolean | null;
+	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
 	openedContentLength?: number;
@@ -52,6 +54,8 @@ export type MarkResearchSourceRejectedInput = {
 	sourceId: string;
 	rejectedReason: string;
 	relevanceScore?: number | null;
+	topicRelevant?: boolean | null;
+	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
 	openedContentLength?: number;
@@ -149,6 +153,8 @@ export async function markResearchSourceReviewed(
 			reviewedNote: input.reviewedNote ?? existing.reviewedNote,
 			relevanceScore: normalizeNullableScore(input.relevanceScore),
 			rejectedReason: null,
+			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
+			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
@@ -186,6 +192,8 @@ export async function markResearchSourceRejected(
 			status: "discovered",
 			rejectedReason: input.rejectedReason,
 			relevanceScore: normalizeNullableScore(input.relevanceScore),
+			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
+			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
@@ -260,6 +268,8 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		citationNote: row.citationNote,
 		relevanceScore: row.relevanceScore,
 		rejectedReason: row.rejectedReason,
+		topicRelevant: row.topicRelevant,
+		topicRelevanceReason: row.topicRelevanceReason,
 		supportedKeyQuestions: parseStringArray(row.supportedKeyQuestionsJson),
 		extractedClaims: parseStringArray(row.extractedClaimsJson),
 		openedContentLength: row.openedContentLength,
@@ -293,4 +303,14 @@ function normalizeNullableScore(value: unknown): number | null {
 	const parsed = Number(value);
 	if (!Number.isFinite(parsed)) return null;
 	return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function normalizeNullableBoolean(value: unknown): boolean | null {
+	if (value === undefined || value === null) return null;
+	return Boolean(value);
+}
+
+function normalizeNullableText(value: string | null | undefined): string | null {
+	const normalized = value?.replace(/\s+/g, " ").trim();
+	return normalized ? normalized : null;
 }

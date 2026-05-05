@@ -45,6 +45,8 @@ export type ReviewedResearchSourceNotes = {
 	keyFindings: string[];
 	extractedText: string | null;
 	relevanceScore: number;
+	topicRelevant: boolean;
+	topicRelevanceReason: string | null;
 	supportedKeyQuestions: string[];
 	extractedClaims: string[];
 	rejectedReason: string | null;
@@ -163,6 +165,8 @@ export async function triageAndReviewSources(
 			keyFindings,
 			extractedText,
 			relevanceScore,
+			topicRelevant: topicRelevance.relevant,
+			topicRelevanceReason: buildTopicRelevanceReason(topicRelevance),
 			supportedKeyQuestions,
 			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
 			rejectedReason,
@@ -444,6 +448,14 @@ function defaultRejectedReason(input: {
 		return "Rejected because relevance was below the Deep Research threshold.";
 	}
 	return null;
+}
+
+function buildTopicRelevanceReason(result: TopicRelevanceResult): string | null {
+	if (result.anchors.length === 0) return null;
+	if (result.relevant) {
+		return `Matched topic anchors: ${result.matchedAnchors.join(", ")}.`;
+	}
+	return `Matched ${result.matchedAnchors.length} of ${result.anchors.length} topic anchors: ${result.anchors.join(", ")}.`;
 }
 
 function normalizeText(value: string): string {

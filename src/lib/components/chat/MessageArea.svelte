@@ -5,6 +5,7 @@ import type {
 	ChatMessage,
 	ContextDebugState,
 	DeepResearchJob,
+	DeepResearchReportIntent,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 	TaskSteeringPayload,
@@ -49,7 +50,13 @@ let {
 	onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
 	onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 	onCancelDeepResearchJob?: ((jobId: string) => void | Promise<void>) | undefined;
-	onEditDeepResearchPlan?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
+	onEditDeepResearchPlan?:
+		| ((
+				jobId: string,
+				instructions: string,
+				reportIntent?: DeepResearchReportIntent
+			) => void | Promise<void>)
+		| undefined;
 	onApproveDeepResearchPlan?: ((jobId: string) => void | Promise<void>) | undefined;
 	onDiscussDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
 	onResearchFurtherFromDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;

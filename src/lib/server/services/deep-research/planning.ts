@@ -2,6 +2,14 @@ export type ResearchDepth = "focused" | "standard" | "max";
 
 export type ResearchLanguage = "en" | "hu";
 
+export type ReportIntent =
+	| "comparison"
+	| "recommendation"
+	| "investigation"
+	| "market_scan"
+	| "product_scan"
+	| "limitation_focused";
+
 export type PlanningContextItem = {
 	type: "conversation" | "knowledge" | "attachment" | "report";
 	artifactId?: string;
@@ -21,6 +29,7 @@ export type ResearchPlan = {
 	goal: string;
 	depth: ResearchDepth;
 	researchLanguage?: ResearchLanguage;
+	reportIntent: ReportIntent;
 	researchBudget: ResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {
@@ -95,6 +104,7 @@ export type CreateRevisedResearchPlanDraftInput = {
 	previousPlan: ResearchPlan;
 	previousVersion: number;
 	editInstruction: string;
+	reportIntent?: ReportIntent;
 	selectedDepth: ResearchDepth;
 	researchLanguage: ResearchLanguage;
 	contextDisclosure?: string | null;
@@ -125,6 +135,7 @@ const planLabels: Record<
 		expectedTime: string;
 		sourceReviewCeiling: (count: number) => string;
 		goal: string;
+		reportIntent: string;
 		includedSources: string;
 		keyQuestions: string;
 		expectedReportShape: string;
@@ -137,6 +148,7 @@ const planLabels: Record<
 		expectedTime: "Expected time",
 		sourceReviewCeiling: (count) => `Source review ceiling: up to ${count}`,
 		goal: "Goal",
+		reportIntent: "Report intent",
 		includedSources: "Included sources",
 		keyQuestions: "Key questions",
 		expectedReportShape: "Expected report shape",
@@ -149,6 +161,7 @@ const planLabels: Record<
 		sourceReviewCeiling: (count) =>
 			`Forrás-áttekintési plafon: legfeljebb ${count}`,
 		goal: "Cél",
+		reportIntent: "Jelentési szándék",
 		includedSources: "Bevont források",
 		keyQuestions: "Fő kérdések",
 		expectedReportShape: "Várt jelentésszerkezet",
@@ -226,6 +239,28 @@ const localizedCostWarnings: Record<
 	},
 };
 
+const localizedReportIntentLabels: Record<
+	ResearchLanguage,
+	Record<ReportIntent, string>
+> = {
+	en: {
+		comparison: "Comparison",
+		recommendation: "Recommendation",
+		investigation: "Investigation",
+		market_scan: "Market scan",
+		product_scan: "Product scan",
+		limitation_focused: "Limitation-focused",
+	},
+	hu: {
+		comparison: "Összehasonlítás",
+		recommendation: "Ajánlás",
+		investigation: "Vizsgálat",
+		market_scan: "Piaci áttekintés",
+		product_scan: "Termékáttekintés",
+		limitation_focused: "Korlátokra fókuszáló",
+	},
+};
+
 const depthBudgets: Record<ResearchDepth, ResearchBudget> = {
 	focused: {
 		sourceReviewCeiling: 12,
@@ -265,6 +300,7 @@ export async function createFirstResearchPlanDraft(
 	const plan = {
 		...draftedPlan,
 		researchLanguage: input.researchLanguage,
+		reportIntent: normalizeReportIntent(draftedPlan.reportIntent, input.userRequest),
 	};
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
@@ -319,6 +355,10 @@ export async function createRevisedResearchPlanDraft(
 	const plan = {
 		...draftedPlan,
 		researchLanguage: input.researchLanguage,
+		reportIntent: normalizeReportIntent(
+			input.reportIntent ?? draftedPlan.reportIntent,
+			`${input.previousPlan.goal} ${input.editInstruction}`,
+		),
 	};
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
@@ -356,6 +396,7 @@ function draftDefaultResearchPlan(
 		goal: input.userRequest,
 		depth: input.selectedDepth,
 		researchLanguage: input.researchLanguage,
+		reportIntent: inferReportIntent(input.userRequest),
 		researchBudget,
 		keyQuestions: buildDefaultKeyQuestions(
 			input.userRequest,
@@ -379,6 +420,7 @@ function reviseDefaultResearchPlan(
 	return {
 		...input.previousPlan,
 		depth: input.selectedDepth,
+		reportIntent: input.reportIntent ?? input.previousPlan.reportIntent,
 		researchBudget: depthBudgets[input.selectedDepth],
 		sourceScope: {
 			...input.previousPlan.sourceScope,
@@ -422,6 +464,7 @@ function renderResearchPlan(plan: ResearchPlan): string {
 	);
 	return [
 		`${labels.goal}: ${plan.goal}`,
+		`${labels.reportIntent}: ${localizedReportIntentLabels[researchLanguage][plan.reportIntent]}`,
 		"",
 		`${labels.depth}: ${localizedDepthLabels[researchLanguage][plan.depth]}`,
 		`${labels.expectedTime}: ${effortEstimate.expectedTimeBand}`,
@@ -459,6 +502,48 @@ function renderResearchPlan(plan: ResearchPlan): string {
 				]
 			: []),
 	].join("\n");
+}
+
+function normalizeReportIntent(
+	value: unknown,
+	fallbackText: string,
+): ReportIntent {
+	if (isReportIntent(value)) return value;
+	return inferReportIntent(fallbackText);
+}
+
+function isReportIntent(value: unknown): value is ReportIntent {
+	return (
+		value === "comparison" ||
+		value === "recommendation" ||
+		value === "investigation" ||
+		value === "market_scan" ||
+		value === "product_scan" ||
+		value === "limitation_focused"
+	);
+}
+
+function inferReportIntent(value: string): ReportIntent {
+	const text = value.toLowerCase();
+	if (/\b(compare|comparison|versus|vs\.?|összehasonl|hasonlítsd)\b/u.test(text)) {
+		return "comparison";
+	}
+	if (/\b(recommend|recommendation|choose|best|ajánl|válassz|legjobb)\b/u.test(text)) {
+		return "recommendation";
+	}
+	if (/\b(market|landscape|trend|piac|piaci|trend)\b/u.test(text)) {
+		return "market_scan";
+	}
+	if (
+		/\b(product|tool|vendor|assistant)\b/u.test(text) ||
+		/(termék|eszköz|szállító|asszisztens)/u.test(text)
+	) {
+		return "product_scan";
+	}
+	if (/\b(limitation|constraint|risk|korlát|kockázat)\b/u.test(text)) {
+		return "limitation_focused";
+	}
+	return "investigation";
 }
 
 function buildDefaultKeyQuestions(

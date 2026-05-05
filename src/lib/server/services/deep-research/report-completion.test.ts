@@ -395,15 +395,21 @@ describe("audited Deep Research report completion", () => {
 		expect(reportArtifact?.contentText).not.toContain("## Sources");
 	});
 
-	it("fails without sealing the conversation when no credible supported claims remain", async () => {
+	it("publishes an Evidence Limitation Memo without sealing the conversation when no credible supported claims remain", async () => {
 		const { db } = await import("$lib/server/db");
 		const {
 			approveDeepResearchPlan,
 			completeDeepResearchJobWithAuditedReport,
+			discussDeepResearchReport,
+			listConversationDeepResearchJobs,
+			researchFurtherFromDeepResearchReport,
 			startDeepResearchJobShell,
 		} = await import("./index");
 		const { listResearchSources, saveDiscoveredResearchSource } = await import(
 			"./sources"
+		);
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
 		);
 
 		const created = await startDeepResearchJobShell({
@@ -438,12 +444,15 @@ describe("audited Deep Research report completion", () => {
 			},
 		]);
 
-		const failedCompletion = await completeDeepResearchJobWithAuditedReport({
+		const completedMemo = await completeDeepResearchJobWithAuditedReport({
 			userId: "user-1",
 			jobId: created.id,
 			synthesisNotes,
 			now: new Date("2026-05-05T10:20:00.000Z"),
 		});
+		const memoArtifact = completedMemo?.reportArtifactId
+			? await getArtifactForUser("user-1", completedMemo.reportArtifactId)
+			: null;
 		const [conversation] = await db
 			.select({
 				status: schema.conversations.status,
@@ -451,7 +460,7 @@ describe("audited Deep Research report completion", () => {
 			})
 			.from(schema.conversations)
 			.where(eq(schema.conversations.id, "conv-1"));
-		const reportArtifacts = await db
+		const generatedArtifacts = await db
 			.select({ id: schema.artifacts.id })
 			.from(schema.artifacts)
 			.where(eq(schema.artifacts.type, "generated_output"));
@@ -459,15 +468,51 @@ describe("audited Deep Research report completion", () => {
 			userId: "user-1",
 			jobId: created.id,
 		});
-
-		expect(failedCompletion).toMatchObject({
-			id: created.id,
-			status: "failed",
-			stage: "citation_audit_failed",
-			reportArtifactId: null,
-			completedAt: null,
+		const [listedMemoJob] = await listConversationDeepResearchJobs(
+			"user-1",
+			"conv-1",
+		);
+		const discussResult = await discussDeepResearchReport({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:22:00.000Z"),
 		});
-		expect(failedCompletion?.timeline).toEqual(
+		const researchFurtherResult = await researchFurtherFromDeepResearchReport({
+			userId: "user-1",
+			jobId: created.id,
+			depth: "max",
+			now: new Date("2026-05-05T10:23:00.000Z"),
+		});
+
+		expect(completedMemo).toMatchObject({
+			id: created.id,
+			status: "completed",
+			stage: "evidence_limitation_memo_ready",
+			reportArtifactId: expect.any(String),
+			completedAt: new Date("2026-05-05T10:20:00.000Z").getTime(),
+			evidenceLimitationMemo: {
+				title: "Evidence Limitation Memo: Assess unverified battery recycling claims",
+				reviewedScope: {
+					discoveredCount: 1,
+					reviewedCount: 0,
+					topicRelevantCount: 0,
+					rejectedOrOffTopicCount: 0,
+				},
+				recoveryActions: [
+					expect.objectContaining({ kind: "revise_plan" }),
+					expect.objectContaining({ kind: "add_sources" }),
+					expect.objectContaining({ kind: "choose_deeper_depth" }),
+					expect.objectContaining({ kind: "targeted_follow_up" }),
+				],
+			},
+		});
+		expect(listedMemoJob).toMatchObject({
+			id: created.id,
+			evidenceLimitationMemo: completedMemo?.evidenceLimitationMemo,
+		});
+		expect(discussResult).toBeNull();
+		expect(researchFurtherResult).toBeNull();
+		expect(completedMemo?.timeline).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					stage: "citation_audit",
@@ -480,11 +525,39 @@ describe("audited Deep Research report completion", () => {
 				}),
 			]),
 		);
+		expect(memoArtifact).toMatchObject({
+			id: completedMemo?.reportArtifactId,
+			name: "Evidence Limitation Memo - Assess unverified battery recycling claims.md",
+			type: "generated_output",
+			retrievalClass: "durable",
+			metadata: {
+				deepResearchEvidenceLimitationMemo: true,
+				deepResearchReport: false,
+				deepResearchJobId: created.id,
+				documentRole: "evidence_limitation_memo",
+				memoRecoveryActions: [
+					expect.objectContaining({ kind: "revise_plan" }),
+					expect.objectContaining({ kind: "add_sources" }),
+					expect.objectContaining({ kind: "choose_deeper_depth" }),
+					expect.objectContaining({ kind: "targeted_follow_up" }),
+				],
+			},
+		});
+		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
+		expect(memoArtifact?.contentText).not.toContain("# Research Report:");
+		expect(memoArtifact?.contentText).toContain("## Reviewed Scope");
+		expect(memoArtifact?.contentText).toContain("- Discovered sources: 1");
+		expect(memoArtifact?.contentText).toContain("- Reviewed sources: 0");
+		expect(memoArtifact?.contentText).toContain(
+			"- Topic-relevant reviewed sources: 0",
+		);
+		expect(memoArtifact?.contentText).toContain("## Grounded Limitation Reasons");
+		expect(memoArtifact?.contentText).toContain("## Next Research Direction");
 		expect(conversation).toEqual({
 			status: "open",
 			sealedAt: null,
 		});
-		expect(reportArtifacts).toEqual([]);
+		expect(generatedArtifacts).toEqual([{ id: completedMemo?.reportArtifactId }]);
 		expect(sources).toEqual([
 			expect.objectContaining({
 				id: source.id,

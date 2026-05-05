@@ -103,6 +103,14 @@ export type DeepResearchDepth = "focused" | "standard" | "max";
 
 export type DeepResearchPlanStatus = "awaiting_approval" | "approved";
 
+export type DeepResearchReportIntent =
+	| "comparison"
+	| "recommendation"
+	| "investigation"
+	| "market_scan"
+	| "product_scan"
+	| "limitation_focused";
+
 export interface DeepResearchBudget {
 	sourceReviewCeiling: number;
 	synthesisPassCeiling: number;
@@ -127,6 +135,7 @@ export interface DeepResearchEffortEstimate {
 export interface DeepResearchPlanRaw {
 	goal: string;
 	depth: DeepResearchDepth;
+	reportIntent: DeepResearchReportIntent;
 	researchBudget: DeepResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {
@@ -182,6 +191,8 @@ export interface DeepResearchSource {
 	citationNote?: string | null;
 	relevanceScore?: number | null;
 	rejectedReason?: string | null;
+	topicRelevant?: boolean | null;
+	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
 	openedContentLength?: number;
@@ -238,6 +249,70 @@ export interface DeepResearchTask {
 	skippedAt?: string | null;
 }
 
+export type DeepResearchPassLifecycleState = "running" | "decided";
+
+export type DeepResearchPassDecision =
+	| "continue_research"
+	| "synthesize_report"
+	| "publish_report"
+	| "publish_evidence_limitation_memo";
+
+export type DeepResearchCoverageGapLifecycleState =
+	| "open"
+	| "in_progress"
+	| "resolved"
+	| "inherited";
+
+export type DeepResearchCoverageGapSeverity =
+	| "critical"
+	| "important"
+	| "minor";
+
+export interface DeepResearchPassCheckpoint {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	passNumber: number;
+	lifecycleState: DeepResearchPassLifecycleState;
+	searchIntent: string;
+	reviewedSourceIds: string[];
+	coverageResult?: Record<string, unknown> | null;
+	coverageGapIds: string[];
+	usageSummary?: Record<string, unknown> | null;
+	nextDecision?: DeepResearchPassDecision | null;
+	decisionSummary?: string | null;
+	terminalDecision: boolean;
+	startedAt: string;
+	completedAt?: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface DeepResearchCoverageGap {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	passCheckpointId: string;
+	lifecycleState: DeepResearchCoverageGapLifecycleState;
+	severity: DeepResearchCoverageGapSeverity;
+	reason: string;
+	keyQuestion?: string | null;
+	comparisonAxis?: string | null;
+	recommendedNextAction: string;
+	detail?: string | null;
+	reviewedSourceCount: number;
+	resolvedByEvidence?: Record<string, unknown> | null;
+	resolvedByClaims?: Record<string, unknown> | null;
+	resolvedByLimitations?: Record<string, unknown> | null;
+	resolutionSummary?: string | null;
+	inheritedFromGapId?: string | null;
+	createdAt: string;
+	updatedAt: string;
+	resolvedAt?: string | null;
+}
+
 export interface DeepResearchTimelineEvent {
 	id: string;
 	jobId?: string;
@@ -275,6 +350,31 @@ export interface DeepResearchRuntimeEstimate {
 	actualRuntimeMs?: number;
 }
 
+export type DeepResearchMemoRecoveryActionKind =
+	| "revise_plan"
+	| "add_sources"
+	| "choose_deeper_depth"
+	| "targeted_follow_up";
+
+export interface DeepResearchMemoRecoveryAction {
+	kind: DeepResearchMemoRecoveryActionKind;
+	label: string;
+	description: string;
+}
+
+export interface DeepResearchEvidenceLimitationMemo {
+	title: string;
+	reviewedScope: {
+		discoveredCount: number;
+		reviewedCount: number;
+		topicRelevantCount: number;
+		rejectedOrOffTopicCount: number;
+	};
+	limitations: string[];
+	nextResearchDirection: string;
+	recoveryActions: DeepResearchMemoRecoveryAction[];
+}
+
 export interface DeepResearchJob {
 	id: string;
 	conversationId: string;
@@ -288,8 +388,11 @@ export interface DeepResearchJob {
 	plan?: DeepResearchPlanSummary | null;
 	currentPlan?: DeepResearchPlanSummary | null;
 	timeline?: DeepResearchTimelineEvent[];
+	passCheckpoints?: DeepResearchPassCheckpoint[];
+	coverageGaps?: DeepResearchCoverageGap[];
 	sourceCounts?: DeepResearchSourceCounts;
 	sources?: DeepResearchSource[];
+	evidenceLimitationMemo?: DeepResearchEvidenceLimitationMemo | null;
 	usageSummary?: DeepResearchUsageSummary;
 	runtimeEstimate?: DeepResearchRuntimeEstimate;
 	createdAt: number;

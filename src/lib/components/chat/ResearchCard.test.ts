@@ -60,6 +60,7 @@ describe('ResearchCard', () => {
 					rawPlan: {
 						goal: 'Hasonlítsd össze az akkumulátor-újrahasznosítási szabályokat.',
 						depth: 'standard',
+						reportIntent: 'comparison',
 						researchBudget: {
 							sourceReviewCeiling: 40,
 							synthesisPassCeiling: 2,
@@ -84,6 +85,8 @@ describe('ResearchCard', () => {
 			}),
 		});
 
+		expect(getByText(/Jelentési szándék/)).toBeInTheDocument();
+		expect(getByText('Összehasonlítás')).toBeInTheDocument();
 		expect(getByText('Kulcskérdések')).toBeInTheDocument();
 		expect(getByText('Eredmények')).toBeInTheDocument();
 		expect(getByText('Terv elkészült')).toBeInTheDocument();
@@ -120,6 +123,55 @@ describe('ResearchCard', () => {
 		expect(getByRole('button', { name: 'Approve Research Plan' })).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Edit Research Plan' })).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
+	});
+
+	it('shows Report Intent in the approval view and lets Plan Edit revise it', async () => {
+		const onEdit = vi.fn(async () => {});
+		const { getByRole, getByLabelText, getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				plan: {
+					version: 1,
+					renderedPlan: '',
+					rawPlan: {
+						goal: 'Compare EU and US battery recycling policy.',
+						depth: 'standard',
+						reportIntent: 'comparison',
+						researchBudget: {
+							sourceReviewCeiling: 40,
+							synthesisPassCeiling: 2,
+						},
+						keyQuestions: ['Which rules changed recently?'],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ['Comparison'],
+						constraints: [],
+						deliverables: ['Cited Research Report'],
+					},
+					contextDisclosure: null,
+					effortEstimate: {
+						selectedDepth: 'standard',
+						expectedTimeBand: '10-25 minutes',
+						sourceReviewCeiling: 40,
+						relativeCostWarning:
+							'Moderate relative cost; use for serious multi-source synthesis.',
+					},
+				},
+			}),
+			onEdit,
+		});
+
+		expect(getByText(/Report intent/)).toBeInTheDocument();
+		expect(getByText('Comparison')).toBeInTheDocument();
+
+		await fireEvent.click(getByRole('button', { name: 'Edit Research Plan' }));
+		await fireEvent.change(getByLabelText('Report intent'), {
+			target: { value: 'recommendation' },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Submit Plan Edit' }));
+
+		expect(onEdit).toHaveBeenCalledWith('research-job-1', '', 'recommendation');
 	});
 
 	it('shows a compact Activity Timeline with source counts and warnings', () => {
@@ -630,6 +682,82 @@ describe('ResearchCard', () => {
 
 		expect(onDiscussReport).toHaveBeenCalledWith('research-job-1');
 		expect(onResearchFurther).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('presents completed Evidence Limitation Memos as insufficient evidence instead of failed reports', () => {
+		const { getAllByText, getByText, queryByRole, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'evidence_limitation_memo_ready',
+				reportArtifactId: 'artifact-memo-1',
+				completedAt: Date.now(),
+				sourceCounts: {
+					discovered: 5,
+					reviewed: 2,
+					cited: 0,
+				},
+				evidenceLimitationMemo: {
+					title: 'Evidence Limitation Memo: Battery recycling claims',
+					reviewedScope: {
+						discoveredCount: 5,
+						reviewedCount: 2,
+						topicRelevantCount: 1,
+						rejectedOrOffTopicCount: 3,
+					},
+					limitations: [
+						'Only one reviewed source matched the approved key questions.',
+						'Two opened sources were rejected as off-topic.',
+					],
+					nextResearchDirection:
+						'Revise the plan toward official enforcement guidance and add primary sources.',
+					recoveryActions: [
+						{
+							kind: 'revise_plan',
+							label: 'Revise plan',
+							description: 'Clarify the approved question or scope.',
+						},
+						{
+							kind: 'add_sources',
+							label: 'Add sources',
+							description: 'Attach stronger primary sources.',
+						},
+						{
+							kind: 'choose_deeper_depth',
+							label: 'Choose deeper depth',
+							description: 'Start a new run only after explicitly choosing a deeper depth.',
+						},
+						{
+							kind: 'targeted_follow_up',
+							label: 'Targeted follow-up',
+							description: 'Run focused follow-up research.',
+						},
+					],
+				},
+			} as Partial<DeepResearchJob> & { evidenceLimitationMemo: unknown }),
+			onDiscussReport: vi.fn(),
+			onResearchFurther: vi.fn(),
+		});
+
+		expect(getByText('Insufficient evidence')).toBeInTheDocument();
+		expect(queryByText('Failed')).not.toBeInTheDocument();
+		expect(getByText('Reviewed scope')).toBeInTheDocument();
+		expect(getAllByText('5 discovered').length).toBeGreaterThan(0);
+		expect(getAllByText('2 reviewed').length).toBeGreaterThan(0);
+		expect(getByText('1 topic-relevant')).toBeInTheDocument();
+		expect(getByText('3 rejected/off-topic')).toBeInTheDocument();
+		expect(getByText('Grounded limitation reasons')).toBeInTheDocument();
+		expect(
+			getByText('Only one reviewed source matched the approved key questions.')
+		).toBeInTheDocument();
+		expect(getByText('Next research direction')).toBeInTheDocument();
+		expect(getByText(/Revise the plan toward official enforcement guidance/)).toBeInTheDocument();
+		expect(getByText('Memo Recovery Actions')).toBeInTheDocument();
+		expect(getByText('Revise plan')).toBeInTheDocument();
+		expect(getByText('Add sources')).toBeInTheDocument();
+		expect(getByText('Choose deeper depth')).toBeInTheDocument();
+		expect(getByText('Targeted follow-up')).toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Discuss Report' })).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Research Further' })).not.toBeInTheDocument();
 	});
 
 	it('does not show Report Actions before a Research Report is completed', () => {

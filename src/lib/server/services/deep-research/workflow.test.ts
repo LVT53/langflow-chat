@@ -486,7 +486,7 @@ describe("real Deep Research workflow stepper", () => {
 		const tasks = await listResearchTasks({
 			userId: "user-1",
 			jobId: approved.id,
-			passNumber: 1,
+			passNumber: 2,
 		});
 		const timeline = await listResearchTimelineEvents({
 			userId: "user-1",
@@ -524,6 +524,9 @@ describe("real Deep Research workflow stepper", () => {
 		const { db } = await import("$lib/server/db");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { listResearchTasks } = await import("./tasks");
+		const { listResearchPassCheckpoints, listResearchCoverageGaps } =
+			await import("./pass-state");
+		const { listResearchTimelineEvents } = await import("./timeline");
 
 		await db
 			.update(schema.deepResearchJobs)
@@ -542,7 +545,19 @@ describe("real Deep Research workflow stepper", () => {
 		const tasks = await listResearchTasks({
 			userId: "user-1",
 			jobId: approved.id,
-			passNumber: 1,
+			passNumber: 2,
+		});
+		const checkpoints = await listResearchPassCheckpoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const gaps = await listResearchCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
 		});
 		const [conversation] = await db
 			.select({
@@ -565,6 +580,7 @@ describe("real Deep Research workflow stepper", () => {
 		expect(tasks).toEqual([
 			expect.objectContaining({
 				jobId: approved.id,
+				passNumber: 2,
 				status: "pending",
 				assignmentType: "coverage_gap",
 				keyQuestion:
@@ -572,6 +588,7 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 			expect.objectContaining({
 				jobId: approved.id,
+				passNumber: 2,
 				status: "pending",
 				assignmentType: "coverage_gap",
 				keyQuestion:
@@ -579,6 +596,7 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 			expect.objectContaining({
 				jobId: approved.id,
+				passNumber: 2,
 				status: "pending",
 				assignmentType: "coverage_gap",
 				keyQuestion:
@@ -586,8 +604,130 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 		]);
 		expect(conversation).toEqual({
-			status: "open",
-			sealedAt: null,
+				status: "open",
+				sealedAt: null,
+		});
+		expect(checkpoints).toEqual([
+			expect.objectContaining({
+				passNumber: 1,
+				searchIntent: "Initial approved-plan source review",
+				nextDecision: "continue_research",
+				terminalDecision: true,
+				coverageGapIds: expect.arrayContaining(gaps.map((gap) => gap.id)),
+			}),
+			expect.objectContaining({
+				passNumber: 2,
+				searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+				terminalDecision: false,
+			}),
+		]);
+		expect(gaps).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					lifecycleState: "open",
+					severity: "critical",
+					recommendedNextAction: expect.stringContaining(
+						"Review additional sources",
+					),
+				}),
+			]),
+		);
+		expect(tasks.map((task) => task.coverageGapId)).toEqual(
+			expect.arrayContaining(gaps.map((gap) => gap.id)),
+		);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "coverage_assessment",
+					kind: "pass_decision",
+					messageKey: "deepResearch.timeline.passDecision",
+					messageParams: expect.objectContaining({
+						passNumber: 1,
+						nextDecision: "continue_research",
+					}),
+				}),
+			]),
+		);
+	});
+
+	it("does not complete a report from high-confidence off-topic reviewed sources", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, listResearchSources } = await import(
+			"./sources"
+		);
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://cars.example.test/volkswagen-ev-prices-hungary",
+			title: "Volkswagen electric car prices in Hungary",
+			provider: "public_web",
+			snippet:
+				"Dealer discounts and battery trim changes for Volkswagen electric cars.",
+			sourceText:
+				"Volkswagen ID electric car prices, dealer discounts, Hungarian EV market changes, and battery trim details.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:09:00.000Z"),
+			},
+			{
+				sourceReview: {
+					reviewer: {
+						reviewSource: async (source) => ({
+							summary: `Reviewed ${source.title}`,
+							keyFindings: [
+								"The source appears to answer every approved question.",
+							],
+							extractedText: source.sourceText,
+							relevanceScore: 95,
+							supportedKeyQuestions:
+								approved.currentPlan?.rawPlan?.keyQuestions ?? [],
+							extractedClaims: [
+								"Volkswagen EV prices dropped sharply in Hungary.",
+							],
+						}),
+					},
+				},
+			},
+		);
+		const [source] = await listResearchSources({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+				reportArtifactId: null,
+			},
+		});
+		expect(source).toMatchObject({
+			status: "discovered",
+			relevanceScore: 95,
+			topicRelevant: false,
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			reviewedAt: null,
 		});
 	});
 
@@ -725,11 +865,14 @@ describe("real Deep Research workflow stepper", () => {
 		);
 	});
 
-	it("fails terminally when source review budget is exhausted without reviewed evidence", async () => {
+	it("completes with an Evidence Limitation Memo when source review budget is exhausted without reviewed evidence", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
 
 		await db
 			.update(schema.deepResearchJobs)
@@ -805,17 +948,28 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			jobId: approved.id,
 		});
+		const memoArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
 
 		expect(result).toMatchObject({
 			advanced: true,
-			outcome: "coverage_failed",
+			outcome: "report_completed",
 			job: {
 				id: approved.id,
-				status: "failed",
-				stage: "coverage_exhausted_failed",
-				reportArtifactId: null,
+				status: "completed",
+				stage: "evidence_limitation_memo_ready",
+				reportArtifactId: expect.any(String),
 			},
 		});
+		expect(memoArtifact?.metadata).toMatchObject({
+			deepResearchEvidenceLimitationMemo: true,
+			deepResearchReport: false,
+			documentRole: "evidence_limitation_memo",
+		});
+		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
+		expect(memoArtifact?.contentText).toContain("## Reviewed Scope");
+		expect(memoArtifact?.contentText).toContain("- Reviewed sources: 0");
 		expect(timeline).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

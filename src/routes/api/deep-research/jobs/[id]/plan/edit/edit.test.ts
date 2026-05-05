@@ -88,6 +88,18 @@ describe('POST /api/deep-research/jobs/[id]/plan/edit', () => {
 		});
 	});
 
+	it('accepts a Report Intent-only Plan Edit before approval', async () => {
+		const response = await POST(makeEvent({ reportIntent: 'market_scan' }));
+
+		expect(response.status).toBe(200);
+		expect(mockEditDeepResearchPlan).toHaveBeenCalledWith({
+			userId: 'user-1',
+			jobId: 'research-job-1',
+			editInstruction: '',
+			reportIntent: 'market_scan',
+		});
+	});
+
 	it('returns a conflict when the Research Plan can no longer be edited', async () => {
 		const error = Object.assign(new Error('Approved Research Plans cannot be edited'), {
 			code: 'plan_already_approved',

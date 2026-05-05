@@ -32,6 +32,7 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.plan).toMatchObject({
 			depth: "standard",
 			goal: "Compare the current EU and US approaches to AI copyright training data rules.",
+			reportIntent: "comparison",
 			sourceScope: expect.objectContaining({
 				includePublicWeb: true,
 			}),
@@ -41,6 +42,7 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.renderedPlan).toContain(
 			"Goal: Compare the current EU and US approaches to AI copyright training data rules.",
 		);
+		expect(result.renderedPlan).toContain("Report intent: Comparison");
 		expect(result.renderedPlan).toContain("Standard Deep Research");
 		expect(result.contextDisclosure).toEqual(
 			"Context considered: 1 conversation item.",
@@ -117,6 +119,7 @@ describe("createFirstResearchPlanDraft", () => {
 			"Cél: Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.",
 		);
 		expect(result.renderedPlan).toContain("Mélység: Fókuszált mély kutatás");
+		expect(result.renderedPlan).toContain("Jelentési szándék: Termékáttekintés");
 		expect(result.renderedPlan).toContain("Várható idő: 3-8 perc");
 		expect(result.renderedPlan).toContain(
 			"Forrás-áttekintési plafon: legfeljebb 12",

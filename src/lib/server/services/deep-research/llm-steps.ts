@@ -12,7 +12,12 @@ import type {
 	CitationAuditSource,
 	DeepResearchReportDraft,
 } from "./citation-audit";
-import type { ResearchLanguage, ResearchPlan, ResearchPlanIncludedSource } from "./planning";
+import type {
+	ReportIntent,
+	ResearchLanguage,
+	ResearchPlan,
+	ResearchPlanIncludedSource,
+} from "./planning";
 import type { ResearchReportDraft } from "./report-writer";
 import { writeResearchReport, type WriteResearchReportInput } from "./report-writer";
 import type {
@@ -46,6 +51,7 @@ export async function draftResearchPlanWithLlm(input: {
 	contextDisclosure: string | null;
 	previousPlan?: ResearchPlan | null;
 	editInstruction?: string | null;
+	reportIntent?: ReportIntent;
 	includedSources?: ResearchPlanIncludedSource[];
 }): Promise<ResearchPlan | null> {
 	const result = await tryRunAndRecordDeepResearchModel({
@@ -74,8 +80,11 @@ export async function draftResearchPlanWithLlm(input: {
 					contextDisclosure: input.contextDisclosure,
 					previousPlan: input.previousPlan ?? null,
 					editInstruction: input.editInstruction ?? null,
+					reportIntent: input.reportIntent ?? null,
 					requiredShape: {
 						goal: "string",
+						reportIntent:
+							"comparison|recommendation|investigation|market_scan|product_scan|limitation_focused",
 						keyQuestions: ["string"],
 						reportShape: ["string"],
 						constraints: ["string"],
@@ -91,11 +100,14 @@ export async function draftResearchPlanWithLlm(input: {
 
 	const goal = stringValue(parsed.goal) ?? input.userRequest;
 	const keyQuestions = stringArrayValue(parsed.keyQuestions).slice(0, 8);
+	const reportIntent =
+		input.reportIntent ?? reportIntentValue(stringValue(parsed.reportIntent));
 	if (keyQuestions.length === 0) return null;
 	return {
 		goal,
 		depth: input.selectedDepth,
 		researchLanguage: input.researchLanguage,
+		reportIntent: reportIntent ?? "investigation",
 		researchBudget: input.selectedBudget,
 		keyQuestions,
 		sourceScope: {
@@ -460,4 +472,18 @@ function sourceForPrompt(source: DeepResearchSource) {
 
 function limitText(value: string, maxLength: number): string {
 	return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function reportIntentValue(value: string | null): ResearchPlan["reportIntent"] | null {
+	if (
+		value === "comparison" ||
+		value === "recommendation" ||
+		value === "investigation" ||
+		value === "market_scan" ||
+		value === "product_scan" ||
+		value === "limitation_focused"
+	) {
+		return value;
+	}
+	return null;
 }

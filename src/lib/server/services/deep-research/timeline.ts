@@ -12,6 +12,7 @@ export type ResearchTimelineStage =
 	| "research_tasks"
 	| "synthesis"
 	| "citation_audit"
+	| "evidence_limitation_memo"
 	| "report_completion";
 
 export type ResearchTimelineKind =
@@ -22,7 +23,8 @@ export type ResearchTimelineKind =
 	| "stage_completed"
 	| "warning"
 	| "assumption"
-	| "coverage_assessed";
+	| "coverage_assessed"
+	| "pass_decision";
 
 export type ResearchSourceCounts = {
 	discovered: number;

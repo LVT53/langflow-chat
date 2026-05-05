@@ -194,4 +194,63 @@ describe("Deep Research synthesis notes", () => {
 			"Raw source-level finding.",
 		]);
 	});
+
+	it("does not let off-topic reviewed sources become accepted findings or task support", async () => {
+		const sourceRef = {
+			reviewedSourceId: "reviewed-off-topic",
+			discoveredSourceId: "source-off-topic",
+			canonicalUrl: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices",
+		};
+		const result = await buildSynthesisNotes({
+			jobId: "job-cube",
+			reviewedSources: [
+				{
+					id: "reviewed-off-topic",
+					jobId: "job-cube",
+					discoveredSourceId: "source-off-topic",
+					canonicalUrl: "https://cars.example.test/volkswagen-ev-prices",
+					title: "Volkswagen EV prices",
+					duplicateSourceIds: [],
+					authorityScore: 80,
+					qualityScore: 80,
+					reviewScore: 160,
+					summary: "Volkswagen EV prices dropped in Hungary.",
+					keyFindings: ["Volkswagen EV prices dropped in Hungary."],
+					extractedText: "Volkswagen EV prices dropped in Hungary.",
+					relevanceScore: 95,
+					topicRelevant: false,
+					topicRelevanceReason:
+						"Source discusses Volkswagen EV prices, not Cube bicycles.",
+					supportedKeyQuestions: [
+						"How do Cube Kathmandu and Cube Nulane specifications differ?",
+					],
+					extractedClaims: [
+						"Volkswagen EV prices dropped in Hungary.",
+					],
+					rejectedReason: null,
+					openedContentLength: 740,
+					createdAt: "2026-05-05T12:00:00.000Z",
+				},
+			],
+			completedTasks: [
+				{
+					id: "task-off-topic",
+					output: "Cube buyers should choose based on Volkswagen EV discounts.",
+					supportLevel: "strong",
+					sourceRefs: [sourceRef],
+				},
+			],
+		});
+
+		expect(result.supportedFindings).toEqual([]);
+		expect(result.findings).toEqual([
+			{
+				kind: "assumption",
+				statement:
+					"Cube buyers should choose based on Volkswagen EV discounts.",
+				sourceRefs: [],
+			},
+		]);
+	});
 });

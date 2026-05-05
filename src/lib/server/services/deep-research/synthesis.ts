@@ -45,7 +45,13 @@ export type SynthesisNotes = {
 export async function buildSynthesisNotes(
 	input: BuildSynthesisNotesInput,
 ): Promise<SynthesisNotes> {
-	const reviewedFindings = input.reviewedSources.flatMap((source) =>
+	const eligibleReviewedSources = input.reviewedSources.filter(
+		isAcceptedReviewedSource,
+	);
+	const reviewedSourcesById = new Map(
+		input.reviewedSources.map((source) => [source.id, source]),
+	);
+	const reviewedFindings = eligibleReviewedSources.flatMap((source) =>
 		source.keyFindings.map((finding) => ({
 			kind: "supported" as const,
 			statement: normalizeText(finding),
@@ -57,7 +63,10 @@ export async function buildSynthesisNotes(
 	const supportedFindings = reviewedFindings.filter(
 		(finding) => !conflictedStatements.has(finding.statement),
 	);
-	const taskSynthesis = synthesizeCompletedTaskOutputs(input.completedTasks);
+	const taskSynthesis = synthesizeCompletedTaskOutputs(
+		input.completedTasks,
+		reviewedSourcesById,
+	);
 	const finalSupportedFindings = [
 		...taskSynthesis.supportedFindings,
 		...supportedFindings,
@@ -79,7 +88,10 @@ export async function buildSynthesisNotes(
 	};
 }
 
-function synthesizeCompletedTaskOutputs(tasks: CompletedResearchTaskOutput[]): {
+function synthesizeCompletedTaskOutputs(
+	tasks: CompletedResearchTaskOutput[],
+	reviewedSourcesById: Map<string, PersistedReviewedResearchSourceNotes>,
+): {
 	supportedFindings: SynthesisFinding[];
 	assumptions: SynthesisFinding[];
 	reportLimitations: SynthesisFinding[];
@@ -89,9 +101,16 @@ function synthesizeCompletedTaskOutputs(tasks: CompletedResearchTaskOutput[]): {
 	const reportLimitations: SynthesisFinding[] = [];
 
 	for (const task of tasks) {
-		const sourceRefs = task.sourceRefs ?? [];
-		const supportLevel =
+		const sourceRefs = (task.sourceRefs ?? []).filter((sourceRef) => {
+			const reviewedSource = reviewedSourcesById.get(sourceRef.reviewedSourceId);
+			return !reviewedSource || isAcceptedReviewedSource(reviewedSource);
+		});
+		const declaredSupportLevel =
 			task.supportLevel ?? (sourceRefs.length > 0 ? "strong" : "missing");
+		const supportLevel =
+			declaredSupportLevel === "strong" && sourceRefs.length === 0
+				? "missing"
+				: declaredSupportLevel;
 		const finding: SynthesisFinding = {
 			kind: supportLevel === "strong" ? "supported" : "assumption",
 			statement: normalizeText(task.output),
@@ -114,6 +133,12 @@ function synthesizeCompletedTaskOutputs(tasks: CompletedResearchTaskOutput[]): {
 	}
 
 	return { supportedFindings, assumptions, reportLimitations };
+}
+
+function isAcceptedReviewedSource(
+	source: PersistedReviewedResearchSourceNotes,
+): boolean {
+	return !source.rejectedReason && source.topicRelevant !== false;
 }
 
 function findConflictingReviewedFindings(findings: SynthesisFinding[]): {
