@@ -588,6 +588,10 @@ _Avoid_: assistant answer, generated file, summary, chat response
 A **Research Report** organized for scanning and decision-making, with a short title, answer-first executive summary, capped key findings, plan-shaped analysis, visible limitations, and a cited source list.
 _Avoid_: source dump, activity log, citation audit transcript, raw findings export
 
+**Structured Research Report**:
+A machine-checkable report model that AlfyAI renders into Markdown or another user-facing format.
+_Avoid_: markdown blob, prose-only draft, raw report text
+
 **Discovered Source**:
 A candidate source found during research but not necessarily read.
 _Avoid_: used source, citation
@@ -595,6 +599,10 @@ _Avoid_: used source, citation
 **Reviewed Source**:
 A source opened, extracted, summarized, or otherwise analyzed by a **Deep Research Job**.
 _Avoid_: search result, cited source
+
+**Topic-Relevant Reviewed Source**:
+A **Reviewed Source** that supports the approved **Research Plan** and passes plan-topic or named-entity relevance checks.
+_Avoid_: reviewed source, plausible source, generic source
 
 **Cited Source**:
 A **Research Source** cited in a **Research Report**.
@@ -652,6 +660,14 @@ _Avoid_: failure, excuse, hidden caveat
 A verification step that checks whether **Research Report** claims are supported by cited **Reviewed Sources**.
 _Avoid_: source formatting, citation cleanup
 
+**Report Eligibility Gate**:
+A checkpoint before synthesis or report publication that decides whether enough **Topic-Relevant Reviewed Sources** exist to produce a credible **Research Report**.
+_Avoid_: citation audit, final formatting, source count check
+
+**Evidence Limitation Memo**:
+A durable Deep Research output that explains why no credible **Research Report** could be produced.
+_Avoid_: failed report, partial report, empty report
+
 ### Relationships
 
 - A **Deep Research Job** is optional and explicitly started by the user.
@@ -693,6 +709,8 @@ _Avoid_: source formatting, citation cleanup
 - A **Research Report** is durable and reusable; it is not only assistant message text.
 - A **Research Report** includes citations and a user-facing source list.
 - Every successful **Research Report** should be a **Readable Research Report**.
+- A **Readable Research Report** should be produced from a **Structured Research Report** rather than a freeform Markdown blob.
+- A **Structured Research Report** should preserve report parts such as title, scope, executive summary, recommendation, comparison matrix, key findings, sections, limitations, and cited sources before rendering.
 - A **Readable Research Report** is not a dump of every reviewed source note.
 - A **Readable Research Report** should lead with the answer, then show the strongest evidence-backed findings, then organize the body around the approved **Research Plan**.
 - Key findings in a **Readable Research Report** should be capped to a small, scannable set; additional reviewed notes belong in the **Research Workspace**, source ledger, or future appendix, not the main report body.
@@ -703,6 +721,12 @@ _Avoid_: source formatting, citation cleanup
 - Only **Reviewed Sources** may become **Cited Sources**.
 - **Discovered Sources** may appear in a source ledger or activity history, but they are not evidence for report claims.
 - Source counts should distinguish discovered, reviewed, and cited sources instead of presenting one inflated total.
+- Research Card source counts should also expose a compact **Topic-Relevant Reviewed Source** count, so users can distinguish source volume from usable evidence quality.
+- A **Reviewed Source** is not automatically a **Topic-Relevant Reviewed Source**.
+- A **Topic-Relevant Reviewed Source** must support the approved **Research Plan** and pass topic or named-entity relevance checks.
+- Source-review model output may identify supported key questions, but deterministic topic or named-entity overlap should guard against unrelated high-authority or generic sources becoming **Topic-Relevant Reviewed Sources**.
+- Comparison reports should require **Topic-Relevant Reviewed Sources** across the compared named entities before the **Research Report** is eligible to complete.
+- A high discovered or reviewed source count must not satisfy the **Report Eligibility Gate** when too few sources are topic-relevant.
 - Deep Research depth sets a **Research Budget**.
 - A **Research Budget** is a ceiling, not a promised source count.
 - A **Research Plan** should show a **Research Effort Estimate** before approval.
@@ -718,6 +742,8 @@ _Avoid_: source formatting, citation cleanup
 - A running **Deep Research Job** shows an **Activity Timeline** rather than only a spinner.
 - The **Activity Timeline** is persisted and remains attached to the **Research Report** after completion.
 - The **Activity Timeline** shows user-facing stage progress, source counts, brief summaries, assumptions, and warnings.
+- The **Activity Timeline** should avoid repeating source counts on every step when the same counts are already visible in the Research Card summary.
+- Per-event source counts may appear only when they add meaningful change or diagnostic value.
 - The **Activity Timeline** does not expose private model reasoning or chain-of-thought.
 - Deep Research user-facing text must support English and Hungarian.
 - **Research Language** defaults to the latest user request language unless the user explicitly asks for another output language.
@@ -725,6 +751,7 @@ _Avoid_: source formatting, citation cleanup
 - Source titles, quotes, and citations may remain in their original source language.
 - Deep Research prose should not mix English and Hungarian except for source material, product names, file names, URLs, citations, and quotes.
 - A **Research Card** presents the **Research Plan**, running **Activity Timeline**, source progress, completion state, and **Report Actions** inside chat.
+- A **Research Card** should use cited-site favicons for **Cited Sources** where available, as visual source identity rather than evidence authority.
 - A **Research Card** is not the full **Research Report**.
 - After a **Report Boundary**, the **Research Card** remains visible in the read-only conversation.
 - The full **Research Report** opens in the workspace/report viewing surface rather than inline as chat content.
@@ -764,9 +791,16 @@ _Avoid_: source formatting, citation cleanup
 - **Citation Audit** verifies claim support, not only citation formatting.
 - Unsupported core claims must be repaired, removed, or disclosed as **Report Limitations**.
 - **Citation Audit** may trigger one repair pass before completion or failure.
+- Every **Research Report** must pass the **Report Eligibility Gate** before **Citation Audit** can publish it.
+- **Citation Audit** verifies source support for retained claims; it does not replace the **Report Eligibility Gate**.
 - A **Research Report** has a semi-fixed readable structure: short title, executive summary, capped key findings, compact methodology, main body organized by the **Research Plan**, source list, and **Report Limitations** when applicable.
 - A **Research Report** may add plan-specific sections such as recommendations, comparison matrices, timelines, methodology, appendices, or next steps.
 - **Citation Audit** should preserve readable report structure while removing unsupported claims; it should not replace every report section with the same retained-claim list.
+- Markdown is a rendering target for a **Structured Research Report**, not the report's source of truth.
+- If the **Report Eligibility Gate** fails because too few sources are topic-relevant, Deep Research should end with an insufficient-relevant-evidence outcome instead of publishing a normal **Research Report**.
+- An insufficient-relevant-evidence outcome may create an **Evidence Limitation Memo**.
+- An **Evidence Limitation Memo** is durable and inspectable, but it must not create the same user expectation as a completed **Research Report**.
+- An **Evidence Limitation Memo** should summarize the approved goal, searched/reviewed scope, topic-relevant counts, why no credible report was produced, and the best next research direction.
 - Deep Research should be built in independently testable and verifiable vertical slices.
 - Deep Research slices should follow test-driven development: prove the behavior, implement it, then refactor.
 - Deep Research v1 slices should be production-capable rather than prototype-only.

@@ -108,6 +108,11 @@ This roadmap breaks Deep Research into independently testable vertical slices. T
     - Evaluate key-question coverage and produce Coverage Gaps.
     - Verifiable: insufficient coverage loops; sufficient coverage proceeds.
 
+16a. **Report Eligibility Gate**
+    - Count only Topic-Relevant Reviewed Sources for report eligibility.
+    - Require compared named entities to have topic-relevant support before comparison reports can complete.
+    - Verifiable: high reviewed-source counts with off-topic evidence do not produce a Research Report.
+
 17. **Iterative Loop**
     - Coverage Gaps generate targeted follow-up discovery/review passes.
     - Verifiable: loop stops at sufficient coverage or Research Budget exhaustion.
@@ -125,16 +130,20 @@ This roadmap breaks Deep Research into independently testable vertical slices. T
     - Verifiable: findings map back to Reviewed Sources.
 
 21. **Report Writer**
-    - Produce a semi-fixed Research Report from findings.
-    - Verifiable: title, summary, findings, body, source list, limitations.
+    - Produce a Structured Research Report from findings before rendering Markdown.
+    - Verifiable: title, scope, executive summary, recommendation, comparison matrix, findings, body sections, source list, and limitations exist as structured fields before Markdown rendering.
 
 22. **Citation Audit**
     - Verify claims against cited Reviewed Sources.
-    - Verifiable: unsupported claims are repaired, removed, or limited.
+    - Verifiable: unsupported claims are repaired, removed, or limited without collapsing the Structured Research Report into repeated bullet lists.
 
 23. **Complete With Limitations**
     - Allow completion when a useful report exists but gaps remain.
     - Verifiable: limitations show in report and timeline.
+
+23a. **Evidence Limitation Memo**
+    - Create a durable memo when Deep Research cannot publish a credible Research Report because too few sources are topic-relevant.
+    - Verifiable: memo is not labeled as a Research Report and includes reviewed scope, topic-relevant counts, reason, and next research direction.
 
 24. **Real Report Boundary**
     - Completion of an audited real report seals the conversation.
@@ -164,6 +173,13 @@ This roadmap breaks Deep Research into independently testable vertical slices. T
     - Plan, card, timeline, and report prose use Hungarian when requested.
     - Verifiable: no mixed prose except citations/source titles.
 
-31. **Admin/Operational Controls**
+31. **Research Card Interaction Polish**
+    - Deep Research depth popup closes on outside click and Escape.
+    - Cited sources can show website favicons for compact visual identity.
+    - Activity Timeline connector lines visually connect through the final dot.
+    - Repeated per-step source counts are suppressed unless the count changed or adds diagnostic value.
+    - Verifiable: popup dismissal works by pointer and keyboard; missing favicons degrade silently.
+
+32. **Admin/Operational Controls**
     - Add concurrency, cancellation, stale-job recovery, and worker restart behavior.
     - Verifiable: closing the tab and restarting the server have predictable outcomes.
