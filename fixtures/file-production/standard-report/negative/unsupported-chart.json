@@ -1,0 +1,12 @@
+{
+  "fixtureId": "unsupported-chart",
+  "expectedErrorCode": "unsupported_chart_type",
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Unsupported Chart",
+    "blocks": [
+      { "type": "chart", "chartType": "radar3d", "title": "Unsupported", "xKey": "x", "yKey": "y", "data": [{ "x": "A", "y": 1 }] }
+    ]
+  }
+}

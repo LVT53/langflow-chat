@@ -1,0 +1,16 @@
+{
+  "fixtureId": "hungarian-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Magyar állapotjelentés",
+    "subtitle": "Hosszú szavak és ékezetek ellenőrzése",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Összefoglaló" },
+      { "type": "paragraph", "text": "Az ügyfél-elégedettség javult, miközben a hosszútávúfolyamatfolytonosság ellenőrizhető maradt." },
+      { "type": "callout", "tone": "tip", "title": "Megjegyzés", "text": "A feliratoknak és címkéknek magyarul is el kell férniük." }
+    ]
+  }
+}

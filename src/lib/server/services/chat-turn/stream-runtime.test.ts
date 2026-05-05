@@ -91,6 +91,31 @@ describe("createServerChunkRuntime", () => {
 			"Qudelix alternatives\n\nThe answer starts here.",
 		);
 	});
+
+	it("keeps file-production tool calls out of persisted thinking segments", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitToolCallEvent(
+			"produce_file",
+			{ requestTitle: "Report" },
+			"running",
+		);
+		runtime.emitToolCallEvent("produce_file", {}, "done");
+
+		expect(
+			chunks.filter((chunk) => chunk.startsWith("event: tool_call")),
+		).toHaveLength(2);
+		expect(runtime.toolCallRecords).toEqual([
+			expect.objectContaining({ name: "produce_file", status: "done" }),
+		]);
+		expect(runtime.serverSegments).toEqual([]);
+	});
 });
 
 describe("stream error extraction", () => {

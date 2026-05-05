@@ -2,18 +2,19 @@
 	import { isDark } from '$lib/stores/theme';
 	import { t } from '$lib/i18n';
 	import { estimateTokenCount } from '$lib/utils/tokens';
+	import { isVisibleThinkingToolCall } from '$lib/utils/tool-calls';
 	import type {
 		ArtifactSummary,
-		ChatGeneratedFileListItem,
 		ChatMessage,
 		DocumentWorkspaceItem,
+		FileProductionJob,
 	} from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
-	import GeneratedFile from './GeneratedFile.svelte';
+	import FileProductionCard from './FileProductionCard.svelte';
 	import { onDestroy, tick } from 'svelte';
 	import type { TaskSteeringPayload } from '$lib/types';
 
@@ -22,23 +23,27 @@
 		isLast = false,
 		pinnedArtifactIds = [],
 		excludedArtifactIds = [],
-		generatedFiles = [],
+		fileProductionJobs = [],
 		conversationId = null,
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
 		onOpenDocument = undefined,
+		onRetryFileProductionJob = undefined,
+		onCancelFileProductionJob = undefined,
 	}: {
 		message: ChatMessage;
 		isLast?: boolean;
 		pinnedArtifactIds?: string[];
 		excludedArtifactIds?: string[];
-		generatedFiles?: ChatGeneratedFileListItem[];
+		fileProductionJobs?: FileProductionJob[];
 		conversationId?: string | null;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
+		onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 	} = $props();
 
 	let copied = $state(false);
@@ -47,23 +52,23 @@
 	let editText = $state('');
 	let editTextarea = $state<HTMLTextAreaElement | null>(null);
 	let showTimestampTooltip = $state(false);
-let dedupedGeneratedFiles = $derived(
-	generatedFiles.reduce(
-		(acc, file) => {
-			if (!acc.seen.has(file.id)) {
-				acc.seen.add(file.id);
-				acc.list.push(file);
-			}
-			return acc;
-		},
-		{ seen: new Set<string>(), list: [] as ChatGeneratedFileListItem[] }
-	).list
-);
+	let dedupedFileProductionJobs = $derived(
+		fileProductionJobs.reduce(
+			(acc, job) => {
+				if (!acc.seen.has(job.id)) {
+					acc.seen.add(job.id);
+					acc.list.push(job);
+				}
+				return acc;
+			},
+			{ seen: new Set<string>(), list: [] as FileProductionJob[] },
+		).list,
+	);
 	let isUser = $derived(message.role === 'user');
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 	let hasThinking = $derived(Boolean(message.thinking?.trim()));
 	let hasToolCalls = $derived(
-		(message.thinkingSegments?.some((segment) => segment.type === 'tool_call')) ?? false
+		(message.thinkingSegments?.some(isVisibleThinkingToolCall)) ?? false
 	);
 	let thinkingTokenCount = $derived(hasThinking ? estimateTokenCount(message.thinking ?? '') : 0);
 	let responseTokenCount = $derived(estimateTokenCount(message.content));
@@ -272,19 +277,14 @@ let dedupedGeneratedFiles = $derived(
 					isStreaming={Boolean(message.isStreaming)}
 				/>
 			</div>
-			{#if generatedFiles.length > 0 && conversationId}
-				<div class="generated-files-inline" data-testid="message-generated-files">
-					{#each dedupedGeneratedFiles as file (file.id)}
-						<GeneratedFile
-							fileId={file.id}
-							{conversationId}
-							filename={file.filename}
-							size={file.sizeBytes}
-							mimeType={file.mimeType ?? 'application/octet-stream'}
-							downloadUrl={file.status === 'success' ? `/api/chat/files/${file.id}/download` : ''}
-							status={file.status}
-							error={file.error}
-							onOpen={onOpenDocument}
+			{#if fileProductionJobs.length > 0 && conversationId}
+				<div class="file-production-inline" data-testid="message-file-production-jobs">
+					{#each dedupedFileProductionJobs as job (job.id)}
+						<FileProductionCard
+							{job}
+							onOpenDocument={onOpenDocument}
+							onRetry={onRetryFileProductionJob}
+							onCancel={onCancelFileProductionJob}
 						/>
 					{/each}
 				</div>
@@ -553,7 +553,7 @@ let dedupedGeneratedFiles = $derived(
 		margin-top: var(--space-sm);
 	}
 
-	.generated-files-inline {
+	.file-production-inline {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-xs);

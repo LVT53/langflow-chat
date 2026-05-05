@@ -1,0 +1,16 @@
+{
+  "fixtureId": "short-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Quarterly Operating Snapshot",
+    "subtitle": "Executive summary",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Summary" },
+      { "type": "paragraph", "text": "Revenue increased while support volume remained stable." },
+      { "type": "callout", "tone": "note", "title": "Readout", "text": "Numbers are preliminary until finance closes the month." }
+    ]
+  }
+}

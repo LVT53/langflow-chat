@@ -1,0 +1,39 @@
+{
+  "fixtureId": "table-heavy-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Regional Revenue Detail",
+    "blocks": [
+      { "type": "heading", "level": 2, "text": "Revenue Table" },
+      {
+        "type": "table",
+        "title": "Quarterly revenue by region",
+        "caption": "Numeric columns should align right and wrap safely.",
+        "columns": [
+          { "key": "date", "label": "Date", "kind": "date" },
+          { "key": "region", "label": "Region", "kind": "text" },
+          { "key": "revenue", "label": "Revenue", "kind": "number" },
+          { "key": "change", "label": "Change", "kind": "percent" },
+          { "key": "notes", "label": "Notes", "kind": "text" }
+        ],
+        "rows": [
+          { "date": "2026-05-01", "region": "Central Europe", "revenue": 139000, "change": 0.112, "notes": "Dense operational note with hosszútávú folyamat continuity." },
+          { "date": "2026-05-02", "region": "Nordics and Baltics", "revenue": 106500, "change": 0.076, "notes": "Wraps a long regional label without clipping." },
+          { "date": "2026-05-03", "region": "Magyar piac", "revenue": 84500, "change": 0.052, "notes": "Hungarian accents and hosszútávúfolyamatfolytonosság fit safely." },
+          { "date": "2026-05-04", "region": "Iberia", "revenue": 92300, "change": -0.014, "notes": "Negative percentages stay aligned." },
+          { "date": "2026-05-05", "region": "France", "revenue": 118200, "change": 0.031, "notes": "Standard text row for alternating backgrounds." },
+          { "date": "2026-05-06", "region": "DACH", "revenue": 151700, "change": 0.084, "notes": "Numeric cells align right." },
+          { "date": "2026-05-07", "region": "Benelux", "revenue": 74500, "change": 0.022, "notes": "Date formatting remains stable." },
+          { "date": "2026-05-08", "region": "Poland", "revenue": 68200, "change": 0.047, "notes": "Compact rows stay readable." },
+          { "date": "2026-05-09", "region": "Czechia and Slovakia", "revenue": 58900, "change": 0.058, "notes": "Long market name wraps in the text column." },
+          { "date": "2026-05-10", "region": "Romania", "revenue": 50300, "change": 0.019, "notes": "Repeated headers are tested by longer generated tables." },
+          { "date": "2026-05-11", "region": "Greece", "revenue": 42100, "change": -0.006, "notes": "No merged cells are allowed in v1." },
+          { "date": "2026-05-12", "region": "Ireland", "revenue": 39600, "change": 0.029, "notes": "Captions must stay near the table." }
+        ]
+      }
+    ]
+  }
+}

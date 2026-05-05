@@ -50,6 +50,13 @@ export type PromptContextLimits = {
 	targetConstructedContext: number;
 };
 
+type OutputTokenBudget = {
+	configuredMaxTokens: number | null;
+	effectiveMaxTokens: number | null;
+	outputReserve: number;
+	outputReserveClamped: boolean;
+};
+
 type LangflowModelRunConfig = ModelConfig & {
 	contextLimits?: PromptContextLimits;
 	providerId?: string;
@@ -92,47 +99,56 @@ function buildResponseLanguageGuard(language: SupportedLanguage): string {
 }
 
 const FILE_GENERATION_GUARD = [
-	"Generated file workflow (split toolkit):",
+	"Generated file workflow (unified file production):",
 	"",
-	"For PDFs and static documents (reports, brochures, fact sheets):",
-	"- Use `export_document` for styled PDF exports with the Terracotta Crown theme (brand colors, cover pages, styled headings, tables, code blocks, callouts).",
-	"- For `export_document`: Write Markdown content with YAML frontmatter to enable styled output:",
-	"  - `title: Report Title` (required for cover page)",
-	"  - `subtitle: Subtitle text` (optional)",
-	"  - `author: Author name` (optional)",
-	"  - `date: YYYY-MM-DD` (optional)",
-	"  - `cover: true` (optional - enables the styled cover page)",
-	"- For `export_document`: Use Obsidian-style blockquotes for callouts: `> [!info]`, `> [!warning]`, `> [!tip]`, `> [!note]`.",
-	"- For `export_document`: Embed images as `![alt text](url)` - Playwright renders them with border-radius and shadow styling.",
-	"- For `export_document`: Do NOT rewrite the entire document into the tool payload. The system will automatically use the active conversation context when `markdown_content` is empty.",
-	"- Use `generate_file` with `language: javascript` for programmatic PDFs via the pre-loaded `createPDF()` helper.",
-	"- For `generate_file` PDF: Pass structured content blocks to `createPDF({ filename, title, content })`. Supported block types: `{ type: heading, text, level: 1|2|3 }`, `{ type: paragraph, text }`, `{ type: list, items, ordered }`, `{ type: table, headers, rows }`, `{ type: code, text }`, `{ type: separator }`, `{ type: image, src, alt }`.",
-	"- For `generate_file` PDF: The `createPDF` helper applies the AlfyAI Terracotta Crown theme automatically (brand colors, DejaVu fonts, styled tables/images). Do not use `pdf-lib` directly.",
-	"- Embed real-world images using `image_search` to find URLs, then include them as `![alt text](url)` in Markdown or `{ type: image, src }` in structured blocks.",
+	"- If the user asks for a downloadable file and the `produce_file` tool is available, call `produce_file` instead of only describing the result in text.",
+	"- Tool success means the file-production request was accepted, not that the file is already finished. The chat card is the source of truth for queued/running/succeeded/failed state.",
+	"- Do not mention file-production job IDs, queued/running status, worker status, or internal diagnostics in your user-facing response.",
+	"- Prefer the fewest `produce_file` calls that faithfully represent the user's request. For the same report or document in multiple formats, batch those formats into one call instead of issuing parallel calls.",
+	"- Every call must include `idempotencyKey`, `requestTitle`, `requestedOutputs`, `sourceMode`, and `documentIntent`. It may include `templateHint`, `documentSource`, and `program` when relevant.",
+	"- `conversationId` is supplied by the tool runtime from the active chat session. Do not ask the user for it and do not include it as a normal tool argument.",
+	"- `documentIntent` is a short model hint such as `report`, `analysis_brief`, `invoice`, `slides`, `spreadsheet`, or `data_export`. Server-side classification and validation remain authoritative.",
+	"- `templateHint` is optional. Use it only for user-visible preferences such as `standard-report`, `compact`, `visual-report`, or a requested house style; the renderer may ignore unsupported hints.",
 	"",
-	"For data science, CSV manipulation, or plain text exports:",
-	"- Use the `generate_file` tool with `language: python`.",
-	"- Use ONLY the Python standard library (csv, json, io). The Python sandbox does NOT have pandas, numpy, or any other third-party data-science packages.",
-	"- Write the final output file to `/output` or no file will be created.",
+	"For PDF, DOCX, HTML, reports, briefs, brochures, fact sheets, and other styled documents:",
+	"- Prefer `sourceMode: \"document_source\"` and provide `documentSource` using the AlfyAI Standard Report source shape.",
+	"- `requestedOutputs` should be an array like `[{\"type\":\"pdf\"}]`, `[{\"type\":\"docx\"}]`, `[{\"type\":\"html\"}]`, or a multi-output array when the user asks for multiple formats.",
+	"- Prefer one `document_source` call with multiple `requestedOutputs` for the same styled document, such as `[{\"type\":\"pdf\"},{\"type\":\"docx\"},{\"type\":\"html\"}]`.",
+	"- Build `documentSource` as structured content: title, optional subtitle or cover metadata, and blocks such as headings, paragraphs, lists, tables, callouts, quotes, code, dividers, images, and charts.",
+	"- `documentSource` MUST include: `version: 1`, `template: \"alfyai_standard_report\"`, `title`, and `blocks`.",
+	"- Keep each section heading directly before the paragraphs, lists, tables, or charts it introduces. Do not group headings separately from their content.",
+	"- Include a concise `date` or `cover.dateLabel` when the generated document should show a generation date; the renderer will place it compactly in the header.",
+	"- Minimal valid `documentSource` example:",
+	"  ```json",
+	"  {",
+	"    \"version\": 1,",
+	"    \"template\": \"alfyai_standard_report\",",
+	"    \"title\": \"Quarterly Summary\",",
+	"    \"blocks\": [{ \"type\": \"paragraph\", \"text\": \"Executive summary.\" }]",
+	"  }",
+	"  ```",
+	"- For headings, use `{ type: \"heading\", level: 2, text: \"Section title\" }`. Supported heading levels are 1, 2, and 3.",
+	"- For tables, the safest shape is `{ type: \"table\", title, headers: [\"Column\"], rows: [[\"Value\"]] }`. Do not use merged cells, nested tables, `rowspan`, or `colspan`.",
+	"- For charts, provide complete chart data, labels, units, title, caption, and alt text. Supported v1 chart types are bar, stackedBar, line, area, scatter, pie, and donut.",
+	"- For simple bar/line/area charts, Chart.js-style data is accepted: `{ type: \"chart\", chartType: \"bar\", title, caption, altText, data: { labels: [\"A\"], datasets: [{ label: \"Score\", data: [8] }] } }`.",
+	"- For images in document source, use safe HTTPS or internal image URLs returned by available tools, include useful alt text, and mark whether the image is critical to the document.",
+	"- Do not generate raw HTML or hand-written PDF code for styled reports when document source can express the document.",
 	"",
-	"For binary office files (Excel .xlsx, Word .docx, PowerPoint .pptx, ODT, PDF):",
-	"- Use the `generate_file` tool with `language: javascript`.",
-	"- Use `exceljs` for Excel workbooks (`new ExcelJS.Workbook()`).",
-	"- Use `docx` for Word documents (`new docx.Document()`).",
-	"- Use `pptxgenjs` for PowerPoint presentations (`new PptxGenJS()`).",
-	"- Use `jszip` for ODT packaging.",
-	"- Use the pre-loaded `createPDF()` helper for programmatic PDFs.",
-	"- Write the final output file to `/output` or no file will be created.",
-	"- NEVER use Python for xlsx, docx, pptx, or PDF generation. JavaScript is the only supported language for binary office files.",
+	"For CSV, JSON, TXT, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, or other code-generated artifacts:",
+	"- Use `sourceMode: \"program\"` and provide `program` with `language`, `sourceCode`, and optional `filename`.",
+	"- `program` must be a nested JSON object, not a JSON-encoded string. Example: `\"program\": {\"language\":\"python\",\"sourceCode\":\"...\",\"filename\":\"data.csv\"}`.",
+	"- Use `language: \"python\"` for standard-library-friendly text and data exports such as CSV, JSON, TXT, Markdown, simple HTML, and SVG.",
+	"- Do not assume Python third-party packages such as openpyxl, reportlab, python-docx, pandas, or matplotlib are installed.",
+	"- Use `language: \"javascript\"` for `.xlsx` with `exceljs`, `.pptx` with `pptxgenjs`, `.docx` with `docx`, and `.odt` with `jszip` packaging.",
+	"- For PptxGenJS charts, `slide.addChart` data must be an array of series objects: `[{ name: \"Series\", labels: [\"A\"], values: [1] }]`. Do not pass a plain `{ labels, values }` object directly.",
+	"- Program source must write final requested files to `/output`; no downloadable file exists if `/output` remains empty.",
+	"- If `program.filename` is provided, write exactly one final output file with that filename.",
+	"- Do not write fallback diagnostics or scratch files to `/output`; return only user-requested artifacts.",
 	"",
-	"General rules for both tools:",
-	"- If the user asks for a downloadable file and a file-generation tool is available, call it instead of only describing the result in text.",
-	"- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when a dedicated file-generation tool is available.",
-	"- Only tell the user a file is ready after the tool succeeds.",
-	"- Do not mention the generated file name or include a file download link in your response text. The file will automatically appear in the chat UI with a download button.",
-	"- Generated files appear in the chat UI after the response finishes.",
-	"- If the `generate_file` tool call includes a `filename` parameter, your code MUST write exactly ONE file to `/output` with that exact name. Writing zero files or multiple files when a filename is specified will cause the generation to fail.",
-	"- If file generation fails, inspect the actual error, make one clear fix, and retry at most once without switching tools.",
+	"General file-production rules:",
+	"- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when `produce_file` is available.",
+	"- Do not claim the file is ready in prose. Tell the user you started the file request and that the file card will update when generation finishes.",
+	"- If file production fails, inspect the actual error, make one clear fix, and retry at most once without changing the user's requested artifact type.",
 ].join("\n");
 
 const IMAGE_SEARCH_GUARD = [
@@ -368,6 +384,50 @@ function extractCurrentMessageSection(
 	};
 }
 
+function resolveOutputTokenBudget(params: {
+	maxTokens?: number | null;
+	contextLimits: PromptContextLimits;
+	systemPrompt: string;
+	currentMessageSection: string;
+}): OutputTokenBudget {
+	if (params.maxTokens == null) {
+		return {
+			configuredMaxTokens: null,
+			effectiveMaxTokens: null,
+			outputReserve: 0,
+			outputReserveClamped: false,
+		};
+	}
+
+	const configuredMaxTokens = Math.max(1, params.maxTokens);
+	const systemTokens = estimateTokenCount(params.systemPrompt);
+	const currentMessageTokens = estimateTokenCount(params.currentMessageSection);
+	const maxReserveForTargetContext = Math.max(
+		1,
+		params.contextLimits.maxModelContext -
+			params.contextLimits.targetConstructedContext,
+	);
+	const maxReserveForRequiredInput = Math.max(
+		1,
+		params.contextLimits.maxModelContext -
+			systemTokens -
+			currentMessageTokens -
+			LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS,
+	);
+	const effectiveMaxTokens = Math.min(
+		configuredMaxTokens,
+		maxReserveForTargetContext,
+		maxReserveForRequiredInput,
+	);
+
+	return {
+		configuredMaxTokens,
+		effectiveMaxTokens,
+		outputReserve: effectiveMaxTokens,
+		outputReserveClamped: effectiveMaxTokens < configuredMaxTokens,
+	};
+}
+
 function applyOutboundPromptBudget(params: {
 	inputValue: string;
 	message: string;
@@ -378,8 +438,18 @@ function applyOutboundPromptBudget(params: {
 	modelId: ModelId | string | undefined;
 	modelName: string;
 	providerId?: string | null;
-}): string {
-	const outputReserve = Math.max(0, params.maxTokens ?? 0);
+}): { inputValue: string; outputTokenBudget: OutputTokenBudget } {
+	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
+		params.inputValue,
+		params.message,
+	);
+	const outputTokenBudget = resolveOutputTokenBudget({
+		maxTokens: params.maxTokens,
+		contextLimits: params.contextLimits,
+		systemPrompt: params.systemPrompt,
+		currentMessageSection,
+	});
+	const outputReserve = outputTokenBudget.outputReserve;
 	const configuredPromptBudget = Math.min(
 		params.contextLimits.targetConstructedContext,
 		params.contextLimits.compactionUiThreshold,
@@ -391,15 +461,25 @@ function applyOutboundPromptBudget(params: {
 		systemTokens -
 		LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS;
 	const currentInputTokens = estimateTokenCount(params.inputValue);
-
-	if (inputTokenBudget > 0 && currentInputTokens <= inputTokenBudget) {
-		return params.inputValue;
+	if (outputTokenBudget.outputReserveClamped) {
+		console.warn("[LANGFLOW] Output token cap clamped", {
+			sessionId: params.sessionId,
+			modelId: params.modelId ?? "model1",
+			providerId: params.providerId ?? null,
+			modelName: params.modelName,
+			maxModelContext: params.contextLimits.maxModelContext,
+			targetConstructedContext: params.contextLimits.targetConstructedContext,
+			configuredMaxTokens: outputTokenBudget.configuredMaxTokens,
+			effectiveMaxTokens: outputTokenBudget.effectiveMaxTokens,
+			outputReserve: outputTokenBudget.outputReserve,
+			outputReserveClamped: true,
+		});
 	}
 
-	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
-		params.inputValue,
-		params.message,
-	);
+	if (inputTokenBudget > 0 && currentInputTokens <= inputTokenBudget) {
+		return { inputValue: params.inputValue, outputTokenBudget };
+	}
+
 	const currentMessageTokens = estimateTokenCount(currentMessageSection);
 	const contextBudget = Math.max(0, inputTokenBudget - currentMessageTokens - 16);
 	const compactedContext = contextPrefix
@@ -424,12 +504,15 @@ function applyOutboundPromptBudget(params: {
 		configuredPromptBudget,
 		systemTokens,
 		outputReserve,
+		configuredMaxTokens: outputTokenBudget.configuredMaxTokens,
+		effectiveMaxTokens: outputTokenBudget.effectiveMaxTokens,
+		outputReserveClamped: outputTokenBudget.outputReserveClamped,
 		inputTokenBudget,
 		beforeInputTokens: currentInputTokens,
 		afterInputTokens: estimateTokenCount(finalInputValue),
 	});
 
-	return finalInputValue;
+	return { inputValue: finalInputValue, outputTokenBudget };
 }
 
 function inferContextTraceSource(sectionName: string): ContextTraceSource {
@@ -498,7 +581,7 @@ function emitOutboundContextTrace(params: {
 	systemPrompt: string;
 	message: string;
 	contextLimits: PromptContextLimits;
-	maxTokens?: number | null;
+	outputReserve: number;
 	sessionId: string;
 	userId?: string | null;
 	modelId: ModelId | string | undefined;
@@ -530,7 +613,7 @@ function emitOutboundContextTrace(params: {
 						estimateTokenCount(params.systemPrompt) +
 						estimateTokenCount(params.message),
 					promptEstimate: estimateTokenCount(params.inputValue),
-					outputReserve: Math.max(0, params.maxTokens ?? 0),
+					outputReserve: params.outputReserve,
 					wasBudgetEnforced:
 						estimateTokenCount(params.inputValue) >=
 						params.contextLimits.targetConstructedContext,
@@ -611,6 +694,7 @@ function getProviderReasoningEffort(
 function buildLangflowTweaks(
 	modelConfig: LangflowModelRunConfig,
 	systemPrompt: string,
+	effectiveMaxTokens?: number | null,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
 	const requestTimeoutSeconds = Math.max(
@@ -625,8 +709,8 @@ function buildLangflowTweaks(
 		api_base: modelConfig.baseUrl,
 		...(componentId ? { timeout: requestTimeoutSeconds } : {}),
 		...(modelConfig.apiKey ? { api_key: modelConfig.apiKey } : {}),
-		...(modelConfig.maxTokens != null
-			? { max_tokens: modelConfig.maxTokens }
+		...(effectiveMaxTokens != null
+			? { max_tokens: effectiveMaxTokens }
 			: {}),
 		enable_thinking: shouldSendVllmChatTemplateThinking(modelConfig),
 		...(reasoningEffort &&
@@ -767,7 +851,7 @@ export async function prepareOutboundChatContext(params: {
 		systemPromptAppendix: params.systemPromptAppendix,
 		personalityPrompt: params.personalityPrompt,
 	});
-	inputValue = applyOutboundPromptBudget({
+	const budgetedPrompt = applyOutboundPromptBudget({
 		inputValue,
 		message: params.message,
 		systemPrompt,
@@ -784,6 +868,7 @@ export async function prepareOutboundChatContext(params: {
 		modelName: params.modelConfig.modelName,
 		providerId: null,
 	});
+	inputValue = budgetedPrompt.inputValue;
 
 	return {
 		inputValue,
@@ -930,7 +1015,7 @@ export async function sendMessage(
 			modelConfig,
 			config,
 		);
-		inputValue = applyOutboundPromptBudget({
+		const budgetedPrompt = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
@@ -941,12 +1026,13 @@ export async function sendMessage(
 			modelName,
 			providerId: modelConfig.providerId ?? null,
 		});
+		inputValue = budgetedPrompt.inputValue;
 		emitOutboundContextTrace({
 			inputValue,
 			systemPrompt,
 			message,
 			contextLimits,
-			maxTokens: modelConfig.maxTokens,
+			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
 			sessionId,
 			userId: user?.id ?? null,
 			modelId: modelId ?? "model1",
@@ -961,7 +1047,11 @@ export async function sendMessage(
 			input_type: "chat",
 			output_type: "chat",
 			session_id: sessionId,
-			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
+			tweaks: buildLangflowTweaks(
+				modelConfig,
+				systemPrompt,
+				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			),
 		};
 
 		if (config.contextDiagnosticsDebug) {
@@ -1154,7 +1244,7 @@ export async function sendMessageStream(
 			modelConfig,
 			config,
 		);
-		inputValue = applyOutboundPromptBudget({
+		const budgetedPrompt = applyOutboundPromptBudget({
 			inputValue,
 			message,
 			systemPrompt,
@@ -1165,12 +1255,13 @@ export async function sendMessageStream(
 			modelName,
 			providerId: modelConfig.providerId ?? null,
 		});
+		inputValue = budgetedPrompt.inputValue;
 		emitOutboundContextTrace({
 			inputValue,
 			systemPrompt,
 			message,
 			contextLimits,
-			maxTokens: modelConfig.maxTokens,
+			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
 			sessionId,
 			userId: options?.user?.id ?? null,
 			modelId: modelId ?? "model1",
@@ -1185,7 +1276,11 @@ export async function sendMessageStream(
 			input_type: "chat",
 			output_type: "chat",
 			session_id: sessionId,
-			tweaks: buildLangflowTweaks(modelConfig, systemPrompt),
+			tweaks: buildLangflowTweaks(
+				modelConfig,
+				systemPrompt,
+				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			),
 		};
 
 		if (config.contextDiagnosticsDebug) {

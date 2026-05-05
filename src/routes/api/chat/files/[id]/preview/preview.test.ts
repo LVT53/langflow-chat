@@ -156,4 +156,48 @@ describe('GET /api/chat/files/[id]/preview', () => {
 			'application/vnd.oasis.opendocument.text'
 		);
 	});
+
+	it('rejects mismatched generated-file MIME type and extension before preview', async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: 'file-1',
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			filename: 'report.pdf',
+			mimeType: 'text/plain',
+			sizeBytes: 11,
+			storagePath: 'conv-1/file-1.pdf',
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from('hello world'));
+
+		const response = await GET(makeEvent());
+		const body = await response.json();
+
+		expect(response.status).toBe(415);
+		expect(body.error).toBe('Unsupported generated file type');
+	});
+
+	it('serves generated HTML previews with restrictive CSP and sandbox headers', async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: 'file-1',
+			conversationId: 'conv-1',
+			userId: 'user-1',
+			filename: 'report.html',
+			mimeType: 'text/html',
+			sizeBytes: 31,
+			storagePath: 'conv-1/file-1.html',
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from('<!doctype html><h1>Report</h1>'));
+
+		const response = await GET(makeEvent());
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+		expect(response.headers.get('Content-Security-Policy')).toBe(
+			"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+		);
+		expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+		expect(response.headers.get('Content-Disposition')).toContain('inline; filename="report.html"');
+	});
 });

@@ -2,10 +2,10 @@
 import { tick } from "svelte";
 import { t } from "$lib/i18n";
 import type {
-	ChatGeneratedFileListItem,
 	ChatMessage,
 	ContextDebugState,
 	DocumentWorkspaceItem,
+	FileProductionJob,
 	TaskSteeringPayload,
 } from "$lib/types";
 import MessageBubble from "./MessageBubble.svelte";
@@ -15,29 +15,33 @@ let {
 	conversationId = null,
 	isThinkingActive = false,
 	contextDebug = null,
-	generatedFiles = [],
+	fileProductionJobs = [],
 	onRegenerate = undefined,
 	onEdit = undefined,
 	onSteer = undefined,
 	onOpenDocument = undefined,
+	onRetryFileProductionJob = undefined,
+	onCancelFileProductionJob = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
 	isThinkingActive?: boolean;
 	contextDebug?: ContextDebugState | null;
-	generatedFiles?: ChatGeneratedFileListItem[];
+	fileProductionJobs?: FileProductionJob[];
 	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 	onEdit?:
 		| ((payload: { messageId: string; newText: string }) => void)
 		| undefined;
 	onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 	onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
+	onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
+	onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
 let shouldAutoScroll = true;
 let lastMessageCount = 0;
-let lastGeneratedFileCount = 0;
+let lastFileProductionJobCount = 0;
 let lastConversationId: string | null = null;
 let shouldJumpToConversationBottom = false;
 
@@ -46,7 +50,7 @@ $effect(() => {
 		lastConversationId = conversationId;
 		shouldAutoScroll = true;
 		lastMessageCount = 0;
-		lastGeneratedFileCount = 0;
+		lastFileProductionJobCount = 0;
 		shouldJumpToConversationBottom = true;
 	}
 });
@@ -63,17 +67,11 @@ function hasNewMessage(currentMessages: ChatMessage[]): boolean {
 	return currentMessages.length > lastMessageCount;
 }
 
-function getGeneratedFilesForMessage(
-	messageId: string,
-): ChatGeneratedFileListItem[] {
-	return generatedFiles.filter((file) => file.assistantMessageId === messageId);
-}
-
 $effect.pre(() => {
 	messages;
 	scrollContainer;
 	isThinkingActive;
-	generatedFiles.length;
+	fileProductionJobs.length;
 
 	if (!scrollContainer) return;
 
@@ -83,12 +81,13 @@ $effect.pre(() => {
 			shouldJumpToConversationBottom = false;
 		}
 		lastMessageCount = 0;
-		lastGeneratedFileCount = generatedFiles.length;
+		lastFileProductionJobCount = fileProductionJobs.length;
 		return;
 	}
 
 	const isNewMessage = hasNewMessage(dedupedMessages);
-	const hasNewGeneratedFiles = generatedFiles.length > lastGeneratedFileCount;
+	const hasNewFileProductionJobs =
+		fileProductionJobs.length > lastFileProductionJobCount;
 
 	if (shouldJumpToConversationBottom) {
 		// Switching to another conversation should always reveal the latest response.
@@ -97,8 +96,8 @@ $effect.pre(() => {
 	} else if (isNewMessage) {
 		// New message added: jump directly to the latest content.
 		void alignToBottomAfterRender();
-	} else if (hasNewGeneratedFiles && shouldAutoScroll) {
-		// Generated files render inside the latest assistant message; keep that expanded area visible.
+	} else if (hasNewFileProductionJobs && shouldAutoScroll) {
+		// File-production cards render inside the latest assistant message; keep that expanded area visible.
 		void alignToBottomAfterRender();
 	} else if (shouldAutoScroll && isThinkingActive) {
 		// Only follow during thinking phase; stop once content streaming begins.
@@ -106,7 +105,7 @@ $effect.pre(() => {
 	}
 
 	lastMessageCount = dedupedMessages.length;
-	lastGeneratedFileCount = generatedFiles.length;
+	lastFileProductionJobCount = fileProductionJobs.length;
 });
 
 function instantScrollToBottom() {
@@ -134,6 +133,23 @@ let dedupedMessages = $derived(
 		{ seen: new Set<string>(), list: [] as ChatMessage[] },
 	).list,
 );
+
+let currentStreamingAssistantMessageId = $derived(
+	[...dedupedMessages]
+		.reverse()
+		.find((message) => message.role === 'assistant' && (message.isStreaming || message.isThinkingStreaming))
+		?.id ?? null,
+);
+
+function getFileProductionJobsForMessage(message: ChatMessage): FileProductionJob[] {
+	return fileProductionJobs.filter((job) => {
+		if (job.assistantMessageId === message.id) return true;
+		if (job.assistantMessageId != null) return false;
+		if (message.role !== 'assistant' || message.id !== currentStreamingAssistantMessageId) return false;
+		if (conversationId && job.conversationId !== conversationId) return false;
+		return job.createdAt >= message.timestamp - 1000;
+	});
+}
 
 async function alignToBottomAfterRender() {
 	if (!scrollContainer) return;
@@ -170,12 +186,14 @@ async function alignToBottomAfterRender() {
 					isLast={i === dedupedMessages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
-					generatedFiles={getGeneratedFilesForMessage(message.id)}
+					fileProductionJobs={getFileProductionJobsForMessage(message)}
 					{conversationId}
 					{onRegenerate}
 					{onEdit}
 					{onSteer}
 					{onOpenDocument}
+					{onRetryFileProductionJob}
+					{onCancelFileProductionJob}
 				/>
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>

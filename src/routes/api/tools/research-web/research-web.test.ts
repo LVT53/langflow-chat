@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("$lib/server/auth/hooks", () => ({
-	verifyFileGenerateServiceAssertion: vi.fn(),
+	verifyFileProductionServiceAssertion: vi.fn(),
 }));
 
 vi.mock("$lib/server/db", () => ({
@@ -23,13 +23,13 @@ vi.mock("$lib/server/services/web-research", async (importOriginal) => {
 	};
 });
 
-import { verifyFileGenerateServiceAssertion } from "$lib/server/auth/hooks";
+import { verifyFileProductionServiceAssertion } from "$lib/server/auth/hooks";
 import { db } from "$lib/server/db";
 import { researchWeb } from "$lib/server/services/web-research";
 import { POST } from "./+server";
 
-const mockVerifyFileGenerateServiceAssertion =
-	verifyFileGenerateServiceAssertion as ReturnType<typeof vi.fn>;
+const mockVerifyFileProductionServiceAssertion =
+	verifyFileProductionServiceAssertion as ReturnType<typeof vi.fn>;
 const mockResearchWeb = researchWeb as ReturnType<typeof vi.fn>;
 const mockFindConversation = db.query.conversations.findFirst as ReturnType<
 	typeof vi.fn
@@ -95,7 +95,7 @@ describe("POST /api/tools/research-web", () => {
 				fallbackReasons: [],
 			},
 		});
-		mockVerifyFileGenerateServiceAssertion.mockReturnValue({
+		mockVerifyFileProductionServiceAssertion.mockReturnValue({
 			valid: true,
 			claims: {
 				conversationId: "conv-1",
@@ -142,7 +142,7 @@ describe("POST /api/tools/research-web", () => {
 		);
 
 		expect(response.status).toBe(200);
-		expect(mockVerifyFileGenerateServiceAssertion).toHaveBeenCalledWith(
+		expect(mockVerifyFileProductionServiceAssertion).toHaveBeenCalledWith(
 			"Bearer signed",
 		);
 	});

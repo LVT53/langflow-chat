@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "template": "alfyai_standard_report",
+  "fixtureSet": "standard-report",
+  "outputs": ["pdf", "docx", "html"],
+  "screenshotOutputs": ["pdf", "html"],
+  "visualReview": {
+    "artifactDirectory": "artifacts/file-production/standard-report",
+    "screenshots": [
+      "chart-heavy-report/pdf/page-1.png",
+      "chart-heavy-report/html/desktop.png",
+      "chart-heavy-report/html/mobile.png",
+      "hungarian-report/pdf/page-1.png",
+      "hungarian-report/html/desktop.png",
+      "hungarian-report/html/mobile.png",
+      "image-report/pdf/page-1.png",
+      "image-report/html/desktop.png",
+      "image-report/html/mobile.png",
+      "long-report/pdf/page-1.png",
+      "long-report/html/desktop.png",
+      "long-report/html/mobile.png",
+      "short-report/pdf/page-1.png",
+      "short-report/html/desktop.png",
+      "short-report/html/mobile.png",
+      "table-heavy-report/pdf/page-1.png",
+      "table-heavy-report/html/desktop.png",
+      "table-heavy-report/html/mobile.png",
+      "technical-note/pdf/page-1.png",
+      "technical-note/html/desktop.png",
+      "technical-note/html/mobile.png"
+    ]
+  },
+  "printBudget": {
+    "bodyFontPt": { "min": 10.5, "target": 11, "max": 12 },
+    "marginMm": { "top": 18, "right": 16, "bottom": 18, "left": 16 },
+    "headerFooter": {
+      "minBodyGapMm": 6,
+      "maxHeaderHeightMm": 12,
+      "maxFooterHeightMm": 10
+    },
+    "tables": {
+      "forbidHorizontalClipping": true,
+      "minCellPaddingPt": 4,
+      "maxPortraitColumns": 8
+    },
+    "layout": {
+      "forbidOrphanedHeadings": true,
+      "keepCaptionsWithFigures": true,
+      "forbidLongWordOverflow": true
+    }
+  }
+}

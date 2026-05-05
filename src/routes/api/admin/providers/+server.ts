@@ -70,6 +70,7 @@ export const POST: RequestHandler = async (event) => {
       maxModelContext: input.maxModelContext,
       compactionUiThreshold: input.compactionUiThreshold,
       targetConstructedContext: input.targetConstructedContext,
+      maxTokens: input.maxTokens,
     });
     if (limitOrderingError) {
       return json({ error: limitOrderingError }, { status: 400 });

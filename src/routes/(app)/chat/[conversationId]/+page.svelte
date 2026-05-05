@@ -20,6 +20,10 @@ import {
 	fetchMessageEvidence,
 	generateConversationTitle,
 } from "$lib/client/api/conversations";
+import {
+	cancelFileProductionJob as cancelFileProductionJobRequest,
+	retryFileProductionJob as retryFileProductionJobRequest,
+} from "$lib/client/api/file-production";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
@@ -28,12 +32,12 @@ import EvidenceManager from "$lib/components/chat/EvidenceManager.svelte";
 import type {
 	ArtifactSummary,
 	ChatGeneratedFile,
-	ChatGeneratedFileListItem,
 	ChatMessage,
 	ConversationDraft,
 	ContextDebugState,
 	ConversationContextStatus,
 	DocumentWorkspaceItem,
+	FileProductionJob,
 	TaskState,
 	TaskSteeringPayload,
 } from "$lib/types";
@@ -44,12 +48,19 @@ import {
 	getStreamBufferInfo,
 } from "$lib/services/streaming";
 import type { StreamHandle } from "$lib/services/streaming";
-import { inferGeneratedFilenameFromToolInput } from "$lib/utils/generate-file-tool";
 import {
 	buildChatSourceMessageHref,
 	clearChatFocusMessageParam,
 	getChatFocusMessageIdFromUrl,
 } from "$lib/client/document-workspace-navigation";
+import {
+	loadPersistedWorkspaceDocumentState,
+	reduceWorkspaceDocumentsForDeletedConversation,
+	reduceWorkspaceDocumentClose,
+	reduceWorkspaceDocumentOpen,
+	savePersistedWorkspaceDocumentState,
+	WORKSPACE_CONVERSATION_DELETED_EVENT,
+} from "$lib/client/document-workspace-state";
 import {
 	removeConversationLocal,
 	updateConversationTitleLocal,
@@ -58,25 +69,27 @@ import {
 import ChatComposerPanel from "./_components/ChatComposerPanel.svelte";
 import ChatMessagePane from "./_components/ChatMessagePane.svelte";
 import DropZoneOverlay from "$lib/components/chat/DropZoneOverlay.svelte";
-import DocumentWorkspace from "$lib/components/chat/DocumentWorkspace.svelte";
+import DocumentWorkspace from "$lib/components/document-workspace/DocumentWorkspace.svelte";
 import {
 	appendAssistantPlaceholder,
 	appendThinkingChunkToMessageList,
 	appendTokenChunkToMessageList,
 	appendUserMessageAndPlaceholder,
 	applyToolCallUpdateToMessageList,
+	attachUnassignedFileProductionJobsToAssistant,
 	createAssistantPlaceholder,
 	createUserMessage,
 	finalizeStreamingMessageList,
+	getWorkspacePresentationAfterDocumentOpen,
+	hasActiveFileProductionJobs,
+	mergeFileProductionJob,
 	mergeAttachedArtifacts,
 	removeMessageById,
 	toFriendlySendError,
 	updateMessageById,
 	cloneSendPayload,
 	isOsFileDropEvent,
-	reducePendingGeneratedFiles,
-	reduceWorkspaceDocumentClose,
-	reduceWorkspaceDocumentOpen,
+	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
 	type MessageEditPayload,
 	type MessageRegeneratePayload,
@@ -97,6 +110,7 @@ const initialContextDebug = getData().contextDebug ?? null;
 const initialConversationDraft = getData().draft ?? null;
 const initialBootstrapMode = getData().bootstrap ?? false;
 const initialGeneratedFiles = getData().generatedFiles ?? [];
+const initialFileProductionJobs = getData().fileProductionJobs ?? [];
 
 // Track conversation title reactively - use $derived to keep in sync with page data
 let conversationTitle = $derived(data.conversation?.title ?? "");
@@ -134,10 +148,18 @@ let conversationDraft = $state<ConversationDraft | null>(
 	initialConversationDraft,
 );
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
-let pendingGeneratedFiles = $state<ChatGeneratedFileListItem[]>([]);
-let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
-let activeWorkspaceDocumentId = $state<string | null>(null);
-let workspaceOpen = $state(false);
+let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
+const initialWorkspaceState = getPersistedWorkspaceState();
+let workspaceDocuments = $state<DocumentWorkspaceItem[]>(
+	initialWorkspaceState?.documents ?? [],
+);
+let activeWorkspaceDocumentId = $state<string | null>(
+	initialWorkspaceState?.activeDocumentId ?? null,
+);
+let workspaceOpen = $state(initialWorkspaceState?.isOpen ?? false);
+let workspacePresentation = $state<"docked" | "expanded">(
+	initialWorkspaceState?.presentation ?? "docked",
+);
 let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
 let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
@@ -160,16 +182,6 @@ let isThinkingActive = $derived(
 let showInitialLoading = $derived(
 	(isSending || initialStreamPending) && $messages.length === 0,
 );
-let generatedFileCards = $derived([
-	...generatedFiles.map(
-		(file) =>
-			({
-				...file,
-				status: "success",
-			}) satisfies ChatGeneratedFileListItem,
-	),
-	...pendingGeneratedFiles,
-]);
 let availableWorkspaceDocuments = $derived(
 	generatedFiles.map((file) => ({
 		id: file.id,
@@ -180,10 +192,11 @@ let availableWorkspaceDocuments = $derived(
 		documentFamilyStatus: file.documentFamilyStatus ?? null,
 		documentLabel: file.documentLabel ?? null,
 		documentRole: file.documentRole ?? null,
-		versionNumber: file.versionNumber ?? null,
-		originConversationId: file.originConversationId ?? null,
-		originAssistantMessageId: file.originAssistantMessageId ?? null,
-		sourceChatFileId: file.sourceChatFileId ?? null,
+		versionNumber: file.versionNumber ?? 1,
+		originConversationId: file.originConversationId ?? file.conversationId,
+		originAssistantMessageId:
+			file.originAssistantMessageId ?? file.assistantMessageId ?? null,
+		sourceChatFileId: file.sourceChatFileId ?? file.id,
 		mimeType: file.mimeType,
 		previewUrl: `/api/chat/files/${file.id}/preview`,
 		artifactId: file.artifactId ?? null,
@@ -192,32 +205,49 @@ let availableWorkspaceDocuments = $derived(
 	})),
 );
 
-function inferGeneratedFilename(input: Record<string, unknown>): string {
-	return inferGeneratedFilenameFromToolInput(input);
+function getPersistedWorkspaceState() {
+	if (!browser) return null;
+	return loadPersistedWorkspaceDocumentState(window.sessionStorage);
 }
 
-function addPendingGeneratedFile(
-	input: Record<string, unknown>,
-	assistantMessageId: string,
+function restorePersistedWorkspaceState() {
+	const persistedWorkspaceState = getPersistedWorkspaceState();
+	if (!persistedWorkspaceState) {
+		workspaceDocuments = [];
+		activeWorkspaceDocumentId = null;
+		workspaceOpen = false;
+		workspacePresentation = "docked";
+		return;
+	}
+
+	workspaceDocuments = persistedWorkspaceState.documents;
+	activeWorkspaceDocumentId = persistedWorkspaceState.activeDocumentId;
+	workspaceOpen = persistedWorkspaceState.isOpen;
+	workspacePresentation = persistedWorkspaceState.presentation;
+}
+
+$effect(() => {
+	if (!browser) return;
+	savePersistedWorkspaceDocumentState(window.sessionStorage, {
+		documents: workspaceDocuments,
+		activeDocumentId: activeWorkspaceDocumentId,
+		isOpen: workspaceOpen && workspaceDocuments.length > 0,
+		presentation: workspacePresentation,
+	});
+});
+
+function openWorkspaceDocument(
+	document: DocumentWorkspaceItem,
+	options: { preservePresentation?: boolean } = {},
 ) {
-	const filename = inferGeneratedFilename(input);
-	pendingGeneratedFiles = reducePendingGeneratedFiles(
-		pendingGeneratedFiles,
-		filename,
-		assistantMessageId,
-		data.conversation.id,
-	);
-}
-
-function resetPendingGeneratedFiles() {
-	pendingGeneratedFiles = [];
-}
-
-function openWorkspaceDocument(document: DocumentWorkspaceItem) {
 	const result = reduceWorkspaceDocumentOpen(workspaceDocuments, document);
 	workspaceDocuments = result.documents;
 	activeWorkspaceDocumentId = result.activeDocumentId;
 	workspaceOpen = result.isOpen;
+	workspacePresentation = getWorkspacePresentationAfterDocumentOpen(
+		workspacePresentation,
+		options,
+	);
 	if (browser && document.artifactId) {
 		void recordDocumentWorkspaceOpen(document.artifactId).catch(
 			() => undefined,
@@ -250,6 +280,30 @@ function closeWorkspaceDocument(documentId: string) {
 
 function closeWorkspace() {
 	workspaceOpen = false;
+	workspacePresentation = "docked";
+}
+
+function handleWorkspaceConversationDeleted(conversationId: string) {
+	const nextState = reduceWorkspaceDocumentsForDeletedConversation(
+		workspaceDocuments,
+		conversationId,
+		activeWorkspaceDocumentId,
+	);
+	if (nextState.documents.length === workspaceDocuments.length) return;
+
+	workspaceDocuments = nextState.documents;
+	activeWorkspaceDocumentId = nextState.activeDocumentId;
+	workspaceOpen = nextState.isOpen;
+	if (!nextState.isOpen) {
+		workspacePresentation = "docked";
+	}
+}
+
+function handleWorkspaceConversationDeletedEvent(event: Event) {
+	const conversationId = (event as CustomEvent<{ conversationId?: unknown }>)
+		.detail?.conversationId;
+	if (typeof conversationId !== "string") return;
+	handleWorkspaceConversationDeleted(conversationId);
 }
 
 async function focusMessage(messageId: string) {
@@ -346,12 +400,10 @@ function resetState() {
 	contextDebug = data.contextDebug ?? null;
 	conversationDraft = data.draft ?? null;
 	generatedFiles = data.generatedFiles ?? [];
+	fileProductionJobs = data.fileProductionJobs ?? [];
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
-	workspaceDocuments = [];
-	activeWorkspaceDocumentId = null;
-	workspaceOpen = false;
-	resetPendingGeneratedFiles();
+	restorePersistedWorkspaceState();
 	queuedTurn = null;
 	bootstrapMode = data.bootstrap ?? false;
 	hydratingConversation = false;
@@ -499,6 +551,9 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 		if (detail.generatedFiles) {
 			generatedFiles = [...(detail.generatedFiles ?? [])];
 		}
+		if (detail.fileProductionJobs) {
+			fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
+		}
 
 		// Poll for evidence
 		if (newAssistant.id) {
@@ -525,6 +580,7 @@ async function loadPersistedData() {
 	if (detail) {
 		messages.set([...(detail.messages ?? [])]);
 		generatedFiles = [...(detail.generatedFiles ?? [])];
+		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		conversationDraft = null;
 		const pending = consumePendingConversationMessage(data.conversation.id);
 		void pending;
@@ -579,12 +635,6 @@ async function reconnectToOrphanedStream(
 				);
 			},
 			onToolCall(name, input, status, details) {
-				if (
-					(name === "generate_file" || name === "export_document") &&
-					status === "running"
-				) {
-					addPendingGeneratedFile(input, placeholderId);
-				}
 				messages.update((list) =>
 					applyToolCallUpdateToMessageList(list, {
 						placeholderId,
@@ -594,6 +644,9 @@ async function reconnectToOrphanedStream(
 						details,
 					}),
 				);
+				if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 			},
 			onWaiting() {
 				console.info("[CHAT] Reconnection waiting - polling for completion");
@@ -626,8 +679,13 @@ async function reconnectToOrphanedStream(
 					);
 					generatedFiles = [...generatedFiles, ...newFiles];
 				}
-				resetPendingGeneratedFiles();
+				if (metadata?.generatedFiles) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 				const serverAssistantId = metadata?.assistantMessageId;
+				if (serverAssistantId) {
+					attachFileProductionJobsToAssistantMessage(serverAssistantId);
+				}
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
 						placeholderId,
@@ -642,7 +700,6 @@ async function reconnectToOrphanedStream(
 					void pollMessageEvidence(serverAssistantId);
 					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
 				}
-				resetPendingGeneratedFiles();
 
 				const isBrowserAbort =
 					err.name === "AbortError" &&
@@ -714,6 +771,7 @@ async function reconnectToOrphanedStream(
 						// Update stores directly - don't call invalidateAll as it can overwrite our fresh data
 						messages.set([...(detail.messages ?? [])]); // Create new array to trigger reactivity
 						generatedFiles = [...(detail.generatedFiles ?? [])];
+						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
 						const pending = consumePendingConversationMessage(
@@ -779,14 +837,23 @@ async function checkForOrphanedStreamOnMount() {
 onMount(() => {
 	currentConversationId.set(data.conversation.id);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
+	window.addEventListener(
+		WORKSPACE_CONVERSATION_DELETED_EVENT,
+		handleWorkspaceConversationDeletedEvent,
+	);
 	void checkForOrphanedStreamOnMount();
 	void recoverPendingEvidence();
 	void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
 });
 
 onDestroy(() => {
-	if (browser)
+	if (browser) {
 		document.removeEventListener("visibilitychange", handleVisibilityChange);
+		window.removeEventListener(
+			WORKSPACE_CONVERSATION_DELETED_EVENT,
+			handleWorkspaceConversationDeletedEvent,
+		);
+	}
 	for (const controller of evidencePollControllers.values()) {
 		controller.abort();
 	}
@@ -829,7 +896,7 @@ async function hydrateConversationDetail(conversationId: string) {
 		contextDebug = payload.contextDebug ?? contextDebug;
 		conversationDraft = payload.draft ?? conversationDraft;
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
-		resetPendingGeneratedFiles();
+		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
 		bootstrapMode = false;
 
 		if (
@@ -846,6 +913,49 @@ async function hydrateConversationDetail(conversationId: string) {
 		hydratingConversation = false;
 	}
 }
+
+function attachFileProductionJobsToAssistantMessage(assistantMessageId: string) {
+	fileProductionJobs = attachUnassignedFileProductionJobsToAssistant(
+		fileProductionJobs,
+		{
+			conversationId: data.conversation.id,
+			assistantMessageId,
+		},
+	);
+}
+
+async function handleRetryFileProductionJob(jobId: string) {
+	try {
+		const job = await retryFileProductionJobRequest(jobId);
+		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to retry file production";
+	}
+}
+
+async function handleCancelFileProductionJob(jobId: string) {
+	try {
+		const job = await cancelFileProductionJobRequest(jobId);
+		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to cancel file production";
+	}
+}
+
+$effect(() => {
+	const conversationId = data.conversation?.id;
+	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
+		return;
+	}
+
+	const interval = setInterval(() => {
+		void hydrateConversationDetail(conversationId);
+	}, 2500);
+
+	return () => {
+		clearInterval(interval);
+	};
+});
 
 let initializedGeneratedFilesData = false;
 let prevGeneratedFilesData: typeof data.generatedFiles;
@@ -865,7 +975,20 @@ $effect(() => {
 			);
 			generatedFiles = [...currentFiles, ...newFiles];
 		}
-		resetPendingGeneratedFiles();
+	}
+});
+
+let initializedFileProductionJobsData = false;
+let prevFileProductionJobsData: typeof data.fileProductionJobs;
+$effect(() => {
+	if (!initializedFileProductionJobsData) {
+		prevFileProductionJobsData = data.fileProductionJobs;
+		initializedFileProductionJobsData = true;
+		return;
+	}
+	if (data.fileProductionJobs !== prevFileProductionJobsData) {
+		prevFileProductionJobsData = data.fileProductionJobs;
+		fileProductionJobs = [...(data.fileProductionJobs ?? [])];
 	}
 });
 
@@ -1089,12 +1212,6 @@ function handleSend(
 				);
 			},
 			onToolCall(name, input, status, details) {
-				if (
-					(name === "generate_file" || name === "export_document") &&
-					status === "running"
-				) {
-					addPendingGeneratedFile(input, placeholderId);
-				}
 				messages.update((list) =>
 					applyToolCallUpdateToMessageList(list, {
 						placeholderId,
@@ -1104,6 +1221,9 @@ function handleSend(
 						details,
 					}),
 				);
+				if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+					void hydrateConversationDetail(data.conversation.id);
+				}
 			},
 			onEnd(fullText, metadata) {
 				const completedUserMessage = lastUserMessage;
@@ -1120,9 +1240,12 @@ function handleSend(
 						(f) => !existingIds.has(f.id),
 					);
 					generatedFiles = [...generatedFiles, ...newFiles];
+					void hydrateConversationDetail(data.conversation.id);
 				}
-				resetPendingGeneratedFiles();
 				const serverAssistantId = metadata?.assistantMessageId;
+				if (serverAssistantId) {
+					attachFileProductionJobsToAssistantMessage(serverAssistantId);
+				}
 				messages.update((list) =>
 					finalizeStreamingMessageList(list, {
 						placeholderId,
@@ -1158,7 +1281,6 @@ function handleSend(
 				messages.update((list) => removeMessageById(list, placeholderId));
 				activeStream = null;
 				isSending = false;
-				resetPendingGeneratedFiles();
 				restoreQueuedTurnToDraft();
 
 				const isBrowserAbort =
@@ -1231,12 +1353,6 @@ function handleRetry() {
 					);
 				},
 				onToolCall(name, input, status, details) {
-					if (
-						(name === "generate_file" || name === "export_document") &&
-						status === "running"
-					) {
-						addPendingGeneratedFile(input, placeholderId);
-					}
 					messages.update((list) =>
 						applyToolCallUpdateToMessageList(list, {
 							placeholderId,
@@ -1246,6 +1362,9 @@ function handleRetry() {
 							details,
 						}),
 					);
+					if (shouldHydrateFileProductionJobsOnToolCall(name, status)) {
+						void hydrateConversationDetail(data.conversation.id);
+					}
 				},
 				onWaiting() {
 					console.info(
@@ -1269,9 +1388,12 @@ function handleRetry() {
 							(f) => !existingIds.has(f.id),
 						);
 						generatedFiles = [...generatedFiles, ...newFiles];
+						void hydrateConversationDetail(data.conversation.id);
 					}
-					resetPendingGeneratedFiles();
 					const serverAssistantId = metadata?.assistantMessageId;
+					if (serverAssistantId) {
+						attachFileProductionJobsToAssistantMessage(serverAssistantId);
+					}
 					messages.update((list) =>
 						finalizeStreamingMessageList(list, {
 							placeholderId,
@@ -1305,7 +1427,6 @@ function handleRetry() {
 					messages.update((list) => removeMessageById(list, placeholderId));
 					activeStream = null;
 					isSending = false;
-					resetPendingGeneratedFiles();
 					restoreQueuedTurnToDraft();
 
 					const isBrowserAbort =
@@ -1564,7 +1685,10 @@ function handleDrop(event: DragEvent) {
 	ondrop={handleDrop}
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
-	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
+	<div
+		class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg"
+		class:chat-stage-workspace-open={workspaceOpen && workspaceDocuments.length > 0}
+	>
 		<div class="chat-main relative flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div class="chat-messages flex flex-1 flex-col overflow-hidden">
 				{#if showInitialLoading}
@@ -1580,11 +1704,13 @@ function handleDrop(event: DragEvent) {
 						conversationId={data.conversation.id}
 						{isThinkingActive}
 						{contextDebug}
-						generatedFiles={generatedFileCards}
+						{fileProductionJobs}
 						onOpenDocument={openWorkspaceDocument}
 						onRegenerate={handleRegenerate}
 						onEdit={handleEdit}
 						onSteer={handleSteering}
+						onRetryFileProductionJob={handleRetryFileProductionJob}
+						onCancelFileProductionJob={handleCancelFileProductionJob}
 					/>
 				{/if}
 			</div>
@@ -1626,14 +1752,19 @@ function handleDrop(event: DragEvent) {
 
 		<DocumentWorkspace
 			open={workspaceOpen}
+			presentation={workspacePresentation}
 			documents={workspaceDocuments}
 			availableDocuments={availableWorkspaceDocuments}
 			activeDocumentId={activeWorkspaceDocumentId}
 			onSelectDocument={selectWorkspaceDocument}
-			onOpenDocument={openWorkspaceDocument}
+			onOpenDocument={(document) =>
+				openWorkspaceDocument(document, { preservePresentation: true })}
 			onJumpToSource={handleJumpToWorkspaceSource}
 			onCloseDocument={closeWorkspaceDocument}
 			onCloseWorkspace={closeWorkspace}
+			onPresentationChange={(nextPresentation) => {
+				workspacePresentation = nextPresentation;
+			}}
 		/>
 	</div>
 
@@ -1647,11 +1778,18 @@ function handleDrop(event: DragEvent) {
 
 <style>
 	.chat-main {
+		flex: 1 1 0%;
 		min-width: 0;
 	}
 
 	.chat-messages {
 		min-width: 0;
+	}
+
+	.chat-stage-workspace-open .chat-main :global(.scroll-container > div),
+	.chat-stage-workspace-open .chat-main :global(.composer-shell) {
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	.spinner-large {

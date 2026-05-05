@@ -1,10 +1,10 @@
 <script lang="ts">
 	import MessageArea from '$lib/components/chat/MessageArea.svelte';
 	import type {
-		ChatGeneratedFileListItem,
 		ChatMessage,
 		ContextDebugState,
 		DocumentWorkspaceItem,
+		FileProductionJob,
 		TaskSteeringPayload
 	} from '$lib/types';
 	import type { MessageEditPayload, MessageRegeneratePayload } from '../_helpers';
@@ -14,21 +14,25 @@
 		conversationId,
 		isThinkingActive,
 		contextDebug,
-		generatedFiles,
+		fileProductionJobs = [],
 		onOpenDocument,
 		onRegenerate,
 		onEdit,
 		onSteer,
+		onRetryFileProductionJob,
+		onCancelFileProductionJob,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
-		generatedFiles: ChatGeneratedFileListItem[];
+		fileProductionJobs?: FileProductionJob[];
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
+		onRetryFileProductionJob?: (jobId: string) => void | Promise<void>;
+		onCancelFileProductionJob?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -38,11 +42,13 @@
 		{conversationId}
 		{isThinkingActive}
 		{contextDebug}
-		{generatedFiles}
+		{fileProductionJobs}
 		{onOpenDocument}
 		{onRegenerate}
 		{onEdit}
 		{onSteer}
+		{onRetryFileProductionJob}
+		{onCancelFileProductionJob}
 	/>
 </div>
 

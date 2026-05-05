@@ -117,10 +117,15 @@ export interface ChatGeneratedFile {
 	createdAt: number;
 }
 
-export interface ChatGeneratedFileListItem {
+export type FileProductionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface FileProductionJobFile {
 	id: string;
-	conversationId: string;
-	assistantMessageId?: string | null;
+	filename: string;
+	mimeType: string | null;
+	sizeBytes: number;
+	downloadUrl: string;
+	previewUrl: string | null;
 	artifactId?: string | null;
 	documentFamilyId?: string | null;
 	documentFamilyStatus?: WorkingDocumentFamilyStatus | null;
@@ -130,12 +135,24 @@ export interface ChatGeneratedFileListItem {
 	originConversationId?: string | null;
 	originAssistantMessageId?: string | null;
 	sourceChatFileId?: string | null;
-	filename: string;
-	mimeType: string | null;
-	sizeBytes: number;
+}
+
+export interface FileProductionJob {
+	id: string;
+	conversationId: string;
+	assistantMessageId?: string | null;
+	title: string;
+	status: FileProductionJobStatus;
+	stage?: string | null;
 	createdAt: number;
-	status: "generating" | "success" | "failed";
-	error?: string;
+	updatedAt: number;
+	files: FileProductionJobFile[];
+	warnings: string[];
+	error?: {
+		code: string;
+		message: string;
+		retryable: boolean;
+	} | null;
 }
 
 export type DocumentWorkspaceSource =
@@ -173,6 +190,7 @@ export interface ConversationDetail {
 	draft?: ConversationDraft | null;
 	bootstrap?: boolean;
 	generatedFiles?: ChatGeneratedFile[];
+	fileProductionJobs?: FileProductionJob[];
 	totalCostUsdMicros?: number;
 	totalTokens?: number;
 }

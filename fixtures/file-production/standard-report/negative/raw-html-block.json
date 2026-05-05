@@ -1,0 +1,10 @@
+{
+  "fixtureId": "raw-html-block",
+  "expectedErrorCode": "unsupported_document_block",
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Raw HTML Attempt",
+    "blocks": [{ "type": "rawHtml", "html": "<h1>Unsafe</h1>" }]
+  }
+}

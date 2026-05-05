@@ -1,4 +1,4 @@
-# Sandbox — Sandboxed File Generation
+# Sandbox — Sandboxed File Production
 
 Sandboxed container execution for AI-generated file production. Isolated Python/Node runtime with no network access.
 
@@ -21,7 +21,7 @@ Sandboxed container execution for AI-generated file production. Isolated Python/
 
 | Prefix | Source |
 |--------|--------|
-| `[FILE_GENERATE]` | Sandbox endpoint, image warmup, readback warnings |
+| `[FILE_PRODUCTION]` | Sandbox runtime, image warmup, readback warnings |
 | `[SANDBOX]` | Container lifecycle events |
 
 ## Anti-Patterns

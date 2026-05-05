@@ -118,7 +118,7 @@ describe("buildOutboundSystemPrompt", () => {
 		vi.clearAllMocks();
 	});
 
-	it("keeps always-on date, generated-file, and image-search guidance with custom prompts", () => {
+	it("keeps always-on date, unified file-production, and image-search guidance with custom prompts", () => {
 		const prompt = buildOutboundSystemPrompt({
 			basePrompt: "Custom system prompt",
 			inputValue: "Create a downloadable PDF with photos of Amsterdam.",
@@ -131,6 +131,22 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("Time-sensitive search workflow");
 		expect(prompt).toContain("Generated file workflow");
 		expect(prompt).toContain("If the user asks for a downloadable file");
+		expect(prompt).toContain("produce_file");
+		expect(prompt).toContain("sourceMode");
+		expect(prompt).toContain("document_source");
+		expect(prompt).toContain("documentSource");
+		expect(prompt).toContain("program");
+		expect(prompt).toContain("PptxGenJS charts");
+		expect(prompt).toContain("array of series objects");
+		expect(prompt).toContain("idempotencyKey");
+		expect(prompt).toContain("requestTitle");
+		expect(prompt).toContain("requestedOutputs");
+		expect(prompt).toContain("documentIntent");
+		expect(prompt).toContain('type: "heading"');
+		expect(prompt).toContain("level: 2");
+		expect(prompt).toContain("headers");
+		expect(prompt).toContain("Chart.js-style data");
+		expect(prompt).toContain("directly before the paragraphs");
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");
 		expect(prompt).toContain("research_web");
@@ -139,6 +155,10 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain(
 			"get_contents` expects a JSON argument like {urls:",
 		);
+		expect(prompt).not.toContain("generate_file");
+		expect(prompt).not.toContain("export_document");
+		expect(prompt).not.toContain("createPDF");
+		expect(prompt).not.toContain("Terracotta Crown");
 	});
 
 	it("places the selected personality style after generic tool guidance so it controls visible answer style", () => {
@@ -284,6 +304,67 @@ describe("sendMessage provider routing", () => {
 		expect(
 			estimateTokenCount(`${systemPrompt}\n\n${body.input_value}`),
 		).toBeLessThanOrEqual(8_000);
+	});
+
+	it("keeps usable prompt context when a switched provider has an impossible max token cap", async () => {
+		mocks.getProviderWithSecrets.mockResolvedValueOnce({
+			id: "provider-1",
+			name: "fireworks",
+			displayName: "Fireworks Model",
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "accounts/fireworks/models/kimi-k2p6",
+			reasoningEffort: null,
+			thinkingType: null,
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: 146_000,
+			compactionUiThreshold: 131_400,
+			targetConstructedContext: 102_200,
+			maxMessageLength: null,
+			maxTokens: 262_000,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
+		const switchedModelContext = [
+			"Context from your conversation history:",
+			`## Retrieved Evidence\nImportant retained context.\n${"large context ".repeat(5000)}`,
+			"## Current User Message\nTiny question?",
+		].join("\n\n");
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: switchedModelContext,
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+		try {
+			await sendMessage("Tiny question?", "conv-1", "provider:provider-1", {
+				id: "user-1",
+			});
+
+			const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+			const providerTweaks = body.tweaks["ModelNode-1"];
+			expect(providerTweaks.max_tokens).toBeLessThan(146_000);
+			expect(body.input_value).toContain("Important retained context.");
+			expect(body.input_value).toContain(
+				"## Current User Message\nTiny question?",
+			);
+			expect(warn).toHaveBeenCalledWith(
+				"[LANGFLOW] Output token cap clamped",
+				expect.objectContaining({
+					configuredMaxTokens: 262_000,
+					effectiveMaxTokens: providerTweaks.max_tokens,
+					outputReserveClamped: true,
+				}),
+			);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 
 	it("emits a compact Context Trace for the outbound turn without prompt body text", async () => {

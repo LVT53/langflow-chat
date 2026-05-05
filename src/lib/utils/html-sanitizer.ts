@@ -1,12 +1,16 @@
 import DOMPurify from 'isomorphic-dompurify';
 
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(
+	html: string,
+	options: { allowStyleAttributes?: boolean; allowStyleTags?: boolean } = {}
+): string {
 	if (!html) return '';
 
 	return DOMPurify.sanitize(html, {
 		USE_PROFILES: { html: true },
-		FORBID_TAGS: ['script', 'style'],
-		FORBID_ATTR: ['style'],
+		FORBID_TAGS: options.allowStyleTags ? ['script'] : ['script', 'style'],
+		FORBID_ATTR: options.allowStyleAttributes ? [] : ['style'],
+		ADD_TAGS: options.allowStyleTags ? ['style'] : [],
 		ADD_ATTR: ['target', 'rel'],
 		ALLOW_DATA_ATTR: false,
 		ALLOW_UNKNOWN_PROTOCOLS: false,

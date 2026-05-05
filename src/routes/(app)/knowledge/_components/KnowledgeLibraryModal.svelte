@@ -42,10 +42,7 @@ let itemCount = $derived(getLibraryItemCount({ documents }));
 let bulkKey = $derived(getLibraryBulkKey());
 
 function openPreview(document: KnowledgeDocumentItem) {
-	onOpenDocument({
-		...toWorkspaceDocument(document),
-		previewUrl: document.previewUrl ?? null,
-	});
+	onOpenDocument(toWorkspaceDocument(document));
 	onClose();
 }
 

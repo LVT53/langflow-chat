@@ -18,6 +18,7 @@ describe("KnowledgeLibraryModal", () => {
 			updatedAt: Date.now(),
 			displayArtifactId: "artifact-display",
 			promptArtifactId: "artifact-prompt",
+			previewUrl: "/api/knowledge/artifact-prompt/preview",
 			familyArtifactIds: ["artifact-display", "artifact-prompt"],
 			conversationId: null,
 			summary: null,
@@ -55,6 +56,7 @@ describe("KnowledgeLibraryModal", () => {
 				filename: "Deck.pptx",
 			}),
 		);
+		expect(onOpenDocument.mock.calls[0][0].previewUrl).toBeUndefined();
 		expect(onOpenDocument).not.toHaveBeenCalledWith(
 			expect.objectContaining({
 				artifactId: "artifact-prompt",

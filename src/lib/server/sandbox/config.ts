@@ -27,7 +27,6 @@ interface SandboxRuntimeConfig {
 }
 
 const JAVASCRIPT_NODE_MODULES_DIR = path.join(process.cwd(), "node_modules");
-const JAVASCRIPT_HELPERS_DIR = path.join(process.cwd(), "sandbox-helpers");
 const PYTHON_VENV_SITE_PACKAGES = path.join(
 	process.cwd(),
 	"sandbox-python-env",
@@ -50,7 +49,6 @@ const SANDBOX_RUNTIME_CONFIG: Record<SandboxLanguage, SandboxRuntimeConfig> = {
 		workingDir: "/workspace",
 		binds: [
 			`${JAVASCRIPT_NODE_MODULES_DIR}:/workspace/node_modules:ro`,
-			`${JAVASCRIPT_HELPERS_DIR}:/workspace/helpers:ro`,
 		],
 	},
 };
@@ -120,7 +118,7 @@ async function pullSandboxImage(language: SandboxLanguage): Promise<void> {
 	const runtime = getSandboxRuntime(language);
 
 	console.info(
-		"[FILE_GENERATE] Sandbox image missing locally; pulling base image",
+		"[FILE_PRODUCTION] Sandbox image missing locally; pulling base image",
 		{
 			runtime: language,
 			image: runtime.image,
@@ -141,7 +139,7 @@ async function pullSandboxImage(language: SandboxLanguage): Promise<void> {
 				reject(error);
 				return;
 			}
-			console.info("[FILE_GENERATE] Sandbox image pull completed", {
+			console.info("[FILE_PRODUCTION] Sandbox image pull completed", {
 				runtime: language,
 				image: runtime.image,
 			});
@@ -192,21 +190,21 @@ export function prewarmSandboxImageInBackground(): void {
 		}
 
 		state.warmupStarted = true;
-		console.info("[FILE_GENERATE] Scheduling sandbox image warmup", {
+		console.info("[FILE_PRODUCTION] Scheduling sandbox image warmup", {
 			runtime: language,
 			image: runtime.image,
 		});
 
 		void ensureSandboxImage(language)
 			.then(() => {
-				console.info("[FILE_GENERATE] Sandbox image warmup ready", {
+				console.info("[FILE_PRODUCTION] Sandbox image warmup ready", {
 					runtime: language,
 					image: runtime.image,
 				});
 			})
 			.catch((error) => {
 				state.warmupStarted = false;
-				console.warn("[FILE_GENERATE] Sandbox image warmup failed", {
+				console.warn("[FILE_PRODUCTION] Sandbox image warmup failed", {
 					runtime: language,
 					image: runtime.image,
 					error,

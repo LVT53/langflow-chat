@@ -48,6 +48,7 @@ export {
 // Internal helpers (moved to sub-modules, retained here for local use)
 // ---------------------------------------------------------------------------
 import { getNestedObject } from "$lib/services/stream-protocol";
+import { isFileProductionToolName } from "$lib/utils/tool-calls";
 import { parseMaybeJson } from "./stream-parser";
 import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
@@ -207,6 +208,8 @@ export function createServerChunkRuntime({
 		status: "running" | "done",
 		details?: ImportedToolDetails,
 	) => {
+		const shouldStoreThinkingSegment = !isFileProductionToolName(name);
+
 		flushInlineThinkingBuffer();
 		flushPendingThinking();
 		if (onToolCall) onToolCall(name, input, status, details?.outputSummary);
@@ -222,28 +225,32 @@ export function createServerChunkRuntime({
 		);
 
 		if (status === "running") {
-			serverSegments.push({
-				type: "tool_call",
-				name,
-				input,
-				status: "running",
-			});
+			if (shouldStoreThinkingSegment) {
+				serverSegments.push({
+					type: "tool_call",
+					name,
+					input,
+					status: "running",
+				});
+			}
 			toolCallRecords.push({ name, input, status: "running" });
 			return;
 		}
 
-		for (let i = serverSegments.length - 1; i >= 0; i--) {
-			const segment = serverSegments[i];
-			if (
-				segment.type === "tool_call" &&
-				segment.name === name &&
-				segment.status === "running"
-			) {
-				segment.status = "done";
-				segment.outputSummary = details?.outputSummary ?? null;
-				segment.sourceType = details?.sourceType ?? null;
-				segment.candidates = details?.candidates;
-				break;
+		if (shouldStoreThinkingSegment) {
+			for (let i = serverSegments.length - 1; i >= 0; i--) {
+				const segment = serverSegments[i];
+				if (
+					segment.type === "tool_call" &&
+					segment.name === name &&
+					segment.status === "running"
+				) {
+					segment.status = "done";
+					segment.outputSummary = details?.outputSummary ?? null;
+					segment.sourceType = details?.sourceType ?? null;
+					segment.candidates = details?.candidates;
+					break;
+				}
 			}
 		}
 

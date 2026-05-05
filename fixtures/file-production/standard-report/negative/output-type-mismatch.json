@@ -1,0 +1,6 @@
+{
+  "fixtureId": "output-type-mismatch",
+  "expectedErrorCode": "output_file_type_mismatch",
+  "filename": "report.pdf",
+  "mimeType": "text/plain"
+}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
-  import { renderMarkdown, renderCodeBlock, prepareCodeHighlighting } from '$lib/services/markdown';
+  import { renderMarkdown, renderCodeBlock, prepareCodeHighlighting } from '$lib/utils/markdown-loader';
   import {
     deriveBalancedColumnWidths,
     getTableColumnCount,
@@ -44,8 +44,9 @@
     if (throttleTimer !== null) return;
     throttleTimer = setTimeout(() => {
       throttleTimer = null;
-      const latest = pendingContent!;
+      const latest = pendingContent;
       pendingContent = null;
+      if (latest === null) return;
       void renderContent(latest, darkMode, streaming);
     }, STREAM_THROTTLE_MS);
   }
@@ -71,12 +72,12 @@
       textLines.length = 0;
     };
 
-    const flushCode = () => {
+    const flushCode = async () => {
       nextBlocks.push({
         type: 'code',
         code: codeLines.join('\n'),
         language,
-        html: renderCodeBlock(codeLines.join('\n'), language, darkMode)
+        html: await renderCodeBlock(codeLines.join('\n'), language, darkMode)
       });
       codeLines.length = 0;
       language = undefined;
@@ -94,7 +95,7 @@
       }
 
       if (inCodeBlock && closingFenceMatch) {
-        flushCode();
+        await flushCode();
         inCodeBlock = false;
         continue;
       }
@@ -109,7 +110,7 @@
     await flushText();
 
     if (inCodeBlock) {
-      flushCode();
+      await flushCode();
     }
 
     return nextBlocks;
@@ -209,7 +210,7 @@
             wordIndex++;
           }
         }
-        node.parentNode!.replaceChild(fragment, node);
+        node.parentNode?.replaceChild(fragment, node);
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const tagName = (node as Element).tagName;
         if (tagName === 'SCRIPT' || tagName === 'STYLE') return;

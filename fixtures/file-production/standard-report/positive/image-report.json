@@ -1,0 +1,19 @@
+{
+  "fixtureId": "image-report",
+  "template": "alfyai_standard_report",
+  "outputs": ["pdf", "docx", "html"],
+  "documentSource": {
+    "version": 1,
+    "template": "alfyai_standard_report",
+    "title": "Image Handling Report",
+    "blocks": [
+      {
+        "type": "image",
+        "source": { "kind": "https", "url": "https://example.com/assets/factory-floor.png" },
+        "altText": "Factory floor layout overview.",
+        "caption": "Critical image with centered caption.",
+        "critical": true
+      }
+    ]
+  }
+}

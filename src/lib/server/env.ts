@@ -89,6 +89,21 @@ interface Config {
 	systemPrompt: string;
 	perUserStreamLimit: number;
 	maxFileUploadSize: number;
+	fileProductionMaxOutputs: number;
+	fileProductionMaxSourceJsonBytes: number;
+	fileProductionMaxProjectionBytes: number;
+	fileProductionMaxPdfPages: number;
+	fileProductionMaxTableRows: number;
+	fileProductionMaxTableColumns: number;
+	fileProductionMaxChartDataPoints: number;
+	fileProductionMaxChartSeries: number;
+	fileProductionMaxImageCount: number;
+	fileProductionMaxImageBytes: number;
+	fileProductionMaxTotalImageBytes: number;
+	fileProductionSandboxTimeoutMs: number;
+	fileProductionRendererTimeoutMs: number;
+	fileProductionMaxOutputFileBytes: number;
+	fileProductionMaxTotalOutputBytes: number;
 }
 
 export function getDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -407,6 +422,75 @@ function readConfig(): Config {
 			1048576,
 			parseInt(process.env.MAX_FILE_UPLOAD_SIZE || "104857600", 10) ||
 				104857600,
+		),
+		fileProductionMaxOutputs: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_OUTPUTS || "5", 10) || 5,
+		),
+		fileProductionMaxSourceJsonBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES || "2097152", 10) ||
+				2097152,
+		),
+		fileProductionMaxProjectionBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_PROJECTION_BYTES || "1048576", 10) ||
+				1048576,
+		),
+		fileProductionMaxPdfPages: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_PDF_PAGES || "250", 10) || 250,
+		),
+		fileProductionMaxTableRows: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_TABLE_ROWS || "10000", 10) || 10000,
+		),
+		fileProductionMaxTableColumns: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_TABLE_COLUMNS || "50", 10) || 50,
+		),
+		fileProductionMaxChartDataPoints: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_CHART_DATA_POINTS || "20000", 10) ||
+				20000,
+		),
+		fileProductionMaxChartSeries: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_CHART_SERIES || "50", 10) || 50,
+		),
+		fileProductionMaxImageCount: Math.max(
+			1,
+			parseInt(process.env.FILE_PRODUCTION_MAX_IMAGE_COUNT || "50", 10) || 50,
+		),
+		fileProductionMaxImageBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_IMAGE_BYTES || "26214400", 10) ||
+				26214400,
+		),
+		fileProductionMaxTotalImageBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES || "209715200", 10) ||
+				209715200,
+		),
+		fileProductionSandboxTimeoutMs: Math.max(
+			1000,
+			parseInt(process.env.FILE_PRODUCTION_SANDBOX_TIMEOUT_MS || "300000", 10) ||
+				300000,
+		),
+		fileProductionRendererTimeoutMs: Math.max(
+			1000,
+			parseInt(process.env.FILE_PRODUCTION_RENDERER_TIMEOUT_MS || "300000", 10) ||
+				300000,
+		),
+		fileProductionMaxOutputFileBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES || "104857600", 10) ||
+				104857600,
+		),
+		fileProductionMaxTotalOutputBytes: Math.max(
+			1024,
+			parseInt(process.env.FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES || "262144000", 10) ||
+				262144000,
 		),
 	};
 }

@@ -106,18 +106,22 @@ const {
 	};
 });
 
-vi.mock(import('fs/promises'), async (importOriginal) => {
-	const actual = await importOriginal();
-	return {
-		...actual,
-		mkdir: vi.fn(() => Promise.resolve(undefined)),
-		writeFile: vi.fn(() => Promise.resolve(undefined)),
-		readFile: vi.fn(() => Promise.resolve(Buffer.from('test content'))),
-		unlink: vi.fn(() => Promise.resolve(undefined)),
+vi.mock('fs/promises', () => ({
+	default: {
+		mkdir: mockMkdir,
+		writeFile: mockWriteFile,
+		readFile: mockReadFile,
+		unlink: mockUnlink,
 		rm: mockRm,
-		access: vi.fn(() => Promise.resolve(undefined)),
-	};
-});
+		access: mockAccess,
+	},
+	mkdir: mockMkdir,
+	writeFile: mockWriteFile,
+	readFile: mockReadFile,
+	unlink: mockUnlink,
+	rm: mockRm,
+	access: mockAccess,
+}));
 
 vi.mock('$lib/server/db', () => ({
 	db: {
@@ -303,6 +307,7 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 vi.mock('$lib/server/services/knowledge', () => ({
+	createArtifactLink: vi.fn(async () => undefined),
 	createGeneratedOutputArtifact: (...args: unknown[]) => mockCreateGeneratedOutputArtifact(...args),
 }));
 
@@ -320,6 +325,7 @@ describe('chat-files service', () => {
 		vi.clearAllMocks();
 		mockRm.mockResolvedValue(undefined);
 		vi.spyOn(console, 'info').mockImplementation(() => undefined);
+		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	});
 
@@ -646,6 +652,62 @@ describe('chat-files service', () => {
 			const result = await getChatFileByUser('file-8', 'user-7');
 
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('syncGeneratedFilesToMemory', () => {
+		it('preserves generated-file version metadata when text extraction fails', async () => {
+			const { getChatFile, syncGeneratedFilesToMemory } = await import('./chat-files');
+			mockExtractDocumentText.mockRejectedValueOnce(new Error('parser failed'));
+			mockRows.push({
+				id: 'file-1',
+				conversationId: 'conv-a',
+				assistantMessageId: 'assistant-a',
+				userId: 'user-1',
+				filename: 'report.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 5000,
+				storagePath: 'conv-a/file-1.pdf',
+				createdAt: new Date('2026-01-01'),
+			});
+			expect(await getChatFile('conv-a', 'file-1')).toMatchObject({
+				id: 'file-1',
+			});
+
+			await syncGeneratedFilesToMemory({
+				userId: 'user-1',
+				conversationId: 'conv-a',
+				assistantMessageId: 'assistant-a',
+				fileIds: ['file-1'],
+				assistantResponse: 'Here is the report.',
+			});
+
+			expect(console.error).not.toHaveBeenCalled();
+			expect(mockAccess).toHaveBeenCalled();
+			expect(mockReadFile).toHaveBeenCalled();
+			expect(mockExtractDocumentText).toHaveBeenCalled();
+			expect(mockCreateGeneratedOutputArtifact).toHaveBeenCalledWith(
+				expect.objectContaining({
+					nameOverride: 'report.pdf',
+					metadata: expect.objectContaining({
+						originalChatFileId: 'file-1',
+						generatedFilename: 'report.pdf',
+						generatedFileVersion: 1,
+						versionNumber: 1,
+						sourceChatFileId: 'file-1',
+					}),
+				})
+			);
+			expect(mockCreateGeneratedOutputArtifact.mock.calls[0][0].content).toContain(
+				'Generated file version: v1'
+			);
+			expect(console.warn).toHaveBeenCalledWith(
+				'[CHAT_FILES] Generated file text extraction failed; preserving version metadata',
+				expect.objectContaining({
+					fileId: 'file-1',
+					filename: 'report.pdf',
+				})
+			);
 		});
 	});
 

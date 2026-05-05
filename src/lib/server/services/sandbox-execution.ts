@@ -53,6 +53,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const OUTPUT_DIR = "/output";
+const MAX_ERROR_DETAIL_CHARS = 1600;
 const PYTHON_OUTPUT_INSPECTION_SCRIPT = `
 import json
 import os
@@ -145,19 +146,6 @@ interface OutputReadbackFile {
 	contentBase64: string;
 }
 
-function stripCreatePdfRedeclarations(code: string): string {
-	// Strip any line that re-declares createPDF via require().
-	// The bootstrap already provides createPDF from the helper module.
-	// Matches both:
-	//   const createPDF = require('/workspace/helpers/create-pdf');
-	//   const { createPDF } = require('pdf-lib');
-	//   const { createPDF, PDFDocument } = require("pdf-lib");
-	return code.replace(
-		/^[ \t]*(?:const|let|var)\s+(?:\{[^}]*\bcreatePDF\b[^}]*\}|createPDF)\s*=\s*require\s*\([^)]*\)\s*;?\s*$/gm,
-		"// (createPDF is pre-loaded by the sandbox)",
-	);
-}
-
 function fixDoubleEscapedQuotes(code: string): string {
 	// Fix the most common model escaping error: writing \\' instead of \'
 	// inside single-quoted strings.  e.g. 'Alföldy\\'s' → SyntaxError
@@ -171,13 +159,96 @@ function buildSandboxBootstrapCode(
 	language: SandboxLanguage,
 ): string {
 	if (language === "javascript") {
-		const sanitized = fixDoubleEscapedQuotes(
-			stripCreatePdfRedeclarations(code),
-		);
+		const sanitized = fixDoubleEscapedQuotes(code);
 		return `
 const sandboxFs = require('fs');
+const sandboxModule = require('module');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
-const createPDF = require('/workspace/helpers/create-pdf');
+const sandboxOriginalModuleLoad = sandboxModule._load;
+
+function sandboxNormalizePptxSeries(series, labels, index) {
+	if (!series || typeof series !== 'object') return series;
+	const seriesLabels = Array.isArray(series.labels) ? series.labels : labels;
+	const values = Array.isArray(series.values)
+		? series.values
+		: Array.isArray(series.data)
+			? series.data
+			: null;
+	if (!Array.isArray(seriesLabels) || !Array.isArray(values)) return series;
+	return {
+		...series,
+		name: series.name || series.label || series.title || \`Series \${index + 1}\`,
+		labels: seriesLabels,
+		values,
+	};
+}
+
+function sandboxNormalizePptxChartData(data) {
+	if (Array.isArray(data)) {
+		return data.map((series, index) => sandboxNormalizePptxSeries(series, undefined, index));
+	}
+	if (!data || typeof data !== 'object') return data;
+
+	const labels = Array.isArray(data.labels)
+		? data.labels
+		: Array.isArray(data.categories)
+			? data.categories
+			: Array.isArray(data.xLabels)
+				? data.xLabels
+				: undefined;
+	if (Array.isArray(data.datasets)) {
+		return data.datasets.map((series, index) => sandboxNormalizePptxSeries(series, labels, index));
+	}
+	if (Array.isArray(data.series)) {
+		return data.series.map((series, index) => sandboxNormalizePptxSeries(series, labels, index));
+	}
+	return sandboxNormalizePptxSeries(data, labels, 0);
+}
+
+function sandboxNormalizePptxChartType(type) {
+	if (!Array.isArray(type)) return type;
+	return type.map((entry) => {
+		if (!entry || typeof entry !== 'object') return entry;
+		return { ...entry, data: sandboxNormalizePptxChartData(entry.data) };
+	});
+}
+
+function sandboxPatchPptxGenJsCharts(PptxGenJS) {
+	if (!PptxGenJS || typeof PptxGenJS !== 'function' || PptxGenJS.__alfyaiChartPatch) {
+		return PptxGenJS;
+	}
+	const originalAddSlide = PptxGenJS.prototype && PptxGenJS.prototype.addSlide;
+	if (typeof originalAddSlide !== 'function') return PptxGenJS;
+
+	function patchSlide(slide) {
+		if (!slide || typeof slide.addChart !== 'function' || slide.__alfyaiChartPatch) return slide;
+		const originalAddChart = slide.addChart;
+		Object.defineProperty(slide, '__alfyaiChartPatch', { value: true });
+		slide.addChart = function patchedAddChart(type, data, opt) {
+			const normalizedType = sandboxNormalizePptxChartType(type);
+			const normalizedData = Array.isArray(type) ? data : sandboxNormalizePptxChartData(data);
+			return originalAddChart.call(this, normalizedType, normalizedData, opt);
+		};
+		return slide;
+	}
+
+	PptxGenJS.prototype.addSlide = function patchedAddSlide(...args) {
+		return patchSlide(originalAddSlide.apply(this, args));
+	};
+	Object.defineProperty(PptxGenJS, '__alfyaiChartPatch', { value: true });
+	return PptxGenJS;
+}
+
+sandboxModule._load = function patchedSandboxModuleLoad(request, parent, isMain) {
+	const loaded = sandboxOriginalModuleLoad.apply(this, arguments);
+	if (request === 'pptxgenjs' || String(request).includes('pptxgenjs')) {
+		sandboxPatchPptxGenJsCharts(loaded);
+		if (loaded && typeof loaded === 'object' && loaded.default) {
+			sandboxPatchPptxGenJsCharts(loaded.default);
+		}
+	}
+	return loaded;
+};
 
 (async () => {
 	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
@@ -262,6 +333,31 @@ function getMimeType(filename: string): string {
 	return MIME_TYPES[ext] || "application/octet-stream";
 }
 
+function compactErrorDetail(value: string): string | null {
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	return trimmed.length > MAX_ERROR_DETAIL_CHARS
+		? `${trimmed.slice(0, MAX_ERROR_DETAIL_CHARS)}...`
+		: trimmed;
+}
+
+function formatNonZeroExitError(
+	stderr: string,
+	stdout: string,
+	exitCode: number
+): string {
+	const stderrDetail = compactErrorDetail(stderr);
+	const stdoutDetail = compactErrorDetail(stdout);
+	const details = [
+		stderrDetail ? `stderr: ${stderrDetail}` : null,
+		stdoutDetail ? `stdout: ${stdoutDetail}` : null,
+	].filter((detail): detail is string => Boolean(detail));
+
+	return details.length > 0
+		? `Execution failed with exit code ${exitCode}: ${details.join(" | ")}`
+		: `Execution failed with exit code ${exitCode}`;
+}
+
 function isPathTraversalAttempt(name: string): boolean {
 	return (
 		name.includes("..") ||
@@ -327,7 +423,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Reject dangerous entry types (symlinks, hardlinks, devices)
 				if (isDangerousEntryType(header)) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -345,7 +441,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Reject path traversal attempts
 				if (isPathTraversalAttempt(name)) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -357,7 +453,7 @@ async function extractFilesFromContainer(
 
 				// SECURITY: Check max files limit
 				if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-					console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+					console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 						containerId: container.id,
 						name,
 						type,
@@ -383,7 +479,7 @@ async function extractFilesFromContainer(
 				stream.on("end", () => {
 					// SECURITY: Skip files that exceed per-file size limit
 					if (fileSize > maxFileSizeBytes) {
-						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+						console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
@@ -398,7 +494,7 @@ async function extractFilesFromContainer(
 
 					// SECURITY: Check total output size limit
 					if (totalBytes + content.length > maxTotalBytes) {
-						console.warn("[FILE_GENERATE] Skipping sandbox archive entry", {
+						console.warn("[FILE_PRODUCTION] Skipping sandbox archive entry", {
 							containerId: container.id,
 							name,
 							type,
@@ -425,7 +521,7 @@ async function extractFilesFromContainer(
 				});
 
 				stream.on("error", (error) => {
-					console.warn("[FILE_GENERATE] Sandbox archive entry read failed", {
+					console.warn("[FILE_PRODUCTION] Sandbox archive entry read failed", {
 						containerId: container.id,
 						name,
 						type,
@@ -442,7 +538,7 @@ async function extractFilesFromContainer(
 			archiveStream.pipe(extract);
 		});
 	} catch (error) {
-		console.error("[FILE_GENERATE] Failed to read sandbox output archive", {
+		console.error("[FILE_PRODUCTION] Failed to read sandbox output archive", {
 			containerId: container.id,
 			outputDir: OUTPUT_DIR,
 			error,
@@ -451,7 +547,11 @@ async function extractFilesFromContainer(
 	}
 }
 
-function classifyError(stderr: string, exitCode: number): string | undefined {
+function classifyError(
+	stderr: string,
+	exitCode: number,
+	stdout = ""
+): string | undefined {
 	if (
 		exitCode === 137 ||
 		stderr.includes("MemoryError") ||
@@ -477,6 +577,12 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 	) {
 		return `Import error: ${stderr}`;
 	}
+	if (stderr.includes("tmpData.forEach is not a function")) {
+		return [
+			"Execution failed: PptxGenJS chart data must be an array of series objects.",
+			'Use slide.addChart(type, [{ name: "Series", labels: [...], values: [...] }], options) instead of passing a plain { labels, values } object.',
+		].join(" ");
+	}
 	if (
 		stderr.includes("sharp") ||
 		stderr.includes("ENOMEM") ||
@@ -498,7 +604,7 @@ function classifyError(stderr: string, exitCode: number): string | undefined {
 	}
 
 	if (exitCode !== 0 && exitCode !== undefined) {
-		return `Execution failed with exit code ${exitCode}`;
+		return formatNonZeroExitError(stderr, stdout, exitCode);
 	}
 
 	return undefined;
@@ -513,7 +619,7 @@ async function inspectOutputDirectory(
 	);
 
 	if (inspection.exitCode !== 0) {
-		console.warn("[FILE_GENERATE] In-container output inspection failed", {
+		console.warn("[FILE_PRODUCTION] In-container output inspection failed", {
 			containerId: container.id,
 			exitCode: inspection.exitCode,
 			stdoutPreview: inspection.stdout || null,
@@ -524,7 +630,7 @@ async function inspectOutputDirectory(
 
 	if (!inspection.stdout) {
 		console.warn(
-			"[FILE_GENERATE] In-container output inspection returned no stdout",
+			"[FILE_PRODUCTION] In-container output inspection returned no stdout",
 			{
 				containerId: container.id,
 				stderrPreview: inspection.stderr || null,
@@ -537,7 +643,7 @@ async function inspectOutputDirectory(
 		return JSON.parse(inspection.stdout) as OutputInspectionResult;
 	} catch (error) {
 		console.warn(
-			"[FILE_GENERATE] In-container output inspection parse failed",
+			"[FILE_PRODUCTION] In-container output inspection parse failed",
 			{
 				containerId: container.id,
 				stdoutPreview: inspection.stdout.slice(0, 500),
@@ -586,7 +692,7 @@ async function readFilesFromInsideContainer(
 
 	for (const file of parsed.files) {
 		if (files.length >= SANDBOX_MAX_OUTPUT_FILES) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-files-limit",
@@ -597,7 +703,7 @@ async function readFilesFromInsideContainer(
 
 		const content = Buffer.from(file.contentBase64, "base64");
 		if (content.length !== file.sizeBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "size-mismatch",
@@ -608,7 +714,7 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (content.length > maxFileSizeBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-file-size-limit",
@@ -619,7 +725,7 @@ async function readFilesFromInsideContainer(
 		}
 
 		if (totalBytes + content.length > maxTotalBytes) {
-			console.warn("[FILE_GENERATE] Skipping in-container output file", {
+			console.warn("[FILE_PRODUCTION] Skipping in-container output file", {
 				containerId: container.id,
 				path: file.path,
 				reason: "max-total-size-limit",
@@ -701,7 +807,7 @@ export async function executeCode(
 			files = await extractFilesFromContainer(sandbox.container);
 			if (files.length === 0 && (outputInspection?.files.length ?? 0) > 0) {
 				console.warn(
-					"[FILE_GENERATE] Archive extraction missed in-container output files; falling back to in-container read",
+					"[FILE_PRODUCTION] Archive extraction missed in-container output files; falling back to in-container read",
 					{
 						containerId: sandbox.container.id,
 						fileCount: outputInspection?.files.length ?? 0,
@@ -732,7 +838,7 @@ export async function executeCode(
 				extractionError === undefined
 			) {
 				console.warn(
-					"[FILE_GENERATE] Re-inspection found output files after initial empty result; retrying collection",
+					"[FILE_PRODUCTION] Re-inspection found output files after initial empty result; retrying collection",
 					{
 						containerId: sandbox.container.id,
 						fileCount: reInspection.files.length,
@@ -762,7 +868,7 @@ export async function executeCode(
 		}
 
 		const error =
-			classifyError(result.stderr, result.exitCode) ??
+			classifyError(result.stderr, result.exitCode, result.stdout) ??
 			(extractionError
 				? `Failed to collect generated files: ${extractionError}`
 				: undefined);

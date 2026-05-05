@@ -1,12 +1,12 @@
 /**
  * Shared markdown module loader with lazy caching.
  *
- * Both FilePreview.svelte and DocumentWorkspace.svelte dynamically import
+ * DocumentPreviewRenderer.svelte and DocumentWorkspace.svelte dynamically import
  * the markdown service. This utility consolidates the caching pattern so
  * the module is only loaded once regardless of how many consumers call it.
  */
 
-type MarkdownModule = typeof import('$lib/services/markdown');
+type MarkdownModule = typeof import("$lib/services/markdown");
 
 let markdownModulePromise: Promise<MarkdownModule> | null = null;
 
@@ -16,7 +16,7 @@ let markdownModulePromise: Promise<MarkdownModule> | null = null;
  */
 export function getMarkdownModule(): Promise<MarkdownModule> {
 	if (!markdownModulePromise) {
-		markdownModulePromise = import('$lib/services/markdown');
+		markdownModulePromise = import("$lib/services/markdown");
 	}
 	return markdownModulePromise;
 }
@@ -32,8 +32,30 @@ export function getMarkdownModule(): Promise<MarkdownModule> {
 export async function renderHighlightedText(
 	content: string,
 	language: string,
-	isDark: boolean
+	isDark: boolean,
 ): Promise<string> {
 	const { renderHighlightedText: fn } = await getMarkdownModule();
 	return fn(content, language, isDark);
+}
+
+export async function renderMarkdown(
+	content: string,
+	isDark: boolean,
+): Promise<string> {
+	const { renderMarkdown: fn } = await getMarkdownModule();
+	return fn(content, isDark);
+}
+
+export async function renderCodeBlock(
+	content: string,
+	language: string | undefined,
+	isDark: boolean,
+): Promise<string> {
+	const { renderCodeBlock: fn } = await getMarkdownModule();
+	return fn(content, language, isDark);
+}
+
+export async function prepareCodeHighlighting(content: string): Promise<void> {
+	const { prepareCodeHighlighting: fn } = await getMarkdownModule();
+	await fn(content);
 }

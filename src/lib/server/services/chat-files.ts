@@ -498,12 +498,22 @@ export async function syncGeneratedFilesToMemory(params: {
 				continue;
 			}
 
+			let extractedText: string | null = null;
+			try {
 				const extraction = await extractDocumentText(
-				join(getChatFilesDir(), file.storagePath),
-				file.mimeType,
-				file.filename
-			);
-			const extractedText = extraction.text;
+					join(getChatFilesDir(), file.storagePath),
+					file.mimeType,
+					file.filename
+				);
+				extractedText = extraction.text;
+			} catch (error) {
+				console.warn('[CHAT_FILES] Generated file text extraction failed; preserving version metadata', {
+					conversationId: params.conversationId,
+					fileId: file.id,
+					filename: file.filename,
+					error,
+				});
+			}
 
 			const recentVersions = await listRecentGeneratedFileVersions(params.userId, file.filename, 4);
 			const previousVersion = recentVersions[0] ?? null;

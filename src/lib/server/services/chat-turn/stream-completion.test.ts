@@ -12,10 +12,10 @@ describe("completeStreamTurn", () => {
 	const mockCloseDownstream = vi.fn();
 	const mockClearStreamBuffer = vi.fn();
 	const mockGetStreamBuffer = vi.fn();
-	const mockGetChatFiles = vi.fn();
-	const mockAssignGeneratedFiles = vi.fn();
 	const mockSyncGeneratedFiles = vi.fn();
 	const mockGetChatFilesForMsg = vi.fn();
+	const mockGetFileProductionJobs = vi.fn();
+	const mockAssignFileProductionJobs = vi.fn();
 	const mockEstimateTokenCount = vi.fn().mockReturnValue(100);
 
 	const defaultUserMsg = { id: "user-msg-1" };
@@ -38,8 +38,9 @@ describe("completeStreamTurn", () => {
 		mockRunPostTurnTasks.mockResolvedValue(undefined);
 		mockTouchConversation.mockResolvedValue(undefined);
 		mockGetStreamBuffer.mockReturnValue(null);
-		mockGetChatFiles.mockResolvedValue([]);
 		mockGetChatFilesForMsg.mockResolvedValue([]);
+		mockGetFileProductionJobs.mockResolvedValue([]);
+		mockAssignFileProductionJobs.mockResolvedValue(undefined);
 		mockEnqueueChunk.mockReturnValue(true);
 		mockEstimateTokenCount.mockReturnValue(100);
 	});
@@ -62,7 +63,7 @@ describe("completeStreamTurn", () => {
 		attachmentIds: ["att-1"],
 		activeDocumentArtifactId: "doc-1",
 		requestStartTime: Date.now() - 5000,
-		generatedFileIdsAtStart: new Set<string>(),
+		fileProductionJobIdsAtStart: new Set<string>(),
 		latestContextStatus: null as unknown,
 		latestActiveWorkingSet: null as unknown,
 		latestTaskState: null as unknown,
@@ -83,10 +84,10 @@ describe("completeStreamTurn", () => {
 		closeDownstream: mockCloseDownstream,
 		clearStreamBuffer: mockClearStreamBuffer,
 		getStreamBuffer: mockGetStreamBuffer,
-		getChatFiles: mockGetChatFiles,
-		assignGeneratedFilesToAssistantMessage: mockAssignGeneratedFiles,
 		syncGeneratedFilesToMemory: mockSyncGeneratedFiles,
 		getChatFilesForAssistantMessage: mockGetChatFilesForMsg,
+		getFileProductionJobs: mockGetFileProductionJobs,
+		assignFileProductionJobsToAssistantMessage: mockAssignFileProductionJobs,
 		estimateTokenCount: mockEstimateTokenCount,
 	};
 
@@ -284,21 +285,44 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
-	it("handles generated file tool calls", async () => {
-		mockGetChatFiles.mockResolvedValue([{ id: "gf-new", name: "output.txt" }]);
+	it("attaches new file-production jobs from produce_file to the assistant message", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing" },
+			{ id: "job-new" },
+		]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			fileProductionJobIdsAtStart: new Set(["job-existing"]),
+			toolCallRecords: [{ name: "produce_file", status: "done" }],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+	});
+
+	it("handles produced generated files from produce_file tool calls", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-new", files: [{ id: "gf-new" }] },
+		]);
 		mockGetChatFilesForMsg.mockResolvedValue([
 			{ id: "gf-new", name: "output.txt" },
 		]);
 
 		await completeStreamTurn({
 			...defaultParams,
-			toolCallRecords: [{ name: "generate_file", status: "done" }],
+			toolCallRecords: [{ name: "produce_file", status: "done" }],
 		});
 
-		expect(mockAssignGeneratedFiles).toHaveBeenCalledWith(
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
 			"conv-1",
 			"asst-msg-1",
-			["gf-new"],
+			["job-new"],
 		);
 		expect(mockSyncGeneratedFiles).toHaveBeenCalledWith(
 			expect.objectContaining({

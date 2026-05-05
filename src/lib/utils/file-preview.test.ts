@@ -53,6 +53,20 @@ describe('file-preview utils', () => {
 		expect(getPreviewContentType('file.heif', null)).toBe('image/heif');
 	});
 
+	it('classifies extension-only HTML as a rendered HTML preview', () => {
+		expect(determinePreviewFileType(null, 'site-export.html')).toBe('html');
+		expect(determinePreviewFileType(null, 'site-export.htm')).toBe('html');
+		expect(determinePreviewFileType('', 'site-export.HTML')).toBe('html');
+	});
+
+	it('trusts known visual file extensions over generic text MIME metadata', () => {
+		expect(determinePreviewFileType('text/plain', 'contract.docx')).toBe('docx');
+		expect(determinePreviewFileType('text/plain', 'workbook.xlsx')).toBe('xlsx');
+		expect(determinePreviewFileType('text/plain', 'slides.pptx')).toBe('pptx');
+		expect(determinePreviewFileType('text/plain', 'report.pdf')).toBe('pdf');
+		expect(determinePreviewFileType('text/plain', 'site.htm')).toBe('html');
+	});
+
 	it('exposes syntax languages for code-like previewable formats', () => {
 		expect(getPreviewLanguage(null, 'script.py')).toBe('python');
 		expect(getPreviewLanguage(null, 'styles.css')).toBe('css');

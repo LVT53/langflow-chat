@@ -155,6 +155,27 @@
       "when": 1777140000008,
       "tag": "1777140000008_users_preferred_personality",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1777140000009,
+      "tag": "1777140000009_file_production_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1777140000010,
+      "tag": "1777140000010_file_production_job_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777140000011,
+      "tag": "1777140000011_file_production_requests",
+      "breakpoints": true
     }
 
   ]

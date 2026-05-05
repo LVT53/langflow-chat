@@ -58,9 +58,9 @@ The search overhaul routes web work through the server-owned `research_web` tool
 
 1. Deploy the app code. `scripts/deploy.sh` pulls `origin main`, so merge `dev` to `main` first or use your manual deploy flow if you are testing directly from `dev`.
 2. Set these server env vars: `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `ALFYAI_API_SIGNING_KEY`. Exa is required for page opening. Brave is optional, but recommended for wider search coverage. `ALFYAI_API_SIGNING_KEY` must be the same value in AlfyAI and Langflow.
-3. Keep the existing file-generation custom node if you use generated files: `langflow_nodes/file_generator_tool.py`.
+3. Use the unified file-production custom node for generated files: `langflow_nodes/file_production_tool.py`. It exposes `produce_file` and sends durable jobs to `/api/chat/files/produce`. Its model-facing output-list field is `requestedOutputs`; do not rename it to `outputs`, because that collides with Langflow component internals.
 4. Add or update the web-research custom node in Langflow: `langflow_nodes/web_research_tool.py`. Configure `ALFYAI_API_URL` to the AlfyAI server URL reachable from Langflow, and configure the same `ALFYAI_API_SIGNING_KEY`.
-5. Connect the `Web Research` node's `Tool` output to the Agent node's tools input.
+5. Connect the `File Production` and `Web Research` nodes' `Tool` outputs to the Agent node's tools input.
 6. Disconnect the old/raw Exa search tool from the Agent tools input unless you intentionally want it as a fallback. Leaving both connected gives the model two competing search tools and can make behavior less predictable.
 7. Leave the optional `WEB_RESEARCH_*` env vars at their defaults unless you need different breadth or latency. They can also be changed later in Settings > Administration > System > Web Research.
 8. Keep `TEI_RERANKER_URL` configured if you want source and evidence reranking. Search still works without TEI reranking, but diagnostics will show `sourceReranked: false` when reranking is unavailable or not confident.
@@ -69,6 +69,7 @@ The search overhaul routes web work through the server-owned `research_web` tool
 Post-deploy checks:
 
 - Ask for an exact page-backed value, for example a current price from a product URL.
+- Ask for a PDF report with headings, a table, and a bar chart. It should create a successful file-production card; `unsupported_document_block` means the running AlfyAI app or Langflow flow is stale or the document-source contract has drifted.
 - Ask for a product review summary that should include video evidence; if YouTube videos are selected and transcripts are exposed, diagnostics should show `youtubeTranscriptFetchedCount > 0`.
 - In the `research_web` tool result diagnostics, expect `providers.exaConfigured: true`, `openedPageCount > 0`, `selectedSourceCount > 0`, and `evidenceCandidateCount > 0`.
 - For prices, dates, availability, specs, and similar exact values, `exactEvidenceCandidateCount` should usually be greater than `0`.
@@ -129,7 +130,7 @@ At a high level, AlfyAI runs as a single SvelteKit application with server route
 - Landing-page draft reuse is guarded: only empty default-title prepared conversations are reused from session storage, which prevents new sends from silently reusing an older real chat.
 - The chat page consumes any pending initial message, supports one queued follow-up turn while a response is streaming, and streams the assistant response over Server-Sent Events.
 - Authenticated chat turns automatically feed the current user account's display name and email into system-prompt assembly as scoped personalization context, so the assistant can address the user naturally even on the first message.
-- Chat-generated files are created through the sandboxed file-generator path only when the executed code writes the final file to `/output`; successful files then appear back in the chat UI for download. The mirrored Langflow custom node should send the script in `source_code` plus an explicit `language` argument, because `code` collides with Langflow component internals and can cause the node to send its own source instead of the requested script. On a fresh host, the first successful run may also pull the pinned sandbox image before execution starts.
+- Chat-generated files are created through the unified `produce_file` tool and durable file-production jobs. The Langflow node's model-facing output-list field is `requestedOutputs`, which the node maps to the server API's `outputs` field. Document-style files should prefer `sourceMode: "document_source"` with structured `documentSource`; genuinely programmatic exports use `sourceMode: "program"` and write final files to `/output`. On a fresh host, the first program-mode run may also pull the pinned sandbox image before execution starts.
 - The app now uses a default-closed working-document workspace instead of separate preview silos. Generated files, chat attachments, knowledge-library documents, and search-opened documents all reuse the same shared rich previewer: embedded in a right-side pane on desktop and a full-screen layer on mobile.
 - The shared preview/workspace path now lazy-loads the heavy rich-preview stack and markdown highlighter on first open, so idle chat and knowledge pages do not pay the full document-preview cost up front.
 - The working-document workspace now carries document identity and continuity affordances directly in the shell: version history for document families, source-message jump for generated outputs, compare mode for text-like versions, and a shared historical-status badge when a generated-document family has gone dormant.
@@ -169,7 +170,7 @@ Notes before the tables:
 | `LANGFLOW_API_KEY` | Yes | none | Authenticates Langflow API calls | Always set in real deployments | App boot fails if missing |
 | `LANGFLOW_FLOW_ID` | No | empty | Default Langflow flow used when a model-specific flow is not configured | Set it when you use one primary Langflow flow for chat | Model-specific flow IDs override it |
 | `LANGFLOW_WEBHOOK_SECRET` | No | empty | Shared secret for Langflow sentence webhook verification | Set it when webhook flows are exposed or shared across systems | Leave empty only in trusted/local setups |
-| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for internal Langflow tool calls | Set it on both AlfyAI and Langflow custom nodes such as file generation and web research | When unset, service assertions are rejected and only session-auth requests are allowed |
+| `ALFYAI_API_SIGNING_KEY` | No | empty | HMAC signing secret used to verify scoped service assertions for internal Langflow tool calls | Set it on both AlfyAI and Langflow custom nodes such as file production and web research | When unset, service assertions are rejected and only session-auth requests are allowed |
 | `SESSION_SECRET` | Yes | none | Signs and protects session cookies | Always set to a long random secret in every environment | App boot fails if missing |
 | `DATABASE_PATH` | No | `./data/chat.db` | SQLite database location | Set it when the database should live outside the repo root or on a mounted volume | The parent directory must be writable |
 | `WEBHOOK_PORT` | No | `8090` | Port used by webhook-related server handling | Set it only if your deployment expects a different port | Must be numeric |
@@ -294,7 +295,7 @@ Notes before the tables:
 - If you set `DOCUMENT_PARSER_OCR_SERVER_URL`, Liteparse expects an OCR server contract (`POST` multipart with `file` and `language`, response JSON `{ "results": [{ "text", "bbox", "confidence" }] }`).
 - `GET /api/health` exists and returns `{"status":"OK"}`.
 - Auxiliary services such as title generation and summarization can fail independently without necessarily blocking core chat.
-- A sandboxed file-generation run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
+- A sandboxed file-production run that does not actually write a file to `/output` now returns an explicit error instead of a silent empty success response.
 - If you self-host Honcho and point its deriver/summary models at your own GPU-backed LLM stack, start with `DERIVER_WORKERS=2` on the Honcho deployment and scale upward only while queue backlog drops without saturating your inference server.
 - Admin configuration can override selected runtime values after boot; the environment remains the base layer, not always the final one.
 

@@ -112,7 +112,7 @@ _Avoid_: demo slice, spike, partial path
 - A direct attachment or explicitly targeted document may become **Protected Context**.
 - Passive workspace state alone does not create **Protected Context**.
 - **Context Selection** is the source of truth for promoting **Available Context** into **Prompt Context**.
-- **Context Selection** considers conversation, memory, attachment, workspace, task, generated-document, and retrieval signals together.
+- **Context Selection** considers conversation, memory, attachment, workspace, task, generated-file, generated-document, and retrieval signals together.
 - Individual subsystems may supply **Available Context** and **Context Signals**, but should not independently force large text into **Prompt Context**.
 - Every promoted context item has a **Context Inclusion Level**.
 - **Reference Context** preserves awareness without sending body content.
@@ -158,7 +158,8 @@ _Avoid_: demo slice, spike, partial path
 - The immediately previous exchange may receive limited protection for conversational continuity.
 - Older turns should compete through relevance and budget rather than transcript recency alone.
 - Large previous outputs should not become **Prompt Context** only because they are recent.
-- Generated outputs are **Available Context** but not automatically **Prompt Context**.
+- **Generated Files** and **Generated Documents** are **Available Context** but not automatically **Prompt Context**.
+- Generated-output prompt inclusion must happen through **Context Selection**, not through a separate latest-file or file-generation prompt shortcut.
 - A generated output may become **Protected Context** when the user clearly continues work on it.
 - A recent or visible generated output alone should usually receive no more than **Reference Context**.
 - A semantically relevant generated output may receive **Excerpt Context**.
@@ -246,9 +247,25 @@ _Avoid_: duplicate version, overwrite candidate
 An **Uploaded Document** whose display name was changed to preserve both files after a **Filename Conflict**.
 _Avoid_: new version, replacement, overwrite
 
+**File Production Request**:
+A user request for AlfyAI to create one or more downloadable **Generated Files**.
+_Avoid_: export task, PDF tool call, sandbox job
+
+**File Production Card**:
+A chat card that presents the durable state and actions for a **File Production Request**.
+_Avoid_: stream placeholder, temporary generated-file row, tool-call log
+
+**Generated File**:
+A downloadable file produced by AlfyAI during chat.
+_Avoid_: uploaded document, attachment, artifact
+
 **Generated Document**:
-A document produced by AlfyAI during chat or file generation.
-_Avoid_: uploaded document, attachment, report
+A **Generated File** whose content is a document-like work item that can be opened, revised, or versioned.
+_Avoid_: uploaded document, attachment, report, raw export
+
+**Generated Document Source**:
+The normalized semantic structure AlfyAI uses to render a **Generated Document**.
+_Avoid_: PDF code, layout script, binary file bytes, raw HTML
 
 **Generated Document Family**:
 A set of **Generated Documents** that are iterations of the same AI-created work item.
@@ -258,20 +275,125 @@ _Avoid_: duplicate upload group, file history
 One member of a **Generated Document Family**.
 _Avoid_: uploaded duplicate, library version
 
+**Generated Document Template**:
+A reusable presentation policy for rendering a **Generated Document Source**.
+_Avoid_: generated document source, PDF script, style prompt
+
+**App Typography Set**:
+The bundled Nimbus Sans L and Libre Baskerville fonts used by AlfyAI's product interface and generated-document presentation.
+_Avoid_: system font dependency, per-document custom font, host-installed PDF font
+
 **Working Document**:
 A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
 _Avoid_: active file, current artifact
 
+**Document Workspace**:
+The user-facing surface where one or more **Working Documents** can be opened, switched, inspected, compared, or closed.
+_Avoid_: working document sidebar, file preview modal, active document
+
+**Open Documents Rail**:
+The **Document Workspace** switcher that appears when multiple **Working Documents** are open.
+_Avoid_: tabs, document chips, file row
+
+**Expanded Document Workspace**:
+A larger **Document Workspace** presentation for focused reading or inspection of the same open **Working Documents**.
+_Avoid_: fullscreen modal, separate viewer
+
+**Document Provenance**:
+The origin information that explains where a **Working Document** came from.
+_Avoid_: source message button, primary document action, source viewer
+
 ### Relationships
 
 - A **Library Document** may be an **Uploaded Document**.
-- A **Generated Document** is not an **Uploaded Document**.
+- A **Generated Document** is a **Generated File**.
+- A **Generated File** is not an **Uploaded Document**.
+- A **Generated File** does not automatically become a **Generated Document**.
+- A **File Production Request** may produce one or more **Generated Files**.
+- A **File Production Request** is one user-facing capability even when AlfyAI uses different internal production methods.
+- A **File Production Card** appears from persisted job state, not from a stream-only placeholder.
+- A **File Production Card** may present queued or running jobs with a generating visual treatment while the underlying job status remains `queued` or `running`.
+- A queued or running **File Production Card** may use a content-loading shimmer treatment instead of textual progress, a spinner, or a progress bar.
+- A queued or running **File Production Card** keeps cancellation available as a quiet icon-only affordance rather than a text action.
+- A **File Production Card** should resolve from generating to finished in place with a tight top-to-bottom reveal, not a large success flash or layout jump.
+- An unassigned active **File Production Card** may appear inside the current streaming assistant response as soon as the successful production job exists, then reconcile to the persisted assistant message when the stream completes.
+- A **Generated Document** may have a **Generated Document Source**.
+- A **Generated Document Source** is **Available Context**.
+- The rendered binary file is the downloadable **Generated File**.
+- A **Generated Document Template** renders a **Generated Document Source** into one or more downloadable formats.
+- A **File Production Request** may name a **Generated Document Template**.
+- When no template is named, AlfyAI chooses an appropriate **Generated Document Template**.
+- A **Generated Document Template** should use the **App Typography Set** rather than depending on host-installed PDF fonts.
+- Within the **App Typography Set**, Nimbus Sans L is the primary generated-document font; Libre Baskerville is reserved for restrained title or cover accents.
+- Missing **App Typography Set** font files are a packaging error for generated-document rendering and should fail visibly rather than falling back to host fonts.
+- AlfyAI owns document layout and rendering; the assistant supplies semantic content, not PDF layout code.
+- Non-document outputs such as raw data files, code files, images, or bundles may remain **Generated Files** without entering generated-document version history.
 - A **Filename Conflict** creates an **Auto-Renamed Upload**.
 - A **Filename Conflict** does not create a **Generated Document Version**.
 - An **Auto-Renamed Upload** remains a separate **Uploaded Document**.
 - Uploaded documents do not form user-visible version history in v1.
 - A **Generated Document Family** may contain one or more **Generated Document Versions**.
 - A **Working Document** may point to either a **Library Document** or a **Generated Document**.
+- A **Library Document** preview in the **Document Workspace** should resolve to the original display file when that file exists.
+- Normalized or extracted **Library Document** text is retrieval and prompt context, not the default visual preview identity.
+- If a **Library Document** no longer has an original display file, the **Document Workspace** may fall back to extracted text as a degraded preview.
+- A **Document Workspace** may contain one or more **Working Documents**.
+- A **Document Workspace** has at most one selected **Working Document** at a time.
+- A **Document Workspace** should keep multiple open **Working Documents** readable and scannable even when more documents are open than fit at once.
+- An **Open Documents Rail** appears only when the **Document Workspace** contains more than one **Working Document**.
+- An **Open Documents Rail** lists open **Working Documents**, not unopened **Generated Document Versions**.
+- On desktop, the **Open Documents Rail** should be a vertical, scrollable document switcher.
+- The **Open Documents Rail** should prioritize readable titles, a clear active row, quiet file-type/provenance metadata, compact close controls, and compact generated-version badges where relevant.
+- The **Open Documents Rail** should not become a secondary action toolbar, thumbnail strip, or colorful status board.
+- **Generated Document Versions** remain visible through generated-document version history, separate from the **Open Documents Rail**.
+- Generated-document version history should be visible only when the selected **Working Document** belongs to a multi-version **Generated Document Family**.
+- Generated-document version history should stay compact in the normal **Document Workspace** view.
+- Unopened **Generated Document Versions** should not show body content unless the user opens or compares that version.
+- A Markdown **Working Document** should render as a readable document by default.
+- A Markdown **Working Document** is a rich reading preview, not a source-style text or code preview.
+- Markdown **Working Document** rendering should support common reading features such as headings, lists, tables, task lists, fenced code, callouts, and frontmatter presentation.
+- Markdown **Working Document** rendering should provide document typography and visible structure for heading hierarchy, list markers, tables, blockquotes, and code fences.
+- Markdown **Working Document** rendering should not resolve Obsidian-style wiki links or embeds unless AlfyAI can map them to real documents.
+- Markdown **Working Document** rendering should keep safe external links clickable.
+- Markdown **Working Document** rendering should not make unresolved relative links, wiki links, or embeds behave like real workspace navigation.
+- A Markdown **Working Document** does not need a separate raw-text mode in the **Document Workspace**; the original file remains available through download.
+- A **Document Workspace** provides read-only previews for supported document formats.
+- Supported **Document Workspace** previews should preserve the natural reading shape of the format: paged PDF, readable Word/OpenDocument content, workbook tables, slide previews, rendered Markdown, rendered HTML, CSV tables, and source-style text/code previews.
+- HTML **Working Document** previews should be visual, static, and sandboxed rather than fully interactive pages.
+- HTML **Working Document** previews should preserve inline styling and safe same-file packaged styling when available.
+- HTML **Working Document** previews should not execute scripts or allow live page navigation inside the preview.
+- External network assets in HTML **Working Document** previews may remain blocked or degraded.
+- Unsupported legacy or specialized file formats may remain download-only unless AlfyAI adds a dedicated preview path for them.
+- An **Expanded Document Workspace** keeps the same selected **Working Document**, open-document set, and document controls as the docked **Document Workspace**.
+- An **Expanded Document Workspace** should not be a separate preview surface with different behavior from the docked **Document Workspace**.
+- An **Expanded Document Workspace** should use a centered max-width reading frame on wide desktop displays, approximately 1600px.
+- An **Expanded Document Workspace** should use extra width for a better rail and preview layout, not by stretching the preview surface edge to edge.
+- A docked **Document Workspace** may be horizontally resized within sensible min and max bounds.
+- Double-clicking the docked **Document Workspace** resize handle should reset it to the default width.
+- An **Expanded Document Workspace** should not expose manual horizontal resizing.
+- **Document Workspace** implementation work should be sliced by user-verifiable behavior, not by component internals alone.
+- Independently verifiable **Document Workspace** slices include open-document rail behavior, PDF interaction, Markdown rendering, Knowledge preview parity, HTML visual fidelity, resize reset, provenance placement, and expanded-width layout.
+- Chat and Knowledge should use the same **Document Workspace** for inspecting **Working Documents**.
+- Chat opens the **Document Workspace** docked by default so conversation remains primary.
+- Knowledge may open documents in the **Expanded Document Workspace** by default.
+- Knowledge opens the **Expanded Document Workspace** by default so document inspection remains primary.
+- Closing the **Expanded Document Workspace** in Knowledge should return to the same Knowledge Library state underneath.
+- Chat and Knowledge keep separate open **Working Document** sets even though they use the same **Document Workspace** surface.
+- Opening a **Working Document** in Knowledge should not automatically add it to the Chat **Document Workspace**.
+- AlfyAI should not maintain parallel document viewer surfaces with different controls or behavior for the same **Working Documents**.
+- Generated-document comparison belongs inside the **Document Workspace**, not in a separate viewer surface.
+- **Document Provenance** is secondary metadata for a **Working Document**, not a primary **Document Workspace** action.
+- **Document Provenance** should appear near document identity details such as filename, type, and generated version.
+- When **Document Provenance** points to a chat message, the **Document Workspace** may offer a quiet origin affordance that jumps to that message.
+- **Document Provenance** controls should not sit beside page, slide, zoom, or pan controls.
+- Document navigation and zoom controls belong with the preview inside the **Document Workspace**, not split across separate workspace and preview surfaces.
+- Document navigation and zoom controls should appear only for formats that benefit from them.
+- Page and slide navigation in the **Document Workspace** should start with compact controls rather than thumbnail strips.
+- Page and slide navigation in the **Document Workspace** should use one compact indicator, not duplicate page or slide summaries.
+- Mouse wheel input should scroll a **Working Document** preview by default; modified wheel input such as Ctrl/Cmd+wheel may zoom when the format supports zoom.
+- Drag panning should activate only when a zoomable **Working Document** preview is zoomed beyond its fit/default scale.
+- Image previews in the **Document Workspace** should support intuitive zoom, fit, and pan interactions for inspection.
+- Image preview controls should remain read-only and should not introduce editing actions such as crop, rotate, or annotation.
 - Opening a document can make it a **Working Document**, but it does not by itself make the whole body **Prompt Context**.
 
 ### Example dialogue
@@ -282,8 +404,56 @@ _Avoid_: active file, current artifact
 > **Dev:** "When do we show version history?"
 > **Domain expert:** "Only for a **Generated Document Family**, where each generated iteration is a **Generated Document Version**."
 >
+> **Dev:** "If AlfyAI creates `data.csv`, is that a **Generated Document**?"
+> **Domain expert:** "No. It is a **Generated File**. It becomes a **Generated Document** only if the user treats it as a work item to open, revise, or version."
+>
+> **Dev:** "Should the assistant choose between a PDF export feature and a sandbox file generator?"
+> **Domain expert:** "No. The user made one **File Production Request**. AlfyAI chooses the internal production path."
+>
+> **Dev:** "Should the assistant write PDF styling code?"
+> **Domain expert:** "No. The assistant provides a **Generated Document Source**; AlfyAI applies a **Generated Document Template** when rendering."
+>
 > **Dev:** "Can an uploaded PDF be the **Working Document**?"
 > **Domain expert:** "Yes. A **Working Document** can be uploaded or generated, but upload duplicates still stay separate documents."
+>
+> **Dev:** "Is the sidebar itself the **Working Document**?"
+> **Domain expert:** "No. The surface is the **Document Workspace**; the selected item inside it is the **Working Document**."
+>
+> **Dev:** "If many documents are open, should their names shrink until they are unreadable?"
+> **Domain expert:** "No. The **Document Workspace** should preserve readable document switching, even when the open set has to scroll."
+>
+> **Dev:** "Should the switcher always take space, even when only one document is open?"
+> **Domain expert:** "No. The **Open Documents Rail** appears when there are multiple **Working Documents**."
+>
+> **Dev:** "Should a Markdown file open as highlighted source code?"
+> **Domain expert:** "No. A Markdown **Working Document** should open as a rendered reading document; raw text is available through download."
+>
+> **Dev:** "Should Obsidian wiki links and embeds behave like real links immediately?"
+> **Domain expert:** "No. Render Markdown readably, but do not resolve workspace-specific links unless they can point to real documents."
+>
+> **Dev:** "Should every relative Markdown link become clickable in the workspace?"
+> **Domain expert:** "No. Keep safe external links clickable, and keep unresolved workspace links readable but non-navigating."
+>
+> **Dev:** "Should opening a spreadsheet or slide deck behave like editing it in an office suite?"
+> **Domain expert:** "No. The **Document Workspace** provides read-only previews for supported formats; editing is out of scope."
+>
+> **Dev:** "Should HTML previews run arbitrary page scripts?"
+> **Domain expert:** "No. HTML **Working Document** previews should be static and sandboxed."
+>
+> **Dev:** "Should fullscreen open a separate file-preview modal?"
+> **Domain expert:** "No. Focused reading should use an **Expanded Document Workspace** with the same documents and controls."
+>
+> **Dev:** "Should Knowledge keep its own document preview modal if Chat has the new workspace?"
+> **Domain expert:** "No. Chat and Knowledge should use the same **Document Workspace** surface, with different default presentation states when useful."
+>
+> **Dev:** "Should page and zoom controls be split between the workspace header and the preview renderer?"
+> **Domain expert:** "No. Navigation and zoom belong in one compact preview toolbar inside the **Document Workspace**."
+>
+> **Dev:** "Should the first-class navigation redesign include page thumbnails?"
+> **Domain expert:** "No. Start with compact controls; thumbnails can be added later if the need is proven."
+>
+> **Dev:** "Does better image zoom mean adding image editing?"
+> **Domain expert:** "No. Image zoom, fit, and pan are inspection controls inside the **Document Workspace**."
 
 ## Deep Research Context
 

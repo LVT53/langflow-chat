@@ -505,6 +505,104 @@ export const chatGeneratedFiles = sqliteTable('chat_generated_files', {
 	userIdx: index('chat_generated_files_user_idx').on(table.userId, table.createdAt),
 }));
 
+export const fileProductionJobs = sqliteTable('file_production_jobs', {
+	id: text('id').primaryKey(),
+	conversationId: text('conversation_id')
+		.notNull()
+		.references(() => conversations.id, { onDelete: 'cascade' }),
+	assistantMessageId: text('assistant_message_id').references(() => messages.id, {
+		onDelete: 'set null',
+	}),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	title: text('title').notNull(),
+	status: text('status').notNull().default('succeeded'),
+	stage: text('stage'),
+	origin: text('origin').notNull().default('legacy_generated_file'),
+	currentAttemptId: text('current_attempt_id'),
+	retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+	errorCode: text('error_code'),
+	errorMessage: text('error_message'),
+	completedAt: integer('completed_at', { mode: 'timestamp' }),
+	cancelRequestedAt: integer('cancel_requested_at', { mode: 'timestamp' }),
+	idempotencyKey: text('idempotency_key'),
+	requestJson: text('request_json'),
+	sourceMode: text('source_mode'),
+	documentIntent: text('document_intent'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	conversationIdx: index('file_production_jobs_conversation_idx').on(
+		table.conversationId,
+		table.createdAt
+	),
+	assistantMessageIdx: index('file_production_jobs_assistant_message_idx').on(
+		table.assistantMessageId,
+		table.createdAt
+	),
+	userIdx: index('file_production_jobs_user_idx').on(table.userId, table.createdAt),
+	idempotencyUniqueIdx: uniqueIndex('file_production_jobs_idempotency_unique_idx')
+		.on(table.userId, table.conversationId, table.idempotencyKey)
+		.where(sql`${table.idempotencyKey} IS NOT NULL`),
+	sourceModeIdx: index('file_production_jobs_source_mode_idx').on(
+		table.sourceMode,
+		table.createdAt
+	),
+}));
+
+export const fileProductionJobAttempts = sqliteTable('file_production_job_attempts', {
+	id: text('id').primaryKey(),
+	jobId: text('job_id')
+		.notNull()
+		.references(() => fileProductionJobs.id, { onDelete: 'cascade' }),
+	attemptNumber: integer('attempt_number').notNull(),
+	status: text('status').notNull().default('running'),
+	stage: text('stage'),
+	mode: text('mode'),
+	renderer: text('renderer'),
+	runtime: text('runtime'),
+	workerId: text('worker_id'),
+	claimedAt: integer('claimed_at', { mode: 'timestamp' }),
+	heartbeatAt: integer('heartbeat_at', { mode: 'timestamp' }),
+	startedAt: integer('started_at', { mode: 'timestamp' }),
+	finishedAt: integer('finished_at', { mode: 'timestamp' }),
+	errorCode: text('error_code'),
+	errorMessage: text('error_message'),
+	retryable: integer('retryable', { mode: 'boolean' }).notNull().default(false),
+	diagnosticsJson: text('diagnostics_json'),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	jobNumberUniqueIdx: uniqueIndex('file_production_job_attempts_job_number_unique_idx').on(
+		table.jobId,
+		table.attemptNumber
+	),
+	jobIdx: index('file_production_job_attempts_job_idx').on(table.jobId, table.createdAt),
+	workerIdx: index('file_production_job_attempts_worker_idx').on(
+		table.workerId,
+		table.status,
+		table.heartbeatAt
+	),
+}));
+
+export const fileProductionJobFiles = sqliteTable('file_production_job_files', {
+	id: text('id').primaryKey(),
+	jobId: text('job_id')
+		.notNull()
+		.references(() => fileProductionJobs.id, { onDelete: 'cascade' }),
+	chatGeneratedFileId: text('chat_generated_file_id')
+		.notNull()
+		.references(() => chatGeneratedFiles.id, { onDelete: 'cascade' }),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+	chatFileUniqueIdx: uniqueIndex('file_production_job_files_chat_file_unique_idx').on(
+		table.chatGeneratedFileId
+	),
+	jobOrderIdx: index('file_production_job_files_job_order_idx').on(table.jobId, table.sortOrder),
+}));
+
 export const personalityProfiles = sqliteTable('personality_profiles', {
 	id: text('id').primaryKey(),
 	name: text('name').notNull().unique(),

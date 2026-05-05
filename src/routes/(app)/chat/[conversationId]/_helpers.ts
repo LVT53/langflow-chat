@@ -1,14 +1,14 @@
 import type { StreamMetadata } from '$lib/services/streaming';
 import type { I18nKey } from '$lib/i18n';
 import { isOsFileDropEvent } from '$lib/utils/file-drag';
+import { isFileProductionToolName } from '$lib/utils/tool-calls';
 import type {
 	ArtifactSummary,
 	ChatMessage,
 	EvidenceSourceType,
 	PendingAttachment,
 	ToolEvidenceCandidate,
-	ChatGeneratedFileListItem,
-	DocumentWorkspaceItem,
+	FileProductionJob,
 	ModelId,
 } from '$lib/types';
 
@@ -126,6 +126,49 @@ export function mergeAttachedArtifacts(
 		mergedArtifacts.set(artifact.id, artifact);
 	}
 	return Array.from(mergedArtifacts.values());
+}
+
+export function hasActiveFileProductionJobs(jobs: FileProductionJob[]): boolean {
+	return jobs.some((job) => job.status === 'queued' || job.status === 'running');
+}
+
+export function shouldHydrateFileProductionJobsOnToolCall(
+	name: string,
+	status: 'running' | 'done'
+): boolean {
+	return isFileProductionToolName(name) && status === 'done';
+}
+
+export function mergeFileProductionJob(
+	currentJobs: FileProductionJob[],
+	updatedJob: FileProductionJob
+): FileProductionJob[] {
+	const existingIndex = currentJobs.findIndex((job) => job.id === updatedJob.id);
+	if (existingIndex === -1) {
+		return [updatedJob, ...currentJobs];
+	}
+
+	return currentJobs.map((job, index) => (index === existingIndex ? updatedJob : job));
+}
+
+export function attachUnassignedFileProductionJobsToAssistant(
+	currentJobs: FileProductionJob[],
+	params: { conversationId: string; assistantMessageId: string }
+): FileProductionJob[] {
+	return currentJobs.map((job) =>
+		job.conversationId === params.conversationId && job.assistantMessageId === null
+			? { ...job, assistantMessageId: params.assistantMessageId }
+			: job
+		);
+}
+
+export type WorkspacePresentation = 'docked' | 'expanded';
+
+export function getWorkspacePresentationAfterDocumentOpen(
+	currentPresentation: WorkspacePresentation,
+	options: { preservePresentation?: boolean } = {}
+): WorkspacePresentation {
+	return options.preservePresentation ? currentPresentation : 'docked';
 }
 
 export function createAssistantPlaceholder(id: string, timestamp = Date.now()): ChatMessage {
@@ -247,6 +290,10 @@ export function applyToolCallUpdateToMessageList(
 	}
 ): ChatMessage[] {
 	return updateMessageById(list, params.placeholderId, (message) => {
+		if (isFileProductionToolName(params.name)) {
+			return message;
+		}
+
 		const segments = message.thinkingSegments ?? [];
 		if (params.status === 'running') {
 			return {
@@ -337,30 +384,6 @@ export function removeMessageById(list: ChatMessage[], messageId: string): ChatM
 	return list.filter((message) => message.id !== messageId);
 }
 
-export function reducePendingGeneratedFiles(
-	list: ChatGeneratedFileListItem[],
-	filename: string,
-	assistantMessageId: string,
-	conversationId: string
-): ChatGeneratedFileListItem[] {
-	if (list.some((f) => f.assistantMessageId === assistantMessageId && f.filename === filename)) {
-		return list;
-	}
-	return [
-		...list,
-		{
-			id: `pending-${crypto.randomUUID()}`,
-			conversationId,
-			assistantMessageId,
-			filename,
-			mimeType: 'application/octet-stream',
-			sizeBytes: 0,
-			createdAt: Date.now(),
-			status: 'generating',
-		},
-	];
-}
-
 export function cloneSendPayload(payload: SendPayload): SendPayload {
 	return {
 		message: payload.message,
@@ -371,40 +394,5 @@ export function cloneSendPayload(payload: SendPayload): SendPayload {
 		})),
 		conversationId: payload.conversationId ?? null,
 		modelId: payload.modelId,
-	};
-}
-
-export function reduceWorkspaceDocumentOpen(
-	documents: DocumentWorkspaceItem[],
-	document: DocumentWorkspaceItem
-): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
-	const alreadyOpen = documents.some((entry) => entry.id === document.id);
-	const updatedDocuments = alreadyOpen
-		? documents.map((entry) => (entry.id === document.id ? { ...entry, ...document } : entry))
-		: [...documents, document];
-
-	return {
-		documents: updatedDocuments,
-		activeDocumentId: document.id,
-		isOpen: true,
-	};
-}
-
-export function reduceWorkspaceDocumentClose(
-	documents: DocumentWorkspaceItem[],
-	documentId: string,
-	activeWorkspaceDocumentId: string | null
-): { documents: DocumentWorkspaceItem[]; activeDocumentId: string | null; isOpen: boolean } {
-	const remainingDocuments = documents.filter((document) => document.id !== documentId);
-	let nextActiveId = activeWorkspaceDocumentId;
-
-	if (activeWorkspaceDocumentId === documentId) {
-		nextActiveId = remainingDocuments.at(-1)?.id ?? null;
-	}
-
-	return {
-		documents: remainingDocuments,
-		activeDocumentId: nextActiveId,
-		isOpen: remainingDocuments.length > 0,
 	};
 }
