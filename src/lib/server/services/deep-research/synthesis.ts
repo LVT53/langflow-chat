@@ -58,10 +58,13 @@ export async function buildSynthesisNotes(
 		(finding) => !conflictedStatements.has(finding.statement),
 	);
 	const taskSynthesis = synthesizeCompletedTaskOutputs(input.completedTasks);
-	const findings = [
-		...supportedFindings,
-		...conflicts,
+	const finalSupportedFindings = [
 		...taskSynthesis.supportedFindings,
+		...supportedFindings,
+	];
+	const findings = [
+		...finalSupportedFindings,
+		...conflicts,
 		...taskSynthesis.assumptions,
 		...taskSynthesis.reportLimitations,
 	];
@@ -69,10 +72,7 @@ export async function buildSynthesisNotes(
 	return {
 		jobId: input.jobId,
 		findings,
-		supportedFindings: [
-			...supportedFindings,
-			...taskSynthesis.supportedFindings,
-		],
+		supportedFindings: finalSupportedFindings,
 		conflicts,
 		assumptions: taskSynthesis.assumptions,
 		reportLimitations: taskSynthesis.reportLimitations,

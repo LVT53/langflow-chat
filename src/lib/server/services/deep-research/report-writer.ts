@@ -43,27 +43,38 @@ export type WriteResearchReportInput = {
 
 type ReportSectionKind = "methodology" | "comparison" | "recommendations";
 
+export const MAX_REPORT_KEY_FINDINGS = 7;
+const MAX_EXECUTIVE_SUMMARY_FINDINGS = 3;
+const MAX_REPORT_TITLE_WORDS = 16;
+
 const reportLabels: Record<
 	ResearchLanguage,
 	{
 		titlePrefix: string;
 		executiveSummary: string;
 		keyFindings: string;
-		mainBody: string;
+		analysis: string;
 		sources: string;
 		reportLimitations: string;
 		methodology: string;
 		comparison: string;
 		recommendations: string;
+		bottomLine: string;
+		supportingEvidence: string;
 		researchQuestions: string;
 		synthesis: string;
+		analysisIntro: string;
+		comparisonIntro: string;
+		recommendationsIntro: string;
+		evidenceBackedPoint: string;
+		evidence: string;
 		methodologyScope: (depthLabel: string) => string;
 		sourceReviewCeiling: string;
 		synthesisPassCeiling: string;
 		recommendationsBody: string;
 		noFindingSummary: string;
-		executiveSummaryBody: (goal: string, findingSummary: string) => string;
-		mainBodyGoal: (goal: string) => string;
+		executiveSummaryQuestion: (goal: string) => string;
+		analysisGoal: (goal: string) => string;
 		emptyBullet: string;
 	}
 > = {
@@ -71,14 +82,21 @@ const reportLabels: Record<
 		titlePrefix: "Research Report",
 		executiveSummary: "Executive Summary",
 		keyFindings: "Key Findings",
-		mainBody: "Main Body",
+		analysis: "Analysis",
 		sources: "Sources",
 		reportLimitations: "Report Limitations",
 		methodology: "Methodology",
 		comparison: "Comparison",
 		recommendations: "Recommendations",
+		bottomLine: "Bottom line",
+		supportingEvidence: "Supporting evidence",
 		researchQuestions: "Research questions",
 		synthesis: "Synthesis",
+		analysisIntro: "Evidence-backed answer",
+		comparisonIntro: "At a glance",
+		recommendationsIntro: "Decision implications",
+		evidenceBackedPoint: "Evidence-backed point",
+		evidence: "Evidence",
 		methodologyScope: (depthLabel) =>
 			`Review scope followed the approved ${depthLabel} plan.`,
 		sourceReviewCeiling: "Source review ceiling",
@@ -87,8 +105,8 @@ const reportLabels: Record<
 			"Use the supported findings above to choose next actions.",
 		noFindingSummary:
 			"The reviewed evidence did not produce a supported finding.",
-		executiveSummaryBody: (goal, findingSummary) => `${goal} ${findingSummary}`,
-		mainBodyGoal: (goal) =>
+		executiveSummaryQuestion: (goal) => `Question: ${goal}`,
+		analysisGoal: (goal) =>
 			`This report addresses the approved Research Plan goal: ${goal}`,
 		emptyBullet: "None.",
 	},
@@ -96,14 +114,21 @@ const reportLabels: Record<
 		titlePrefix: "Kutatási jelentés",
 		executiveSummary: "Vezetői összefoglaló",
 		keyFindings: "Fő megállapítások",
-		mainBody: "Fő tartalom",
+		analysis: "Elemzés",
 		sources: "Források",
 		reportLimitations: "Jelentési korlátok",
 		methodology: "Módszertan",
 		comparison: "Összehasonlítás",
 		recommendations: "Javaslatok",
+		bottomLine: "Rövid válasz",
+		supportingEvidence: "Alátámasztó bizonyíték",
 		researchQuestions: "Kutatási kérdések",
 		synthesis: "Szintézis",
+		analysisIntro: "Bizonyítékokra épülő válasz",
+		comparisonIntro: "Gyors áttekintés",
+		recommendationsIntro: "Döntési következmények",
+		evidenceBackedPoint: "Bizonyítékkal alátámasztott pont",
+		evidence: "Bizonyíték",
 		methodologyScope: (depthLabel) =>
 			`Az áttekintés hatóköre a jóváhagyott ${depthLabel} tervet követte.`,
 		sourceReviewCeiling: "Forrás-áttekintési plafon",
@@ -112,9 +137,8 @@ const reportLabels: Record<
 			"A fenti alátámasztott megállapításokat használd a következő lépések kiválasztásához.",
 		noFindingSummary:
 			"Az áttekintett bizonyítékok nem eredményeztek alátámasztott megállapítást.",
-		executiveSummaryBody: (goal, findingSummary) =>
-			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal} ${findingSummary}`,
-		mainBodyGoal: (goal) =>
+		executiveSummaryQuestion: (goal) => `Kérdés: ${goal}`,
+		analysisGoal: (goal) =>
 			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal}`,
 		emptyBullet: "Nincs.",
 	},
@@ -125,7 +149,8 @@ export function writeResearchReport(
 ): ResearchReportDraft {
 	const researchLanguage = input.plan.researchLanguage ?? "en";
 	const citedSources = buildCitedSources(input.synthesisNotes, input.sources);
-	const keyFindings = input.synthesisNotes.supportedFindings.map((finding) =>
+	const visibleFindings = selectResearchReportFindings(input.synthesisNotes);
+	const keyFindings = visibleFindings.map((finding) =>
 		formatFindingWithCitations(finding, citedSources),
 	);
 	const executiveSummary = buildExecutiveSummary(
@@ -146,7 +171,7 @@ export function writeResearchReport(
 	]
 		.map(normalizeText)
 		.filter(Boolean);
-	const title = `${reportLabels[researchLanguage].titlePrefix}: ${input.plan.goal}`;
+	const title = buildReportTitle(input.plan.goal, researchLanguage);
 	const markdown = renderReportMarkdown({
 		title,
 		executiveSummary,
@@ -167,6 +192,31 @@ export function writeResearchReport(
 		limitations,
 		markdown,
 	};
+}
+
+export function selectResearchReportFindings(
+	synthesisNotes: SynthesisNotes,
+): SynthesisFinding[] {
+	const seen = new Set<string>();
+	const findings: SynthesisFinding[] = [];
+
+	for (const finding of synthesisNotes.supportedFindings) {
+		const statement = normalizeText(finding.statement);
+		if (!statement || finding.sourceRefs.length === 0) {
+			continue;
+		}
+		const key = statement.toLowerCase();
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		findings.push({ ...finding, statement });
+		if (findings.length >= MAX_REPORT_KEY_FINDINGS) {
+			break;
+		}
+	}
+
+	return findings;
 }
 
 function buildCitedSources(
@@ -215,14 +265,21 @@ function buildExecutiveSummary(
 	keyFindings: string[],
 	researchLanguage: ResearchLanguage,
 ): string {
+	const labels = reportLabels[researchLanguage];
 	const findingSummary =
-		keyFindings.length > 0
-			? keyFindings[0]
-			: reportLabels[researchLanguage].noFindingSummary;
-	return reportLabels[researchLanguage].executiveSummaryBody(
-		plan.goal,
-		findingSummary,
+		keyFindings.length > 0 ? keyFindings[0] : labels.noFindingSummary;
+	const lines = [
+		labels.executiveSummaryQuestion(plan.goal),
+		`${labels.bottomLine}: ${findingSummary}`,
+	];
+	const supportingFindings = keyFindings.slice(
+		1,
+		MAX_EXECUTIVE_SUMMARY_FINDINGS,
 	);
+	if (supportingFindings.length > 0) {
+		lines.push(`${labels.supportingEvidence}: ${supportingFindings.join(" ")}`);
+	}
+	return lines.join("\n");
 }
 
 function buildMainBody(
@@ -232,7 +289,7 @@ function buildMainBody(
 ): string {
 	const labels = reportLabels[researchLanguage];
 	const body = [
-		labels.mainBodyGoal(plan.goal),
+		labels.analysisGoal(plan.goal),
 		"",
 		`${labels.researchQuestions}:`,
 		...plan.keyQuestions.map((question) => `- ${question}`),
@@ -241,7 +298,7 @@ function buildMainBody(
 	if (keyFindings.length > 0) {
 		body.push(
 			"",
-			`${labels.synthesis}:`,
+			`${labels.analysisIntro}:`,
 			...keyFindings.map((finding) => `- ${finding}`),
 		);
 	}
@@ -259,7 +316,11 @@ function buildReportSections(
 		.filter((section): section is ReportSectionKind => Boolean(section));
 
 	if (sections.length > 0) {
-		return sections.map((sectionKind) => ({
+		const dedupedSections = uniqueValues<ReportSectionKind>([
+			"methodology",
+			...sections,
+		]);
+		return dedupedSections.map((sectionKind) => ({
 			heading: formatSectionHeading(sectionKind, researchLanguage),
 			body: buildSectionBody(sectionKind, plan, keyFindings, researchLanguage),
 		}));
@@ -267,7 +328,16 @@ function buildReportSections(
 
 	return [
 		{
-			heading: reportLabels[researchLanguage].mainBody,
+			heading: reportLabels[researchLanguage].methodology,
+			body: buildSectionBody(
+				"methodology",
+				plan,
+				keyFindings,
+				researchLanguage,
+			),
+		},
+		{
+			heading: reportLabels[researchLanguage].analysis,
 			body: buildMainBody(plan, keyFindings, researchLanguage),
 		},
 	];
@@ -285,6 +355,7 @@ function normalizeSectionKind(section: string): ReportSectionKind | null {
 	}
 	if (
 		normalized === "comparison" ||
+		normalized === "main comparison" ||
 		normalized === "osszehasonlitas" ||
 		normalized === "fo osszehasonlitas"
 	) {
@@ -322,7 +393,7 @@ function buildSectionBody(
 	}
 
 	if (sectionKind === "comparison") {
-		return renderBullets(keyFindings, researchLanguage).join("\n");
+		return renderComparisonTable(keyFindings, researchLanguage);
 	}
 
 	if (sectionKind === "recommendations") {
@@ -333,6 +404,27 @@ function buildSectionBody(
 	}
 
 	return buildMainBody(plan, keyFindings, researchLanguage);
+}
+
+function renderComparisonTable(
+	keyFindings: string[],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	if (keyFindings.length === 0) {
+		return renderBullets(keyFindings, researchLanguage).join("\n");
+	}
+
+	return [
+		labels.comparisonIntro,
+		"",
+		`| # | ${labels.evidenceBackedPoint} |`,
+		"| --- | --- |",
+		...keyFindings.map(
+			(finding, index) =>
+				`| ${index + 1} | ${escapeMarkdownTableCell(finding)} |`,
+		),
+	].join("\n");
 }
 
 function formatDepthLabel(
@@ -401,20 +493,20 @@ function renderReportMarkdown(input: {
 		lines.push(`## ${section.heading}`, section.body, "");
 	}
 
+	if (input.limitations.length > 0) {
+		lines.push(
+			`## ${labels.reportLimitations}`,
+			...renderBullets(input.limitations, input.researchLanguage),
+			"",
+		);
+	}
+
 	lines.push(
 		`## ${labels.sources}`,
 		...input.sources.map(
 			(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`,
 		),
 	);
-
-	if (input.limitations.length > 0) {
-		lines.push(
-			"",
-			`## ${labels.reportLimitations}`,
-			...renderBullets(input.limitations, input.researchLanguage),
-		);
-	}
 
 	return lines.join("\n");
 }
@@ -432,4 +524,30 @@ function renderBullets(
 
 function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
+}
+
+function buildReportTitle(
+	goal: string,
+	researchLanguage: ResearchLanguage,
+): string {
+	return `${reportLabels[researchLanguage].titlePrefix}: ${shortenTitleSubject(goal)}`;
+}
+
+function shortenTitleSubject(value: string): string {
+	const normalized = normalizeText(value)
+		.replace(/^["'`]+|["'`.?!:;]+$/g, "")
+		.trim();
+	const words = normalized.split(/\s+/).filter(Boolean);
+	if (words.length <= MAX_REPORT_TITLE_WORDS) {
+		return normalized;
+	}
+	return words.slice(0, MAX_REPORT_TITLE_WORDS).join(" ");
+}
+
+function uniqueValues<T>(values: T[]): T[] {
+	return [...new Set(values)];
+}
+
+function escapeMarkdownTableCell(value: string): string {
+	return value.replace(/\|/g, "\\|").replace(/\n+/g, " ");
 }

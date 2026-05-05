@@ -37,7 +37,11 @@ import {
 } from './planning';
 import { resolveResearchLanguage } from './language';
 import { generateTitle } from '$lib/server/services/title-generator';
-import type { ResearchReportDraft } from './report-writer';
+import {
+	MAX_REPORT_KEY_FINDINGS,
+	selectResearchReportFindings,
+	type ResearchReportDraft,
+} from './report-writer';
 import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
 import type { SynthesisNotes } from './synthesis';
 import {
@@ -1029,12 +1033,13 @@ function buildCitationAuditReportDraft(
 	reportDraft: ResearchReportDraft,
 	synthesisNotes: SynthesisNotes
 ): DeepResearchReportDraft {
+	const visibleFindings = selectResearchReportFindings(synthesisNotes);
 	return {
 		title: reportDraft.title,
 		sections: [
 			{
 				heading: 'Key Findings',
-				claims: synthesisNotes.supportedFindings.map((finding, index) => ({
+				claims: visibleFindings.map((finding, index) => ({
 					id: `finding-${index + 1}`,
 					text: finding.statement,
 					core: true,
@@ -1058,7 +1063,9 @@ function renderAuditedReportMarkdown(input: {
 	researchLanguage: ResearchLanguage;
 }): string {
 	const labels = auditedReportLabels[input.researchLanguage];
-	const retainedClaims = input.auditedReport.sections.flatMap((section) => section.claims);
+	const retainedClaims = input.auditedReport.sections
+		.flatMap((section) => section.claims)
+		.slice(0, MAX_REPORT_KEY_FINDINGS);
 	const sourceById = new Map(input.sources.map((source) => [source.id, source]));
 	const citedSourceIds = new Set(retainedClaims.flatMap((claim) => claim.citationSourceIds));
 	const citedSources = input.sources.filter((source) => citedSourceIds.has(source.id));
@@ -1070,9 +1077,7 @@ function renderAuditedReportMarkdown(input: {
 		`# ${input.reportDraft.title}`,
 		'',
 		`## ${labels.executiveSummary}`,
-		retainedClaims[0]
-			? labels.retainedSummary(retainedClaims[0].text)
-			: labels.noSupportedClaims,
+		...renderAuditedExecutiveSummary(retainedClaims, sourceById, labels),
 		'',
 		`## ${labels.keyFindings}`,
 		...keyFindingLines,
@@ -1080,7 +1085,26 @@ function renderAuditedReportMarkdown(input: {
 	];
 
 	for (const section of input.reportDraft.sections) {
-		lines.push(`## ${section.heading}`, ...keyFindingLines, '');
+		const sectionBody = renderAuditedSectionBody({
+			section,
+			retainedClaims,
+			sourceById,
+			researchLanguage: input.researchLanguage,
+			labels,
+		});
+		if (sectionBody.length > 0) {
+			lines.push(`## ${section.heading}`, ...sectionBody, '');
+		}
+	}
+
+	if (input.auditedReport.limitations.length > 0) {
+		lines.push(
+			`## ${labels.reportLimitations}`,
+			...input.auditedReport.limitations.map(
+				(limitation) => `- ${localizeAuditedLimitation(limitation, input.researchLanguage)}`
+			),
+			''
+		);
 	}
 
 	lines.push(
@@ -1091,16 +1115,6 @@ function renderAuditedReportMarkdown(input: {
 				)
 			: [`- ${labels.none}`])
 	);
-
-	if (input.auditedReport.limitations.length > 0) {
-		lines.push(
-			'',
-			`## ${labels.reportLimitations}`,
-			...input.auditedReport.limitations.map(
-				(limitation) => `- ${localizeAuditedLimitation(limitation, input.researchLanguage)}`
-			)
-		);
-	}
 
 	return lines.join('\n');
 }
@@ -1114,7 +1128,13 @@ const auditedReportLabels: Record<
 		reportLimitations: string;
 		none: string;
 		noSupportedClaims: string;
-		retainedSummary: (claim: string) => string;
+		bottomLine: string;
+		supportingEvidence: string;
+		methodology: string;
+		comparison: string;
+		recommendations: string;
+		analysis: string;
+		evidenceBackedPoint: string;
 	}
 > = {
 	en: {
@@ -1124,7 +1144,13 @@ const auditedReportLabels: Record<
 		reportLimitations: 'Report Limitations',
 		none: 'None.',
 		noSupportedClaims: 'The citation audit found no credible supported claims.',
-		retainedSummary: (claim) => `The citation audit retained this core finding: ${claim}`,
+		bottomLine: 'Bottom line',
+		supportingEvidence: 'Supporting evidence',
+		methodology: 'Methodology',
+		comparison: 'Comparison',
+		recommendations: 'Recommendations',
+		analysis: 'Analysis',
+		evidenceBackedPoint: 'Evidence-backed point',
 	},
 	hu: {
 		executiveSummary: 'Vezetői összefoglaló',
@@ -1134,10 +1160,85 @@ const auditedReportLabels: Record<
 		none: 'Nincs.',
 		noSupportedClaims:
 			'A hivatkozás-ellenőrzés nem talált hitelesen alátámasztott állítást.',
-		retainedSummary: (claim) =>
-			`A hivatkozás-ellenőrzés után megtartott fő megállapítás: ${claim}`,
+		bottomLine: 'Rövid válasz',
+		supportingEvidence: 'Alátámasztó bizonyíték',
+		methodology: 'Módszertan',
+		comparison: 'Összehasonlítás',
+		recommendations: 'Javaslatok',
+		analysis: 'Elemzés',
+		evidenceBackedPoint: 'Bizonyítékkal alátámasztott pont',
 	},
 };
+
+function renderAuditedExecutiveSummary(
+	retainedClaims: DeepResearchReportDraft['sections'][number]['claims'],
+	sourceById: Map<string, ResearchReportDraft['sources'][number]>,
+	labels: (typeof auditedReportLabels)[ResearchLanguage]
+): string[] {
+	if (retainedClaims.length === 0) {
+		return [labels.noSupportedClaims];
+	}
+
+	const [firstClaim, ...supportingClaims] = retainedClaims;
+	const lines = [
+		`${labels.bottomLine}: ${formatAuditedClaim(firstClaim, sourceById)}`,
+	];
+	const supporting = supportingClaims.slice(0, 2);
+	if (supporting.length > 0) {
+		lines.push(
+			`${labels.supportingEvidence}: ${supporting
+				.map((claim) => formatAuditedClaim(claim, sourceById))
+				.join(' ')}`,
+		);
+	}
+	return lines;
+}
+
+function renderAuditedSectionBody(input: {
+	section: ResearchReportDraft['sections'][number];
+	retainedClaims: DeepResearchReportDraft['sections'][number]['claims'];
+	sourceById: Map<string, ResearchReportDraft['sources'][number]>;
+	researchLanguage: ResearchLanguage;
+	labels: (typeof auditedReportLabels)[ResearchLanguage];
+}): string[] {
+	const kind = normalizeAuditedSectionKind(input.section.heading, input.researchLanguage);
+	if (kind === 'methodology') {
+		return input.section.body.split('\n');
+	}
+
+	if (input.retainedClaims.length === 0) {
+		return [`- ${input.labels.none}`];
+	}
+
+	if (kind === 'comparison') {
+		return [
+			`| # | ${input.labels.evidenceBackedPoint} |`,
+			'| --- | --- |',
+			...input.retainedClaims.map(
+				(claim, index) =>
+					`| ${index + 1} | ${escapeMarkdownTableCell(
+						formatAuditedClaim(claim, input.sourceById)
+					)} |`
+			),
+		];
+	}
+
+	return input.retainedClaims.map(
+		(claim) => `- ${formatAuditedClaim(claim, input.sourceById)}`
+	);
+}
+
+function normalizeAuditedSectionKind(
+	heading: string,
+	researchLanguage: ResearchLanguage
+): 'methodology' | 'comparison' | 'recommendations' | 'analysis' {
+	const labels = auditedReportLabels[researchLanguage];
+	const normalized = normalizeLabel(heading);
+	if (normalized === normalizeLabel(labels.methodology)) return 'methodology';
+	if (normalized === normalizeLabel(labels.comparison)) return 'comparison';
+	if (normalized === normalizeLabel(labels.recommendations)) return 'recommendations';
+	return 'analysis';
+}
 
 function localizeAuditedLimitation(
 	limitation: string,
@@ -1176,6 +1277,19 @@ function formatAuditedClaim(
 	const citationSuffix =
 		citationNumbers.length > 0 ? ` ${uniqueValues(citationNumbers).join(' ')}` : '';
 	return `${claim.text}${citationSuffix}`;
+}
+
+function normalizeLabel(value: string): string {
+	return value
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.replace(/[^\p{L}]+/gu, ' ')
+		.trim();
+}
+
+function escapeMarkdownTableCell(value: string): string {
+	return value.replace(/\|/g, '\\|').replace(/\n+/g, ' ');
 }
 
 function sourceCountsFromSources(sources: DeepResearchSource[]): DeepResearchSourceCounts {

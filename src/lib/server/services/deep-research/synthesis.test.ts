@@ -150,4 +150,48 @@ describe("Deep Research synthesis notes", () => {
 			"report_limitation",
 		]);
 	});
+
+	it("prioritizes synthesized task findings before raw reviewed source notes", async () => {
+		const sourceRef = {
+			reviewedSourceId: "reviewed-1",
+			discoveredSourceId: "source-1",
+			canonicalUrl: "https://agency.gov.example/report",
+			title: "Agency report",
+		};
+		const result = await buildSynthesisNotes({
+			jobId: "job-1",
+			reviewedSources: [
+				{
+					id: "reviewed-1",
+					jobId: "job-1",
+					discoveredSourceId: "source-1",
+					canonicalUrl: "https://agency.gov.example/report",
+					title: "Agency report",
+					duplicateSourceIds: [],
+					authorityScore: 80,
+					qualityScore: 16,
+					reviewScore: 96,
+					summary: "Raw source note.",
+					keyFindings: ["Raw source-level finding."],
+					extractedText: "Raw source note.",
+					createdAt: "2026-05-05T12:00:00.000Z",
+				},
+			],
+			completedTasks: [
+				{
+					id: "task-answer",
+					output: "Task-level synthesis answers the research question.",
+					supportLevel: "strong",
+					sourceRefs: [sourceRef],
+				},
+			],
+		});
+
+		expect(
+			result.supportedFindings.map((finding) => finding.statement),
+		).toEqual([
+			"Task-level synthesis answers the research question.",
+			"Raw source-level finding.",
+		]);
+	});
 });

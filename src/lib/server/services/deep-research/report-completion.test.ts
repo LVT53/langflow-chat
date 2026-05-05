@@ -198,8 +198,13 @@ describe("audited Deep Research report completion", () => {
 		expect(reportArtifact?.contentText).toContain(
 			"# Research Report: Compare EU and US AI copyright training data rules",
 		);
+		expect(reportArtifact?.contentText).toContain("## Methodology");
+		expect(reportArtifact?.contentText).toContain("## Comparison");
 		expect(reportArtifact?.contentText).toContain(
 			"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
+			"The citation audit retained this core finding",
 		);
 		expect(reportArtifact?.contentText).toContain("## Sources");
 		expect(reportArtifact?.contentText).toContain(
@@ -380,6 +385,9 @@ describe("audited Deep Research report completion", () => {
 		expect(reportArtifact?.contentText).toContain("## Fő megállapítások");
 		expect(reportArtifact?.contentText).toContain("## Források");
 		expect(reportArtifact?.contentText).toContain(
+			"Rövid válasz: A magyar AI piac 2025-ben novekedett.",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
 			"A hivatkozás-ellenőrzés után megtartott fő megállapítás",
 		);
 		expect(reportArtifact?.contentText).not.toContain("## Executive Summary");

@@ -84,12 +84,13 @@ describe("Deep Research report writer", () => {
 		});
 
 		expect(report.title).toBe(
-			"Research Report: Compare private AI coding assistants for a small engineering team.",
+			"Research Report: Compare private AI coding assistants for a small engineering team",
 		);
 		expect(report.markdown).toContain(`# ${report.title}`);
 		expect(report.markdown).toContain("## Executive Summary");
 		expect(report.markdown).toContain("## Key Findings");
-		expect(report.markdown).toContain("## Main Body");
+		expect(report.markdown).toContain("## Methodology");
+		expect(report.markdown).toContain("## Comparison");
 		expect(report.markdown).toContain(
 			"- Repository-aware coding assistants differ most on index freshness and permission controls. [1]",
 		);
@@ -142,7 +143,7 @@ describe("Deep Research report writer", () => {
 		);
 		expect(report.markdown).toContain("## Comparison");
 		expect(report.markdown).toContain(
-			"Repository-aware coding assistants differ most on index freshness and permission controls. [1]",
+			"| 1 | Repository-aware coding assistants differ most on index freshness and permission controls. [1] |",
 		);
 		expect(report.markdown).toContain("## Recommendations");
 		expect(report.markdown).toContain(
@@ -272,11 +273,10 @@ describe("Deep Research report writer", () => {
 		});
 
 		expect(report.executiveSummary).toContain(
-			"Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol",
+			"Kérdés: Privát AI kódoló asszisztensek összehasonlítása",
 		);
-		expect(report.markdown).toContain(
-			"Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: Privát AI kódoló asszisztensek összehasonlítása",
-		);
+		expect(report.markdown).toContain("## Módszertan");
+		expect(report.markdown).toContain("## Összehasonlítás");
 		expect(report.markdown).toContain(citedFinding);
 		expect(report.markdown).toContain(
 			"[1] AI coding security documentation - https://docs.example.com/ai-coding/security",
@@ -287,5 +287,49 @@ describe("Deep Research report writer", () => {
 		expect(report.markdown).not.toContain("Research questions:");
 		expect(report.markdown).not.toContain("Synthesis:");
 		expect(report.markdown).not.toContain("- None.");
+	});
+
+	it("keeps readable reports capped instead of dumping every source note", () => {
+		const manyFindings = Array.from({ length: 10 }, (_, index) => ({
+			kind: "supported" as const,
+			statement: `Supported finding ${index + 1}.`,
+			sourceRefs: [
+				{
+					reviewedSourceId: `reviewed-${index + 1}`,
+					discoveredSourceId: `source-${index + 1}`,
+					canonicalUrl: `https://docs.example.com/source-${index + 1}`,
+					title: `Source ${index + 1}`,
+				},
+			],
+		}));
+		const report = writeResearchReport({
+			jobId: "job-many-findings",
+			plan: {
+				...basePlan,
+				goal: "Compare many competing document processors with source-heavy notes and produce a decision-ready report for procurement",
+				reportShape: ["Methodology", "Comparison"],
+			},
+			synthesisNotes: {
+				...baseSynthesisNotes,
+				findings: manyFindings,
+				supportedFindings: manyFindings,
+			},
+			sources: manyFindings.map((finding, index) => ({
+				id: `source-${index + 1}`,
+				reviewedSourceId: finding.sourceRefs[0].reviewedSourceId,
+				status: "cited",
+				title: `Source ${index + 1}`,
+				url: `https://docs.example.com/source-${index + 1}`,
+			})),
+		});
+
+		expect(report.title).toBe(
+			"Research Report: Compare many competing document processors with source-heavy notes and produce a decision-ready report for procurement",
+		);
+		expect(report.keyFindings).toHaveLength(7);
+		expect(report.markdown).toContain("Supported finding 7.");
+		expect(report.markdown).not.toContain("Supported finding 8.");
+		expect(report.markdown).not.toContain("Supported finding 10.");
+		expect(report.markdown).toContain("| # | Evidence-backed point |");
 	});
 });

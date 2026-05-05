@@ -390,7 +390,7 @@ export async function writeResearchReportWithLlm(
 			{
 				role: "system",
 				content:
-					"Write a structured Deep Research report draft from the approved plan and supported findings. Do not invent claims or citations. Return only JSON.",
+					"Write a readable Deep Research report draft from the approved plan and supported findings. Lead with the answer, use short descriptive headings, keep findings grouped instead of dumping source notes, disclose methods and limitations, and do not invent claims or citations. Return only JSON.",
 			},
 			{
 				role: "user",
@@ -401,6 +401,7 @@ export async function writeResearchReportWithLlm(
 					sources: input.sources,
 					limitations: input.limitations ?? [],
 					requiredShape: {
+						title: "short report title, not the whole user request",
 						executiveSummary: "string",
 						sections: [{ heading: "string", body: "string" }],
 					},
