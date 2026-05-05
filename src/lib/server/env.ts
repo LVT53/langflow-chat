@@ -266,8 +266,8 @@ function readConfig(): Config {
 		),
 		targetConstructedContext: Math.max(
 			1000,
-			parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || "157286", 10) ||
-				157286,
+			parseInt(process.env.TARGET_CONSTRUCTED_CONTEXT || "235929", 10) ||
+				235929,
 		),
 		model1MaxModelContext: Math.max(
 			1000,
@@ -292,9 +292,9 @@ function readConfig(): Config {
 			parseInt(
 				process.env.MODEL_1_TARGET_CONSTRUCTED_CONTEXT ||
 					process.env.TARGET_CONSTRUCTED_CONTEXT ||
-					"157286",
+					"235929",
 				10,
-			) || 157286,
+			) || 235929,
 		),
 		model1MaxMessageLength: Math.max(
 			1,
@@ -328,9 +328,9 @@ function readConfig(): Config {
 			parseInt(
 				process.env.MODEL_2_TARGET_CONSTRUCTED_CONTEXT ||
 					process.env.TARGET_CONSTRUCTED_CONTEXT ||
-					"157286",
+					"235929",
 				10,
-			) || 157286,
+			) || 235929,
 		),
 		model2MaxMessageLength: Math.max(
 			1,

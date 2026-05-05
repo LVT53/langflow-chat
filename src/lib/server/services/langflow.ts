@@ -26,6 +26,7 @@ import {
 	type ContextTraceSource,
 	type LegacyContextTraceSectionInput,
 } from "./chat-turn/context-trace";
+import { deriveModelContextBudget } from "./chat-turn/context-budget";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -319,13 +320,7 @@ async function resolveLangflowRunConfig(
 			maxTokens: provider.maxTokens ?? config.model1.maxTokens,
 			flowId: config.model1.flowId || config.langflowFlowId,
 			componentId,
-			contextLimits: {
-				maxModelContext: provider.maxModelContext ?? config.maxModelContext,
-				compactionUiThreshold:
-					provider.compactionUiThreshold ?? config.compactionUiThreshold,
-				targetConstructedContext:
-					provider.targetConstructedContext ?? config.targetConstructedContext,
-			},
+			contextLimits: resolveProviderPromptContextLimits(provider, config),
 			providerId,
 			providerReasoningEffort: provider.reasoningEffort,
 			providerThinkingType: provider.thinkingType,
@@ -364,6 +359,26 @@ function resolvePromptContextLimits(
 	};
 }
 
+function resolveProviderPromptContextLimits(
+	provider: {
+		maxModelContext: number | null;
+		compactionUiThreshold: number | null;
+		targetConstructedContext: number | null;
+	},
+	config: RuntimeConfig,
+): PromptContextLimits {
+	const budget = deriveModelContextBudget({
+		maxModelContext: provider.maxModelContext ?? config.maxModelContext,
+		compactionUiThreshold: provider.compactionUiThreshold,
+		targetConstructedContext: provider.targetConstructedContext,
+	});
+	return {
+		maxModelContext: budget.maxModelContext,
+		compactionUiThreshold: budget.compactionUiThreshold,
+		targetConstructedContext: budget.targetConstructedContext,
+	};
+}
+
 function extractCurrentMessageSection(
 	inputValue: string,
 	message: string,
@@ -390,41 +405,22 @@ function resolveOutputTokenBudget(params: {
 	systemPrompt: string;
 	currentMessageSection: string;
 }): OutputTokenBudget {
-	if (params.maxTokens == null) {
-		return {
-			configuredMaxTokens: null,
-			effectiveMaxTokens: null,
-			outputReserve: 0,
-			outputReserveClamped: false,
-		};
-	}
-
-	const configuredMaxTokens = Math.max(1, params.maxTokens);
 	const systemTokens = estimateTokenCount(params.systemPrompt);
 	const currentMessageTokens = estimateTokenCount(params.currentMessageSection);
-	const maxReserveForTargetContext = Math.max(
-		1,
-		params.contextLimits.maxModelContext -
-			params.contextLimits.targetConstructedContext,
-	);
-	const maxReserveForRequiredInput = Math.max(
-		1,
-		params.contextLimits.maxModelContext -
-			systemTokens -
-			currentMessageTokens -
-			LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS,
-	);
-	const effectiveMaxTokens = Math.min(
-		configuredMaxTokens,
-		maxReserveForTargetContext,
-		maxReserveForRequiredInput,
-	);
-
+	const budget = deriveModelContextBudget({
+		maxModelContext: params.contextLimits.maxModelContext,
+		targetConstructedContext: params.contextLimits.targetConstructedContext,
+		compactionUiThreshold: params.contextLimits.compactionUiThreshold,
+		maxTokens: params.maxTokens,
+		systemPromptTokens: systemTokens,
+		currentMessageTokens,
+		overheadReserveTokens: LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS,
+	});
 	return {
-		configuredMaxTokens,
-		effectiveMaxTokens,
-		outputReserve: effectiveMaxTokens,
-		outputReserveClamped: effectiveMaxTokens < configuredMaxTokens,
+		configuredMaxTokens: budget.configuredMaxTokens,
+		effectiveMaxTokens: budget.effectiveMaxTokens,
+		outputReserve: budget.outputReserve,
+		outputReserveClamped: budget.outputReserveClamped,
 	};
 }
 

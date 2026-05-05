@@ -163,13 +163,6 @@ export function validateProviderLimitOrdering(input: {
     return 'Compaction UI threshold must be less than max model context';
   }
   if (
-    compactionUiThreshold !== null &&
-    targetConstructedContext !== null &&
-    targetConstructedContext >= compactionUiThreshold
-  ) {
-    return 'Target constructed context must be less than compaction UI threshold';
-  }
-  if (
     maxModelContext !== null &&
     targetConstructedContext !== null &&
     targetConstructedContext >= maxModelContext

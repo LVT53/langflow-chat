@@ -231,7 +231,7 @@ function handleSave() {
 						</div>
 						<div>
 							<label class="settings-label" for="form-target-context">{$t('admin.targetConstructedContextLabel')}</label>
-							<input id="form-target-context" type="number" class="settings-input" bind:value={formTargetConstructedContext} placeholder="157286" min="1000" />
+							<input id="form-target-context" type="number" class="settings-input" bind:value={formTargetConstructedContext} placeholder="235929" min="1000" />
 						</div>
 						<div>
 							<label class="settings-label" for="form-max-msg-length">{$t('admin.maxMessageLengthLabel')}</label>

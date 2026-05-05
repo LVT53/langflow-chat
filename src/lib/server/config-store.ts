@@ -638,13 +638,13 @@ export async function refreshConfig(): Promise<void> {
 
 	runtimeConfig = base;
 
-	// Cross-field validation: target < threshold < max (per-model)
+	// Cross-field validation: target and threshold must fit below max.
 	function validateTriple(
 		max: number,
 		threshold: number,
 		target: number,
 	): boolean {
-		return target >= threshold || threshold >= max;
+		return target >= max || threshold >= max;
 	}
 
 	if (

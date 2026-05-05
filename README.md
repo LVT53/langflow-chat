@@ -179,7 +179,7 @@ Notes before the tables:
 | `ATTACHMENT_TRACE_DEBUG` | No | `false` | Enables extra attachment tracing logs | Turn it on while debugging upload/readiness issues | Debug logging only; not a feature flag |
 | `MAX_MODEL_CONTEXT` | No | `262144` | Maximum tokens the model context window supports | Raise it for larger context windows or lower it for stricter limits | Can also be overridden in admin config |
 | `COMPACTION_UI_THRESHOLD` | No | `209715` | UI warning threshold at 80% of max | Adjust if you want earlier or later compaction warnings | Can also be overridden in admin config |
-| `TARGET_CONSTRUCTED_CONTEXT` | No | `157286` | Target context size at 60% of max | Adjust to control how aggressively context is compacted | Can also be overridden in admin config |
+| `TARGET_CONSTRUCTED_CONTEXT` | No | `235929` | Target context size at 90% of max | Adjust to control how much prompt context is constructed before final reserve | Can also be overridden in admin config |
 | `WORKING_SET_DOCUMENT_TOKEN_BUDGET` | No | `4000` | Token budget for working-set document snippets in prompts | Raise it if longer document excerpts should reach the model | Can also be overridden in admin config |
 | `WORKING_SET_PROMPT_TOKEN_BUDGET` | No | `20000` | Token budget for the overall working-set prompt section | Raise it if more documents should be included in context | Can also be overridden in admin config |
 | `SMALL_FILE_THRESHOLD_CHARS` | No | `5000` | Character threshold below which files are treated as small for extraction | Tune based on typical upload sizes | Can also be overridden in admin config |
