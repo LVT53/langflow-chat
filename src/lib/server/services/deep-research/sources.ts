@@ -15,6 +15,21 @@ import {
 
 type DeepResearchSourceRow = typeof deepResearchSources.$inferSelect;
 
+export type ResearchSourceLedgerEntry = {
+	id: string;
+	status: DeepResearchSourceStatus;
+	url: string;
+	faviconUrl?: string | null;
+	title?: string | null;
+	reviewedNote?: string | null;
+	citationNote?: string | null;
+	rejectedReason?: string | null;
+	topicRelevant?: boolean | null;
+	topicRelevanceReason?: string | null;
+	reviewedAt?: string | null;
+	citedAt?: string | null;
+};
+
 export type SaveDiscoveredResearchSourceInput = {
 	jobId: string;
 	conversationId: string;
@@ -122,6 +137,40 @@ export async function listResearchSources(
 		);
 
 	return rows.map(mapSourceRow);
+}
+
+export function buildDefaultResearchSourceLedger<T extends ResearchSourceLedgerEntry>(
+	sources: T[],
+): T[] {
+	return sources.filter((source) => {
+		if (source.citedAt || source.status === "cited") return true;
+		if (
+			(source.reviewedAt || source.status === "reviewed") &&
+			source.topicRelevant !== false
+		) {
+			return true;
+		}
+		if (source.topicRelevant === false && explainsResearchLimitation(source)) {
+			return true;
+		}
+		return false;
+	});
+}
+
+export function getResearchSourceFaviconUrl(url: string): string | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return null;
+	}
+	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+		return null;
+	}
+	if (!isPublicHostname(parsed.hostname)) {
+		return null;
+	}
+	return new URL("/favicon.ico", parsed.origin).toString();
 }
 
 export async function countResearchSources(
@@ -293,6 +342,7 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		userId: row.userId,
 		status: row.status as DeepResearchSourceStatus,
 		url: row.url,
+		faviconUrl: getResearchSourceFaviconUrl(row.url),
 		title: row.title,
 		provider: row.provider,
 		snippet: row.snippet,
@@ -359,4 +409,41 @@ function normalizeNullableBoolean(value: unknown): boolean | null {
 function normalizeNullableText(value: string | null | undefined): string | null {
 	const normalized = value?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
+}
+
+function explainsResearchLimitation(source: ResearchSourceLedgerEntry): boolean {
+	const text = [
+		source.rejectedReason,
+		source.topicRelevanceReason,
+		source.reviewedNote,
+		source.citationNote,
+	]
+		.map((value) => value?.toLowerCase() ?? "")
+		.join(" ");
+	return /\b(limit|limited|limitation|coverage|gap|missing|insufficient|not enough|could not|unable)\b/.test(
+		text,
+	);
+}
+
+function isPublicHostname(hostname: string): boolean {
+	const normalized = hostname.toLowerCase();
+	if (
+		normalized === "localhost" ||
+		normalized.endsWith(".localhost") ||
+		normalized.endsWith(".local")
+	) {
+		return false;
+	}
+	if (normalized.includes(":")) {
+		return false;
+	}
+	const octets = normalized.split(".").map((part) => Number(part));
+	if (octets.length === 4 && octets.every((octet) => Number.isInteger(octet))) {
+		const [first, second] = octets;
+		if (first === 10 || first === 127 || first === 0) return false;
+		if (first === 169 && second === 254) return false;
+		if (first === 172 && second >= 16 && second <= 31) return false;
+		if (first === 192 && second === 168) return false;
+	}
+	return true;
 }

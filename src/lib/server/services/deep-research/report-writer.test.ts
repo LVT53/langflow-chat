@@ -262,6 +262,42 @@ describe("Deep Research report writer", () => {
 		]);
 	});
 
+	it("includes a Source Ledger Snapshot in Evidence Limitation Memos", () => {
+		const memo = writeEvidenceLimitationMemo({
+			jobId: "job-weak-evidence",
+			plan: basePlan,
+			reviewedScope: {
+				discoveredCount: 3,
+				reviewedCount: 1,
+				topicRelevantCount: 0,
+				rejectedOrOffTopicCount: 2,
+			},
+			limitations: ["No reviewed source matched the approved question."],
+			sources: [
+				{
+					id: "source-rejected",
+					status: "discovered",
+					title: "Rejected vendor page",
+					url: "https://vendor.example.com/off-topic",
+					rejectedReason:
+						"Rejected because it explains why the memo has a source coverage limitation.",
+					topicRelevant: false,
+				} as any,
+				{
+					id: "source-discovered",
+					status: "discovered",
+					title: "Discovered-only result",
+					url: "https://search.example.com/result",
+				},
+			],
+		});
+
+		expect(memo.markdown).toContain("## Source Ledger Snapshot");
+		expect(memo.markdown).toContain("### Rejected/Off-topic Reviewed Sources");
+		expect(memo.markdown).toContain("Rejected vendor page");
+		expect(memo.markdown).not.toContain("Discovered-only result");
+	});
+
 	it("writes a durable markdown report from supported synthesis notes with citations and source list", () => {
 		const report = writeResearchReport({
 			jobId: "job-1",
@@ -350,6 +386,75 @@ describe("Deep Research report writer", () => {
 		expect(report.markdown).not.toContain("link-1");
 	});
 
+	it("renders a durable Source Ledger Snapshot scoped to sources that affected the report", () => {
+		const report = writeResearchReport({
+			jobId: "job-1",
+			plan: basePlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [acceptedClaim],
+			evidenceNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+					citationNote: "Supports a central report claim.",
+				},
+				{
+					id: "source-reviewed",
+					status: "reviewed",
+					title: "Repository workflow background",
+					url: "https://analysis.example.com/repository-workflow",
+					reviewedNote: "Topic-relevant background for the approved scope.",
+					topicRelevant: true,
+				} as any,
+				{
+					id: "source-rejected",
+					status: "discovered",
+					title: "Unrelated pricing roundup",
+					url: "https://noise.example.com/pricing",
+					rejectedReason:
+						"Rejected because it explains a limitation in pricing coverage.",
+					topicRelevant: false,
+					topicRelevanceReason:
+						"The source covered a different product category.",
+				} as any,
+				{
+					id: "source-discovered",
+					status: "discovered",
+					title: "Discovered-only result",
+					url: "https://search.example.com/result",
+				},
+			],
+		});
+
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"### Cited Sources",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"- AI coding security documentation - https://docs.example.com/ai-coding/security",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"### Topic-relevant Reviewed Sources",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"- Repository workflow background - https://analysis.example.com/repository-workflow",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"### Rejected/Off-topic Reviewed Sources",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).toContain(
+			"- Unrelated pricing roundup - https://noise.example.com/pricing",
+		);
+		expect(report.structuredReport.core.sourceLedgerSnapshot).not.toContain(
+			"Discovered-only result",
+		);
+		expect(report.markdown).toContain("## Source Ledger Snapshot");
+		expect(report.markdown).toContain("### Cited Sources");
+	});
+
 	it("selects structured report shape templates from Report Intent", () => {
 		const expectedHeadingsByIntent = {
 			comparison: ["Comparison Matrix", "Decision Implications"],
@@ -393,6 +498,44 @@ describe("Deep Research report writer", () => {
 				expect(section.sourceIds).toContain("source-1");
 			}
 		}
+	});
+
+	it("renders Hungarian structured report intent headings and source ledger snapshot labels", () => {
+		const report = writeResearchReport({
+			jobId: "job-hu-structured",
+			plan: {
+				...basePlan,
+				researchLanguage: "hu",
+				goal: "Privát AI kódoló asszisztensek összehasonlítása",
+				reportIntent: "comparison",
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [acceptedClaim],
+			evidenceNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+				},
+			],
+		});
+
+		expect(report.structuredReport.sections.map((section) => section.heading)).toEqual([
+			"Összehasonlító mátrix",
+			"Döntési következmények",
+		]);
+		expect(report.markdown).toContain("## Összehasonlító mátrix");
+		expect(report.markdown).toContain("## Döntési következmények");
+		expect(report.markdown).toContain("## Forrásnapló pillanatkép");
+		expect(report.markdown).toContain("### Idézett források");
+		expect(report.markdown).toContain(
+			"[1] AI coding security documentation - https://docs.example.com/ai-coding/security",
+		);
+		expect(report.markdown).not.toContain("## Comparison Matrix");
+		expect(report.markdown).not.toContain("Cited sources in this report");
 	});
 
 	it("honors plan-specific sections such as methodology, comparison, and recommendations", () => {

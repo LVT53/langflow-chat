@@ -51,7 +51,12 @@ import {
 	writeEvidenceLimitationMemo,
 	type ResearchReportDraft,
 } from './report-writer';
-import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
+import {
+	getResearchSourceFaviconUrl,
+	listResearchSources,
+	markResearchSourceCited,
+	saveDiscoveredResearchSource,
+} from './sources';
 import { isSourceTopicRelevantToPlan } from './source-review';
 import {
 	listResearchCoverageGaps,
@@ -1016,6 +1021,11 @@ export async function completeDeepResearchJobWithAuditedReport(
 				deepResearchReportKind: 'audited',
 				deepResearchJobId: job.id,
 				deepResearchDepth: job.depth,
+				deepResearchSourceLedgerSnapshot: {
+					markdown: reportDraft.structuredReport.core.sourceLedgerSnapshot,
+					sources: reportDraft.sourceLedgerSnapshotSources,
+					sourceCounts: sourceCountsFromSources(sources),
+				},
 				documentFamilyId: randomUUID(),
 				documentFamilyStatus: 'active',
 				documentLabel: reportName,
@@ -1322,6 +1332,7 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 			limitations: input.limitations,
 			researchLanguage,
 		}),
+		sources: input.sources.map(mapSourceForReportWriter),
 	});
 	const memoName = buildEvidenceLimitationMemoArtifactName(input.job.title, researchLanguage);
 	const memoArtifactId = `deep-research-memo-${input.job.id}`;
@@ -1351,6 +1362,11 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 				deepResearchReport: false,
 				deepResearchJobId: input.job.id,
 				deepResearchDepth: input.job.depth,
+				deepResearchSourceLedgerSnapshot: {
+					markdown: memo.sourceLedgerSnapshot,
+					sources: memo.sourceLedgerSnapshotSources,
+					sourceCounts: sourceCountsFromSources(input.sources),
+				},
 				documentFamilyId: randomUUID(),
 				documentFamilyStatus: 'active',
 				documentLabel: memoName,
@@ -1727,7 +1743,14 @@ function mapSourceForReportWriter(source: DeepResearchSource) {
 		status: source.status,
 		title: source.title ?? source.url,
 		url: source.url,
+		faviconUrl: source.faviconUrl,
 		citationNote: source.citationNote,
+		reviewedNote: source.reviewedNote,
+		rejectedReason: source.rejectedReason,
+		topicRelevant: source.topicRelevant,
+		topicRelevanceReason: source.topicRelevanceReason,
+		reviewedAt: source.reviewedAt,
+		citedAt: source.citedAt,
 	};
 }
 
@@ -2471,29 +2494,167 @@ async function loadSourceLedgersByJobId(
 	if (jobIds.length === 0) return new Map();
 
 	const jobIdSet = new Set(jobIds);
+	const snapshotLedgers = await loadCompletedSourceLedgerSnapshots(userId, jobIds);
 	const sources = (await listResearchSources({ userId, conversationId })).filter((source) =>
 		jobIdSet.has(source.jobId)
 	);
 	const ledgers = new Map<string, SourceLedgerForCard>();
 	for (const jobId of jobIds) {
-		ledgers.set(jobId, {
-			sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
-			sources: [],
-		});
+		ledgers.set(
+			jobId,
+			snapshotLedgers.get(jobId) ?? {
+				sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
+				sources: [],
+			}
+		);
 	}
 
 	for (const source of sources) {
+		if (snapshotLedgers.has(source.jobId)) continue;
 		const ledger = ledgers.get(source.jobId);
 		if (!ledger) continue;
 		ledger.sourceCounts.discovered += source.discoveredAt ? 1 : 0;
 		ledger.sourceCounts.reviewed += source.reviewedAt ? 1 : 0;
 		ledger.sourceCounts.cited += source.citedAt ? 1 : 0;
-		if (source.reviewedAt || source.citedAt) {
+		if (source.reviewedAt || source.citedAt || source.rejectedReason) {
 			ledger.sources.push(mapSourceForCard(source));
 		}
 	}
 
 	return ledgers;
+}
+
+async function loadCompletedSourceLedgerSnapshots(
+	userId: string,
+	jobIds: string[]
+): Promise<Map<string, SourceLedgerForCard>> {
+	const rows = await db
+		.select({
+			jobId: deepResearchJobs.id,
+			conversationId: deepResearchJobs.conversationId,
+			artifactId: artifacts.id,
+			metadataJson: artifacts.metadataJson,
+		})
+		.from(deepResearchJobs)
+		.innerJoin(artifacts, eq(deepResearchJobs.reportArtifactId, artifacts.id))
+		.where(
+			and(
+				eq(deepResearchJobs.userId, userId),
+				eq(deepResearchJobs.status, 'completed'),
+				inArray(deepResearchJobs.id, jobIds)
+			)
+		);
+	const snapshots = new Map<string, SourceLedgerForCard>();
+	for (const row of rows) {
+		const snapshot = parseSourceLedgerSnapshotMetadata({
+			metadataJson: row.metadataJson,
+			jobId: row.jobId,
+			conversationId: row.conversationId,
+		});
+		if (snapshot) snapshots.set(row.jobId, snapshot);
+	}
+	return snapshots;
+}
+
+function parseSourceLedgerSnapshotMetadata(input: {
+	metadataJson: string | null;
+	jobId: string;
+	conversationId: string;
+}): SourceLedgerForCard | null {
+	if (!input.metadataJson) return null;
+	let metadata: unknown;
+	try {
+		metadata = JSON.parse(input.metadataJson);
+	} catch {
+		return null;
+	}
+	if (!metadata || typeof metadata !== 'object') return null;
+	const snapshot = (metadata as Record<string, unknown>).deepResearchSourceLedgerSnapshot;
+	if (!snapshot || typeof snapshot !== 'object') return null;
+	const snapshotRecord = snapshot as Record<string, unknown>;
+	const snapshotSources = Array.isArray(snapshotRecord.sources) ? snapshotRecord.sources : [];
+	const sources = snapshotSources
+		.map((source) =>
+			mapSnapshotSourceForCard({
+				source,
+				jobId: input.jobId,
+				conversationId: input.conversationId,
+			})
+		)
+		.filter((source): source is DeepResearchSource => Boolean(source));
+	if (sources.length === 0) return null;
+	const sourceCounts = parseSnapshotSourceCounts(snapshotRecord.sourceCounts, sources);
+	return {
+		sourceCounts,
+		sources: sources.map(mapSourceForCard),
+	};
+}
+
+function mapSnapshotSourceForCard(input: {
+	source: unknown;
+	jobId: string;
+	conversationId: string;
+}): DeepResearchSource | null {
+	if (!input.source || typeof input.source !== 'object') return null;
+	const record = input.source as Record<string, unknown>;
+	const id = readString(record.id);
+	const url = readString(record.url);
+	if (!id || !url) return null;
+	const status = readString(record.status) as DeepResearchSource['status'] | null;
+	const now = new Date(0).toISOString();
+	return {
+		id,
+		jobId: input.jobId,
+		conversationId: input.conversationId,
+		status:
+			status === 'reviewed' || status === 'cited' || status === 'discovered'
+				? status
+				: 'reviewed',
+		url,
+		faviconUrl: readString(record.faviconUrl) ?? getResearchSourceFaviconUrl(url),
+		title: readString(record.title) ?? url,
+		provider: 'snapshot',
+		snippet: null,
+		sourceText: null,
+		reviewedNote: readString(record.reviewedNote),
+		citationNote: readString(record.citationNote),
+		relevanceScore: null,
+		rejectedReason: readString(record.rejectedReason),
+		topicRelevant:
+			typeof record.topicRelevant === 'boolean' ? record.topicRelevant : null,
+		topicRelevanceReason: readString(record.topicRelevanceReason),
+		supportedKeyQuestions: [],
+		extractedClaims: [],
+		sourceQualitySignals: null,
+		sourceAuthoritySummary: null,
+		openedContentLength: 0,
+		discoveredAt: now,
+		reviewedAt: readString(record.reviewedAt),
+		citedAt: readString(record.citedAt),
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function parseSnapshotSourceCounts(
+	value: unknown,
+	sources: DeepResearchSource[]
+): DeepResearchSourceCounts {
+	if (value && typeof value === 'object') {
+		const record = value as Record<string, unknown>;
+		return {
+			discovered: readNumber(record.discovered),
+			reviewed: readNumber(record.reviewed),
+			cited: readNumber(record.cited),
+		};
+	}
+	return {
+		discovered: sources.length,
+		reviewed: sources.filter(
+			(source) => source.status === 'reviewed' || source.status === 'cited' || source.reviewedAt
+		).length,
+		cited: sources.filter((source) => source.status === 'cited' || source.citedAt).length,
+	};
 }
 
 async function saveResearchPlanDraft(
@@ -2647,6 +2808,7 @@ function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
 		conversationId: source.conversationId,
 		status: source.status,
 		url: source.url,
+		faviconUrl: source.faviconUrl,
 		title: source.title,
 		provider: source.provider,
 		snippet: source.snippet,
@@ -2655,6 +2817,8 @@ function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
 		citationNote: source.citationNote,
 		relevanceScore: source.relevanceScore,
 		rejectedReason: source.rejectedReason,
+		topicRelevant: source.topicRelevant,
+		topicRelevanceReason: source.topicRelevanceReason,
 		supportedKeyQuestions: source.supportedKeyQuestions,
 		extractedClaims: source.extractedClaims,
 		sourceQualitySignals: source.sourceQualitySignals,

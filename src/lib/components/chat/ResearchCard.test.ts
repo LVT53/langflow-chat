@@ -367,6 +367,72 @@ describe('ResearchCard', () => {
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
 	});
 
+	it('renders known timeline operational summaries in Hungarian instead of persisted English', () => {
+		uiLanguage.set('hu');
+		const { getAllByText, getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+				timeline: [
+					{
+						id: 'timeline-discovery',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'source_discovery',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:20:00.000Z',
+						messageKey: 'deepResearch.timeline.sourceDiscoveryCompleted',
+						messageParams: {
+							discoveredSources: 12,
+						},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 0,
+							cited: 0,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Discovered 12 public web source candidates.',
+						createdAt: '2026-05-05T10:20:00.000Z',
+					},
+					{
+						id: 'timeline-review',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'source_review',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:30:00.000Z',
+						messageKey: 'deepResearch.timeline.sourceReviewCompleted',
+						messageParams: {
+							reviewedSources: 5,
+						},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Source review completed for 5 reviewed sources.',
+						createdAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		expect(getByText('12 nyilvános webes forrásjelölt felfedezve.')).toBeInTheDocument();
+		expect(getByText('Forrásáttekintés befejezve 5 áttekintett forrással.')).toBeInTheDocument();
+		expect(getAllByText('12 felfedezett').length).toBeGreaterThan(0);
+		expect(getByText('5 áttekintett')).toBeInTheDocument();
+		expect(getByText('2 idézett')).toBeInTheDocument();
+		expect(queryByText('Discovered 12 public web source candidates.')).not.toBeInTheDocument();
+		expect(queryByText('Source review completed for 5 reviewed sources.')).not.toBeInTheDocument();
+	});
+
 	it('keeps timeline rows compact by omitting empty future filler stages', () => {
 		const { getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
@@ -628,6 +694,51 @@ describe('ResearchCard', () => {
 		expect(getByText('Cited source')).toBeInTheDocument();
 		expect(getByText('Supports a report claim.')).toBeInTheDocument();
 		expect(queryByText('Discovered-only source')).not.toBeInTheDocument();
+	});
+
+	it('renders source favicons and keeps a fallback icon slot when the favicon fails', async () => {
+		const { container, getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'report_ready',
+				sourceCounts: {
+					discovered: 1,
+					reviewed: 1,
+					cited: 1,
+				},
+				sources: [
+					{
+						id: 'source-cited',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						status: 'cited',
+						url: 'https://docs.example.com/cited',
+						faviconUrl: 'https://docs.example.com/favicon.ico',
+						title: 'Cited source with favicon',
+						provider: 'web_search',
+						discoveredAt: '2026-05-05T10:12:00.000Z',
+						reviewedAt: '2026-05-05T10:21:00.000Z',
+						citedAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+			}),
+		});
+
+		expect(getByText('Cited source with favicon')).toBeInTheDocument();
+		const iconSlot = container.querySelector('.research-card__source-favicon');
+		const favicon = iconSlot?.querySelector('img');
+
+		expect(iconSlot).not.toBeNull();
+		expect(favicon).not.toBeNull();
+		expect(favicon).toHaveAttribute('src', 'https://docs.example.com/favicon.ico');
+
+		await fireEvent.error(favicon as Element);
+
+		expect(container.querySelector('.research-card__source-favicon img')).toBeNull();
+		expect(
+			container.querySelector('.research-card__source-favicon-fallback')
+		).not.toBeNull();
+		expect(container.querySelector('.research-card__source-favicon')).toBe(iconSlot);
 	});
 
 	it('does not render unexpected private reasoning fields from timeline payloads', () => {

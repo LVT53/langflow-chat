@@ -77,6 +77,7 @@
 	let isStageDetailOpen = $state(false);
 	let planEditError = $state<string | null>(null);
 	let advanceError = $state<string | null>(null);
+	let failedFavicons = $state<Record<string, true>>({});
 
 	let isOptimisticJob = $derived(job.id.startsWith('pending-deep-research-'));
 	let canCancel = $derived(
@@ -174,6 +175,13 @@
 			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
 			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
 		];
+	}
+
+	function markFaviconFailed(sourceId: string) {
+		failedFavicons = {
+			...failedFavicons,
+			[sourceId]: true,
+		};
 	}
 
 	function handleStageDetailKeydown(event: KeyboardEvent) {
@@ -412,6 +420,115 @@
 	function isSourceSpecificTimelineEvent(event: DeepResearchTimelineEvent): boolean {
 		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
 		return eventText.includes('source') || eventText.includes('citation');
+	}
+
+	function timelineEventSummary(event: TimelineEventView): string {
+		if (!isLocalizableTimelineSummary(event)) {
+			return event.summary;
+		}
+		if (event.messageKey === 'deepResearch.timeline.planGenerated') {
+			return $t('deepResearch.timeline.summary.planGenerated');
+		}
+		if (event.messageKey === 'deepResearch.timeline.sourceDiscoveryCompleted') {
+			return $t('deepResearch.timeline.summary.sourceDiscoveryCompleted', {
+				count: timelineNumberParam(event, ['discoveredSources'], event.sourceCounts.discovered),
+			});
+		}
+		if (event.messageKey === 'deepResearch.timeline.sourceReviewCompleted') {
+			return $t('deepResearch.timeline.summary.sourceReviewCompleted', {
+				count: timelineNumberParam(event, ['reviewedSources'], event.sourceCounts.reviewed),
+			});
+		}
+		if (event.messageKey === 'deepResearch.timeline.researchTasksCompleted') {
+			return $t('deepResearch.timeline.summary.researchTasksCompleted', {
+				passNumber: timelineNumberParam(event, ['passNumber'], 1),
+				count: timelineNumberParam(event, ['completedTasks'], 0),
+			});
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageSufficient') {
+			return $t('deepResearch.timeline.summary.coverageSufficient');
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageLimited') {
+			return $t('deepResearch.timeline.summary.coverageLimited');
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageInsufficient') {
+			return $t('deepResearch.timeline.summary.coverageInsufficient');
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditCompleted') {
+			return $t('deepResearch.timeline.summary.citationAuditCompleted');
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditFailed') {
+			return $t('deepResearch.timeline.summary.citationAuditFailed');
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditRepairPassCreated') {
+			return $t('deepResearch.timeline.summary.citationAuditRepairPassCreated', {
+				passNumber: timelineNumberParam(event, ['passNumber'], 1),
+				count: timelineNumberParam(event, ['repairTasks'], 0),
+			});
+		}
+		if (event.messageKey === 'deepResearch.timeline.evidenceLimitationMemoCompleted') {
+			return $t('deepResearch.timeline.summary.evidenceLimitationMemoCompleted');
+		}
+		if (event.messageKey === 'deepResearch.timeline.workerCancelled') {
+			return $t('deepResearch.timeline.summary.workerCancelled');
+		}
+		if (event.messageKey === 'deepResearch.timeline.workerStaleRecovered') {
+			return $t('deepResearch.timeline.summary.workerStaleRecovered');
+		}
+		return event.summary;
+	}
+
+	function isLocalizableTimelineSummary(event: DeepResearchTimelineEvent): boolean {
+		const summary = event.summary.trim();
+		if (event.messageKey === 'deepResearch.timeline.planGenerated') {
+			return summary === 'Research Plan drafted for approval.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.sourceDiscoveryCompleted') {
+			return /^Discovered \d+ public web source candidates\.$/.test(summary);
+		}
+		if (event.messageKey === 'deepResearch.timeline.sourceReviewCompleted') {
+			return /^Source review completed for \d+ reviewed sources?\.$/.test(summary);
+		}
+		if (event.messageKey === 'deepResearch.timeline.researchTasksCompleted') {
+			return /^Research task pass \d+ completed with \d+ completed tasks?\.$/.test(summary);
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageSufficient') {
+			return summary === 'Reviewed evidence covers the approved Research Plan key questions.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageLimited') {
+			return summary === 'Depth budget is exhausted; incomplete coverage will be disclosed as report limitations.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.coverageInsufficient') {
+			return summary === 'Coverage gaps remain before report synthesis.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditCompleted') {
+			return summary === 'Citation audit completed and unsupported claims were removed or retained with citations.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditFailed') {
+			return summary === 'Citation audit failed because no credible supported claims remained.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.citationAuditRepairPassCreated') {
+			return /^Citation audit created repair pass \d+ with \d+ repair tasks?\.$/.test(summary);
+		}
+		if (event.messageKey === 'deepResearch.timeline.evidenceLimitationMemoCompleted') {
+			return summary === 'Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.workerCancelled') {
+			return summary === 'Deep Research job cancelled before further worker advancement.';
+		}
+		if (event.messageKey === 'deepResearch.timeline.workerStaleRecovered') {
+			return summary === 'Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.';
+		}
+		return false;
+	}
+
+	function timelineNumberParam(event: DeepResearchTimelineEvent, names: string[], fallback: number): number {
+		for (const name of names) {
+			const value = event.messageParams?.[name];
+			const parsed = typeof value === 'number' ? value : Number(value);
+			if (Number.isFinite(parsed)) return parsed;
+		}
+		return fallback;
 	}
 
 	function activeTimelineIndex(job: DeepResearchJob): number {
@@ -754,6 +871,18 @@
 					<ul>
 						{#each visibleSources as source (source.id)}
 							<li>
+								<span class="research-card__source-favicon" aria-hidden="true">
+									{#if source.faviconUrl && !failedFavicons[source.id]}
+										<img
+											src={source.faviconUrl}
+											alt=""
+											loading="lazy"
+											onerror={() => markFaviconFailed(source.id)}
+										/>
+									{:else}
+										<span class="research-card__source-favicon-fallback"></span>
+									{/if}
+								</span>
 								<a href={source.url} target="_blank" rel="noreferrer">
 									{source.title ?? source.url}
 								</a>
@@ -831,7 +960,7 @@
 							<p class="research-card__timeline-summary">{$t(step.labelKey)}</p>
 							{#each step.events ?? [] as event (event.id)}
 								<div class="research-card__timeline-event">
-									<p>{event.summary}</p>
+									<p>{timelineEventSummary(event)}</p>
 									{#if event.showSourceCounts}
 										<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
 											{#each sourceCountLabels(event.sourceCounts) as label}
@@ -1409,11 +1538,36 @@
 
 	.research-card__reviewed-sources li {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: 1rem minmax(0, 1fr) auto;
 		gap: 0.15rem 0.45rem;
 		border-radius: 7px;
 		background: var(--surface-page);
 		padding: 0.45rem 0.55rem;
+	}
+
+	.research-card__source-favicon {
+		width: 1rem;
+		height: 1rem;
+		align-self: center;
+		justify-self: center;
+		border-radius: 4px;
+		overflow: hidden;
+		background: var(--surface-page);
+	}
+
+	.research-card__source-favicon img,
+	.research-card__source-favicon-fallback {
+		display: block;
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.research-card__source-favicon-fallback {
+		border: 1px solid var(--border-subtle);
+		border-radius: 4px;
+		background:
+			linear-gradient(135deg, transparent 45%, var(--text-muted) 47%, var(--text-muted) 53%, transparent 55%),
+			var(--surface-page);
 	}
 
 	.research-card__reviewed-sources a {
@@ -1437,7 +1591,7 @@
 	}
 
 	.research-card__reviewed-sources p {
-		grid-column: 1 / -1;
+		grid-column: 2 / -1;
 		margin: 0;
 		color: var(--text-secondary);
 	}

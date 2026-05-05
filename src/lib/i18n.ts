@@ -751,6 +751,31 @@ const dictionary = {
 		"deepResearch.timeline.auditingCitations": "Auditing citations",
 		"deepResearch.timeline.writingReport": "Writing report",
 		"deepResearch.timeline.completed": "Completed",
+		"deepResearch.timeline.summary.planGenerated": "Research Plan drafted for approval.",
+		"deepResearch.timeline.summary.sourceDiscoveryCompleted":
+			"Discovered {count} public web source candidates.",
+		"deepResearch.timeline.summary.sourceReviewCompleted":
+			"Source review completed for {count} reviewed sources.",
+		"deepResearch.timeline.summary.researchTasksCompleted":
+			"Research task pass {passNumber} completed with {count} completed tasks.",
+		"deepResearch.timeline.summary.coverageSufficient":
+			"Reviewed evidence covers the approved Research Plan key questions.",
+		"deepResearch.timeline.summary.coverageLimited":
+			"Depth budget is exhausted; incomplete coverage will be disclosed as report limitations.",
+		"deepResearch.timeline.summary.coverageInsufficient":
+			"Coverage gaps remain before report synthesis.",
+		"deepResearch.timeline.summary.citationAuditCompleted":
+			"Citation audit completed and unsupported claims were removed or retained with citations.",
+		"deepResearch.timeline.summary.citationAuditFailed":
+			"Citation audit failed because no credible supported claims remained.",
+		"deepResearch.timeline.summary.citationAuditRepairPassCreated":
+			"Citation audit created repair pass {passNumber} with {count} repair tasks.",
+		"deepResearch.timeline.summary.evidenceLimitationMemoCompleted":
+			"Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.",
+		"deepResearch.timeline.summary.workerCancelled":
+			"Deep Research job cancelled before further worker advancement.",
+		"deepResearch.timeline.summary.workerStaleRecovered":
+			"Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.",
 		"composerTools.attachFile": "Attach file",
 		"composerTools.attachFileMaxSize": "Attach file (max 100MB)",
 		"composerTools.uploadsUnavailable": "File uploads are unavailable",
@@ -1644,6 +1669,32 @@ const dictionary = {
 		"deepResearch.timeline.auditingCitations": "Idézések auditálása",
 		"deepResearch.timeline.writingReport": "Jelentés írása",
 		"deepResearch.timeline.completed": "Befejezve",
+		"deepResearch.timeline.summary.planGenerated":
+			"A kutatási terv elkészült jóváhagyásra.",
+		"deepResearch.timeline.summary.sourceDiscoveryCompleted":
+			"{count} nyilvános webes forrásjelölt felfedezve.",
+		"deepResearch.timeline.summary.sourceReviewCompleted":
+			"Forrásáttekintés befejezve {count} áttekintett forrással.",
+		"deepResearch.timeline.summary.researchTasksCompleted":
+			"A(z) {passNumber}. kutatási feladatmenet lezárult {count} befejezett feladattal.",
+		"deepResearch.timeline.summary.coverageSufficient":
+			"Az áttekintett bizonyíték lefedi a jóváhagyott kutatási terv kulcskérdéseit.",
+		"deepResearch.timeline.summary.coverageLimited":
+			"A mélységi keret kimerült; a hiányos lefedettség jelentési korlátként jelenik meg.",
+		"deepResearch.timeline.summary.coverageInsufficient":
+			"A jelentésszintézis előtt még lefedettségi hiányok maradtak.",
+		"deepResearch.timeline.summary.citationAuditCompleted":
+			"A hivatkozás-ellenőrzés befejeződött, a nem alátámasztott állítások eltávolításra kerültek vagy hivatkozással maradtak meg.",
+		"deepResearch.timeline.summary.citationAuditFailed":
+			"A hivatkozás-ellenőrzés sikertelen volt, mert nem maradt hitelesen alátámasztott állítás.",
+		"deepResearch.timeline.summary.citationAuditRepairPassCreated":
+			"A hivatkozás-ellenőrzés létrehozta a(z) {passNumber}. javító menetet {count} javítási feladattal.",
+		"deepResearch.timeline.summary.evidenceLimitationMemoCompleted":
+			"A kutatás bizonyítékkorlát-memóval zárult, mert nem volt elég hiteles, témához illeszkedő bizonyíték.",
+		"deepResearch.timeline.summary.workerCancelled":
+			"A mély kutatási feladat megszakadt, mielőtt a worker tovább léptette volna.",
+		"deepResearch.timeline.summary.workerStaleRecovered":
+			"A mély kutatási feladat a legutóbbi tartós folytatási pontról folytatódott a worker időtúllépése után.",
 		"composerTools.attachFile": "Fájl csatolása",
 		"composerTools.attachFileMaxSize": "Fájl csatolása (max. 100 MB)",
 		"composerTools.uploadsUnavailable": "A fájlfeltöltés nem érhető el",

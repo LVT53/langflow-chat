@@ -73,6 +73,7 @@ describe("audited Deep Research report completion", () => {
 		const {
 			approveDeepResearchPlan,
 			completeDeepResearchJobWithAuditedReport,
+			listConversationDeepResearchJobs,
 			startDeepResearchJobShell,
 		} = await import("./index");
 		const {
@@ -191,6 +192,15 @@ describe("audited Deep Research report completion", () => {
 				deepResearchJobId: created.id,
 				deepResearchReport: true,
 				deepResearchReportKind: "audited",
+				deepResearchSourceLedgerSnapshot: expect.objectContaining({
+					markdown: expect.stringContaining("### Cited Sources"),
+					sources: [
+						expect.objectContaining({
+							id: source.id,
+							title: "Agency AI copyright training data briefing",
+						}),
+					],
+				}),
 				documentRole: "research_report",
 				originConversationId: "conv-1",
 			},
@@ -221,6 +231,30 @@ describe("audited Deep Research report completion", () => {
 				reviewedAt: "2026-05-05T10:08:00.000Z",
 				citedAt: "2026-05-05T10:20:00.000Z",
 			}),
+		]);
+
+		const lateReviewedSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://late.example.test/mutable-live-source",
+			title: "Late mutable live source",
+			provider: "public_web",
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: lateReviewedSource.id,
+			reviewedNote: "This row was added after the report was completed.",
+		});
+		const [reopened] = await listConversationDeepResearchJobs("user-1", "conv-1");
+
+		expect(reopened.sourceCounts).toEqual({
+			discovered: 1,
+			reviewed: 1,
+			cited: 1,
+		});
+		expect(reopened.sources?.map((source) => source.title)).toEqual([
+			"Agency AI copyright training data briefing",
 		]);
 	});
 

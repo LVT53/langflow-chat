@@ -245,6 +245,7 @@ export interface DeepResearchSource {
 	userId?: string;
 	status: DeepResearchSourceStatus;
 	url: string;
+	faviconUrl?: string | null;
 	title?: string | null;
 	provider: string;
 	snippet?: string | null;

@@ -6,7 +6,9 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
 import {
+	buildDefaultResearchSourceLedger,
 	countResearchSources,
+	getResearchSourceFaviconUrl,
 	listResearchSources,
 	markResearchSourceCited,
 	markResearchSourceRejected,
@@ -312,5 +314,113 @@ describe("deep research source ledger", () => {
 			topicRelevanceReason:
 				"Source discusses Volkswagen EV prices, not Cube bicycle models.",
 		});
+	});
+
+	it("scopes the default ledger to cited, topic-relevant reviewed, and useful limitation sources", async () => {
+		const cited = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://docs.example.com/security",
+			title: "Security documentation",
+			provider: "web_search",
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: cited.id,
+			topicRelevant: true,
+			reviewedNote: "Official documentation directly supports the security claim.",
+		});
+		const citedSource = await markResearchSourceCited({
+			userId: "user-1",
+			sourceId: cited.id,
+			citationNote: "Supports a central report claim.",
+		});
+
+		const reviewed = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://analysis.example.com/background",
+			title: "Relevant background analysis",
+			provider: "web_search",
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: reviewed.id,
+			topicRelevant: true,
+			reviewedNote: "Relevant background source for the approved topic.",
+		});
+
+		const rejected = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://unrelated.example.com/pricing",
+			title: "Unrelated pricing page",
+			provider: "web_search",
+		});
+		const rejectedSource = await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: rejected.id,
+			rejectedReason:
+				"Rejected because it explains why pricing coverage is limited.",
+			topicRelevant: false,
+			topicRelevanceReason:
+				"Pricing page was about a different product category.",
+		});
+
+		const discoveredOnly = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://search.example.com/result",
+			title: "Discovered-only result",
+			provider: "web_search",
+		});
+		const offTopicWithoutLimitation = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://noise.example.com/post",
+			title: "Noise post",
+			provider: "web_search",
+		});
+		await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: offTopicWithoutLimitation.id,
+			rejectedReason: "Unrelated search result.",
+			topicRelevant: false,
+		});
+
+		const ledger = buildDefaultResearchSourceLedger([
+			citedSource,
+			reviewedSource,
+			rejectedSource,
+			discoveredOnly,
+			...(await listResearchSources({ userId: "user-1", jobId: "job-1" })).filter(
+				(source) => source.id === offTopicWithoutLimitation.id,
+			),
+		]);
+
+		expect(ledger.map((source) => source.id)).toEqual([
+			citedSource.id,
+			reviewedSource.id,
+			rejectedSource.id,
+		]);
+	});
+
+	it("generates favicons only for normal public web URLs", () => {
+		expect(getResearchSourceFaviconUrl("https://docs.example.com/path")).toBe(
+			"https://docs.example.com/favicon.ico",
+		);
+		expect(getResearchSourceFaviconUrl("http://news.example.org/article")).toBe(
+			"http://news.example.org/favicon.ico",
+		);
+		expect(getResearchSourceFaviconUrl("ftp://files.example.com/source")).toBeNull();
+		expect(getResearchSourceFaviconUrl("http://localhost:5173/source")).toBeNull();
+		expect(getResearchSourceFaviconUrl("http://127.0.0.1/source")).toBeNull();
+		expect(getResearchSourceFaviconUrl("http://10.1.2.3/source")).toBeNull();
+		expect(getResearchSourceFaviconUrl("not a url")).toBeNull();
 	});
 });

@@ -4,6 +4,7 @@ import type {
 	DeepResearchSynthesisClaim,
 } from "$lib/types";
 import type { ResearchLanguage, ResearchPlan } from "./planning";
+import { buildDefaultResearchSourceLedger } from "./sources";
 import type { SynthesisFinding, SynthesisNotes } from "./synthesis";
 
 export type ResearchReportSourceStatus = DeepResearchSourceStatus;
@@ -14,7 +15,14 @@ export type ResearchReportSource = {
 	status: ResearchReportSourceStatus;
 	title: string;
 	url: string;
+	faviconUrl?: string | null;
 	citationNote?: string | null;
+	reviewedNote?: string | null;
+	rejectedReason?: string | null;
+	topicRelevant?: boolean | null;
+	topicRelevanceReason?: string | null;
+	reviewedAt?: string | null;
+	citedAt?: string | null;
 };
 
 export type CitedResearchReportSource = ResearchReportSource & {
@@ -66,6 +74,7 @@ export type ResearchReportDraft = {
 	sources: CitedResearchReportSource[];
 	limitations: string[];
 	structuredReport: StructuredResearchReport;
+	sourceLedgerSnapshotSources: ResearchReportSource[];
 	markdown: string;
 };
 
@@ -95,6 +104,8 @@ export type EvidenceLimitationMemoDraft = {
 	limitations: string[];
 	nextResearchDirection: string;
 	recoveryActions: EvidenceLimitationMemoRecoveryAction[];
+	sourceLedgerSnapshot: string;
+	sourceLedgerSnapshotSources: ResearchReportSource[];
 	markdown: string;
 };
 
@@ -114,6 +125,7 @@ export type WriteEvidenceLimitationMemoInput = {
 	reviewedScope: EvidenceLimitationMemoReviewedScope;
 	limitations: string[];
 	nextResearchDirection?: string | null;
+	sources?: ResearchReportSource[];
 };
 
 type ReportSectionKind = "methodology" | "comparison" | "recommendations";
@@ -132,6 +144,9 @@ const reportLabels: Record<
 		sources: string;
 		sourceLedgerSnapshot: string;
 		reportLimitations: string;
+		citedSources: string;
+		topicRelevantReviewedSources: string;
+		rejectedOrOffTopicReviewedSources: string;
 		methodology: string;
 		methodologySourceBasis: string;
 		comparison: string;
@@ -165,6 +180,9 @@ const reportLabels: Record<
 		sources: "Sources",
 		sourceLedgerSnapshot: "Source Ledger Snapshot",
 		reportLimitations: "Report Limitations",
+		citedSources: "Cited Sources",
+		topicRelevantReviewedSources: "Topic-relevant Reviewed Sources",
+		rejectedOrOffTopicReviewedSources: "Rejected/Off-topic Reviewed Sources",
 		methodology: "Methodology",
 		methodologySourceBasis: "Methodology / Source Basis",
 		comparison: "Comparison",
@@ -201,6 +219,10 @@ const reportLabels: Record<
 		sources: "Források",
 		sourceLedgerSnapshot: "Forrásnapló pillanatkép",
 		reportLimitations: "Jelentési korlátok",
+		citedSources: "Idézett források",
+		topicRelevantReviewedSources: "Témához illeszkedő áttekintett források",
+		rejectedOrOffTopicReviewedSources:
+			"Elutasított/témán kívüli áttekintett források",
 		methodology: "Módszertan",
 		methodologySourceBasis: "Módszertan / forrásalap",
 		comparison: "Összehasonlítás",
@@ -228,6 +250,28 @@ const reportLabels: Record<
 		analysisGoal: (goal) =>
 			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal}`,
 		emptyBullet: "Nincs.",
+	},
+};
+
+const reportIntentSectionHeadings: Record<
+	ResearchLanguage,
+	Record<ResearchPlan["reportIntent"], string[]>
+> = {
+	en: {
+		comparison: ["Comparison Matrix", "Decision Implications"],
+		recommendation: ["Recommendation", "Tradeoffs"],
+		investigation: ["Investigation Findings", "Open Questions"],
+		market_scan: ["Market Landscape", "Signals To Watch"],
+		product_scan: ["Product Scan", "Fit Assessment"],
+		limitation_focused: ["Memo", "Constraints And Next Steps"],
+	},
+	hu: {
+		comparison: ["Összehasonlító mátrix", "Döntési következmények"],
+		recommendation: ["Ajánlás", "Kompromisszumok"],
+		investigation: ["Vizsgálati megállapítások", "Nyitott kérdések"],
+		market_scan: ["Piaci körkép", "Figyelendő jelzések"],
+		product_scan: ["Termékáttekintés", "Illeszkedés értékelése"],
+		limitation_focused: ["Memó", "Korlátok és következő lépések"],
 	},
 };
 
@@ -346,6 +390,7 @@ export function writeResearchReport(
 		title,
 		researchLanguage,
 	});
+	const sourceLedgerSnapshotSources = selectSourceLedgerSnapshotSources(input.sources);
 	validateStructuredResearchReport(structuredReport);
 	const citedSources =
 		useVerifiedClaims
@@ -405,6 +450,7 @@ export function writeResearchReport(
 					)
 				: limitations,
 		structuredReport,
+		sourceLedgerSnapshotSources,
 		markdown,
 	};
 }
@@ -424,12 +470,20 @@ export function writeEvidenceLimitationMemo(
 	const recoveryActions = buildEvidenceLimitationMemoRecoveryActions(
 		researchLanguage,
 	);
+	const sourceLedgerSnapshot = buildSourceLedgerSnapshot(
+		input.sources ?? [],
+		researchLanguage,
+	);
+	const sourceLedgerSnapshotSources = selectSourceLedgerSnapshotSources(
+		input.sources ?? [],
+	);
 	const markdown = renderEvidenceLimitationMemoMarkdown({
 		title,
 		reviewedScope: input.reviewedScope,
 		limitations: visibleLimitations,
 		nextResearchDirection,
 		recoveryActions,
+		sourceLedgerSnapshot,
 		researchLanguage,
 	});
 
@@ -440,6 +494,8 @@ export function writeEvidenceLimitationMemo(
 		limitations: visibleLimitations,
 		nextResearchDirection,
 		recoveryActions,
+		sourceLedgerSnapshot,
+		sourceLedgerSnapshotSources,
 		markdown,
 	};
 }
@@ -515,7 +571,10 @@ function buildStructuredResearchReport(input: WriteResearchReportInput & {
 				input.researchLanguage,
 			),
 			limitations: buildStructuredLimitationsFromText(input),
-			sourceLedgerSnapshot: buildSourceLedgerSnapshot(input.sources),
+			sourceLedgerSnapshot: buildSourceLedgerSnapshot(
+				input.sources,
+				input.researchLanguage,
+			),
 		},
 		sections: buildReportSections(
 			input.plan,
@@ -592,9 +651,16 @@ function buildStructuredResearchReportFromClaims(input: WriteResearchReportInput
 				input.researchLanguage,
 			),
 			limitations,
-			sourceLedgerSnapshot: buildSourceLedgerSnapshot(input.sources),
+			sourceLedgerSnapshot: buildSourceLedgerSnapshot(
+				input.sources,
+				input.researchLanguage,
+			),
 		},
-		sections: buildStructuredSectionsFromClaims(input.plan, claimBlocks),
+		sections: buildStructuredSectionsFromClaims(
+			input.plan,
+			claimBlocks,
+			input.researchLanguage,
+		),
 	};
 }
 
@@ -673,14 +739,68 @@ function buildMethodologySourceBasis(
 	].join("\n");
 }
 
-function buildSourceLedgerSnapshot(sources: ResearchReportSource[]): string {
-	const citedCount = sources.filter((source) => source.status === "cited").length;
-	return `Source ledger snapshot placeholder pending DRS-14. Cited sources in this report: ${citedCount}.`;
+function buildSourceLedgerSnapshot(
+	sources: ResearchReportSource[],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	const scopedSources = selectSourceLedgerSnapshotSources(sources);
+	const citedSources = scopedSources.filter(
+		(source) => source.status === "cited" || Boolean(source.citedAt),
+	);
+	const reviewedSources = scopedSources.filter(
+		(source) =>
+			source.status !== "cited" &&
+			!source.citedAt &&
+			source.topicRelevant !== false,
+	);
+	const rejectedSources = scopedSources.filter(
+		(source) => source.topicRelevant === false,
+	);
+
+	return [
+		`### ${labels.citedSources}`,
+		...renderSourceSnapshotBullets(citedSources, researchLanguage),
+		"",
+		`### ${labels.topicRelevantReviewedSources}`,
+		...renderSourceSnapshotBullets(reviewedSources, researchLanguage),
+		"",
+		`### ${labels.rejectedOrOffTopicReviewedSources}`,
+		...renderSourceSnapshotBullets(rejectedSources, researchLanguage),
+	].join("\n");
+}
+
+function selectSourceLedgerSnapshotSources(
+	sources: ResearchReportSource[],
+): ResearchReportSource[] {
+	return buildDefaultResearchSourceLedger(sources);
+}
+
+function renderSourceSnapshotBullets(
+	sources: ResearchReportSource[],
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (sources.length === 0) {
+		return [`- ${reportLabels[researchLanguage].emptyBullet}`];
+	}
+	return sources.map((source) => {
+		const notes = [
+			source.citationNote,
+			source.reviewedNote,
+			source.rejectedReason,
+			source.topicRelevanceReason,
+		]
+			.map((value) => normalizeText(value ?? ""))
+			.filter(Boolean);
+		const noteSuffix = notes.length > 0 ? ` (${notes.join(" ")})` : "";
+		return `- ${source.title || source.url} - ${source.url}${noteSuffix}`;
+	});
 }
 
 function buildStructuredSectionsFromClaims(
 	plan: ResearchPlan,
 	keyFindings: StructuredResearchReportTextBlock[],
+	researchLanguage: ResearchLanguage,
 ): StructuredResearchReportSection[] {
 	const references = {
 		claimIds: uniqueValues(keyFindings.flatMap((finding) => finding.claimIds)),
@@ -690,7 +810,7 @@ function buildStructuredSectionsFromClaims(
 		sourceIds: uniqueValues(keyFindings.flatMap((finding) => finding.sourceIds)),
 	};
 	const claimBody = keyFindings.map((finding) => `- ${finding.text}`).join("\n");
-	return sectionHeadingsForIntent(plan.reportIntent).map((heading) => ({
+	return sectionHeadingsForIntent(plan.reportIntent, researchLanguage).map((heading) => ({
 		heading,
 		body: claimBody,
 		...references,
@@ -699,13 +819,9 @@ function buildStructuredSectionsFromClaims(
 
 function sectionHeadingsForIntent(
 	intent: ResearchPlan["reportIntent"],
+	researchLanguage: ResearchLanguage,
 ): string[] {
-	if (intent === "comparison") return ["Comparison Matrix", "Decision Implications"];
-	if (intent === "recommendation") return ["Recommendation", "Tradeoffs"];
-	if (intent === "market_scan") return ["Market Landscape", "Signals To Watch"];
-	if (intent === "product_scan") return ["Product Scan", "Fit Assessment"];
-	if (intent === "limitation_focused") return ["Memo", "Constraints And Next Steps"];
-	return ["Investigation Findings", "Open Questions"];
+	return reportIntentSectionHeadings[researchLanguage][intent];
 }
 
 function validateStructuredResearchReport(report: StructuredResearchReport): void {
@@ -783,9 +899,12 @@ function renderEvidenceLimitationMemoMarkdown(input: {
 	limitations: string[];
 	nextResearchDirection: string;
 	recoveryActions: EvidenceLimitationMemoRecoveryAction[];
+	sourceLedgerSnapshot: string;
 	researchLanguage: ResearchLanguage;
 }): string {
 	const labels = evidenceLimitationMemoLabels[input.researchLanguage];
+	const reportLedgerLabel =
+		reportLabels[input.researchLanguage].sourceLedgerSnapshot;
 	return [
 		`# ${input.title}`,
 		"",
@@ -805,6 +924,9 @@ function renderEvidenceLimitationMemoMarkdown(input: {
 		...input.recoveryActions.map(
 			(action) => `- **${action.label}**: ${action.description}`,
 		),
+		"",
+		`## ${reportLedgerLabel}`,
+		input.sourceLedgerSnapshot,
 	].join("\n");
 }
 
