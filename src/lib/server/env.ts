@@ -35,8 +35,14 @@ interface Config {
 	deepResearchWorkerEnabled: boolean;
 	deepResearchWorkerIntervalMs: number;
 	deepResearchWorkerStaleTimeoutMs: number;
+	deepResearchJobRuntimeLimitMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchActiveConversationLimit: number;
+	deepResearchActiveUserLimit: number;
+	deepResearchActiveGlobalLimit: number;
+	deepResearchGlobalReasoningConcurrency: number;
+	deepResearchUserReasoningConcurrency: number;
 	deepResearchDepthBudgets: DeepResearchDepthBudgetPolicy;
 	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
@@ -215,13 +221,37 @@ function readConfig(): Config {
 				1800000,
 			),
 		),
+		deepResearchJobRuntimeLimitMs: Math.max(
+			60000,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS, 7200000),
+		),
 		deepResearchWorkerGlobalConcurrency: Math.max(
 			0,
-			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY, 1),
+			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY, 2),
 		),
 		deepResearchWorkerUserConcurrency: Math.max(
 			0,
-			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_USER_CONCURRENCY, 1),
+			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_USER_CONCURRENCY, 2),
+		),
+		deepResearchActiveConversationLimit: Math.max(
+			1,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT, 1),
+		),
+		deepResearchActiveUserLimit: Math.max(
+			0,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_ACTIVE_USER_LIMIT, 2),
+		),
+		deepResearchActiveGlobalLimit: Math.max(
+			0,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT, 4),
+		),
+		deepResearchGlobalReasoningConcurrency: Math.max(
+			1,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY, 4),
+		),
+		deepResearchUserReasoningConcurrency: Math.max(
+			0,
+			parseIntegerEnv(process.env.DEEP_RESEARCH_USER_REASONING_CONCURRENCY, 2),
 		),
 		deepResearchDepthBudgets: readDeepResearchDepthBudgets(),
 		deepResearchModels: readDeepResearchModelSelections(),

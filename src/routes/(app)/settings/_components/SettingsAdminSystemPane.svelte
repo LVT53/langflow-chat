@@ -344,8 +344,14 @@ function configLabelKey(key: string): string {
 		DEEP_RESEARCH_WORKER_ENABLED: "admin.deepResearchWorkerEnabled",
 		DEEP_RESEARCH_WORKER_INTERVAL_MS: "admin.deepResearchWorkerIntervalMs",
 		DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS: "admin.deepResearchWorkerStaleTimeoutMs",
+		DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS: "admin.deepResearchJobRuntimeLimitMs",
 		DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: "admin.deepResearchWorkerGlobalConcurrency",
 		DEEP_RESEARCH_WORKER_USER_CONCURRENCY: "admin.deepResearchWorkerUserConcurrency",
+		DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT: "admin.deepResearchActiveConversationLimit",
+		DEEP_RESEARCH_ACTIVE_USER_LIMIT: "admin.deepResearchActiveUserLimit",
+		DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: "admin.deepResearchActiveGlobalLimit",
+		DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: "admin.deepResearchGlobalReasoningConcurrency",
+		DEEP_RESEARCH_USER_REASONING_CONCURRENCY: "admin.deepResearchUserReasoningConcurrency",
 		MODEL_1_MAX_MODEL_CONTEXT: "admin.model1MaxModelContext",
 		MODEL_1_COMPACTION_UI_THRESHOLD: "admin.model1CompactionThreshold",
 		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: "admin.model1TargetContext",
@@ -406,8 +412,14 @@ const NUMBER_KEYS = new Set([
 	"REQUEST_TIMEOUT_MS",
 	"DEEP_RESEARCH_WORKER_INTERVAL_MS",
 	"DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS",
+	"DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS",
 	"DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY",
 	"DEEP_RESEARCH_WORKER_USER_CONCURRENCY",
+	"DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT",
+	"DEEP_RESEARCH_ACTIVE_USER_LIMIT",
+	"DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT",
+	"DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY",
+	"DEEP_RESEARCH_USER_REASONING_CONCURRENCY",
 ]);
 
 function placeholderFor(key: string): string {
@@ -561,8 +573,14 @@ function placeholderFor(key: string): string {
 			{#each [
 				'DEEP_RESEARCH_WORKER_INTERVAL_MS',
 				'DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS',
+				'DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS',
 				'DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY',
 				'DEEP_RESEARCH_WORKER_USER_CONCURRENCY',
+				'DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT',
+				'DEEP_RESEARCH_ACTIVE_USER_LIMIT',
+				'DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT',
+				'DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY',
+				'DEEP_RESEARCH_USER_REASONING_CONCURRENCY',
 			] as key}
 				<div>
 					<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
@@ -573,8 +591,12 @@ function placeholderFor(key: string): string {
 						bind:value={adminConfig[key]}
 						min={key === 'DEEP_RESEARCH_WORKER_INTERVAL_MS'
 							? '1000'
-							: key === 'DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS'
+							: key === 'DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS' ||
+								  key === 'DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS'
 								? '60000'
+								: key === 'DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT' ||
+									  key === 'DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY'
+									? '1'
 								: '0'}
 						placeholder={placeholderFor(key)}
 					/>

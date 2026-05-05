@@ -73,6 +73,13 @@ export type RecordResearchTaskFailureInput = {
 	now?: Date;
 };
 
+export type CancelRunningResearchTasksInput = {
+	userId: string;
+	jobId: string;
+	reason: string;
+	now?: Date;
+};
+
 export type RecoverExpiredResearchTasksInput = {
 	userId: string;
 	jobId: string;
@@ -265,6 +272,32 @@ export async function completeResearchTask(
 	}
 
 	return row ? mapResearchTaskRow(row) : null;
+}
+
+export async function cancelRunningResearchTasks(
+	input: CancelRunningResearchTasksInput,
+): Promise<DeepResearchTask[]> {
+	const { db } = await import("$lib/server/db");
+	const now = input.now ?? new Date();
+	const rows = await db
+		.update(deepResearchTasks)
+		.set({
+			status: "cancelled",
+			failureKind: "permanent",
+			failureReason: input.reason,
+			failedAt: now,
+			updatedAt: now,
+		})
+		.where(
+			and(
+				eq(deepResearchTasks.userId, input.userId),
+				eq(deepResearchTasks.jobId, input.jobId),
+				eq(deepResearchTasks.status, "running"),
+			),
+		)
+		.returning();
+
+	return rows.map(mapResearchTaskRow);
 }
 
 export async function skipResearchTask(

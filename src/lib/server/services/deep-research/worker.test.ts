@@ -460,6 +460,34 @@ describe("Deep Research worker cleanup and recovery", () => {
 			updatedAt: new Date("2026-05-05T10:07:00.000Z"),
 		});
 		const {
+			claimResearchTasks,
+			createResearchTasksFromCoverageGaps,
+			listResearchTasks,
+		} = await import("./tasks");
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "cancel-gap",
+					keyQuestion: "Which source still needs review?",
+					summary: "A running task should be cancelled with the job.",
+					severity: "major",
+				},
+			],
+			now: new Date("2026-05-05T10:07:10.000Z"),
+		});
+		await claimResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+			limit: 1,
+			claimToken: "workflow-cancel-test",
+			now: new Date("2026-05-05T10:07:20.000Z"),
+		});
+		const {
 			requestDeepResearchWorkerCancellation,
 			triggerDeepResearchWorkflowWorkerForJob,
 		} = await import("./worker");
@@ -481,6 +509,11 @@ describe("Deep Research worker cleanup and recovery", () => {
 			userId: "user-1",
 			jobId: approved.id,
 		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
 
 		expect(cancelled).toMatchObject({
 			id: approved.id,
@@ -497,6 +530,14 @@ describe("Deep Research worker cleanup and recovery", () => {
 			advanced: false,
 		});
 		expect(workflowStep).not.toHaveBeenCalled();
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				id: task.id,
+				status: "cancelled",
+				failureKind: "permanent",
+				failureReason: "Deep Research job cancelled by user request.",
+			}),
+		]);
 		expect(
 			timeline.map((event) => ({
 				stage: event.stage,

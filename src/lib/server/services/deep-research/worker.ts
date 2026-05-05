@@ -10,6 +10,7 @@ import {
 	type RunDeepResearchWorkflowStepInput,
 	type RunDeepResearchWorkflowStepResult,
 } from "./workflow";
+import { cancelRunningResearchTasks } from "./tasks";
 
 export type DeepResearchWorkflowStepRunner = (
 	input: RunDeepResearchWorkflowStepInput,
@@ -390,6 +391,13 @@ export async function requestDeepResearchWorkerCancellation(
 		)
 		.returning();
 	if (!cancelledJob) return loadDeepResearchJobForWorker(job);
+
+	await cancelRunningResearchTasks({
+		userId: input.userId,
+		jobId: job.id,
+		reason: "Deep Research job cancelled by user request.",
+		now,
+	});
 
 	await saveResearchTimelineEvent({
 		jobId: cancelledJob.id,

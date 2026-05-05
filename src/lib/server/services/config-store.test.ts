@@ -20,8 +20,14 @@ vi.mock("../env", () => ({
 		deepResearchWorkerEnabled: false,
 		deepResearchWorkerIntervalMs: 5000,
 		deepResearchWorkerStaleTimeoutMs: 1800000,
-		deepResearchWorkerGlobalConcurrency: 1,
-		deepResearchWorkerUserConcurrency: 1,
+		deepResearchJobRuntimeLimitMs: 7200000,
+		deepResearchWorkerGlobalConcurrency: 2,
+		deepResearchWorkerUserConcurrency: 2,
+		deepResearchActiveConversationLimit: 1,
+		deepResearchActiveUserLimit: 2,
+		deepResearchActiveGlobalLimit: 4,
+		deepResearchGlobalReasoningConcurrency: 4,
+		deepResearchUserReasoningConcurrency: 2,
 		deepResearchModels: {
 			plan_generation: "model1",
 			plan_revision: "model1",
@@ -40,8 +46,14 @@ vi.mock("../env", () => ({
 		deepResearchWorkerEnabled: false,
 		deepResearchWorkerIntervalMs: 5000,
 		deepResearchWorkerStaleTimeoutMs: 1800000,
-		deepResearchWorkerGlobalConcurrency: 1,
-		deepResearchWorkerUserConcurrency: 1,
+		deepResearchJobRuntimeLimitMs: 7200000,
+		deepResearchWorkerGlobalConcurrency: 2,
+		deepResearchWorkerUserConcurrency: 2,
+		deepResearchActiveConversationLimit: 1,
+		deepResearchActiveUserLimit: 2,
+		deepResearchActiveGlobalLimit: 4,
+		deepResearchGlobalReasoningConcurrency: 4,
+		deepResearchUserReasoningConcurrency: 2,
 		deepResearchModels: {
 			plan_generation: "model1",
 			plan_revision: "model1",
@@ -126,8 +138,14 @@ describe("Knowledge Store Config", () => {
 			expect(config.deepResearchWorkerEnabled).toBe(false);
 			expect(config.deepResearchWorkerIntervalMs).toBe(5000);
 			expect(config.deepResearchWorkerStaleTimeoutMs).toBe(1800000);
-			expect(config.deepResearchWorkerGlobalConcurrency).toBe(1);
-			expect(config.deepResearchWorkerUserConcurrency).toBe(1);
+			expect(config.deepResearchJobRuntimeLimitMs).toBe(7200000);
+			expect(config.deepResearchWorkerGlobalConcurrency).toBe(2);
+			expect(config.deepResearchWorkerUserConcurrency).toBe(2);
+			expect(config.deepResearchActiveConversationLimit).toBe(1);
+			expect(config.deepResearchActiveUserLimit).toBe(2);
+			expect(config.deepResearchActiveGlobalLimit).toBe(4);
+			expect(config.deepResearchGlobalReasoningConcurrency).toBe(4);
+			expect(config.deepResearchUserReasoningConcurrency).toBe(2);
 		});
 
 		it("getConfig() should apply Deep Research worker admin overrides", async () => {
@@ -136,8 +154,14 @@ describe("Knowledge Store Config", () => {
 				{ key: "DEEP_RESEARCH_WORKER_ENABLED", value: "true" },
 				{ key: "DEEP_RESEARCH_WORKER_INTERVAL_MS", value: "12000" },
 				{ key: "DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS", value: "3600000" },
+				{ key: "DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS", value: "5400000" },
 				{ key: "DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY", value: "3" },
 				{ key: "DEEP_RESEARCH_WORKER_USER_CONCURRENCY", value: "2" },
+				{ key: "DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT", value: "1" },
+				{ key: "DEEP_RESEARCH_ACTIVE_USER_LIMIT", value: "5" },
+				{ key: "DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT", value: "8" },
+				{ key: "DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY", value: "7" },
+				{ key: "DEEP_RESEARCH_USER_REASONING_CONCURRENCY", value: "3" },
 			];
 
 			await refreshConfig();
@@ -147,16 +171,28 @@ describe("Knowledge Store Config", () => {
 			expect(config.deepResearchWorkerEnabled).toBe(true);
 			expect(config.deepResearchWorkerIntervalMs).toBe(12000);
 			expect(config.deepResearchWorkerStaleTimeoutMs).toBe(3600000);
+			expect(config.deepResearchJobRuntimeLimitMs).toBe(5400000);
 			expect(config.deepResearchWorkerGlobalConcurrency).toBe(3);
 			expect(config.deepResearchWorkerUserConcurrency).toBe(2);
+			expect(config.deepResearchActiveConversationLimit).toBe(1);
+			expect(config.deepResearchActiveUserLimit).toBe(5);
+			expect(config.deepResearchActiveGlobalLimit).toBe(8);
+			expect(config.deepResearchGlobalReasoningConcurrency).toBe(7);
+			expect(config.deepResearchUserReasoningConcurrency).toBe(3);
 		});
 
 		it("getConfig() should clamp small Deep Research worker overrides", async () => {
 			adminConfigRows = [
 				{ key: "DEEP_RESEARCH_WORKER_INTERVAL_MS", value: "250" },
 				{ key: "DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS", value: "5000" },
+				{ key: "DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS", value: "30000" },
 				{ key: "DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY", value: "-2" },
 				{ key: "DEEP_RESEARCH_WORKER_USER_CONCURRENCY", value: "-1" },
+				{ key: "DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT", value: "0" },
+				{ key: "DEEP_RESEARCH_ACTIVE_USER_LIMIT", value: "-1" },
+				{ key: "DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT", value: "-4" },
+				{ key: "DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY", value: "0" },
+				{ key: "DEEP_RESEARCH_USER_REASONING_CONCURRENCY", value: "-3" },
 			];
 
 			await refreshConfig();
@@ -164,8 +200,14 @@ describe("Knowledge Store Config", () => {
 			const config = getConfig();
 			expect(config.deepResearchWorkerIntervalMs).toBe(1000);
 			expect(config.deepResearchWorkerStaleTimeoutMs).toBe(60000);
+			expect(config.deepResearchJobRuntimeLimitMs).toBe(60000);
 			expect(config.deepResearchWorkerGlobalConcurrency).toBe(0);
 			expect(config.deepResearchWorkerUserConcurrency).toBe(0);
+			expect(config.deepResearchActiveConversationLimit).toBe(1);
+			expect(config.deepResearchActiveUserLimit).toBe(0);
+			expect(config.deepResearchActiveGlobalLimit).toBe(0);
+			expect(config.deepResearchGlobalReasoningConcurrency).toBe(1);
+			expect(config.deepResearchUserReasoningConcurrency).toBe(0);
 		});
 
 		it("getConfig() should apply Deep Research role model admin overrides", async () => {

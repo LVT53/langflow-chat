@@ -8,6 +8,13 @@ vi.mock('$lib/server/services/deep-research/worker', () => ({
 	triggerDeepResearchWorkflowWorkerForJob: vi.fn(),
 }));
 
+vi.mock('$lib/server/config-store', () => ({
+	getConfig: vi.fn(() => ({
+		deepResearchWorkerGlobalConcurrency: 2,
+		deepResearchWorkerUserConcurrency: 2,
+	})),
+}));
+
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { triggerDeepResearchWorkflowWorkerForJob } from '$lib/server/services/deep-research/worker';
@@ -73,6 +80,10 @@ describe('POST /api/deep-research/jobs/[id]/worker/advance', () => {
 		expect(mockTriggerDeepResearchWorkflowWorkerForJob).toHaveBeenCalledWith({
 			userId: 'user-1',
 			jobId: 'research-job-1',
+			controls: {
+				globalConcurrencyLimit: 2,
+				userConcurrencyLimit: 2,
+			},
 		});
 	});
 
@@ -87,6 +98,10 @@ describe('POST /api/deep-research/jobs/[id]/worker/advance', () => {
 		expect(mockTriggerDeepResearchWorkflowWorkerForJob).toHaveBeenCalledWith({
 			userId: 'user-1',
 			jobId: 'other-user-job',
+			controls: {
+				globalConcurrencyLimit: 2,
+				userConcurrencyLimit: 2,
+			},
 		});
 	});
 

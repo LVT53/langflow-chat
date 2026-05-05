@@ -284,7 +284,8 @@ export type DeepResearchTaskStatus =
 	| "running"
 	| "completed"
 	| "failed"
-	| "skipped";
+	| "skipped"
+	| "cancelled";
 
 export type DeepResearchTaskAssignmentType =
 	| "coverage_gap"

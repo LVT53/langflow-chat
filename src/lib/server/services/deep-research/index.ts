@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { getConfig } from '$lib/server/config-store';
 import {
 	artifacts,
 	conversations,
@@ -193,7 +194,12 @@ const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed
 
 export class DeepResearchJobStartError extends Error {
 	constructor(
-		public readonly code: 'conversation_not_found' | 'conversation_sealed' | 'active_job_exists',
+		public readonly code:
+			| 'conversation_not_found'
+			| 'conversation_sealed'
+			| 'active_job_exists'
+			| 'active_user_limit_exceeded'
+			| 'active_global_limit_exceeded',
 		message: string,
 		public readonly status: number
 	) {
@@ -387,6 +393,40 @@ export async function assertCanStartDeepResearchJob(
 			409
 		);
 	}
+
+	const runtimePolicy = getConfig();
+	const activeUserLimit = Math.max(0, runtimePolicy.deepResearchActiveUserLimit);
+	const activeGlobalLimit = Math.max(0, runtimePolicy.deepResearchActiveGlobalLimit);
+	const activeUserCount = await countActiveDeepResearchJobs({
+		userId: input.userId,
+	});
+	if (activeUserCount >= activeUserLimit) {
+		throw new DeepResearchJobStartError(
+			'active_user_limit_exceeded',
+			'This user already has the maximum number of active Deep Research jobs',
+			429
+		);
+	}
+
+	const activeGlobalCount = await countActiveDeepResearchJobs();
+	if (activeGlobalCount >= activeGlobalLimit) {
+		throw new DeepResearchJobStartError(
+			'active_global_limit_exceeded',
+			'The Deep Research runtime is at its global active-job limit',
+			429
+		);
+	}
+}
+
+async function countActiveDeepResearchJobs(input: { userId?: string } = {}): Promise<number> {
+	const where = input.userId
+		? and(eq(deepResearchJobs.userId, input.userId), OPEN_JOB_STATUS_FILTER)
+		: OPEN_JOB_STATUS_FILTER;
+	const [result] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(deepResearchJobs)
+		.where(where);
+	return Number(result?.count ?? 0);
 }
 
 export async function listConversationDeepResearchJobs(

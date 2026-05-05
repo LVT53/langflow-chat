@@ -1447,6 +1447,188 @@ describe("real Deep Research workflow stepper", () => {
 		]);
 	});
 
+	it("claims no more Research Tasks than the approved per-job model reasoning concurrency", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			createResearchTasksFromCoverageGaps,
+			listResearchTasks,
+		} = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-1",
+					keyQuestion: "Question one",
+					summary: "Resolve question one.",
+					severity: "major",
+				},
+				{
+					id: "gap-2",
+					keyQuestion: "Question two",
+					summary: "Resolve question two.",
+					severity: "major",
+				},
+				{
+					id: "gap-3",
+					keyQuestion: "Question three",
+					summary: "Resolve question three.",
+					severity: "major",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:11:00.000Z"),
+			},
+			{
+				tasks: {
+					executor: async ({ task }) => ({
+						summary: `Completed ${task.assignment}`,
+						findings: [`Finding for ${task.assignment}`],
+					}),
+				},
+			},
+		);
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+
+		expect(result).toMatchObject({
+			advanced: false,
+			outcome: "not_eligible",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(tasks.map((task) => task.status)).toEqual([
+			"completed",
+			"completed",
+			"pending",
+		]);
+	});
+
+	it("completes with an Evidence Limitation Memo at a safe boundary when job runtime is exhausted", async () => {
+		const previousRuntimeLimit = process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS;
+		process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS = "60000";
+		vi.resetModules();
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const createResearchTasksFromCoverageGaps = vi.fn(async () => []);
+		const completeDeepResearchJobWithEvidenceLimitationMemo = vi.fn(
+			async () => ({
+				...approved,
+				status: "completed" as const,
+				stage: "evidence_limitation_memo_completed",
+			}),
+		);
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:02:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		try {
+			const result = await runDeepResearchWorkflowStep(
+				{
+					userId: "user-1",
+					jobId: approved.id,
+					now: new Date("2026-05-05T10:04:00.000Z"),
+				},
+				{
+					coverage: {
+						assessResearchCoverage: () => ({
+							jobId: approved.id,
+							status: "insufficient",
+							canContinue: true,
+							coverageGaps: [
+								{
+									keyQuestion: "What source is missing?",
+									reason: "No reviewed sources yet.",
+									reviewedSourceCount: 0,
+									recommendedNextAction: "Add authoritative sources.",
+								},
+							],
+							reportLimitations: [
+								{
+									limitation: "Runtime expired before enough evidence was reviewed.",
+									severity: "major",
+								},
+							],
+							timelineSummary: {
+								stage: "coverage_assessment",
+								kind: "warning",
+								messageKey: "deepResearch.timeline.coverageFailed",
+								messageParams: {},
+								sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
+								assumptions: [],
+								warnings: ["Runtime expired before enough evidence was reviewed."],
+								summary: "Runtime expired before enough evidence was reviewed.",
+							},
+						}),
+					},
+					tasks: {
+						createResearchTasksFromCoverageGaps,
+					},
+					reportCompletion: {
+						completeDeepResearchJobWithAuditedReport: vi.fn(),
+						completeDeepResearchJobWithEvidenceLimitationMemo,
+					},
+				},
+			);
+
+			expect(result).toMatchObject({
+				advanced: true,
+				outcome: "report_completed",
+				job: {
+					id: approved.id,
+					status: "completed",
+					stage: "evidence_limitation_memo_completed",
+				},
+			});
+			expect(createResearchTasksFromCoverageGaps).not.toHaveBeenCalled();
+			expect(completeDeepResearchJobWithEvidenceLimitationMemo).toHaveBeenCalledWith(
+				expect.objectContaining({
+					userId: "user-1",
+					jobId: approved.id,
+					limitations: [
+						"Runtime expired before enough evidence was reviewed.",
+					],
+				}),
+			);
+		} finally {
+			if (previousRuntimeLimit === undefined) {
+				delete process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS;
+			} else {
+				process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS = previousRuntimeLimit;
+			}
+		}
+	});
+
 	it("resumes a workflow-owned running Research Task after a crash at claim time", async () => {
 		const approved = await createApprovedResearchJob();
 		await seedCompletedMeaningfulPass(approved.id, 1);

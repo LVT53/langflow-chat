@@ -46,6 +46,38 @@ async function seedConversation() {
 	sqlite.close();
 }
 
+async function seedAdditionalConversation(input: {
+	conversationId: string;
+	messageId: string;
+	userId?: string;
+}) {
+	const sqlite = new Database(dbPath);
+	sqlite.pragma('foreign_keys = ON');
+	const db = drizzle(sqlite, { schema });
+
+	const now = new Date('2026-05-05T10:00:00.000Z');
+	db.insert(schema.conversations)
+		.values({
+			id: input.conversationId,
+			userId: input.userId ?? 'user-1',
+			title: 'Research conversation',
+			createdAt: now,
+			updatedAt: now,
+		})
+		.run();
+	db.insert(schema.messages)
+		.values({
+			id: input.messageId,
+			conversationId: input.conversationId,
+			role: 'user',
+			content: 'Compare EU and US AI copyright training data rules',
+			createdAt: now,
+		})
+		.run();
+
+	sqlite.close();
+}
+
 async function seedCompletedMeaningfulPasses(
 	jobId: string,
 	count: number,
@@ -529,6 +561,49 @@ describe('deep research job shell service', () => {
 		).rejects.toMatchObject({
 			code: 'active_job_exists',
 			status: 409,
+		});
+	});
+
+	it('rejects a third active Deep Research Job for one user by default', async () => {
+		await seedAdditionalConversation({
+			conversationId: 'conv-2',
+			messageId: 'user-msg-2',
+		});
+		await seedAdditionalConversation({
+			conversationId: 'conv-3',
+			messageId: 'user-msg-3',
+		});
+		const { startDeepResearchJobShell } = await import('./index');
+
+		await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'standard',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+		await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-2',
+			triggerMessageId: 'user-msg-2',
+			userRequest: 'Research EU AI Act enforcement signals',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:02:00.000Z'),
+		});
+
+		await expect(
+			startDeepResearchJobShell({
+				userId: 'user-1',
+				conversationId: 'conv-3',
+				triggerMessageId: 'user-msg-3',
+				userRequest: 'Research US copyright office reports',
+				depth: 'focused',
+				now: new Date('2026-05-05T10:03:00.000Z'),
+			})
+		).rejects.toMatchObject({
+			code: 'active_user_limit_exceeded',
+			status: 429,
 		});
 	});
 

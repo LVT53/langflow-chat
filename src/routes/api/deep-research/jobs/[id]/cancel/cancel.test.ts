@@ -8,14 +8,21 @@ vi.mock('$lib/server/services/deep-research', () => ({
 	cancelPrePlanDeepResearchJob: vi.fn(),
 }));
 
+vi.mock('$lib/server/services/deep-research/worker', () => ({
+	requestDeepResearchWorkerCancellation: vi.fn(),
+}));
+
 import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { cancelPrePlanDeepResearchJob } from '$lib/server/services/deep-research';
+import { requestDeepResearchWorkerCancellation } from '$lib/server/services/deep-research/worker';
 
 type CancelRouteEvent = Parameters<typeof POST>[0];
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockCancelPrePlanDeepResearchJob = cancelPrePlanDeepResearchJob as ReturnType<typeof vi.fn>;
+const mockRequestDeepResearchWorkerCancellation =
+	requestDeepResearchWorkerCancellation as ReturnType<typeof vi.fn>;
 
 function makeEvent(jobId = 'research-job-1', user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -45,6 +52,7 @@ describe('POST /api/deep-research/jobs/[id]/cancel', () => {
 			updatedAt: Date.now(),
 			cancelledAt: Date.now(),
 		});
+		mockRequestDeepResearchWorkerCancellation.mockResolvedValue(null);
 	});
 
 	it('cancels a pre-approval Deep Research job for the signed-in user', async () => {
@@ -61,10 +69,42 @@ describe('POST /api/deep-research/jobs/[id]/cancel', () => {
 			userId: 'user-1',
 			jobId: 'research-job-1',
 		});
+		expect(mockRequestDeepResearchWorkerCancellation).not.toHaveBeenCalled();
+	});
+
+	it('cancels an approved or running Deep Research job through the worker cancellation path', async () => {
+		mockCancelPrePlanDeepResearchJob.mockResolvedValue(null);
+		mockRequestDeepResearchWorkerCancellation.mockResolvedValue({
+			id: 'running-job-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			depth: 'standard',
+			status: 'cancelled',
+			stage: 'cancelled_by_request',
+			title: 'Research AI copyright rules',
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			cancelledAt: Date.now(),
+		});
+
+		const response = await POST(makeEvent('running-job-1'));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.job).toMatchObject({
+			id: 'running-job-1',
+			status: 'cancelled',
+			stage: 'cancelled_by_request',
+		});
+		expect(mockRequestDeepResearchWorkerCancellation).toHaveBeenCalledWith({
+			userId: 'user-1',
+			jobId: 'running-job-1',
+		});
 	});
 
 	it('returns 404 when the Deep Research job cannot be cancelled', async () => {
 		mockCancelPrePlanDeepResearchJob.mockResolvedValue(null);
+		mockRequestDeepResearchWorkerCancellation.mockResolvedValue(null);
 
 		const response = await POST(makeEvent('running-job-1'));
 		const data = await response.json();
@@ -72,6 +112,10 @@ describe('POST /api/deep-research/jobs/[id]/cancel', () => {
 		expect(response.status).toBe(404);
 		expect(data.error).toMatch(/not found or not cancellable/i);
 		expect(mockCancelPrePlanDeepResearchJob).toHaveBeenCalledWith({
+			userId: 'user-1',
+			jobId: 'running-job-1',
+		});
+		expect(mockRequestDeepResearchWorkerCancellation).toHaveBeenCalledWith({
 			userId: 'user-1',
 			jobId: 'running-job-1',
 		});

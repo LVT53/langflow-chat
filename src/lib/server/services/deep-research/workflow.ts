@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { deepResearchJobs } from "$lib/server/db/schema";
+import { getConfig } from "$lib/server/config-store";
 import type {
 	DeepResearchJob,
 	DeepResearchSource,
@@ -246,15 +247,26 @@ async function runResearchTasksStep(
 	});
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
 
+	const workflowRunningTasks = passTasks.filter(
+		(task) => task.status === "running" && task.claimToken === workflowClaimToken,
+	);
+	const claimLimit = Math.max(
+		0,
+		Math.min(
+			pendingRequiredTasks.length,
+			modelReasoningConcurrencyLimit(approvedPlan as ResearchPlan) -
+				workflowRunningTasks.length,
+		),
+	);
 	let claimedTasks: DeepResearchTask[] = [];
-	if (pendingRequiredTasks.length > 0) {
+	if (claimLimit > 0) {
 		claimedTasks = await (
 			dependencies.tasks?.claimResearchTasks ?? claimResearchTasks
 		)({
 			userId: jobRow.userId,
 			jobId: jobRow.id,
 			passNumber,
-			limit: pendingRequiredTasks.length,
+			limit: claimLimit,
 			claimToken: workflowClaimToken,
 			now,
 		});
@@ -262,9 +274,6 @@ async function runResearchTasksStep(
 	const executor =
 		dependencies.tasks?.executor ?? defaultResearchTaskExecutor(jobRow.userId);
 
-	const workflowRunningTasks = passTasks.filter(
-		(task) => task.status === "running" && task.claimToken === workflowClaimToken,
-	);
 	const tasksToExecute = dedupeTasksById([
 		...workflowRunningTasks,
 		...claimedTasks,
@@ -1028,6 +1037,9 @@ async function runSourceReviewStep(
 							intendedComparisonAxis: source.intendedComparisonAxis,
 						})),
 					reviewLimit,
+					sourceProcessingConcurrency:
+						(approvedPlan as ResearchPlan).researchBudget
+							.sourceProcessingConcurrency,
 					planGoal: (approvedPlan as ResearchPlan).goal,
 					keyQuestions: (approvedPlan as ResearchPlan).keyQuestions,
 				},
@@ -1219,6 +1231,17 @@ async function runSourceReviewStep(
 	});
 
 	if (coverageAssessment.status !== "sufficient") {
+		if (hasDeepResearchRuntimeExpired(jobRow, now)) {
+			return completeCoverageExhaustedWithEvidenceLimitationMemo({
+				jobRow,
+				now,
+				limitations: coverageAssessment.reportLimitations.map(
+					(limitation) => limitation.limitation,
+				),
+				sourceCounts: sourceCountsFromResearchSources(sources),
+				dependencies,
+			});
+		}
 		if (coverageAssessment.canContinue) {
 			await upsertResearchPassCheckpoint({
 				userId: jobRow.userId,
@@ -2291,4 +2314,29 @@ function sourceSupportsQuestion(source: DeepResearchSource, question: string): b
 	if (questionTerms.length === 0) return false;
 	const overlap = questionTerms.filter((term) => text.includes(term)).length;
 	return overlap >= Math.min(2, questionTerms.length);
+}
+
+function modelReasoningConcurrencyLimit(plan: ResearchPlan): number {
+	const configured = plan.researchBudget.modelReasoningConcurrency;
+	const planLimit =
+		configured === undefined || !Number.isFinite(configured)
+			? 1
+			: Math.max(1, Math.floor(configured));
+	const config = getConfig();
+	return Math.max(
+		0,
+		Math.min(
+			planLimit,
+			Math.max(0, Math.floor(config.deepResearchUserReasoningConcurrency)),
+			Math.max(1, Math.floor(config.deepResearchGlobalReasoningConcurrency)),
+		),
+	);
+}
+
+function hasDeepResearchRuntimeExpired(
+	jobRow: typeof deepResearchJobs.$inferSelect,
+	now: Date,
+): boolean {
+	const runtimeLimitMs = Math.max(60_000, getConfig().deepResearchJobRuntimeLimitMs);
+	return now.getTime() - jobRow.createdAt.getTime() >= runtimeLimitMs;
 }

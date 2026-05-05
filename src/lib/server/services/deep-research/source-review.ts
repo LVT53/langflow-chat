@@ -23,6 +23,7 @@ export type TriageSourcesForReviewInput = {
 	jobId: string;
 	discoveredSources: DiscoveredResearchSource[];
 	reviewLimit: number;
+	sourceProcessingConcurrency?: number;
 	planGoal?: string;
 	keyQuestions?: string[];
 };
@@ -132,9 +133,15 @@ export async function triageAndReviewSources(
 	dependencies: TriageAndReviewSourcesDependencies,
 ): Promise<SourceTriageAndReviewResult> {
 	const triage = await triageSourcesForReview(input);
-	const reviewedSources: PersistedReviewedResearchSourceNotes[] = [];
+	const reviewConcurrency = normalizePositiveInteger(
+		input.sourceProcessingConcurrency,
+		1,
+	);
 
-	for (const source of triage.selectedSources) {
+	const reviewedSourceResults = await mapWithConcurrency(
+		triage.selectedSources,
+		reviewConcurrency,
+		async (source) => {
 		const review = await dependencies.reviewer.reviewSource(source);
 		const extractedText = review.extractedText
 			? normalizeText(review.extractedText)
@@ -221,10 +228,14 @@ export async function triageAndReviewSources(
 			openedContentLength: sourceText.length,
 		});
 
-		if (!notes.rejectedReason && notes.relevanceScore >= MIN_RELEVANCE_SCORE) {
-			reviewedSources.push(notes);
-		}
-	}
+			return !notes.rejectedReason && notes.relevanceScore >= MIN_RELEVANCE_SCORE
+				? notes
+				: null;
+		},
+	);
+	const reviewedSources = reviewedSourceResults.filter(
+		(source): source is PersistedReviewedResearchSourceNotes => source !== null,
+	);
 
 	return {
 		...triage,
@@ -616,6 +627,39 @@ function normalizeTopicText(value: string): string {
 		.replace(/\p{Diacritic}/gu, "")
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+	const parsed =
+		typeof value === "number"
+			? value
+			: typeof value === "string"
+				? Number.parseInt(value, 10)
+				: Number.NaN;
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.max(1, Math.floor(parsed));
+}
+
+async function mapWithConcurrency<T, R>(
+	items: T[],
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+	const limit = Math.max(1, Math.floor(concurrency));
+	const results = new Array<R>(items.length);
+	let nextIndex = 0;
+	const workers = Array.from(
+		{ length: Math.min(limit, items.length) },
+		async () => {
+			while (nextIndex < items.length) {
+				const currentIndex = nextIndex;
+				nextIndex += 1;
+				results[currentIndex] = await mapper(items[currentIndex]);
+			}
+		},
+	);
+	await Promise.all(workers);
+	return results;
 }
 
 function normalizeResearchSourceUrl(url: string): string {

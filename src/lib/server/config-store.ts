@@ -59,8 +59,14 @@ export const ADMIN_CONFIG_KEYS = [
 	"DEEP_RESEARCH_WORKER_ENABLED",
 	"DEEP_RESEARCH_WORKER_INTERVAL_MS",
 	"DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS",
+	"DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS",
 	"DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY",
 	"DEEP_RESEARCH_WORKER_USER_CONCURRENCY",
+	"DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT",
+	"DEEP_RESEARCH_ACTIVE_USER_LIMIT",
+	"DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT",
+	"DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY",
+	"DEEP_RESEARCH_USER_REASONING_CONCURRENCY",
 	"DEEP_RESEARCH_DEPTH_BUDGETS_JSON",
 	"DEEP_RESEARCH_PLAN_MODEL",
 	"DEEP_RESEARCH_PLAN_REVISION_MODEL",
@@ -131,8 +137,14 @@ export interface RuntimeConfig {
 	deepResearchWorkerEnabled: boolean;
 	deepResearchWorkerIntervalMs: number;
 	deepResearchWorkerStaleTimeoutMs: number;
+	deepResearchJobRuntimeLimitMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchActiveConversationLimit: number;
+	deepResearchActiveUserLimit: number;
+	deepResearchActiveGlobalLimit: number;
+	deepResearchGlobalReasoningConcurrency: number;
+	deepResearchUserReasoningConcurrency: number;
 	deepResearchDepthBudgets: DeepResearchDepthBudgetPolicy;
 	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
@@ -408,6 +420,12 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 			config.deepResearchWorkerStaleTimeoutMs = Math.max(60000, parsed);
 		}
 	},
+	DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchJobRuntimeLimitMs = Math.max(60000, parsed);
+		}
+	},
 	DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) {
@@ -418,6 +436,36 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) {
 			config.deepResearchWorkerUserConcurrency = Math.max(0, parsed);
+		}
+	},
+	DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchActiveConversationLimit = Math.max(1, parsed);
+		}
+	},
+	DEEP_RESEARCH_ACTIVE_USER_LIMIT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchActiveUserLimit = Math.max(0, parsed);
+		}
+	},
+	DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchActiveGlobalLimit = Math.max(0, parsed);
+		}
+	},
+	DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchGlobalReasoningConcurrency = Math.max(1, parsed);
+		}
+	},
+	DEEP_RESEARCH_USER_REASONING_CONCURRENCY: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.deepResearchUserReasoningConcurrency = Math.max(0, parsed);
 		}
 	},
 	DEEP_RESEARCH_DEPTH_BUDGETS_JSON: (config, value) => {
@@ -857,8 +905,26 @@ export function getResolvedAdminConfigValues(
 		DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS: String(
 			config.deepResearchWorkerStaleTimeoutMs,
 		),
+		DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS: String(
+			config.deepResearchJobRuntimeLimitMs,
+		),
 		DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: String(
 			config.deepResearchWorkerGlobalConcurrency,
+		),
+		DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT: String(
+			config.deepResearchActiveConversationLimit,
+		),
+		DEEP_RESEARCH_ACTIVE_USER_LIMIT: String(
+			config.deepResearchActiveUserLimit,
+		),
+		DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: String(
+			config.deepResearchActiveGlobalLimit,
+		),
+		DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: String(
+			config.deepResearchGlobalReasoningConcurrency,
+		),
+		DEEP_RESEARCH_USER_REASONING_CONCURRENCY: String(
+			config.deepResearchUserReasoningConcurrency,
 		),
 		DEEP_RESEARCH_WORKER_USER_CONCURRENCY: String(
 			config.deepResearchWorkerUserConcurrency,

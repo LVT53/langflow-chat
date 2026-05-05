@@ -141,6 +141,63 @@ describe("Deep Research source triage and review", () => {
 		]);
 	});
 
+	it("reviews selected sources up to the source processing concurrency budget", async () => {
+		let activeReviews = 0;
+		let maxActiveReviews = 0;
+
+		await triageAndReviewSources(
+			{
+				jobId: "job-1",
+				discoveredSources: [
+					{
+						id: "source-1",
+						url: "https://agency.example.test/one",
+						title: "Agency report one",
+						snippet: "Official report with methodology.",
+					},
+					{
+						id: "source-2",
+						url: "https://agency.example.test/two",
+						title: "Agency report two",
+						snippet: "Official report with methodology.",
+					},
+					{
+						id: "source-3",
+						url: "https://agency.example.test/three",
+						title: "Agency report three",
+						snippet: "Official report with methodology.",
+					},
+				],
+				reviewLimit: 3,
+				sourceProcessingConcurrency: 2,
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => {
+						activeReviews += 1;
+						maxActiveReviews = Math.max(maxActiveReviews, activeReviews);
+						await new Promise((resolve) => setTimeout(resolve, 0));
+						activeReviews -= 1;
+						return {
+							summary: `Reviewed ${source.title}`,
+							keyFindings: ["The source has relevant official data."],
+							extractedText: "Official report text.",
+						};
+					},
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => ({
+						...notes,
+						id: `reviewed-${notes.discoveredSourceId}`,
+						createdAt: "2026-05-05T12:00:00.000Z",
+					}),
+				},
+			},
+		);
+
+		expect(maxActiveReviews).toBe(2);
+	});
+
 	it("records source quality signals instead of only one authority score", async () => {
 		const savedNotes: unknown[] = [];
 
