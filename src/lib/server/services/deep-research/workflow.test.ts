@@ -281,6 +281,244 @@ describe("real Deep Research workflow stepper", () => {
 		]);
 	});
 
+	it("reviews discovered sources during the source review step and records timeline progress", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, listResearchSources } = await import(
+			"./sources"
+		);
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const discoveredSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		const sources = await listResearchSources({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+		});
+		expect(sources).toEqual([
+			expect.objectContaining({
+				id: discoveredSource.id,
+				status: "cited",
+				reviewedAt: "2026-05-05T10:09:00.000Z",
+				reviewedNote:
+					"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+			}),
+		]);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					jobId: approved.id,
+					stage: "source_review",
+					kind: "stage_completed",
+					sourceCounts: {
+						discovered: 1,
+						reviewed: 1,
+						cited: 0,
+					},
+				}),
+			]),
+		);
+	});
+
+	it("does not let duplicate or low-quality discovered sources inflate reviewed count", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, listResearchSources } = await import(
+			"./sources"
+		);
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const primarySource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.gov/ai-copyright-training-data?utm_source=search",
+			title: "Agency AI copyright training data methodology",
+			provider: "public_web",
+			snippet:
+				"Methodology and data on AI copyright training data rules in the EU and US.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.gov/ai-copyright-training-data/#summary",
+			title: "Duplicate agency page",
+			provider: "public_web",
+			snippet: "Duplicate copy of the agency briefing.",
+			discoveredAt: new Date("2026-05-05T10:07:30.000Z"),
+		});
+		await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://random-blog.example.test/shocking-ai-listicle",
+			title: "Shocking unsourced AI copyright listicle",
+			provider: "public_web",
+			snippet: "Unsourced listicle with no citations or methodology.",
+			discoveredAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		await runDeepResearchWorkflowStep({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		const sources = await listResearchSources({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(sources.filter((source) => source.reviewedAt)).toEqual([
+			expect.objectContaining({
+				id: primarySource.id,
+				status: "cited",
+			}),
+		]);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "source_review",
+					kind: "stage_completed",
+					sourceCounts: {
+						discovered: 3,
+						reviewed: 1,
+						cited: 0,
+					},
+				}),
+			]),
+		);
+	});
+
+	it("records a source review warning and continues to coverage handoff when review fails", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource } = await import("./sources");
+		const { triageAndReviewSources } = await import("./source-review");
+		const { listResearchTasks } = await import("./tasks");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.gov/ai-copyright-training-data",
+			title: "Agency AI copyright training data methodology",
+			provider: "public_web",
+			snippet:
+				"Methodology and data on AI copyright training data rules in the EU and US.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:09:00.000Z"),
+			},
+			{
+				sourceReview: {
+					triageAndReviewSources,
+					reviewer: {
+						reviewSource: async () => {
+							throw new Error("provider timeout");
+						},
+					},
+				},
+			},
+		);
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 1,
+		});
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(tasks.length).toBeGreaterThan(0);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "source_review",
+					kind: "warning",
+					warnings: ["Source review could not complete: provider timeout"],
+					sourceCounts: {
+						discovered: 1,
+						reviewed: 0,
+						cited: 0,
+					},
+				}),
+			]),
+		);
+	});
+
 	it("creates continuation tasks instead of a premature report when coverage has gaps and budget remains", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");

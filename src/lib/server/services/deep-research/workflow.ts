@@ -9,8 +9,12 @@ import {
 	listConversationDeepResearchJobs,
 } from "./index";
 import type { ResearchPlan } from "./planning";
-import type { PersistedReviewedResearchSourceNotes } from "./source-review";
-import { listResearchSources } from "./sources";
+import {
+	type PersistedReviewedResearchSourceNotes,
+	type SourceReviewer,
+	triageAndReviewSources,
+} from "./source-review";
+import { listResearchSources, markResearchSourceReviewed } from "./sources";
 import { buildSynthesisNotes } from "./synthesis";
 import { createResearchTasksFromCoverageGaps } from "./tasks";
 import { saveResearchTimelineEvent } from "./timeline";
@@ -39,6 +43,10 @@ export type DeepResearchWorkflowDependencies = {
 	};
 	sources?: {
 		listResearchSources: typeof listResearchSources;
+	};
+	sourceReview?: {
+		triageAndReviewSources?: typeof triageAndReviewSources;
+		reviewer?: SourceReviewer;
 	};
 	coverage?: {
 		assessResearchCoverage: typeof assessResearchCoverage;
@@ -106,13 +114,120 @@ async function runSourceReviewStep(
 		return job ? { job, advanced: false, outcome: "not_eligible" } : null;
 	}
 
-	const sources = await (
+	let sources = await (
 		dependencies.sources?.listResearchSources ?? listResearchSources
 	)({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
+	const alreadyReviewedCount = sources.filter(
+		(source) => source.reviewedAt,
+	).length;
+	const reviewLimit = Math.max(
+		0,
+		(approvedPlan as ResearchPlan).researchBudget.sourceReviewCeiling -
+			alreadyReviewedCount,
+	);
+	const reviewWarnings: string[] = [];
+	if (reviewLimit > 0) {
+		try {
+			await (
+				dependencies.sourceReview?.triageAndReviewSources ??
+				triageAndReviewSources
+			)(
+				{
+					jobId: jobRow.id,
+					discoveredSources: sources
+						.filter((source) => !source.reviewedAt)
+						.map((source) => ({
+							id: source.id,
+							url: source.url,
+							title: source.title ?? source.url,
+							snippet: source.snippet,
+						})),
+					reviewLimit,
+				},
+				{
+					reviewer:
+						dependencies.sourceReview?.reviewer ?? defaultSourceReviewer,
+					repository: {
+						saveReviewedSourceNotes: async (notes) => {
+							const reviewedSource = await markResearchSourceReviewed({
+								userId: jobRow.userId,
+								sourceId: notes.discoveredSourceId,
+								reviewedAt: now,
+								reviewedNote:
+									notes.keyFindings[0] ?? notes.summary ?? notes.extractedText,
+							});
+
+							return {
+								...notes,
+								id: reviewedSource.id,
+								createdAt: reviewedSource.reviewedAt ?? now.toISOString(),
+							};
+						},
+					},
+				},
+			);
+		} catch (error) {
+			reviewWarnings.push(
+				`Source review could not complete: ${getErrorMessage(error)}`,
+			);
+		}
+		sources = await (
+			dependencies.sources?.listResearchSources ?? listResearchSources
+		)({
+			userId: jobRow.userId,
+			jobId: jobRow.id,
+		});
+	}
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
+	if (reviewWarnings.length > 0) {
+		await saveResearchTimelineEvent({
+			jobId: jobRow.id,
+			conversationId: jobRow.conversationId,
+			userId: jobRow.userId,
+			taskId: null,
+			stage: "source_review",
+			kind: "warning",
+			occurredAt: now.toISOString(),
+			messageKey: "deepResearch.timeline.sourceReviewWarning",
+			messageParams: {
+				discoveredSources: sources.length,
+				reviewedSources: reviewedSources.length,
+			},
+			sourceCounts: {
+				discovered: sources.length,
+				reviewed: reviewedSources.length,
+				cited: sources.filter((source) => source.citedAt).length,
+			},
+			assumptions: [],
+			warnings: reviewWarnings,
+			summary: reviewWarnings[0],
+		});
+	}
+	await saveResearchTimelineEvent({
+		jobId: jobRow.id,
+		conversationId: jobRow.conversationId,
+		userId: jobRow.userId,
+		taskId: null,
+		stage: "source_review",
+		kind: "stage_completed",
+		occurredAt: now.toISOString(),
+		messageKey: "deepResearch.timeline.sourceReviewCompleted",
+		messageParams: {
+			discoveredSources: sources.length,
+			reviewedSources: reviewedSources.length,
+		},
+		sourceCounts: {
+			discovered: sources.length,
+			reviewed: reviewedSources.length,
+			cited: sources.filter((source) => source.citedAt).length,
+		},
+		assumptions: [],
+		warnings: [],
+		summary: `Source review completed for ${reviewedSources.length} reviewed source${reviewedSources.length === 1 ? "" : "s"}.`,
+	});
 	const coverageAssessment = (
 		dependencies.coverage?.assessResearchCoverage ?? assessResearchCoverage
 	)({
@@ -243,6 +358,21 @@ async function runSourceReviewStep(
 		advanced: true,
 		outcome: "report_completed",
 	};
+}
+
+const defaultSourceReviewer: SourceReviewer = {
+	async reviewSource(source) {
+		const summary = source.snippet?.trim() || source.title.trim();
+		return {
+			summary,
+			keyFindings: [summary],
+			extractedText: source.snippet ?? null,
+		};
+	},
+};
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : "unknown error";
 }
 
 async function runDiscoveryStep(

@@ -16,6 +16,7 @@
 		onOpenReport = undefined,
 		onDiscussReport = undefined,
 		onResearchFurther = undefined,
+		onAdvanceResearch = undefined,
 	}: {
 		job: DeepResearchJob;
 		onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
@@ -24,15 +25,19 @@
 		onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
 		onResearchFurther?: ((jobId: string) => void | Promise<void>) | undefined;
+		onAdvanceResearch?: ((jobId: string) => void | Promise<void>) | undefined;
 	} = $props();
 
 	let isEditingPlan = $state(false);
 	let planEditInstructions = $state('');
 	let planEditPending = $state(false);
 	let planApprovalPending = $state(false);
+	let advancePending = $state(false);
 	let planEditError = $state<string | null>(null);
+	let advanceError = $state<string | null>(null);
 
 	let canCancel = $derived(job.status === 'awaiting_plan' || job.status === 'awaiting_approval');
+	let canAdvanceResearch = $derived(job.status === 'approved' || job.status === 'running');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
 	let reportDocument = $derived(buildReportDocument(job));
@@ -117,6 +122,19 @@
 	function researchFurther() {
 		if (!reportDocument || !onResearchFurther) return;
 		void onResearchFurther(job.id);
+	}
+
+	async function advanceResearch() {
+		if (!canAdvanceResearch || !onAdvanceResearch || advancePending) return;
+		advancePending = true;
+		advanceError = null;
+		try {
+			await onAdvanceResearch(job.id);
+		} catch (err) {
+			advanceError = err instanceof Error ? err.message : $t('deepResearch.advanceWorkflowFailed');
+		} finally {
+			advancePending = false;
+		}
 	}
 
 	async function approvePlan() {
@@ -323,6 +341,27 @@
 				{/each}
 			</ol>
 		</section>
+	{/if}
+
+	{#if advanceError}
+		<p class="research-card__error" role="alert">{advanceError}</p>
+	{/if}
+
+	{#if canAdvanceResearch}
+		<div class="research-card__actions">
+			<button
+				type="button"
+				class="research-card__action"
+				onclick={advanceResearch}
+				disabled={!onAdvanceResearch || advancePending}
+				aria-label={$t('deepResearch.advanceWorkflowLabel')}
+				title={$t('deepResearch.advanceWorkflowHelp')}
+			>
+				{advancePending
+					? $t('deepResearch.advancingWorkflow')
+					: $t('deepResearch.advanceWorkflowLabel')}
+			</button>
+		</div>
 	{/if}
 
 	{#if canCancel}

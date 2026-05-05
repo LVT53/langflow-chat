@@ -27,6 +27,7 @@ import {
 	retryFileProductionJob as retryFileProductionJobRequest,
 } from "$lib/client/api/file-production";
 import {
+	advanceDeepResearchWorkflow as advanceDeepResearchWorkflowRequest,
 	approveDeepResearchPlan as approveDeepResearchPlanRequest,
 	cancelDeepResearchJob as cancelDeepResearchJobRequest,
 	discussDeepResearchReport as discussDeepResearchReportRequest,
@@ -1048,6 +1049,16 @@ async function handleResearchFurtherFromDeepResearchReport(jobId: string) {
 	}
 }
 
+async function handleAdvanceDeepResearchWorkflow(jobId: string) {
+	try {
+		const result = await advanceDeepResearchWorkflowRequest(jobId);
+		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, result.job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to advance Deep Research";
+		throw err;
+	}
+}
+
 $effect(() => {
 	const conversationId = data.conversation?.id;
 	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
@@ -1848,6 +1859,7 @@ function handleDrop(event: DragEvent) {
 						onApproveDeepResearchPlan={handleApproveDeepResearchPlan}
 						onDiscussDeepResearchReport={handleDiscussDeepResearchReport}
 						onResearchFurtherFromDeepResearchReport={handleResearchFurtherFromDeepResearchReport}
+						onAdvanceDeepResearchWorkflow={handleAdvanceDeepResearchWorkflow}
 					/>
 				{/if}
 			</div>

@@ -279,6 +279,27 @@ describe('MessageArea', () => {
 		expect(onResearchFurtherFromDeepResearchReport).toHaveBeenCalledWith('research-job-1');
 	});
 
+	it('routes manual Deep Research workflow advancement through the card callback', async () => {
+		const onAdvanceDeepResearchWorkflow = vi.fn();
+		const { getByRole } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'approved',
+					stage: 'plan_approved',
+				}),
+			],
+			onAdvanceDeepResearchWorkflow,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Advance research' }));
+
+		expect(onAdvanceDeepResearchWorkflow).toHaveBeenCalledWith('research-job-1');
+	});
+
 	it('keeps completed Research Cards usable while read-only chat actions are hidden', async () => {
 		const onOpenDocument = vi.fn<(document: DocumentWorkspaceItem) => void>();
 		const { getByRole, queryByRole } = render(MessageArea, {

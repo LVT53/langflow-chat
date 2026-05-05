@@ -9,6 +9,26 @@ interface DeepResearchJobResponse {
 	job: DeepResearchJob;
 }
 
+export interface DeepResearchWorkflowAdvanceResult {
+	advanced: boolean;
+	outcome: string;
+	status: DeepResearchJob["status"];
+	stage: string | null;
+	job: DeepResearchJob;
+}
+
+export async function advanceDeepResearchWorkflow(
+	jobId: string,
+	fetchImpl: FetchLike = fetch,
+): Promise<DeepResearchWorkflowAdvanceResult> {
+	return requestJson<DeepResearchWorkflowAdvanceResult>(
+		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/workflow/advance`,
+		{ method: "POST" },
+		"Failed to advance Deep Research workflow",
+		fetchImpl,
+	);
+}
+
 export async function cancelDeepResearchJob(
 	jobId: string,
 	fetchImpl: FetchLike = fetch,

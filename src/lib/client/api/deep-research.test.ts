@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	advanceDeepResearchWorkflow,
 	approveDeepResearchPlan,
 	discussDeepResearchReport,
 	editDeepResearchPlan,
@@ -7,6 +8,48 @@ import {
 } from "./deep-research";
 
 describe("deep-research client API", () => {
+	it("posts a manual workflow advance request and returns the updated job", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						advanced: true,
+						outcome: "discovery_completed",
+						status: "running",
+						stage: "source_review",
+						job: {
+							id: "job-1",
+							conversationId: "conv-1",
+							triggerMessageId: "message-1",
+							depth: "standard",
+							status: "running",
+							stage: "source_review",
+							title: "Research battery recycling policy",
+							createdAt: 1,
+							updatedAt: 2,
+						},
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await expect(advanceDeepResearchWorkflow("job-1", fetchMock)).resolves.toMatchObject({
+			advanced: true,
+			outcome: "discovery_completed",
+			job: {
+				id: "job-1",
+				status: "running",
+				stage: "source_review",
+			},
+		});
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/deep-research/jobs/job-1/workflow/advance",
+			{
+				method: "POST",
+			},
+		);
+	});
+
 	it("posts Plan Edit instructions and returns the updated job", async () => {
 		const fetchMock = vi.fn(
 			async () =>

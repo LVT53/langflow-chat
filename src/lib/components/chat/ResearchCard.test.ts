@@ -323,6 +323,47 @@ describe('ResearchCard', () => {
 		expect(queryByRole('button', { name: 'Edit Research Plan' })).not.toBeInTheDocument();
 	});
 
+	it('lets approved and running jobs manually advance the research workflow', async () => {
+		const onAdvanceResearch = vi.fn();
+		const { getByRole, rerender } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'approved',
+				stage: 'plan_approved',
+			}),
+			onAdvanceResearch,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Advance research' }));
+		expect(onAdvanceResearch).toHaveBeenCalledWith('research-job-1');
+
+		await rerender({
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+			}),
+			onAdvanceResearch,
+		});
+		await fireEvent.click(getByRole('button', { name: 'Advance research' }));
+
+		expect(onAdvanceResearch).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not show manual workflow advance for completed, cancelled, or failed jobs', () => {
+		for (const status of ['completed', 'cancelled', 'failed'] as const) {
+			const { queryByRole, unmount } = render(ResearchCard, {
+				job: makeDeepResearchJob({
+					status,
+					stage: status === 'completed' ? 'report_ready' : status,
+					reportArtifactId: status === 'completed' ? 'artifact-report-1' : null,
+				}),
+				onAdvanceResearch: vi.fn(),
+			});
+
+			expect(queryByRole('button', { name: 'Advance research' })).not.toBeInTheDocument();
+			unmount();
+		}
+	});
+
 	it('shows an approval error without opening the Plan Edit form', async () => {
 		const onApprove = vi.fn(async () => {
 			throw new Error('Approval route unavailable');

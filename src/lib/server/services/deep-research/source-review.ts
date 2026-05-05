@@ -78,6 +78,9 @@ export async function triageSourcesForReview(
 	const canonicalSources = deduplicateDiscoveredSources(
 		input.discoveredSources,
 	).sort(compareSourceReviewCandidates);
+	const reviewableSources = canonicalSources.filter(
+		(source) => source.reviewScore > 0,
+	);
 	const reviewLimit = Math.max(0, Math.floor(input.reviewLimit));
 
 	return {
@@ -85,7 +88,7 @@ export async function triageSourcesForReview(
 		discoveredCount: input.discoveredSources.length,
 		canonicalSourceCount: canonicalSources.length,
 		reviewedCount: 0,
-		selectedSources: canonicalSources.slice(0, reviewLimit),
+		selectedSources: reviewableSources.slice(0, reviewLimit),
 	};
 }
 

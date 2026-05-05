@@ -31,6 +31,7 @@ let {
 	onApproveDeepResearchPlan = undefined,
 	onDiscussDeepResearchReport = undefined,
 	onResearchFurtherFromDeepResearchReport = undefined,
+	onAdvanceDeepResearchWorkflow = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
@@ -52,6 +53,7 @@ let {
 	onApproveDeepResearchPlan?: ((jobId: string) => void | Promise<void>) | undefined;
 	onDiscussDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
 	onResearchFurtherFromDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
+	onAdvanceDeepResearchWorkflow?: ((jobId: string) => void | Promise<void>) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -213,6 +215,7 @@ async function alignToBottomAfterRender() {
 					onOpenReport={onOpenDocument}
 					onDiscussReport={onDiscussDeepResearchReport}
 					onResearchFurther={onResearchFurtherFromDeepResearchReport}
+					onAdvanceResearch={onAdvanceDeepResearchWorkflow}
 				/>
 			{/each}
 			{#each dedupedMessages as message, i (message.renderKey ?? message.id)}

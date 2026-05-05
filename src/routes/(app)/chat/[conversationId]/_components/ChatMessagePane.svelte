@@ -29,6 +29,7 @@
 		onApproveDeepResearchPlan,
 		onDiscussDeepResearchReport,
 		onResearchFurtherFromDeepResearchReport,
+		onAdvanceDeepResearchWorkflow,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
@@ -48,6 +49,7 @@
 		onApproveDeepResearchPlan?: (jobId: string) => void | Promise<void>;
 		onDiscussDeepResearchReport?: (jobId: string) => void | Promise<void>;
 		onResearchFurtherFromDeepResearchReport?: (jobId: string) => void | Promise<void>;
+		onAdvanceDeepResearchWorkflow?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -71,6 +73,7 @@
 		{onApproveDeepResearchPlan}
 		{onDiscussDeepResearchReport}
 		{onResearchFurtherFromDeepResearchReport}
+		{onAdvanceDeepResearchWorkflow}
 	/>
 </div>
 
