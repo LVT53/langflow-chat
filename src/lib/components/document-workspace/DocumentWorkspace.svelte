@@ -162,6 +162,10 @@ function stopResize() {
 	isResizing = false;
 }
 
+function resetWorkspaceWidth() {
+	workspaceWidth = clampWorkspaceWidth(DEFAULT_WORKSPACE_WIDTH);
+}
+
 function clampWorkspaceWidth(nextWidth: number): number {
 	return Math.max(
 		MIN_WIDTH,
@@ -248,6 +252,15 @@ function getDocumentLifecycleLabel(
 	return document.documentFamilyStatus === "historical"
 		? $t("documentWorkspace.historical")
 		: null;
+}
+
+function getDocumentProvenanceLabel(document: DocumentWorkspaceItem): string {
+	if (canJumpToSource(document)) {
+		return $t("documentWorkspace.fromAssistantMessage");
+	}
+	return document.source === "chat_generated_file"
+		? $t("documentWorkspace.fromGeneratedFile")
+		: $t("documentWorkspace.fromKnowledgeBase");
 }
 
 let familyDocuments = $derived.by(() => {
@@ -509,6 +522,25 @@ $effect(() => {
 					{#if getDocumentSubtitle(activeDocument)}
 						<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
 					{/if}
+					<div class="workspace-provenance" data-testid="document-provenance">
+						{#if canJumpToSource(activeDocument)}
+							<button
+								type="button"
+								class="workspace-provenance-link"
+								onclick={() => onJumpToSource?.(activeDocument)}
+								aria-label={$t('documentWorkspace.viewSourceMessage')}
+								title={$t('documentWorkspace.viewSourceMessage')}
+							>
+								<span>{getDocumentProvenanceLabel(activeDocument)}</span>
+								<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M7 17 17 7" />
+									<path d="M7 7h10v10" />
+								</svg>
+							</button>
+						{:else}
+							<span class="workspace-provenance-text">{getDocumentProvenanceLabel(activeDocument)}</span>
+						{/if}
+					</div>
 					{#if getDocumentLifecycleLabel(activeDocument)}
 						<div class="workspace-status-row">
 							<span class="workspace-status-badge">
@@ -546,30 +578,7 @@ $effect(() => {
 				</div>
 			</div>
 
-			{#if canJumpToSource(activeDocument)}
-				<div class="workspace-actions">
-					{#if canCompareActiveDocument}
-						<button
-							type="button"
-							class="workspace-source-button"
-							onclick={() => {
-								compareMode = !compareMode;
-							}}
-						>
-						{compareMode ? $t('documentWorkspace.closeCompare') : $t('documentWorkspace.compareVersions')}
-						</button>
-					{/if}
-					<button
-						type="button"
-						class="workspace-source-button"
-						onclick={() => onJumpToSource?.(activeDocument)}
-					>
-					{$t('documentWorkspace.viewSourceMessage')}
-					</button>
-				</div>
-			{/if}
-
-			{#if !canJumpToSource(activeDocument) && canCompareActiveDocument}
+			{#if canCompareActiveDocument}
 				<div class="workspace-actions">
 					<button
 						type="button"
@@ -578,7 +587,7 @@ $effect(() => {
 							compareMode = !compareMode;
 						}}
 					>
-						{compareMode ? 'Close compare' : 'Compare versions'}
+						{compareMode ? $t('documentWorkspace.closeCompare') : $t('documentWorkspace.compareVersions')}
 					</button>
 				</div>
 			{/if}
@@ -718,6 +727,7 @@ $effect(() => {
 			class="workspace-resize-handle" 
 			data-testid="resize-handle"
 			onmousedown={startResize}
+			ondblclick={resetWorkspaceWidth}
 			onkeydown={handleResizeKeyDown}
 			role="slider"
 			aria-label={$t('documentWorkspace.resizePanel')}
@@ -733,6 +743,25 @@ $effect(() => {
 			{#if getDocumentSubtitle(activeDocument)}
 				<div class="workspace-subtitle">{getDocumentSubtitle(activeDocument)}</div>
 			{/if}
+			<div class="workspace-provenance" data-testid="document-provenance">
+				{#if canJumpToSource(activeDocument)}
+					<button
+						type="button"
+						class="workspace-provenance-link"
+						onclick={() => onJumpToSource?.(activeDocument)}
+						aria-label={$t('documentWorkspace.viewSourceMessage')}
+						title={$t('documentWorkspace.viewSourceMessage')}
+					>
+						<span>{getDocumentProvenanceLabel(activeDocument)}</span>
+						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M7 17 17 7" />
+							<path d="M7 7h10v10" />
+						</svg>
+					</button>
+				{:else}
+					<span class="workspace-provenance-text">{getDocumentProvenanceLabel(activeDocument)}</span>
+				{/if}
+			</div>
 			{#if getDocumentLifecycleLabel(activeDocument)}
 				<div class="workspace-status-row">
 					<span class="workspace-status-badge">
@@ -786,30 +815,7 @@ $effect(() => {
 		</div>
 	</div>
 
-	{#if canJumpToSource(activeDocument)}
-		<div class="workspace-actions">
-			{#if canCompareActiveDocument}
-				<button
-					type="button"
-					class="workspace-source-button"
-					onclick={() => {
-						compareMode = !compareMode;
-					}}
-				>
-					{compareMode ? $t('documentWorkspace.closeCompare') : $t('documentWorkspace.compareVersions')}
-				</button>
-			{/if}
-			<button
-				type="button"
-				class="workspace-source-button"
-				onclick={() => onJumpToSource?.(activeDocument)}
-			>
-				{$t('documentWorkspace.viewSourceMessage')}
-			</button>
-		</div>
-	{/if}
-
-	{#if !canJumpToSource(activeDocument) && canCompareActiveDocument}
+	{#if canCompareActiveDocument}
 		<div class="workspace-actions">
 			<button
 				type="button"
@@ -1028,6 +1034,45 @@ $effect(() => {
 		font-weight: 500;
 		letter-spacing: 0.02em;
 		color: var(--text-secondary);
+	}
+
+	.workspace-provenance {
+		display: flex;
+		align-items: center;
+		margin-top: 0.38rem;
+		min-width: 0;
+	}
+
+	.workspace-provenance-link,
+	.workspace-provenance-text {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.28rem;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		padding: 0;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.72rem;
+		font-weight: 500;
+		line-height: 1.25;
+		color: var(--text-muted);
+	}
+
+	.workspace-provenance-link {
+		cursor: pointer;
+		transition: color var(--duration-fast) ease;
+	}
+
+	.workspace-provenance-link:hover {
+		color: var(--text-primary);
+	}
+
+	.workspace-provenance-link span,
+	.workspace-provenance-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.workspace-status-row {
@@ -1388,7 +1433,10 @@ $effect(() => {
 
 		.workspace-shell-expanded {
 			position: fixed;
-			inset: 1.25rem;
+			top: 1.25rem;
+			right: max(1.25rem, calc((100vw - 1600px) / 2));
+			bottom: 1.25rem;
+			left: max(1.25rem, calc((100vw - 1600px) / 2));
 			z-index: 115;
 			width: auto;
 			max-width: none;

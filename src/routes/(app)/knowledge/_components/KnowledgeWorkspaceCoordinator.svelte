@@ -13,7 +13,7 @@ import {
 } from "$lib/client/document-workspace-state";
 import { recordDocumentWorkspaceOpen } from "$lib/client/api/knowledge";
 import DocumentWorkspace from "$lib/components/document-workspace/DocumentWorkspace.svelte";
-import { getWorkspaceMetadataForArtifact } from "../_helpers";
+import { getWorkspaceDocumentForArtifact } from "../_helpers";
 import { toWorkspaceDocument } from "../_helpers";
 
 let {
@@ -46,13 +46,12 @@ $effect(() => {
 		return;
 	}
 
-	openDocument({
-		...handoffDoc,
-		...(handoffDoc.artifactId
-			? (getWorkspaceMetadataForArtifact(documents, handoffDoc.artifactId) ??
-				{})
-			: {}),
-	});
+	openDocument(
+		handoffDoc.artifactId
+			? (getWorkspaceDocumentForArtifact(documents, handoffDoc.artifactId) ??
+				handoffDoc)
+			: handoffDoc,
+	);
 	lastHandoffKey = key;
 	if (browser) {
 		requestAnimationFrame(() => {

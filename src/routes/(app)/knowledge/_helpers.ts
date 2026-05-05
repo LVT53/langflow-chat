@@ -138,18 +138,10 @@ export function toWorkspaceDocument(
 	};
 }
 
-export function getWorkspaceMetadataForArtifact(
+export function getWorkspaceDocumentForArtifact(
 	documents: KnowledgeDocumentItem[],
 	artifactId: string,
-): Pick<
-	DocumentWorkspaceItem,
-	| "documentFamilyId"
-	| "documentFamilyStatus"
-	| "documentLabel"
-	| "documentRole"
-	| "versionNumber"
-	| "title"
-> | null {
+): DocumentWorkspaceItem | null {
 	const matchingDocument =
 		documents.find(
 			(document) =>
@@ -160,12 +152,5 @@ export function getWorkspaceMetadataForArtifact(
 		return null;
 	}
 
-	return {
-		title: matchingDocument.documentLabel ?? matchingDocument.name,
-		documentFamilyId: matchingDocument.documentFamilyId ?? null,
-		documentFamilyStatus: matchingDocument.documentFamilyStatus ?? null,
-		documentLabel: matchingDocument.documentLabel ?? null,
-		documentRole: matchingDocument.documentRole ?? null,
-		versionNumber: matchingDocument.versionNumber ?? null,
-	};
+	return toWorkspaceDocument(matchingDocument);
 }

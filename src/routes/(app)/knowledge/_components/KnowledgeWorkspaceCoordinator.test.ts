@@ -91,4 +91,38 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 			"/api/knowledge/artifact-1/download",
 		);
 	});
+
+	it("resolves normalized handoff artifacts to the display artifact before previewing", async () => {
+		render(KnowledgeWorkspaceCoordinator, {
+			props: {
+				documents: [
+					{
+						id: "doc-1",
+						name: "Contract.docx",
+						type: "source_document",
+						mimeType:
+							"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+						sizeBytes: 120,
+						createdAt: 1,
+						displayArtifactId: "display-docx-1",
+						promptArtifactId: "artifact-1",
+					},
+				],
+			},
+		});
+
+		await waitFor(() => {
+			expect(global.fetch).toHaveBeenCalledWith(
+				"/api/knowledge/display-docx-1/preview",
+			);
+		});
+
+		const download = await screen.findByRole("link", {
+			name: /download contract\.docx/i,
+		});
+		expect(download).toHaveAttribute(
+			"href",
+			"/api/knowledge/display-docx-1/download",
+		);
+	});
 });

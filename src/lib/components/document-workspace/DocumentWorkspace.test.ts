@@ -143,7 +143,13 @@ describe("DocumentWorkspace", () => {
 				name: /very long research brief with readable name/i,
 			}),
 		).toBeInTheDocument();
-		expect(within(rail).getByText(/research brief • v2/i)).toBeInTheDocument();
+		expect(within(rail).getByText("v2")).toHaveClass(
+			"open-documents-rail-version",
+		);
+		expect(
+			within(rail).getByText(/knowledge base • text • research brief/i),
+		).toBeInTheDocument();
+		expect(within(rail).getByText("2 open")).toBeInTheDocument();
 		const desktopWorkspace = screen.getByRole("complementary", {
 			name: /document workspace/i,
 		});
@@ -616,6 +622,54 @@ describe("DocumentWorkspace", () => {
 			expect(desktopWorkspace.style.width).toMatch(/\d+px/);
 		});
 
+		it("resets the docked workspace width when the resize handle is double-clicked", async () => {
+			render(DocumentWorkspace, {
+				props: {
+					open: true,
+					documents: [
+						{
+							id: "doc-1",
+							source: "knowledge_artifact",
+							filename: "document.pdf",
+							title: "Document",
+							mimeType: "application/pdf",
+							artifactId: null,
+						},
+					],
+					availableDocuments: [],
+					activeDocumentId: "doc-1",
+					onSelectDocument: vi.fn(),
+					onOpenDocument: vi.fn(),
+					onCloseDocument: vi.fn(),
+					onCloseWorkspace: vi.fn(),
+				},
+			});
+
+			const desktopWorkspace = screen.getByRole("complementary", {
+				name: /document workspace/i,
+			});
+			const resizeHandle =
+				within(desktopWorkspace).getByTestId("resize-handle");
+
+			Object.defineProperty(desktopWorkspace, "offsetWidth", {
+				value: 500,
+				configurable: true,
+			});
+
+			await fireEvent.mouseDown(resizeHandle, { clientX: 500 });
+			document.dispatchEvent(
+				new MouseEvent("mousemove", { clientX: 400, bubbles: true }),
+			);
+			document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+			await tick();
+			expect(desktopWorkspace.style.width).not.toBe("560px");
+
+			await fireEvent.dblClick(resizeHandle);
+			await tick();
+
+			expect(desktopWorkspace.style.width).toBe("560px");
+		});
+
 		it("respects minimum width constraint during resize", async () => {
 			render(DocumentWorkspace, {
 				props: {
@@ -849,8 +903,8 @@ describe("DocumentWorkspace", () => {
 			within(desktopWorkspace).getAllByText("Brief • v2").length,
 		).toBeGreaterThan(0);
 		expect(
-			within(desktopWorkspace).getByText("Historical"),
-		).toBeInTheDocument();
+			within(desktopWorkspace).getAllByText("Historical").length,
+		).toBeGreaterThan(0);
 		expect(within(desktopWorkspace).getByText("Latest")).toBeInTheDocument();
 		expect(within(desktopWorkspace).getByText("Current")).toBeInTheDocument();
 
@@ -925,7 +979,7 @@ describe("DocumentWorkspace", () => {
 		expect(onSelectDocument).not.toHaveBeenCalled();
 	});
 
-	it("renders a source-message action for documents with origin metadata", async () => {
+	it("renders source-message provenance in the document header for documents with origin metadata", async () => {
 		const onJumpToSource = vi.fn();
 
 		render(DocumentWorkspace, {
@@ -960,6 +1014,21 @@ describe("DocumentWorkspace", () => {
 		const desktopWorkspace = screen.getByRole("complementary", {
 			name: /document workspace/i,
 		});
+		expect(
+			within(desktopWorkspace).queryByRole("button", {
+				name: /compare versions/i,
+			}),
+		).not.toBeInTheDocument();
+		expect(
+			within(desktopWorkspace).getByText("From assistant message"),
+		).toBeInTheDocument();
+		expect(
+			within(desktopWorkspace).getByTestId("document-provenance"),
+		).toContainElement(
+			within(desktopWorkspace).getByRole("button", {
+				name: /view source message/i,
+			}),
+		);
 		await fireEvent.click(
 			within(desktopWorkspace).getByRole("button", {
 				name: /view source message/i,

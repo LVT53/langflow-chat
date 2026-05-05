@@ -122,6 +122,12 @@ interface MockWorksheet {
 	) => void;
 }
 
+function expectPageIndicator(page: string, total: number) {
+	expect(screen.getByTestId("preview-page-input")).toHaveDisplayValue(page);
+	expect(screen.getByText(`of ${total}`)).toBeInTheDocument();
+	expect(document.querySelector(".preview-toolbar-page-summary")).not.toBeInTheDocument();
+}
+
 describe("DocumentPreviewRenderer", () => {
 	const mockOnClose = vi.fn();
 
@@ -338,7 +344,7 @@ describe("DocumentPreviewRenderer", () => {
 		await waitFor(() => {
 			const canvas = document.querySelector("canvas");
 			expect(canvas).toBeInTheDocument();
-			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+			expectPageIndicator("1", 1);
 		});
 	});
 
@@ -360,7 +366,7 @@ describe("DocumentPreviewRenderer", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+			expectPageIndicator("1", 1);
 		});
 
 		// With fit-to-width logic, the page may render multiple times as scale is calculated
@@ -415,7 +421,7 @@ describe("DocumentPreviewRenderer", () => {
 		await waitFor(() => {
 			expect(firstPageRender).toHaveBeenCalled();
 		});
-		expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+		expectPageIndicator("1", 2);
 		await waitFor(() => {
 			expect(
 				document.querySelector(".pdf-rendering-overlay"),
@@ -454,6 +460,13 @@ describe("DocumentPreviewRenderer", () => {
 
 		await fireEvent.wheel(scrollRegion, { deltaY: 120 });
 		expect(scrollRegion.scrollTop).toBe(120);
+
+		await fireEvent.wheel(scrollRegion, { deltaY: -120, ctrlKey: true });
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: "Reset zoom" })).toHaveTextContent(
+				"112%",
+			);
+		});
 
 		scrollRegion.focus();
 		await fireEvent.keyDown(scrollRegion, { key: "ArrowDown" });
@@ -573,7 +586,7 @@ describe("DocumentPreviewRenderer", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+			expectPageIndicator("1", 1);
 		});
 
 		const componentSource = readFileSync(
@@ -612,7 +625,7 @@ describe("DocumentPreviewRenderer", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+			expectPageIndicator("1", 1);
 		});
 
 		await fireEvent.click(screen.getByLabelText("Zoom in"));
@@ -648,7 +661,7 @@ describe("DocumentPreviewRenderer", () => {
 		});
 
 		await waitFor(() => {
-			expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+			expectPageIndicator("1", 1);
 		});
 		await waitFor(() => {
 			expect(mockPdfRender).toHaveBeenCalled();

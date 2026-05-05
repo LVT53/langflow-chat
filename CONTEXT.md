@@ -299,6 +299,10 @@ _Avoid_: tabs, document chips, file row
 A larger **Document Workspace** presentation for focused reading or inspection of the same open **Working Documents**.
 _Avoid_: fullscreen modal, separate viewer
 
+**Document Provenance**:
+The origin information that explains where a **Working Document** came from.
+_Avoid_: source message button, primary document action, source viewer
+
 ### Relationships
 
 - A **Library Document** may be an **Uploaded Document**.
@@ -330,17 +334,25 @@ _Avoid_: fullscreen modal, separate viewer
 - Uploaded documents do not form user-visible version history in v1.
 - A **Generated Document Family** may contain one or more **Generated Document Versions**.
 - A **Working Document** may point to either a **Library Document** or a **Generated Document**.
+- A **Library Document** preview in the **Document Workspace** should resolve to the original display file when that file exists.
+- Normalized or extracted **Library Document** text is retrieval and prompt context, not the default visual preview identity.
+- If a **Library Document** no longer has an original display file, the **Document Workspace** may fall back to extracted text as a degraded preview.
 - A **Document Workspace** may contain one or more **Working Documents**.
 - A **Document Workspace** has at most one selected **Working Document** at a time.
 - A **Document Workspace** should keep multiple open **Working Documents** readable and scannable even when more documents are open than fit at once.
 - An **Open Documents Rail** appears only when the **Document Workspace** contains more than one **Working Document**.
 - An **Open Documents Rail** lists open **Working Documents**, not unopened **Generated Document Versions**.
+- On desktop, the **Open Documents Rail** should be a vertical, scrollable document switcher.
+- The **Open Documents Rail** should prioritize readable titles, a clear active row, quiet file-type/provenance metadata, compact close controls, and compact generated-version badges where relevant.
+- The **Open Documents Rail** should not become a secondary action toolbar, thumbnail strip, or colorful status board.
 - **Generated Document Versions** remain visible through generated-document version history, separate from the **Open Documents Rail**.
 - Generated-document version history should be visible only when the selected **Working Document** belongs to a multi-version **Generated Document Family**.
 - Generated-document version history should stay compact in the normal **Document Workspace** view.
 - Unopened **Generated Document Versions** should not show body content unless the user opens or compares that version.
 - A Markdown **Working Document** should render as a readable document by default.
+- A Markdown **Working Document** is a rich reading preview, not a source-style text or code preview.
 - Markdown **Working Document** rendering should support common reading features such as headings, lists, tables, task lists, fenced code, callouts, and frontmatter presentation.
+- Markdown **Working Document** rendering should provide document typography and visible structure for heading hierarchy, list markers, tables, blockquotes, and code fences.
 - Markdown **Working Document** rendering should not resolve Obsidian-style wiki links or embeds unless AlfyAI can map them to real documents.
 - Markdown **Working Document** rendering should keep safe external links clickable.
 - Markdown **Working Document** rendering should not make unresolved relative links, wiki links, or embeds behave like real workspace navigation.
@@ -348,9 +360,19 @@ _Avoid_: fullscreen modal, separate viewer
 - A **Document Workspace** provides read-only previews for supported document formats.
 - Supported **Document Workspace** previews should preserve the natural reading shape of the format: paged PDF, readable Word/OpenDocument content, workbook tables, slide previews, rendered Markdown, rendered HTML, CSV tables, and source-style text/code previews.
 - HTML **Working Document** previews should be visual, static, and sandboxed rather than fully interactive pages.
+- HTML **Working Document** previews should preserve inline styling and safe same-file packaged styling when available.
+- HTML **Working Document** previews should not execute scripts or allow live page navigation inside the preview.
+- External network assets in HTML **Working Document** previews may remain blocked or degraded.
 - Unsupported legacy or specialized file formats may remain download-only unless AlfyAI adds a dedicated preview path for them.
 - An **Expanded Document Workspace** keeps the same selected **Working Document**, open-document set, and document controls as the docked **Document Workspace**.
 - An **Expanded Document Workspace** should not be a separate preview surface with different behavior from the docked **Document Workspace**.
+- An **Expanded Document Workspace** should use a centered max-width reading frame on wide desktop displays, approximately 1600px.
+- An **Expanded Document Workspace** should use extra width for a better rail and preview layout, not by stretching the preview surface edge to edge.
+- A docked **Document Workspace** may be horizontally resized within sensible min and max bounds.
+- Double-clicking the docked **Document Workspace** resize handle should reset it to the default width.
+- An **Expanded Document Workspace** should not expose manual horizontal resizing.
+- **Document Workspace** implementation work should be sliced by user-verifiable behavior, not by component internals alone.
+- Independently verifiable **Document Workspace** slices include open-document rail behavior, PDF interaction, Markdown rendering, Knowledge preview parity, HTML visual fidelity, resize reset, provenance placement, and expanded-width layout.
 - Chat and Knowledge should use the same **Document Workspace** for inspecting **Working Documents**.
 - Chat opens the **Document Workspace** docked by default so conversation remains primary.
 - Knowledge may open documents in the **Expanded Document Workspace** by default.
@@ -360,9 +382,16 @@ _Avoid_: fullscreen modal, separate viewer
 - Opening a **Working Document** in Knowledge should not automatically add it to the Chat **Document Workspace**.
 - AlfyAI should not maintain parallel document viewer surfaces with different controls or behavior for the same **Working Documents**.
 - Generated-document comparison belongs inside the **Document Workspace**, not in a separate viewer surface.
+- **Document Provenance** is secondary metadata for a **Working Document**, not a primary **Document Workspace** action.
+- **Document Provenance** should appear near document identity details such as filename, type, and generated version.
+- When **Document Provenance** points to a chat message, the **Document Workspace** may offer a quiet origin affordance that jumps to that message.
+- **Document Provenance** controls should not sit beside page, slide, zoom, or pan controls.
 - Document navigation and zoom controls belong with the preview inside the **Document Workspace**, not split across separate workspace and preview surfaces.
 - Document navigation and zoom controls should appear only for formats that benefit from them.
 - Page and slide navigation in the **Document Workspace** should start with compact controls rather than thumbnail strips.
+- Page and slide navigation in the **Document Workspace** should use one compact indicator, not duplicate page or slide summaries.
+- Mouse wheel input should scroll a **Working Document** preview by default; modified wheel input such as Ctrl/Cmd+wheel may zoom when the format supports zoom.
+- Drag panning should activate only when a zoomable **Working Document** preview is zoomed beyond its fit/default scale.
 - Image previews in the **Document Workspace** should support intuitive zoom, fit, and pan interactions for inspection.
 - Image preview controls should remain read-only and should not introduce editing actions such as crop, rotate, or annotation.
 - Opening a document can make it a **Working Document**, but it does not by itself make the whole body **Prompt Context**.

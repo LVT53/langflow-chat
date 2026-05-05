@@ -39,11 +39,21 @@ function getDocumentVersionLabel(
 		: null;
 }
 
-function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
+function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
+	return document.source === "chat_generated_file"
+		? $t("documentWorkspace.fromGeneratedFile")
+		: $t("documentWorkspace.fromKnowledgeBase");
+}
+
+function getDocumentMetadata(document: DocumentWorkspaceItem): string {
 	return (
-		[formatRoleLabel(document.documentRole), getDocumentVersionLabel(document)]
+		[
+			getDocumentSourceLabel(document),
+			determinePreviewFileType(document.mimeType, document.filename).toUpperCase(),
+			formatRoleLabel(document.documentRole),
+		]
 			.filter(Boolean)
-			.join(" • ") || null
+			.join(" • ")
 	);
 }
 </script>
@@ -56,6 +66,10 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 		aria-label={$t('documentWorkspace.openDocuments')}
 		data-testid="open-documents-rail"
 	>
+		<div class="open-documents-rail-head">
+			<span>{$t('documentWorkspace.openDocuments')}</span>
+			<span>{$t('documentWorkspace.openDocumentsCount', { count: documents.length })}</span>
+		</div>
 		{#each documents as document (document.id)}
 			<div class="open-documents-rail-row" class:open-documents-rail-row-active={document.id === activeDocumentId}>
 				<button
@@ -69,9 +83,15 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 						<FileTypeIcon type={determinePreviewFileType(document.mimeType, document.filename)} />
 					</span>
 					<span class="open-documents-rail-text">
-						<span class="open-documents-rail-title">{getDocumentTitle(document)}</span>
-						{#if getDocumentMetadata(document)}
-							<span class="open-documents-rail-meta">{getDocumentMetadata(document)}</span>
+						<span class="open-documents-rail-title-row">
+							<span class="open-documents-rail-title">{getDocumentTitle(document)}</span>
+							{#if getDocumentVersionLabel(document)}
+								<span class="open-documents-rail-version">{getDocumentVersionLabel(document)}</span>
+							{/if}
+						</span>
+						<span class="open-documents-rail-meta">{getDocumentMetadata(document)}</span>
+						{#if document.documentFamilyStatus === "historical"}
+							<span class="open-documents-rail-history">{$t('documentWorkspace.historical')}</span>
 						{/if}
 					</span>
 				</button>
@@ -94,41 +114,70 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 <style>
 	.open-documents-rail {
 		display: flex;
-		flex: 0 0 clamp(11.5rem, 18vw, 15rem);
+		flex: 0 0 clamp(13rem, 18vw, 17rem);
 		flex-direction: column;
-		gap: 0.35rem;
-		width: clamp(11.5rem, 18vw, 15rem);
+		gap: 0.42rem;
+		width: clamp(13rem, 18vw, 17rem);
 		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
-		padding: 0.65rem 0.75rem;
+		padding: 0.72rem 0.72rem 0.9rem;
 		border-right: 1px solid var(--border-default);
-		background: color-mix(in srgb, var(--surface-elevated) 58%, var(--surface-page) 42%);
+		background: color-mix(in srgb, var(--surface-elevated) 48%, var(--surface-page) 52%);
 		animation: rail-enter var(--duration-standard) ease-out;
+	}
+
+	.open-documents-rail-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.1rem 0.2rem 0.4rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.66rem;
+		font-weight: 650;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.open-documents-rail-head span:last-child {
+		font-weight: 500;
+		letter-spacing: 0;
+		text-transform: none;
 	}
 
 	.open-documents-rail-row {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.25rem;
+		align-items: start;
+		gap: 0.18rem;
 		border: 1px solid transparent;
-		border-radius: 0.45rem;
+		border-radius: 0.5rem;
 		background: transparent;
+		transition:
+			border-color var(--duration-fast) ease,
+			background-color var(--duration-fast) ease;
 	}
 
 	.open-documents-rail-row-active {
+		border-color: color-mix(in srgb, var(--text-primary) 14%, var(--border-default) 86%);
+		background: color-mix(in srgb, var(--surface-page) 88%, var(--surface-elevated) 12%);
+		box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-primary) 42%, transparent 58%);
+	}
+
+	.open-documents-rail-row:hover {
 		border-color: var(--border-default);
-		background: color-mix(in srgb, var(--surface-page) 86%, transparent 14%);
+		background: color-mix(in srgb, var(--surface-page) 76%, transparent 24%);
 	}
 
 	.open-documents-rail-tab {
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
-		align-items: center;
-		gap: 0.55rem;
+		align-items: start;
+		gap: 0.58rem;
 		min-width: 0;
-		padding: 0.55rem 0.35rem 0.55rem 0.55rem;
+		padding: 0.58rem 0.28rem 0.58rem 0.62rem;
 		border: none;
 		background: transparent;
 		text-align: left;
@@ -141,6 +190,7 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 
 	.open-documents-rail-icon {
 		display: inline-flex;
+		margin-top: 0.08rem;
 		color: var(--icon-muted);
 	}
 
@@ -148,16 +198,47 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 		display: flex;
 		min-width: 0;
 		flex-direction: column;
-		gap: 0.12rem;
+		gap: 0.18rem;
+	}
+
+	.open-documents-rail-title-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.38rem;
+		min-width: 0;
 	}
 
 	.open-documents-rail-title {
 		display: -webkit-box;
+		min-width: 0;
+		flex: 1 1 auto;
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		font-size: 0.82rem;
 		line-height: 1.25;
+	}
+
+	.open-documents-rail-version,
+	.open-documents-rail-history {
+		display: inline-flex;
+		align-items: center;
+		flex: 0 0 auto;
+		border: 1px solid var(--border-default);
+		border-radius: 0.35rem;
+		padding: 0.08rem 0.28rem;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.61rem;
+		font-weight: 650;
+		line-height: 1.15;
+		color: var(--text-muted);
+		background: var(--surface-page);
+	}
+
+	.open-documents-rail-history {
+		align-self: flex-start;
+		border-color: transparent;
+		background: color-mix(in srgb, var(--surface-page) 74%, transparent 26%);
 	}
 
 	.open-documents-rail-meta {
@@ -172,12 +253,24 @@ function getDocumentMetadata(document: DocumentWorkspaceItem): string | null {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.8rem;
-		height: 1.8rem;
+		width: 1.65rem;
+		height: 1.65rem;
+		margin-top: 0.38rem;
+		margin-right: 0.25rem;
 		border: none;
-		border-radius: 999px;
+		border-radius: 0.35rem;
 		background: transparent;
 		color: var(--icon-muted);
+		opacity: 0.56;
+		transition:
+			opacity var(--duration-fast) ease,
+			background-color var(--duration-fast) ease,
+			color var(--duration-fast) ease;
+	}
+
+	.open-documents-rail-row:hover .open-documents-rail-close,
+	.open-documents-rail-close:focus-visible {
+		opacity: 1;
 	}
 
 	.open-documents-rail-close:hover {

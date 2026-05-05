@@ -36,7 +36,6 @@
 		getDefaultPersonaMemoryFilter,
 		getFocusContinuityItemCount,
 		toWorkspaceDocument,
-		getWorkspaceMetadataForArtifact,
 		type FocusContinuityView,
 
 		type MemoryModal,

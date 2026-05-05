@@ -15,6 +15,7 @@ const TEXT_EXTENSIONS = new Set([
 	"csv",
 	"json",
 	"html",
+	"htm",
 	"xml",
 	"rtf",
 	"css",
@@ -69,6 +70,7 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
 	md: "text/markdown",
 	csv: "text/csv",
 	html: "text/html",
+	htm: "text/html",
 	css: "text/css",
 	js: "application/javascript",
 	json: "application/json",
@@ -113,10 +115,18 @@ export function determinePreviewFileType(
 		if (ext === "pptx") return "pptx";
 		if (ext === "odt") return "odt";
 		if (ext && IMAGE_EXTENSIONS.has(ext)) return "image";
-		if (ext === "html") return "html";
+		if (ext === "html" || ext === "htm") return "html";
 		if (ext && TEXT_EXTENSIONS.has(ext)) return "text";
 		return "unsupported";
 	}
+
+	if (ext === "pdf") return "pdf";
+	if (ext === "docx") return "docx";
+	if (ext === "xlsx") return "xlsx";
+	if (ext === "pptx") return "pptx";
+	if (ext === "odt") return "odt";
+	if (ext && IMAGE_EXTENSIONS.has(ext)) return "image";
+	if (ext === "html" || ext === "htm") return "html";
 
 	if (mime.includes("pdf")) return "pdf";
 	if (mime.includes("wordprocessingml")) return "docx";
@@ -124,7 +134,7 @@ export function determinePreviewFileType(
 	if (mime.includes("presentationml")) return "pptx";
 	if (mime === "application/vnd.oasis.opendocument.text") return "odt";
 	if (mime.startsWith("image/")) return "image";
-	if (mime === "text/html" || ext === "html") return "html";
+	if (mime === "text/html") return "html";
 	if (
 		mime.startsWith("text/") ||
 		mime === "application/json" ||
@@ -161,7 +171,7 @@ export function getPreviewLanguage(
 	if (ext === "js") return "javascript";
 	if (ext === "ts") return "typescript";
 	if (ext === "json") return "json";
-	if (ext === "html") return "html";
+	if (ext === "html" || ext === "htm") return "html";
 	if (ext === "css") return "css";
 	if (ext === "md") return "markdown";
 	if (ext === "xml" || ext === "svg") return "xml";

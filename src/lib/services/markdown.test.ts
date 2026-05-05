@@ -62,6 +62,23 @@ describe("Markdown Rendering Service", () => {
 		expect(html).toContain("![[Embed.png]]");
 	});
 
+	it("renders common reading structures for Markdown documents", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			`# Title\n\n## Section\n\n- Bullet\n- [x] Done\n\n1. First\n\n| Name | Value |\n| --- | --- |\n| Alpha | 1 |`,
+			false,
+		);
+
+		expect(html).toContain("<h1>Title</h1>");
+		expect(html).toContain("<h2>Section</h2>");
+		expect(html).toContain("<ul>");
+		expect(html).toContain("<ol>");
+		expect(html).toContain('type="checkbox"');
+		expect(html).toContain("markdown-table-wrap");
+		expect(html).toContain("<th>Name</th>");
+		expect(html).toContain("<td>Alpha</td>");
+	});
+
 	it("preserves Shiki inline styles for fenced code in rendered Markdown", async () => {
 		const mod = await import("./markdown");
 		const html = await mod.renderMarkdown(

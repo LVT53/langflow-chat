@@ -102,9 +102,6 @@ function handlePageInputKeydown(event: KeyboardEvent) {
 				/>
 				<span class="preview-toolbar-page-total">{$t('documentWorkspace.pageOf', { total: totalPages })}</span>
 			</label>
-			<span class="preview-toolbar-page-summary">
-				{pageLabel} {currentPage} {$t('documentWorkspace.pageOf', { total: totalPages })}
-			</span>
 			<button
 				type="button"
 				class="preview-toolbar-button"
@@ -196,11 +193,6 @@ function handlePageInputKeydown(event: KeyboardEvent) {
 	}
 
 	.preview-toolbar-page-total {
-		color: var(--text-muted);
-	}
-
-	.preview-toolbar-page-summary {
-		font-size: 0.76rem;
 		color: var(--text-muted);
 	}
 

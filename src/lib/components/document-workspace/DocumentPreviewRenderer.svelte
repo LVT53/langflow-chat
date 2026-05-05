@@ -815,18 +815,25 @@ function clampPdfScrollLeft(nextScrollLeft: number): number {
 	return Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
 }
 
-function scrollPdfBy(deltaY: number) {
-	if (!scrollContainerRef || deltaY === 0) return;
+function scrollPdfBy(deltaX: number, deltaY: number) {
+	if (!scrollContainerRef || (deltaX === 0 && deltaY === 0)) return;
+	scrollContainerRef.scrollLeft = clampPdfScrollLeft(
+		scrollContainerRef.scrollLeft + deltaX,
+	);
 	scrollContainerRef.scrollTop = clampPdfScrollTop(
 		scrollContainerRef.scrollTop + deltaY,
 	);
 }
 
 function handlePdfWheel(event: WheelEvent) {
-	if (!scrollContainerRef || Math.abs(event.deltaY) <= Math.abs(event.deltaX))
+	if (!scrollContainerRef) return;
+	if (event.ctrlKey || event.metaKey) {
+		event.preventDefault();
+		setZoomLevel(zoom + (event.deltaY < 0 ? 0.12 : -0.12));
 		return;
+	}
 	event.preventDefault();
-	scrollPdfBy(event.deltaY);
+	scrollPdfBy(event.deltaX, event.deltaY);
 }
 
 function handlePdfScrollKeydown(event: KeyboardEvent) {
@@ -851,7 +858,7 @@ function handlePdfScrollKeydown(event: KeyboardEvent) {
 	const delta = keyDeltas[event.key];
 	if (delta === undefined) return;
 	event.preventDefault();
-	scrollPdfBy(delta);
+	scrollPdfBy(0, delta);
 }
 
 function handlePdfPointerDown(event: PointerEvent) {
@@ -1499,6 +1506,193 @@ function downloadFile() {
 	}
 	:global(.csv-table tr:nth-child(even)) {
 		background: color-mix(in srgb, var(--surface-page) 50%, transparent);
+	}
+
+	:global(.markdown-document-preview) {
+		max-width: 72ch;
+		margin: 0 auto;
+		font-family: 'Libre Baskerville', serif;
+		font-size: 0.96rem;
+		line-height: 1.72;
+		color: var(--text-primary);
+	}
+
+	:global(.markdown-document-preview h1),
+	:global(.markdown-document-preview h2),
+	:global(.markdown-document-preview h3),
+	:global(.markdown-document-preview h4),
+	:global(.markdown-document-preview h5),
+	:global(.markdown-document-preview h6) {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-weight: 700;
+		line-height: 1.25;
+		color: var(--text-primary);
+	}
+
+	:global(.markdown-document-preview h1) {
+		margin: 0 0 1.1rem;
+		font-size: 1.75rem;
+	}
+
+	:global(.markdown-document-preview h2) {
+		margin: 2rem 0 0.8rem;
+		padding-bottom: 0.35rem;
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: 1.28rem;
+	}
+
+	:global(.markdown-document-preview h3) {
+		margin: 1.55rem 0 0.6rem;
+		font-size: 1.08rem;
+	}
+
+	:global(.markdown-document-preview h4),
+	:global(.markdown-document-preview h5),
+	:global(.markdown-document-preview h6) {
+		margin: 1.25rem 0 0.5rem;
+		font-size: 0.95rem;
+	}
+
+	:global(.markdown-document-preview p) {
+		margin: 0 0 1rem;
+	}
+
+	:global(.markdown-document-preview ul),
+	:global(.markdown-document-preview ol) {
+		margin: 0.7rem 0 1rem;
+		padding-left: 1.45rem;
+	}
+
+	:global(.markdown-document-preview ul) {
+		list-style: disc;
+	}
+
+	:global(.markdown-document-preview ol) {
+		list-style: decimal;
+	}
+
+	:global(.markdown-document-preview li) {
+		margin: 0.28rem 0;
+		padding-left: 0.2rem;
+	}
+
+	:global(.markdown-document-preview li > input[type='checkbox']) {
+		margin-right: 0.45rem;
+		transform: translateY(0.08rem);
+	}
+
+	:global(.markdown-document-preview blockquote) {
+		margin: 1.1rem 0;
+		padding: 0.05rem 0 0.05rem 1rem;
+		border-left: 3px solid var(--border-strong);
+		color: var(--text-secondary);
+	}
+
+	:global(.markdown-document-preview a) {
+		color: var(--accent);
+		text-decoration: underline;
+		text-underline-offset: 0.18em;
+	}
+
+	:global(.markdown-document-preview code) {
+		font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+		font-size: 0.9em;
+	}
+
+	:global(.markdown-document-preview :not(pre) > code) {
+		border: 1px solid var(--border-subtle);
+		border-radius: 0.28rem;
+		padding: 0.08rem 0.28rem;
+		background: color-mix(in srgb, var(--surface-elevated) 70%, var(--surface-page) 30%);
+	}
+
+	:global(.markdown-document-preview pre) {
+		margin: 1rem 0;
+		border: 1px solid var(--border-default);
+		border-radius: 0.5rem;
+		padding: 0.85rem 1rem;
+		overflow-x: auto;
+		font-size: 0.84rem;
+		line-height: 1.55;
+	}
+
+	:global(.markdown-table-wrap) {
+		margin: 1rem 0 1.25rem;
+		overflow-x: auto;
+	}
+
+	:global(.markdown-table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.86rem;
+	}
+
+	:global(.markdown-table th),
+	:global(.markdown-table td) {
+		border: 1px solid var(--border-default);
+		padding: 0.5rem 0.68rem;
+		text-align: left;
+		vertical-align: top;
+	}
+
+	:global(.markdown-table th) {
+		background: var(--surface-elevated);
+		font-weight: 700;
+	}
+
+	:global(.markdown-frontmatter),
+	:global(.markdown-callout) {
+		margin: 0 0 1.15rem;
+		border: 1px solid var(--border-default);
+		border-radius: 0.55rem;
+		background: color-mix(in srgb, var(--surface-elevated) 58%, var(--surface-page) 42%);
+		font-family: 'Nimbus Sans L', sans-serif;
+	}
+
+	:global(.markdown-frontmatter) {
+		padding: 0.65rem 0.75rem;
+	}
+
+	:global(.markdown-frontmatter dl) {
+		display: grid;
+		gap: 0.34rem;
+		margin: 0;
+	}
+
+	:global(.markdown-frontmatter-row) {
+		display: grid;
+		grid-template-columns: minmax(6rem, 0.32fr) minmax(0, 1fr);
+		gap: 0.75rem;
+	}
+
+	:global(.markdown-frontmatter dt),
+	:global(.markdown-frontmatter dd) {
+		margin: 0;
+		font-size: 0.78rem;
+	}
+
+	:global(.markdown-frontmatter dt) {
+		font-weight: 700;
+		color: var(--text-muted);
+	}
+
+	:global(.markdown-callout) {
+		padding: 0.8rem 0.9rem;
+		border-left: 3px solid var(--border-strong);
+	}
+
+	:global(.markdown-callout-title) {
+		margin-bottom: 0.4rem;
+		font-size: 0.78rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary);
+	}
+
+	:global(.markdown-callout-body > :last-child) {
+		margin-bottom: 0;
 	}
 
 	.html-preview-shell {
