@@ -121,11 +121,9 @@ const localizedDepthLabels: Record<
 const planLabels: Record<
 	ResearchLanguage,
 	{
-		title: string;
 		depth: string;
 		expectedTime: string;
 		sourceReviewCeiling: (count: number) => string;
-		cost: string;
 		goal: string;
 		includedSources: string;
 		keyQuestions: string;
@@ -135,11 +133,9 @@ const planLabels: Record<
 	}
 > = {
 	en: {
-		title: "Research Plan",
 		depth: "Depth",
 		expectedTime: "Expected time",
 		sourceReviewCeiling: (count) => `Source review ceiling: up to ${count}`,
-		cost: "Cost",
 		goal: "Goal",
 		includedSources: "Included sources",
 		keyQuestions: "Key questions",
@@ -148,12 +144,10 @@ const planLabels: Record<
 		deliverables: "Deliverables",
 	},
 	hu: {
-		title: "Kutatási terv",
 		depth: "Mélység",
 		expectedTime: "Várható idő",
 		sourceReviewCeiling: (count) =>
 			`Forrás-áttekintési plafon: legfeljebb ${count}`,
-		cost: "Költség",
 		goal: "Cél",
 		includedSources: "Bevont források",
 		keyQuestions: "Fő kérdések",
@@ -166,7 +160,6 @@ const planLabels: Record<
 const localizedDefaultPlanProse: Record<
 	ResearchLanguage,
 	{
-		keyQuestions: string[];
 		reportShape: string[];
 		constraints: string[];
 		deliverables: string[];
@@ -174,11 +167,6 @@ const localizedDefaultPlanProse: Record<
 	}
 > = {
 	en: {
-		keyQuestions: [
-			"What is the current state of the topic?",
-			"Which similarities and differences matter most?",
-			"What practical implications should the report call out?",
-		],
 		reportShape: [
 			"Executive summary",
 			"Key findings",
@@ -186,18 +174,11 @@ const localizedDefaultPlanProse: Record<
 			"Source list",
 			"Limitations",
 		],
-		constraints: [
-			"Do not start source-heavy research until the Research Plan is approved.",
-		],
+		constraints: [],
 		deliverables: ["Cited Research Report"],
 		planEditPrefix: "Plan edit",
 	},
 	hu: {
-		keyQuestions: [
-			"Mi a téma jelenlegi állapota?",
-			"Mely hasonlóságok és különbségek a legfontosabbak?",
-			"Milyen gyakorlati következményeket emeljen ki a jelentés?",
-		],
 		reportShape: [
 			"Vezetői összefoglaló",
 			"Fő megállapítások",
@@ -205,9 +186,7 @@ const localizedDefaultPlanProse: Record<
 			"Forráslista",
 			"Korlátok",
 		],
-		constraints: [
-			"Ne induljon forrásigényes kutatás a Kutatási terv jóváhagyása előtt.",
-		],
+		constraints: [],
 		deliverables: ["Hivatkozásokkal ellátott kutatási jelentés"],
 		planEditPrefix: "Tervmódosítás",
 	},
@@ -218,14 +197,14 @@ const localizedExpectedTimeBands: Record<
 	Record<ResearchDepth, string>
 > = {
 	en: {
-		focused: "10-20 minutes",
-		standard: "30-60 minutes",
-		max: "2-4 hours",
+		focused: "3-8 minutes",
+		standard: "10-25 minutes",
+		max: "45-120 minutes",
 	},
 	hu: {
-		focused: "10-20 perc",
-		standard: "30-60 perc",
-		max: "2-4 óra",
+		focused: "3-8 perc",
+		standard: "10-25 perc",
+		max: "45-120 perc",
 	},
 };
 
@@ -375,7 +354,10 @@ function draftDefaultResearchPlan(
 		depth: input.selectedDepth,
 		researchLanguage: input.researchLanguage,
 		researchBudget,
-		keyQuestions: defaultProse.keyQuestions,
+		keyQuestions: buildDefaultKeyQuestions(
+			input.userRequest,
+			input.researchLanguage,
+		),
 		sourceScope: {
 			includePublicWeb: true,
 			planningContextDisclosure: contextDisclosure,
@@ -432,15 +414,15 @@ function renderResearchPlan(plan: ResearchPlan): string {
 	const researchLanguage = plan.researchLanguage ?? "en";
 	const labels = planLabels[researchLanguage];
 	const effortEstimate = buildEffortEstimate(plan.depth, researchLanguage);
+	const visibleConstraints = plan.constraints.filter(
+		(constraint) => !isInternalApprovalConstraint(constraint),
+	);
 	return [
-		`# ${labels.title}`,
+		`${labels.goal}: ${plan.goal}`,
 		"",
 		`${labels.depth}: ${localizedDepthLabels[researchLanguage][plan.depth]}`,
 		`${labels.expectedTime}: ${effortEstimate.expectedTimeBand}`,
 		labels.sourceReviewCeiling(effortEstimate.sourceReviewCeiling),
-		`${labels.cost}: ${effortEstimate.relativeCostWarning}`,
-		"",
-		`${labels.goal}: ${plan.goal}`,
 		...(plan.sourceScope.planningContextDisclosure
 			? ["", plan.sourceScope.planningContextDisclosure]
 			: []),
@@ -459,9 +441,13 @@ function renderResearchPlan(plan: ResearchPlan): string {
 		"",
 		`${labels.expectedReportShape}:`,
 		...plan.reportShape.map((section) => `- ${section}`),
-		"",
-		`${labels.constraints}:`,
-		...plan.constraints.map((constraint) => `- ${constraint}`),
+		...(visibleConstraints.length > 0
+			? [
+					"",
+					`${labels.constraints}:`,
+					...visibleConstraints.map((constraint) => `- ${constraint}`),
+				]
+			: []),
 		...(researchLanguage === "hu"
 			? [
 					"",
@@ -470,6 +456,35 @@ function renderResearchPlan(plan: ResearchPlan): string {
 				]
 			: []),
 	].join("\n");
+}
+
+function buildDefaultKeyQuestions(
+	userRequest: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	const topic = userRequest
+		.trim()
+		.replace(/\s+/g, " ")
+		.replace(/[.!?]+$/u, "");
+	if (researchLanguage === "hu") {
+		return [
+			`Mi a legfontosabb jelenlegi háttér ehhez a témához: ${topic}?`,
+			"Mely hiteles források támasztják alá vagy árnyalják a fő állításokat?",
+			"Milyen gyakorlati következtetéseket és korlátokat kell kiemelnie a jelentésnek?",
+		];
+	}
+
+	return [
+		`What is the current evidence and context for this topic: ${topic}?`,
+		"Where do credible sources agree, disagree, or leave important gaps?",
+		"What practical implications, risks, and limitations should the report call out?",
+	];
+}
+
+function isInternalApprovalConstraint(value: string): boolean {
+	return /do not start source-heavy research until the research plan is approved/i.test(
+		value,
+	) || /ne induljon forrásigényes kutatás/i.test(value);
 }
 
 function buildEffortEstimate(

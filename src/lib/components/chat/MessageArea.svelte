@@ -167,6 +167,23 @@ let currentStreamingAssistantMessageId = $derived(
 		?.id ?? null,
 );
 
+let deepResearchJobsByTriggerMessageId = $derived(
+	deepResearchJobs.reduce((jobsByMessageId, job) => {
+		if (!job.triggerMessageId) return jobsByMessageId;
+		const jobs = jobsByMessageId.get(job.triggerMessageId) ?? [];
+		jobs.push(job);
+		jobsByMessageId.set(job.triggerMessageId, jobs);
+		return jobsByMessageId;
+	}, new Map<string, DeepResearchJob[]>())
+);
+
+let unanchoredDeepResearchJobs = $derived(
+	deepResearchJobs.filter((job) => {
+		if (!job.triggerMessageId) return true;
+		return !dedupedMessages.some((message) => message.id === job.triggerMessageId);
+	})
+);
+
 function getFileProductionJobsForMessage(message: ChatMessage): FileProductionJob[] {
 	return fileProductionJobs.filter((job) => {
 		if (job.assistantMessageId === message.id) return true;
@@ -206,7 +223,7 @@ async function alignToBottomAfterRender() {
 				</p>
 			</div>
 		{:else}
-			{#each deepResearchJobs as job (job.id)}
+			{#each unanchoredDeepResearchJobs as job (job.id)}
 				<ResearchCard
 					job={job}
 					onCancel={onCancelDeepResearchJob}
@@ -234,6 +251,18 @@ async function alignToBottomAfterRender() {
 					{onRetryFileProductionJob}
 					{onCancelFileProductionJob}
 				/>
+				{#each deepResearchJobsByTriggerMessageId.get(message.id) ?? [] as job (job.id)}
+					<ResearchCard
+						job={job}
+						onCancel={onCancelDeepResearchJob}
+						onEdit={onEditDeepResearchPlan}
+						onApprove={onApproveDeepResearchPlan}
+						onOpenReport={onOpenDocument}
+						onDiscussReport={onDiscussDeepResearchReport}
+						onResearchFurther={onResearchFurtherFromDeepResearchReport}
+						onAdvanceResearch={onAdvanceDeepResearchWorkflow}
+					/>
+				{/each}
 			{/each}
 			<div class="scroll-clearance" aria-hidden="true"></div>
 		{/if}

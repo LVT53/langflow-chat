@@ -5,8 +5,19 @@
 		DeepResearchDepth,
 		DeepResearchJob,
 		DeepResearchJobStatus,
+		DeepResearchPlanSummary,
 		DocumentWorkspaceItem,
 	} from '$lib/types';
+
+	type VisiblePlanSection = {
+		heading: string;
+		items: string[];
+	};
+
+	type VisiblePlan = {
+		goal: string;
+		sections: VisiblePlanSection[];
+	};
 
 	let {
 		job,
@@ -43,6 +54,7 @@
 	let reportDocument = $derived(buildReportDocument(job));
 	let timelineEvents = $derived((job.timeline ?? []).slice(-4));
 	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
+	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
 	let hasSourceLedgerProgress = $derived(
 		sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0
 	);
@@ -74,6 +86,83 @@
 			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
 			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
 		];
+	}
+
+	function isInternalApprovalConstraint(value: string): boolean {
+		return /do not start source-heavy research until the research plan is approved/i.test(value) ||
+			/ne induljon forrásigényes kutatás/i.test(value);
+	}
+
+	function compactItems(items: Array<string | null | undefined>): string[] {
+		return items
+			.map((item) => item?.trim() ?? '')
+			.filter((item) => item.length > 0 && !isInternalApprovalConstraint(item));
+	}
+
+	function buildVisiblePlan(plan: DeepResearchPlanSummary): VisiblePlan {
+		if (plan.rawPlan) {
+			const rawPlan = plan.rawPlan;
+			const sections: VisiblePlanSection[] = [];
+			const includedSources = compactItems(
+				rawPlan.sourceScope.includedSources?.map((source) =>
+					source.title ? source.title : source.artifactId,
+				) ?? [],
+			);
+			if (includedSources.length > 0) {
+				sections.push({ heading: 'Included sources', items: includedSources });
+			}
+
+			const keyQuestions = compactItems(rawPlan.keyQuestions);
+			if (keyQuestions.length > 0) {
+				sections.push({ heading: 'Key questions', items: keyQuestions });
+			}
+
+			const reportShape = compactItems(rawPlan.reportShape);
+			if (reportShape.length > 0) {
+				sections.push({ heading: 'Expected report shape', items: reportShape });
+			}
+
+			const constraints = compactItems(rawPlan.constraints);
+			if (constraints.length > 0) {
+				sections.push({ heading: 'Constraints', items: constraints });
+			}
+
+			const deliverables = compactItems(rawPlan.deliverables);
+			if (deliverables.length > 0) {
+				sections.push({ heading: 'Deliverables', items: deliverables });
+			}
+
+			return {
+				goal: rawPlan.goal,
+				sections,
+			};
+		}
+
+		return parseRenderedPlan(plan.renderedPlan);
+	}
+
+	function parseRenderedPlan(renderedPlan: string): VisiblePlan {
+		const lines = renderedPlan
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => {
+				if (!line) return false;
+				if (/^#\s+/.test(line)) return false;
+				if (/^(Research Plan|Kutatási terv)$/i.test(line)) return false;
+				if (/^(Cost|Költség):/i.test(line)) return false;
+				if (isInternalApprovalConstraint(line.replace(/^-\s*/, ''))) return false;
+				return true;
+			});
+		const goalIndex = lines.findIndex((line) => /^(Goal|Cél):/i.test(line));
+		const goal =
+			goalIndex >= 0
+				? lines[goalIndex].replace(/^(Goal|Cél):\s*/i, '').trim()
+				: job.title;
+		const remaining = lines.filter((_, index) => index !== goalIndex);
+		return {
+			goal,
+			sections: [{ heading: 'Plan details', items: remaining }],
+		};
 	}
 
 	function cancelJob() {
@@ -211,7 +300,6 @@
 						count: activePlan.effortEstimate.sourceReviewCeiling,
 					})}
 				</span>
-				<span>{activePlan.effortEstimate.relativeCostWarning}</span>
 			</div>
 
 			{#if activePlan.contextDisclosure}
@@ -221,7 +309,24 @@
 				</p>
 			{/if}
 
-			<div class="research-card__plan-text">{activePlan.renderedPlan}</div>
+			{#if visiblePlan}
+				<div class="research-card__plan-text">
+					<div class="research-card__plan-goal">
+						<strong>Goal</strong>
+						<p>{visiblePlan.goal}</p>
+					</div>
+					{#each visiblePlan.sections as section}
+						<div class="research-card__plan-section">
+							<strong>{section.heading}</strong>
+							<ul>
+								{#each section.items as item}
+									<li>{item.replace(/^-\s*/, '')}</li>
+								{/each}
+							</ul>
+						</div>
+					{/each}
+				</div>
+			{/if}
 
 			{#if isEditingPlan}
 				<form class="research-card__edit-form" onsubmit={submitPlanEdit}>
@@ -317,16 +422,6 @@
 								<span>{label}</span>
 							{/each}
 						</div>
-						{#if event.assumptions.length > 0}
-							<div class="research-card__timeline-notes">
-								<strong>{$t('deepResearch.timeline.assumptions')}</strong>
-								<ul>
-									{#each event.assumptions as assumption}
-										<li>{assumption}</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
 						{#if event.warnings.length > 0}
 							<div class="research-card__timeline-notes research-card__timeline-notes--warning">
 								<strong>{$t('deepResearch.timeline.warnings')}</strong>
@@ -441,12 +536,12 @@
 	.research-card {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-sm);
-		border: 1px solid color-mix(in srgb, var(--border-subtle) 76%, var(--accent) 24%);
+		gap: var(--space-md);
+		border: 1px solid var(--border-subtle);
 		border-radius: 8px;
-		background: color-mix(in srgb, var(--surface-elevated) 94%, var(--accent) 6%);
-		padding: var(--space-md);
-		box-shadow: var(--shadow-md);
+		background: var(--surface-elevated);
+		padding: var(--space-lg);
+		box-shadow: var(--shadow-sm);
 	}
 
 	.research-card__header {
@@ -462,8 +557,8 @@
 
 	.research-card__eyebrow {
 		font-size: 0.72rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
+		font-weight: 600;
+		letter-spacing: 0;
 		text-transform: uppercase;
 		color: var(--text-muted);
 	}
@@ -471,8 +566,8 @@
 	.research-card__title {
 		margin: 0.2rem 0 0;
 		overflow-wrap: anywhere;
-		font-size: 0.98rem;
-		font-weight: 700;
+		font-size: 1rem;
+		font-weight: 600;
 		line-height: 1.35;
 		color: var(--text-primary);
 	}
@@ -480,10 +575,10 @@
 	.research-card__depth {
 		flex: 0 0 auto;
 		border-radius: 999px;
-		background: color-mix(in srgb, var(--surface-page) 78%, var(--surface-elevated) 22%);
+		background: var(--surface-page);
 		padding: 0.22rem 0.55rem;
 		font-size: 0.78rem;
-		font-weight: 700;
+		font-weight: 500;
 		color: var(--text-secondary);
 	}
 
@@ -497,7 +592,7 @@
 	}
 
 	.research-card__status {
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--text-primary);
 	}
 
@@ -519,18 +614,18 @@
 	.research-card__plan {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-sm);
+		gap: var(--space-md);
 		border-top: 1px solid var(--border-subtle);
-		padding-top: var(--space-sm);
+		padding-top: var(--space-md);
 	}
 
 	.research-card__sources,
 	.research-card__timeline {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-xs);
+		gap: var(--space-sm);
 		border-top: 1px solid var(--border-subtle);
-		padding-top: var(--space-sm);
+		padding-top: var(--space-md);
 	}
 
 	.research-card__timeline-list {
@@ -547,14 +642,14 @@
 		flex-direction: column;
 		gap: 0.35rem;
 		border-radius: 7px;
-		background: color-mix(in srgb, var(--surface-page) 72%, var(--surface-elevated) 28%);
+		background: var(--surface-page);
 		padding: var(--space-sm);
 	}
 
 	.research-card__timeline-summary {
 		margin: 0;
 		font-size: 0.83rem;
-		font-weight: 700;
+		font-weight: 500;
 		line-height: 1.35;
 		color: var(--text-primary);
 	}
@@ -569,7 +664,7 @@
 
 	.research-card__source-counts span {
 		border-radius: 999px;
-		background: var(--surface-elevated);
+		background: var(--surface-page);
 		padding: 0.16rem 0.42rem;
 	}
 
@@ -599,13 +694,13 @@
 		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.15rem 0.45rem;
 		border-radius: 7px;
-		background: color-mix(in srgb, var(--surface-page) 72%, var(--surface-elevated) 28%);
+		background: var(--surface-page);
 		padding: 0.45rem 0.55rem;
 	}
 
 	.research-card__reviewed-sources a {
 		overflow-wrap: anywhere;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--text-primary);
 		text-decoration: none;
 	}
@@ -616,10 +711,10 @@
 
 	.research-card__reviewed-sources span {
 		border-radius: 999px;
-		background: var(--surface-elevated);
+		background: var(--surface-page);
 		padding: 0.08rem 0.36rem;
 		font-size: 0.7rem;
-		font-weight: 700;
+		font-weight: 500;
 		color: var(--text-muted);
 	}
 
@@ -660,28 +755,28 @@
 	.research-card__section-header h3 {
 		margin: 0;
 		font-size: 0.9rem;
-		font-weight: 800;
+		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.research-card__section-header span {
 		font-size: 0.75rem;
-		font-weight: 700;
+		font-weight: 500;
 		color: var(--text-muted);
 	}
 
 	.research-card__effort {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-xs);
+		gap: var(--space-sm);
 		font-size: 0.78rem;
 		color: var(--text-secondary);
 	}
 
 	.research-card__effort span {
 		border-radius: 7px;
-		background: color-mix(in srgb, var(--surface-page) 76%, var(--surface-elevated) 24%);
-		padding: 0.24rem 0.45rem;
+		background: var(--surface-page);
+		padding: 0.3rem 0.5rem;
 	}
 
 	.research-card__effort strong {
@@ -701,28 +796,56 @@
 	}
 
 	.research-card__plan-text {
-		max-height: 11rem;
-		overflow: auto;
 		border: 1px solid var(--border-subtle);
 		border-radius: 7px;
 		background: var(--surface-page);
-		padding: var(--space-sm);
-		white-space: pre-wrap;
+		padding: var(--space-md);
 		overflow-wrap: anywhere;
 		font-size: 0.82rem;
-		line-height: 1.45;
+		line-height: 1.5;
 		color: var(--text-secondary);
+	}
+
+	.research-card__plan-goal,
+	.research-card__plan-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.research-card__plan-goal + .research-card__plan-section,
+	.research-card__plan-section + .research-card__plan-section {
+		margin-top: var(--space-sm);
+	}
+
+	.research-card__plan-goal strong,
+	.research-card__plan-section strong {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.research-card__plan-goal p {
+		margin: 0;
+	}
+
+	.research-card__plan-section ul {
+		display: flex;
+		flex-direction: column;
+		gap: 0.22rem;
+		margin: 0;
+		padding-left: 1rem;
 	}
 
 	.research-card__edit-form {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-xs);
+		gap: var(--space-sm);
 	}
 
 	.research-card__edit-label {
 		font-size: 0.78rem;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--text-primary);
 	}
 
@@ -749,6 +872,7 @@
 		flex-wrap: wrap;
 		gap: var(--space-xs);
 		justify-content: flex-end;
+		margin-top: var(--space-xs);
 	}
 
 	.research-card__error {
@@ -763,7 +887,7 @@
 		background: var(--surface-page);
 		padding: 0.38rem 0.7rem;
 		font-size: 0.82rem;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--text-secondary);
 		cursor: pointer;
 	}

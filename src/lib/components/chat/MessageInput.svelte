@@ -404,6 +404,7 @@ function toggleDeepResearchMenu() {
 
 function selectDeepResearchDepth(depth: DeepResearchDepth) {
 	selectedDeepResearchDepth = selectedDeepResearchDepth === depth ? null : depth;
+	showDeepResearchMenu = false;
 }
 
 async function uploadFiles(files: FileList | null) {
@@ -694,15 +695,10 @@ async function emitDraftChange(force = false) {
 							title={$t('composerTools.deepResearch')}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-								<path d="m10.5 14.5-4 4" />
-								<path d="m14 11 4-4" />
-								<path d="m8 16 1.5 1.5" />
-								<path d="m16.5 8.5 1.5 1.5" />
-								<circle cx="12" cy="12" r="4" />
-								<path d="M12 2v2" />
-								<path d="M12 20v2" />
-								<path d="M2 12h2" />
-								<path d="M20 12h2" />
+								<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v14H7a3 3 0 0 0-3 3V5.5Z" />
+								<path d="M4 20a3 3 0 0 1 3-3h12" />
+								<circle cx="11" cy="10" r="2.5" />
+								<path d="m13 12 2.4 2.4" />
 							</svg>
 						</button>
 

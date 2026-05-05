@@ -16,6 +16,7 @@ import {
 } from "$lib/client/conversation-session";
 import {
 	applyTaskSteering,
+	deleteConversation,
 	deleteConversationDraft,
 	deleteConversationMessages,
 	fetchConversationDetail,
@@ -105,6 +106,7 @@ import {
 	isConversationReadOnly,
 	isOsFileDropEvent,
 	shouldStartDeepResearchJob,
+	shouldDeleteConversationAfterCancellingDeepResearch,
 	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
 	type MessageEditPayload,
@@ -1009,8 +1011,22 @@ async function handleCancelFileProductionJob(jobId: string) {
 }
 
 async function handleCancelDeepResearchJob(jobId: string) {
+	const jobBeforeCancel = deepResearchJobs.find((job) => job.id === jobId);
+	const shouldDeleteConversation = shouldDeleteConversationAfterCancellingDeepResearch({
+		jobBeforeCancel,
+		messageCount: $messages.length,
+		deepResearchJobCount: deepResearchJobs.length,
+	});
 	try {
 		const job = await cancelDeepResearchJobRequest(jobId);
+		if (shouldDeleteConversation) {
+			draftPersistence.clear();
+			await deleteConversationDraft(data.conversation.id).catch(() => undefined);
+			await deleteConversation(data.conversation.id);
+			removeConversationLocal(data.conversation.id);
+			await goto("/");
+			return;
+		}
 		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
 	} catch (err) {
 		sendError = err instanceof Error ? err.message : "Failed to cancel Deep Research";

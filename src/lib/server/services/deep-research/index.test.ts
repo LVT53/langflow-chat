@@ -201,7 +201,10 @@ describe('deep research job shell service', () => {
 				},
 			},
 		});
-		expect(created.currentPlan?.renderedPlan).toContain('# Research Plan');
+		expect(created.currentPlan?.renderedPlan).not.toContain('# Research Plan');
+		expect(created.currentPlan?.renderedPlan).toContain(
+			'Goal: Compare EU and US AI copyright training data rules'
+		);
 		expect(created.currentPlan?.renderedPlan).toContain(
 			'Context considered: 1 conversation item, 1 knowledge item.'
 		);
@@ -375,7 +378,10 @@ describe('deep research job shell service', () => {
 		});
 
 		expect(created.currentPlan?.rawPlan.researchLanguage).toBe('hu');
-		expect(created.currentPlan?.renderedPlan).toContain('# Kutatási terv');
+		expect(created.currentPlan?.renderedPlan).not.toContain('# Kutatási terv');
+		expect(created.currentPlan?.renderedPlan).toContain(
+			'Cél: Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.'
+		);
 	});
 
 	it('writes plan-generation Research Usage when usage is available at job start', async () => {

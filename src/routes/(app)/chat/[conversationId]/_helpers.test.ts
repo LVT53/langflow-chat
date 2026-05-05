@@ -10,6 +10,7 @@ import {
 	hasActiveFileProductionJobs,
 	isConversationReadOnly,
 	shouldStartDeepResearchJob,
+	shouldDeleteConversationAfterCancellingDeepResearch,
 	mergeFileProductionJob,
 	shouldHydrateFileProductionJobsOnToolCall,
 	toFriendlySendError,
@@ -123,6 +124,42 @@ describe('send payload helpers', () => {
 		expect(shouldStartDeepResearchJob(payload)).toBe(true);
 		expect(shouldStartDeepResearchJob({ ...payload, deepResearchDepth: null })).toBe(false);
 		expect(shouldStartDeepResearchJob(payload, 'assistant-retry-1')).toBe(false);
+	});
+});
+
+describe('Deep Research cancellation helpers', () => {
+	it('deletes a brand-new unstarted Deep Research conversation after cancellation', () => {
+		expect(
+			shouldDeleteConversationAfterCancellingDeepResearch({
+				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				messageCount: 1,
+				deepResearchJobCount: 1,
+			})
+		).toBe(true);
+	});
+
+	it('keeps conversations with started research or prior chat history', () => {
+		expect(
+			shouldDeleteConversationAfterCancellingDeepResearch({
+				jobBeforeCancel: makeDeepResearchJob('running'),
+				messageCount: 1,
+				deepResearchJobCount: 1,
+			})
+		).toBe(false);
+		expect(
+			shouldDeleteConversationAfterCancellingDeepResearch({
+				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				messageCount: 2,
+				deepResearchJobCount: 1,
+			})
+		).toBe(false);
+		expect(
+			shouldDeleteConversationAfterCancellingDeepResearch({
+				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				messageCount: 1,
+				deepResearchJobCount: 2,
+			})
+		).toBe(false);
 	});
 });
 

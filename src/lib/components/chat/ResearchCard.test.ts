@@ -45,7 +45,7 @@ describe('ResearchCard', () => {
 	});
 
 	it('shows a persisted Research Plan and approval affordances when awaiting approval', () => {
-		const { getByRole, getByText } = render(ResearchCard, {
+		const { getByRole, getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				plan: {
 					version: 1,
@@ -54,7 +54,7 @@ describe('ResearchCard', () => {
 					contextDisclosure: 'Planning considered 2 knowledge items and 1 attachment item.',
 					effortEstimate: {
 						selectedDepth: 'standard',
-						expectedTimeBand: '30-60 minutes',
+						expectedTimeBand: '10-25 minutes',
 						sourceReviewCeiling: 40,
 						relativeCostWarning:
 							'Moderate relative cost; use for serious multi-source synthesis.',
@@ -65,16 +65,17 @@ describe('ResearchCard', () => {
 
 		expect(getByText('Research Plan')).toBeInTheDocument();
 		expect(getByText(/Compare EU and US battery recycling policy/)).toBeInTheDocument();
-		expect(getByText('30-60 minutes')).toBeInTheDocument();
+		expect(getByText('10-25 minutes')).toBeInTheDocument();
 		expect(getByText('Up to 40 sources')).toBeInTheDocument();
+		expect(queryByText(/Moderate relative cost/)).not.toBeInTheDocument();
 		expect(getByText(/Planning considered 2 knowledge items/)).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Approve Research Plan' })).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Edit Research Plan' })).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
 	});
 
-	it('shows a compact Activity Timeline with source counts, assumptions, and warnings', () => {
-		const { getByText } = render(ResearchCard, {
+	it('shows a compact Activity Timeline with source counts and warnings', () => {
+		const { getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'source_review',
@@ -109,7 +110,8 @@ describe('ResearchCard', () => {
 		expect(getByText('12 discovered')).toBeInTheDocument();
 		expect(getByText('5 reviewed')).toBeInTheDocument();
 		expect(getByText('2 cited')).toBeInTheDocument();
-		expect(getByText('Public web sources are enough for the initial pass.')).toBeInTheDocument();
+		expect(queryByText('Public web sources are enough for the initial pass.')).not.toBeInTheDocument();
+		expect(queryByText('Assumptions')).not.toBeInTheDocument();
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
 	});
 
@@ -246,7 +248,7 @@ describe('ResearchCard', () => {
 					contextDisclosure: null,
 					effortEstimate: {
 						selectedDepth: 'standard',
-						expectedTimeBand: '30-60 minutes',
+						expectedTimeBand: '10-25 minutes',
 						sourceReviewCeiling: 40,
 						relativeCostWarning:
 							'Moderate relative cost; use for serious multi-source synthesis.',
@@ -256,10 +258,10 @@ describe('ResearchCard', () => {
 			onEdit,
 		});
 
-		expect(queryByLabelText('Plan edit instructions')).not.toBeInTheDocument();
+		expect(queryByLabelText('Edit plan instructions')).not.toBeInTheDocument();
 
 		await fireEvent.click(getByRole('button', { name: 'Edit Research Plan' }));
-		const instructions = getByLabelText('Plan edit instructions');
+		const instructions = getByLabelText('Edit plan instructions');
 		await fireEvent.input(instructions, {
 			target: { value: 'Focus more on EU enforcement and recent recycling targets.' },
 		});
@@ -270,7 +272,7 @@ describe('ResearchCard', () => {
 			'Focus more on EU enforcement and recent recycling targets.'
 		);
 		await waitFor(() => {
-			expect(queryByLabelText('Plan edit instructions')).not.toBeInTheDocument();
+			expect(queryByLabelText('Edit plan instructions')).not.toBeInTheDocument();
 		});
 	});
 
@@ -289,7 +291,7 @@ describe('ResearchCard', () => {
 				contextDisclosure: null,
 				effortEstimate: {
 					selectedDepth: 'standard',
-					expectedTimeBand: '30-60 minutes',
+					expectedTimeBand: '10-25 minutes',
 					sourceReviewCeiling: 40,
 					relativeCostWarning:
 						'Moderate relative cost; use for serious multi-source synthesis.',
@@ -376,7 +378,7 @@ describe('ResearchCard', () => {
 					contextDisclosure: null,
 					effortEstimate: {
 						selectedDepth: 'standard',
-						expectedTimeBand: '30-60 minutes',
+						expectedTimeBand: '10-25 minutes',
 						sourceReviewCeiling: 40,
 						relativeCostWarning:
 							'Moderate relative cost; use for serious multi-source synthesis.',

@@ -162,6 +162,47 @@ describe('MessageArea', () => {
 		expect(queryByText('Conversation Ready')).not.toBeInTheDocument();
 	});
 
+	it('renders a Deep Research card after the user message that triggered it', () => {
+		const triggerMessage: ChatMessage = {
+			id: 'user-1',
+			role: 'user',
+			content: 'Please research battery recycling policy.',
+			timestamp: Date.now(),
+		};
+		const { container, getByRole } = render(MessageArea, {
+			messages: [triggerMessage],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					triggerMessageId: 'user-1',
+					status: 'awaiting_approval',
+					stage: 'plan_drafted',
+					title: 'Draft battery recycling research plan',
+					plan: {
+						version: 1,
+						renderedPlan: 'Goal: Compare battery recycling policy.',
+						contextDisclosure: null,
+						effortEstimate: {
+							selectedDepth: 'standard',
+							expectedTimeBand: '10-25 minutes',
+							sourceReviewCeiling: 40,
+							relativeCostWarning:
+								'Moderate relative cost; use for serious multi-source synthesis.',
+						},
+					},
+				}),
+			],
+		});
+
+		expect(getByRole('article', { name: 'Deep Research: Draft battery recycling research plan' })).toBeInTheDocument();
+		const renderedText = container.textContent ?? '';
+		expect(renderedText.indexOf('Please research battery recycling policy.')).toBeLessThan(
+			renderedText.indexOf('Research Plan')
+		);
+	});
+
 	it('routes Deep Research cancellation through the card callback', async () => {
 		const onCancelDeepResearchJob = vi.fn();
 		const { getByRole } = render(MessageArea, {
@@ -196,7 +237,7 @@ describe('MessageArea', () => {
 						contextDisclosure: null,
 						effortEstimate: {
 							selectedDepth: 'standard',
-							expectedTimeBand: '30-60 minutes',
+							expectedTimeBand: '10-25 minutes',
 							sourceReviewCeiling: 40,
 							relativeCostWarning:
 								'Moderate relative cost; use for serious multi-source synthesis.',
@@ -209,7 +250,7 @@ describe('MessageArea', () => {
 		});
 
 		await fireEvent.click(getByRole('button', { name: 'Edit Research Plan' }));
-		await fireEvent.input(getByLabelText('Plan edit instructions'), {
+		await fireEvent.input(getByLabelText('Edit plan instructions'), {
 			target: { value: 'Include more primary sources.' },
 		});
 		await fireEvent.click(getByRole('button', { name: 'Submit Plan Edit' }));

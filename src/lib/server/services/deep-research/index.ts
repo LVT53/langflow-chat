@@ -235,7 +235,7 @@ export async function startDeepResearchJobShell(
 			stage: 'plan_generation',
 			researchLanguage,
 			occurredAt: now,
-			assumptions: draft.rawPlan.constraints,
+			assumptions: [],
 		})
 	);
 

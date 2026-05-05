@@ -152,6 +152,16 @@ export function shouldStartDeepResearchJob(
 	return Boolean(payload.deepResearchDepth && !retryAssistantMessageId);
 }
 
+export function shouldDeleteConversationAfterCancellingDeepResearch(params: {
+	jobBeforeCancel: DeepResearchJob | null | undefined;
+	messageCount: number;
+	deepResearchJobCount: number;
+}): boolean {
+	const status = params.jobBeforeCancel?.status;
+	const notStarted = status === 'awaiting_plan' || status === 'awaiting_approval';
+	return notStarted && params.messageCount <= 1 && params.deepResearchJobCount <= 1;
+}
+
 export function isConversationReadOnly(
 	conversation: { status?: 'open' | 'sealed' | null },
 	_deepResearchJobs: DeepResearchJob[] = []

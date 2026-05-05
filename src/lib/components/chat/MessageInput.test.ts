@@ -60,13 +60,14 @@ describe('MessageInput', () => {
 
 	it('sends the selected Deep Research depth with the next message', async () => {
 		const sendSpy = vi.fn();
-		const { getByPlaceholderText, getByRole } = render(MessageInput, {
+		const { getByPlaceholderText, getByRole, queryByRole } = render(MessageInput, {
 			deepResearchEnabled: true,
 			onSend: sendSpy,
 		});
 
 		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
 		await fireEvent.click(getByRole('button', { name: 'Standard Deep Research' }));
+		expect(queryByRole('button', { name: 'Standard Deep Research' })).toBeNull();
 		await fireEvent.input(getByPlaceholderText('Type a message...'), {
 			target: { value: 'Research EV battery recycling policy' },
 		});

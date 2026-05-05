@@ -37,7 +37,10 @@ describe("createFirstResearchPlanDraft", () => {
 			}),
 		});
 		expect(result.plan.keyQuestions.length).toBeGreaterThanOrEqual(3);
-		expect(result.renderedPlan).toContain("Research Plan");
+		expect(result.renderedPlan).not.toContain("# Research Plan");
+		expect(result.renderedPlan).toContain(
+			"Goal: Compare the current EU and US approaches to AI copyright training data rules.",
+		);
 		expect(result.renderedPlan).toContain("Standard Deep Research");
 		expect(result.contextDisclosure).toEqual(
 			"Context considered: 1 conversation item.",
@@ -83,12 +86,12 @@ describe("createFirstResearchPlanDraft", () => {
 
 		expect(result.effortEstimate).toEqual({
 			selectedDepth: "max",
-			expectedTimeBand: "2-4 hours",
+			expectedTimeBand: "45-120 minutes",
 			sourceReviewCeiling: 120,
 			relativeCostWarning:
 				"Highest relative cost; use for broad or high-stakes investigations.",
 		});
-		expect(result.renderedPlan).toContain("Expected time: 2-4 hours");
+		expect(result.renderedPlan).toContain("Expected time: 45-120 minutes");
 		expect(result.renderedPlan).toContain("Source review ceiling: up to 120");
 	});
 
@@ -109,9 +112,12 @@ describe("createFirstResearchPlanDraft", () => {
 			],
 		});
 
-		expect(result.renderedPlan).toContain("# Kutatási terv");
+		expect(result.renderedPlan).not.toContain("# Kutatási terv");
+		expect(result.renderedPlan).toContain(
+			"Cél: Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.",
+		);
 		expect(result.renderedPlan).toContain("Mélység: Fókuszált mély kutatás");
-		expect(result.renderedPlan).toContain("Várható idő: 10-20 perc");
+		expect(result.renderedPlan).toContain("Várható idő: 3-8 perc");
 		expect(result.renderedPlan).toContain(
 			"Forrás-áttekintési plafon: legfeljebb 12",
 		);
@@ -139,9 +145,9 @@ describe("createFirstResearchPlanDraft", () => {
 		});
 
 		expect(result.plan.keyQuestions).toEqual([
-			"Mi a téma jelenlegi állapota?",
-			"Mely hasonlóságok és különbségek a legfontosabbak?",
-			"Milyen gyakorlati következményeket emeljen ki a jelentés?",
+			"Mi a legfontosabb jelenlegi háttér ehhez a témához: Kérlek foglald össze a privát AI kódoló asszisztensek beszerzési kockázatait?",
+			"Mely hiteles források támasztják alá vagy árnyalják a fő állításokat?",
+			"Milyen gyakorlati következtetéseket és korlátokat kell kiemelnie a jelentésnek?",
 		]);
 		expect(result.plan.reportShape).toEqual([
 			"Vezetői összefoglaló",
@@ -150,9 +156,7 @@ describe("createFirstResearchPlanDraft", () => {
 			"Forráslista",
 			"Korlátok",
 		]);
-		expect(result.plan.constraints).toEqual([
-			"Ne induljon forrásigényes kutatás a Kutatási terv jóváhagyása előtt.",
-		]);
+		expect(result.plan.constraints).toEqual([]);
 		expect(result.plan.deliverables).toEqual([
 			"Hivatkozásokkal ellátott kutatási jelentés",
 		]);
