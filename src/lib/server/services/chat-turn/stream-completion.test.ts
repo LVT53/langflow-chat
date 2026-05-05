@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ArtifactSummary, ContextDebugState, TaskState } from "$lib/types";
 import { completeStreamTurn } from "./stream-completion";
 
 describe("completeStreamTurn", () => {
@@ -90,6 +91,67 @@ describe("completeStreamTurn", () => {
 		assignFileProductionJobsToAssistantMessage: mockAssignFileProductionJobs,
 		estimateTokenCount: mockEstimateTokenCount,
 	};
+
+	const artifact = (id: string, name: string): ArtifactSummary => ({
+		id,
+		type: "source_document",
+		retrievalClass: "durable",
+		name,
+		mimeType: "text/plain",
+		sizeBytes: 12,
+		conversationId: "conv-1",
+		summary: null,
+		createdAt: 1,
+		updatedAt: 2,
+	});
+
+	const contextDebug = (
+		artifactId: string,
+		name: string,
+	): ContextDebugState => ({
+		activeTaskId: "task-1",
+		activeTaskObjective: "Use persisted context",
+		taskLocked: false,
+		routingStage: "evidence_rerank",
+		routingConfidence: 0.9,
+		verificationStatus: "passed",
+		selectedEvidence: [
+			{
+				artifactId,
+				name,
+				artifactType: "source_document",
+				sourceType: "document",
+				role: "selected",
+				origin: "system",
+				confidence: 0.9,
+				reason: "persisted evidence",
+			},
+		],
+		selectedEvidenceBySource: [{ sourceType: "document", count: 1 }],
+		pinnedEvidence: [],
+		excludedEvidence: [],
+		honcho: null,
+	});
+
+	const taskState = (taskId: string): TaskState => ({
+		taskId,
+		userId: "user-1",
+		conversationId: "conv-1",
+		status: "active",
+		objective: "Persisted task",
+		confidence: 0.9,
+		locked: false,
+		lastConfirmedTurnMessageId: null,
+		constraints: [],
+		factsToPreserve: [],
+		decisions: [],
+		openQuestions: [],
+		activeArtifactIds: [],
+		nextSteps: [],
+		lastCheckpointAt: null,
+		createdAt: 1,
+		updatedAt: 2,
+	});
 
 	it("creates user and assistant messages", async () => {
 		await completeStreamTurn(defaultParams);
@@ -251,6 +313,83 @@ describe("completeStreamTurn", () => {
 				generatedFiles: [],
 			}),
 		);
+	});
+
+	it("builds end metadata contextSources from persisted turn state and attached artifacts", async () => {
+		const staleWorkingSet = [
+			artifact("artifact-stale-working", "Stale working"),
+		];
+		const persistedWorkingSet = [
+			artifact("artifact-persisted-working", "Persisted working"),
+		];
+		const attachedArtifacts = [
+			artifact("artifact-attached", "Attached source"),
+		];
+		const persistedContextDebug = contextDebug(
+			"artifact-persisted-evidence",
+			"Persisted evidence",
+		);
+		const persistedTaskState = taskState("task-persisted");
+
+		mockPersistUserTurnAttachments.mockResolvedValueOnce(attachedArtifacts);
+		mockPersistAssistantTurnState.mockResolvedValueOnce({
+			activeWorkingSet: persistedWorkingSet,
+			taskState: persistedTaskState,
+			contextDebug: persistedContextDebug,
+			workCapsule: undefined,
+		});
+
+		await completeStreamTurn({
+			...defaultParams,
+			latestActiveWorkingSet: staleWorkingSet,
+			latestTaskState: taskState("task-stale"),
+			latestContextDebug: contextDebug(
+				"artifact-stale-evidence",
+				"Stale evidence",
+			),
+		});
+
+		const endCall = mockEnqueueChunk.mock.calls.find((call: string[]) =>
+			call[0]?.startsWith("event: end"),
+		);
+		expect(endCall).toBeDefined();
+		const data = JSON.parse(endCall[0].replace("event: end\ndata: ", ""));
+
+		expect(data.activeWorkingSet).toEqual(persistedWorkingSet);
+		expect(data.taskState).toEqual(persistedTaskState);
+		expect(data.contextDebug).toEqual(persistedContextDebug);
+		expect(data.contextSources.groups).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "attachments",
+					items: [
+						expect.objectContaining({
+							artifactId: "artifact-attached",
+							title: "Attached source",
+						}),
+					],
+				}),
+				expect.objectContaining({
+					kind: "working_set",
+					items: [
+						expect.objectContaining({
+							artifactId: "artifact-persisted-working",
+							title: "Persisted working",
+						}),
+					],
+				}),
+				expect.objectContaining({
+					kind: "task_evidence",
+					items: [
+						expect.objectContaining({
+							artifactId: "artifact-persisted-evidence",
+							title: "Persisted evidence",
+						}),
+					],
+				}),
+			]),
+		);
+		expect(JSON.stringify(data.contextSources)).not.toContain("Stale");
 	});
 
 	it("sets wasStopped to true in the end event when requested", async () => {

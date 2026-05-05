@@ -9,6 +9,14 @@ import type {
 import { buildContextSourcesState } from "./context-sources";
 import type { WorkCapsuleSummary } from "./types";
 
+type PersistedStreamTurnState = {
+	activeWorkingSet: unknown;
+	taskState: unknown;
+	contextDebug: unknown;
+	workCapsule: WorkCapsuleSummary;
+	attachedArtifacts?: unknown;
+};
+
 export interface CompleteStreamTurnParams {
 	wasStopped: boolean;
 	conversationId: string;
@@ -82,6 +90,7 @@ export interface CompleteStreamTurnParams {
 		taskState: unknown;
 		contextDebug: unknown;
 		workCapsule: WorkCapsuleSummary;
+		attachedArtifacts?: unknown;
 	}>;
 	persistAssistantEvidence: (params: {
 		logPrefix: string;
@@ -220,6 +229,8 @@ export async function completeStreamTurn(
 	const hadFileProductionToolCall = toolCallSummary.some(
 		(record) => record.name === "produce_file",
 	);
+	let persistedTurnState: PersistedStreamTurnState | null = null;
+	let attachedArtifactsForContextSources: ArtifactSummary[] = [];
 
 	console.info("[CHAT_STREAM] Tool-call summary", {
 		conversationId,
@@ -334,11 +345,26 @@ export async function completeStreamTurn(
 			userId,
 			conversationId,
 			contextStatus: latestContextStatus as ConversationContextStatus | null,
-			contextDebug: latestContextDebug as ContextDebugState | null,
-			activeWorkingSet: Array.isArray(latestActiveWorkingSet)
-				? (latestActiveWorkingSet as ArtifactSummary[])
-				: [],
+			contextDebug: persistedTurnState
+				? (persistedTurnState.contextDebug as ContextDebugState | null)
+				: (latestContextDebug as ContextDebugState | null),
+			attachedArtifacts:
+				getPersistedArtifactSummaries(persistedTurnState?.attachedArtifacts) ??
+				attachedArtifactsForContextSources,
+			activeWorkingSet: persistedTurnState
+				? (getPersistedArtifactSummaries(persistedTurnState.activeWorkingSet) ??
+					[])
+				: (getPersistedArtifactSummaries(latestActiveWorkingSet) ?? []),
 		});
+		const activeWorkingSet = persistedTurnState
+			? persistedTurnState.activeWorkingSet
+			: latestActiveWorkingSet;
+		const taskState = persistedTurnState
+			? persistedTurnState.taskState
+			: latestTaskState;
+		const contextDebug = persistedTurnState
+			? persistedTurnState.contextDebug
+			: latestContextDebug;
 
 		enqueueChunk(
 			`event: end\ndata: ${JSON.stringify({
@@ -353,9 +379,9 @@ export async function completeStreamTurn(
 				modelDisplayName,
 				contextStatus: latestContextStatus,
 				contextSources,
-				activeWorkingSet: latestActiveWorkingSet,
-				taskState: latestTaskState,
-				contextDebug: latestContextDebug,
+				activeWorkingSet,
+				taskState,
+				contextDebug,
 				generatedFiles,
 			})}\n\n`,
 		);
@@ -368,16 +394,21 @@ export async function completeStreamTurn(
 		.then(([userMsg, assistantMsg]) => {
 			const postPersistTasks: Promise<unknown>[] = [];
 			let uiStateTask: Promise<unknown> = Promise.resolve();
+			let attachmentPersistenceTask: Promise<unknown> = Promise.resolve();
 			if (persistUserMessage && userMsg && attachmentIds.length > 0) {
-				postPersistTasks.push(
-					persistUserTurnAttachments({
-						userId,
-						conversationId,
-						messageId: userMsg.id,
-						normalizedMessage,
-						attachmentIds,
-					}).catch(() => undefined),
-				);
+				attachmentPersistenceTask = persistUserTurnAttachments({
+					userId,
+					conversationId,
+					messageId: userMsg.id,
+					normalizedMessage,
+					attachmentIds,
+				})
+					.then((artifacts) => {
+						attachedArtifactsForContextSources =
+							getPersistedArtifactSummaries(artifacts) ?? [];
+					})
+					.catch(() => undefined);
+				postPersistTasks.push(attachmentPersistenceTask);
 			}
 
 			let latestWorkCapsule: WorkCapsuleSummary;
@@ -407,6 +438,7 @@ export async function completeStreamTurn(
 					honchoContext: latestHonchoContext,
 					honchoSnapshot: latestHonchoSnapshot,
 				}).then((turnState) => {
+					persistedTurnState = turnState;
 					latestWorkCapsule = turnState.workCapsule;
 				});
 				postPersistTasks.push(uiStateTask);
@@ -414,6 +446,7 @@ export async function completeStreamTurn(
 				postPersistTasks.push(
 					(async () => {
 						await uiStateTask.catch(() => undefined);
+						const currentTurnState = persistedTurnState;
 						await persistAssistantEvidence({
 							logPrefix: "[STREAM]",
 							userId,
@@ -422,12 +455,16 @@ export async function completeStreamTurn(
 							normalizedMessage,
 							assistantResponse: finalResponse,
 							attachmentIds,
-							taskState: latestTaskState,
+							taskState: currentTurnState
+								? currentTurnState.taskState
+								: latestTaskState,
 							contextStatus:
 								(latestContextStatus as unknown) ??
 								(initialContextStatus as unknown) ??
 								null,
-							contextDebug: latestContextDebug,
+							contextDebug: currentTurnState
+								? currentTurnState.contextDebug
+								: latestContextDebug,
 							initialTaskState,
 							initialContextDebug,
 							toolCalls: toolCallRecords,
@@ -438,6 +475,7 @@ export async function completeStreamTurn(
 			}
 
 			return uiStateTask
+				.then(() => attachmentPersistenceTask)
 				.then(() => sendEndAndClose(userMsg?.id, assistantMsg?.id))
 				.then(() =>
 					Promise.allSettled(postPersistTasks).then(() =>
@@ -456,4 +494,24 @@ export async function completeStreamTurn(
 		.catch(() => {
 			return sendEndAndClose();
 		});
+}
+
+function getPersistedArtifactSummaries(
+	value: unknown,
+): ArtifactSummary[] | null {
+	if (!Array.isArray(value)) return null;
+	return value.filter(isArtifactSummaryLike) as ArtifactSummary[];
+}
+
+function isArtifactSummaryLike(value: unknown): value is ArtifactSummary {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"name" in value &&
+		typeof value.name === "string" &&
+		"type" in value &&
+		typeof value.type === "string"
+	);
 }
