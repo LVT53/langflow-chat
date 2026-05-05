@@ -111,13 +111,79 @@ describe("createFirstResearchPlanDraft", () => {
 
 		expect(result.effortEstimate).toEqual({
 			selectedDepth: "max",
-			expectedTimeBand: "45-120 minutes",
-			sourceReviewCeiling: 120,
+			expectedTimeBand:
+				"Long high-depth run; duration depends on source availability and repair needs.",
+			sourceReviewCeiling: 200,
 			relativeCostWarning:
 				"Highest relative cost; use for broad or high-stakes investigations.",
+			passBudget: "5-8 meaningful research passes",
+			repairPassBudget: "up to 3 repair passes",
 		});
-		expect(result.renderedPlan).toContain("Expected time: 45-120 minutes");
-		expect(result.renderedPlan).toContain("Source review ceiling: up to 120");
+		expect(result.renderedPlan).toContain(
+			"Expected time: Long high-depth run; duration depends on source availability and repair needs.",
+		);
+		expect(result.renderedPlan).toContain("Source review ceiling: up to 200");
+	});
+
+	it("uses the raised depth budget defaults in the Research Plan and effort estimate", async () => {
+		const focused = await createFirstResearchPlanDraft({
+			jobId: "job-budget-focused",
+			userRequest: "Research EV home charger safety considerations.",
+			selectedDepth: "focused",
+			researchLanguage: "en",
+		});
+		const standard = await createFirstResearchPlanDraft({
+			jobId: "job-budget-standard",
+			userRequest: "Research EV home charger market tradeoffs.",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+		const max = await createFirstResearchPlanDraft({
+			jobId: "job-budget-max",
+			userRequest: "Research EV home charger regulation and market tradeoffs.",
+			selectedDepth: "max",
+			researchLanguage: "en",
+		});
+
+		expect(focused.plan.researchBudget).toEqual({
+			sourceReviewCeiling: 24,
+			synthesisPassCeiling: 3,
+			meaningfulPassFloor: 2,
+			meaningfulPassCeiling: 3,
+			repairPassCeiling: 1,
+			sourceProcessingConcurrency: 6,
+			modelReasoningConcurrency: 2,
+		});
+		expect(standard.plan.researchBudget).toEqual({
+			sourceReviewCeiling: 75,
+			synthesisPassCeiling: 5,
+			meaningfulPassFloor: 3,
+			meaningfulPassCeiling: 5,
+			repairPassCeiling: 2,
+			sourceProcessingConcurrency: 12,
+			modelReasoningConcurrency: 4,
+		});
+		expect(max.plan.researchBudget).toEqual({
+			sourceReviewCeiling: 200,
+			synthesisPassCeiling: 8,
+			meaningfulPassFloor: 5,
+			meaningfulPassCeiling: 8,
+			repairPassCeiling: 3,
+			sourceProcessingConcurrency: 24,
+			modelReasoningConcurrency: 8,
+		});
+		expect(max.effortEstimate).toMatchObject({
+			selectedDepth: "max",
+			sourceReviewCeiling: 200,
+			passBudget: "5-8 meaningful research passes",
+			repairPassBudget: "up to 3 repair passes",
+		});
+		expect(max.renderedPlan).toContain(
+			"Pass budget: 5-8 meaningful research passes",
+		);
+		expect(max.renderedPlan).toContain("Repair pass budget: up to 3");
+		expect(max.renderedPlan).toContain("Source processing concurrency: up to 24");
+		expect(max.renderedPlan).toContain("Model reasoning concurrency: up to 8");
 	});
 
 	it("renders Hungarian Research Plan labels without translating included source titles", async () => {
@@ -143,9 +209,11 @@ describe("createFirstResearchPlanDraft", () => {
 		);
 		expect(result.renderedPlan).toContain("Mélység: Fókuszált mély kutatás");
 		expect(result.renderedPlan).toContain("Jelentési szándék: Termékáttekintés");
-		expect(result.renderedPlan).toContain("Várható idő: 3-8 perc");
 		expect(result.renderedPlan).toContain(
-			"Forrás-áttekintési plafon: legfeljebb 12",
+			"Várható idő: Rövid, többkörös futás; az időtartam a források elérhetőségétől függ.",
+		);
+		expect(result.renderedPlan).toContain(
+			"Forrás-áttekintési plafon: legfeljebb 24",
 		);
 		expect(result.renderedPlan).toContain("Bevont források:");
 		expect(result.renderedPlan).toContain("OpenAI Codex Pricing");
@@ -208,7 +276,12 @@ describe("createFirstResearchPlanDraft", () => {
 				depth: "focused",
 				researchBudget: {
 					sourceReviewCeiling: 40,
-					synthesisPassCeiling: 1,
+					synthesisPassCeiling: 3,
+					meaningfulPassFloor: 2,
+					meaningfulPassCeiling: 3,
+					repairPassCeiling: 1,
+					sourceProcessingConcurrency: 6,
+					modelReasoningConcurrency: 2,
 				},
 				keyQuestions: ["Which databases should be compared?"],
 				sourceScope: {
@@ -232,7 +305,85 @@ describe("createFirstResearchPlanDraft", () => {
 				{ repository, structuredPlanner },
 			),
 		).rejects.toThrow(
-			"Research Plan exceeds Focused Deep Research budget: source review ceiling 40 is above 12.",
+			"Research Plan exceeds Focused Deep Research budget: source review ceiling 40 is above 24.",
+		);
+		expect(repository.saveResearchPlanDraft).not.toHaveBeenCalled();
+	});
+
+	it("rejects a structured plan below the depth pass floor or above concurrency defaults", async () => {
+		const repository = {
+			saveResearchPlanDraft: vi.fn(),
+		};
+		const basePlan = {
+			goal: "Map the tradeoffs of open-source vector databases.",
+			depth: "focused" as const,
+			researchBudget: {
+				sourceReviewCeiling: 24,
+				synthesisPassCeiling: 3,
+				meaningfulPassFloor: 2,
+				meaningfulPassCeiling: 3,
+				repairPassCeiling: 1,
+				sourceProcessingConcurrency: 6,
+				modelReasoningConcurrency: 2,
+			},
+			keyQuestions: ["Which databases should be compared?"],
+			sourceScope: {
+				includePublicWeb: true,
+				planningContextDisclosure: null,
+			},
+			reportShape: ["Executive summary"],
+			constraints: [],
+			deliverables: ["Cited Research Report"],
+		};
+
+		await expect(
+			createFirstResearchPlanDraft(
+				{
+					jobId: "job-pass-floor",
+					userRequest: "Map the tradeoffs of open-source vector databases.",
+					selectedDepth: "focused",
+					researchLanguage: "en",
+				},
+				{
+					repository,
+					structuredPlanner: {
+						draftPlan: vi.fn(async () => ({
+							...basePlan,
+							researchBudget: {
+								...basePlan.researchBudget,
+								meaningfulPassFloor: 1,
+							},
+						})),
+					},
+				},
+			),
+		).rejects.toThrow(
+			"Research Plan is below Focused Deep Research minimum pass expectation: meaningful pass floor 1 is below 2.",
+		);
+
+		await expect(
+			createFirstResearchPlanDraft(
+				{
+					jobId: "job-concurrency",
+					userRequest: "Map the tradeoffs of open-source vector databases.",
+					selectedDepth: "focused",
+					researchLanguage: "en",
+				},
+				{
+					repository,
+					structuredPlanner: {
+						draftPlan: vi.fn(async () => ({
+							...basePlan,
+							researchBudget: {
+								...basePlan.researchBudget,
+								sourceProcessingConcurrency: 7,
+							},
+						})),
+					},
+				},
+			),
+		).rejects.toThrow(
+			"Research Plan exceeds Focused Deep Research budget: source processing concurrency 7 is above 6.",
 		);
 		expect(repository.saveResearchPlanDraft).not.toHaveBeenCalled();
 	});

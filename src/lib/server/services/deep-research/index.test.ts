@@ -46,6 +46,36 @@ async function seedConversation() {
 	sqlite.close();
 }
 
+async function seedCompletedMeaningfulPasses(
+	jobId: string,
+	count: number,
+) {
+	const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+		await import('./pass-state');
+	for (let index = 0; index < count; index += 1) {
+		const passNumber = index + 1;
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: 'user-1',
+			jobId,
+			conversationId: 'conv-1',
+			passNumber,
+			searchIntent:
+				passNumber === 1
+					? 'Initial approved-plan source review'
+					: `Targeted follow-up for pass ${passNumber - 1} Coverage Gaps`,
+			reviewedSourceIds: [],
+			now: new Date(`2026-05-05T10:${10 + index}:00.000Z`),
+		});
+		await completeResearchPassCheckpoint({
+			userId: 'user-1',
+			checkpointId: checkpoint.id,
+			nextDecision: 'synthesize_report',
+			decisionSummary: 'Fixture completed meaningful research pass.',
+			now: new Date(`2026-05-05T10:${10 + index}:30.000Z`),
+		});
+	}
+}
+
 async function completeApprovedJobWithAuditedReport(input?: {
 	userRequest?: string;
 	depth?: 'focused' | 'standard' | 'max';
@@ -70,6 +100,10 @@ async function completeApprovedJobWithAuditedReport(input?: {
 		jobId: created.id,
 		now: new Date('2026-05-05T10:06:00.000Z'),
 	});
+	await seedCompletedMeaningfulPasses(
+		created.id,
+		input?.depth === 'max' ? 5 : input?.depth === 'focused' ? 2 : 3
+	);
 	const source = await saveDiscoveredResearchSource({
 		userId: 'user-1',
 		conversationId: 'conv-1',
@@ -197,7 +231,7 @@ describe('deep research job shell service', () => {
 				contextDisclosure: 'Context considered: 1 conversation item, 1 knowledge item.',
 				effortEstimate: {
 					selectedDepth: 'standard',
-					sourceReviewCeiling: 40,
+					sourceReviewCeiling: 75,
 				},
 			},
 		});
@@ -1092,7 +1126,7 @@ describe('deep research job shell service', () => {
 					contextDisclosure: 'Context considered: 1 report item.',
 					effortEstimate: {
 						selectedDepth: 'focused',
-						sourceReviewCeiling: 12,
+						sourceReviewCeiling: 24,
 					},
 				},
 			},

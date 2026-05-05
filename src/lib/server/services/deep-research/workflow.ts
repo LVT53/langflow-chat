@@ -462,6 +462,17 @@ async function runResearchTasksStep(
 		dependencies,
 	});
 	if (eligibilityResult) return eligibilityResult;
+	const minimumPassContinuation =
+		await createMinimumPassExpectationContinuationIfNeeded({
+			jobRow,
+			approvedPlan: approvedPlan as ResearchPlan,
+			currentPassNumber: passNumber,
+			reviewedSources,
+			sources,
+			now,
+			dependencies,
+		});
+	if (minimumPassContinuation) return minimumPassContinuation;
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -593,6 +604,17 @@ async function runSynthesisResumeStep(
 		dependencies,
 	});
 	if (eligibilityResult) return eligibilityResult;
+	const minimumPassContinuation =
+		await createMinimumPassExpectationContinuationIfNeeded({
+			jobRow,
+			approvedPlan: approvedPlan as ResearchPlan,
+			currentPassNumber: passNumber,
+			reviewedSources,
+			sources,
+			now,
+			dependencies,
+		});
+	if (minimumPassContinuation) return minimumPassContinuation;
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -656,8 +678,11 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			),
 			synthesisPasses: Math.max(
 				0,
-				input.approvedPlan.researchBudget.synthesisPassCeiling -
-					input.passNumber,
+				meaningfulPassCeiling(input.approvedPlan) -
+					(await countCompletedMeaningfulResearchPasses({
+						userId: input.jobRow.userId,
+						jobId: input.jobRow.id,
+					})),
 			),
 		},
 	});
@@ -1158,7 +1183,10 @@ async function runSourceReviewStep(
 				approvedPlan.researchBudget.sourceReviewCeiling -
 					reviewedSources.length,
 			),
-			synthesisPasses: approvedPlan.researchBudget.synthesisPassCeiling,
+			synthesisPasses: Math.max(
+				0,
+				meaningfulPassCeiling(approvedPlan as ResearchPlan) - 1,
+			),
 		},
 	});
 
@@ -1260,6 +1288,24 @@ async function runSourceReviewStep(
 				dependencies,
 			});
 		}
+		const completedMeaningfulPasses = await countCompletedMeaningfulResearchPasses({
+			userId: jobRow.userId,
+			jobId: jobRow.id,
+		});
+		if (completedMeaningfulPasses < meaningfulPassFloor(approvedPlan as ResearchPlan)) {
+			return completeCoverageExhaustedWithEvidenceLimitationMemo({
+				jobRow,
+				now,
+				limitations: [
+					...coverageAssessment.reportLimitations.map(
+						(limitation) => limitation.limitation,
+					),
+					`Minimum pass expectation was not satisfied: ${completedMeaningfulPasses} of ${meaningfulPassFloor(approvedPlan as ResearchPlan)} meaningful research passes completed.`,
+				],
+				sourceCounts: sourceCountsFromResearchSources(sources),
+				dependencies,
+			});
+		}
 
 		return completeSourceReviewReport({
 			jobRow,
@@ -1272,6 +1318,18 @@ async function runSourceReviewStep(
 		});
 	}
 
+	const minimumPassContinuation =
+		await createMinimumPassExpectationContinuationIfNeeded({
+			jobRow,
+			approvedPlan: approvedPlan as ResearchPlan,
+			currentPassNumber: 1,
+			reviewedSources,
+			sources,
+			now,
+			dependencies,
+		});
+	if (minimumPassContinuation) return minimumPassContinuation;
+
 	return completeSourceReviewReport({
 		jobRow,
 		now,
@@ -1281,6 +1339,116 @@ async function runSourceReviewStep(
 		),
 		dependencies,
 	});
+}
+
+async function createMinimumPassExpectationContinuationIfNeeded(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	approvedPlan: ResearchPlan;
+	currentPassNumber: number;
+	reviewedSources: DeepResearchSource[];
+	sources: DeepResearchSource[];
+	now: Date;
+	dependencies: DeepResearchWorkflowDependencies;
+}): Promise<RunDeepResearchWorkflowStepResult | null> {
+	const completedMeaningfulPasses = await countCompletedMeaningfulResearchPasses({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+	});
+	const passFloor = meaningfulPassFloor(input.approvedPlan);
+	if (completedMeaningfulPasses >= passFloor) return null;
+	if (completedMeaningfulPasses >= meaningfulPassCeiling(input.approvedPlan)) {
+		return completeCoverageExhaustedWithEvidenceLimitationMemo({
+			jobRow: input.jobRow,
+			now: input.now,
+			limitations: [
+				`Minimum pass expectation was not satisfied: ${completedMeaningfulPasses} of ${passFloor} meaningful research passes completed.`,
+			],
+			sourceCounts: sourceCountsFromResearchSources(input.sources),
+			dependencies: input.dependencies,
+		});
+	}
+
+	const nextPassNumber = input.currentPassNumber + 1;
+	const checkpoint = await upsertResearchPassCheckpoint({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: nextPassNumber,
+		searchIntent: `Minimum pass expectation follow-up after pass ${input.currentPassNumber}`,
+		reviewedSourceIds: input.reviewedSources.map((source) => source.id),
+		coverageResult: {
+			status: "minimum_pass_expectation_unmet",
+			completedMeaningfulPasses,
+			requiredMeaningfulPasses: passFloor,
+		},
+		now: input.now,
+	});
+	const persistedGaps = await saveCoverageGapsForPass({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passCheckpointId: checkpoint.id,
+		gaps: input.approvedPlan.keyQuestions.map((keyQuestion) => ({
+			keyQuestion,
+			reason: "insufficient_supported_claims",
+			reviewedSourceCount: input.reviewedSources.length,
+			severity: "important",
+			recommendedNextAction: `Run another meaningful research pass before report publication: ${keyQuestion}`,
+			detail: `${completedMeaningfulPasses} of ${passFloor} required meaningful research passes are complete.`,
+		})),
+		now: input.now,
+	});
+	await saveResearchPassDecisionTimeline({
+		jobRow: input.jobRow,
+		stage: "coverage_assessment",
+		passNumber: input.currentPassNumber,
+		nextDecision: "continue_research",
+		decisionSummary: `Continue research because ${completedMeaningfulPasses} of ${passFloor} minimum meaningful passes are complete.`,
+		sourceCounts: sourceCountsFromResearchSources(input.sources),
+		now: input.now,
+	});
+	await (
+		input.dependencies.tasks?.createResearchTasksFromCoverageGaps ??
+		createResearchTasksFromCoverageGaps
+	)({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passNumber: nextPassNumber,
+		gaps: persistedGaps.map((gap) => ({
+			id: gap.id,
+			keyQuestion: gap.keyQuestion,
+			summary: gap.recommendedNextAction,
+			severity: gap.severity,
+		})),
+		now: input.now,
+	});
+	await db
+		.update(deepResearchJobs)
+		.set({
+			status: "running",
+			stage: "research_tasks",
+			updatedAt: input.now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobRow.id),
+				eq(deepResearchJobs.userId, input.jobRow.userId),
+				eq(deepResearchJobs.status, "running"),
+			),
+		);
+	const reloaded = await reloadWorkflowJob(
+		input.jobRow.userId,
+		input.jobRow.conversationId,
+		input.jobRow.id,
+	);
+	return reloaded
+		? {
+				job: reloaded,
+				advanced: true,
+				outcome: "coverage_continuation_created",
+			}
+		: null;
 }
 
 async function completeSourceReviewReport(input: {
@@ -1723,6 +1891,44 @@ function sourceCountsFromResearchSources(sources: DeepResearchSource[]) {
 		reviewed: sources.filter((source) => source.reviewedAt).length,
 		cited: sources.filter((source) => source.citedAt).length,
 	};
+}
+
+async function countCompletedMeaningfulResearchPasses(input: {
+	userId: string;
+	jobId: string;
+}): Promise<number> {
+	const checkpoints = await listResearchPassCheckpoints(input);
+	return checkpoints.filter(
+		(checkpoint) =>
+			checkpoint.terminalDecision &&
+			!isRepairPassCheckpoint(checkpoint.searchIntent),
+	).length;
+}
+
+function isRepairPassCheckpoint(searchIntent: string): boolean {
+	return /\b(repair|citation audit)\b/i.test(searchIntent);
+}
+
+function meaningfulPassFloor(plan: ResearchPlan): number {
+	return Math.max(
+		1,
+		Math.floor(
+			plan.researchBudget.meaningfulPassFloor ??
+				plan.researchBudget.synthesisPassCeiling ??
+				1,
+		),
+	);
+}
+
+function meaningfulPassCeiling(plan: ResearchPlan): number {
+	return Math.max(
+		meaningfulPassFloor(plan),
+		Math.floor(
+			plan.researchBudget.meaningfulPassCeiling ??
+				plan.researchBudget.synthesisPassCeiling ??
+				meaningfulPassFloor(plan),
+		),
+	);
 }
 
 function buildDefaultSourceReviewer(input: {

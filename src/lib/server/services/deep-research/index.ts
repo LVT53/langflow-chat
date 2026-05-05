@@ -657,6 +657,14 @@ export async function completeDeepResearchJobWithAuditedReport(
 	const currentPlans = await loadCurrentPlansByJobId([job.id]);
 	const currentPlan = currentPlans.get(job.id);
 	if (!currentPlan?.rawPlan) return null;
+	if (
+		(await countCompletedMeaningfulResearchPasses({
+			userId: input.userId,
+			jobId: job.id,
+		})) < minimumMeaningfulPassExpectation(currentPlan.rawPlan)
+	) {
+		return null;
+	}
 	const reportAssemblyResumeKey = `report:${job.id}:audited`;
 	const citationAuditResumeKey = `citation-audit:${job.id}:audited`;
 	const existingReportAssembly = await getResearchResumePoint({
@@ -1117,6 +1125,26 @@ async function createCitationAuditRepairPass(input: {
 		}),
 	]);
 	const claimsById = new Map(claims.map((claim) => [claim.id, claim]));
+	const repairPassCeiling =
+		input.currentPlan.rawPlan?.researchBudget.repairPassCeiling ?? 1;
+	const existingRepairPasses = passCheckpoints.filter((checkpoint) =>
+		/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent)
+	).length;
+	if (existingRepairPasses >= repairPassCeiling) {
+		return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
+			job: input.job,
+			currentPlan: input.currentPlan,
+			sources: await listResearchSources({
+				userId: input.job.userId,
+				jobId: input.job.id,
+			}),
+			limitations: [
+				`Repair pass budget exhausted after ${existingRepairPasses} repair pass${existingRepairPasses === 1 ? '' : 'es'}.`,
+				...claimGraphAuditWarnings(input.auditResult),
+			],
+			now: input.now,
+		});
+	}
 	const passNumber =
 		Math.max(1, ...passCheckpoints.map((checkpoint) => checkpoint.passNumber)) +
 		1;
@@ -2830,6 +2858,29 @@ function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
 		createdAt: source.createdAt,
 		updatedAt: source.updatedAt,
 	};
+}
+
+async function countCompletedMeaningfulResearchPasses(input: {
+	userId: string;
+	jobId: string;
+}): Promise<number> {
+	const checkpoints = await listResearchPassCheckpoints(input);
+	return checkpoints.filter(
+		(checkpoint) =>
+			checkpoint.terminalDecision &&
+			!/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent),
+	).length;
+}
+
+function minimumMeaningfulPassExpectation(plan: DeepResearchPlanRaw): number {
+	return Math.max(
+		1,
+		Math.floor(
+			plan.researchBudget.meaningfulPassFloor ??
+				plan.researchBudget.synthesisPassCeiling ??
+				1,
+		),
+	);
 }
 
 function mapTimelineEvent(event: PersistedResearchTimelineEvent): DeepResearchTimelineEvent {

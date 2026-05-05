@@ -5,7 +5,9 @@ import { resolve } from "node:path";
 import {
 	defaultDeepResearchModelSelections,
 	DEEP_RESEARCH_MODEL_ROLES,
+	normalizeDeepResearchDepthBudgetPolicy,
 	normalizeConfiguredModelId,
+	type DeepResearchDepthBudgetPolicy,
 	type DeepResearchModelSelections,
 } from "../deep-research-models";
 
@@ -35,6 +37,7 @@ interface Config {
 	deepResearchWorkerStaleTimeoutMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchDepthBudgets: DeepResearchDepthBudgetPolicy;
 	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
@@ -154,6 +157,16 @@ function readDeepResearchModelSelections(): DeepResearchModelSelections {
 	return selections;
 }
 
+function readDeepResearchDepthBudgets(): DeepResearchDepthBudgetPolicy {
+	const rawValue = process.env.DEEP_RESEARCH_DEPTH_BUDGETS_JSON;
+	if (!rawValue) return normalizeDeepResearchDepthBudgetPolicy(undefined);
+	try {
+		return normalizeDeepResearchDepthBudgetPolicy(JSON.parse(rawValue));
+	} catch {
+		return normalizeDeepResearchDepthBudgetPolicy(undefined);
+	}
+}
+
 function buildDefaultHonchoIdentityNamespace(
 	databasePath: string,
 	honchoWorkspace: string,
@@ -210,6 +223,7 @@ function readConfig(): Config {
 			0,
 			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_USER_CONCURRENCY, 1),
 		),
+		deepResearchDepthBudgets: readDeepResearchDepthBudgets(),
 		deepResearchModels: readDeepResearchModelSelections(),
 		contextDiagnosticsDebug:
 			process.env.CONTEXT_DIAGNOSTICS_DEBUG === "true",

@@ -1,3 +1,5 @@
+import { getConfig, type RuntimeConfig } from "$lib/server/config-store";
+
 export type ResearchDepth = "focused" | "standard" | "max";
 
 export type ResearchLanguage = "en" | "hu";
@@ -47,6 +49,11 @@ export type ResearchPlan = {
 export type ResearchBudget = {
 	sourceReviewCeiling: number;
 	synthesisPassCeiling: number;
+	meaningfulPassFloor: number;
+	meaningfulPassCeiling: number;
+	repairPassCeiling: number;
+	sourceProcessingConcurrency: number;
+	modelReasoningConcurrency: number;
 };
 
 export type ResearchEffortEstimate = {
@@ -54,6 +61,8 @@ export type ResearchEffortEstimate = {
 	expectedTimeBand: string;
 	sourceReviewCeiling: number;
 	relativeCostWarning: string;
+	passBudget: string;
+	repairPassBudget: string;
 };
 
 export type ResearchPlanDraftRecord = {
@@ -136,6 +145,10 @@ const planLabels: Record<
 		depth: string;
 		expectedTime: string;
 		sourceReviewCeiling: (count: number) => string;
+		passBudget: (floor: number, ceiling: number) => string;
+		repairPassBudget: (count: number) => string;
+		sourceProcessingConcurrency: (count: number) => string;
+		modelReasoningConcurrency: (count: number) => string;
 		goal: string;
 		reportIntent: string;
 		comparedEntities: string;
@@ -151,6 +164,13 @@ const planLabels: Record<
 		depth: "Depth",
 		expectedTime: "Expected time",
 		sourceReviewCeiling: (count) => `Source review ceiling: up to ${count}`,
+		passBudget: (floor, ceiling) =>
+			`Pass budget: ${floor}-${ceiling} meaningful research passes`,
+		repairPassBudget: (count) => `Repair pass budget: up to ${count}`,
+		sourceProcessingConcurrency: (count) =>
+			`Source processing concurrency: up to ${count}`,
+		modelReasoningConcurrency: (count) =>
+			`Model reasoning concurrency: up to ${count}`,
 		goal: "Goal",
 		reportIntent: "Report intent",
 		comparedEntities: "Compared entities",
@@ -166,6 +186,13 @@ const planLabels: Record<
 		expectedTime: "Várható idő",
 		sourceReviewCeiling: (count) =>
 			`Forrás-áttekintési plafon: legfeljebb ${count}`,
+		passBudget: (floor, ceiling) =>
+			`Kutatási kör keret: ${floor}-${ceiling} érdemi kutatási kör`,
+		repairPassBudget: (count) => `Javítási kör keret: legfeljebb ${count}`,
+		sourceProcessingConcurrency: (count) =>
+			`Forrásfeldolgozási párhuzamosság: legfeljebb ${count}`,
+		modelReasoningConcurrency: (count) =>
+			`Modell következtetési párhuzamosság: legfeljebb ${count}`,
 		goal: "Cél",
 		reportIntent: "Jelentési szándék",
 		comparedEntities: "Összehasonlított entitások",
@@ -218,14 +245,20 @@ const localizedExpectedTimeBands: Record<
 	Record<ResearchDepth, string>
 > = {
 	en: {
-		focused: "3-8 minutes",
-		standard: "10-25 minutes",
-		max: "45-120 minutes",
+		focused:
+			"Short multi-pass run; duration depends on source availability.",
+		standard:
+			"Extended multi-pass run; duration depends on source availability.",
+		max:
+			"Long high-depth run; duration depends on source availability and repair needs.",
 	},
 	hu: {
-		focused: "3-8 perc",
-		standard: "10-25 perc",
-		max: "45-120 perc",
+		focused:
+			"Rövid, többkörös futás; az időtartam a források elérhetőségétől függ.",
+		standard:
+			"Kibővített, többkörös futás; az időtartam a források elérhetőségétől függ.",
+		max:
+			"Hosszú, nagy mélységű futás; az időtartam a forrásoktól és a javítási igényektől függ.",
 	},
 };
 
@@ -269,21 +302,6 @@ const localizedReportIntentLabels: Record<
 	},
 };
 
-const depthBudgets: Record<ResearchDepth, ResearchBudget> = {
-	focused: {
-		sourceReviewCeiling: 12,
-		synthesisPassCeiling: 1,
-	},
-	standard: {
-		sourceReviewCeiling: 40,
-		synthesisPassCeiling: 2,
-	},
-	max: {
-		sourceReviewCeiling: 120,
-		synthesisPassCeiling: 4,
-	},
-};
-
 export async function createFirstResearchPlanDraft(
 	input: CreateFirstResearchPlanDraftInput,
 	dependencies: CreateFirstResearchPlanDraftDependencies = {},
@@ -292,7 +310,7 @@ export async function createFirstResearchPlanDraft(
 		input.planningContext ?? [],
 		input.researchLanguage,
 	);
-	const researchBudget = depthBudgets[input.selectedDepth];
+	const researchBudget = buildResearchBudget(input.selectedDepth);
 	const effortEstimate = buildEffortEstimate(
 		input.selectedDepth,
 		input.researchLanguage,
@@ -341,7 +359,7 @@ export async function createRevisedResearchPlanDraft(
 	input: CreateRevisedResearchPlanDraftInput,
 	dependencies: CreateFirstResearchPlanDraftDependencies = {},
 ): Promise<ResearchPlanDraftResult> {
-	const researchBudget = depthBudgets[input.selectedDepth];
+	const researchBudget = buildResearchBudget(input.selectedDepth);
 	const effortEstimate = buildEffortEstimate(
 		input.selectedDepth,
 		input.researchLanguage,
@@ -434,7 +452,7 @@ function reviseDefaultResearchPlan(
 		...input.previousPlan,
 		depth: input.selectedDepth,
 		reportIntent: input.reportIntent ?? input.previousPlan.reportIntent,
-		researchBudget: depthBudgets[input.selectedDepth],
+		researchBudget: buildResearchBudget(input.selectedDepth),
 		sourceScope: {
 			...input.previousPlan.sourceScope,
 			planningContextDisclosure: input.contextDisclosure ?? null,
@@ -450,7 +468,7 @@ function validatePlanAgainstSelectedDepth(
 	plan: ResearchPlan,
 	selectedDepth: ResearchDepth,
 ): void {
-	const selectedBudget = depthBudgets[selectedDepth];
+	const selectedBudget = buildResearchBudget(selectedDepth);
 	if (
 		plan.researchBudget.sourceReviewCeiling > selectedBudget.sourceReviewCeiling
 	) {
@@ -459,11 +477,52 @@ function validatePlanAgainstSelectedDepth(
 		);
 	}
 	if (
+		plan.researchBudget.meaningfulPassCeiling >
+		selectedBudget.meaningfulPassCeiling ||
 		plan.researchBudget.synthesisPassCeiling >
-		selectedBudget.synthesisPassCeiling
+			selectedBudget.synthesisPassCeiling
 	) {
 		throw new Error(
-			`Research Plan exceeds ${depthLabels[selectedDepth]} budget: synthesis pass ceiling ${plan.researchBudget.synthesisPassCeiling} is above ${selectedBudget.synthesisPassCeiling}.`,
+			`Research Plan exceeds ${depthLabels[selectedDepth]} budget: meaningful pass ceiling ${Math.max(plan.researchBudget.meaningfulPassCeiling, plan.researchBudget.synthesisPassCeiling)} is above ${selectedBudget.meaningfulPassCeiling}.`,
+		);
+	}
+	if (
+		plan.researchBudget.meaningfulPassFloor <
+		selectedBudget.meaningfulPassFloor
+	) {
+		throw new Error(
+			`Research Plan is below ${depthLabels[selectedDepth]} minimum pass expectation: meaningful pass floor ${plan.researchBudget.meaningfulPassFloor} is below ${selectedBudget.meaningfulPassFloor}.`,
+		);
+	}
+	if (
+		plan.researchBudget.meaningfulPassFloor >
+		plan.researchBudget.meaningfulPassCeiling
+	) {
+		throw new Error(
+			`Research Plan has an invalid pass budget: meaningful pass floor ${plan.researchBudget.meaningfulPassFloor} is above meaningful pass ceiling ${plan.researchBudget.meaningfulPassCeiling}.`,
+		);
+	}
+	if (
+		plan.researchBudget.repairPassCeiling > selectedBudget.repairPassCeiling
+	) {
+		throw new Error(
+			`Research Plan exceeds ${depthLabels[selectedDepth]} budget: repair pass ceiling ${plan.researchBudget.repairPassCeiling} is above ${selectedBudget.repairPassCeiling}.`,
+		);
+	}
+	if (
+		plan.researchBudget.sourceProcessingConcurrency >
+		selectedBudget.sourceProcessingConcurrency
+	) {
+		throw new Error(
+			`Research Plan exceeds ${depthLabels[selectedDepth]} budget: source processing concurrency ${plan.researchBudget.sourceProcessingConcurrency} is above ${selectedBudget.sourceProcessingConcurrency}.`,
+		);
+	}
+	if (
+		plan.researchBudget.modelReasoningConcurrency >
+		selectedBudget.modelReasoningConcurrency
+	) {
+		throw new Error(
+			`Research Plan exceeds ${depthLabels[selectedDepth]} budget: model reasoning concurrency ${plan.researchBudget.modelReasoningConcurrency} is above ${selectedBudget.modelReasoningConcurrency}.`,
 		);
 	}
 }
@@ -496,6 +555,17 @@ function renderResearchPlan(plan: ResearchPlan): string {
 		`${labels.depth}: ${localizedDepthLabels[researchLanguage][plan.depth]}`,
 		`${labels.expectedTime}: ${effortEstimate.expectedTimeBand}`,
 		labels.sourceReviewCeiling(effortEstimate.sourceReviewCeiling),
+		labels.passBudget(
+			plan.researchBudget.meaningfulPassFloor,
+			plan.researchBudget.meaningfulPassCeiling,
+		),
+		labels.repairPassBudget(plan.researchBudget.repairPassCeiling),
+		labels.sourceProcessingConcurrency(
+			plan.researchBudget.sourceProcessingConcurrency,
+		),
+		labels.modelReasoningConcurrency(
+			plan.researchBudget.modelReasoningConcurrency,
+		),
 		...(plan.sourceScope.planningContextDisclosure
 			? ["", plan.sourceScope.planningContextDisclosure]
 			: []),
@@ -687,11 +757,30 @@ function buildEffortEstimate(
 	depth: ResearchDepth,
 	researchLanguage: ResearchLanguage = "en",
 ): ResearchEffortEstimate {
+	const budget = buildResearchBudget(depth);
 	return {
 		selectedDepth: depth,
-		sourceReviewCeiling: depthBudgets[depth].sourceReviewCeiling,
+		sourceReviewCeiling: budget.sourceReviewCeiling,
 		expectedTimeBand: localizedExpectedTimeBands[researchLanguage][depth],
 		relativeCostWarning: localizedCostWarnings[researchLanguage][depth],
+		passBudget: `${budget.meaningfulPassFloor}-${budget.meaningfulPassCeiling} meaningful research passes`,
+		repairPassBudget: `up to ${budget.repairPassCeiling} repair passes`,
+	};
+}
+
+export function buildResearchBudget(
+	depth: ResearchDepth,
+	config: RuntimeConfig = getConfig(),
+): ResearchBudget {
+	const budget = config.deepResearchDepthBudgets[depth];
+	return {
+		sourceReviewCeiling: budget.sourceReviewCeiling,
+		synthesisPassCeiling: budget.meaningfulPassCeiling,
+		meaningfulPassFloor: budget.meaningfulPassFloor,
+		meaningfulPassCeiling: budget.meaningfulPassCeiling,
+		repairPassCeiling: budget.repairPassCeiling,
+		sourceProcessingConcurrency: budget.sourceProcessingConcurrency,
+		modelReasoningConcurrency: budget.modelReasoningConcurrency,
 	};
 }
 

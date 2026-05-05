@@ -46,6 +46,37 @@ async function seedConversation() {
 	sqlite.close();
 }
 
+async function seedCompletedMeaningfulPasses(
+	jobId: string,
+	count: number,
+	startPassNumber = 1,
+) {
+	const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+		await import("./pass-state");
+	for (let index = 0; index < count; index += 1) {
+		const passNumber = startPassNumber + index;
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId,
+			conversationId: "conv-1",
+			passNumber,
+			searchIntent:
+				passNumber === 1
+					? "Initial approved-plan source review"
+					: `Targeted follow-up for pass ${passNumber - 1} Coverage Gaps`,
+			reviewedSourceIds: [],
+			now: new Date(`2026-05-05T10:${10 + index}:00.000Z`),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: checkpoint.id,
+			nextDecision: "synthesize_report",
+			decisionSummary: "Fixture completed meaningful research pass.",
+			now: new Date(`2026-05-05T10:${10 + index}:30.000Z`),
+		});
+	}
+}
+
 describe("audited Deep Research report completion", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-report-completion-${randomUUID()}.db`;
@@ -98,6 +129,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 3);
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -284,6 +316,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 3);
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -381,6 +414,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 3, 2);
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -516,6 +550,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 3, 2);
 		const checkpoint = await upsertResearchPassCheckpoint({
 			userId: "user-1",
 			jobId: created.id,
@@ -584,7 +619,7 @@ describe("audited Deep Research report completion", () => {
 		const tasks = await listResearchTasks({
 			userId: "user-1",
 			jobId: created.id,
-			passNumber: 2,
+			passNumber: 5,
 		});
 		const generatedArtifacts = await db
 			.select({ id: schema.artifacts.id })
@@ -598,7 +633,7 @@ describe("audited Deep Research report completion", () => {
 			reportArtifactId: null,
 			passCheckpoints: expect.arrayContaining([
 				expect.objectContaining({
-					passNumber: 2,
+					passNumber: 5,
 					searchIntent:
 						"Citation audit repair pass for unsupported or contradicted Synthesis Claims",
 				}),
@@ -606,7 +641,7 @@ describe("audited Deep Research report completion", () => {
 		});
 		expect(tasks).toEqual([
 			expect.objectContaining({
-				passNumber: 2,
+				passNumber: 5,
 				status: "pending",
 				assignment: expect.stringContaining(
 					"Repair claim after citation audit",
@@ -641,6 +676,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 2);
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -724,6 +760,7 @@ describe("audited Deep Research report completion", () => {
 			jobId: created.id,
 			now: new Date("2026-05-05T10:06:00.000Z"),
 		});
+		await seedCompletedMeaningfulPasses(created.id, 2);
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",

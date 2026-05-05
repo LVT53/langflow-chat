@@ -66,6 +66,27 @@ async function createApprovedResearchJob() {
 	return approved;
 }
 
+async function seedCompletedMeaningfulPass(jobId: string, passNumber = 1) {
+	const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+		await import("./pass-state");
+	const checkpoint = await upsertResearchPassCheckpoint({
+		userId: "user-1",
+		jobId,
+		conversationId: "conv-1",
+		passNumber,
+		searchIntent: "Initial approved-plan source review",
+		reviewedSourceIds: [],
+		now: new Date("2026-05-05T10:08:30.000Z"),
+	});
+	await completeResearchPassCheckpoint({
+		userId: "user-1",
+		checkpointId: checkpoint.id,
+		nextDecision: "continue_research",
+		decisionSummary: "Continue with targeted follow-up work.",
+		now: new Date("2026-05-05T10:08:45.000Z"),
+	});
+}
+
 describe("real Deep Research workflow stepper", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-workflow-${randomUUID()}.db`;
@@ -186,7 +207,7 @@ describe("real Deep Research workflow stepper", () => {
 		);
 	});
 
-	it("completes an audited report when reviewed coverage is sufficient", async () => {
+	it("continues research instead of publishing when the minimum pass floor is unmet", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
 		const {
@@ -194,10 +215,8 @@ describe("real Deep Research workflow stepper", () => {
 			markResearchSourceReviewed,
 			listResearchSources,
 		} = await import("./sources");
+		const { listResearchTasks } = await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
-		const { getArtifactForUser } = await import(
-			"$lib/server/services/knowledge/store"
-		);
 
 		const discoveredSource = await saveDiscoveredResearchSource({
 			userId: "user-1",
@@ -230,9 +249,6 @@ describe("real Deep Research workflow stepper", () => {
 			jobId: approved.id,
 			now: new Date("2026-05-05T10:20:00.000Z"),
 		});
-		const completedReport = result?.job.reportArtifactId
-			? await getArtifactForUser("user-1", result.job.reportArtifactId)
-			: null;
 		const [conversation] = await db
 			.select({
 				status: schema.conversations.status,
@@ -244,41 +260,34 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			jobId: approved.id,
 		});
+		const followUpTasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+			passNumber: 2,
+		});
 
 		expect(result).toMatchObject({
 			advanced: true,
-			outcome: "report_completed",
+			outcome: "coverage_continuation_created",
 			job: {
 				id: approved.id,
-				status: "completed",
-				stage: "report_ready",
-				completedAt: new Date("2026-05-05T10:20:00.000Z").getTime(),
+				status: "running",
+				stage: "research_tasks",
 			},
 		});
-		expect(completedReport).toMatchObject({
-			type: "generated_output",
-			retrievalClass: "durable",
-			metadata: {
-				deepResearchReport: true,
-				deepResearchReportKind: "audited",
-				deepResearchJobId: approved.id,
-			},
-		});
-		expect(completedReport?.contentText).toContain(
-			"EU and US AI copyright training data rules require provenance records and rights-risk review.",
-		);
 		expect(conversation).toEqual({
-			status: "sealed",
-			sealedAt: new Date("2026-05-05T10:20:00.000Z"),
+			status: "open",
+			sealedAt: null,
 		});
 		expect(sources).toEqual([
 			expect.objectContaining({
 				id: discoveredSource.id,
-				status: "cited",
+				status: "reviewed",
 				reviewedAt: "2026-05-05T10:08:00.000Z",
-				citedAt: "2026-05-05T10:20:00.000Z",
+				citedAt: null,
 			}),
 		]);
+		expect(followUpTasks.length).toBeGreaterThan(0);
 	});
 
 	it("creates repair work instead of a normal report when reviewed sources lack supported Synthesis Claims", async () => {
@@ -480,7 +489,11 @@ describe("real Deep Research workflow stepper", () => {
 
 		expect(result).toMatchObject({
 			advanced: true,
-			outcome: "report_completed",
+			outcome: "coverage_continuation_created",
+			job: {
+				status: "running",
+				stage: "research_tasks",
+			},
 		});
 		expect(sources).toEqual([
 			expect.objectContaining({
@@ -573,7 +586,7 @@ describe("real Deep Research workflow stepper", () => {
 		expect(sources.filter((source) => source.reviewedAt)).toEqual([
 			expect.objectContaining({
 				id: primarySource.id,
-				status: "cited",
+				status: "reviewed",
 			}),
 		]);
 		expect(timeline).toEqual(
@@ -1094,10 +1107,10 @@ describe("real Deep Research workflow stepper", () => {
 			job: {
 				id: approved.id,
 				status: "completed",
-				stage: "report_ready",
+				stage: "evidence_limitation_memo_ready",
 			},
 		});
-		expect(reportArtifact?.contentText).toContain("## Report Limitations");
+		expect(reportArtifact?.contentText).not.toContain("# Research Report:");
 		expect(reportArtifact?.contentText).toContain(
 			"Depth budget is exhausted before enough independent reviewed evidence could support this key question.",
 		);
@@ -1234,6 +1247,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("completes pending Research Tasks and finishes an audited report from the task pass", async () => {
 		const approved = await createApprovedResearchJob();
+		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
 		const {
 			saveDiscoveredResearchSource,
@@ -1268,7 +1282,7 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			jobId: approved.id,
 			conversationId: "conv-1",
-			passNumber: 1,
+			passNumber: 2,
 			gaps: [
 				{
 					id: "gap-practical-implications",
@@ -1297,7 +1311,7 @@ describe("real Deep Research workflow stepper", () => {
 		const tasks = await listResearchTasks({
 			userId: "user-1",
 			jobId: approved.id,
-			passNumber: 1,
+			passNumber: 2,
 		});
 		const timeline = await listResearchTimelineEvents({
 			userId: "user-1",
@@ -1435,6 +1449,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("resumes a workflow-owned running Research Task after a crash at claim time", async () => {
 		const approved = await createApprovedResearchJob();
+		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
 		const {
 			saveDiscoveredResearchSource,
@@ -1469,7 +1484,7 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			jobId: approved.id,
 			conversationId: "conv-1",
-			passNumber: 1,
+			passNumber: 2,
 			gaps: [
 				{
 					id: "gap-task-claim-crash",
@@ -1483,9 +1498,9 @@ describe("real Deep Research workflow stepper", () => {
 		await claimResearchTasks({
 			userId: "user-1",
 			jobId: approved.id,
-			passNumber: 1,
+			passNumber: 2,
 			limit: 1,
-			claimToken: `workflow:${approved.id}:1`,
+			claimToken: `workflow:${approved.id}:2`,
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
 		await db
@@ -1505,7 +1520,7 @@ describe("real Deep Research workflow stepper", () => {
 		const tasks = await listResearchTasks({
 			userId: "user-1",
 			jobId: approved.id,
-			passNumber: 1,
+			passNumber: 2,
 		});
 		const resumePoints = await listResearchResumePoints({
 			userId: "user-1",
@@ -1542,6 +1557,8 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("reattaches an assembled report artifact on retry without creating duplicates", async () => {
 		const approved = await createApprovedResearchJob();
+		await seedCompletedMeaningfulPass(approved.id, 1);
+		await seedCompletedMeaningfulPass(approved.id, 2);
 		const { db } = await import("$lib/server/db");
 		const {
 			saveDiscoveredResearchSource,
@@ -1687,6 +1704,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("turns non-critical failed Research Tasks into audited report limitations", async () => {
 		const approved = await createApprovedResearchJob();
+		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
 		const {
 			saveDiscoveredResearchSource,
@@ -1722,7 +1740,7 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			jobId: approved.id,
 			conversationId: "conv-1",
-			passNumber: 1,
+			passNumber: 2,
 			gaps: [
 				{
 					id: "gap-market-commentary",

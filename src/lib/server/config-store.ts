@@ -9,7 +9,9 @@ export type { ModelConfig } from "./env";
 import type { ModelId } from "$lib/types";
 import {
 	defaultDeepResearchModelSelections,
+	normalizeDeepResearchDepthBudgetPolicy,
 	normalizeConfiguredModelId,
+	type DeepResearchDepthBudgetPolicy,
 	type DeepResearchModelSelections,
 } from "$lib/deep-research-models";
 import { db } from "./db";
@@ -59,6 +61,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS",
 	"DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY",
 	"DEEP_RESEARCH_WORKER_USER_CONCURRENCY",
+	"DEEP_RESEARCH_DEPTH_BUDGETS_JSON",
 	"DEEP_RESEARCH_PLAN_MODEL",
 	"DEEP_RESEARCH_PLAN_REVISION_MODEL",
 	"DEEP_RESEARCH_SOURCE_REVIEW_MODEL",
@@ -130,6 +133,7 @@ export interface RuntimeConfig {
 	deepResearchWorkerStaleTimeoutMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchDepthBudgets: DeepResearchDepthBudgetPolicy;
 	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
@@ -222,6 +226,9 @@ function buildDefaultConfig(): RuntimeConfig {
 		deepResearchModels: {
 			...(envConfig.deepResearchModels ?? defaultDeepResearchModelSelections()),
 		},
+		deepResearchDepthBudgets: normalizeDeepResearchDepthBudgetPolicy(
+			envConfig.deepResearchDepthBudgets,
+		),
 		braveSearchApiKey: envConfig.braveSearchApiKey,
 		deepResearchEnabled: envConfig.deepResearchEnabled ?? false,
 	};
@@ -411,6 +418,16 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) {
 			config.deepResearchWorkerUserConcurrency = Math.max(0, parsed);
+		}
+	},
+	DEEP_RESEARCH_DEPTH_BUDGETS_JSON: (config, value) => {
+		try {
+			config.deepResearchDepthBudgets = normalizeDeepResearchDepthBudgetPolicy(
+				JSON.parse(value),
+			);
+		} catch {
+			config.deepResearchDepthBudgets =
+				normalizeDeepResearchDepthBudgetPolicy(undefined);
 		}
 	},
 	DEEP_RESEARCH_PLAN_MODEL: (config, value) => {
@@ -845,6 +862,9 @@ export function getResolvedAdminConfigValues(
 		),
 		DEEP_RESEARCH_WORKER_USER_CONCURRENCY: String(
 			config.deepResearchWorkerUserConcurrency,
+		),
+		DEEP_RESEARCH_DEPTH_BUDGETS_JSON: JSON.stringify(
+			config.deepResearchDepthBudgets,
 		),
 		DEEP_RESEARCH_PLAN_MODEL: config.deepResearchModels.plan_generation,
 		DEEP_RESEARCH_PLAN_REVISION_MODEL:

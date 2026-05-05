@@ -114,6 +114,11 @@ export type DeepResearchReportIntent =
 export interface DeepResearchBudget {
 	sourceReviewCeiling: number;
 	synthesisPassCeiling: number;
+	meaningfulPassFloor?: number;
+	meaningfulPassCeiling?: number;
+	repairPassCeiling?: number;
+	sourceProcessingConcurrency?: number;
+	modelReasoningConcurrency?: number;
 }
 
 export type DeepResearchJobStatus =
@@ -130,6 +135,8 @@ export interface DeepResearchEffortEstimate {
 	expectedTimeBand: string;
 	sourceReviewCeiling: number;
 	relativeCostWarning: string;
+	passBudget?: string;
+	repairPassBudget?: string;
 }
 
 export interface DeepResearchPlanRaw {

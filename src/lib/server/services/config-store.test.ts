@@ -186,5 +186,44 @@ describe("Knowledge Store Config", () => {
 				report_writing: "model1",
 			});
 		});
+
+		it("getConfig() should expose and override Deep Research depth budget policy", async () => {
+			expect(getConfig().deepResearchDepthBudgets.focused).toMatchObject({
+				sourceReviewCeiling: 24,
+				meaningfulPassFloor: 2,
+				meaningfulPassCeiling: 3,
+				repairPassCeiling: 1,
+				sourceProcessingConcurrency: 6,
+				modelReasoningConcurrency: 2,
+			});
+
+			adminConfigRows = [
+				{
+					key: "DEEP_RESEARCH_DEPTH_BUDGETS_JSON",
+					value: JSON.stringify({
+						focused: {
+							sourceReviewCeiling: 18,
+							meaningfulPassFloor: 2,
+							meaningfulPassCeiling: 4,
+							repairPassCeiling: 2,
+							sourceProcessingConcurrency: 5,
+							modelReasoningConcurrency: 2,
+						},
+					}),
+				},
+			];
+
+			await refreshConfig();
+
+			expect(getConfig().deepResearchDepthBudgets.focused).toEqual({
+				sourceReviewCeiling: 18,
+				meaningfulPassFloor: 2,
+				meaningfulPassCeiling: 4,
+				repairPassCeiling: 2,
+				sourceProcessingConcurrency: 5,
+				modelReasoningConcurrency: 2,
+			});
+			expect(getConfig().deepResearchDepthBudgets.standard.sourceReviewCeiling).toBe(75);
+		});
 	});
 });
