@@ -26,6 +26,8 @@ let {
 	onRetryFileProductionJob = undefined,
 	onCancelFileProductionJob = undefined,
 	onCancelDeepResearchJob = undefined,
+	onEditDeepResearchPlan = undefined,
+	onApproveDeepResearchPlan = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
@@ -42,6 +44,8 @@ let {
 	onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
 	onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
 	onCancelDeepResearchJob?: ((jobId: string) => void | Promise<void>) | undefined;
+	onEditDeepResearchPlan?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
+	onApproveDeepResearchPlan?: ((jobId: string) => void | Promise<void>) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -195,7 +199,12 @@ async function alignToBottomAfterRender() {
 			</div>
 		{:else}
 			{#each deepResearchJobs as job (job.id)}
-				<ResearchCard job={job} onCancel={onCancelDeepResearchJob} />
+				<ResearchCard
+					job={job}
+					onCancel={onCancelDeepResearchJob}
+					onEdit={onEditDeepResearchPlan}
+					onApprove={onApproveDeepResearchPlan}
+				/>
 			{/each}
 			{#each dedupedMessages as message, i (message.renderKey ?? message.id)}
 				<MessageBubble

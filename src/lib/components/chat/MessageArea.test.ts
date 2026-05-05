@@ -82,6 +82,7 @@ describe('MessageArea', () => {
 			updatedAt: overrides.updatedAt ?? now,
 			completedAt: overrides.completedAt ?? null,
 			cancelledAt: overrides.cancelledAt ?? null,
+			...overrides,
 		};
 	}
 
@@ -170,6 +171,50 @@ describe('MessageArea', () => {
 		await fireEvent.click(getByRole('button', { name: 'Cancel Deep Research' }));
 
 		expect(onCancelDeepResearchJob).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('routes Deep Research Plan Edit and approval through card callbacks', async () => {
+		const onEditDeepResearchPlan = vi.fn(async () => {});
+		const onApproveDeepResearchPlan = vi.fn(async () => {});
+		const { getByRole, getByLabelText } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'awaiting_approval',
+					stage: 'plan_drafted',
+					plan: {
+						version: 1,
+						renderedPlan: 'Research Plan\n\nGoal: Compare battery recycling policy.',
+						contextDisclosure: null,
+						effortEstimate: {
+							selectedDepth: 'standard',
+							expectedTimeBand: '30-60 minutes',
+							sourceReviewCeiling: 40,
+							relativeCostWarning:
+								'Moderate relative cost; use for serious multi-source synthesis.',
+						},
+					},
+				}),
+			],
+			onEditDeepResearchPlan,
+			onApproveDeepResearchPlan,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Edit Research Plan' }));
+		await fireEvent.input(getByLabelText('Plan edit instructions'), {
+			target: { value: 'Include more primary sources.' },
+		});
+		await fireEvent.click(getByRole('button', { name: 'Submit Plan Edit' }));
+		await fireEvent.click(getByRole('button', { name: 'Approve Research Plan' }));
+
+		expect(onEditDeepResearchPlan).toHaveBeenCalledWith(
+			'research-job-1',
+			'Include more primary sources.'
+		);
+		expect(onApproveDeepResearchPlan).toHaveBeenCalledWith('research-job-1');
 	});
 
 	it('scrolls to reveal file-production cards when they appear at the end of the chat', async () => {

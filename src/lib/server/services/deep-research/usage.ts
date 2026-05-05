@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq } from "drizzle-orm";
+import { deepResearchUsageRecords } from "$lib/server/db/schema";
 import type { ResearchTimelineStage } from "./timeline";
 
 export type ResearchUsageSource = "provider" | "estimated";
@@ -47,6 +50,18 @@ export type ResearchUsageRecord = {
 	runtimeMs: number | null;
 	costUsdMicros: number;
 };
+
+export type PersistedResearchUsageRecord = ResearchUsageRecord & {
+	id: string;
+	createdAt: string;
+};
+
+export type ListResearchUsageRecordsInput = {
+	userId: string;
+	jobId: string;
+};
+
+type DeepResearchUsageRecordRow = typeof deepResearchUsageRecords.$inferSelect;
 
 export type BuildPlanGenerationResearchUsageRecordInput = {
 	jobId: string;
@@ -101,6 +116,91 @@ export function buildPlanGenerationResearchUsageRecord(
 		usageSource: usage.source ?? "estimated",
 		runtimeMs: input.runtimeMs ?? null,
 		costUsdMicros: normalizeCount(input.costUsdMicros),
+	};
+}
+
+export async function saveResearchUsageRecord(
+	record: ResearchUsageRecord,
+): Promise<PersistedResearchUsageRecord> {
+	const { db } = await import("$lib/server/db");
+	const [row] = await db
+		.insert(deepResearchUsageRecords)
+		.values({
+			id: randomUUID(),
+			jobId: record.jobId,
+			taskId: record.taskId,
+			conversationId: record.conversationId,
+			userId: record.userId,
+			stage: record.stage,
+			operation: record.operation,
+			modelId: record.modelId,
+			modelDisplayName: record.modelDisplayName,
+			providerId: record.providerId,
+			providerDisplayName: record.providerDisplayName,
+			billingMonth: record.billingMonth,
+			occurredAt: new Date(record.occurredAt),
+			promptTokens: record.promptTokens,
+			cachedInputTokens: record.cachedInputTokens,
+			cacheHitTokens: record.cacheHitTokens,
+			cacheMissTokens: record.cacheMissTokens,
+			completionTokens: record.completionTokens,
+			reasoningTokens: record.reasoningTokens,
+			totalTokens: record.totalTokens,
+			usageSource: record.usageSource,
+			runtimeMs: record.runtimeMs,
+			costUsdMicros: record.costUsdMicros,
+		})
+		.returning();
+
+	return mapUsageRecordRow(row);
+}
+
+export async function listResearchUsageRecords(
+	input: ListResearchUsageRecordsInput,
+): Promise<PersistedResearchUsageRecord[]> {
+	const { db } = await import("$lib/server/db");
+	const rows = await db
+		.select()
+		.from(deepResearchUsageRecords)
+		.where(
+			and(
+				eq(deepResearchUsageRecords.userId, input.userId),
+				eq(deepResearchUsageRecords.jobId, input.jobId),
+			),
+		)
+		.orderBy(asc(deepResearchUsageRecords.occurredAt));
+
+	return rows.map(mapUsageRecordRow);
+}
+
+function mapUsageRecordRow(
+	row: DeepResearchUsageRecordRow,
+): PersistedResearchUsageRecord {
+	return {
+		id: row.id,
+		jobId: row.jobId,
+		taskId: row.taskId,
+		conversationId: row.conversationId,
+		userId: row.userId,
+		stage: row.stage as ResearchTimelineStage,
+		operation: row.operation as ResearchUsageOperation,
+		modelId: row.modelId,
+		modelDisplayName: row.modelDisplayName,
+		providerId: row.providerId,
+		providerDisplayName: row.providerDisplayName,
+		billingMonth: row.billingMonth,
+		occurredAt: row.occurredAt.toISOString(),
+		promptTokens: row.promptTokens,
+		cachedInputTokens: row.cachedInputTokens,
+		cacheHitTokens: row.cacheHitTokens,
+		cacheMissTokens: row.cacheMissTokens,
+		completionTokens: row.completionTokens,
+		reasoningTokens: row.reasoningTokens,
+		totalTokens: row.totalTokens,
+		usageSource: row.usageSource as ResearchUsageSource,
+		runtimeMs: row.runtimeMs,
+		costUsdMicros: row.costUsdMicros,
+		createdAt: row.createdAt.toISOString(),
 	};
 }
 

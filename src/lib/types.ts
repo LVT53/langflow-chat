@@ -101,7 +101,7 @@ export interface Conversation {
 
 export type DeepResearchDepth = "focused" | "standard" | "max";
 
-export type DeepResearchPlanStatus = "awaiting_approval";
+export type DeepResearchPlanStatus = "awaiting_approval" | "approved";
 
 export interface DeepResearchBudget {
 	sourceReviewCeiling: number;
@@ -111,6 +111,7 @@ export interface DeepResearchBudget {
 export type DeepResearchJobStatus =
 	| "awaiting_plan"
 	| "awaiting_approval"
+	| "approved"
 	| "running"
 	| "completed"
 	| "failed"

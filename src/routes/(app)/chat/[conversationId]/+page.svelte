@@ -26,7 +26,11 @@ import {
 	cancelFileProductionJob as cancelFileProductionJobRequest,
 	retryFileProductionJob as retryFileProductionJobRequest,
 } from "$lib/client/api/file-production";
-import { cancelDeepResearchJob as cancelDeepResearchJobRequest } from "$lib/client/api/deep-research";
+import {
+	approveDeepResearchPlan as approveDeepResearchPlanRequest,
+	cancelDeepResearchJob as cancelDeepResearchJobRequest,
+	editDeepResearchPlan as editDeepResearchPlanRequest,
+} from "$lib/client/api/deep-research";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
@@ -989,6 +993,26 @@ async function handleCancelDeepResearchJob(jobId: string) {
 	}
 }
 
+async function handleEditDeepResearchPlan(jobId: string, instructions: string) {
+	try {
+		const job = await editDeepResearchPlanRequest(jobId, instructions);
+		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to edit Research Plan";
+		throw err;
+	}
+}
+
+async function handleApproveDeepResearchPlan(jobId: string) {
+	try {
+		const job = await approveDeepResearchPlanRequest(jobId);
+		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to approve Research Plan";
+		throw err;
+	}
+}
+
 $effect(() => {
 	const conversationId = data.conversation?.id;
 	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
@@ -1778,6 +1802,8 @@ function handleDrop(event: DragEvent) {
 						onRetryFileProductionJob={handleRetryFileProductionJob}
 						onCancelFileProductionJob={handleCancelFileProductionJob}
 						onCancelDeepResearchJob={handleCancelDeepResearchJob}
+						onEditDeepResearchPlan={handleEditDeepResearchPlan}
+						onApproveDeepResearchPlan={handleApproveDeepResearchPlan}
 					/>
 				{/if}
 			</div>

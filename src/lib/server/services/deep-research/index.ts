@@ -11,10 +11,30 @@ import type {
 } from '$lib/types';
 import {
 	createFirstResearchPlanDraft,
+	createRevisedResearchPlanDraft,
 	type PlanningContextItem,
 	type ResearchLanguage,
 	type ResearchPlanDraftRecord,
 } from './planning';
+import {
+	createPlanGenerationTimelineEvent,
+	saveResearchTimelineEvent,
+} from './timeline';
+import {
+	buildPlanGenerationResearchUsageRecord,
+	saveResearchUsageRecord,
+	type ResearchProviderUsageSnapshot,
+} from './usage';
+
+export type PlanGenerationUsageInput = {
+	modelId: string;
+	modelDisplayName?: string | null;
+	providerId?: string | null;
+	providerDisplayName?: string | null;
+	runtimeMs?: number | null;
+	providerUsage?: ResearchProviderUsageSnapshot | null;
+	costUsdMicros?: number | null;
+};
 
 export type StartDeepResearchJobShellInput = {
 	userId: string;
@@ -24,6 +44,7 @@ export type StartDeepResearchJobShellInput = {
 	depth: DeepResearchDepth;
 	researchLanguage?: ResearchLanguage;
 	planningContext?: PlanningContextItem[];
+	planGenerationUsage?: PlanGenerationUsageInput | null;
 	now?: Date;
 };
 
@@ -33,6 +54,20 @@ export type AssertCanStartDeepResearchJobInput = {
 };
 
 export type CancelPrePlanDeepResearchJobInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type EditDeepResearchPlanInput = {
+	userId: string;
+	jobId: string;
+	editInstruction: string;
+	researchLanguage?: ResearchLanguage;
+	now?: Date;
+};
+
+export type ApproveDeepResearchPlanInput = {
 	userId: string;
 	jobId: string;
 	now?: Date;
@@ -54,10 +89,30 @@ export class DeepResearchJobStartError extends Error {
 	}
 }
 
+export class DeepResearchPlanActionError extends Error {
+	constructor(
+		public readonly code:
+			| 'plan_already_approved'
+			| 'plan_not_editable'
+			| 'plan_not_approvable',
+		message: string,
+		public readonly status: number
+	) {
+		super(message);
+		this.name = 'DeepResearchPlanActionError';
+	}
+}
+
 export function isDeepResearchJobStartError(
 	error: unknown
 ): error is DeepResearchJobStartError {
 	return error instanceof DeepResearchJobStartError;
+}
+
+export function isDeepResearchPlanActionError(
+	error: unknown
+): error is DeepResearchPlanActionError {
+	return error instanceof DeepResearchPlanActionError;
 }
 
 export async function startDeepResearchJobShell(
@@ -108,6 +163,36 @@ export async function startDeepResearchJobShell(
 		})
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
+
+	await saveResearchTimelineEvent(
+		createPlanGenerationTimelineEvent({
+			jobId: job.id,
+			conversationId: input.conversationId,
+			userId: input.userId,
+			stage: 'plan_generation',
+			researchLanguage: input.researchLanguage ?? 'en',
+			occurredAt: now,
+			assumptions: draft.rawPlan.constraints,
+		})
+	);
+
+	if (input.planGenerationUsage) {
+		await saveResearchUsageRecord(
+			buildPlanGenerationResearchUsageRecord({
+				jobId: job.id,
+				conversationId: input.conversationId,
+				userId: input.userId,
+				modelId: input.planGenerationUsage.modelId,
+				modelDisplayName: input.planGenerationUsage.modelDisplayName,
+				providerId: input.planGenerationUsage.providerId,
+				providerDisplayName: input.planGenerationUsage.providerDisplayName,
+				occurredAt: now,
+				runtimeMs: input.planGenerationUsage.runtimeMs,
+				providerUsage: input.planGenerationUsage.providerUsage,
+				costUsdMicros: input.planGenerationUsage.costUsdMicros,
+			})
+		);
+	}
 
 	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft));
 }
@@ -201,6 +286,129 @@ export async function cancelPrePlanDeepResearchJob(
 	if (!job) return null;
 	const currentPlans = await loadCurrentPlansByJobId([job.id]);
 	return mapDeepResearchJob(job, currentPlans.get(job.id) ?? null);
+}
+
+export async function editDeepResearchPlan(
+	input: EditDeepResearchPlanInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+
+	if (!job) return null;
+	if (job.status === 'approved') {
+		throw new DeepResearchPlanActionError(
+			'plan_already_approved',
+			'Approved Research Plans cannot be edited',
+			409
+		);
+	}
+	if (job.status !== 'awaiting_approval') {
+		throw new DeepResearchPlanActionError(
+			'plan_not_editable',
+			'This Deep Research Plan cannot be edited in its current state',
+			409
+		);
+	}
+
+	const [currentPlanRow] = await db
+		.select()
+		.from(deepResearchPlanVersions)
+		.where(eq(deepResearchPlanVersions.jobId, job.id))
+		.orderBy(desc(deepResearchPlanVersions.version))
+		.limit(1);
+
+	if (!currentPlanRow) return null;
+
+	const currentPlan = mapResearchPlanVersionRow(currentPlanRow);
+	if (!currentPlan.rawPlan) return null;
+
+	const draft = await createRevisedResearchPlanDraft(
+		{
+			jobId: job.id,
+			previousPlan: currentPlan.rawPlan,
+			previousVersion: currentPlan.version,
+			editInstruction: input.editInstruction,
+			selectedDepth: job.depth as DeepResearchDepth,
+			researchLanguage: input.researchLanguage ?? 'en',
+			contextDisclosure: currentPlan.contextDisclosure ?? null,
+		},
+		{
+			repository: {
+				saveResearchPlanDraft: (draftRecord) =>
+					saveResearchPlanDraft(draftRecord, now),
+			},
+		}
+	);
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'awaiting_approval',
+			stage: 'plan_revised',
+			updatedAt: now,
+		})
+		.where(eq(deepResearchJobs.id, job.id))
+		.returning();
+
+	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft));
+}
+
+export async function approveDeepResearchPlan(
+	input: ApproveDeepResearchPlanInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+
+	if (!job) return null;
+	if (job.status === 'approved') {
+		const currentPlans = await loadCurrentPlansByJobId([job.id]);
+		return mapDeepResearchJob(job, currentPlans.get(job.id) ?? null);
+	}
+	if (job.status !== 'awaiting_approval') {
+		throw new DeepResearchPlanActionError(
+			'plan_not_approvable',
+			'This Deep Research Plan cannot be approved in its current state',
+			409
+		);
+	}
+
+	const [currentPlanRow] = await db
+		.select()
+		.from(deepResearchPlanVersions)
+		.where(eq(deepResearchPlanVersions.jobId, job.id))
+		.orderBy(desc(deepResearchPlanVersions.version))
+		.limit(1);
+
+	if (!currentPlanRow) return null;
+
+	const [approvedPlanRow] = await db
+		.update(deepResearchPlanVersions)
+		.set({
+			status: 'approved',
+			updatedAt: now,
+		})
+		.where(eq(deepResearchPlanVersions.id, currentPlanRow.id))
+		.returning();
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'approved',
+			stage: 'plan_approved',
+			updatedAt: now,
+		})
+		.where(eq(deepResearchJobs.id, job.id))
+		.returning();
+
+	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(approvedPlanRow));
 }
 
 function buildJobTitle(userRequest: string): string {

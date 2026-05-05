@@ -11,9 +11,15 @@
 	}: {
 		job: DeepResearchJob;
 		onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
-		onEdit?: ((jobId: string) => void | Promise<void>) | undefined;
+		onEdit?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
 		onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
 	} = $props();
+
+	let isEditingPlan = $state(false);
+	let planEditInstructions = $state('');
+	let planEditPending = $state(false);
+	let planApprovalPending = $state(false);
+	let planEditError = $state<string | null>(null);
 
 	let canCancel = $derived(job.status === 'awaiting_plan' || job.status === 'awaiting_approval');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
@@ -28,6 +34,7 @@
 	const statusKeys: Record<DeepResearchJobStatus, I18nKey> = {
 		awaiting_plan: 'deepResearch.status.awaitingPlan',
 		awaiting_approval: 'deepResearch.status.awaitingApproval',
+		approved: 'deepResearch.status.approved',
 		running: 'deepResearch.status.running',
 		completed: 'deepResearch.status.completed',
 		failed: 'deepResearch.status.failed',
@@ -39,14 +46,41 @@
 		void onCancel(job.id);
 	}
 
-	function approvePlan() {
-		if (!canApprovePlan || !onApprove) return;
-		void onApprove(job.id);
+	async function approvePlan() {
+		if (!canApprovePlan || !onApprove || planApprovalPending) return;
+		planApprovalPending = true;
+		try {
+			await onApprove(job.id);
+		} catch (err) {
+			planEditError = err instanceof Error ? err.message : $t('deepResearch.approvePlanFailed');
+		} finally {
+			planApprovalPending = false;
+		}
 	}
 
 	function editPlan() {
 		if (!canApprovePlan || !onEdit) return;
-		void onEdit(job.id);
+		isEditingPlan = true;
+		planEditError = null;
+	}
+
+	async function submitPlanEdit(event: SubmitEvent) {
+		event.preventDefault();
+		if (!canApprovePlan || !onEdit || planEditPending || planApprovalPending) return;
+		const trimmedInstructions = planEditInstructions.trim();
+		if (!trimmedInstructions) return;
+
+		planEditPending = true;
+		planEditError = null;
+		try {
+			await onEdit(job.id, trimmedInstructions);
+			planEditInstructions = '';
+			isEditingPlan = false;
+		} catch (err) {
+			planEditError = err instanceof Error ? err.message : $t('deepResearch.editPlanFailed');
+		} finally {
+			planEditPending = false;
+		}
 	}
 </script>
 
@@ -97,6 +131,48 @@
 			{/if}
 
 			<div class="research-card__plan-text">{activePlan.renderedPlan}</div>
+
+			{#if isEditingPlan}
+				<form class="research-card__edit-form" onsubmit={submitPlanEdit}>
+					<label class="research-card__edit-label" for={`${job.id}-plan-edit`}>
+						{$t('deepResearch.planEditInstructions')}
+					</label>
+					<textarea
+						id={`${job.id}-plan-edit`}
+						class="research-card__edit-textarea"
+						bind:value={planEditInstructions}
+						disabled={planEditPending}
+						rows="3"
+					></textarea>
+					{#if planEditError}
+						<p class="research-card__error" role="alert">{planEditError}</p>
+					{/if}
+					<div class="research-card__edit-actions">
+						<button
+							type="submit"
+							class="research-card__action research-card__action--primary"
+							disabled={planEditPending || !planEditInstructions.trim()}
+						>
+							{planEditPending
+								? $t('deepResearch.submittingPlanEdit')
+								: $t('deepResearch.submitPlanEdit')}
+						</button>
+						<button
+							type="button"
+							class="research-card__action"
+							disabled={planEditPending}
+							onclick={() => {
+								isEditingPlan = false;
+								planEditError = null;
+							}}
+						>
+							{$t('common.cancel')}
+						</button>
+					</div>
+				</form>
+			{:else if planEditError}
+				<p class="research-card__error" role="alert">{planEditError}</p>
+			{/if}
 		</section>
 	{/if}
 
@@ -107,7 +183,7 @@
 					type="button"
 					class="research-card__action research-card__action--primary"
 					onclick={approvePlan}
-					disabled={!onApprove}
+					disabled={!onApprove || planApprovalPending || planEditPending}
 					aria-label={$t('deepResearch.approvePlanLabel')}
 					title={$t('deepResearch.approvePlanLabel')}
 				>
@@ -117,7 +193,7 @@
 					type="button"
 					class="research-card__action"
 					onclick={editPlan}
-					disabled={!onEdit}
+					disabled={!onEdit || planApprovalPending || planEditPending}
 					aria-label={$t('deepResearch.editPlanLabel')}
 					title={$t('deepResearch.editPlanLabel')}
 				>
@@ -128,7 +204,7 @@
 				type="button"
 				class="research-card__action research-card__cancel"
 				onclick={cancelJob}
-				disabled={!onCancel}
+				disabled={!onCancel || planApprovalPending || planEditPending}
 				aria-label={$t('deepResearch.cancelLabel')}
 				title={$t('deepResearch.cancelLabel')}
 			>
@@ -287,6 +363,49 @@
 		font-size: 0.82rem;
 		line-height: 1.45;
 		color: var(--text-secondary);
+	}
+
+	.research-card__edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+	}
+
+	.research-card__edit-label {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: var(--text-primary);
+	}
+
+	.research-card__edit-textarea {
+		min-height: 5rem;
+		resize: vertical;
+		border: 1px solid var(--border-subtle);
+		border-radius: 7px;
+		background: var(--surface-page);
+		padding: var(--space-sm);
+		font: inherit;
+		font-size: 0.84rem;
+		line-height: 1.45;
+		color: var(--text-primary);
+	}
+
+	.research-card__edit-textarea:focus {
+		outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+		outline-offset: 2px;
+	}
+
+	.research-card__edit-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-xs);
+		justify-content: flex-end;
+	}
+
+	.research-card__error {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--danger);
 	}
 
 	.research-card__action {

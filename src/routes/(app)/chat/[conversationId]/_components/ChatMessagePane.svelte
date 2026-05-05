@@ -24,6 +24,8 @@
 		onRetryFileProductionJob,
 		onCancelFileProductionJob,
 		onCancelDeepResearchJob,
+		onEditDeepResearchPlan,
+		onApproveDeepResearchPlan,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
@@ -38,6 +40,8 @@
 		onRetryFileProductionJob?: (jobId: string) => void | Promise<void>;
 		onCancelFileProductionJob?: (jobId: string) => void | Promise<void>;
 		onCancelDeepResearchJob?: (jobId: string) => void | Promise<void>;
+		onEditDeepResearchPlan?: (jobId: string, instructions: string) => void | Promise<void>;
+		onApproveDeepResearchPlan?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -56,6 +60,8 @@
 		{onRetryFileProductionJob}
 		{onCancelFileProductionJob}
 		{onCancelDeepResearchJob}
+		{onEditDeepResearchPlan}
+		{onApproveDeepResearchPlan}
 	/>
 </div>
 

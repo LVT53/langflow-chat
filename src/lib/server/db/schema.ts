@@ -116,6 +116,89 @@ export const deepResearchPlanVersions = sqliteTable('deep_research_plan_versions
   ),
 }));
 
+export const deepResearchTimelineEvents = sqliteTable('deep_research_timeline_events', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  taskId: text('task_id'),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  kind: text('kind').notNull(),
+  occurredAt: integer('occurred_at', { mode: 'timestamp' }).notNull(),
+  messageKey: text('message_key').notNull(),
+  messageParamsJson: text('message_params_json').notNull(),
+  sourceCountsJson: text('source_counts_json').notNull(),
+  assumptionsJson: text('assumptions_json').notNull(),
+  warningsJson: text('warnings_json').notNull(),
+  summary: text('summary').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobOccurredIdx: index('deep_research_timeline_events_job_occurred_idx').on(
+    table.jobId,
+    table.occurredAt
+  ),
+  conversationOccurredIdx: index('deep_research_timeline_events_conversation_occurred_idx').on(
+    table.conversationId,
+    table.occurredAt
+  ),
+  userOccurredIdx: index('deep_research_timeline_events_user_occurred_idx').on(
+    table.userId,
+    table.occurredAt
+  ),
+}));
+
+export const deepResearchUsageRecords = sqliteTable('deep_research_usage_records', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  taskId: text('task_id'),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(),
+  operation: text('operation').notNull(),
+  modelId: text('model_id').notNull(),
+  modelDisplayName: text('model_display_name'),
+  providerId: text('provider_id'),
+  providerDisplayName: text('provider_display_name'),
+  billingMonth: text('billing_month').notNull(),
+  occurredAt: integer('occurred_at', { mode: 'timestamp' }).notNull(),
+  promptTokens: integer('prompt_tokens').notNull().default(0),
+  cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+  cacheHitTokens: integer('cache_hit_tokens').notNull().default(0),
+  cacheMissTokens: integer('cache_miss_tokens').notNull().default(0),
+  completionTokens: integer('completion_tokens').notNull().default(0),
+  reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  usageSource: text('usage_source').notNull().default('estimated'),
+  runtimeMs: integer('runtime_ms'),
+  costUsdMicros: integer('cost_usd_micros').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobOccurredIdx: index('deep_research_usage_records_job_occurred_idx').on(
+    table.jobId,
+    table.occurredAt
+  ),
+  userMonthIdx: index('deep_research_usage_records_user_month_idx').on(
+    table.userId,
+    table.billingMonth
+  ),
+  modelMonthIdx: index('deep_research_usage_records_model_month_idx').on(
+    table.modelId,
+    table.billingMonth
+  ),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')

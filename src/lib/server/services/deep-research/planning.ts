@@ -79,6 +79,16 @@ export type CreateFirstResearchPlanDraftDependencies = {
 	};
 };
 
+export type CreateRevisedResearchPlanDraftInput = {
+	jobId: string;
+	previousPlan: ResearchPlan;
+	previousVersion: number;
+	editInstruction: string;
+	selectedDepth: ResearchDepth;
+	researchLanguage: ResearchLanguage;
+	contextDisclosure?: string | null;
+};
+
 const depthLabels: Record<ResearchDepth, string> = {
 	focused: "Focused Deep Research",
 	standard: "Standard Deep Research",
@@ -160,6 +170,52 @@ export async function createFirstResearchPlanDraft(
 	};
 }
 
+export async function createRevisedResearchPlanDraft(
+	input: CreateRevisedResearchPlanDraftInput,
+	dependencies: CreateFirstResearchPlanDraftDependencies = {},
+): Promise<ResearchPlanDraftResult> {
+	const researchBudget = depthBudgets[input.selectedDepth];
+	const effortEstimate = buildEffortEstimate(input.selectedDepth);
+	const plan = dependencies.structuredPlanner
+		? await dependencies.structuredPlanner.draftPlan(
+				{
+					jobId: input.jobId,
+					userRequest: input.previousPlan.goal,
+					selectedDepth: input.selectedDepth,
+					researchLanguage: input.researchLanguage,
+				},
+				{
+					selectedBudget: researchBudget,
+					contextDisclosure: input.contextDisclosure ?? null,
+				},
+			)
+		: reviseDefaultResearchPlan(input);
+	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
+	const renderedPlan = renderResearchPlan(plan);
+	const draft: ResearchPlanDraftRecord = {
+		jobId: input.jobId,
+		version: input.previousVersion + 1,
+		status: "awaiting_approval",
+		rawPlan: plan,
+		renderedPlan,
+		contextDisclosure: input.contextDisclosure ?? null,
+		effortEstimate,
+	};
+	const persisted = dependencies.repository
+		? await dependencies.repository.saveResearchPlanDraft(draft)
+		: draft;
+
+	return {
+		...persisted,
+		status: "awaiting_approval",
+		rawPlan: plan,
+		renderedPlan,
+		contextDisclosure: input.contextDisclosure ?? null,
+		effortEstimate,
+		plan,
+	};
+}
+
 function draftDefaultResearchPlan(
 	input: CreateFirstResearchPlanDraftInput,
 	researchBudget: ResearchBudget,
@@ -189,6 +245,25 @@ function draftDefaultResearchPlan(
 			"Do not start source-heavy research until the Research Plan is approved.",
 		],
 		deliverables: ["Cited Research Report"],
+	};
+}
+
+function reviseDefaultResearchPlan(
+	input: CreateRevisedResearchPlanDraftInput,
+): ResearchPlan {
+	const editInstruction = input.editInstruction.trim();
+	return {
+		...input.previousPlan,
+		depth: input.selectedDepth,
+		researchBudget: depthBudgets[input.selectedDepth],
+		sourceScope: {
+			...input.previousPlan.sourceScope,
+			planningContextDisclosure: input.contextDisclosure ?? null,
+		},
+		constraints: [
+			...input.previousPlan.constraints,
+			`Plan edit: ${editInstruction}`,
+		],
 	};
 }
 
@@ -231,6 +306,9 @@ function renderResearchPlan(plan: ResearchPlan): string {
 		"",
 		"Expected report shape:",
 		...plan.reportShape.map((section) => `- ${section}`),
+		"",
+		"Constraints:",
+		...plan.constraints.map((constraint) => `- ${constraint}`),
 	].join("\n");
 }
 

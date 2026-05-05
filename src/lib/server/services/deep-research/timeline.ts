@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq } from "drizzle-orm";
+import { deepResearchTimelineEvents } from "$lib/server/db/schema";
+
 export type ResearchTimelineStage =
 	| "plan_generation"
 	| "plan_revision"
@@ -41,6 +45,19 @@ export type ResearchTimelineEvent = {
 	summary: string;
 };
 
+export type PersistedResearchTimelineEvent = ResearchTimelineEvent & {
+	id: string;
+	createdAt: string;
+};
+
+export type ListResearchTimelineEventsInput = {
+	userId: string;
+	jobId: string;
+};
+
+type DeepResearchTimelineEventRow =
+	typeof deepResearchTimelineEvents.$inferSelect;
+
 export type CreatePlanGenerationTimelineEventInput = {
 	jobId: string;
 	conversationId: string;
@@ -81,6 +98,75 @@ export function createPlanGenerationTimelineEvent(
 	};
 }
 
+export async function saveResearchTimelineEvent(
+	event: ResearchTimelineEvent,
+): Promise<PersistedResearchTimelineEvent> {
+	const { db } = await import("$lib/server/db");
+	const [row] = await db
+		.insert(deepResearchTimelineEvents)
+		.values({
+			id: randomUUID(),
+			jobId: event.jobId,
+			taskId: event.taskId,
+			conversationId: event.conversationId,
+			userId: event.userId,
+			stage: event.stage,
+			kind: event.kind,
+			occurredAt: new Date(event.occurredAt),
+			messageKey: event.messageKey,
+			messageParamsJson: JSON.stringify(event.messageParams),
+			sourceCountsJson: JSON.stringify(event.sourceCounts),
+			assumptionsJson: JSON.stringify(event.assumptions),
+			warningsJson: JSON.stringify(event.warnings),
+			summary: event.summary,
+		})
+		.returning();
+
+	return mapTimelineEventRow(row);
+}
+
+export async function listResearchTimelineEvents(
+	input: ListResearchTimelineEventsInput,
+): Promise<PersistedResearchTimelineEvent[]> {
+	const { db } = await import("$lib/server/db");
+	const rows = await db
+		.select()
+		.from(deepResearchTimelineEvents)
+		.where(
+			and(
+				eq(deepResearchTimelineEvents.userId, input.userId),
+				eq(deepResearchTimelineEvents.jobId, input.jobId),
+			),
+		)
+		.orderBy(asc(deepResearchTimelineEvents.occurredAt));
+
+	return rows.map(mapTimelineEventRow);
+}
+
+function mapTimelineEventRow(
+	row: DeepResearchTimelineEventRow,
+): PersistedResearchTimelineEvent {
+	return {
+		id: row.id,
+		jobId: row.jobId,
+		conversationId: row.conversationId,
+		userId: row.userId,
+		taskId: row.taskId,
+		stage: row.stage as ResearchTimelineStage,
+		kind: row.kind as ResearchTimelineKind,
+		occurredAt: row.occurredAt.toISOString(),
+		messageKey: row.messageKey,
+		messageParams: parseJson<Record<string, string | number | boolean | null>>(
+			row.messageParamsJson,
+		),
+		sourceCounts: parseJson<ResearchSourceCounts>(row.sourceCountsJson),
+		assumptions: parseJson<string[]>(row.assumptionsJson),
+		warnings: parseJson<string[]>(row.warningsJson),
+		summary: row.summary,
+		createdAt: row.createdAt.toISOString(),
+	};
+}
+
 function normalizeSourceCounts(
 	sourceCounts: Partial<ResearchSourceCounts> = {},
 ): ResearchSourceCounts {
@@ -98,4 +184,8 @@ function normalizeCount(value: unknown): number {
 
 function sanitizeUserVisibleNotes(notes: string[]): string[] {
 	return notes.map((note) => note.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+function parseJson<T>(value: string): T {
+	return JSON.parse(value) as T;
 }
