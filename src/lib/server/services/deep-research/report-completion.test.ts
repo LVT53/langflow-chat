@@ -317,6 +317,144 @@ describe("audited Deep Research report completion", () => {
 		});
 	});
 
+	it("assembles the completed report from verified Synthesis Claims instead of source-note synthesis text", async () => {
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { saveDeepResearchSynthesisClaims } = await import(
+			"./synthesis-claims"
+		);
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare private AI coding assistants",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://vendor.example.test/private-ai-coding-security",
+			title: "Private AI coding security docs",
+			provider: "public_web",
+			snippet: "Security docs for private AI coding assistants.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"Private AI coding assistants vary by repository index freshness and permission controls.",
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Verify private AI coding assistant controls",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		const [evidenceNote] = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			notes: [
+				{
+					sourceId: reviewedSource.id,
+					findingText:
+						"Private AI coding assistants vary by repository index freshness and permission controls.",
+					supportedKeyQuestion:
+						"Which products have the strongest repository-aware coding workflow?",
+					sourceSupport: {
+						sourceId: reviewedSource.id,
+						reviewedSourceId: reviewedSource.id,
+					},
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+		await saveDeepResearchSynthesisClaims({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			synthesisPass: "synthesis-pass-1",
+			claims: [
+				{
+					statement:
+						"Private AI coding assistants vary by repository index freshness and permission controls.",
+					claimType: "official_specification",
+					central: true,
+					status: "accepted",
+					evidenceLinks: [
+						{
+							evidenceNoteId: evidenceNote.id,
+							relation: "support",
+						},
+					],
+				},
+			],
+			now: new Date("2026-05-05T10:12:00.000Z"),
+		});
+
+		const completed = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement: "Private AI coding security docs",
+					sourceId: reviewedSource.id,
+					url: reviewedSource.url,
+					title: reviewedSource.title ?? "Private AI coding security docs",
+				},
+			]),
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = completed?.reportArtifactId
+			? await getArtifactForUser("user-1", completed.reportArtifactId)
+			: null;
+
+		expect(completed).toMatchObject({
+			id: created.id,
+			status: "completed",
+			stage: "report_ready",
+		});
+		expect(reportArtifact?.contentText).toContain(
+			"Private AI coding assistants vary by repository index freshness and permission controls.",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
+			"- Private AI coding security docs [1]",
+		);
+		expect(reportArtifact?.contentText).toContain("## Source Ledger Snapshot");
+	});
+
 	it("creates a repair pass instead of rendering Markdown when claim-graph audit needs repair", async () => {
 		const { db } = await import("$lib/server/db");
 		const {

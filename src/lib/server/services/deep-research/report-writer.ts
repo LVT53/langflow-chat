@@ -1,4 +1,8 @@
-import type { DeepResearchSourceStatus } from "$lib/types";
+import type {
+	DeepResearchEvidenceNote,
+	DeepResearchSourceStatus,
+	DeepResearchSynthesisClaim,
+} from "$lib/types";
 import type { ResearchLanguage, ResearchPlan } from "./planning";
 import type { SynthesisFinding, SynthesisNotes } from "./synthesis";
 
@@ -22,6 +26,37 @@ export type ResearchReportSection = {
 	body: string;
 };
 
+export type StructuredResearchReportReference = {
+	claimIds: string[];
+	evidenceLinkIds: string[];
+	sourceIds: string[];
+};
+
+export type StructuredResearchReportTextBlock = StructuredResearchReportReference & {
+	text: string;
+};
+
+export type StructuredResearchReportCore = {
+	title: string;
+	scope: string;
+	executiveSummary: StructuredResearchReportTextBlock;
+	keyFindings: StructuredResearchReportTextBlock[];
+	methodologySourceBasis: string;
+	limitations: StructuredResearchReportTextBlock[];
+	sourceLedgerSnapshot: string;
+};
+
+export type StructuredResearchReportSection = StructuredResearchReportReference & {
+	heading: string;
+	body: string;
+};
+
+export type StructuredResearchReport = {
+	intent: ResearchPlan["reportIntent"];
+	core: StructuredResearchReportCore;
+	sections: StructuredResearchReportSection[];
+};
+
 export type ResearchReportDraft = {
 	jobId: string;
 	title: string;
@@ -30,6 +65,7 @@ export type ResearchReportDraft = {
 	sections: ResearchReportSection[];
 	sources: CitedResearchReportSource[];
 	limitations: string[];
+	structuredReport: StructuredResearchReport;
 	markdown: string;
 };
 
@@ -66,6 +102,8 @@ export type WriteResearchReportInput = {
 	jobId: string;
 	plan: ResearchPlan;
 	synthesisNotes: SynthesisNotes;
+	synthesisClaims?: DeepResearchSynthesisClaim[];
+	evidenceNotes?: DeepResearchEvidenceNote[];
 	sources: ResearchReportSource[];
 	limitations?: string[];
 };
@@ -92,8 +130,10 @@ const reportLabels: Record<
 		keyFindings: string;
 		analysis: string;
 		sources: string;
+		sourceLedgerSnapshot: string;
 		reportLimitations: string;
 		methodology: string;
+		methodologySourceBasis: string;
 		comparison: string;
 		recommendations: string;
 		bottomLine: string;
@@ -123,8 +163,10 @@ const reportLabels: Record<
 		keyFindings: "Key Findings",
 		analysis: "Analysis",
 		sources: "Sources",
+		sourceLedgerSnapshot: "Source Ledger Snapshot",
 		reportLimitations: "Report Limitations",
 		methodology: "Methodology",
+		methodologySourceBasis: "Methodology / Source Basis",
 		comparison: "Comparison",
 		recommendations: "Recommendations",
 		bottomLine: "Bottom line",
@@ -157,8 +199,10 @@ const reportLabels: Record<
 		keyFindings: "Fő megállapítások",
 		analysis: "Elemzés",
 		sources: "Források",
+		sourceLedgerSnapshot: "Forrásnapló pillanatkép",
 		reportLimitations: "Jelentési korlátok",
 		methodology: "Módszertan",
+		methodologySourceBasis: "Módszertan / forrásalap",
 		comparison: "Összehasonlítás",
 		recommendations: "Javaslatok",
 		bottomLine: "Rövid válasz",
@@ -287,37 +331,63 @@ export function writeResearchReport(
 	input: WriteResearchReportInput,
 ): ResearchReportDraft {
 	const researchLanguage = input.plan.researchLanguage ?? "en";
-	const citedSources = buildCitedSources(input.synthesisNotes, input.sources);
-	const visibleFindings = selectResearchReportFindings(input.synthesisNotes);
-	const keyFindings = visibleFindings.map((finding) =>
-		formatFindingWithCitations(finding, citedSources),
-	);
-	const executiveSummary = buildExecutiveSummary(
-		input.plan,
-		keyFindings,
-		researchLanguage,
-	);
-	const sections = buildReportSections(
-		input.plan,
-		keyFindings,
-		researchLanguage,
-	);
+	const useVerifiedClaims = hasVerifiedClaimInput(input);
 	const limitations = [
 		...input.synthesisNotes.reportLimitations.map(
 			(limitation) => limitation.statement,
 		),
 		...(input.limitations ?? []),
-	]
+		]
 		.map(normalizeText)
 		.filter(Boolean);
 	const title = buildReportTitle(input.plan.goal, researchLanguage);
+	const structuredReport = buildStructuredResearchReport({
+		...input,
+		title,
+		researchLanguage,
+	});
+	validateStructuredResearchReport(structuredReport);
+	const citedSources =
+		useVerifiedClaims
+			? buildCitedSourcesFromStructuredReport(structuredReport, input.sources)
+			: buildCitedSources(input.synthesisNotes, input.sources);
+	const keyFindings =
+		useVerifiedClaims
+			? structuredReport.core.keyFindings.map((finding) =>
+					formatStructuredTextBlockWithCitations(finding, citedSources),
+				)
+			: selectResearchReportFindings(input.synthesisNotes).map((finding) =>
+					formatFindingWithCitations(finding, citedSources),
+				);
+	assertReadableReportFindings(keyFindings, citedSources);
+	const executiveSummary =
+		useVerifiedClaims
+			? formatStructuredTextBlockWithCitations(
+					structuredReport.core.executiveSummary,
+					citedSources,
+				)
+			: buildExecutiveSummary(input.plan, keyFindings, researchLanguage);
+	const sections =
+		useVerifiedClaims
+			? buildStructuredReportSectionsForMarkdown(
+					structuredReport,
+					citedSources,
+					researchLanguage,
+				)
+			: buildReportSections(input.plan, keyFindings, researchLanguage);
 	const markdown = renderReportMarkdown({
 		title,
 		executiveSummary,
 		keyFindings,
 		sections,
 		sources: citedSources,
-		limitations,
+		limitations:
+			useVerifiedClaims
+				? structuredReport.core.limitations.map((limitation) =>
+						formatStructuredTextBlockWithCitations(limitation, citedSources),
+					)
+				: limitations,
+		sourceLedgerSnapshot: structuredReport.core.sourceLedgerSnapshot,
 		researchLanguage,
 	});
 
@@ -328,7 +398,13 @@ export function writeResearchReport(
 		keyFindings,
 		sections,
 		sources: citedSources,
-		limitations,
+		limitations:
+			useVerifiedClaims
+				? structuredReport.core.limitations.map((limitation) =>
+						formatStructuredTextBlockWithCitations(limitation, citedSources),
+					)
+				: limitations,
+		structuredReport,
 		markdown,
 	};
 }
@@ -391,6 +467,296 @@ export function selectResearchReportFindings(
 	}
 
 	return findings;
+}
+
+function buildStructuredResearchReport(input: WriteResearchReportInput & {
+	title: string;
+	researchLanguage: ResearchLanguage;
+}): StructuredResearchReport {
+	if (hasVerifiedClaimInput(input)) {
+		return buildStructuredResearchReportFromClaims(input);
+	}
+
+	const citedSources = buildCitedSources(input.synthesisNotes, input.sources);
+	const keyFindings = selectResearchReportFindings(input.synthesisNotes).map(
+		(finding) => ({
+			text: formatFindingWithCitations(finding, citedSources),
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: uniqueValues(
+				finding.sourceRefs.flatMap((sourceRef) => [
+					sourceRef.discoveredSourceId,
+					sourceRef.reviewedSourceId,
+				]),
+			),
+		}),
+	);
+	const executiveSummaryText = buildExecutiveSummary(
+		input.plan,
+		keyFindings.map((finding) => finding.text),
+		input.researchLanguage,
+	);
+	return {
+		intent: input.plan.reportIntent,
+		core: {
+			title: input.title,
+			scope: buildReportScope(input.plan),
+			executiveSummary: {
+				text: executiveSummaryText,
+				claimIds: keyFindings.flatMap((finding) => finding.claimIds),
+				evidenceLinkIds: keyFindings.flatMap(
+					(finding) => finding.evidenceLinkIds,
+				),
+				sourceIds: uniqueValues(keyFindings.flatMap((finding) => finding.sourceIds)),
+			},
+			keyFindings,
+			methodologySourceBasis: buildMethodologySourceBasis(
+				input.plan,
+				input.researchLanguage,
+			),
+			limitations: buildStructuredLimitationsFromText(input),
+			sourceLedgerSnapshot: buildSourceLedgerSnapshot(input.sources),
+		},
+		sections: buildReportSections(
+			input.plan,
+			keyFindings.map((finding) => finding.text),
+			input.researchLanguage,
+		).map((section) => ({
+			heading: section.heading,
+			body: section.body,
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: [],
+		})),
+	};
+}
+
+function hasVerifiedClaimInput(input: WriteResearchReportInput): boolean {
+	return Boolean(
+		input.synthesisClaims?.some(
+			(claim) => claim.status === "accepted" || claim.status === "limited",
+		) && input.evidenceNotes,
+	);
+}
+
+function buildStructuredResearchReportFromClaims(input: WriteResearchReportInput & {
+	title: string;
+	researchLanguage: ResearchLanguage;
+}): StructuredResearchReport {
+	const evidenceById = new Map(
+		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
+	);
+	const claimBlocks = (input.synthesisClaims ?? [])
+		.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+		.map((claim) => buildStructuredTextBlockFromClaim(claim, evidenceById))
+		.filter((block): block is StructuredResearchReportTextBlock =>
+			Boolean(block),
+		)
+		.slice(0, MAX_REPORT_KEY_FINDINGS);
+	const limitations = [
+		...claimBlocks
+			.filter((block) => {
+				const claim = input.synthesisClaims?.find((item) =>
+					block.claimIds.includes(item.id),
+				);
+				return claim?.status === "limited";
+			})
+			.map((block) => {
+				const claim = input.synthesisClaims?.find((item) =>
+					block.claimIds.includes(item.id),
+				);
+				return {
+					...block,
+					text:
+						normalizeText(claim?.statusReason ?? "") ||
+						`Limited claim: ${block.text}`,
+				};
+			}),
+		...buildStructuredLimitationsFromText(input),
+	];
+	const executiveSummary = claimBlocks[0] ?? {
+		text: reportLabels[input.researchLanguage].noFindingSummary,
+		claimIds: [],
+		evidenceLinkIds: [],
+		sourceIds: [],
+	};
+	return {
+		intent: input.plan.reportIntent,
+		core: {
+			title: input.title,
+			scope: buildReportScope(input.plan),
+			executiveSummary,
+			keyFindings: claimBlocks,
+			methodologySourceBasis: buildMethodologySourceBasis(
+				input.plan,
+				input.researchLanguage,
+			),
+			limitations,
+			sourceLedgerSnapshot: buildSourceLedgerSnapshot(input.sources),
+		},
+		sections: buildStructuredSectionsFromClaims(input.plan, claimBlocks),
+	};
+}
+
+function buildStructuredTextBlockFromClaim(
+	claim: DeepResearchSynthesisClaim,
+	evidenceById: Map<string, DeepResearchEvidenceNote>,
+): StructuredResearchReportTextBlock | null {
+	const usefulLinks = claim.evidenceLinks.filter((link) =>
+		["support", "qualification"].includes(link.relation),
+	);
+	if (usefulLinks.length === 0) return null;
+	const sourceIds = uniqueValues(
+		usefulLinks.flatMap((link) => {
+			const evidence = evidenceById.get(link.evidenceNoteId);
+			return evidence ? sourceIdsFromEvidenceNote(evidence) : [];
+		}),
+	);
+	if (sourceIds.length === 0) return null;
+	const text = normalizeText(claim.statement);
+	if (!text) return null;
+	return {
+		text,
+		claimIds: [claim.id],
+		evidenceLinkIds: usefulLinks.map((link) => link.id),
+		sourceIds,
+	};
+}
+
+function sourceIdsFromEvidenceNote(note: DeepResearchEvidenceNote): string[] {
+	return uniqueValues(
+		[
+			note.sourceId,
+			note.sourceSupport.sourceId,
+			note.sourceSupport.reviewedSourceId,
+			...(Array.isArray(note.sourceSupport.sourceIds)
+				? note.sourceSupport.sourceIds
+				: []),
+		].filter((value): value is string => typeof value === "string" && value),
+	);
+}
+
+function buildStructuredLimitationsFromText(input: WriteResearchReportInput): StructuredResearchReportTextBlock[] {
+	return [
+		...input.synthesisNotes.reportLimitations.map(
+			(limitation) => limitation.statement,
+		),
+		...(input.limitations ?? []),
+	]
+		.map(normalizeText)
+		.filter(Boolean)
+		.map((text) => ({
+			text,
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: [],
+		}));
+}
+
+function buildReportScope(plan: ResearchPlan): string {
+	const questions =
+		plan.keyQuestions.length > 0
+			? ` Key questions: ${plan.keyQuestions.join("; ")}.`
+			: "";
+	return `Approved scope: ${plan.goal}.${questions}`;
+}
+
+function buildMethodologySourceBasis(
+	plan: ResearchPlan,
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	return [
+		labels.methodologyScope(formatDepthLabel(plan.depth, researchLanguage)),
+		`${labels.sourceReviewCeiling}: ${plan.researchBudget.sourceReviewCeiling}.`,
+		`${labels.synthesisPassCeiling}: ${plan.researchBudget.synthesisPassCeiling}.`,
+	].join("\n");
+}
+
+function buildSourceLedgerSnapshot(sources: ResearchReportSource[]): string {
+	const citedCount = sources.filter((source) => source.status === "cited").length;
+	return `Source ledger snapshot placeholder pending DRS-14. Cited sources in this report: ${citedCount}.`;
+}
+
+function buildStructuredSectionsFromClaims(
+	plan: ResearchPlan,
+	keyFindings: StructuredResearchReportTextBlock[],
+): StructuredResearchReportSection[] {
+	const references = {
+		claimIds: uniqueValues(keyFindings.flatMap((finding) => finding.claimIds)),
+		evidenceLinkIds: uniqueValues(
+			keyFindings.flatMap((finding) => finding.evidenceLinkIds),
+		),
+		sourceIds: uniqueValues(keyFindings.flatMap((finding) => finding.sourceIds)),
+	};
+	const claimBody = keyFindings.map((finding) => `- ${finding.text}`).join("\n");
+	return sectionHeadingsForIntent(plan.reportIntent).map((heading) => ({
+		heading,
+		body: claimBody,
+		...references,
+	}));
+}
+
+function sectionHeadingsForIntent(
+	intent: ResearchPlan["reportIntent"],
+): string[] {
+	if (intent === "comparison") return ["Comparison Matrix", "Decision Implications"];
+	if (intent === "recommendation") return ["Recommendation", "Tradeoffs"];
+	if (intent === "market_scan") return ["Market Landscape", "Signals To Watch"];
+	if (intent === "product_scan") return ["Product Scan", "Fit Assessment"];
+	if (intent === "limitation_focused") return ["Memo", "Constraints And Next Steps"];
+	return ["Investigation Findings", "Open Questions"];
+}
+
+function validateStructuredResearchReport(report: StructuredResearchReport): void {
+	const missing: string[] = [];
+	if (!normalizeText(report.core.title)) missing.push("title");
+	if (!normalizeText(report.core.scope)) missing.push("scope");
+	if (!normalizeText(report.core.executiveSummary.text)) {
+		missing.push("executiveSummary");
+	}
+	if (report.core.keyFindings.length === 0) missing.push("keyFindings");
+	if (!normalizeText(report.core.methodologySourceBasis)) {
+		missing.push("methodologySourceBasis");
+	}
+	if (!normalizeText(report.core.sourceLedgerSnapshot)) {
+		missing.push("sourceLedgerSnapshot");
+	}
+	if (missing.length > 0) {
+		throw new Error(
+			`Structured Research Report is missing required fields: ${missing.join(", ")}`,
+		);
+	}
+}
+
+function assertReadableReportFindings(
+	keyFindings: string[],
+	citedSources: CitedResearchReportSource[],
+): void {
+	if (keyFindings.length < 3 || citedSources.length === 0) return;
+	const sourceTitles = citedSources.map((source) =>
+		normalizeFindingForReadabilityCheck(source.title),
+	);
+	const sourceTitleMatches = keyFindings.filter((finding) => {
+		const normalizedFinding = normalizeFindingForReadabilityCheck(finding);
+		return sourceTitles.some((title) => title && title === normalizedFinding);
+	});
+	if (sourceTitleMatches.length >= Math.ceil(keyFindings.length / 2)) {
+		throw new Error(
+			"Structured Research Report failed readability validation: source-note dump detected.",
+		);
+	}
+}
+
+function normalizeFindingForReadabilityCheck(value: string): string {
+	return value
+		.replace(/\[\d+\]/g, "")
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/&[#a-z0-9]+;/gi, " ")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
 }
 
 function buildEvidenceLimitationMemoRecoveryActions(
@@ -480,6 +846,36 @@ function buildCitedSources(
 		}
 	}
 
+	return citedSources;
+}
+
+function buildCitedSourcesFromStructuredReport(
+	report: StructuredResearchReport,
+	sources: ResearchReportSource[],
+): CitedResearchReportSource[] {
+	const citedSourceIds = uniqueValues([
+		...report.core.executiveSummary.sourceIds,
+		...report.core.keyFindings.flatMap((finding) => finding.sourceIds),
+		...report.core.limitations.flatMap((limitation) => limitation.sourceIds),
+		...report.sections.flatMap((section) => section.sourceIds),
+	]);
+	const sourcesByReviewedId = new Map(
+		sources
+			.filter((source) => source.reviewedSourceId)
+			.map((source) => [source.reviewedSourceId, source]),
+	);
+	const sourcesById = new Map(sources.map((source) => [source.id, source]));
+	const citedSources: CitedResearchReportSource[] = [];
+	const seen = new Set<string>();
+	for (const sourceId of citedSourceIds) {
+		const source = sourcesByReviewedId.get(sourceId) ?? sourcesById.get(sourceId);
+		if (!source || seen.has(source.id)) continue;
+		seen.add(source.id);
+		citedSources.push({
+			...source,
+			citationNumber: citedSources.length + 1,
+		});
+	}
 	return citedSources;
 }
 
@@ -711,6 +1107,56 @@ function formatFindingWithCitations(
 	return `${finding.statement}${citationSuffix}`;
 }
 
+function formatStructuredTextBlockWithCitations(
+	block: StructuredResearchReportTextBlock,
+	citedSources: CitedResearchReportSource[],
+): string {
+	const citationNumbers = block.sourceIds
+		.map((sourceId) =>
+			citedSources.find(
+				(source) => source.id === sourceId || source.reviewedSourceId === sourceId,
+			),
+		)
+		.filter((source): source is CitedResearchReportSource => Boolean(source))
+		.map((source) => `[${source.citationNumber}]`);
+	const citationSuffix =
+		citationNumbers.length > 0 ? ` ${uniqueValues(citationNumbers).join(" ")}` : "";
+	return `${block.text}${citationSuffix}`;
+}
+
+function buildStructuredReportSectionsForMarkdown(
+	report: StructuredResearchReport,
+	citedSources: CitedResearchReportSource[],
+	researchLanguage: ResearchLanguage,
+): ResearchReportSection[] {
+	const labels = reportLabels[researchLanguage];
+	return [
+		{
+			heading: labels.methodologySourceBasis,
+			body: report.core.methodologySourceBasis,
+		},
+		...report.sections.map((section) => ({
+			heading: section.heading,
+			body: section.body
+				.split("\n")
+				.map((line) => {
+					const matchingFinding = report.core.keyFindings.find((finding) =>
+						line.includes(finding.text),
+					);
+					if (!matchingFinding) return line;
+					return line.replace(
+						matchingFinding.text,
+						formatStructuredTextBlockWithCitations(
+							matchingFinding,
+							citedSources,
+						),
+					);
+				})
+				.join("\n"),
+		})),
+	];
+}
+
 function renderReportMarkdown(input: {
 	title: string;
 	executiveSummary: string;
@@ -718,6 +1164,7 @@ function renderReportMarkdown(input: {
 	sections: ResearchReportSection[];
 	sources: CitedResearchReportSource[];
 	limitations: string[];
+	sourceLedgerSnapshot: string;
 	researchLanguage: ResearchLanguage;
 }): string {
 	const labels = reportLabels[input.researchLanguage];
@@ -743,6 +1190,12 @@ function renderReportMarkdown(input: {
 			"",
 		);
 	}
+
+	lines.push(
+		`## ${labels.sourceLedgerSnapshot}`,
+		input.sourceLedgerSnapshot,
+		"",
+	);
 
 	lines.push(
 		`## ${labels.sources}`,

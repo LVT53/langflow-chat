@@ -33,6 +33,15 @@
 		showSourceCounts: boolean;
 	};
 
+	type ResearchCardSeverity =
+		| 'awaiting_plan'
+		| 'needs_attention'
+		| 'working'
+		| 'completed'
+		| 'insufficient_evidence'
+		| 'cancelled'
+		| 'failed';
+
 	let {
 		job,
 		onApprove = undefined,
@@ -65,6 +74,7 @@
 	let planEditPending = $state(false);
 	let planApprovalPending = $state(false);
 	let advancePending = $state(false);
+	let isStageDetailOpen = $state(false);
 	let planEditError = $state<string | null>(null);
 	let advanceError = $state<string | null>(null);
 
@@ -84,11 +94,16 @@
 		job.status === 'completed' &&
 			(job.stage === 'evidence_limitation_memo_ready' || Boolean(evidenceLimitationMemo))
 	);
+	let researchSeverity = $derived(getResearchSeverity(job, isEvidenceLimitationMemo));
 	let reportDocument = $derived(buildReportDocument(job));
 	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
 	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
 	let timelineSteps = $derived(buildTimelineSteps(job));
+	let activeStage = $derived(timelineSteps.find((step) => step.status === 'active') ?? timelineSteps.at(-1) ?? null);
+	let progressRingClass = $derived(`research-card__progress-ring research-card__progress-ring--${stageProgressBand(job)}`);
+	let stageDetailRows = $derived(buildStageDetailRows(job));
 	let costLabel = $derived(formatCostLabel(job.usageSummary?.totalCostUsdMicros ?? 0));
+	let finalResearchTimeLabel = $derived(formatFinalResearchTimeLabel(job));
 	let hasSourceLedgerProgress = $derived(
 		sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0
 	);
@@ -132,9 +147,25 @@
 		'limitation_focused',
 	] satisfies DeepResearchReportIntent[];
 
-	function statusLabelKey(job: DeepResearchJob): I18nKey {
-		if (isEvidenceLimitationMemo) return 'deepResearch.status.insufficientEvidence';
-		return statusKeys[job.status];
+	function getResearchSeverity(
+		job: DeepResearchJob,
+		hasEvidenceLimitationMemo: boolean
+	): ResearchCardSeverity {
+		if (hasEvidenceLimitationMemo) return 'insufficient_evidence';
+		if (job.status === 'awaiting_approval') return 'needs_attention';
+		if (job.status === 'approved' || job.status === 'running') return 'working';
+		if (job.status === 'completed') return 'completed';
+		if (job.status === 'cancelled') return 'cancelled';
+		if (job.status === 'failed') return 'failed';
+		return 'awaiting_plan';
+	}
+
+	function severityLabelKey(severity: ResearchCardSeverity): I18nKey {
+		if (severity === 'needs_attention') return 'deepResearch.status.needsAttention';
+		if (severity === 'working') return 'deepResearch.status.working';
+		if (severity === 'insufficient_evidence') return 'deepResearch.status.insufficientEvidence';
+		if (severity === 'awaiting_plan') return statusKeys.awaiting_plan;
+		return statusKeys[severity];
 	}
 
 	function sourceCountLabels(sourceCounts: DeepResearchSourceCounts) {
@@ -143,6 +174,12 @@
 			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
 			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
 		];
+	}
+
+	function handleStageDetailKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			isStageDetailOpen = false;
+		}
 	}
 
 	function formatReportIntent(intent: DeepResearchReportIntent): string {
@@ -219,19 +256,139 @@
 		});
 	}
 
+	function formatFinalResearchTimeLabel(job: DeepResearchJob): string | null {
+		if (job.status !== 'completed') return null;
+		const runtimeMs = job.runtimeEstimate?.actualRuntimeMs ?? (
+			job.completedAt && job.createdAt ? job.completedAt - job.createdAt : null
+		);
+		if (!runtimeMs || !Number.isFinite(runtimeMs) || runtimeMs <= 0) return null;
+		const totalSeconds = Math.max(1, Math.round(runtimeMs / 1000));
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+		const time =
+			hours > 0
+				? `${hours}h ${String(minutes).padStart(2, '0')}m`
+				: `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+		return $t('deepResearch.finalResearchTime', { time });
+	}
+
 	function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 		const currentIndex = activeTimelineIndex(job);
 		const timelineEvents = buildTimelineEventViews(job.timeline ?? []);
-		return TIMELINE_STEP_DEFINITIONS.map((step, index) => ({
-			...step,
-			status:
-				job.status === 'completed' || index < currentIndex
-					? 'completed'
-					: index === currentIndex
-						? 'active'
-						: 'pending',
-			events: timelineEvents.filter((event) => step.stages.includes(event.stage)),
-		}));
+		return TIMELINE_STEP_DEFINITIONS.map((step, index) => {
+			const events = timelineEvents.filter((event) => step.stages.includes(event.stage));
+			return {
+				...step,
+				status:
+					job.status === 'completed' || index < currentIndex
+						? 'completed'
+						: index === currentIndex
+							? 'active'
+							: 'pending',
+				events,
+			};
+		}).filter((step, index) => {
+			if (step.events.length > 0) return true;
+			if (index === currentIndex) return true;
+			if (job.status === 'awaiting_approval' && index === currentIndex - 1) return true;
+			return false;
+		});
+	}
+
+	function stageProgressBand(job: DeepResearchJob): 'start' | 'early' | 'middle' | 'late' | 'done' {
+		const index = activeTimelineIndex(job);
+		if (job.status === 'completed') return 'done';
+		if (index <= 1) return 'start';
+		if (index <= 3) return 'early';
+		if (index <= 6) return 'middle';
+		return 'late';
+	}
+
+	function buildStageDetailRows(job: DeepResearchJob): string[] {
+		return [
+			formatPassProgress(job),
+			formatOpenCoverageGaps(job),
+			formatResolvedClaimConflicts(job),
+			formatAuditRepairState(job),
+		].filter((row): row is string => Boolean(row));
+	}
+
+	function formatPassProgress(job: DeepResearchJob): string | null {
+		const checkpoints = job.passCheckpoints ?? [];
+		if (checkpoints.length === 0) return null;
+		const completed = checkpoints.filter((checkpoint) => checkpoint.lifecycleState === 'decided').length;
+		const running = checkpoints.filter((checkpoint) => checkpoint.lifecycleState === 'running').length;
+		if (completed > 0 && running > 0) {
+			const key =
+				completed === 1 && running === 1
+					? 'deepResearch.progress.meaningfulPassesCompletedAndRunning'
+					: 'deepResearch.progress.meaningfulPassesCompletedAndRunningPlural';
+			return $t(key, {
+				completed,
+				running,
+			});
+		}
+		if (completed > 0) {
+			return $t(
+				completed === 1
+					? 'deepResearch.progress.meaningfulPassesCompleted'
+					: 'deepResearch.progress.meaningfulPassesCompletedPlural',
+				{ count: completed }
+			);
+		}
+		if (running > 0) {
+			return $t(
+				running === 1
+					? 'deepResearch.progress.meaningfulPassesRunning'
+					: 'deepResearch.progress.meaningfulPassesRunningPlural',
+				{ count: running }
+			);
+		}
+		return null;
+	}
+
+	function formatOpenCoverageGaps(job: DeepResearchJob): string | null {
+		const openGaps = (job.coverageGaps ?? []).filter(
+			(gap) => gap.lifecycleState === 'open' || gap.lifecycleState === 'in_progress'
+		).length;
+		if (openGaps === 0) return null;
+		return $t(
+			openGaps === 1
+				? 'deepResearch.progress.openCoverageGaps'
+				: 'deepResearch.progress.openCoverageGapsPlural',
+			{ count: openGaps }
+		);
+	}
+
+	function formatResolvedClaimConflicts(job: DeepResearchJob): string | null {
+		const conflictGroups = new Map<string, Set<string>>();
+		for (const claim of job.synthesisClaims ?? []) {
+			if (!claim.competingClaimGroupId || claim.status === 'needs-repair') continue;
+			const statuses = conflictGroups.get(claim.competingClaimGroupId) ?? new Set<string>();
+			statuses.add(claim.status);
+			conflictGroups.set(claim.competingClaimGroupId, statuses);
+		}
+		const resolvedConflicts = [...conflictGroups.values()].filter(
+			(statuses) => statuses.has('accepted') && statuses.has('rejected')
+		).length;
+		if (resolvedConflicts === 0) return null;
+		return $t(
+			resolvedConflicts === 1
+				? 'deepResearch.progress.resolvedClaimConflicts'
+				: 'deepResearch.progress.resolvedClaimConflictsPlural',
+			{ count: resolvedConflicts }
+		);
+	}
+
+	function formatAuditRepairState(job: DeepResearchJob): string | null {
+		const repairPoint = (job.resumePoints ?? []).find(
+			(point) => point.boundary === 'repair' && point.status === 'running'
+		);
+		if (repairPoint) return $t('deepResearch.progress.auditRepairRunning');
+		const needsRepair = (job.synthesisClaims ?? []).some((claim) => claim.status === 'needs-repair');
+		if (needsRepair) return $t('deepResearch.progress.auditRepairNeeded');
+		return null;
 	}
 
 	function buildTimelineEventViews(events: DeepResearchTimelineEvent[]): TimelineEventView[] {
@@ -386,6 +543,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={handleStageDetailKeydown} />
+
 <article
 	class="research-card"
 	aria-label={$t('deepResearch.cardLabel', { title: job.title })}
@@ -395,16 +554,71 @@
 			<div class="research-card__eyebrow">{$t('composerTools.deepResearch')}</div>
 			<h2 class="research-card__title" title={job.title}>{job.title}</h2>
 		</div>
-		<div class="research-card__depth">{$t(depthKeys[job.depth])}</div>
+		<div class="research-card__header-actions">
+			<button
+				type="button"
+				class="research-card__progress-button"
+				aria-label={$t('deepResearch.progress.showDetails')}
+				aria-expanded={isStageDetailOpen}
+				onclick={() => {
+					isStageDetailOpen = !isStageDetailOpen;
+				}}
+			>
+				<span class={progressRingClass} aria-hidden="true"></span>
+				<span class="research-card__progress-stage">
+					{$t('deepResearch.progress.stagePrefix')}{activeStage ? $t(activeStage.labelKey) : $t('deepResearch.timeline.planDrafting')}
+				</span>
+			</button>
+			<div class="research-card__depth">{$t(depthKeys[job.depth])}</div>
+		</div>
 	</div>
 
+	{#if isStageDetailOpen}
+		<div
+			class="research-card__progress-popover"
+			role="dialog"
+			aria-label={$t('deepResearch.progress.detailsLabel')}
+		>
+			<div class="research-card__progress-popover-header">
+				<strong>{$t('deepResearch.progress.detailsLabel')}</strong>
+				<button
+					type="button"
+					class="research-card__progress-close"
+					aria-label={$t('deepResearch.progress.dismissDetails')}
+					onclick={() => {
+						isStageDetailOpen = false;
+					}}
+				>
+					x
+				</button>
+			</div>
+			<p class="research-card__progress-current">
+				{$t('deepResearch.progress.currentStage', {
+					stage: activeStage ? $t(activeStage.labelKey) : $t('deepResearch.timeline.planDrafting'),
+				})}
+			</p>
+			{#if stageDetailRows.length > 0}
+				<ul>
+					{#each stageDetailRows as row}
+						<li>{row}</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="research-card__progress-empty">{$t('deepResearch.progress.noDetailsYet')}</p>
+			{/if}
+		</div>
+	{/if}
+
 	<div class="research-card__meta">
-		<span class={`research-card__status research-card__status--${job.status}`}>
+		<span class={`research-card__status research-card__status--${researchSeverity}`}>
 			<span class="research-card__status-dot" aria-hidden="true"></span>
-			{$t(statusLabelKey(job))}
+			{$t(severityLabelKey(researchSeverity))}
 		</span>
 		{#if job.status === 'completed' && costLabel}
 			<span class="research-card__cost">{costLabel}</span>
+		{/if}
+		{#if finalResearchTimeLabel}
+			<span class="research-card__cost">{finalResearchTimeLabel}</span>
 		{/if}
 	</div>
 
@@ -757,6 +971,13 @@
 		gap: var(--space-md);
 	}
 
+	.research-card__header-actions {
+		display: inline-flex;
+		flex: 0 0 auto;
+		align-items: center;
+		gap: var(--space-xs);
+	}
+
 	.research-card__title-group {
 		min-width: 0;
 	}
@@ -789,6 +1010,117 @@
 		color: var(--text-secondary);
 	}
 
+	.research-card__progress-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.42rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: 999px;
+		background: var(--surface-page);
+		padding: 0.18rem 0.5rem 0.18rem 0.28rem;
+		font: inherit;
+		font-size: 0.76rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out);
+	}
+
+	.research-card__progress-button:hover,
+	.research-card__progress-button:focus-visible {
+		border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface-page));
+		color: var(--text-primary);
+	}
+
+	.research-card__progress-ring {
+		width: 1.05rem;
+		height: 1.05rem;
+		border-radius: 999px;
+		background:
+			radial-gradient(circle at center, var(--surface-page) 48%, transparent 50%),
+			conic-gradient(var(--accent) 18%, color-mix(in srgb, var(--accent) 18%, var(--border-subtle)) 0);
+	}
+
+	.research-card__progress-ring--early {
+		background:
+			radial-gradient(circle at center, var(--surface-page) 48%, transparent 50%),
+			conic-gradient(var(--accent) 34%, color-mix(in srgb, var(--accent) 18%, var(--border-subtle)) 0);
+	}
+
+	.research-card__progress-ring--middle {
+		background:
+			radial-gradient(circle at center, var(--surface-page) 48%, transparent 50%),
+			conic-gradient(var(--accent) 56%, color-mix(in srgb, var(--accent) 18%, var(--border-subtle)) 0);
+	}
+
+	.research-card__progress-ring--late {
+		background:
+			radial-gradient(circle at center, var(--surface-page) 48%, transparent 50%),
+			conic-gradient(var(--accent) 78%, color-mix(in srgb, var(--accent) 18%, var(--border-subtle)) 0);
+	}
+
+	.research-card__progress-ring--done {
+		background:
+			radial-gradient(circle at center, var(--surface-page) 48%, transparent 50%),
+			conic-gradient(#22c55e 100%, color-mix(in srgb, #22c55e 18%, var(--border-subtle)) 0);
+	}
+
+	.research-card__progress-stage {
+		white-space: nowrap;
+	}
+
+	.research-card__progress-popover {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
+		border-radius: 8px;
+		background: var(--surface-page);
+		padding: var(--space-sm);
+		font-size: 0.8rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
+		animation: research-top-fade 140ms var(--ease-out);
+	}
+
+	.research-card__progress-popover-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		color: var(--text-primary);
+	}
+
+	.research-card__progress-close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.45rem;
+		height: 1.45rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.research-card__progress-current,
+	.research-card__progress-empty {
+		margin: 0;
+	}
+
+	.research-card__progress-popover ul {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin: 0;
+		padding-left: 1rem;
+	}
+
 	.research-card__meta {
 		display: flex;
 		flex-wrap: wrap;
@@ -813,16 +1145,27 @@
 		background: var(--text-muted);
 	}
 
-	.research-card__status--running .research-card__status-dot,
-	.research-card__status--approved .research-card__status-dot,
+	.research-card__status--working .research-card__status-dot,
 	.research-card__status--awaiting_plan .research-card__status-dot,
-	.research-card__status--awaiting_approval .research-card__status-dot {
+	.research-card__status--needs_attention .research-card__status-dot {
 		background: #f97316;
 		animation: research-pulse 1.4s ease-in-out infinite;
 	}
 
 	.research-card__status--completed .research-card__status-dot {
 		background: #22c55e;
+	}
+
+	.research-card__status--insufficient_evidence .research-card__status-dot {
+		background: #eab308;
+	}
+
+	.research-card__status--cancelled .research-card__status-dot {
+		background: var(--text-muted);
+	}
+
+	.research-card__status--failed .research-card__status-dot {
+		background: var(--danger);
 	}
 
 	.research-card__cost {
@@ -1304,10 +1647,22 @@
 		}
 	}
 
+	@keyframes research-top-fade {
+		from {
+			opacity: 0;
+			transform: translateY(-0.35rem);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.research-card__status-dot,
 		.research-card__timeline-marker,
-		.research-card__planning-spinner {
+		.research-card__planning-spinner,
+		.research-card__progress-popover {
 			animation: none !important;
 		}
 

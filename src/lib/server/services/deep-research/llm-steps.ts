@@ -403,6 +403,13 @@ export async function writeResearchReportWithLlm(
 	input: WriteResearchReportInput & { context: LlmStepContext },
 ): Promise<ResearchReportDraft> {
 	const fallback = writeResearchReport(input);
+	if (
+		fallback.structuredReport.core.keyFindings.some(
+			(finding) => finding.claimIds.length > 0,
+		)
+	) {
+		return fallback;
+	}
 	const result = await tryRunAndRecordDeepResearchModel({
 		role: "report_writing",
 		jobId: input.context.jobId,

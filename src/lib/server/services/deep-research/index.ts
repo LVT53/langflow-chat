@@ -756,6 +756,16 @@ export async function completeDeepResearchJobWithAuditedReport(
 		userId: input.userId,
 		jobId: job.id,
 	});
+	const [verifiedSynthesisClaims, verifiedEvidenceNotes] = await Promise.all([
+		listDeepResearchSynthesisClaims({
+			userId: input.userId,
+			jobId: job.id,
+		}),
+		listDeepResearchEvidenceNotes({
+			userId: input.userId,
+			jobId: job.id,
+		}),
+	]);
 	const synthesisFindingsForCitations = [
 		...input.synthesisNotes.findings,
 		...input.synthesisNotes.supportedFindings,
@@ -774,6 +784,12 @@ export async function completeDeepResearchJobWithAuditedReport(
 				sourceIdsNeededForReport.add(source.id);
 			}
 		}
+	}
+	for (const sourceId of sourceIdsFromVerifiedClaims(
+		verifiedSynthesisClaims,
+		verifiedEvidenceNotes
+	)) {
+		sourceIdsNeededForReport.add(sourceId);
 	}
 	await Promise.all(
 		initialSources
@@ -820,6 +836,8 @@ export async function completeDeepResearchJobWithAuditedReport(
 		jobId: job.id,
 		plan: currentPlan.rawPlan,
 		synthesisNotes: input.synthesisNotes,
+		synthesisClaims: verifiedSynthesisClaims,
+		evidenceNotes: verifiedEvidenceNotes,
 		sources: sources.map(mapSourceForReportWriter),
 		limitations: input.limitations,
 	});
@@ -1713,10 +1731,58 @@ function mapSourceForReportWriter(source: DeepResearchSource) {
 	};
 }
 
+function sourceIdsFromVerifiedClaims(
+	claims: DeepResearchSynthesisClaim[],
+	evidenceNotes: DeepResearchEvidenceNote[]
+): string[] {
+	const evidenceById = new Map(evidenceNotes.map((note) => [note.id, note]));
+	return uniqueValues(
+		claims
+			.filter((claim) => claim.status === 'accepted' || claim.status === 'limited')
+			.flatMap((claim) =>
+				claim.evidenceLinks
+					.filter((link) => link.relation === 'support' || link.relation === 'qualification')
+					.flatMap((link) => {
+						const evidence = evidenceById.get(link.evidenceNoteId);
+						if (!evidence) return [];
+						return [
+							evidence.sourceId,
+							evidence.sourceSupport.sourceId,
+							evidence.sourceSupport.reviewedSourceId,
+							...(Array.isArray(evidence.sourceSupport.sourceIds)
+								? evidence.sourceSupport.sourceIds
+								: []),
+						].filter(
+							(value): value is string => typeof value === 'string' && value.length > 0
+						);
+					})
+			)
+	);
+}
+
 function buildCitationAuditReportDraft(
 	reportDraft: ResearchReportDraft,
 	synthesisNotes: SynthesisNotes
 ): DeepResearchReportDraft {
+	if (reportDraft.structuredReport.core.keyFindings.some((finding) => finding.claimIds.length > 0)) {
+		return {
+			title: reportDraft.title,
+			sections: reportDraft.structuredReport.sections.map((section) => ({
+				heading: section.heading,
+				claims: reportDraft.structuredReport.core.keyFindings
+					.filter((finding) =>
+						finding.claimIds.some((claimId) => section.claimIds.includes(claimId))
+					)
+					.map((finding) => ({
+						id: finding.claimIds[0] ?? randomUUID(),
+						text: finding.text,
+						core: true,
+						citationSourceIds: uniqueValues(finding.sourceIds),
+					})),
+			})),
+			limitations: reportDraft.limitations,
+		};
+	}
 	const visibleFindings = selectResearchReportFindings(synthesisNotes);
 	return {
 		title: reportDraft.title,
@@ -1793,6 +1859,12 @@ function renderAuditedReportMarkdown(input: {
 	}
 
 	lines.push(
+		`## ${labels.sourceLedgerSnapshot}`,
+		input.reportDraft.structuredReport.core.sourceLedgerSnapshot,
+		''
+	);
+
+	lines.push(
 		`## ${labels.sources}`,
 		...(citedSources.length > 0
 			? citedSources.map(
@@ -1810,6 +1882,7 @@ const auditedReportLabels: Record<
 		executiveSummary: string;
 		keyFindings: string;
 		sources: string;
+		sourceLedgerSnapshot: string;
 		reportLimitations: string;
 		none: string;
 		noSupportedClaims: string;
@@ -1826,6 +1899,7 @@ const auditedReportLabels: Record<
 		executiveSummary: 'Executive Summary',
 		keyFindings: 'Key Findings',
 		sources: 'Sources',
+		sourceLedgerSnapshot: 'Source Ledger Snapshot',
 		reportLimitations: 'Report Limitations',
 		none: 'None.',
 		noSupportedClaims: 'The citation audit found no credible supported claims.',
@@ -1841,6 +1915,7 @@ const auditedReportLabels: Record<
 		executiveSummary: 'Vezetői összefoglaló',
 		keyFindings: 'Fő megállapítások',
 		sources: 'Források',
+		sourceLedgerSnapshot: 'Forrásnapló pillanatkép',
 		reportLimitations: 'Jelentési korlátok',
 		none: 'Nincs.',
 		noSupportedClaims:

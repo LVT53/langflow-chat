@@ -125,6 +125,158 @@ describe('ResearchCard', () => {
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
 	});
 
+	it('maps operational job status to user-facing research severity', () => {
+		const examples: Array<[Partial<DeepResearchJob>, string]> = [
+			[{ status: 'awaiting_approval', stage: 'plan_drafted' }, 'Needs attention'],
+			[{ status: 'running', stage: 'source_review' }, 'Working'],
+			[{ status: 'completed', stage: 'report_ready', reportArtifactId: 'artifact-report-1' }, 'Completed'],
+			[
+				{
+					status: 'completed',
+					stage: 'evidence_limitation_memo_ready',
+					evidenceLimitationMemo: {
+						title: 'Evidence Limitation Memo',
+						reviewedScope: {
+							discoveredCount: 3,
+							reviewedCount: 1,
+							topicRelevantCount: 0,
+							rejectedOrOffTopicCount: 2,
+						},
+						limitations: ['Evidence is too thin.'],
+						nextResearchDirection: 'Add stronger primary sources.',
+						recoveryActions: [],
+					},
+				},
+				'Insufficient evidence',
+			],
+			[{ status: 'cancelled', stage: 'cancelled' }, 'Cancelled'],
+			[{ status: 'failed', stage: 'failed' }, 'Failed'],
+		];
+
+		for (const [overrides, label] of examples) {
+			const { getAllByText, unmount } = render(ResearchCard, {
+				job: makeDeepResearchJob(overrides),
+			});
+
+			expect(getAllByText(label).length).toBeGreaterThan(0);
+			unmount();
+		}
+	});
+
+	it('reveals coarse stage progress details and dismisses the popup without exact percent language', async () => {
+		const { container, getByRole, getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'citation_audit',
+				passCheckpoints: [
+					{
+						id: 'pass-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						passNumber: 1,
+						lifecycleState: 'decided',
+						searchIntent: 'Establish primary regulatory baseline.',
+						reviewedSourceIds: ['source-1'],
+						coverageGapIds: ['gap-1'],
+						nextDecision: 'continue_research',
+						decisionSummary: 'Need stronger US enforcement evidence.',
+						terminalDecision: true,
+						startedAt: '2026-05-05T10:00:00.000Z',
+						completedAt: '2026-05-05T10:30:00.000Z',
+						createdAt: '2026-05-05T10:00:00.000Z',
+						updatedAt: '2026-05-05T10:30:00.000Z',
+					},
+					{
+						id: 'pass-2',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						passNumber: 2,
+						lifecycleState: 'running',
+						searchIntent: 'Target unresolved enforcement gaps.',
+						reviewedSourceIds: ['source-2'],
+						coverageGapIds: [],
+						terminalDecision: false,
+						startedAt: '2026-05-05T10:31:00.000Z',
+						createdAt: '2026-05-05T10:31:00.000Z',
+						updatedAt: '2026-05-05T10:45:00.000Z',
+					},
+				],
+				coverageGaps: [
+					{
+						id: 'gap-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						passCheckpointId: 'pass-1',
+						lifecycleState: 'open',
+						severity: 'important',
+						reason: 'US enforcement evidence remains thin.',
+						keyQuestion: 'Which rules changed recently?',
+						recommendedNextAction: 'Search regulator guidance.',
+						reviewedSourceCount: 3,
+						createdAt: '2026-05-05T10:30:00.000Z',
+						updatedAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+				synthesisClaims: [
+					{
+						id: 'claim-a',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						statement: 'EU enforcement is stricter.',
+						central: true,
+						status: 'accepted',
+						competingClaimGroupId: 'conflict-1',
+						evidenceLinks: [],
+						createdAt: '2026-05-05T10:45:00.000Z',
+						updatedAt: '2026-05-05T10:45:00.000Z',
+					},
+					{
+						id: 'claim-b',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						statement: 'US enforcement is stricter.',
+						central: true,
+						status: 'rejected',
+						competingClaimGroupId: 'conflict-1',
+						evidenceLinks: [],
+						createdAt: '2026-05-05T10:45:00.000Z',
+						updatedAt: '2026-05-05T10:45:00.000Z',
+					},
+				],
+				resumePoints: [
+					{
+						id: 'resume-repair',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						boundary: 'repair',
+						resumeKey: 'repair:1',
+						status: 'running',
+						stage: 'citation_audit',
+						startedAt: '2026-05-05T10:46:00.000Z',
+						createdAt: '2026-05-05T10:46:00.000Z',
+						updatedAt: '2026-05-05T10:47:00.000Z',
+					},
+				],
+			}),
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Show research progress details' }));
+
+		expect(getByRole('dialog', { name: 'Research progress details' })).toBeInTheDocument();
+		expect(getByText('Auditing citations')).toBeInTheDocument();
+		expect(getByText('1 meaningful pass completed, 1 in progress')).toBeInTheDocument();
+		expect(getByText('1 open coverage gap')).toBeInTheDocument();
+		expect(getByText('1 claim conflict resolved')).toBeInTheDocument();
+		expect(getByText('Audit repair in progress')).toBeInTheDocument();
+		expect(container).not.toHaveTextContent(/%|\bpercent\b/i);
+
+		await fireEvent.keyDown(window, { key: 'Escape' });
+
+		await waitFor(() => {
+			expect(queryByText('Research progress details')).not.toBeInTheDocument();
+		});
+	});
+
 	it('shows Report Intent in the approval view and lets Plan Edit revise it', async () => {
 		const onEdit = vi.fn(async () => {});
 		const { getByRole, getByLabelText, getByText } = render(ResearchCard, {
@@ -213,6 +365,21 @@ describe('ResearchCard', () => {
 		expect(queryByText('Public web sources are enough for the initial pass.')).not.toBeInTheDocument();
 		expect(queryByText('Assumptions')).not.toBeInTheDocument();
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
+	});
+
+	it('keeps timeline rows compact by omitting empty future filler stages', () => {
+		const { getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+				timeline: [],
+			}),
+		});
+
+		expect(getByText('Reviewing sources')).toBeInTheDocument();
+		expect(queryByText('Synthesizing')).not.toBeInTheDocument();
+		expect(queryByText('Writing report')).not.toBeInTheDocument();
+		expect(queryByText('Completed')).not.toBeInTheDocument();
 	});
 
 	it('suppresses repeated per-event source counts unless the event needs source context', () => {
@@ -682,6 +849,30 @@ describe('ResearchCard', () => {
 
 		expect(onDiscussReport).toHaveBeenCalledWith('research-job-1');
 		expect(onResearchFurther).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('renders final Research Time next to completed job cost summary', () => {
+		const { getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'report_ready',
+				reportArtifactId: 'artifact-report-1',
+				completedAt: Date.now(),
+				usageSummary: {
+					totalCostUsdMicros: 12_345,
+					totalTokens: 1234,
+					byModel: [],
+				},
+				runtimeEstimate: {
+					label: '10-25 minutes',
+					source: 'calibrated',
+					actualRuntimeMs: 723_000,
+				},
+			}),
+		});
+
+		expect(getByText('Est. $0.0123')).toBeInTheDocument();
+		expect(getByText('Research time 12m 03s')).toBeInTheDocument();
 	});
 
 	it('presents completed Evidence Limitation Memos as insufficient evidence instead of failed reports', () => {
