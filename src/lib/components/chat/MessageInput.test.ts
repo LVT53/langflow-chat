@@ -310,7 +310,7 @@ describe('MessageInput', () => {
 		});
 
 		await fireEvent.click(getByLabelText(/prompt budget usage/i));
-		await fireEvent.click(getByRole('button', { name: 'Manage evidence' }));
+		await fireEvent.click(getByRole('button', { name: 'Manage context sources' }));
 
 		expect(manageEvidenceSpy).toHaveBeenCalledTimes(1);
 	});

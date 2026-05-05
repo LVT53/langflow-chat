@@ -66,7 +66,7 @@
 	<div
 		class="evidence-overlay"
 		role="dialog"
-		aria-label={$t('evidenceManager.title')}
+		aria-label={$t('contextSources.title')}
 		aria-modal="true"
 		tabindex="-1"
 		onclick={handleBackdropClick}
@@ -74,8 +74,8 @@
 	>
 		<div class="evidence-panel">
 			<div class="panel-header">
-				<h2 class="panel-title">Manage evidence</h2>
-				<button type="button" class="panel-close" aria-label={$t('evidenceManager.close')} onclick={close}>
+				<h2 class="panel-title">{$t('contextSources.manage')}</h2>
+				<button type="button" class="panel-close" aria-label={$t('contextSources.close')} onclick={close}>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 						<path d="M6 6 18 18" />
 						<path d="M18 6 6 18" />
@@ -86,7 +86,7 @@
 			<div class="panel-body">
 				<div class="section">
 					<div class="section-header">
-						<h3>Current selection</h3>
+						<h3>{$t('contextSources.currentSelection')}</h3>
 						<span>{selectedRows.length}</span>
 					</div>
 					{#if selectedRows.length > 0}
@@ -105,19 +105,20 @@
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference={preferenceFor(item.artifactId)}
+										label={$t('contextSources.sourcePreference')}
 										onSteer={steer}
 									/>
 								</div>
 							{/each}
 						</div>
 					{:else}
-						<div class="empty-state">No active evidence is selected right now.</div>
+						<div class="empty-state">{$t('contextSources.noActiveSources')}</div>
 					{/if}
 				</div>
 
 				<div class="section">
 					<div class="section-header">
-						<h3>Pinned</h3>
+						<h3>{$t('contextSources.pinned')}</h3>
 						<span>{contextDebug?.pinnedEvidence.length ?? 0}</span>
 					</div>
 					{#if (contextDebug?.pinnedEvidence.length ?? 0) > 0}
@@ -128,25 +129,26 @@
 										<div class="row-title">{item.name}</div>
 										<div class="row-meta">
 											<span class="row-chip">{item.sourceType}</span>
-											<span>Pinned by you</span>
+											<span>{$t('contextSources.pinnedByYou')}</span>
 										</div>
 									</div>
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference="pinned"
+										label={$t('contextSources.sourcePreference')}
 										onSteer={steer}
 									/>
 								</div>
 							{/each}
 						</div>
 					{:else}
-						<div class="empty-state">No pinned evidence.</div>
+						<div class="empty-state">{$t('contextSources.noPinnedSources')}</div>
 					{/if}
 				</div>
 
 				<div class="section">
 					<div class="section-header">
-						<h3>Excluded</h3>
+						<h3>{$t('contextSources.excluded')}</h3>
 						<span>{contextDebug?.excludedEvidence.length ?? 0}</span>
 					</div>
 					{#if (contextDebug?.excludedEvidence.length ?? 0) > 0}
@@ -157,19 +159,20 @@
 										<div class="row-title">{item.name}</div>
 										<div class="row-meta">
 											<span class="row-chip">{item.sourceType}</span>
-											<span>Excluded from auto-selection</span>
+											<span>{$t('contextSources.excludedFromAutoSelection')}</span>
 										</div>
 									</div>
 									<EvidencePreferenceControl
 										artifactId={item.artifactId}
 										preference="excluded"
+										label={$t('contextSources.sourcePreference')}
 										onSteer={steer}
 									/>
 								</div>
 							{/each}
 						</div>
 					{:else}
-						<div class="empty-state">No excluded evidence.</div>
+						<div class="empty-state">{$t('contextSources.noExcludedSources')}</div>
 					{/if}
 				</div>
 			</div>

@@ -1,17 +1,20 @@
 <script lang="ts">
+	import { t } from '$lib/i18n';
 	import type { EvidencePreference, TaskSteeringPayload } from '$lib/types';
 
 	let {
 		artifactId,
 		preference = 'auto',
-		label = 'Evidence preference',
+		label = undefined,
 		onSteer
 	}: {
 		artifactId: string;
 		preference?: EvidencePreference;
-		label?: string;
+		label?: string | undefined;
 		onSteer?: (payload: TaskSteeringPayload) => void;
 	} = $props();
+
+	let resolvedLabel = $derived(label ?? $t('contextSources.sourcePreference'));
 
 	function handleChange(event: Event) {
 		const nextPreference = (event.currentTarget as HTMLSelectElement).value as EvidencePreference;
@@ -24,11 +27,11 @@
 </script>
 
 <label class="preference-shell">
-	<span class="sr-only">{label}</span>
-	<select class="preference-select" value={preference} aria-label={label} onchange={handleChange}>
-		<option value="auto">Auto</option>
-		<option value="pinned">Pinned</option>
-		<option value="excluded">Excluded</option>
+	<span class="sr-only">{resolvedLabel}</span>
+	<select class="preference-select" value={preference} aria-label={resolvedLabel} onchange={handleChange}>
+		<option value="auto">{$t('contextSources.preference.auto')}</option>
+		<option value="pinned">{$t('contextSources.preference.pinned')}</option>
+		<option value="excluded">{$t('contextSources.preference.excluded')}</option>
 	</select>
 </label>
 
