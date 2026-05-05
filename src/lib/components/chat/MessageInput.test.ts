@@ -58,6 +58,36 @@ describe('MessageInput', () => {
 		);
 	});
 
+	it('closes Deep Research depth choices on outside pointer down', async () => {
+		const { getByPlaceholderText, getByRole, queryByRole } = render(MessageInput, {
+			deepResearchEnabled: true,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+		expect(getByRole('button', { name: 'Focused Deep Research' })).toBeInTheDocument();
+
+		await fireEvent.pointerDown(getByPlaceholderText('Type a message...'));
+
+		expect(queryByRole('button', { name: 'Focused Deep Research' })).toBeNull();
+		expect(queryByRole('button', { name: 'Standard Deep Research' })).toBeNull();
+		expect(queryByRole('button', { name: 'Max Deep Research' })).toBeNull();
+	});
+
+	it('closes Deep Research depth choices on Escape', async () => {
+		const { getByRole, queryByRole } = render(MessageInput, {
+			deepResearchEnabled: true,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Deep Research' }));
+		expect(getByRole('button', { name: 'Focused Deep Research' })).toBeInTheDocument();
+
+		await fireEvent.keyDown(document, { key: 'Escape' });
+
+		expect(queryByRole('button', { name: 'Focused Deep Research' })).toBeNull();
+		expect(queryByRole('button', { name: 'Standard Deep Research' })).toBeNull();
+		expect(queryByRole('button', { name: 'Max Deep Research' })).toBeNull();
+	});
+
 	it('sends the selected Deep Research depth with the next message', async () => {
 		const sendSpy = vi.fn();
 		const { getByPlaceholderText, getByRole, queryByRole } = render(MessageInput, {

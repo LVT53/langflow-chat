@@ -392,6 +392,34 @@ function closeToolsMenu() {
 	showToolsMenu = false;
 }
 
+function closeDeepResearchMenu() {
+	showDeepResearchMenu = false;
+}
+
+function closeDeepResearchMenuOnOutsideInteraction(node: HTMLElement) {
+	function handlePointerDown(event: PointerEvent) {
+		if (!showDeepResearchMenu) return;
+		const target = event.target;
+		if (target instanceof Node && node.contains(target)) return;
+		closeDeepResearchMenu();
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (!showDeepResearchMenu || event.key !== "Escape") return;
+		closeDeepResearchMenu();
+	}
+
+	document.addEventListener("pointerdown", handlePointerDown, true);
+	document.addEventListener("keydown", handleKeydown);
+
+	return {
+		destroy() {
+			document.removeEventListener("pointerdown", handlePointerDown, true);
+			document.removeEventListener("keydown", handleKeydown);
+		},
+	};
+}
+
 function toggleDeepResearchMenu() {
 	if (selectedDeepResearchDepth) {
 		selectedDeepResearchDepth = null;
@@ -683,7 +711,10 @@ async function emitDraftChange(force = false) {
 				</div>
 
 				{#if deepResearchEnabled}
-					<div class="deep-research-trigger relative flex items-center">
+					<div
+						class="deep-research-trigger relative flex items-center"
+						use:closeDeepResearchMenuOnOutsideInteraction
+					>
 						<button
 							type="button"
 							class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
