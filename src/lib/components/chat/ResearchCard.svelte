@@ -1,18 +1,29 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import type { I18nKey } from '$lib/i18n';
-	import type { DeepResearchDepth, DeepResearchJob, DeepResearchJobStatus } from '$lib/types';
+	import type {
+		DeepResearchDepth,
+		DeepResearchJob,
+		DeepResearchJobStatus,
+		DocumentWorkspaceItem,
+	} from '$lib/types';
 
 	let {
 		job,
 		onApprove = undefined,
 		onEdit = undefined,
 		onCancel = undefined,
+		onOpenReport = undefined,
+		onDiscussReport = undefined,
+		onResearchFurther = undefined,
 	}: {
 		job: DeepResearchJob;
 		onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
 		onEdit?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
 		onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
+		onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
+		onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
+		onResearchFurther?: ((jobId: string) => void | Promise<void>) | undefined;
 	} = $props();
 
 	let isEditingPlan = $state(false);
@@ -24,6 +35,7 @@
 	let canCancel = $derived(job.status === 'awaiting_plan' || job.status === 'awaiting_approval');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
+	let reportDocument = $derived(buildReportDocument(job));
 	let timelineEvents = $derived((job.timeline ?? []).slice(-4));
 
 	const depthKeys: Record<DeepResearchDepth, I18nKey> = {
@@ -53,6 +65,49 @@
 	function cancelJob() {
 		if (!canCancel || !onCancel) return;
 		void onCancel(job.id);
+	}
+
+	function buildReportFilename(title: string): string {
+		const safeTitle = title
+			.replace(/[\\/:*?"<>|]+/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 96);
+		return `Research Report - ${safeTitle || 'Deep Research'}.md`;
+	}
+
+	function buildReportDocument(job: DeepResearchJob): DocumentWorkspaceItem | null {
+		if (job.status !== 'completed' || !job.reportArtifactId) return null;
+		const filename = buildReportFilename(job.title);
+		return {
+			id: `artifact:${job.reportArtifactId}`,
+			source: 'knowledge_artifact',
+			filename,
+			title: filename,
+			documentLabel: filename,
+			documentRole: 'research_report',
+			versionNumber: 1,
+			mimeType: 'text/markdown',
+			artifactId: job.reportArtifactId,
+			conversationId: job.conversationId,
+			previewUrl: `/api/knowledge/${job.reportArtifactId}/preview`,
+			downloadUrl: `/api/knowledge/${job.reportArtifactId}/download`,
+		};
+	}
+
+	function openReport() {
+		if (!reportDocument || !onOpenReport) return;
+		onOpenReport(reportDocument);
+	}
+
+	function discussReport() {
+		if (!reportDocument || !onDiscussReport) return;
+		void onDiscussReport(job.id);
+	}
+
+	function researchFurther() {
+		if (!reportDocument || !onResearchFurther) return;
+		void onResearchFurther(job.id);
 	}
 
 	async function approvePlan() {
@@ -259,6 +314,41 @@
 				title={$t('deepResearch.cancelLabel')}
 			>
 				{$t('common.cancel')}
+			</button>
+		</div>
+	{/if}
+
+	{#if reportDocument}
+		<div class="research-card__actions">
+			<button
+				type="button"
+				class="research-card__action research-card__action--primary"
+				onclick={openReport}
+				disabled={!onOpenReport}
+				aria-label={$t('deepResearch.openReportLabel')}
+				title={$t('deepResearch.openReportLabel')}
+			>
+				{$t('deepResearch.openReportLabel')}
+			</button>
+			<button
+				type="button"
+				class="research-card__action"
+				onclick={discussReport}
+				disabled={!onDiscussReport}
+				aria-label={$t('deepResearch.discussReportLabel')}
+				title={$t('deepResearch.discussReportLabel')}
+			>
+				{$t('deepResearch.discussReportLabel')}
+			</button>
+			<button
+				type="button"
+				class="research-card__action"
+				onclick={researchFurther}
+				disabled={!onResearchFurther}
+				aria-label={$t('deepResearch.researchFurtherLabel')}
+				title={$t('deepResearch.researchFurtherLabel')}
+			>
+				{$t('deepResearch.researchFurtherLabel')}
 			</button>
 		</div>
 	{/if}

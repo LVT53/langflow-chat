@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations, deepResearchJobs, deepResearchPlanVersions } from '$lib/server/db/schema';
-import { createArtifact } from '$lib/server/services/knowledge/store';
+import {
+	artifacts,
+	conversations,
+	deepResearchJobs,
+	deepResearchPlanVersions,
+} from '$lib/server/db/schema';
+import { createConversation } from '$lib/server/services/conversations';
+import { createArtifact, createArtifactLink } from '$lib/server/services/knowledge/store';
+import { createMessage } from '$lib/server/services/messages';
 import type {
+	Conversation,
 	DeepResearchDepth,
 	DeepResearchEffortEstimate,
 	DeepResearchJob,
@@ -83,8 +91,37 @@ export type CompleteDeepResearchJobWithFakeReportInput = {
 	now?: Date;
 };
 
+export type DiscussDeepResearchReportInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type ResearchFurtherFromDeepResearchReportInput = {
+	userId: string;
+	jobId: string;
+	depth?: DeepResearchDepth;
+	researchLanguage?: ResearchLanguage;
+	now?: Date;
+};
+
+export type DeepResearchReportActionResult = {
+	sourceJobId: string;
+	reportArtifactId: string;
+	conversation: Conversation;
+	messageId: string;
+};
+
+export type ResearchFurtherReportActionResult = DeepResearchReportActionResult & {
+	job: DeepResearchJob;
+};
+
 type DeepResearchJobRow = typeof deepResearchJobs.$inferSelect;
 type DeepResearchPlanVersionRow = typeof deepResearchPlanVersions.$inferSelect;
+type ResearchReportContext = {
+	job: DeepResearchJobRow;
+	report: typeof artifacts.$inferSelect;
+};
 
 const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed', 'failed', 'cancelled')`;
 
@@ -526,10 +563,162 @@ export async function completeDeepResearchJobWithFakeReport(
 	);
 }
 
+export async function discussDeepResearchReport(
+	input: DiscussDeepResearchReportInput
+): Promise<DeepResearchReportActionResult | null> {
+	const context = await loadCompletedResearchReportContext(input);
+	if (!context) return null;
+
+	const conversation = await createConversation(
+		input.userId,
+		buildFollowupConversationTitle('Discuss', context.job.title)
+	);
+	const message = await createMessage(
+		conversation.id,
+		'user',
+		buildDiscussReportSeedMessage(context),
+		undefined,
+		undefined,
+		{
+			deepResearchReportContext: {
+				action: 'discuss_report',
+				sourceJobId: context.job.id,
+				sourceConversationId: context.job.conversationId,
+				reportArtifactId: context.report.id,
+			},
+		}
+	);
+	await createArtifactLink({
+		userId: input.userId,
+		artifactId: context.report.id,
+		linkType: 'attached_to_conversation',
+		conversationId: conversation.id,
+		messageId: message.id,
+	});
+
+	return {
+		sourceJobId: context.job.id,
+		reportArtifactId: context.report.id,
+		conversation,
+		messageId: message.id,
+	};
+}
+
+export async function researchFurtherFromDeepResearchReport(
+	input: ResearchFurtherFromDeepResearchReportInput
+): Promise<ResearchFurtherReportActionResult | null> {
+	const context = await loadCompletedResearchReportContext(input);
+	if (!context) return null;
+
+	const depth = input.depth ?? (context.job.depth as DeepResearchDepth);
+	const conversation = await createConversation(
+		input.userId,
+		buildFollowupConversationTitle('Research further', context.job.title)
+	);
+	const userRequest = buildResearchFurtherSeedMessage(context);
+	const message = await createMessage(
+		conversation.id,
+		'user',
+		userRequest,
+		undefined,
+		undefined,
+		{
+			deepResearchReportContext: {
+				action: 'research_further',
+				sourceJobId: context.job.id,
+				sourceConversationId: context.job.conversationId,
+				reportArtifactId: context.report.id,
+			},
+		}
+	);
+	await createArtifactLink({
+		userId: input.userId,
+		artifactId: context.report.id,
+		linkType: 'attached_to_conversation',
+		conversationId: conversation.id,
+		messageId: message.id,
+	});
+
+	const job = await startDeepResearchJobShell({
+		userId: input.userId,
+		conversationId: conversation.id,
+		triggerMessageId: message.id,
+		userRequest,
+		depth,
+		researchLanguage: input.researchLanguage,
+		planningContext: [
+			{
+				type: 'report',
+				title: context.report.name,
+				summary: context.report.summary ?? context.report.contentText ?? context.job.title,
+			},
+		],
+		now: input.now,
+	});
+
+	return {
+		sourceJobId: context.job.id,
+		reportArtifactId: context.report.id,
+		conversation,
+		messageId: message.id,
+		job,
+	};
+}
+
+async function loadCompletedResearchReportContext(input: {
+	userId: string;
+	jobId: string;
+}): Promise<ResearchReportContext | null> {
+	const [row] = await db
+		.select({
+			job: deepResearchJobs,
+			report: artifacts,
+		})
+		.from(deepResearchJobs)
+		.innerJoin(artifacts, eq(deepResearchJobs.reportArtifactId, artifacts.id))
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+				eq(deepResearchJobs.status, 'completed'),
+				eq(artifacts.userId, input.userId)
+			)
+		)
+		.limit(1);
+
+	return row ?? null;
+}
+
 function buildJobTitle(userRequest: string): string {
 	const normalized = userRequest.replace(/\s+/g, ' ').trim();
 	if (normalized.length <= 80) return normalized;
 	return `${normalized.slice(0, 77)}...`;
+}
+
+function buildFollowupConversationTitle(prefix: string, jobTitle: string): string {
+	const title = `${prefix}: ${jobTitle}`.replace(/\s+/g, ' ').trim();
+	if (title.length <= 80) return title;
+	return `${title.slice(0, 77)}...`;
+}
+
+function buildDiscussReportSeedMessage(context: ResearchReportContext): string {
+	return [
+		`Discuss this Research Report: ${context.report.name}`,
+		'',
+		`Source Deep Research topic: ${context.job.title}`,
+		'',
+		'Use the attached Research Report as the working context for this normal chat.',
+	].join('\n');
+}
+
+function buildResearchFurtherSeedMessage(context: ResearchReportContext): string {
+	return [
+		`Research further from this Research Report: ${context.report.name}`,
+		'',
+		`Source Deep Research topic: ${context.job.title}`,
+		'',
+		'Use the attached Research Report as planning context and draft a new Deep Research Plan for approval.',
+	].join('\n');
 }
 
 function buildReportArtifactName(jobTitle: string): string {

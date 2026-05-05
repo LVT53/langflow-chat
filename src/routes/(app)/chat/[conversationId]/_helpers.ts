@@ -9,6 +9,7 @@ import type {
 	PendingAttachment,
 	ToolEvidenceCandidate,
 	FileProductionJob,
+	DeepResearchJob,
 	ModelId,
 } from '$lib/types';
 
@@ -132,6 +133,13 @@ export function mergeAttachedArtifacts(
 
 export function hasActiveFileProductionJobs(jobs: FileProductionJob[]): boolean {
 	return jobs.some((job) => job.status === 'queued' || job.status === 'running');
+}
+
+export function isConversationReadOnly(
+	conversation: { status?: 'open' | 'sealed' | null },
+	_deepResearchJobs: DeepResearchJob[] = []
+): boolean {
+	return conversation.status === 'sealed';
 }
 
 export function shouldHydrateFileProductionJobsOnToolCall(

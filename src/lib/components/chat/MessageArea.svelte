@@ -19,6 +19,7 @@ let {
 	contextDebug = null,
 	fileProductionJobs = [],
 	deepResearchJobs = [],
+	readOnly = false,
 	onRegenerate = undefined,
 	onEdit = undefined,
 	onSteer = undefined,
@@ -28,6 +29,8 @@ let {
 	onCancelDeepResearchJob = undefined,
 	onEditDeepResearchPlan = undefined,
 	onApproveDeepResearchPlan = undefined,
+	onDiscussDeepResearchReport = undefined,
+	onResearchFurtherFromDeepResearchReport = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
@@ -35,6 +38,7 @@ let {
 	contextDebug?: ContextDebugState | null;
 	fileProductionJobs?: FileProductionJob[];
 	deepResearchJobs?: DeepResearchJob[];
+	readOnly?: boolean;
 	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 	onEdit?:
 		| ((payload: { messageId: string; newText: string }) => void)
@@ -46,6 +50,8 @@ let {
 	onCancelDeepResearchJob?: ((jobId: string) => void | Promise<void>) | undefined;
 	onEditDeepResearchPlan?: ((jobId: string, instructions: string) => void | Promise<void>) | undefined;
 	onApproveDeepResearchPlan?: ((jobId: string) => void | Promise<void>) | undefined;
+	onDiscussDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
+	onResearchFurtherFromDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -204,6 +210,9 @@ async function alignToBottomAfterRender() {
 					onCancel={onCancelDeepResearchJob}
 					onEdit={onEditDeepResearchPlan}
 					onApprove={onApproveDeepResearchPlan}
+					onOpenReport={onOpenDocument}
+					onDiscussReport={onDiscussDeepResearchReport}
+					onResearchFurther={onResearchFurtherFromDeepResearchReport}
 				/>
 			{/each}
 			{#each dedupedMessages as message, i (message.renderKey ?? message.id)}
@@ -214,6 +223,7 @@ async function alignToBottomAfterRender() {
 					{excludedArtifactIds}
 					fileProductionJobs={getFileProductionJobsForMessage(message)}
 					{conversationId}
+					{readOnly}
 					{onRegenerate}
 					{onEdit}
 					{onSteer}

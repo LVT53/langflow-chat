@@ -756,4 +756,209 @@ describe('deep research job shell service', () => {
 		expect(secondCompletion).toEqual(firstCompletion);
 		expect(reportArtifacts).toEqual([{ id: firstCompletion?.reportArtifactId }]);
 	});
+
+	it('starts a new Normal Chat from a completed Research Report without reopening the sealed conversation', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithFakeReport,
+			discussDeepResearchReport,
+			startDeepResearchJobShell,
+		} = await import('./index');
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'standard',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+		await approveDeepResearchPlan({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:06:00.000Z'),
+		});
+		const completed = await completeDeepResearchJobWithFakeReport({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:20:00.000Z'),
+		});
+
+		const action = await discussDeepResearchReport({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:25:00.000Z'),
+		});
+		const [sourceConversation] = await db
+			.select({
+				status: schema.conversations.status,
+				sealedAt: schema.conversations.sealedAt,
+			})
+			.from(schema.conversations)
+			.where(eq(schema.conversations.id, 'conv-1'));
+		const [seedMessage] = await db
+			.select({
+				role: schema.messages.role,
+				content: schema.messages.content,
+				metadataJson: schema.messages.metadataJson,
+			})
+			.from(schema.messages)
+			.where(eq(schema.messages.conversationId, action?.conversation.id ?? ''));
+		const links = await db
+			.select({
+				artifactId: schema.artifactLinks.artifactId,
+				conversationId: schema.artifactLinks.conversationId,
+				messageId: schema.artifactLinks.messageId,
+				linkType: schema.artifactLinks.linkType,
+			})
+			.from(schema.artifactLinks)
+			.where(eq(schema.artifactLinks.conversationId, action?.conversation.id ?? ''));
+		const followupJobs = await db
+			.select({ id: schema.deepResearchJobs.id })
+			.from(schema.deepResearchJobs)
+			.where(eq(schema.deepResearchJobs.conversationId, action?.conversation.id ?? ''));
+
+		expect(action).toMatchObject({
+			sourceJobId: created.id,
+			reportArtifactId: completed?.reportArtifactId,
+			conversation: {
+				title: 'Discuss: Compare EU and US AI copyright training data rules',
+			},
+			messageId: expect.any(String),
+		});
+		expect(action?.conversation.id).not.toBe('conv-1');
+		expect(sourceConversation).toEqual({
+			status: 'sealed',
+			sealedAt: new Date('2026-05-05T10:20:00.000Z'),
+		});
+		expect(seedMessage).toMatchObject({
+			role: 'user',
+			content: expect.stringContaining('Discuss this Research Report'),
+		});
+		expect(JSON.parse(seedMessage?.metadataJson ?? '{}')).toMatchObject({
+			deepResearchReportContext: {
+				action: 'discuss_report',
+				sourceJobId: created.id,
+				sourceConversationId: 'conv-1',
+				reportArtifactId: completed?.reportArtifactId,
+			},
+		});
+		expect(links).toEqual([
+			{
+				artifactId: completed?.reportArtifactId,
+				conversationId: action?.conversation.id,
+				messageId: action?.messageId,
+				linkType: 'attached_to_conversation',
+			},
+		]);
+		expect(followupJobs).toEqual([]);
+	});
+
+	it('starts a new Deep Research Job from a completed Research Report and leaves it awaiting approval', async () => {
+		const { db } = await import('$lib/server/db');
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithFakeReport,
+			researchFurtherFromDeepResearchReport,
+			startDeepResearchJobShell,
+		} = await import('./index');
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'standard',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+		await approveDeepResearchPlan({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:06:00.000Z'),
+		});
+		const completed = await completeDeepResearchJobWithFakeReport({
+			userId: 'user-1',
+			jobId: created.id,
+			now: new Date('2026-05-05T10:20:00.000Z'),
+		});
+
+		const action = await researchFurtherFromDeepResearchReport({
+			userId: 'user-1',
+			jobId: created.id,
+			depth: 'focused',
+			now: new Date('2026-05-05T10:25:00.000Z'),
+		});
+		const [sourceConversation] = await db
+			.select({
+				status: schema.conversations.status,
+				sealedAt: schema.conversations.sealedAt,
+			})
+			.from(schema.conversations)
+			.where(eq(schema.conversations.id, 'conv-1'));
+		const [seedMessage] = await db
+			.select({
+				role: schema.messages.role,
+				content: schema.messages.content,
+				metadataJson: schema.messages.metadataJson,
+			})
+			.from(schema.messages)
+			.where(eq(schema.messages.id, action?.messageId ?? ''));
+		const links = await db
+			.select({
+				artifactId: schema.artifactLinks.artifactId,
+				conversationId: schema.artifactLinks.conversationId,
+				messageId: schema.artifactLinks.messageId,
+				linkType: schema.artifactLinks.linkType,
+			})
+			.from(schema.artifactLinks)
+			.where(eq(schema.artifactLinks.conversationId, action?.conversation.id ?? ''));
+
+		expect(action).toMatchObject({
+			sourceJobId: created.id,
+			reportArtifactId: completed?.reportArtifactId,
+			conversation: {
+				title: 'Research further: Compare EU and US AI copyright training data rules',
+			},
+			messageId: expect.any(String),
+			job: {
+				conversationId: action?.conversation.id,
+				triggerMessageId: action?.messageId,
+				depth: 'focused',
+				status: 'awaiting_approval',
+				stage: 'plan_drafted',
+				plan: {
+					contextDisclosure: 'Context considered: 1 report item.',
+					effortEstimate: {
+						selectedDepth: 'focused',
+						sourceReviewCeiling: 12,
+					},
+				},
+			},
+		});
+		expect(action?.conversation.id).not.toBe('conv-1');
+		expect(action?.job.id).not.toBe(created.id);
+		expect(sourceConversation).toEqual({
+			status: 'sealed',
+			sealedAt: new Date('2026-05-05T10:20:00.000Z'),
+		});
+		expect(seedMessage).toMatchObject({
+			role: 'user',
+			content: expect.stringContaining('Research further from this Research Report'),
+		});
+		expect(JSON.parse(seedMessage?.metadataJson ?? '{}')).toMatchObject({
+			deepResearchReportContext: {
+				action: 'research_further',
+				sourceJobId: created.id,
+				sourceConversationId: 'conv-1',
+				reportArtifactId: completed?.reportArtifactId,
+			},
+		});
+		expect(links).toEqual([
+			{
+				artifactId: completed?.reportArtifactId,
+				conversationId: action?.conversation.id,
+				messageId: action?.messageId,
+				linkType: 'attached_to_conversation',
+			},
+		]);
+	});
 });

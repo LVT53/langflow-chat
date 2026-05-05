@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ResearchCard from './ResearchCard.svelte';
-import type { DeepResearchJob } from '$lib/types';
+import type { DeepResearchJob, DocumentWorkspaceItem } from '$lib/types';
 
 function makeDeepResearchJob(overrides: Partial<DeepResearchJob> = {}): DeepResearchJob {
 	const now = Date.now();
@@ -269,6 +269,72 @@ describe('ResearchCard', () => {
 
 		await waitFor(() => {
 			expect(getByRole('alert')).toHaveTextContent('Approval route unavailable');
+		});
+	});
+
+	it('shows Report Actions on completed Research Reports and calls their handlers', async () => {
+		const onDiscussReport = vi.fn();
+		const onResearchFurther = vi.fn();
+		const { getByRole } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'report_ready',
+				reportArtifactId: 'artifact-report-1',
+				completedAt: Date.now(),
+			}),
+			onDiscussReport,
+			onResearchFurther,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Discuss Report' }));
+		await fireEvent.click(getByRole('button', { name: 'Research Further' }));
+
+		expect(onDiscussReport).toHaveBeenCalledWith('research-job-1');
+		expect(onResearchFurther).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('does not show Report Actions before a Research Report is completed', () => {
+		const { queryByRole } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'synthesis',
+				reportArtifactId: null,
+			}),
+			onDiscussReport: vi.fn(),
+			onResearchFurther: vi.fn(),
+		});
+
+		expect(queryByRole('button', { name: 'Discuss Report' })).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Research Further' })).not.toBeInTheDocument();
+	});
+
+	it('opens a completed fake Research Report in the document workspace', async () => {
+		const onOpenReport = vi.fn<(document: DocumentWorkspaceItem) => void>();
+		const { getByRole } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'completed',
+				stage: 'report_ready',
+				reportArtifactId: 'artifact-report-1',
+				completedAt: Date.now(),
+			}),
+			onOpenReport,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Open Report' }));
+
+		expect(onOpenReport).toHaveBeenCalledWith({
+			id: 'artifact:artifact-report-1',
+			source: 'knowledge_artifact',
+			filename: 'Research Report - Research battery recycling policy.md',
+			title: 'Research Report - Research battery recycling policy.md',
+			documentLabel: 'Research Report - Research battery recycling policy.md',
+			documentRole: 'research_report',
+			versionNumber: 1,
+			mimeType: 'text/markdown',
+			artifactId: 'artifact-report-1',
+			conversationId: 'conv-1',
+			previewUrl: '/api/knowledge/artifact-report-1/preview',
+			downloadUrl: '/api/knowledge/artifact-report-1/download',
 		});
 	});
 });

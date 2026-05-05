@@ -25,6 +25,7 @@
 		excludedArtifactIds = [],
 		fileProductionJobs = [],
 		conversationId = null,
+		readOnly = false,
 		onRegenerate = undefined,
 		onEdit = undefined,
 		onSteer = undefined,
@@ -38,6 +39,7 @@
 		excludedArtifactIds?: string[];
 		fileProductionJobs?: FileProductionJob[];
 		conversationId?: string | null;
+		readOnly?: boolean;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
@@ -365,7 +367,7 @@
 				</div>
 			{/if}
 
-			{#if !isUser}
+			{#if !isUser && !readOnly}
 				<!-- Regenerate button -->
 				<button
 					type="button"
@@ -398,19 +400,21 @@
 						</div>
 					</div>
 				</div>
-				<!-- Edit button -->
-				<button
-					type="button"
-					class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
-					onclick={startEdit}
-					title={$t('messageBubble.editMessage')}
-					aria-label={$t('messageBubble.editMessage')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-					</svg>
-				</button>
+				{#if !readOnly}
+					<!-- Edit button -->
+					<button
+						type="button"
+						class="btn-icon-bare sm:!min-h-[44px] sm:!min-w-[44px]"
+						onclick={startEdit}
+						title={$t('messageBubble.editMessage')}
+						aria-label={$t('messageBubble.editMessage')}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+							<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+						</svg>
+					</button>
+				{/if}
 			{/if}
 
 			<button

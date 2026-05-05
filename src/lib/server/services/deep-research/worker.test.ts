@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,6 +134,117 @@ describe("mock Deep Research worker", () => {
 				}),
 			]),
 		);
+	});
+
+	it("advances an approved job by explicit trigger without an open chat stream", async () => {
+		const approved = await createApprovedResearchJob();
+		const { triggerMockDeepResearchWorkerForJob } = await import("./worker");
+		const { listConversationDeepResearchJobs } = await import("./index");
+
+		const result = await triggerMockDeepResearchWorkerForJob({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const [reloaded] = await listConversationDeepResearchJobs(
+			"user-1",
+			"conv-1",
+		);
+
+		expect(result).toMatchObject({
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "source_discovery",
+				updatedAt: new Date("2026-05-05T10:07:00.000Z").getTime(),
+			},
+			advanced: true,
+		});
+		expect(reloaded).toEqual(result?.job);
+	});
+
+	it("does not advance non-approved, cancelled, or failed jobs by explicit trigger", async () => {
+		const { startDeepResearchJobShell, cancelPrePlanDeepResearchJob } =
+			await import("./index");
+		const { triggerMockDeepResearchWorkerForJob } = await import("./worker");
+		const { db } = await import("$lib/server/db");
+
+		const awaitingApproval = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare EU and US AI copyright training data rules",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+
+		await expect(
+			triggerMockDeepResearchWorkerForJob({
+				userId: "user-1",
+				jobId: awaitingApproval.id,
+				now: new Date("2026-05-05T10:07:00.000Z"),
+			}),
+		).resolves.toMatchObject({
+			job: {
+				id: awaitingApproval.id,
+				status: "awaiting_approval",
+				stage: "plan_drafted",
+			},
+			advanced: false,
+		});
+
+		const cancelled = await cancelPrePlanDeepResearchJob({
+			userId: "user-1",
+			jobId: awaitingApproval.id,
+			now: new Date("2026-05-05T10:08:00.000Z"),
+		});
+
+		await expect(
+			triggerMockDeepResearchWorkerForJob({
+				userId: "user-1",
+				jobId: cancelled?.id ?? awaitingApproval.id,
+				now: new Date("2026-05-05T10:09:00.000Z"),
+			}),
+		).resolves.toMatchObject({
+			job: {
+				id: awaitingApproval.id,
+				status: "cancelled",
+				stage: "cancelled_before_approval",
+			},
+			advanced: false,
+		});
+
+		const failedJob = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare EU and US AI copyright training data rules again",
+			depth: "focused",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "failed",
+				stage: "mock_failed",
+				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, failedJob.id));
+
+		await expect(
+			triggerMockDeepResearchWorkerForJob({
+				userId: "user-1",
+				jobId: failedJob.id,
+				now: new Date("2026-05-05T10:12:00.000Z"),
+			}),
+		).resolves.toMatchObject({
+			job: {
+				id: failedJob.id,
+				status: "failed",
+				stage: "mock_failed",
+			},
+			advanced: false,
+		});
 	});
 
 	it("advances the persisted mock stage sequence into a report-ready handoff state", async () => {

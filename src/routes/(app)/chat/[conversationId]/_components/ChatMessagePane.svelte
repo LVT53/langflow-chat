@@ -17,6 +17,7 @@
 		contextDebug,
 		fileProductionJobs = [],
 		deepResearchJobs = [],
+		readOnly = false,
 		onOpenDocument,
 		onRegenerate,
 		onEdit,
@@ -26,6 +27,8 @@
 		onCancelDeepResearchJob,
 		onEditDeepResearchPlan,
 		onApproveDeepResearchPlan,
+		onDiscussDeepResearchReport,
+		onResearchFurtherFromDeepResearchReport,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
@@ -33,6 +36,7 @@
 		contextDebug: ContextDebugState | null;
 		fileProductionJobs?: FileProductionJob[];
 		deepResearchJobs?: DeepResearchJob[];
+		readOnly?: boolean;
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
@@ -42,6 +46,8 @@
 		onCancelDeepResearchJob?: (jobId: string) => void | Promise<void>;
 		onEditDeepResearchPlan?: (jobId: string, instructions: string) => void | Promise<void>;
 		onApproveDeepResearchPlan?: (jobId: string) => void | Promise<void>;
+		onDiscussDeepResearchReport?: (jobId: string) => void | Promise<void>;
+		onResearchFurtherFromDeepResearchReport?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -53,6 +59,7 @@
 		{contextDebug}
 		{fileProductionJobs}
 		{deepResearchJobs}
+		{readOnly}
 		{onOpenDocument}
 		{onRegenerate}
 		{onEdit}
@@ -62,6 +69,8 @@
 		{onCancelDeepResearchJob}
 		{onEditDeepResearchPlan}
 		{onApproveDeepResearchPlan}
+		{onDiscussDeepResearchReport}
+		{onResearchFurtherFromDeepResearchReport}
 	/>
 </div>
 

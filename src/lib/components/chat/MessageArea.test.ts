@@ -1,7 +1,12 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import MessageArea from './MessageArea.svelte';
-import type { ChatMessage, DeepResearchJob, FileProductionJob } from '$lib/types';
+import type {
+	ChatMessage,
+	DeepResearchJob,
+	DocumentWorkspaceItem,
+	FileProductionJob,
+} from '$lib/types';
 
 Object.defineProperty(window, 'matchMedia', {
 	writable: true,
@@ -215,6 +220,108 @@ describe('MessageArea', () => {
 			'Include more primary sources.'
 		);
 		expect(onApproveDeepResearchPlan).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('routes completed Deep Research reports through the workspace open callback', async () => {
+		const onOpenDocument = vi.fn<(document: DocumentWorkspaceItem) => void>();
+		const { getByRole } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'completed',
+					stage: 'report_ready',
+					reportArtifactId: 'artifact-report-1',
+					completedAt: Date.now(),
+				}),
+			],
+			onOpenDocument,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Open Report' }));
+
+		expect(onOpenDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'artifact:artifact-report-1',
+				source: 'knowledge_artifact',
+				artifactId: 'artifact-report-1',
+				previewUrl: '/api/knowledge/artifact-report-1/preview',
+			})
+		);
+	});
+
+	it('routes completed Deep Research Report Actions through card callbacks', async () => {
+		const onDiscussDeepResearchReport = vi.fn();
+		const onResearchFurtherFromDeepResearchReport = vi.fn();
+		const { getByRole } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'completed',
+					stage: 'report_ready',
+					reportArtifactId: 'artifact-report-1',
+					completedAt: Date.now(),
+				}),
+			],
+			onDiscussDeepResearchReport,
+			onResearchFurtherFromDeepResearchReport,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Discuss Report' }));
+		await fireEvent.click(getByRole('button', { name: 'Research Further' }));
+
+		expect(onDiscussDeepResearchReport).toHaveBeenCalledWith('research-job-1');
+		expect(onResearchFurtherFromDeepResearchReport).toHaveBeenCalledWith('research-job-1');
+	});
+
+	it('keeps completed Research Cards usable while read-only chat actions are hidden', async () => {
+		const onOpenDocument = vi.fn<(document: DocumentWorkspaceItem) => void>();
+		const { getByRole, queryByRole } = render(MessageArea, {
+			readOnly: true,
+			messages: [
+				{
+					id: 'user-1',
+					renderKey: 'user-1',
+					role: 'user',
+					content: 'Research battery recycling policy',
+					timestamp: Date.now(),
+				},
+				{
+					id: 'assistant-1',
+					renderKey: 'assistant-1',
+					role: 'assistant',
+					content: 'The report is ready.',
+					timestamp: Date.now() + 1,
+					isStreaming: false,
+					isThinkingStreaming: false,
+				},
+			],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'completed',
+					stage: 'report_ready',
+					reportArtifactId: 'artifact-report-1',
+					completedAt: Date.now(),
+				}),
+			],
+			onOpenDocument,
+			onEdit: vi.fn(),
+			onRegenerate: vi.fn(),
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Open Report' }));
+
+		expect(onOpenDocument).toHaveBeenCalledOnce();
+		expect(queryByRole('button', { name: 'Edit message' })).not.toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Regenerate response' })).not.toBeInTheDocument();
 	});
 
 	it('scrolls to reveal file-production cards when they appear at the end of the chat', async () => {

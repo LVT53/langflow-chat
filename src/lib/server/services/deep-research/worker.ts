@@ -15,6 +15,17 @@ export type RunNextMockDeepResearchWorkerStepResult = {
 	advanced: boolean;
 } | null;
 
+export type TriggerMockDeepResearchWorkerForJobInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type TriggerMockDeepResearchWorkerForJobResult = {
+	job: DeepResearchJob;
+	advanced: boolean;
+} | null;
+
 type MockWorkerStage = {
 	fromStatus: string;
 	fromStage: string;
@@ -99,6 +110,47 @@ export async function runNextMockDeepResearchWorkerStep(
 	);
 	if (!nextStage) return null;
 
+	return advanceMockWorkerJob(eligibleJob, nextStage, now);
+}
+
+export async function triggerMockDeepResearchWorkerForJob(
+	input: TriggerMockDeepResearchWorkerForJobInput,
+): Promise<TriggerMockDeepResearchWorkerForJobResult> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+			),
+		)
+		.limit(1);
+
+	if (!job) return null;
+	const nextStage = getNextMockWorkerStage(job.status, job.stage);
+	if (!nextStage) {
+		const jobs = await listConversationDeepResearchJobs(
+			job.userId,
+			job.conversationId,
+		);
+		const currentJob = jobs.find((candidate) => candidate.id === job.id);
+		if (!currentJob) return null;
+		return {
+			job: currentJob,
+			advanced: false,
+		};
+	}
+
+	return advanceMockWorkerJob(job, nextStage, now);
+}
+
+async function advanceMockWorkerJob(
+	eligibleJob: typeof deepResearchJobs.$inferSelect,
+	nextStage: MockWorkerStage,
+	now: Date,
+): Promise<RunNextMockDeepResearchWorkerStepResult> {
 	const [claimedJob] = await db
 		.update(deepResearchJobs)
 		.set({

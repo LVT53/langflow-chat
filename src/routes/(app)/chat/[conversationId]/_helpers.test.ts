@@ -7,11 +7,12 @@ import {
 	createAssistantPlaceholder,
 	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveFileProductionJobs,
+	isConversationReadOnly,
 	mergeFileProductionJob,
 	shouldHydrateFileProductionJobsOnToolCall,
 	toFriendlySendError,
 } from './_helpers';
-import type { FileProductionJob } from '$lib/types';
+import type { DeepResearchJob, FileProductionJob } from '$lib/types';
 
 function makeJob(id: string, status: FileProductionJob['status']): FileProductionJob {
 	return {
@@ -37,6 +38,23 @@ function makeUnassignedJob(
 		...makeJob(id, 'succeeded'),
 		assistantMessageId: null,
 		...overrides,
+	};
+}
+
+function makeDeepResearchJob(status: DeepResearchJob['status']): DeepResearchJob {
+	return {
+		id: `research-${status}`,
+		conversationId: 'conv-1',
+		triggerMessageId: 'user-1',
+		depth: 'standard',
+		status,
+		stage: status,
+		title: `${status} research`,
+		userRequest: `${status} research`,
+		createdAt: 1,
+		updatedAt: 1,
+		completedAt: null,
+		cancelledAt: status === 'cancelled' ? 2 : null,
 	};
 }
 
@@ -88,6 +106,20 @@ describe('send payload helpers', () => {
 				deepResearchDepth: 'focused',
 			})
 		);
+	});
+});
+
+describe('conversation read-only helpers', () => {
+	it('treats sealed conversations as read-only for chat input', () => {
+		expect(isConversationReadOnly({ status: 'sealed' })).toBe(true);
+		expect(isConversationReadOnly({ status: 'open' })).toBe(false);
+		expect(isConversationReadOnly({ status: undefined })).toBe(false);
+	});
+
+	it('does not infer read-only mode from cancelled or failed Deep Research jobs', () => {
+		const jobs = [makeDeepResearchJob('cancelled'), makeDeepResearchJob('failed')];
+
+		expect(isConversationReadOnly({ status: 'open' }, jobs)).toBe(false);
 	});
 });
 

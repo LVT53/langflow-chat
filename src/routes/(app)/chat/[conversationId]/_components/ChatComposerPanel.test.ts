@@ -89,4 +89,24 @@ describe("ChatComposerPanel", () => {
 			}),
 		);
 	});
+
+	it("does not send from a disabled composer", async () => {
+		const onSend = vi.fn();
+		const { getByPlaceholderText, getByRole } = renderComposerPanel({
+			disabled: true,
+			onSend,
+		});
+
+		await fireEvent.input(getByPlaceholderText("Type a message..."), {
+			target: { value: "Try to continue the sealed conversation" },
+		});
+
+		expect(getByRole("button", { name: "Send message" })).toBeDisabled();
+
+		await fireEvent.keyDown(getByPlaceholderText("Type a message..."), {
+			key: "Enter",
+		});
+
+		expect(onSend).not.toHaveBeenCalled();
+	});
 });

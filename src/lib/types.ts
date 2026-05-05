@@ -193,6 +193,18 @@ export interface DeepResearchJob {
 	cancelledAt?: number | null;
 }
 
+export interface DeepResearchReportActionResult {
+	sourceJobId: string;
+	reportArtifactId: string;
+	conversation: Conversation;
+	messageId: string;
+}
+
+export interface DeepResearchResearchFurtherActionResult
+	extends DeepResearchReportActionResult {
+	job: DeepResearchJob;
+}
+
 // Generated file from chat (AI-generated files)
 export interface ChatGeneratedFile {
 	id: string;

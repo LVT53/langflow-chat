@@ -23,6 +23,12 @@ import { listMessageAttachments } from "./knowledge";
 type PersistedMessageMetadata = {
 	evidenceSummary?: MessageEvidenceSummary | null;
 	evidenceStatus?: MessageEvidenceStatusState;
+	deepResearchReportContext?: {
+		action: "discuss_report" | "research_further";
+		sourceJobId: string;
+		sourceConversationId: string;
+		reportArtifactId: string;
+	};
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;
 	modelDisplayName?: string | null;

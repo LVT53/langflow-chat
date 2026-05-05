@@ -1,4 +1,8 @@
-import type { DeepResearchJob } from "$lib/types";
+import type {
+	DeepResearchJob,
+	DeepResearchReportActionResult,
+	DeepResearchResearchFurtherActionResult,
+} from "$lib/types";
 import { type FetchLike, requestJson } from "./http";
 
 interface DeepResearchJobResponse {
@@ -47,4 +51,28 @@ export async function approveDeepResearchPlan(
 		fetchImpl,
 	);
 	return payload.job;
+}
+
+export async function discussDeepResearchReport(
+	jobId: string,
+	fetchImpl: FetchLike = fetch,
+): Promise<DeepResearchReportActionResult> {
+	return requestJson<DeepResearchReportActionResult>(
+		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/report-actions/discuss`,
+		{ method: "POST" },
+		"Failed to discuss Research Report",
+		fetchImpl,
+	);
+}
+
+export async function researchFurtherFromDeepResearchReport(
+	jobId: string,
+	fetchImpl: FetchLike = fetch,
+): Promise<DeepResearchResearchFurtherActionResult> {
+	return requestJson<DeepResearchResearchFurtherActionResult>(
+		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/report-actions/research-further`,
+		{ method: "POST" },
+		"Failed to research further from Research Report",
+		fetchImpl,
+	);
 }

@@ -29,7 +29,9 @@ import {
 import {
 	approveDeepResearchPlan as approveDeepResearchPlanRequest,
 	cancelDeepResearchJob as cancelDeepResearchJobRequest,
+	discussDeepResearchReport as discussDeepResearchReportRequest,
 	editDeepResearchPlan as editDeepResearchPlanRequest,
+	researchFurtherFromDeepResearchReport as researchFurtherFromDeepResearchReportRequest,
 } from "$lib/client/api/deep-research";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
@@ -96,6 +98,7 @@ import {
 	toFriendlySendError,
 	updateMessageById,
 	cloneSendPayload,
+	isConversationReadOnly,
 	isOsFileDropEvent,
 	shouldHydrateFileProductionJobsOnToolCall,
 	type DraftChangePayload,
@@ -161,6 +164,10 @@ let conversationDraft = $state<ConversationDraft | null>(
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
 let deepResearchJobs = $state<DeepResearchJob[]>(initialDeepResearchJobs);
+let conversationStatus = $state(data.conversation.status ?? "open");
+let isConversationReadOnlyForChat = $derived(
+	isConversationReadOnly({ status: conversationStatus }, deepResearchJobs),
+);
 const initialWorkspaceState = getPersistedWorkspaceState();
 let workspaceDocuments = $state<DocumentWorkspaceItem[]>(
 	initialWorkspaceState?.documents ?? [],
@@ -426,6 +433,7 @@ function resetState() {
 	generatedFiles = data.generatedFiles ?? [];
 	fileProductionJobs = data.fileProductionJobs ?? [];
 	deepResearchJobs = data.deepResearchJobs ?? [];
+	conversationStatus = data.conversation.status ?? "open";
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
 	restorePersistedWorkspaceState();
@@ -582,6 +590,7 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 		if (detail.deepResearchJobs) {
 			deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
 		}
+		conversationStatus = detail.conversation?.status ?? conversationStatus;
 
 		// Poll for evidence
 		if (newAssistant.id) {
@@ -610,6 +619,7 @@ async function loadPersistedData() {
 		generatedFiles = [...(detail.generatedFiles ?? [])];
 		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+		conversationStatus = detail.conversation?.status ?? conversationStatus;
 		conversationDraft = null;
 		const pending = consumePendingConversationMessage(data.conversation.id);
 		void pending;
@@ -802,6 +812,7 @@ async function reconnectToOrphanedStream(
 						generatedFiles = [...(detail.generatedFiles ?? [])];
 						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 						deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+						conversationStatus = detail.conversation?.status ?? conversationStatus;
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
 						const pending = consumePendingConversationMessage(
@@ -928,6 +939,7 @@ async function hydrateConversationDetail(conversationId: string) {
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
 		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
 		deepResearchJobs = payload.deepResearchJobs ?? deepResearchJobs;
+		conversationStatus = payload.conversation?.status ?? conversationStatus;
 		bootstrapMode = false;
 
 		if (
@@ -1013,6 +1025,29 @@ async function handleApproveDeepResearchPlan(jobId: string) {
 	}
 }
 
+async function handleDiscussDeepResearchReport(jobId: string) {
+	try {
+		const action = await discussDeepResearchReportRequest(jobId);
+		upsertConversationLocal(action.conversation);
+		await goto(`/chat/${action.conversation.id}`);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to discuss Research Report";
+		throw err;
+	}
+}
+
+async function handleResearchFurtherFromDeepResearchReport(jobId: string) {
+	try {
+		const action = await researchFurtherFromDeepResearchReportRequest(jobId);
+		upsertConversationLocal(action.conversation);
+		await goto(`/chat/${action.conversation.id}`);
+	} catch (err) {
+		sendError =
+			err instanceof Error ? err.message : "Failed to research further from Research Report";
+		throw err;
+	}
+}
+
 $effect(() => {
 	const conversationId = data.conversation?.id;
 	if (!browser || !conversationId || !hasActiveFileProductionJobs(fileProductionJobs)) {
@@ -1075,6 +1110,10 @@ $effect(() => {
 		prevDeepResearchJobsData = data.deepResearchJobs;
 		deepResearchJobs = [...(data.deepResearchJobs ?? [])];
 	}
+});
+
+$effect(() => {
+	conversationStatus = data.conversation.status ?? "open";
 });
 
 function restorePayloadToDraft(payload: SendPayload) {
@@ -1237,7 +1276,7 @@ function handleSend(
 		payload.personalityProfileId !== undefined
 			? payload.personalityProfileId
 			: selectedPersonalityId;
-	if (!text.trim() || isSending || isEditResendPending) return;
+	if (!text.trim() || isConversationReadOnlyForChat || isSending || isEditResendPending) return;
 
 	sendError = null;
 	isSending = true;
@@ -1399,6 +1438,7 @@ function handleSend(
 }
 
 function handleRetry() {
+	if (isConversationReadOnlyForChat) return;
 	if (canRetry && lastUserMessage) {
 		sendError = null;
 		isSending = true;
@@ -1544,7 +1584,7 @@ function handleRetry() {
 }
 
 function handleRegenerate(payload: MessageRegeneratePayload) {
-	if (isSending || isEditResendPending) return;
+	if (isConversationReadOnlyForChat || isSending || isEditResendPending) return;
 	const { messageId } = payload;
 	const msgs = $messages;
 	const assistantIdx = msgs.findIndex((m) => m.id === messageId);
@@ -1575,7 +1615,7 @@ function handleRegenerate(payload: MessageRegeneratePayload) {
 }
 
 async function handleEdit(payload: MessageEditPayload) {
-	if (isSending || isEditResendPending) return;
+	if (isConversationReadOnlyForChat || isSending || isEditResendPending) return;
 	const { messageId, newText } = payload;
 	const msgs = $messages;
 	const editIdx = msgs.findIndex((m) => m.id === messageId);
@@ -1615,7 +1655,7 @@ function handleStop() {
 }
 
 function handleQueue(payload: SendPayload) {
-	if (!isSending || queuedTurn || !payload.message.trim()) {
+	if (isConversationReadOnlyForChat || !isSending || queuedTurn || !payload.message.trim()) {
 		return;
 	}
 
@@ -1626,6 +1666,7 @@ function handleQueue(payload: SendPayload) {
 }
 
 async function handleSteering(payload: TaskSteeringPayload) {
+	if (isConversationReadOnlyForChat) return;
 	try {
 		const result = await applyTaskSteering(data.conversation.id, payload);
 		taskState = result.taskState ?? taskState;
@@ -1725,7 +1766,7 @@ function handleDragEnter(event: DragEvent) {
 	if (!isOsFileDropEvent(event)) return;
 	event.preventDefault();
 	dragEnterCount += 1;
-	fileDragRejected = isSending;
+	fileDragRejected = isConversationReadOnlyForChat || isSending;
 	fileDragActive = true;
 }
 
@@ -1753,7 +1794,7 @@ function handleDrop(event: DragEvent) {
 	fileDragRejected = false;
 	if (!isOsFileDropEvent(event)) return;
 	event.preventDefault();
-	if (isSending || isEditResendPending) return;
+	if (isConversationReadOnlyForChat || isSending || isEditResendPending) return;
 	const files = event.dataTransfer?.files;
 	if (!files || files.length === 0) return;
 	void uploadFilesFn?.(files);
@@ -1795,6 +1836,7 @@ function handleDrop(event: DragEvent) {
 						{contextDebug}
 						{fileProductionJobs}
 						{deepResearchJobs}
+						readOnly={isConversationReadOnlyForChat}
 						onOpenDocument={openWorkspaceDocument}
 						onRegenerate={handleRegenerate}
 						onEdit={handleEdit}
@@ -1804,6 +1846,8 @@ function handleDrop(event: DragEvent) {
 						onCancelDeepResearchJob={handleCancelDeepResearchJob}
 						onEditDeepResearchPlan={handleEditDeepResearchPlan}
 						onApproveDeepResearchPlan={handleApproveDeepResearchPlan}
+						onDiscussDeepResearchReport={handleDiscussDeepResearchReport}
+						onResearchFurtherFromDeepResearchReport={handleResearchFurtherFromDeepResearchReport}
 					/>
 				{/if}
 			</div>
@@ -1818,8 +1862,8 @@ function handleDrop(event: DragEvent) {
 				onDraftChange={handleDraftChange}
 				onEditQueuedMessage={editQueuedTurn}
 				onDeleteQueuedMessage={clearQueuedTurn}
-				disabled={isSending || isEditResendPending}
-				isGenerating={isSending || isEditResendPending}
+				disabled={isConversationReadOnlyForChat || isSending || isEditResendPending}
+				isGenerating={!isConversationReadOnlyForChat && (isSending || isEditResendPending)}
 				hasQueuedMessage={Boolean(queuedTurn)}
 				queuedMessagePreview={queuedTurn?.message ?? ''}
 				maxLength={data.maxMessageLength}

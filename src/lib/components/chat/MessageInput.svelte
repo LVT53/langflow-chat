@@ -274,6 +274,7 @@ function adjustHeight() {
 }
 
 function handleInput() {
+	if (disabled) return;
 	message = textarea.value;
 	draftEmissionVersion += 1;
 	adjustHeight();
@@ -281,6 +282,7 @@ function handleInput() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+	if (disabled) return;
 	if (event.isComposing) return;
 	if (event.key === "Enter" && !event.shiftKey) {
 		event.preventDefault();
@@ -328,6 +330,7 @@ function clearComposerAfterSubmit() {
 }
 
 function send() {
+	if (disabled) return;
 	if (isGenerating) return;
 	if (!canSend) {
 		if (
@@ -345,6 +348,7 @@ function send() {
 }
 
 function queue() {
+	if (disabled) return;
 	if (!canQueue) return;
 	onQueue?.(buildSendPayload());
 	queuedSendAfterProcessing = false;
@@ -352,6 +356,7 @@ function queue() {
 }
 
 function stop() {
+	if (disabled) return;
 	onStop?.();
 	showToolsMenu = false;
 	showDeepResearchMenu = false;
@@ -593,6 +598,7 @@ async function emitDraftChange(force = false) {
 			bind:value={message}
 			oninput={handleInput}
 			onkeydown={handleKeydown}
+			disabled={disabled}
 			placeholder={$t('chat.messagePlaceholder')}
 			class="composer-textarea min-h-[72px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[13px] py-[7px] text-left text-[15px] leading-[1.42] font-serif text-text-primary placeholder:font-sans placeholder:text-[14px] placeholder:text-text-muted focus:outline-none focus:ring-0 md:min-h-[88px] md:px-[16px] md:py-[8px] md:text-[15px] md:leading-[1.35]"
 			rows="1"
@@ -652,6 +658,7 @@ async function emitDraftChange(force = false) {
 						type="button"
 						class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
 						onclick={toggleToolsMenu}
+						disabled={disabled}
 						aria-label={$t('chat.openComposerTools')}
 						aria-expanded={showToolsMenu}
 					>
@@ -681,6 +688,7 @@ async function emitDraftChange(force = false) {
 							class="btn-icon-bare composer-icon flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center text-text-muted"
 							class:composer-icon--active={selectedDeepResearchDepth}
 							onclick={toggleDeepResearchMenu}
+							disabled={disabled}
 							aria-label={$t('composerTools.deepResearch')}
 							aria-expanded={showDeepResearchMenu}
 							title={$t('composerTools.deepResearch')}
@@ -755,6 +763,7 @@ async function emitDraftChange(force = false) {
 							data-testid="queue-button"
 							type="button"
 							onclick={queue}
+							disabled={disabled}
 							aria-label={$t('chat.queueMessage')}
 							class="queue-button flex h-[40px] items-center justify-center rounded-[10px] border border-border bg-surface-page px-3 text-[13px] font-sans font-medium text-text-primary shadow-sm animate-in"
 						>
@@ -765,6 +774,7 @@ async function emitDraftChange(force = false) {
 						data-testid="stop-button"
 						type="button"
 						onclick={stop}
+						disabled={disabled}
 						aria-label={$t('chat.stop')}
 						class="composer-stop-accent flex h-[40px] w-[40px] items-center justify-center rounded-[10px] shadow-sm animate-in"
 					>

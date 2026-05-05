@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { approveDeepResearchPlan, editDeepResearchPlan } from "./deep-research";
+import {
+	approveDeepResearchPlan,
+	discussDeepResearchReport,
+	editDeepResearchPlan,
+	researchFurtherFromDeepResearchReport,
+} from "./deep-research";
 
 describe("deep-research client API", () => {
 	it("posts Plan Edit instructions and returns the updated job", async () => {
@@ -78,6 +83,85 @@ describe("deep-research client API", () => {
 		});
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/deep-research/jobs/job-1/plan/approve",
+			{
+				method: "POST",
+			},
+		);
+	});
+
+	it("posts Discuss Report and returns the new conversation target", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						sourceJobId: "job-1",
+						reportArtifactId: "artifact-1",
+						conversation: {
+							id: "conv-discuss-1",
+							title: "Discuss: Research battery recycling policy",
+							projectId: null,
+							createdAt: 1,
+							updatedAt: 2,
+						},
+						messageId: "message-discuss-1",
+					}),
+					{ status: 201, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await expect(
+			discussDeepResearchReport("job-1", fetchMock),
+		).resolves.toMatchObject({
+			conversation: { id: "conv-discuss-1" },
+			messageId: "message-discuss-1",
+		});
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/deep-research/jobs/job-1/report-actions/discuss",
+			{
+				method: "POST",
+			},
+		);
+	});
+
+	it("posts Research Further and returns the new conversation and pending job", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						sourceJobId: "job-1",
+						reportArtifactId: "artifact-1",
+						conversation: {
+							id: "conv-further-1",
+							title: "Research further: Research battery recycling policy",
+							projectId: null,
+							createdAt: 1,
+							updatedAt: 2,
+						},
+						messageId: "message-further-1",
+						job: {
+							id: "job-2",
+							conversationId: "conv-further-1",
+							triggerMessageId: "message-further-1",
+							depth: "standard",
+							status: "awaiting_approval",
+							stage: "plan_drafted",
+							title: "Research further from this Research Report",
+							createdAt: 1,
+							updatedAt: 2,
+						},
+					}),
+					{ status: 201, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await expect(
+			researchFurtherFromDeepResearchReport("job-1", fetchMock),
+		).resolves.toMatchObject({
+			conversation: { id: "conv-further-1" },
+			job: { id: "job-2", status: "awaiting_approval" },
+		});
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/deep-research/jobs/job-1/report-actions/research-further",
 			{
 				method: "POST",
 			},
