@@ -176,6 +176,61 @@ export interface DeepResearchSourceCounts {
 
 export type DeepResearchSourceStatus = "discovered" | "reviewed" | "cited";
 
+export type DeepResearchSourceType =
+	| "official_vendor"
+	| "official_government"
+	| "academic"
+	| "independent_analysis"
+	| "news"
+	| "forum"
+	| "vendor_marketing"
+	| "unknown";
+
+export type DeepResearchSourceIndependence =
+	| "primary"
+	| "independent"
+	| "affiliated"
+	| "community"
+	| "unknown";
+
+export type DeepResearchSourceFreshness =
+	| "current"
+	| "recent"
+	| "dated"
+	| "stale"
+	| "undated"
+	| "unknown";
+
+export type DeepResearchSourceDirectness =
+	| "direct"
+	| "indirect"
+	| "anecdotal"
+	| "unknown";
+
+export type DeepResearchExtractionConfidence = "high" | "medium" | "low";
+
+export type DeepResearchClaimFit =
+	| "strong"
+	| "partial"
+	| "weak"
+	| "mismatch"
+	| "unknown";
+
+export interface DeepResearchSourceQualitySignals {
+	sourceType: DeepResearchSourceType;
+	independence: DeepResearchSourceIndependence;
+	freshness: DeepResearchSourceFreshness;
+	directness: DeepResearchSourceDirectness;
+	extractionConfidence: DeepResearchExtractionConfidence;
+	claimFit: DeepResearchClaimFit;
+}
+
+export interface DeepResearchSourceAuthoritySummary {
+	label: string;
+	score: number;
+	reasons: string[];
+}
+
 export interface DeepResearchSource {
 	id: string;
 	jobId: string;
@@ -195,6 +250,8 @@ export interface DeepResearchSource {
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
+	sourceAuthoritySummary?: DeepResearchSourceAuthoritySummary | null;
 	openedContentLength?: number;
 	discoveredAt: string;
 	reviewedAt: string | null;
@@ -331,6 +388,8 @@ export interface DeepResearchEvidenceNote {
 	comparisonAxis?: string | null;
 	findingText: string;
 	sourceSupport: Record<string, unknown>;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
+	sourceAuthoritySummary?: DeepResearchSourceAuthoritySummary | null;
 	createdAt: string;
 	updatedAt: string;
 }

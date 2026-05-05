@@ -226,6 +226,7 @@ export const deepResearchSources = sqliteTable('deep_research_sources', {
   topicRelevanceReason: text('topic_relevance_reason'),
   supportedKeyQuestionsJson: text('supported_key_questions_json'),
   extractedClaimsJson: text('extracted_claims_json'),
+  sourceQualitySignalsJson: text('source_quality_signals_json'),
   openedContentLength: integer('opened_content_length').notNull().default(0),
   discoveredAt: integer('discovered_at', { mode: 'timestamp' }).notNull(),
   reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
@@ -447,6 +448,7 @@ export const deepResearchEvidenceNotes = sqliteTable('deep_research_evidence_not
   comparisonAxis: text('comparison_axis'),
   findingText: text('finding_text').notNull(),
   sourceSupportJson: text('source_support_json').notNull().default('{}'),
+  sourceQualitySignalsJson: text('source_quality_signals_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (table) => ({

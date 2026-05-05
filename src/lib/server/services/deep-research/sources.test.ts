@@ -215,6 +215,53 @@ describe("deep research source ledger", () => {
 		});
 	});
 
+	it("persists Source Quality Signals on reviewed source ledger rows", async () => {
+		const discovered = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://vendor.example.com/products/model-x/specs",
+			title: "Vendor Model X official specifications",
+			provider: "web_search",
+			discoveredAt: new Date("2026-05-05T10:30:00.000Z"),
+		});
+
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: discovered.id,
+			reviewedAt: new Date("2026-05-05T11:00:00.000Z"),
+			reviewedNote: "Official specifications list 16 GB memory.",
+			sourceQualitySignals: {
+				sourceType: "official_vendor",
+				independence: "affiliated",
+				freshness: "undated",
+				directness: "direct",
+				extractionConfidence: "high",
+				claimFit: "strong",
+			},
+		});
+
+		const [source] = await listResearchSources({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(source.sourceQualitySignals).toEqual({
+			sourceType: "official_vendor",
+			independence: "affiliated",
+			freshness: "undated",
+			directness: "direct",
+			extractionConfidence: "high",
+			claimFit: "strong",
+		});
+		expect(source.sourceAuthoritySummary).toEqual(
+			expect.objectContaining({
+				label: "Strong for official details",
+				score: expect.any(Number),
+			}),
+		);
+	});
+
 	it("keeps off-topic rejection state inspectable in the source ledger", async () => {
 		const discovered = await saveDiscoveredResearchSource({
 			jobId: "job-1",

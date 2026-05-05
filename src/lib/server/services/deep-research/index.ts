@@ -760,6 +760,7 @@ export async function completeDeepResearchJobWithAuditedReport(
 		sourceText: source.sourceText,
 		supportedKeyQuestions: source.supportedKeyQuestions,
 		extractedClaims: source.extractedClaims,
+		sourceQualitySignals: source.sourceQualitySignals,
 	}));
 	const llmClaimReviewer = await buildCitationClaimReviewerWithLlm({
 		context: {
@@ -2304,6 +2305,8 @@ function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
 		rejectedReason: source.rejectedReason,
 		supportedKeyQuestions: source.supportedKeyQuestions,
 		extractedClaims: source.extractedClaims,
+		sourceQualitySignals: source.sourceQualitySignals,
+		sourceAuthoritySummary: source.sourceAuthoritySummary,
 		openedContentLength: source.openedContentLength,
 		discoveredAt: source.discoveredAt,
 		reviewedAt: source.reviewedAt,

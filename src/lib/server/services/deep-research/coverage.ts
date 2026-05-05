@@ -1,4 +1,6 @@
+import type { DeepResearchSourceQualitySignals } from "$lib/types";
 import type { ResearchPlan } from "./planning";
+import { scoreSourceQualitySignals } from "./source-quality";
 import type {
 	ResearchSourceCounts,
 	ResearchTimelineKind,
@@ -17,6 +19,7 @@ export type ReviewedCoverageSource = {
 	supportedKeyQuestions: string[];
 	keyFindings: string[];
 	qualityScore?: number;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	topicRelevant?: boolean;
 };
 
@@ -295,10 +298,17 @@ function hasFreshSource(
 function averageQualityScore(sources: ReviewedCoverageSource[]): number {
 	if (sources.length === 0) return 0;
 	const total = sources.reduce(
-		(sum, source) => sum + (source.qualityScore ?? 1),
+		(sum, source) => sum + sourceQualityScore(source),
 		0,
 	);
 	return total / sources.length;
+}
+
+function sourceQualityScore(source: ReviewedCoverageSource): number {
+	if (source.sourceQualitySignals) {
+		return scoreSourceQualitySignals(source.sourceQualitySignals);
+	}
+	return source.qualityScore ?? 1;
 }
 
 function buildBudgetState(input: {

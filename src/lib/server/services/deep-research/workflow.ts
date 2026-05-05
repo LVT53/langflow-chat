@@ -755,6 +755,7 @@ async function runSourceReviewStep(
 										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
 										extractedClaims: notes.extractedClaims,
+										sourceQualitySignals: notes.sourceQualitySignals,
 										openedContentLength: notes.openedContentLength,
 									})
 								: await markResearchSourceReviewed({
@@ -768,6 +769,7 @@ async function runSourceReviewStep(
 										topicRelevanceReason: notes.topicRelevanceReason,
 										supportedKeyQuestions: notes.supportedKeyQuestions,
 										extractedClaims: notes.extractedClaims,
+										sourceQualitySignals: notes.sourceQualitySignals,
 										openedContentLength: notes.openedContentLength,
 									});
 
@@ -789,6 +791,7 @@ async function runSourceReviewStep(
 									supportedKeyQuestions: notes.supportedKeyQuestions,
 									comparedEntity: notes.comparedEntity,
 									comparisonAxis: notes.comparisonAxis,
+									sourceQualitySignals: notes.sourceQualitySignals,
 									now,
 								});
 							}
@@ -1707,6 +1710,7 @@ function mapReviewedSourceForCoverage(
 					? [source.reviewedNote]
 					: [],
 		qualityScore: source.relevanceScore ?? 80,
+		sourceQualitySignals: source.sourceQualitySignals,
 		topicRelevant:
 			source.topicRelevant ??
 			isSourceTopicRelevantToPlan({
@@ -1759,6 +1763,19 @@ function mapReviewedSourceForSynthesis(
 		topicRelevanceReason: source.topicRelevanceReason ?? null,
 		supportedKeyQuestions: source.supportedKeyQuestions ?? [],
 		extractedClaims: source.extractedClaims ?? [],
+		sourceQualitySignals: source.sourceQualitySignals ?? {
+			sourceType: "unknown",
+			independence: "unknown",
+			freshness: "unknown",
+			directness: "unknown",
+			extractionConfidence: "low",
+			claimFit: "unknown",
+		},
+		sourceAuthoritySummary: source.sourceAuthoritySummary ?? {
+			label: "Weak source fit",
+			score: 0,
+			reasons: [],
+		},
 		rejectedReason: source.rejectedReason ?? null,
 		openedContentLength: source.openedContentLength ?? 0,
 		createdAt: reviewedAt,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DeepResearchSourceQualitySignals } from "$lib/types";
 import { assessResearchCoverage } from "./coverage";
 import type { ResearchPlan } from "./planning";
 
@@ -230,6 +231,64 @@ describe("assessResearchCoverage", () => {
 			],
 		});
 	});
+
+	it("uses Source Quality Signals when assessing vendor evidence for independent reliability", () => {
+		const assessment = assessResearchCoverage({
+			jobId: "job-vendor-reliability",
+			conversationId: "conversation-vendor-reliability",
+			plan: {
+				...standardPlan,
+				keyQuestions: ["Is Model X independently reliable?"],
+			},
+			reviewedSources: [
+				reviewedSource({
+					id: "vendor-specs",
+					canonicalUrl: "https://vendor.example.com/model-x/specs",
+					supportedKeyQuestions: ["Is Model X independently reliable?"],
+					qualityScore: 95,
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "indirect",
+						extractionConfidence: "medium",
+						claimFit: "weak",
+					},
+				}),
+				reviewedSource({
+					id: "vendor-warranty",
+					canonicalUrl: "https://vendor.example.com/model-x/warranty",
+					supportedKeyQuestions: ["Is Model X independently reliable?"],
+					qualityScore: 95,
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "indirect",
+						extractionConfidence: "medium",
+						claimFit: "weak",
+					},
+				}),
+			],
+			remainingBudget: {
+				sourceReviews: 4,
+				synthesisPasses: 1,
+			},
+			signals: {
+				minimumDistinctSourceDomains: 1,
+				minimumAverageQualityScore: 60,
+			},
+		});
+
+		expect(assessment.status).toBe("insufficient");
+		expect(assessment.coverageGaps).toContainEqual(
+			expect.objectContaining({
+				keyQuestion: "Is Model X independently reliable?",
+				reason: "low_source_quality",
+				reviewedSourceCount: 2,
+			}),
+		);
+	});
 });
 
 function reviewedSource(input: {
@@ -237,6 +296,8 @@ function reviewedSource(input: {
 	canonicalUrl: string;
 	supportedKeyQuestions: string[];
 	topicRelevant?: boolean;
+	qualityScore?: number;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals;
 }) {
 	return {
 		id: input.id,
@@ -248,6 +309,8 @@ function reviewedSource(input: {
 		keyFindings: input.supportedKeyQuestions.map(
 			(question) => `Finding for ${question}`,
 		),
+		qualityScore: input.qualityScore,
+		sourceQualitySignals: input.sourceQualitySignals,
 		topicRelevant: input.topicRelevant,
 	};
 }

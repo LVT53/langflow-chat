@@ -1,4 +1,7 @@
-import type { DeepResearchSourceStatus } from "$lib/types";
+import type {
+	DeepResearchSourceQualitySignals,
+	DeepResearchSourceStatus,
+} from "$lib/types";
 
 export type DeepResearchReportClaim = {
 	id: string;
@@ -31,6 +34,7 @@ export type CitationAuditSource = {
 	sourceText?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 };
 
 export type CitationAuditFindingStatus =
@@ -180,13 +184,30 @@ export async function auditDeepResearchReportCitations(
 			const supportedSources = reviewedCitedSources.filter((source) =>
 				sourceSupportsClaim(source, claim),
 			);
-			if (supportedSources.length > 0) {
+			const qualityFitSources = supportedSources.filter((source) =>
+				sourceQualitySignalsFitClaim(source, claim),
+			);
+			if (qualityFitSources.length > 0) {
 				auditedClaims.push(claim);
 				findings.push({
 					claimId: claim.id,
 					status: "supported",
-					sourceIds: supportedSources.map((source) => source.id),
+					sourceIds: qualityFitSources.map((source) => source.id),
 					reason: "Claim is supported by at least one reviewed cited source.",
+				});
+				continue;
+			}
+
+			if (supportedSources.length > 0) {
+				limitations.push(
+					`Removed unsupported core claim after citation audit: ${claim.text}`,
+				);
+				findings.push({
+					claimId: claim.id,
+					status: "unsupported_claim",
+					sourceIds: supportedSources.map((source) => source.id),
+					reason:
+						"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
 				});
 				continue;
 			}
@@ -297,6 +318,31 @@ function sourceSupportsClaim(
 		const overlapRatio = overlap / claimTerms.length;
 		return overlap >= minimumOverlap && overlapRatio >= 0.68;
 	});
+}
+
+function sourceQualitySignalsFitClaim(
+	source: CitationAuditSource,
+	claim: DeepResearchReportClaim,
+): boolean {
+	const signals = source.sourceQualitySignals;
+	if (!signals) return true;
+	if (!claimRequiresIndependentReliabilitySupport(claim.text)) return true;
+	return (
+		signals.independence === "independent" &&
+		signals.claimFit !== "weak" &&
+		signals.claimFit !== "mismatch" &&
+		signals.directness !== "indirect"
+	);
+}
+
+function claimRequiresIndependentReliabilitySupport(claimText: string): boolean {
+	const normalized = normalizeForComparison(claimText);
+	return (
+		/\bindependent(?:ly)?\b/.test(normalized) &&
+		/\b(reliable|reliability|long[- ]term|owner|failure|durability)\b/.test(
+			normalized,
+		)
+	);
 }
 
 async function repairUnsupportedClaim(input: {

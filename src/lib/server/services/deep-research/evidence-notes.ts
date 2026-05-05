@@ -5,7 +5,16 @@ import {
 	deepResearchPassCheckpoints,
 	deepResearchTasks,
 } from "$lib/server/db/schema";
-import type { DeepResearchEvidenceNote, DeepResearchTaskOutput } from "$lib/types";
+import type {
+	DeepResearchEvidenceNote,
+	DeepResearchSourceQualitySignals,
+	DeepResearchTaskOutput,
+} from "$lib/types";
+import {
+	deriveSourceAuthoritySummary,
+	normalizeSourceQualitySignals,
+	parseSourceQualitySignals,
+} from "./source-quality";
 
 type DeepResearchEvidenceNoteRow =
 	typeof deepResearchEvidenceNotes.$inferSelect;
@@ -16,6 +25,7 @@ export type SaveDeepResearchEvidenceNoteInput = {
 	comparedEntity?: string | null;
 	comparisonAxis?: string | null;
 	sourceSupport?: Record<string, unknown> | null;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 };
 
 export type SaveDeepResearchEvidenceNotesInput = {
@@ -45,6 +55,9 @@ export async function saveDeepResearchEvidenceNotes(
 			comparedEntity: normalizeOptionalText(note.comparedEntity),
 			comparisonAxis: normalizeOptionalText(note.comparisonAxis),
 			sourceSupport: note.sourceSupport ?? {},
+			sourceQualitySignals: normalizeSourceQualitySignals(
+				note.sourceQualitySignals,
+			),
 		}))
 		.filter((note) => note.findingText.length > 0);
 	if (normalizedNotes.length === 0) return [];
@@ -67,6 +80,9 @@ export async function saveDeepResearchEvidenceNotes(
 				comparisonAxis: note.comparisonAxis,
 				findingText: note.findingText,
 				sourceSupportJson: JSON.stringify(note.sourceSupport),
+				sourceQualitySignalsJson: note.sourceQualitySignals
+					? JSON.stringify(note.sourceQualitySignals)
+					: null,
 				createdAt: now,
 				updatedAt: now,
 			})),
@@ -185,6 +201,7 @@ export async function buildSourceReviewEvidenceNotes(input: {
 	supportedKeyQuestions: string[];
 	comparedEntity?: string | null;
 	comparisonAxis?: string | null;
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	now?: Date;
 }): Promise<DeepResearchEvidenceNote[]> {
 	const keyFindings =
@@ -208,6 +225,7 @@ export async function buildSourceReviewEvidenceNotes(input: {
 				title: input.title,
 				excerpt: input.extractedText ?? input.summary ?? findingText,
 			},
+			sourceQualitySignals: input.sourceQualitySignals,
 		})),
 		now: input.now,
 	});
@@ -250,6 +268,9 @@ function mapEvidenceNoteRow(
 	row: DeepResearchEvidenceNoteRow,
 	passNumber: number,
 ): DeepResearchEvidenceNote {
+	const sourceQualitySignals = parseSourceQualitySignals(
+		row.sourceQualitySignalsJson,
+	);
 	return {
 		id: row.id,
 		jobId: row.jobId,
@@ -264,6 +285,8 @@ function mapEvidenceNoteRow(
 		comparisonAxis: row.comparisonAxis,
 		findingText: row.findingText,
 		sourceSupport: parseObject(row.sourceSupportJson),
+		sourceQualitySignals,
+		sourceAuthoritySummary: deriveSourceAuthoritySummary(sourceQualitySignals),
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

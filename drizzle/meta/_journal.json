@@ -253,6 +253,13 @@
       "when": 1777140000022,
       "tag": "1777140000022_deep_research_evidence_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1777140000023,
+      "tag": "1777140000023_deep_research_source_quality_signals",
+      "breakpoints": true
     }
 
   ]

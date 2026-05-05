@@ -141,6 +141,71 @@ describe("Deep Research source triage and review", () => {
 		]);
 	});
 
+	it("records source quality signals instead of only one authority score", async () => {
+		const savedNotes: unknown[] = [];
+
+		await triageAndReviewSources(
+			{
+				jobId: "job-1",
+				discoveredSources: [
+					{
+						id: "vendor-specs",
+						url: "https://vendor.example.com/products/model-x/specs",
+						title: "Vendor Model X official specifications",
+						snippet:
+							"Official vendor page with dimensions, battery size, warranty, and safety certifications.",
+						sourceText:
+							"Model X official specifications: 16 GB memory, 1 TB storage, 14 hour battery rating, and vendor warranty terms.",
+					},
+				],
+				reviewLimit: 1,
+				planGoal: "Assess Model X specifications and reliability.",
+				keyQuestions: [
+					"What are the official Model X specifications?",
+					"Is Model X independently reliable?",
+				],
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => ({
+						summary: `Reviewed ${source.title}`,
+						keyFindings: ["Model X has 16 GB memory and 1 TB storage."],
+						extractedText: source.sourceText,
+						relevanceScore: 95,
+						supportedKeyQuestions: ["What are the official Model X specifications?"],
+					}),
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => {
+						savedNotes.push(notes);
+						return {
+							...notes,
+							id: "reviewed-vendor-specs",
+							createdAt: "2026-05-05T12:00:00.000Z",
+						};
+					},
+				},
+			},
+		);
+
+		expect(savedNotes).toEqual([
+			expect.objectContaining({
+				discoveredSourceId: "vendor-specs",
+				sourceQualitySignals: expect.objectContaining({
+					sourceType: "official_vendor",
+					independence: "affiliated",
+					freshness: "undated",
+					directness: "direct",
+					extractionConfidence: "high",
+					claimFit: "strong",
+				}),
+				sourceAuthoritySummary: expect.objectContaining({
+					label: "Strong for official details",
+				}),
+			}),
+		]);
+	});
+
 	it("rejects off-topic sources even when the reviewer returns strong key-question support", async () => {
 		const savedNotes: Array<{
 			discoveredSourceId: string;

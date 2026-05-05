@@ -1,3 +1,12 @@
+import type {
+	DeepResearchSourceAuthoritySummary,
+	DeepResearchSourceQualitySignals,
+} from "$lib/types";
+import {
+	deriveSourceAuthoritySummary,
+	evaluateSourceQualitySignals,
+} from "./source-quality";
+
 export type DiscoveredResearchSource = {
 	id: string;
 	url: string;
@@ -51,6 +60,8 @@ export type ReviewedResearchSourceNotes = {
 	comparedEntity?: string | null;
 	comparisonAxis?: string | null;
 	extractedClaims: string[];
+	sourceQualitySignals: DeepResearchSourceQualitySignals;
+	sourceAuthoritySummary: DeepResearchSourceAuthoritySummary;
 	rejectedReason: string | null;
 	openedContentLength: number;
 };
@@ -156,6 +167,17 @@ export async function triageAndReviewSources(
 				topicRelevance,
 				requiresKeyQuestionSupport: (input.keyQuestions ?? []).length > 0,
 			});
+		const sourceQualitySignals = evaluateSourceQualitySignals({
+			url: source.canonicalUrl,
+			title: source.title,
+			snippet: source.snippet,
+			sourceText,
+			keyFindings,
+			supportedKeyQuestions,
+			relevanceScore,
+		});
+		const sourceAuthoritySummary =
+			deriveSourceAuthoritySummary(sourceQualitySignals);
 		const notes = await dependencies.repository.saveReviewedSourceNotes({
 			jobId: input.jobId,
 			discoveredSourceId: source.id,
@@ -175,6 +197,12 @@ export async function triageAndReviewSources(
 			comparedEntity: normalizeOptionalText(review.comparedEntity),
 			comparisonAxis: normalizeOptionalText(review.comparisonAxis),
 			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
+			sourceQualitySignals,
+			sourceAuthoritySummary: sourceAuthoritySummary ?? {
+				label: "Weak source fit",
+				score: 0,
+				reasons: [],
+			},
 			rejectedReason,
 			openedContentLength: sourceText.length,
 		});

@@ -325,4 +325,71 @@ describe("Deep Research citation audit", () => {
 			}),
 		);
 	});
+
+	it("rejects vendor-page support for independent reliability claims when signals are weak", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-vendor-reliability",
+			report: {
+				title: "Model X report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-specs",
+								text: "Model X includes 16 GB memory and 1 TB storage.",
+								core: true,
+								citationSourceIds: ["vendor-specs"],
+							},
+							{
+								id: "claim-reliability",
+								text: "Model X is independently reliable over long-term use.",
+								core: true,
+								citationSourceIds: ["vendor-specs"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "vendor-specs",
+					status: "cited",
+					title: "Vendor Model X official specifications",
+					url: "https://vendor.example.com/products/model-x/specs",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Model X includes 16 GB memory and 1 TB storage. Vendor claims Model X is reliable over long-term use.",
+					extractedClaims: [
+						"Model X includes 16 GB memory and 1 TB storage.",
+						"Vendor claims Model X is reliable over long-term use.",
+					],
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "indirect",
+						extractionConfidence: "medium",
+						claimFit: "weak",
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("completed_with_limitations");
+		expect(result.auditedReport.sections[0].claims.map((claim) => claim.id)).toEqual([
+			"claim-specs",
+		]);
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-reliability",
+				status: "unsupported_claim",
+				sourceIds: ["vendor-specs"],
+				reason:
+					"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
+			}),
+		);
+	});
 });

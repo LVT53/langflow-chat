@@ -4,8 +4,14 @@ import { deepResearchSources } from "$lib/server/db/schema";
 import type {
 	DeepResearchSource,
 	DeepResearchSourceCounts,
+	DeepResearchSourceQualitySignals,
 	DeepResearchSourceStatus,
 } from "$lib/types";
+import {
+	deriveSourceAuthoritySummary,
+	normalizeSourceQualitySignals,
+	parseSourceQualitySignals,
+} from "./source-quality";
 
 type DeepResearchSourceRow = typeof deepResearchSources.$inferSelect;
 
@@ -46,6 +52,7 @@ export type MarkResearchSourceReviewedInput = {
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	openedContentLength?: number;
 };
 
@@ -58,6 +65,7 @@ export type MarkResearchSourceRejectedInput = {
 	topicRelevanceReason?: string | null;
 	supportedKeyQuestions?: string[];
 	extractedClaims?: string[];
+	sourceQualitySignals?: DeepResearchSourceQualitySignals | null;
 	openedContentLength?: number;
 	rejectedAt?: Date;
 };
@@ -157,6 +165,9 @@ export async function markResearchSourceReviewed(
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
+			sourceQualitySignalsJson: stringifySourceQualitySignals(
+				input.sourceQualitySignals,
+			),
 			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
 			updatedAt: reviewedAt,
 		})
@@ -196,6 +207,9 @@ export async function markResearchSourceRejected(
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
 			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
+			sourceQualitySignalsJson: stringifySourceQualitySignals(
+				input.sourceQualitySignals,
+			),
 			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
 			updatedAt: rejectedAt,
 		})
@@ -253,6 +267,9 @@ function buildScopeFilters(input: ListResearchSourcesInput) {
 }
 
 function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
+	const sourceQualitySignals = parseSourceQualitySignals(
+		row.sourceQualitySignalsJson,
+	);
 	return {
 		id: row.id,
 		jobId: row.jobId,
@@ -272,6 +289,8 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		topicRelevanceReason: row.topicRelevanceReason,
 		supportedKeyQuestions: parseStringArray(row.supportedKeyQuestionsJson),
 		extractedClaims: parseStringArray(row.extractedClaimsJson),
+		sourceQualitySignals,
+		sourceAuthoritySummary: deriveSourceAuthoritySummary(sourceQualitySignals),
 		openedContentLength: row.openedContentLength,
 		discoveredAt: row.discoveredAt.toISOString(),
 		reviewedAt: row.reviewedAt?.toISOString() ?? null,
@@ -279,6 +298,13 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
+}
+
+function stringifySourceQualitySignals(
+	value: DeepResearchSourceQualitySignals | null | undefined,
+): string | null {
+	const signals = normalizeSourceQualitySignals(value);
+	return signals ? JSON.stringify(signals) : null;
 }
 
 function parseStringArray(value: string | null): string[] {

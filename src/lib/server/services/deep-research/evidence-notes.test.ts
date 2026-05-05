@@ -252,6 +252,92 @@ describe("deep research Evidence Notes", () => {
 		expect(new Set(rehydrated.map((note) => note.id)).size).toBe(3);
 	});
 
+	it("allows the same source to have different Source Quality Signals per Evidence Note", async () => {
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const {
+			listDeepResearchEvidenceNotes,
+			saveDeepResearchEvidenceNotes,
+		} = await import("./evidence-notes");
+
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passNumber: 1,
+			searchIntent: "Evaluate vendor page for specs and reliability",
+			reviewedSourceIds: ["source-eu"],
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+
+		await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passCheckpointId: checkpoint.id,
+			sourceId: "source-eu",
+			notes: [
+				{
+					findingText: "The vendor page directly states the official memory specification.",
+					supportedKeyQuestion: "What are the official specifications?",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+				{
+					findingText: "The vendor page does not independently prove long-term reliability.",
+					supportedKeyQuestion: "Is the product independently reliable?",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "indirect",
+						extractionConfidence: "medium",
+						claimFit: "weak",
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+
+		const notes = await listDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(notes).toHaveLength(2);
+		expect(notes).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceId: "source-eu",
+					supportedKeyQuestion: "What are the official specifications?",
+					sourceQualitySignals: expect.objectContaining({
+						directness: "direct",
+						claimFit: "strong",
+					}),
+					sourceAuthoritySummary: expect.objectContaining({
+						label: "Strong for official details",
+					}),
+				}),
+				expect.objectContaining({
+					sourceId: "source-eu",
+					supportedKeyQuestion: "Is the product independently reliable?",
+					sourceQualitySignals: expect.objectContaining({
+						directness: "indirect",
+						claimFit: "weak",
+					}),
+					sourceAuthoritySummary: expect.objectContaining({
+						label: "Weak source fit",
+					}),
+				}),
+			]),
+		);
+	});
+
 	it("writes durable Evidence Notes from source review outputs", async () => {
 		const { db } = await import("$lib/server/db");
 		const { listConversationDeepResearchJobs } = await import("./index");
