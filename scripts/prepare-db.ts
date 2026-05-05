@@ -8,21 +8,15 @@ if (!process.env.DATABASE_PATH) {
 }
 
 import { existsSync, mkdirSync, readFileSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 
-const databasePath = process.env.DATABASE_PATH;
-const dbDir = dirname(databasePath);
-
-if (!existsSync(dbDir)) {
-	mkdirSync(dbDir, { recursive: true });
-}
-
-const sqlite = new Database(databasePath);
-sqlite.pragma('foreign_keys = ON');
+let databasePath = process.env.DATABASE_PATH;
+let sqlite: Database.Database;
 
 const requiredExistingTables = [
 	'projects',
@@ -82,6 +76,18 @@ const INFERENCE_PROVIDER_MIGRATION_TAGS = [
 	'1777140000002_inference_provider_context_limits',
 	'1777140000004_inference_provider_max_tokens',
 ] as const;
+
+function openDatabase(path: string): void {
+	databasePath = path;
+	const dbDir = dirname(databasePath);
+
+	if (!existsSync(dbDir)) {
+		mkdirSync(dbDir, { recursive: true });
+	}
+
+	sqlite = new Database(databasePath);
+	sqlite.pragma('foreign_keys = ON');
+}
 
 function hasTable(tableName: string): boolean {
 	return Boolean(
@@ -401,104 +407,126 @@ function backfillColumnMigrationIfNeeded(params: {
 	return 1;
 }
 
-try {
-	if (hasApplicationTables()) {
-		autoCreateMissingColumns();
-
-		const schemaProblems = validateExistingRuntimeSchema();
-		const existingMigrationCount = countMigrationRows();
-		if (schemaProblems.length > 0 && existingMigrationCount > 0) {
-			throw new Error(
-				`Database ${databasePath} has migration records but is missing schema pieces: ${schemaProblems.join(', ')}`
-			);
-		}
-
-		if (schemaProblems.length > 0) {
-			throw new Error(
-				`Database ${databasePath} is missing required schema pieces: ${schemaProblems.join(', ')}`
-			);
-		}
-
-		if (existingMigrationCount === 0) {
-			const insertedCount = syncMigrationJournalToBaselineSchema();
-			if (insertedCount > 0) {
-				console.log(
-					`Backfilled ${insertedCount} baseline Drizzle migration record(s) for ${databasePath}.`
-				);
-			}
-		}
-
-		const adoptedHonchoMigrationCount = backfillColumnMigrationIfNeeded({
-			table: 'users',
-			column: 'honcho_peer_version',
-			tag: HONCHO_PEER_VERSION_MIGRATION_TAG,
-		});
-		if (adoptedHonchoMigrationCount > 0) {
-			console.log(
-				`Backfilled ${adoptedHonchoMigrationCount} Drizzle migration record for existing users.honcho_peer_version column in ${databasePath}.`
-			);
-		}
-
-		const adoptedTitleLanguageMigrationCount = backfillColumnMigrationIfNeeded({
-			table: 'users',
-			column: 'title_language',
-			tag: TITLE_LANGUAGE_MIGRATION_TAG,
-		});
-		if (adoptedTitleLanguageMigrationCount > 0) {
-			console.log(
-				`Backfilled ${adoptedTitleLanguageMigrationCount} Drizzle migration record for existing users.title_language column in ${databasePath}.`
-			);
-		}
-
-		const {
-			backfill: adoptedInferenceProvidersMigrationCount,
-			repair: needsRepair,
-			created: createdInferenceProvidersTable,
-		} = ensureInferenceProvidersSchema();
-		if (adoptedInferenceProvidersMigrationCount > 0) {
-			if (needsRepair) {
-				console.log(
-					`Repaired inference_providers schema in ${databasePath}: ${createdInferenceProvidersTable ? 'created missing table and' : 'added missing columns and'} backfilled ${adoptedInferenceProvidersMigrationCount} provider migration record(s).`
-				);
-			} else {
-				console.log(
-					`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record(s) for existing inference_providers schema in ${databasePath}.`
-				);
-			}
-		}
-
-		const adoptedUiLanguageMigrationCount = backfillColumnMigrationIfNeeded({
-			table: 'users',
-			column: 'ui_language',
-			tag: UI_LANGUAGE_MIGRATION_TAG,
-		});
-		if (adoptedUiLanguageMigrationCount > 0) {
-			console.log(
-				`Backfilled ${adoptedUiLanguageMigrationCount} Drizzle migration record for existing users.ui_language column in ${databasePath}.`
-			);
-		}
-
-		const adoptedPreferredPersonalityMigrationCount = backfillColumnMigrationIfNeeded({
-			table: 'users',
-			column: 'preferred_personality_id',
-			tag: PREFERRED_PERSONALITY_MIGRATION_TAG,
-			applyPendingBefore: true,
-		});
-		if (adoptedPreferredPersonalityMigrationCount > 0) {
-			console.log(
-				`Backfilled ${adoptedPreferredPersonalityMigrationCount} Drizzle migration record for existing users.preferred_personality_id column in ${databasePath}.`
-			);
-		}
-
-		const db = drizzle(sqlite);
-		migrate(db, { migrationsFolder: './drizzle' });
-		console.log(`Database migrations are up to date for ${databasePath}.`);
-		process.exit(0);
+function applyMigrationCompatibilityRepairs(): void {
+	const adoptedHonchoMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'honcho_peer_version',
+		tag: HONCHO_PEER_VERSION_MIGRATION_TAG,
+	});
+	if (adoptedHonchoMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedHonchoMigrationCount} Drizzle migration record for existing users.honcho_peer_version column in ${databasePath}.`
+		);
 	}
 
+	const adoptedTitleLanguageMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'title_language',
+		tag: TITLE_LANGUAGE_MIGRATION_TAG,
+	});
+	if (adoptedTitleLanguageMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedTitleLanguageMigrationCount} Drizzle migration record for existing users.title_language column in ${databasePath}.`
+		);
+	}
+
+	const {
+		backfill: adoptedInferenceProvidersMigrationCount,
+		repair: needsRepair,
+		created: createdInferenceProvidersTable,
+	} = ensureInferenceProvidersSchema();
+	if (adoptedInferenceProvidersMigrationCount > 0) {
+		if (needsRepair) {
+			console.log(
+				`Repaired inference_providers schema in ${databasePath}: ${createdInferenceProvidersTable ? 'created missing table and' : 'added missing columns and'} backfilled ${adoptedInferenceProvidersMigrationCount} provider migration record(s).`
+			);
+		} else {
+			console.log(
+				`Backfilled ${adoptedInferenceProvidersMigrationCount} Drizzle migration record(s) for existing inference_providers schema in ${databasePath}.`
+			);
+		}
+	}
+
+	const adoptedUiLanguageMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'ui_language',
+		tag: UI_LANGUAGE_MIGRATION_TAG,
+	});
+	if (adoptedUiLanguageMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedUiLanguageMigrationCount} Drizzle migration record for existing users.ui_language column in ${databasePath}.`
+		);
+	}
+
+	const adoptedPreferredPersonalityMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'preferred_personality_id',
+		tag: PREFERRED_PERSONALITY_MIGRATION_TAG,
+		applyPendingBefore: true,
+	});
+	if (adoptedPreferredPersonalityMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedPreferredPersonalityMigrationCount} Drizzle migration record for existing users.preferred_personality_id column in ${databasePath}.`
+		);
+	}
+}
+
+function runDrizzleMigrations(): void {
 	const db = drizzle(sqlite);
 	migrate(db, { migrationsFolder: './drizzle' });
-	console.log(`Database migrations are up to date for ${databasePath}.`);
-} finally {
-	sqlite.close();
+}
+
+export function prepareDatabase(path = process.env.DATABASE_PATH || './data/chat.db'): void {
+	openDatabase(path);
+
+	try {
+		if (hasApplicationTables()) {
+			autoCreateMissingColumns();
+
+			const existingMigrationCount = countMigrationRows();
+			if (existingMigrationCount === 0) {
+				const schemaProblems = validateExistingRuntimeSchema();
+				if (schemaProblems.length > 0) {
+					throw new Error(
+						`Database ${databasePath} is missing required schema pieces: ${schemaProblems.join(', ')}`
+					);
+				}
+
+				const insertedCount = syncMigrationJournalToBaselineSchema();
+				if (insertedCount > 0) {
+					console.log(
+						`Backfilled ${insertedCount} baseline Drizzle migration record(s) for ${databasePath}.`
+					);
+				}
+			}
+
+			applyMigrationCompatibilityRepairs();
+			runDrizzleMigrations();
+			autoCreateMissingColumns();
+			const schemaProblems = validateExistingRuntimeSchema();
+			if (schemaProblems.length > 0) {
+				throw new Error(
+					`Database ${databasePath} is missing required schema pieces after migrations: ${schemaProblems.join(', ')}`
+				);
+			}
+			console.log(`Database migrations are up to date for ${databasePath}.`);
+			return;
+		}
+
+		runDrizzleMigrations();
+		console.log(`Database migrations are up to date for ${databasePath}.`);
+	} finally {
+		sqlite.close();
+	}
+}
+
+function isDirectExecution(): boolean {
+	return Boolean(
+		process.argv[1] &&
+			resolve(process.argv[1]) === fileURLToPath(import.meta.url),
+	);
+}
+
+if (isDirectExecution()) {
+	prepareDatabase();
 }

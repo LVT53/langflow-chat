@@ -1,0 +1,99 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { afterEach, describe, expect, it } from 'vitest';
+import { prepareDatabase } from './prepare-db';
+
+const PRE_DEEP_RESEARCH_TAG = '1777140000011_file_production_requests';
+
+let tempDir: string | null = null;
+
+function createDatabaseMigratedThroughTag(dbPath: string, tag: string): void {
+	const sqlite = new Database(dbPath);
+	sqlite.pragma('foreign_keys = ON');
+	sqlite.exec(`
+		CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+			id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+			hash text NOT NULL,
+			created_at numeric
+		)
+	`);
+
+	const journal = JSON.parse(readFileSync('./drizzle/meta/_journal.json', 'utf8')) as {
+		entries: Array<{ tag: string }>;
+	};
+	const targetIndex = journal.entries.findIndex((entry) => entry.tag === tag);
+	if (targetIndex === -1) {
+		throw new Error(`Cannot find migration tag ${tag}`);
+	}
+
+	const migrations = readMigrationFiles({ migrationsFolder: './drizzle' }).slice(
+		0,
+		targetIndex + 1,
+	);
+	const insertMigration = sqlite.prepare(
+		'INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)',
+	);
+	sqlite.transaction(() => {
+		for (const migration of migrations) {
+			for (const statement of migration.sql) {
+				if (statement.trim().length === 0) continue;
+				sqlite.exec(statement);
+			}
+			insertMigration.run(migration.hash, String(migration.folderMillis));
+		}
+	})();
+	sqlite.close();
+}
+
+function hasTable(sqlite: Database.Database, tableName: string): boolean {
+	return Boolean(
+		sqlite
+			.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+			.get(tableName),
+	);
+}
+
+function listColumns(sqlite: Database.Database, tableName: string): string[] {
+	return sqlite
+		.prepare(`PRAGMA table_info(${JSON.stringify(tableName)})`)
+		.all()
+		.map((row) => String((row as { name: unknown }).name));
+}
+
+describe('prepare-db script', () => {
+	afterEach(() => {
+		if (tempDir) {
+			rmSync(tempDir, { recursive: true, force: true });
+			tempDir = null;
+		}
+	});
+
+	it('applies pending Deep Research migrations to a journaled pre-Deep-Research database', () => {
+		tempDir = mkdtempSync(join(tmpdir(), 'alfyai-prepare-db-'));
+		const dbPath = join(tempDir, 'chat.db');
+		createDatabaseMigratedThroughTag(dbPath, PRE_DEEP_RESEARCH_TAG);
+
+		prepareDatabase(dbPath);
+
+		const sqlite = new Database(dbPath, { readonly: true });
+		try {
+			expect(hasTable(sqlite, 'deep_research_jobs')).toBe(true);
+			expect(hasTable(sqlite, 'deep_research_plan_versions')).toBe(true);
+			expect(hasTable(sqlite, 'deep_research_timeline_events')).toBe(true);
+			expect(hasTable(sqlite, 'deep_research_usage_records')).toBe(true);
+			expect(hasTable(sqlite, 'deep_research_sources')).toBe(true);
+			expect(hasTable(sqlite, 'deep_research_tasks')).toBe(true);
+			expect(listColumns(sqlite, 'conversations')).toEqual(
+				expect.arrayContaining(['status', 'sealed_at']),
+			);
+			expect(listColumns(sqlite, 'deep_research_jobs')).toContain(
+				'report_artifact_id',
+			);
+		} finally {
+			sqlite.close();
+		}
+	});
+});
