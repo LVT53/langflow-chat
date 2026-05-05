@@ -268,4 +268,40 @@ describe("serializeWorkingSetArtifacts", () => {
 		expect(serialized).toContain("Document: gamma.md");
 		expect(estimateTokenCount(serialized)).toBeLessThanOrEqual(360);
 	});
+
+	it("keeps many selected evidence items within the total budget while preserving header breadth", () => {
+		const artifacts = Array.from({ length: 24 }, (_, index) =>
+			makeAttachment({
+				id: `pin-${index + 1}`,
+				name: `source-${String(index + 1).padStart(2, "0")}.md`,
+				contentText: `Evidence ${index + 1}. `.repeat(1_000),
+			}),
+		);
+		const totalBudget = 120;
+		const serialized = serializeWorkingSetArtifacts({
+			artifacts,
+			totalBudget,
+			documentBudget: 120,
+			outputBudget: 120,
+		});
+
+		const emittedHeaders = artifacts.filter((artifact) =>
+			serialized.includes(`Document: ${artifact.name}`),
+		);
+		const expectedHeaderCount = artifacts.reduce(
+			(state, artifact) => {
+				const candidateHeaders = [...state.headers, `Document: ${artifact.name}`];
+				if (estimateTokenCount(candidateHeaders.join("\n\n")) <= totalBudget) {
+					state.headers = candidateHeaders;
+				}
+				return state;
+			},
+			{ headers: [] as string[] },
+		).headers.length;
+
+		expect(estimateTokenCount(serialized)).toBeLessThanOrEqual(totalBudget);
+		expect(emittedHeaders).toHaveLength(expectedHeaderCount);
+		expect(emittedHeaders.length).toBeGreaterThan(1);
+		expect(emittedHeaders.length).toBeLessThan(artifacts.length);
+	});
 });

@@ -320,33 +320,55 @@ export function serializeWorkingSetArtifacts(params: {
 	outputBudget: number;
 }): string {
 	const snippets = params.snippets ?? new Map<string, string>();
-	let budgetRemaining = params.totalBudget;
 	const parts: string[] = [];
-	const separatorReserve = Math.max(0, params.artifacts.length - 1) * 16;
-	const fairShareBudget = Math.max(
-		80,
-		Math.floor(
-			Math.max(0, params.totalBudget - separatorReserve) /
-				Math.max(1, params.artifacts.length)
-		)
-	);
+	const selected: Array<{
+		partIndex: number;
+		header: string;
+		excerptSource: string;
+		excerptBudget: number;
+	}> = [];
 
 	for (const artifact of params.artifacts) {
 		const excerptSource =
 			snippets.get(artifact.id) ?? artifact.contentText ?? artifact.summary ?? artifact.name;
 		const perArtifactBudget =
 			artifact.type === 'generated_output' ? params.outputBudget : params.documentBudget;
-		const excerptBudget = Math.max(
-			40,
-			Math.min(perArtifactBudget, fairShareBudget, Math.max(0, budgetRemaining))
-		);
 		const kind = artifact.type === 'generated_output' ? 'Result' : 'Document';
-		const section = `${kind}: ${artifact.name}\n${truncateToTokenBudget(
+		const header = `${kind}: ${artifact.name}`;
+		const candidateParts = [...parts, header];
+
+		if (estimateTokenCount(candidateParts.join('\n\n')) > params.totalBudget) {
+			continue;
+		}
+
+		parts.push(header);
+		selected.push({
+			partIndex: parts.length - 1,
+			header,
 			excerptSource,
-			excerptBudget
-		)}`;
-		parts.push(section);
-		budgetRemaining -= estimateTokenCount(section);
+			excerptBudget: perArtifactBudget,
+		});
+	}
+
+	if (selected.length === 0) return '';
+
+	const headerTokens = estimateTokenCount(parts.join('\n\n'));
+	const contentBudget = Math.max(0, params.totalBudget - headerTokens);
+	const fairShareBudget = Math.floor(contentBudget / selected.length);
+	let remainderBudget = contentBudget % selected.length;
+
+	for (const item of selected) {
+		const itemBudget = Math.min(
+			item.excerptBudget,
+			fairShareBudget + (remainderBudget > 0 ? 1 : 0)
+		);
+		if (remainderBudget > 0) remainderBudget -= 1;
+		if (itemBudget <= 0) continue;
+
+		const excerpt = truncateToTokenBudget(item.excerptSource, itemBudget);
+		if (!excerpt || estimateTokenCount(excerpt) > itemBudget) continue;
+
+		parts[item.partIndex] = `${item.header}\n${excerpt}`;
 	}
 
 	return parts.join('\n\n');
