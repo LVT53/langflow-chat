@@ -10,7 +10,9 @@ import {
 	consumePendingConversationMessage,
 	createConversationDraftRecord,
 	createDraftPersistence,
+	getConversationPersonalitySelection,
 	hasMeaningfulDraft,
+	setConversationPersonalitySelection,
 } from "$lib/client/conversation-session";
 import {
 	applyTaskSteering,
@@ -166,7 +168,12 @@ let workspacePresentation = $state<"docked" | "expanded">(
 );
 let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
-let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
+let selectedPersonalityId = $state<string | null>(
+	getConversationPersonalitySelection(
+		data.conversation.id,
+		untrack(() => data.userPersonality) ?? null,
+	),
+);
 let bootstrapMode = initialBootstrapMode;
 let hydratingConversation = false;
 let suppressHydration = $state(false);
@@ -348,6 +355,11 @@ function getActiveWorkspaceArtifactId(): string | undefined {
 	return activeDocument?.artifactId ?? undefined;
 }
 
+function setSelectedPersonalityId(id: string | null) {
+	selectedPersonalityId = id;
+	setConversationPersonalitySelection(data.conversation.id, id);
+}
+
 function maybeSendPendingInitialMessage() {
 	if (
 		typeof window === "undefined" ||
@@ -374,9 +386,7 @@ function maybeSendPendingInitialMessage() {
 	}
 	// Show loading state until streaming actually starts
 	initialStreamPending = true;
-	if (pendingDraft.personalityProfileId) {
-		selectedPersonalityId = pendingDraft.personalityProfileId;
-	}
+	setSelectedPersonalityId(pendingDraft.personalityProfileId ?? null);
 	handleSend({ ...pendingDraft, pendingAttachments: [] });
 }
 
@@ -397,6 +407,10 @@ function resetState() {
 	lastUserMessage = "";
 	lastAssistantResponse = "";
 	canRetry = false;
+	selectedPersonalityId = getConversationPersonalitySelection(
+		data.conversation.id,
+		data.userPersonality ?? null,
+	);
 	contextStatus = data.contextStatus ?? null;
 	attachedArtifacts = data.attachedArtifacts ?? [];
 	activeWorkingSet = data.activeWorkingSet ?? [];
@@ -1193,6 +1207,10 @@ function handleSend(
 	const attachmentIds = payload.attachmentIds ?? [];
 	const newAttachments = payload.attachments ?? [];
 	const modelIdForTurn = payload.modelId ?? $selectedModel;
+	const personalityProfileIdForTurn =
+		payload.personalityProfileId !== undefined
+			? payload.personalityProfileId
+			: selectedPersonalityId;
 	if (!text.trim() || isSending || isEditResendPending) return;
 
 	sendError = null;
@@ -1346,7 +1364,7 @@ function handleSend(
 			attachmentIds,
 			deepResearchDepth: payload.deepResearchDepth ?? null,
 			activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
-			personalityProfileId: selectedPersonalityId,
+			personalityProfileId: personalityProfileIdForTurn,
 			retryAssistantMessageId,
 			retryUserMessageId,
 			retryUserMessage: retryAssistantMessageId ? text : undefined,
@@ -1787,7 +1805,7 @@ function handleDrop(event: DragEvent) {
 				deepResearchEnabled={data.deepResearchEnabled}
 				{personalityProfiles}
 				{selectedPersonalityId}
-				onPersonalityChange={(id) => selectedPersonalityId = id}
+				onPersonalityChange={setSelectedPersonalityId}
 				draftText={conversationDraft?.draftText ?? ''}
 				draftAttachments={conversationDraft?.selectedAttachments ?? []}
 				draftVersion={conversationDraft?.updatedAt ?? 0}

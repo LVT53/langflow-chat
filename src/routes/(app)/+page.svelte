@@ -7,6 +7,7 @@ import {
 	createConversationDraftRecord,
 	createDraftPersistence,
 	getLandingDraftConversationId,
+	setConversationPersonalitySelection,
 	setLandingDraftConversationId,
 	storePendingConversationMessage,
 } from '$lib/client/conversation-session';
@@ -262,6 +263,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 			const id = payload.conversationId ?? await ensurePreparedConversation();
 			currentConversationId.set(id);
 			upsertConversationLocal(id, 'New Conversation', Date.now() / 1000);
+			setConversationPersonalitySelection(id, selectedPersonalityId);
 			setLandingDraftConversationId(null);
 			conversationDraft = null;
 			draftPersistence.clear();
