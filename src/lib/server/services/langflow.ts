@@ -140,6 +140,7 @@ const FILE_GENERATION_GUARD = [
 	"- Use `language: \"python\"` for standard-library-friendly text and data exports such as CSV, JSON, TXT, Markdown, simple HTML, and SVG.",
 	"- Do not assume Python third-party packages such as openpyxl, reportlab, python-docx, pandas, or matplotlib are installed.",
 	"- Use `language: \"javascript\"` for `.xlsx` with `exceljs`, `.pptx` with `pptxgenjs`, `.docx` with `docx`, and `.odt` with `jszip` packaging.",
+	"- For PptxGenJS charts, `slide.addChart` data must be an array of series objects: `[{ name: \"Series\", labels: [\"A\"], values: [1] }]`. Do not pass a plain `{ labels, values }` object directly.",
 	"- Program source must write final requested files to `/output`; no downloadable file exists if `/output` remains empty.",
 	"- If `program.filename` is provided, write exactly one final output file with that filename.",
 	"- Do not write fallback diagnostics or scratch files to `/output`; return only user-requested artifacts.",

@@ -162,7 +162,93 @@ function buildSandboxBootstrapCode(
 		const sanitized = fixDoubleEscapedQuotes(code);
 		return `
 const sandboxFs = require('fs');
+const sandboxModule = require('module');
 const SANDBOX_OUTPUT_DIR = ${JSON.stringify(OUTPUT_DIR)};
+const sandboxOriginalModuleLoad = sandboxModule._load;
+
+function sandboxNormalizePptxSeries(series, labels, index) {
+	if (!series || typeof series !== 'object') return series;
+	const seriesLabels = Array.isArray(series.labels) ? series.labels : labels;
+	const values = Array.isArray(series.values)
+		? series.values
+		: Array.isArray(series.data)
+			? series.data
+			: null;
+	if (!Array.isArray(seriesLabels) || !Array.isArray(values)) return series;
+	return {
+		...series,
+		name: series.name || series.label || series.title || \`Series \${index + 1}\`,
+		labels: seriesLabels,
+		values,
+	};
+}
+
+function sandboxNormalizePptxChartData(data) {
+	if (Array.isArray(data)) {
+		return data.map((series, index) => sandboxNormalizePptxSeries(series, undefined, index));
+	}
+	if (!data || typeof data !== 'object') return data;
+
+	const labels = Array.isArray(data.labels)
+		? data.labels
+		: Array.isArray(data.categories)
+			? data.categories
+			: Array.isArray(data.xLabels)
+				? data.xLabels
+				: undefined;
+	if (Array.isArray(data.datasets)) {
+		return data.datasets.map((series, index) => sandboxNormalizePptxSeries(series, labels, index));
+	}
+	if (Array.isArray(data.series)) {
+		return data.series.map((series, index) => sandboxNormalizePptxSeries(series, labels, index));
+	}
+	return sandboxNormalizePptxSeries(data, labels, 0);
+}
+
+function sandboxNormalizePptxChartType(type) {
+	if (!Array.isArray(type)) return type;
+	return type.map((entry) => {
+		if (!entry || typeof entry !== 'object') return entry;
+		return { ...entry, data: sandboxNormalizePptxChartData(entry.data) };
+	});
+}
+
+function sandboxPatchPptxGenJsCharts(PptxGenJS) {
+	if (!PptxGenJS || typeof PptxGenJS !== 'function' || PptxGenJS.__alfyaiChartPatch) {
+		return PptxGenJS;
+	}
+	const originalAddSlide = PptxGenJS.prototype && PptxGenJS.prototype.addSlide;
+	if (typeof originalAddSlide !== 'function') return PptxGenJS;
+
+	function patchSlide(slide) {
+		if (!slide || typeof slide.addChart !== 'function' || slide.__alfyaiChartPatch) return slide;
+		const originalAddChart = slide.addChart;
+		Object.defineProperty(slide, '__alfyaiChartPatch', { value: true });
+		slide.addChart = function patchedAddChart(type, data, opt) {
+			const normalizedType = sandboxNormalizePptxChartType(type);
+			const normalizedData = Array.isArray(type) ? data : sandboxNormalizePptxChartData(data);
+			return originalAddChart.call(this, normalizedType, normalizedData, opt);
+		};
+		return slide;
+	}
+
+	PptxGenJS.prototype.addSlide = function patchedAddSlide(...args) {
+		return patchSlide(originalAddSlide.apply(this, args));
+	};
+	Object.defineProperty(PptxGenJS, '__alfyaiChartPatch', { value: true });
+	return PptxGenJS;
+}
+
+sandboxModule._load = function patchedSandboxModuleLoad(request, parent, isMain) {
+	const loaded = sandboxOriginalModuleLoad.apply(this, arguments);
+	if (request === 'pptxgenjs' || String(request).includes('pptxgenjs')) {
+		sandboxPatchPptxGenJsCharts(loaded);
+		if (loaded && typeof loaded === 'object' && loaded.default) {
+			sandboxPatchPptxGenJsCharts(loaded.default);
+		}
+	}
+	return loaded;
+};
 
 (async () => {
 	sandboxFs.mkdirSync(SANDBOX_OUTPUT_DIR, { recursive: true });
@@ -490,6 +576,12 @@ function classifyError(
 		stderr.includes("ERR_MODULE_NOT_FOUND")
 	) {
 		return `Import error: ${stderr}`;
+	}
+	if (stderr.includes("tmpData.forEach is not a function")) {
+		return [
+			"Execution failed: PptxGenJS chart data must be an array of series objects.",
+			'Use slide.addChart(type, [{ name: "Series", labels: [...], values: [...] }], options) instead of passing a plain { labels, values } object.',
+		].join(" ");
 	}
 	if (
 		stderr.includes("sharp") ||

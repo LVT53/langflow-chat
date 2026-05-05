@@ -90,7 +90,7 @@ For headings, use { "type": "heading", "level": 2, "text": "Section title" }. Su
 For tables, the safest documentSource block shape is { "type": "table", "title": "...", "headers": ["Column"], "rows": [["Value"]] }. Do not use merged cells, nested tables, rowspan, or colspan.
 For simple bar/line/area charts, Chart.js-style data is accepted: { "type": "chart", "chartType": "bar", "title": "...", "caption": "...", "altText": "...", "data": { "labels": ["A"], "datasets": [{ "label": "Score", "data": [8] }] } }.
 For CSV, JSON, TXT, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, and other code-generated artifacts, use sourceMode: "program" with program.language, program.sourceCode, and optional program.filename.
-Use Python for standard-library-friendly text/data exports. Use JavaScript for .xlsx via exceljs, .pptx via pptxgenjs, .docx via docx, and .odt via jszip packaging. Program source must write final requested files to /output.
+Use Python for standard-library-friendly text/data exports. Use JavaScript for .xlsx via exceljs, .pptx via pptxgenjs, .docx via docx, and .odt via jszip packaging. For PptxGenJS charts, slide.addChart data must be an array of series objects like [{ name: "Series", labels: ["A"], values: [1] }], not a plain { labels, values } object. Program source must write final requested files to /output.
 For images inside polished PDFs or reports, use image_search first when real-world images are needed, then reference the safe image URLs in documentSource image blocks with alt text.
 run_python_repl is scratch work only. It does not create downloadable files and must not substitute for produce_file.
 Only say a generated file is ready after the tool succeeds.

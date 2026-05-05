@@ -184,6 +184,24 @@ describe("sandbox-execution", () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
+		it("returns actionable guidance for PptxGenJS object-shaped chart data failures", async () => {
+			const mockResult: SandboxResult = {
+				stdout: "",
+				stderr:
+					"TypeError: tmpData.forEach is not a function at addChartDefinition (/workspace/node_modules/pptxgenjs/dist/pptxgen.cjs.js:1698:13)",
+				exitCode: 1,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+
+			const result = await executeCode("makeDeck()", "javascript");
+
+			expect(result.error).toContain("PptxGenJS chart data");
+			expect(result.error).toContain("array of series objects");
+			expect(result.error).toContain("slide.addChart");
+			expect(result.exitCode).toBe(1);
+		});
+
 		it("handles timeout errors gracefully", async () => {
 			mockSandbox.execute.mockImplementation(
 				() =>
@@ -266,6 +284,33 @@ describe("sandbox-execution", () => {
 					'const fs = require("fs"); fs.writeFileSync("/output/test.txt", "ok");',
 				),
 			);
+		});
+
+		it("wraps JavaScript code with a PptxGenJS chart data compatibility shim", async () => {
+			const mockResult: SandboxResult = {
+				stdout: "ok",
+				stderr: "",
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+			mockContainer.getArchive.mockResolvedValue(createEmptyOutputArchive());
+
+			await executeCode(
+				'const PptxGenJS = require("pptxgenjs"); const pptx = new PptxGenJS(); const slide = pptx.addSlide(); slide.addChart(pptx.ChartType.bar, { labels: ["A"], values: [1] }, { x: 1, y: 1, w: 4, h: 3 });',
+				"javascript",
+			);
+
+			expect(mockSandbox.execute).toHaveBeenCalledWith(
+				expect.stringContaining("function sandboxNormalizePptxChartData"),
+			);
+			expect(mockSandbox.execute).toHaveBeenCalledWith(
+				expect.stringContaining("function sandboxPatchPptxGenJsCharts"),
+			);
+			expect(mockSandbox.execute).toHaveBeenCalledWith(
+				expect.stringContaining("slide.addChart(pptx.ChartType.bar"),
+			);
+			const wrappedCode = mockSandbox.execute.mock.calls[0][0] as string;
+			expect(() => new Function("require", "process", wrappedCode)).not.toThrow();
 		});
 
 		it("extracts generated files after a leading directory entry", async () => {

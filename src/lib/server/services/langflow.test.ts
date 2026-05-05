@@ -136,6 +136,8 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("document_source");
 		expect(prompt).toContain("documentSource");
 		expect(prompt).toContain("program");
+		expect(prompt).toContain("PptxGenJS charts");
+		expect(prompt).toContain("array of series objects");
 		expect(prompt).toContain("idempotencyKey");
 		expect(prompt).toContain("requestTitle");
 		expect(prompt).toContain("requestedOutputs");
