@@ -150,6 +150,7 @@ export function handleOpenDocument(doc: DocumentWorkspaceItem) {
 	open={workspaceOpen}
 	presentation="expanded"
 	returnToDockedOnExpandedClose={false}
+	showPresentationToggle={false}
 	documents={workspaceDocuments}
 	availableDocuments={availableWorkspaceDocuments}
 	activeDocumentId={activeWorkspaceDocumentId}

@@ -18,6 +18,7 @@ let {
 	open = false,
 	presentation = "docked",
 	returnToDockedOnExpandedClose = true,
+	showPresentationToggle = true,
 	documents = [],
 	availableDocuments = [],
 	activeDocumentId = null,
@@ -31,6 +32,7 @@ let {
 	open?: boolean;
 	presentation?: "docked" | "expanded";
 	returnToDockedOnExpandedClose?: boolean;
+	showPresentationToggle?: boolean;
 	documents?: DocumentWorkspaceItem[];
 	availableDocuments?: DocumentWorkspaceItem[];
 	activeDocumentId?: string | null;
@@ -583,20 +585,22 @@ $effect(() => {
 									</svg>
 								</a>
 							{/if}
-							<button
-								type="button"
-								class="btn-icon-bare workspace-expand-button"
-								onclick={requestExpandedPresentation}
-								aria-label={$t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
-								title={$t('documentWorkspace.expandWorkspace')}
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="15 3 21 3 21 9" />
-									<polyline points="9 21 3 21 3 15" />
-									<line x1="21" y1="3" x2="14" y2="10" />
-									<line x1="3" y1="21" x2="10" y2="14" />
-								</svg>
-							</button>
+							{#if showPresentationToggle}
+								<button
+									type="button"
+									class="btn-icon-bare workspace-expand-button"
+									onclick={requestExpandedPresentation}
+									aria-label={$t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+									title={$t('documentWorkspace.expandWorkspace')}
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<polyline points="15 3 21 3 21 9" />
+										<polyline points="9 21 3 21 3 15" />
+										<line x1="21" y1="3" x2="14" y2="10" />
+										<line x1="3" y1="21" x2="10" y2="14" />
+									</svg>
+								</button>
+							{/if}
 							<button
 								type="button"
 								class="btn-icon-bare workspace-close-button"
@@ -829,20 +833,22 @@ $effect(() => {
 								</svg>
 							</a>
 						{/if}
-						<button
-							type="button"
-							class="btn-icon-bare workspace-expand-button"
-							onclick={presentation === "expanded" ? requestDockedPresentation : requestExpandedPresentation}
-							aria-label={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspaceLabel', { title: getDocumentTitle(activeDocument) }) : $t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
-							title={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspace') : $t('documentWorkspace.expandWorkspace')}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<polyline points="15 3 21 3 21 9" />
-								<polyline points="9 21 3 21 3 15" />
-								<line x1="21" y1="3" x2="14" y2="10" />
-								<line x1="3" y1="21" x2="10" y2="14" />
-							</svg>
-						</button>
+						{#if showPresentationToggle}
+							<button
+								type="button"
+								class="btn-icon-bare workspace-expand-button"
+								onclick={presentation === "expanded" ? requestDockedPresentation : requestExpandedPresentation}
+								aria-label={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspaceLabel', { title: getDocumentTitle(activeDocument) }) : $t('documentWorkspace.expandWorkspaceLabel', { title: getDocumentTitle(activeDocument) })}
+								title={presentation === "expanded" ? $t('documentWorkspace.collapseWorkspace') : $t('documentWorkspace.expandWorkspace')}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="15 3 21 3 21 9" />
+									<polyline points="9 21 3 21 3 15" />
+									<line x1="21" y1="3" x2="14" y2="10" />
+									<line x1="3" y1="21" x2="10" y2="14" />
+								</svg>
+							</button>
+						{/if}
 						<button
 							type="button"
 							class="btn-icon-bare workspace-close-button"
