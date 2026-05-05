@@ -98,6 +98,56 @@ describe('ContextUsageRing cost display', () => {
 		expect(screen.queryByText(/verification/i)).toBeNull();
 	});
 
+	it('uses contextSources for source counts and reduced state when available', () => {
+		renderRing({
+			contextStatus: {
+				estimatedTokens: 5000,
+				targetTokens: 157286,
+				thresholdTokens: 209715,
+				compactionMode: 'none',
+				routingStage: 'deterministic',
+				routingConfidence: 100,
+				verificationStatus: 'skipped',
+				layersUsed: [],
+				recentTurnCount: 5,
+				workingSetCount: 3,
+				workingSetArtifactIds: [],
+				workingSetApplied: true,
+				taskStateApplied: true,
+				promptArtifactCount: 1,
+				summary: null,
+				updatedAt: Date.now(),
+			},
+			contextDebug: {
+				routingStage: 'deterministic',
+				routingConfidence: 100,
+				verificationStatus: 'skipped',
+				selectedEvidence: [],
+				pinnedEvidence: [],
+				excludedEvidence: [],
+			},
+			contextSources: {
+				conversationId: 'conversation-1',
+				userId: 'user-1',
+				activeCount: 2,
+				inferredCount: 0,
+				selectedCount: 2,
+				pinnedCount: 1,
+				excludedCount: 1,
+				reduced: true,
+				compacted: false,
+				groups: [],
+				updatedAt: Date.now(),
+			},
+		});
+
+		expect(screen.getByText('contextSources.currentSelection')).toBeTruthy();
+		expect(screen.getByText('contextSources.state')).toBeTruthy();
+		expect(screen.getByText('contextSources.reduced')).toBeTruthy();
+		expect(screen.getByText('contextSources.pinned')).toBeTruthy();
+		expect(screen.getByText('contextSources.excluded')).toBeTruthy();
+	});
+
 	it('formats sub-dollar cost with 4 decimal places', () => {
 		renderRing({ totalCostUsd: 0.0042, totalTokens: 500 });
 

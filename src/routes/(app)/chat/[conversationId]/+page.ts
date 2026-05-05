@@ -32,6 +32,7 @@ export const load: PageLoad = async ({ params, fetch, url }) => {
 		attachedArtifacts: detail.attachedArtifacts ?? [],
 		activeWorkingSet: detail.activeWorkingSet ?? [],
 		contextStatus: detail.contextStatus ?? null,
+		contextSources: detail.contextSources ?? null,
 		taskState: detail.taskState ?? null,
 		contextDebug: detail.contextDebug ?? null,
 		draft: detail.draft ?? null,

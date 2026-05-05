@@ -6,6 +6,7 @@
 	import type {
 		ArtifactSummary,
 		ContextDebugState,
+		ContextSourcesState,
 		ConversationContextStatus,
 		PendingAttachment,
 		TaskState,
@@ -33,6 +34,7 @@
 		attachedArtifacts,
 		taskState,
 		contextDebug,
+		contextSources = null,
 		draftText,
 		draftAttachments,
 		draftVersion,
@@ -66,6 +68,7 @@
 		attachedArtifacts: ArtifactSummary[];
 		taskState: TaskState | null;
 		contextDebug: ContextDebugState | null;
+		contextSources?: ContextSourcesState | null;
 		draftText: string;
 		draftAttachments: PendingAttachment[];
 		draftVersion: number;
@@ -165,6 +168,7 @@
 			{attachedArtifacts}
 			{taskState}
 			{contextDebug}
+			{contextSources}
 			{draftText}
 			{draftAttachments}
 			{draftVersion}

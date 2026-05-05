@@ -3,6 +3,9 @@
 	import { t } from '$lib/i18n';
 	import type {
 		ContextDebugState,
+		ContextSourceGroupKind,
+		ContextSourceItem,
+		ContextSourcesState,
 		EvidencePreference,
 		TaskSteeringPayload,
 	} from '$lib/types';
@@ -10,11 +13,13 @@
 	let {
 		open = false,
 		contextDebug = null,
+		contextSources = null,
 		onClose = undefined,
 		onSteer = undefined,
 	}: {
 		open?: boolean;
 		contextDebug?: ContextDebugState | null;
+		contextSources?: ContextSourcesState | null;
 		onClose?: (() => void) | undefined;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 	} = $props();
@@ -50,13 +55,72 @@
 		new Set(contextDebug?.excludedEvidence.map((item) => item.artifactId) ?? [])
 	);
 	let selectedRows = $derived(
-		contextDebug?.selectedEvidence.filter(
-			(item) => !pinnedIds.has(item.artifactId) && !excludedIds.has(item.artifactId)
-		) ?? []
+		contextSources
+			? contextSources.groups
+				.filter((group) => group.kind !== 'pinned' && group.kind !== 'excluded')
+				.flatMap((group) => group.items)
+			: contextDebug?.selectedEvidence.filter(
+				(item) => !pinnedIds.has(item.artifactId) && !excludedIds.has(item.artifactId)
+			) ?? []
+	);
+	let pinnedRows = $derived(
+		contextSources?.groups.find((group) => group.kind === 'pinned')?.items ??
+			contextDebug?.pinnedEvidence ??
+			[]
+	);
+	let excludedRows = $derived(
+		contextSources?.groups.find((group) => group.kind === 'excluded')?.items ??
+			contextDebug?.excludedEvidence ??
+			[]
 	);
 
 	function steer(payload: TaskSteeringPayload) {
 		onSteer?.(payload);
+	}
+
+	function itemId(item: ContextSourceItem | { artifactId: string }): string {
+		return 'id' in item ? item.id : item.artifactId;
+	}
+
+	function itemArtifactId(item: ContextSourceItem | { artifactId: string }): string | null {
+		return item.artifactId ?? null;
+	}
+
+	function itemTitle(item: ContextSourceItem | { name: string }): string {
+		return 'title' in item ? item.title : item.name;
+	}
+
+	function itemSourceType(item: ContextSourceItem | { sourceType: string }): string {
+		return item.sourceType;
+	}
+
+	function itemReason(item: ContextSourceItem | { reason?: string | null }): string | null {
+		return item.reason ?? null;
+	}
+
+	function formatSourceState(): string {
+		if (contextSources?.compacted) return $t('contextSources.compacted');
+		if (contextSources?.reduced) return $t('contextSources.reduced');
+		return $t('contextSources.full');
+	}
+
+	function formatGroupKind(kind: ContextSourceGroupKind): string {
+		switch (kind) {
+			case 'attachments':
+				return $t('contextSources.group.attachments');
+			case 'working_set':
+				return $t('contextSources.group.workingSet');
+			case 'task_evidence':
+				return $t('contextSources.group.taskEvidence');
+			case 'pinned':
+				return $t('contextSources.pinned');
+			case 'excluded':
+				return $t('contextSources.excluded');
+			case 'memory':
+				return $t('contextSources.group.memory');
+			case 'conversation':
+				return $t('contextSources.group.conversation');
+		}
 	}
 </script>
 
@@ -84,30 +148,53 @@
 			</div>
 
 			<div class="panel-body">
+				{#if contextSources}
+					<div class="source-summary">
+						<div>
+							<div class="summary-label">{$t('contextSources.activeSources')}</div>
+							<div class="summary-value">{contextSources.activeCount}</div>
+						</div>
+						<div>
+							<div class="summary-label">{$t('contextSources.state')}</div>
+							<div
+								class="summary-value"
+								class:summary-value--reduced={contextSources.reduced || contextSources.compacted}
+							>
+								{formatSourceState()}
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<div class="section">
 					<div class="section-header">
 						<h3>{$t('contextSources.currentSelection')}</h3>
-						<span>{selectedRows.length}</span>
+						<span>{contextSources?.selectedCount ?? selectedRows.length}</span>
 					</div>
 					{#if selectedRows.length > 0}
 						<div class="row-list">
-							{#each selectedRows as item (item.artifactId)}
+							{#each selectedRows as item (itemId(item))}
 								<div class="evidence-row">
 									<div class="row-copy">
-										<div class="row-title">{item.name}</div>
+										<div class="row-title">{itemTitle(item)}</div>
 										<div class="row-meta">
-											<span class="row-chip">{item.sourceType}</span>
-											{#if item.reason}
-												<span>{item.reason}</span>
+											<span class="row-chip">{itemSourceType(item)}</span>
+											{#if contextSources && 'id' in item}
+												<span>{formatGroupKind(item.id.split(':')[0] as ContextSourceGroupKind)}</span>
+											{/if}
+											{#if itemReason(item)}
+												<span>{itemReason(item)}</span>
 											{/if}
 										</div>
 									</div>
-									<EvidencePreferenceControl
-										artifactId={item.artifactId}
-										preference={preferenceFor(item.artifactId)}
-										label={$t('contextSources.sourcePreference')}
-										onSteer={steer}
-									/>
+									{#if itemArtifactId(item) && contextDebug}
+										<EvidencePreferenceControl
+											artifactId={itemArtifactId(item) ?? ''}
+											preference={preferenceFor(itemArtifactId(item) ?? '')}
+											label={$t('contextSources.sourcePreference')}
+											onSteer={steer}
+										/>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -119,25 +206,27 @@
 				<div class="section">
 					<div class="section-header">
 						<h3>{$t('contextSources.pinned')}</h3>
-						<span>{contextDebug?.pinnedEvidence.length ?? 0}</span>
+						<span>{contextSources?.pinnedCount ?? pinnedRows.length}</span>
 					</div>
-					{#if (contextDebug?.pinnedEvidence.length ?? 0) > 0}
+					{#if pinnedRows.length > 0}
 						<div class="row-list">
-							{#each contextDebug?.pinnedEvidence ?? [] as item (item.artifactId)}
+							{#each pinnedRows as item (itemId(item))}
 								<div class="evidence-row">
 									<div class="row-copy">
-										<div class="row-title">{item.name}</div>
+										<div class="row-title">{itemTitle(item)}</div>
 										<div class="row-meta">
-											<span class="row-chip">{item.sourceType}</span>
+											<span class="row-chip">{itemSourceType(item)}</span>
 											<span>{$t('contextSources.pinnedByYou')}</span>
 										</div>
 									</div>
-									<EvidencePreferenceControl
-										artifactId={item.artifactId}
-										preference="pinned"
-										label={$t('contextSources.sourcePreference')}
-										onSteer={steer}
-									/>
+									{#if itemArtifactId(item) && contextDebug}
+										<EvidencePreferenceControl
+											artifactId={itemArtifactId(item) ?? ''}
+											preference="pinned"
+											label={$t('contextSources.sourcePreference')}
+											onSteer={steer}
+										/>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -149,25 +238,27 @@
 				<div class="section">
 					<div class="section-header">
 						<h3>{$t('contextSources.excluded')}</h3>
-						<span>{contextDebug?.excludedEvidence.length ?? 0}</span>
+						<span>{contextSources?.excludedCount ?? excludedRows.length}</span>
 					</div>
-					{#if (contextDebug?.excludedEvidence.length ?? 0) > 0}
+					{#if excludedRows.length > 0}
 						<div class="row-list">
-							{#each contextDebug?.excludedEvidence ?? [] as item (item.artifactId)}
+							{#each excludedRows as item (itemId(item))}
 								<div class="evidence-row">
 									<div class="row-copy">
-										<div class="row-title">{item.name}</div>
+										<div class="row-title">{itemTitle(item)}</div>
 										<div class="row-meta">
-											<span class="row-chip">{item.sourceType}</span>
+											<span class="row-chip">{itemSourceType(item)}</span>
 											<span>{$t('contextSources.excludedFromAutoSelection')}</span>
 										</div>
 									</div>
-									<EvidencePreferenceControl
-										artifactId={item.artifactId}
-										preference="excluded"
-										label={$t('contextSources.sourcePreference')}
-										onSteer={steer}
-									/>
+									{#if itemArtifactId(item) && contextDebug}
+										<EvidencePreferenceControl
+											artifactId={itemArtifactId(item) ?? ''}
+											preference="excluded"
+											label={$t('contextSources.sourcePreference')}
+											onSteer={steer}
+										/>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -233,6 +324,29 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 1rem;
+	}
+
+	.source-summary {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.summary-label {
+		font-size: 0.72rem;
+		color: var(--text-muted);
+	}
+
+	.summary-value {
+		margin-top: 0.2rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.summary-value--reduced {
+		color: var(--danger);
 	}
 
 	.section + .section {

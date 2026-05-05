@@ -8,6 +8,7 @@ import FileAttachment from "./FileAttachment.svelte";
 import type {
 	ArtifactSummary,
 	ContextDebugState,
+	ContextSourcesState,
 	ConversationContextStatus,
 	PendingAttachment,
 	TaskState,
@@ -44,6 +45,7 @@ let {
 	attachedArtifacts = [],
 	taskState = null,
 	contextDebug = null,
+	contextSources = null,
 	draftText = "",
 	draftAttachments = [],
 	draftVersion = 0,
@@ -76,6 +78,7 @@ let {
 	attachedArtifacts?: ArtifactSummary[];
 	taskState?: TaskState | null;
 	contextDebug?: ContextDebugState | null;
+	contextSources?: ContextSourcesState | null;
 	draftText?: string;
 	draftAttachments?: PendingAttachment[];
 	draftVersion?: number;
@@ -774,6 +777,7 @@ async function emitDraftChange(force = false) {
 					attachedArtifacts={composerArtifacts}
 					{taskState}
 					{contextDebug}
+					{contextSources}
 					onSteer={handleSteering}
 					onManageEvidence={handleManageEvidence}
 					{totalCostUsd}

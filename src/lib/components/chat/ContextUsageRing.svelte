@@ -4,6 +4,7 @@
 	import type {
 		ArtifactSummary,
 		ContextDebugState,
+		ContextSourcesState,
 		ConversationContextStatus,
 		MemoryLayer,
 		TaskState,
@@ -16,6 +17,7 @@
 		attachedArtifacts = [],
 		taskState = null,
 		contextDebug = null,
+		contextSources = null,
 		onSteer = undefined,
 		onManageEvidence = undefined,
 		totalCostUsd = 0,
@@ -25,6 +27,7 @@
 		attachedArtifacts?: ArtifactSummary[];
 		taskState?: TaskState | null;
 		contextDebug?: ContextDebugState | null;
+		contextSources?: ContextSourcesState | null;
 		onSteer?: ((payload: TaskSteeringPayload) => void) | undefined;
 		onManageEvidence?: (() => void) | undefined;
 		totalCostUsd?: number;
@@ -108,6 +111,12 @@
 		}
 	}
 
+	function formatSourceState(): string {
+		if (contextSources?.compacted) return $t('contextSources.compacted');
+		if (contextSources?.reduced) return $t('contextSources.reduced');
+		return $t('contextSources.full');
+	}
+
 	function steer(action: TaskSteeringAction, artifactId?: string, objective?: string) {
 		onSteer?.({ action, artifactId, objective });
 	}
@@ -177,12 +186,21 @@
 	let dashOffset = $derived(circumference * (1 - ratio));
 	let percent = $derived(Math.round(ratio * 100));
 	let activeObjective = $derived(contextDebug?.activeTaskObjective ?? taskState?.objective ?? null);
+	let selectedSourceCount = $derived(
+		contextSources?.selectedCount ?? contextDebug?.selectedEvidence.length ?? 0
+	);
+	let pinnedSourceCount = $derived(
+		contextSources?.pinnedCount ?? contextDebug?.pinnedEvidence.length ?? 0
+	);
+	let excludedSourceCount = $derived(
+		contextSources?.excludedCount ?? contextDebug?.excludedEvidence.length ?? 0
+	);
 	let toneClass = $derived(
 		!contextStatus
 			? 'ring-button--idle'
-			: contextStatus.compactionMode === 'llm_fallback'
+			: contextSources?.compacted || contextStatus.compactionMode === 'llm_fallback'
 				? 'ring-button--compact'
-				: contextStatus.compactionMode === 'deterministic'
+				: contextSources?.reduced || contextStatus.compactionMode === 'deterministic'
 					? 'ring-button--high'
 					: ratio >= 0.9
 						? 'ring-button--high'
@@ -321,7 +339,30 @@
 						{formatCompactionMode(contextStatus.compactionMode)}
 					</span>
 				</div>
-				{#if contextDebug}
+				{#if contextSources}
+					<div class="popover-stat">
+						<span>{$t('contextSources.currentSelection')}</span>
+						<span>{selectedSourceCount}</span>
+					</div>
+					<div class="popover-stat">
+						<span>{$t('contextSources.state')}</span>
+						<span class:compaction-active={contextSources.reduced || contextSources.compacted}>
+							{formatSourceState()}
+						</span>
+					</div>
+					{#if pinnedSourceCount > 0}
+						<div class="popover-stat">
+							<span>{$t('contextSources.pinned')}</span>
+							<span>{pinnedSourceCount}</span>
+						</div>
+					{/if}
+					{#if excludedSourceCount > 0}
+						<div class="popover-stat">
+							<span>{$t('contextSources.excluded')}</span>
+							<span>{excludedSourceCount}</span>
+						</div>
+					{/if}
+				{:else if contextDebug}
 					<div class="popover-stat">
 						<span>{$t('contextUsageRing.selectedEvidence')}</span>
 						<span>{contextDebug.selectedEvidence.length}</span>

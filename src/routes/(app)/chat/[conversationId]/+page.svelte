@@ -48,6 +48,7 @@ import type {
 	ChatMessage,
 	ConversationDraft,
 	ContextDebugState,
+	ContextSourcesState,
 	ConversationContextStatus,
 	DeepResearchJob,
 	DocumentWorkspaceItem,
@@ -127,6 +128,7 @@ const initialAttachedArtifacts = getData().attachedArtifacts ?? [];
 const initialActiveWorkingSet = getData().activeWorkingSet ?? [];
 const initialTaskState = getData().taskState ?? null;
 const initialContextDebug = getData().contextDebug ?? null;
+const initialContextSources = getData().contextSources ?? null;
 const initialConversationDraft = getData().draft ?? null;
 const initialBootstrapMode = getData().bootstrap ?? false;
 const initialGeneratedFiles = getData().generatedFiles ?? [];
@@ -168,6 +170,7 @@ let attachedArtifacts = $state<ArtifactSummary[]>(initialAttachedArtifacts);
 let activeWorkingSet: ArtifactSummary[] = initialActiveWorkingSet;
 let taskState = $state<TaskState | null>(initialTaskState);
 let contextDebug = $state<ContextDebugState | null>(initialContextDebug);
+let contextSources = $state<ContextSourcesState | null>(initialContextSources);
 let conversationDraft = $state<ConversationDraft | null>(
 	initialConversationDraft,
 );
@@ -445,6 +448,7 @@ function resetState() {
 	activeWorkingSet = data.activeWorkingSet ?? [];
 	taskState = data.taskState ?? null;
 	contextDebug = data.contextDebug ?? null;
+	contextSources = data.contextSources ?? null;
 	conversationDraft = data.draft ?? null;
 	generatedFiles = data.generatedFiles ?? [];
 	fileProductionJobs = data.fileProductionJobs ?? [];
@@ -589,6 +593,9 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 		if (detail.contextStatus) {
 			contextStatus = detail.contextStatus;
 		}
+		if (detail.contextSources) {
+			contextSources = detail.contextSources;
+		}
 		if (detail.activeWorkingSet) {
 			activeWorkingSet = detail.activeWorkingSet;
 		}
@@ -635,6 +642,11 @@ async function loadPersistedData() {
 	);
 	if (detail) {
 		messages.set([...(detail.messages ?? [])]);
+		contextStatus = detail.contextStatus ?? contextStatus;
+		contextSources = detail.contextSources ?? contextSources;
+		activeWorkingSet = detail.activeWorkingSet ?? activeWorkingSet;
+		taskState = detail.taskState ?? taskState;
+		contextDebug = detail.contextDebug ?? contextDebug;
 		generatedFiles = [...(detail.generatedFiles ?? [])];
 		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		deepResearchJobs = mergeDeepResearchJobsForHydration(
@@ -730,6 +742,7 @@ async function reconnectToOrphanedStream(
 					fullText.length,
 				);
 				contextStatus = metadata?.contextStatus ?? contextStatus;
+				contextSources = metadata?.contextSources ?? contextSources;
 				activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 				taskState = metadata?.taskState ?? taskState;
 				contextDebug = metadata?.contextDebug ?? contextDebug;
@@ -831,6 +844,11 @@ async function reconnectToOrphanedStream(
 
 						// Update stores directly - don't call invalidateAll as it can overwrite our fresh data
 						messages.set([...(detail.messages ?? [])]); // Create new array to trigger reactivity
+						contextStatus = detail.contextStatus ?? contextStatus;
+						contextSources = detail.contextSources ?? contextSources;
+						activeWorkingSet = detail.activeWorkingSet ?? activeWorkingSet;
+						taskState = detail.taskState ?? taskState;
+						contextDebug = detail.contextDebug ?? contextDebug;
 						generatedFiles = [...(detail.generatedFiles ?? [])];
 						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 						deepResearchJobs = mergeDeepResearchJobsForHydration(
@@ -958,6 +976,7 @@ async function hydrateConversationDetail(conversationId: string) {
 		}
 		activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
 		contextStatus = payload.contextStatus ?? contextStatus;
+		contextSources = payload.contextSources ?? contextSources;
 		taskState = payload.taskState ?? taskState;
 		contextDebug = payload.contextDebug ?? contextDebug;
 		conversationDraft = payload.draft ?? conversationDraft;
@@ -1548,6 +1567,7 @@ function handleSend(
 				const completedAssistantResponse = fullText;
 				lastAssistantResponse = fullText;
 				contextStatus = metadata?.contextStatus ?? contextStatus;
+				contextSources = metadata?.contextSources ?? contextSources;
 				activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 				taskState = metadata?.taskState ?? taskState;
 				contextDebug = metadata?.contextDebug ?? contextDebug;
@@ -1698,6 +1718,7 @@ function handleRetry() {
 				onEnd(fullText, metadata) {
 					lastAssistantResponse = fullText;
 					contextStatus = metadata?.contextStatus ?? contextStatus;
+					contextSources = metadata?.contextSources ?? contextSources;
 					activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
 					taskState = metadata?.taskState ?? taskState;
 					contextDebug = metadata?.contextDebug ?? contextDebug;
@@ -1862,6 +1883,10 @@ async function handleSteering(payload: TaskSteeringPayload) {
 		const result = await applyTaskSteering(data.conversation.id, payload);
 		taskState = result.taskState ?? taskState;
 		contextDebug = result.contextDebug ?? contextDebug;
+		const detail = await fetchConversationDetail(data.conversation.id).catch(
+			() => null,
+		);
+		contextSources = detail?.contextSources ?? contextSources;
 	} catch {
 		return;
 	}
@@ -2064,6 +2089,7 @@ function handleDrop(event: DragEvent) {
 				{attachedArtifacts}
 				{taskState}
 				{contextDebug}
+				{contextSources}
 				{totalCostUsd}
 				{totalTokens}
 				deepResearchEnabled={data.deepResearchEnabled}
@@ -2101,6 +2127,7 @@ function handleDrop(event: DragEvent) {
 	<EvidenceManager
 		open={evidenceManagerOpen}
 		{contextDebug}
+		{contextSources}
 		onClose={closeEvidenceManager}
 		onSteer={handleSteering}
 	/>
