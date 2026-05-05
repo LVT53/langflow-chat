@@ -306,6 +306,43 @@ describe("sendMessage provider routing", () => {
 		).toBeLessThanOrEqual(8_000);
 	});
 
+	it("does not cap outbound prompt context at the compaction UI threshold", async () => {
+		mockConfig(
+			{ maxTokens: 512 },
+			{
+				model1MaxModelContext: 30_000,
+				model1CompactionUiThreshold: 8_000,
+				model1TargetConstructedContext: 25_000,
+			},
+		);
+		const contextAboveCompactionThreshold = [
+			"Context from your conversation history:",
+			`## Retrieved Evidence\n${"large context ".repeat(2300)}`,
+			"## Current User Message\nTiny question?",
+		].join("\n\n");
+		mocks.buildConstructedContext.mockResolvedValueOnce({
+			inputValue: contextAboveCompactionThreshold,
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+
+		await sendMessage("Tiny question?", "conv-1", "model1", { id: "user-1" });
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		const systemPrompt = body.tweaks["ModelNode-1"].system_prompt;
+		const outboundPromptTokens = estimateTokenCount(
+			`${systemPrompt}\n\n${body.input_value}`,
+		);
+
+		expect(body.input_value).toBe(contextAboveCompactionThreshold);
+		expect(body.input_value).not.toContain("[truncated]");
+		expect(outboundPromptTokens).toBeGreaterThan(8_000);
+		expect(outboundPromptTokens).toBeLessThanOrEqual(25_000);
+	});
+
 	it("keeps usable prompt context when a switched provider has an impossible max token cap", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",

@@ -448,7 +448,6 @@ function applyOutboundPromptBudget(params: {
 	const outputReserve = outputTokenBudget.outputReserve;
 	const configuredPromptBudget = Math.min(
 		params.contextLimits.targetConstructedContext,
-		params.contextLimits.compactionUiThreshold,
 		Math.max(1, params.contextLimits.maxModelContext - outputReserve),
 	);
 	const systemTokens = estimateTokenCount(params.systemPrompt);
