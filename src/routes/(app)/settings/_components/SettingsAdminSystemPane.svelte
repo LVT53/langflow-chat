@@ -11,6 +11,12 @@ import {
 } from "$lib/client/api/admin";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
+import {
+	DEEP_RESEARCH_MODEL_ROLES,
+	DEFAULT_DEEP_RESEARCH_MODEL_ID,
+	type DeepResearchModelRoleDefinition,
+} from "$lib/deep-research-models";
+import type { ModelId } from "$lib/types";
 import ModelFormModal from "./ModelFormModal.svelte";
 
 const tVal = get(t);
@@ -18,6 +24,7 @@ const tVal = get(t);
 let {
 	adminConfig = $bindable(),
 	envDefaults = {},
+	availableModels = [],
 	adminSaving = false,
 	adminMessage = "",
 	adminError = "",
@@ -28,6 +35,7 @@ let {
 }: {
 	adminConfig: Record<string, string>;
 	envDefaults?: Record<string, string>;
+	availableModels?: Array<{ id: ModelId; displayName: string }>;
 	adminSaving?: boolean;
 	adminMessage?: string;
 	adminError?: string;
@@ -280,6 +288,35 @@ function modelNameDisplay(name: string): string {
 		: name === "model2"
 			? adminConfig.MODEL_2_DISPLAY_NAME || "Model 2"
 			: name;
+}
+
+function deepResearchModelOptions(): Array<{
+	id: ModelId;
+	displayName: string;
+}> {
+	const options = new Map<ModelId, string>();
+	for (const model of availableModels) {
+		options.set(model.id, model.displayName);
+	}
+	if (!options.has("model1")) {
+		options.set("model1", adminConfig.MODEL_1_DISPLAY_NAME || "Model 1");
+	}
+	if (adminConfig.MODEL_2_ENABLED !== "false" && !options.has("model2")) {
+		options.set("model2", adminConfig.MODEL_2_DISPLAY_NAME || "Model 2");
+	}
+	for (const provider of providers) {
+		if (!provider.enabled) continue;
+		options.set(`provider:${provider.id}` as ModelId, provider.displayName);
+	}
+	return Array.from(options, ([id, displayName]) => ({ id, displayName }));
+}
+
+function deepResearchRoleValue(
+	role: DeepResearchModelRoleDefinition,
+): ModelId {
+	return (adminConfig[role.configKey] ||
+		envDefaults[role.configKey] ||
+		DEFAULT_DEEP_RESEARCH_MODEL_ID) as ModelId;
 }
 
 $effect(() => {
@@ -543,6 +580,29 @@ function placeholderFor(key: string): string {
 					/>
 				</div>
 			{/each}
+		</div>
+		<div class="border-t border-border pt-3">
+			<h3 class="text-sm font-medium text-text-primary">{$t('admin.deepResearchModels')}</h3>
+			<p class="mt-1 text-xs text-text-muted">{$t('admin.deepResearchModelsDescription')}</p>
+			<div class="mt-3 grid gap-3 md:grid-cols-2">
+				{#each DEEP_RESEARCH_MODEL_ROLES as role}
+					<div>
+						<label class="settings-label" for={role.configKey}>{$t(role.labelKey)}</label>
+						<select
+							id={role.configKey}
+							class="settings-input"
+							value={deepResearchRoleValue(role)}
+							onchange={(event) => {
+								adminConfig[role.configKey] = event.currentTarget.value;
+							}}
+						>
+							{#each deepResearchModelOptions() as model}
+								<option value={model.id}>{model.displayName}</option>
+							{/each}
+						</select>
+					</div>
+				{/each}
+			</div>
 		</div>
 	</div>
 </section>

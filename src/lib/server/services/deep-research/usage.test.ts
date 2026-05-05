@@ -6,7 +6,9 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
 import {
+	buildResearchUsageRecord,
 	buildPlanGenerationResearchUsageRecord,
+	getResearchUsageCostSummary,
 	listResearchUsageRecords,
 	saveResearchUsageRecord,
 } from "./usage";
@@ -169,5 +171,84 @@ describe("research usage persistence", () => {
 		expect(saved.id).toEqual(expect.any(String));
 		expect("messageId" in saved).toBe(false);
 		expect(records).toEqual([saved]);
+	});
+
+	it("calculates record cost from model price rules and aggregates per job and model", async () => {
+		const { db } = await import("$lib/server/db");
+		await db.insert(schema.modelPriceRules).values({
+			id: "price-openrouter-claude",
+			providerId: "openrouter",
+			providerName: "OpenRouter",
+			modelId: "provider:openrouter",
+			modelName: "anthropic/claude-sonnet-4",
+			inputUsdMicrosPer1m: 2_000_000,
+			outputUsdMicrosPer1m: 10_000_000,
+			enabled: true,
+		});
+
+		const sourceReview = await buildResearchUsageRecord({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			stage: "source_review",
+			operation: "source_review",
+			modelId: "provider:openrouter",
+			modelDisplayName: "OpenRouter Research",
+			providerId: "openrouter",
+			providerDisplayName: "OpenRouter",
+			providerModelName: "anthropic/claude-sonnet-4",
+			occurredAt: new Date("2026-05-05T10:30:00.000Z"),
+			providerUsage: {
+				promptTokens: 1_000_000,
+				completionTokens: 500_000,
+				source: "provider",
+			},
+		});
+		await saveResearchUsageRecord(sourceReview);
+		await saveResearchUsageRecord(
+			buildPlanGenerationResearchUsageRecord({
+				jobId: "job-1",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				occurredAt: new Date("2026-05-05T10:20:00.000Z"),
+				providerUsage: {
+					promptTokens: 100,
+					completionTokens: 50,
+				},
+				costUsdMicros: 300,
+			}),
+		);
+
+		expect(sourceReview.costUsdMicros).toBe(7_000_000);
+
+		await expect(
+			getResearchUsageCostSummary({ userId: "user-1", jobId: "job-1" }),
+		).resolves.toEqual({
+			jobId: "job-1",
+			totalCostUsdMicros: 7_000_300,
+			totalTokens: 1_500_150,
+			byModel: [
+				{
+					modelId: "model1",
+					modelDisplayName: "Model One",
+					providerId: null,
+					providerDisplayName: null,
+					costUsdMicros: 300,
+					totalTokens: 150,
+					operationCount: 1,
+				},
+				{
+					modelId: "provider:openrouter",
+					modelDisplayName: "OpenRouter Research",
+					providerId: "openrouter",
+					providerDisplayName: "OpenRouter",
+					costUsdMicros: 7_000_000,
+					totalTokens: 1_500_000,
+					operationCount: 1,
+				},
+			],
+		});
 	});
 });

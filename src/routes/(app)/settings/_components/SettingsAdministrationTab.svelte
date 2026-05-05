@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { UserRole } from '$lib/types';
+	import type { ModelId, UserRole } from '$lib/types';
 	import {
 		createAdminUser,
 		deleteAdminUser,
@@ -17,6 +17,7 @@
 	let {
 		currentUserId,
 		modelNames,
+		availableModels = [],
 		adminConfig = $bindable(),
 		envDefaults = {},
 		adminSaving = false,
@@ -29,6 +30,7 @@
 	}: {
 		currentUserId: string;
 		modelNames: Record<string, string>;
+		availableModels?: Array<{ id: ModelId; displayName: string }>;
 		adminConfig: Record<string, string>;
 		envDefaults?: Record<string, string>;
 		adminSaving?: boolean;
@@ -208,6 +210,7 @@
 	<SettingsAdminSystemPane
 		bind:adminConfig
 		{envDefaults}
+		{availableModels}
 		{adminSaving}
 		{adminMessage}
 		{adminError}

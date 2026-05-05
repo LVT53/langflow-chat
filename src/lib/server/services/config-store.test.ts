@@ -22,6 +22,15 @@ vi.mock("../env", () => ({
 		deepResearchWorkerStaleTimeoutMs: 1800000,
 		deepResearchWorkerGlobalConcurrency: 1,
 		deepResearchWorkerUserConcurrency: 1,
+		deepResearchModels: {
+			plan_generation: "model1",
+			plan_revision: "model1",
+			source_review: "model1",
+			research_task: "model1",
+			synthesis: "model1",
+			citation_audit: "model1",
+			report_writing: "model1",
+		},
 	},
 	envConfig: {
 		workingSetDocumentTokenBudget: 4000,
@@ -33,6 +42,15 @@ vi.mock("../env", () => ({
 		deepResearchWorkerStaleTimeoutMs: 1800000,
 		deepResearchWorkerGlobalConcurrency: 1,
 		deepResearchWorkerUserConcurrency: 1,
+		deepResearchModels: {
+			plan_generation: "model1",
+			plan_revision: "model1",
+			source_review: "model1",
+			research_task: "model1",
+			synthesis: "model1",
+			citation_audit: "model1",
+			report_writing: "model1",
+		},
 	},
 }));
 
@@ -148,6 +166,25 @@ describe("Knowledge Store Config", () => {
 			expect(config.deepResearchWorkerStaleTimeoutMs).toBe(60000);
 			expect(config.deepResearchWorkerGlobalConcurrency).toBe(0);
 			expect(config.deepResearchWorkerUserConcurrency).toBe(0);
+		});
+
+		it("getConfig() should apply Deep Research role model admin overrides", async () => {
+			adminConfigRows = [
+				{ key: "DEEP_RESEARCH_PLAN_MODEL", value: "model2" },
+				{
+					key: "DEEP_RESEARCH_SOURCE_REVIEW_MODEL",
+					value: "provider:openrouter",
+				},
+				{ key: "DEEP_RESEARCH_REPORT_MODEL", value: "invalid-model" },
+			];
+
+			await refreshConfig();
+
+			expect(getConfig().deepResearchModels).toMatchObject({
+				plan_generation: "model2",
+				source_review: "provider:openrouter",
+				report_writing: "model1",
+			});
 		});
 	});
 });

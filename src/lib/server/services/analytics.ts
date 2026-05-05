@@ -198,7 +198,7 @@ async function getModelSnapshot(modelId: string, fallbackDisplayName?: string | 
 	};
 }
 
-async function findPriceRule(params: {
+export async function findPriceRule(params: {
 	modelId: string;
 	providerId: string | null;
 	providerModelName: string | null;
@@ -224,7 +224,7 @@ async function findPriceRule(params: {
 	);
 }
 
-function calculateCostUsdMicros(
+export function calculateCostUsdMicros(
 	rule: typeof modelPriceRules.$inferSelect | null,
 	usage: {
 		promptTokens: number;

@@ -287,7 +287,7 @@ describe("Deep Research worker tick and scheduler", () => {
 	});
 });
 
-describe("mock Deep Research worker", () => {
+describe("Deep Research worker cleanup and recovery", () => {
 	beforeEach(async () => {
 		dbPath = `/tmp/alfyai-deep-research-worker-${randomUUID()}.db`;
 		process.env.DATABASE_PATH = dbPath;
@@ -309,282 +309,14 @@ describe("mock Deep Research worker", () => {
 		}
 	});
 
-	it("advances an approved job into the first persisted mock research stage", async () => {
-		const approved = await createApprovedResearchJob();
-		const { runNextMockDeepResearchWorkerStep } = await import("./worker");
-		const { listConversationDeepResearchJobs } = await import("./index");
-		const { listResearchTimelineEvents } = await import("./timeline");
+	it("does not expose legacy mock worker entrypoints", async () => {
+		const worker = await import("./worker");
 
-		const result = await runNextMockDeepResearchWorkerStep({
-			now: new Date("2026-05-05T10:07:00.000Z"),
-		});
-		const [reloaded] = await listConversationDeepResearchJobs(
-			"user-1",
-			"conv-1",
-		);
-		const timeline = await listResearchTimelineEvents({
-			userId: "user-1",
-			jobId: approved.id,
-		});
-
-		expect(result).toMatchObject({
-			job: {
-				id: approved.id,
-				status: "running",
-				stage: "source_discovery",
-				updatedAt: new Date("2026-05-05T10:07:00.000Z").getTime(),
-			},
-			advanced: true,
-		});
-		expect(reloaded).toMatchObject({
-			id: approved.id,
-			status: "running",
-			stage: "source_discovery",
-		});
-		expect(timeline).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					jobId: approved.id,
-					stage: "source_discovery",
-					kind: "stage_started",
-					occurredAt: "2026-05-05T10:07:00.000Z",
-					messageKey: "deepResearch.timeline.sourceDiscoveryStarted",
-					summary: "Mock source discovery started.",
-				}),
-			]),
-		);
+		expect(worker).not.toHaveProperty("runNextMockDeepResearchWorkerStep");
+		expect(worker).not.toHaveProperty("triggerMockDeepResearchWorkerForJob");
 	});
 
-	it("advances an approved job by explicit trigger without an open chat stream", async () => {
-		const approved = await createApprovedResearchJob();
-		const { triggerMockDeepResearchWorkerForJob } = await import("./worker");
-		const { listConversationDeepResearchJobs } = await import("./index");
-
-		const result = await triggerMockDeepResearchWorkerForJob({
-			userId: "user-1",
-			jobId: approved.id,
-			now: new Date("2026-05-05T10:07:00.000Z"),
-		});
-		const [reloaded] = await listConversationDeepResearchJobs(
-			"user-1",
-			"conv-1",
-		);
-
-		expect(result).toMatchObject({
-			job: {
-				id: approved.id,
-				status: "running",
-				stage: "source_discovery",
-				updatedAt: new Date("2026-05-05T10:07:00.000Z").getTime(),
-			},
-			advanced: true,
-		});
-		expect(reloaded).toEqual(result?.job);
-	});
-
-	it("honors configured global and user concurrency limits before starting approved work", async () => {
-		await seedAdditionalConversation({
-			userId: "user-1",
-			conversationId: "conv-2",
-			messageId: "user-msg-2",
-		});
-		await seedAdditionalConversation({
-			userId: "user-2",
-			conversationId: "conv-3",
-			messageId: "user-msg-3",
-			email: "second-user@example.com",
-			createUser: true,
-		});
-
-		const firstUserRunning = await createApprovedResearchJob({
-			createdAt: new Date("2026-05-05T10:01:00.000Z"),
-			approvedAt: new Date("2026-05-05T10:06:00.000Z"),
-		});
-		const sameUserApproved = await createApprovedResearchJob({
-			conversationId: "conv-2",
-			triggerMessageId: "user-msg-2",
-			userRequest: "Research the same issue for product teams",
-			createdAt: new Date("2026-05-05T10:02:00.000Z"),
-			approvedAt: new Date("2026-05-05T10:07:00.000Z"),
-		});
-		const otherUserApproved = await createApprovedResearchJob({
-			userId: "user-2",
-			conversationId: "conv-3",
-			triggerMessageId: "user-msg-3",
-			userRequest: "Research the same issue for counsel",
-			createdAt: new Date("2026-05-05T10:03:00.000Z"),
-			approvedAt: new Date("2026-05-05T10:08:00.000Z"),
-		});
-		const { triggerMockDeepResearchWorkerForJob } = await import("./worker");
-		const { listConversationDeepResearchJobs } = await import("./index");
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: firstUserRunning.id,
-				now: new Date("2026-05-05T10:09:00.000Z"),
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: firstUserRunning.id,
-				status: "running",
-				stage: "source_discovery",
-			},
-			advanced: true,
-		});
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: sameUserApproved.id,
-				now: new Date("2026-05-05T10:10:00.000Z"),
-				controls: {
-					globalConcurrencyLimit: 10,
-					userConcurrencyLimit: 1,
-				},
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: sameUserApproved.id,
-				status: "approved",
-				stage: "plan_approved",
-			},
-			advanced: false,
-		});
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-2",
-				jobId: otherUserApproved.id,
-				now: new Date("2026-05-05T10:11:00.000Z"),
-				controls: {
-					globalConcurrencyLimit: 10,
-					userConcurrencyLimit: 1,
-				},
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: otherUserApproved.id,
-				status: "running",
-				stage: "source_discovery",
-			},
-			advanced: true,
-		});
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: sameUserApproved.id,
-				now: new Date("2026-05-05T10:12:00.000Z"),
-				controls: {
-					globalConcurrencyLimit: 2,
-				},
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: sameUserApproved.id,
-				status: "approved",
-				stage: "plan_approved",
-			},
-			advanced: false,
-		});
-
-		const [sameUserReloaded] = await listConversationDeepResearchJobs(
-			"user-1",
-			"conv-2",
-		);
-		expect(sameUserReloaded).toMatchObject({
-			id: sameUserApproved.id,
-			status: "approved",
-			stage: "plan_approved",
-		});
-	});
-
-	it("does not advance non-approved, cancelled, or failed jobs by explicit trigger", async () => {
-		const { startDeepResearchJobShell, cancelPrePlanDeepResearchJob } =
-			await import("./index");
-		const { triggerMockDeepResearchWorkerForJob } = await import("./worker");
-		const { db } = await import("$lib/server/db");
-
-		const awaitingApproval = await startDeepResearchJobShell({
-			userId: "user-1",
-			conversationId: "conv-1",
-			triggerMessageId: "user-msg-1",
-			userRequest: "Compare EU and US AI copyright training data rules",
-			depth: "standard",
-			now: new Date("2026-05-05T10:01:00.000Z"),
-		});
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: awaitingApproval.id,
-				now: new Date("2026-05-05T10:07:00.000Z"),
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: awaitingApproval.id,
-				status: "awaiting_approval",
-				stage: "plan_drafted",
-			},
-			advanced: false,
-		});
-
-		const cancelled = await cancelPrePlanDeepResearchJob({
-			userId: "user-1",
-			jobId: awaitingApproval.id,
-			now: new Date("2026-05-05T10:08:00.000Z"),
-		});
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: cancelled?.id ?? awaitingApproval.id,
-				now: new Date("2026-05-05T10:09:00.000Z"),
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: awaitingApproval.id,
-				status: "cancelled",
-				stage: "cancelled_before_approval",
-			},
-			advanced: false,
-		});
-
-		const failedJob = await startDeepResearchJobShell({
-			userId: "user-1",
-			conversationId: "conv-1",
-			triggerMessageId: "user-msg-1",
-			userRequest: "Compare EU and US AI copyright training data rules again",
-			depth: "focused",
-			now: new Date("2026-05-05T10:10:00.000Z"),
-		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "failed",
-				stage: "mock_failed",
-				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, failedJob.id));
-
-		await expect(
-			triggerMockDeepResearchWorkerForJob({
-				userId: "user-1",
-				jobId: failedJob.id,
-				now: new Date("2026-05-05T10:12:00.000Z"),
-			}),
-		).resolves.toMatchObject({
-			job: {
-				id: failedJob.id,
-				status: "failed",
-				stage: "mock_failed",
-			},
-			advanced: false,
-		});
-	});
-
-	it("marks stale running and report-ready jobs failed after the configured timeout", async () => {
+	it("marks stale running workflow jobs failed after the configured timeout", async () => {
 		await seedAdditionalConversation({
 			userId: "user-1",
 			conversationId: "conv-2",
@@ -614,7 +346,7 @@ describe("mock Deep Research worker", () => {
 			.update(schema.deepResearchJobs)
 			.set({
 				status: "running",
-				stage: "report_ready",
+				stage: "research_tasks",
 				updatedAt: new Date("2026-05-05T09:10:00.000Z"),
 			})
 			.where(eq(schema.deepResearchJobs.id, reportReadyJob.id));
@@ -666,32 +398,35 @@ describe("mock Deep Research worker", () => {
 			kind: "warning",
 			summary:
 				"Deep Research job marked failed after exceeding the stale worker timeout.",
-			warnings: ["Worker timeout exceeded for stage report_ready."],
+			warnings: ["Worker timeout exceeded for stage research_tasks."],
 		});
 	});
 
-	it("cancels running mock work before further advancement and records a diagnostic timeline summary", async () => {
+	it("cancels running workflow work before further advancement and records a diagnostic timeline summary", async () => {
 		const approved = await createApprovedResearchJob();
+		await setResearchJobState({
+			jobId: approved.id,
+			status: "running",
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
 		const {
 			requestDeepResearchWorkerCancellation,
-			triggerMockDeepResearchWorkerForJob,
+			triggerDeepResearchWorkflowWorkerForJob,
 		} = await import("./worker");
 		const { listResearchTimelineEvents } = await import("./timeline");
+		const workflowStep = vi.fn();
 
-		await triggerMockDeepResearchWorkerForJob({
-			userId: "user-1",
-			jobId: approved.id,
-			now: new Date("2026-05-05T10:07:00.000Z"),
-		});
 		const cancelled = await requestDeepResearchWorkerCancellation({
 			userId: "user-1",
 			jobId: approved.id,
 			now: new Date("2026-05-05T10:08:00.000Z"),
 		});
-		const laterTrigger = await triggerMockDeepResearchWorkerForJob({
+		const laterTrigger = await triggerDeepResearchWorkflowWorkerForJob({
 			userId: "user-1",
 			jobId: approved.id,
 			now: new Date("2026-05-05T10:09:00.000Z"),
+			workflowStep,
 		});
 		const timeline = await listResearchTimelineEvents({
 			userId: "user-1",
@@ -712,6 +447,7 @@ describe("mock Deep Research worker", () => {
 			},
 			advanced: false,
 		});
+		expect(workflowStep).not.toHaveBeenCalled();
 		expect(
 			timeline.map((event) => ({
 				stage: event.stage,
@@ -726,62 +462,9 @@ describe("mock Deep Research worker", () => {
 			messageKey: "deepResearch.timeline.workerCancelled",
 			summary: "Deep Research job cancelled before further worker advancement.",
 			warnings: [
-				"Cancellation requested while job was at stage source_discovery.",
+				"Cancellation requested while job was at stage source_review.",
 			],
 		});
-	});
-
-	it("advances the persisted mock stage sequence into a report-ready handoff state", async () => {
-		const approved = await createApprovedResearchJob();
-		const { runNextMockDeepResearchWorkerStep } = await import("./worker");
-		const { listConversationDeepResearchJobs } = await import("./index");
-		const { listResearchTimelineEvents } = await import("./timeline");
-
-		await runNextMockDeepResearchWorkerStep({
-			now: new Date("2026-05-05T10:07:00.000Z"),
-		});
-		await runNextMockDeepResearchWorkerStep({
-			now: new Date("2026-05-05T10:08:00.000Z"),
-		});
-		await runNextMockDeepResearchWorkerStep({
-			now: new Date("2026-05-05T10:09:00.000Z"),
-		});
-		const result = await runNextMockDeepResearchWorkerStep({
-			now: new Date("2026-05-05T10:10:00.000Z"),
-		});
-		const [reloaded] = await listConversationDeepResearchJobs(
-			"user-1",
-			"conv-1",
-		);
-		const timeline = await listResearchTimelineEvents({
-			userId: "user-1",
-			jobId: approved.id,
-		});
-
-		expect(result).toMatchObject({
-			job: {
-				id: approved.id,
-				status: "running",
-				stage: "report_ready",
-				completedAt: null,
-				updatedAt: new Date("2026-05-05T10:10:00.000Z").getTime(),
-			},
-			advanced: true,
-		});
-		expect(reloaded).toEqual(result?.job);
-		expect(
-			timeline
-				.filter(
-					(event) =>
-						event.kind === "stage_started" || event.kind === "stage_completed",
-				)
-				.map((event) => [event.stage, event.summary]),
-		).toEqual([
-			["source_discovery", "Mock source discovery started."],
-			["source_review", "Mock source review completed."],
-			["synthesis", "Mock synthesis completed."],
-			["report_completion", "Mock research is ready for report generation."],
-		]);
 	});
 });
 

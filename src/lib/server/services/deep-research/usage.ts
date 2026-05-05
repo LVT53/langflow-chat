@@ -61,6 +61,21 @@ export type ListResearchUsageRecordsInput = {
 	jobId: string;
 };
 
+export type ResearchUsageCostSummary = {
+	jobId: string;
+	totalCostUsdMicros: number;
+	totalTokens: number;
+	byModel: Array<{
+		modelId: string;
+		modelDisplayName: string | null;
+		providerId: string | null;
+		providerDisplayName: string | null;
+		costUsdMicros: number;
+		totalTokens: number;
+		operationCount: number;
+	}>;
+};
+
 type DeepResearchUsageRecordRow = typeof deepResearchUsageRecords.$inferSelect;
 
 export type BuildPlanGenerationResearchUsageRecordInput = {
@@ -77,6 +92,101 @@ export type BuildPlanGenerationResearchUsageRecordInput = {
 	providerUsage?: ResearchProviderUsageSnapshot | null;
 	costUsdMicros?: number | null;
 };
+
+export type BuildResearchUsageRecordInput = {
+	jobId: string;
+	taskId?: string | null;
+	conversationId: string;
+	userId: string;
+	stage: ResearchTimelineStage;
+	operation: ResearchUsageOperation;
+	modelId: string;
+	modelDisplayName?: string | null;
+	providerId?: string | null;
+	providerDisplayName?: string | null;
+	providerModelName?: string | null;
+	occurredAt?: Date;
+	runtimeMs?: number | null;
+	providerUsage?: ResearchProviderUsageSnapshot | null;
+	costUsdMicros?: number | null;
+};
+
+export async function buildResearchUsageRecord(
+	input: BuildResearchUsageRecordInput,
+): Promise<ResearchUsageRecord> {
+	const occurredAt = input.occurredAt ?? new Date();
+	const usage = input.providerUsage ?? {};
+	const promptTokens = normalizeCount(usage.promptTokens);
+	const cachedInputTokens = normalizeCount(usage.cachedInputTokens);
+	const cacheHitTokens = normalizeCount(usage.cacheHitTokens);
+	const cacheMissTokens = normalizeCount(usage.cacheMissTokens);
+	const completionTokens = normalizeCount(usage.completionTokens);
+	const reasoningTokens = normalizeCount(usage.reasoningTokens);
+	const totalTokens =
+		normalizeCount(usage.totalTokens) ||
+		promptTokens + completionTokens + reasoningTokens;
+	const costUsdMicros =
+		input.costUsdMicros == null
+			? await calculateResearchUsageCostUsdMicros({
+					modelId: input.modelId,
+					providerId: input.providerId ?? null,
+					providerModelName: input.providerModelName ?? null,
+					promptTokens,
+					cachedInputTokens,
+					cacheHitTokens,
+					cacheMissTokens,
+					completionTokens,
+					reasoningTokens,
+				})
+			: normalizeCount(input.costUsdMicros);
+
+	return {
+		jobId: input.jobId,
+		taskId: input.taskId ?? null,
+		conversationId: input.conversationId,
+		userId: input.userId,
+		stage: input.stage,
+		operation: input.operation,
+		modelId: input.modelId,
+		modelDisplayName: input.modelDisplayName ?? null,
+		providerId: input.providerId ?? null,
+		providerDisplayName: input.providerDisplayName ?? null,
+		billingMonth: occurredAt.toISOString().slice(0, 7),
+		occurredAt: occurredAt.toISOString(),
+		promptTokens,
+		cachedInputTokens,
+		cacheHitTokens,
+		cacheMissTokens,
+		completionTokens,
+		reasoningTokens,
+		totalTokens,
+		usageSource: usage.source ?? "estimated",
+		runtimeMs: input.runtimeMs ?? null,
+		costUsdMicros,
+	};
+}
+
+export async function calculateResearchUsageCostUsdMicros(input: {
+	modelId: string;
+	providerId: string | null;
+	providerModelName: string | null;
+	promptTokens: number;
+	cachedInputTokens: number;
+	cacheHitTokens: number;
+	cacheMissTokens: number;
+	completionTokens: number;
+	reasoningTokens: number;
+}): Promise<number> {
+	const { calculateCostUsdMicros, findPriceRule } = await import(
+		"$lib/server/services/analytics"
+	);
+	const priceRule = await findPriceRule({
+		modelId: input.modelId,
+		providerId: input.providerId,
+		providerModelName: input.providerModelName,
+	});
+	return calculateCostUsdMicros(priceRule, input);
+}
 
 export function buildPlanGenerationResearchUsageRecord(
 	input: BuildPlanGenerationResearchUsageRecordInput,
@@ -171,6 +281,44 @@ export async function listResearchUsageRecords(
 		.orderBy(asc(deepResearchUsageRecords.occurredAt));
 
 	return rows.map(mapUsageRecordRow);
+}
+
+export async function getResearchUsageCostSummary(
+	input: ListResearchUsageRecordsInput,
+): Promise<ResearchUsageCostSummary> {
+	const records = await listResearchUsageRecords(input);
+	const byModel = new Map<string, ResearchUsageCostSummary["byModel"][number]>();
+
+	for (const record of records) {
+		const key = `${record.modelId}\0${record.providerId ?? ""}`;
+		const current =
+			byModel.get(key) ??
+			{
+				modelId: record.modelId,
+				modelDisplayName: record.modelDisplayName,
+				providerId: record.providerId,
+				providerDisplayName: record.providerDisplayName,
+				costUsdMicros: 0,
+				totalTokens: 0,
+				operationCount: 0,
+			};
+		current.costUsdMicros += record.costUsdMicros;
+		current.totalTokens += record.totalTokens;
+		current.operationCount += 1;
+		byModel.set(key, current);
+	}
+
+	return {
+		jobId: input.jobId,
+		totalCostUsdMicros: records.reduce(
+			(total, record) => total + record.costUsdMicros,
+			0,
+		),
+		totalTokens: records.reduce((total, record) => total + record.totalTokens, 0),
+		byModel: Array.from(byModel.values()).sort((a, b) =>
+			a.modelId.localeCompare(b.modelId),
+		),
+	};
 }
 
 function mapUsageRecordRow(

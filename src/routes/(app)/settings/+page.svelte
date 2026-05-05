@@ -476,6 +476,7 @@ let removingPhoto = $state(false);
 			<SettingsAdministrationTab
 				currentUserId={data.userSettings.id}
 				{modelNames}
+				{availableModels}
 				bind:adminConfig
 				envDefaults={(data as SettingsPageData).envDefaults ?? {}}
 				{adminSaving}

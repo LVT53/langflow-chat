@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
 import * as schema from '$lib/server/db/schema';
+import type { SynthesisNotes } from './synthesis';
 
 let dbPath: string;
 
@@ -43,6 +44,91 @@ async function seedConversation() {
 		.run();
 
 	sqlite.close();
+}
+
+async function completeApprovedJobWithAuditedReport(input?: {
+	userRequest?: string;
+	depth?: 'focused' | 'standard' | 'max';
+}) {
+	const {
+		approveDeepResearchPlan,
+		completeDeepResearchJobWithAuditedReport,
+		startDeepResearchJobShell,
+	} = await import('./index');
+	const { markResearchSourceReviewed, saveDiscoveredResearchSource } = await import('./sources');
+	const userRequest = input?.userRequest ?? 'Compare EU and US AI copyright training data rules';
+	const created = await startDeepResearchJobShell({
+		userId: 'user-1',
+		conversationId: 'conv-1',
+		triggerMessageId: 'user-msg-1',
+		userRequest,
+		depth: input?.depth ?? 'standard',
+		now: new Date('2026-05-05T10:01:00.000Z'),
+	});
+	await approveDeepResearchPlan({
+		userId: 'user-1',
+		jobId: created.id,
+		now: new Date('2026-05-05T10:06:00.000Z'),
+	});
+	const source = await saveDiscoveredResearchSource({
+		userId: 'user-1',
+		conversationId: 'conv-1',
+		jobId: created.id,
+		url: 'https://agency.example.test/ai-copyright-training-data',
+		title: 'Agency AI copyright training data briefing',
+		provider: 'public_web',
+		snippet: 'Agency briefing on AI copyright training data rules.',
+		discoveredAt: new Date('2026-05-05T10:07:00.000Z'),
+	});
+	const reviewedSource = await markResearchSourceReviewed({
+		userId: 'user-1',
+		sourceId: source.id,
+		reviewedAt: new Date('2026-05-05T10:08:00.000Z'),
+		reviewedNote:
+			'EU and US AI copyright training data rules require provenance records and rights-risk review.',
+	});
+	const synthesisNotes = buildSupportedSynthesisNotes({
+		jobId: created.id,
+		sourceId: reviewedSource.id,
+		url: reviewedSource.url,
+		title: reviewedSource.title ?? 'Agency briefing',
+	});
+	const completed = await completeDeepResearchJobWithAuditedReport({
+		userId: 'user-1',
+		jobId: created.id,
+		synthesisNotes,
+		now: new Date('2026-05-05T10:20:00.000Z'),
+	});
+	return { created, completed };
+}
+
+function buildSupportedSynthesisNotes(input: {
+	jobId: string;
+	sourceId: string;
+	url: string;
+	title: string;
+}): SynthesisNotes {
+	const finding = {
+		kind: 'supported' as const,
+		statement:
+			'EU and US AI copyright training data rules require provenance records and rights-risk review.',
+		sourceRefs: [
+			{
+				reviewedSourceId: input.sourceId,
+				discoveredSourceId: input.sourceId,
+				canonicalUrl: input.url,
+				title: input.title,
+			},
+		],
+	};
+	return {
+		jobId: input.jobId,
+		findings: [finding],
+		supportedFindings: [finding],
+		conflicts: [],
+		assumptions: [],
+		reportLimitations: [],
+	};
 }
 
 describe('deep research job shell service', () => {
@@ -872,214 +958,16 @@ describe('deep research job shell service', () => {
 		expect(secondApproval).toEqual(firstApproval);
 	});
 
-	it('completes a Deep Research Job with one durable fake Research Report artifact', async () => {
-		const { db } = await import('$lib/server/db');
-		const {
-			approveDeepResearchPlan,
-			completeDeepResearchJobWithFakeReport,
-			startDeepResearchJobShell,
-		} = await import('./index');
-		const { getArtifactForUser } = await import('$lib/server/services/knowledge/store');
-		const created = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Compare EU and US AI copyright training data rules',
-			depth: 'standard',
-			now: new Date('2026-05-05T10:01:00.000Z'),
-		});
-		await approveDeepResearchPlan({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:06:00.000Z'),
-		});
+	it('does not expose the legacy fake report completion path', async () => {
+		const deepResearchService = await import('./index');
 
-		const completed = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:20:00.000Z'),
-		});
-		const reportArtifact = completed?.reportArtifactId
-			? await getArtifactForUser('user-1', completed.reportArtifactId)
-			: null;
-		const [conversation] = await db
-			.select({
-				status: schema.conversations.status,
-				sealedAt: schema.conversations.sealedAt,
-			})
-			.from(schema.conversations)
-			.where(eq(schema.conversations.id, 'conv-1'));
-
-		expect(completed).toMatchObject({
-			id: created.id,
-			status: 'completed',
-			stage: 'report_ready',
-			completedAt: new Date('2026-05-05T10:20:00.000Z').getTime(),
-		});
-		expect(completed?.reportArtifactId).toEqual(expect.any(String));
-		expect(reportArtifact).toMatchObject({
-			id: completed?.reportArtifactId,
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			type: 'generated_output',
-			retrievalClass: 'durable',
-			name: 'Research Report - Compare EU and US AI copyright training data rules.md',
-			mimeType: 'text/markdown',
-			extension: 'md',
-			metadata: {
-				deepResearchJobId: created.id,
-				deepResearchReport: true,
-				documentLabel: 'Research Report - Compare EU and US AI copyright training data rules.md',
-				documentRole: 'research_report',
-				versionNumber: 1,
-				originConversationId: 'conv-1',
-			},
-		});
-		expect(reportArtifact?.contentText).toContain('# Research Report');
-		expect(reportArtifact?.contentText).toContain(
-			'Compare EU and US AI copyright training data rules'
-		);
-		expect(conversation).toEqual({
-			status: 'sealed',
-			sealedAt: new Date('2026-05-05T10:20:00.000Z'),
-		});
-	});
-
-	it('does not seal or create a report for cancelled or failed Deep Research Jobs', async () => {
-		const { db } = await import('$lib/server/db');
-		const {
-			cancelPrePlanDeepResearchJob,
-			completeDeepResearchJobWithFakeReport,
-			startDeepResearchJobShell,
-		} = await import('./index');
-		const cancelledJob = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Compare EU and US AI copyright training data rules',
-			depth: 'standard',
-			now: new Date('2026-05-05T10:01:00.000Z'),
-		});
-		await cancelPrePlanDeepResearchJob({
-			userId: 'user-1',
-			jobId: cancelledJob.id,
-			now: new Date('2026-05-05T10:02:00.000Z'),
-		});
-
-		const cancelledCompletion = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: cancelledJob.id,
-			now: new Date('2026-05-05T10:20:00.000Z'),
-		});
-		const retryJob = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Retry the research',
-			depth: 'focused',
-			now: new Date('2026-05-05T10:21:00.000Z'),
-		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: 'failed',
-				stage: 'mock_worker_failed',
-				updatedAt: new Date('2026-05-05T10:22:00.000Z'),
-			})
-			.where(eq(schema.deepResearchJobs.id, retryJob.id));
-
-		const failedCompletion = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: retryJob.id,
-			now: new Date('2026-05-05T10:23:00.000Z'),
-		});
-		const [conversation] = await db
-			.select({
-				status: schema.conversations.status,
-				sealedAt: schema.conversations.sealedAt,
-			})
-			.from(schema.conversations)
-			.where(eq(schema.conversations.id, 'conv-1'));
-		const reportArtifacts = await db
-			.select({ id: schema.artifacts.id })
-			.from(schema.artifacts)
-			.where(eq(schema.artifacts.type, 'generated_output'));
-
-		expect(cancelledCompletion).toBeNull();
-		expect(failedCompletion).toBeNull();
-		expect(conversation).toEqual({
-			status: 'open',
-			sealedAt: null,
-		});
-		expect(reportArtifacts).toEqual([]);
-	});
-
-	it('treats Research Report completion as idempotent without duplicating report artifacts', async () => {
-		const { db } = await import('$lib/server/db');
-		const {
-			approveDeepResearchPlan,
-			completeDeepResearchJobWithFakeReport,
-			startDeepResearchJobShell,
-		} = await import('./index');
-		const created = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Compare EU and US AI copyright training data rules',
-			depth: 'standard',
-			now: new Date('2026-05-05T10:01:00.000Z'),
-		});
-		await approveDeepResearchPlan({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:06:00.000Z'),
-		});
-
-		const firstCompletion = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:20:00.000Z'),
-		});
-		const secondCompletion = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:21:00.000Z'),
-		});
-		const reportArtifacts = await db
-			.select({ id: schema.artifacts.id })
-			.from(schema.artifacts)
-			.where(eq(schema.artifacts.type, 'generated_output'));
-
-		expect(secondCompletion).toEqual(firstCompletion);
-		expect(reportArtifacts).toEqual([{ id: firstCompletion?.reportArtifactId }]);
+		expect(deepResearchService).not.toHaveProperty('completeDeepResearchJobWithFakeReport');
 	});
 
 	it('starts a new Normal Chat from a completed Research Report without reopening the sealed conversation', async () => {
 		const { db } = await import('$lib/server/db');
-		const {
-			approveDeepResearchPlan,
-			completeDeepResearchJobWithFakeReport,
-			discussDeepResearchReport,
-			startDeepResearchJobShell,
-		} = await import('./index');
-		const created = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Compare EU and US AI copyright training data rules',
-			depth: 'standard',
-			now: new Date('2026-05-05T10:01:00.000Z'),
-		});
-		await approveDeepResearchPlan({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:06:00.000Z'),
-		});
-		const completed = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:20:00.000Z'),
-		});
+		const { discussDeepResearchReport } = await import('./index');
+		const { created, completed } = await completeApprovedJobWithAuditedReport();
 
 		const action = await discussDeepResearchReport({
 			userId: 'user-1',
@@ -1153,30 +1041,8 @@ describe('deep research job shell service', () => {
 
 	it('starts a new Deep Research Job from a completed Research Report and leaves it awaiting approval', async () => {
 		const { db } = await import('$lib/server/db');
-		const {
-			approveDeepResearchPlan,
-			completeDeepResearchJobWithFakeReport,
-			researchFurtherFromDeepResearchReport,
-			startDeepResearchJobShell,
-		} = await import('./index');
-		const created = await startDeepResearchJobShell({
-			userId: 'user-1',
-			conversationId: 'conv-1',
-			triggerMessageId: 'user-msg-1',
-			userRequest: 'Compare EU and US AI copyright training data rules',
-			depth: 'standard',
-			now: new Date('2026-05-05T10:01:00.000Z'),
-		});
-		await approveDeepResearchPlan({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:06:00.000Z'),
-		});
-		const completed = await completeDeepResearchJobWithFakeReport({
-			userId: 'user-1',
-			jobId: created.id,
-			now: new Date('2026-05-05T10:20:00.000Z'),
-		});
+		const { researchFurtherFromDeepResearchReport } = await import('./index');
+		const { created, completed } = await completeApprovedJobWithAuditedReport();
 
 		const action = await researchFurtherFromDeepResearchReport({
 			userId: 'user-1',

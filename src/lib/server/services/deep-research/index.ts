@@ -95,12 +95,6 @@ export type ApproveDeepResearchPlanInput = {
 	now?: Date;
 };
 
-export type CompleteDeepResearchJobWithFakeReportInput = {
-	userId: string;
-	jobId: string;
-	now?: Date;
-};
-
 export type CompleteDeepResearchJobWithAuditedReportInput = {
 	userId: string;
 	jobId: string;
@@ -518,86 +512,6 @@ export async function approveDeepResearchPlan(
 		updatedJob,
 		mapResearchPlanVersionRow(approvedPlanRow),
 		timelineEvents.get(job.id) ?? []
-	);
-}
-
-export async function completeDeepResearchJobWithFakeReport(
-	input: CompleteDeepResearchJobWithFakeReportInput
-): Promise<DeepResearchJob | null> {
-	const now = input.now ?? new Date();
-	const [job] = await db
-		.select()
-		.from(deepResearchJobs)
-		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
-		.limit(1);
-
-	if (!job) return null;
-
-	if (job.status === 'completed' && job.reportArtifactId) {
-		const currentPlans = await loadCurrentPlansByJobId([job.id]);
-		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
-		return mapDeepResearchJob(
-			job,
-			currentPlans.get(job.id) ?? null,
-			timelineEvents.get(job.id) ?? []
-		);
-	}
-	if (job.status !== 'approved' && job.status !== 'running') {
-		return null;
-	}
-
-	const reportName = buildReportArtifactName(job.title);
-	const reportArtifact = await createArtifact({
-		userId: job.userId,
-		conversationId: job.conversationId,
-		type: 'generated_output',
-		retrievalClass: 'durable',
-		name: reportName,
-		mimeType: 'text/markdown',
-		extension: 'md',
-		sizeBytes: Buffer.byteLength(buildFakeResearchReport(job), 'utf8'),
-		contentText: buildFakeResearchReport(job),
-		summary: `Research Report for ${job.title}`,
-		metadata: {
-			deepResearchReport: true,
-			deepResearchJobId: job.id,
-			deepResearchDepth: job.depth,
-			documentFamilyId: randomUUID(),
-			documentFamilyStatus: 'active',
-			documentLabel: reportName,
-			documentRole: 'research_report',
-			versionNumber: 1,
-			originConversationId: job.conversationId,
-		},
-	});
-
-	const [updatedJob] = await db
-		.update(deepResearchJobs)
-		.set({
-			status: 'completed',
-			stage: 'report_ready',
-			reportArtifactId: reportArtifact.id,
-			completedAt: now,
-			updatedAt: now,
-		})
-		.where(eq(deepResearchJobs.id, job.id))
-		.returning();
-
-	await db
-		.update(conversations)
-		.set({
-			status: 'sealed',
-			sealedAt: now,
-			updatedAt: now,
-		})
-		.where(and(eq(conversations.id, job.conversationId), eq(conversations.userId, job.userId)));
-
-	const currentPlans = await loadCurrentPlansByJobId([updatedJob.id]);
-	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [updatedJob.id]);
-	return mapDeepResearchJob(
-		updatedJob,
-		currentPlans.get(updatedJob.id) ?? null,
-		timelineEvents.get(updatedJob.id) ?? []
 	);
 }
 
@@ -1033,26 +947,6 @@ function buildReportArtifactName(jobTitle: string): string {
 		.trim()
 		.slice(0, 96);
 	return `Research Report - ${safeTitle || 'Deep Research'}.md`;
-}
-
-function buildFakeResearchReport(job: DeepResearchJobRow): string {
-	return [
-		'# Research Report',
-		'',
-		`## Topic`,
-		job.title,
-		'',
-		'## Summary',
-		'This is a placeholder Research Report produced by the Deep Research mock completion path.',
-		'',
-		'## Findings',
-		'- The final research synthesis worker has not been enabled yet.',
-		'- This artifact exists to exercise the durable Report Boundary and document workspace handoff.',
-		'',
-		'## Limitations',
-		'- No public web sources were reviewed for this placeholder report.',
-		'- Replace this report body when the real research worker and citation audit are implemented.',
-	].join('\n');
 }
 
 async function loadCurrentPlansByJobId(

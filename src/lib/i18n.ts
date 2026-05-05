@@ -284,6 +284,16 @@ const dictionary = {
 		"admin.deepResearch": "Deep Research",
 		"admin.deepResearchDescription":
 			"Show the Deep Research composer entry and allow research-depth requests in chat.",
+		"admin.deepResearchModels": "Research models",
+		"admin.deepResearchModelsDescription":
+			"Choose the configured model used by each model-call role. Context windows and token limits are inferred from the selected model or provider.",
+		"admin.deepResearchModel.planGeneration": "Plan drafting",
+		"admin.deepResearchModel.planRevision": "Plan revision",
+		"admin.deepResearchModel.sourceReview": "Source review",
+		"admin.deepResearchModel.researchTask": "Research tasks",
+		"admin.deepResearchModel.synthesis": "Synthesis",
+		"admin.deepResearchModel.citationAudit": "Citation audit",
+		"admin.deepResearchModel.reportWriting": "Report writing",
 		// Admin - Title Generator
 		"admin.titleGenerator": "Title Generator",
 		"admin.basePromptDescription":
@@ -1159,6 +1169,16 @@ const dictionary = {
 		"admin.deepResearch": "Mély kutatás",
 		"admin.deepResearchDescription":
 			"Megjeleníti a Mély kutatás beviteli lehetőséget, és engedélyezi a kutatási mélységet tartalmazó chat kéréseket.",
+		"admin.deepResearchModels": "Kutatási modellek",
+		"admin.deepResearchModelsDescription":
+			"Válaszd ki, melyik beállított modellt használja az egyes modellhívó szerep. A kontextusablakok és tokenkorlátok a kiválasztott modellből vagy szolgáltatóból származnak.",
+		"admin.deepResearchModel.planGeneration": "Tervkészítés",
+		"admin.deepResearchModel.planRevision": "Tervmódosítás",
+		"admin.deepResearchModel.sourceReview": "Forrásáttekintés",
+		"admin.deepResearchModel.researchTask": "Kutatási feladatok",
+		"admin.deepResearchModel.synthesis": "Szintézis",
+		"admin.deepResearchModel.citationAudit": "Idézésaudit",
+		"admin.deepResearchModel.reportWriting": "Jelentésírás",
 		// Admin - Title Generator
 		"admin.titleGenerator": "Címgenerátor",
 		"admin.basePromptDescription":

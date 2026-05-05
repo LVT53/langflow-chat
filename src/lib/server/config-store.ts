@@ -7,6 +7,11 @@ import { config as envConfig } from "./env";
 export type { ModelConfig } from "./env";
 
 import type { ModelId } from "$lib/types";
+import {
+	defaultDeepResearchModelSelections,
+	normalizeConfiguredModelId,
+	type DeepResearchModelSelections,
+} from "$lib/deep-research-models";
 import { db } from "./db";
 import { adminConfig } from "./db/schema";
 import { getSystemPrompt, normalizeSystemPromptReference } from "./prompts";
@@ -54,6 +59,13 @@ export const ADMIN_CONFIG_KEYS = [
 	"DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS",
 	"DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY",
 	"DEEP_RESEARCH_WORKER_USER_CONCURRENCY",
+	"DEEP_RESEARCH_PLAN_MODEL",
+	"DEEP_RESEARCH_PLAN_REVISION_MODEL",
+	"DEEP_RESEARCH_SOURCE_REVIEW_MODEL",
+	"DEEP_RESEARCH_RESEARCH_TASK_MODEL",
+	"DEEP_RESEARCH_SYNTHESIS_MODEL",
+	"DEEP_RESEARCH_CITATION_AUDIT_MODEL",
+	"DEEP_RESEARCH_REPORT_MODEL",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
 	"TITLE_GEN_SYSTEM_PROMPT_EN",
@@ -118,6 +130,7 @@ export interface RuntimeConfig {
 	deepResearchWorkerStaleTimeoutMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -206,6 +219,9 @@ function buildDefaultConfig(): RuntimeConfig {
 		...envConfig,
 		model1: { ...envConfig.model1 },
 		model2: { ...envConfig.model2 },
+		deepResearchModels: {
+			...(envConfig.deepResearchModels ?? defaultDeepResearchModelSelections()),
+		},
 		braveSearchApiKey: envConfig.braveSearchApiKey,
 		deepResearchEnabled: envConfig.deepResearchEnabled ?? false,
 	};
@@ -396,6 +412,27 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		if (parsed !== undefined) {
 			config.deepResearchWorkerUserConcurrency = Math.max(0, parsed);
 		}
+	},
+	DEEP_RESEARCH_PLAN_MODEL: (config, value) => {
+		config.deepResearchModels.plan_generation = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_PLAN_REVISION_MODEL: (config, value) => {
+		config.deepResearchModels.plan_revision = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_SOURCE_REVIEW_MODEL: (config, value) => {
+		config.deepResearchModels.source_review = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_RESEARCH_TASK_MODEL: (config, value) => {
+		config.deepResearchModels.research_task = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_SYNTHESIS_MODEL: (config, value) => {
+		config.deepResearchModels.synthesis = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_CITATION_AUDIT_MODEL: (config, value) => {
+		config.deepResearchModels.citation_audit = normalizeConfiguredModelId(value);
+	},
+	DEEP_RESEARCH_REPORT_MODEL: (config, value) => {
+		config.deepResearchModels.report_writing = normalizeConfiguredModelId(value);
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -809,6 +846,17 @@ export function getResolvedAdminConfigValues(
 		DEEP_RESEARCH_WORKER_USER_CONCURRENCY: String(
 			config.deepResearchWorkerUserConcurrency,
 		),
+		DEEP_RESEARCH_PLAN_MODEL: config.deepResearchModels.plan_generation,
+		DEEP_RESEARCH_PLAN_REVISION_MODEL:
+			config.deepResearchModels.plan_revision,
+		DEEP_RESEARCH_SOURCE_REVIEW_MODEL:
+			config.deepResearchModels.source_review,
+		DEEP_RESEARCH_RESEARCH_TASK_MODEL:
+			config.deepResearchModels.research_task,
+		DEEP_RESEARCH_SYNTHESIS_MODEL: config.deepResearchModels.synthesis,
+		DEEP_RESEARCH_CITATION_AUDIT_MODEL:
+			config.deepResearchModels.citation_audit,
+		DEEP_RESEARCH_REPORT_MODEL: config.deepResearchModels.report_writing,
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: config.titleGenSystemPromptEn,

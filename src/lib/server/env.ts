@@ -2,6 +2,12 @@
 // Centralized environment configuration module
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
+import {
+	defaultDeepResearchModelSelections,
+	DEEP_RESEARCH_MODEL_ROLES,
+	normalizeConfiguredModelId,
+	type DeepResearchModelSelections,
+} from "../deep-research-models";
 
 export interface ModelConfig {
 	baseUrl: string;
@@ -29,6 +35,7 @@ interface Config {
 	deepResearchWorkerStaleTimeoutMs: number;
 	deepResearchWorkerGlobalConcurrency: number;
 	deepResearchWorkerUserConcurrency: number;
+	deepResearchModels: DeepResearchModelSelections;
 	contextDiagnosticsDebug: boolean;
 	titleGenUrl: string;
 	titleGenApiKey: string;
@@ -139,6 +146,14 @@ function parseIntegerEnv(value: string | undefined, fallback: number): number {
 	return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function readDeepResearchModelSelections(): DeepResearchModelSelections {
+	const selections = defaultDeepResearchModelSelections();
+	for (const role of DEEP_RESEARCH_MODEL_ROLES) {
+		selections[role.id] = normalizeConfiguredModelId(process.env[role.configKey]);
+	}
+	return selections;
+}
+
 function buildDefaultHonchoIdentityNamespace(
 	databasePath: string,
 	honchoWorkspace: string,
@@ -195,6 +210,7 @@ function readConfig(): Config {
 			0,
 			parseIntegerEnv(process.env.DEEP_RESEARCH_WORKER_USER_CONCURRENCY, 1),
 		),
+		deepResearchModels: readDeepResearchModelSelections(),
 		contextDiagnosticsDebug:
 			process.env.CONTEXT_DIAGNOSTICS_DEBUG === "true",
 		titleGenUrl: process.env.TITLE_GEN_URL || "http://localhost:30001/v1",
