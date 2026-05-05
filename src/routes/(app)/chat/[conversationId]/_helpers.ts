@@ -1,6 +1,7 @@
 import type { StreamMetadata } from '$lib/services/streaming';
 import type { I18nKey } from '$lib/i18n';
 import { isOsFileDropEvent } from '$lib/utils/file-drag';
+import { isFileProductionToolName } from '$lib/utils/tool-calls';
 import type {
 	ArtifactSummary,
 	ChatMessage,
@@ -135,7 +136,7 @@ export function shouldHydrateFileProductionJobsOnToolCall(
 	name: string,
 	status: 'running' | 'done'
 ): boolean {
-	return name === 'produce_file' && status === 'done';
+	return isFileProductionToolName(name) && status === 'done';
 }
 
 export function mergeFileProductionJob(
@@ -289,6 +290,10 @@ export function applyToolCallUpdateToMessageList(
 	}
 ): ChatMessage[] {
 	return updateMessageById(list, params.placeholderId, (message) => {
+		if (isFileProductionToolName(params.name)) {
+			return message;
+		}
+
 		const segments = message.thinkingSegments ?? [];
 		if (params.status === 'running') {
 			return {

@@ -1446,6 +1446,7 @@ function downloadFile() {
 	:global(.pptx-slide) {
 		background: transparent;
 		min-width: 0;
+		scroll-margin-top: var(--preview-toolbar-jump-offset);
 	}
 
 	:global(.pptx-slide-frame) {
@@ -1826,6 +1827,7 @@ function downloadFile() {
 	}
 
 	.preview-body {
+		--preview-toolbar-jump-offset: 4rem;
 		min-height: 0;
 		min-width: 0;
 		overflow-y: auto;
@@ -1901,6 +1903,7 @@ function downloadFile() {
 		justify-content: center;
 		width: fit-content;
 		min-width: 100%;
+		scroll-margin-top: var(--preview-toolbar-jump-offset);
 	}
 
 	.pdf-canvas {

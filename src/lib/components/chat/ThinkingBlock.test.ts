@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import type { ThinkingSegment } from '$lib/types';
 import ThinkingBlock from './ThinkingBlock.svelte';
 
 describe('ThinkingBlock', () => {
-	it('labels file-production tool calls as produce_file instead of Fetching', () => {
+	it('hides file-production tool calls from the thinking surface', async () => {
 		const segments: ThinkingSegment[] = [
 			{
 				type: 'tool_call',
@@ -25,7 +25,12 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		expect(screen.getByText('produce_file')).toBeInTheDocument();
+		expect(screen.queryByText('produce_file')).not.toBeInTheDocument();
+		expect(screen.queryByText(/Fetching:/)).not.toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/i }));
+
+		expect(screen.queryByText('produce_file')).not.toBeInTheDocument();
 		expect(screen.queryByText(/Fetching:/)).not.toBeInTheDocument();
 	});
 

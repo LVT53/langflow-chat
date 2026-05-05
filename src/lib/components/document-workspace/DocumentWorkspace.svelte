@@ -903,6 +903,7 @@ $effect(() => {
 			{documents}
 			activeDocumentId={activeDocument.id}
 			{onSelectDocument}
+			{onJumpToSource}
 			{onCloseDocument}
 		/>
 

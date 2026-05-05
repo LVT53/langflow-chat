@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { I18nKey } from '$lib/i18n';
 import {
+	applyToolCallUpdateToMessageList,
 	attachUnassignedFileProductionJobsToAssistant,
+	createAssistantPlaceholder,
 	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveFileProductionJobs,
 	mergeFileProductionJob,
@@ -105,8 +107,46 @@ describe('file production chat helpers', () => {
 
 	it('hydrates file-production jobs once the produce_file tool call has created a job', () => {
 		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'done')).toBe(true);
+		expect(shouldHydrateFileProductionJobsOnToolCall('file_production', 'done')).toBe(true);
 		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'running')).toBe(false);
 		expect(shouldHydrateFileProductionJobsOnToolCall('web_search', 'done')).toBe(false);
+	});
+
+	it('keeps produce_file events out of visible thinking segments', () => {
+		const list = [createAssistantPlaceholder('assistant-1')];
+		const running = applyToolCallUpdateToMessageList(list, {
+			placeholderId: 'assistant-1',
+			name: 'produce_file',
+			input: { requestTitle: 'Quarterly report' },
+			status: 'running',
+		});
+		const done = applyToolCallUpdateToMessageList(running, {
+			placeholderId: 'assistant-1',
+			name: 'produce_file',
+			input: {},
+			status: 'done',
+		});
+
+		expect(done[0].thinkingSegments).toBeUndefined();
+	});
+
+	it('keeps non-file tool calls visible in thinking segments', () => {
+		const list = [createAssistantPlaceholder('assistant-1')];
+		const updated = applyToolCallUpdateToMessageList(list, {
+			placeholderId: 'assistant-1',
+			name: 'web_search',
+			input: { query: 'Svelte docs' },
+			status: 'running',
+		});
+
+		expect(updated[0].thinkingSegments).toEqual([
+			{
+				type: 'tool_call',
+				name: 'web_search',
+				input: { query: 'Svelte docs' },
+				status: 'running',
+			},
+		]);
 	});
 
 	it('keeps newly produced files attached when the streaming placeholder becomes the server assistant message', () => {

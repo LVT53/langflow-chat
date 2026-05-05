@@ -963,6 +963,20 @@ describe("DocumentPreviewRenderer", () => {
 		});
 	});
 
+	it("keeps page jumps clear of the sticky preview toolbar", () => {
+		const componentSource = readFileSync(
+			"src/lib/components/document-workspace/DocumentPreviewRenderer.svelte",
+			"utf8",
+		);
+
+		expect(componentSource).toContain(
+			"--preview-toolbar-jump-offset: 4rem;",
+		);
+		expect(componentSource).toContain(
+			"scroll-margin-top: var(--preview-toolbar-jump-offset);",
+		);
+	});
+
 	it("treats XML as text preview content", async () => {
 		const mockBlob = new Blob(["<root><item>Hello</item></root>"], {
 			type: "application/xml",

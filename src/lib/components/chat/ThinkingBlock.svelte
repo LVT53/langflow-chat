@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { ThinkingSegment } from '$lib/types';
+	import {
+		isFileProductionToolName,
+		isVisibleThinkingSegment,
+		isVisibleThinkingToolCall,
+	} from '$lib/utils/tool-calls';
 
 	let {
 		content = '',
@@ -20,10 +25,13 @@ let freshTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	const label = $derived(thinkingIsDone ? 'Thought' : 'Thinking');
 const isActiveThinking = $derived(!thinkingIsDone);
+const visibleSegments = $derived(segments.filter(isVisibleThinkingSegment));
+const hasSegments = $derived(visibleSegments.length > 0);
+const visibleTools = $derived(segments.filter(isVisibleThinkingToolCall));
 
 $effect(() => {
 const totalLength = hasSegments
-? segments.reduce((sum, s) => sum + (s.type === 'text' ? s.content.length : 0), 0)
+? visibleSegments.reduce((sum, s) => sum + (s.type === 'text' ? s.content.length : 0), 0)
 : content.length;
 if (totalLength > prevContentLength && isActiveThinking) {
 contentFresh = true;
@@ -33,12 +41,6 @@ freshTimeout = setTimeout(() => { contentFresh = false; }, 500);
 }
 prevContentLength = totalLength;
 });
-	const hasSegments = $derived(segments.length > 0);
-	const visibleTools = $derived(
-		segments.filter(
-			(segment): segment is ThinkingSegment & { type: 'tool_call' } => segment.type === 'tool_call'
-		)
-	);
 
 	function extractHostname(raw: string): string {
 		try {
@@ -53,13 +55,9 @@ prevContentLength = totalLength;
 		return n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse');
 	}
 
-	function isFileProductionTool(name: string): boolean {
-		const n = name.toLowerCase();
-		return n === 'produce_file' || n.includes('file_production');
-	}
-
 	// Returns the raw URL if any tool input contains one, or null for everything else.
 	function getFetchUrl(name: string, input: Record<string, unknown>): string | null {
+		if (isFileProductionToolName(name)) return null;
 		if (!isFetchTool(name)) return null;
 		const raw = String(Object.values(input)[0] ?? '');
 		try { new URL(raw); return raw; } catch { return null; }
@@ -68,7 +66,7 @@ prevContentLength = totalLength;
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
 		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 200);
-		if (isFileProductionTool(name)) {
+		if (isFileProductionToolName(name)) {
 			return 'produce_file';
 		}
 		if (n.includes('search') || n.includes('tavily')) {
@@ -88,7 +86,7 @@ prevContentLength = totalLength;
 			const q = input.query ?? input.q ?? Object.values(input)[0];
 			return String(q ?? '');
 		}
-		if (isFileProductionTool(name)) {
+		if (isFileProductionToolName(name)) {
 			const title = input.requestTitle ?? input.filename ?? input.documentIntent;
 			return title ? String(title) : 'produce_file';
 		}
@@ -157,7 +155,7 @@ prevContentLength = totalLength;
 	{#if expanded}
 <div class="thinking-content" class:content-fresh={contentFresh} transition:slide>
 			{#if hasSegments}
-				{#each segments as seg}
+				{#each visibleSegments as seg}
 					{#if seg.type === 'text'}
 						<pre class="thinking-text">{seg.content}</pre>
 					{:else}

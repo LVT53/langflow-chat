@@ -2,6 +2,7 @@
 	import { isDark } from '$lib/stores/theme';
 	import { t } from '$lib/i18n';
 	import { estimateTokenCount } from '$lib/utils/tokens';
+	import { isVisibleThinkingToolCall } from '$lib/utils/tool-calls';
 	import type {
 		ArtifactSummary,
 		ChatMessage,
@@ -67,7 +68,7 @@
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 	let hasThinking = $derived(Boolean(message.thinking?.trim()));
 	let hasToolCalls = $derived(
-		(message.thinkingSegments?.some((segment) => segment.type === 'tool_call')) ?? false
+		(message.thinkingSegments?.some(isVisibleThinkingToolCall)) ?? false
 	);
 	let thinkingTokenCount = $derived(hasThinking ? estimateTokenCount(message.thinking ?? '') : 0);
 	let responseTokenCount = $derived(estimateTokenCount(message.content));

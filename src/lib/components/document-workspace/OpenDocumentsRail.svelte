@@ -8,11 +8,13 @@ let {
 	documents,
 	activeDocumentId,
 	onSelectDocument,
+	onJumpToSource = undefined,
 	onCloseDocument,
 }: {
 	documents: DocumentWorkspaceItem[];
 	activeDocumentId: string | null;
 	onSelectDocument: (documentId: string) => void;
+	onJumpToSource?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	onCloseDocument: (documentId: string) => void;
 } = $props();
 
@@ -47,6 +49,25 @@ function isAiGeneratedDocument(document: DocumentWorkspaceItem): boolean {
 	return document.source === "chat_generated_file";
 }
 
+function canJumpToSource(document: DocumentWorkspaceItem): boolean {
+	return Boolean(
+		onJumpToSource &&
+			document.originConversationId &&
+			document.originAssistantMessageId,
+	);
+}
+
+function handleSelectKeydown(event: KeyboardEvent, documentId: string) {
+	if (event.key !== "Enter" && event.key !== " ") return;
+	event.preventDefault();
+	onSelectDocument(documentId);
+}
+
+function handleJumpToSource(event: MouseEvent, document: DocumentWorkspaceItem) {
+	event.stopPropagation();
+	onJumpToSource?.(document);
+}
+
 function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
 	return isAiGeneratedDocument(document)
 		? $t("documentWorkspace.aiSource")
@@ -79,19 +100,37 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		</div>
 		{#each documents as document (document.id)}
 			<div class="open-documents-rail-row" class:open-documents-rail-row-active={document.id === activeDocumentId}>
-				<button
-					type="button"
+				<div
 					role="tab"
+					tabindex="0"
 					class="open-documents-rail-tab"
 					aria-selected={document.id === activeDocumentId}
 					onclick={() => onSelectDocument(document.id)}
+					onkeydown={(event) => handleSelectKeydown(event, document.id)}
 				>
 					<span class="open-documents-rail-icon">
 						<FileTypeIcon type={determinePreviewFileType(document.mimeType, document.filename)} />
 					</span>
 					<span class="open-documents-rail-text">
 						<span class="open-documents-rail-title-row">
-							<span class="open-documents-rail-title">{getDocumentTitle(document)}</span>
+							<span class="open-documents-rail-title-source">
+								<span class="open-documents-rail-title">{getDocumentTitle(document)}</span>
+								{#if canJumpToSource(document)}
+									<button
+										type="button"
+										class="open-documents-rail-source-jump"
+										onclick={(event) => handleJumpToSource(event, document)}
+										onkeydown={(event) => event.stopPropagation()}
+										aria-label={$t('documentWorkspace.viewSourceMessage')}
+										title={$t('documentWorkspace.viewSourceMessage')}
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+											<path d="M7 17 17 7" />
+											<path d="M7 7h10v10" />
+										</svg>
+									</button>
+								{/if}
+							</span>
 							{#if getDocumentVersionLabel(document)}
 								<span class="open-documents-rail-version">{getDocumentVersionLabel(document)}</span>
 							{/if}
@@ -114,7 +153,7 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 							<span class="open-documents-rail-history">{$t('documentWorkspace.historical')}</span>
 						{/if}
 					</span>
-				</button>
+				</div>
 				<button
 					type="button"
 					class="open-documents-rail-close"
@@ -224,10 +263,15 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		background: transparent;
 		text-align: left;
 		color: var(--text-secondary);
+		cursor: pointer;
 	}
 
 	.open-documents-rail-row-active .open-documents-rail-tab {
 		color: var(--text-primary);
+	}
+
+	.open-documents-rail-tab:focus-visible {
+		outline: none;
 	}
 
 	.open-documents-rail-icon {
@@ -258,6 +302,14 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		min-width: 0;
 	}
 
+	.open-documents-rail-title-source {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.2rem;
+		min-width: 0;
+		flex: 1 1 auto;
+	}
+
 	.open-documents-rail-title {
 		display: -webkit-box;
 		min-width: 0;
@@ -267,6 +319,43 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		overflow: hidden;
 		font-size: 0.82rem;
 		line-height: 1.25;
+	}
+
+	.open-documents-rail-source-jump {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+		width: 1.05rem;
+		height: 1.05rem;
+		margin-top: 0.02rem;
+		border: none;
+		border-radius: 0.25rem;
+		background: transparent;
+		color: var(--icon-muted);
+		opacity: 0.46;
+		transform: translate(-1px, 1px) scale(0.96);
+		transition:
+			color 180ms ease,
+			opacity 180ms ease,
+			transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			background-color 180ms ease;
+	}
+
+	.open-documents-rail-row:hover .open-documents-rail-source-jump,
+	.open-documents-rail-source-jump:focus-visible {
+		color: var(--text-primary);
+		opacity: 1;
+		transform: translate(1px, -1px) scale(1);
+	}
+
+	.open-documents-rail-source-jump:hover {
+		background: color-mix(in srgb, var(--surface-page) 72%, transparent 28%);
+	}
+
+	.open-documents-rail-source-jump:focus-visible {
+		outline: 2px solid color-mix(in srgb, var(--focus-ring) 68%, transparent 32%);
+		outline-offset: 0.12rem;
 	}
 
 	.open-documents-rail-version,
