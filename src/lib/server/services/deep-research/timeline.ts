@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { deepResearchTimelineEvents } from "$lib/server/db/schema";
 
 export type ResearchTimelineStage =
@@ -53,6 +53,11 @@ export type PersistedResearchTimelineEvent = ResearchTimelineEvent & {
 export type ListResearchTimelineEventsInput = {
 	userId: string;
 	jobId: string;
+};
+
+export type ListResearchTimelineEventsForJobsInput = {
+	userId: string;
+	jobIds: string[];
 };
 
 type DeepResearchTimelineEventRow =
@@ -136,6 +141,25 @@ export async function listResearchTimelineEvents(
 			and(
 				eq(deepResearchTimelineEvents.userId, input.userId),
 				eq(deepResearchTimelineEvents.jobId, input.jobId),
+			),
+		)
+		.orderBy(asc(deepResearchTimelineEvents.occurredAt));
+
+	return rows.map(mapTimelineEventRow);
+}
+
+export async function listResearchTimelineEventsForJobs(
+	input: ListResearchTimelineEventsForJobsInput,
+): Promise<PersistedResearchTimelineEvent[]> {
+	if (input.jobIds.length === 0) return [];
+	const { db } = await import("$lib/server/db");
+	const rows = await db
+		.select()
+		.from(deepResearchTimelineEvents)
+		.where(
+			and(
+				eq(deepResearchTimelineEvents.userId, input.userId),
+				inArray(deepResearchTimelineEvents.jobId, input.jobIds),
 			),
 		)
 		.orderBy(asc(deepResearchTimelineEvents.occurredAt));

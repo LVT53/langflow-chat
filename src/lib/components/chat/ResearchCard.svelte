@@ -24,6 +24,7 @@
 	let canCancel = $derived(job.status === 'awaiting_plan' || job.status === 'awaiting_approval');
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
+	let timelineEvents = $derived((job.timeline ?? []).slice(-4));
 
 	const depthKeys: Record<DeepResearchDepth, I18nKey> = {
 		focused: 'deepResearch.depth.focused',
@@ -40,6 +41,14 @@
 		failed: 'deepResearch.status.failed',
 		cancelled: 'deepResearch.status.cancelled',
 	};
+
+	function sourceCountLabels(sourceCounts: { discovered: number; reviewed: number; cited: number }) {
+		return [
+			$t('deepResearch.timeline.discovered', { count: sourceCounts.discovered }),
+			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
+			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
+		];
+	}
 
 	function cancelJob() {
 		if (!canCancel || !onCancel) return;
@@ -176,6 +185,47 @@
 		</section>
 	{/if}
 
+	{#if timelineEvents.length > 0}
+		<section class="research-card__timeline" aria-labelledby={`${job.id}-timeline-heading`}>
+			<div class="research-card__section-header">
+				<h3 id={`${job.id}-timeline-heading`}>{$t('deepResearch.timelineHeading')}</h3>
+			</div>
+
+			<ol class="research-card__timeline-list">
+				{#each timelineEvents as event (event.id)}
+					<li class="research-card__timeline-item">
+						<p class="research-card__timeline-summary">{event.summary}</p>
+						<div class="research-card__source-counts" aria-label="Source counts">
+							{#each sourceCountLabels(event.sourceCounts) as label}
+								<span>{label}</span>
+							{/each}
+						</div>
+						{#if event.assumptions.length > 0}
+							<div class="research-card__timeline-notes">
+								<strong>{$t('deepResearch.timeline.assumptions')}</strong>
+								<ul>
+									{#each event.assumptions as assumption}
+										<li>{assumption}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+						{#if event.warnings.length > 0}
+							<div class="research-card__timeline-notes research-card__timeline-notes--warning">
+								<strong>{$t('deepResearch.timeline.warnings')}</strong>
+								<ul>
+									{#each event.warnings as warning}
+										<li>{warning}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ol>
+		</section>
+	{/if}
+
 	{#if canCancel}
 		<div class="research-card__actions">
 			{#if canApprovePlan}
@@ -299,6 +349,75 @@
 		gap: var(--space-sm);
 		border-top: 1px solid var(--border-subtle);
 		padding-top: var(--space-sm);
+	}
+
+	.research-card__timeline {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		border-top: 1px solid var(--border-subtle);
+		padding-top: var(--space-sm);
+	}
+
+	.research-card__timeline-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.research-card__timeline-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		border-radius: 7px;
+		background: color-mix(in srgb, var(--surface-page) 72%, var(--surface-elevated) 28%);
+		padding: var(--space-sm);
+	}
+
+	.research-card__timeline-summary {
+		margin: 0;
+		font-size: 0.83rem;
+		font-weight: 700;
+		line-height: 1.35;
+		color: var(--text-primary);
+	}
+
+	.research-card__source-counts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+	}
+
+	.research-card__source-counts span {
+		border-radius: 999px;
+		background: var(--surface-elevated);
+		padding: 0.16rem 0.42rem;
+	}
+
+	.research-card__timeline-notes {
+		font-size: 0.76rem;
+		line-height: 1.4;
+		color: var(--text-secondary);
+	}
+
+	.research-card__timeline-notes strong {
+		display: block;
+		margin-bottom: 0.18rem;
+		color: var(--text-primary);
+	}
+
+	.research-card__timeline-notes ul {
+		margin: 0;
+		padding-left: 1rem;
+	}
+
+	.research-card__timeline-notes--warning {
+		color: var(--text-secondary);
 	}
 
 	.research-card__section-header {

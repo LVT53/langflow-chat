@@ -73,6 +73,7 @@ export const deepResearchJobs = sqliteTable('deep_research_jobs', {
   stage: text('stage'),
   title: text('title').notNull(),
   userRequest: text('user_request').notNull(),
+  reportArtifactId: text('report_artifact_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
@@ -87,6 +88,7 @@ export const deepResearchJobs = sqliteTable('deep_research_jobs', {
     table.status,
     table.updatedAt
   ),
+  reportArtifactIdx: index('deep_research_jobs_report_artifact_idx').on(table.reportArtifactId),
   activeConversationUniqueIdx: uniqueIndex('deep_research_jobs_active_conversation_unique_idx')
     .on(table.conversationId)
     .where(sql`${table.status} NOT IN ('completed', 'failed', 'cancelled')`),

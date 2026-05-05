@@ -73,6 +73,88 @@ describe('ResearchCard', () => {
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
 	});
 
+	it('shows a compact Activity Timeline with source counts, assumptions, and warnings', () => {
+		const { getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+				timeline: [
+					{
+						id: 'timeline-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'source_review',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:30:00.000Z',
+						messageKey: 'deepResearch.timeline.sourceReviewCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: ['Public web sources are enough for the initial pass.'],
+						warnings: ['One source could not be opened and was skipped.'],
+						summary: 'Reviewed 5 candidate sources.',
+						createdAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		expect(getByText('Activity Timeline')).toBeInTheDocument();
+		expect(getByText('Reviewed 5 candidate sources.')).toBeInTheDocument();
+		expect(getByText('12 discovered')).toBeInTheDocument();
+		expect(getByText('5 reviewed')).toBeInTheDocument();
+		expect(getByText('2 cited')).toBeInTheDocument();
+		expect(getByText('Public web sources are enough for the initial pass.')).toBeInTheDocument();
+		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
+	});
+
+	it('does not render unexpected private reasoning fields from timeline payloads', () => {
+		const { container, getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_discovery',
+				timeline: [
+					{
+						id: 'timeline-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'source_discovery',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:20:00.000Z',
+						messageKey: 'deepResearch.timeline.sourceDiscoveryCompleted',
+						messageParams: {
+							privateReasoning: 'chain-of-thought source strategy',
+						},
+						sourceCounts: {
+							discovered: 8,
+							reviewed: 0,
+							cited: 0,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Discovered 8 candidate sources.',
+						createdAt: '2026-05-05T10:20:00.000Z',
+						privateReasoning: 'The worker privately ranked alternate search branches.',
+						chainOfThought: 'Do not render this hidden reasoning.',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		expect(getByText('Discovered 8 candidate sources.')).toBeInTheDocument();
+		expect(queryByText(/chain-of-thought source strategy/)).not.toBeInTheDocument();
+		expect(queryByText(/privately ranked alternate search branches/)).not.toBeInTheDocument();
+		expect(queryByText(/hidden reasoning/)).not.toBeInTheDocument();
+		expect(container).not.toHaveTextContent('chain-of-thought');
+	});
+
 	it('lets the user submit a freeform Plan Edit while awaiting approval', async () => {
 		const onEdit = vi.fn(async () => {});
 		const { getByRole, getByLabelText, queryByLabelText } = render(ResearchCard, {

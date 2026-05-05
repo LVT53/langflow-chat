@@ -190,6 +190,32 @@ describe('GET /api/conversations/[id]', () => {
 				updatedAt: 1_777_140_002_000,
 				completedAt: null,
 				cancelledAt: null,
+				timeline: [
+					{
+						id: 'timeline-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						taskId: null,
+						stage: 'plan_generation',
+						kind: 'plan_generated',
+						occurredAt: '2026-05-05T10:01:00.000Z',
+						messageKey: 'deepResearch.timeline.planGenerated',
+						messageParams: {
+							discoveredSources: 0,
+							reviewedSources: 0,
+							citedSources: 0,
+						},
+						sourceCounts: {
+							discovered: 0,
+							reviewed: 0,
+							cited: 0,
+						},
+						assumptions: ['No source-heavy research has started before approval.'],
+						warnings: [],
+						summary: 'Research Plan drafted for approval.',
+						createdAt: '2026-05-05T10:01:00.000Z',
+					},
+				],
 			},
 		]);
 
@@ -205,6 +231,12 @@ describe('GET /api/conversations/[id]', () => {
 				depth: 'standard',
 				status: 'awaiting_plan',
 				stage: 'job_shell_created',
+				timeline: [
+					expect.objectContaining({
+						stage: 'plan_generation',
+						summary: 'Research Plan drafted for approval.',
+					}),
+				],
 			}),
 		]);
 	});

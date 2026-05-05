@@ -151,6 +151,29 @@ export interface DeepResearchPlanSummary {
 	updatedAt?: number;
 }
 
+export interface DeepResearchSourceCounts {
+	discovered: number;
+	reviewed: number;
+	cited: number;
+}
+
+export interface DeepResearchTimelineEvent {
+	id: string;
+	jobId?: string;
+	conversationId?: string;
+	taskId?: string | null;
+	stage: string;
+	kind: string;
+	occurredAt: string;
+	messageKey: string;
+	messageParams: Record<string, string | number | boolean | null>;
+	sourceCounts: DeepResearchSourceCounts;
+	assumptions: string[];
+	warnings: string[];
+	summary: string;
+	createdAt?: string;
+}
+
 export interface DeepResearchJob {
 	id: string;
 	conversationId: string;
@@ -160,8 +183,10 @@ export interface DeepResearchJob {
 	stage: string | null;
 	title: string;
 	userRequest?: string;
+	reportArtifactId?: string | null;
 	plan?: DeepResearchPlanSummary | null;
 	currentPlan?: DeepResearchPlanSummary | null;
+	timeline?: DeepResearchTimelineEvent[];
 	createdAt: number;
 	updatedAt: number;
 	completedAt?: number | null;

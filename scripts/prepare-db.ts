@@ -49,6 +49,7 @@ const requiredExistingColumns = [
 	['conversations', 'project_id'],
 	['conversations', 'status'],
 	['conversations', 'sealed_at'],
+	['deep_research_jobs', 'report_artifact_id'],
 	['messages', 'thinking'],
 	['messages', 'tool_calls'],
 	['messages', 'metadata_json'],

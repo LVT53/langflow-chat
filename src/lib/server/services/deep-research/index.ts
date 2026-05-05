@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { conversations, deepResearchJobs, deepResearchPlanVersions } from '$lib/server/db/schema';
+import { createArtifact } from '$lib/server/services/knowledge/store';
 import type {
 	DeepResearchDepth,
 	DeepResearchEffortEstimate,
 	DeepResearchJob,
 	DeepResearchPlanRaw,
 	DeepResearchPlanSummary,
+	DeepResearchTimelineEvent,
 } from '$lib/types';
 import {
 	createFirstResearchPlanDraft,
@@ -18,6 +20,8 @@ import {
 } from './planning';
 import {
 	createPlanGenerationTimelineEvent,
+	listResearchTimelineEventsForJobs,
+	type PersistedResearchTimelineEvent,
 	saveResearchTimelineEvent,
 } from './timeline';
 import {
@@ -68,6 +72,12 @@ export type EditDeepResearchPlanInput = {
 };
 
 export type ApproveDeepResearchPlanInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
+export type CompleteDeepResearchJobWithFakeReportInput = {
 	userId: string;
 	jobId: string;
 	now?: Date;
@@ -164,7 +174,7 @@ export async function startDeepResearchJobShell(
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
 
-	await saveResearchTimelineEvent(
+	const timelineEvent = await saveResearchTimelineEvent(
 		createPlanGenerationTimelineEvent({
 			jobId: job.id,
 			conversationId: input.conversationId,
@@ -194,7 +204,9 @@ export async function startDeepResearchJobShell(
 		);
 	}
 
-	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft));
+	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft), [
+		mapTimelineEvent(timelineEvent),
+	]);
 }
 
 export async function assertCanStartDeepResearchJob(
@@ -259,7 +271,10 @@ export async function listConversationDeepResearchJobs(
 		)
 		.orderBy(asc(deepResearchJobs.createdAt));
 	const currentPlans = await loadCurrentPlansByJobId(rows.map((row) => row.id));
-	return rows.map((row) => mapDeepResearchJob(row, currentPlans.get(row.id) ?? null));
+	const timelineEvents = await loadTimelineEventsByJobId(userId, rows.map((row) => row.id));
+	return rows.map((row) =>
+		mapDeepResearchJob(row, currentPlans.get(row.id) ?? null, timelineEvents.get(row.id) ?? [])
+	);
 }
 
 export async function cancelPrePlanDeepResearchJob(
@@ -285,7 +300,12 @@ export async function cancelPrePlanDeepResearchJob(
 
 	if (!job) return null;
 	const currentPlans = await loadCurrentPlansByJobId([job.id]);
-	return mapDeepResearchJob(job, currentPlans.get(job.id) ?? null);
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+	return mapDeepResearchJob(
+		job,
+		currentPlans.get(job.id) ?? null,
+		timelineEvents.get(job.id) ?? []
+	);
 }
 
 export async function editDeepResearchPlan(
@@ -354,7 +374,12 @@ export async function editDeepResearchPlan(
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
 
-	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft));
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		mapResearchPlanVersionRow(draft),
+		timelineEvents.get(job.id) ?? []
+	);
 }
 
 export async function approveDeepResearchPlan(
@@ -370,7 +395,12 @@ export async function approveDeepResearchPlan(
 	if (!job) return null;
 	if (job.status === 'approved') {
 		const currentPlans = await loadCurrentPlansByJobId([job.id]);
-		return mapDeepResearchJob(job, currentPlans.get(job.id) ?? null);
+		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+		return mapDeepResearchJob(
+			job,
+			currentPlans.get(job.id) ?? null,
+			timelineEvents.get(job.id) ?? []
+		);
 	}
 	if (job.status !== 'awaiting_approval') {
 		throw new DeepResearchPlanActionError(
@@ -408,13 +438,127 @@ export async function approveDeepResearchPlan(
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
 
-	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(approvedPlanRow));
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		mapResearchPlanVersionRow(approvedPlanRow),
+		timelineEvents.get(job.id) ?? []
+	);
+}
+
+export async function completeDeepResearchJobWithFakeReport(
+	input: CompleteDeepResearchJobWithFakeReportInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+
+	if (!job) return null;
+
+	if (job.status === 'completed' && job.reportArtifactId) {
+		const currentPlans = await loadCurrentPlansByJobId([job.id]);
+		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [job.id]);
+		return mapDeepResearchJob(
+			job,
+			currentPlans.get(job.id) ?? null,
+			timelineEvents.get(job.id) ?? []
+		);
+	}
+	if (job.status !== 'approved' && job.status !== 'running') {
+		return null;
+	}
+
+	const reportName = buildReportArtifactName(job.title);
+	const reportArtifact = await createArtifact({
+		userId: job.userId,
+		conversationId: job.conversationId,
+		type: 'generated_output',
+		retrievalClass: 'durable',
+		name: reportName,
+		mimeType: 'text/markdown',
+		extension: 'md',
+		sizeBytes: Buffer.byteLength(buildFakeResearchReport(job), 'utf8'),
+		contentText: buildFakeResearchReport(job),
+		summary: `Research Report for ${job.title}`,
+		metadata: {
+			deepResearchReport: true,
+			deepResearchJobId: job.id,
+			deepResearchDepth: job.depth,
+			documentFamilyId: randomUUID(),
+			documentFamilyStatus: 'active',
+			documentLabel: reportName,
+			documentRole: 'research_report',
+			versionNumber: 1,
+			originConversationId: job.conversationId,
+		},
+	});
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'completed',
+			stage: 'report_ready',
+			reportArtifactId: reportArtifact.id,
+			completedAt: now,
+			updatedAt: now,
+		})
+		.where(eq(deepResearchJobs.id, job.id))
+		.returning();
+
+	await db
+		.update(conversations)
+		.set({
+			status: 'sealed',
+			sealedAt: now,
+			updatedAt: now,
+		})
+		.where(and(eq(conversations.id, job.conversationId), eq(conversations.userId, job.userId)));
+
+	const currentPlans = await loadCurrentPlansByJobId([updatedJob.id]);
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [updatedJob.id]);
+	return mapDeepResearchJob(
+		updatedJob,
+		currentPlans.get(updatedJob.id) ?? null,
+		timelineEvents.get(updatedJob.id) ?? []
+	);
 }
 
 function buildJobTitle(userRequest: string): string {
 	const normalized = userRequest.replace(/\s+/g, ' ').trim();
 	if (normalized.length <= 80) return normalized;
 	return `${normalized.slice(0, 77)}...`;
+}
+
+function buildReportArtifactName(jobTitle: string): string {
+	const safeTitle = jobTitle
+		.replace(/[\\/:*?"<>|]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 96);
+	return `Research Report - ${safeTitle || 'Deep Research'}.md`;
+}
+
+function buildFakeResearchReport(job: DeepResearchJobRow): string {
+	return [
+		'# Research Report',
+		'',
+		`## Topic`,
+		job.title,
+		'',
+		'## Summary',
+		'This is a placeholder Research Report produced by the Deep Research mock completion path.',
+		'',
+		'## Findings',
+		'- The final research synthesis worker has not been enabled yet.',
+		'- This artifact exists to exercise the durable Report Boundary and document workspace handoff.',
+		'',
+		'## Limitations',
+		'- No public web sources were reviewed for this placeholder report.',
+		'- Replace this report body when the real research worker and citation audit are implemented.',
+	].join('\n');
 }
 
 async function loadCurrentPlansByJobId(
@@ -435,6 +579,19 @@ async function loadCurrentPlansByJobId(
 		}
 	}
 	return plans;
+}
+
+async function loadTimelineEventsByJobId(
+	userId: string,
+	jobIds: string[]
+): Promise<Map<string, DeepResearchTimelineEvent[]>> {
+	const events = await listResearchTimelineEventsForJobs({ userId, jobIds });
+	const timelineByJobId = new Map<string, DeepResearchTimelineEvent[]>();
+	for (const event of events) {
+		const mapped = mapTimelineEvent(event);
+		timelineByJobId.set(event.jobId, [...(timelineByJobId.get(event.jobId) ?? []), mapped]);
+	}
+	return timelineByJobId;
 }
 
 async function saveResearchPlanDraft(
@@ -505,7 +662,8 @@ function parseJson<T>(value: string): T {
 
 function mapDeepResearchJob(
 	row: DeepResearchJobRow,
-	currentPlan: DeepResearchPlanSummary | null = null
+	currentPlan: DeepResearchPlanSummary | null = null,
+	timeline: DeepResearchTimelineEvent[] = []
 ): DeepResearchJob {
 	return {
 		id: row.id,
@@ -516,11 +674,32 @@ function mapDeepResearchJob(
 		stage: row.stage ?? null,
 		title: row.title,
 		userRequest: row.userRequest,
+		reportArtifactId: row.reportArtifactId ?? null,
 		plan: currentPlan,
 		currentPlan,
+		timeline,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 		completedAt: row.completedAt ? row.completedAt.getTime() : null,
 		cancelledAt: row.cancelledAt ? row.cancelledAt.getTime() : null,
+	};
+}
+
+function mapTimelineEvent(event: PersistedResearchTimelineEvent): DeepResearchTimelineEvent {
+	return {
+		id: event.id,
+		jobId: event.jobId,
+		conversationId: event.conversationId,
+		taskId: event.taskId,
+		stage: event.stage,
+		kind: event.kind,
+		occurredAt: event.occurredAt,
+		messageKey: event.messageKey,
+		messageParams: event.messageParams,
+		sourceCounts: event.sourceCounts,
+		assumptions: event.assumptions,
+		warnings: event.warnings,
+		summary: event.summary,
+		createdAt: event.createdAt,
 	};
 }
