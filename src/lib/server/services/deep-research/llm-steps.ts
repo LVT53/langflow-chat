@@ -27,6 +27,7 @@ import type {
 	SynthesisNotes,
 } from "./synthesis";
 import { buildSynthesisNotes } from "./synthesis";
+import { classifyDeepResearchClaimType } from "./source-quality";
 import type {
 	PersistedReviewedResearchSourceNotes,
 	SourceReviewCandidate,
@@ -449,10 +450,20 @@ function mapLlmFindings(
 			const statement = stringValue(item.statement);
 			const sourceRefs = stringArrayValue(item.sourceIds)
 				.map((sourceId) => sourceRefsById.get(sourceId))
-				.filter((sourceRef): sourceRef is ResearchSourceReference => Boolean(sourceRef));
-			return statement && sourceRefs.length > 0
-				? { kind, statement, sourceRefs }
-				: null;
+				.filter((sourceRef): sourceRef is ResearchSourceReference =>
+					Boolean(sourceRef),
+				);
+			if (!statement || sourceRefs.length === 0) return null;
+			return {
+				kind,
+				statement,
+				sourceRefs,
+				claimType:
+					kind === "supported"
+						? classifyDeepResearchClaimType(statement)
+						: undefined,
+				central: kind === "supported" ? true : undefined,
+			};
 		})
 		.filter((finding): finding is SynthesisFinding => Boolean(finding));
 }

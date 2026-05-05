@@ -1,3 +1,5 @@
+import type { DeepResearchClaimType } from "$lib/types";
+import { classifyDeepResearchClaimType } from "./source-quality";
 import type { PersistedReviewedResearchSourceNotes } from "./source-review";
 
 export type ResearchSourceReference = {
@@ -17,6 +19,8 @@ export type SynthesisFinding = {
 	kind: SynthesisFindingKind;
 	statement: string;
 	sourceRefs: ResearchSourceReference[];
+	claimType?: DeepResearchClaimType;
+	central?: boolean;
 };
 
 export type CompletedResearchTaskOutput = {
@@ -56,6 +60,8 @@ export async function buildSynthesisNotes(
 			kind: "supported" as const,
 			statement: normalizeText(finding),
 			sourceRefs: [mapReviewedSourceReference(source)],
+			claimType: classifyDeepResearchClaimType(finding),
+			central: true,
 		})),
 	);
 	const { conflicts, conflictedStatements } =
@@ -118,7 +124,11 @@ function synthesizeCompletedTaskOutputs(
 		};
 
 		if (supportLevel === "strong" && sourceRefs.length > 0) {
-			supportedFindings.push(finding);
+			supportedFindings.push({
+				...finding,
+				claimType: classifyDeepResearchClaimType(finding.statement),
+				central: true,
+			});
 		} else {
 			assumptions.push(finding);
 		}

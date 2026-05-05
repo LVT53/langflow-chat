@@ -34,6 +34,8 @@ const requiredExistingTables = [
 	'deep_research_coverage_gaps',
 	'deep_research_resume_points',
 	'deep_research_evidence_notes',
+	'deep_research_synthesis_claims',
+	'deep_research_claim_evidence_links',
 	'conversation_task_states',
 	'task_state_evidence_links',
 	'task_checkpoints',

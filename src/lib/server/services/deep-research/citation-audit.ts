@@ -1,12 +1,15 @@
 import type {
+	DeepResearchClaimType,
 	DeepResearchSourceQualitySignals,
 	DeepResearchSourceStatus,
 } from "$lib/types";
+import { classifyDeepResearchClaimType } from "./source-quality";
 
 export type DeepResearchReportClaim = {
 	id: string;
 	text: string;
 	core?: boolean;
+	claimType?: DeepResearchClaimType;
 	citationSourceIds: string[];
 };
 
@@ -326,22 +329,63 @@ function sourceQualitySignalsFitClaim(
 ): boolean {
 	const signals = source.sourceQualitySignals;
 	if (!signals) return true;
-	if (!claimRequiresIndependentReliabilitySupport(claim.text)) return true;
-	return (
+	if (claim.core === false) return true;
+	const claimType =
+		claim.claimType ?? classifyDeepResearchClaimType(claim.text);
+	if (claimType === "official_specification") {
+		return (
+			signals.sourceType === "official_vendor" ||
+			signals.sourceType === "official_government" ||
+			signals.independence === "primary"
+		);
+	}
+	if (claimType === "price_availability") {
+		return (
+			(signals.freshness === "current" || signals.freshness === "recent") &&
+			claimDisclosesTiming(claim.text)
+		);
+	}
+	if (claimType === "high_stakes") {
+		return (
+			(signals.sourceType === "official_government" ||
+				signals.sourceType === "academic" ||
+				signals.independence === "primary") &&
+			signals.claimFit !== "weak" &&
+			signals.claimFit !== "mismatch" &&
+			claimDisclosesLimitations(claim.text)
+		);
+	}
+	if (claimType !== "reliability_experience") return true;
+	if (signals.claimFit === "weak" || signals.claimFit === "mismatch") {
+		return false;
+	}
+	if (
 		signals.independence === "independent" &&
-		signals.claimFit !== "weak" &&
-		signals.claimFit !== "mismatch" &&
 		signals.directness !== "indirect"
+	) {
+		return true;
+	}
+	return (
+		(signals.independence === "community" || signals.sourceType === "forum") &&
+		claimLabelsExperientialEvidence(claim.text)
 	);
 }
 
-function claimRequiresIndependentReliabilitySupport(claimText: string): boolean {
-	const normalized = normalizeForComparison(claimText);
-	return (
-		/\bindependent(?:ly)?\b/.test(normalized) &&
-		/\b(reliable|reliability|long[- ]term|owner|failure|durability)\b/.test(
-			normalized,
-		)
+function claimDisclosesTiming(claimText: string): boolean {
+	return /\b(as of|on|today|currently|current|latest|in 20[0-9]{2}|20[0-9]{2})\b/i.test(
+		claimText,
+	);
+}
+
+function claimLabelsExperientialEvidence(claimText: string): boolean {
+	return /\b(owner reports?|user reports?|forum reports?|reviews?|experiential|experience reports?)\b/i.test(
+		claimText,
+	);
+}
+
+function claimDisclosesLimitations(claimText: string): boolean {
+	return /\b(limited|limitation|limitations|may|might|consult|not (?:medical|legal|financial) advice|evidence varies|not definitive)\b/i.test(
+		claimText,
 	);
 }
 

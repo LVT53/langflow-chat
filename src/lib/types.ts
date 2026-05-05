@@ -216,6 +216,13 @@ export type DeepResearchClaimFit =
 	| "mismatch"
 	| "unknown";
 
+export type DeepResearchClaimType =
+	| "official_specification"
+	| "price_availability"
+	| "reliability_experience"
+	| "high_stakes"
+	| "general";
+
 export interface DeepResearchSourceQualitySignals {
 	sourceType: DeepResearchSourceType;
 	independence: DeepResearchSourceIndependence;
@@ -394,6 +401,50 @@ export interface DeepResearchEvidenceNote {
 	updatedAt: string;
 }
 
+export type DeepResearchSynthesisClaimStatus =
+	| "accepted"
+	| "limited"
+	| "rejected"
+	| "needs-repair";
+
+export type DeepResearchClaimEvidenceRelation =
+	| "support"
+	| "qualification"
+	| "contradiction";
+
+export interface DeepResearchClaimEvidenceLink {
+	id: string;
+	claimId: string;
+	evidenceNoteId: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	relation: DeepResearchClaimEvidenceRelation;
+	rationale?: string | null;
+	material: boolean;
+	createdAt: string;
+}
+
+export interface DeepResearchSynthesisClaim {
+	id: string;
+	jobId: string;
+	conversationId: string;
+	userId?: string;
+	passCheckpointId?: string | null;
+	synthesisPass?: string | null;
+	planQuestion?: string | null;
+	reportSection?: string | null;
+	statement: string;
+	claimType?: DeepResearchClaimType | null;
+	central: boolean;
+	status: DeepResearchSynthesisClaimStatus;
+	statusReason?: string | null;
+	competingClaimGroupId?: string | null;
+	evidenceLinks: DeepResearchClaimEvidenceLink[];
+	createdAt: string;
+	updatedAt: string;
+}
+
 export type DeepResearchResumePointBoundary =
 	| "running_pass"
 	| "research_task"
@@ -506,6 +557,7 @@ export interface DeepResearchJob {
 	passCheckpoints?: DeepResearchPassCheckpoint[];
 	coverageGaps?: DeepResearchCoverageGap[];
 	evidenceNotes?: DeepResearchEvidenceNote[];
+	synthesisClaims?: DeepResearchSynthesisClaim[];
 	resumePoints?: DeepResearchResumePoint[];
 	sourceCounts?: DeepResearchSourceCounts;
 	sources?: DeepResearchSource[];

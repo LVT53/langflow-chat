@@ -1,5 +1,6 @@
 import type {
 	DeepResearchClaimFit,
+	DeepResearchClaimType,
 	DeepResearchExtractionConfidence,
 	DeepResearchSourceAuthoritySummary,
 	DeepResearchSourceDirectness,
@@ -57,6 +58,21 @@ export function evaluateSourceQualitySignals(
 			relevanceScore: input.relevanceScore,
 		}),
 	};
+}
+
+export function classifyDeepResearchClaimType(
+	claimText: string,
+): DeepResearchClaimType {
+	const normalized = normalizeText(claimText).toLowerCase();
+	if (isHighStakesClaim(normalized)) return "high_stakes";
+	if (isOfficialSpecificationClaim(normalized)) {
+		return "official_specification";
+	}
+	if (isPriceAvailabilityClaim(normalized)) return "price_availability";
+	if (isReliabilityExperienceClaim(normalized)) {
+		return "reliability_experience";
+	}
+	return "general";
 }
 
 export function deriveSourceAuthoritySummary(
@@ -324,6 +340,38 @@ function safeHostname(url: string): string {
 
 function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
+}
+
+function isOfficialSpecificationClaim(normalized: string): boolean {
+	return (
+		/\b(official|officially|specification|specifications|manual|datasheet|vendor)\b/.test(
+			normalized,
+		) &&
+		/\b(includes|supports|rated|capacity|storage|memory|battery|warranty|dimensions|weight|feature|features)\b/.test(
+			normalized,
+		)
+	);
+}
+
+function isPriceAvailabilityClaim(normalized: string): boolean {
+	return (
+		/\b(price|prices|pricing|cost|costs|msrp|discount|available|availability|stock|in stock|sold out|shipping|delivery)\b/.test(
+			normalized,
+		) ||
+		/[$€£]\s?\d/.test(normalized)
+	);
+}
+
+function isReliabilityExperienceClaim(normalized: string): boolean {
+	return /\b(reliable|reliability|long[- ]term|owner|owners|failure|failures|durability|review|reviews|forum|experience|experiences)\b/.test(
+		normalized,
+	);
+}
+
+function isHighStakesClaim(normalized: string): boolean {
+	return /\b(medical|medicine|diagnosis|diagnostic|treatment|legal|law|safety[- ]critical|financial advice|investment|investing|clinical|regulated health)\b/.test(
+		normalized,
+	);
 }
 
 const sourceTypeValues = new Set<DeepResearchSourceType>([

@@ -36,7 +36,11 @@ import {
 	executeResearchTaskWithLlm,
 	reviewSourceWithLlm,
 } from "./llm-steps";
-import { buildSourceReviewEvidenceNotes } from "./evidence-notes";
+import {
+	buildSourceReviewEvidenceNotes,
+	listDeepResearchEvidenceNotes,
+} from "./evidence-notes";
+import { saveDeepResearchSynthesisClaimsFromNotes } from "./synthesis-claims";
 import {
 	completeResearchPassCheckpoint,
 	listResearchCoverageGaps,
@@ -548,6 +552,13 @@ async function runSynthesisResumeStep(
 						reviewedSources: synthesisInput.reviewedSources,
 						completedTasks: synthesisInput.completedTasks,
 					});
+	await persistSynthesisClaimsForPass({
+		jobRow,
+		passNumber,
+		synthesisPass: synthesisResumeKey,
+		synthesisNotes,
+		now,
+	});
 	await completeResearchResumePoint({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
@@ -610,9 +621,17 @@ async function buildSynthesisNotesWithResumePoint(input: {
 		existingSynthesis?.status === "completed" &&
 		existingSynthesis.result?.synthesisNotes
 	) {
-		return existingSynthesis.result.synthesisNotes as Awaited<
+		const synthesisNotes = existingSynthesis.result.synthesisNotes as Awaited<
 			ReturnType<typeof buildSynthesisNotes>
 		>;
+		await persistSynthesisClaimsForPass({
+			jobRow: input.jobRow,
+			passNumber: input.passNumber,
+			synthesisPass: synthesisResumeKey,
+			synthesisNotes,
+			now: input.now,
+		});
+		return synthesisNotes;
 	}
 	const synthesisNotes = input.dependencies.synthesis?.buildSynthesisNotes
 		? await input.dependencies.synthesis.buildSynthesisNotes(input.synthesisInput)
@@ -626,6 +645,13 @@ async function buildSynthesisNotesWithResumePoint(input: {
 				reviewedSources: input.synthesisInput.reviewedSources,
 				completedTasks: input.synthesisInput.completedTasks,
 			});
+	await persistSynthesisClaimsForPass({
+		jobRow: input.jobRow,
+		passNumber: input.passNumber,
+		synthesisPass: synthesisResumeKey,
+		synthesisNotes,
+		now: input.now,
+	});
 	await completeResearchResumePoint({
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
@@ -634,6 +660,38 @@ async function buildSynthesisNotesWithResumePoint(input: {
 		now: input.now,
 	});
 	return synthesisNotes;
+}
+
+async function persistSynthesisClaimsForPass(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	passNumber: number;
+	synthesisPass: string;
+	synthesisNotes: Awaited<ReturnType<typeof buildSynthesisNotes>>;
+	now: Date;
+}): Promise<void> {
+	const [passCheckpoints, evidenceNotes] = await Promise.all([
+		listResearchPassCheckpoints({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+		listDeepResearchEvidenceNotes({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+	]);
+	const checkpoint = passCheckpoints.find(
+		(passCheckpoint) => passCheckpoint.passNumber === input.passNumber,
+	);
+	await saveDeepResearchSynthesisClaimsFromNotes({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		conversationId: input.jobRow.conversationId,
+		passCheckpointId: checkpoint?.id ?? null,
+		synthesisPass: input.synthesisPass,
+		synthesisNotes: input.synthesisNotes,
+		evidenceNotes,
+		now: input.now,
+	});
 }
 
 async function runSourceReviewStep(

@@ -466,6 +466,81 @@ export const deepResearchEvidenceNotes = sqliteTable('deep_research_evidence_not
   ),
 }));
 
+export const deepResearchSynthesisClaims = sqliteTable('deep_research_synthesis_claims', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passCheckpointId: text('pass_checkpoint_id').references(() => deepResearchPassCheckpoints.id, {
+    onDelete: 'set null',
+  }),
+  synthesisPass: text('synthesis_pass'),
+  planQuestion: text('plan_question'),
+  reportSection: text('report_section'),
+  statement: text('statement').notNull(),
+  claimType: text('claim_type'),
+  central: integer('central', { mode: 'boolean' }).notNull().default(false),
+  status: text('status').notNull().default('needs-repair'),
+  statusReason: text('status_reason'),
+  competingClaimGroupId: text('competing_claim_group_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobStatusIdx: index('deep_research_synthesis_claims_job_status_idx').on(
+    table.jobId,
+    table.status,
+    table.createdAt
+  ),
+  userJobQuestionIdx: index('deep_research_synthesis_claims_user_question_idx').on(
+    table.userId,
+    table.jobId,
+    table.planQuestion
+  ),
+  passIdx: index('deep_research_synthesis_claims_pass_idx').on(table.passCheckpointId),
+  competingGroupIdx: index('deep_research_synthesis_claims_competing_group_idx').on(
+    table.competingClaimGroupId
+  ),
+}));
+
+export const deepResearchClaimEvidenceLinks = sqliteTable('deep_research_claim_evidence_links', {
+  id: text('id').primaryKey(),
+  claimId: text('claim_id')
+    .notNull()
+    .references(() => deepResearchSynthesisClaims.id, { onDelete: 'cascade' }),
+  evidenceNoteId: text('evidence_note_id')
+    .notNull()
+    .references(() => deepResearchEvidenceNotes.id, { onDelete: 'cascade' }),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  relation: text('relation').notNull(),
+  rationale: text('rationale'),
+  material: integer('material', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  claimIdx: index('deep_research_claim_evidence_links_claim_idx').on(table.claimId),
+  evidenceIdx: index('deep_research_claim_evidence_links_evidence_idx').on(table.evidenceNoteId),
+  jobRelationIdx: index('deep_research_claim_evidence_links_job_relation_idx').on(
+    table.jobId,
+    table.relation
+  ),
+  claimEvidenceRelationUniqueIdx: uniqueIndex(
+    'deep_research_claim_evidence_links_claim_evidence_relation_idx'
+  ).on(table.claimId, table.evidenceNoteId, table.relation),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')

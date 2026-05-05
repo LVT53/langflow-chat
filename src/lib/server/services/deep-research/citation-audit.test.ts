@@ -392,4 +392,227 @@ describe("Deep Research citation audit", () => {
 			}),
 		);
 	});
+
+	it("rejects forum support for a central official specification claim", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-forum-specs",
+			report: {
+				title: "Model X report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-official-spec",
+								text: "Model X officially includes 16 GB memory and 1 TB storage.",
+								core: true,
+								citationSourceIds: ["forum-post"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "forum-post",
+					status: "cited",
+					title: "Owner forum thread",
+					url: "https://forum.example.test/model-x-specs",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Model X officially includes 16 GB memory and 1 TB storage.",
+					extractedClaims: [
+						"Model X officially includes 16 GB memory and 1 TB storage.",
+					],
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "recent",
+						directness: "anecdotal",
+						extractionConfidence: "medium",
+						claimFit: "partial",
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.canComplete).toBe(false);
+		expect(result.auditedReport.sections[0].claims).toEqual([]);
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-official-spec",
+				status: "unsupported_claim",
+				sourceIds: ["forum-post"],
+				reason:
+					"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
+			}),
+		);
+	});
+
+	it("rejects central price claims without fresh dated evidence and timing disclosure", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-price",
+			report: {
+				title: "Model X price report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-price",
+								text: "Model X costs $999.",
+								core: true,
+								citationSourceIds: ["market-price"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "market-price",
+					status: "cited",
+					title: "Retail listing",
+					url: "https://retailer.example.test/model-x",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote: "Model X costs $999.",
+					extractedClaims: ["Model X costs $999."],
+					sourceQualitySignals: {
+						sourceType: "independent_analysis",
+						independence: "independent",
+						freshness: "stale",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-price",
+				status: "unsupported_claim",
+				sourceIds: ["market-price"],
+				reason:
+					"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
+			}),
+		);
+	});
+
+	it("allows forum evidence for reliability claims when labeled as experiential owner reports", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-owner-reliability",
+			report: {
+				title: "Model X owner report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-owner-reports",
+								text: "Owner reports describe Model X as reliable over long-term use.",
+								core: true,
+								citationSourceIds: ["owner-thread"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "owner-thread",
+					status: "cited",
+					title: "Owner reliability thread",
+					url: "https://forum.example.test/model-x-reliability",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Owner reports describe Model X as reliable over long-term use.",
+					extractedClaims: [
+						"Owner reports describe Model X as reliable over long-term use.",
+					],
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "recent",
+						directness: "anecdotal",
+						extractionConfidence: "medium",
+						claimFit: "partial",
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("passed");
+		expect(result.auditedReport.sections[0].claims).toEqual([
+			expect.objectContaining({
+				id: "claim-owner-reports",
+			}),
+		]);
+	});
+
+	it("rejects central high-stakes claims without explicit limitations", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-high-stakes",
+			report: {
+				title: "Treatment report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-treatment",
+								text: "Clinical treatment Alpha reduces migraine symptoms.",
+								core: true,
+								citationSourceIds: ["clinical-guidance"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "clinical-guidance",
+					status: "cited",
+					title: "Clinical guidance",
+					url: "https://health.gov.example/migraine",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Clinical treatment Alpha reduces migraine symptoms.",
+					extractedClaims: [
+						"Clinical treatment Alpha reduces migraine symptoms.",
+					],
+					sourceQualitySignals: {
+						sourceType: "official_government",
+						independence: "primary",
+						freshness: "recent",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-treatment",
+				status: "unsupported_claim",
+				sourceIds: ["clinical-guidance"],
+				reason:
+					"Claim cited reviewed sources, but Source Quality Signals did not fit the claim.",
+			}),
+		);
+	});
 });

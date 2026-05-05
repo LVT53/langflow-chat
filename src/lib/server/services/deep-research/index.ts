@@ -25,6 +25,7 @@ import type {
 	DeepResearchResumePoint,
 	DeepResearchSource,
 	DeepResearchSourceCounts,
+	DeepResearchSynthesisClaim,
 	DeepResearchTimelineEvent,
 	DeepResearchUsageSummary,
 } from '$lib/types';
@@ -62,6 +63,7 @@ import {
 	upsertResearchResumePoint,
 } from './resume-points';
 import { listDeepResearchEvidenceNotes } from './evidence-notes';
+import { listDeepResearchSynthesisClaims } from './synthesis-claims';
 import type { SynthesisNotes } from './synthesis';
 import {
 	buildCitationClaimReviewerWithLlm,
@@ -413,6 +415,7 @@ export async function listConversationDeepResearchJobs(
 				passCheckpoints: passStates.get(row.id)?.passCheckpoints ?? [],
 				coverageGaps: passStates.get(row.id)?.coverageGaps ?? [],
 				evidenceNotes: passStates.get(row.id)?.evidenceNotes ?? [],
+				synthesisClaims: passStates.get(row.id)?.synthesisClaims ?? [],
 				resumePoints: passStates.get(row.id)?.resumePoints ?? [],
 			}
 		)
@@ -1481,7 +1484,8 @@ function buildCitationAuditReportDraft(
 				claims: visibleFindings.map((finding, index) => ({
 					id: `finding-${index + 1}`,
 					text: finding.statement,
-					core: true,
+					core: finding.central !== false,
+					claimType: finding.claimType,
 					citationSourceIds: uniqueValues(
 						finding.sourceRefs.flatMap((sourceRef) => [
 							sourceRef.discoveredSourceId,
@@ -1881,6 +1885,7 @@ type DeepResearchJobReadModel = {
 	passCheckpoints?: DeepResearchPassCheckpoint[];
 	coverageGaps?: DeepResearchCoverageGap[];
 	evidenceNotes?: DeepResearchEvidenceNote[];
+	synthesisClaims?: DeepResearchSynthesisClaim[];
 	resumePoints?: DeepResearchResumePoint[];
 };
 
@@ -1888,6 +1893,7 @@ type DeepResearchPassStateForCard = {
 	passCheckpoints: DeepResearchPassCheckpoint[];
 	coverageGaps: DeepResearchCoverageGap[];
 	evidenceNotes: DeepResearchEvidenceNote[];
+	synthesisClaims: DeepResearchSynthesisClaim[];
 	resumePoints: DeepResearchResumePoint[];
 };
 
@@ -1898,16 +1904,24 @@ async function loadPassStatesByJobId(
 	const states = new Map<string, DeepResearchPassStateForCard>();
 	await Promise.all(
 		jobIds.map(async (jobId) => {
-			const [passCheckpoints, coverageGaps, evidenceNotes, resumePoints] = await Promise.all([
+			const [
+				passCheckpoints,
+				coverageGaps,
+				evidenceNotes,
+				synthesisClaims,
+				resumePoints,
+			] = await Promise.all([
 				listResearchPassCheckpoints({ userId, jobId }),
 				listResearchCoverageGaps({ userId, jobId }),
 				listDeepResearchEvidenceNotes({ userId, jobId }),
+				listDeepResearchSynthesisClaims({ userId, jobId }),
 				listResearchResumePoints({ userId, jobId }),
 			]);
 			states.set(jobId, {
 				passCheckpoints,
 				coverageGaps,
 				evidenceNotes,
+				synthesisClaims,
 				resumePoints,
 			});
 		})
@@ -2255,6 +2269,7 @@ function mapDeepResearchJob(
 		passCheckpoints: readModel.passCheckpoints ?? [],
 		coverageGaps: readModel.coverageGaps ?? [],
 		evidenceNotes: readModel.evidenceNotes ?? [],
+		synthesisClaims: readModel.synthesisClaims ?? [],
 		resumePoints: readModel.resumePoints ?? [],
 		sourceCounts: sourceLedger?.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
 		sources: sourceLedger?.sources ?? [],

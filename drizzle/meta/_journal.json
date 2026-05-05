@@ -260,6 +260,13 @@
       "when": 1777140000023,
       "tag": "1777140000023_deep_research_source_quality_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1777140000024,
+      "tag": "1777140000024_deep_research_synthesis_claims",
+      "breakpoints": true
     }
 
   ]

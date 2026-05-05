@@ -50,6 +50,41 @@ describe("Deep Research synthesis notes", () => {
 		expect(result.reportLimitations).toHaveLength(0);
 	});
 
+	it("classifies supported report findings by claim type and centrality", async () => {
+		const result = await buildSynthesisNotes({
+			jobId: "job-claim-types",
+			reviewedSources: [
+				{
+					id: "reviewed-specs",
+					jobId: "job-claim-types",
+					discoveredSourceId: "source-specs",
+					canonicalUrl: "https://vendor.example.com/model-x/specs",
+					title: "Model X official specifications",
+					duplicateSourceIds: [],
+					authorityScore: 80,
+					qualityScore: 80,
+					reviewScore: 160,
+					summary: "Model X official specifications.",
+					keyFindings: [
+						"Model X officially includes 16 GB memory and 1 TB storage.",
+					],
+					extractedText:
+						"Model X officially includes 16 GB memory and 1 TB storage.",
+					createdAt: "2026-05-05T12:00:00.000Z",
+				},
+			],
+			completedTasks: [],
+		});
+
+		expect(result.supportedFindings).toEqual([
+			expect.objectContaining({
+				statement: "Model X officially includes 16 GB memory and 1 TB storage.",
+				central: true,
+				claimType: "official_specification",
+			}),
+		]);
+	});
+
 	it("keeps conflicting Reviewed Source notes as a conflict finding", async () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-1",
