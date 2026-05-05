@@ -183,6 +183,13 @@
       "when": 1777140000012,
       "tag": "1777140000012_deep_research_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1777140000013,
+      "tag": "1777140000013_deep_research_plan_versions",
+      "breakpoints": true
     }
 
   ]

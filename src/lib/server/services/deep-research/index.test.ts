@@ -67,7 +67,7 @@ describe('deep research job shell service', () => {
 		}
 	});
 
-	it('creates and reloads a durable Deep Research Job shell for a conversation', async () => {
+	it('creates and reloads a durable Deep Research Job with its first Research Plan', async () => {
 		const { startDeepResearchJobShell, listConversationDeepResearchJobs } = await import('./index');
 
 		const created = await startDeepResearchJobShell({
@@ -84,11 +84,24 @@ describe('deep research job shell service', () => {
 			conversationId: 'conv-1',
 			triggerMessageId: 'user-msg-1',
 			depth: 'standard',
-			status: 'awaiting_plan',
-			stage: 'job_shell_created',
+			status: 'awaiting_approval',
+			stage: 'plan_drafted',
 			title: 'Compare EU and US AI copyright training data rules',
 			userRequest: 'Compare EU and US AI copyright training data rules',
+			currentPlan: {
+				version: 1,
+				status: 'awaiting_approval',
+				contextDisclosure: null,
+				effortEstimate: {
+					selectedDepth: 'standard',
+					sourceReviewCeiling: 40,
+				},
+			},
 		});
+		expect(created.currentPlan?.renderedPlan).toContain('# Research Plan');
+		expect(created.currentPlan?.rawPlan.goal).toBe(
+			'Compare EU and US AI copyright training data rules'
+		);
 		expect(jobs).toEqual([created]);
 	});
 
@@ -273,7 +286,7 @@ describe('deep research job shell service', () => {
 		});
 
 		expect(nextJob).toMatchObject({
-			status: 'awaiting_plan',
+			status: 'awaiting_approval',
 			depth: 'focused',
 			userRequest: 'Research follow-up sources',
 		});
@@ -310,7 +323,7 @@ describe('deep research job shell service', () => {
 		});
 
 		expect(nextJob).toMatchObject({
-			status: 'awaiting_plan',
+			status: 'awaiting_approval',
 			depth: 'focused',
 			userRequest: 'Try research again',
 		});

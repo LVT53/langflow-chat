@@ -92,6 +92,30 @@ export const deepResearchJobs = sqliteTable('deep_research_jobs', {
     .where(sql`${table.status} NOT IN ('completed', 'failed', 'cancelled')`),
 }));
 
+export const deepResearchPlanVersions = sqliteTable('deep_research_plan_versions', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => deepResearchJobs.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  status: text('status').notNull().default('awaiting_approval'),
+  rawPlanJson: text('raw_plan_json').notNull(),
+  renderedPlan: text('rendered_plan').notNull(),
+  contextDisclosure: text('context_disclosure'),
+  effortEstimateJson: text('effort_estimate_json').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (table) => ({
+  jobVersionUniqueIdx: uniqueIndex('deep_research_plan_versions_job_version_unique_idx').on(
+    table.jobId,
+    table.version
+  ),
+  jobVersionIdx: index('deep_research_plan_versions_job_version_idx').on(
+    table.jobId,
+    table.version
+  ),
+}));
+
 export const artifacts = sqliteTable('artifacts', {
   id: text('id').primaryKey(),
   userId: text('user_id')

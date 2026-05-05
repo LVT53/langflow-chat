@@ -101,6 +101,13 @@ export interface Conversation {
 
 export type DeepResearchDepth = "focused" | "standard" | "max";
 
+export type DeepResearchPlanStatus = "awaiting_approval";
+
+export interface DeepResearchBudget {
+	sourceReviewCeiling: number;
+	synthesisPassCeiling: number;
+}
+
 export type DeepResearchJobStatus =
 	| "awaiting_plan"
 	| "awaiting_approval"
@@ -108,6 +115,40 @@ export type DeepResearchJobStatus =
 	| "completed"
 	| "failed"
 	| "cancelled";
+
+export interface DeepResearchEffortEstimate {
+	selectedDepth: DeepResearchDepth;
+	expectedTimeBand: string;
+	sourceReviewCeiling: number;
+	relativeCostWarning: string;
+}
+
+export interface DeepResearchPlanRaw {
+	goal: string;
+	depth: DeepResearchDepth;
+	researchBudget: DeepResearchBudget;
+	keyQuestions: string[];
+	sourceScope: {
+		includePublicWeb: boolean;
+		planningContextDisclosure: string | null;
+	};
+	reportShape: string[];
+	constraints: string[];
+	deliverables: string[];
+}
+
+export interface DeepResearchPlanSummary {
+	id?: string;
+	jobId?: string;
+	version: number;
+	status?: DeepResearchPlanStatus;
+	rawPlan?: DeepResearchPlanRaw;
+	renderedPlan: string;
+	contextDisclosure?: string | null;
+	effortEstimate: DeepResearchEffortEstimate;
+	createdAt?: number;
+	updatedAt?: number;
+}
 
 export interface DeepResearchJob {
 	id: string;
@@ -118,6 +159,8 @@ export interface DeepResearchJob {
 	stage: string | null;
 	title: string;
 	userRequest?: string;
+	plan?: DeepResearchPlanSummary | null;
+	currentPlan?: DeepResearchPlanSummary | null;
 	createdAt: number;
 	updatedAt: number;
 	completedAt?: number | null;

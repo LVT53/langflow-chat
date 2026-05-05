@@ -127,8 +127,8 @@ describe('POST /api/chat/send', () => {
 			conversationId: 'conv-1',
 			triggerMessageId: 'user-msg',
 			depth: 'standard',
-			status: 'awaiting_plan',
-			stage: 'job_shell_created',
+			status: 'awaiting_approval',
+			stage: 'plan_drafted',
 			title: 'Compare EU and US AI copyright training data rules',
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -222,7 +222,7 @@ describe('POST /api/chat/send', () => {
 			conversationId: 'conv-1',
 			triggerMessageId: 'user-msg',
 			depth: 'standard',
-			status: 'awaiting_plan',
+			status: 'awaiting_approval',
 		});
 		expect(mockCreateMessage).toHaveBeenCalledTimes(1);
 		expect(mockCreateMessage).toHaveBeenCalledWith(

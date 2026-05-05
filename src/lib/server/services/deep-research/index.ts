@@ -1,8 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { conversations, deepResearchJobs } from '$lib/server/db/schema';
-import type { DeepResearchDepth, DeepResearchJob } from '$lib/types';
+import { conversations, deepResearchJobs, deepResearchPlanVersions } from '$lib/server/db/schema';
+import type {
+	DeepResearchDepth,
+	DeepResearchEffortEstimate,
+	DeepResearchJob,
+	DeepResearchPlanRaw,
+	DeepResearchPlanSummary,
+} from '$lib/types';
+import {
+	createFirstResearchPlanDraft,
+	type PlanningContextItem,
+	type ResearchLanguage,
+	type ResearchPlanDraftRecord,
+} from './planning';
 
 export type StartDeepResearchJobShellInput = {
 	userId: string;
@@ -10,6 +22,8 @@ export type StartDeepResearchJobShellInput = {
 	triggerMessageId: string;
 	userRequest: string;
 	depth: DeepResearchDepth;
+	researchLanguage?: ResearchLanguage;
+	planningContext?: PlanningContextItem[];
 	now?: Date;
 };
 
@@ -25,6 +39,7 @@ export type CancelPrePlanDeepResearchJobInput = {
 };
 
 type DeepResearchJobRow = typeof deepResearchJobs.$inferSelect;
+type DeepResearchPlanVersionRow = typeof deepResearchPlanVersions.$inferSelect;
 
 const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed', 'failed', 'cancelled')`;
 
@@ -68,7 +83,33 @@ export async function startDeepResearchJobShell(
 		})
 		.returning();
 
-	return mapDeepResearchJob(job);
+	const draft = await createFirstResearchPlanDraft(
+		{
+			jobId: job.id,
+			userRequest: input.userRequest,
+			selectedDepth: input.depth,
+			researchLanguage: input.researchLanguage ?? 'en',
+			planningContext: input.planningContext,
+		},
+		{
+			repository: {
+				saveResearchPlanDraft: (draftRecord) =>
+					saveResearchPlanDraft(draftRecord, now),
+			},
+		}
+	);
+
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: draft.status,
+			stage: 'plan_drafted',
+			updatedAt: now,
+		})
+		.where(eq(deepResearchJobs.id, job.id))
+		.returning();
+
+	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft));
 }
 
 export async function assertCanStartDeepResearchJob(
@@ -132,7 +173,8 @@ export async function listConversationDeepResearchJobs(
 			)
 		)
 		.orderBy(asc(deepResearchJobs.createdAt));
-	return rows.map(mapDeepResearchJob);
+	const currentPlans = await loadCurrentPlansByJobId(rows.map((row) => row.id));
+	return rows.map((row) => mapDeepResearchJob(row, currentPlans.get(row.id) ?? null));
 }
 
 export async function cancelPrePlanDeepResearchJob(
@@ -156,7 +198,9 @@ export async function cancelPrePlanDeepResearchJob(
 		)
 		.returning();
 
-	return job ? mapDeepResearchJob(job) : null;
+	if (!job) return null;
+	const currentPlans = await loadCurrentPlansByJobId([job.id]);
+	return mapDeepResearchJob(job, currentPlans.get(job.id) ?? null);
 }
 
 function buildJobTitle(userRequest: string): string {
@@ -165,7 +209,96 @@ function buildJobTitle(userRequest: string): string {
 	return `${normalized.slice(0, 77)}...`;
 }
 
-function mapDeepResearchJob(row: DeepResearchJobRow): DeepResearchJob {
+async function loadCurrentPlansByJobId(
+	jobIds: string[]
+): Promise<Map<string, DeepResearchPlanSummary>> {
+	if (jobIds.length === 0) return new Map();
+
+	const rows = await db
+		.select()
+		.from(deepResearchPlanVersions)
+		.where(inArray(deepResearchPlanVersions.jobId, jobIds))
+		.orderBy(asc(deepResearchPlanVersions.jobId), desc(deepResearchPlanVersions.version));
+
+	const plans = new Map<string, DeepResearchPlanSummary>();
+	for (const row of rows) {
+		if (!plans.has(row.jobId)) {
+			plans.set(row.jobId, mapResearchPlanVersionRow(row));
+		}
+	}
+	return plans;
+}
+
+async function saveResearchPlanDraft(
+	draft: ResearchPlanDraftRecord,
+	now: Date
+): Promise<ResearchPlanDraftRecord & { id: string; createdAt: number; updatedAt: number }> {
+	const [row] = await db
+		.insert(deepResearchPlanVersions)
+		.values({
+			id: randomUUID(),
+			jobId: draft.jobId,
+			version: draft.version,
+			status: draft.status,
+			rawPlanJson: JSON.stringify(draft.rawPlan),
+			renderedPlan: draft.renderedPlan,
+			contextDisclosure: draft.contextDisclosure,
+			effortEstimateJson: JSON.stringify(draft.effortEstimate),
+			createdAt: now,
+			updatedAt: now,
+		})
+		.returning();
+
+	return {
+		...draft,
+		id: row.id,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+function mapResearchPlanVersionRow(
+	row:
+		| DeepResearchPlanVersionRow
+		| (ResearchPlanDraftRecord & { id?: string; createdAt?: number; updatedAt?: number })
+): DeepResearchPlanSummary {
+	if ('rawPlanJson' in row) {
+		return {
+			id: row.id,
+			jobId: row.jobId,
+			version: row.version,
+			status: row.status as DeepResearchPlanSummary['status'],
+			rawPlan: parseJson<DeepResearchPlanRaw>(row.rawPlanJson),
+			renderedPlan: row.renderedPlan,
+			contextDisclosure: row.contextDisclosure,
+			effortEstimate: parseJson<DeepResearchEffortEstimate>(row.effortEstimateJson),
+			createdAt: row.createdAt.getTime(),
+			updatedAt: row.updatedAt.getTime(),
+		};
+	}
+
+	return {
+		id: row.id,
+		jobId: row.jobId,
+		version: row.version,
+		status: row.status,
+		rawPlan: row.rawPlan as DeepResearchPlanRaw,
+		renderedPlan: row.renderedPlan,
+		contextDisclosure: row.contextDisclosure,
+		effortEstimate: row.effortEstimate as DeepResearchEffortEstimate,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
+	};
+}
+
+function parseJson<T>(value: string): T {
+	return JSON.parse(value) as T;
+}
+
+function mapDeepResearchJob(
+	row: DeepResearchJobRow,
+	currentPlan: DeepResearchPlanSummary | null = null
+): DeepResearchJob {
 	return {
 		id: row.id,
 		conversationId: row.conversationId,
@@ -175,6 +308,8 @@ function mapDeepResearchJob(row: DeepResearchJobRow): DeepResearchJob {
 		stage: row.stage ?? null,
 		title: row.title,
 		userRequest: row.userRequest,
+		plan: currentPlan,
+		currentPlan,
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 		completedAt: row.completedAt ? row.completedAt.getTime() : null,
