@@ -9,6 +9,7 @@ import {
 	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
 	isConversationReadOnly,
+	mergeDeepResearchJobsForHydration,
 	shouldStartDeepResearchJob,
 	shouldDeleteConversationAfterCancellingDeepResearch,
 	mergeFileProductionJob,
@@ -58,6 +59,27 @@ function makeDeepResearchJob(status: DeepResearchJob['status']): DeepResearchJob
 		updatedAt: 1,
 		completedAt: null,
 		cancelledAt: status === 'cancelled' ? 2 : null,
+	};
+}
+
+function makeHydrationDeepResearchJob(
+	id: string,
+	overrides: Partial<DeepResearchJob> = {}
+): DeepResearchJob {
+	return {
+		id,
+		conversationId: 'conv-1',
+		triggerMessageId: 'user-1',
+		depth: 'standard',
+		status: 'awaiting_plan',
+		stage: 'plan_generation',
+		title: id,
+		userRequest: 'Research battery recycling',
+		createdAt: 1,
+		updatedAt: 1,
+		completedAt: null,
+		cancelledAt: null,
+		...overrides,
 	};
 }
 
@@ -160,6 +182,48 @@ describe('Deep Research cancellation helpers', () => {
 				deepResearchJobCount: 2,
 			})
 		).toBe(false);
+	});
+});
+
+describe('Deep Research hydration helpers', () => {
+	it('preserves an optimistic planning card when a stale hydration payload has no jobs yet', () => {
+		const optimisticJob = makeHydrationDeepResearchJob('pending-deep-research-1');
+
+		expect(mergeDeepResearchJobsForHydration([optimisticJob], [])).toEqual([
+			optimisticJob,
+		]);
+	});
+
+	it('preserves an active server job when a stale hydration payload temporarily misses it', () => {
+		const activeJob = makeHydrationDeepResearchJob('research-1', {
+			status: 'awaiting_plan',
+		});
+
+		expect(mergeDeepResearchJobsForHydration([activeJob], [])).toEqual([activeJob]);
+	});
+
+	it('does not preserve completed local jobs that are absent from the hydrated payload', () => {
+		const completedJob = makeHydrationDeepResearchJob('research-1', {
+			status: 'completed',
+			stage: 'report_ready',
+			reportArtifactId: 'artifact-1',
+			completedAt: 2,
+		});
+
+		expect(mergeDeepResearchJobsForHydration([completedJob], [])).toEqual([]);
+	});
+
+	it('replaces an optimistic equivalent once the server job is present', () => {
+		const optimisticJob = makeHydrationDeepResearchJob('pending-deep-research-1');
+		const serverJob = makeHydrationDeepResearchJob('research-1', {
+			triggerMessageId: 'server-user-1',
+			status: 'awaiting_approval',
+			stage: 'plan_drafted',
+		});
+
+		expect(mergeDeepResearchJobsForHydration([optimisticJob], [serverJob])).toEqual([
+			serverJob,
+		]);
 	});
 });
 

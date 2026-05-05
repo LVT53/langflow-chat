@@ -157,7 +157,8 @@ describe('MessageArea', () => {
 		expect(getByRole('article', { name: 'Deep Research: Research battery recycling policy' })).toBeInTheDocument();
 		expect(getByText('Standard')).toBeInTheDocument();
 		expect(getByText('Awaiting plan')).toBeInTheDocument();
-		expect(getByText('job_shell_created')).toBeInTheDocument();
+		expect(getByText('Drafting research plan...')).toBeInTheDocument();
+		expect(getByText('Drafting plan')).toBeInTheDocument();
 		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
 		expect(queryByText('Conversation Ready')).not.toBeInTheDocument();
 	});

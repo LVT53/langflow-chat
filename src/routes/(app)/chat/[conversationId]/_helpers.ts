@@ -145,6 +145,40 @@ export function hasActiveDeepResearchJobs(jobs: DeepResearchJob[]): boolean {
 	);
 }
 
+export function mergeDeepResearchJobsForHydration(
+	currentJobs: DeepResearchJob[],
+	incomingJobs: DeepResearchJob[]
+): DeepResearchJob[] {
+	const incomingIds = new Set(incomingJobs.map((job) => job.id));
+	const merged = [...incomingJobs];
+	for (const job of currentJobs) {
+		if (incomingIds.has(job.id)) continue;
+		if (!shouldPreserveDeepResearchJobDuringHydration(job)) continue;
+		if (incomingJobs.some((incomingJob) => isEquivalentDeepResearchJob(job, incomingJob))) {
+			continue;
+		}
+		merged.push(job);
+	}
+	return merged;
+}
+
+function shouldPreserveDeepResearchJobDuringHydration(job: DeepResearchJob): boolean {
+	return job.id.startsWith('pending-deep-research-') || hasActiveDeepResearchJobs([job]);
+}
+
+function isEquivalentDeepResearchJob(left: DeepResearchJob, right: DeepResearchJob): boolean {
+	if (left.id === right.id) return true;
+	if (left.triggerMessageId && left.triggerMessageId === right.triggerMessageId) return true;
+	const leftRequest = left.userRequest?.trim() ?? '';
+	const rightRequest = right.userRequest?.trim() ?? '';
+	return (
+		left.conversationId === right.conversationId &&
+		left.depth === right.depth &&
+		leftRequest.length > 0 &&
+		leftRequest === rightRequest
+	);
+}
+
 export function shouldStartDeepResearchJob(
 	payload: Pick<SendPayload, 'deepResearchDepth'>,
 	retryAssistantMessageId?: string

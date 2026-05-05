@@ -98,6 +98,7 @@ import {
 	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
+	mergeDeepResearchJobsForHydration,
 	mergeFileProductionJob,
 	mergeAttachedArtifacts,
 	removeMessageById,
@@ -603,7 +604,10 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 			fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		}
 		if (detail.deepResearchJobs) {
-			deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+			deepResearchJobs = mergeDeepResearchJobsForHydration(
+				deepResearchJobs,
+				detail.deepResearchJobs ?? [],
+			);
 		}
 		conversationStatus = detail.conversation?.status ?? conversationStatus;
 
@@ -633,7 +637,10 @@ async function loadPersistedData() {
 		messages.set([...(detail.messages ?? [])]);
 		generatedFiles = [...(detail.generatedFiles ?? [])];
 		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
-		deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+		deepResearchJobs = mergeDeepResearchJobsForHydration(
+			deepResearchJobs,
+			detail.deepResearchJobs ?? [],
+		);
 		conversationStatus = detail.conversation?.status ?? conversationStatus;
 		conversationDraft = null;
 		const pending = consumePendingConversationMessage(data.conversation.id);
@@ -826,7 +833,10 @@ async function reconnectToOrphanedStream(
 						messages.set([...(detail.messages ?? [])]); // Create new array to trigger reactivity
 						generatedFiles = [...(detail.generatedFiles ?? [])];
 						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
-						deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+						deepResearchJobs = mergeDeepResearchJobsForHydration(
+							deepResearchJobs,
+							detail.deepResearchJobs ?? [],
+						);
 						conversationStatus = detail.conversation?.status ?? conversationStatus;
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
@@ -953,7 +963,9 @@ async function hydrateConversationDetail(conversationId: string) {
 		conversationDraft = payload.draft ?? conversationDraft;
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
 		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
-		deepResearchJobs = payload.deepResearchJobs ?? deepResearchJobs;
+		deepResearchJobs = payload.deepResearchJobs
+			? mergeDeepResearchJobsForHydration(deepResearchJobs, payload.deepResearchJobs)
+			: deepResearchJobs;
 		conversationStatus = payload.conversation?.status ?? conversationStatus;
 		bootstrapMode = false;
 
@@ -1262,7 +1274,10 @@ $effect(() => {
 	}
 	if (data.deepResearchJobs !== prevDeepResearchJobsData) {
 		prevDeepResearchJobsData = data.deepResearchJobs;
-		deepResearchJobs = [...(data.deepResearchJobs ?? [])];
+		deepResearchJobs = mergeDeepResearchJobsForHydration(
+			deepResearchJobs,
+			data.deepResearchJobs ?? [],
+		);
 	}
 });
 
