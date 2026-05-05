@@ -67,6 +67,7 @@ import {
 } from "$lib/client/document-workspace-navigation";
 import {
 	loadPersistedWorkspaceDocumentState,
+	reduceWorkspaceClose,
 	reduceWorkspaceDocumentsForDeletedConversation,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
@@ -308,7 +309,13 @@ function closeWorkspaceDocument(documentId: string) {
 }
 
 function closeWorkspace() {
-	workspaceOpen = false;
+	const result = reduceWorkspaceClose(
+		workspaceDocuments,
+		activeWorkspaceDocumentId,
+	);
+	workspaceDocuments = result.documents;
+	activeWorkspaceDocumentId = result.activeDocumentId;
+	workspaceOpen = result.isOpen;
 	workspacePresentation = "docked";
 }
 

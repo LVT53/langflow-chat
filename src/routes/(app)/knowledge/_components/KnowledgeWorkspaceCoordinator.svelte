@@ -9,6 +9,7 @@ import {
 	getKnowledgeWorkspaceDocumentFromUrl,
 } from "$lib/client/document-workspace-navigation";
 import {
+	reduceWorkspaceClose,
 	reduceWorkspaceDocumentsForDeletedConversation,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
@@ -52,7 +53,7 @@ $effect(() => {
 	openDocument(
 		handoffDoc.artifactId
 			? (getWorkspaceDocumentForArtifact(documents, handoffDoc.artifactId) ??
-				handoffDoc)
+					handoffDoc)
 			: handoffDoc,
 	);
 	lastHandoffKey = key;
@@ -76,7 +77,13 @@ function openDocument(doc: DocumentWorkspaceItem) {
 
 export function closeDocument(documentId?: string) {
 	if (!documentId) {
-		workspaceOpen = false;
+		const result = reduceWorkspaceClose(
+			workspaceDocuments,
+			activeWorkspaceDocumentId,
+		);
+		workspaceDocuments = result.documents;
+		activeWorkspaceDocumentId = result.activeDocumentId;
+		workspaceOpen = result.isOpen;
 		return;
 	}
 
@@ -102,7 +109,13 @@ function selectWorkspaceDocument(documentId: string) {
 }
 
 function closeWorkspace() {
-	workspaceOpen = false;
+	const result = reduceWorkspaceClose(
+		workspaceDocuments,
+		activeWorkspaceDocumentId,
+	);
+	workspaceDocuments = result.documents;
+	activeWorkspaceDocumentId = result.activeDocumentId;
+	workspaceOpen = result.isOpen;
 }
 
 function handleWorkspaceConversationDeleted(conversationId: string) {

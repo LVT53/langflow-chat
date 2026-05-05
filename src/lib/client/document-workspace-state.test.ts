@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { DocumentWorkspaceItem } from "$lib/types";
 import {
 	loadPersistedWorkspaceDocumentState,
-	reduceWorkspaceDocumentsForDeletedConversation,
+	reduceWorkspaceClose,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
+	reduceWorkspaceDocumentsForDeletedConversation,
 	removeConversationFromPersistedWorkspaceDocumentState,
 	savePersistedWorkspaceDocumentState,
 } from "./document-workspace-state";
@@ -56,6 +57,27 @@ describe("document workspace state", () => {
 		]);
 		expect(result.activeDocumentId).toBe("doc-2");
 		expect(result.isOpen).toBe(true);
+	});
+
+	it("removes the last open document when the workspace is closed", () => {
+		const result = reduceWorkspaceClose([makeDocument("doc-1")], "doc-1");
+
+		expect(result).toEqual({
+			documents: [],
+			activeDocumentId: null,
+			isOpen: false,
+		});
+	});
+
+	it("hides a multi-document workspace without dropping the open document list", () => {
+		const documents = [makeDocument("doc-1"), makeDocument("doc-2")];
+		const result = reduceWorkspaceClose(documents, "doc-1");
+
+		expect(result).toEqual({
+			documents,
+			activeDocumentId: "doc-1",
+			isOpen: false,
+		});
 	});
 
 	it("persists an open workspace so chat navigation can restore the same rail", () => {
