@@ -167,22 +167,55 @@ let currentStreamingAssistantMessageId = $derived(
 		?.id ?? null,
 );
 
-let deepResearchJobsByTriggerMessageId = $derived(
+let deepResearchJobsByAnchorMessageKey = $derived(
 	deepResearchJobs.reduce((jobsByMessageId, job) => {
-		if (!job.triggerMessageId) return jobsByMessageId;
-		const jobs = jobsByMessageId.get(job.triggerMessageId) ?? [];
+		const anchorKey = findDeepResearchAnchorMessageKey(job, dedupedMessages);
+		if (!anchorKey) return jobsByMessageId;
+		const jobs = jobsByMessageId.get(anchorKey) ?? [];
 		jobs.push(job);
-		jobsByMessageId.set(job.triggerMessageId, jobs);
+		jobsByMessageId.set(anchorKey, jobs);
 		return jobsByMessageId;
 	}, new Map<string, DeepResearchJob[]>())
 );
 
 let unanchoredDeepResearchJobs = $derived(
 	deepResearchJobs.filter((job) => {
-		if (!job.triggerMessageId) return true;
-		return !dedupedMessages.some((message) => message.id === job.triggerMessageId);
+		return !findDeepResearchAnchorMessageKey(job, dedupedMessages);
 	})
 );
+
+function messageRenderKey(message: ChatMessage): string {
+	return message.renderKey ?? message.id;
+}
+
+function findDeepResearchAnchorMessageKey(
+	job: DeepResearchJob,
+	messageList: ChatMessage[],
+): string | null {
+	if (job.triggerMessageId) {
+		const exactMatch = messageList.find(
+			(message) =>
+				message.id === job.triggerMessageId ||
+				message.renderKey === job.triggerMessageId,
+		);
+		if (exactMatch) return messageRenderKey(exactMatch);
+	}
+
+	const request = normalizeAnchorText(job.userRequest ?? '');
+	if (!request) return null;
+	const matchingUserMessage = [...messageList]
+		.reverse()
+		.find(
+			(message) =>
+				message.role === 'user' &&
+				normalizeAnchorText(message.content) === request,
+		);
+	return matchingUserMessage ? messageRenderKey(matchingUserMessage) : null;
+}
+
+function normalizeAnchorText(value: string): string {
+	return value.replace(/\s+/g, ' ').trim();
+}
 
 function getFileProductionJobsForMessage(message: ChatMessage): FileProductionJob[] {
 	return fileProductionJobs.filter((job) => {
@@ -251,7 +284,7 @@ async function alignToBottomAfterRender() {
 					{onRetryFileProductionJob}
 					{onCancelFileProductionJob}
 				/>
-				{#each deepResearchJobsByTriggerMessageId.get(message.id) ?? [] as job (job.id)}
+				{#each deepResearchJobsByAnchorMessageKey.get(messageRenderKey(message)) ?? [] as job (job.id)}
 					<ResearchCard
 						job={job}
 						onCancel={onCancelDeepResearchJob}

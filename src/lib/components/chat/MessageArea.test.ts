@@ -204,6 +204,42 @@ describe('MessageArea', () => {
 		);
 	});
 
+	it('keeps a pre-draft Deep Research card below the user message during trigger id handoff', () => {
+		const triggerMessage: ChatMessage = {
+			id: 'client-user-1',
+			renderKey: 'client-user-1',
+			role: 'user',
+			content: 'Please research battery recycling policy.',
+			timestamp: Date.now(),
+		};
+		const { container, getByRole } = render(MessageArea, {
+			messages: [triggerMessage],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					id: 'server-research-job-1',
+					triggerMessageId: 'server-user-1',
+					status: 'awaiting_plan',
+					stage: 'plan_generation',
+					title: 'Please research battery recycling policy.',
+					userRequest: 'Please research battery recycling policy.',
+				}),
+			],
+		});
+
+		expect(
+			getByRole('article', {
+				name: 'Deep Research: Please research battery recycling policy.',
+			}),
+		).toBeInTheDocument();
+		const renderedText = container.textContent ?? '';
+		expect(renderedText.indexOf('Please research battery recycling policy.')).toBeLessThan(
+			renderedText.indexOf('Awaiting plan'),
+		);
+	});
+
 	it('routes Deep Research cancellation through the card callback', async () => {
 		const onCancelDeepResearchJob = vi.fn();
 		const { getByRole } = render(MessageArea, {
