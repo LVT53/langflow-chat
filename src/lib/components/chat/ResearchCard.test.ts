@@ -163,6 +163,173 @@ describe('ResearchCard', () => {
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
 	});
 
+	it('suppresses repeated per-event source counts unless the event needs source context', () => {
+		const { getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'report_writing',
+				timeline: [
+					{
+						id: 'timeline-coverage',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'coverage_assessment',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:40:00.000Z',
+						messageKey: 'deepResearch.timeline.coverageCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Checked coverage.',
+						createdAt: '2026-05-05T10:40:00.000Z',
+					},
+					{
+						id: 'timeline-synthesis',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'synthesis',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:50:00.000Z',
+						messageKey: 'deepResearch.timeline.synthesisCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Synthesized findings.',
+						createdAt: '2026-05-05T10:50:00.000Z',
+					},
+					{
+						id: 'timeline-citation',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'citation_audit',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T11:00:00.000Z',
+						messageKey: 'deepResearch.timeline.citationAuditCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Audited citations.',
+						createdAt: '2026-05-05T11:00:00.000Z',
+					},
+					{
+						id: 'timeline-writing',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'report_writing',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T11:10:00.000Z',
+						messageKey: 'deepResearch.timeline.reportWritingCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: ['Citation density was low in one section.'],
+						summary: 'Wrote report.',
+						createdAt: '2026-05-05T11:10:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		const coverageEvent = getByText('Checked coverage.').closest('.research-card__timeline-event');
+		const synthesisEvent = getByText('Synthesized findings.').closest('.research-card__timeline-event');
+		const citationEvent = getByText('Audited citations.').closest('.research-card__timeline-event');
+		const writingEvent = getByText('Wrote report.').closest('.research-card__timeline-event');
+
+		expect(coverageEvent).toHaveTextContent('12 discovered');
+		expect(synthesisEvent).not.toHaveTextContent('12 discovered');
+		expect(citationEvent).toHaveTextContent('12 discovered');
+		expect(writingEvent).toHaveTextContent('12 discovered');
+		expect(writingEvent).toHaveTextContent('Citation density was low in one section.');
+	});
+
+	it('shows per-event source counts when non-source timeline counts change', () => {
+		const { getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'synthesis',
+				timeline: [
+					{
+						id: 'timeline-coverage',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'coverage_assessment',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:40:00.000Z',
+						messageKey: 'deepResearch.timeline.coverageCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Checked coverage.',
+						createdAt: '2026-05-05T10:40:00.000Z',
+					},
+					{
+						id: 'timeline-synthesis',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'synthesis',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:50:00.000Z',
+						messageKey: 'deepResearch.timeline.synthesisCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 3,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Synthesized findings after one more citation.',
+						createdAt: '2026-05-05T10:50:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		const synthesisEvent = getByText('Synthesized findings after one more citation.').closest(
+			'.research-card__timeline-event'
+		);
+
+		expect(synthesisEvent).toHaveTextContent('12 discovered');
+		expect(synthesisEvent).toHaveTextContent('5 reviewed');
+		expect(synthesisEvent).toHaveTextContent('3 cited');
+	});
+
 	it('shows source ledger progress with distinct discovered, reviewed, and cited counts', () => {
 		const { getByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({

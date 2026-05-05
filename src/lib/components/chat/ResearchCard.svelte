@@ -5,6 +5,8 @@
 		DeepResearchDepth,
 		DeepResearchJob,
 		DeepResearchJobStatus,
+		DeepResearchSourceCounts,
+		DeepResearchTimelineEvent,
 		DeepResearchPlanSummary,
 		DocumentWorkspaceItem,
 	} from '$lib/types';
@@ -23,7 +25,11 @@
 		labelKey: I18nKey;
 		stages: string[];
 		status: 'completed' | 'active' | 'pending';
-		events: DeepResearchJob['timeline'];
+		events: TimelineEventView[];
+	};
+
+	type TimelineEventView = DeepResearchTimelineEvent & {
+		showSourceCounts: boolean;
 	};
 
 	let {
@@ -91,7 +97,7 @@
 		cancelled: 'deepResearch.status.cancelled',
 	};
 
-	function sourceCountLabels(sourceCounts: { discovered: number; reviewed: number; cited: number }) {
+	function sourceCountLabels(sourceCounts: DeepResearchSourceCounts) {
 		return [
 			$t('deepResearch.timeline.discovered', { count: sourceCounts.discovered }),
 			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
@@ -171,6 +177,7 @@
 
 	function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 		const currentIndex = activeTimelineIndex(job);
+		const timelineEvents = buildTimelineEventViews(job.timeline ?? []);
 		return TIMELINE_STEP_DEFINITIONS.map((step, index) => ({
 			...step,
 			status:
@@ -179,8 +186,31 @@
 					: index === currentIndex
 						? 'active'
 						: 'pending',
-			events: (job.timeline ?? []).filter((event) => step.stages.includes(event.stage)),
+			events: timelineEvents.filter((event) => step.stages.includes(event.stage)),
 		}));
+	}
+
+	function buildTimelineEventViews(events: DeepResearchTimelineEvent[]): TimelineEventView[] {
+		let previousCounts: DeepResearchSourceCounts | null = null;
+		return events.map((event) => {
+			const countsChanged = !previousCounts || !sameSourceCounts(previousCounts, event.sourceCounts);
+			const showSourceCounts =
+				countsChanged || isSourceSpecificTimelineEvent(event) || event.warnings.length > 0;
+			previousCounts = event.sourceCounts;
+			return {
+				...event,
+				showSourceCounts,
+			};
+		});
+	}
+
+	function sameSourceCounts(a: DeepResearchSourceCounts, b: DeepResearchSourceCounts): boolean {
+		return a.discovered === b.discovered && a.reviewed === b.reviewed && a.cited === b.cited;
+	}
+
+	function isSourceSpecificTimelineEvent(event: DeepResearchTimelineEvent): boolean {
+		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+		return eventText.includes('source') || eventText.includes('citation');
 	}
 
 	function activeTimelineIndex(job: DeepResearchJob): number {
@@ -469,11 +499,13 @@
 							{#each step.events ?? [] as event (event.id)}
 								<div class="research-card__timeline-event">
 									<p>{event.summary}</p>
-									<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
-										{#each sourceCountLabels(event.sourceCounts) as label}
-											<span>{label}</span>
-										{/each}
-									</div>
+									{#if event.showSourceCounts}
+										<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
+											{#each sourceCountLabels(event.sourceCounts) as label}
+												<span>{label}</span>
+											{/each}
+										</div>
+									{/if}
 									{#if event.warnings.length > 0}
 										<div class="research-card__timeline-notes research-card__timeline-notes--warning">
 											<strong>{$t('deepResearch.timeline.warnings')}</strong>
@@ -745,6 +777,7 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+		--research-timeline-marker-center: 0.61rem;
 	}
 
 	.research-card__timeline-item {
@@ -758,11 +791,15 @@
 	.research-card__timeline-item::before {
 		content: "";
 		position: absolute;
-		top: 0.72rem;
+		top: 0;
 		bottom: 0;
 		left: 0.28rem;
 		width: 1px;
 		background: var(--border-subtle);
+	}
+
+	.research-card__timeline-item:first-child::before {
+		top: var(--research-timeline-marker-center);
 	}
 
 	.research-card__timeline-item--completed::before {
@@ -770,6 +807,10 @@
 	}
 
 	.research-card__timeline-item:last-child::before {
+		bottom: calc(100% - var(--research-timeline-marker-center));
+	}
+
+	.research-card__timeline-item:only-child::before {
 		display: none;
 	}
 
