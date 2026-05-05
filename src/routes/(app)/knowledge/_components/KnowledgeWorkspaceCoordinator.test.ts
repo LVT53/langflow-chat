@@ -82,14 +82,17 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 			},
 		});
 
-		const download = await screen.findByRole("link", {
+		const downloads = await screen.findAllByRole("link", {
 			name: /download notes\.md/i,
 		});
 
-		expect(download).toHaveAttribute(
-			"href",
-			"/api/knowledge/artifact-1/download",
-		);
+		expect(
+			downloads.some(
+				(download) =>
+					download.getAttribute("href") ===
+					"/api/knowledge/artifact-1/download",
+			),
+		).toBe(true);
 	});
 
 	it("resolves normalized handoff artifacts to the display artifact before previewing", async () => {
@@ -117,12 +120,15 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 			);
 		});
 
-		const download = await screen.findByRole("link", {
+		const downloads = await screen.findAllByRole("link", {
 			name: /download contract\.docx/i,
 		});
-		expect(download).toHaveAttribute(
-			"href",
-			"/api/knowledge/display-docx-1/download",
-		);
+		expect(
+			downloads.some(
+				(download) =>
+					download.getAttribute("href") ===
+					"/api/knowledge/display-docx-1/download",
+			),
+		).toBe(true);
 	});
 });

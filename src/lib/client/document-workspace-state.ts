@@ -1,10 +1,21 @@
 import type { DocumentWorkspaceItem } from "$lib/types";
 
+export type WorkspacePresentation = "docked" | "expanded";
+
 export type WorkspaceDocumentState = {
 	documents: DocumentWorkspaceItem[];
 	activeDocumentId: string | null;
 	isOpen: boolean;
 };
+
+export type PersistedWorkspaceDocumentState = WorkspaceDocumentState & {
+	presentation: WorkspacePresentation;
+	updatedAt: number;
+};
+
+const CHAT_WORKSPACE_STATE_STORAGE_KEY = "alfyai-chat-document-workspace";
+const MAX_PERSISTED_DOCUMENTS = 12;
+const MAX_PERSISTED_STATE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function reduceWorkspaceDocumentOpen(
 	documents: DocumentWorkspaceItem[],
@@ -43,4 +54,88 @@ export function reduceWorkspaceDocumentClose(
 		activeDocumentId: nextActiveId,
 		isOpen: remainingDocuments.length > 0,
 	};
+}
+
+export function loadPersistedWorkspaceDocumentState(
+	storage: Pick<Storage, "getItem"> | null | undefined,
+	now = Date.now(),
+): PersistedWorkspaceDocumentState | null {
+	if (!storage) return null;
+
+	const raw = storage.getItem(CHAT_WORKSPACE_STATE_STORAGE_KEY);
+	if (!raw) return null;
+
+	try {
+		const parsed = JSON.parse(raw) as Partial<PersistedWorkspaceDocumentState>;
+		if (!Array.isArray(parsed.documents)) return null;
+		if (
+			typeof parsed.updatedAt === "number" &&
+			now - parsed.updatedAt > MAX_PERSISTED_STATE_AGE_MS
+		) {
+			return null;
+		}
+
+		const documents = parsed.documents.filter(
+			(document): document is DocumentWorkspaceItem =>
+				Boolean(
+					document &&
+						typeof document.id === "string" &&
+						typeof document.filename === "string" &&
+						typeof document.source === "string",
+				),
+		);
+		if (documents.length === 0) return null;
+
+		const activeDocumentId =
+			typeof parsed.activeDocumentId === "string" &&
+			documents.some((document) => document.id === parsed.activeDocumentId)
+				? parsed.activeDocumentId
+				: (documents.at(-1)?.id ?? null);
+
+		return {
+			documents,
+			activeDocumentId,
+			isOpen: parsed.isOpen === true,
+			presentation: parsed.presentation === "expanded" ? "expanded" : "docked",
+			updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : now,
+		};
+	} catch {
+		return null;
+	}
+}
+
+export function savePersistedWorkspaceDocumentState(
+	storage: Pick<Storage, "setItem" | "removeItem"> | null | undefined,
+	state: {
+		documents: DocumentWorkspaceItem[];
+		activeDocumentId: string | null;
+		isOpen: boolean;
+		presentation: WorkspacePresentation;
+	},
+	now = Date.now(),
+): void {
+	if (!storage) return;
+
+	if (state.documents.length === 0) {
+		storage.removeItem(CHAT_WORKSPACE_STATE_STORAGE_KEY);
+		return;
+	}
+
+	const documents = state.documents.slice(-MAX_PERSISTED_DOCUMENTS);
+	const activeDocumentId =
+		state.activeDocumentId &&
+		documents.some((document) => document.id === state.activeDocumentId)
+			? state.activeDocumentId
+			: (documents.at(-1)?.id ?? null);
+
+	storage.setItem(
+		CHAT_WORKSPACE_STATE_STORAGE_KEY,
+		JSON.stringify({
+			documents,
+			activeDocumentId,
+			isOpen: state.isOpen,
+			presentation: state.presentation,
+			updatedAt: now,
+		} satisfies PersistedWorkspaceDocumentState),
+	);
 }

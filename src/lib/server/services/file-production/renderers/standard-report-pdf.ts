@@ -38,8 +38,7 @@ const APP_FONT_FILES = {
 const APP_BRAND_LOGO_SOURCE = 'ui-vector-transparent-logo';
 const LOGO_VIEWBOX_HEIGHT = 112;
 const LOGO_VIEWBOX_WIDTH = 100;
-const COVER_LOGO_HEIGHT_PT = 52;
-const DOCUMENT_TITLE_LOGO_HEIGHT_PT = 42;
+const HEADER_LOGO_HEIGHT_PT = 10;
 const APP_FONT_DIAGNOSTICS = {
 	body: 'Nimbus Sans L',
 	bodyBold: 'Nimbus Sans L Bold',
@@ -68,6 +67,34 @@ const LAYOUT = {
 	lineHeight: 1.38,
 	paragraphGapPt: 5,
 } as const;
+const MONTH_NAMES = [
+	'January',
+	'February',
+	'March',
+	'April',
+	'May',
+	'June',
+	'July',
+	'August',
+	'September',
+	'October',
+	'November',
+	'December',
+] as const;
+const MONTH_NAMES_BY_KEY: Record<string, string> = {
+	jan: 'January',
+	feb: 'February',
+	mar: 'March',
+	apr: 'April',
+	may: 'May',
+	jun: 'June',
+	jul: 'July',
+	aug: 'August',
+	sep: 'September',
+	oct: 'October',
+	nov: 'November',
+	dec: 'December',
+};
 
 export interface StandardReportPdfRenderResult {
 	filename: string;
@@ -81,9 +108,10 @@ export interface StandardReportPdfRenderResult {
 		lineHeight: typeof LAYOUT.lineHeight;
 		brandLogo: {
 			source: typeof APP_BRAND_LOGO_SOURCE;
-			coverHeightPt: typeof COVER_LOGO_HEIGHT_PT;
-			documentTitleHeightPt: typeof DOCUMENT_TITLE_LOGO_HEIGHT_PT;
-			headerPlacement: 'text-only';
+			headerHeightPt: typeof HEADER_LOGO_HEIGHT_PT;
+			coverPlacement: 'none';
+			documentTitlePlacement: 'none';
+			headerPlacement: 'logo-and-text';
 		};
 		firstPageDateLabel: string | null;
 		marginMm: typeof LAYOUT.marginMm;
@@ -121,6 +149,7 @@ export interface StandardReportPdfRenderOptions {
 	imageLoader?: (
 		source: Extract<GeneratedDocumentBlock, { type: 'image' }>['source']
 	) => Promise<GeneratedDocumentImageLoadResult>;
+	now?: Date;
 }
 
 export class StandardReportPdfRenderError extends Error {
@@ -182,13 +211,52 @@ function sanitizePdfText(text: string): string {
 	return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
 }
 
+function ordinalDay(day: number): string {
+	const suffix =
+		day % 100 >= 11 && day % 100 <= 13
+			? 'th'
+			: day % 10 === 1
+				? 'st'
+				: day % 10 === 2
+					? 'nd'
+					: day % 10 === 3
+						? 'rd'
+						: 'th';
+	return `${day}${suffix}`;
+}
+
+function formatGeneratedDateLabel(date: Date): string {
+	const validDate = Number.isNaN(date.getTime()) ? new Date() : date;
+	return `${MONTH_NAMES[validDate.getMonth()]} ${ordinalDay(validDate.getDate())}`;
+}
+
 function normalizeDocumentDateLabel(value?: string | null): string | null {
 	const text = sanitizePdfText(value ?? '');
 	if (!text) return null;
 	const stripped = text
 		.replace(/^(?:generated\s+(?:on|at)|generated|created\s+(?:on|at)|created|date)\s*[:,-]?\s*/i, '')
 		.trim();
-	return stripped || text;
+	const candidate = stripped || text;
+	const monthDayMatch = candidate.match(
+		/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})\b/i
+	);
+	if (monthDayMatch) {
+		const monthKey = monthDayMatch[1].slice(0, 3).toLowerCase();
+		const day = Number.parseInt(monthDayMatch[2], 10);
+		if (MONTH_NAMES_BY_KEY[monthKey] && day >= 1 && day <= 31) {
+			return `${MONTH_NAMES_BY_KEY[monthKey]} ${ordinalDay(day)}`;
+		}
+	}
+	const isoDateMatch = candidate.match(/\b\d{4}-(\d{1,2})-(\d{1,2})\b/);
+	if (isoDateMatch) {
+		const monthNumber = Number.parseInt(isoDateMatch[1], 10);
+		const day = Number.parseInt(isoDateMatch[2], 10);
+		const monthName = MONTH_NAMES[monthNumber - 1];
+		if (monthName && day >= 1 && day <= 31) {
+			return `${monthName} ${ordinalDay(day)}`;
+		}
+	}
+	return candidate;
 }
 
 function breakLongWord(word: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -333,7 +401,8 @@ class StandardReportPdfLayout {
 	constructor(
 		private readonly pdfDoc: PDFDocument,
 		private readonly source: GeneratedDocumentSource,
-		private readonly fonts: FontSet
+		private readonly fonts: FontSet,
+		private readonly generatedAt: Date
 	) {
 		this.page = this.createPage();
 		this.y = this.contentTop();
@@ -410,26 +479,17 @@ class StandardReportPdfLayout {
 	drawCover(): void {
 		const x = this.contentX();
 		const width = this.contentWidth();
-		const top = A4[1] - mm(42);
+		const top = A4[1] - mm(54);
 		this.y = top;
-		const logoBottom = top - 2;
-		const logoWidth = drawAlfyAiLogo(this.page, x, logoBottom, COVER_LOGO_HEIGHT_PT);
-		this.page.drawText('AlfyAI', {
-			x: x + logoWidth + 10,
-			y: logoBottom + COVER_LOGO_HEIGHT_PT * 0.38,
-			size: 15,
-			font: this.fonts.bold,
-			color: hexColor(THEME.accent),
-		});
 		const eyebrow = this.source.cover?.eyebrow ?? 'AlfyAI Standard Report';
 		this.page.drawText(eyebrow.toUpperCase(), {
 			x,
-			y: logoBottom - 30,
+			y: this.y,
 			size: 9,
 			font: this.fonts.bold,
 			color: hexColor(THEME.accent),
 		});
-		this.y = logoBottom - 80;
+		this.y -= 52;
 		this.drawWrapped({
 			text: this.source.title,
 			font: this.fonts.titleBold,
@@ -454,16 +514,7 @@ class StandardReportPdfLayout {
 
 	drawDocumentTitle(): void {
 		const x = this.contentX();
-		const logoBottom = this.y - 18;
-		const logoWidth = drawAlfyAiLogo(this.page, x, logoBottom, DOCUMENT_TITLE_LOGO_HEIGHT_PT);
-		this.page.drawText('AlfyAI', {
-			x: x + logoWidth + 8,
-			y: logoBottom + DOCUMENT_TITLE_LOGO_HEIGHT_PT * 0.36,
-			size: 12.5,
-			font: this.fonts.bold,
-			color: hexColor(THEME.accent),
-		});
-		this.y -= 64;
+		this.y -= 12;
 		this.page.drawRectangle({
 			x,
 			y: this.y + 8,
@@ -496,7 +547,7 @@ class StandardReportPdfLayout {
 		const size = level === 1 ? 20 : level === 2 ? 15 : 13;
 		const gap = level === 1 ? 16 : 13;
 		const lines = wrapText(text, this.fonts.bold, size, this.contentWidth());
-		this.ensureSpace(lines.length * size * 1.35 + 34);
+		this.ensureSpace(lines.length * size * 1.35 + 72);
 		this.y -= gap;
 		for (const line of lines) {
 			this.page.drawText(line, {
@@ -1287,15 +1338,23 @@ class StandardReportPdfLayout {
 
 	drawHeadersAndFooters(): void {
 		const pages = this.pdfDoc.getPages();
-		const firstPageDateLabel = normalizeDocumentDateLabel(
-			this.source.cover?.dateLabel ?? this.source.date
-		);
+		const firstPageDateLabel =
+			normalizeDocumentDateLabel(this.source.cover?.dateLabel ?? this.source.date) ??
+			formatGeneratedDateLabel(this.generatedAt);
 		for (const [index, page] of pages.entries()) {
 			const pageNumber = index + 1;
 			const headerY = A4[1] - mm(10);
 			const headerX = this.contentX();
 			const headerRight = headerX + this.contentWidth();
 			const headerSize = 8.5;
+			const logoY = headerY - 1.5;
+			const logoWidth = drawAlfyAiLogo(
+				page,
+				headerX,
+				logoY,
+				HEADER_LOGO_HEIGHT_PT,
+				0.9
+			);
 			const brandText = 'AlfyAI';
 			const brandWidth = this.fonts.bold.widthOfTextAtSize(brandText, headerSize);
 			const dateText = pageNumber === 1 ? firstPageDateLabel : null;
@@ -1315,14 +1374,15 @@ class StandardReportPdfLayout {
 					});
 				}
 			}
-			page.drawText('AlfyAI', {
-				x: headerX,
+			const brandX = headerX + logoWidth + 5;
+			page.drawText(brandText, {
+				x: brandX,
 				y: headerY,
 				size: headerSize,
 				font: this.fonts.bold,
 				color: hexColor(THEME.accent),
 			});
-			const titleX = headerX + brandWidth + 28;
+			const titleX = brandX + brandWidth + 22;
 			const title = fitTextToWidth(
 				this.source.title,
 				this.fonts.regular,
@@ -1394,7 +1454,8 @@ export async function renderStandardReportPdf(
 	pdfDoc.setKeywords(['AlfyAI', 'generated document', 'standard report']);
 
 	const fonts = await embedFonts(pdfDoc);
-	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts);
+	const generatedAt = options.now ?? new Date();
+	const layout = new StandardReportPdfLayout(pdfDoc, source, fonts, generatedAt);
 	if (source.cover) {
 		layout.drawCover();
 	} else {
@@ -1454,11 +1515,14 @@ export async function renderStandardReportPdf(
 			lineHeight: LAYOUT.lineHeight,
 			brandLogo: {
 				source: APP_BRAND_LOGO_SOURCE,
-				coverHeightPt: COVER_LOGO_HEIGHT_PT,
-				documentTitleHeightPt: DOCUMENT_TITLE_LOGO_HEIGHT_PT,
-				headerPlacement: 'text-only',
+				headerHeightPt: HEADER_LOGO_HEIGHT_PT,
+				coverPlacement: 'none',
+				documentTitlePlacement: 'none',
+				headerPlacement: 'logo-and-text',
 			},
-			firstPageDateLabel: normalizeDocumentDateLabel(source.cover?.dateLabel ?? source.date),
+			firstPageDateLabel:
+				normalizeDocumentDateLabel(source.cover?.dateLabel ?? source.date) ??
+				formatGeneratedDateLabel(generatedAt),
 			marginMm: LAYOUT.marginMm,
 			colors: {
 				text: THEME.text,

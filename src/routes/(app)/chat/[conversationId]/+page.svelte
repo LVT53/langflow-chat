@@ -54,8 +54,10 @@ import {
 	getChatFocusMessageIdFromUrl,
 } from "$lib/client/document-workspace-navigation";
 import {
+	loadPersistedWorkspaceDocumentState,
 	reduceWorkspaceDocumentClose,
 	reduceWorkspaceDocumentOpen,
+	savePersistedWorkspaceDocumentState,
 } from "$lib/client/document-workspace-state";
 import {
 	removeConversationLocal,
@@ -145,10 +147,17 @@ let conversationDraft = $state<ConversationDraft | null>(
 );
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
-let workspaceDocuments = $state<DocumentWorkspaceItem[]>([]);
-let activeWorkspaceDocumentId = $state<string | null>(null);
-let workspaceOpen = $state(false);
-let workspacePresentation = $state<"docked" | "expanded">("docked");
+const initialWorkspaceState = getPersistedWorkspaceState();
+let workspaceDocuments = $state<DocumentWorkspaceItem[]>(
+	initialWorkspaceState?.documents ?? [],
+);
+let activeWorkspaceDocumentId = $state<string | null>(
+	initialWorkspaceState?.activeDocumentId ?? null,
+);
+let workspaceOpen = $state(initialWorkspaceState?.isOpen ?? false);
+let workspacePresentation = $state<"docked" | "expanded">(
+	initialWorkspaceState?.presentation ?? "docked",
+);
 let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
 let selectedPersonalityId = $state<string | null>(untrack(() => data.userPersonality) ?? null);
@@ -181,7 +190,7 @@ let availableWorkspaceDocuments = $derived(
 		documentFamilyStatus: file.documentFamilyStatus ?? null,
 		documentLabel: file.documentLabel ?? null,
 		documentRole: file.documentRole ?? null,
-		versionNumber: file.versionNumber ?? null,
+		versionNumber: file.versionNumber ?? 1,
 		originConversationId: file.originConversationId ?? null,
 		originAssistantMessageId: file.originAssistantMessageId ?? null,
 		sourceChatFileId: file.sourceChatFileId ?? null,
@@ -192,6 +201,37 @@ let availableWorkspaceDocuments = $derived(
 		downloadUrl: `/api/chat/files/${file.id}/download`,
 	})),
 );
+
+function getPersistedWorkspaceState() {
+	if (!browser) return null;
+	return loadPersistedWorkspaceDocumentState(window.sessionStorage);
+}
+
+function restorePersistedWorkspaceState() {
+	const persistedWorkspaceState = getPersistedWorkspaceState();
+	if (!persistedWorkspaceState) {
+		workspaceDocuments = [];
+		activeWorkspaceDocumentId = null;
+		workspaceOpen = false;
+		workspacePresentation = "docked";
+		return;
+	}
+
+	workspaceDocuments = persistedWorkspaceState.documents;
+	activeWorkspaceDocumentId = persistedWorkspaceState.activeDocumentId;
+	workspaceOpen = persistedWorkspaceState.isOpen;
+	workspacePresentation = persistedWorkspaceState.presentation;
+}
+
+$effect(() => {
+	if (!browser) return;
+	savePersistedWorkspaceDocumentState(window.sessionStorage, {
+		documents: workspaceDocuments,
+		activeDocumentId: activeWorkspaceDocumentId,
+		isOpen: workspaceOpen && workspaceDocuments.length > 0,
+		presentation: workspacePresentation,
+	});
+});
 
 function openWorkspaceDocument(
 	document: DocumentWorkspaceItem,
@@ -337,10 +377,7 @@ function resetState() {
 	fileProductionJobs = data.fileProductionJobs ?? [];
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
-	workspaceDocuments = [];
-	activeWorkspaceDocumentId = null;
-	workspaceOpen = false;
-	workspacePresentation = "docked";
+	restorePersistedWorkspaceState();
 	queuedTurn = null;
 	bootstrapMode = data.bootstrap ?? false;
 	hydratingConversation = false;
@@ -1613,7 +1650,10 @@ function handleDrop(event: DragEvent) {
 	ondrop={handleDrop}
 >
 	<DropZoneOverlay active={fileDragActive} rejected={fileDragRejected} />
-	<div class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg">
+	<div
+		class="chat-stage relative flex min-h-0 flex-1 overflow-hidden rounded-lg"
+		class:chat-stage-workspace-open={workspaceOpen && workspaceDocuments.length > 0}
+	>
 		<div class="chat-main relative flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div class="chat-messages flex flex-1 flex-col overflow-hidden">
 				{#if showInitialLoading}
@@ -1703,11 +1743,18 @@ function handleDrop(event: DragEvent) {
 
 <style>
 	.chat-main {
+		flex: 1 1 0%;
 		min-width: 0;
 	}
 
 	.chat-messages {
 		min-width: 0;
+	}
+
+	.chat-stage-workspace-open .chat-main :global(.scroll-container > div),
+	.chat-stage-workspace-open .chat-main :global(.composer-shell) {
+		margin-left: auto;
+		margin-right: auto;
 	}
 
 	.spinner-large {

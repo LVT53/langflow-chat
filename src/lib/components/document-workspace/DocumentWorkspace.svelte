@@ -78,23 +78,14 @@ let lastDocumentId = $state<string | null>(null);
 // Resize state
 let isResizing = $state(false);
 let resizeStartX = $state(0);
-let resizeStartWidth = $state(560);
-const DEFAULT_WORKSPACE_WIDTH = 560;
-const MIN_WIDTH = 420;
-const MAX_WIDTH_RATIO = 0.58;
+let resizeStartWidth = $state(950);
+const DEFAULT_WORKSPACE_WIDTH = 950;
+const MIN_WIDTH = 620;
+const MAX_WIDTH_RATIO = 0.68;
+const LEGACY_NARROW_WIDTH_THRESHOLD = 700;
 const WORKSPACE_WIDTH_STORAGE_KEY = "document-workspace-width";
 
-let workspaceWidth = $state(
-	browser && localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY)
-		? Math.max(
-				MIN_WIDTH,
-				parseFloat(
-					localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY) ||
-						String(DEFAULT_WORKSPACE_WIDTH),
-				),
-			) || DEFAULT_WORKSPACE_WIDTH
-		: DEFAULT_WORKSPACE_WIDTH,
-);
+let workspaceWidth = $state(getInitialWorkspaceWidth());
 
 // Persist workspace width when it changes
 $effect(() => {
@@ -151,11 +142,7 @@ function handleResizeMove(event: MouseEvent) {
 
 	const clientX = event.clientX ?? 0;
 	const deltaX = resizeStartX - clientX;
-	const newWidth = Math.max(
-		MIN_WIDTH,
-		Math.min(resizeStartWidth + deltaX, window.innerWidth * MAX_WIDTH_RATIO),
-	);
-	workspaceWidth = newWidth;
+	workspaceWidth = clampWorkspaceWidth(resizeStartWidth + deltaX);
 }
 
 function stopResize() {
@@ -167,9 +154,24 @@ function resetWorkspaceWidth() {
 }
 
 function clampWorkspaceWidth(nextWidth: number): number {
+	const viewportMax = browser
+		? window.innerWidth * MAX_WIDTH_RATIO
+		: DEFAULT_WORKSPACE_WIDTH;
 	return Math.max(
-		MIN_WIDTH,
-		Math.min(nextWidth, window.innerWidth * MAX_WIDTH_RATIO),
+		Math.min(MIN_WIDTH, viewportMax),
+		Math.min(nextWidth, viewportMax),
+	);
+}
+
+function getInitialWorkspaceWidth(): number {
+	if (!browser) return DEFAULT_WORKSPACE_WIDTH;
+	const storedValue = localStorage.getItem(WORKSPACE_WIDTH_STORAGE_KEY);
+	const parsedStoredValue = storedValue ? Number.parseFloat(storedValue) : NaN;
+	const shouldUseStoredWidth =
+		Number.isFinite(parsedStoredValue) &&
+		parsedStoredValue > LEGACY_NARROW_WIDTH_THRESHOLD;
+	return clampWorkspaceWidth(
+		shouldUseStoredWidth ? parsedStoredValue : DEFAULT_WORKSPACE_WIDTH,
 	);
 }
 
@@ -193,7 +195,7 @@ function handleResizeKeyDown(event: KeyboardEvent) {
 	}
 	if (event.key === "End") {
 		event.preventDefault();
-		workspaceWidth = clampWorkspaceWidth(window.innerWidth * MAX_WIDTH_RATIO);
+		workspaceWidth = clampWorkspaceWidth(Number.POSITIVE_INFINITY);
 	}
 }
 
@@ -235,9 +237,13 @@ function getDocumentTitle(document: DocumentWorkspaceItem): string {
 function getDocumentVersionLabel(
 	document: DocumentWorkspaceItem,
 ): string | null {
-	return document.versionNumber && document.versionNumber > 0
-		? `v${document.versionNumber}`
-		: null;
+	const versionNumber =
+		document.versionNumber && document.versionNumber > 0
+			? document.versionNumber
+			: document.source === "chat_generated_file"
+				? 1
+				: null;
+	return versionNumber ? `v${versionNumber}` : null;
 }
 
 function getDocumentSubtitle(document: DocumentWorkspaceItem): string | null {
@@ -538,6 +544,29 @@ $effect(() => {
 							</div>
 						{/if}
 						<div class="workspace-header-actions">
+							{#if documents.length > 1}
+								<button
+									type="button"
+									class="btn-icon-bare workspace-mobile-documents-button"
+									onclick={() => {
+										mobileDocumentsSheetOpen = !mobileDocumentsSheetOpen;
+									}}
+									aria-label={$t('documentWorkspace.openDocuments')}
+									aria-expanded={mobileDocumentsSheetOpen}
+									title={$t('documentWorkspace.openDocuments')}
+									data-testid="mobile-documents-button"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M8 6h13" />
+										<path d="M8 12h13" />
+										<path d="M8 18h13" />
+										<path d="M3 6h.01" />
+										<path d="M3 12h.01" />
+										<path d="M3 18h.01" />
+									</svg>
+									<span aria-hidden="true">{documents.length}</span>
+								</button>
+							{/if}
 							{#if getDocumentDownloadUrl(activeDocument)}
 								<a
 									class="btn-icon-bare workspace-download-button"
@@ -1032,6 +1061,45 @@ $effect(() => {
 
 	.workspace-shell-mobile .workspace-header {
 		border-left: none;
+		padding: 0.72rem 0.82rem 0.68rem;
+	}
+
+	.workspace-shell-mobile .workspace-eyebrow {
+		font-size: 0.64rem;
+		letter-spacing: 0.1em;
+	}
+
+	.workspace-shell-mobile .workspace-title-row {
+		align-items: flex-start;
+		gap: 0.55rem;
+	}
+
+	.workspace-shell-mobile .workspace-title {
+		white-space: normal;
+		font-size: 0.94rem;
+		line-height: 1.25;
+	}
+
+	.workspace-shell-mobile .workspace-title span {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+	}
+
+	.workspace-shell-mobile .workspace-subtitle {
+		margin-top: 0.24rem;
+		font-size: 0.72rem;
+	}
+
+	.workspace-shell-mobile .workspace-meta-row {
+		gap: 0.28rem;
+		margin-top: 0.28rem;
+	}
+
+	.workspace-shell-mobile .workspace-source-pill,
+	.workspace-shell-mobile .workspace-status-badge {
+		padding: 0.14rem 0.38rem;
+		font-size: 0.62rem;
 	}
 
 	.workspace-heading {
@@ -1084,29 +1152,34 @@ $effect(() => {
 
 	.workspace-title-link {
 		cursor: pointer;
-		transition: color var(--duration-fast) ease;
 	}
 
 	.workspace-title-link:hover,
 	.workspace-title-link:focus-visible {
-		color: var(--text-secondary);
+		color: var(--text-primary);
+	}
+
+	.workspace-title-link:focus-visible {
+		border-radius: 0.25rem;
+		outline: 2px solid color-mix(in srgb, var(--focus-ring) 70%, transparent 30%);
+		outline-offset: 0.18rem;
 	}
 
 	.workspace-title-source-icon {
 		flex: 0 0 auto;
 		color: var(--icon-muted);
-		opacity: 0.72;
+		opacity: 0.58;
 		transition:
-			color var(--duration-fast) ease,
-			opacity var(--duration-fast) ease,
-			transform var(--duration-fast) ease;
+			color 180ms ease,
+			opacity 180ms ease,
+			transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
 	.workspace-title-link:hover .workspace-title-source-icon,
 	.workspace-title-link:focus-visible .workspace-title-source-icon {
 		color: var(--text-primary);
 		opacity: 1;
-		transform: translate(1px, -1px);
+		transform: translate(2px, -2px);
 	}
 
 	.workspace-subtitle {
@@ -1145,6 +1218,7 @@ $effect(() => {
 
 	.workspace-source-pill-ai {
 		border-color: color-mix(in srgb, var(--border-default) 72%, var(--text-primary) 28%);
+		background: color-mix(in srgb, var(--surface-page) 76%, var(--surface-elevated) 24%);
 		color: var(--text-secondary);
 	}
 
@@ -1178,6 +1252,33 @@ $effect(() => {
 		align-items: center;
 		gap: 0.3rem;
 		flex-shrink: 0;
+	}
+
+	.workspace-mobile-documents-button {
+		gap: 0.16rem;
+		min-width: 2.45rem;
+		color: var(--icon-muted);
+		transition:
+			background-color 160ms ease,
+			color 160ms ease,
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	.workspace-mobile-documents-button:hover,
+	.workspace-mobile-documents-button[aria-expanded="true"] {
+		background: color-mix(in srgb, var(--surface-elevated) 78%, var(--surface-page) 22%);
+		color: var(--text-primary);
+	}
+
+	.workspace-mobile-documents-button:hover {
+		transform: translateY(-1px);
+	}
+
+	.workspace-mobile-documents-button span {
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.68rem;
+		font-weight: 700;
+		line-height: 1;
 	}
 
 	.workspace-expand-button {
@@ -1494,9 +1595,9 @@ $effect(() => {
 	@media (min-width: 768px) {
 		.workspace-shell-desktop {
 			display: flex;
-			width: min(48vw, 46rem);
-			max-width: 58%;
-			min-width: 26rem;
+			width: min(68vw, 59.375rem);
+			max-width: 68%;
+			min-width: min(38.75rem, 68vw);
 			flex: 0 0 auto;
 			border-left: 1px solid var(--border-subtle);
 			background: var(--surface-page);

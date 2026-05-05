@@ -53,8 +53,14 @@ prevContentLength = totalLength;
 		return n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse');
 	}
 
+	function isFileProductionTool(name: string): boolean {
+		const n = name.toLowerCase();
+		return n === 'produce_file' || n.includes('file_production');
+	}
+
 	// Returns the raw URL if any tool input contains one, or null for everything else.
 	function getFetchUrl(name: string, input: Record<string, unknown>): string | null {
+		if (!isFetchTool(name)) return null;
 		const raw = String(Object.values(input)[0] ?? '');
 		try { new URL(raw); return raw; } catch { return null; }
 	}
@@ -62,6 +68,9 @@ prevContentLength = totalLength;
 	function formatToolCall(name: string, input: Record<string, unknown>): string {
 		const n = name.toLowerCase();
 		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 200);
+		if (isFileProductionTool(name)) {
+			return 'produce_file';
+		}
 		if (n.includes('search') || n.includes('tavily')) {
 			const q = input.query ?? input.q ?? Object.values(input)[0];
 			return `Searching: "${String(q ?? '').slice(0, 200)}"`;
@@ -78,6 +87,10 @@ prevContentLength = totalLength;
 		if (n.includes('search') || n.includes('tavily')) {
 			const q = input.query ?? input.q ?? Object.values(input)[0];
 			return String(q ?? '');
+		}
+		if (isFileProductionTool(name)) {
+			const title = input.requestTitle ?? input.filename ?? input.documentIntent;
+			return title ? String(title) : 'produce_file';
 		}
 		if (isFetchTool(name)) {
 			return String(Object.values(input)[0] ?? '');

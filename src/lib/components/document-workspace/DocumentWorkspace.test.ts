@@ -613,6 +613,11 @@ describe("DocumentWorkspace", () => {
 
 	describe("Resizable panel", () => {
 		it("opens generated document previews at a wider PDF-friendly default width", async () => {
+			Object.defineProperty(window, "innerWidth", {
+				value: 1600,
+				configurable: true,
+			});
+
 			render(DocumentWorkspace, {
 				props: {
 					open: true,
@@ -639,7 +644,7 @@ describe("DocumentWorkspace", () => {
 				name: /document workspace/i,
 			});
 
-			expect(desktopWorkspace.style.width).toBe("560px");
+			expect(desktopWorkspace.style.width).toBe("950px");
 		});
 
 		it("can be dragged to resize to a new width", async () => {
@@ -727,12 +732,12 @@ describe("DocumentWorkspace", () => {
 			);
 			document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
 			await tick();
-			expect(desktopWorkspace.style.width).not.toBe("560px");
+			expect(desktopWorkspace.style.width).not.toBe("950px");
 
 			await fireEvent.dblClick(resizeHandle);
 			await tick();
 
-			expect(desktopWorkspace.style.width).toBe("560px");
+			expect(desktopWorkspace.style.width).toBe("950px");
 		});
 
 		it("respects minimum width constraint during resize", async () => {
@@ -778,7 +783,7 @@ describe("DocumentWorkspace", () => {
 			await tick();
 
 			const width = parseInt(desktopWorkspace.style.width, 10);
-			expect(width).toBeGreaterThanOrEqual(420);
+			expect(width).toBeGreaterThanOrEqual(620);
 		});
 
 		it("respects maximum width constraint during resize", async () => {
@@ -824,7 +829,7 @@ describe("DocumentWorkspace", () => {
 			await tick();
 
 			const width = parseInt(desktopWorkspace.style.width, 10);
-			const maxWidth = window.innerWidth * 0.58;
+			const maxWidth = window.innerWidth * 0.68;
 			expect(width).toBeLessThanOrEqual(Math.ceil(maxWidth));
 		});
 	});

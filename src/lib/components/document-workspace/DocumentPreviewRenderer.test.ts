@@ -105,6 +105,10 @@ vi.mock("pdfjs-dist", () => ({
 	GlobalWorkerOptions: {
 		workerSrc: "",
 	},
+	VerbosityLevel: {
+		ERRORS: 0,
+	},
+	setVerbosityLevel: vi.fn(),
 	getDocument: vi.fn(() => ({
 		promise: Promise.resolve({
 			numPages: 1,
@@ -346,6 +350,9 @@ describe("DocumentPreviewRenderer", () => {
 			expect(canvas).toBeInTheDocument();
 			expectPageIndicator("1", 1);
 		});
+		expect(pdfjsLib.getDocument).toHaveBeenCalledWith(
+			expect.objectContaining({ verbosity: pdfjsLib.VerbosityLevel.ERRORS }),
+		);
 	});
 
 	it("renders a PDF page once after load instead of looping on render-state changes", async () => {
@@ -887,6 +894,9 @@ describe("DocumentPreviewRenderer", () => {
 		await waitFor(() => {
 			expect(document.querySelectorAll(".pptx-slide-image")).toHaveLength(2);
 		});
+		expect(document.querySelectorAll(".pptx-slide-header")).toHaveLength(0);
+		expect(document.querySelectorAll(".pptx-slide-badge")).toHaveLength(2);
+		expect(document.querySelectorAll(".pptx-slide-separator")).toHaveLength(1);
 
 		expect(mockPptxLoadFile).toHaveBeenCalledTimes(1);
 		expect(mockPptxGoToSlide).toHaveBeenCalledTimes(2);
@@ -917,7 +927,7 @@ describe("DocumentPreviewRenderer", () => {
 			expect(screen.getByTestId("preview-toolbar")).toBeInTheDocument();
 		});
 		expect(screen.getByLabelText("Next slide")).toBeInTheDocument();
-		expect(screen.getAllByText("Slide 1 of 2").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Slide 1 / 2").length).toBeGreaterThan(0);
 	});
 
 	it("moves the visible PPTX slide when users use slide navigation", async () => {

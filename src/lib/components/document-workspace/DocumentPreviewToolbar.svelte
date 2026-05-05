@@ -134,7 +134,11 @@ function handlePageInputKeydown(event: KeyboardEvent) {
 
 <style>
 	.preview-toolbar {
+		position: sticky;
+		top: 0;
+		z-index: 8;
 		display: flex;
+		flex: 0 0 auto;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;

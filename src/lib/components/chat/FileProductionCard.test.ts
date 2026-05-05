@@ -79,6 +79,37 @@ describe('FileProductionCard', () => {
 		expect(queryByText('limit=5 actual=6')).toBeNull();
 	});
 
+	it('opens produced files with a v1 fallback while background metadata sync catches up', async () => {
+		const onOpenDocument = vi.fn();
+		const { getByRole } = render(FileProductionCard, {
+			job: makeJob({
+				status: 'succeeded',
+				files: [
+					{
+						id: 'file-1',
+						filename: 'report.pdf',
+						mimeType: 'application/pdf',
+						sizeBytes: 2048,
+						downloadUrl: '/api/chat/files/file-1/download',
+						previewUrl: '/api/chat/files/file-1/preview',
+						versionNumber: null,
+					},
+				],
+			}),
+			onOpenDocument,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Preview report.pdf' }));
+
+		expect(onOpenDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'file-1',
+				source: 'chat_generated_file',
+				versionNumber: 1,
+			})
+		);
+	});
+
 	it('uses Hungarian safe text for document render failures when the UI language is Hungarian', () => {
 		uiLanguage.set('hu');
 		const { getByText, queryByText, unmount } = render(FileProductionCard, {

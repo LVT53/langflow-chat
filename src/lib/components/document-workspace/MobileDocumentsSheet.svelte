@@ -36,20 +36,6 @@ function selectDocument(documentId: string) {
 }
 </script>
 
-{#if documents.length > 1}
-	<div class="mobile-documents-control">
-		<button
-			type="button"
-			class="mobile-documents-button"
-			onclick={() => onOpenChange(true)}
-			aria-expanded={open}
-			data-testid="mobile-documents-button"
-		>
-			{$t('documentWorkspace.openDocuments')}
-		</button>
-	</div>
-{/if}
-
 {#if open}
 	<div class="mobile-documents-sheet" data-testid="mobile-documents-sheet">
 		<div class="mobile-documents-sheet-header">
@@ -88,21 +74,6 @@ function selectDocument(documentId: string) {
 {/if}
 
 <style>
-	.mobile-documents-control {
-		display: flex;
-		padding: 0.55rem 1rem 0;
-		background: var(--surface-page);
-	}
-
-	.mobile-documents-button {
-		border: 1px solid var(--border-default);
-		border-radius: 999px;
-		background: var(--surface-elevated);
-		padding: 0.4rem 0.75rem;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-	}
-
 	.mobile-documents-sheet {
 		margin: 0.55rem 1rem 0;
 		border: 1px solid var(--border-default);
@@ -187,7 +158,6 @@ function selectDocument(documentId: string) {
 	}
 
 	@media (min-width: 768px) {
-		.mobile-documents-control,
 		.mobile-documents-sheet {
 			display: none;
 		}

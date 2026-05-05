@@ -96,7 +96,7 @@
 			documentFamilyStatus: file.documentFamilyStatus ?? null,
 			documentLabel: file.documentLabel ?? null,
 			documentRole: file.documentRole ?? null,
-			versionNumber: file.versionNumber ?? null,
+			versionNumber: file.versionNumber ?? 1,
 			originConversationId: file.originConversationId ?? null,
 			originAssistantMessageId: file.originAssistantMessageId ?? null,
 			sourceChatFileId: file.sourceChatFileId ?? null,

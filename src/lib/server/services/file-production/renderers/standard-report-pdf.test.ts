@@ -46,9 +46,10 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 				paragraphColor: '#3E3933',
 				brandLogo: {
 					source: 'ui-vector-transparent-logo',
-					coverHeightPt: 52,
-					documentTitleHeightPt: 42,
-					headerPlacement: 'text-only',
+					headerHeightPt: 10,
+					coverPlacement: 'none',
+					documentTitlePlacement: 'none',
+					headerPlacement: 'logo-and-text',
 				},
 				marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
 				colors: {
@@ -120,12 +121,35 @@ describe('AlfyAI Standard Report PDF renderer', () => {
 
 		expect(rendered.diagnostics.brandLogo).toEqual({
 			source: 'ui-vector-transparent-logo',
-			coverHeightPt: 52,
-			documentTitleHeightPt: 42,
-			headerPlacement: 'text-only',
+			headerHeightPt: 10,
+			coverPlacement: 'none',
+			documentTitlePlacement: 'none',
+			headerPlacement: 'logo-and-text',
 		});
-		expect(rendered.diagnostics.firstPageDateLabel).toBe('May 4, 2026');
+		expect(rendered.diagnostics.firstPageDateLabel).toBe('May 4th');
 		expect(rendered.content.toString('latin1')).not.toContain('favicon-32x32');
+	});
+
+	it('adds a compact generation date when document source omits one', async () => {
+		const validation = validateGeneratedDocumentSource({
+			version: 1,
+			template: 'alfyai_standard_report',
+			title: 'Undated report',
+			blocks: [
+				{
+					type: 'paragraph',
+					text: 'The renderer should still stamp the generation date in the header.',
+				},
+			],
+		});
+		expect(validation.ok).toBe(true);
+		if (!validation.ok) return;
+
+		const rendered = await renderStandardReportPdf(validation.source, {
+			now: new Date('2026-05-04T12:00:00.000Z'),
+		});
+
+		expect(rendered.diagnostics.firstPageDateLabel).toBe('May 4th');
 	});
 
 	it('uses a quieter paragraph treatment so body copy does not compete with report structure', async () => {

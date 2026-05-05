@@ -6,8 +6,8 @@ import { db } from "$lib/server/db";
 import { ensureRuntimeSchemaCompatibility } from "$lib/server/db/compat";
 import { users } from "$lib/server/db/schema";
 import { prewarmSandboxImageInBackground } from "$lib/server/sandbox/config";
-import { ensureFileProductionWorker } from "$lib/server/services/file-production";
 import { validateSession } from "$lib/server/services/auth";
+import { ensureFileProductionWorker } from "$lib/server/services/file-production";
 import { ensureMemoryMaintenanceScheduler } from "$lib/server/services/memory-maintenance";
 import { webhookBuffer } from "$lib/server/services/webhook-buffer";
 
@@ -82,5 +82,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, "/");
 	}
 
-	return await resolve(event);
+	return await resolve(event, {
+		preload: ({ type, path }) => {
+			if (type === "css" && path.includes("AvatarCircle.")) {
+				return false;
+			}
+			return type === "js" || type === "css";
+		},
+	});
 };

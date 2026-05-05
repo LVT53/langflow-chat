@@ -34,9 +34,13 @@ function getDocumentTitle(document: DocumentWorkspaceItem): string {
 function getDocumentVersionLabel(
 	document: DocumentWorkspaceItem,
 ): string | null {
-	return document.versionNumber && document.versionNumber > 0
-		? `v${document.versionNumber}`
-		: null;
+	const versionNumber =
+		document.versionNumber && document.versionNumber > 0
+			? document.versionNumber
+			: document.source === "chat_generated_file"
+				? 1
+				: null;
+	return versionNumber ? `v${versionNumber}` : null;
 }
 
 function isAiGeneratedDocument(document: DocumentWorkspaceItem): boolean {
@@ -174,9 +178,9 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		background: transparent;
 		overflow: hidden;
 		transition:
-			border-color var(--duration-fast) ease,
-			background-color var(--duration-fast) ease,
-			box-shadow var(--duration-fast) ease;
+			border-color 180ms ease,
+			background-color 180ms ease,
+			box-shadow 180ms ease;
 	}
 
 	.open-documents-rail-row::before {
@@ -185,14 +189,17 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		inset: 0;
 		background: color-mix(in srgb, var(--surface-page) 82%, var(--surface-elevated) 18%);
 		opacity: 0;
-		transition: opacity var(--duration-standard) ease;
+		transform: scaleX(0.985);
+		transform-origin: left center;
+		transition:
+			opacity 180ms ease,
+			transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 		pointer-events: none;
 	}
 
 	.open-documents-rail-row-active {
 		border-color: color-mix(in srgb, var(--text-primary) 14%, var(--border-default) 86%);
 		background: color-mix(in srgb, var(--surface-page) 88%, var(--surface-elevated) 12%);
-		box-shadow: inset 2px 0 0 color-mix(in srgb, var(--text-primary) 42%, transparent 58%);
 	}
 
 	.open-documents-rail-row:not(.open-documents-rail-row-active):hover {
@@ -201,6 +208,7 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 
 	.open-documents-rail-row:not(.open-documents-rail-row-active):hover::before {
 		opacity: 1;
+		transform: scaleX(1);
 	}
 
 	.open-documents-rail-tab {
@@ -226,6 +234,14 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		display: inline-flex;
 		margin-top: 0.08rem;
 		color: var(--icon-muted);
+		transition:
+			color 180ms ease,
+			transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	.open-documents-rail-row:not(.open-documents-rail-row-active):hover .open-documents-rail-icon {
+		color: var(--text-secondary);
+		transform: translateY(-1px);
 	}
 
 	.open-documents-rail-text {
@@ -296,6 +312,11 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 	}
 
 	.open-documents-rail-source-ai {
+		flex: 0 0 auto;
+		border: 1px solid color-mix(in srgb, var(--border-default) 78%, var(--text-primary) 22%);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface-page) 74%, var(--surface-elevated) 26%);
+		padding: 0.08rem 0.32rem;
 		font-weight: 650;
 		color: var(--text-secondary);
 	}
@@ -328,9 +349,10 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		color: var(--icon-muted);
 		opacity: 0.56;
 		transition:
-			opacity var(--duration-fast) ease,
-			background-color var(--duration-fast) ease,
-			color var(--duration-fast) ease;
+			opacity 180ms ease,
+			background-color 180ms ease,
+			color 180ms ease,
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
 	.open-documents-rail-row:not(.open-documents-rail-row-active):hover .open-documents-rail-close,
@@ -342,6 +364,7 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 	.open-documents-rail-close:hover {
 		background: color-mix(in srgb, var(--surface-page) 82%, transparent 18%);
 		color: var(--text-primary);
+		transform: translateY(-1px);
 	}
 
 	@keyframes rail-enter {

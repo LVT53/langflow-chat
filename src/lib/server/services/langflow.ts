@@ -116,6 +116,8 @@ const FILE_GENERATION_GUARD = [
 	"- Prefer one `document_source` call with multiple `requestedOutputs` for the same styled document, such as `[{\"type\":\"pdf\"},{\"type\":\"docx\"},{\"type\":\"html\"}]`.",
 	"- Build `documentSource` as structured content: title, optional subtitle or cover metadata, and blocks such as headings, paragraphs, lists, tables, callouts, quotes, code, dividers, images, and charts.",
 	"- `documentSource` MUST include: `version: 1`, `template: \"alfyai_standard_report\"`, `title`, and `blocks`.",
+	"- Keep each section heading directly before the paragraphs, lists, tables, or charts it introduces. Do not group headings separately from their content.",
+	"- Include a concise `date` or `cover.dateLabel` when the generated document should show a generation date; the renderer will place it compactly in the header.",
 	"- Minimal valid `documentSource` example:",
 	"  ```json",
 	"  {",

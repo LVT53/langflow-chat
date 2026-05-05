@@ -144,6 +144,7 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("level: 2");
 		expect(prompt).toContain("headers");
 		expect(prompt).toContain("Chart.js-style data");
+		expect(prompt).toContain("directly before the paragraphs");
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");
 		expect(prompt).toContain("research_web");

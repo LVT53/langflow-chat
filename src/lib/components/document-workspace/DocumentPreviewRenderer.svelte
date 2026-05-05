@@ -143,11 +143,11 @@ $effect(() => {
 // Re-render all pages when zoom changes
 $effect(() => {
 	if (fileType === "pdf" && pdfDoc && canvasRefs.length > 0) {
+		const activeZoom = zoom;
 		if (suppressNextPdfRenderEffect) {
 			suppressNextPdfRenderEffect = false;
 			return;
 		}
-		const activeZoom = zoom;
 		void renderAllPages(activeZoom);
 	}
 });
@@ -486,14 +486,19 @@ async function renderPdf(blob: Blob) {
 		if (!pdfjsLib) {
 			pdfjsLib = await import("pdfjs-dist");
 			pdfjsLib.GlobalWorkerOptions.workerSrc = await loadPdfWorkerUrl();
+			pdfjsLib.setVerbosityLevel?.(pdfjsLib.VerbosityLevel.ERRORS);
 		}
 
 		// Bail if a newer render cycle started during async loading
 		if (pdfRenderVersion !== currentVersion) return;
 
 		const arrayBuffer = await blob.arrayBuffer();
+		const verbosity = pdfjsLib.VerbosityLevel?.ERRORS;
 		suppressNextPdfRenderEffect = true;
-		pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+		pdfDoc = await pdfjsLib.getDocument({
+			data: arrayBuffer,
+			...(verbosity !== undefined ? { verbosity } : {}),
+		}).promise;
 		totalPages = pdfDoc.numPages;
 		// Pre-size canvasRefs so Svelte 5 array reactivity fires before template render
 		canvasRefs = new Array(totalPages).fill(null);
@@ -617,13 +622,18 @@ async function renderPage(
 
 		if (!context) return;
 
-		canvas.width = viewport.width;
-		canvas.height = viewport.height;
+		const outputScale = window.devicePixelRatio || 1;
+		canvas.width = Math.floor(viewport.width * outputScale);
+		canvas.height = Math.floor(viewport.height * outputScale);
+		canvas.style.width = `${Math.floor(viewport.width)}px`;
+		canvas.style.height = `${Math.floor(viewport.height)}px`;
 
 		// Create and register render task
 		renderTask = page.render({
 			canvasContext: context,
 			viewport: viewport,
+			transform:
+				outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
 		});
 		activeRenderTasks.set(pageNum, renderTask);
 
@@ -712,15 +722,6 @@ function setZoomLevel(nextZoom: number) {
 	const clampedZoom = clampZoomLevel(nextZoom);
 	if (Math.abs(clampedZoom - zoom) < 0.01) return;
 	zoom = clampedZoom;
-	if (
-		fileType === "pdf" &&
-		pdfDoc &&
-		canvasRefs.length > 0 &&
-		pdfInitialRenderInProgress
-	) {
-		suppressNextPdfRenderEffect = false;
-		void renderAllPages(clampedZoom);
-	}
 }
 
 function getTouchDistance(touches: TouchList): number {
@@ -860,6 +861,7 @@ function handlePdfScrollKeydown(event: KeyboardEvent) {
 
 function handlePdfPointerDown(event: PointerEvent) {
 	if (!scrollContainerRef || zoom <= 1) return;
+	event.preventDefault();
 	pdfDragging = true;
 	pdfDragStartX = event.clientX;
 	pdfDragStartY = event.clientY;
@@ -958,10 +960,15 @@ async function renderPptx(blob: Blob) {
 			const dataUrl = canvas.toDataURL("image/png");
 			html += `
 					<div class="pptx-slide">
-						<div class="pptx-slide-header">Slide ${i + 1} of ${slideCount}</div>
-						<img src="${dataUrl}" alt="Slide ${i + 1}" class="pptx-slide-image" />
+						<div class="pptx-slide-frame">
+							<img src="${dataUrl}" alt="Slide ${i + 1}" class="pptx-slide-image" />
+							<div class="pptx-slide-badge">Slide ${i + 1} / ${slideCount}</div>
+						</div>
 					</div>
 				`;
+			if (i < slideCount - 1) {
+				html += '<div class="pptx-slide-separator" aria-hidden="true"></div>';
+			}
 		}
 
 		html += "</div>";
@@ -1432,26 +1439,73 @@ function downloadFile() {
 	:global(.pptx-container) {
 		font-family: 'Nimbus Sans L', sans-serif;
 		min-width: 0;
+		max-width: 58rem;
+		margin: 0 auto;
 	}
 
 	:global(.pptx-slide) {
-		margin-bottom: 2rem;
-		background: var(--surface-elevated);
-		border-radius: 0.75rem;
-		border: 1px solid var(--border-default);
-		overflow: hidden;
+		background: transparent;
 		min-width: 0;
 	}
 
-	:global(.pptx-slide-header) {
-		padding: 0.75rem 1rem;
-		background: var(--surface-overlay);
-		border-bottom: 1px solid var(--border-default);
+	:global(.pptx-slide-frame) {
+		position: relative;
+		overflow: hidden;
+		border: 1px solid var(--border-default);
+		border-radius: 0.55rem;
+		background: #ffffff;
+		box-shadow: 0 0.75rem 1.8rem rgba(0, 0, 0, 0.08);
+	}
+
+	:global(.pptx-slide-badge) {
+		position: absolute;
+		right: 0.55rem;
+		bottom: 0.55rem;
+		border: 1px solid color-mix(in srgb, #ffffff 72%, #1b1815 28%);
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.88);
+		padding: 0.18rem 0.5rem;
 		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		font-weight: 700;
+		line-height: 1.2;
+		color: #3e3933;
+		backdrop-filter: blur(6px);
+	}
+
+	:global(.pptx-slide-separator) {
+		position: relative;
+		height: 1.05rem;
+		margin: 0.22rem 0;
+	}
+
+	:global(.pptx-slide-separator::before),
+	:global(.pptx-slide-separator::after) {
+		content: "";
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+
+	:global(.pptx-slide-separator::before) {
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		background: linear-gradient(
+			180deg,
+			transparent,
+			color-mix(in srgb, var(--border-default) 76%, var(--text-primary) 24%),
+			transparent
+		);
+	}
+
+	:global(.pptx-slide-separator::after) {
+		top: 50%;
+		width: 0.38rem;
+		height: 0.38rem;
+		border: 1px solid var(--border-default);
+		border-radius: 999px;
+		background: var(--surface-page);
+		transform: translate(-50%, -50%);
 	}
 
 	:global(.pptx-slide-image) {
