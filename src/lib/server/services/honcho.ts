@@ -29,6 +29,10 @@ import {
 	selectPromptContext,
 	type ContextSelectionCandidate,
 } from './chat-turn/context-selection';
+import {
+	deriveCurrentTurnAttachmentBudget,
+	deriveModelContextBudget,
+} from './chat-turn/context-budget';
 import type {
 	ContextTraceSource,
 	LegacyContextTraceSectionInput,
@@ -151,6 +155,19 @@ function buildContextSelectionCandidates(params: {
 					: [],
 		};
 	});
+}
+
+function buildCurrentAttachmentSnippetMap(params: {
+	artifacts: Artifact[];
+	snippets: Map<string, string>;
+}): Map<string, string> {
+	const next = new Map(params.snippets);
+	for (const artifact of params.artifacts) {
+		if (artifact.contentText?.trim()) {
+			next.delete(artifact.id);
+		}
+	}
+	return next;
 }
 
 function normalizePeerIdFragment(rawId: string): string {
@@ -1270,6 +1287,19 @@ export async function buildConstructedContext(params: {
 		currentConversationId: params.conversationId,
 	});
 	const documentFocused = activeDocumentState.documentFocused;
+	const targetBudget =
+		params.contextLimits?.targetConstructedContext ??
+		getTargetConstructedContext(params.modelId);
+	const compactionThreshold =
+		params.contextLimits?.compactionUiThreshold ??
+		getCompactionUiThreshold(params.modelId);
+	const maxModelContext =
+		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
+	const modelContextBudget = deriveModelContextBudget({
+		maxModelContext,
+		targetConstructedContext: targetBudget,
+		compactionUiThreshold: compactionThreshold,
+	});
 
 	const preparedContext = await prepareTaskContext({
 		userId: params.userId,
@@ -1340,11 +1370,20 @@ export async function buildConstructedContext(params: {
 		currentAttachments.length > 0
 			? serializeBudgetedAttachments({
 					artifacts: currentAttachments,
-					snippets: artifactSnippets,
+					snippets: buildCurrentAttachmentSnippetMap({
+						artifacts: currentAttachments,
+						snippets: artifactSnippets,
+					}),
 					message: params.message,
-					totalBudget: ATTACHMENT_PROMPT_TOKEN_BUDGET,
-					taskPerAttachmentBudget: ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET,
-					excerptPerAttachmentBudget: ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET,
+					...deriveCurrentTurnAttachmentBudget({
+						contextBudget: modelContextBudget,
+						attachmentCount: currentAttachments.length,
+						minTotalBudget: ATTACHMENT_PROMPT_TOKEN_BUDGET,
+						minPerAttachmentBudget:
+							documentFocused
+								? ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET
+								: ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET,
+					}),
 				})
 			: null;
 	const serializedCurrentAttachments = attachmentContext?.body ?? '';
@@ -1482,15 +1521,6 @@ export async function buildConstructedContext(params: {
 			logPrefix: '[HONCHO]',
 		}).catch(() => sections)),
 	];
-
-	const targetBudget =
-		params.contextLimits?.targetConstructedContext ??
-		getTargetConstructedContext(params.modelId);
-	const compactionThreshold =
-		params.contextLimits?.compactionUiThreshold ??
-		getCompactionUiThreshold(params.modelId);
-	const maxModelContext =
-		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
 
 	const intro = suppressCarryover
 		? 'You are receiving a compacted conversation context bundle. Use it as the working context for this turn.'

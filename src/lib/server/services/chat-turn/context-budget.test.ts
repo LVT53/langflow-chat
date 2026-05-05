@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveModelContextBudget } from "./context-budget";
+import {
+	deriveCurrentTurnAttachmentBudget,
+	deriveModelContextBudget,
+} from "./context-budget";
 
 describe("deriveModelContextBudget", () => {
 	it("derives target and compaction defaults from usable model context", () => {
@@ -81,6 +84,25 @@ describe("deriveModelContextBudget", () => {
 			outputReserveClamped: true,
 			targetConstructedContext: 900_000,
 			compactionUiThreshold: 800_000,
+		});
+	});
+
+	it("scales current-turn attachment budget from model capacity", () => {
+		const contextBudget = deriveModelContextBudget({
+			maxModelContext: 1_000_000,
+		});
+
+		expect(
+			deriveCurrentTurnAttachmentBudget({
+				contextBudget,
+				attachmentCount: 12,
+				minTotalBudget: 6_000,
+				minPerAttachmentBudget: 2_400,
+			}),
+		).toEqual({
+			totalBudget: 364_500,
+			taskPerAttachmentBudget: 30_375,
+			excerptPerAttachmentBudget: 30_375,
 		});
 	});
 });

@@ -23,6 +23,19 @@ export type ModelContextBudget = {
 	awarenessBudget: number;
 };
 
+export type CurrentTurnAttachmentBudgetInput = {
+	contextBudget: Pick<ModelContextBudget, "coreBudget" | "targetConstructedContext">;
+	attachmentCount: number;
+	minTotalBudget?: number;
+	minPerAttachmentBudget?: number;
+};
+
+export type CurrentTurnAttachmentBudget = {
+	totalBudget: number;
+	taskPerAttachmentBudget: number;
+	excerptPerAttachmentBudget: number;
+};
+
 const MIN_MODEL_CONTEXT_TOKENS = 1_000;
 const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
 const TARGET_CONTEXT_RATIO = 0.9;
@@ -109,6 +122,35 @@ export function deriveModelContextBudget(
 		coreBudget,
 		supportBudget,
 		awarenessBudget,
+	};
+}
+
+export function deriveCurrentTurnAttachmentBudget(
+	input: CurrentTurnAttachmentBudgetInput,
+): CurrentTurnAttachmentBudget {
+	const attachmentCount = Math.max(1, Math.floor(input.attachmentCount));
+	const minTotalBudget = Math.max(0, Math.floor(input.minTotalBudget ?? 0));
+	const minPerAttachmentBudget = Math.max(
+		80,
+		Math.floor(input.minPerAttachmentBudget ?? 80),
+	);
+	const modelScaledBudget = Math.max(
+		minTotalBudget,
+		Math.floor(input.contextBudget.coreBudget * 0.9),
+	);
+	const totalBudget = Math.min(
+		input.contextBudget.targetConstructedContext,
+		modelScaledBudget,
+	);
+	const perAttachmentBudget = Math.max(
+		minPerAttachmentBudget,
+		Math.floor(totalBudget / attachmentCount),
+	);
+
+	return {
+		totalBudget,
+		taskPerAttachmentBudget: perAttachmentBudget,
+		excerptPerAttachmentBudget: perAttachmentBudget,
 	};
 }
 
