@@ -24,6 +24,7 @@ import {
 	cancelFileProductionJob as cancelFileProductionJobRequest,
 	retryFileProductionJob as retryFileProductionJobRequest,
 } from "$lib/client/api/file-production";
+import { cancelDeepResearchJob as cancelDeepResearchJobRequest } from "$lib/client/api/deep-research";
 import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
@@ -36,6 +37,7 @@ import type {
 	ConversationDraft,
 	ContextDebugState,
 	ConversationContextStatus,
+	DeepResearchJob,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 	TaskState,
@@ -111,6 +113,7 @@ const initialConversationDraft = getData().draft ?? null;
 const initialBootstrapMode = getData().bootstrap ?? false;
 const initialGeneratedFiles = getData().generatedFiles ?? [];
 const initialFileProductionJobs = getData().fileProductionJobs ?? [];
+const initialDeepResearchJobs = getData().deepResearchJobs ?? [];
 
 // Track conversation title reactively - use $derived to keep in sync with page data
 let conversationTitle = $derived(data.conversation?.title ?? "");
@@ -149,6 +152,7 @@ let conversationDraft = $state<ConversationDraft | null>(
 );
 let generatedFiles = $state<ChatGeneratedFile[]>(initialGeneratedFiles);
 let fileProductionJobs = $state<FileProductionJob[]>(initialFileProductionJobs);
+let deepResearchJobs = $state<DeepResearchJob[]>(initialDeepResearchJobs);
 const initialWorkspaceState = getPersistedWorkspaceState();
 let workspaceDocuments = $state<DocumentWorkspaceItem[]>(
 	initialWorkspaceState?.documents ?? [],
@@ -401,6 +405,7 @@ function resetState() {
 	conversationDraft = data.draft ?? null;
 	generatedFiles = data.generatedFiles ?? [];
 	fileProductionJobs = data.fileProductionJobs ?? [];
+	deepResearchJobs = data.deepResearchJobs ?? [];
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
 	restorePersistedWorkspaceState();
@@ -554,6 +559,9 @@ async function pollForCompletion(placeholderId: string, attempt = 0) {
 		if (detail.fileProductionJobs) {
 			fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		}
+		if (detail.deepResearchJobs) {
+			deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
+		}
 
 		// Poll for evidence
 		if (newAssistant.id) {
@@ -581,6 +589,7 @@ async function loadPersistedData() {
 		messages.set([...(detail.messages ?? [])]);
 		generatedFiles = [...(detail.generatedFiles ?? [])];
 		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
+		deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
 		conversationDraft = null;
 		const pending = consumePendingConversationMessage(data.conversation.id);
 		void pending;
@@ -772,6 +781,7 @@ async function reconnectToOrphanedStream(
 						messages.set([...(detail.messages ?? [])]); // Create new array to trigger reactivity
 						generatedFiles = [...(detail.generatedFiles ?? [])];
 						fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
+						deepResearchJobs = [...(detail.deepResearchJobs ?? [])];
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
 						const pending = consumePendingConversationMessage(
@@ -897,6 +907,7 @@ async function hydrateConversationDetail(conversationId: string) {
 		conversationDraft = payload.draft ?? conversationDraft;
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
 		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
+		deepResearchJobs = payload.deepResearchJobs ?? deepResearchJobs;
 		bootstrapMode = false;
 
 		if (
@@ -924,6 +935,17 @@ function attachFileProductionJobsToAssistantMessage(assistantMessageId: string) 
 	);
 }
 
+function mergeDeepResearchJob(
+	jobs: DeepResearchJob[],
+	updatedJob: DeepResearchJob,
+): DeepResearchJob[] {
+	const existingIndex = jobs.findIndex((job) => job.id === updatedJob.id);
+	if (existingIndex === -1) {
+		return [...jobs, updatedJob];
+	}
+	return jobs.map((job, index) => (index === existingIndex ? updatedJob : job));
+}
+
 async function handleRetryFileProductionJob(jobId: string) {
 	try {
 		const job = await retryFileProductionJobRequest(jobId);
@@ -939,6 +961,15 @@ async function handleCancelFileProductionJob(jobId: string) {
 		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
 	} catch (err) {
 		sendError = err instanceof Error ? err.message : "Failed to cancel file production";
+	}
+}
+
+async function handleCancelDeepResearchJob(jobId: string) {
+	try {
+		const job = await cancelDeepResearchJobRequest(jobId);
+		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
+	} catch (err) {
+		sendError = err instanceof Error ? err.message : "Failed to cancel Deep Research";
 	}
 }
 
@@ -989,6 +1020,20 @@ $effect(() => {
 	if (data.fileProductionJobs !== prevFileProductionJobsData) {
 		prevFileProductionJobsData = data.fileProductionJobs;
 		fileProductionJobs = [...(data.fileProductionJobs ?? [])];
+	}
+});
+
+let initializedDeepResearchJobsData = false;
+let prevDeepResearchJobsData: typeof data.deepResearchJobs;
+$effect(() => {
+	if (!initializedDeepResearchJobsData) {
+		prevDeepResearchJobsData = data.deepResearchJobs;
+		initializedDeepResearchJobsData = true;
+		return;
+	}
+	if (data.deepResearchJobs !== prevDeepResearchJobsData) {
+		prevDeepResearchJobsData = data.deepResearchJobs;
+		deepResearchJobs = [...(data.deepResearchJobs ?? [])];
 	}
 });
 
@@ -1299,6 +1344,7 @@ function handleSend(
 			modelId: modelIdForTurn,
 			skipPersistUserMessage,
 			attachmentIds,
+			deepResearchDepth: payload.deepResearchDepth ?? null,
 			activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
 			personalityProfileId: selectedPersonalityId,
 			retryAssistantMessageId,
@@ -1704,12 +1750,14 @@ function handleDrop(event: DragEvent) {
 						{isThinkingActive}
 						{contextDebug}
 						{fileProductionJobs}
+						{deepResearchJobs}
 						onOpenDocument={openWorkspaceDocument}
 						onRegenerate={handleRegenerate}
 						onEdit={handleEdit}
 						onSteer={handleSteering}
 						onRetryFileProductionJob={handleRetryFileProductionJob}
 						onCancelFileProductionJob={handleCancelFileProductionJob}
+						onCancelDeepResearchJob={handleCancelDeepResearchJob}
 					/>
 				{/if}
 			</div>
@@ -1736,6 +1784,7 @@ function handleDrop(event: DragEvent) {
 				{contextDebug}
 				{totalCostUsd}
 				{totalTokens}
+				deepResearchEnabled={data.deepResearchEnabled}
 				{personalityProfiles}
 				{selectedPersonalityId}
 				onPersonalityChange={(id) => selectedPersonalityId = id}

@@ -13,6 +13,17 @@ export type StartDeepResearchJobShellInput = {
 	now?: Date;
 };
 
+export type AssertCanStartDeepResearchJobInput = {
+	userId: string;
+	conversationId: string;
+};
+
+export type CancelPrePlanDeepResearchJobInput = {
+	userId: string;
+	jobId: string;
+	now?: Date;
+};
+
 type DeepResearchJobRow = typeof deepResearchJobs.$inferSelect;
 
 const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed', 'failed', 'cancelled')`;
@@ -37,6 +48,32 @@ export function isDeepResearchJobStartError(
 export async function startDeepResearchJobShell(
 	input: StartDeepResearchJobShellInput
 ): Promise<DeepResearchJob> {
+	await assertCanStartDeepResearchJob(input);
+
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.insert(deepResearchJobs)
+		.values({
+			id: randomUUID(),
+			userId: input.userId,
+			conversationId: input.conversationId,
+			triggerMessageId: input.triggerMessageId,
+			depth: input.depth,
+			status: 'awaiting_plan',
+			stage: 'job_shell_created',
+			title: buildJobTitle(input.userRequest),
+			userRequest: input.userRequest,
+			createdAt: now,
+			updatedAt: now,
+		})
+		.returning();
+
+	return mapDeepResearchJob(job);
+}
+
+export async function assertCanStartDeepResearchJob(
+	input: AssertCanStartDeepResearchJobInput
+): Promise<void> {
 	const [conversation] = await db
 		.select({
 			id: conversations.id,
@@ -79,26 +116,6 @@ export async function startDeepResearchJobShell(
 			409
 		);
 	}
-
-	const now = input.now ?? new Date();
-	const [job] = await db
-		.insert(deepResearchJobs)
-		.values({
-			id: randomUUID(),
-			userId: input.userId,
-			conversationId: input.conversationId,
-			triggerMessageId: input.triggerMessageId,
-			depth: input.depth,
-			status: 'awaiting_plan',
-			stage: 'job_shell_created',
-			title: buildJobTitle(input.userRequest),
-			userRequest: input.userRequest,
-			createdAt: now,
-			updatedAt: now,
-		})
-		.returning();
-
-	return mapDeepResearchJob(job);
 }
 
 export async function listConversationDeepResearchJobs(
@@ -116,6 +133,30 @@ export async function listConversationDeepResearchJobs(
 		)
 		.orderBy(asc(deepResearchJobs.createdAt));
 	return rows.map(mapDeepResearchJob);
+}
+
+export async function cancelPrePlanDeepResearchJob(
+	input: CancelPrePlanDeepResearchJobInput
+): Promise<DeepResearchJob | null> {
+	const now = input.now ?? new Date();
+	const [job] = await db
+		.update(deepResearchJobs)
+		.set({
+			status: 'cancelled',
+			stage: 'cancelled_before_approval',
+			cancelledAt: now,
+			updatedAt: now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+				sql`${deepResearchJobs.status} IN ('awaiting_plan', 'awaiting_approval')`
+			)
+		)
+		.returning();
+
+	return job ? mapDeepResearchJob(job) : null;
 }
 
 function buildJobTitle(userRequest: string): string {

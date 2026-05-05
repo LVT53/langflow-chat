@@ -38,6 +38,7 @@ export const load: ServerLoad = async (event) => {
 		conversations,
 		projects: projectsList,
 		maxMessageLength: config.maxMessageLength,
+		deepResearchEnabled: config.deepResearchEnabled,
 		userTheme: userRow?.theme ?? 'system',
 		userModel,
 		userTitleLanguage: (userRow?.titleLanguage ?? 'auto') as 'auto' | 'en' | 'hu',

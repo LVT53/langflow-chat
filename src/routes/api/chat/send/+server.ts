@@ -15,6 +15,7 @@ import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { touchConversation } from "$lib/server/services/conversations";
 import { isAttachmentReadinessError } from "$lib/server/services/knowledge";
 import {
+	assertCanStartDeepResearchJob,
 	isDeepResearchJobStartError,
 	startDeepResearchJobShell,
 } from "$lib/server/services/deep-research";
@@ -90,6 +91,10 @@ export const POST: RequestHandler = async (event) => {
 
 	try {
 		if (turn.deepResearchDepth) {
+			await assertCanStartDeepResearchJob({
+				userId: user.id,
+				conversationId: turn.conversationId,
+			});
 			const userMessage = await createMessage(
 				turn.conversationId,
 				"user",

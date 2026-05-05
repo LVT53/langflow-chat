@@ -42,6 +42,7 @@
 		onUploadFiles,
 		totalCostUsd,
 		totalTokens,
+		deepResearchEnabled,
 		personalityProfiles,
 		selectedPersonalityId,
 		onPersonalityChange,
@@ -81,6 +82,7 @@
 		}) => void) | undefined;
 		totalCostUsd?: number;
 		totalTokens?: number;
+		deepResearchEnabled?: boolean;
 		personalityProfiles?: Array<{ id: string; name: string; description: string }>;
 		selectedPersonalityId?: string | null;
 		onPersonalityChange?: ((id: string | null) => void) | undefined;
@@ -173,6 +175,7 @@
 			{onUploadFiles}
 			{totalCostUsd}
 			{totalTokens}
+			{deepResearchEnabled}
 			{personalityProfiles}
 			{selectedPersonalityId}
 			{onPersonalityChange}

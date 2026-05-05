@@ -284,6 +284,28 @@ describe('streamChat', () => {
 		expect(parsedBody.conversationId).toBe('conv-1');
 	});
 
+	it('threads the selected Deep Research depth into the streaming request body', async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([
+				'event: end\n',
+				'data: {}\n',
+				'\n'
+			])
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat('research this', 'conv-1', cb as unknown as StreamCallbacks, {
+			deepResearchDepth: 'standard',
+		});
+		await done;
+
+		const requestInit = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
+		const parsedBody = JSON.parse(String(requestInit?.body));
+		expect(parsedBody.deepResearch).toEqual({ depth: 'standard' });
+	});
+
 	it('threads the active workspace document id into retry requests too', async () => {
 		const mockFetch = vi.mocked(fetch);
 		mockFetch.mockResolvedValue(

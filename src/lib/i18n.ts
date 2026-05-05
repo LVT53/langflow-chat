@@ -280,6 +280,10 @@ const dictionary = {
 		"admin.model2Visibility": "Model 2 Visibility",
 		"admin.model2VisibilityDescription":
 			"Hide model 2 from the app and force fallbacks to model 1",
+		// Admin - Deep Research
+		"admin.deepResearch": "Deep Research",
+		"admin.deepResearchDescription":
+			"Show the Deep Research composer entry and allow research-depth requests in chat.",
 		// Admin - Title Generator
 		"admin.titleGenerator": "Title Generator",
 		"admin.basePromptDescription":
@@ -348,6 +352,7 @@ const dictionary = {
 		"admin.model2FlowId": "Model 2 Flow ID",
 		"admin.model2ComponentId": "Model 2 Component ID",
 		"admin.model2Enabled": "Enable Model 2",
+		"admin.deepResearchEnabled": "Enable Deep Research",
 		"admin.model1MaxModelContext": "Model 1 Max Context",
 		"admin.model1CompactionThreshold": "Model 1 Compaction Threshold",
 		"admin.model1TargetContext": "Model 1 Target Context",
@@ -630,6 +635,17 @@ const dictionary = {
 		"composerTools.deepResearchFocused": "Focused Deep Research",
 		"composerTools.deepResearchStandard": "Standard Deep Research",
 		"composerTools.deepResearchMax": "Max Deep Research",
+		"deepResearch.cardLabel": "Deep Research: {title}",
+		"deepResearch.cancelLabel": "Cancel Deep Research",
+		"deepResearch.depth.focused": "Focused",
+		"deepResearch.depth.standard": "Standard",
+		"deepResearch.depth.max": "Max",
+		"deepResearch.status.awaitingPlan": "Awaiting plan",
+		"deepResearch.status.awaitingApproval": "Awaiting approval",
+		"deepResearch.status.running": "Running",
+		"deepResearch.status.completed": "Completed",
+		"deepResearch.status.failed": "Failed",
+		"deepResearch.status.cancelled": "Cancelled",
 		"composerTools.attachFile": "Attach file",
 		"composerTools.attachFileMaxSize": "Attach file (max 100MB)",
 		"composerTools.uploadsUnavailable": "File uploads are unavailable",
@@ -1103,6 +1119,10 @@ const dictionary = {
 		"admin.model2Visibility": "2. modell láthatósága",
 		"admin.model2VisibilityDescription":
 			"A 2. modell elrejtése az alkalmazásból, visszaváltással az 1. modellre",
+		// Admin - Deep Research
+		"admin.deepResearch": "Mély kutatás",
+		"admin.deepResearchDescription":
+			"Megjeleníti a Mély kutatás beviteli lehetőséget, és engedélyezi a kutatási mélységet tartalmazó chat kéréseket.",
 		// Admin - Title Generator
 		"admin.titleGenerator": "Címgenerátor",
 		"admin.basePromptDescription":
@@ -1172,6 +1192,7 @@ const dictionary = {
 		"admin.model2FlowId": "2. modell folyamatazonosító",
 		"admin.model2ComponentId": "2. modell komponensazonosító",
 		"admin.model2Enabled": "2. modell engedélyezése",
+		"admin.deepResearchEnabled": "Mély kutatás engedélyezése",
 		"admin.model1MaxModelContext": "1. modell maximális kontextusa",
 		"admin.model1CompactionThreshold": "1. modell tömörítési küszöb",
 		"admin.model1TargetContext": "1. modell célkontextusa",
@@ -1380,6 +1401,17 @@ const dictionary = {
 		"composerTools.deepResearchFocused": "Fókuszált mély kutatás",
 		"composerTools.deepResearchStandard": "Normál mély kutatás",
 		"composerTools.deepResearchMax": "Max mély kutatás",
+		"deepResearch.cardLabel": "Mély kutatás: {title}",
+		"deepResearch.cancelLabel": "Mély kutatás megszakítása",
+		"deepResearch.depth.focused": "Fókuszált",
+		"deepResearch.depth.standard": "Normál",
+		"deepResearch.depth.max": "Max",
+		"deepResearch.status.awaitingPlan": "Tervre vár",
+		"deepResearch.status.awaitingApproval": "Jóváhagyásra vár",
+		"deepResearch.status.running": "Fut",
+		"deepResearch.status.completed": "Befejezve",
+		"deepResearch.status.failed": "Sikertelen",
+		"deepResearch.status.cancelled": "Megszakítva",
 		"composerTools.attachFile": "Fájl csatolása",
 		"composerTools.attachFileMaxSize": "Fájl csatolása (max. 100 MB)",
 		"composerTools.uploadsUnavailable": "A fájlfeltöltés nem érhető el",

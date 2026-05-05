@@ -4,11 +4,13 @@ import { t } from "$lib/i18n";
 import type {
 	ChatMessage,
 	ContextDebugState,
+	DeepResearchJob,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 	TaskSteeringPayload,
 } from "$lib/types";
 import MessageBubble from "./MessageBubble.svelte";
+import ResearchCard from "./ResearchCard.svelte";
 
 let {
 	messages = [],
@@ -16,18 +18,21 @@ let {
 	isThinkingActive = false,
 	contextDebug = null,
 	fileProductionJobs = [],
+	deepResearchJobs = [],
 	onRegenerate = undefined,
 	onEdit = undefined,
 	onSteer = undefined,
 	onOpenDocument = undefined,
 	onRetryFileProductionJob = undefined,
 	onCancelFileProductionJob = undefined,
+	onCancelDeepResearchJob = undefined,
 }: {
 	messages?: ChatMessage[];
 	conversationId?: string | null;
 	isThinkingActive?: boolean;
 	contextDebug?: ContextDebugState | null;
 	fileProductionJobs?: FileProductionJob[];
+	deepResearchJobs?: DeepResearchJob[];
 	onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 	onEdit?:
 		| ((payload: { messageId: string; newText: string }) => void)
@@ -36,12 +41,14 @@ let {
 	onOpenDocument?: ((document: DocumentWorkspaceItem) => void) | undefined;
 	onRetryFileProductionJob?: ((jobId: string) => void) | undefined;
 	onCancelFileProductionJob?: ((jobId: string) => void) | undefined;
+	onCancelDeepResearchJob?: ((jobId: string) => void | Promise<void>) | undefined;
 } = $props();
 
 let scrollContainer = $state<HTMLDivElement | null>(null);
 let shouldAutoScroll = true;
 let lastMessageCount = 0;
 let lastFileProductionJobCount = 0;
+let lastDeepResearchJobCount = 0;
 let lastConversationId: string | null = null;
 let shouldJumpToConversationBottom = false;
 
@@ -51,6 +58,7 @@ $effect(() => {
 		shouldAutoScroll = true;
 		lastMessageCount = 0;
 		lastFileProductionJobCount = 0;
+		lastDeepResearchJobCount = 0;
 		shouldJumpToConversationBottom = true;
 	}
 });
@@ -72,22 +80,25 @@ $effect.pre(() => {
 	scrollContainer;
 	isThinkingActive;
 	fileProductionJobs.length;
+	deepResearchJobs.length;
 
 	if (!scrollContainer) return;
 
-	if (messages.length === 0) {
+	if (messages.length === 0 && deepResearchJobs.length === 0) {
 		if (shouldJumpToConversationBottom) {
 			// Do not consume the first user send as an initial-load jump for empty conversations.
 			shouldJumpToConversationBottom = false;
 		}
 		lastMessageCount = 0;
 		lastFileProductionJobCount = fileProductionJobs.length;
+		lastDeepResearchJobCount = 0;
 		return;
 	}
 
 	const isNewMessage = hasNewMessage(dedupedMessages);
 	const hasNewFileProductionJobs =
 		fileProductionJobs.length > lastFileProductionJobCount;
+	const hasNewDeepResearchJobs = deepResearchJobs.length > lastDeepResearchJobCount;
 
 	if (shouldJumpToConversationBottom) {
 		// Switching to another conversation should always reveal the latest response.
@@ -99,6 +110,8 @@ $effect.pre(() => {
 	} else if (hasNewFileProductionJobs && shouldAutoScroll) {
 		// File-production cards render inside the latest assistant message; keep that expanded area visible.
 		void alignToBottomAfterRender();
+	} else if (hasNewDeepResearchJobs && shouldAutoScroll) {
+		void alignToBottomAfterRender();
 	} else if (shouldAutoScroll && isThinkingActive) {
 		// Only follow during thinking phase; stop once content streaming begins.
 		instantScrollToBottom();
@@ -106,6 +119,7 @@ $effect.pre(() => {
 
 	lastMessageCount = dedupedMessages.length;
 	lastFileProductionJobCount = fileProductionJobs.length;
+	lastDeepResearchJobCount = deepResearchJobs.length;
 });
 
 function instantScrollToBottom() {
@@ -172,7 +186,7 @@ async function alignToBottomAfterRender() {
 	aria-atomic="false"
 >
 	<div class="mx-auto flex min-h-full w-full max-w-[760px] flex-col gap-lg px-sm py-lg md:px-lg md:py-xl lg:px-xl">
-		{#if messages.length === 0}
+		{#if messages.length === 0 && deepResearchJobs.length === 0}
 			<div class="conversation-empty-state">
 				<div class="conversation-empty-eyebrow">{$t('chat.conversationReady')}</div>
 				<p class="conversation-empty-copy">
@@ -180,6 +194,9 @@ async function alignToBottomAfterRender() {
 				</p>
 			</div>
 		{:else}
+			{#each deepResearchJobs as job (job.id)}
+				<ResearchCard job={job} onCancel={onCancelDeepResearchJob} />
+			{/each}
 			{#each dedupedMessages as message, i (message.renderKey ?? message.id)}
 				<MessageBubble
 					{message}

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+let adminConfigRows: Array<{ key: string; value: string }> = [];
+
 // Mock must be defined before imports
 vi.mock("../db", () => ({
 	db: {
 		select: vi.fn(() => ({
-			from: vi.fn(() => Promise.resolve([])),
+			from: vi.fn(() => Promise.resolve(adminConfigRows)),
 		})),
 	},
 }));
@@ -14,11 +16,13 @@ vi.mock("../env", () => ({
 		workingSetDocumentTokenBudget: 4000,
 		workingSetPromptTokenBudget: 20000,
 		smallFileThresholdChars: 5000,
+		deepResearchEnabled: false,
 	},
 	envConfig: {
 		workingSetDocumentTokenBudget: 4000,
 		workingSetPromptTokenBudget: 20000,
 		smallFileThresholdChars: 5000,
+		deepResearchEnabled: false,
 	},
 }));
 
@@ -33,6 +37,7 @@ const {
 
 describe("Knowledge Store Config", () => {
 	beforeEach(async () => {
+		adminConfigRows = [];
 		await refreshConfig();
 	});
 
@@ -76,6 +81,14 @@ describe("Knowledge Store Config", () => {
 		it("getConfig() should keep Deep Research disabled by default", () => {
 			const config = getConfig();
 			expect(config.deepResearchEnabled).toBe(false);
+		});
+
+		it("getConfig() should allow admin config to enable Deep Research", async () => {
+			adminConfigRows = [{ key: "DEEP_RESEARCH_ENABLED", value: "true" }];
+
+			await refreshConfig();
+
+			expect(getConfig().deepResearchEnabled).toBe(true);
 		});
 	});
 });

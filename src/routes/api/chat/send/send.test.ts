@@ -14,7 +14,14 @@ vi.mock('$lib/server/services/langflow', () => ({
 }));
 
 vi.mock('$lib/server/services/deep-research', () => ({
-	isDeepResearchJobStartError: vi.fn(() => false),
+	assertCanStartDeepResearchJob: vi.fn(),
+	isDeepResearchJobStartError: vi.fn(
+		(error: unknown) =>
+			typeof error === 'object' &&
+			error !== null &&
+			'name' in error &&
+			error.name === 'DeepResearchJobStartError',
+	),
 	startDeepResearchJobShell: vi.fn(),
 }));
 
@@ -73,13 +80,17 @@ import { POST } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation, touchConversation } from '$lib/server/services/conversations';
 import { sendMessage } from '$lib/server/services/langflow';
-import { startDeepResearchJobShell } from '$lib/server/services/deep-research';
+import {
+	assertCanStartDeepResearchJob,
+	startDeepResearchJobShell,
+} from '$lib/server/services/deep-research';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
+const mockAssertCanStartDeepResearchJob = assertCanStartDeepResearchJob as ReturnType<typeof vi.fn>;
 const mockStartDeepResearchJobShell = startDeepResearchJobShell as ReturnType<typeof vi.fn>;
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
@@ -104,6 +115,7 @@ describe('POST /api/chat/send', () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
+		mockAssertCanStartDeepResearchJob.mockResolvedValue(undefined);
 		mockCreateMessage.mockImplementation(async () => ({
 			id: crypto.randomUUID(),
 			role: 'user',
@@ -227,6 +239,64 @@ describe('POST /api/chat/send', () => {
 				depth: 'standard',
 			}),
 		);
+		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('rejects Deep Research in a sealed conversation before persisting the triggering message', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		const error = {
+			name: 'DeepResearchJobStartError',
+			code: 'conversation_sealed',
+			message: 'Deep Research cannot be started in a sealed conversation',
+			status: 409,
+		};
+		mockAssertCanStartDeepResearchJob.mockRejectedValue(error);
+
+		const event = makeEvent({
+			message: 'Research this sealed topic',
+			conversationId: 'conv-1',
+			deepResearch: { depth: 'standard' },
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(409);
+		expect(data).toMatchObject({
+			error: 'Deep Research cannot be started in a sealed conversation',
+			code: 'conversation_sealed',
+		});
+		expect(mockCreateMessage).not.toHaveBeenCalled();
+		expect(mockStartDeepResearchJobShell).not.toHaveBeenCalled();
+		expect(mockSendMessage).not.toHaveBeenCalled();
+	});
+
+	it('rejects Deep Research when an active job exists before persisting the triggering message', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		const error = {
+			name: 'DeepResearchJobStartError',
+			code: 'active_job_exists',
+			message: 'This conversation already has an active Deep Research job',
+			status: 409,
+		};
+		mockAssertCanStartDeepResearchJob.mockRejectedValue(error);
+
+		const event = makeEvent({
+			message: 'Start another research pass',
+			conversationId: 'conv-1',
+			deepResearch: { depth: 'focused' },
+		});
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(409);
+		expect(data).toMatchObject({
+			error: 'This conversation already has an active Deep Research job',
+			code: 'active_job_exists',
+		});
+		expect(mockCreateMessage).not.toHaveBeenCalled();
+		expect(mockStartDeepResearchJobShell).not.toHaveBeenCalled();
 		expect(mockSendMessage).not.toHaveBeenCalled();
 	});
 

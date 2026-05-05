@@ -3,6 +3,7 @@
 	import type {
 		ChatMessage,
 		ContextDebugState,
+		DeepResearchJob,
 		DocumentWorkspaceItem,
 		FileProductionJob,
 		TaskSteeringPayload
@@ -15,24 +16,28 @@
 		isThinkingActive,
 		contextDebug,
 		fileProductionJobs = [],
+		deepResearchJobs = [],
 		onOpenDocument,
 		onRegenerate,
 		onEdit,
 		onSteer,
 		onRetryFileProductionJob,
 		onCancelFileProductionJob,
+		onCancelDeepResearchJob,
 	}: {
 		messages: ChatMessage[];
 		conversationId: string;
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
 		fileProductionJobs?: FileProductionJob[];
+		deepResearchJobs?: DeepResearchJob[];
 		onOpenDocument: (document: DocumentWorkspaceItem) => void;
 		onRegenerate: (payload: MessageRegeneratePayload) => void;
 		onEdit: (payload: MessageEditPayload) => void;
 		onSteer: (payload: TaskSteeringPayload) => void | Promise<void>;
 		onRetryFileProductionJob?: (jobId: string) => void | Promise<void>;
 		onCancelFileProductionJob?: (jobId: string) => void | Promise<void>;
+		onCancelDeepResearchJob?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>
 
@@ -43,12 +48,14 @@
 		{isThinkingActive}
 		{contextDebug}
 		{fileProductionJobs}
+		{deepResearchJobs}
 		{onOpenDocument}
 		{onRegenerate}
 		{onEdit}
 		{onSteer}
 		{onRetryFileProductionJob}
 		{onCancelFileProductionJob}
+		{onCancelDeepResearchJob}
 	/>
 </div>
 

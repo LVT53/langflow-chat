@@ -48,6 +48,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_REASONING_EFFORT",
 	"MODEL_2_THINKING_TYPE",
 	"MODEL_2_ENABLED",
+	"DEEP_RESEARCH_ENABLED",
 	"TITLE_GEN_URL",
 	"TITLE_GEN_MODEL",
 	"TITLE_GEN_SYSTEM_PROMPT_EN",
@@ -355,6 +356,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_ENABLED: (config, value) => {
 		config.model2Enabled = value === "true";
+	},
+	DEEP_RESEARCH_ENABLED: (config, value) => {
+		config.deepResearchEnabled = value === "true";
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -754,6 +758,7 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_REASONING_EFFORT: config.model2.reasoningEffort ?? "",
 		MODEL_2_THINKING_TYPE: config.model2.thinkingType ?? "",
 		MODEL_2_ENABLED: String(config.model2Enabled),
+		DEEP_RESEARCH_ENABLED: String(config.deepResearchEnabled),
 		TITLE_GEN_URL: config.titleGenUrl,
 		TITLE_GEN_MODEL: config.titleGenModel,
 		TITLE_GEN_SYSTEM_PROMPT_EN: config.titleGenSystemPromptEn,

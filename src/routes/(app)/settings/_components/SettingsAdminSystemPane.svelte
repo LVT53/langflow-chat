@@ -303,6 +303,7 @@ function configLabelKey(key: string): string {
 		MODEL_2_FLOW_ID: "admin.model2FlowId",
 		MODEL_2_COMPONENT_ID: "admin.model2ComponentId",
 		MODEL_2_ENABLED: "admin.model2Enabled",
+		DEEP_RESEARCH_ENABLED: "admin.deepResearchEnabled",
 		MODEL_1_MAX_MODEL_CONTEXT: "admin.model1MaxModelContext",
 		MODEL_1_COMPACTION_UI_THRESHOLD: "admin.model1CompactionThreshold",
 		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: "admin.model1TargetContext",
@@ -466,6 +467,29 @@ function placeholderFor(key: string): string {
 				checked={adminConfig.MODEL_2_ENABLED !== 'false'}
 				onchange={(event) => {
 					adminConfig.MODEL_2_ENABLED = event.currentTarget.checked ? 'true' : 'false';
+				}}
+			/>
+			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
+		</label>
+	</div>
+</section>
+
+<!-- Deep Research feature flag -->
+<section class="settings-card mb-4">
+	<h2 class="settings-section-title">{$t('admin.deepResearch')}</h2>
+	<div class="flex items-center justify-between">
+		<div>
+			<label class="settings-label mb-0" for="DEEP_RESEARCH_ENABLED">{$t('admin.deepResearchEnabled')}</label>
+			<p class="text-xs text-text-tertiary">{$t('admin.deepResearchDescription')}</p>
+		</div>
+		<label class="relative inline-flex cursor-pointer items-center">
+			<input
+				id="DEEP_RESEARCH_ENABLED"
+				type="checkbox"
+				class="peer sr-only"
+				checked={adminConfig.DEEP_RESEARCH_ENABLED === 'true'}
+				onchange={(event) => {
+					adminConfig.DEEP_RESEARCH_ENABLED = event.currentTarget.checked ? 'true' : 'false';
 				}}
 			/>
 			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>

@@ -276,6 +276,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 				attachments: payload.attachments,
 				modelId: payload.modelId ?? $selectedModel,
 				personalityProfileId: selectedPersonalityId,
+				deepResearchDepth: payload.deepResearchDepth ?? null,
 			});
 			await navigateToConversationFromLanding({
 				conversationId: id,
@@ -409,6 +410,7 @@ import type { ConversationDetail, ModelId } from '$lib/types';
 					onDraftChange={handleDraftChange}
 					disabled={creating}
 					maxLength={data.maxMessageLength}
+					deepResearchEnabled={data.deepResearchEnabled}
 					conversationId={preparedConversationId}
 					contextStatus={null}
 					attachedArtifacts={[]}

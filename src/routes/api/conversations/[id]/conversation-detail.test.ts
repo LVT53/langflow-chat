@@ -42,6 +42,10 @@ vi.mock('$lib/server/services/file-production', () => ({
 	listConversationFileProductionJobs: vi.fn(),
 }));
 
+vi.mock('$lib/server/services/deep-research', () => ({
+	listConversationDeepResearchJobs: vi.fn(),
+}));
+
 import { GET } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
 import { getConversation } from '$lib/server/services/conversations';
@@ -60,6 +64,7 @@ import { getChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import { getConversationCostSummary } from '$lib/server/services/analytics';
 import { listConversationFileProductionJobs } from '$lib/server/services/file-production';
+import { listConversationDeepResearchJobs } from '$lib/server/services/deep-research';
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
@@ -75,6 +80,8 @@ const mockGetConversationDraft = getConversationDraft as ReturnType<typeof vi.fn
 const mockGetConversationCostSummary = getConversationCostSummary as ReturnType<typeof vi.fn>;
 const mockListConversationFileProductionJobs =
 	listConversationFileProductionJobs as ReturnType<typeof vi.fn>;
+const mockListConversationDeepResearchJobs =
+	listConversationDeepResearchJobs as ReturnType<typeof vi.fn>;
 
 function makeEvent(user = { id: 'user-1' }, id = 'conv-1') {
 	return {
@@ -143,6 +150,7 @@ describe('GET /api/conversations/[id]', () => {
 				error: null,
 			},
 		]);
+		mockListConversationDeepResearchJobs.mockResolvedValue([]);
 	});
 
 	it('returns file-production jobs with the conversation detail', async () => {
@@ -163,6 +171,40 @@ describe('GET /api/conversations/[id]', () => {
 						downloadUrl: '/api/chat/files/file-1/download',
 					}),
 				],
+			}),
+		]);
+	});
+
+	it('returns deep research jobs with the conversation detail', async () => {
+		mockListConversationDeepResearchJobs.mockResolvedValue([
+			{
+				id: 'research-job-1',
+				conversationId: 'conv-1',
+				triggerMessageId: 'user-1',
+				depth: 'standard',
+				status: 'awaiting_plan',
+				stage: 'job_shell_created',
+				title: 'Research battery recycling policy',
+				userRequest: 'Research battery recycling policy',
+				createdAt: 1_777_140_002_000,
+				updatedAt: 1_777_140_002_000,
+				completedAt: null,
+				cancelledAt: null,
+			},
+		]);
+
+		const response = await GET(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockListConversationDeepResearchJobs).toHaveBeenCalledWith('user-1', 'conv-1');
+		expect(data.deepResearchJobs).toEqual([
+			expect.objectContaining({
+				id: 'research-job-1',
+				title: 'Research battery recycling policy',
+				depth: 'standard',
+				status: 'awaiting_plan',
+				stage: 'job_shell_created',
 			}),
 		]);
 	});

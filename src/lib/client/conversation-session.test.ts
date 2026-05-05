@@ -61,8 +61,25 @@ describe('conversation-session', () => {
 			attachments: [attachment],
 			modelId: undefined,
 			personalityProfileId: null,
+			deepResearchDepth: null,
 		});
 		expect(hasPendingConversationMessage('conv-123')).toBe(false);
+	});
+
+	it('preserves Deep Research depth on pending bootstrap messages', () => {
+		storePendingConversationMessage('conv-123', {
+			message: 'Research this deeply',
+			attachmentIds: [],
+			attachments: [],
+			deepResearchDepth: 'max',
+		});
+
+		expect(consumePendingConversationMessage('conv-123')).toEqual(
+			expect.objectContaining({
+				message: 'Research this deeply',
+				deepResearchDepth: 'max',
+			})
+		);
 	});
 
 	it('builds a draft record only when the draft is meaningful', () => {

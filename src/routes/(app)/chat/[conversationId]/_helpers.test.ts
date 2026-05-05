@@ -3,6 +3,7 @@ import type { I18nKey } from '$lib/i18n';
 import {
 	applyToolCallUpdateToMessageList,
 	attachUnassignedFileProductionJobsToAssistant,
+	cloneSendPayload,
 	createAssistantPlaceholder,
 	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveFileProductionJobs,
@@ -67,6 +68,26 @@ describe('workspace presentation helpers', () => {
 				preservePresentation: true,
 			})
 		).toBe('expanded');
+	});
+});
+
+describe('send payload helpers', () => {
+	it('preserves Deep Research depth when cloning queued turns', () => {
+		const cloned = cloneSendPayload({
+			message: 'Research battery recycling',
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+			conversationId: 'conv-1',
+			deepResearchDepth: 'focused',
+		});
+
+		expect(cloned).toEqual(
+			expect.objectContaining({
+				message: 'Research battery recycling',
+				deepResearchDepth: 'focused',
+			})
+		);
 	});
 });
 

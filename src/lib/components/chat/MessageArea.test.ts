@@ -1,7 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import MessageArea from './MessageArea.svelte';
-import type { ChatMessage, FileProductionJob } from '$lib/types';
+import type { ChatMessage, DeepResearchJob, FileProductionJob } from '$lib/types';
 
 Object.defineProperty(window, 'matchMedia', {
 	writable: true,
@@ -67,6 +67,24 @@ describe('MessageArea', () => {
 		};
 	}
 
+	function makeDeepResearchJob(overrides: Partial<DeepResearchJob> = {}): DeepResearchJob {
+		const now = Date.now();
+		return {
+			id: overrides.id ?? 'research-job-1',
+			conversationId: overrides.conversationId ?? 'conv-1',
+			triggerMessageId: overrides.triggerMessageId ?? 'user-1',
+			depth: overrides.depth ?? 'standard',
+			status: overrides.status ?? 'awaiting_plan',
+			stage: overrides.stage ?? 'job_shell_created',
+			title: overrides.title ?? 'Research battery recycling policy',
+			userRequest: overrides.userRequest ?? 'Research battery recycling policy',
+			createdAt: overrides.createdAt ?? now,
+			updatedAt: overrides.updatedAt ?? now,
+			completedAt: overrides.completedAt ?? null,
+			cancelledAt: overrides.cancelledAt ?? null,
+		};
+	}
+
 	it('preserves the expanded thinking block when a streaming placeholder id is replaced', async () => {
 		const initialMessage: ChatMessage = {
 			id: 'temp-assistant-id',
@@ -119,6 +137,39 @@ describe('MessageArea', () => {
 		expect(
 			getByText('Your messages and generated files will appear here.')
 		).toBeInTheDocument();
+	});
+
+	it('renders persisted Deep Research jobs as cards without an assistant message', () => {
+		const { getByRole, getByText, queryByText } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [makeDeepResearchJob()],
+		});
+
+		expect(getByRole('article', { name: 'Deep Research: Research battery recycling policy' })).toBeInTheDocument();
+		expect(getByText('Standard')).toBeInTheDocument();
+		expect(getByText('Awaiting plan')).toBeInTheDocument();
+		expect(getByText('job_shell_created')).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Cancel Deep Research' })).toBeInTheDocument();
+		expect(queryByText('Conversation Ready')).not.toBeInTheDocument();
+	});
+
+	it('routes Deep Research cancellation through the card callback', async () => {
+		const onCancelDeepResearchJob = vi.fn();
+		const { getByRole } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [makeDeepResearchJob()],
+			onCancelDeepResearchJob,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Cancel Deep Research' }));
+
+		expect(onCancelDeepResearchJob).toHaveBeenCalledWith('research-job-1');
 	});
 
 	it('scrolls to reveal file-production cards when they appear at the end of the chat', async () => {

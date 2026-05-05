@@ -395,5 +395,6 @@ export function cloneSendPayload(payload: SendPayload): SendPayload {
 		})),
 		conversationId: payload.conversationId ?? null,
 		modelId: payload.modelId,
+		deepResearchDepth: payload.deepResearchDepth ?? null,
 	};
 }

@@ -1,4 +1,10 @@
-import type { ArtifactSummary, ConversationDraft, ModelId, PendingAttachment } from '$lib/types';
+import type {
+	ArtifactSummary,
+	ConversationDraft,
+	DeepResearchDepth,
+	ModelId,
+	PendingAttachment,
+} from '$lib/types';
 import {
 	deleteConversationDraft,
 	deletePreparedConversation,
@@ -16,6 +22,7 @@ export type PendingConversationMessage = {
 	attachments: ArtifactSummary[];
 	modelId?: ModelId;
 	personalityProfileId?: string | null;
+	deepResearchDepth?: DeepResearchDepth | null;
 };
 
 function getSessionStorage(): Storage | null {
@@ -82,6 +89,7 @@ export function storePendingConversationMessage(
 			attachments: payload.attachments,
 			modelId: payload.modelId,
 			personalityProfileId: payload.personalityProfileId,
+			deepResearchDepth: payload.deepResearchDepth,
 		})
 	);
 }
@@ -121,12 +129,19 @@ export function consumePendingConversationMessage(
 				typeof parsed.personalityProfileId === 'string'
 					? parsed.personalityProfileId
 					: null,
+			deepResearchDepth:
+				parsed.deepResearchDepth === 'focused' ||
+				parsed.deepResearchDepth === 'standard' ||
+				parsed.deepResearchDepth === 'max'
+					? parsed.deepResearchDepth
+					: null,
 		};
 	} catch {
 		return {
 			message: rawValue,
 			attachmentIds: [],
 			attachments: [],
+			deepResearchDepth: null,
 		};
 	}
 }

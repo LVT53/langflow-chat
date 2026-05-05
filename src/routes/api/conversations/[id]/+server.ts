@@ -15,6 +15,7 @@ import {
 } from '$lib/server/services/knowledge';
 import { getChatFiles } from '$lib/server/services/chat-files';
 import { listConversationFileProductionJobs } from '$lib/server/services/file-production';
+import { listConversationDeepResearchJobs } from '$lib/server/services/deep-research';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
 import { getConversationCostSummary } from '$lib/server/services/analytics';
 import {
@@ -46,6 +47,7 @@ export const GET: RequestHandler = async (event) => {
 				contextDebug: null,
 				draft,
 				fileProductionJobs: [],
+				deepResearchJobs: [],
 				bootstrap: true,
 			});
 		}
@@ -60,6 +62,7 @@ export const GET: RequestHandler = async (event) => {
 			draft,
 			generatedFiles,
 			fileProductionJobs,
+			deepResearchJobs,
 			costSummary,
 		] = await Promise.all([
 			listMessages(id),
@@ -71,6 +74,7 @@ export const GET: RequestHandler = async (event) => {
 			getConversationDraft(user.id, id),
 			getChatFiles(id),
 			listConversationFileProductionJobs(user.id, id),
+			listConversationDeepResearchJobs(user.id, id),
 			getConversationCostSummary(id),
 		]);
 		const taskStateWithContinuity = await attachContinuityToTaskState(user.id, taskState).catch(
@@ -87,6 +91,7 @@ export const GET: RequestHandler = async (event) => {
 			draft,
 			generatedFiles,
 			fileProductionJobs,
+			deepResearchJobs,
 			bootstrap: false,
 			totalCostUsdMicros: costSummary.totalCostUsdMicros,
 			totalTokens: costSummary.totalTokens,
