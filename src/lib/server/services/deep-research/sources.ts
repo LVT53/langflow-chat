@@ -17,6 +17,7 @@ export type SaveDiscoveredResearchSourceInput = {
 	title?: string | null;
 	provider: string;
 	snippet?: string | null;
+	sourceText?: string | null;
 	discoveredAt?: Date;
 };
 
@@ -40,6 +41,21 @@ export type MarkResearchSourceReviewedInput = {
 	sourceId: string;
 	reviewedAt?: Date;
 	reviewedNote?: string | null;
+	relevanceScore?: number | null;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
+	openedContentLength?: number;
+};
+
+export type MarkResearchSourceRejectedInput = {
+	userId: string;
+	sourceId: string;
+	rejectedReason: string;
+	relevanceScore?: number | null;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
+	openedContentLength?: number;
+	rejectedAt?: Date;
 };
 
 export async function saveDiscoveredResearchSource(
@@ -59,6 +75,7 @@ export async function saveDiscoveredResearchSource(
 			title: input.title ?? null,
 			provider: input.provider,
 			snippet: input.snippet ?? null,
+			sourceText: input.sourceText ?? null,
 			discoveredAt: now,
 			updatedAt: now,
 		})
@@ -130,7 +147,49 @@ export async function markResearchSourceReviewed(
 			status: "reviewed",
 			reviewedAt,
 			reviewedNote: input.reviewedNote ?? existing.reviewedNote,
+			relevanceScore: normalizeNullableScore(input.relevanceScore),
+			rejectedReason: null,
+			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
+			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
 			updatedAt: reviewedAt,
+		})
+		.where(eq(deepResearchSources.id, existing.id))
+		.returning();
+
+	return mapSourceRow(row);
+}
+
+export async function markResearchSourceRejected(
+	input: MarkResearchSourceRejectedInput,
+): Promise<DeepResearchSource> {
+	const { db } = await import("$lib/server/db");
+	const [existing] = await db
+		.select()
+		.from(deepResearchSources)
+		.where(
+			and(
+				eq(deepResearchSources.userId, input.userId),
+				eq(deepResearchSources.id, input.sourceId),
+			),
+		)
+		.limit(1);
+
+	if (!existing) {
+		throw new Error("Research source not found");
+	}
+
+	const rejectedAt = input.rejectedAt ?? new Date();
+	const [row] = await db
+		.update(deepResearchSources)
+		.set({
+			status: "discovered",
+			rejectedReason: input.rejectedReason,
+			relevanceScore: normalizeNullableScore(input.relevanceScore),
+			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
+			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
+			updatedAt: rejectedAt,
 		})
 		.where(eq(deepResearchSources.id, existing.id))
 		.returning();
@@ -196,8 +255,14 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 		title: row.title,
 		provider: row.provider,
 		snippet: row.snippet,
+		sourceText: row.sourceText,
 		reviewedNote: row.reviewedNote,
 		citationNote: row.citationNote,
+		relevanceScore: row.relevanceScore,
+		rejectedReason: row.rejectedReason,
+		supportedKeyQuestions: parseStringArray(row.supportedKeyQuestionsJson),
+		extractedClaims: parseStringArray(row.extractedClaimsJson),
+		openedContentLength: row.openedContentLength,
 		discoveredAt: row.discoveredAt.toISOString(),
 		reviewedAt: row.reviewedAt?.toISOString() ?? null,
 		citedAt: row.citedAt?.toISOString() ?? null,
@@ -206,7 +271,26 @@ function mapSourceRow(row: DeepResearchSourceRow): DeepResearchSource {
 	};
 }
 
+function parseStringArray(value: string | null): string[] {
+	if (!value) return [];
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		return Array.isArray(parsed)
+			? parsed.filter((item): item is string => typeof item === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
+
 function normalizeCount(value: unknown): number {
 	const parsed = typeof value === "number" ? value : Number(value);
 	return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+}
+
+function normalizeNullableScore(value: unknown): number | null {
+	if (value === undefined || value === null) return null;
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) return null;
+	return Math.max(0, Math.min(100, Math.round(parsed)));
 }

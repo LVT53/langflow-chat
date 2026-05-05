@@ -218,6 +218,13 @@
       "when": 1777140000017,
       "tag": "1777140000017_deep_research_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1777140000018,
+      "tag": "1777140000018_deep_research_quality_metadata",
+      "breakpoints": true
     }
 
   ]

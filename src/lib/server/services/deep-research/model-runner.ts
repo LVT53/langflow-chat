@@ -1,0 +1,118 @@
+import { buildOpenAICompatibleUrl } from "$lib/server/services/openai-compatible-url";
+import { getConfig } from "$lib/server/config-store";
+import { decryptApiKey, getProviderWithSecrets } from "$lib/server/services/inference-providers";
+import { resolveDeepResearchModel, type DeepResearchModelRole } from "./model-config";
+import type { ResearchProviderUsageSnapshot } from "./usage";
+
+export type DeepResearchModelMessage = {
+	role: "system" | "user" | "assistant";
+	content: string;
+};
+
+export type DeepResearchModelRunResult = {
+	content: string;
+	modelId: string;
+	modelDisplayName: string;
+	providerId: string | null;
+	providerDisplayName: string | null;
+	providerModelName: string | null;
+	runtimeMs: number;
+	usage: ResearchProviderUsageSnapshot | null;
+};
+
+export async function runDeepResearchModel(input: {
+	role: DeepResearchModelRole;
+	messages: DeepResearchModelMessage[];
+	temperature?: number;
+	maxTokens?: number;
+	fetchImpl?: typeof fetch;
+}): Promise<DeepResearchModelRunResult> {
+	const resolved = await resolveDeepResearchModel(input.role);
+	const config = getConfig();
+	const credentials = await resolveModelCredentials(resolved.modelId);
+	const baseUrl = resolved.providerBaseUrl ?? credentials.baseUrl;
+	const model = resolved.providerModelName ?? credentials.modelName;
+	if (!baseUrl || !model) {
+		throw new Error(`Deep Research model ${input.role} is not configured`);
+	}
+
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	if (credentials.apiKey) headers.Authorization = `Bearer ${credentials.apiKey}`;
+	const startedAt = Date.now();
+	const response = await (input.fetchImpl ?? fetch)(
+		buildOpenAICompatibleUrl(baseUrl, "/v1/chat/completions"),
+		{
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				model,
+				messages: input.messages,
+				temperature: input.temperature ?? 0.2,
+				max_tokens: input.maxTokens ?? resolved.limits.maxTokens ?? 1800,
+				chat_template_kwargs: { enable_thinking: false },
+				extra_body: { chat_template_kwargs: { enable_thinking: false } },
+			}),
+			signal: AbortSignal.timeout(config.requestTimeoutMs),
+		},
+	);
+	if (!response.ok) {
+		throw new Error(`Deep Research model ${input.role} failed: ${response.status}`);
+	}
+	const json = await response.json();
+	const content = String(json?.choices?.[0]?.message?.content ?? "").trim();
+	return {
+		content,
+		modelId: resolved.modelId,
+		modelDisplayName: resolved.modelDisplayName,
+		providerId: resolved.providerId,
+		providerDisplayName: resolved.providerDisplayName,
+		providerModelName: resolved.providerModelName,
+		runtimeMs: Date.now() - startedAt,
+		usage: mapUsage(json?.usage),
+	};
+}
+
+async function resolveModelCredentials(modelId: string): Promise<{
+	baseUrl: string;
+	modelName: string;
+	apiKey: string;
+}> {
+	const config = getConfig();
+	if (modelId === "model2") {
+		return {
+			baseUrl: config.model2.baseUrl,
+			modelName: config.model2.modelName,
+			apiKey: config.model2.apiKey,
+		};
+	}
+	if (modelId.startsWith("provider:")) {
+		const provider = await getProviderWithSecrets(modelId.slice("provider:".length));
+		if (!provider) return { baseUrl: "", modelName: "", apiKey: "" };
+		return {
+			baseUrl: provider.baseUrl,
+			modelName: provider.modelName,
+			apiKey: decryptApiKey(provider.apiKeyEncrypted, provider.apiKeyIv),
+		};
+	}
+	return {
+		baseUrl: config.model1.baseUrl,
+		modelName: config.model1.modelName,
+		apiKey: config.model1.apiKey,
+	};
+}
+
+function mapUsage(value: unknown): ResearchProviderUsageSnapshot | null {
+	if (!value || typeof value !== "object") return null;
+	const usage = value as Record<string, unknown>;
+	return {
+		promptTokens: readNumber(usage.prompt_tokens),
+		completionTokens: readNumber(usage.completion_tokens),
+		totalTokens: readNumber(usage.total_tokens),
+		reasoningTokens: readNumber(usage.reasoning_tokens),
+		source: "provider",
+	};
+}
+
+function readNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}

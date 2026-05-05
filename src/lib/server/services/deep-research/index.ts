@@ -7,7 +7,7 @@ import {
 	deepResearchJobs,
 	deepResearchPlanVersions,
 } from '$lib/server/db/schema';
-import { createConversation } from '$lib/server/services/conversations';
+import { createConversation, updateConversationTitle } from '$lib/server/services/conversations';
 import { createArtifact, createArtifactLink } from '$lib/server/services/knowledge/store';
 import { createMessage } from '$lib/server/services/messages';
 import type {
@@ -15,10 +15,12 @@ import type {
 	DeepResearchDepth,
 	DeepResearchEffortEstimate,
 	DeepResearchJob,
+	DeepResearchRuntimeEstimate,
 	DeepResearchPlanRaw,
 	DeepResearchPlanSummary,
 	DeepResearchSource,
 	DeepResearchTimelineEvent,
+	DeepResearchUsageSummary,
 } from '$lib/types';
 import {
 	auditDeepResearchReportCitations,
@@ -33,6 +35,7 @@ import {
 	type ResearchPlanDraftRecord,
 } from './planning';
 import { resolveResearchLanguage } from './language';
+import { generateTitle } from '$lib/server/services/title-generator';
 import { writeResearchReport, type ResearchReportDraft } from './report-writer';
 import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
 import type { SynthesisNotes } from './synthesis';
@@ -44,6 +47,7 @@ import {
 } from './timeline';
 import {
 	buildPlanGenerationResearchUsageRecord,
+	getResearchUsageCostSummary,
 	saveResearchUsageRecord,
 	type ResearchProviderUsageSnapshot,
 } from './usage';
@@ -121,7 +125,9 @@ export type DeepResearchReportActionResult = {
 	sourceJobId: string;
 	reportArtifactId: string;
 	conversation: Conversation;
-	messageId: string;
+	messageId?: string;
+	seedMessage: string;
+	researchLanguage: ResearchLanguage;
 };
 
 export type ResearchFurtherReportActionResult = DeepResearchReportActionResult & {
@@ -227,6 +233,15 @@ export async function startDeepResearchJobShell(
 		.where(eq(deepResearchJobs.id, job.id))
 		.returning();
 
+	const titledJob = await applyGeneratedResearchTitle({
+		userId: input.userId,
+		conversationId: input.conversationId,
+		job: updatedJob,
+		userRequest: input.userRequest,
+		assistantContext: draft.renderedPlan,
+		now,
+	});
+
 	const timelineEvent = await saveResearchTimelineEvent(
 		createPlanGenerationTimelineEvent({
 			jobId: job.id,
@@ -257,7 +272,7 @@ export async function startDeepResearchJobShell(
 		);
 	}
 
-	return mapDeepResearchJob(updatedJob, mapResearchPlanVersionRow(draft), [
+	return mapDeepResearchJob(titledJob, mapResearchPlanVersionRow(draft), [
 		mapTimelineEvent(timelineEvent),
 	]);
 }
@@ -326,12 +341,18 @@ export async function listConversationDeepResearchJobs(
 	const currentPlans = await loadCurrentPlansByJobId(rows.map((row) => row.id));
 	const timelineEvents = await loadTimelineEventsByJobId(userId, rows.map((row) => row.id));
 	const sourceLedgers = await loadSourceLedgersByJobId(userId, conversationId, rows.map((row) => row.id));
+	const usageSummaries = await loadUsageSummariesByJobId(userId, rows.map((row) => row.id));
+	const runtimeEstimates = await loadRuntimeEstimatesByJobId(rows);
 	return rows.map((row) =>
 		mapDeepResearchJob(
 			row,
 			currentPlans.get(row.id) ?? null,
 			timelineEvents.get(row.id) ?? [],
-			sourceLedgers.get(row.id)
+			sourceLedgers.get(row.id),
+			{
+				usageSummary: usageSummaries.get(row.id),
+				runtimeEstimate: runtimeEstimates.get(row.id),
+			}
 		)
 	);
 }
@@ -690,34 +711,21 @@ export async function discussDeepResearchReport(
 		input.userId,
 		buildFollowupConversationTitle('Discuss', context.job.title)
 	);
-	const message = await createMessage(
-		conversation.id,
-		'user',
-		buildDiscussReportSeedMessage(context),
-		undefined,
-		undefined,
-		{
-			deepResearchReportContext: {
-				action: 'discuss_report',
-				sourceJobId: context.job.id,
-				sourceConversationId: context.job.conversationId,
-				reportArtifactId: context.report.id,
-			},
-		}
-	);
 	await createArtifactLink({
 		userId: input.userId,
 		artifactId: context.report.id,
 		linkType: 'attached_to_conversation',
 		conversationId: conversation.id,
-		messageId: message.id,
 	});
+	const researchLanguage = resolveReportLanguage(context);
+	const seedMessage = buildDiscussReportSeedMessage(context, researchLanguage);
 
 	return {
 		sourceJobId: context.job.id,
 		reportArtifactId: context.report.id,
 		conversation,
-		messageId: message.id,
+		seedMessage,
+		researchLanguage,
 	};
 }
 
@@ -728,11 +736,12 @@ export async function researchFurtherFromDeepResearchReport(
 	if (!context) return null;
 
 	const depth = input.depth ?? (context.job.depth as DeepResearchDepth);
+	const researchLanguage = input.researchLanguage ?? resolveReportLanguage(context);
 	const conversation = await createConversation(
 		input.userId,
 		buildFollowupConversationTitle('Research further', context.job.title)
 	);
-	const userRequest = buildResearchFurtherSeedMessage(context);
+	const userRequest = buildResearchFurtherSeedMessage(context, researchLanguage);
 	const message = await createMessage(
 		conversation.id,
 		'user',
@@ -762,7 +771,7 @@ export async function researchFurtherFromDeepResearchReport(
 		triggerMessageId: message.id,
 		userRequest,
 		depth,
-		researchLanguage: input.researchLanguage,
+		researchLanguage,
 		planningContext: [
 			{
 				type: 'report',
@@ -778,6 +787,8 @@ export async function researchFurtherFromDeepResearchReport(
 		reportArtifactId: context.report.id,
 		conversation,
 		messageId: message.id,
+		seedMessage: userRequest,
+		researchLanguage,
 		job,
 	};
 }
@@ -806,19 +817,69 @@ async function loadCompletedResearchReportContext(input: {
 	return row ?? null;
 }
 
+async function applyGeneratedResearchTitle(input: {
+	userId: string;
+	conversationId: string;
+	job: DeepResearchJobRow;
+	userRequest: string;
+	assistantContext: string;
+	now: Date;
+}): Promise<DeepResearchJobRow> {
+	const title = await generateDeepResearchTitle(input.userRequest, input.assistantContext);
+	if (title === input.job.title) return input.job;
+	const [updatedJob] = await db
+		.update(deepResearchJobs)
+		.set({ title, updatedAt: input.now })
+		.where(eq(deepResearchJobs.id, input.job.id))
+		.returning();
+	await updateConversationTitle(input.userId, input.conversationId, title).catch(() => null);
+	return updatedJob ?? input.job;
+}
+
+async function generateDeepResearchTitle(
+	userRequest: string,
+	assistantContext: string
+): Promise<string> {
+	const fallback = buildJobTitle(userRequest);
+	if (process.env.NODE_ENV === 'test') return fallback;
+	try {
+		const title = await generateTitle(userRequest, assistantContext);
+		return normalizeTitleWithoutEllipsis(title) || fallback;
+	} catch {
+		return fallback;
+	}
+}
+
 function buildJobTitle(userRequest: string): string {
-	const normalized = userRequest.replace(/\s+/g, ' ').trim();
-	if (normalized.length <= 80) return normalized;
-	return `${normalized.slice(0, 77)}...`;
+	return normalizeTitleWithoutEllipsis(userRequest) || 'Deep Research';
 }
 
 function buildFollowupConversationTitle(prefix: string, jobTitle: string): string {
-	const title = `${prefix}: ${jobTitle}`.replace(/\s+/g, ' ').trim();
-	if (title.length <= 80) return title;
-	return `${title.slice(0, 77)}...`;
+	return normalizeTitleWithoutEllipsis(`${prefix}: ${jobTitle}`) || prefix;
 }
 
-function buildDiscussReportSeedMessage(context: ResearchReportContext): string {
+function normalizeTitleWithoutEllipsis(value: string): string {
+	return value.replace(/\s+/g, ' ').replace(/\.{3,}$/u, '').trim();
+}
+
+function resolveReportLanguage(context: ResearchReportContext): ResearchLanguage {
+	const text = `${context.job.title}\n${context.job.userRequest}\n${context.report.contentText ?? ''}`;
+	return resolveResearchLanguage({ userRequest: text });
+}
+
+function buildDiscussReportSeedMessage(
+	context: ResearchReportContext,
+	researchLanguage: ResearchLanguage
+): string {
+	if (researchLanguage === 'hu') {
+		return [
+			`Beszéljük át ezt a kutatási jelentést: ${context.report.name}`,
+			'',
+			`Forrás mély kutatási téma: ${context.job.title}`,
+			'',
+			'A csatolt kutatási jelentést használd munkakontextusként, és magyarul válaszolj.',
+		].join('\n');
+	}
 	return [
 		`Discuss this Research Report: ${context.report.name}`,
 		'',
@@ -828,7 +889,19 @@ function buildDiscussReportSeedMessage(context: ResearchReportContext): string {
 	].join('\n');
 }
 
-function buildResearchFurtherSeedMessage(context: ResearchReportContext): string {
+function buildResearchFurtherSeedMessage(
+	context: ResearchReportContext,
+	researchLanguage: ResearchLanguage
+): string {
+	if (researchLanguage === 'hu') {
+		return [
+			`Kutass tovább ebből a kutatási jelentésből: ${context.report.name}`,
+			'',
+			`Forrás mély kutatási téma: ${context.job.title}`,
+			'',
+			'A csatolt kutatási jelentést használd tervezési kontextusként, készíts új jóváhagyandó mély kutatási tervet, és magyarul válaszolj.',
+		].join('\n');
+	}
 	return [
 		`Research further from this Research Report: ${context.report.name}`,
 		'',
@@ -987,6 +1060,107 @@ type SourceLedgerForCard = {
 	sources: DeepResearchSource[];
 };
 
+type DeepResearchJobReadModel = {
+	usageSummary?: DeepResearchUsageSummary;
+	runtimeEstimate?: DeepResearchRuntimeEstimate;
+};
+
+async function loadUsageSummariesByJobId(
+	userId: string,
+	jobIds: string[]
+): Promise<Map<string, DeepResearchUsageSummary>> {
+	const summaries = new Map<string, DeepResearchUsageSummary>();
+	await Promise.all(
+		jobIds.map(async (jobId) => {
+			const summary = await getResearchUsageCostSummary({ userId, jobId });
+			summaries.set(jobId, summary);
+		})
+	);
+	return summaries;
+}
+
+async function loadRuntimeEstimatesByJobId(
+	rows: DeepResearchJobRow[]
+): Promise<Map<string, DeepResearchRuntimeEstimate>> {
+	const estimates = new Map<string, DeepResearchRuntimeEstimate>();
+	const calibrated = await loadCalibratedRuntimeStats(rows);
+	for (const row of rows) {
+		const actualRuntimeMs =
+			row.completedAt && row.createdAt
+				? Math.max(0, row.completedAt.getTime() - row.createdAt.getTime())
+				: undefined;
+		const calibratedLabel = calibrated.get(row.depth);
+		estimates.set(row.id, {
+			label: actualRuntimeMs
+				? formatRuntimeRange(actualRuntimeMs, actualRuntimeMs)
+				: (calibratedLabel ?? fallbackRuntimeEstimate(row.depth as DeepResearchDepth)),
+			source: calibratedLabel ? 'calibrated' : 'fallback',
+			...(actualRuntimeMs !== undefined ? { actualRuntimeMs } : {}),
+		});
+	}
+	return estimates;
+}
+
+async function loadCalibratedRuntimeStats(
+	rows: DeepResearchJobRow[]
+): Promise<Map<string, string>> {
+	const depths = [...new Set(rows.map((row) => row.depth))];
+	const estimates = new Map<string, string>();
+	for (const depth of depths) {
+		const completedRows = await db
+			.select({
+				createdAt: deepResearchJobs.createdAt,
+				completedAt: deepResearchJobs.completedAt,
+			})
+			.from(deepResearchJobs)
+			.where(
+				and(
+					eq(deepResearchJobs.depth, depth),
+					eq(deepResearchJobs.status, 'completed'),
+					sql`${deepResearchJobs.completedAt} IS NOT NULL`
+				)
+			)
+			.orderBy(desc(deepResearchJobs.completedAt))
+			.limit(50);
+		const runtimes = completedRows
+			.map((row) =>
+				row.completedAt
+					? row.completedAt.getTime() - row.createdAt.getTime()
+					: 0
+			)
+			.filter((runtime) => runtime > 0)
+			.sort((a, b) => a - b);
+		if (runtimes.length < 5) continue;
+		estimates.set(depth, formatRuntimeRange(percentile(runtimes, 0.5), percentile(runtimes, 0.9)));
+	}
+	return estimates;
+}
+
+function fallbackRuntimeEstimate(depth: DeepResearchDepth | string): string {
+	if (depth === 'focused') return '30-90 sec';
+	if (depth === 'max') return '4-12 min';
+	return '1-4 min';
+}
+
+function percentile(values: number[], p: number): number {
+	if (values.length === 0) return 0;
+	const index = Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * p) - 1));
+	return values[index];
+}
+
+function formatRuntimeRange(lowMs: number, highMs: number): string {
+	const low = formatRuntimeDuration(lowMs);
+	const high = formatRuntimeDuration(highMs);
+	return low === high ? low : `${low}-${high}`;
+}
+
+function formatRuntimeDuration(ms: number): string {
+	const seconds = Math.max(1, Math.round(ms / 1000));
+	if (seconds < 60) return `${seconds} sec`;
+	const minutes = Math.round(seconds / 60);
+	return `${minutes} min`;
+}
+
 async function loadSourceLedgersByJobId(
 	userId: string,
 	conversationId: string,
@@ -1111,7 +1285,8 @@ function mapDeepResearchJob(
 	row: DeepResearchJobRow,
 	currentPlan: DeepResearchPlanSummary | null = null,
 	timeline: DeepResearchTimelineEvent[] = [],
-	sourceLedger: SourceLedgerForCard | undefined = undefined
+	sourceLedger: SourceLedgerForCard | undefined = undefined,
+	readModel: DeepResearchJobReadModel = {}
 ): DeepResearchJob {
 	return {
 		id: row.id,
@@ -1128,6 +1303,28 @@ function mapDeepResearchJob(
 		timeline,
 		sourceCounts: sourceLedger?.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
 		sources: sourceLedger?.sources ?? [],
+		usageSummary: readModel.usageSummary ?? {
+			totalCostUsdMicros: 0,
+			totalTokens: 0,
+			byModel: [],
+		},
+		runtimeEstimate:
+			readModel.runtimeEstimate ?? {
+				label:
+					row.completedAt && row.createdAt
+						? formatRuntimeRange(
+								row.completedAt.getTime() - row.createdAt.getTime(),
+								row.completedAt.getTime() - row.createdAt.getTime()
+							)
+						: fallbackRuntimeEstimate(row.depth),
+				source: 'fallback',
+				...(row.completedAt
+					? {
+							actualRuntimeMs:
+								row.completedAt.getTime() - row.createdAt.getTime(),
+						}
+					: {}),
+			},
 		createdAt: row.createdAt.getTime(),
 		updatedAt: row.updatedAt.getTime(),
 		completedAt: row.completedAt ? row.completedAt.getTime() : null,
@@ -1145,8 +1342,14 @@ function mapSourceForCard(source: DeepResearchSource): DeepResearchSource {
 		title: source.title,
 		provider: source.provider,
 		snippet: source.snippet,
+		sourceText: source.sourceText,
 		reviewedNote: source.reviewedNote,
 		citationNote: source.citationNote,
+		relevanceScore: source.relevanceScore,
+		rejectedReason: source.rejectedReason,
+		supportedKeyQuestions: source.supportedKeyQuestions,
+		extractedClaims: source.extractedClaims,
+		openedContentLength: source.openedContentLength,
 		discoveredAt: source.discoveredAt,
 		reviewedAt: source.reviewedAt,
 		citedAt: source.citedAt,

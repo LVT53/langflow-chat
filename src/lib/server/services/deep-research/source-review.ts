@@ -3,12 +3,16 @@ export type DiscoveredResearchSource = {
 	url: string;
 	title: string;
 	snippet?: string | null;
+	sourceText?: string | null;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
 };
 
 export type TriageSourcesForReviewInput = {
 	jobId: string;
 	discoveredSources: DiscoveredResearchSource[];
 	reviewLimit: number;
+	keyQuestions?: string[];
 };
 
 export type SourceReviewCandidate = DiscoveredResearchSource & {
@@ -39,6 +43,11 @@ export type ReviewedResearchSourceNotes = {
 	summary: string;
 	keyFindings: string[];
 	extractedText: string | null;
+	relevanceScore: number;
+	supportedKeyQuestions: string[];
+	extractedClaims: string[];
+	rejectedReason: string | null;
+	openedContentLength: number;
 };
 
 export type PersistedReviewedResearchSourceNotes =
@@ -51,6 +60,10 @@ export type ReviewSourceResult = {
 	summary: string;
 	keyFindings?: string[];
 	extractedText?: string | null;
+	relevanceScore?: number;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
+	rejectedReason?: string | null;
 };
 
 export type SourceReviewer = {
@@ -101,6 +114,34 @@ export async function triageAndReviewSources(
 
 	for (const source of triage.selectedSources) {
 		const review = await dependencies.reviewer.reviewSource(source);
+		const extractedText = review.extractedText
+			? normalizeText(review.extractedText)
+			: null;
+		const sourceText = extractedText ?? source.sourceText ?? source.snippet ?? "";
+		const supportedKeyQuestions = normalizeSupportedKeyQuestions(
+			review.supportedKeyQuestions,
+			input.keyQuestions ?? [],
+			sourceText,
+		);
+		const keyFindings = normalizeTextList(review.keyFindings ?? []);
+		const relevanceScore = normalizeRelevanceScore(
+			review.relevanceScore,
+			{
+				supportedKeyQuestions,
+				keyFindings,
+				sourceText,
+				title: source.title,
+			},
+		);
+		const rejectedReason =
+			normalizeRejectedReason(review.rejectedReason) ??
+			defaultRejectedReason({
+				relevanceScore,
+				supportedKeyQuestions,
+				source,
+				sourceText,
+				requiresKeyQuestionSupport: (input.keyQuestions ?? []).length > 0,
+			});
 		const notes = await dependencies.repository.saveReviewedSourceNotes({
 			jobId: input.jobId,
 			discoveredSourceId: source.id,
@@ -111,13 +152,18 @@ export async function triageAndReviewSources(
 			qualityScore: source.qualityScore,
 			reviewScore: source.reviewScore,
 			summary: normalizeText(review.summary),
-			keyFindings: normalizeTextList(review.keyFindings ?? []),
-			extractedText: review.extractedText
-				? normalizeText(review.extractedText)
-				: null,
+			keyFindings,
+			extractedText,
+			relevanceScore,
+			supportedKeyQuestions,
+			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
+			rejectedReason,
+			openedContentLength: sourceText.length,
 		});
 
-		reviewedSources.push(notes);
+		if (!notes.rejectedReason && notes.relevanceScore >= MIN_RELEVANCE_SCORE) {
+			reviewedSources.push(notes);
+		}
 	}
 
 	return {
@@ -190,6 +236,8 @@ function scoreSourceQuality(source: DiscoveredResearchSource): number {
 	const text = `${source.title} ${source.snippet ?? ""}`.toLowerCase();
 	let score = 0;
 
+	if (isBlockedOrNoiseSource(source)) return -100;
+
 	for (const signal of [
 		"methodology",
 		"data",
@@ -205,6 +253,136 @@ function scoreSourceQuality(source: DiscoveredResearchSource): number {
 	}
 
 	return score;
+}
+
+const MIN_RELEVANCE_SCORE = 55;
+
+function isBlockedOrNoiseSource(source: DiscoveredResearchSource): boolean {
+	const title = source.title.toLowerCase();
+	const content = `${source.title} ${source.snippet ?? ""} ${source.sourceText ?? ""}`.toLowerCase();
+	return [
+		"request rejected",
+		"checking your browser",
+		"recaptcha",
+		"captcha",
+		"access denied",
+		"enable javascript",
+	].some((signal) => title.includes(signal) || content.includes(signal));
+}
+
+function normalizeSupportedKeyQuestions(
+	explicitQuestions: string[] | undefined,
+	planQuestions: string[],
+	sourceText: string,
+): string[] {
+	const normalizedExplicit = normalizeTextList(explicitQuestions ?? []);
+	if (normalizedExplicit.length > 0) {
+		return normalizedExplicit.filter((question) =>
+			planQuestions.length === 0 ||
+			planQuestions.some((planQuestion) => questionsOverlap(question, planQuestion)),
+		);
+	}
+	return planQuestions.filter((question) => sourceSupportsQuestion(sourceText, question));
+}
+
+function sourceSupportsQuestion(sourceText: string, question: string): boolean {
+	const sourceTerms = importantTerms(sourceText);
+	const questionTerms = importantTerms(question);
+	if (questionTerms.length === 0) return false;
+	const overlap = questionTerms.filter((term) => sourceTerms.has(term)).length;
+	return overlap >= Math.min(2, questionTerms.length);
+}
+
+function questionsOverlap(left: string, right: string): boolean {
+	const leftTerms = importantTerms(left);
+	const rightTerms = importantTerms(right);
+	let overlap = 0;
+	for (const term of leftTerms) {
+		if (rightTerms.has(term)) overlap += 1;
+	}
+	return overlap >= Math.min(2, leftTerms.size, rightTerms.size);
+}
+
+function importantTerms(value: string): Set<string> {
+	return new Set(
+		value
+			.toLowerCase()
+			.replace(/https?:\/\/\S+/g, " ")
+			.split(/[^a-z0-9áéíóöőúüű]+/iu)
+			.map((term) => term.trim())
+			.filter((term) => term.length >= 4 && !STOP_WORDS.has(term)),
+	);
+}
+
+const STOP_WORDS = new Set([
+	"what",
+	"which",
+	"where",
+	"when",
+	"with",
+	"from",
+	"this",
+	"that",
+	"does",
+	"current",
+	"rules",
+	"source",
+	"sources",
+	"research",
+	"report",
+	"about",
+	"should",
+	"could",
+	"would",
+]);
+
+function normalizeRelevanceScore(
+	score: number | undefined,
+	input: {
+		supportedKeyQuestions: string[];
+		keyFindings: string[];
+		sourceText: string;
+		title: string;
+	},
+): number {
+	if (typeof score === "number" && Number.isFinite(score)) {
+		return Math.max(0, Math.min(100, Math.round(score)));
+	}
+	let computed = 25;
+	if (input.supportedKeyQuestions.length > 0) computed += 35;
+	if (input.keyFindings.length > 0) computed += 20;
+	if (input.sourceText.length >= 500) computed += 10;
+	if (!isBlockedOrNoiseSource({ id: "", url: "https://example.test", title: input.title, sourceText: input.sourceText })) {
+		computed += 10;
+	}
+	return Math.max(0, Math.min(100, computed));
+}
+
+function normalizeRejectedReason(reason: string | null | undefined): string | null {
+	const normalized = reason?.replace(/\s+/g, " ").trim();
+	return normalized ? normalized : null;
+}
+
+function defaultRejectedReason(input: {
+	relevanceScore: number;
+	supportedKeyQuestions: string[];
+	source: SourceReviewCandidate;
+	sourceText: string;
+	requiresKeyQuestionSupport?: boolean;
+}): string | null {
+	if (isBlockedOrNoiseSource(input.source)) {
+		return "Rejected because the page appears to be blocked, captcha-protected, or browser-check noise.";
+	}
+	if (input.sourceText.trim().length === 0) {
+		return "Rejected because no usable source content was available.";
+	}
+	if (input.requiresKeyQuestionSupport && input.supportedKeyQuestions.length === 0) {
+		return "Rejected because the source does not support any approved key question.";
+	}
+	if (input.relevanceScore < MIN_RELEVANCE_SCORE) {
+		return "Rejected because relevance was below the Deep Research threshold.";
+	}
+	return null;
 }
 
 function normalizeText(value: string): string {

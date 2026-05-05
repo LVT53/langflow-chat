@@ -15,8 +15,15 @@
 	};
 
 	type VisiblePlan = {
-		goal: string;
 		sections: VisiblePlanSection[];
+	};
+
+	type TimelineStep = {
+		id: string;
+		label: string;
+		stages: string[];
+		status: 'completed' | 'active' | 'pending';
+		events: DeepResearchJob['timeline'];
 	};
 
 	let {
@@ -52,9 +59,10 @@
 	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
 	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
 	let reportDocument = $derived(buildReportDocument(job));
-	let timelineEvents = $derived((job.timeline ?? []).slice(-4));
 	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
 	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
+	let timelineSteps = $derived(buildTimelineSteps(job));
+	let costLabel = $derived(formatCostLabel(job.usageSummary?.totalCostUsdMicros ?? 0));
 	let hasSourceLedgerProgress = $derived(
 		sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0
 	);
@@ -103,28 +111,9 @@
 		if (plan.rawPlan) {
 			const rawPlan = plan.rawPlan;
 			const sections: VisiblePlanSection[] = [];
-			const includedSources = compactItems(
-				rawPlan.sourceScope.includedSources?.map((source) =>
-					source.title ? source.title : source.artifactId,
-				) ?? [],
-			);
-			if (includedSources.length > 0) {
-				sections.push({ heading: 'Included sources', items: includedSources });
-			}
-
 			const keyQuestions = compactItems(rawPlan.keyQuestions);
 			if (keyQuestions.length > 0) {
 				sections.push({ heading: 'Key questions', items: keyQuestions });
-			}
-
-			const reportShape = compactItems(rawPlan.reportShape);
-			if (reportShape.length > 0) {
-				sections.push({ heading: 'Expected report shape', items: reportShape });
-			}
-
-			const constraints = compactItems(rawPlan.constraints);
-			if (constraints.length > 0) {
-				sections.push({ heading: 'Constraints', items: constraints });
 			}
 
 			const deliverables = compactItems(rawPlan.deliverables);
@@ -132,10 +121,7 @@
 				sections.push({ heading: 'Deliverables', items: deliverables });
 			}
 
-			return {
-				goal: rawPlan.goal,
-				sections,
-			};
+			return { sections };
 		}
 
 		return parseRenderedPlan(plan.renderedPlan);
@@ -154,16 +140,56 @@
 				return true;
 			});
 		const goalIndex = lines.findIndex((line) => /^(Goal|Cél):/i.test(line));
-		const goal =
-			goalIndex >= 0
-				? lines[goalIndex].replace(/^(Goal|Cél):\s*/i, '').trim()
-				: job.title;
 		const remaining = lines.filter((_, index) => index !== goalIndex);
 		return {
-			goal,
-			sections: [{ heading: 'Plan details', items: remaining }],
+			sections: [
+				{
+					heading: 'Key questions',
+					items: remaining.filter((line) => !/^(Goal|Cél|Expected report shape|Várt jelentésszerkezet):/i.test(line)),
+				},
+			],
 		};
 	}
+
+	function formatCostLabel(costUsdMicros: number): string | null {
+		if (!Number.isFinite(costUsdMicros) || costUsdMicros <= 0) return null;
+		return `Est. $${(costUsdMicros / 1_000_000).toFixed(4)}`;
+	}
+
+	function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
+		const currentIndex = activeTimelineIndex(job);
+		return TIMELINE_STEP_DEFINITIONS.map((step, index) => ({
+			...step,
+			status:
+				job.status === 'completed' || index < currentIndex
+					? 'completed'
+					: index === currentIndex
+						? 'active'
+						: 'pending',
+			events: (job.timeline ?? []).filter((event) => step.stages.includes(event.stage)),
+		}));
+	}
+
+	function activeTimelineIndex(job: DeepResearchJob): number {
+		if (job.status === 'completed') return TIMELINE_STEP_DEFINITIONS.length - 1;
+		if (job.status === 'awaiting_approval') return 1;
+		const stage = job.stage ?? '';
+		const index = TIMELINE_STEP_DEFINITIONS.findIndex((step) => step.stages.includes(stage));
+		return Math.max(0, index);
+	}
+
+	const TIMELINE_STEP_DEFINITIONS = [
+		{ id: 'plan', label: 'Plan drafted', stages: ['plan_generation', 'plan_drafted', 'plan_revised'] },
+		{ id: 'approval', label: 'Awaiting approval', stages: ['plan_approved'] },
+		{ id: 'discovery', label: 'Discovering sources', stages: ['source_discovery'] },
+		{ id: 'review', label: 'Reviewing sources', stages: ['source_review'] },
+		{ id: 'coverage', label: 'Checking coverage', stages: ['coverage_assessment'] },
+		{ id: 'gaps', label: 'Filling gaps', stages: ['research_tasks'] },
+		{ id: 'synthesis', label: 'Synthesizing', stages: ['synthesis'] },
+		{ id: 'audit', label: 'Auditing citations', stages: ['citation_audit', 'citation_audit_failed'] },
+		{ id: 'writing', label: 'Writing report', stages: ['report_writing', 'report_ready'] },
+		{ id: 'completed', label: 'Completed', stages: ['completed'] },
+	] satisfies Array<Omit<TimelineStep, 'status' | 'events'>>;
 
 	function cancelJob() {
 		if (!canCancel || !onCancel) return;
@@ -277,9 +303,12 @@
 	</div>
 
 	<div class="research-card__meta">
-		<span class="research-card__status">{$t(statusKeys[job.status])}</span>
-		{#if job.stage}
-			<span class="research-card__stage">{job.stage}</span>
+		<span class={`research-card__status research-card__status--${job.status}`}>
+			<span class="research-card__status-dot" aria-hidden="true"></span>
+			{$t(statusKeys[job.status])}
+		</span>
+		{#if job.status === 'completed' && costLabel}
+			<span class="research-card__cost">{costLabel}</span>
 		{/if}
 	</div>
 
@@ -293,7 +322,7 @@
 			<div class="research-card__effort" aria-label={$t('deepResearch.effortHeading')}>
 				<span>
 					<strong>{$t('deepResearch.expectedTime')}</strong>
-					{activePlan.effortEstimate.expectedTimeBand}
+					{job.runtimeEstimate?.label ?? activePlan.effortEstimate.expectedTimeBand}
 				</span>
 				<span>
 					{$t('deepResearch.sourceCeiling', {
@@ -311,10 +340,6 @@
 
 			{#if visiblePlan}
 				<div class="research-card__plan-text">
-					<div class="research-card__plan-goal">
-						<strong>Goal</strong>
-						<p>{visiblePlan.goal}</p>
-					</div>
 					{#each visiblePlan.sections as section}
 						<div class="research-card__plan-section">
 							<strong>{section.heading}</strong>
@@ -407,31 +432,39 @@
 		</section>
 	{/if}
 
-	{#if timelineEvents.length > 0}
+	{#if timelineSteps.length > 0}
 		<section class="research-card__timeline" aria-labelledby={`${job.id}-timeline-heading`}>
 			<div class="research-card__section-header">
 				<h3 id={`${job.id}-timeline-heading`}>{$t('deepResearch.timelineHeading')}</h3>
 			</div>
 
 			<ol class="research-card__timeline-list">
-				{#each timelineEvents as event (event.id)}
-					<li class="research-card__timeline-item">
-						<p class="research-card__timeline-summary">{event.summary}</p>
-						<div class="research-card__source-counts" aria-label="Source counts">
-							{#each sourceCountLabels(event.sourceCounts) as label}
-								<span>{label}</span>
+				{#each timelineSteps as step (step.id)}
+					<li class={`research-card__timeline-item research-card__timeline-item--${step.status}`}>
+						<div class="research-card__timeline-marker" aria-hidden="true"></div>
+						<div class="research-card__timeline-body">
+							<p class="research-card__timeline-summary">{step.label}</p>
+							{#each step.events ?? [] as event (event.id)}
+								<div class="research-card__timeline-event">
+									<p>{event.summary}</p>
+									<div class="research-card__source-counts" aria-label="Source counts">
+										{#each sourceCountLabels(event.sourceCounts) as label}
+											<span>{label}</span>
+										{/each}
+									</div>
+									{#if event.warnings.length > 0}
+										<div class="research-card__timeline-notes research-card__timeline-notes--warning">
+											<strong>{$t('deepResearch.timeline.warnings')}</strong>
+											<ul>
+												{#each event.warnings as warning}
+													<li>{warning}</li>
+												{/each}
+											</ul>
+										</div>
+									{/if}
+								</div>
 							{/each}
 						</div>
-						{#if event.warnings.length > 0}
-							<div class="research-card__timeline-notes research-card__timeline-notes--warning">
-								<strong>{$t('deepResearch.timeline.warnings')}</strong>
-								<ul>
-									{#each event.warnings as warning}
-										<li>{warning}</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
 					</li>
 				{/each}
 			</ol>
@@ -537,11 +570,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);
-		border: 1px solid var(--border-subtle);
+		border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
 		border-radius: 8px;
 		background: var(--surface-elevated);
 		padding: var(--space-lg);
-		box-shadow: var(--shadow-sm);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 
 	.research-card__header {
@@ -575,7 +608,8 @@
 	.research-card__depth {
 		flex: 0 0 auto;
 		border-radius: 999px;
-		background: var(--surface-page);
+		border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-subtle));
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface-page));
 		padding: 0.22rem 0.55rem;
 		font-size: 0.78rem;
 		font-weight: 500;
@@ -592,16 +626,38 @@
 	}
 
 	.research-card__status {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.36rem;
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
-	.research-card__stage {
+	.research-card__status-dot {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 999px;
+		background: var(--text-muted);
+	}
+
+	.research-card__status--running .research-card__status-dot,
+	.research-card__status--approved .research-card__status-dot,
+	.research-card__status--awaiting_plan .research-card__status-dot,
+	.research-card__status--awaiting_approval .research-card__status-dot {
+		background: #f97316;
+		animation: research-pulse 1.4s ease-in-out infinite;
+	}
+
+	.research-card__status--completed .research-card__status-dot {
+		background: #22c55e;
+	}
+
+	.research-card__cost {
 		border-left: 1px solid var(--border-subtle);
 		padding-left: var(--space-xs);
-		font-family: monospace;
-		font-size: 0.78rem;
-		color: var(--text-muted);
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-secondary);
 	}
 
 	.research-card__actions {
@@ -631,19 +687,63 @@
 	.research-card__timeline-list {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-xs);
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 
 	.research-card__timeline-item {
+		position: relative;
+		display: grid;
+		grid-template-columns: 1rem minmax(0, 1fr);
+		gap: 0.6rem;
+		padding: 0 0 var(--space-sm);
+	}
+
+	.research-card__timeline-item::before {
+		content: "";
+		position: absolute;
+		top: 0.9rem;
+		bottom: 0;
+		left: 0.44rem;
+		width: 1px;
+		background: var(--border-subtle);
+	}
+
+	.research-card__timeline-item--completed::before {
+		background: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+	}
+
+	.research-card__timeline-item:last-child::before {
+		display: none;
+	}
+
+	.research-card__timeline-marker {
+		position: relative;
+		z-index: 1;
+		margin-top: 0.24rem;
+		width: 0.9rem;
+		height: 0.9rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: 999px;
+		background: var(--surface-page);
+	}
+
+	.research-card__timeline-item--completed .research-card__timeline-marker {
+		border-color: #22c55e;
+		background: #22c55e;
+	}
+
+	.research-card__timeline-item--active .research-card__timeline-marker {
+		border-color: #f97316;
+		background: #f97316;
+		animation: research-pulse 1.4s ease-in-out infinite;
+	}
+
+	.research-card__timeline-body {
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
-		border-radius: 7px;
-		background: var(--surface-page);
-		padding: var(--space-sm);
 	}
 
 	.research-card__timeline-summary {
@@ -652,6 +752,22 @@
 		font-weight: 500;
 		line-height: 1.35;
 		color: var(--text-primary);
+	}
+
+	.research-card__timeline-item--pending .research-card__timeline-summary {
+		color: var(--text-muted);
+	}
+
+	.research-card__timeline-event {
+		border-radius: 7px;
+		background: var(--surface-page);
+		padding: var(--space-sm);
+	}
+
+	.research-card__timeline-event p {
+		margin: 0 0 0.35rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
 	}
 
 	.research-card__source-counts {
@@ -896,6 +1012,24 @@
 		border-color: color-mix(in srgb, var(--accent) 48%, var(--border-subtle));
 		background: var(--accent);
 		color: var(--text-on-accent);
+	}
+
+	@keyframes research-pulse {
+		0%, 100% {
+			transform: scale(1);
+			opacity: 1;
+		}
+		50% {
+			transform: scale(1.25);
+			opacity: 0.72;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.research-card__status-dot,
+		.research-card__timeline-marker {
+			animation: none !important;
+		}
 	}
 
 	.research-card__action:hover:not(:disabled),

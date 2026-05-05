@@ -177,8 +177,14 @@ export interface DeepResearchSource {
 	title?: string | null;
 	provider: string;
 	snippet?: string | null;
+	sourceText?: string | null;
 	reviewedNote?: string | null;
 	citationNote?: string | null;
+	relevanceScore?: number | null;
+	rejectedReason?: string | null;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
+	openedContentLength?: number;
 	discoveredAt: string;
 	reviewedAt: string | null;
 	citedAt: string | null;
@@ -249,6 +255,26 @@ export interface DeepResearchTimelineEvent {
 	createdAt?: string;
 }
 
+export interface DeepResearchUsageSummary {
+	totalCostUsdMicros: number;
+	totalTokens: number;
+	byModel: Array<{
+		modelId: string;
+		modelDisplayName: string | null;
+		providerId: string | null;
+		providerDisplayName: string | null;
+		costUsdMicros: number;
+		totalTokens: number;
+		operationCount: number;
+	}>;
+}
+
+export interface DeepResearchRuntimeEstimate {
+	label: string;
+	source: "fallback" | "calibrated";
+	actualRuntimeMs?: number;
+}
+
 export interface DeepResearchJob {
 	id: string;
 	conversationId: string;
@@ -264,6 +290,8 @@ export interface DeepResearchJob {
 	timeline?: DeepResearchTimelineEvent[];
 	sourceCounts?: DeepResearchSourceCounts;
 	sources?: DeepResearchSource[];
+	usageSummary?: DeepResearchUsageSummary;
+	runtimeEstimate?: DeepResearchRuntimeEstimate;
 	createdAt: number;
 	updatedAt: number;
 	completedAt?: number | null;
@@ -274,7 +302,9 @@ export interface DeepResearchReportActionResult {
 	sourceJobId: string;
 	reportArtifactId: string;
 	conversation: Conversation;
-	messageId: string;
+	messageId?: string;
+	seedMessage?: string;
+	researchLanguage?: "en" | "hu";
 }
 
 export interface DeepResearchResearchFurtherActionResult

@@ -13,6 +13,7 @@ import {
 	getConversationPersonalitySelection,
 	hasMeaningfulDraft,
 	setConversationPersonalitySelection,
+	storePendingConversationMessage,
 } from "$lib/client/conversation-session";
 import {
 	applyTaskSteering,
@@ -1024,6 +1025,7 @@ async function handleCancelDeepResearchJob(jobId: string) {
 			await deleteConversationDraft(data.conversation.id).catch(() => undefined);
 			await deleteConversation(data.conversation.id);
 			removeConversationLocal(data.conversation.id);
+			await invalidateAll();
 			await goto("/");
 			return;
 		}
@@ -1057,7 +1059,17 @@ async function handleDiscussDeepResearchReport(jobId: string) {
 	try {
 		const action = await discussDeepResearchReportRequest(jobId);
 		upsertConversationLocal(action.conversation);
-		await goto(`/chat/${action.conversation.id}`);
+		if (action.seedMessage) {
+			storePendingConversationMessage(action.conversation.id, {
+				message: action.seedMessage,
+				attachmentIds: [],
+				attachments: [],
+				modelId: $selectedModel,
+				personalityProfileId: selectedPersonalityId,
+				deepResearchDepth: null,
+			});
+		}
+		await goto(`/chat/${action.conversation.id}?view=bootstrap`);
 	} catch (err) {
 		sendError = err instanceof Error ? err.message : "Failed to discuss Research Report";
 		throw err;

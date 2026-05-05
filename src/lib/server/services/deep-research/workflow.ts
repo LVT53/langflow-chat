@@ -19,7 +19,11 @@ import {
 	type SourceReviewer,
 	triageAndReviewSources,
 } from "./source-review";
-import { listResearchSources, markResearchSourceReviewed } from "./sources";
+import {
+	listResearchSources,
+	markResearchSourceRejected,
+	markResearchSourceReviewed,
+} from "./sources";
 import {
 	buildSynthesisNotes,
 	type CompletedResearchTaskOutput,
@@ -369,21 +373,38 @@ async function runSourceReviewStep(
 							url: source.url,
 							title: source.title ?? source.url,
 							snippet: source.snippet,
+							sourceText: source.sourceText,
 						})),
 					reviewLimit,
+					keyQuestions: (approvedPlan as ResearchPlan).keyQuestions,
 				},
 				{
 					reviewer:
 						dependencies.sourceReview?.reviewer ?? defaultSourceReviewer,
 					repository: {
 						saveReviewedSourceNotes: async (notes) => {
-							const reviewedSource = await markResearchSourceReviewed({
-								userId: jobRow.userId,
-								sourceId: notes.discoveredSourceId,
-								reviewedAt: now,
-								reviewedNote:
-									notes.keyFindings[0] ?? notes.summary ?? notes.extractedText,
-							});
+							const reviewedSource = notes.rejectedReason
+								? await markResearchSourceRejected({
+										userId: jobRow.userId,
+										sourceId: notes.discoveredSourceId,
+										rejectedAt: now,
+										rejectedReason: notes.rejectedReason,
+										relevanceScore: notes.relevanceScore,
+										supportedKeyQuestions: notes.supportedKeyQuestions,
+										extractedClaims: notes.extractedClaims,
+										openedContentLength: notes.openedContentLength,
+									})
+								: await markResearchSourceReviewed({
+										userId: jobRow.userId,
+										sourceId: notes.discoveredSourceId,
+										reviewedAt: now,
+										reviewedNote:
+											notes.keyFindings[0] ?? notes.summary ?? notes.extractedText,
+										relevanceScore: notes.relevanceScore,
+										supportedKeyQuestions: notes.supportedKeyQuestions,
+										extractedClaims: notes.extractedClaims,
+										openedContentLength: notes.openedContentLength,
+									});
 
 							return {
 								...notes,
@@ -861,9 +882,19 @@ function mapReviewedSourceForCoverage(
 		url: source.url,
 		title: source.title ?? source.url,
 		reviewedAt: source.reviewedAt ?? undefined,
-		supportedKeyQuestions: plan.keyQuestions,
-		keyFindings: source.reviewedNote ? [source.reviewedNote] : [],
-		qualityScore: 80,
+		supportedKeyQuestions:
+			source.supportedKeyQuestions && source.supportedKeyQuestions.length > 0
+				? source.supportedKeyQuestions
+				: plan.keyQuestions.filter((question) =>
+						sourceSupportsQuestion(source, question),
+					),
+		keyFindings:
+			source.extractedClaims && source.extractedClaims.length > 0
+				? source.extractedClaims
+				: source.reviewedNote
+					? [source.reviewedNote]
+					: [],
+		qualityScore: source.relevanceScore ?? 80,
 	};
 }
 
@@ -884,10 +915,41 @@ function mapReviewedSourceForSynthesis(
 		reviewScore: 80,
 		summary:
 			source.reviewedNote ?? source.snippet ?? source.title ?? source.url,
-		keyFindings: [
-			source.reviewedNote ?? source.snippet ?? source.title ?? source.url,
-		],
+		keyFindings:
+			source.extractedClaims && source.extractedClaims.length > 0
+				? source.extractedClaims
+				: [
+						source.reviewedNote ??
+							source.snippet ??
+							source.title ??
+							source.url,
+					],
 		extractedText: source.reviewedNote ?? null,
+		relevanceScore: source.relevanceScore ?? 80,
+		supportedKeyQuestions: source.supportedKeyQuestions ?? [],
+		extractedClaims: source.extractedClaims ?? [],
+		rejectedReason: source.rejectedReason ?? null,
+		openedContentLength: source.openedContentLength ?? 0,
 		createdAt: reviewedAt,
 	};
+}
+
+function sourceSupportsQuestion(source: DeepResearchSource, question: string): boolean {
+	const text = [
+		source.title,
+		source.snippet,
+		source.sourceText,
+		source.reviewedNote,
+		...(source.extractedClaims ?? []),
+	]
+		.filter(Boolean)
+		.join(" ")
+		.toLowerCase();
+	const questionTerms = question
+		.toLowerCase()
+		.split(/[^a-z0-9áéíóöőúüű]+/iu)
+		.filter((term) => term.length >= 4);
+	if (questionTerms.length === 0) return false;
+	const overlap = questionTerms.filter((term) => text.includes(term)).length;
+	return overlap >= Math.min(2, questionTerms.length);
 }

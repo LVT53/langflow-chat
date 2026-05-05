@@ -23,6 +23,7 @@ export type DiscoveredResearchSourceCandidate = {
 	metadata: {
 		query: string;
 		snippet: string | null;
+		text: string | null;
 		canonicalUrl: string;
 		publishedAt: string | null;
 		authorityClass: string | null;
@@ -179,6 +180,7 @@ const defaultDiscoveredSourceRepository = {
 					title: source.title,
 					provider: source.provider,
 					snippet: source.metadata.snippet,
+					sourceText: source.metadata.text,
 					discoveredAt: new Date(source.discoveredAt),
 				}),
 			);
@@ -209,12 +211,20 @@ function mapResearchSourceToCandidate(input: {
 		metadata: {
 			query: input.query,
 			snippet: input.source.snippet,
+			text: buildDiscoverySourceText(input.source),
 			canonicalUrl,
 			publishedAt: input.source.publishedAt,
 			authorityClass: input.source.authorityClass,
 			authorityScore: input.source.authorityScore,
 		},
 	};
+}
+
+function buildDiscoverySourceText(source: ResearchSource): string | null {
+	const parts = [source.text, ...(source.highlights ?? []), source.snippet]
+		.map((part) => part?.trim() ?? "")
+		.filter(Boolean);
+	return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 function dedupeCandidatesByUrl(
