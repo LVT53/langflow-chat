@@ -30,6 +30,11 @@ import {
 	type ResearchSourceReference,
 } from "./synthesis";
 import {
+	buildSynthesisNotesWithLlm,
+	executeResearchTaskWithLlm,
+	reviewSourceWithLlm,
+} from "./llm-steps";
+import {
 	claimResearchTasks,
 	completeResearchTask,
 	createResearchTasksFromCoverageGaps,
@@ -188,7 +193,7 @@ async function runResearchTasksStep(
 			now,
 		});
 		const executor =
-			dependencies.tasks?.executor ?? defaultResearchTaskExecutor;
+			dependencies.tasks?.executor ?? defaultResearchTaskExecutor(jobRow.userId);
 
 		for (const task of claimedTasks) {
 			try {
@@ -301,15 +306,25 @@ async function runResearchTasksStep(
 		);
 
 	const sourceRefsById = buildResearchSourceReferenceMap(reviewedSources);
-	const synthesisNotes = await (
-		dependencies.synthesis?.buildSynthesisNotes ?? buildSynthesisNotes
-	)({
+	const synthesisInput = {
 		jobId: jobRow.id,
 		reviewedSources: reviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: completedTasks.map((task) =>
 			mapCompletedResearchTaskForSynthesis(task, sourceRefsById),
 		),
-	});
+	};
+	const synthesisNotes = dependencies.synthesis?.buildSynthesisNotes
+		? await dependencies.synthesis.buildSynthesisNotes(synthesisInput)
+		: await buildSynthesisNotesWithLlm({
+				context: {
+					jobId: jobRow.id,
+					conversationId: jobRow.conversationId,
+					userId: jobRow.userId,
+					now,
+				},
+				reviewedSources: synthesisInput.reviewedSources,
+				completedTasks: synthesisInput.completedTasks,
+			});
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -380,7 +395,12 @@ async function runSourceReviewStep(
 				},
 				{
 					reviewer:
-						dependencies.sourceReview?.reviewer ?? defaultSourceReviewer,
+						dependencies.sourceReview?.reviewer ??
+						buildDefaultSourceReviewer({
+							jobRow,
+							now,
+							keyQuestions: (approvedPlan as ResearchPlan).keyQuestions,
+						}),
 					repository: {
 						saveReviewedSourceNotes: async (notes) => {
 							const reviewedSource = notes.rejectedReason
@@ -610,13 +630,23 @@ async function completeSourceReviewReport(input: {
 				eq(deepResearchJobs.stage, "source_review"),
 			),
 		);
-	const synthesisNotes = await (
-		input.dependencies.synthesis?.buildSynthesisNotes ?? buildSynthesisNotes
-	)({
+	const synthesisInput = {
 		jobId: input.jobRow.id,
 		reviewedSources: input.reviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: [],
-	});
+	};
+	const synthesisNotes = input.dependencies.synthesis?.buildSynthesisNotes
+		? await input.dependencies.synthesis.buildSynthesisNotes(synthesisInput)
+		: await buildSynthesisNotesWithLlm({
+				context: {
+					jobId: input.jobRow.id,
+					conversationId: input.jobRow.conversationId,
+					userId: input.jobRow.userId,
+					now: input.now,
+				},
+				reviewedSources: synthesisInput.reviewedSources,
+				completedTasks: synthesisInput.completedTasks,
+			});
 	const completedJob = await (
 		input.dependencies.reportCompletion
 			?.completeDeepResearchJobWithAuditedReport ??
@@ -692,21 +722,56 @@ async function failCoverageExhaustedWithoutEvidence(input: {
 		: null;
 }
 
-const defaultSourceReviewer: SourceReviewer = {
-	async reviewSource(source) {
-		const summary = source.snippet?.trim() || source.title.trim();
-		return {
-			summary,
-			keyFindings: [summary],
-			extractedText: source.snippet ?? null,
-		};
-	},
-};
+function buildDefaultSourceReviewer(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	now: Date;
+	keyQuestions: string[];
+}): SourceReviewer {
+	return {
+		async reviewSource(source) {
+			const llmReview = await reviewSourceWithLlm({
+				context: {
+					jobId: input.jobRow.id,
+					conversationId: input.jobRow.conversationId,
+					userId: input.jobRow.userId,
+					now: input.now,
+				},
+				source,
+				keyQuestions: input.keyQuestions,
+			});
+			if (llmReview) return llmReview;
 
-const defaultResearchTaskExecutor: ResearchTaskExecutor = async ({
-	task,
-	reviewedSources,
-}) => {
+		const summary = source.snippet?.trim() || source.title.trim();
+			return {
+				summary,
+				keyFindings: [summary],
+				extractedText: source.snippet ?? null,
+				relevanceScore: 80,
+				supportedKeyQuestions: input.keyQuestions,
+				extractedClaims: [summary],
+			};
+		},
+	};
+}
+
+const defaultResearchTaskExecutor =
+	(userId: string): ResearchTaskExecutor =>
+	async ({ job, approvedPlan, task, reviewedSources, now }) => {
+		const llmOutput = await executeResearchTaskWithLlm({
+			context: {
+				jobId: job.id,
+				conversationId: job.conversationId,
+				userId,
+				taskId: task.id,
+				now,
+			},
+			job,
+			approvedPlan,
+			task,
+			reviewedSources,
+		});
+		if (llmOutput) return llmOutput;
+
 	const assignment = task.assignment.trim();
 	const focus = task.keyQuestion?.trim();
 	const sourceIds = reviewedSources.map((source) => source.id);
@@ -885,6 +950,8 @@ function mapReviewedSourceForCoverage(
 		supportedKeyQuestions:
 			source.supportedKeyQuestions && source.supportedKeyQuestions.length > 0
 				? source.supportedKeyQuestions
+				: source.reviewedNote && source.relevanceScore == null
+					? plan.keyQuestions
 				: plan.keyQuestions.filter((question) =>
 						sourceSupportsQuestion(source, question),
 					),

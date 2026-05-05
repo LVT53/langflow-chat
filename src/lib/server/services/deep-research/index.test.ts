@@ -1015,30 +1015,19 @@ describe('deep research job shell service', () => {
 			conversation: {
 				title: 'Discuss: Compare EU and US AI copyright training data rules',
 			},
-			messageId: expect.any(String),
 		});
 		expect(action?.conversation.id).not.toBe('conv-1');
 		expect(sourceConversation).toEqual({
 			status: 'sealed',
 			sealedAt: new Date('2026-05-05T10:20:00.000Z'),
 		});
-		expect(seedMessage).toMatchObject({
-			role: 'user',
-			content: expect.stringContaining('Discuss this Research Report'),
-		});
-		expect(JSON.parse(seedMessage?.metadataJson ?? '{}')).toMatchObject({
-			deepResearchReportContext: {
-				action: 'discuss_report',
-				sourceJobId: created.id,
-				sourceConversationId: 'conv-1',
-				reportArtifactId: completed?.reportArtifactId,
-			},
-		});
+		expect(seedMessage).toBeUndefined();
+		expect(action?.seedMessage).toContain('Discuss this Research Report');
 		expect(links).toEqual([
 			{
 				artifactId: completed?.reportArtifactId,
 				conversationId: action?.conversation.id,
-				messageId: action?.messageId,
+				messageId: null,
 				linkType: 'attached_to_conversation',
 			},
 		]);

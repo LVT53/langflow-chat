@@ -459,6 +459,19 @@ describe("audited Deep Research report completion", () => {
 			reportArtifactId: null,
 			completedAt: null,
 		});
+		expect(failedCompletion?.timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "citation_audit",
+					kind: "warning",
+					summary:
+						"Citation audit failed because no credible supported claims remained.",
+					warnings: expect.arrayContaining([
+						"Removed claim because it cited sources that were not both reviewed and cited: Battery recycling eliminated all supply risk in 2025.",
+					]),
+				}),
+			]),
+		);
 		expect(conversation).toEqual({
 			status: "open",
 			sealedAt: null,

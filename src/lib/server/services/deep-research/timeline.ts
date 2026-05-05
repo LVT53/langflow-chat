@@ -9,6 +9,7 @@ export type ResearchTimelineStage =
 	| "source_discovery"
 	| "source_review"
 	| "coverage_assessment"
+	| "research_tasks"
 	| "synthesis"
 	| "citation_audit"
 	| "report_completion";

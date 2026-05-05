@@ -567,19 +567,22 @@ describe("real Deep Research workflow stepper", () => {
 				jobId: approved.id,
 				status: "pending",
 				assignmentType: "coverage_gap",
-				keyQuestion: "What is the current state of the topic?",
+				keyQuestion:
+					"What is the current evidence and context for this topic: Compare EU and US AI copyright training data rules?",
 			}),
 			expect.objectContaining({
 				jobId: approved.id,
 				status: "pending",
 				assignmentType: "coverage_gap",
-				keyQuestion: "Which similarities and differences matter most?",
+				keyQuestion:
+					"Where do credible sources agree, disagree, or leave important gaps?",
 			}),
 			expect.objectContaining({
 				jobId: approved.id,
 				status: "pending",
 				assignmentType: "coverage_gap",
-				keyQuestion: "What practical implications should the report call out?",
+				keyQuestion:
+					"What practical implications, risks, and limitations should the report call out?",
 			}),
 		]);
 		expect(conversation).toEqual({

@@ -28,6 +28,9 @@ export type CitationAuditSource = {
 	reviewedNote?: string | null;
 	citationNote?: string | null;
 	snippet?: string | null;
+	sourceText?: string | null;
+	supportedKeyQuestions?: string[];
+	extractedClaims?: string[];
 };
 
 export type CitationAuditFindingStatus =
@@ -53,9 +56,24 @@ export type CitationAuditInput = {
 	jobId: string;
 	report: DeepResearchReportDraft;
 	citedSources: CitationAuditSource[];
+	reviewClaimSupport?: (
+		input: CitationAuditClaimReviewInput,
+	) => Promise<CitationAuditClaimReviewResult | null>;
 	repairUnsupportedClaim?: (
 		input: CitationAuditRepairInput,
 	) => Promise<CitationAuditRepairResult | null>;
+};
+
+export type CitationAuditClaimReviewInput = {
+	claim: DeepResearchReportClaim;
+	reviewedCitedSources: CitationAuditSource[];
+};
+
+export type CitationAuditClaimReviewResult = {
+	status: "supported" | "repaired" | "unsupported";
+	reason: string;
+	citationSourceIds?: string[];
+	text?: string;
 };
 
 export type CitationAuditRepairInput = {
@@ -95,21 +113,6 @@ export async function auditDeepResearchReportCitations(
 				.map((sourceId) => sourceById.get(sourceId))
 				.filter((source): source is CitationAuditSource => Boolean(source));
 			const reviewedCitedSources = sources.filter(isReviewedCitedSource);
-			const supportedSources = sources.filter(
-				(source) =>
-					isReviewedCitedSource(source) && sourceSupportsClaim(source, claim),
-			);
-
-			if (supportedSources.length > 0) {
-				auditedClaims.push(claim);
-				findings.push({
-					claimId: claim.id,
-					status: "supported",
-					sourceIds: supportedSources.map((source) => source.id),
-					reason: "Claim is supported by at least one reviewed cited source.",
-				});
-				continue;
-			}
 
 			if (reviewedCitedSources.length === 0) {
 				const sourceIds =
@@ -125,6 +128,65 @@ export async function auditDeepResearchReportCitations(
 					sourceIds,
 					reason:
 						"Claim cited no source that had both Reviewed Source and Cited Source status.",
+				});
+				continue;
+			}
+
+			const llmReview = await reviewClaimSupport({
+				claim,
+				reviewedCitedSources,
+				sourceById,
+				reviewClaimSupport: input.reviewClaimSupport,
+			});
+			if (llmReview) {
+				if (llmReview.status === "supported") {
+					auditedClaims.push({
+						...claim,
+						citationSourceIds: llmReview.supportedSourceIds,
+					});
+					findings.push({
+						claimId: claim.id,
+						status: "supported",
+						sourceIds: llmReview.supportedSourceIds,
+						reason: llmReview.reason,
+					});
+					continue;
+				}
+				if (llmReview.status === "repaired") {
+					auditedClaims.push(llmReview.claim);
+					limitations.push(
+						`Repaired unsupported core claim during citation audit: ${claim.text}`,
+					);
+					findings.push({
+						claimId: claim.id,
+						status: "repaired",
+						sourceIds: llmReview.supportedSourceIds,
+						reason: llmReview.reason,
+					});
+					continue;
+				}
+				limitations.push(
+					`Removed unsupported core claim after citation audit: ${claim.text}`,
+				);
+				findings.push({
+					claimId: claim.id,
+					status: "unsupported_claim",
+					sourceIds: reviewedCitedSources.map((source) => source.id),
+					reason: llmReview.reason,
+				});
+				continue;
+			}
+
+			const supportedSources = reviewedCitedSources.filter((source) =>
+				sourceSupportsClaim(source, claim),
+			);
+			if (supportedSources.length > 0) {
+				auditedClaims.push(claim);
+				findings.push({
+					claimId: claim.id,
+					status: "supported",
+					sourceIds: supportedSources.map((source) => source.id),
+					reason: "Claim is supported by at least one reviewed cited source.",
 				});
 				continue;
 			}
@@ -198,17 +260,43 @@ function sourceSupportsClaim(
 	source: CitationAuditSource,
 	claim: DeepResearchReportClaim,
 ): boolean {
-	const sourceText = [
+	const claimText = normalizeForComparison(claim.text);
+	const evidenceSegments = [
+		...(source.extractedClaims ?? []),
 		source.reviewedNote,
 		source.citationNote,
 		source.snippet,
+		source.sourceText,
 		source.title,
 	]
-		.filter(Boolean)
-		.join(" ");
-	return normalizedWords(claim.text).every((word) =>
-		normalizedWords(sourceText).includes(word),
-	);
+		.filter((segment): segment is string => Boolean(segment?.trim()));
+
+	if (evidenceSegments.length === 0) return false;
+	if (
+		evidenceSegments.some(
+			(segment) => normalizeForComparison(segment).includes(claimText),
+		)
+	) {
+		return true;
+	}
+	if (evidenceSegments.some((segment) => contradictsClaim(segment, claim.text))) {
+		return false;
+	}
+
+	const claimTerms = importantTerms(claim.text);
+	if (claimTerms.length === 0) return false;
+	const claimNumbers = extractNumbers(claim.text);
+
+	return evidenceSegments.some((segment) => {
+		const segmentTerms = new Set(importantTerms(segment));
+		if (segmentTerms.size === 0) return false;
+		if (!claimNumbers.every((number) => segment.includes(number))) return false;
+
+		const overlap = claimTerms.filter((term) => segmentTerms.has(term)).length;
+		const minimumOverlap = Math.min(3, claimTerms.length);
+		const overlapRatio = overlap / claimTerms.length;
+		return overlap >= minimumOverlap && overlapRatio >= 0.68;
+	});
 }
 
 async function repairUnsupportedClaim(input: {
@@ -251,6 +339,63 @@ async function repairUnsupportedClaim(input: {
 	};
 }
 
+async function reviewClaimSupport(input: {
+	claim: DeepResearchReportClaim;
+	reviewedCitedSources: CitationAuditSource[];
+	sourceById: Map<string, CitationAuditSource>;
+	reviewClaimSupport?: CitationAuditInput["reviewClaimSupport"];
+}): Promise<
+	| {
+			status: "supported";
+			supportedSourceIds: string[];
+			reason: string;
+	  }
+	| {
+			status: "repaired";
+			claim: DeepResearchReportClaim;
+			supportedSourceIds: string[];
+			reason: string;
+	  }
+	| {
+			status: "unsupported";
+			reason: string;
+	  }
+	| null
+> {
+	if (!input.reviewClaimSupport) return null;
+	const review = await input.reviewClaimSupport({
+		claim: input.claim,
+		reviewedCitedSources: input.reviewedCitedSources,
+	});
+	if (!review) return null;
+
+	const allowedSourceIds = new Set(input.reviewedCitedSources.map((source) => source.id));
+	const supportedSourceIds = (review.citationSourceIds ?? input.claim.citationSourceIds).filter(
+		(sourceId) => allowedSourceIds.has(sourceId),
+	);
+	const reason = review.reason.trim() || "Citation audit model reviewed the claim.";
+
+	if (review.status === "supported" && supportedSourceIds.length > 0) {
+		return { status: "supported", supportedSourceIds, reason };
+	}
+	if (review.status === "repaired" && review.text?.trim() && supportedSourceIds.length > 0) {
+		return {
+			status: "repaired",
+			claim: {
+				...input.claim,
+				text: review.text.trim(),
+				citationSourceIds: supportedSourceIds,
+			},
+			supportedSourceIds,
+			reason,
+		};
+	}
+	if (review.status === "unsupported") {
+		return { status: "unsupported", reason };
+	}
+	return null;
+}
+
 function determineAuditStatus(input: {
 	retainedClaimCount: number;
 	removedClaimCount: number;
@@ -263,10 +408,75 @@ function determineAuditStatus(input: {
 	return "completed_with_limitations";
 }
 
-function normalizedWords(value: string): string[] {
+function normalizeForComparison(value: string): string {
 	return value
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, " ")
-		.split(" ")
-		.filter((word) => word.length > 2);
+		.replace(/\s+/g, " ")
+		.trim();
 }
+
+function contradictsClaim(evidence: string, claim: string): boolean {
+	const normalizedEvidence = normalizeForComparison(evidence);
+	const normalizedClaim = normalizeForComparison(claim);
+
+	if (
+		/\beliminat\w*\b/.test(normalizedClaim) &&
+		/\b(?:did not|does not|do not|not|never|no)\b.{0,32}\beliminat\w*\b/.test(
+			normalizedEvidence,
+		)
+	) {
+		return true;
+	}
+	if (
+		/\ball\b/.test(normalizedClaim) &&
+		/\b(?:not|never|no)\b.{0,32}\ball\b/.test(normalizedEvidence)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function importantTerms(value: string): string[] {
+	return [
+		...new Set(
+			normalizeForComparison(value)
+				.replace(/https?:\/\/\S+/g, " ")
+				.split(/[^a-z0-9áéíóöőúüű]+/iu)
+				.map((term) => stemTerm(term.trim()))
+				.filter((term) => term.length >= 4 && !STOP_WORDS.has(term)),
+		),
+	];
+}
+
+function stemTerm(term: string): string {
+	return term
+		.replace(/(ingly|edly|ing|ed|es|s)$/i, "")
+		.replace(/(ek|ok|ak|nak|nek|ban|ben|ról|ről|tól|től)$/iu, "");
+}
+
+function extractNumbers(value: string): string[] {
+	return value.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+}
+
+const STOP_WORDS = new Set([
+	"about",
+	"across",
+	"also",
+	"because",
+	"from",
+	"into",
+	"that",
+	"their",
+	"there",
+	"these",
+	"this",
+	"with",
+	"without",
+	"által",
+	"arra",
+	"azon",
+	"ezek",
+	"hogy",
+	"mint",
+	"vagy",
+]);

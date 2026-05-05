@@ -19,6 +19,7 @@ import type {
 	DeepResearchPlanRaw,
 	DeepResearchPlanSummary,
 	DeepResearchSource,
+	DeepResearchSourceCounts,
 	DeepResearchTimelineEvent,
 	DeepResearchUsageSummary,
 } from '$lib/types';
@@ -36,9 +37,14 @@ import {
 } from './planning';
 import { resolveResearchLanguage } from './language';
 import { generateTitle } from '$lib/server/services/title-generator';
-import { writeResearchReport, type ResearchReportDraft } from './report-writer';
+import type { ResearchReportDraft } from './report-writer';
 import { listResearchSources, markResearchSourceCited, saveDiscoveredResearchSource } from './sources';
 import type { SynthesisNotes } from './synthesis';
+import {
+	buildCitationClaimReviewerWithLlm,
+	draftResearchPlanWithLlm,
+	writeResearchReportWithLlm,
+} from './llm-steps';
 import {
 	createPlanGenerationTimelineEvent,
 	listResearchTimelineEventsForJobs,
@@ -216,6 +222,23 @@ export async function startDeepResearchJobShell(
 			planningContext: input.planningContext,
 		},
 		{
+			structuredPlanner: {
+				draftPlan: (plannerInput, context) =>
+					draftResearchPlanWithLlm({
+						context: {
+							jobId: job.id,
+							conversationId: input.conversationId,
+							userId: input.userId,
+							now,
+						},
+						role: 'plan_generation',
+						userRequest: plannerInput.userRequest,
+						selectedDepth: plannerInput.selectedDepth,
+						researchLanguage: plannerInput.researchLanguage,
+						selectedBudget: context.selectedBudget,
+						contextDisclosure: context.contextDisclosure,
+					}),
+			},
 			repository: {
 				saveResearchPlanDraft: (draftRecord) =>
 					saveResearchPlanDraft(draftRecord, now),
@@ -438,6 +461,25 @@ export async function editDeepResearchPlan(
 			contextDisclosure: currentPlan.contextDisclosure ?? null,
 		},
 		{
+			structuredPlanner: {
+				draftPlan: (plannerInput, context) =>
+					draftResearchPlanWithLlm({
+						context: {
+							jobId: job.id,
+							conversationId: job.conversationId,
+							userId: input.userId,
+							now,
+						},
+						role: 'plan_revision',
+						userRequest: input.editInstruction,
+						selectedDepth: plannerInput.selectedDepth,
+						researchLanguage: plannerInput.researchLanguage,
+						selectedBudget: context.selectedBudget,
+						contextDisclosure: context.contextDisclosure,
+						previousPlan: currentPlan.rawPlan,
+						editInstruction: input.editInstruction,
+					}),
+			},
 			repository: {
 				saveResearchPlanDraft: (draftRecord) =>
 					saveResearchPlanDraft(draftRecord, now),
@@ -599,27 +641,81 @@ export async function completeDeepResearchJobWithAuditedReport(
 		userId: input.userId,
 		jobId: job.id,
 	});
-	const reportDraft = writeResearchReport({
+	const reportDraft = await writeResearchReportWithLlm({
+		context: {
+			jobId: job.id,
+			conversationId: job.conversationId,
+			userId: job.userId,
+			now,
+		},
 		jobId: job.id,
 		plan: currentPlan.rawPlan,
 		synthesisNotes: input.synthesisNotes,
 		sources: sources.map(mapSourceForReportWriter),
 		limitations: input.limitations,
 	});
+	const citationAuditReportDraft = buildCitationAuditReportDraft(
+		reportDraft,
+		input.synthesisNotes
+	);
+	const citationAuditSources = sources.map((source) => ({
+		id: source.id,
+		status: source.status,
+		title: source.title ?? source.url,
+		url: source.url,
+		reviewedAt: source.reviewedAt,
+		citedAt: source.citedAt,
+		reviewedNote: source.reviewedNote,
+		citationNote: source.citationNote,
+		snippet: source.snippet,
+		sourceText: source.sourceText,
+		supportedKeyQuestions: source.supportedKeyQuestions,
+		extractedClaims: source.extractedClaims,
+	}));
+	const llmClaimReviewer = await buildCitationClaimReviewerWithLlm({
+		context: {
+			jobId: job.id,
+			conversationId: job.conversationId,
+			userId: job.userId,
+			now,
+		},
+		report: citationAuditReportDraft,
+		citedSources: citationAuditSources,
+	});
 	const auditResult = await auditDeepResearchReportCitations({
 		jobId: job.id,
-		report: buildCitationAuditReportDraft(reportDraft, input.synthesisNotes),
-		citedSources: sources.map((source) => ({
-			id: source.id,
-			status: source.status,
-			title: source.title ?? source.url,
-			url: source.url,
-			reviewedAt: source.reviewedAt,
-			citedAt: source.citedAt,
-			reviewedNote: source.reviewedNote,
-			citationNote: source.citationNote,
-			snippet: source.snippet,
-		})),
+		report: citationAuditReportDraft,
+		citedSources: citationAuditSources,
+		reviewClaimSupport: llmClaimReviewer
+			? async ({ claim }) => llmClaimReviewer(claim.id)
+			: undefined,
+	});
+	await saveResearchTimelineEvent({
+		jobId: job.id,
+		conversationId: job.conversationId,
+		userId: job.userId,
+		taskId: null,
+		stage: 'citation_audit',
+		kind: auditResult.canComplete ? 'stage_completed' : 'warning',
+		occurredAt: now.toISOString(),
+		messageKey: auditResult.canComplete
+			? 'deepResearch.timeline.citationAuditCompleted'
+			: 'deepResearch.timeline.citationAuditFailed',
+		messageParams: {
+			status: auditResult.status,
+			retainedClaims: auditResult.findings.filter((finding) =>
+				['supported', 'repaired'].includes(finding.status)
+			).length,
+			removedClaims: auditResult.findings.filter((finding) =>
+				['unsupported_source', 'unsupported_claim'].includes(finding.status)
+			).length,
+		},
+		sourceCounts: sourceCountsFromSources(sources),
+		assumptions: [],
+		warnings: citationAuditWarnings(auditResult),
+		summary: auditResult.canComplete
+			? 'Citation audit completed and unsupported claims were removed or retained with citations.'
+			: 'Citation audit failed because no credible supported claims remained.',
 	});
 
 	if (!auditResult.canComplete) {
@@ -1082,6 +1178,22 @@ function formatAuditedClaim(
 	return `${claim.text}${citationSuffix}`;
 }
 
+function sourceCountsFromSources(sources: DeepResearchSource[]): DeepResearchSourceCounts {
+	return {
+		discovered: sources.length,
+		reviewed: sources.filter((source) => source.reviewedAt).length,
+		cited: sources.filter((source) => source.citedAt).length,
+	};
+}
+
+function citationAuditWarnings(auditResult: Awaited<ReturnType<typeof auditDeepResearchReportCitations>>): string[] {
+	if (auditResult.limitations.length > 0) return auditResult.limitations.slice(0, 6);
+	if (!auditResult.canComplete) {
+		return ['No reviewed cited source supported the core claims strongly enough to publish a report.'];
+	}
+	return [];
+}
+
 function uniqueValues<T>(values: T[]): T[] {
 	return [...new Set(values)];
 }
@@ -1150,7 +1262,11 @@ async function loadUsageSummariesByJobId(
 	await Promise.all(
 		jobIds.map(async (jobId) => {
 			const summary = await getResearchUsageCostSummary({ userId, jobId });
-			summaries.set(jobId, summary);
+			summaries.set(jobId, {
+				totalCostUsdMicros: summary.totalCostUsdMicros,
+				totalTokens: summary.totalTokens,
+				byModel: summary.byModel,
+			});
 		})
 	);
 	return summaries;

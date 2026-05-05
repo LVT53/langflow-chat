@@ -2,7 +2,13 @@ import { buildOpenAICompatibleUrl } from "$lib/server/services/openai-compatible
 import { getConfig } from "$lib/server/config-store";
 import { decryptApiKey, getProviderWithSecrets } from "$lib/server/services/inference-providers";
 import { resolveDeepResearchModel, type DeepResearchModelRole } from "./model-config";
-import type { ResearchProviderUsageSnapshot } from "./usage";
+import {
+	buildResearchUsageRecord,
+	saveResearchUsageRecord,
+	type ResearchProviderUsageSnapshot,
+	type ResearchUsageOperation,
+} from "./usage";
+import type { ResearchTimelineStage } from "./timeline";
 
 export type DeepResearchModelMessage = {
 	role: "system" | "user" | "assistant";
@@ -70,6 +76,61 @@ export async function runDeepResearchModel(input: {
 		runtimeMs: Date.now() - startedAt,
 		usage: mapUsage(json?.usage),
 	};
+}
+
+export async function tryRunAndRecordDeepResearchModel(input: {
+	role: DeepResearchModelRole;
+	jobId: string;
+	conversationId: string;
+	userId: string;
+	taskId?: string | null;
+	stage: ResearchTimelineStage;
+	operation?: ResearchUsageOperation;
+	messages: DeepResearchModelMessage[];
+	temperature?: number;
+	maxTokens?: number;
+	occurredAt?: Date;
+	fetchImpl?: typeof fetch;
+}): Promise<DeepResearchModelRunResult | null> {
+	if (process.env.NODE_ENV === "test" && !input.fetchImpl) {
+		return null;
+	}
+
+	try {
+		const result = await runDeepResearchModel({
+			role: input.role,
+			messages: input.messages,
+			temperature: input.temperature,
+			maxTokens: input.maxTokens,
+			fetchImpl: input.fetchImpl,
+		});
+		await saveResearchUsageRecord(
+			await buildResearchUsageRecord({
+				jobId: input.jobId,
+				taskId: input.taskId ?? null,
+				conversationId: input.conversationId,
+				userId: input.userId,
+				stage: input.stage,
+				operation: input.operation ?? input.role,
+				modelId: result.modelId,
+				modelDisplayName: result.modelDisplayName,
+				providerId: result.providerId,
+				providerDisplayName: result.providerDisplayName,
+				providerModelName: result.providerModelName,
+				occurredAt: input.occurredAt,
+				runtimeMs: result.runtimeMs,
+				providerUsage: result.usage,
+			}),
+		);
+		return result;
+	} catch (error) {
+		console.warn("[DEEP_RESEARCH] LLM role failed; using fallback", {
+			role: input.role,
+			jobId: input.jobId,
+			error: error instanceof Error ? error.message : "unknown error",
+		});
+		return null;
+	}
 }
 
 async function resolveModelCredentials(modelId: string): Promise<{

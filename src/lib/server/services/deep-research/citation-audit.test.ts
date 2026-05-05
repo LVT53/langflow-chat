@@ -54,6 +54,97 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 
+	it("accepts source-supported paraphrases without requiring exact wording", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-1",
+			report: {
+				title: "Training data report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-1",
+								text: "AI copyright rules require training-data provenance and risk review.",
+								core: true,
+								citationSourceIds: ["source-1"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "source-1",
+					status: "cited",
+					title: "Agency briefing",
+					url: "https://agency.gov.example/ai-copyright",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+					extractedClaims: [
+						"AI copyright training data rules require provenance records and rights-risk review.",
+					],
+				},
+			],
+		});
+
+		expect(result.status).toBe("passed");
+		expect(result.canComplete).toBe(true);
+		expect(result.auditedReport.sections[0].claims).toHaveLength(1);
+	});
+
+	it("uses an audit reviewer to support source-grounded claims before fallback checks", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-1",
+			report: {
+				title: "Market report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-llm-supported",
+								text: "Specialized vendors gained adoption among regulated buyers.",
+								core: true,
+								citationSourceIds: ["source-1"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "source-1",
+					status: "cited",
+					title: "Vendor adoption briefing",
+					url: "https://market.example.test/vendors",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Enterprise procurement teams expanded pilots with domain-specific vendors.",
+				},
+			],
+			reviewClaimSupport: async () => ({
+				status: "supported",
+				reason: "The model judged the claim as a supported paraphrase.",
+				citationSourceIds: ["source-1"],
+			}),
+		});
+
+		expect(result.status).toBe("passed");
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-llm-supported",
+				status: "supported",
+				reason: "The model judged the claim as a supported paraphrase.",
+			}),
+		);
+	});
+
 	it("turns claims that cite discovered-only sources into visible limitations", async () => {
 		const result = await auditDeepResearchReportCitations({
 			jobId: "job-1",

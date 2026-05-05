@@ -83,7 +83,7 @@ export type CreateFirstResearchPlanDraftDependencies = {
 				selectedBudget: ResearchBudget;
 				contextDisclosure: string | null;
 			},
-		) => Promise<ResearchPlan>;
+		) => Promise<ResearchPlan | null>;
 	};
 	sourceResearch?: {
 		discoverSources: (...args: unknown[]) => Promise<unknown>;
@@ -254,12 +254,14 @@ export async function createFirstResearchPlanDraft(
 		input.selectedDepth,
 		input.researchLanguage,
 	);
-	const draftedPlan = dependencies.structuredPlanner
+	const structuredPlan = dependencies.structuredPlanner
 		? await dependencies.structuredPlanner.draftPlan(input, {
 				selectedBudget: researchBudget,
 				contextDisclosure,
 			})
-		: draftDefaultResearchPlan(input, researchBudget, contextDisclosure);
+		: null;
+	const draftedPlan =
+		structuredPlan ?? draftDefaultResearchPlan(input, researchBudget, contextDisclosure);
 	const plan = {
 		...draftedPlan,
 		researchLanguage: input.researchLanguage,
@@ -299,7 +301,7 @@ export async function createRevisedResearchPlanDraft(
 		input.selectedDepth,
 		input.researchLanguage,
 	);
-	const draftedPlan = dependencies.structuredPlanner
+	const structuredPlan = dependencies.structuredPlanner
 		? await dependencies.structuredPlanner.draftPlan(
 				{
 					jobId: input.jobId,
@@ -312,7 +314,8 @@ export async function createRevisedResearchPlanDraft(
 					contextDisclosure: input.contextDisclosure ?? null,
 				},
 			)
-		: reviseDefaultResearchPlan(input);
+		: null;
+	const draftedPlan = structuredPlan ?? reviseDefaultResearchPlan(input);
 	const plan = {
 		...draftedPlan,
 		researchLanguage: input.researchLanguage,
