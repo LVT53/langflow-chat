@@ -116,6 +116,8 @@ const initialBootstrapMode = getData().bootstrap ?? false;
 const initialGeneratedFiles = getData().generatedFiles ?? [];
 const initialFileProductionJobs = getData().fileProductionJobs ?? [];
 const initialDeepResearchJobs = getData().deepResearchJobs ?? [];
+const initialConversationId = getData().conversation.id;
+const initialUserPersonality = getData().userPersonality ?? null;
 
 // Track conversation title reactively - use $derived to keep in sync with page data
 let conversationTitle = $derived(data.conversation?.title ?? "");
@@ -170,8 +172,8 @@ let evidenceManagerOpen = $state(false);
 let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
 let selectedPersonalityId = $state<string | null>(
 	getConversationPersonalitySelection(
-		data.conversation.id,
-		untrack(() => data.userPersonality) ?? null,
+		initialConversationId,
+		initialUserPersonality,
 	),
 );
 let bootstrapMode = initialBootstrapMode;
