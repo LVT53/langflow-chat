@@ -86,7 +86,7 @@ describe('obsolete file-generation surfaces', () => {
 		expect(source).toContain('Tool success means the file-production request was accepted');
 		expect(source).toContain('Do not mention file-production job IDs');
 		expect(source).toContain('Prefer one `document_source` call with multiple `requestedOutputs`');
-		expect(source).toContain('`program` must be a nested JSON object');
+		expect(source).toContain('`program` must be a JSON-encoded string');
 		expect(source).not.toContain('Only tell the user a file is ready after the tool succeeds.');
 		expect(source).not.toContain('Generated files appear in the chat UI after the response finishes.');
 	});

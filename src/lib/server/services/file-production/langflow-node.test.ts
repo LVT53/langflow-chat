@@ -49,4 +49,17 @@ describe('Langflow File Production tool node', () => {
 		expect(source).not.toContain("job.get('id', 'unknown')");
 		expect(source).not.toContain("job.get('status', 'queued')");
 	});
+
+	it('keeps JSON text inputs aligned with the Langflow tool schema', () => {
+		const source = nodeSource();
+
+		expect(source).toContain('name="program"');
+		expect(source).toContain('JSON-encoded object with language, sourceCode, and optional filename');
+		expect(source).toContain('program must be a JSON-encoded object when sourceMode is program.');
+		expect(source).toContain('name="documentSource"');
+		expect(source).toContain('JSON-encoded object using the AlfyAI Standard Report source shape');
+		expect(source).toContain('documentSource must be a JSON-encoded object when sourceMode is document_source.');
+		expect(source).toContain('name="requestedOutputs"');
+		expect(source).toContain('requestedOutputs must be a non-empty JSON-encoded array.');
+	});
 });

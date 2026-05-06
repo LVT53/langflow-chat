@@ -142,6 +142,8 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("requestTitle");
 		expect(prompt).toContain("requestedOutputs");
 		expect(prompt).toContain("documentIntent");
+		expect(prompt).toContain("JSON-encoded string");
+		expect(prompt).toContain("not as a nested object or array");
 		expect(prompt).toContain('type: "heading"');
 		expect(prompt).toContain("level: 2");
 		expect(prompt).toContain("headers");

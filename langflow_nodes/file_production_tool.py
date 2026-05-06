@@ -78,7 +78,7 @@ class FileProductionToolComponent(Component):
         MultilineInput(
             name="requestedOutputs",
             display_name="Outputs",
-            info='JSON array of requested outputs, for example [{"type":"pdf"}] or [{"type":"csv"}]',
+            info='JSON-encoded array of requested outputs, for example [{"type":"pdf"}] or [{"type":"csv"}]',
             value='[{"type":"pdf"}]',
             required=True,
             tool_mode=True,
@@ -112,7 +112,7 @@ class FileProductionToolComponent(Component):
             name="documentSource",
             display_name="Document Source",
             info=(
-                'JSON object using the AlfyAI Standard Report source shape. Required when sourceMode is document_source. '
+                'JSON-encoded object using the AlfyAI Standard Report source shape. Required when sourceMode is document_source. '
                 'Include version: 1, template: "alfyai_standard_report", title, and blocks. '
                 'Heading blocks use {"type":"heading","level":2,"text":"Section title"}.'
             ),
@@ -123,7 +123,7 @@ class FileProductionToolComponent(Component):
         MultilineInput(
             name="program",
             display_name="Program",
-            info='JSON object with language, sourceCode, and optional filename. Required when sourceMode is program.',
+            info='JSON-encoded object with language, sourceCode, and optional filename. Required when sourceMode is program.',
             value="",
             required=False,
             tool_mode=True,
@@ -225,15 +225,15 @@ class FileProductionToolComponent(Component):
         if not request_title:
             return "requestTitle is required."
         if not isinstance(requested_outputs, list) or not requested_outputs:
-            return "requestedOutputs must be a non-empty JSON array."
+            return "requestedOutputs must be a non-empty JSON-encoded array."
         if source_mode not in {"document_source", "program"}:
             return 'sourceMode must be "document_source" or "program".'
         if not document_intent:
             return "documentIntent is required."
         if source_mode == "document_source" and not isinstance(document_source, dict):
-            return "documentSource must be a JSON object when sourceMode is document_source."
+            return "documentSource must be a JSON-encoded object when sourceMode is document_source."
         if source_mode == "program" and not isinstance(program, dict):
-            return "program must be a JSON object when sourceMode is program."
+            return "program must be a JSON-encoded object when sourceMode is program."
 
         payload: dict[str, Any] = {
             "conversationId": conversation_id,
