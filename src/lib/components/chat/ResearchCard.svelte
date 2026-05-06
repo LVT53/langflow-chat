@@ -1488,9 +1488,9 @@
 	}
 
 	.research-card__timeline-toggle {
-		border: 1px solid rgba(94, 106, 210, 0.2);
+		border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border-subtle));
 		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.78);
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface-page));
 		color: var(--text-primary);
 		font-size: 0.78rem;
 		font-weight: 700;
@@ -1500,8 +1500,8 @@
 
 	.research-card__timeline-toggle:hover,
 	.research-card__timeline-toggle:focus-visible {
-		border-color: rgba(94, 106, 210, 0.38);
-		background: rgba(255, 255, 255, 0.96);
+		border-color: color-mix(in srgb, var(--accent) 48%, var(--border-subtle));
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface-page));
 	}
 
 	.research-card__timeline-item {

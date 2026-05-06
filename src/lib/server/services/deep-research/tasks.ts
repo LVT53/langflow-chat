@@ -263,12 +263,20 @@ export async function completeResearchTask(
 		.returning();
 
 	if (row) {
-		await saveResearchTaskEvidenceNotes({
-			userId: input.userId,
-			taskId: row.id,
-			output: input.output,
-			now,
-		});
+		try {
+			await saveResearchTaskEvidenceNotes({
+				userId: input.userId,
+				taskId: row.id,
+				output: input.output,
+				now,
+			});
+		} catch (error) {
+			console.warn("[DEEP_RESEARCH] Research task evidence note save failed", {
+				taskId: row.id,
+				jobId: row.jobId,
+				error: error instanceof Error ? error.message : "unknown error",
+			});
+		}
 	}
 
 	return row ? mapResearchTaskRow(row) : null;

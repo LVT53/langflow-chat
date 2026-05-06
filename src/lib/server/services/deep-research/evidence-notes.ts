@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
 	deepResearchEvidenceNotes,
 	deepResearchPassCheckpoints,
+	deepResearchSources,
 	deepResearchTasks,
 } from "$lib/server/db/schema";
 import type {
@@ -18,6 +19,9 @@ import {
 
 type DeepResearchEvidenceNoteRow =
 	typeof deepResearchEvidenceNotes.$inferSelect;
+
+const MAX_EVIDENCE_NOTES_PER_SAVE = 64;
+const MAX_EVIDENCE_NOTE_TEXT_LENGTH = 2_000;
 
 export type SaveDeepResearchEvidenceNoteInput = {
 	findingText: string;
@@ -48,9 +52,13 @@ export async function saveDeepResearchEvidenceNotes(
 	input: SaveDeepResearchEvidenceNotesInput,
 ): Promise<DeepResearchEvidenceNote[]> {
 	const normalizedNotes = input.notes
+		.slice(0, MAX_EVIDENCE_NOTES_PER_SAVE)
 		.map((note) => ({
 			...note,
-			findingText: normalizeText(note.findingText),
+			findingText: normalizeText(note.findingText).slice(
+				0,
+				MAX_EVIDENCE_NOTE_TEXT_LENGTH,
+			),
 			supportedKeyQuestion: normalizeOptionalText(note.supportedKeyQuestion),
 			comparedEntity: normalizeOptionalText(note.comparedEntity),
 			comparisonAxis: normalizeOptionalText(note.comparisonAxis),
@@ -125,6 +133,20 @@ export async function saveResearchTaskEvidenceNotes(input: {
 	if (!checkpoint) return [];
 
 	const sourceIds = normalizeStringList(input.output.sourceIds ?? []);
+	const validSourceRows =
+		sourceIds.length > 0
+			? await db
+					.select({ id: deepResearchSources.id })
+					.from(deepResearchSources)
+					.where(
+						and(
+							eq(deepResearchSources.userId, input.userId),
+							eq(deepResearchSources.jobId, task.jobId),
+							inArray(deepResearchSources.id, sourceIds),
+						),
+					)
+			: [];
+	const validSourceIds = validSourceRows.map((row) => row.id);
 	const findings = [
 		input.output.summary,
 		...(input.output.findings ?? []),
@@ -137,7 +159,7 @@ export async function saveResearchTaskEvidenceNotes(input: {
 		jobId: task.jobId,
 		conversationId: task.conversationId,
 		passCheckpointId: checkpoint.id,
-		sourceId: sourceIds.length === 1 ? sourceIds[0] : null,
+		sourceId: validSourceIds.length === 1 ? validSourceIds[0] : null,
 		taskId: task.id,
 		notes: uniqueFindings.map((findingText) => ({
 			findingText,
@@ -145,7 +167,7 @@ export async function saveResearchTaskEvidenceNotes(input: {
 			comparedEntity: input.output.comparedEntity,
 			comparisonAxis: input.output.comparisonAxis,
 			sourceSupport: {
-				sourceIds,
+				sourceIds: validSourceIds,
 				taskId: task.id,
 				coverageGapId: task.coverageGapId,
 			},

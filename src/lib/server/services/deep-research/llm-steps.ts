@@ -35,6 +35,9 @@ import type {
 } from "./source-review";
 import type { DeepResearchJob, DeepResearchSource, DeepResearchTask, DeepResearchTaskOutput } from "$lib/types";
 
+const MAX_SOURCE_REVIEW_FINDINGS = 12;
+const MAX_SOURCE_REVIEW_CLAIMS = 16;
+
 export type LlmStepContext = {
 	jobId: string;
 	conversationId: string;
@@ -182,13 +185,13 @@ export async function reviewSourceWithLlm(input: {
 	if (!parsed) return null;
 	return {
 		summary: stringValue(parsed.summary) ?? input.source.snippet ?? input.source.title,
-		keyFindings: stringArrayValue(parsed.keyFindings).slice(0, 12),
+		keyFindings: stringArrayValue(parsed.keyFindings).slice(0, MAX_SOURCE_REVIEW_FINDINGS),
 		extractedText: stringValue(parsed.extractedText),
 		relevanceScore: numberValue(parsed.relevanceScore) ?? undefined,
 		supportedKeyQuestions: stringArrayValue(parsed.supportedKeyQuestions),
 		comparedEntity: stringValue(parsed.comparedEntity),
 		comparisonAxis: stringValue(parsed.comparisonAxis),
-		extractedClaims: stringArrayValue(parsed.extractedClaims),
+		extractedClaims: stringArrayValue(parsed.extractedClaims).slice(0, MAX_SOURCE_REVIEW_CLAIMS),
 		rejectedReason: stringValue(parsed.rejectedReason),
 	};
 }

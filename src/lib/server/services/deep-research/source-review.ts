@@ -359,9 +359,9 @@ function normalizeSupportedKeyQuestions(
 function sourceSupportsQuestion(sourceText: string, question: string): boolean {
 	const sourceTerms = importantTerms(sourceText);
 	const questionTerms = importantTerms(question);
-	if (questionTerms.length === 0) return false;
-	const overlap = questionTerms.filter((term) => sourceTerms.has(term)).length;
-	return overlap >= Math.min(2, questionTerms.length);
+	if (questionTerms.size === 0) return false;
+	const overlap = [...questionTerms].filter((term) => sourceTerms.has(term)).length;
+	return overlap >= Math.min(2, questionTerms.size);
 }
 
 function questionsOverlap(left: string, right: string): boolean {

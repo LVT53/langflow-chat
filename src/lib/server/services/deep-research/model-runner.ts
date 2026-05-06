@@ -16,6 +16,8 @@ import {
 	saveResearchUsageRecord,
 } from "./usage";
 
+const DEFAULT_DEEP_RESEARCH_MODEL_TIMEOUT_MS = 90_000;
+
 export type DeepResearchModelMessage = {
 	role: "system" | "user" | "assistant";
 	content: string;
@@ -72,7 +74,9 @@ export async function runDeepResearchModel(input: {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(config.requestTimeoutMs),
+			signal: AbortSignal.timeout(
+				deepResearchModelTimeoutMs(config.requestTimeoutMs),
+			),
 		},
 	);
 	if (!response.ok) {
@@ -92,6 +96,19 @@ export async function runDeepResearchModel(input: {
 		runtimeMs: Date.now() - startedAt,
 		usage: mapUsage(json?.usage),
 	};
+}
+
+function deepResearchModelTimeoutMs(configuredTimeoutMs: number): number {
+	if (!Number.isFinite(configuredTimeoutMs)) {
+		return DEFAULT_DEEP_RESEARCH_MODEL_TIMEOUT_MS;
+	}
+	return Math.max(
+		1_000,
+		Math.min(
+			Math.floor(configuredTimeoutMs),
+			DEFAULT_DEEP_RESEARCH_MODEL_TIMEOUT_MS,
+		),
+	);
 }
 
 export async function tryRunAndRecordDeepResearchModel(input: {
@@ -120,24 +137,33 @@ export async function tryRunAndRecordDeepResearchModel(input: {
 			maxTokens: input.maxTokens,
 			fetchImpl: input.fetchImpl,
 		});
-		await saveResearchUsageRecord(
-			await buildResearchUsageRecord({
+		try {
+			await saveResearchUsageRecord(
+				await buildResearchUsageRecord({
+					jobId: input.jobId,
+					taskId: input.taskId ?? null,
+					conversationId: input.conversationId,
+					userId: input.userId,
+					stage: input.stage,
+					operation: input.operation ?? input.role,
+					modelId: result.modelId,
+					modelDisplayName: result.modelDisplayName,
+					providerId: result.providerId,
+					providerDisplayName: result.providerDisplayName,
+					providerModelName: result.providerModelName,
+					occurredAt: input.occurredAt,
+					runtimeMs: result.runtimeMs,
+					providerUsage: result.usage,
+				}),
+			);
+		} catch (error) {
+			console.warn("[DEEP_RESEARCH] Usage record save failed", {
+				role: input.role,
 				jobId: input.jobId,
 				taskId: input.taskId ?? null,
-				conversationId: input.conversationId,
-				userId: input.userId,
-				stage: input.stage,
-				operation: input.operation ?? input.role,
-				modelId: result.modelId,
-				modelDisplayName: result.modelDisplayName,
-				providerId: result.providerId,
-				providerDisplayName: result.providerDisplayName,
-				providerModelName: result.providerModelName,
-				occurredAt: input.occurredAt,
-				runtimeMs: result.runtimeMs,
-				providerUsage: result.usage,
-			}),
-		);
+				error: error instanceof Error ? error.message : "unknown error",
+			});
+		}
 		return result;
 	} catch (error) {
 		console.warn("[DEEP_RESEARCH] LLM role failed; using fallback", {
