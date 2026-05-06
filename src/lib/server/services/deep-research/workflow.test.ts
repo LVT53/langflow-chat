@@ -521,10 +521,24 @@ describe("real Deep Research workflow stepper", () => {
 				},
 			},
 		);
+		const repairedCheckpoints = await listResearchPassCheckpoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
 
 		expect(repairResult).toMatchObject({
 			advanced: true,
 		});
+		expect(repairedCheckpoints).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					passNumber: 2,
+					searchIntent:
+						"Report eligibility repair for pass 1 Claim Readiness gaps",
+					terminalDecision: true,
+				}),
+			]),
+		);
 	});
 
 	it("reviews discovered sources during the source review step and records timeline progress", async () => {
@@ -2017,6 +2031,60 @@ describe("real Deep Research workflow stepper", () => {
 				limit: 4,
 			}),
 		);
+	});
+
+	it("stops a Research Task pass cleanly when its conversation is deleted mid-flight", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { createResearchTasksFromCoverageGaps } = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: [
+				{
+					id: "gap-deleted-conversation",
+					keyQuestion: "Which source is still missing?",
+					summary: "Required source work still needs a worker claim.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				tasks: {
+					executor: async () => {
+						await db
+							.delete(schema.conversations)
+							.where(eq(schema.conversations.id, "conv-1"));
+						return {
+							summary: "Completed after deletion.",
+							findings: ["Finding after deletion."],
+						};
+					},
+				},
+			},
+		);
+
+		expect(result).toBeNull();
 	});
 
 	it("turns non-critical failed Research Tasks into audited report limitations", async () => {

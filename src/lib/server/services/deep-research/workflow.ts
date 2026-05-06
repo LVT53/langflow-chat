@@ -376,6 +376,36 @@ async function runResearchTasksStep(
 		}),
 	);
 
+	const postTaskJob = await reloadWorkflowJob(
+		jobRow.userId,
+		jobRow.conversationId,
+		jobRow.id,
+	);
+	if (!postTaskJob) {
+		console.warn("[DEEP_RESEARCH] Research task pass abandoned", {
+			jobId: jobRow.id,
+			passNumber,
+			reason: "job_missing_after_task_execution",
+		});
+		return null;
+	}
+	if (
+		postTaskJob.status !== "running" ||
+		postTaskJob.stage !== "research_tasks"
+	) {
+		console.info("[DEEP_RESEARCH] Research task pass stopped", {
+			jobId: jobRow.id,
+			passNumber,
+			status: postTaskJob.status,
+			stage: postTaskJob.stage,
+		});
+		return {
+			job: postTaskJob,
+			advanced: false,
+			outcome: "not_eligible",
+		};
+	}
+
 	if (tasksToExecute.length > 0) {
 		await db
 			.update(deepResearchJobs)
@@ -1831,12 +1861,12 @@ async function persistResearchTaskPassDecision(input: {
 	sources: DeepResearchSource[];
 	now: Date;
 }) {
-	const existingTerminalDecision = await getTerminalPassDecision({
+	const existingPassCheckpoint = await getResearchPassCheckpoint({
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
 		passNumber: input.passNumber,
 	});
-	if (existingTerminalDecision) return;
+	if (existingPassCheckpoint?.terminalDecision) return;
 
 	const checkpoint = await upsertResearchPassCheckpoint({
 		userId: input.jobRow.userId,
@@ -1844,9 +1874,10 @@ async function persistResearchTaskPassDecision(input: {
 		conversationId: input.jobRow.conversationId,
 		passNumber: input.passNumber,
 		searchIntent:
-			input.passNumber === 1
+			existingPassCheckpoint?.searchIntent ??
+			(input.passNumber === 1
 				? "Targeted follow-up for Coverage Gaps"
-				: `Targeted follow-up for pass ${input.passNumber - 1} Coverage Gaps`,
+				: `Targeted follow-up for pass ${input.passNumber - 1} Coverage Gaps`),
 		reviewedSourceIds: input.reviewedSources.map((source) => source.id),
 		coverageResult: {
 			status: "task_pass_completed",
@@ -2134,15 +2165,22 @@ async function getTerminalPassDecision(input: {
 	jobId: string;
 	passNumber: number;
 }): Promise<DeepResearchPassCheckpoint | null> {
+	const checkpoint = await getResearchPassCheckpoint(input);
+	return checkpoint?.terminalDecision ? checkpoint : null;
+}
+
+async function getResearchPassCheckpoint(input: {
+	userId: string;
+	jobId: string;
+	passNumber: number;
+}): Promise<DeepResearchPassCheckpoint | null> {
 	const checkpoints = await listResearchPassCheckpoints({
 		userId: input.userId,
 		jobId: input.jobId,
 	});
 	return (
 		checkpoints.find(
-			(checkpoint) =>
-				checkpoint.passNumber === input.passNumber &&
-				checkpoint.terminalDecision,
+			(checkpoint) => checkpoint.passNumber === input.passNumber,
 		) ?? null
 	);
 }
