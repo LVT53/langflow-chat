@@ -328,6 +328,7 @@ export async function createFirstResearchPlanDraft(
 		researchLanguage: input.researchLanguage,
 		reportIntent: normalizeReportIntent(draftedPlan.reportIntent, input.userRequest),
 	};
+	normalizePlanTextFields(plan, input.userRequest);
 	normalizePlanComparisonMetadata(plan, input.userRequest);
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
@@ -387,6 +388,10 @@ export async function createRevisedResearchPlanDraft(
 			`${input.previousPlan.goal} ${input.editInstruction}`,
 		),
 	};
+	normalizePlanTextFields(
+		plan,
+		`${input.previousPlan.goal} ${input.editInstruction}`,
+	);
 	normalizePlanComparisonMetadata(
 		plan,
 		`${input.previousPlan.goal} ${input.editInstruction}`,
@@ -607,6 +612,57 @@ function normalizeReportIntent(
 ): ReportIntent {
 	if (isReportIntent(value)) return value;
 	return inferReportIntent(fallbackText);
+}
+
+function normalizePlanTextFields(plan: ResearchPlan, fallbackText: string): void {
+	const researchLanguage = plan.researchLanguage ?? "en";
+	const defaultProse = localizedDefaultPlanProse[researchLanguage];
+	const goal = normalizePlanTextValue(plan.goal);
+	plan.goal = goal ?? fallbackText.trim().replace(/\s+/g, " ");
+	plan.keyQuestions = normalizePlanTextArray(plan.keyQuestions);
+	if (plan.keyQuestions.length === 0) {
+		plan.keyQuestions = buildDefaultKeyQuestions(fallbackText, researchLanguage);
+	}
+	plan.reportShape = normalizePlanTextArray(plan.reportShape);
+	if (plan.reportShape.length === 0) {
+		plan.reportShape = defaultProse.reportShape;
+	}
+	plan.constraints = normalizePlanTextArray(plan.constraints);
+	plan.deliverables = normalizePlanTextArray(plan.deliverables);
+	if (plan.deliverables.length === 0) {
+		plan.deliverables = defaultProse.deliverables;
+	}
+	if (plan.comparedEntities) {
+		plan.comparedEntities = normalizePlanTextArray(plan.comparedEntities);
+		if (plan.comparedEntities.length === 0) delete plan.comparedEntities;
+	}
+	if (plan.comparisonAxes) {
+		plan.comparisonAxes = normalizePlanTextArray(plan.comparisonAxes);
+		if (plan.comparisonAxes.length === 0) delete plan.comparisonAxes;
+	}
+}
+
+function normalizePlanTextArray(values: unknown): string[] {
+	if (!Array.isArray(values)) return [];
+	return values
+		.map((value) => normalizePlanTextValue(value))
+		.filter((value): value is string => Boolean(value));
+}
+
+function normalizePlanTextValue(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const normalized = value.trim().replace(/\s+/g, " ");
+	if (!normalized || isSchemaPlaceholderText(normalized)) return null;
+	return normalized;
+}
+
+function isSchemaPlaceholderText(value: string): boolean {
+	const normalized = value.trim().replace(/^["']|["']$/g, "").toLowerCase();
+	return (
+		normalized === "string" ||
+		normalized === "string[]" ||
+		normalized.startsWith("string[] ")
+	);
 }
 
 function normalizePlanComparisonMetadata(

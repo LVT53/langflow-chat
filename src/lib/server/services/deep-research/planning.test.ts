@@ -101,6 +101,51 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.renderedPlan).toContain("- code review workflows");
 	});
 
+	it("filters schema placeholder strings from structured plan drafts", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-schema-placeholders",
+				userRequest:
+					"Compare GitHub Copilot and Cursor for privacy and pricing.",
+				selectedDepth: "focused",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare GitHub Copilot and Cursor for privacy and pricing.",
+						depth: "focused",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: ["string"],
+						comparisonAxes: ["string"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: ["string"],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["string"],
+						constraints: ["string"],
+						deliverables: ["string"],
+					})),
+				},
+			},
+		);
+
+		expect(result.plan.keyQuestions).not.toEqual(["string"]);
+		expect(result.plan.keyQuestions.length).toBeGreaterThan(1);
+		expect(result.plan.reportShape).not.toEqual(["string"]);
+		expect(result.plan.deliverables).not.toEqual(["string"]);
+		expect(result.plan.constraints).toEqual([]);
+		expect(result.plan.comparedEntities).toEqual([
+			"GitHub Copilot",
+			"Cursor",
+		]);
+		expect(result.plan.comparisonAxes).toEqual(["privacy", "pricing"]);
+		expect(result.renderedPlan).not.toContain("- string");
+	});
+
 	it("drafts concrete fallback questions for product model comparisons", async () => {
 		const result = await createFirstResearchPlanDraft({
 			jobId: "job-cube-bikes",
