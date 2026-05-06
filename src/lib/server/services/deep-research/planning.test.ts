@@ -138,10 +138,7 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.plan.reportShape).not.toEqual(["string"]);
 		expect(result.plan.deliverables).not.toEqual(["string"]);
 		expect(result.plan.constraints).toEqual([]);
-		expect(result.plan.comparedEntities).toEqual([
-			"GitHub Copilot",
-			"Cursor",
-		]);
+		expect(result.plan.comparedEntities).toEqual(["GitHub Copilot", "Cursor"]);
 		expect(result.plan.comparisonAxes).toEqual(["privacy", "pricing"]);
 		expect(result.renderedPlan).not.toContain("- string");
 	});
@@ -175,9 +172,14 @@ describe("createFirstResearchPlanDraft", () => {
 		const cases = [
 			{
 				jobId: "job-recommendation",
-				userRequest: "Recommend the best private AI coding assistant for a small software team.",
+				userRequest:
+					"Recommend the best private AI coding assistant for a small software team.",
 				reportIntent: "recommendation",
-				expectedFragments: ["decision should the report support", "shortlist", "disqualifiers"],
+				expectedFragments: [
+					"decision should the report support",
+					"shortlist",
+					"disqualifiers",
+				],
 			},
 			{
 				jobId: "job-market",
@@ -187,21 +189,36 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				jobId: "job-product",
-				userRequest: "Research private AI coding assistant products for enterprise use.",
+				userRequest:
+					"Research private AI coding assistant products for enterprise use.",
 				reportIntent: "product_scan",
-				expectedFragments: ["products, versions, tiers", "official capabilities", "independent tests"],
+				expectedFragments: [
+					"products, versions, tiers",
+					"official capabilities",
+					"independent tests",
+				],
 			},
 			{
 				jobId: "job-limitation",
-				userRequest: "Research the risks and limitations of geothermal drilling in dense cities.",
+				userRequest:
+					"Research the risks and limitations of geothermal drilling in dense cities.",
 				reportIntent: "limitation_focused",
-				expectedFragments: ["risk and limitation checking", "failure modes", "mitigations"],
+				expectedFragments: [
+					"risk and limitation checking",
+					"failure modes",
+					"mitigations",
+				],
 			},
 			{
 				jobId: "job-investigation",
-				userRequest: "Investigate why European heat pump adoption slowed in 2025.",
+				userRequest:
+					"Investigate why European heat pump adoption slowed in 2025.",
 				reportIntent: "investigation",
-				expectedFragments: ["exact claim, event, problem", "key actors", "credible sources disagree"],
+				expectedFragments: [
+					"exact claim, event, problem",
+					"key actors",
+					"credible sources disagree",
+				],
 			},
 		] as const;
 
@@ -218,7 +235,80 @@ describe("createFirstResearchPlanDraft", () => {
 			for (const fragment of item.expectedFragments) {
 				expect(questions).toContain(fragment);
 			}
-			expect(questions).not.toContain("current evidence and context for this topic");
+			expect(questions).not.toContain(
+				"current evidence and context for this topic",
+			);
+		}
+	});
+
+	it("routes evidence strength and consensus review requests to the limitation-focused report shape", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-evidence-review",
+			userRequest:
+				"Review the evidence strength, consensus, conflict, and unresolved contradictions in the research on GLP-1 weight loss drugs.",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+
+		expect(result.plan.reportIntent).toBe("limitation_focused");
+		expect(result.renderedPlan).toContain("Report intent: Limitation-focused");
+		expect(result.plan.keyQuestions.join("\n")).toContain("expert consensus");
+	});
+
+	it("recognizes evidence-review vocabulary as limitation-focused research requests", async () => {
+		const cases = [
+			"Do an evidence review of remote work productivity studies.",
+			"Assess the disagreement between sources on school phone bans.",
+			"Evaluate the evidence support for blue light glasses claims.",
+			"Analyze contradiction between clinical trial findings on vitamin D.",
+			"Review unresolved conflicts in the literature on carbon capture.",
+		];
+
+		for (const [index, userRequest] of cases.entries()) {
+			const result = await createFirstResearchPlanDraft({
+				jobId: `job-evidence-vocabulary-${index}`,
+				userRequest,
+				selectedDepth: "focused",
+				researchLanguage: "en",
+			});
+
+			expect(result.plan.reportIntent).toBe("limitation_focused");
+		}
+	});
+
+	it("keeps higher-priority report intents ahead of evidence-review language", async () => {
+		const cases = [
+			{
+				userRequest:
+					"Compare the evidence strength for GitHub Copilot and Cursor on code review quality.",
+				reportIntent: "comparison",
+			},
+			{
+				userRequest:
+					"Recommend the best option based on evidence strength and unresolved conflicts.",
+				reportIntent: "recommendation",
+			},
+			{
+				userRequest:
+					"Map the market consensus and conflicting evidence for home battery storage.",
+				reportIntent: "market_scan",
+			},
+			{
+				userRequest:
+					"Review the evidence support for private AI assistant products.",
+				reportIntent: "product_scan",
+			},
+		] as const;
+
+		for (const [index, item] of cases.entries()) {
+			const result = await createFirstResearchPlanDraft({
+				jobId: `job-evidence-precedence-${index}`,
+				userRequest: item.userRequest,
+				selectedDepth: "focused",
+				researchLanguage: "en",
+			});
+
+			expect(result.plan.reportIntent).toBe(item.reportIntent);
 		}
 	});
 
@@ -228,37 +318,61 @@ describe("createFirstResearchPlanDraft", () => {
 				jobId: "job-law",
 				userRequest:
 					"Research GDPR compliance risks for using customer data in AI training.",
-				expectedFragments: ["jurisdictions", "current legal authorities", "compliance risk"],
+				expectedFragments: [
+					"jurisdictions",
+					"current legal authorities",
+					"compliance risk",
+				],
 			},
 			{
 				jobId: "job-procurement",
 				userRequest:
 					"Recommend private AI coding assistant software for enterprise procurement.",
-				expectedFragments: ["stakeholder criteria", "data-handling terms", "vendor lock-in"],
+				expectedFragments: [
+					"stakeholder criteria",
+					"data-handling terms",
+					"vendor lock-in",
+				],
 			},
 			{
 				jobId: "job-technical",
 				userRequest:
 					"Investigate SQLite to Postgres migration performance and reliability risks.",
-				expectedFragments: ["versions, architectures, APIs", "operating limits", "observability"],
+				expectedFragments: [
+					"versions, architectures, APIs",
+					"operating limits",
+					"observability",
+				],
 			},
 			{
 				jobId: "job-health",
 				userRequest:
 					"Research current clinical guidance and risks for GLP-1 weight loss drugs.",
-				expectedFragments: ["clinical guidelines", "contraindications", "adverse effects"],
+				expectedFragments: [
+					"clinical guidelines",
+					"contraindications",
+					"adverse effects",
+				],
 			},
 			{
 				jobId: "job-finance",
 				userRequest:
 					"Recommend a bond ETF strategy for a taxable portfolio in 2026.",
-				expectedFragments: ["financial products", "fees, taxes", "downside risks"],
+				expectedFragments: [
+					"financial products",
+					"fees, taxes",
+					"downside risks",
+				],
 			},
 			{
 				jobId: "job-academic",
 				userRequest:
 					"Write an academic literature review of retrieval augmented generation evaluation studies.",
-				expectedFragments: ["databases, search terms", "study quality", "bias risk"],
+				expectedFragments: [
+					"databases, search terms",
+					"study quality",
+					"bias risk",
+				],
 			},
 		] as const;
 
@@ -359,7 +473,9 @@ describe("createFirstResearchPlanDraft", () => {
 			"Pass budget: 5-8 meaningful research passes",
 		);
 		expect(max.renderedPlan).toContain("Repair pass budget: up to 3");
-		expect(max.renderedPlan).toContain("Source processing concurrency: up to 24");
+		expect(max.renderedPlan).toContain(
+			"Source processing concurrency: up to 24",
+		);
 		expect(max.renderedPlan).toContain("Model reasoning concurrency: up to 8");
 	});
 
@@ -385,7 +501,9 @@ describe("createFirstResearchPlanDraft", () => {
 			"Cél: Kérlek kutasd ki az AI kódoló asszisztensek beszerzési szempontjait.",
 		);
 		expect(result.renderedPlan).toContain("Mélység: Fókuszált mély kutatás");
-		expect(result.renderedPlan).toContain("Jelentési szándék: Termékáttekintés");
+		expect(result.renderedPlan).toContain(
+			"Jelentési szándék: Termékáttekintés",
+		);
 		expect(result.renderedPlan).toContain(
 			"Várható idő: Rövid, többkörös futás; az időtartam a források elérhetőségétől függ.",
 		);

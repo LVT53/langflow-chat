@@ -738,6 +738,84 @@ describe("Deep Research report writer", () => {
 		);
 	});
 
+	it("prefers claim-linked comparison evidence when multiple notes share the same entity and axis", () => {
+		const comparisonPlan: ResearchPlan = {
+			...basePlan,
+			goal: "Compare two AI coding assistants for repository workflow.",
+			reportIntent: "comparison",
+			comparedEntities: ["Assistant A"],
+			comparisonAxes: ["Repository workflow"],
+			reportShape: ["Comparison Matrix", "Decision Implications"],
+		};
+		const unlinkedNote: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-unlinked-workflow",
+			sourceId: "source-unlinked-workflow",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Repository workflow",
+			findingText:
+				"Assistant A has an uncited repository workflow note that was not accepted.",
+			sourceSupport: {
+				sourceId: "source-unlinked-workflow",
+				reviewedSourceId: "reviewed-unlinked-workflow",
+			},
+		};
+		const linkedNote: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-linked-workflow",
+			sourceId: "source-linked-workflow",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Repository workflow",
+			findingText:
+				"Assistant A supports repository-aware workflow with permission controls.",
+			sourceSupport: {
+				sourceId: "source-linked-workflow",
+				reviewedSourceId: "reviewed-linked-workflow",
+			},
+		};
+		const linkedClaim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-linked-workflow",
+			statement: linkedNote.findingText,
+			reportSection: linkedNote.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-linked-workflow",
+					claimId: "claim-linked-workflow",
+					evidenceNoteId: linkedNote.id,
+				},
+			],
+		};
+
+		const report = writeResearchReport({
+			jobId: "job-linked-matrix-evidence",
+			plan: comparisonPlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [linkedClaim],
+			evidenceNotes: [unlinkedNote, linkedNote],
+			sources: [
+				{
+					id: "source-linked-workflow",
+					reviewedSourceId: "reviewed-linked-workflow",
+					status: "cited",
+					title: "Assistant A repository workflow documentation",
+					url: "https://assistant-a.example.test/workflow",
+				},
+			],
+		});
+
+		expect(report.markdown).toContain(
+			"| Repository workflow | Assistant A supports repository-aware workflow with permission controls. [1] |",
+		);
+		expect(report.markdown).not.toContain(
+			"| Repository workflow | Not established |",
+		);
+		expect(report.markdown).not.toContain(
+			"Assistant A has an uncited repository workflow note that was not accepted.",
+		);
+	});
+
 	it("renders recommendation reports with ranked options, rubric, fit/risk table, next actions, and compact appendix", () => {
 		const recommendationEvidence: DeepResearchEvidenceNote[] = [
 			{
@@ -1593,6 +1671,88 @@ describe("Deep Research report writer", () => {
 		expect(report.markdown).not.toContain("Supported finding 8.");
 		expect(report.markdown).not.toContain("Supported finding 10.");
 		expect(report.markdown).toContain("| # | Evidence-backed point |");
+	});
+
+	it("cites structured-section evidence beyond capped key findings and includes its source", () => {
+		const scanEvidence = Array.from({ length: 8 }, (_, index) => {
+			const evidenceNumber = index + 1;
+			return {
+				...evidenceNotes[0],
+				id: `evidence-market-scan-${evidenceNumber}`,
+				sourceId: `source-market-scan-${evidenceNumber}`,
+				comparedEntity: `Vendor ${evidenceNumber}`,
+				comparisonAxis:
+					evidenceNumber === 8 ? "Availability" : "Shortlist signal",
+				findingText:
+					evidenceNumber === 8
+						? "Vendor 8 has limited regional availability that should be treated as a watchout."
+						: `Vendor ${evidenceNumber} has a supported shortlist signal.`,
+				sourceSupport: {
+					sourceId: `source-market-scan-${evidenceNumber}`,
+					reviewedSourceId: `reviewed-market-scan-${evidenceNumber}`,
+				},
+				sourceQualitySignals:
+					evidenceNumber === 8
+						? {
+								sourceType: "vendor_marketing" as const,
+								independence: "affiliated" as const,
+								freshness: "dated" as const,
+								directness: "direct" as const,
+								extractionConfidence: "medium" as const,
+								claimFit: "partial" as const,
+							}
+						: null,
+			};
+		});
+		const scanClaims = scanEvidence.map((note, index) => ({
+			...acceptedClaim,
+			id: `claim-market-scan-${index + 1}`,
+			statement: note.findingText,
+			reportSection: note.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: `link-market-scan-${index + 1}`,
+					claimId: `claim-market-scan-${index + 1}`,
+					evidenceNoteId: note.id,
+				},
+			],
+		}));
+
+		const report = writeResearchReport({
+			jobId: "job-market-scan-capped-section-citations",
+			plan: {
+				...basePlan,
+				goal: "Scan vendors for regional availability watchouts.",
+				reportIntent: "market_scan",
+				comparedEntities: scanEvidence.map((note) => note.comparedEntity ?? ""),
+				comparisonAxes: ["Shortlist signal", "Availability"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: scanClaims,
+			evidenceNotes: scanEvidence,
+			sources: scanEvidence.map((note, index) => ({
+				id: note.sourceId,
+				reviewedSourceId: note.sourceSupport.reviewedSourceId,
+				status: "cited",
+				title: `Market scan source ${index + 1}`,
+				url: `https://market-scan.example.test/source-${index + 1}`,
+			})),
+		});
+
+		expect(report.keyFindings).toHaveLength(7);
+		expect(report.markdown).not.toContain(
+			"- Vendor 8 has limited regional availability that should be treated as a watchout.",
+		);
+		expect(report.markdown).toContain(
+			"- Watchout: Vendor 8 has limited regional availability that should be treated as a watchout. [8]",
+		);
+		expect(report.markdown).toContain(
+			"[8] Market scan source 8 - https://market-scan.example.test/source-8",
+		);
+		expect(report.sources.map((source) => source.id)).toContain(
+			"source-market-scan-8",
+		);
 	});
 
 	it("rejects the docs/test-report source-note dump failure pattern", () => {

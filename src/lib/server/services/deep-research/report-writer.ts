@@ -59,6 +59,7 @@ export type StructuredResearchReportSection =
 	StructuredResearchReportReference & {
 		heading: string;
 		body: string;
+		citationBlocks?: StructuredResearchReportTextBlock[];
 	};
 
 export type StructuredResearchReportBlockKind =
@@ -750,39 +751,21 @@ function buildStructuredResearchReportFromClaims(
 	const evidenceById = new Map(
 		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
 	);
-	const claimBlocks = (input.synthesisClaims ?? [])
-		.filter(
-			(claim) => claim.status === "accepted" || claim.status === "limited",
-		)
-		.map((claim) => buildStructuredTextBlockFromClaim(claim, evidenceById))
-		.filter((block): block is StructuredResearchReportTextBlock =>
-			Boolean(block),
-		)
-		.reduce<StructuredResearchReportTextBlock[]>((blocks, block) => {
-			const duplicate = blocks.find(
-				(item) =>
-					normalizeFindingForReadabilityCheck(item.text) ===
-					normalizeFindingForReadabilityCheck(block.text),
-			);
-			if (!duplicate) {
-				blocks.push(block);
-				return blocks;
-			}
-			duplicate.claimIds = uniqueValues([
-				...duplicate.claimIds,
-				...block.claimIds,
-			]);
-			duplicate.evidenceLinkIds = uniqueValues([
-				...duplicate.evidenceLinkIds,
-				...block.evidenceLinkIds,
-			]);
-			duplicate.sourceIds = uniqueValues([
-				...duplicate.sourceIds,
-				...block.sourceIds,
-			]);
-			return blocks;
-		}, [])
-		.slice(0, MAX_REPORT_KEY_FINDINGS);
+	const allClaimBlocks = dedupeStructuredTextBlocks(
+		(input.synthesisClaims ?? [])
+			.filter(
+				(claim) => claim.status === "accepted" || claim.status === "limited",
+			)
+			.map((claim) => buildStructuredTextBlockFromClaim(claim, evidenceById))
+			.filter((block): block is StructuredResearchReportTextBlock =>
+				Boolean(block),
+			),
+	);
+	const claimBlocks = allClaimBlocks.slice(0, MAX_REPORT_KEY_FINDINGS);
+	const sectionCitationCandidates = dedupeStructuredTextBlocks([
+		...allClaimBlocks,
+		...buildEvidenceNoteCitationBlocks(input),
+	]);
 	const limitations = [
 		...claimBlocks
 			.filter((block) => {
@@ -832,8 +815,75 @@ function buildStructuredResearchReportFromClaims(
 			claimBlocks,
 			input.researchLanguage,
 			input,
+			sectionCitationCandidates,
 		),
 	};
+}
+
+function dedupeStructuredTextBlocks(
+	blocks: StructuredResearchReportTextBlock[],
+): StructuredResearchReportTextBlock[] {
+	return blocks.reduce<StructuredResearchReportTextBlock[]>(
+		(deduped, block) => {
+			const duplicate = deduped.find(
+				(item) =>
+					normalizeFindingForReadabilityCheck(item.text) ===
+					normalizeFindingForReadabilityCheck(block.text),
+			);
+			if (!duplicate) {
+				deduped.push({ ...block });
+				return deduped;
+			}
+			duplicate.claimIds = uniqueValues([
+				...duplicate.claimIds,
+				...block.claimIds,
+			]);
+			duplicate.evidenceLinkIds = uniqueValues([
+				...duplicate.evidenceLinkIds,
+				...block.evidenceLinkIds,
+			]);
+			duplicate.sourceIds = uniqueValues([
+				...duplicate.sourceIds,
+				...block.sourceIds,
+			]);
+			return deduped;
+		},
+		[],
+	);
+}
+
+function buildEvidenceNoteCitationBlocks(
+	input: WriteResearchReportInput,
+): StructuredResearchReportTextBlock[] {
+	const acceptedClaims = (input.synthesisClaims ?? []).filter(
+		(claim) => claim.status === "accepted" || claim.status === "limited",
+	);
+	return (input.evidenceNotes ?? [])
+		.map((note) => {
+			const supportingLinks = acceptedClaims.flatMap((claim) =>
+				claim.evidenceLinks
+					.filter(
+						(link) =>
+							link.evidenceNoteId === note.id &&
+							["support", "qualification"].includes(link.relation),
+					)
+					.map((link) => ({ claim, link })),
+			);
+			const sourceIds = sourceIdsFromEvidenceNote(note);
+			const text = normalizeText(note.findingText);
+			if (!text || sourceIds.length === 0) return null;
+			return {
+				text,
+				claimIds: uniqueValues(supportingLinks.map(({ claim }) => claim.id)),
+				evidenceLinkIds: uniqueValues(
+					supportingLinks.map(({ link }) => link.id),
+				),
+				sourceIds,
+			};
+		})
+		.filter((block): block is StructuredResearchReportTextBlock =>
+			Boolean(block),
+		);
 }
 
 function buildStructuredTextBlockFromClaim(
@@ -976,8 +1026,9 @@ function buildStructuredSectionsFromClaims(
 	keyFindings: StructuredResearchReportTextBlock[],
 	researchLanguage: ResearchLanguage,
 	input?: WriteResearchReportInput,
+	citationCandidates: StructuredResearchReportTextBlock[] = keyFindings,
 ): StructuredResearchReportSection[] {
-	const references = {
+	const keyFindingReferences = {
 		claimIds: uniqueValues(keyFindings.flatMap((finding) => finding.claimIds)),
 		evidenceLinkIds: uniqueValues(
 			keyFindings.flatMap((finding) => finding.evidenceLinkIds),
@@ -994,67 +1045,93 @@ function buildStructuredSectionsFromClaims(
 		researchLanguage,
 	);
 	return headings.map((heading, index) => {
-		if (input && isMatrixComparisonSection(plan, index)) {
+		const buildSection = (
+			body: string,
+			fallbackReferences: StructuredResearchReportReference = keyFindingReferences,
+		): StructuredResearchReportSection => {
+			const citationBlocks = findCitationBlocksRenderedInBody(
+				body,
+				citationCandidates,
+			);
+			const references =
+				citationBlocks.length > 0
+					? referencesFromStructuredTextBlocks(citationBlocks)
+					: fallbackReferences;
 			return {
 				heading,
-				body: buildDecisionBriefComparisonMatrix(input, researchLanguage),
+				body,
 				...references,
+				citationBlocks,
 			};
+		};
+		if (input && isMatrixComparisonSection(plan, index)) {
+			return buildSection(
+				buildDecisionBriefComparisonMatrix(input, researchLanguage),
+			);
 		}
 		if (input && plan.reportIntent === "comparison" && index > 0) {
-			return {
-				heading,
-				body: buildDecisionImplicationsBody(
+			return buildSection(
+				buildDecisionImplicationsBody(
 					plan,
 					input.evidenceNotes ?? [],
 					researchLanguage,
 				),
-				...references,
-			};
+			);
 		}
 		if (input && plan.reportIntent === "recommendation") {
-			return {
-				heading,
-				body: buildRecommendationReportSectionBody(
+			return buildSection(
+				buildRecommendationReportSectionBody(
 					index,
 					input,
 					keyFindings,
 					researchLanguage,
 				),
-				...references,
-			};
+			);
 		}
 		if (input && plan.reportIntent === "investigation") {
-			return {
-				heading,
-				body: buildInvestigationReportSectionBody(index, input, keyFindings),
-				...references,
-			};
+			return buildSection(
+				buildInvestigationReportSectionBody(index, input, keyFindings),
+			);
 		}
 		if (
 			input &&
 			(plan.reportIntent === "market_scan" ||
 				plan.reportIntent === "product_scan")
 		) {
-			return {
-				heading,
-				body: buildScanReportSectionBody(index, input, keyFindings),
-				...references,
-			};
+			return buildSection(
+				buildScanReportSectionBody(index, input, keyFindings),
+			);
 		}
 		if (input && plan.reportIntent === "limitation_focused") {
-			return {
-				heading,
-				body: buildEvidenceReviewSectionBody(index, input, keyFindings),
-				...references,
-			};
+			return buildSection(
+				buildEvidenceReviewSectionBody(index, input, keyFindings),
+			);
 		}
-		return {
-			heading,
-			body: claimBody,
-			...references,
-		};
+		return buildSection(claimBody);
 	});
+}
+
+function findCitationBlocksRenderedInBody(
+	body: string,
+	citationCandidates: StructuredResearchReportTextBlock[],
+): StructuredResearchReportTextBlock[] {
+	const normalizedBody = normalizeFindingForReadabilityCheck(body);
+	return citationCandidates.filter((block) => {
+		const normalizedText = normalizeFindingForReadabilityCheck(block.text);
+		return normalizedText && normalizedBody.includes(normalizedText);
+	});
+}
+
+function referencesFromStructuredTextBlocks(
+	blocks: StructuredResearchReportTextBlock[],
+): StructuredResearchReportReference {
+	return {
+		claimIds: uniqueValues(blocks.flatMap((block) => block.claimIds)),
+		evidenceLinkIds: uniqueValues(
+			blocks.flatMap((block) => block.evidenceLinkIds),
+		),
+		sourceIds: uniqueValues(blocks.flatMap((block) => block.sourceIds)),
+	};
 }
 
 function buildEvidenceReviewSectionBody(
@@ -1558,7 +1635,12 @@ function buildDecisionBriefComparisonMatrix(
 	const usedCues = new Set<EvidenceConfidenceCueKind>();
 	const rows = axes.map((axis) => {
 		const cells = entities.map((entity) => {
-			const note = findComparisonEvidenceNote(evidenceById, entity, axis);
+			const note = findComparisonEvidenceNote(
+				evidenceById,
+				entity,
+				axis,
+				claimByEvidenceId,
+			);
 			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
 			const cell = formatComparisonEvidenceCell(
 				claim ? note : null,
@@ -1591,18 +1673,24 @@ function findComparisonEvidenceNote(
 	evidenceById: Map<string, DeepResearchEvidenceNote>,
 	entity: string,
 	axis: string,
+	claimByEvidenceId?: Map<string, DeepResearchSynthesisClaim>,
 ): DeepResearchEvidenceNote | null {
 	const normalizedEntity = normalizeComparisonKey(entity);
 	const normalizedAxis = normalizeComparisonKey(axis);
+	const candidates: DeepResearchEvidenceNote[] = [];
 	for (const note of evidenceById.values()) {
 		if (
 			normalizeComparisonKey(note.comparedEntity ?? "") === normalizedEntity &&
 			normalizeComparisonKey(note.comparisonAxis ?? "") === normalizedAxis
 		) {
-			return note;
+			candidates.push(note);
 		}
 	}
-	return null;
+	return (
+		candidates.find((note) => claimByEvidenceId?.has(note.id)) ??
+		candidates[0] ??
+		null
+	);
 }
 
 function formatComparisonEvidenceCell(
@@ -2246,11 +2334,15 @@ function buildStructuredReportSectionsForMarkdown(
 			.split("\n")
 			.map((line) => {
 				let renderedLine = line;
-				for (const finding of report.core.keyFindings) {
-					if (!renderedLine.includes(finding.text)) continue;
+				const citationBlocks = dedupeStructuredTextBlocks([
+					...(section.citationBlocks ?? []),
+					...report.core.keyFindings,
+				]).sort((left, right) => right.text.length - left.text.length);
+				for (const block of citationBlocks) {
+					if (!renderedLine.includes(block.text)) continue;
 					renderedLine = renderedLine.replace(
-						finding.text,
-						formatStructuredTextBlockWithCitations(finding, citedSources),
+						block.text,
+						formatStructuredTextBlockWithCitations(block, citedSources),
 					);
 				}
 				return renderedLine;

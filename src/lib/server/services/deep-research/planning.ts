@@ -245,20 +245,17 @@ const localizedExpectedTimeBands: Record<
 	Record<ResearchDepth, string>
 > = {
 	en: {
-		focused:
-			"Short multi-pass run; duration depends on source availability.",
+		focused: "Short multi-pass run; duration depends on source availability.",
 		standard:
 			"Extended multi-pass run; duration depends on source availability.",
-		max:
-			"Long high-depth run; duration depends on source availability and repair needs.",
+		max: "Long high-depth run; duration depends on source availability and repair needs.",
 	},
 	hu: {
 		focused:
 			"Rövid, többkörös futás; az időtartam a források elérhetőségétől függ.",
 		standard:
 			"Kibővített, többkörös futás; az időtartam a források elérhetőségétől függ.",
-		max:
-			"Hosszú, nagy mélységű futás; az időtartam a forrásoktól és a javítási igényektől függ.",
+		max: "Hosszú, nagy mélységű futás; az időtartam a forrásoktól és a javítási igényektől függ.",
 	},
 };
 
@@ -322,11 +319,15 @@ export async function createFirstResearchPlanDraft(
 			})
 		: null;
 	const draftedPlan =
-		structuredPlan ?? draftDefaultResearchPlan(input, researchBudget, contextDisclosure);
+		structuredPlan ??
+		draftDefaultResearchPlan(input, researchBudget, contextDisclosure);
 	const plan = {
 		...draftedPlan,
 		researchLanguage: input.researchLanguage,
-		reportIntent: normalizeReportIntent(draftedPlan.reportIntent, input.userRequest),
+		reportIntent: normalizeReportIntent(
+			draftedPlan.reportIntent,
+			input.userRequest,
+		),
 	};
 	normalizePlanTextFields(plan, input.userRequest);
 	normalizePlanComparisonMetadata(plan, input.userRequest);
@@ -483,7 +484,7 @@ function validatePlanAgainstSelectedDepth(
 	}
 	if (
 		plan.researchBudget.meaningfulPassCeiling >
-		selectedBudget.meaningfulPassCeiling ||
+			selectedBudget.meaningfulPassCeiling ||
 		plan.researchBudget.synthesisPassCeiling >
 			selectedBudget.synthesisPassCeiling
 	) {
@@ -492,8 +493,7 @@ function validatePlanAgainstSelectedDepth(
 		);
 	}
 	if (
-		plan.researchBudget.meaningfulPassFloor <
-		selectedBudget.meaningfulPassFloor
+		plan.researchBudget.meaningfulPassFloor < selectedBudget.meaningfulPassFloor
 	) {
 		throw new Error(
 			`Research Plan is below ${depthLabels[selectedDepth]} minimum pass expectation: meaningful pass floor ${plan.researchBudget.meaningfulPassFloor} is below ${selectedBudget.meaningfulPassFloor}.`,
@@ -614,14 +614,20 @@ function normalizeReportIntent(
 	return inferReportIntent(fallbackText);
 }
 
-function normalizePlanTextFields(plan: ResearchPlan, fallbackText: string): void {
+function normalizePlanTextFields(
+	plan: ResearchPlan,
+	fallbackText: string,
+): void {
 	const researchLanguage = plan.researchLanguage ?? "en";
 	const defaultProse = localizedDefaultPlanProse[researchLanguage];
 	const goal = normalizePlanTextValue(plan.goal);
 	plan.goal = goal ?? fallbackText.trim().replace(/\s+/g, " ");
 	plan.keyQuestions = normalizePlanTextArray(plan.keyQuestions);
 	if (plan.keyQuestions.length === 0) {
-		plan.keyQuestions = buildDefaultKeyQuestions(fallbackText, researchLanguage);
+		plan.keyQuestions = buildDefaultKeyQuestions(
+			fallbackText,
+			researchLanguage,
+		);
 	}
 	plan.reportShape = normalizePlanTextArray(plan.reportShape);
 	if (plan.reportShape.length === 0) {
@@ -657,7 +663,10 @@ function normalizePlanTextValue(value: unknown): string | null {
 }
 
 function isSchemaPlaceholderText(value: string): boolean {
-	const normalized = value.trim().replace(/^["']|["']$/g, "").toLowerCase();
+	const normalized = value
+		.trim()
+		.replace(/^["']|["']$/g, "")
+		.toLowerCase();
 	return (
 		normalized === "string" ||
 		normalized === "string[]" ||
@@ -705,9 +714,9 @@ function inferComparisonMetadata(value: string): {
 	);
 	if (brandedProductMatch) {
 		const brand = brandedProductMatch[2];
-		const productEntities = splitComparisonList(
-			brandedProductMatch[1],
-		).map((entity) => prefixBrand(entity, brand));
+		const productEntities = splitComparisonList(brandedProductMatch[1]).map(
+			(entity) => prefixBrand(entity, brand),
+		);
 		const axisMatch = normalized.match(
 			/\b(?:for|on|across|by|regarding|in terms of)\s+(.+?)[.!?]?$/iu,
 		);
@@ -726,7 +735,9 @@ function inferComparisonMetadata(value: string): {
 	);
 	return {
 		entities: entityMatch ? splitComparisonList(entityMatch[1]) : [],
-		axes: axisMatch ? splitComparisonList(axisMatch[1]).map(lowercaseFirst) : [],
+		axes: axisMatch
+			? splitComparisonList(axisMatch[1]).map(lowercaseFirst)
+			: [],
 	};
 }
 
@@ -794,10 +805,16 @@ function isReportIntent(value: unknown): value is ReportIntent {
 
 function inferReportIntent(value: string): ReportIntent {
 	const text = value.toLowerCase();
-	if (/\b(compare|comparison|versus|vs\.?|összehasonl|hasonlítsd)\b/u.test(text)) {
+	if (
+		/\b(compare|comparison|versus|vs\.?|összehasonl|hasonlítsd)\b/u.test(text)
+	) {
 		return "comparison";
 	}
-	if (/\b(recommend|recommendation|choose|best|ajánl|válassz|legjobb)\b/u.test(text)) {
+	if (
+		/\b(recommend|recommendation|choose|best|ajánl|válassz|legjobb)\b/u.test(
+			text,
+		)
+	) {
 		return "recommendation";
 	}
 	if (/\b(market|landscape|trend|piac|piaci|trend)\b/u.test(text)) {
@@ -809,10 +826,31 @@ function inferReportIntent(value: string): ReportIntent {
 	) {
 		return "product_scan";
 	}
+	if (isEvidenceReviewIntent(text)) {
+		return "limitation_focused";
+	}
 	if (/\b(limitations?|constraints?|risks?|korlát|kockázat)\b/u.test(text)) {
 		return "limitation_focused";
 	}
 	return "investigation";
+}
+
+function isEvidenceReviewIntent(text: string): boolean {
+	return (
+		/\bevidence\s+(?:review|strength|quality|base|support|gap|gaps)\b/u.test(
+			text,
+		) ||
+		/\b(?:review|assess|evaluate|analy[sz]e|synthesi[sz]e)\b.{0,100}\b(?:evidence|consensus|conflicts?|disagreements?|contradictions?)\b/u.test(
+			text,
+		) ||
+		/\b(?:consensus|conflicts?|disagreements?|contradictions?)\b.{0,100}\b(?:evidence|research|studies|sources|findings|claims?)\b/u.test(
+			text,
+		) ||
+		/\b(?:contradictory|conflicting)\s+(?:evidence|findings|studies|sources|claims?)\b/u.test(
+			text,
+		) ||
+		/\bunresolved\s+conflicts?\b/u.test(text)
+	);
 }
 
 function buildDefaultKeyQuestions(
@@ -1084,27 +1122,39 @@ function buildDomainSpecificKeyQuestions(
 }
 
 function isLawTopic(text: string): boolean {
-	return /\b(law|legal|regulation|regulatory|compliance|court|lawsuit|statute|directive|liability|jurisdiction|copyright|privacy|gdpr|eu ai act)\b/u.test(text);
+	return /\b(law|legal|regulation|regulatory|compliance|court|lawsuit|statute|directive|liability|jurisdiction|copyright|privacy|gdpr|eu ai act)\b/u.test(
+		text,
+	);
 }
 
 function isProcurementTopic(text: string): boolean {
-	return /\b(procurement|purchase|buy|vendor|supplier|rfp|security review|due diligence|enterprise|contract|sourcing|tco|total cost|beszerz|szállító)\b/u.test(text);
+	return /\b(procurement|purchase|buy|vendor|supplier|rfp|security review|due diligence|enterprise|contract|sourcing|tco|total cost|beszerz|szállító)\b/u.test(
+		text,
+	);
 }
 
 function isSoftwareTechnicalTopic(text: string): boolean {
-	return /\b(software|technical|api|sdk|database|framework|library|architecture|deployment|infrastructure|cloud|security|performance|scalability|migration|observability|kubernetes|svelte|typescript|python|node|postgres|sqlite)\b/u.test(text);
+	return /\b(software|technical|api|sdk|database|framework|library|architecture|deployment|infrastructure|cloud|security|performance|scalability|migration|observability|kubernetes|svelte|typescript|python|node|postgres|sqlite)\b/u.test(
+		text,
+	);
 }
 
 function isHealthTopic(text: string): boolean {
-	return /\b(health|medical|clinical|patient|doctor|disease|treatment|drug|therapy|diagnosis|symptom|vaccine|fda|ema|guideline|contraindication|side effect)\b/u.test(text);
+	return /\b(health|medical|clinical|patient|doctor|disease|treatment|drug|therapy|diagnosis|symptom|vaccine|fda|ema|guideline|contraindication|side effect)\b/u.test(
+		text,
+	);
 }
 
 function isFinanceTopic(text: string): boolean {
-	return /\b(finance|financial|stock|bond|etf|fund|crypto|investment|portfolio|loan|mortgage|insurance|tax|inflation|interest rate|yield|valuation|revenue|profit|market cap|liquidity|volatility)\b/u.test(text);
+	return /\b(finance|financial|stock|bond|etf|fund|crypto|investment|portfolio|loan|mortgage|insurance|tax|inflation|interest rate|yield|valuation|revenue|profit|market cap|liquidity|volatility)\b/u.test(
+		text,
+	);
 }
 
 function isAcademicLiteratureTopic(text: string): boolean {
-	return /\b(academic|literature review|systematic review|meta-analysis|paper|papers|study|studies|journal|peer[- ]reviewed|research literature|citation|pubmed|arxiv|scholar)\b/u.test(text);
+	return /\b(academic|literature review|systematic review|meta-analysis|paper|papers|study|studies|journal|peer[- ]reviewed|research literature|citation|pubmed|arxiv|scholar)\b/u.test(
+		text,
+	);
 }
 
 function buildComparisonKeyQuestions(input: {
@@ -1139,10 +1189,16 @@ function buildComparisonKeyQuestions(input: {
 }
 
 function inferDefaultComparisonAxes(topic: string): string {
-	if (/\b(?:bike|bikes|bicycle|bicycles|cube|nulane|kathmandu|kathmando)\b/iu.test(topic)) {
+	if (
+		/\b(?:bike|bikes|bicycle|bicycles|cube|nulane|kathmandu|kathmando)\b/iu.test(
+			topic,
+		)
+	) {
 		return "intended use, frame and geometry, drivetrain, motor and battery if electric, brakes, wheels and tires, racks/fenders/lights, comfort, weight, price, and availability";
 	}
-	if (/\b(?:law|rules?|regulation|policy|copyright|compliance)\b/iu.test(topic)) {
+	if (
+		/\b(?:law|rules?|regulation|policy|copyright|compliance)\b/iu.test(topic)
+	) {
 		return "legal scope, enforcement authority, affected actors, compliance duties, unresolved disputes, timelines, and practical risk";
 	}
 	return "features, evidence quality, costs, constraints, risks, tradeoffs, and practical fit";
@@ -1164,9 +1220,11 @@ function formatList(values: string[]): string {
 }
 
 function isInternalApprovalConstraint(value: string): boolean {
-	return /do not start source-heavy research until the research plan is approved/i.test(
-		value,
-	) || /ne induljon forrásigényes kutatás/i.test(value);
+	return (
+		/do not start source-heavy research until the research plan is approved/i.test(
+			value,
+		) || /ne induljon forrásigényes kutatás/i.test(value)
+	);
 }
 
 function buildEffortEstimate(
