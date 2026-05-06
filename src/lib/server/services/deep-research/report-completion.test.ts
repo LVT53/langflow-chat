@@ -526,7 +526,217 @@ describe("audited Deep Research report completion", () => {
 		expect(reportArtifact?.contentText).not.toContain(
 			"- Private AI coding security docs [1]",
 		);
-		expect(reportArtifact?.contentText).toContain("## Source Ledger Snapshot");
+		expect(reportArtifact?.contentText).toContain(
+			"## Appendix: Source Ledger Snapshot",
+		);
+	});
+
+	it("preserves structured comparison matrix markdown after audited finalization", async () => {
+		vi.doMock("./llm-steps", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("./llm-steps")>();
+			return {
+				...actual,
+				writeResearchReportWithLlm: async (
+					input: Parameters<typeof actual.writeResearchReportWithLlm>[0],
+				) => {
+					const sourceA = input.sources.find((source) =>
+						source.title.includes("Product A"),
+					);
+					const sourceB = input.sources.find((source) =>
+						source.title.includes("Product B"),
+					);
+					const sourceAId = sourceA?.id ?? input.sources[0]?.id ?? "source-a";
+					const sourceBId = sourceB?.id ?? input.sources[1]?.id ?? "source-b";
+					const matrix = [
+						"| Axis | Product A | Product B | Decision Meaning |",
+						"| --- | --- | --- | --- |",
+						"| Range | Product A has a 400Wh battery for commuter range. [1] | Not established | Range: evidence is incomplete, so treat this row as a caveat rather than a deciding advantage. |",
+						"| Motor support | Not established | Product B uses a Bosch SX motor with 55Nm torque. [2] | Motor support: evidence is incomplete, so treat this row as a caveat rather than a deciding advantage. |",
+					].join("\n");
+					return {
+						jobId: input.jobId,
+						title: "Research Report: Compare Product A and Product B",
+						executiveSummary:
+							"Product A and Product B differ on range and motor support.",
+						keyFindings: [
+							"Product A has a 400Wh battery for commuter range. [1]",
+							"Product B uses a Bosch SX motor with 55Nm torque. [2]",
+						],
+						sections: [{ heading: "Comparison Matrix", body: matrix }],
+						sources: [
+							{
+								...(sourceA ?? input.sources[0]),
+								citationNumber: 1,
+							},
+							{
+								...(sourceB ?? input.sources[1]),
+								citationNumber: 2,
+							},
+						],
+						limitations: [],
+						structuredReport: {
+							intent: "comparison",
+							core: {
+								title: "Research Report: Compare Product A and Product B",
+								scope: "Compare Product A and Product B.",
+								executiveSummary: {
+									text: "Product A and Product B differ on range and motor support.",
+									claimIds: ["claim-a", "claim-b"],
+									evidenceLinkIds: [],
+									sourceIds: [sourceAId, sourceBId],
+								},
+								keyFindings: [
+									{
+										text: "Product A has a 400Wh battery for commuter range.",
+										claimIds: ["claim-a"],
+										evidenceLinkIds: [],
+										sourceIds: [sourceAId],
+									},
+									{
+										text: "Product B uses a Bosch SX motor with 55Nm torque.",
+										claimIds: ["claim-b"],
+										evidenceLinkIds: [],
+										sourceIds: [sourceBId],
+									},
+								],
+								methodologySourceBasis:
+									"Review scope followed the approved comparison plan.",
+								limitations: [],
+								sourceLedgerSnapshot:
+									"### Cited Sources\n- Product A official specifications - https://product.example.test/a\n- Product B official specifications - https://product.example.test/b",
+							},
+							sections: [
+								{
+									heading: "Comparison Matrix",
+									body: matrix,
+									claimIds: ["claim-a", "claim-b"],
+									evidenceLinkIds: [],
+									sourceIds: [sourceAId, sourceBId],
+								},
+							],
+						},
+						reportBlocks: [
+							{
+								kind: "summary",
+								heading: "Answer",
+								markdown:
+									"Product A and Product B differ on range and motor support.",
+								claimIds: ["claim-a", "claim-b"],
+								evidenceLinkIds: [],
+								sourceIds: [sourceAId, sourceBId],
+							},
+							{
+								kind: "section",
+								heading: "Comparison Matrix",
+								markdown: matrix,
+								claimIds: ["claim-a", "claim-b"],
+								evidenceLinkIds: [],
+								sourceIds: [sourceAId, sourceBId],
+							},
+						],
+						sourceLedgerSnapshotSources: input.sources,
+						markdown: [
+							"# Research Report: Compare Product A and Product B",
+							"",
+							"## Answer",
+							"Product A and Product B differ on range and motor support.",
+							"",
+							"## Comparison Matrix",
+							matrix,
+							"",
+							"## Appendix: Sources",
+							"[1] Product A official specifications - https://product.example.test/a",
+							"[2] Product B official specifications - https://product.example.test/b",
+						].join("\n"),
+					};
+				},
+			};
+		});
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare Product A and Product B",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await seedCompletedMeaningfulPasses(created.id, 3);
+		const sourceA = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://product.example.test/a",
+			title: "Product A official specifications",
+			provider: "public_web",
+		});
+		const sourceB = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://product.example.test/b",
+			title: "Product B official specifications",
+			provider: "public_web",
+		});
+		const reviewedSourceA = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: sourceA.id,
+			reviewedNote: "Product A has a 400Wh battery for commuter range.",
+		});
+		const reviewedSourceB = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: sourceB.id,
+			reviewedNote: "Product B uses a Bosch SX motor with 55Nm torque.",
+		});
+
+		const completed = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement: "Product A has a 400Wh battery for commuter range.",
+					sourceId: reviewedSourceA.id,
+					url: reviewedSourceA.url,
+					title: reviewedSourceA.title ?? "Product A specifications",
+				},
+				{
+					statement: "Product B uses a Bosch SX motor with 55Nm torque.",
+					sourceId: reviewedSourceB.id,
+					url: reviewedSourceB.url,
+					title: reviewedSourceB.title ?? "Product B specifications",
+				},
+			]),
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = completed?.reportArtifactId
+			? await getArtifactForUser("user-1", completed.reportArtifactId)
+			: null;
+
+		expect(reportArtifact?.contentText).toContain("## Comparison Matrix");
+		expect(reportArtifact?.contentText).toContain(
+			"| Axis | Product A | Product B | Decision Meaning |",
+		);
+		expect(reportArtifact?.contentText).toContain(
+			"| Range | Product A has a 400Wh battery for commuter range. [1] | Not established |",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
+			"## Comparison Matrix\n- Product A has a 400Wh battery",
+		);
 	});
 
 	it("uses the configured claim-graph citation reviewer to complete claims that deterministic quality signals would repair", async () => {

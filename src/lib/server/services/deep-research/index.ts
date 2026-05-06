@@ -2424,6 +2424,10 @@ function renderAuditedReportMarkdown(input: {
 	sources: ResearchReportDraft['sources'];
 	researchLanguage: ResearchLanguage;
 }): string {
+	if (canUseStructuredAuditedReportMarkdown(input.reportDraft, input.auditedReport)) {
+		return input.reportDraft.markdown;
+	}
+
 	const labels = auditedReportLabels[input.researchLanguage];
 	const retainedClaims = input.auditedReport.sections
 		.flatMap((section) => section.claims)
@@ -2485,6 +2489,55 @@ function renderAuditedReportMarkdown(input: {
 	);
 
 	return lines.join('\n');
+}
+
+function canUseStructuredAuditedReportMarkdown(
+	reportDraft: ResearchReportDraft,
+	auditedReport: DeepResearchReportDraft
+): boolean {
+	const retainedClaimIds = new Set(
+		auditedReport.sections.flatMap((section) =>
+			section.claims.map((claim) => claim.id)
+		)
+	);
+	const structuredClaimIds = collectStructuredReportClaimIds(reportDraft);
+	if (structuredClaimIds.length === 0) return false;
+	if (!structuredClaimIds.every((claimId) => retainedClaimIds.has(claimId))) {
+		return false;
+	}
+
+	const draftLimitations = new Set(reportDraft.limitations);
+	return auditedReport.limitations.every((limitation) =>
+		draftLimitations.has(limitation)
+	);
+}
+
+function collectStructuredReportClaimIds(reportDraft: ResearchReportDraft): string[] {
+	const claimIds = new Set<string>();
+	const addClaimIds = (ids: string[]) => {
+		for (const id of ids) {
+			if (id) claimIds.add(id);
+		}
+	};
+
+	addClaimIds(reportDraft.structuredReport.core.executiveSummary.claimIds);
+	for (const finding of reportDraft.structuredReport.core.keyFindings) {
+		addClaimIds(finding.claimIds);
+	}
+	for (const limitation of reportDraft.structuredReport.core.limitations) {
+		addClaimIds(limitation.claimIds);
+	}
+	for (const section of reportDraft.structuredReport.sections) {
+		addClaimIds(section.claimIds);
+		for (const citationBlock of section.citationBlocks ?? []) {
+			addClaimIds(citationBlock.claimIds);
+		}
+	}
+	for (const block of reportDraft.reportBlocks) {
+		addClaimIds(block.claimIds);
+	}
+
+	return [...claimIds];
 }
 
 const auditedReportLabels: Record<

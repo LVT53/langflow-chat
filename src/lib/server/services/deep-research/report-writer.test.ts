@@ -816,6 +816,89 @@ describe("Deep Research report writer", () => {
 		);
 	});
 
+	it("builds a comparison matrix from linked evidence metadata when the plan omits entities and axes", () => {
+		const productEvidence: DeepResearchEvidenceNote[] = [
+			{
+				...evidenceNotes[0],
+				id: "evidence-product-a-range",
+				sourceId: "source-product-a",
+				comparedEntity: "Product A",
+				comparisonAxis: "Range",
+				findingText: "Product A has a 400Wh battery for commuter range.",
+				sourceSupport: {
+					sourceId: "source-product-a",
+					reviewedSourceId: "reviewed-product-a",
+				},
+			},
+			{
+				...evidenceNotes[0],
+				id: "evidence-product-b-motor",
+				sourceId: "source-product-b",
+				comparedEntity: "Product B",
+				comparisonAxis: "Motor support",
+				findingText: "Product B uses a Bosch SX motor with 55Nm torque.",
+				sourceSupport: {
+					sourceId: "source-product-b",
+					reviewedSourceId: "reviewed-product-b",
+				},
+			},
+		];
+		const productClaims = productEvidence.map((note, index) => ({
+			...acceptedClaim,
+			id: `claim-product-${index + 1}`,
+			statement: note.findingText,
+			reportSection: note.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: `link-product-${index + 1}`,
+					claimId: `claim-product-${index + 1}`,
+					evidenceNoteId: note.id,
+				},
+			],
+		}));
+
+		const report = writeResearchReport({
+			jobId: "job-comparison-metadata-fallback",
+			plan: {
+				...basePlan,
+				reportIntent: "comparison",
+				comparedEntities: undefined,
+				comparisonAxes: undefined,
+				reportShape: ["Comparison Matrix", "Decision Implications"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: productClaims,
+			evidenceNotes: productEvidence,
+			sources: [
+				{
+					id: "source-product-a",
+					reviewedSourceId: "reviewed-product-a",
+					status: "cited",
+					title: "Product A official specifications",
+					url: "https://product.example.test/a",
+				},
+				{
+					id: "source-product-b",
+					reviewedSourceId: "reviewed-product-b",
+					status: "cited",
+					title: "Product B official specifications",
+					url: "https://product.example.test/b",
+				},
+			],
+		});
+
+		expect(report.markdown).toContain(
+			"| Axis | Product A | Product B | Decision Meaning |",
+		);
+		expect(report.markdown).toContain(
+			"| Range | Product A has a 400Wh battery for commuter range. [1] | Not established |",
+		);
+		expect(report.markdown).not.toContain(
+			"## Comparison Matrix\n- Product A has a 400Wh battery",
+		);
+	});
+
 	it("renders recommendation reports with ranked options, rubric, fit/risk table, next actions, and compact appendix", () => {
 		const recommendationEvidence: DeepResearchEvidenceNote[] = [
 			{

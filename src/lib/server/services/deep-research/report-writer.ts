@@ -1591,12 +1591,7 @@ function isMatrixComparisonSection(
 	plan: ResearchPlan,
 	sectionIndex: number,
 ): boolean {
-	return (
-		plan.reportIntent === "comparison" &&
-		sectionIndex === 0 &&
-		Boolean(plan.comparedEntities?.length) &&
-		Boolean(plan.comparisonAxes?.length)
-	);
+	return plan.reportIntent === "comparison" && sectionIndex === 0;
 }
 
 function buildDecisionBriefComparisonMatrix(
@@ -1604,22 +1599,6 @@ function buildDecisionBriefComparisonMatrix(
 	researchLanguage: ResearchLanguage,
 ): string {
 	const labels = reportLabels[researchLanguage];
-	const entities = uniqueValues(
-		(input.plan.comparedEntities ?? []).map(normalizeText).filter(Boolean),
-	);
-	const axes = uniqueValues(
-		(input.plan.comparisonAxes ?? []).map(normalizeText).filter(Boolean),
-	);
-	if (entities.length === 0 || axes.length === 0) {
-		return (input.synthesisClaims ?? [])
-			.filter(
-				(claim) => claim.status === "accepted" || claim.status === "limited",
-			)
-			.map((claim) => `- ${normalizeText(claim.statement)}`)
-			.filter((line) => line !== "-")
-			.join("\n");
-	}
-
 	const evidenceById = new Map(
 		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
 	);
@@ -1630,6 +1609,34 @@ function buildDecisionBriefComparisonMatrix(
 			if (!["support", "qualification"].includes(link.relation)) continue;
 			claimByEvidenceId.set(link.evidenceNoteId, claim);
 		}
+	}
+	const linkedComparisonNotes = (input.evidenceNotes ?? []).filter((note) =>
+		claimByEvidenceId.has(note.id),
+	);
+	const entities = uniqueValues(
+		(input.plan.comparedEntities?.length
+			? input.plan.comparedEntities
+			: linkedComparisonNotes.map((note) => note.comparedEntity ?? "")
+		)
+			.map(normalizeText)
+			.filter(Boolean),
+	);
+	const axes = uniqueValues(
+		(input.plan.comparisonAxes?.length
+			? input.plan.comparisonAxes
+			: linkedComparisonNotes.map((note) => note.comparisonAxis ?? "")
+		)
+			.map(normalizeText)
+			.filter(Boolean),
+	);
+	if (entities.length === 0 || axes.length === 0) {
+		return (input.synthesisClaims ?? [])
+			.filter(
+				(claim) => claim.status === "accepted" || claim.status === "limited",
+			)
+			.map((claim) => `- ${normalizeText(claim.statement)}`)
+			.filter((line) => line !== "-")
+			.join("\n");
 	}
 
 	const usedCues = new Set<EvidenceConfidenceCueKind>();
