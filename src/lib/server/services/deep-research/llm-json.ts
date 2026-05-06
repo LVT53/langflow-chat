@@ -1,16 +1,22 @@
-export function parseModelJsonObject(content: string): Record<string, unknown> | null {
+export function parseModelJsonValue(content: string): unknown | null {
 	const trimmed = content.trim();
 	if (!trimmed) return null;
 
 	for (const candidate of jsonCandidates(trimmed)) {
 		try {
 			const parsed = JSON.parse(candidate) as unknown;
-			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-				return parsed as Record<string, unknown>;
-			}
+			if (parsed && typeof parsed === "object") return parsed;
 		} catch {
 			// Try the next candidate.
 		}
+	}
+	return null;
+}
+
+export function parseModelJsonObject(content: string): Record<string, unknown> | null {
+	const parsed = parseModelJsonValue(content);
+	if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+		return parsed as Record<string, unknown>;
 	}
 	return null;
 }

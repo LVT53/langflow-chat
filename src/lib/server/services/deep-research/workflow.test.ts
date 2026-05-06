@@ -294,14 +294,29 @@ describe("real Deep Research workflow stepper", () => {
 		const approved = await createApprovedResearchJob();
 		const approvedPlan = approved.currentPlan?.rawPlan;
 		if (!approvedPlan) throw new Error("Expected approved plan");
-		const primaryQuestion = approvedPlan.keyQuestions[0];
 		const { db } = await import("$lib/server/db");
+		const singlePassPlan = {
+			...approvedPlan,
+			researchBudget: {
+				...approvedPlan.researchBudget,
+				meaningfulPassFloor: 1,
+				synthesisPassCeiling: 1,
+			},
+		};
+		await db
+			.update(schema.deepResearchPlanVersions)
+			.set({
+				rawPlanJson: JSON.stringify(singlePassPlan),
+			})
+			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		const primaryQuestion = singlePassPlan.keyQuestions[0];
 		const {
 			saveDiscoveredResearchSource,
 			markResearchSourceReviewed,
 		} = await import("./sources");
 		const {
 			upsertResearchPassCheckpoint,
+			completeResearchPassCheckpoint,
 			listResearchCoverageGaps,
 			listResearchPassCheckpoints,
 		} = await import("./pass-state");
@@ -330,7 +345,7 @@ describe("real Deep Research workflow stepper", () => {
 			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
 			reviewedNote:
 				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
-			supportedKeyQuestions: approvedPlan.keyQuestions,
+			supportedKeyQuestions: singlePassPlan.keyQuestions,
 			extractedClaims: [
 				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
 			],
@@ -344,12 +359,19 @@ describe("real Deep Research workflow stepper", () => {
 			reviewedSourceIds: [source.id],
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: checkpoint.id,
+			nextDecision: "synthesize",
+			decisionSummary: "Reviewed evidence is ready for synthesis.",
+			now: new Date("2026-05-05T10:09:30.000Z"),
+		});
 		await saveDeepResearchEvidenceNotes({
 			userId: "user-1",
 			jobId: approved.id,
 			conversationId: "conv-1",
 			passCheckpointId: checkpoint.id,
-			notes: approvedPlan.keyQuestions.map((keyQuestion) => ({
+			notes: singlePassPlan.keyQuestions.map((keyQuestion) => ({
 				sourceId: source.id,
 				supportedKeyQuestion: keyQuestion,
 				findingText:
@@ -380,23 +402,7 @@ describe("real Deep Research workflow stepper", () => {
 					buildSynthesisNotes: async () => ({
 						jobId: approved.id,
 						findings: [],
-						supportedFindings: [
-							{
-								kind: "supported",
-								statement:
-									"All Hungarian tax filing deadlines moved to 2030.",
-								sourceRefs: [
-									{
-										reviewedSourceId: source.id,
-										discoveredSourceId: source.id,
-										canonicalUrl: source.url,
-										title: source.title ?? source.url,
-									},
-								],
-								central: true,
-								claimType: "general",
-							},
-						],
+						supportedFindings: [],
 						conflicts: [],
 						assumptions: [],
 						reportLimitations: [],

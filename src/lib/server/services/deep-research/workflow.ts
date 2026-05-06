@@ -919,6 +919,8 @@ async function assessReportEligibilityAfterSynthesis(input: {
 function hasReportBlockingClaimReadinessIssue(
 	synthesisClaims: Awaited<ReturnType<typeof listDeepResearchSynthesisClaims>>,
 ): boolean {
+	const centralClaims = synthesisClaims.filter((claim) => claim.central);
+	if (!centralClaims.some(isReportReadyCentralClaim)) return true;
 	return synthesisClaims.some(
 		(claim) =>
 			claim.central &&
@@ -927,6 +929,18 @@ function hasReportBlockingClaimReadinessIssue(
 				claim.evidenceLinks.some(
 					(link) => link.relation === "contradiction" && link.material,
 				)),
+	);
+}
+
+function isReportReadyCentralClaim(
+	claim: Awaited<ReturnType<typeof listDeepResearchSynthesisClaims>>[number],
+): boolean {
+	return (
+		(claim.status === "accepted" || claim.status === "limited") &&
+		claim.evidenceLinks.some((link) => link.relation === "support") &&
+		!claim.evidenceLinks.some(
+			(link) => link.relation === "contradiction" && link.material,
+		)
 	);
 }
 

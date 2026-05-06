@@ -617,21 +617,10 @@ function normalizeClaimGraphReviewerVerdict(input: {
 	if (!input.verdict || input.verdict.claimId !== input.claim.id) return null;
 	if (!validClaimGraphVerdictStatuses.has(input.verdict.verdict)) return null;
 
-	const linkedEvidenceIds = new Set(
-		input.linkedEvidence.map((item) => item.evidence.id),
-	);
-	const unlinkedEvidenceIds = input.verdict.evidenceNoteIds.filter(
-		(evidenceNoteId) => !linkedEvidenceIds.has(evidenceNoteId),
-	);
-	if (unlinkedEvidenceIds.length > 0) {
-		return unsupportedClaimGraphVerdict({
-			claim: input.claim,
-			evidenceNoteIds: unlinkedEvidenceIds,
-			reason:
-				"Citation audit model cited Evidence Notes that are not linked to this Synthesis Claim.",
-		});
-	}
-
+	const normalizedEvidenceNoteIds = normalizeReviewerEvidenceNoteIds({
+		evidenceNoteIds: input.verdict.evidenceNoteIds,
+		linkedEvidence: input.linkedEvidence,
+	});
 	const supportEvidenceIds = new Set(
 		input.linkedEvidence
 			.filter((item) => item.link.relation === "support")
@@ -641,7 +630,7 @@ function normalizeClaimGraphReviewerVerdict(input: {
 		input.verdict.verdict === "supported" ||
 		input.verdict.verdict === "partially_supported"
 	) {
-		const supportedEvidenceNoteIds = input.verdict.evidenceNoteIds.filter(
+		const supportedEvidenceNoteIds = normalizedEvidenceNoteIds.filter(
 			(evidenceNoteId) => supportEvidenceIds.has(evidenceNoteId),
 		);
 		if (supportedEvidenceNoteIds.length === 0) return null;
@@ -659,8 +648,8 @@ function normalizeClaimGraphReviewerVerdict(input: {
 		return unsupportedClaimGraphVerdict({
 			claim: input.claim,
 			evidenceNoteIds:
-				input.verdict.evidenceNoteIds.length > 0
-					? uniqueValues(input.verdict.evidenceNoteIds)
+				normalizedEvidenceNoteIds.length > 0
+					? normalizedEvidenceNoteIds
 					: [...supportEvidenceIds],
 			reason:
 				input.verdict.reason.trim() ||
@@ -671,11 +660,51 @@ function normalizeClaimGraphReviewerVerdict(input: {
 	return {
 		claimId: input.claim.id,
 		verdict: input.verdict.verdict,
-		evidenceNoteIds: uniqueValues(input.verdict.evidenceNoteIds),
+		evidenceNoteIds: normalizedEvidenceNoteIds,
 		reason:
 			input.verdict.reason.trim() ||
 			"Citation audit model requested claim repair before report rendering.",
 	};
+}
+
+function normalizeReviewerEvidenceNoteIds(input: {
+	evidenceNoteIds: string[];
+	linkedEvidence: Array<{
+		link: DeepResearchSynthesisClaim["evidenceLinks"][number];
+		evidence: DeepResearchEvidenceNote;
+	}>;
+}): string[] {
+	const aliases = new Map<string, string[]>();
+	for (const { evidence } of input.linkedEvidence) {
+		const evidenceIds = [
+			evidence.id,
+			evidence.sourceId,
+			...sourceIdsFromEvidenceSupport(evidence.sourceSupport),
+		].filter((value): value is string => Boolean(value?.trim()));
+		for (const evidenceId of evidenceIds) {
+			aliases.set(evidenceId, [
+				...(aliases.get(evidenceId) ?? []),
+				evidence.id,
+			]);
+		}
+	}
+	return uniqueValues(
+		input.evidenceNoteIds.flatMap((evidenceNoteId) =>
+			aliases.get(evidenceNoteId) ?? [],
+		),
+	);
+}
+
+function sourceIdsFromEvidenceSupport(
+	sourceSupport: Record<string, unknown>,
+): string[] {
+	return [
+		sourceSupport.sourceId,
+		sourceSupport.reviewedSourceId,
+		...(Array.isArray(sourceSupport.sourceIds)
+			? sourceSupport.sourceIds
+			: []),
+	].filter((value): value is string => typeof value === "string");
 }
 
 function evidenceNoteSupportsSynthesisClaim(

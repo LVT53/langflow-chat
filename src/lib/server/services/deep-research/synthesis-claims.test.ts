@@ -71,7 +71,7 @@ describe("deep research Synthesis Claims", () => {
 		}
 	});
 
-	it("persists a rejected claim when linked Evidence Notes do not support it", async () => {
+	it("preserves accepted claims with support links for citation-audit judgment", async () => {
 		const { upsertResearchPassCheckpoint } = await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 		const { saveDeepResearchSynthesisClaims } = await import(
@@ -138,8 +138,8 @@ describe("deep research Synthesis Claims", () => {
 				reportSection: "United States litigation status",
 				statement:
 					"US courts have already settled every major AI training-data copyright lawsuit.",
-				status: "rejected",
-				statusReason: expect.stringContaining("do not support"),
+				status: "accepted",
+				statusReason: null,
 				evidenceLinks: [
 					expect.objectContaining({
 						evidenceNoteId: evidenceNote.id,

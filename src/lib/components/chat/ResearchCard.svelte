@@ -111,6 +111,9 @@
 		timelinePreferenceJobId === job.id ? isTimelineOpen : shouldOpenTimelineByDefault(job)
 	);
 	let activeStage = $derived(timelineSteps.find((step) => step.status === 'active') ?? timelineSteps.at(-1) ?? null);
+	let activeStageLabelKey = $derived(
+		activeStage ? timelineStepLabelKey(job, activeStage) : 'deepResearch.timeline.planDrafting'
+	);
 	let progressRingClass = $derived(`research-card__progress-ring research-card__progress-ring--${stageProgressBand(job)}`);
 	let stageDetailRows = $derived(buildStageDetailRows(job));
 	let costLabel = $derived(formatCostLabel(job.usageSummary?.totalCostUsdMicros ?? 0));
@@ -423,13 +426,25 @@
 	}
 
 	function formatAuditRepairState(job: DeepResearchJob): string | null {
-		const repairPoint = (job.resumePoints ?? []).find(
-			(point) => point.boundary === 'repair' && point.status === 'running'
-		);
-		if (repairPoint) return $t('deepResearch.progress.auditRepairRunning');
+		if (hasRunningCitationAuditRepair(job)) return $t('deepResearch.progress.auditRepairRunning');
 		const needsRepair = (job.synthesisClaims ?? []).some((claim) => claim.status === 'needs-repair');
 		if (needsRepair) return $t('deepResearch.progress.auditRepairNeeded');
 		return null;
+	}
+
+	function hasRunningCitationAuditRepair(job: DeepResearchJob): boolean {
+		const repairPoint = (job.resumePoints ?? []).find(
+			(point) => point.boundary === 'repair' && point.status === 'running'
+		);
+		if (repairPoint) return true;
+		return (
+			job.stage === 'research_tasks' &&
+			(job.passCheckpoints ?? []).some(
+				(checkpoint) =>
+					checkpoint.lifecycleState === 'running' &&
+					/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent)
+			)
+		);
 	}
 
 	function buildTimelineEventViews(events: DeepResearchTimelineEvent[]): TimelineEventView[] {
@@ -633,6 +648,13 @@
 		return Math.max(0, index);
 	}
 
+	function timelineStepLabelKey(job: DeepResearchJob, step: TimelineStep): I18nKey {
+		if (step.id === 'gaps' && hasRunningCitationAuditRepair(job)) {
+			return 'deepResearch.timeline.repairingCitations';
+		}
+		return step.labelKey;
+	}
+
 	const TIMELINE_STEP_DEFINITIONS = [
 		{ id: 'plan', labelKey: 'deepResearch.timeline.planDrafting', stages: ['plan_generation'] },
 		{ id: 'plan-drafted', labelKey: 'deepResearch.timeline.planDrafted', stages: ['plan_drafted', 'plan_revised'] },
@@ -643,7 +665,7 @@
 		{ id: 'gaps', labelKey: 'deepResearch.timeline.fillingGaps', stages: ['research_tasks'] },
 		{ id: 'synthesis', labelKey: 'deepResearch.timeline.synthesizing', stages: ['synthesis'] },
 		{ id: 'audit', labelKey: 'deepResearch.timeline.auditingCitations', stages: ['citation_audit', 'citation_audit_failed'] },
-		{ id: 'writing', labelKey: 'deepResearch.timeline.writingReport', stages: ['report_writing', 'report_ready'] },
+		{ id: 'writing', labelKey: 'deepResearch.timeline.writingReport', stages: ['report_assembly', 'report_writing', 'report_ready'] },
 		{ id: 'completed', labelKey: 'deepResearch.timeline.completed', stages: ['completed'] },
 	] satisfies Array<Omit<TimelineStep, 'status' | 'events'>>;
 
@@ -803,7 +825,7 @@
 			>
 				<span class={progressRingClass} aria-hidden="true"></span>
 				<span class="research-card__progress-stage">
-					{$t('deepResearch.progress.stagePrefix')}{activeStage ? $t(activeStage.labelKey) : $t('deepResearch.timeline.planDrafting')}
+					{$t('deepResearch.progress.stagePrefix')}{$t(activeStageLabelKey)}
 				</span>
 			</button>
 			<div class="research-card__depth">{$t(depthKeys[job.depth])}</div>
@@ -831,7 +853,7 @@
 			</div>
 			<p class="research-card__progress-current">
 				{$t('deepResearch.progress.currentStage', {
-					stage: activeStage ? $t(activeStage.labelKey) : $t('deepResearch.timeline.planDrafting'),
+					stage: $t(activeStageLabelKey),
 				})}
 			</p>
 			{#if stageDetailRows.length > 0}
@@ -1097,7 +1119,7 @@
 							<div class="research-card__timeline-marker" aria-hidden="true"></div>
 							<div class="research-card__timeline-body">
 								{#if showTimelineStepLabel(job)}
-									<p class="research-card__timeline-summary">{$t(step.labelKey)}</p>
+									<p class="research-card__timeline-summary">{$t(timelineStepLabelKey(job, step))}</p>
 								{/if}
 								{#each step.events ?? [] as event (event.id)}
 									<div class="research-card__timeline-event">
@@ -1659,15 +1681,20 @@
 	}
 
 	.research-card__memo-actions li {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.35rem;
 		border-radius: 7px;
 		background: var(--surface-page);
 		padding: 0.45rem 0.55rem;
 	}
 
 	.research-card__memo-action-button {
-		border: 0;
-		background: none;
-		padding: 0;
+		border: 1px solid var(--border-strong);
+		border-radius: 6px;
+		background: var(--surface-card);
+		padding: 0.34rem 0.52rem;
 		text-align: left;
 		font-weight: 600;
 		color: var(--text-primary);
@@ -1675,8 +1702,9 @@
 	}
 
 	.research-card__memo-action-button:hover:not(:disabled) {
+		border-color: var(--accent);
 		color: var(--accent);
-		text-decoration: underline;
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface-card));
 	}
 
 	.research-card__memo-action-button:disabled {

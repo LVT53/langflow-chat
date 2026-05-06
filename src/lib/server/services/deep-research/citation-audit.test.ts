@@ -788,12 +788,12 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 
-	it("rejects claim-graph LLM verdicts that cite unlinked evidence notes", async () => {
+	it("maps claim-graph LLM source IDs back to linked Evidence Notes", async () => {
 		const result = await auditDeepResearchClaimGraph({
-			jobId: "job-llm-unlinked-evidence",
+			jobId: "job-llm-source-id-evidence",
 			claims: [
 				buildSynthesisClaim({
-					id: "claim-llm-unlinked-evidence",
+					id: "claim-llm-source-id-evidence",
 					statement: "Model X officially includes 16 GB memory.",
 					claimType: "official_specification",
 					evidenceNoteId: "note-linked",
@@ -814,7 +814,50 @@ describe("Deep Research citation audit", () => {
 				}),
 			],
 			reviewClaim: () => ({
-				claimId: "claim-llm-unlinked-evidence",
+				claimId: "claim-llm-source-id-evidence",
+				verdict: "supported",
+				evidenceNoteIds: ["source-1"],
+				reason: "The model cited the source id for the linked note.",
+			}),
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-llm-source-id-evidence",
+				verdict: "supported",
+				evidenceNoteIds: ["note-linked"],
+			}),
+		]);
+	});
+
+	it("falls back when claim-graph LLM verdicts cite unknown evidence ids", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-llm-unknown-evidence",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-llm-unknown-evidence",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-linked",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-linked",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "undated",
+						directness: "anecdotal",
+						extractionConfidence: "low",
+						claimFit: "weak",
+					},
+				}),
+			],
+			reviewClaim: () => ({
+				claimId: "claim-llm-unknown-evidence",
 				verdict: "supported",
 				evidenceNoteIds: ["note-not-linked"],
 				reason: "The model cited an invalid note.",
@@ -824,10 +867,9 @@ describe("Deep Research citation audit", () => {
 		expect(result.status).toBe("needs_repair");
 		expect(result.verdicts).toEqual([
 			expect.objectContaining({
-				claimId: "claim-llm-unlinked-evidence",
+				claimId: "claim-llm-unknown-evidence",
 				verdict: "needs_repair",
-				evidenceNoteIds: ["note-not-linked"],
-				reason: expect.stringContaining("not linked"),
+				reason: expect.stringContaining("Claim Type Evidence Requirements"),
 			}),
 		]);
 	});

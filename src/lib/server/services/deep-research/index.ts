@@ -754,6 +754,12 @@ export async function completeDeepResearchJobWithAuditedReport(
 		});
 	}
 
+	await updateRunningDeepResearchStage({
+		userId: job.userId,
+		jobId: job.id,
+		stage: 'citation_audit',
+		now,
+	});
 	await upsertResearchResumePoint({
 		userId: job.userId,
 		jobId: job.id,
@@ -921,6 +927,12 @@ export async function completeDeepResearchJobWithAuditedReport(
 		userId: input.userId,
 		jobId: job.id,
 	});
+	await updateRunningDeepResearchStage({
+		userId: job.userId,
+		jobId: job.id,
+		stage: 'report_assembly',
+		now,
+	});
 	await upsertResearchResumePoint({
 		userId: job.userId,
 		jobId: job.id,
@@ -960,6 +972,12 @@ export async function completeDeepResearchJobWithAuditedReport(
 		reportDraft,
 		input.synthesisNotes
 	);
+	await updateRunningDeepResearchStage({
+		userId: job.userId,
+		jobId: job.id,
+		stage: 'citation_audit',
+		now,
+	});
 	await upsertResearchResumePoint({
 		userId: job.userId,
 		jobId: job.id,
@@ -1239,6 +1257,27 @@ async function loadFinalizableDeepResearchJobRow(
 		)
 		.limit(1);
 	return freshJob ?? null;
+}
+
+async function updateRunningDeepResearchStage(input: {
+	userId: string;
+	jobId: string;
+	stage: string;
+	now: Date;
+}): Promise<void> {
+	await db
+		.update(deepResearchJobs)
+		.set({
+			stage: input.stage,
+			updatedAt: input.now,
+		})
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.jobId),
+				eq(deepResearchJobs.userId, input.userId),
+				eq(deepResearchJobs.status, 'running')
+			)
+		);
 }
 
 async function loadDeepResearchJobSnapshot(input: {

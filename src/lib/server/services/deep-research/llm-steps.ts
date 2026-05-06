@@ -4,6 +4,7 @@ import {
 	numberValue,
 	objectArrayValue,
 	parseModelJsonObject,
+	parseModelJsonValue,
 	stringArrayValue,
 	stringValue,
 } from "./llm-json";
@@ -479,7 +480,7 @@ export async function buildClaimGraphCitationReviewerWithLlm(input: {
 					{
 						role: "system",
 						content:
-							"Audit Synthesis Claims against their linked Evidence Notes. Use judgment for claim-type evidence requirements; do not rely on shallow source-quality labels alone. Return only JSON.",
+							"Audit Synthesis Claims against their linked Evidence Notes. Use judgment for claim-type evidence requirements; do not rely on shallow source-quality labels alone. For evidenceNoteIds, use only IDs from evidenceNotes[].id; do not return source IDs, reviewedSourceIds, URLs, or titles. Return one verdict for each claim and return only JSON.",
 					},
 					{
 						role: "user",
@@ -524,24 +525,41 @@ export async function buildClaimGraphCitationReviewerWithLlm(input: {
 					},
 				],
 			});
-			const parsed = result ? parseModelJsonObject(result.content) : null;
-			return parsed ? objectArrayValue(parsed.verdicts) : [];
+			const parsed = result ? parseModelJsonValue(result.content) : null;
+			return claimGraphReviewerItemsFromParsed(parsed);
 		},
 	);
 
 	const eligibleClaimIds = new Set(eligibleClaims.map((item) => item.claim.id));
 	const verdicts = new Map<string, DeepResearchCitationAuditVerdict>();
 	for (const item of batchResults.flat()) {
-		const claimId = stringValue(item.claimId);
+		const claimId =
+			stringValue(item.claimId) ??
+			stringValue(item.id) ??
+			stringValue(item.synthesisClaimId);
 		if (!claimId || !eligibleClaimIds.has(claimId)) continue;
-		const verdict = claimGraphVerdictStatusValue(stringValue(item.verdict));
+		const verdict = claimGraphVerdictStatusValue(
+			stringValue(item.verdict) ??
+				stringValue(item.status) ??
+				stringValue(item.auditVerdict),
+		);
 		if (!verdict) continue;
 		verdicts.set(claimId, {
 			claimId,
 			verdict,
-			evidenceNoteIds: stringArrayValue(item.evidenceNoteIds),
+			evidenceNoteIds: firstEvidenceIdentifierArrayValue([
+				item.evidenceNoteIds,
+				item.evidenceIds,
+				item.supportingEvidenceNoteIds,
+				item.citedEvidenceNoteIds,
+				item.evidenceNotes,
+				item.supportingEvidence,
+				item.citations,
+			]),
 			reason:
 				stringValue(item.reason) ??
+				stringValue(item.rationale) ??
+				stringValue(item.explanation) ??
 				"Citation audit model reviewed this Synthesis Claim.",
 		});
 	}
@@ -669,6 +687,49 @@ function claimGraphVerdictStatusValue(
 		return value;
 	}
 	return null;
+}
+
+function claimGraphReviewerItemsFromParsed(
+	parsed: unknown,
+): Record<string, unknown>[] {
+	if (Array.isArray(parsed)) return objectArrayValue(parsed);
+	if (!parsed || typeof parsed !== "object") return [];
+	const object = parsed as Record<string, unknown>;
+	for (const value of [
+		object.verdicts,
+		object.claims,
+		object.audits,
+		object.results,
+	]) {
+		const items = objectArrayValue(value);
+		if (items.length > 0) return items;
+	}
+	return [];
+}
+
+function firstEvidenceIdentifierArrayValue(values: unknown[]): string[] {
+	for (const value of values) {
+		const strings = evidenceIdentifierArrayValue(value);
+		if (strings.length > 0) return strings;
+	}
+	return [];
+}
+
+function evidenceIdentifierArrayValue(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item) => {
+			if (typeof item === "string") return item;
+			if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+			const object = item as Record<string, unknown>;
+			return (
+				stringValue(object.evidenceNoteId) ??
+				stringValue(object.id) ??
+				stringValue(object.sourceId) ??
+				stringValue(object.reviewedSourceId)
+			);
+		})
+		.filter((item): item is string => Boolean(item));
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {

@@ -277,6 +277,53 @@ describe('ResearchCard', () => {
 		});
 	});
 
+	it('labels citation repair separately from generic gap filling', async () => {
+		const { getByRole, getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'research_tasks',
+				passCheckpoints: [
+					{
+						id: 'pass-repair',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						passNumber: 4,
+						lifecycleState: 'running',
+						searchIntent:
+							'Citation audit repair pass for unsupported or contradicted Synthesis Claims',
+						reviewedSourceIds: [],
+						coverageGapIds: [],
+						terminalDecision: false,
+						startedAt: '2026-05-05T10:31:00.000Z',
+						createdAt: '2026-05-05T10:31:00.000Z',
+						updatedAt: '2026-05-05T10:45:00.000Z',
+					},
+				],
+				resumePoints: [
+					{
+						id: 'resume-repair',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						boundary: 'repair',
+						resumeKey: 'repair:1',
+						status: 'running',
+						stage: 'repair',
+						startedAt: '2026-05-05T10:46:00.000Z',
+						createdAt: '2026-05-05T10:46:00.000Z',
+						updatedAt: '2026-05-05T10:47:00.000Z',
+					},
+				],
+			}),
+		});
+
+		expect(getByText('Stage: Repairing citations')).toBeInTheDocument();
+
+		await fireEvent.click(getByRole('button', { name: 'Show research progress details' }));
+
+		expect(getByText('Current stage: Repairing citations')).toBeInTheDocument();
+		expect(getByText('Audit repair in progress')).toBeInTheDocument();
+	});
+
 	it('shows Report Intent in the approval view and lets Plan Edit revise it', async () => {
 		const onEdit = vi.fn(async () => {});
 		const { getByRole, getByLabelText, getByText } = render(ResearchCard, {

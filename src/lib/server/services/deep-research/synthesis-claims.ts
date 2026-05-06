@@ -397,16 +397,6 @@ function assessClaimSupport(input: {
 				"Accepted Synthesis Claims require at least one supporting Evidence Note.",
 		};
 	}
-	if (
-		!supportingNotes.some((note) =>
-			evidenceNoteSupportsClaim(input.statement, note),
-		)
-	) {
-		return {
-			status: "rejected",
-			statusReason: "Linked Evidence Notes do not support the Synthesis Claim.",
-		};
-	}
 
 	return { status: input.requestedStatus };
 }
@@ -481,7 +471,7 @@ function matchingEvidenceNotesForFinding(
 		]),
 	);
 	const findingStatement = normalizeText(finding.statement).toLowerCase();
-	return evidenceNotes.filter((note) => {
+	const sourceMatchedNotes = evidenceNotes.filter((note) => {
 		if (normalizeText(note.findingText).toLowerCase() === findingStatement) {
 			return true;
 		}
@@ -489,6 +479,14 @@ function matchingEvidenceNotesForFinding(
 		const sourceSupportIds = sourceIdsFromSupport(note.sourceSupport);
 		return sourceSupportIds.some((sourceId) => sourceIds.has(sourceId));
 	});
+	const exactMatches = sourceMatchedNotes.filter(
+		(note) => normalizeText(note.findingText).toLowerCase() === findingStatement,
+	);
+	if (exactMatches.length > 0) return exactMatches;
+	const textMatches = sourceMatchedNotes.filter((note) =>
+		evidenceNoteSupportsClaim(finding.statement, note),
+	);
+	return textMatches.length > 0 ? textMatches : sourceMatchedNotes;
 }
 
 function sourceIdsFromSupport(
@@ -507,7 +505,10 @@ function firstNonNull(values: Array<string | null | undefined>): string | null {
 
 function evidenceNoteSupportsClaim(
 	statement: string,
-	note: DeepResearchEvidenceNoteRow,
+	note: Pick<
+		DeepResearchEvidenceNote,
+		"findingText" | "supportedKeyQuestion" | "comparedEntity" | "comparisonAxis"
+	>,
 ): boolean {
 	const claimTerms = importantTerms(statement);
 	const noteTerms = importantTerms(
