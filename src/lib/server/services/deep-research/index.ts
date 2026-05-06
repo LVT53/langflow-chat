@@ -868,6 +868,10 @@ export async function completeDeepResearchJobWithAuditedReport(
 				job,
 				currentPlan,
 				auditResult: claimGraphAuditResult,
+				synthesisNotes: input.synthesisNotes,
+				limitations: input.limitations,
+				claims: claimGraphClaims,
+				evidenceNotes: claimGraphEvidenceNotes,
 				now,
 			});
 		}
@@ -1303,6 +1307,10 @@ async function createCitationAuditRepairPass(input: {
 	job: DeepResearchJobRow;
 	currentPlan: DeepResearchPlanSummary;
 	auditResult: Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>;
+	synthesisNotes?: SynthesisNotes;
+	limitations?: string[];
+	claims?: DeepResearchSynthesisClaim[];
+	evidenceNotes?: DeepResearchEvidenceNote[];
 	now: Date;
 }): Promise<DeepResearchJob | null> {
 	if (!input.auditResult) return null;
@@ -1327,6 +1335,23 @@ async function createCitationAuditRepairPass(input: {
 		/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent)
 	).length;
 	if (existingRepairPasses >= repairPassCeiling) {
+		if (input.synthesisNotes && input.claims && input.evidenceNotes) {
+			const reportFromSupportedClaims =
+				await completeAuditedReportWithSupportedClaimGraph({
+					job: input.job,
+					currentPlan: input.currentPlan,
+					synthesisNotes: input.synthesisNotes,
+					limitations: [
+						...(input.limitations ?? []),
+						`Repair pass budget exhausted after ${existingRepairPasses} repair pass${existingRepairPasses === 1 ? '' : 'es'}.`,
+					],
+					auditResult: input.auditResult,
+					claims: input.claims,
+					evidenceNotes: input.evidenceNotes,
+					now: input.now,
+				});
+			if (reportFromSupportedClaims) return reportFromSupportedClaims;
+		}
 		return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
 			job: input.job,
 			currentPlan: input.currentPlan,
@@ -1456,6 +1481,226 @@ async function createCitationAuditRepairPass(input: {
 			resumePoints: passStates.get(input.job.id)?.resumePoints ?? [],
 		}
 	);
+}
+
+async function completeAuditedReportWithSupportedClaimGraph(input: {
+	job: DeepResearchJobRow;
+	currentPlan: DeepResearchPlanSummary;
+	synthesisNotes: SynthesisNotes;
+	limitations: string[];
+	auditResult: NonNullable<
+		Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>
+	>;
+	claims: DeepResearchSynthesisClaim[];
+	evidenceNotes: DeepResearchEvidenceNote[];
+	now: Date;
+}): Promise<DeepResearchJob | null> {
+	const verifiedSynthesisClaims = filterSynthesisClaimsForReportableVerdicts({
+		claims: input.claims,
+		auditResult: input.auditResult,
+	});
+	if (verifiedSynthesisClaims.length === 0) return null;
+
+	const citedAt = input.now;
+	const initialSources = await listResearchSources({
+		userId: input.job.userId,
+		jobId: input.job.id,
+	});
+	const synthesisFindingsForCitations = [
+		...input.synthesisNotes.findings,
+		...input.synthesisNotes.supportedFindings,
+	];
+	const sourceIdsNeededForReport = new Set(
+		synthesisFindingsForCitations.flatMap((finding) =>
+			finding.sourceRefs.flatMap((sourceRef) => [
+				sourceRef.discoveredSourceId,
+				sourceRef.reviewedSourceId,
+			])
+		)
+	);
+	for (const sourceId of sourceIdsFromVerifiedClaims(
+		verifiedSynthesisClaims,
+		input.evidenceNotes
+	)) {
+		sourceIdsNeededForReport.add(sourceId);
+	}
+	await Promise.all(
+		initialSources
+			.filter(
+				(source) =>
+					sourceIdsNeededForReport.has(source.id) &&
+					source.reviewedAt &&
+					!source.citedAt
+			)
+			.map((source) =>
+				markResearchSourceCited({
+					userId: input.job.userId,
+					sourceId: source.id,
+					citedAt,
+					citationNote: `Cited in audited Research Report for ${input.job.title}`,
+				})
+			)
+	);
+
+	const sources = await listResearchSources({
+		userId: input.job.userId,
+		jobId: input.job.id,
+	});
+	await updateRunningDeepResearchStage({
+		userId: input.job.userId,
+		jobId: input.job.id,
+		stage: 'report_assembly',
+		now: input.now,
+	});
+	const reportLimitations = [
+		...input.limitations,
+		...claimGraphReportLimitations(input.auditResult),
+	];
+	const reportDraft = await writeResearchReportWithLlm({
+		context: {
+			jobId: input.job.id,
+			conversationId: input.job.conversationId,
+			userId: input.job.userId,
+			now: input.now,
+		},
+		jobId: input.job.id,
+		plan: input.currentPlan.rawPlan,
+		synthesisNotes: input.synthesisNotes,
+		synthesisClaims: verifiedSynthesisClaims,
+		evidenceNotes: input.evidenceNotes,
+		sources: sources.map(mapSourceForReportWriter),
+		limitations: reportLimitations,
+	});
+	if (!(await loadFinalizableDeepResearchJobRow(input.job))) {
+		return loadDeepResearchJobSnapshot({
+			userId: input.job.userId,
+			jobId: input.job.id,
+			currentPlan: input.currentPlan,
+		});
+	}
+	const citationAuditReportDraft = buildCitationAuditReportDraft(
+		reportDraft,
+		input.synthesisNotes
+	);
+	const citationAuditSources = sources.map((source) => ({
+		id: source.id,
+		status: source.status,
+		title: source.title ?? source.url,
+		url: source.url,
+		reviewedAt: source.reviewedAt,
+		citedAt: source.citedAt,
+		reviewedNote: source.reviewedNote,
+		citationNote: source.citationNote,
+		snippet: source.snippet,
+		sourceText: source.sourceText,
+		supportedKeyQuestions: source.supportedKeyQuestions,
+		extractedClaims: source.extractedClaims,
+		sourceQualitySignals: source.sourceQualitySignals,
+	}));
+	const llmClaimReviewer = await buildCitationClaimReviewerWithLlm({
+		context: {
+			jobId: input.job.id,
+			conversationId: input.job.conversationId,
+			userId: input.job.userId,
+			now: input.now,
+		},
+		report: citationAuditReportDraft,
+		citedSources: citationAuditSources,
+	});
+	const auditResult = await auditDeepResearchReportCitations({
+		jobId: input.job.id,
+		report: citationAuditReportDraft,
+		citedSources: citationAuditSources,
+		reviewClaimSupport: llmClaimReviewer
+			? async ({ claim }) => llmClaimReviewer(claim.id)
+			: undefined,
+	});
+	await saveResearchTimelineEvent({
+		jobId: input.job.id,
+		conversationId: input.job.conversationId,
+		userId: input.job.userId,
+		taskId: null,
+		stage: 'citation_audit',
+		kind: auditResult.canComplete ? 'stage_completed' : 'warning',
+		occurredAt: input.now.toISOString(),
+		messageKey: auditResult.canComplete
+			? 'deepResearch.timeline.citationAuditCompleted'
+			: 'deepResearch.timeline.citationAuditFailed',
+		messageParams: {
+			status: auditResult.status,
+			retainedClaims: auditResult.findings.filter((finding) =>
+				['supported', 'repaired'].includes(finding.status)
+			).length,
+			removedClaims: auditResult.findings.filter((finding) =>
+				['unsupported_source', 'unsupported_claim'].includes(finding.status)
+			).length,
+		},
+		sourceCounts: sourceCountsFromSources(sources),
+		assumptions: [],
+		warnings: citationAuditWarnings(auditResult),
+		summary: auditResult.canComplete
+			? 'Citation audit completed and unsupported claims were removed or retained with citations.'
+			: 'Citation audit failed because no credible supported claims remained.',
+	});
+	if (!auditResult.canComplete) return null;
+
+	const auditedMarkdown = renderAuditedReportMarkdown({
+		reportDraft,
+		auditedReport: auditResult.auditedReport,
+		sources: reportDraft.sources,
+		researchLanguage: input.currentPlan.rawPlan.researchLanguage ?? 'en',
+	});
+	const reportName = buildReportArtifactName(
+		input.job.title,
+		input.currentPlan.rawPlan.researchLanguage ?? 'en'
+	);
+	const reportArtifactId = `deep-research-report-${input.job.id}`;
+	const existingReportArtifact = await loadArtifactById({
+		userId: input.job.userId,
+		artifactId: reportArtifactId,
+	});
+	const reportArtifact =
+		existingReportArtifact ??
+		(await createArtifact({
+			id: reportArtifactId,
+			userId: input.job.userId,
+			conversationId: input.job.conversationId,
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: reportName,
+			mimeType: 'text/markdown',
+			extension: 'md',
+			sizeBytes: Buffer.byteLength(auditedMarkdown, 'utf8'),
+			contentText: auditedMarkdown,
+			summary:
+				(input.currentPlan.rawPlan.researchLanguage ?? 'en') === 'hu'
+					? `Ellenőrzött kutatási jelentés: ${input.job.title}`
+					: `Audited Research Report for ${input.job.title}`,
+			metadata: {
+				deepResearchReport: true,
+				deepResearchReportKind: 'audited',
+				deepResearchJobId: input.job.id,
+				deepResearchDepth: input.job.depth,
+				deepResearchSourceLedgerSnapshot: {
+					markdown: reportDraft.structuredReport.core.sourceLedgerSnapshot,
+					sources: reportDraft.sourceLedgerSnapshotSources,
+					sourceCounts: sourceCountsFromSources(sources),
+				},
+				documentFamilyId: randomUUID(),
+				documentFamilyStatus: 'active',
+				documentLabel: reportName,
+				documentRole: 'research_report',
+				versionNumber: 1,
+				originConversationId: input.job.conversationId,
+				citationAuditStatus: auditResult.status,
+			},
+		}));
+	return finalizeAuditedReportJobFromArtifact({
+		job: input.job,
+		currentPlan: input.currentPlan,
+		artifactId: reportArtifact.id,
+		now: input.now,
+	});
 }
 
 export async function completeDeepResearchJobWithEvidenceLimitationMemo(
@@ -2058,6 +2303,72 @@ function sourceIdsFromVerifiedClaims(
 					})
 			)
 	);
+}
+
+function filterSynthesisClaimsForReportableVerdicts(input: {
+	claims: DeepResearchSynthesisClaim[];
+	auditResult: NonNullable<
+		Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>
+	>;
+}): DeepResearchSynthesisClaim[] {
+	const verdictByClaimId = new Map(
+		input.auditResult.verdicts.map((verdict) => [verdict.claimId, verdict])
+	);
+	return input.claims.flatMap((claim) => {
+		const verdict = verdictByClaimId.get(claim.id);
+		if (
+			!verdict ||
+			(verdict.verdict !== 'supported' &&
+				verdict.verdict !== 'partially_supported')
+		) {
+			return [];
+		}
+		const allowedEvidenceNoteIds = new Set(verdict.evidenceNoteIds);
+		const evidenceLinks = claim.evidenceLinks.filter((link) => {
+			if (link.relation !== 'support' && link.relation !== 'qualification') {
+				return false;
+			}
+			return (
+				allowedEvidenceNoteIds.size === 0 ||
+				allowedEvidenceNoteIds.has(link.evidenceNoteId)
+			);
+		});
+		if (evidenceLinks.length === 0) return [];
+		return [
+			{
+				...claim,
+				status:
+					verdict.verdict === 'partially_supported' ? 'limited' : 'accepted',
+				statusReason:
+					verdict.verdict === 'partially_supported'
+						? verdict.reason
+						: claim.statusReason,
+				evidenceLinks,
+			},
+		];
+	});
+}
+
+function claimGraphReportLimitations(
+	auditResult: NonNullable<
+		Awaited<ReturnType<typeof auditAndPersistDeepResearchClaimGraph>>
+	>
+): string[] {
+	const failedVerdicts = auditResult.verdicts.filter(
+		(verdict) =>
+			verdict.verdict !== 'supported' &&
+			verdict.verdict !== 'partially_supported'
+	);
+	if (failedVerdicts.length === 0) return [];
+	return [
+		`Removed ${failedVerdicts.length} unsupported or unresolved claim${failedVerdicts.length === 1 ? '' : 's'} after citation audit; retained supported and partially supported claims only.`,
+		...failedVerdicts
+			.slice(0, 8)
+			.map(
+				(verdict) =>
+					`Removed claim ${verdict.claimId} after citation audit (${verdict.verdict}): ${verdict.reason}`
+			),
+	];
 }
 
 function buildCitationAuditReportDraft(

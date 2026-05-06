@@ -790,6 +790,190 @@ describe("audited Deep Research report completion", () => {
 		);
 	});
 
+	it("renders an audited report from supported claims when repair budget is exhausted", async () => {
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { saveDeepResearchSynthesisClaims } = await import(
+			"./synthesis-claims"
+		);
+		const {
+			markResearchSourceReviewed,
+			saveDiscoveredResearchSource,
+		} = await import("./sources");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare Model X and Model Y specifications",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await seedCompletedMeaningfulPasses(created.id, 3, 2);
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: (
+				await saveDiscoveredResearchSource({
+					userId: "user-1",
+					conversationId: "conv-1",
+					jobId: created.id,
+					url: "https://vendor.example.test/model-x/specs",
+					title: "Model X official specifications",
+					provider: "public_web",
+					snippet: "Model X officially includes 16 GB memory.",
+					discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+				})
+			).id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote: "Model X officially includes 16 GB memory.",
+			relevanceScore: 95,
+			topicRelevant: true,
+			supportedKeyQuestions: ["What are the official Model X specifications?"],
+			extractedClaims: ["Model X officially includes 16 GB memory."],
+			sourceQualitySignals: {
+				sourceType: "official_vendor",
+				independence: "primary",
+				freshness: "current",
+				directness: "direct",
+				extractionConfidence: "high",
+				claimFit: "strong",
+			},
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial specification review",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 5,
+			searchIntent:
+				"Completed Citation audit repair pass for unsupported claims",
+			now: new Date("2026-05-05T10:13:00.000Z"),
+		});
+		await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 6,
+			searchIntent:
+				"Completed Citation audit repair pass for remaining unsupported claims",
+			now: new Date("2026-05-05T10:14:00.000Z"),
+		});
+		const [supportedNote, weakNote] = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			sourceId: reviewedSource.id,
+			notes: [
+				{
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceSupport: {
+						sourceId: reviewedSource.id,
+						url: reviewedSource.url,
+						title: reviewedSource.title,
+					},
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				},
+				{
+					findingText: "A forum post says Model Y feels durable.",
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "undated",
+						directness: "anecdotal",
+						extractionConfidence: "low",
+						claimFit: "weak",
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+		await saveDeepResearchSynthesisClaims({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			synthesisPass: "synthesis-pass-1",
+			claims: [
+				{
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					central: true,
+					status: "accepted",
+					evidenceLinks: [
+						{ evidenceNoteId: supportedNote.id, relation: "support" },
+					],
+				},
+				{
+					statement: "Model Y officially has proven long-term durability.",
+					claimType: "official_specification",
+					central: true,
+					status: "accepted",
+					evidenceLinks: [{ evidenceNoteId: weakNote.id, relation: "support" }],
+				},
+			],
+			now: new Date("2026-05-05T10:12:00.000Z"),
+		});
+
+		const completed = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement: "Model X officially includes 16 GB memory.",
+					sourceId: reviewedSource.id,
+					url: reviewedSource.url,
+					title: reviewedSource.title ?? "Model X official specifications",
+				},
+			]),
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = completed?.reportArtifactId
+			? await getArtifactForUser("user-1", completed.reportArtifactId)
+			: null;
+
+		expect(completed).toMatchObject({
+			status: "completed",
+			stage: "report_ready",
+		});
+		expect(reportArtifact?.contentText).toContain(
+			"Model X officially includes 16 GB memory.",
+		);
+		expect(reportArtifact?.contentText).toContain(
+			"Removed 1 unsupported or unresolved claim",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
+			"Evidence Limitation Memo",
+		);
+	});
+
 	it("falls back conservatively when the configured claim-graph citation reviewer is unavailable", async () => {
 		vi.doMock("./llm-steps", async (importOriginal) => {
 			const actual = await importOriginal<typeof import("./llm-steps")>();

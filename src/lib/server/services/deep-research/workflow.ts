@@ -921,15 +921,7 @@ function hasReportBlockingClaimReadinessIssue(
 ): boolean {
 	const centralClaims = synthesisClaims.filter((claim) => claim.central);
 	if (!centralClaims.some(isReportReadyCentralClaim)) return true;
-	return synthesisClaims.some(
-		(claim) =>
-			claim.central &&
-			(((claim.status === "needs-repair" || claim.status === "rejected") &&
-				claim.evidenceLinks.length > 0) ||
-				claim.evidenceLinks.some(
-					(link) => link.relation === "contradiction" && link.material,
-				)),
-	);
+	return false;
 }
 
 function isReportReadyCentralClaim(

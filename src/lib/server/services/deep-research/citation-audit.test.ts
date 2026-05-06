@@ -698,6 +698,82 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 
+	it("uses persisted source excerpts when short Evidence Note text is too narrow", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-excerpt-supported-spec",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-excerpt-handlebar",
+					statement: "Model X includes a CUBE Rise Trail Bar 720mm cockpit.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-excerpt-handlebar",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-excerpt-handlebar",
+					findingText: "The source lists cockpit component details.",
+					sourceExcerpt:
+						"Model X specifications list Cockpit: CUBE Rise Trail Bar 720mm.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-excerpt-handlebar",
+				verdict: "supported",
+				evidenceNoteIds: ["note-excerpt-handlebar"],
+			}),
+		]);
+	});
+
+	it("accepts direct non-community product spec evidence for non-official wording", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-direct-commerce-spec",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-commerce-battery",
+					statement: "Model X includes a 750 Wh battery.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-commerce-battery",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-commerce-battery",
+					findingText: "Model X includes a 750 Wh battery.",
+					sourceQualitySignals: {
+						sourceType: "vendor_marketing",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "direct",
+						extractionConfidence: "medium",
+						claimFit: "partial",
+					},
+				}),
+			],
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-commerce-battery",
+				verdict: "supported",
+				evidenceNoteIds: ["note-commerce-battery"],
+			}),
+		]);
+	});
+
 	it("uses claim-graph LLM verdicts as the normal authority for quality-fit judgment", async () => {
 		const result = await auditDeepResearchClaimGraph({
 			jobId: "job-llm-quality-fit",
@@ -1207,6 +1283,7 @@ function buildSynthesisClaim(input: {
 function buildEvidenceNote(input: {
 	id: string;
 	findingText: string;
+	sourceExcerpt?: string;
 	sourceQualitySignals: DeepResearchSourceQualitySignals;
 }): DeepResearchEvidenceNote {
 	return {
@@ -1226,6 +1303,7 @@ function buildEvidenceNote(input: {
 			sourceId: "source-1",
 			title: "Model X product page",
 			url: "https://vendor.example.test/model-x",
+			excerpt: input.sourceExcerpt,
 		},
 		sourceQualitySignals: input.sourceQualitySignals,
 		sourceAuthoritySummary: null,

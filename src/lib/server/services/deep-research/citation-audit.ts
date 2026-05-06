@@ -784,6 +784,10 @@ function evidenceNoteSupportsSynthesisClaim(
 			citedAt: evidenceNote.createdAt,
 			reviewedNote: evidenceNote.findingText,
 			citationNote: null,
+			sourceText:
+				typeof evidenceNote.sourceSupport.excerpt === "string"
+					? evidenceNote.sourceSupport.excerpt
+					: null,
 			snippet: [
 				evidenceNote.supportedKeyQuestion,
 				evidenceNote.comparedEntity,
@@ -887,6 +891,17 @@ function sourceQualitySignalsFitClaim(
 	const claimType =
 		claim.claimType ?? classifyDeepResearchClaimType(claim.text);
 	if (claimType === "official_specification") {
+		if (
+			!claimRequiresStrictOfficialSpecificationAuthority(claim.text) &&
+			signals.directness === "direct" &&
+			signals.extractionConfidence !== "low" &&
+			signals.independence !== "community" &&
+			signals.sourceType !== "forum" &&
+			signals.claimFit !== "weak" &&
+			signals.claimFit !== "mismatch"
+		) {
+			return true;
+		}
 		return (
 			signals.sourceType === "official_vendor" ||
 			signals.sourceType === "official_government" ||
@@ -939,6 +954,14 @@ function hasStrongDirectNonCommunitySupport(
 		signals.claimFit === "strong" &&
 		signals.sourceType !== "forum" &&
 		signals.independence !== "community"
+	);
+}
+
+function claimRequiresStrictOfficialSpecificationAuthority(
+	claimText: string,
+): boolean {
+	return /\b(official|officially|manufacturer|vendor|brand|cube says|according to cube)\b/i.test(
+		claimText,
 	);
 }
 

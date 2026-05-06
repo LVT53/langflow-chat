@@ -494,6 +494,7 @@ function sourceIdsFromSupport(
 ): string[] {
 	const values = [
 		sourceSupport.sourceId,
+		sourceSupport.reviewedSourceId,
 		...(Array.isArray(sourceSupport.sourceIds) ? sourceSupport.sourceIds : []),
 	];
 	return values.filter((value): value is string => typeof value === "string");
@@ -507,7 +508,11 @@ function evidenceNoteSupportsClaim(
 	statement: string,
 	note: Pick<
 		DeepResearchEvidenceNote,
-		"findingText" | "supportedKeyQuestion" | "comparedEntity" | "comparisonAxis"
+		| "findingText"
+		| "supportedKeyQuestion"
+		| "comparedEntity"
+		| "comparisonAxis"
+		| "sourceSupport"
 	>,
 ): boolean {
 	const claimTerms = importantTerms(statement);
@@ -517,6 +522,9 @@ function evidenceNoteSupportsClaim(
 			note.supportedKeyQuestion,
 			note.comparedEntity,
 			note.comparisonAxis,
+			typeof note.sourceSupport.excerpt === "string"
+				? note.sourceSupport.excerpt
+				: null,
 		]
 			.filter(Boolean)
 			.join(" "),

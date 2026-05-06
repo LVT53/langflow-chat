@@ -244,7 +244,7 @@ function inferDirectness(input: {
 }): DeepResearchSourceDirectness {
 	if (input.sourceType === "forum") return "anecdotal";
 	if (
-		/\b(specification|specifications|manual|datasheet|official|states|according to)\b/i.test(
+		/\b(specification|specifications|specs|technical specs?|manual|datasheet|official|states|according to|geometry|component table|product page|manufacturer lists?)\b/i.test(
 			input.text,
 		)
 	) {
@@ -292,7 +292,6 @@ function inferClaimFit(input: {
 	supportedKeyQuestions: string[];
 	relevanceScore?: number | null;
 }): DeepResearchClaimFit {
-	if (input.supportedKeyQuestions.length === 0) return "mismatch";
 	const relevanceScore = input.relevanceScore ?? 0;
 	if (
 		input.directness === "direct" &&
@@ -301,6 +300,15 @@ function inferClaimFit(input: {
 	) {
 		return "strong";
 	}
+	if (
+		input.supportedKeyQuestions.length === 0 &&
+		input.directness === "direct" &&
+		input.extractionConfidence !== "low" &&
+		relevanceScore >= 55
+	) {
+		return "partial";
+	}
+	if (input.supportedKeyQuestions.length === 0) return "mismatch";
 	if (relevanceScore >= 55) return "partial";
 	return "weak";
 }
