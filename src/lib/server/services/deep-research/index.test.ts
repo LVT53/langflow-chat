@@ -564,6 +564,68 @@ describe('deep research job shell service', () => {
 		});
 	});
 
+	it('allows active Deep Research Jobs in one conversation up to the configured conversation limit', async () => {
+		const { db } = await import('$lib/server/db');
+		const { refreshConfig } = await import('$lib/server/config-store');
+		const { listConversationDeepResearchJobs, startDeepResearchJobShell } = await import('./index');
+		const now = new Date('2026-05-05T10:00:00.000Z');
+		await db.insert(schema.adminConfig).values([
+			{
+				key: 'DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT',
+				value: '2',
+				updatedAt: now,
+				updatedBy: 'user-1',
+			},
+			{
+				key: 'DEEP_RESEARCH_ACTIVE_USER_LIMIT',
+				value: '5',
+				updatedAt: now,
+				updatedBy: 'user-1',
+			},
+			{
+				key: 'DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT',
+				value: '10',
+				updatedAt: now,
+				updatedBy: 'user-1',
+			},
+		]);
+		await refreshConfig();
+
+		await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'standard',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+		await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'user-msg-1',
+			userRequest: 'Start another research pass',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:02:00.000Z'),
+		});
+
+		await expect(
+			startDeepResearchJobShell({
+				userId: 'user-1',
+				conversationId: 'conv-1',
+				triggerMessageId: 'user-msg-1',
+				userRequest: 'Start one research pass too many',
+				depth: 'focused',
+				now: new Date('2026-05-05T10:03:00.000Z'),
+			})
+		).rejects.toMatchObject({
+			code: 'active_job_exists',
+			status: 409,
+		});
+
+		const jobs = await listConversationDeepResearchJobs('user-1', 'conv-1');
+		expect(jobs).toHaveLength(2);
+	});
+
 	it('rejects a third active Deep Research Job for one user by default', async () => {
 		await seedAdditionalConversation({
 			conversationId: 'conv-2',

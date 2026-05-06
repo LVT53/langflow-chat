@@ -191,6 +191,7 @@ type ResearchReportContext = {
 };
 
 const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed', 'failed', 'cancelled')`;
+const FINALIZABLE_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} IN ('approved', 'running')`;
 
 export class DeepResearchJobStartError extends Error {
 	constructor(
@@ -375,18 +376,16 @@ export async function assertCanStartDeepResearchJob(
 		);
 	}
 
-	const [activeJob] = await db
-		.select({ id: deepResearchJobs.id })
-		.from(deepResearchJobs)
-		.where(
-			and(
-				eq(deepResearchJobs.userId, input.userId),
-				eq(deepResearchJobs.conversationId, input.conversationId),
-				OPEN_JOB_STATUS_FILTER
-			)
-		)
-		.limit(1);
-	if (activeJob) {
+	const runtimePolicy = getConfig();
+	const activeConversationLimit = Math.max(
+		1,
+		runtimePolicy.deepResearchActiveConversationLimit
+	);
+	const activeConversationCount = await countActiveDeepResearchJobs({
+		userId: input.userId,
+		conversationId: input.conversationId,
+	});
+	if (activeConversationCount >= activeConversationLimit) {
 		throw new DeepResearchJobStartError(
 			'active_job_exists',
 			'This conversation already has an active Deep Research job',
@@ -394,7 +393,6 @@ export async function assertCanStartDeepResearchJob(
 		);
 	}
 
-	const runtimePolicy = getConfig();
 	const activeUserLimit = Math.max(0, runtimePolicy.deepResearchActiveUserLimit);
 	const activeGlobalLimit = Math.max(0, runtimePolicy.deepResearchActiveGlobalLimit);
 	const activeUserCount = await countActiveDeepResearchJobs({
@@ -418,14 +416,20 @@ export async function assertCanStartDeepResearchJob(
 	}
 }
 
-async function countActiveDeepResearchJobs(input: { userId?: string } = {}): Promise<number> {
-	const where = input.userId
-		? and(eq(deepResearchJobs.userId, input.userId), OPEN_JOB_STATUS_FILTER)
-		: OPEN_JOB_STATUS_FILTER;
+async function countActiveDeepResearchJobs(
+	input: { userId?: string; conversationId?: string } = {}
+): Promise<number> {
+	const filters = [OPEN_JOB_STATUS_FILTER];
+	if (input.userId) {
+		filters.push(eq(deepResearchJobs.userId, input.userId));
+	}
+	if (input.conversationId) {
+		filters.push(eq(deepResearchJobs.conversationId, input.conversationId));
+	}
 	const [result] = await db
 		.select({ count: sql<number>`count(*)` })
 		.from(deepResearchJobs)
-		.where(where);
+		.where(and(...filters));
 	return Number(result?.count ?? 0);
 }
 
@@ -755,6 +759,13 @@ export async function completeDeepResearchJobWithAuditedReport(
 			},
 			now,
 		});
+		if (!(await loadFinalizableDeepResearchJobRow(job))) {
+			return loadDeepResearchJobSnapshot({
+				userId: job.userId,
+				jobId: job.id,
+				currentPlan,
+			});
+		}
 
 		if (claimGraphAuditResult.status === 'failed') {
 			await saveResearchTimelineEvent({
@@ -894,6 +905,13 @@ export async function completeDeepResearchJobWithAuditedReport(
 		sources: sources.map(mapSourceForReportWriter),
 		limitations: input.limitations,
 	});
+	if (!(await loadFinalizableDeepResearchJobRow(job))) {
+		return loadDeepResearchJobSnapshot({
+			userId: job.userId,
+			jobId: job.id,
+			currentPlan,
+		});
+	}
 	const citationAuditReportDraft = buildCitationAuditReportDraft(
 		reportDraft,
 		input.synthesisNotes
@@ -1021,6 +1039,13 @@ export async function completeDeepResearchJobWithAuditedReport(
 			? 'Citation audit completed and unsupported claims were removed or retained with citations.'
 			: 'Citation audit failed because no credible supported claims remained.',
 	});
+	if (!(await loadFinalizableDeepResearchJobRow(job))) {
+		return loadDeepResearchJobSnapshot({
+			userId: job.userId,
+			jobId: job.id,
+			currentPlan,
+		});
+	}
 
 	if (!auditResult.canComplete) {
 		return completeDeepResearchJobWithEvidenceLimitationMemoFromState({
@@ -1117,9 +1142,21 @@ async function finalizeAuditedReportJobFromArtifact(input: {
 			completedAt: input.now,
 			updatedAt: input.now,
 		})
-		.where(eq(deepResearchJobs.id, input.job.id))
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.job.id),
+				eq(deepResearchJobs.userId, input.job.userId),
+				FINALIZABLE_JOB_STATUS_FILTER
+			)
+		)
 		.returning();
-	if (!updatedJob) return null;
+	if (!updatedJob) {
+		return loadDeepResearchJobSnapshot({
+			userId: input.job.userId,
+			jobId: input.job.id,
+			currentPlan: input.currentPlan,
+		});
+	}
 
 	await db
 		.update(conversations)
@@ -1140,6 +1177,42 @@ async function finalizeAuditedReportJobFromArtifact(input: {
 		updatedJob,
 		input.currentPlan,
 		timelineEvents.get(updatedJob.id) ?? []
+	);
+}
+
+async function loadFinalizableDeepResearchJobRow(
+	job: Pick<DeepResearchJobRow, 'id' | 'userId'>
+): Promise<DeepResearchJobRow | null> {
+	const [freshJob] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(
+			and(
+				eq(deepResearchJobs.id, job.id),
+				eq(deepResearchJobs.userId, job.userId),
+				FINALIZABLE_JOB_STATUS_FILTER
+			)
+		)
+		.limit(1);
+	return freshJob ?? null;
+}
+
+async function loadDeepResearchJobSnapshot(input: {
+	userId: string;
+	jobId: string;
+	currentPlan?: DeepResearchPlanSummary | null;
+}): Promise<DeepResearchJob | null> {
+	const [job] = await db
+		.select()
+		.from(deepResearchJobs)
+		.where(and(eq(deepResearchJobs.id, input.jobId), eq(deepResearchJobs.userId, input.userId)))
+		.limit(1);
+	if (!job) return null;
+	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [input.jobId]);
+	return mapDeepResearchJob(
+		job,
+		input.currentPlan ?? null,
+		timelineEvents.get(input.jobId) ?? []
 	);
 }
 
@@ -1402,6 +1475,13 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 		}),
 		sources: input.sources.map(mapSourceForReportWriter),
 	});
+	if (!(await loadFinalizableDeepResearchJobRow(input.job))) {
+		return loadDeepResearchJobSnapshot({
+			userId: input.job.userId,
+			jobId: input.job.id,
+			currentPlan: input.currentPlan,
+		});
+	}
 	const memoName = buildEvidenceLimitationMemoArtifactName(input.job.title, researchLanguage);
 	const memoArtifactId = `deep-research-memo-${input.job.id}`;
 	const existingMemoArtifact = await loadArtifactById({
@@ -1489,8 +1569,21 @@ async function completeDeepResearchJobWithEvidenceLimitationMemoFromState(input:
 			completedAt: input.now,
 			updatedAt: input.now,
 		})
-		.where(eq(deepResearchJobs.id, input.job.id))
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.job.id),
+				eq(deepResearchJobs.userId, input.job.userId),
+				FINALIZABLE_JOB_STATUS_FILTER
+			)
+		)
 		.returning();
+	if (!updatedJob) {
+		return loadDeepResearchJobSnapshot({
+			userId: input.job.userId,
+			jobId: input.job.id,
+			currentPlan: input.currentPlan,
+		});
+	}
 	const timelineEvents = await loadTimelineEventsByJobId(input.job.userId, [updatedJob.id]);
 	return mapDeepResearchJob(
 		updatedJob,
@@ -1516,9 +1609,21 @@ async function finalizeEvidenceLimitationMemoJobFromArtifact(input: {
 			completedAt: input.now,
 			updatedAt: input.now,
 		})
-		.where(eq(deepResearchJobs.id, input.job.id))
+		.where(
+			and(
+				eq(deepResearchJobs.id, input.job.id),
+				eq(deepResearchJobs.userId, input.job.userId),
+				FINALIZABLE_JOB_STATUS_FILTER
+			)
+		)
 		.returning();
-	if (!updatedJob) return null;
+	if (!updatedJob) {
+		return loadDeepResearchJobSnapshot({
+			userId: input.job.userId,
+			jobId: input.job.id,
+			currentPlan: input.currentPlan,
+		});
+	}
 	const timelineEvents = await loadTimelineEventsByJobId(input.job.userId, [updatedJob.id]);
 	return mapDeepResearchJob(
 		updatedJob,

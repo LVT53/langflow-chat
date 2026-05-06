@@ -89,9 +89,6 @@ export const deepResearchJobs = sqliteTable('deep_research_jobs', {
     table.updatedAt
   ),
   reportArtifactIdx: index('deep_research_jobs_report_artifact_idx').on(table.reportArtifactId),
-  activeConversationUniqueIdx: uniqueIndex('deep_research_jobs_active_conversation_unique_idx')
-    .on(table.conversationId)
-    .where(sql`${table.status} NOT IN ('completed', 'failed', 'cancelled')`),
 }));
 
 export const deepResearchPlanVersions = sqliteTable('deep_research_plan_versions', {

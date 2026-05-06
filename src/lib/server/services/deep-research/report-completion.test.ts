@@ -86,6 +86,9 @@ describe("audited Deep Research report completion", () => {
 	});
 
 	afterEach(async () => {
+		vi.doUnmock("./llm-steps");
+		vi.doUnmock("./report-writer");
+		vi.restoreAllMocks();
 		try {
 			const { sqlite } = await import("$lib/server/db");
 			sqlite.close();
@@ -902,6 +905,237 @@ describe("audited Deep Research report completion", () => {
 				citedAt: null,
 			}),
 		]);
+	});
+
+	it("preserves a running job cancellation that lands during audited report finalization", async () => {
+		const { db } = await import("$lib/server/db");
+		let cancelledDuringReportAssembly = false;
+		let activeJobId: string | null = null;
+		vi.doMock("./llm-steps", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("./llm-steps")>();
+			return {
+				...actual,
+				writeResearchReportWithLlm: async (
+					input: Parameters<typeof actual.writeResearchReportWithLlm>[0],
+				) => {
+					if (activeJobId && !cancelledDuringReportAssembly) {
+						cancelledDuringReportAssembly = true;
+						await db
+							.update(schema.deepResearchJobs)
+							.set({
+								status: "cancelled",
+								stage: "cancelled_by_request",
+								cancelledAt: new Date("2026-05-05T10:19:00.000Z"),
+								updatedAt: new Date("2026-05-05T10:19:00.000Z"),
+							})
+							.where(eq(schema.deepResearchJobs.id, activeJobId));
+					}
+					return actual.writeResearchReportWithLlm(input);
+				},
+			};
+		});
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare EU and US AI copyright training data rules",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		activeJobId = created.id;
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "report_completion",
+				updatedAt: new Date("2026-05-05T10:18:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, created.id));
+		await seedCompletedMeaningfulPasses(created.id, 3);
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet: "Agency briefing on AI copyright training data rules.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+		});
+
+		const result = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement:
+						"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+					sourceId: reviewedSource.id,
+					url: reviewedSource.url,
+					title: reviewedSource.title ?? "Agency briefing",
+				},
+			]),
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const [storedJob] = await db
+			.select({
+				status: schema.deepResearchJobs.status,
+				stage: schema.deepResearchJobs.stage,
+				reportArtifactId: schema.deepResearchJobs.reportArtifactId,
+				completedAt: schema.deepResearchJobs.completedAt,
+				cancelledAt: schema.deepResearchJobs.cancelledAt,
+			})
+			.from(schema.deepResearchJobs)
+			.where(eq(schema.deepResearchJobs.id, created.id));
+		const [conversation] = await db
+			.select({
+				status: schema.conversations.status,
+				sealedAt: schema.conversations.sealedAt,
+			})
+			.from(schema.conversations)
+			.where(eq(schema.conversations.id, "conv-1"));
+		const generatedArtifacts = await db
+			.select({ id: schema.artifacts.id })
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+
+		expect(cancelledDuringReportAssembly).toBe(true);
+		expect(result).toMatchObject({
+			id: created.id,
+			status: "cancelled",
+			stage: "cancelled_by_request",
+			reportArtifactId: null,
+			completedAt: null,
+			cancelledAt: new Date("2026-05-05T10:19:00.000Z").getTime(),
+		});
+		expect(storedJob).toEqual({
+			status: "cancelled",
+			stage: "cancelled_by_request",
+			reportArtifactId: null,
+			completedAt: null,
+			cancelledAt: new Date("2026-05-05T10:19:00.000Z"),
+		});
+		expect(conversation).toEqual({
+			status: "open",
+			sealedAt: null,
+		});
+		expect(generatedArtifacts).toEqual([]);
+	});
+
+	it("preserves a running job cancellation that lands during Evidence Limitation Memo finalization", async () => {
+		const { db } = await import("$lib/server/db");
+		let cancelledDuringMemoAssembly = false;
+		let activeJobId: string | null = null;
+		vi.doMock("./report-writer", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("./report-writer")>();
+			return {
+				...actual,
+				writeEvidenceLimitationMemo: (
+					input: Parameters<typeof actual.writeEvidenceLimitationMemo>[0],
+				) => {
+					if (activeJobId && !cancelledDuringMemoAssembly) {
+						cancelledDuringMemoAssembly = true;
+						db.update(schema.deepResearchJobs)
+							.set({
+								status: "cancelled",
+								stage: "cancelled_by_request",
+								cancelledAt: new Date("2026-05-05T10:19:00.000Z"),
+								updatedAt: new Date("2026-05-05T10:19:00.000Z"),
+							})
+							.where(eq(schema.deepResearchJobs.id, activeJobId))
+							.run();
+					}
+					return actual.writeEvidenceLimitationMemo(input);
+				},
+			};
+		});
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithEvidenceLimitationMemo,
+			startDeepResearchJobShell,
+		} = await import("./index");
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Assess unverified battery recycling claims",
+			depth: "focused",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		activeJobId = created.id;
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "evidence_limitation_memo",
+				updatedAt: new Date("2026-05-05T10:18:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, created.id));
+
+		const result = await completeDeepResearchJobWithEvidenceLimitationMemo({
+			userId: "user-1",
+			jobId: created.id,
+			limitations: ["No reviewed topic-relevant sources remained."],
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const [storedJob] = await db
+			.select({
+				status: schema.deepResearchJobs.status,
+				stage: schema.deepResearchJobs.stage,
+				reportArtifactId: schema.deepResearchJobs.reportArtifactId,
+				completedAt: schema.deepResearchJobs.completedAt,
+				cancelledAt: schema.deepResearchJobs.cancelledAt,
+			})
+			.from(schema.deepResearchJobs)
+			.where(eq(schema.deepResearchJobs.id, created.id));
+		const generatedArtifacts = await db
+			.select({ id: schema.artifacts.id })
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+
+		expect(cancelledDuringMemoAssembly).toBe(true);
+		expect(result).toMatchObject({
+			id: created.id,
+			status: "cancelled",
+			stage: "cancelled_by_request",
+			reportArtifactId: null,
+			completedAt: null,
+			cancelledAt: new Date("2026-05-05T10:19:00.000Z").getTime(),
+		});
+		expect(storedJob).toEqual({
+			status: "cancelled",
+			stage: "cancelled_by_request",
+			reportArtifactId: null,
+			completedAt: null,
+			cancelledAt: new Date("2026-05-05T10:19:00.000Z"),
+		});
+		expect(generatedArtifacts).toEqual([]);
 	});
 });
 

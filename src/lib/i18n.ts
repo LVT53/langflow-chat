@@ -287,6 +287,9 @@ const dictionary = {
 		"admin.deepResearchModels": "Research models",
 		"admin.deepResearchModelsDescription":
 			"Choose the configured model used by each model-call role. Context windows and token limits are inferred from the selected model or provider.",
+		"admin.deepResearchDepthBudgets": "Depth budgets",
+		"admin.deepResearchDepthBudgetsDescription":
+			"Edit the normalized focused, standard, and max Deep Research budget policy as JSON.",
 		"admin.deepResearchModel.planGeneration": "Plan drafting",
 		"admin.deepResearchModel.planRevision": "Plan revision",
 		"admin.deepResearchModel.sourceReview": "Source review",
@@ -374,6 +377,7 @@ const dictionary = {
 		"admin.deepResearchActiveGlobalLimit": "Global Active Jobs",
 		"admin.deepResearchGlobalReasoningConcurrency": "Global Reasoning Concurrency",
 		"admin.deepResearchUserReasoningConcurrency": "User Reasoning Concurrency",
+		"admin.deepResearchDepthBudgetsJson": "Depth Budget Policy JSON",
 		"admin.model1MaxModelContext": "Model 1 Max Context",
 		"admin.model1CompactionThreshold": "Model 1 Compaction Threshold",
 		"admin.model1TargetContext": "Model 1 Target Context",
@@ -1285,6 +1289,9 @@ const dictionary = {
 		"admin.deepResearchModels": "Kutatási modellek",
 		"admin.deepResearchModelsDescription":
 			"Válaszd ki, melyik beállított modellt használja az egyes modellhívó szerep. A kontextusablakok és tokenkorlátok a kiválasztott modellből vagy szolgáltatóból származnak.",
+		"admin.deepResearchDepthBudgets": "Mélységi keretek",
+		"admin.deepResearchDepthBudgetsDescription":
+			"A fókuszált, normál és max Mély kutatás normalizált keretpolitikája JSON formátumban.",
 		"admin.deepResearchModel.planGeneration": "Tervkészítés",
 		"admin.deepResearchModel.planRevision": "Tervmódosítás",
 		"admin.deepResearchModel.sourceReview": "Forrásáttekintés",
@@ -1373,6 +1380,7 @@ const dictionary = {
 		"admin.deepResearchActiveGlobalLimit": "Globális aktív feladatok",
 		"admin.deepResearchGlobalReasoningConcurrency": "Globális érvelési párhuzamosság",
 		"admin.deepResearchUserReasoningConcurrency": "Felhasználói érvelési párhuzamosság",
+		"admin.deepResearchDepthBudgetsJson": "Mélységi keretpolitika JSON",
 		"admin.model1MaxModelContext": "1. modell maximális kontextusa",
 		"admin.model1CompactionThreshold": "1. modell tömörítési küszöb",
 		"admin.model1TargetContext": "1. modell célkontextusa",

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS deep_research_jobs_active_conversation_unique_idx;

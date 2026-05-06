@@ -352,6 +352,7 @@ function configLabelKey(key: string): string {
 		DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: "admin.deepResearchActiveGlobalLimit",
 		DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: "admin.deepResearchGlobalReasoningConcurrency",
 		DEEP_RESEARCH_USER_REASONING_CONCURRENCY: "admin.deepResearchUserReasoningConcurrency",
+		DEEP_RESEARCH_DEPTH_BUDGETS_JSON: "admin.deepResearchDepthBudgetsJson",
 		MODEL_1_MAX_MODEL_CONTEXT: "admin.model1MaxModelContext",
 		MODEL_1_COMPACTION_UI_THRESHOLD: "admin.model1CompactionThreshold",
 		MODEL_1_TARGET_CONSTRUCTED_CONTEXT: "admin.model1TargetContext",
@@ -602,6 +603,23 @@ function placeholderFor(key: string): string {
 					/>
 				</div>
 			{/each}
+		</div>
+		<div class="border-t border-border pt-3">
+			<h3 class="text-sm font-medium text-text-primary">{$t('admin.deepResearchDepthBudgets')}</h3>
+			<p class="mt-1 text-xs text-text-muted">{$t('admin.deepResearchDepthBudgetsDescription')}</p>
+			<div class="mt-3">
+				<label class="settings-label" for="DEEP_RESEARCH_DEPTH_BUDGETS_JSON">
+					{$t(configLabelKey('DEEP_RESEARCH_DEPTH_BUDGETS_JSON'))}
+				</label>
+				<textarea
+					id="DEEP_RESEARCH_DEPTH_BUDGETS_JSON"
+					class="settings-input min-h-[180px] font-mono text-xs"
+					bind:value={adminConfig.DEEP_RESEARCH_DEPTH_BUDGETS_JSON}
+					rows="8"
+					spellcheck="false"
+					placeholder={placeholderFor('DEEP_RESEARCH_DEPTH_BUDGETS_JSON')}
+				></textarea>
+			</div>
 		</div>
 		<div class="border-t border-border pt-3">
 			<h3 class="text-sm font-medium text-text-primary">{$t('admin.deepResearchModels')}</h3>

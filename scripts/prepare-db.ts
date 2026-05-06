@@ -47,7 +47,7 @@ const requiredExistingTables = [
 	'conversation_drafts',
 ];
 
-const requiredExistingColumns = [
+const requiredExistingColumns: Array<[string, string]> = [
 	['conversations', 'project_id'],
 	['conversations', 'status'],
 	['conversations', 'sealed_at'],
@@ -63,6 +63,36 @@ const requiredExistingColumns = [
 	['users', 'avatar_id'],
 	['users', 'profile_picture'],
 	['users', 'honcho_peer_version'],
+];
+
+const baselineAdoptionRequiredTables = [
+	'projects',
+	'artifacts',
+	'artifact_links',
+	'artifact_chunks',
+	'conversation_context_status',
+	'conversation_task_states',
+	'task_state_evidence_links',
+	'task_checkpoints',
+	'memory_projects',
+	'memory_project_task_links',
+	'persona_memory_attributions',
+	'persona_memory_clusters',
+	'persona_memory_cluster_members',
+	'conversation_drafts',
+];
+
+const baselineAdoptionRequiredColumns: Array<[string, string]> = [
+	['conversations', 'project_id'],
+	['messages', 'thinking'],
+	['messages', 'tool_calls'],
+	['messages', 'metadata_json'],
+	['users', 'role'],
+	['users', 'preferred_model'],
+	['users', 'translation_enabled'],
+	['users', 'theme'],
+	['users', 'avatar_id'],
+	['users', 'profile_picture'],
 ];
 
 // Columns that should be auto-created if missing (safe defaults, no data loss)
@@ -163,16 +193,19 @@ function hasApplicationTables(): boolean {
 	return Boolean(row);
 }
 
-function validateExistingRuntimeSchema(): string[] {
+function validateSchemaRequirements(
+	requiredTables: readonly string[],
+	requiredColumns: readonly (readonly [string, string])[],
+): string[] {
 	const problems: string[] = [];
 
-	for (const tableName of requiredExistingTables) {
+	for (const tableName of requiredTables) {
 		if (!hasTable(tableName)) {
 			problems.push(`missing table ${tableName}`);
 		}
 	}
 
-	for (const [tableName, columnName] of requiredExistingColumns) {
+	for (const [tableName, columnName] of requiredColumns) {
 		if (!hasTable(tableName)) {
 			problems.push(`missing table ${tableName} for column ${columnName}`);
 			continue;
@@ -183,6 +216,17 @@ function validateExistingRuntimeSchema(): string[] {
 	}
 
 	return problems;
+}
+
+function validateBaselineAdoptionSchema(): string[] {
+	return validateSchemaRequirements(
+		baselineAdoptionRequiredTables,
+		baselineAdoptionRequiredColumns,
+	);
+}
+
+function validateExistingRuntimeSchema(): string[] {
+	return validateSchemaRequirements(requiredExistingTables, requiredExistingColumns);
 }
 
 function ensureMigrationJournal(): void {
@@ -214,7 +258,7 @@ function readMigrationJournalEntries(): {
 }
 
 function syncMigrationJournalToBaselineSchema(): number {
-	const problems = validateExistingRuntimeSchema();
+	const problems = validateBaselineAdoptionSchema();
 	if (problems.length > 0) {
 		throw new Error(
 			`Cannot adopt existing database into Drizzle migrations: ${problems.join(', ')}`
@@ -477,6 +521,32 @@ function applyMigrationCompatibilityRepairs(): void {
 	}
 }
 
+function applyNoJournalAdoptionCompatibilityBackfills(): void {
+	const adoptedHonchoMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'honcho_peer_version',
+		tag: HONCHO_PEER_VERSION_MIGRATION_TAG,
+		applyPendingBefore: true,
+	});
+	if (adoptedHonchoMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedHonchoMigrationCount} Drizzle migration record for existing users.honcho_peer_version column in ${databasePath}.`
+		);
+	}
+
+	const adoptedTitleLanguageMigrationCount = backfillColumnMigrationIfNeeded({
+		table: 'users',
+		column: 'title_language',
+		tag: TITLE_LANGUAGE_MIGRATION_TAG,
+		applyPendingBefore: true,
+	});
+	if (adoptedTitleLanguageMigrationCount > 0) {
+		console.log(
+			`Backfilled ${adoptedTitleLanguageMigrationCount} Drizzle migration record for existing users.title_language column in ${databasePath}.`
+		);
+	}
+}
+
 function runDrizzleMigrations(): void {
 	const db = drizzle(sqlite);
 	migrate(db, { migrationsFolder: './drizzle' });
@@ -487,11 +557,9 @@ export function prepareDatabase(path = process.env.DATABASE_PATH || './data/chat
 
 	try {
 		if (hasApplicationTables()) {
-			autoCreateMissingColumns();
-
 			const existingMigrationCount = countMigrationRows();
 			if (existingMigrationCount === 0) {
-				const schemaProblems = validateExistingRuntimeSchema();
+				const schemaProblems = validateBaselineAdoptionSchema();
 				if (schemaProblems.length > 0) {
 					throw new Error(
 						`Database ${databasePath} is missing required schema pieces: ${schemaProblems.join(', ')}`
@@ -504,9 +572,12 @@ export function prepareDatabase(path = process.env.DATABASE_PATH || './data/chat
 						`Backfilled ${insertedCount} baseline Drizzle migration record(s) for ${databasePath}.`
 					);
 				}
+				applyNoJournalAdoptionCompatibilityBackfills();
+			} else {
+				autoCreateMissingColumns();
+				applyMigrationCompatibilityRepairs();
 			}
 
-			applyMigrationCompatibilityRepairs();
 			runDrizzleMigrations();
 			autoCreateMissingColumns();
 			const schemaProblems = validateExistingRuntimeSchema();

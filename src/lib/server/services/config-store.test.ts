@@ -73,6 +73,7 @@ const {
 	getSmallFileThreshold,
 	refreshConfig,
 	getConfig,
+	getResolvedAdminConfigValues,
 } = await import("../config-store");
 
 describe("Knowledge Store Config", () => {
@@ -266,6 +267,39 @@ describe("Knowledge Store Config", () => {
 				modelReasoningConcurrency: 2,
 			});
 			expect(getConfig().deepResearchDepthBudgets.standard.sourceReviewCeiling).toBe(75);
+		});
+
+		it("getResolvedAdminConfigValues() should expose all Deep Research admin config keys", () => {
+			const values = getResolvedAdminConfigValues();
+
+			expect(values).toMatchObject({
+				DEEP_RESEARCH_ENABLED: "false",
+				DEEP_RESEARCH_WORKER_ENABLED: "false",
+				DEEP_RESEARCH_WORKER_INTERVAL_MS: "5000",
+				DEEP_RESEARCH_WORKER_STALE_TIMEOUT_MS: "1800000",
+				DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS: "7200000",
+				DEEP_RESEARCH_WORKER_GLOBAL_CONCURRENCY: "2",
+				DEEP_RESEARCH_WORKER_USER_CONCURRENCY: "2",
+				DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT: "1",
+				DEEP_RESEARCH_ACTIVE_USER_LIMIT: "2",
+				DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: "4",
+				DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: "4",
+				DEEP_RESEARCH_USER_REASONING_CONCURRENCY: "2",
+				DEEP_RESEARCH_PLAN_MODEL: "model1",
+				DEEP_RESEARCH_PLAN_REVISION_MODEL: "model1",
+				DEEP_RESEARCH_SOURCE_REVIEW_MODEL: "model1",
+				DEEP_RESEARCH_RESEARCH_TASK_MODEL: "model1",
+				DEEP_RESEARCH_SYNTHESIS_MODEL: "model1",
+				DEEP_RESEARCH_CITATION_AUDIT_MODEL: "model1",
+				DEEP_RESEARCH_REPORT_MODEL: "model1",
+			});
+			const depthBudgets = JSON.parse(values.DEEP_RESEARCH_DEPTH_BUDGETS_JSON);
+			expect(depthBudgets.focused).toMatchObject({
+				sourceReviewCeiling: 24,
+				meaningfulPassFloor: 2,
+			});
+			expect(depthBudgets.standard).toBeDefined();
+			expect(depthBudgets.max).toBeDefined();
 		});
 	});
 });
