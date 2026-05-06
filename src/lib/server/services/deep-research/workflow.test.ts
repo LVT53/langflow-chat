@@ -1070,12 +1070,12 @@ describe("real Deep Research workflow stepper", () => {
 			},
 		});
 		expect(source).toMatchObject({
-			status: "discovered",
+			status: "reviewed",
 			relevanceScore: 95,
 			topicRelevant: false,
 			rejectedReason:
 				"Rejected because the source is off-topic for the approved Research Plan.",
-			reviewedAt: null,
+			reviewedAt: "2026-05-05T10:09:00.000Z",
 		});
 	});
 

@@ -684,13 +684,18 @@ function sourceQualitySignalsFitClaim(
 		return (
 			signals.sourceType === "official_vendor" ||
 			signals.sourceType === "official_government" ||
-			signals.independence === "primary"
+			signals.independence === "primary" ||
+			hasStrongDirectNonCommunitySupport(signals)
 		);
 	}
 	if (claimType === "price_availability") {
+		if (!claimDisclosesTiming(claim.text)) return false;
+		if (signals.freshness === "current" || signals.freshness === "recent") {
+			return true;
+		}
 		return (
-			(signals.freshness === "current" || signals.freshness === "recent") &&
-			claimDisclosesTiming(claim.text)
+			signals.freshness === "undated" &&
+			hasStrongDirectNonCommunitySupport(signals)
 		);
 	}
 	if (claimType === "high_stakes") {
@@ -716,6 +721,18 @@ function sourceQualitySignalsFitClaim(
 	return (
 		(signals.independence === "community" || signals.sourceType === "forum") &&
 		claimLabelsExperientialEvidence(claim.text)
+	);
+}
+
+function hasStrongDirectNonCommunitySupport(
+	signals: DeepResearchSourceQualitySignals,
+): boolean {
+	return (
+		signals.directness === "direct" &&
+		signals.extractionConfidence === "high" &&
+		signals.claimFit === "strong" &&
+		signals.sourceType !== "forum" &&
+		signals.independence !== "community"
 	);
 }
 

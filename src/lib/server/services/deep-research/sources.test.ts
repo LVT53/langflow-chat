@@ -299,14 +299,14 @@ describe("deep research source ledger", () => {
 
 		expect(rejected).toMatchObject({
 			id: discovered.id,
-			status: "discovered",
+			status: "reviewed",
 			rejectedReason:
 				"Rejected because the source is off-topic for the approved Research Plan.",
 			relevanceScore: 95,
 			topicRelevant: false,
 			topicRelevanceReason:
 				"Source discusses Volkswagen EV prices, not Cube bicycle models.",
-			reviewedAt: null,
+			reviewedAt: "2026-05-05T11:00:00.000Z",
 		});
 		expect(listed).toMatchObject({
 			id: discovered.id,

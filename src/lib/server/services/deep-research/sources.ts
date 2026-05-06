@@ -263,7 +263,8 @@ export async function markResearchSourceRejected(
 	const [row] = await db
 		.update(deepResearchSources)
 		.set({
-			status: "discovered",
+			status: "reviewed",
+			reviewedAt: rejectedAt,
 			rejectedReason: input.rejectedReason,
 			relevanceScore: normalizeNullableScore(input.relevanceScore),
 			topicRelevant: normalizeNullableBoolean(input.topicRelevant),

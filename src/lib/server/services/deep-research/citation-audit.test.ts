@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type {
+	DeepResearchEvidenceNote,
+	DeepResearchSourceQualitySignals,
+	DeepResearchSynthesisClaim,
+} from "$lib/types";
 import {
 	auditDeepResearchClaimGraph,
 	auditDeepResearchReportCitations,
@@ -619,6 +624,80 @@ describe("Deep Research citation audit", () => {
 		);
 	});
 
+	it("accepts strong direct undated price evidence when the synthesis claim discloses timing", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-current-price",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-current-price",
+					statement: "As of 2026, Model X costs $999.",
+					claimType: "price_availability",
+					evidenceNoteId: "note-current-price",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-current-price",
+					findingText: "As of 2026, Model X costs $999.",
+					sourceQualitySignals: {
+						sourceType: "vendor_marketing",
+						independence: "affiliated",
+						freshness: "undated",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-current-price",
+				verdict: "supported",
+				evidenceNoteIds: ["note-current-price"],
+			}),
+		]);
+	});
+
+	it("accepts strong direct official specification evidence when source type inference is unknown", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-unknown-source-spec",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-official-memory",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-official-memory",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-official-memory",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "unknown",
+						independence: "unknown",
+						freshness: "undated",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-official-memory",
+				verdict: "supported",
+				evidenceNoteIds: ["note-official-memory"],
+			}),
+		]);
+	});
+
 	it("rejects a Markdown-looking citation when linked Evidence Notes do not support the claim", async () => {
 		const result = await auditDeepResearchClaimGraph({
 			jobId: "job-markdown-citation",
@@ -695,3 +774,73 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 });
+
+function buildSynthesisClaim(input: {
+	id: string;
+	statement: string;
+	claimType: DeepResearchSynthesisClaim["claimType"];
+	evidenceNoteId: string;
+}): DeepResearchSynthesisClaim {
+	return {
+		id: input.id,
+		jobId: "job-claim-graph",
+		conversationId: "conversation-1",
+		userId: "user-1",
+		passCheckpointId: "pass-1",
+		synthesisPass: "synthesis-pass-1",
+		planQuestion: "What is true about Model X?",
+		reportSection: "Findings",
+		statement: input.statement,
+		claimType: input.claimType,
+		central: true,
+		status: "accepted",
+		statusReason: null,
+		competingClaimGroupId: null,
+		evidenceLinks: [
+			{
+				id: `link-${input.id}`,
+				claimId: input.id,
+				evidenceNoteId: input.evidenceNoteId,
+				jobId: "job-claim-graph",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				relation: "support",
+				rationale: null,
+				material: false,
+				createdAt: "2026-05-05T10:12:00.000Z",
+			},
+		],
+		createdAt: "2026-05-05T10:12:00.000Z",
+		updatedAt: "2026-05-05T10:12:00.000Z",
+	};
+}
+
+function buildEvidenceNote(input: {
+	id: string;
+	findingText: string;
+	sourceQualitySignals: DeepResearchSourceQualitySignals;
+}): DeepResearchEvidenceNote {
+	return {
+		id: input.id,
+		jobId: "job-claim-graph",
+		conversationId: "conversation-1",
+		userId: "user-1",
+		passCheckpointId: "pass-1",
+		passNumber: 1,
+		sourceId: "source-1",
+		taskId: null,
+		supportedKeyQuestion: "What is true about Model X?",
+		comparedEntity: "Model X",
+		comparisonAxis: "product details",
+		findingText: input.findingText,
+		sourceSupport: {
+			sourceId: "source-1",
+			title: "Model X product page",
+			url: "https://vendor.example.test/model-x",
+		},
+		sourceQualitySignals: input.sourceQualitySignals,
+		sourceAuthoritySummary: null,
+		createdAt: "2026-05-05T10:11:00.000Z",
+		updatedAt: "2026-05-05T10:11:00.000Z",
+	};
+}
