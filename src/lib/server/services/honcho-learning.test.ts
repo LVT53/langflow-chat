@@ -12,6 +12,32 @@ const mockPrepareTaskContext = vi.hoisted(() =>
 		excludedArtifactIds: [],
 	}))
 );
+const mockSerializeBudgetedAttachments = vi.hoisted(() =>
+	vi.fn(({ artifacts }: { artifacts: Array<{ id: string; name: string; contentText?: string | null }> }) => ({
+		body: artifacts
+			.map((artifact) => `Attachment: ${artifact.name}\n${artifact.contentText ?? artifact.name}`)
+			.join('\n\n'),
+		items: artifacts.map((artifact) => ({
+			id: artifact.id,
+			title: artifact.name,
+			inclusionLevel: 'excerpt',
+			estimatedTokens: 10,
+			trimmed: false,
+		})),
+		mode: 'excerpt',
+	}))
+);
+const mockResolvePromptAttachmentArtifacts = vi.hoisted(() =>
+	vi.fn(async () => ({
+		displayArtifacts: [],
+		promptArtifacts: [],
+		items: [],
+		unresolvedItems: [],
+	}))
+);
+const mockListConversationSourceArtifactIds = vi.hoisted(() =>
+	vi.fn(async () => [])
+);
 const now = Date.now();
 
 const userRows = [
@@ -238,7 +264,7 @@ vi.mock('$lib/server/utils/text', () => ({
 vi.mock('$lib/server/utils/prompt-context', () => ({
 	serializePeerContext: vi.fn((context: unknown) => 'serialized peer context'),
 	serializeArtifacts: vi.fn(() => []),
-	serializeBudgetedAttachments: vi.fn(() => ({ body: '', items: [], mode: 'none' })),
+	serializeBudgetedAttachments: mockSerializeBudgetedAttachments,
 	serializeRoleMessages: vi.fn(() => []),
 	serializeWorkingSetArtifacts: vi.fn(() => []),
 	dedupeById: vi.fn((items: unknown[]) => items),
@@ -270,11 +296,8 @@ vi.mock('$lib/server/services/knowledge', () => ({
 	getTargetConstructedContext: () => 157286,
 	findRelevantKnowledgeArtifacts: vi.fn(async () => []),
 	getArtifactsForUser: vi.fn(async () => []),
-	resolvePromptAttachmentArtifacts: vi.fn(async () => ({
-		displayArtifacts: [],
-		promptArtifacts: [],
-		unresolvedItems: [],
-	})),
+	listConversationSourceArtifactIds: mockListConversationSourceArtifactIds,
+	resolvePromptAttachmentArtifacts: mockResolvePromptAttachmentArtifacts,
 	selectWorkingSetArtifactsForPrompt: vi.fn(async () => []),
 	updateConversationContextStatus: vi.fn(async () => ({
 		conversationId: 'conv-456',
@@ -477,6 +500,13 @@ describe('honcho learning - buildConstructedContext', () => {
 		vi.clearAllMocks();
 		vi.resetModules();
 		mockConfig.honchoEnabled = false;
+		mockListConversationSourceArtifactIds.mockResolvedValue([]);
+		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
+			displayArtifacts: [],
+			promptArtifacts: [],
+			items: [],
+			unresolvedItems: [],
+		});
 	});
 
 	it('passes the active context target budget into task evidence selection', async () => {
@@ -496,6 +526,79 @@ describe('honcho learning - buildConstructedContext', () => {
 		expect(mockPrepareTaskContext).toHaveBeenCalledWith(
 			expect.objectContaining({
 				targetConstructedContext: 720_000,
+			})
+		);
+	});
+
+	it('resolves previous conversation attachments to prompt-ready source content', async () => {
+		mockListConversationSourceArtifactIds.mockResolvedValue(['source-1']);
+		mockResolvePromptAttachmentArtifacts.mockImplementation(async (_userId, artifactIds) => {
+			if (artifactIds.includes('source-1')) {
+				return {
+					displayArtifacts: [
+						{
+							id: 'source-1',
+							name: 'brief.pdf',
+							type: 'source_document',
+							contentText: null,
+						},
+					],
+					promptArtifacts: [
+						{
+							id: 'normalized-1',
+							name: 'brief.pdf',
+							type: 'normalized_document',
+							contentText: 'Extracted carried-forward attachment body.',
+						},
+					],
+					items: [],
+					unresolvedItems: [],
+				};
+			}
+			return {
+				displayArtifacts: [],
+				promptArtifacts: [],
+				items: [],
+				unresolvedItems: [],
+			};
+		});
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: [
+				{
+					id: 'source-1',
+					name: 'brief.pdf',
+					type: 'source_document',
+					contentText: null,
+				},
+			],
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Use that brief again.',
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 900_000,
+				targetConstructedContext: 720_000,
+			},
+		});
+
+		expect(mockSerializeBudgetedAttachments).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [
+					expect.objectContaining({
+						id: 'normalized-1',
+						contentText: 'Extracted carried-forward attachment body.',
+					}),
+				],
 			})
 		);
 	});

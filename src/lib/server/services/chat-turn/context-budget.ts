@@ -48,6 +48,22 @@ export type ExplicitSourceSetBudget = {
 	perSourceBudget: number;
 };
 
+export type SessionHistoryBudgetInput = {
+	contextBudget: Pick<
+		ModelContextBudget,
+		"awarenessBudget" | "targetConstructedContext"
+	>;
+	minTotalBudget?: number;
+	minRecentTurnCount?: number;
+	minUnmatchedRecentTurnTokens?: number;
+};
+
+export type SessionHistoryBudget = {
+	totalBudget: number;
+	recentTurnCount: number;
+	maxUnmatchedRecentTurnTokens: number;
+};
+
 const MIN_MODEL_CONTEXT_TOKENS = 1_000;
 const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
 const TARGET_CONTEXT_RATIO = 0.9;
@@ -55,6 +71,11 @@ const COMPACTION_THRESHOLD_RATIO = 0.8;
 const RESERVED_CONTEXT_RATIO = 0.1;
 const CORE_CONTEXT_RATIO = 0.5;
 const SUPPORT_CONTEXT_RATIO = 0.35;
+const SESSION_HISTORY_BUDGET_RATIO = 0.85;
+const SESSION_HISTORY_TURN_TOKEN_TARGET = 4_000;
+const SESSION_HISTORY_UNMATCHED_TOKEN_RATIO = 0.5;
+const SESSION_HISTORY_MAX_RECENT_TURNS = 32;
+const SESSION_HISTORY_MAX_UNMATCHED_RECENT_TURN_TOKENS = 4_000;
 
 export function deriveModelContextBudget(
 	input: ModelContextBudgetInput,
@@ -186,6 +207,53 @@ export function deriveExplicitSourceSetBudget(
 	return {
 		totalBudget,
 		perSourceBudget,
+	};
+}
+
+export function deriveSessionHistoryBudget(
+	input: SessionHistoryBudgetInput,
+): SessionHistoryBudget {
+	const minTotalBudget = Math.max(0, Math.floor(input.minTotalBudget ?? 0));
+	const minRecentTurnCount = Math.max(
+		1,
+		Math.floor(input.minRecentTurnCount ?? 1),
+	);
+	const minUnmatchedRecentTurnTokens = Math.max(
+		1,
+		Math.floor(input.minUnmatchedRecentTurnTokens ?? 1),
+	);
+	const modelScaledBudget = Math.max(
+		minTotalBudget,
+		Math.floor(
+			input.contextBudget.awarenessBudget * SESSION_HISTORY_BUDGET_RATIO,
+		),
+	);
+	const totalBudget = Math.min(
+		input.contextBudget.targetConstructedContext,
+		modelScaledBudget,
+	);
+	const recentTurnCount = Math.max(
+		minRecentTurnCount,
+		Math.min(
+			SESSION_HISTORY_MAX_RECENT_TURNS,
+			Math.floor(totalBudget / SESSION_HISTORY_TURN_TOKEN_TARGET),
+		),
+	);
+	const averageTurnBudget = Math.floor(
+		totalBudget / Math.max(1, recentTurnCount),
+	);
+	const maxUnmatchedRecentTurnTokens = Math.max(
+		minUnmatchedRecentTurnTokens,
+		Math.min(
+			SESSION_HISTORY_MAX_UNMATCHED_RECENT_TURN_TOKENS,
+			Math.floor(averageTurnBudget * SESSION_HISTORY_UNMATCHED_TOKEN_RATIO),
+		),
+	);
+
+	return {
+		totalBudget,
+		recentTurnCount,
+		maxUnmatchedRecentTurnTokens,
 	};
 }
 

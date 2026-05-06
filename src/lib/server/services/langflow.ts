@@ -27,6 +27,7 @@ import {
 	type LegacyContextTraceSectionInput,
 } from "./chat-turn/context-trace";
 import { deriveModelContextBudget } from "./chat-turn/context-budget";
+import { inferModelContextWindow } from "./model-context";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -357,6 +358,7 @@ function resolvePromptContextLimits(
 
 function resolveProviderPromptContextLimits(
 	provider: {
+		modelName?: string | null;
 		maxModelContext: number | null;
 		compactionUiThreshold: number | null;
 		targetConstructedContext: number | null;
@@ -364,7 +366,10 @@ function resolveProviderPromptContextLimits(
 	config: RuntimeConfig,
 ): PromptContextLimits {
 	const budget = deriveModelContextBudget({
-		maxModelContext: provider.maxModelContext ?? config.maxModelContext,
+		maxModelContext:
+			provider.maxModelContext ??
+			inferModelContextWindow(provider.modelName) ??
+			config.maxModelContext,
 		compactionUiThreshold: provider.compactionUiThreshold,
 		targetConstructedContext: provider.targetConstructedContext,
 	});

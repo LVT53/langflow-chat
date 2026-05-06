@@ -3,6 +3,7 @@ import {
 	deriveCurrentTurnAttachmentBudget,
 	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
+	deriveSessionHistoryBudget,
 } from "./context-budget";
 
 describe("deriveModelContextBudget", () => {
@@ -122,6 +123,25 @@ describe("deriveModelContextBudget", () => {
 		).toEqual({
 			totalBudget: 240_975,
 			perSourceBudget: 20_081,
+		});
+	});
+
+	it("scales session history budget from model capacity", () => {
+		const contextBudget = deriveModelContextBudget({
+			maxModelContext: 1_000_000,
+		});
+
+		expect(
+			deriveSessionHistoryBudget({
+				contextBudget,
+				minTotalBudget: 2_000,
+				minRecentTurnCount: 3,
+				minUnmatchedRecentTurnTokens: 480,
+			}),
+		).toEqual({
+			totalBudget: 103_275,
+			recentTurnCount: 25,
+			maxUnmatchedRecentTurnTokens: 2_065,
 		});
 	});
 });

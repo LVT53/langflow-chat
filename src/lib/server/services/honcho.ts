@@ -33,6 +33,7 @@ import {
 	deriveCurrentTurnAttachmentBudget,
 	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
+	deriveSessionHistoryBudget,
 } from './chat-turn/context-budget';
 import type {
 	ContextTraceSource,
@@ -44,6 +45,7 @@ import {
 	getCompactionUiThreshold,
 	getMaxModelContext,
 	getTargetConstructedContext,
+	listConversationSourceArtifactIds,
 	resolvePromptAttachmentArtifacts,
 	selectWorkingSetArtifactsForPrompt,
 	updateConversationContextStatus,
@@ -87,13 +89,14 @@ const peerContextCache = new Map<string, { value: string | null; expiresAt: numb
 const PEER_CONTEXT_CACHE_TTL_MS = 30_000;
 const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const HONCHO_SAFE_ID_MAX_LENGTH = 48;
-const HONCHO_LIVE_CONTEXT_TOKENS = 2000;
+const HONCHO_LIVE_CONTEXT_TOKENS = 2_000;
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES = ['text/'];
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set(['application/pdf', 'application/json']);
 const HONCHO_ID_HASH_LENGTH = 32;
 const ATTACHMENT_PROMPT_TOKEN_BUDGET = 6_000;
 const ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET = 2_400;
 const ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET = 600;
+const RECENT_TURN_COUNT = 3;
 const UNMATCHED_RECENT_TURN_TOKEN_LIMIT = 480;
 
 // Authority note:
@@ -121,6 +124,7 @@ function inferContextTraceSourceForSection(
 function buildContextSelectionCandidates(params: {
 	sections: PromptContextSection[];
 	attachmentContext?: BudgetedAttachmentContext | null;
+	carriedForwardAttachmentContext?: BudgetedAttachmentContext | null;
 	evidenceItems?: Array<{
 		id: string;
 		title: string;
@@ -129,9 +133,12 @@ function buildContextSelectionCandidates(params: {
 }): ContextSelectionCandidate[] {
 	return params.sections.map((section) => {
 		const isAttachmentSection = section.title === 'Current Attachments';
+		const isCarriedForwardAttachmentSection = section.title === 'Attached Sources';
 		const isEvidenceSection = section.title === 'Retrieved Evidence';
 		const attachmentItems = isAttachmentSection
 			? (params.attachmentContext?.items ?? [])
+			: isCarriedForwardAttachmentSection
+				? (params.carriedForwardAttachmentContext?.items ?? [])
 			: [];
 		const evidenceItems = isEvidenceSection ? (params.evidenceItems ?? []) : [];
 		return {
@@ -149,6 +156,12 @@ function buildContextSelectionCandidates(params: {
 			signalReasons:
 				isAttachmentSection && params.attachmentContext
 					? [`attachment_context:${params.attachmentContext.mode}`]
+					: isCarriedForwardAttachmentSection &&
+						  params.carriedForwardAttachmentContext
+						? [
+								`attachment_context:${params.carriedForwardAttachmentContext.mode}`,
+								'attached_sources:carried_forward',
+							]
 					: isEvidenceSection && evidenceItems.some((item) => item.pinned)
 						? ['pinned_evidence', 'working_set_context:budgeted']
 					: section.title === 'Honcho Session Context'
@@ -996,6 +1009,7 @@ async function loadSessionPromptContext(params: {
 	userId: string;
 	conversationId: string;
 	message: string;
+	liveContextTokens?: number;
 }): Promise<LoadedSessionPromptContext> {
 	const [fallbackSessionMessages, latestHonchoMetadata] = await Promise.all([
 		loadFallbackPromptContextMessages(params.conversationId).catch(() => []),
@@ -1101,7 +1115,10 @@ async function loadSessionPromptContext(params: {
 	const liveContextResult = await resolveWithTimeout(
 		sessionResult.value.context({
 			summary: true,
-			tokens: HONCHO_LIVE_CONTEXT_TOKENS,
+			tokens: Math.max(
+				HONCHO_LIVE_CONTEXT_TOKENS,
+				Math.floor(params.liveContextTokens ?? HONCHO_LIVE_CONTEXT_TOKENS),
+			),
 			peerTarget: userPeer,
 			peerPerspective: assistantPeer,
 			limitToSession: true,
@@ -1181,9 +1198,29 @@ export async function buildConstructedContext(params: {
 	contextTraceSections: LegacyContextTraceSectionInput[];
 }> {
 	const attachmentIds = params.attachmentIds ?? [];
+	const targetBudget =
+		params.contextLimits?.targetConstructedContext ??
+		getTargetConstructedContext(params.modelId);
+	const compactionThreshold =
+		params.contextLimits?.compactionUiThreshold ??
+		getCompactionUiThreshold(params.modelId);
+	const maxModelContext =
+		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
+	const modelContextBudget = deriveModelContextBudget({
+		maxModelContext,
+		targetConstructedContext: targetBudget,
+		compactionUiThreshold: compactionThreshold,
+	});
+	const sessionHistoryBudget = deriveSessionHistoryBudget({
+		contextBudget: modelContextBudget,
+		minTotalBudget: HONCHO_LIVE_CONTEXT_TOKENS,
+		minRecentTurnCount: RECENT_TURN_COUNT,
+		minUnmatchedRecentTurnTokens: UNMATCHED_RECENT_TURN_TOKEN_LIMIT,
+	});
 	const [
 		sessionContext,
 		resolvedAttachments,
+		conversationSourceArtifactIds,
 		workingSetArtifacts,
 	] =
 		await Promise.all([
@@ -1191,8 +1228,12 @@ export async function buildConstructedContext(params: {
 				userId: params.userId,
 				conversationId: params.conversationId,
 				message: params.message,
+				liveContextTokens: sessionHistoryBudget.totalBudget,
 			}),
 			resolvePromptAttachmentArtifacts(params.userId, attachmentIds),
+			listConversationSourceArtifactIds(params.userId, params.conversationId).catch(
+				() => []
+			),
 			selectWorkingSetArtifactsForPrompt(
 				params.userId,
 				params.conversationId,
@@ -1210,6 +1251,25 @@ export async function buildConstructedContext(params: {
 	} = sessionContext;
 	const currentAttachments = resolvedAttachments.promptArtifacts;
 	const currentAttachmentIds = new Set(currentAttachments.map((artifact) => artifact.id));
+	const requestedAttachmentIds = new Set(attachmentIds);
+	const carriedForwardSourceIds = conversationSourceArtifactIds.filter(
+		(artifactId) =>
+			!requestedAttachmentIds.has(artifactId) && !currentAttachmentIds.has(artifactId)
+	);
+	const carriedForwardResolution =
+		carriedForwardSourceIds.length > 0
+			? await resolvePromptAttachmentArtifacts(
+					params.userId,
+					carriedForwardSourceIds
+				).catch(() => ({
+					displayArtifacts: [],
+					promptArtifacts: [],
+					items: [],
+					unresolvedItems: [],
+				}))
+			: null;
+	const resolvedCarriedForwardAttachments = (carriedForwardResolution?.promptArtifacts ?? [])
+		.filter((artifact) => !currentAttachmentIds.has(artifact.id));
 	if (attachmentIds.length > 0 && getConfig().contextDiagnosticsDebug) {
 		console.info('[CONTEXT] Attachment resolution', {
 			conversationId: params.conversationId,
@@ -1266,6 +1326,15 @@ export async function buildConstructedContext(params: {
 		hasExplicitResetSignal: retrievalActiveDocumentState.hasContextResetSignal,
 		turnsSinceLastShift: 0,
 	});
+	const carriedForwardAttachments = suppressCarryover
+		? []
+		: resolvedCarriedForwardAttachments;
+	const allAttachmentContextIds = new Set([
+		...attachmentIds,
+		...currentAttachments.map((artifact) => artifact.id),
+		...(suppressCarryover ? [] : carriedForwardSourceIds),
+		...carriedForwardAttachments.map((artifact) => artifact.id),
+	]);
 
 	const relevantArtifacts = await findRelevantKnowledgeArtifacts({
 		userId: params.userId,
@@ -1288,19 +1357,6 @@ export async function buildConstructedContext(params: {
 		currentConversationId: params.conversationId,
 	});
 	const documentFocused = activeDocumentState.documentFocused;
-	const targetBudget =
-		params.contextLimits?.targetConstructedContext ??
-		getTargetConstructedContext(params.modelId);
-	const compactionThreshold =
-		params.contextLimits?.compactionUiThreshold ??
-		getCompactionUiThreshold(params.modelId);
-	const maxModelContext =
-		params.contextLimits?.maxModelContext ?? getMaxModelContext(params.modelId);
-	const modelContextBudget = deriveModelContextBudget({
-		maxModelContext,
-		targetConstructedContext: targetBudget,
-		compactionUiThreshold: compactionThreshold,
-	});
 
 	const preparedContext = await prepareTaskContext({
 		userId: params.userId,
@@ -1323,12 +1379,16 @@ export async function buildConstructedContext(params: {
 	}));
 	const taskState = preparedContext.taskState;
 	const selectedEvidence = preparedContext.selectedArtifacts.filter(
-		(artifact) => !currentAttachmentIds.has(artifact.id)
+		(artifact) => !allAttachmentContextIds.has(artifact.id)
 	);
 	const pinnedArtifactIds = new Set(preparedContext.pinnedArtifactIds);
 
 	const promptArtifacts = new Map<string, Artifact>();
-	for (const artifact of [...currentAttachments, ...selectedEvidence]) {
+	for (const artifact of [
+		...currentAttachments,
+		...carriedForwardAttachments,
+		...selectedEvidence,
+	]) {
 		promptArtifacts.set(artifact.id, artifact);
 	}
 	const artifactSnippets = await getPromptArtifactSnippets({
@@ -1351,8 +1411,9 @@ export async function buildConstructedContext(params: {
 		message: params.message,
 		resolveContent: (turn) => turn.messages.map((m) => m.content).join(' '),
 		scoreTurn: (message, turnContent) => scoreMatch(message, turnContent),
-		recentTurnCount: 3,
-		maxUnmatchedRecentTurnTokens: UNMATCHED_RECENT_TURN_TOKEN_LIMIT,
+		recentTurnCount: sessionHistoryBudget.recentTurnCount,
+		maxUnmatchedRecentTurnTokens:
+			sessionHistoryBudget.maxUnmatchedRecentTurnTokens,
 	});
 
 	const recentTurnCount = filteredTurns.length;
@@ -1437,6 +1498,35 @@ export async function buildConstructedContext(params: {
 		}
 	}
 
+	const carriedForwardAttachmentContext =
+		carriedForwardAttachments.length > 0
+			? serializeBudgetedAttachments({
+					artifacts: carriedForwardAttachments,
+					snippets: buildCurrentAttachmentSnippetMap({
+						artifacts: carriedForwardAttachments,
+						snippets: artifactSnippets,
+					}),
+					message: params.message,
+					...deriveExplicitSourceSetBudget({
+						contextBudget: modelContextBudget,
+						sourceCount: carriedForwardAttachments.length,
+						minTotalBudget: ATTACHMENT_PROMPT_TOKEN_BUDGET,
+						minPerSourceBudget:
+							documentFocused
+								? ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET
+								: ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET,
+					}),
+				})
+			: null;
+	if (carriedForwardAttachmentContext?.body) {
+		sections.push({
+			title: 'Attached Sources',
+			body: carriedForwardAttachmentContext.body,
+			layer: 'documents',
+			protected: true,
+		});
+	}
+
 	if (selectedEvidence.length > 0) {
 		const evidenceBudget = deriveExplicitSourceSetBudget({
 			contextBudget: modelContextBudget,
@@ -1480,7 +1570,7 @@ export async function buildConstructedContext(params: {
 					(message) => message.content,
 					sessionContextMessages.length
 				),
-				HONCHO_LIVE_CONTEXT_TOKENS
+				sessionHistoryBudget.totalBudget
 			),
 			layer: 'session',
 			protected: true,
@@ -1543,6 +1633,7 @@ export async function buildConstructedContext(params: {
 		candidates: buildContextSelectionCandidates({
 			sections: effectiveSections,
 			attachmentContext,
+			carriedForwardAttachmentContext,
 			evidenceItems: selectedEvidence.map((artifact) => ({
 				id: artifact.id,
 				title: artifact.name,
