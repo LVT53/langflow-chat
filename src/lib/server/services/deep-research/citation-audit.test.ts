@@ -698,6 +698,222 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 
+	it("uses claim-graph LLM verdicts as the normal authority for quality-fit judgment", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-llm-quality-fit",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-llm-quality-fit",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-llm-quality-fit",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-llm-quality-fit",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "undated",
+						directness: "anecdotal",
+						extractionConfidence: "low",
+						claimFit: "weak",
+					},
+				}),
+			],
+			reviewClaim: () => ({
+				claimId: "claim-llm-quality-fit",
+				verdict: "supported",
+				evidenceNoteIds: ["note-llm-quality-fit"],
+				reason:
+					"The configured citation-audit model judged the linked note as sufficient.",
+			}),
+		});
+
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-llm-quality-fit",
+				verdict: "supported",
+				evidenceNoteIds: ["note-llm-quality-fit"],
+				reason:
+					"The configured citation-audit model judged the linked note as sufficient.",
+			}),
+		]);
+	});
+
+	it("uses claim-graph LLM repair verdicts to request repair", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-llm-repair",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-llm-repair",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-llm-repair",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-llm-repair",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+			reviewClaim: () => ({
+				claimId: "claim-llm-repair",
+				verdict: "needs_repair",
+				evidenceNoteIds: ["note-llm-repair"],
+				reason: "The citation-audit model requested narrower wording.",
+			}),
+		});
+
+		expect(result.status).toBe("needs_repair");
+		expect(result.canRenderMarkdown).toBe(false);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-llm-repair",
+				verdict: "needs_repair",
+				reason: "The citation-audit model requested narrower wording.",
+			}),
+		]);
+	});
+
+	it("rejects claim-graph LLM verdicts that cite unlinked evidence notes", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-llm-unlinked-evidence",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-llm-unlinked-evidence",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-linked",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-linked",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+			reviewClaim: () => ({
+				claimId: "claim-llm-unlinked-evidence",
+				verdict: "supported",
+				evidenceNoteIds: ["note-not-linked"],
+				reason: "The model cited an invalid note.",
+			}),
+		});
+
+		expect(result.status).toBe("needs_repair");
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-llm-unlinked-evidence",
+				verdict: "needs_repair",
+				evidenceNoteIds: ["note-not-linked"],
+				reason: expect.stringContaining("not linked"),
+			}),
+		]);
+	});
+
+	it("falls back conservatively when the claim-graph LLM returns no usable verdict", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-llm-missing",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-llm-missing",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-llm-missing",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-llm-missing",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "undated",
+						directness: "anecdotal",
+						extractionConfidence: "low",
+						claimFit: "weak",
+					},
+				}),
+			],
+			reviewClaim: () => null,
+		});
+
+		expect(result.status).toBe("needs_repair");
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-llm-missing",
+				verdict: "needs_repair",
+				reason: expect.stringContaining("Claim Type Evidence Requirements"),
+			}),
+		]);
+	});
+
+	it("does not let claim-graph LLM verdicts rescue hard invariant failures", async () => {
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-hard-invariant",
+			claims: [
+				buildSynthesisClaim({
+					id: "claim-hard-invariant",
+					statement: "Model X officially includes 16 GB memory.",
+					claimType: "official_specification",
+					evidenceNoteId: "note-hard-invariant",
+					status: "needs-repair",
+				}),
+			],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-hard-invariant",
+					findingText: "Model X officially includes 16 GB memory.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "primary",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+			reviewClaim: () => ({
+				claimId: "claim-hard-invariant",
+				verdict: "supported",
+				evidenceNoteIds: ["note-hard-invariant"],
+				reason: "The model tried to support a gated claim.",
+			}),
+		});
+
+		expect(result.status).toBe("needs_repair");
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: "claim-hard-invariant",
+				verdict: "needs_repair",
+				reason: expect.stringContaining("Claim Support Gate failed"),
+			}),
+		]);
+	});
+
 	it("rejects a Markdown-looking citation when linked Evidence Notes do not support the claim", async () => {
 		const result = await auditDeepResearchClaimGraph({
 			jobId: "job-markdown-citation",
@@ -780,6 +996,7 @@ function buildSynthesisClaim(input: {
 	statement: string;
 	claimType: DeepResearchSynthesisClaim["claimType"];
 	evidenceNoteId: string;
+	status?: DeepResearchSynthesisClaim["status"];
 }): DeepResearchSynthesisClaim {
 	return {
 		id: input.id,
@@ -793,7 +1010,7 @@ function buildSynthesisClaim(input: {
 		statement: input.statement,
 		claimType: input.claimType,
 		central: true,
-		status: "accepted",
+		status: input.status ?? "accepted",
 		statusReason: null,
 		competingClaimGroupId: null,
 		evidenceLinks: [

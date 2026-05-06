@@ -10,6 +10,9 @@ import {
 import type {
 	CitationAuditClaimReviewResult,
 	CitationAuditSource,
+	DeepResearchCitationAuditVerdict,
+	DeepResearchCitationAuditVerdictStatus,
+	DeepResearchClaimGraphReviewer,
 	DeepResearchReportDraft,
 } from "./citation-audit";
 import type {
@@ -33,10 +36,18 @@ import type {
 	SourceReviewCandidate,
 	ReviewSourceResult,
 } from "./source-review";
-import type { DeepResearchJob, DeepResearchSource, DeepResearchTask, DeepResearchTaskOutput } from "$lib/types";
+import type {
+	DeepResearchEvidenceNote,
+	DeepResearchJob,
+	DeepResearchSource,
+	DeepResearchSynthesisClaim,
+	DeepResearchTask,
+	DeepResearchTaskOutput,
+} from "$lib/types";
 
 const MAX_SOURCE_REVIEW_FINDINGS = 12;
 const MAX_SOURCE_REVIEW_CLAIMS = 16;
+const CLAIM_GRAPH_CITATION_AUDIT_BATCH_SIZE = 20;
 
 export type LlmStepContext = {
 	jobId: string;
@@ -402,6 +413,142 @@ export async function buildCitationClaimReviewerWithLlm(input: {
 	return (claimId) => reviews.get(claimId) ?? null;
 }
 
+export async function buildClaimGraphCitationReviewerWithLlm(input: {
+	context: LlmStepContext;
+	claims: DeepResearchSynthesisClaim[];
+	evidenceNotes: DeepResearchEvidenceNote[];
+	concurrency?: number;
+}): Promise<DeepResearchClaimGraphReviewer | null> {
+	const evidenceById = new Map(
+		input.evidenceNotes.map((evidenceNote) => [evidenceNote.id, evidenceNote]),
+	);
+	const eligibleClaims = input.claims
+		.map((claim) => ({
+			claim,
+			linkedEvidence: claim.evidenceLinks.flatMap((link) => {
+				const evidence = evidenceById.get(link.evidenceNoteId);
+				return evidence ? [{ link, evidence }] : [];
+			}),
+		}))
+		.filter(({ claim, linkedEvidence }) => {
+			if (
+				claim.central &&
+				claim.status !== "accepted" &&
+				claim.status !== "limited"
+			) {
+				return false;
+			}
+			if (
+				claim.evidenceLinks.some(
+					(link) => !evidenceById.has(link.evidenceNoteId),
+				)
+			) {
+				return false;
+			}
+			if (
+				linkedEvidence.some(
+					(item) =>
+						item.link.relation === "contradiction" && item.link.material,
+				)
+			) {
+				return false;
+			}
+			return linkedEvidence.some((item) => item.link.relation === "support");
+		});
+	if (eligibleClaims.length === 0) return null;
+
+	const batches = chunkArray(
+		eligibleClaims,
+		CLAIM_GRAPH_CITATION_AUDIT_BATCH_SIZE,
+	);
+	const batchResults = await mapWithConcurrency(
+		batches,
+		normalizePositiveInteger(input.concurrency, 1),
+		async (batch) => {
+			const result = await tryRunAndRecordDeepResearchModel({
+				role: "citation_audit",
+				jobId: input.context.jobId,
+				conversationId: input.context.conversationId,
+				userId: input.context.userId,
+				stage: "citation_audit",
+				operation: "citation_audit",
+				occurredAt: input.context.now,
+				temperature: 0,
+				maxTokens: 4000,
+				messages: [
+					{
+						role: "system",
+						content:
+							"Audit Synthesis Claims against their linked Evidence Notes. Use judgment for claim-type evidence requirements; do not rely on shallow source-quality labels alone. Return only JSON.",
+					},
+					{
+						role: "user",
+						content: JSON.stringify({
+							claims: batch.map(({ claim, linkedEvidence }) => ({
+								id: claim.id,
+								statement: claim.statement,
+								claimType:
+									claim.claimType ??
+									classifyDeepResearchClaimType(claim.statement),
+								central: claim.central,
+								status: claim.status,
+								statusReason: claim.statusReason,
+								planQuestion: claim.planQuestion,
+								reportSection: claim.reportSection,
+								evidenceNotes: linkedEvidence.map(({ link, evidence }) => ({
+									id: evidence.id,
+									relation: link.relation,
+									material: link.material,
+									rationale: link.rationale,
+									findingText: evidence.findingText,
+									supportedKeyQuestion: evidence.supportedKeyQuestion,
+									comparedEntity: evidence.comparedEntity,
+									comparisonAxis: evidence.comparisonAxis,
+									sourceSupport: evidence.sourceSupport,
+									sourceQualitySignals: evidence.sourceQualitySignals,
+									sourceAuthoritySummary: evidence.sourceAuthoritySummary,
+								})),
+							})),
+							requiredShape: {
+								verdicts: [
+									{
+										claimId: "string",
+										verdict:
+											"supported|partially_supported|unsupported|contradicted|needs_repair",
+										evidenceNoteIds: ["linked Evidence Note id"],
+										reason: "short specific reason",
+									},
+								],
+							},
+						}),
+					},
+				],
+			});
+			const parsed = result ? parseModelJsonObject(result.content) : null;
+			return parsed ? objectArrayValue(parsed.verdicts) : [];
+		},
+	);
+
+	const eligibleClaimIds = new Set(eligibleClaims.map((item) => item.claim.id));
+	const verdicts = new Map<string, DeepResearchCitationAuditVerdict>();
+	for (const item of batchResults.flat()) {
+		const claimId = stringValue(item.claimId);
+		if (!claimId || !eligibleClaimIds.has(claimId)) continue;
+		const verdict = claimGraphVerdictStatusValue(stringValue(item.verdict));
+		if (!verdict) continue;
+		verdicts.set(claimId, {
+			claimId,
+			verdict,
+			evidenceNoteIds: stringArrayValue(item.evidenceNoteIds),
+			reason:
+				stringValue(item.reason) ??
+				"Citation audit model reviewed this Synthesis Claim.",
+		});
+	}
+	if (verdicts.size === 0) return null;
+	return ({ claim }) => verdicts.get(claim.id) ?? null;
+}
+
 export async function writeResearchReportWithLlm(
 	input: WriteResearchReportInput & { context: LlmStepContext },
 ): Promise<ResearchReportDraft> {
@@ -507,6 +654,62 @@ function sourceForPrompt(source: DeepResearchSource) {
 
 function limitText(value: string, maxLength: number): string {
 	return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function claimGraphVerdictStatusValue(
+	value: string | null,
+): DeepResearchCitationAuditVerdictStatus | null {
+	if (
+		value === "supported" ||
+		value === "partially_supported" ||
+		value === "unsupported" ||
+		value === "contradicted" ||
+		value === "needs_repair"
+	) {
+		return value;
+	}
+	return null;
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+	const parsed =
+		typeof value === "number"
+			? value
+			: typeof value === "string"
+				? Number.parseInt(value, 10)
+				: Number.NaN;
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.max(1, Math.floor(parsed));
+}
+
+async function mapWithConcurrency<T, R>(
+	items: T[],
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+	const limit = Math.max(1, Math.floor(concurrency));
+	const results = new Array<R>(items.length);
+	let nextIndex = 0;
+	const workers = Array.from(
+		{ length: Math.min(limit, items.length) },
+		async () => {
+			while (nextIndex < items.length) {
+				const currentIndex = nextIndex;
+				nextIndex += 1;
+				results[currentIndex] = await mapper(items[currentIndex]);
+			}
+		},
+	);
+	await Promise.all(workers);
+	return results;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
 }
 
 function reportIntentValue(value: string | null): ResearchPlan["reportIntent"] | null {

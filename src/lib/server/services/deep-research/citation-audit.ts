@@ -124,10 +124,20 @@ export type DeepResearchCitationAuditVerdict = {
 	reason: string;
 };
 
+export type DeepResearchClaimGraphReviewInput = {
+	claim: DeepResearchSynthesisClaim;
+	linkedEvidenceNotes: DeepResearchEvidenceNote[];
+};
+
+export type DeepResearchClaimGraphReviewer = (
+	input: DeepResearchClaimGraphReviewInput,
+) => DeepResearchCitationAuditVerdict | null;
+
 export type DeepResearchClaimGraphAuditInput = {
 	jobId: string;
 	claims: DeepResearchSynthesisClaim[];
 	evidenceNotes: DeepResearchEvidenceNote[];
+	reviewClaim?: DeepResearchClaimGraphReviewer;
 };
 
 export type DeepResearchClaimGraphAuditResult = {
@@ -141,11 +151,22 @@ type DeepResearchCitationAuditVerdictRow =
 	typeof deepResearchCitationAuditVerdicts.$inferSelect;
 
 const SQLITE_SAFE_VERDICT_INSERT_CHUNK_SIZE = 80;
+const validClaimGraphVerdictStatuses =
+	new Set<DeepResearchCitationAuditVerdictStatus>([
+		"supported",
+		"partially_supported",
+		"unsupported",
+		"contradicted",
+		"needs_repair",
+	]);
 
 export type AuditAndPersistDeepResearchClaimGraphInput = {
 	userId: string;
 	jobId: string;
 	now?: Date;
+	claims?: DeepResearchSynthesisClaim[];
+	evidenceNotes?: DeepResearchEvidenceNote[];
+	reviewClaim?: DeepResearchClaimGraphReviewer;
 };
 
 export type ListDeepResearchCitationAuditVerdictsInput = {
@@ -160,7 +181,11 @@ export async function auditDeepResearchClaimGraph(
 		input.evidenceNotes.map((evidenceNote) => [evidenceNote.id, evidenceNote]),
 	);
 	const verdicts = input.claims.map((claim) =>
-		auditSynthesisClaim({ claim, evidenceById }),
+		auditSynthesisClaim({
+			claim,
+			evidenceById,
+			reviewClaim: input.reviewClaim,
+		}),
 	);
 	const supportedCount = verdicts.filter((verdict) =>
 		["supported", "partially_supported"].includes(verdict.verdict),
@@ -185,22 +210,26 @@ export async function auditDeepResearchClaimGraph(
 export async function auditAndPersistDeepResearchClaimGraph(
 	input: AuditAndPersistDeepResearchClaimGraphInput,
 ): Promise<DeepResearchClaimGraphAuditResult | null> {
-	const [claims, evidenceNotes] = await Promise.all([
-		listDeepResearchSynthesisClaims({
-			userId: input.userId,
-			jobId: input.jobId,
-		}),
-		listDeepResearchEvidenceNotes({
-			userId: input.userId,
-			jobId: input.jobId,
-		}),
-	]);
+	const [claims, evidenceNotes] =
+		input.claims && input.evidenceNotes
+			? [input.claims, input.evidenceNotes]
+			: await Promise.all([
+					listDeepResearchSynthesisClaims({
+						userId: input.userId,
+						jobId: input.jobId,
+					}),
+					listDeepResearchEvidenceNotes({
+						userId: input.userId,
+						jobId: input.jobId,
+					}),
+				]);
 	if (claims.length === 0) return null;
 
 	const result = await auditDeepResearchClaimGraph({
 		jobId: input.jobId,
 		claims,
 		evidenceNotes,
+		reviewClaim: input.reviewClaim,
 	});
 	const { db } = await import("$lib/server/db");
 	const now = input.now ?? new Date();
@@ -450,21 +479,16 @@ function mapCitationAuditVerdictRow(
 function auditSynthesisClaim(input: {
 	claim: DeepResearchSynthesisClaim;
 	evidenceById: Map<string, DeepResearchEvidenceNote>;
+	reviewClaim?: DeepResearchClaimGraphReviewer;
 }): DeepResearchCitationAuditVerdict {
-	const linkedEvidence = input.claim.evidenceLinks
-		.map((link) => ({
-			link,
-			evidence: input.evidenceById.get(link.evidenceNoteId),
-		}))
-		.filter(
-			(
-				item,
-			): item is {
-				link: DeepResearchSynthesisClaim["evidenceLinks"][number];
-				evidence: DeepResearchEvidenceNote;
-			} => Boolean(item.evidence),
-		);
+	const linkedEvidence = input.claim.evidenceLinks.flatMap((link) => {
+		const evidence = input.evidenceById.get(link.evidenceNoteId);
+		return evidence ? [{ link, evidence }] : [];
+	});
 	const evidenceNoteIds = linkedEvidence.map((item) => item.evidence.id);
+	const missingEvidenceNoteIds = input.claim.evidenceLinks
+		.filter((link) => !input.evidenceById.has(link.evidenceNoteId))
+		.map((link) => link.evidenceNoteId);
 
 	if (
 		input.claim.central &&
@@ -478,6 +502,13 @@ function auditSynthesisClaim(input: {
 			reason:
 				"Central Claim cannot be marked supported because its Claim Support Gate failed.",
 		};
+	}
+	if (missingEvidenceNoteIds.length > 0) {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds: missingEvidenceNoteIds,
+			reason: "Synthesis Claim links to missing Evidence Notes.",
+		});
 	}
 
 	const contradictionLinks = linkedEvidence.filter(
@@ -502,6 +533,17 @@ function auditSynthesisClaim(input: {
 			reason: "Synthesis Claim has no linked supporting Evidence Notes.",
 		});
 	}
+
+	const reviewerVerdict = normalizeClaimGraphReviewerVerdict({
+		claim: input.claim,
+		linkedEvidence,
+		verdict:
+			input.reviewClaim?.({
+				claim: input.claim,
+				linkedEvidenceNotes: linkedEvidence.map((item) => item.evidence),
+			}) ?? null,
+	});
+	if (reviewerVerdict) return reviewerVerdict;
 
 	const supportingNotes = supportLinks.filter((item) =>
 		evidenceNoteSupportsSynthesisClaim(item.evidence, input.claim),
@@ -561,6 +603,78 @@ function unsupportedClaimGraphVerdict(input: {
 		verdict: input.claim.central ? "needs_repair" : "unsupported",
 		evidenceNoteIds: input.evidenceNoteIds,
 		reason: input.reason,
+	};
+}
+
+function normalizeClaimGraphReviewerVerdict(input: {
+	claim: DeepResearchSynthesisClaim;
+	linkedEvidence: Array<{
+		link: DeepResearchSynthesisClaim["evidenceLinks"][number];
+		evidence: DeepResearchEvidenceNote;
+	}>;
+	verdict: DeepResearchCitationAuditVerdict | null;
+}): DeepResearchCitationAuditVerdict | null {
+	if (!input.verdict || input.verdict.claimId !== input.claim.id) return null;
+	if (!validClaimGraphVerdictStatuses.has(input.verdict.verdict)) return null;
+
+	const linkedEvidenceIds = new Set(
+		input.linkedEvidence.map((item) => item.evidence.id),
+	);
+	const unlinkedEvidenceIds = input.verdict.evidenceNoteIds.filter(
+		(evidenceNoteId) => !linkedEvidenceIds.has(evidenceNoteId),
+	);
+	if (unlinkedEvidenceIds.length > 0) {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds: unlinkedEvidenceIds,
+			reason:
+				"Citation audit model cited Evidence Notes that are not linked to this Synthesis Claim.",
+		});
+	}
+
+	const supportEvidenceIds = new Set(
+		input.linkedEvidence
+			.filter((item) => item.link.relation === "support")
+			.map((item) => item.evidence.id),
+	);
+	if (
+		input.verdict.verdict === "supported" ||
+		input.verdict.verdict === "partially_supported"
+	) {
+		const supportedEvidenceNoteIds = input.verdict.evidenceNoteIds.filter(
+			(evidenceNoteId) => supportEvidenceIds.has(evidenceNoteId),
+		);
+		if (supportedEvidenceNoteIds.length === 0) return null;
+		return {
+			claimId: input.claim.id,
+			verdict: input.verdict.verdict,
+			evidenceNoteIds: uniqueValues(supportedEvidenceNoteIds),
+			reason:
+				input.verdict.reason.trim() ||
+				"Citation audit model found the claim supported by linked Evidence Notes.",
+		};
+	}
+
+	if (input.verdict.verdict === "unsupported") {
+		return unsupportedClaimGraphVerdict({
+			claim: input.claim,
+			evidenceNoteIds:
+				input.verdict.evidenceNoteIds.length > 0
+					? uniqueValues(input.verdict.evidenceNoteIds)
+					: [...supportEvidenceIds],
+			reason:
+				input.verdict.reason.trim() ||
+				"Citation audit model found linked Evidence Notes insufficient for this Synthesis Claim.",
+		});
+	}
+
+	return {
+		claimId: input.claim.id,
+		verdict: input.verdict.verdict,
+		evidenceNoteIds: uniqueValues(input.verdict.evidenceNoteIds),
+		reason:
+			input.verdict.reason.trim() ||
+			"Citation audit model requested claim repair before report rendering.",
 	};
 }
 

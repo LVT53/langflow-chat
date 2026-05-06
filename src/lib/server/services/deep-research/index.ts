@@ -77,6 +77,7 @@ import { listDeepResearchSynthesisClaims } from './synthesis-claims';
 import type { SynthesisNotes } from './synthesis';
 import {
 	buildCitationClaimReviewerWithLlm,
+	buildClaimGraphCitationReviewerWithLlm,
 	draftResearchPlanWithLlm,
 	writeResearchReportWithLlm,
 } from './llm-steps';
@@ -765,9 +766,36 @@ export async function completeDeepResearchJobWithAuditedReport(
 		},
 		now,
 	});
+	const [claimGraphClaims, claimGraphEvidenceNotes] = await Promise.all([
+		listDeepResearchSynthesisClaims({
+			userId: input.userId,
+			jobId: job.id,
+		}),
+		listDeepResearchEvidenceNotes({
+			userId: input.userId,
+			jobId: job.id,
+		}),
+	]);
+	const claimGraphReviewer = await buildClaimGraphCitationReviewerWithLlm({
+		context: {
+			jobId: job.id,
+			conversationId: job.conversationId,
+			userId: job.userId,
+			now,
+		},
+		claims: claimGraphClaims,
+		evidenceNotes: claimGraphEvidenceNotes,
+		concurrency: Math.min(
+			2,
+			Math.max(1, currentPlan.rawPlan.researchBudget.modelReasoningConcurrency)
+		),
+	});
 	const claimGraphAuditResult = await auditAndPersistDeepResearchClaimGraph({
 		userId: input.userId,
 		jobId: job.id,
+		claims: claimGraphClaims,
+		evidenceNotes: claimGraphEvidenceNotes,
+		reviewClaim: claimGraphReviewer ?? undefined,
 		now,
 	});
 	if (claimGraphAuditResult) {
@@ -844,16 +872,8 @@ export async function completeDeepResearchJobWithAuditedReport(
 		userId: input.userId,
 		jobId: job.id,
 	});
-	const [verifiedSynthesisClaims, verifiedEvidenceNotes] = await Promise.all([
-		listDeepResearchSynthesisClaims({
-			userId: input.userId,
-			jobId: job.id,
-		}),
-		listDeepResearchEvidenceNotes({
-			userId: input.userId,
-			jobId: job.id,
-		}),
-	]);
+	const verifiedSynthesisClaims = claimGraphClaims;
+	const verifiedEvidenceNotes = claimGraphEvidenceNotes;
 	const synthesisFindingsForCitations = [
 		...input.synthesisNotes.findings,
 		...input.synthesisNotes.supportedFindings,
