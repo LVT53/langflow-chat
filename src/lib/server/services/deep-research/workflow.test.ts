@@ -1519,7 +1519,7 @@ describe("real Deep Research workflow stepper", () => {
 		]);
 	});
 
-	it("claims no more Research Tasks than the approved per-job model reasoning concurrency", async () => {
+	it("claims no more Research Tasks than the task-stage runtime cap", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
 		const {
@@ -1549,6 +1549,18 @@ describe("real Deep Research workflow stepper", () => {
 					id: "gap-3",
 					keyQuestion: "Question three",
 					summary: "Resolve question three.",
+					severity: "major",
+				},
+				{
+					id: "gap-4",
+					keyQuestion: "Question four",
+					summary: "Resolve question four.",
+					severity: "major",
+				},
+				{
+					id: "gap-5",
+					keyQuestion: "Question five",
+					summary: "Resolve question five.",
 					severity: "major",
 				},
 			],
@@ -1594,6 +1606,8 @@ describe("real Deep Research workflow stepper", () => {
 			},
 		});
 		expect(tasks.map((task) => task.status)).toEqual([
+			"completed",
+			"completed",
 			"completed",
 			"completed",
 			"pending",
@@ -1954,6 +1968,55 @@ describe("real Deep Research workflow stepper", () => {
 			id: task.id,
 			status: "pending",
 		});
+	});
+
+	it("claims focused Research Task work above the plan model-concurrency floor", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const { createResearchTasksFromCoverageGaps } = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const claimResearchTasks = vi.fn(async () => []);
+
+		await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			gaps: Array.from({ length: 6 }, (_, index) => ({
+				id: `gap-${index + 1}`,
+				keyQuestion: `Which source fills gap ${index + 1}?`,
+				summary: `Required source work ${index + 1} needs a worker claim.`,
+				severity: "critical" as const,
+			})),
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				tasks: {
+					claimResearchTasks,
+				},
+			},
+		);
+
+		expect(claimResearchTasks).toHaveBeenCalledWith(
+			expect.objectContaining({
+				limit: 4,
+			}),
+		);
 	});
 
 	it("turns non-critical failed Research Tasks into audited report limitations", async () => {

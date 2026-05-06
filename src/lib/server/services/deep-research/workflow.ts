@@ -71,6 +71,11 @@ import {
 	getResearchResumePoint,
 	upsertResearchResumePoint,
 } from "./resume-points";
+import {
+	buildDeepResearchForeignKeyDiagnostics,
+	formatDeepResearchDiagnosticsJson,
+	isSqliteForeignKeyConstraintError,
+} from "./diagnostics";
 import type { ResearchCoverageAssessment, CoverageGap } from "./coverage";
 import type {
 	DeepResearchPassCheckpoint,
@@ -250,12 +255,14 @@ async function runResearchTasksStep(
 		(task) =>
 			task.status === "running" && task.claimToken === workflowClaimToken,
 	);
+	const taskConcurrencyLimit = researchTaskConcurrencyLimit(
+		approvedPlan as ResearchPlan,
+	);
 	const claimLimit = Math.max(
 		0,
 		Math.min(
 			pendingRequiredTasks.length,
-			modelReasoningConcurrencyLimit(approvedPlan as ResearchPlan) -
-				workflowRunningTasks.length,
+			taskConcurrencyLimit - workflowRunningTasks.length,
 		),
 	);
 	let claimedTasks: DeepResearchTask[] = [];
@@ -286,27 +293,28 @@ async function runResearchTasksStep(
 		claimedTasks: claimedTasks.length,
 		tasksToExecute: tasksToExecute.length,
 		claimLimit,
+		taskConcurrencyLimit,
 	});
 
 	await Promise.all(
 		tasksToExecute.map(async (task) => {
 			const taskResumeKey = `task:${task.id}`;
-			await upsertResearchResumePoint({
-				userId: jobRow.userId,
-				jobId: jobRow.id,
-				conversationId: jobRow.conversationId,
-				boundary: "research_task",
-				resumeKey: taskResumeKey,
-				stage: "research_tasks",
-				passNumber,
-				taskId: task.id,
-				payload: {
-					assignmentType: task.assignmentType,
-					coverageGapId: task.coverageGapId,
-				},
-				now,
-			});
 			try {
+				await upsertResearchResumePoint({
+					userId: jobRow.userId,
+					jobId: jobRow.id,
+					conversationId: jobRow.conversationId,
+					boundary: "research_task",
+					resumeKey: taskResumeKey,
+					stage: "research_tasks",
+					passNumber,
+					taskId: task.id,
+					payload: {
+						assignmentType: task.assignmentType,
+						coverageGapId: task.coverageGapId,
+					},
+					now,
+				});
 				const output = await executor({
 					job,
 					approvedPlan: approvedPlan as ResearchPlan,
@@ -333,6 +341,17 @@ async function runResearchTasksStep(
 					now,
 				});
 			} catch (error) {
+				console.warn("[DEEP_RESEARCH] Research task execution failed", {
+					jobId: jobRow.id,
+					taskId: task.id,
+					passNumber,
+					error: getErrorMessage(error),
+					foreignKeyDiagnosticsJson: isSqliteForeignKeyConstraintError(error)
+						? formatDeepResearchDiagnosticsJson(
+								buildDeepResearchForeignKeyDiagnostics(),
+							)
+						: null,
+				});
 				await (
 					dependencies.tasks?.recordResearchTaskFailure ??
 					recordResearchTaskFailure
@@ -2402,6 +2421,33 @@ function modelReasoningConcurrencyLimit(plan: ResearchPlan): number {
 		0,
 		Math.min(
 			planLimit,
+			Math.max(0, Math.floor(config.deepResearchUserReasoningConcurrency)),
+			Math.max(1, Math.floor(config.deepResearchGlobalReasoningConcurrency)),
+		),
+	);
+}
+
+function researchTaskConcurrencyLimit(plan: ResearchPlan): number {
+	const configuredModelConcurrency =
+		plan.researchBudget.modelReasoningConcurrency;
+	const configuredSourceConcurrency =
+		plan.researchBudget.sourceProcessingConcurrency;
+	const modelLimit =
+		configuredModelConcurrency === undefined ||
+		!Number.isFinite(configuredModelConcurrency)
+			? 1
+			: Math.max(1, Math.floor(configuredModelConcurrency));
+	const sourceLimit =
+		configuredSourceConcurrency === undefined ||
+		!Number.isFinite(configuredSourceConcurrency)
+			? modelLimit
+			: Math.max(1, Math.floor(configuredSourceConcurrency));
+	const taskStagePlanLimit = Math.max(modelLimit, Math.min(sourceLimit, 6));
+	const config = getConfig();
+	return Math.max(
+		0,
+		Math.min(
+			taskStagePlanLimit,
 			Math.max(0, Math.floor(config.deepResearchUserReasoningConcurrency)),
 			Math.max(1, Math.floor(config.deepResearchGlobalReasoningConcurrency)),
 		),

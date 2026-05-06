@@ -10,6 +10,10 @@ import {
 } from "./model-config";
 import type { ResearchTimelineStage } from "./timeline";
 import {
+	formatDeepResearchDiagnosticsJson,
+	isSqliteForeignKeyConstraintError,
+} from "./diagnostics";
+import {
 	buildResearchUsageRecord,
 	getResearchUsageForeignKeyDiagnostics,
 	type ResearchProviderUsageSnapshot,
@@ -176,7 +180,9 @@ export async function tryRunAndRecordDeepResearchModel(input: {
 				jobId: input.jobId,
 				taskId: input.taskId ?? null,
 				error: error instanceof Error ? error.message : "unknown error",
-				foreignKeyDiagnostics,
+				foreignKeyDiagnosticsJson: foreignKeyDiagnostics
+					? formatDeepResearchDiagnosticsJson(foreignKeyDiagnostics)
+					: null,
 			});
 		}
 		return result;
@@ -237,14 +243,4 @@ function readNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value)
 		? value
 		: undefined;
-}
-
-function isSqliteForeignKeyConstraintError(error: unknown): boolean {
-	if (typeof error !== "object" || error === null) return false;
-	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
-	return (
-		code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
-		(error instanceof Error &&
-			error.message.includes("FOREIGN KEY constraint failed"))
-	);
 }

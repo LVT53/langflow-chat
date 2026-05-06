@@ -251,9 +251,9 @@ describe("Deep Research model runner", () => {
 				jobId: "job-1",
 				taskId: "task-1",
 				error: "FOREIGN KEY constraint failed",
-				foreignKeyDiagnostics: expect.objectContaining({
-					parentRows: expect.objectContaining({ taskExists: false }),
-				}),
+				foreignKeyDiagnosticsJson: expect.stringContaining(
+					'"taskExists": false',
+				),
 			}),
 		);
 	});

@@ -251,7 +251,7 @@ function readConfig(): Config {
 		),
 		deepResearchUserReasoningConcurrency: Math.max(
 			0,
-			parseIntegerEnv(process.env.DEEP_RESEARCH_USER_REASONING_CONCURRENCY, 2),
+			parseIntegerEnv(process.env.DEEP_RESEARCH_USER_REASONING_CONCURRENCY, 4),
 		),
 		deepResearchDepthBudgets: readDeepResearchDepthBudgets(),
 		deepResearchModels: readDeepResearchModelSelections(),

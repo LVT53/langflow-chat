@@ -27,7 +27,7 @@ vi.mock("../env", () => ({
 		deepResearchActiveUserLimit: 2,
 		deepResearchActiveGlobalLimit: 4,
 		deepResearchGlobalReasoningConcurrency: 4,
-		deepResearchUserReasoningConcurrency: 2,
+		deepResearchUserReasoningConcurrency: 4,
 		deepResearchModels: {
 			plan_generation: "model1",
 			plan_revision: "model1",
@@ -53,7 +53,7 @@ vi.mock("../env", () => ({
 		deepResearchActiveUserLimit: 2,
 		deepResearchActiveGlobalLimit: 4,
 		deepResearchGlobalReasoningConcurrency: 4,
-		deepResearchUserReasoningConcurrency: 2,
+		deepResearchUserReasoningConcurrency: 4,
 		deepResearchModels: {
 			plan_generation: "model1",
 			plan_revision: "model1",
@@ -146,7 +146,7 @@ describe("Knowledge Store Config", () => {
 			expect(config.deepResearchActiveUserLimit).toBe(2);
 			expect(config.deepResearchActiveGlobalLimit).toBe(4);
 			expect(config.deepResearchGlobalReasoningConcurrency).toBe(4);
-			expect(config.deepResearchUserReasoningConcurrency).toBe(2);
+			expect(config.deepResearchUserReasoningConcurrency).toBe(4);
 		});
 
 		it("getConfig() should apply Deep Research worker admin overrides", async () => {
@@ -284,7 +284,7 @@ describe("Knowledge Store Config", () => {
 				DEEP_RESEARCH_ACTIVE_USER_LIMIT: "2",
 				DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: "4",
 				DEEP_RESEARCH_GLOBAL_REASONING_CONCURRENCY: "4",
-				DEEP_RESEARCH_USER_REASONING_CONCURRENCY: "2",
+				DEEP_RESEARCH_USER_REASONING_CONCURRENCY: "4",
 				DEEP_RESEARCH_PLAN_MODEL: "model1",
 				DEEP_RESEARCH_PLAN_REVISION_MODEL: "model1",
 				DEEP_RESEARCH_SOURCE_REVIEW_MODEL: "model1",
