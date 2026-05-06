@@ -771,19 +771,27 @@ function buildDefaultKeyQuestions(
 	if (reportIntent === "comparison") {
 		const comparison = inferComparisonMetadata(userRequest);
 		if (comparison.entities.length >= 2) {
-			return buildComparisonKeyQuestions({
+			return withDomainSpecificKeyQuestions(
+				buildComparisonKeyQuestions({
+					topic,
+					researchLanguage,
+					entities: comparison.entities,
+					axes: comparison.axes,
+				}),
 				topic,
 				researchLanguage,
-				entities: comparison.entities,
-				axes: comparison.axes,
-			});
+			);
 		}
 	}
-	return buildIntentKeyQuestions({
+	return withDomainSpecificKeyQuestions(
+		buildIntentKeyQuestions({
+			topic,
+			researchLanguage,
+			reportIntent,
+		}),
 		topic,
 		researchLanguage,
-		reportIntent,
-	});
+	);
 }
 
 function buildIntentKeyQuestions(input: {
@@ -919,6 +927,128 @@ function buildInvestigationKeyQuestions(
 		"Where do credible sources disagree, leave gaps, or require careful qualification?",
 		"What conclusions, practical implications, open questions, and limitations should the report separate clearly?",
 	];
+}
+
+function withDomainSpecificKeyQuestions(
+	keyQuestions: string[],
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	return normalizeTextList([
+		...keyQuestions,
+		...buildDomainSpecificKeyQuestions(topic, researchLanguage),
+	]).slice(0, 8);
+}
+
+function buildDomainSpecificKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	const text = topic.toLocaleLowerCase();
+	const questions: string[] = [];
+	if (isLawTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely joghatóságok, hatályos jogforrások, szabályozói útmutatók, bírósági vagy hatósági döntések és végrehajtási határidők irányadók most?",
+						"Mely jogi állítások vitatottak, még nem teszteltek vagy joghatóságonként eltérőek, és milyen gyakorlati megfelelési kockázatot okoznak?",
+					]
+				: [
+						"Which jurisdictions, current legal authorities, regulator guidance, court or agency decisions, and enforcement dates govern the topic now?",
+						"Which legal claims are disputed, untested, jurisdiction-dependent, or practically hard to enforce, and what compliance risk follows?",
+					]),
+		);
+	}
+	if (isProcurementTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely érintetti kritériumokat, beszerzési korlátokat, biztonsági és megfelelőségi követelményeket, adatkezelési feltételeket és jóváhagyási lépéseket kell ellenőrizni?",
+						"Milyen implementációs terhet, szerződéses kockázatot, támogatási minőséget, vendor lock-int és teljes életciklus-költséget mutatnak a források?",
+					]
+				: [
+						"Which stakeholder criteria, procurement constraints, security and compliance requirements, data-handling terms, and approval gates must be checked?",
+						"What implementation burden, contract risk, support quality, vendor lock-in, and total lifecycle cost do credible sources show?",
+					]),
+		);
+	}
+	if (isSoftwareTechnicalTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely verziók, architektúrák, API-k, függőségek, kompatibilitási feltételek, teljesítményadatok és üzemeltetési korlátok relevánsak?",
+						"Milyen biztonsági, megbízhatósági, skálázási, migrációs, observability vagy hibakezelési kockázatokat dokumentálnak a források?",
+					]
+				: [
+						"Which versions, architectures, APIs, dependencies, compatibility constraints, performance data, and operating limits are relevant?",
+						"What security, reliability, scalability, migration, observability, or failure-handling risks are documented by credible sources?",
+					]),
+		);
+	}
+	if (isHealthTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely aktuális klinikai irányelvek, szabályozói figyelmeztetések, populációs feltételek, kontraindikációk és ellátási környezetek határozzák meg az alkalmazhatóságot?",
+						"Milyen bizonyíték támasztja alá az előnyöket, károkat, abszolút kockázatokat, mellékhatásokat és bizonytalanságokat, és hol szükséges orvosi óvatosság?",
+					]
+				: [
+						"Which current clinical guidelines, regulator warnings, population criteria, contraindications, and care settings define applicability?",
+						"What evidence supports benefits, harms, absolute risks, adverse effects, and uncertainties, and where should medical caution be explicit?",
+					]),
+		);
+	}
+	if (isFinanceTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely pénzügyi termékek, piacok, időtávok, adatforrások, díjak, adók, likviditási feltételek és szabályozási korlátok relevánsak?",
+						"Milyen feltételezések, volatilitási vagy veszteségkockázatok, érzékenységek, historikus korlátok és alternatív forgatókönyvek változtatják a következtetést?",
+					]
+				: [
+						"Which financial products, markets, time horizons, data sources, fees, taxes, liquidity conditions, and regulatory constraints are relevant?",
+						"What assumptions, volatility or downside risks, sensitivities, historical limitations, and alternative scenarios could change the conclusion?",
+					]),
+		);
+	}
+	if (isAcademicLiteratureTopic(text)) {
+		questions.push(
+			...(researchLanguage === "hu"
+				? [
+						"Mely adatbázisokat, keresőkifejezéseket, beválasztási és kizárási kritériumokat, időablakot és tanulmánytípusokat kell használni?",
+						"Milyen a tanulmányok módszertani minősége, reprodukálhatósága, mintamérete, torzítási kockázata, konszenzusa, ellentmondása és frissessége?",
+					]
+				: [
+						"Which databases, search terms, inclusion and exclusion criteria, date window, and study types should define the literature search?",
+						"What do study quality, reproducibility, sample size, bias risk, consensus, contradictions, and recency show?",
+					]),
+		);
+	}
+	return questions;
+}
+
+function isLawTopic(text: string): boolean {
+	return /\b(law|legal|regulation|regulatory|compliance|court|lawsuit|statute|directive|liability|jurisdiction|copyright|privacy|gdpr|eu ai act)\b/u.test(text);
+}
+
+function isProcurementTopic(text: string): boolean {
+	return /\b(procurement|purchase|buy|vendor|supplier|rfp|security review|due diligence|enterprise|contract|sourcing|tco|total cost|beszerz|szállító)\b/u.test(text);
+}
+
+function isSoftwareTechnicalTopic(text: string): boolean {
+	return /\b(software|technical|api|sdk|database|framework|library|architecture|deployment|infrastructure|cloud|security|performance|scalability|migration|observability|kubernetes|svelte|typescript|python|node|postgres|sqlite)\b/u.test(text);
+}
+
+function isHealthTopic(text: string): boolean {
+	return /\b(health|medical|clinical|patient|doctor|disease|treatment|drug|therapy|diagnosis|symptom|vaccine|fda|ema|guideline|contraindication|side effect)\b/u.test(text);
+}
+
+function isFinanceTopic(text: string): boolean {
+	return /\b(finance|financial|stock|bond|etf|fund|crypto|investment|portfolio|loan|mortgage|insurance|tax|inflation|interest rate|yield|valuation|revenue|profit|market cap|liquidity|volatility)\b/u.test(text);
+}
+
+function isAcademicLiteratureTopic(text: string): boolean {
+	return /\b(academic|literature review|systematic review|meta-analysis|paper|papers|study|studies|journal|peer[- ]reviewed|research literature|citation|pubmed|arxiv|scholar)\b/u.test(text);
 }
 
 function buildComparisonKeyQuestions(input: {

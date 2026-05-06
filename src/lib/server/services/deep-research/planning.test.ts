@@ -177,6 +177,62 @@ describe("createFirstResearchPlanDraft", () => {
 		}
 	});
 
+	it("adds domain-specific checks on top of broad intent templates", async () => {
+		const cases = [
+			{
+				jobId: "job-law",
+				userRequest:
+					"Research GDPR compliance risks for using customer data in AI training.",
+				expectedFragments: ["jurisdictions", "current legal authorities", "compliance risk"],
+			},
+			{
+				jobId: "job-procurement",
+				userRequest:
+					"Recommend private AI coding assistant software for enterprise procurement.",
+				expectedFragments: ["stakeholder criteria", "data-handling terms", "vendor lock-in"],
+			},
+			{
+				jobId: "job-technical",
+				userRequest:
+					"Investigate SQLite to Postgres migration performance and reliability risks.",
+				expectedFragments: ["versions, architectures, APIs", "operating limits", "observability"],
+			},
+			{
+				jobId: "job-health",
+				userRequest:
+					"Research current clinical guidance and risks for GLP-1 weight loss drugs.",
+				expectedFragments: ["clinical guidelines", "contraindications", "adverse effects"],
+			},
+			{
+				jobId: "job-finance",
+				userRequest:
+					"Recommend a bond ETF strategy for a taxable portfolio in 2026.",
+				expectedFragments: ["financial products", "fees, taxes", "downside risks"],
+			},
+			{
+				jobId: "job-academic",
+				userRequest:
+					"Write an academic literature review of retrieval augmented generation evaluation studies.",
+				expectedFragments: ["databases, search terms", "study quality", "bias risk"],
+			},
+		] as const;
+
+		for (const item of cases) {
+			const result = await createFirstResearchPlanDraft({
+				jobId: item.jobId,
+				userRequest: item.userRequest,
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			});
+			const questions = result.plan.keyQuestions.join("\n");
+
+			expect(result.plan.keyQuestions.length).toBeLessThanOrEqual(8);
+			for (const fragment of item.expectedFragments) {
+				expect(questions).toContain(fragment);
+			}
+		}
+	});
+
 	it("includes a coarse Research Effort Estimate for the selected depth", async () => {
 		const result = await createFirstResearchPlanDraft({
 			jobId: "job-3",
