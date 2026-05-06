@@ -11,6 +11,7 @@ import {
 import type { ResearchTimelineStage } from "./timeline";
 import {
 	buildResearchUsageRecord,
+	getResearchUsageForeignKeyDiagnostics,
 	type ResearchProviderUsageSnapshot,
 	type ResearchUsageOperation,
 	saveResearchUsageRecord,
@@ -137,31 +138,45 @@ export async function tryRunAndRecordDeepResearchModel(input: {
 			maxTokens: input.maxTokens,
 			fetchImpl: input.fetchImpl,
 		});
+		let usageRecord: Awaited<
+			ReturnType<typeof buildResearchUsageRecord>
+		> | null = null;
 		try {
-			await saveResearchUsageRecord(
-				await buildResearchUsageRecord({
-					jobId: input.jobId,
-					taskId: input.taskId ?? null,
-					conversationId: input.conversationId,
-					userId: input.userId,
-					stage: input.stage,
-					operation: input.operation ?? input.role,
-					modelId: result.modelId,
-					modelDisplayName: result.modelDisplayName,
-					providerId: result.providerId,
-					providerDisplayName: result.providerDisplayName,
-					providerModelName: result.providerModelName,
-					occurredAt: input.occurredAt,
-					runtimeMs: result.runtimeMs,
-					providerUsage: result.usage,
-				}),
-			);
+			usageRecord = await buildResearchUsageRecord({
+				jobId: input.jobId,
+				taskId: input.taskId ?? null,
+				conversationId: input.conversationId,
+				userId: input.userId,
+				stage: input.stage,
+				operation: input.operation ?? input.role,
+				modelId: result.modelId,
+				modelDisplayName: result.modelDisplayName,
+				providerId: result.providerId,
+				providerDisplayName: result.providerDisplayName,
+				providerModelName: result.providerModelName,
+				occurredAt: input.occurredAt,
+				runtimeMs: result.runtimeMs,
+				providerUsage: result.usage,
+			});
+			await saveResearchUsageRecord(usageRecord);
 		} catch (error) {
+			const foreignKeyDiagnostics =
+				usageRecord && isSqliteForeignKeyConstraintError(error)
+					? await getResearchUsageForeignKeyDiagnostics(usageRecord).catch(
+							(diagnosticError) => ({
+								error:
+									diagnosticError instanceof Error
+										? diagnosticError.message
+										: "unknown diagnostic error",
+							}),
+						)
+					: null;
 			console.warn("[DEEP_RESEARCH] Usage record save failed", {
 				role: input.role,
 				jobId: input.jobId,
 				taskId: input.taskId ?? null,
 				error: error instanceof Error ? error.message : "unknown error",
+				foreignKeyDiagnostics,
 			});
 		}
 		return result;
@@ -222,4 +237,14 @@ function readNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value)
 		? value
 		: undefined;
+}
+
+function isSqliteForeignKeyConstraintError(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+	return (
+		code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
+		(error instanceof Error &&
+			error.message.includes("FOREIGN KEY constraint failed"))
+	);
 }

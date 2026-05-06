@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
-import { deepResearchUsageRecords } from "$lib/server/db/schema";
+import {
+	conversations,
+	deepResearchJobs,
+	deepResearchTasks,
+	deepResearchUsageRecords,
+	users,
+} from "$lib/server/db/schema";
 import type { ResearchTimelineStage } from "./timeline";
 
 export type ResearchUsageSource = "provider" | "estimated";
@@ -74,6 +80,18 @@ export type ResearchUsageCostSummary = {
 		totalTokens: number;
 		operationCount: number;
 	}>;
+};
+
+export type ResearchUsageForeignKeyDiagnostics = {
+	foreignKeysEnabled: unknown;
+	parentRows: {
+		jobExists: boolean;
+		conversationExists: boolean;
+		userExists: boolean;
+		taskExists: boolean | null;
+	};
+	usageForeignKeys: Record<string, unknown>[];
+	usageForeignKeyViolations: Record<string, unknown>[];
 };
 
 type DeepResearchUsageRecordRow = typeof deepResearchUsageRecords.$inferSelect;
@@ -233,26 +251,86 @@ export async function saveResearchUsageRecord(
 	record: ResearchUsageRecord,
 ): Promise<PersistedResearchUsageRecord> {
 	const { db } = await import("$lib/server/db");
-	let row: DeepResearchUsageRecordRow | undefined;
-	try {
-		[row] = await db
-			.insert(deepResearchUsageRecords)
-			.values(buildResearchUsageInsert(record, record.taskId))
-			.returning();
-	} catch (error) {
-		if (!record.taskId || !isSqliteForeignKeyConstraintError(error)) {
-			throw error;
-		}
-		[row] = await db
-			.insert(deepResearchUsageRecords)
-			.values(buildResearchUsageInsert(record, null))
-			.returning();
-	}
-	if (!row) {
-		throw new Error("Failed to save deep research usage record.");
-	}
+	const [row] = await db
+		.insert(deepResearchUsageRecords)
+		.values({
+			id: randomUUID(),
+			jobId: record.jobId,
+			taskId: record.taskId,
+			conversationId: record.conversationId,
+			userId: record.userId,
+			stage: record.stage,
+			operation: record.operation,
+			modelId: record.modelId,
+			modelDisplayName: record.modelDisplayName,
+			providerId: record.providerId,
+			providerDisplayName: record.providerDisplayName,
+			billingMonth: record.billingMonth,
+			occurredAt: new Date(record.occurredAt),
+			promptTokens: record.promptTokens,
+			cachedInputTokens: record.cachedInputTokens,
+			cacheHitTokens: record.cacheHitTokens,
+			cacheMissTokens: record.cacheMissTokens,
+			completionTokens: record.completionTokens,
+			reasoningTokens: record.reasoningTokens,
+			totalTokens: record.totalTokens,
+			usageSource: record.usageSource,
+			runtimeMs: record.runtimeMs,
+			costUsdMicros: record.costUsdMicros,
+		})
+		.returning();
 
 	return mapUsageRecordRow(row);
+}
+
+export async function getResearchUsageForeignKeyDiagnostics(
+	record: ResearchUsageRecord,
+): Promise<ResearchUsageForeignKeyDiagnostics> {
+	const { db, sqlite } = await import("$lib/server/db");
+	const [[job], [conversation], [user], taskRows] = await Promise.all([
+		db
+			.select({ id: deepResearchJobs.id })
+			.from(deepResearchJobs)
+			.where(eq(deepResearchJobs.id, record.jobId))
+			.limit(1),
+		db
+			.select({ id: conversations.id })
+			.from(conversations)
+			.where(eq(conversations.id, record.conversationId))
+			.limit(1),
+		db
+			.select({ id: users.id })
+			.from(users)
+			.where(eq(users.id, record.userId))
+			.limit(1),
+		record.taskId
+			? db
+					.select({ id: deepResearchTasks.id })
+					.from(deepResearchTasks)
+					.where(eq(deepResearchTasks.id, record.taskId))
+					.limit(1)
+			: Promise.resolve([]),
+	]);
+
+	const foreignKeys = sqlite.prepare("PRAGMA foreign_keys").get() as
+		| Record<string, unknown>
+		| undefined;
+
+	return {
+		foreignKeysEnabled: foreignKeys?.foreign_keys ?? null,
+		parentRows: {
+			jobExists: !!job,
+			conversationExists: !!conversation,
+			userExists: !!user,
+			taskExists: record.taskId ? taskRows.length > 0 : null,
+		},
+		usageForeignKeys: sqlite
+			.prepare("PRAGMA foreign_key_list(deep_research_usage_records)")
+			.all() as Record<string, unknown>[],
+		usageForeignKeyViolations: sqlite
+			.prepare("PRAGMA foreign_key_check(deep_research_usage_records)")
+			.all() as Record<string, unknown>[],
+	};
 }
 
 export async function listResearchUsageRecords(
@@ -344,47 +422,6 @@ function mapUsageRecordRow(
 		costUsdMicros: row.costUsdMicros,
 		createdAt: row.createdAt.toISOString(),
 	};
-}
-
-function buildResearchUsageInsert(
-	record: ResearchUsageRecord,
-	taskId: string | null,
-): typeof deepResearchUsageRecords.$inferInsert {
-	return {
-		id: randomUUID(),
-		jobId: record.jobId,
-		taskId,
-		conversationId: record.conversationId,
-		userId: record.userId,
-		stage: record.stage,
-		operation: record.operation,
-		modelId: record.modelId,
-		modelDisplayName: record.modelDisplayName,
-		providerId: record.providerId,
-		providerDisplayName: record.providerDisplayName,
-		billingMonth: record.billingMonth,
-		occurredAt: new Date(record.occurredAt),
-		promptTokens: record.promptTokens,
-		cachedInputTokens: record.cachedInputTokens,
-		cacheHitTokens: record.cacheHitTokens,
-		cacheMissTokens: record.cacheMissTokens,
-		completionTokens: record.completionTokens,
-		reasoningTokens: record.reasoningTokens,
-		totalTokens: record.totalTokens,
-		usageSource: record.usageSource,
-		runtimeMs: record.runtimeMs,
-		costUsdMicros: record.costUsdMicros,
-	};
-}
-
-function isSqliteForeignKeyConstraintError(error: unknown): boolean {
-	if (typeof error !== "object" || error === null) return false;
-	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
-	return (
-		code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
-		(error instanceof Error &&
-			error.message.includes("FOREIGN KEY constraint failed"))
-	);
 }
 
 function normalizeCount(value: unknown): number {

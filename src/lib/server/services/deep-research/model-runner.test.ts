@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	getProviderWithSecrets: vi.fn(),
 	decryptApiKey: vi.fn(),
 	buildResearchUsageRecord: vi.fn(),
+	getResearchUsageForeignKeyDiagnostics: vi.fn(),
 	saveResearchUsageRecord: vi.fn(),
 	warn: vi.fn(),
 }));
@@ -26,6 +27,8 @@ vi.mock("$lib/server/services/inference-providers", () => ({
 vi.mock("./usage", () => ({
 	buildResearchUsageRecord: (input: unknown) =>
 		mocks.buildResearchUsageRecord(input),
+	getResearchUsageForeignKeyDiagnostics: (record: unknown) =>
+		mocks.getResearchUsageForeignKeyDiagnostics(record),
 	saveResearchUsageRecord: (record: unknown) =>
 		mocks.saveResearchUsageRecord(record),
 }));
@@ -96,6 +99,7 @@ describe("Deep Research model runner", () => {
 		mocks.getProviderWithSecrets.mockReset();
 		mocks.decryptApiKey.mockReset();
 		mocks.buildResearchUsageRecord.mockReset();
+		mocks.getResearchUsageForeignKeyDiagnostics.mockReset();
 		mocks.saveResearchUsageRecord.mockReset();
 		mocks.warn.mockReset();
 		mocks.getProviderById.mockResolvedValue(providerConfig());
@@ -109,6 +113,14 @@ describe("Deep Research model runner", () => {
 			id: "usage-record",
 			...(input as object),
 		}));
+		mocks.getResearchUsageForeignKeyDiagnostics.mockResolvedValue({
+			parentRows: {
+				jobExists: true,
+				conversationExists: true,
+				userExists: true,
+				taskExists: true,
+			},
+		});
 		mocks.saveResearchUsageRecord.mockResolvedValue(undefined);
 		vi.spyOn(console, "warn").mockImplementation(mocks.warn);
 	});
@@ -182,6 +194,68 @@ describe("Deep Research model runner", () => {
 		expect(sentBody).not.toHaveProperty("extra_body");
 		expect(mocks.warn).not.toHaveBeenCalled();
 		expect(mocks.saveResearchUsageRecord).toHaveBeenCalledOnce();
+	});
+
+	it("logs foreign-key diagnostics when usage attribution cannot be saved", async () => {
+		const foreignKeyError = Object.assign(
+			new Error("FOREIGN KEY constraint failed"),
+			{ code: "SQLITE_CONSTRAINT_FOREIGNKEY" },
+		);
+		mocks.saveResearchUsageRecord.mockRejectedValueOnce(foreignKeyError);
+		mocks.getResearchUsageForeignKeyDiagnostics.mockResolvedValueOnce({
+			parentRows: {
+				jobExists: true,
+				conversationExists: true,
+				userExists: true,
+				taskExists: false,
+			},
+			usageForeignKeys: [{ table: "deep_research_tasks" }],
+			usageForeignKeyViolations: [],
+		});
+		const fetchImpl = vi.fn(async () => {
+			return new Response(
+				JSON.stringify({
+					choices: [{ message: { content: '{"summary":"done"}' } }],
+					usage: {
+						prompt_tokens: 10,
+						completion_tokens: 4,
+						total_tokens: 14,
+					},
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+		});
+
+		const result = await tryRunAndRecordDeepResearchModel({
+			role: "research_task",
+			jobId: "job-1",
+			taskId: "task-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			stage: "research_tasks",
+			messages: [{ role: "user", content: "Do task" }],
+			fetchImpl,
+		});
+
+		expect(result?.content).toBe('{"summary":"done"}');
+		expect(mocks.getResearchUsageForeignKeyDiagnostics).toHaveBeenCalledWith(
+			expect.objectContaining({
+				jobId: "job-1",
+				taskId: "task-1",
+			}),
+		);
+		expect(mocks.warn).toHaveBeenCalledWith(
+			"[DEEP_RESEARCH] Usage record save failed",
+			expect.objectContaining({
+				role: "research_task",
+				jobId: "job-1",
+				taskId: "task-1",
+				error: "FOREIGN KEY constraint failed",
+				foreignKeyDiagnostics: expect.objectContaining({
+					parentRows: expect.objectContaining({ taskExists: false }),
+				}),
+			}),
+		);
 	});
 
 	it("keeps provider failures on the citation audit fallback boundary", async () => {

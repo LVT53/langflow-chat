@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
-import { db } from "$lib/server/db";
+import { db, sqlite } from "$lib/server/db";
 import { deepResearchJobs } from "$lib/server/db/schema";
 import type { DeepResearchJob } from "$lib/types";
 import { listConversationDeepResearchJobs } from "./index";
@@ -179,7 +179,12 @@ export function ensureDeepResearchWorkerScheduler(
 				}
 			})
 			.catch((error) => {
-				console.error("[DEEP_RESEARCH] Worker tick failed", { error });
+				console.error("[DEEP_RESEARCH] Worker tick failed", {
+					error,
+					foreignKeyDiagnostics: isSqliteForeignKeyConstraintError(error)
+						? buildDeepResearchForeignKeyDiagnostics()
+						: null,
+				});
 			})
 			.finally(() => {
 				workerSchedulerTickInFlight = false;
@@ -532,6 +537,44 @@ function normalizePositiveMilliseconds(value: number): number | null {
 	if (!Number.isFinite(value)) return null;
 	const normalized = Math.floor(value);
 	return normalized > 0 ? normalized : null;
+}
+
+function buildDeepResearchForeignKeyDiagnostics(): {
+	foreignKeyViolations: Record<string, unknown>[];
+	tableForeignKeys: Record<string, Record<string, unknown>[]>;
+} {
+	const tables = [
+		"deep_research_usage_records",
+		"deep_research_resume_points",
+		"deep_research_timeline_events",
+		"deep_research_evidence_notes",
+		"deep_research_tasks",
+		"deep_research_jobs",
+	];
+	return {
+		foreignKeyViolations: sqlite
+			.prepare("PRAGMA foreign_key_check")
+			.all() as Record<string, unknown>[],
+		tableForeignKeys: Object.fromEntries(
+			tables.map((table) => [
+				table,
+				sqlite.prepare(`PRAGMA foreign_key_list(${table})`).all() as Record<
+					string,
+					unknown
+				>[],
+			]),
+		),
+	};
+}
+
+function isSqliteForeignKeyConstraintError(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+	return (
+		code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
+		(error instanceof Error &&
+			error.message.includes("FOREIGN KEY constraint failed"))
+	);
 }
 
 function normalizeRecoverableStage(stage: string | null | undefined): string {
