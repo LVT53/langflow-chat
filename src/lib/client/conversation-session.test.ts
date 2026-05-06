@@ -15,6 +15,10 @@ import {
 	storePendingConversationMessage,
 } from './conversation-session';
 
+function flushAsyncWork(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('conversation-session', () => {
 	beforeEach(() => {
 		window.sessionStorage.clear();
@@ -206,7 +210,7 @@ describe('conversation-session', () => {
 		});
 	});
 
-	it('cleans up empty prepared conversations through the shared helper', () => {
+	it('cleans up empty prepared conversations through the shared helper', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
 		const removeLocal = vi.fn();
 
@@ -216,11 +220,31 @@ describe('conversation-session', () => {
 			fetchImpl: fetchMock,
 		});
 
-		expect(removeLocal).toHaveBeenCalledWith('conv-123');
 		expect(fetchMock).toHaveBeenCalledWith('/api/conversations/conv-123', {
 			method: 'DELETE',
 			keepalive: true,
 		});
+		await flushAsyncWork();
+		expect(removeLocal).toHaveBeenCalledWith('conv-123');
+	});
+
+	it('keeps empty prepared conversations locally when server cleanup is blocked', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ error: 'Conversation has active Deep Research jobs' }), {
+				status: 409,
+			})
+		);
+		const removeLocal = vi.fn();
+
+		cleanupPreparedConversation({
+			conversationId: 'conv-123',
+			removeLocal,
+			fetchImpl: fetchMock,
+		});
+
+		await flushAsyncWork();
+
+		expect(removeLocal).not.toHaveBeenCalled();
 	});
 
 	it('does not clean up a prepared conversation with a pending bootstrap message', () => {

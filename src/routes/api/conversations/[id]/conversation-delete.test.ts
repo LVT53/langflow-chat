@@ -90,4 +90,19 @@ describe('DELETE /api/conversations/[id]', () => {
 		expect(response.status).toBe(500);
 		expect(data.error).toMatch(/failed to fully delete conversation/i);
 	});
+
+	it('returns 409 when active Deep Research jobs block deletion', async () => {
+		mockDeleteConversationWithCleanup.mockRejectedValue({
+			code: 'active_deep_research_jobs',
+		});
+
+		const response = await DELETE(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(409);
+		expect(data).toEqual({
+			error: 'Conversation has active Deep Research jobs',
+			code: 'active_deep_research_jobs',
+		});
+	});
 });

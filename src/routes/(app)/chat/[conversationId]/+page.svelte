@@ -954,6 +954,7 @@ onDestroy(() => {
 	if (
 		!hasPersistedMessages &&
 		data?.conversation?.id &&
+		!hasActiveDeepResearchJobs(deepResearchJobs) &&
 		!hasMeaningfulDraft(
 			conversationDraft?.draftText ?? "",
 			conversationDraft?.selectedAttachmentIds ?? [],

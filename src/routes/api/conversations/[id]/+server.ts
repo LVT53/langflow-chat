@@ -25,6 +25,17 @@ import {
 	getConversationTaskState,
 } from '$lib/server/services/task-state';
 
+function isConversationDeleteBlockedByDeepResearchError(
+	error: unknown
+): error is { code: 'active_deep_research_jobs' } {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		(error as { code?: unknown }).code === 'active_deep_research_jobs'
+	);
+}
+
 export const GET: RequestHandler = async (event) => {
 	try {
 		requireAuth(event);
@@ -158,6 +169,15 @@ export const DELETE: RequestHandler = async (event) => {
 	try {
 		deleted = await deleteConversationWithCleanup(user.id, id);
 	} catch (error) {
+		if (isConversationDeleteBlockedByDeepResearchError(error)) {
+			return json(
+				{
+					error: 'Conversation has active Deep Research jobs',
+					code: error.code,
+				},
+				{ status: 409 }
+			);
+		}
 		console.error('[CONVERSATION_DELETE] Failed to fully delete conversation:', error);
 		return json({ error: 'Failed to fully delete conversation' }, { status: 500 });
 	}

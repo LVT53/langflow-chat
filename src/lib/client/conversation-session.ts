@@ -320,13 +320,16 @@ export function cleanupPreparedConversation(params: {
 		return;
 	}
 
-	params.removeLocal?.(params.conversationId);
 	void deletePreparedConversation(params.conversationId, {
 		fetchImpl: params.fetchImpl,
 		keepalive: true,
-	}).catch(() => {
-		// Ignore cleanup failures; draft conversations are filtered from the sidebar anyway.
-	});
+	})
+		.then(() => {
+			params.removeLocal?.(params.conversationId);
+		})
+		.catch(() => {
+			// Ignore cleanup failures; draft conversations are filtered from the sidebar anyway.
+		});
 }
 
 export function clearConversationSessionState(): void {
