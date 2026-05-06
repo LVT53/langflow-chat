@@ -135,6 +135,53 @@ describe("deep research tasks", () => {
 		expect(reloaded).toEqual(tasks);
 	});
 
+	it("limits Coverage Gap repair tasks to the highest-priority gaps", async () => {
+		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
+			await import("./tasks");
+
+		const gaps = Array.from({ length: 18 }, (_, index) => ({
+			id: `gap-${index}`,
+			keyQuestion: `Question ${index}?`,
+			summary: `Coverage gap ${index}.`,
+			severity:
+				index >= 15
+					? ("critical" as const)
+					: index >= 10
+						? "important"
+						: "minor",
+		}));
+
+		const tasks = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passNumber: 2,
+			gaps,
+			now: new Date("2026-05-05T12:00:00.000Z"),
+		});
+		const reloaded = await listResearchTasks({
+			userId: "user-1",
+			jobId: "job-1",
+			passNumber: 2,
+		});
+
+		expect(tasks).toHaveLength(12);
+		expect(reloaded.map((task) => task.coverageGapId)).toEqual([
+			"gap-15",
+			"gap-16",
+			"gap-17",
+			"gap-10",
+			"gap-11",
+			"gap-12",
+			"gap-13",
+			"gap-14",
+			"gap-0",
+			"gap-1",
+			"gap-2",
+			"gap-3",
+		]);
+	});
+
 	it("blocks a Pass Barrier while required tasks are running and opens after allowed terminal states", async () => {
 		const {
 			claimResearchTasks,

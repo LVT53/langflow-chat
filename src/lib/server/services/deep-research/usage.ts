@@ -233,34 +233,24 @@ export async function saveResearchUsageRecord(
 	record: ResearchUsageRecord,
 ): Promise<PersistedResearchUsageRecord> {
 	const { db } = await import("$lib/server/db");
-	const [row] = await db
-		.insert(deepResearchUsageRecords)
-		.values({
-			id: randomUUID(),
-			jobId: record.jobId,
-			taskId: record.taskId,
-			conversationId: record.conversationId,
-			userId: record.userId,
-			stage: record.stage,
-			operation: record.operation,
-			modelId: record.modelId,
-			modelDisplayName: record.modelDisplayName,
-			providerId: record.providerId,
-			providerDisplayName: record.providerDisplayName,
-			billingMonth: record.billingMonth,
-			occurredAt: new Date(record.occurredAt),
-			promptTokens: record.promptTokens,
-			cachedInputTokens: record.cachedInputTokens,
-			cacheHitTokens: record.cacheHitTokens,
-			cacheMissTokens: record.cacheMissTokens,
-			completionTokens: record.completionTokens,
-			reasoningTokens: record.reasoningTokens,
-			totalTokens: record.totalTokens,
-			usageSource: record.usageSource,
-			runtimeMs: record.runtimeMs,
-			costUsdMicros: record.costUsdMicros,
-		})
-		.returning();
+	let row: DeepResearchUsageRecordRow | undefined;
+	try {
+		[row] = await db
+			.insert(deepResearchUsageRecords)
+			.values(buildResearchUsageInsert(record, record.taskId))
+			.returning();
+	} catch (error) {
+		if (!record.taskId || !isSqliteForeignKeyConstraintError(error)) {
+			throw error;
+		}
+		[row] = await db
+			.insert(deepResearchUsageRecords)
+			.values(buildResearchUsageInsert(record, null))
+			.returning();
+	}
+	if (!row) {
+		throw new Error("Failed to save deep research usage record.");
+	}
 
 	return mapUsageRecordRow(row);
 }
@@ -287,21 +277,22 @@ export async function getResearchUsageCostSummary(
 	input: ListResearchUsageRecordsInput,
 ): Promise<ResearchUsageCostSummary> {
 	const records = await listResearchUsageRecords(input);
-	const byModel = new Map<string, ResearchUsageCostSummary["byModel"][number]>();
+	const byModel = new Map<
+		string,
+		ResearchUsageCostSummary["byModel"][number]
+	>();
 
 	for (const record of records) {
 		const key = `${record.modelId}\0${record.providerId ?? ""}`;
-		const current =
-			byModel.get(key) ??
-			{
-				modelId: record.modelId,
-				modelDisplayName: record.modelDisplayName,
-				providerId: record.providerId,
-				providerDisplayName: record.providerDisplayName,
-				costUsdMicros: 0,
-				totalTokens: 0,
-				operationCount: 0,
-			};
+		const current = byModel.get(key) ?? {
+			modelId: record.modelId,
+			modelDisplayName: record.modelDisplayName,
+			providerId: record.providerId,
+			providerDisplayName: record.providerDisplayName,
+			costUsdMicros: 0,
+			totalTokens: 0,
+			operationCount: 0,
+		};
 		current.costUsdMicros += record.costUsdMicros;
 		current.totalTokens += record.totalTokens;
 		current.operationCount += 1;
@@ -314,7 +305,10 @@ export async function getResearchUsageCostSummary(
 			(total, record) => total + record.costUsdMicros,
 			0,
 		),
-		totalTokens: records.reduce((total, record) => total + record.totalTokens, 0),
+		totalTokens: records.reduce(
+			(total, record) => total + record.totalTokens,
+			0,
+		),
 		byModel: Array.from(byModel.values()).sort((a, b) =>
 			a.modelId.localeCompare(b.modelId),
 		),
@@ -350,6 +344,47 @@ function mapUsageRecordRow(
 		costUsdMicros: row.costUsdMicros,
 		createdAt: row.createdAt.toISOString(),
 	};
+}
+
+function buildResearchUsageInsert(
+	record: ResearchUsageRecord,
+	taskId: string | null,
+): typeof deepResearchUsageRecords.$inferInsert {
+	return {
+		id: randomUUID(),
+		jobId: record.jobId,
+		taskId,
+		conversationId: record.conversationId,
+		userId: record.userId,
+		stage: record.stage,
+		operation: record.operation,
+		modelId: record.modelId,
+		modelDisplayName: record.modelDisplayName,
+		providerId: record.providerId,
+		providerDisplayName: record.providerDisplayName,
+		billingMonth: record.billingMonth,
+		occurredAt: new Date(record.occurredAt),
+		promptTokens: record.promptTokens,
+		cachedInputTokens: record.cachedInputTokens,
+		cacheHitTokens: record.cacheHitTokens,
+		cacheMissTokens: record.cacheMissTokens,
+		completionTokens: record.completionTokens,
+		reasoningTokens: record.reasoningTokens,
+		totalTokens: record.totalTokens,
+		usageSource: record.usageSource,
+		runtimeMs: record.runtimeMs,
+		costUsdMicros: record.costUsdMicros,
+	};
+}
+
+function isSqliteForeignKeyConstraintError(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+	return (
+		code === "SQLITE_CONSTRAINT_FOREIGNKEY" ||
+		(error instanceof Error &&
+			error.message.includes("FOREIGN KEY constraint failed"))
+	);
 }
 
 function normalizeCount(value: unknown): number {

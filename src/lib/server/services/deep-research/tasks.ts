@@ -13,6 +13,7 @@ import { saveResearchTaskEvidenceNotes } from "./evidence-notes";
 type DeepResearchTaskRow = typeof deepResearchTasks.$inferSelect;
 
 const SQLITE_SAFE_INSERT_CHUNK_SIZE = 40;
+const MAX_RESEARCH_TASKS_PER_PASS = 12;
 
 export type CoverageGapSeverity = "critical" | "important" | "minor";
 
@@ -116,6 +117,8 @@ export async function createResearchTasksFromCoverageGaps(
 	input: CreateResearchTasksFromCoverageGapsInput,
 ): Promise<DeepResearchTask[]> {
 	if (input.gaps.length === 0) return [];
+	const selectedGaps = selectCoverageGapsForResearchTasks(input.gaps);
+	if (selectedGaps.length === 0) return [];
 
 	const { db } = await import("$lib/server/db");
 	const now = input.now ?? new Date();
@@ -135,7 +138,7 @@ export async function createResearchTasksFromCoverageGaps(
 	);
 	const rows: DeepResearchTaskRow[] = [];
 	const rowsToInsert: Array<typeof deepResearchTasks.$inferInsert> = [];
-	input.gaps.forEach((gap, index) => {
+	selectedGaps.forEach((gap, index) => {
 		const normalized = {
 			assignmentType: "coverage_gap" as const,
 			coverageGapId: gap.id,
@@ -177,6 +180,32 @@ export async function createResearchTasksFromCoverageGaps(
 	}
 
 	return rows.map(mapResearchTaskRow);
+}
+
+function selectCoverageGapsForResearchTasks(
+	gaps: CoverageGapForResearchTask[],
+): CoverageGapForResearchTask[] {
+	return gaps
+		.map((gap, index) => ({ gap, index }))
+		.sort(
+			(left, right) =>
+				coverageGapSeverityRank(left.gap.severity) -
+					coverageGapSeverityRank(right.gap.severity) ||
+				left.index - right.index,
+		)
+		.slice(0, MAX_RESEARCH_TASKS_PER_PASS)
+		.map(({ gap }) => gap);
+}
+
+function coverageGapSeverityRank(severity: CoverageGapSeverity): number {
+	switch (severity) {
+		case "critical":
+			return 0;
+		case "important":
+			return 1;
+		case "minor":
+			return 2;
+	}
 }
 
 export async function listResearchTasks(

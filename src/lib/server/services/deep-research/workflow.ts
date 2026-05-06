@@ -288,69 +288,87 @@ async function runResearchTasksStep(
 		claimLimit,
 	});
 
-	for (const task of tasksToExecute) {
-		const taskResumeKey = `task:${task.id}`;
-		await upsertResearchResumePoint({
-			userId: jobRow.userId,
-			jobId: jobRow.id,
-			conversationId: jobRow.conversationId,
-			boundary: "research_task",
-			resumeKey: taskResumeKey,
-			stage: "research_tasks",
-			passNumber,
-			taskId: task.id,
-			payload: {
-				assignmentType: task.assignmentType,
-				coverageGapId: task.coverageGapId,
-			},
-			now,
-		});
-		try {
-			const output = await executor({
-				job,
-				approvedPlan: approvedPlan as ResearchPlan,
-				task,
-				reviewedSources,
-				allSources: sources,
-				now,
-			});
-			await (dependencies.tasks?.completeResearchTask ?? completeResearchTask)({
-				userId: jobRow.userId,
-				taskId: task.id,
-				output,
-				now,
-			});
-			await completeResearchResumePoint({
+	await Promise.all(
+		tasksToExecute.map(async (task) => {
+			const taskResumeKey = `task:${task.id}`;
+			await upsertResearchResumePoint({
 				userId: jobRow.userId,
 				jobId: jobRow.id,
+				conversationId: jobRow.conversationId,
+				boundary: "research_task",
 				resumeKey: taskResumeKey,
-				result: {
-					sourceIds: output.sourceIds ?? [],
+				stage: "research_tasks",
+				passNumber,
+				taskId: task.id,
+				payload: {
+					assignmentType: task.assignmentType,
+					coverageGapId: task.coverageGapId,
 				},
 				now,
 			});
-		} catch (error) {
-			await (
-				dependencies.tasks?.recordResearchTaskFailure ??
-				recordResearchTaskFailure
-			)({
-				userId: jobRow.userId,
-				taskId: task.id,
-				failureKind: "permanent",
-				failureReason: getErrorMessage(error),
-				now,
-			});
-			await completeResearchResumePoint({
-				userId: jobRow.userId,
-				jobId: jobRow.id,
-				resumeKey: taskResumeKey,
-				status: "failed",
-				result: {
-					error: getErrorMessage(error),
-				},
-				now,
-			});
-		}
+			try {
+				const output = await executor({
+					job,
+					approvedPlan: approvedPlan as ResearchPlan,
+					task,
+					reviewedSources,
+					allSources: sources,
+					now,
+				});
+				await (
+					dependencies.tasks?.completeResearchTask ?? completeResearchTask
+				)({
+					userId: jobRow.userId,
+					taskId: task.id,
+					output,
+					now,
+				});
+				await completeResearchResumePoint({
+					userId: jobRow.userId,
+					jobId: jobRow.id,
+					resumeKey: taskResumeKey,
+					result: {
+						sourceIds: output.sourceIds ?? [],
+					},
+					now,
+				});
+			} catch (error) {
+				await (
+					dependencies.tasks?.recordResearchTaskFailure ??
+					recordResearchTaskFailure
+				)({
+					userId: jobRow.userId,
+					taskId: task.id,
+					failureKind: "permanent",
+					failureReason: getErrorMessage(error),
+					now,
+				});
+				await completeResearchResumePoint({
+					userId: jobRow.userId,
+					jobId: jobRow.id,
+					resumeKey: taskResumeKey,
+					status: "failed",
+					result: {
+						error: getErrorMessage(error),
+					},
+					now,
+				});
+			}
+		}),
+	);
+
+	if (tasksToExecute.length > 0) {
+		await db
+			.update(deepResearchJobs)
+			.set({ updatedAt: now })
+			.where(
+				and(
+					eq(deepResearchJobs.id, jobRow.id),
+					eq(deepResearchJobs.userId, jobRow.userId),
+					eq(deepResearchJobs.status, "running"),
+					eq(deepResearchJobs.stage, "research_tasks"),
+				),
+			);
 	}
 
 	const barrier = await (
