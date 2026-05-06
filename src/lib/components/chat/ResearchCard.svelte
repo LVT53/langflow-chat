@@ -31,6 +31,7 @@
 
 	type TimelineEventView = DeepResearchTimelineEvent & {
 		showSourceCounts: boolean;
+		isMeaningful: boolean;
 	};
 
 	type ResearchCardSeverity =
@@ -75,6 +76,9 @@
 	let planApprovalPending = $state(false);
 	let advancePending = $state(false);
 	let isStageDetailOpen = $state(false);
+	let isTimelineOpen = $state(false);
+	let timelinePreferenceJobId = $state<string | null>(null);
+	let hasManualTimelinePreference = $state(false);
 	let planEditError = $state<string | null>(null);
 	let advanceError = $state<string | null>(null);
 	let failedFavicons = $state<Record<string, true>>({});
@@ -100,6 +104,10 @@
 	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
 	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
 	let timelineSteps = $derived(buildTimelineSteps(job));
+	let visibleTimelineSteps = $derived(buildVisibleTimelineSteps(job, timelineSteps));
+	let effectiveTimelineOpen = $derived(
+		timelinePreferenceJobId === job.id ? isTimelineOpen : shouldOpenTimelineByDefault(job)
+	);
 	let activeStage = $derived(timelineSteps.find((step) => step.status === 'active') ?? timelineSteps.at(-1) ?? null);
 	let progressRingClass = $derived(`research-card__progress-ring research-card__progress-ring--${stageProgressBand(job)}`);
 	let stageDetailRows = $derived(buildStageDetailRows(job));
@@ -147,6 +155,19 @@
 		'product_scan',
 		'limitation_focused',
 	] satisfies DeepResearchReportIntent[];
+
+	$effect(() => {
+		const defaultOpen = shouldOpenTimelineByDefault(job);
+		if (timelinePreferenceJobId !== job.id) {
+			timelinePreferenceJobId = job.id;
+			hasManualTimelinePreference = false;
+			isTimelineOpen = defaultOpen;
+			return;
+		}
+		if (!hasManualTimelinePreference && defaultOpen) {
+			isTimelineOpen = true;
+		}
+	});
 
 	function getResearchSeverity(
 		job: DeepResearchJob,
@@ -304,6 +325,16 @@
 		});
 	}
 
+	function buildVisibleTimelineSteps(job: DeepResearchJob, steps: TimelineStep[]): TimelineStep[] {
+		if (job.status !== 'running' && job.status !== 'approved') return steps;
+		return steps
+			.map((step) => ({
+				...step,
+				events: step.events.filter((event) => event.isMeaningful),
+			}))
+			.filter((step) => step.events.length > 0);
+	}
+
 	function stageProgressBand(job: DeepResearchJob): 'start' | 'early' | 'middle' | 'late' | 'done' {
 		const index = activeTimelineIndex(job);
 		if (job.status === 'completed') return 'done';
@@ -402,13 +433,23 @@
 	function buildTimelineEventViews(events: DeepResearchTimelineEvent[]): TimelineEventView[] {
 		let previousCounts: DeepResearchSourceCounts | null = null;
 		return events.map((event) => {
-			const countsChanged = !previousCounts || !sameSourceCounts(previousCounts, event.sourceCounts);
+			const countsChanged = previousCounts
+				? !sameSourceCounts(previousCounts, event.sourceCounts)
+				: hasAnySourceCounts(event.sourceCounts);
 			const showSourceCounts =
 				countsChanged || isSourceSpecificTimelineEvent(event) || event.warnings.length > 0;
+			const isMeaningful =
+				countsChanged ||
+				isSourceSpecificTimelineEvent(event) ||
+				isDecisionTimelineEvent(event) ||
+				isTerminalTimelineEvent(event) ||
+				event.assumptions.length > 0 ||
+				event.warnings.length > 0;
 			previousCounts = event.sourceCounts;
 			return {
 				...event,
 				showSourceCounts,
+				isMeaningful,
 			};
 		});
 	}
@@ -417,9 +458,60 @@
 		return a.discovered === b.discovered && a.reviewed === b.reviewed && a.cited === b.cited;
 	}
 
+	function hasAnySourceCounts(sourceCounts: DeepResearchSourceCounts): boolean {
+		return sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0;
+	}
+
 	function isSourceSpecificTimelineEvent(event: DeepResearchTimelineEvent): boolean {
 		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
 		return eventText.includes('source') || eventText.includes('citation');
+	}
+
+	function isDecisionTimelineEvent(event: DeepResearchTimelineEvent): boolean {
+		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+		return (
+			eventText.includes('coverage') ||
+			eventText.includes('repair') ||
+			eventText.includes('assumption')
+		);
+	}
+
+	function isTerminalTimelineEvent(event: DeepResearchTimelineEvent): boolean {
+		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+		return (
+			eventText.includes('completed') ||
+			eventText.includes('memo') ||
+			eventText.includes('failed') ||
+			eventText.includes('cancelled')
+		);
+	}
+
+	function countTimelineAttentionEvents(job: DeepResearchJob): number {
+		return (job.timeline ?? []).filter(
+			(event) => {
+				const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+				return (
+					event.warnings.length > 0 ||
+					eventText.includes('failed') ||
+					eventText.includes('failure') ||
+					eventText.includes('memo')
+				);
+			}
+		).length;
+	}
+
+	function shouldOpenTimelineByDefault(job: DeepResearchJob): boolean {
+		if (job.status !== 'running' && job.status !== 'approved') return true;
+		return countTimelineAttentionEvents(job) > 0;
+	}
+
+	function showTimelineStepLabel(job: DeepResearchJob): boolean {
+		return job.status !== 'running' && job.status !== 'approved';
+	}
+
+	function toggleTimeline() {
+		hasManualTimelinePreference = true;
+		isTimelineOpen = !effectiveTimelineOpen;
 	}
 
 	function timelineEventSummary(event: TimelineEventView): string {
@@ -946,44 +1038,67 @@
 		</section>
 	{/if}
 
-	{#if timelineSteps.length > 0}
+	{#if visibleTimelineSteps.length > 0}
 		<section class="research-card__timeline" aria-labelledby={`${job.id}-timeline-heading`}>
 			<div class="research-card__section-header">
 				<h3 id={`${job.id}-timeline-heading`}>{$t('deepResearch.timelineHeading')}</h3>
+				<button
+					type="button"
+					class="research-card__timeline-toggle"
+					aria-expanded={effectiveTimelineOpen}
+					aria-controls={`${job.id}-timeline-list`}
+					onclick={toggleTimeline}
+				>
+					{effectiveTimelineOpen ? $t('deepResearch.timeline.hide') : $t('deepResearch.timeline.show')}
+				</button>
 			</div>
 
-			<ol class="research-card__timeline-list">
-				{#each timelineSteps as step (step.id)}
-					<li class={`research-card__timeline-item research-card__timeline-item--${step.status}`}>
-						<div class="research-card__timeline-marker" aria-hidden="true"></div>
-						<div class="research-card__timeline-body">
-							<p class="research-card__timeline-summary">{$t(step.labelKey)}</p>
-							{#each step.events ?? [] as event (event.id)}
-								<div class="research-card__timeline-event">
-									<p>{timelineEventSummary(event)}</p>
-									{#if event.showSourceCounts}
-										<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
-											{#each sourceCountLabels(event.sourceCounts) as label}
-												<span>{label}</span>
-											{/each}
-										</div>
-									{/if}
-									{#if event.warnings.length > 0}
-										<div class="research-card__timeline-notes research-card__timeline-notes--warning">
-											<strong>{$t('deepResearch.timeline.warnings')}</strong>
-											<ul>
-												{#each event.warnings as warning}
-													<li>{warning}</li>
+			{#if effectiveTimelineOpen}
+				<ol id={`${job.id}-timeline-list`} class="research-card__timeline-list">
+					{#each visibleTimelineSteps as step (step.id)}
+						<li class={`research-card__timeline-item research-card__timeline-item--${step.status}`}>
+							<div class="research-card__timeline-marker" aria-hidden="true"></div>
+							<div class="research-card__timeline-body">
+								{#if showTimelineStepLabel(job)}
+									<p class="research-card__timeline-summary">{$t(step.labelKey)}</p>
+								{/if}
+								{#each step.events ?? [] as event (event.id)}
+									<div class="research-card__timeline-event">
+										<p>{timelineEventSummary(event)}</p>
+										{#if event.showSourceCounts}
+											<div class="research-card__source-counts" aria-label={$t('deepResearch.sourceCountsLabel')}>
+												{#each sourceCountLabels(event.sourceCounts) as label}
+													<span>{label}</span>
 												{/each}
-											</ul>
-										</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</li>
-				{/each}
-			</ol>
+											</div>
+										{/if}
+										{#if event.assumptions.length > 0}
+											<div class="research-card__timeline-notes">
+												<strong>{$t('deepResearch.timeline.assumptions')}</strong>
+												<ul>
+													{#each event.assumptions as assumption}
+														<li>{assumption}</li>
+													{/each}
+												</ul>
+											</div>
+										{/if}
+										{#if event.warnings.length > 0}
+											<div class="research-card__timeline-notes research-card__timeline-notes--warning">
+												<strong>{$t('deepResearch.timeline.warnings')}</strong>
+												<ul>
+													{#each event.warnings as warning}
+														<li>{warning}</li>
+													{/each}
+												</ul>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</li>
+					{/each}
+				</ol>
+			{/if}
 		</section>
 	{/if}
 
@@ -1370,6 +1485,23 @@
 		padding: 0;
 		list-style: none;
 		--research-timeline-marker-center: 0.61rem;
+	}
+
+	.research-card__timeline-toggle {
+		border: 1px solid rgba(94, 106, 210, 0.2);
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.78);
+		color: var(--text-primary);
+		font-size: 0.78rem;
+		font-weight: 700;
+		padding: 0.3rem 0.65rem;
+		cursor: pointer;
+	}
+
+	.research-card__timeline-toggle:hover,
+	.research-card__timeline-toggle:focus-visible {
+		border-color: rgba(94, 106, 210, 0.38);
+		background: rgba(255, 255, 255, 0.96);
 	}
 
 	.research-card__timeline-item {

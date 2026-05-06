@@ -263,7 +263,7 @@ describe('ResearchCard', () => {
 		await fireEvent.click(getByRole('button', { name: 'Show research progress details' }));
 
 		expect(getByRole('dialog', { name: 'Research progress details' })).toBeInTheDocument();
-		expect(getByText('Auditing citations')).toBeInTheDocument();
+		expect(getByText('Current stage: Auditing citations')).toBeInTheDocument();
 		expect(getByText('1 meaningful pass completed, 1 in progress')).toBeInTheDocument();
 		expect(getByText('1 open coverage gap')).toBeInTheDocument();
 		expect(getByText('1 claim conflict resolved')).toBeInTheDocument();
@@ -326,8 +326,8 @@ describe('ResearchCard', () => {
 		expect(onEdit).toHaveBeenCalledWith('research-job-1', '', 'recommendation');
 	});
 
-	it('shows a compact Activity Timeline with source counts and warnings', () => {
-		const { getByText, queryByText } = render(ResearchCard, {
+	it('shows meaningful Activity Timeline warnings and assumptions without manual expansion', () => {
+		const { getByRole, getByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'source_review',
@@ -357,19 +357,111 @@ describe('ResearchCard', () => {
 			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
 		});
 
+		expect(getByRole('button', { name: 'Hide Activity Timeline' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
 		expect(getByText('Activity Timeline')).toBeInTheDocument();
 		expect(getByText('Reviewed 5 candidate sources.')).toBeInTheDocument();
 		expect(getByText('12 discovered')).toBeInTheDocument();
 		expect(getByText('5 reviewed')).toBeInTheDocument();
 		expect(getByText('2 cited')).toBeInTheDocument();
-		expect(queryByText('Public web sources are enough for the initial pass.')).not.toBeInTheDocument();
-		expect(queryByText('Assumptions')).not.toBeInTheDocument();
+		expect(getByText('Assumptions')).toBeInTheDocument();
+		expect(getByText('Public web sources are enough for the initial pass.')).toBeInTheDocument();
+		expect(getByText('Warnings')).toBeInTheDocument();
 		expect(getByText('One source could not be opened and was skipped.')).toBeInTheDocument();
 	});
 
-	it('renders known timeline operational summaries in Hungarian instead of persisted English', () => {
+	it('collapses the Activity Timeline by default for routine running progress', async () => {
+		const { getByRole, getByText, queryByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'source_review',
+				timeline: [
+					{
+						id: 'timeline-1',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'source_review',
+						kind: 'stage_completed',
+						occurredAt: '2026-05-05T10:30:00.000Z',
+						messageKey: 'deepResearch.timeline.sourceReviewCompleted',
+						messageParams: {
+							reviewedSources: 5,
+						},
+						sourceCounts: {
+							discovered: 12,
+							reviewed: 5,
+							cited: 2,
+						},
+						assumptions: [],
+						warnings: [],
+						summary: 'Source review completed for 5 reviewed sources.',
+						createdAt: '2026-05-05T10:30:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		expect(getByText('Stage: Reviewing sources')).toBeInTheDocument();
+		const timelineToggle = getByRole('button', { name: 'Show Activity Timeline' });
+		expect(timelineToggle).toHaveAttribute('aria-expanded', 'false');
+		expect(queryByText('Source review completed for 5 reviewed sources.')).not.toBeInTheDocument();
+
+		await fireEvent.click(timelineToggle);
+
+		expect(timelineToggle).toHaveAttribute('aria-expanded', 'true');
+		expect(getByText('Source review completed for 5 reviewed sources.')).toBeInTheDocument();
+	});
+
+	it('auto-expands the Activity Timeline for memo/failure context while running', () => {
+		const { getByRole, getByText } = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: 'running',
+				stage: 'citation_audit_failed',
+				timeline: [
+					{
+						id: 'timeline-memo',
+						jobId: 'research-job-1',
+						conversationId: 'conv-1',
+						userId: 'user-1',
+						taskId: null,
+						stage: 'citation_audit_failed',
+						kind: 'memo_completed',
+						occurredAt: '2026-05-05T11:30:00.000Z',
+						messageKey: 'deepResearch.timeline.evidenceLimitationMemoCompleted',
+						messageParams: {},
+						sourceCounts: {
+							discovered: 4,
+							reviewed: 2,
+							cited: 0,
+						},
+						assumptions: [],
+						warnings: [],
+						summary:
+							'Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.',
+						createdAt: '2026-05-05T11:30:00.000Z',
+					},
+				],
+			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
+		});
+
+		expect(getByRole('button', { name: 'Hide Activity Timeline' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(
+			getByText(
+				'Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.'
+			)
+		).toBeInTheDocument();
+	});
+
+	it('renders known timeline operational summaries in Hungarian instead of persisted English', async () => {
 		uiLanguage.set('hu');
-		const { getAllByText, getByText, queryByText } = render(ResearchCard, {
+		const { getAllByText, getByRole, getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'source_review',
@@ -424,6 +516,8 @@ describe('ResearchCard', () => {
 			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
 		});
 
+		await fireEvent.click(getByRole('button', { name: 'Tevékenységi idővonal megjelenítése' }));
+
 		expect(getByText('12 nyilvános webes forrásjelölt felfedezve.')).toBeInTheDocument();
 		expect(getByText('Forrásáttekintés befejezve 5 áttekintett forrással.')).toBeInTheDocument();
 		expect(getAllByText('12 felfedezett').length).toBeGreaterThan(0);
@@ -433,8 +527,8 @@ describe('ResearchCard', () => {
 		expect(queryByText('Source review completed for 5 reviewed sources.')).not.toBeInTheDocument();
 	});
 
-	it('keeps timeline rows compact by omitting empty future filler stages', () => {
-		const { getByText, queryByText } = render(ResearchCard, {
+	it('suppresses routine running timeline rows already represented by the Stage pill', () => {
+		const { getByText, queryByRole, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'source_review',
@@ -442,14 +536,16 @@ describe('ResearchCard', () => {
 			}),
 		});
 
-		expect(getByText('Reviewing sources')).toBeInTheDocument();
+		expect(getByText('Stage: Reviewing sources')).toBeInTheDocument();
+		expect(queryByRole('region', { name: 'Activity Timeline' })).not.toBeInTheDocument();
+		expect(queryByText('Reviewing sources')).not.toBeInTheDocument();
 		expect(queryByText('Synthesizing')).not.toBeInTheDocument();
 		expect(queryByText('Writing report')).not.toBeInTheDocument();
 		expect(queryByText('Completed')).not.toBeInTheDocument();
 	});
 
-	it('suppresses repeated per-event source counts unless the event needs source context', () => {
-		const { getByText } = render(ResearchCard, {
+	it('suppresses repeated per-event source counts unless the event needs source context', async () => {
+		const { getByRole, getByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'report_writing',
@@ -542,6 +638,11 @@ describe('ResearchCard', () => {
 			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
 		});
 
+		expect(getByRole('button', { name: 'Hide Activity Timeline' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+
 		const coverageEvent = getByText('Checked coverage.').closest('.research-card__timeline-event');
 		const synthesisEvent = getByText('Synthesized findings.').closest('.research-card__timeline-event');
 		const citationEvent = getByText('Audited citations.').closest('.research-card__timeline-event');
@@ -554,8 +655,8 @@ describe('ResearchCard', () => {
 		expect(writingEvent).toHaveTextContent('Citation density was low in one section.');
 	});
 
-	it('shows per-event source counts when non-source timeline counts change', () => {
-		const { getByText } = render(ResearchCard, {
+	it('shows per-event source counts when non-source timeline counts change', async () => {
+		const { getByRole, getByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'synthesis',
@@ -605,6 +706,8 @@ describe('ResearchCard', () => {
 				],
 			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
 		});
+
+		await fireEvent.click(getByRole('button', { name: 'Show Activity Timeline' }));
 
 		const synthesisEvent = getByText('Synthesized findings after one more citation.').closest(
 			'.research-card__timeline-event'
@@ -741,8 +844,8 @@ describe('ResearchCard', () => {
 		expect(container.querySelector('.research-card__source-favicon')).toBe(iconSlot);
 	});
 
-	it('does not render unexpected private reasoning fields from timeline payloads', () => {
-		const { container, getByText, queryByText } = render(ResearchCard, {
+	it('does not render unexpected private reasoning fields from timeline payloads', async () => {
+		const { container, getByRole, getByText, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'running',
 				stage: 'source_discovery',
@@ -775,6 +878,8 @@ describe('ResearchCard', () => {
 				],
 			} as Partial<DeepResearchJob> & { timeline: unknown[] }),
 		});
+
+		await fireEvent.click(getByRole('button', { name: 'Show Activity Timeline' }));
 
 		expect(getByText('Discovered 8 candidate sources.')).toBeInTheDocument();
 		expect(queryByText(/chain-of-thought source strategy/)).not.toBeInTheDocument();
