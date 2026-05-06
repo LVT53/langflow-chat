@@ -24,7 +24,10 @@ export const POST: RequestHandler = async (event) => {
 	});
 
 	if (!action) {
-		return json({ error: 'Completed Research Report not found' }, { status: 404 });
+		return json(
+			{ error: 'Completed Research Report or Evidence Limitation Memo not found' },
+			{ status: 404 }
+		);
 	}
 
 	return json(action, { status: 201 });

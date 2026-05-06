@@ -132,19 +132,30 @@ export async function discussDeepResearchReport(
 	return requestJson<DeepResearchReportActionResult>(
 		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/report-actions/discuss`,
 		{ method: "POST" },
-		"Failed to discuss Research Report",
+		"Failed to discuss Deep Research artifact",
 		fetchImpl,
 	);
 }
 
 export async function researchFurtherFromDeepResearchReport(
 	jobId: string,
-	fetchImpl: FetchLike = fetch,
+	optionsOrFetch: FetchLike | { depth?: DeepResearchDepth; fetchImpl?: FetchLike } = fetch,
 ): Promise<DeepResearchResearchFurtherActionResult> {
+	const fetchImpl =
+		typeof optionsOrFetch === "function" ? optionsOrFetch : optionsOrFetch.fetchImpl ?? fetch;
+	const depth = typeof optionsOrFetch === "function" ? undefined : optionsOrFetch.depth;
 	return requestJson<DeepResearchResearchFurtherActionResult>(
 		`/api/deep-research/jobs/${encodeURIComponent(jobId)}/report-actions/research-further`,
-		{ method: "POST" },
-		"Failed to research further from Research Report",
+		{
+			method: "POST",
+			...(depth
+				? {
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ depth }),
+					}
+				: {}),
+		},
+		"Failed to research further from Deep Research artifact",
 		fetchImpl,
 	);
 }

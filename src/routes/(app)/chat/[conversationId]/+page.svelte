@@ -50,6 +50,7 @@ import type {
 	ContextDebugState,
 	ContextSourcesState,
 	ConversationContextStatus,
+	DeepResearchDepth,
 	DeepResearchJob,
 	DeepResearchReportIntent,
 	DocumentWorkspaceItem,
@@ -1153,19 +1154,24 @@ async function handleDiscussDeepResearchReport(jobId: string) {
 		}
 		await goto(`/chat/${action.conversation.id}?view=bootstrap`);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to discuss Research Report";
+		sendError = err instanceof Error ? err.message : "Failed to discuss Deep Research artifact";
 		throw err;
 	}
 }
 
-async function handleResearchFurtherFromDeepResearchReport(jobId: string) {
+async function handleResearchFurtherFromDeepResearchReport(
+	jobId: string,
+	options?: { depth?: DeepResearchDepth },
+) {
 	try {
-		const action = await researchFurtherFromDeepResearchReportRequest(jobId);
+		const action = await researchFurtherFromDeepResearchReportRequest(jobId, options);
 		upsertConversationLocal(action.conversation);
 		await goto(`/chat/${action.conversation.id}`);
 	} catch (err) {
 		sendError =
-			err instanceof Error ? err.message : "Failed to research further from Research Report";
+			err instanceof Error
+				? err.message
+				: "Failed to research further from Deep Research artifact";
 		throw err;
 	}
 }

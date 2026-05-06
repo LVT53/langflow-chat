@@ -189,6 +189,7 @@ type DeepResearchPlanVersionRow = typeof deepResearchPlanVersions.$inferSelect;
 type ResearchReportContext = {
 	job: DeepResearchJobRow;
 	report: typeof artifacts.$inferSelect;
+	artifactKind: 'report' | 'memo';
 };
 
 const OPEN_JOB_STATUS_FILTER = sql`${deepResearchJobs.status} NOT IN ('completed', 'failed', 'cancelled')`;
@@ -1674,7 +1675,7 @@ function toEvidenceLimitationMemoPayload(input: {
 export async function discussDeepResearchReport(
 	input: DiscussDeepResearchReportInput
 ): Promise<DeepResearchReportActionResult | null> {
-	const context = await loadCompletedResearchReportContext(input);
+	const context = await loadCompletedResearchArtifactContext(input);
 	if (!context) return null;
 
 	const conversation = await createConversation(
@@ -1692,7 +1693,7 @@ export async function discussDeepResearchReport(
 				undefined,
 				{
 					deepResearchReportContext: {
-						action: 'discuss',
+						action: context.artifactKind === 'memo' ? 'discuss_memo' : 'discuss',
 						sourceJobId: context.job.id,
 						sourceConversationId: context.job.conversationId,
 						reportArtifactId: context.report.id,
@@ -1721,7 +1722,7 @@ export async function discussDeepResearchReport(
 export async function researchFurtherFromDeepResearchReport(
 	input: ResearchFurtherFromDeepResearchReportInput
 ): Promise<ResearchFurtherReportActionResult | null> {
-	const context = await loadCompletedResearchReportContext(input);
+	const context = await loadCompletedResearchArtifactContext(input);
 	if (!context) return null;
 
 	const depth = input.depth ?? (context.job.depth as DeepResearchDepth);
@@ -1739,7 +1740,10 @@ export async function researchFurtherFromDeepResearchReport(
 		undefined,
 		{
 			deepResearchReportContext: {
-				action: 'research_further',
+				action:
+					context.artifactKind === 'memo'
+						? 'research_further_from_memo'
+						: 'research_further',
 				sourceJobId: context.job.id,
 				sourceConversationId: context.job.conversationId,
 				reportArtifactId: context.report.id,
@@ -1782,7 +1786,7 @@ export async function researchFurtherFromDeepResearchReport(
 	};
 }
 
-async function loadCompletedResearchReportContext(input: {
+async function loadCompletedResearchArtifactContext(input: {
 	userId: string;
 	jobId: string;
 }): Promise<ResearchReportContext | null> {
@@ -1803,10 +1807,11 @@ async function loadCompletedResearchReportContext(input: {
 		)
 		.limit(1);
 
-	if (!row || !isResearchReportArtifactMetadata(row.report.metadataJson)) {
+	const artifactKind = classifyDeepResearchCompletedArtifact(row?.report.metadataJson ?? null);
+	if (!row || !artifactKind) {
 		return null;
 	}
-	return row;
+	return { ...row, artifactKind };
 }
 
 async function loadArtifactById(input: {
@@ -1821,21 +1826,30 @@ async function loadArtifactById(input: {
 	return artifact ?? null;
 }
 
-function isResearchReportArtifactMetadata(metadataJson: string | null): boolean {
-	if (!metadataJson) return false;
+function classifyDeepResearchCompletedArtifact(metadataJson: string | null): 'report' | 'memo' | null {
+	if (!metadataJson) return null;
 	let metadata: unknown;
 	try {
 		metadata = JSON.parse(metadataJson);
 	} catch {
-		return false;
+		return null;
 	}
-	if (!metadata || typeof metadata !== 'object') return false;
+	if (!metadata || typeof metadata !== 'object') return null;
 	const record = metadata as Record<string, unknown>;
-	return (
+	if (
 		record.deepResearchReport === true &&
 		record.documentRole === 'research_report' &&
 		record.deepResearchEvidenceLimitationMemo !== true
-	);
+	) {
+		return 'report';
+	}
+	if (
+		record.deepResearchEvidenceLimitationMemo === true &&
+		record.documentRole === 'evidence_limitation_memo'
+	) {
+		return 'memo';
+	}
+	return null;
 }
 
 async function applyGeneratedResearchTitle(input: {
@@ -1893,20 +1907,24 @@ function buildDiscussReportSeedMessage(
 	researchLanguage: ResearchLanguage
 ): string {
 	if (researchLanguage === 'hu') {
+		const artifactLabel =
+			context.artifactKind === 'memo' ? 'bizonyítékkorlát-memót' : 'kutatási jelentést';
 		return [
-			`Beszéljük át ezt a kutatási jelentést: ${context.report.name}`,
+			`Beszéljük át ezt a ${artifactLabel}: ${context.report.name}`,
 			'',
 			`Forrás mély kutatási téma: ${context.job.title}`,
 			'',
-			'A csatolt kutatási jelentést használd munkakontextusként, és magyarul válaszolj.',
+			`A csatolt ${artifactLabel} használd munkakontextusként, és magyarul válaszolj.`,
 		].join('\n');
 	}
+	const artifactLabel =
+		context.artifactKind === 'memo' ? 'Evidence Limitation Memo' : 'Research Report';
 	return [
-		`Discuss this Research Report: ${context.report.name}`,
+		`Discuss this ${artifactLabel}: ${context.report.name}`,
 		'',
 		`Source Deep Research topic: ${context.job.title}`,
 		'',
-		'Use the attached Research Report as the working context for this normal chat.',
+		`Use the attached ${artifactLabel} as the working context for this normal chat.`,
 	].join('\n');
 }
 
@@ -1915,20 +1933,24 @@ function buildResearchFurtherSeedMessage(
 	researchLanguage: ResearchLanguage
 ): string {
 	if (researchLanguage === 'hu') {
+		const artifactLabel =
+			context.artifactKind === 'memo' ? 'bizonyítékkorlát-memóból' : 'kutatási jelentésből';
 		return [
-			`Kutass tovább ebből a kutatási jelentésből: ${context.report.name}`,
+			`Kutass tovább ebből a ${artifactLabel}: ${context.report.name}`,
 			'',
 			`Forrás mély kutatási téma: ${context.job.title}`,
 			'',
-			'A csatolt kutatási jelentést használd tervezési kontextusként, készíts új jóváhagyandó mély kutatási tervet, és magyarul válaszolj.',
+			'A csatolt anyagot használd tervezési kontextusként, készíts új jóváhagyandó mély kutatási tervet, és magyarul válaszolj.',
 		].join('\n');
 	}
+	const artifactLabel =
+		context.artifactKind === 'memo' ? 'Evidence Limitation Memo' : 'Research Report';
 	return [
-		`Research further from this Research Report: ${context.report.name}`,
+		`Research further from this ${artifactLabel}: ${context.report.name}`,
 		'',
 		`Source Deep Research topic: ${context.job.title}`,
 		'',
-		'Use the attached Research Report as planning context and draft a new Deep Research Plan for approval.',
+		`Use the attached ${artifactLabel} as planning context and draft a new Deep Research Plan for approval.`,
 	].join('\n');
 }
 

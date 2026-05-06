@@ -357,6 +357,59 @@ describe('MessageArea', () => {
 		expect(onResearchFurtherFromDeepResearchReport).toHaveBeenCalledWith('research-job-1');
 	});
 
+	it('routes Evidence Limitation Memo recovery buttons through card callbacks', async () => {
+		const onDiscussDeepResearchReport = vi.fn();
+		const onResearchFurtherFromDeepResearchReport = vi.fn();
+		const { getByRole } = render(MessageArea, {
+			messages: [],
+			conversationId: 'conv-1',
+			isThinkingActive: false,
+			contextDebug: null,
+			deepResearchJobs: [
+				makeDeepResearchJob({
+					status: 'completed',
+					stage: 'evidence_limitation_memo_ready',
+					depth: 'focused',
+					reportArtifactId: 'artifact-memo-1',
+					completedAt: Date.now(),
+					evidenceLimitationMemo: {
+						title: 'Evidence Limitation Memo',
+						reviewedScope: {
+							discoveredCount: 2,
+							reviewedCount: 1,
+							topicRelevantCount: 0,
+							rejectedOrOffTopicCount: 1,
+						},
+						limitations: ['No credible supported claim remained.'],
+						nextResearchDirection: 'Revise the plan.',
+						recoveryActions: [
+							{
+								kind: 'add_sources',
+								label: 'Add sources',
+								description: 'Attach stronger primary sources.',
+							},
+							{
+								kind: 'choose_deeper_depth',
+								label: 'Choose deeper depth',
+								description: 'Run a deeper follow-up.',
+							},
+						],
+					},
+				}),
+			],
+			onDiscussDeepResearchReport,
+			onResearchFurtherFromDeepResearchReport,
+		});
+
+		await fireEvent.click(getByRole('button', { name: 'Add sources' }));
+		await fireEvent.click(getByRole('button', { name: 'Choose deeper depth' }));
+
+		expect(onDiscussDeepResearchReport).toHaveBeenCalledWith('research-job-1');
+		expect(onResearchFurtherFromDeepResearchReport).toHaveBeenCalledWith('research-job-1', {
+			depth: 'standard',
+		});
+	});
+
 	it('routes manual Deep Research workflow advancement through the card callback', async () => {
 		const onAdvanceDeepResearchWorkflow = vi.fn();
 		const { getByRole } = render(MessageArea, {

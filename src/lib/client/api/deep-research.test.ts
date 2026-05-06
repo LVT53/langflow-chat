@@ -301,4 +301,54 @@ describe("deep-research client API", () => {
 			},
 		);
 	});
+
+	it("posts Research Further with an explicit depth override", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						sourceJobId: "job-1",
+						reportArtifactId: "artifact-1",
+						conversation: {
+							id: "conv-further-1",
+							title: "Research further: Research battery recycling policy",
+							projectId: null,
+							createdAt: 1,
+							updatedAt: 2,
+						},
+						messageId: "message-further-1",
+						job: {
+							id: "job-2",
+							conversationId: "conv-further-1",
+							triggerMessageId: "message-further-1",
+							depth: "max",
+							status: "awaiting_approval",
+							stage: "plan_drafted",
+							title: "Research further from this Evidence Limitation Memo",
+							createdAt: 1,
+							updatedAt: 2,
+						},
+					}),
+					{ status: 201, headers: { "Content-Type": "application/json" } },
+				),
+		);
+
+		await expect(
+			researchFurtherFromDeepResearchReport("job-1", {
+				depth: "max",
+				fetchImpl: fetchMock,
+			}),
+		).resolves.toMatchObject({
+			conversation: { id: "conv-further-1" },
+			job: { id: "job-2", depth: "max" },
+		});
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/deep-research/jobs/job-1/report-actions/research-further",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ depth: "max" }),
+			},
+		);
+	});
 });

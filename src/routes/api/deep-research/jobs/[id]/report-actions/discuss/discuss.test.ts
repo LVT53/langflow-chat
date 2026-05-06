@@ -69,13 +69,15 @@ describe('POST /api/deep-research/jobs/[id]/report-actions/discuss', () => {
 		});
 	});
 
-	it('returns not found when the completed Research Report is unavailable', async () => {
+	it('returns not found when the completed Research Report or memo is unavailable', async () => {
 		mockDiscussDeepResearchReport.mockResolvedValue(null);
 
 		const response = await POST(makeEvent());
 		const data = await response.json();
 
 		expect(response.status).toBe(404);
-		expect(data).toEqual({ error: 'Completed Research Report not found' });
+		expect(data).toEqual({
+			error: 'Completed Research Report or Evidence Limitation Memo not found',
+		});
 	});
 });

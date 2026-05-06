@@ -59,7 +59,9 @@ let {
 		| undefined;
 	onApproveDeepResearchPlan?: ((jobId: string) => void | Promise<void>) | undefined;
 	onDiscussDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
-	onResearchFurtherFromDeepResearchReport?: ((jobId: string) => void | Promise<void>) | undefined;
+	onResearchFurtherFromDeepResearchReport?:
+		| ((jobId: string, options?: { depth?: DeepResearchJob['depth'] }) => void | Promise<void>)
+		| undefined;
 	onAdvanceDeepResearchWorkflow?: ((jobId: string) => void | Promise<void>) | undefined;
 } = $props();
 

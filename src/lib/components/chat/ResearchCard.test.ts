@@ -1091,11 +1091,14 @@ describe('ResearchCard', () => {
 		expect(getByText('Research time 12m 03s')).toBeInTheDocument();
 	});
 
-	it('presents completed Evidence Limitation Memos as insufficient evidence instead of failed reports', () => {
+	it('presents completed Evidence Limitation Memos with actionable recovery buttons', async () => {
+		const onDiscussReport = vi.fn();
+		const onResearchFurther = vi.fn();
 		const { getAllByText, getByText, queryByRole, queryByText } = render(ResearchCard, {
 			job: makeDeepResearchJob({
 				status: 'completed',
 				stage: 'evidence_limitation_memo_ready',
+				depth: 'focused',
 				reportArtifactId: 'artifact-memo-1',
 				completedAt: Date.now(),
 				sourceCounts: {
@@ -1141,8 +1144,8 @@ describe('ResearchCard', () => {
 					],
 				},
 			} as Partial<DeepResearchJob> & { evidenceLimitationMemo: unknown }),
-			onDiscussReport: vi.fn(),
-			onResearchFurther: vi.fn(),
+			onDiscussReport,
+			onResearchFurther,
 		});
 
 		expect(getByText('Insufficient evidence')).toBeInTheDocument();
@@ -1165,6 +1168,18 @@ describe('ResearchCard', () => {
 		expect(getByText('Targeted follow-up')).toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Discuss Report' })).not.toBeInTheDocument();
 		expect(queryByRole('button', { name: 'Research Further' })).not.toBeInTheDocument();
+
+		await fireEvent.click(getByText('Revise plan'));
+		await fireEvent.click(getByText('Add sources'));
+		await fireEvent.click(getByText('Choose deeper depth'));
+		await fireEvent.click(getByText('Targeted follow-up'));
+
+		expect(onDiscussReport).toHaveBeenCalledWith('research-job-1');
+		expect(onResearchFurther).toHaveBeenNthCalledWith(1, 'research-job-1');
+		expect(onResearchFurther).toHaveBeenNthCalledWith(2, 'research-job-1', {
+			depth: 'standard',
+		});
+		expect(onResearchFurther).toHaveBeenNthCalledWith(3, 'research-job-1');
 	});
 
 	it('does not show Report Actions before a Research Report is completed', () => {

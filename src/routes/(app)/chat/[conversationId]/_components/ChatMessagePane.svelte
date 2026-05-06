@@ -53,7 +53,10 @@
 		) => void | Promise<void>;
 		onApproveDeepResearchPlan?: (jobId: string) => void | Promise<void>;
 		onDiscussDeepResearchReport?: (jobId: string) => void | Promise<void>;
-		onResearchFurtherFromDeepResearchReport?: (jobId: string) => void | Promise<void>;
+		onResearchFurtherFromDeepResearchReport?: (
+			jobId: string,
+			options?: { depth?: DeepResearchJob['depth'] }
+		) => void | Promise<void>;
 		onAdvanceDeepResearchWorkflow?: (jobId: string) => void | Promise<void>;
 	} = $props();
 </script>

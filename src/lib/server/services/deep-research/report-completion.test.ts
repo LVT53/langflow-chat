@@ -814,6 +814,7 @@ describe("audited Deep Research report completion", () => {
 		const discussResult = await discussDeepResearchReport({
 			userId: "user-1",
 			jobId: created.id,
+			persistSeedMessage: true,
 			now: new Date("2026-05-05T10:22:00.000Z"),
 		});
 		const researchFurtherResult = await researchFurtherFromDeepResearchReport({
@@ -849,8 +850,29 @@ describe("audited Deep Research report completion", () => {
 			id: created.id,
 			evidenceLimitationMemo: completedMemo?.evidenceLimitationMemo,
 		});
-		expect(discussResult).toBeNull();
-		expect(researchFurtherResult).toBeNull();
+		expect(discussResult).toMatchObject({
+			sourceJobId: created.id,
+			reportArtifactId: completedMemo?.reportArtifactId,
+			conversation: {
+				title: "Discuss: Assess unverified battery recycling claims",
+			},
+			messageId: expect.any(String),
+			seedMessage: expect.stringContaining("Evidence Limitation Memo"),
+		});
+		expect(researchFurtherResult).toMatchObject({
+			sourceJobId: created.id,
+			reportArtifactId: completedMemo?.reportArtifactId,
+			conversation: {
+				title: "Research further: Assess unverified battery recycling claims",
+			},
+			messageId: expect.any(String),
+			seedMessage: expect.stringContaining("Evidence Limitation Memo"),
+			job: {
+				status: "awaiting_approval",
+				stage: "plan_drafted",
+				depth: "max",
+			},
+		});
 		expect(completedMemo?.timeline).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

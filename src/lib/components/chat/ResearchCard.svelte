@@ -65,7 +65,9 @@
 		onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
 		onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
 		onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
-		onResearchFurther?: ((jobId: string) => void | Promise<void>) | undefined;
+		onResearchFurther?:
+			| ((jobId: string, options?: { depth?: DeepResearchDepth }) => void | Promise<void>)
+			| undefined;
 		onAdvanceResearch?: ((jobId: string) => void | Promise<void>) | undefined;
 	} = $props();
 
@@ -684,14 +686,40 @@
 		onOpenReport(reportDocument);
 	}
 
-	function discussReport() {
-		if (!reportDocument || !onDiscussReport) return;
+	function discussResearchArtifact() {
+		if (!onDiscussReport) return;
 		void onDiscussReport(job.id);
 	}
 
-	function researchFurther() {
-		if (!reportDocument || !onResearchFurther) return;
+	function researchFurther(options?: { depth?: DeepResearchDepth }) {
+		if (!onResearchFurther) return;
+		if (options) {
+			void onResearchFurther(job.id, options);
+			return;
+		}
 		void onResearchFurther(job.id);
+	}
+
+	function nextDeeperDepth(depth: DeepResearchDepth): DeepResearchDepth {
+		if (depth === 'focused') return 'standard';
+		return 'max';
+	}
+
+	function canRunMemoRecoveryAction(action: { kind: string }): boolean {
+		if (action.kind === 'add_sources') return Boolean(onDiscussReport);
+		return Boolean(onResearchFurther);
+	}
+
+	function runMemoRecoveryAction(action: { kind: string }) {
+		if (action.kind === 'add_sources') {
+			discussResearchArtifact();
+			return;
+		}
+		researchFurther(
+			action.kind === 'choose_deeper_depth'
+				? { depth: nextDeeperDepth(job.depth) }
+				: undefined
+		);
 	}
 
 	async function advanceResearch() {
@@ -1029,7 +1057,16 @@
 				<ul class="research-card__memo-actions">
 					{#each evidenceLimitationMemo.recoveryActions as action}
 						<li>
-							<span>{action.label}</span>
+							<button
+								type="button"
+								class="research-card__memo-action-button"
+								onclick={() => runMemoRecoveryAction(action)}
+								disabled={!canRunMemoRecoveryAction(action)}
+								aria-label={action.label}
+								title={action.label}
+							>
+								{action.label}
+							</button>
 							<p>{action.description}</p>
 						</li>
 					{/each}
@@ -1175,7 +1212,7 @@
 			<button
 				type="button"
 				class="research-card__action"
-				onclick={discussReport}
+				onclick={discussResearchArtifact}
 				disabled={!onDiscussReport}
 				aria-label={$t('deepResearch.discussReportLabel')}
 				title={$t('deepResearch.discussReportLabel')}
@@ -1185,7 +1222,7 @@
 			<button
 				type="button"
 				class="research-card__action"
-				onclick={researchFurther}
+				onclick={() => researchFurther()}
 				disabled={!onResearchFurther}
 				aria-label={$t('deepResearch.researchFurtherLabel')}
 				title={$t('deepResearch.researchFurtherLabel')}
@@ -1627,10 +1664,24 @@
 		padding: 0.45rem 0.55rem;
 	}
 
-	.research-card__memo-actions span {
-		display: block;
+	.research-card__memo-action-button {
+		border: 0;
+		background: none;
+		padding: 0;
+		text-align: left;
 		font-weight: 600;
 		color: var(--text-primary);
+		cursor: pointer;
+	}
+
+	.research-card__memo-action-button:hover:not(:disabled) {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+
+	.research-card__memo-action-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
 	}
 
 	.research-card__source-counts {
