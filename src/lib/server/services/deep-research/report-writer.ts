@@ -40,9 +40,10 @@ export type StructuredResearchReportReference = {
 	sourceIds: string[];
 };
 
-export type StructuredResearchReportTextBlock = StructuredResearchReportReference & {
-	text: string;
-};
+export type StructuredResearchReportTextBlock =
+	StructuredResearchReportReference & {
+		text: string;
+	};
 
 export type StructuredResearchReportCore = {
 	title: string;
@@ -54,10 +55,25 @@ export type StructuredResearchReportCore = {
 	sourceLedgerSnapshot: string;
 };
 
-export type StructuredResearchReportSection = StructuredResearchReportReference & {
-	heading: string;
-	body: string;
-};
+export type StructuredResearchReportSection =
+	StructuredResearchReportReference & {
+		heading: string;
+		body: string;
+	};
+
+export type StructuredResearchReportBlockKind =
+	| "summary"
+	| "findings"
+	| "section"
+	| "limitations"
+	| "appendix";
+
+export type StructuredResearchReportBlock =
+	StructuredResearchReportReference & {
+		kind: StructuredResearchReportBlockKind;
+		heading: string;
+		markdown: string;
+	};
 
 export type StructuredResearchReport = {
 	intent: ResearchPlan["reportIntent"];
@@ -74,6 +90,7 @@ export type ResearchReportDraft = {
 	sources: CitedResearchReportSource[];
 	limitations: string[];
 	structuredReport: StructuredResearchReport;
+	reportBlocks: StructuredResearchReportBlock[];
 	sourceLedgerSnapshotSources: ResearchReportSource[];
 	markdown: string;
 };
@@ -129,10 +146,26 @@ export type WriteEvidenceLimitationMemoInput = {
 };
 
 type ReportSectionKind = "methodology" | "comparison" | "recommendations";
+type EvidenceConfidenceCueKind =
+	| "official_spec"
+	| "vendor_claim"
+	| "dated_price"
+	| "owner_report";
+type EvidenceLimitationMemoReasonGroup =
+	| "source_coverage"
+	| "evidence_quality"
+	| "scope_fit"
+	| "other";
+
+type ComparisonEvidenceCell = {
+	text: string;
+	cue: EvidenceConfidenceCueKind | null;
+};
 
 export const MAX_REPORT_KEY_FINDINGS = 7;
 const MAX_EXECUTIVE_SUMMARY_FINDINGS = 3;
 const MAX_REPORT_TITLE_WORDS = 16;
+const MAX_EVIDENCE_LIMITATION_MEMO_REASONS = 5;
 
 const reportLabels: Record<
 	ResearchLanguage,
@@ -168,8 +201,15 @@ const reportLabels: Record<
 		recommendationsBody: string;
 		noFindingSummary: string;
 		executiveSummaryQuestion: (goal: string) => string;
+		answer: string;
+		appendix: (heading: string) => string;
 		analysisGoal: (goal: string) => string;
 		emptyBullet: string;
+		notEstablished: string;
+		decisionMeaning: string;
+		confidenceCues: string;
+		confidenceCueDescriptions: Record<EvidenceConfidenceCueKind, string>;
+		decisionMeaningBody: (axis: string, filledCellCount: number) => string;
 	}
 > = {
 	en: {
@@ -207,9 +247,24 @@ const reportLabels: Record<
 		noFindingSummary:
 			"The reviewed evidence did not produce a supported finding.",
 		executiveSummaryQuestion: (goal) => `Question: ${goal}`,
+		answer: "Answer",
+		appendix: (heading) => `Appendix: ${heading}`,
 		analysisGoal: (goal) =>
 			`This report addresses the approved Research Plan goal: ${goal}`,
 		emptyBullet: "None.",
+		notEstablished: "Not established",
+		decisionMeaning: "Decision Meaning",
+		confidenceCues: "Confidence cues",
+		confidenceCueDescriptions: {
+			official_spec: "**Official spec** = primary official specifications",
+			vendor_claim: "**Vendor claim** = vendor or affiliated claim",
+			dated_price: "**Dated price** = price or availability may have changed",
+			owner_report: "**Owner report** = user-reported experience",
+		},
+		decisionMeaningBody: (axis, filledCellCount) =>
+			filledCellCount > 1
+				? `${axis}: compare the supported differences directly, then weigh source confidence before choosing.`
+				: `${axis}: evidence is incomplete, so treat this row as a caveat rather than a deciding advantage.`,
 	},
 	hu: {
 		titlePrefix: "Kutatási jelentés",
@@ -247,9 +302,27 @@ const reportLabels: Record<
 		noFindingSummary:
 			"Az áttekintett bizonyítékok nem eredményeztek alátámasztott megállapítást.",
 		executiveSummaryQuestion: (goal) => `Kérdés: ${goal}`,
+		answer: "Válasz",
+		appendix: (heading) => `Függelék: ${heading}`,
 		analysisGoal: (goal) =>
 			`Ez a jelentés a jóváhagyott Kutatási terv céljára válaszol: ${goal}`,
 		emptyBullet: "Nincs.",
+		notEstablished: "Nincs megállapítva",
+		decisionMeaning: "Döntési jelentés",
+		confidenceCues: "Bizalmi jelzések",
+		confidenceCueDescriptions: {
+			official_spec:
+				"**Hivatalos specifikáció** = elsődleges hivatalos specifikáció",
+			vendor_claim: "**Gyártói állítás** = gyártói vagy kapcsolt állítás",
+			dated_price:
+				"**Dátumhoz kötött ár** = az ár vagy elérhetőség változhatott",
+			owner_report:
+				"**Tulajdonosi beszámoló** = felhasználói tapasztalati jelzés",
+		},
+		decisionMeaningBody: (axis, filledCellCount) =>
+			filledCellCount > 1
+				? `${axis}: hasonlítsd össze közvetlenül az alátámasztott különbségeket, majd mérlegeld a forrásbizalmat.`
+				: `${axis}: a bizonyíték hiányos, ezért ezt a sort inkább korlátként kezeld, ne döntő előnyként.`,
 	},
 };
 
@@ -259,19 +332,67 @@ const reportIntentSectionHeadings: Record<
 > = {
 	en: {
 		comparison: ["Comparison Matrix", "Decision Implications"],
-		recommendation: ["Recommendation", "Tradeoffs"],
-		investigation: ["Investigation Findings", "Open Questions"],
-		market_scan: ["Market Landscape", "Signals To Watch"],
-		product_scan: ["Product Scan", "Fit Assessment"],
-		limitation_focused: ["Memo", "Constraints And Next Steps"],
+		recommendation: [
+			"Recommendation",
+			"Ranked Options",
+			"Criteria Rubric",
+			"Fit/Risk Table",
+			"Next Actions",
+		],
+		investigation: [
+			"Timeline / Causal Map",
+			"Competing Explanations",
+			"Confidence And Open Questions",
+		],
+		market_scan: [
+			"Shortlist",
+			"Evaluation Rubric",
+			"Freshness / Pricing / Availability",
+			"Watchouts",
+		],
+		product_scan: [
+			"Shortlist",
+			"Evaluation Rubric",
+			"Freshness / Pricing / Availability",
+			"Watchouts",
+		],
+		limitation_focused: [
+			"Evidence Strength",
+			"Consensus And Conflict",
+			"Strength-Tied Limitations",
+		],
 	},
 	hu: {
 		comparison: ["Összehasonlító mátrix", "Döntési következmények"],
-		recommendation: ["Ajánlás", "Kompromisszumok"],
-		investigation: ["Vizsgálati megállapítások", "Nyitott kérdések"],
-		market_scan: ["Piaci körkép", "Figyelendő jelzések"],
-		product_scan: ["Termékáttekintés", "Illeszkedés értékelése"],
-		limitation_focused: ["Memó", "Korlátok és következő lépések"],
+		recommendation: [
+			"Ajánlás",
+			"Rangsorolt opciók",
+			"Értékelési rubrika",
+			"Illeszkedés/kockázat tábla",
+			"Következő lépések",
+		],
+		investigation: [
+			"Idővonal / oksági térkép",
+			"Versengő magyarázatok",
+			"Bizonyosság és nyitott kérdések",
+		],
+		market_scan: [
+			"Rövidlista",
+			"Értékelési rubrika",
+			"Frissesség / ár / elérhetőség",
+			"Figyelmeztetések",
+		],
+		product_scan: [
+			"Rövidlista",
+			"Értékelési rubrika",
+			"Frissesség / ár / elérhetőség",
+			"Figyelmeztetések",
+		],
+		limitation_focused: [
+			"Bizonyíték erőssége",
+			"Konszenzus és konfliktus",
+			"Erősséghez kötött korlátok",
+		],
 	},
 };
 
@@ -280,13 +401,18 @@ const evidenceLimitationMemoLabels: Record<
 	{
 		titlePrefix: string;
 		reviewedScope: string;
+		scopeItem: string;
+		count: string;
 		discoveredSources: string;
 		reviewedSources: string;
 		topicRelevantReviewedSources: string;
 		rejectedOrOffTopicSources: string;
 		groundedLimitationReasons: string;
+		limitationReasonGroups: Record<EvidenceLimitationMemoReasonGroup, string>;
+		additionalLimitationReasons: (count: number) => string;
 		nextResearchDirection: string;
 		recoveryActions: string;
+		sourceLedgerDetailAppendix: string;
 		defaultNextResearchDirection: string;
 		emptyLimitation: string;
 		actions: Record<
@@ -298,13 +424,24 @@ const evidenceLimitationMemoLabels: Record<
 	en: {
 		titlePrefix: "Evidence Limitation Memo",
 		reviewedScope: "Reviewed Scope",
+		scopeItem: "Scope item",
+		count: "Count",
 		discoveredSources: "Discovered sources",
 		reviewedSources: "Reviewed sources",
 		topicRelevantReviewedSources: "Topic-relevant reviewed sources",
 		rejectedOrOffTopicSources: "Rejected or off-topic sources",
 		groundedLimitationReasons: "Grounded Limitation Reasons",
+		limitationReasonGroups: {
+			source_coverage: "Source coverage",
+			evidence_quality: "Evidence quality",
+			scope_fit: "Scope fit",
+			other: "Other grounded reasons",
+		},
+		additionalLimitationReasons: (count) =>
+			`${count} more grounded reasons are retained in the memo metadata and source detail.`,
 		nextResearchDirection: "Next Research Direction",
-		recoveryActions: "Memo Recovery Actions",
+		recoveryActions: "Recovery Actions",
+		sourceLedgerDetailAppendix: "Appendix: Source Ledger Detail",
 		defaultNextResearchDirection:
 			"Revise the Research Plan or add more topic-relevant sources before requesting a report.",
 		emptyLimitation:
@@ -335,13 +472,24 @@ const evidenceLimitationMemoLabels: Record<
 	hu: {
 		titlePrefix: "Bizonyítékkorlát-memó",
 		reviewedScope: "Áttekintett hatókör",
+		scopeItem: "Hatóköri elem",
+		count: "Darab",
 		discoveredSources: "Felfedezett források",
 		reviewedSources: "Áttekintett források",
 		topicRelevantReviewedSources: "Témához illeszkedő áttekintett források",
 		rejectedOrOffTopicSources: "Elutasított vagy témán kívüli források",
 		groundedLimitationReasons: "Megalapozott korlátozási okok",
+		limitationReasonGroups: {
+			source_coverage: "Forráslefedettség",
+			evidence_quality: "Bizonyítékminőség",
+			scope_fit: "Hatóköri illeszkedés",
+			other: "Egyéb megalapozott okok",
+		},
+		additionalLimitationReasons: (count) =>
+			`${count} további megalapozott ok megmarad a memó metaadataiban és a forrásrészletekben.`,
 		nextResearchDirection: "Következő kutatási irány",
 		recoveryActions: "Memó helyreállítási műveletek",
+		sourceLedgerDetailAppendix: "Függelék: Forrásnapló részletei",
 		defaultNextResearchDirection:
 			"Módosítsd a kutatási tervet, vagy adj hozzá több témához illeszkedő forrást, mielőtt jelentést kérsz.",
 		emptyLimitation:
@@ -381,7 +529,7 @@ export function writeResearchReport(
 			(limitation) => limitation.statement,
 		),
 		...(input.limitations ?? []),
-		]
+	]
 		.map(normalizeText)
 		.filter(Boolean);
 	const title = buildReportTitle(input.plan.goal, researchLanguage);
@@ -390,51 +538,47 @@ export function writeResearchReport(
 		title,
 		researchLanguage,
 	});
-	const sourceLedgerSnapshotSources = selectSourceLedgerSnapshotSources(input.sources);
+	const sourceLedgerSnapshotSources = selectSourceLedgerSnapshotSources(
+		input.sources,
+	);
 	validateStructuredResearchReport(structuredReport);
-	const citedSources =
-		useVerifiedClaims
-			? buildCitedSourcesFromStructuredReport(structuredReport, input.sources)
-			: buildCitedSources(input.synthesisNotes, input.sources);
-	const keyFindings =
-		useVerifiedClaims
-			? structuredReport.core.keyFindings.map((finding) =>
-					formatStructuredTextBlockWithCitations(finding, citedSources),
-				)
-			: selectResearchReportFindings(input.synthesisNotes).map((finding) =>
-					formatFindingWithCitations(finding, citedSources),
-				);
+	const citedSources = useVerifiedClaims
+		? buildCitedSourcesFromStructuredReport(structuredReport, input.sources)
+		: buildCitedSources(input.synthesisNotes, input.sources);
+	const keyFindings = useVerifiedClaims
+		? structuredReport.core.keyFindings.map((finding) =>
+				formatStructuredTextBlockWithCitations(finding, citedSources),
+			)
+		: selectResearchReportFindings(input.synthesisNotes).map((finding) =>
+				formatFindingWithCitations(finding, citedSources),
+			);
 	assertReadableReportFindings(keyFindings, citedSources);
-	const executiveSummary =
-		useVerifiedClaims
-			? formatStructuredTextBlockWithCitations(
-					structuredReport.core.executiveSummary,
-					citedSources,
-				)
-			: buildExecutiveSummary(input.plan, keyFindings, researchLanguage);
-	const sections =
-		useVerifiedClaims
-			? buildStructuredReportSectionsForMarkdown(
-					structuredReport,
-					citedSources,
-					researchLanguage,
-				)
-			: buildReportSections(input.plan, keyFindings, researchLanguage);
-	const markdown = renderReportMarkdown({
-		title,
+	const executiveSummary = useVerifiedClaims
+		? formatStructuredTextBlockWithCitations(
+				structuredReport.core.executiveSummary,
+				citedSources,
+			)
+		: buildExecutiveSummary(input.plan, keyFindings, researchLanguage);
+	const sections = useVerifiedClaims
+		? buildStructuredReportSectionsForMarkdown(structuredReport, citedSources)
+		: buildReportSections(input.plan, keyFindings, researchLanguage);
+	const renderedLimitations = useVerifiedClaims
+		? structuredReport.core.limitations.map((limitation) =>
+				formatStructuredTextBlockWithCitations(limitation, citedSources),
+			)
+		: limitations;
+	const reportBlocks = buildResearchReportBlocks({
 		executiveSummary,
 		keyFindings,
 		sections,
 		sources: citedSources,
-		limitations:
-			useVerifiedClaims
-				? structuredReport.core.limitations.map((limitation) =>
-						formatStructuredTextBlockWithCitations(limitation, citedSources),
-					)
-				: limitations,
+		limitations: renderedLimitations,
 		sourceLedgerSnapshot: structuredReport.core.sourceLedgerSnapshot,
+		structuredReport,
 		researchLanguage,
+		useAnswerFirstLayout: useVerifiedClaims,
 	});
+	const markdown = renderReportMarkdownFromBlocks(title, reportBlocks);
 
 	return {
 		jobId: input.jobId,
@@ -443,13 +587,9 @@ export function writeResearchReport(
 		keyFindings,
 		sections,
 		sources: citedSources,
-		limitations:
-			useVerifiedClaims
-				? structuredReport.core.limitations.map((limitation) =>
-						formatStructuredTextBlockWithCitations(limitation, citedSources),
-					)
-				: limitations,
+		limitations: renderedLimitations,
 		structuredReport,
+		reportBlocks,
 		sourceLedgerSnapshotSources,
 		markdown,
 	};
@@ -467,9 +607,8 @@ export function writeEvidenceLimitationMemo(
 	const nextResearchDirection =
 		normalizeText(input.nextResearchDirection ?? "") ||
 		labels.defaultNextResearchDirection;
-	const recoveryActions = buildEvidenceLimitationMemoRecoveryActions(
-		researchLanguage,
-	);
+	const recoveryActions =
+		buildEvidenceLimitationMemoRecoveryActions(researchLanguage);
 	const sourceLedgerSnapshot = buildSourceLedgerSnapshot(
 		input.sources ?? [],
 		researchLanguage,
@@ -525,10 +664,12 @@ export function selectResearchReportFindings(
 	return findings;
 }
 
-function buildStructuredResearchReport(input: WriteResearchReportInput & {
-	title: string;
-	researchLanguage: ResearchLanguage;
-}): StructuredResearchReport {
+function buildStructuredResearchReport(
+	input: WriteResearchReportInput & {
+		title: string;
+		researchLanguage: ResearchLanguage;
+	},
+): StructuredResearchReport {
 	if (hasVerifiedClaimInput(input)) {
 		return buildStructuredResearchReportFromClaims(input);
 	}
@@ -563,7 +704,9 @@ function buildStructuredResearchReport(input: WriteResearchReportInput & {
 				evidenceLinkIds: keyFindings.flatMap(
 					(finding) => finding.evidenceLinkIds,
 				),
-				sourceIds: uniqueValues(keyFindings.flatMap((finding) => finding.sourceIds)),
+				sourceIds: uniqueValues(
+					keyFindings.flatMap((finding) => finding.sourceIds),
+				),
 			},
 			keyFindings,
 			methodologySourceBasis: buildMethodologySourceBasis(
@@ -598,19 +741,47 @@ function hasVerifiedClaimInput(input: WriteResearchReportInput): boolean {
 	);
 }
 
-function buildStructuredResearchReportFromClaims(input: WriteResearchReportInput & {
-	title: string;
-	researchLanguage: ResearchLanguage;
-}): StructuredResearchReport {
+function buildStructuredResearchReportFromClaims(
+	input: WriteResearchReportInput & {
+		title: string;
+		researchLanguage: ResearchLanguage;
+	},
+): StructuredResearchReport {
 	const evidenceById = new Map(
 		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
 	);
 	const claimBlocks = (input.synthesisClaims ?? [])
-		.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+		.filter(
+			(claim) => claim.status === "accepted" || claim.status === "limited",
+		)
 		.map((claim) => buildStructuredTextBlockFromClaim(claim, evidenceById))
 		.filter((block): block is StructuredResearchReportTextBlock =>
 			Boolean(block),
 		)
+		.reduce<StructuredResearchReportTextBlock[]>((blocks, block) => {
+			const duplicate = blocks.find(
+				(item) =>
+					normalizeFindingForReadabilityCheck(item.text) ===
+					normalizeFindingForReadabilityCheck(block.text),
+			);
+			if (!duplicate) {
+				blocks.push(block);
+				return blocks;
+			}
+			duplicate.claimIds = uniqueValues([
+				...duplicate.claimIds,
+				...block.claimIds,
+			]);
+			duplicate.evidenceLinkIds = uniqueValues([
+				...duplicate.evidenceLinkIds,
+				...block.evidenceLinkIds,
+			]);
+			duplicate.sourceIds = uniqueValues([
+				...duplicate.sourceIds,
+				...block.sourceIds,
+			]);
+			return blocks;
+		}, [])
 		.slice(0, MAX_REPORT_KEY_FINDINGS);
 	const limitations = [
 		...claimBlocks
@@ -660,6 +831,7 @@ function buildStructuredResearchReportFromClaims(input: WriteResearchReportInput
 			input.plan,
 			claimBlocks,
 			input.researchLanguage,
+			input,
 		),
 	};
 }
@@ -702,7 +874,9 @@ function sourceIdsFromEvidenceNote(note: DeepResearchEvidenceNote): string[] {
 	);
 }
 
-function buildStructuredLimitationsFromText(input: WriteResearchReportInput): StructuredResearchReportTextBlock[] {
+function buildStructuredLimitationsFromText(
+	input: WriteResearchReportInput,
+): StructuredResearchReportTextBlock[] {
 	return [
 		...input.synthesisNotes.reportLimitations.map(
 			(limitation) => limitation.statement,
@@ -801,20 +975,760 @@ function buildStructuredSectionsFromClaims(
 	plan: ResearchPlan,
 	keyFindings: StructuredResearchReportTextBlock[],
 	researchLanguage: ResearchLanguage,
+	input?: WriteResearchReportInput,
 ): StructuredResearchReportSection[] {
 	const references = {
 		claimIds: uniqueValues(keyFindings.flatMap((finding) => finding.claimIds)),
 		evidenceLinkIds: uniqueValues(
 			keyFindings.flatMap((finding) => finding.evidenceLinkIds),
 		),
-		sourceIds: uniqueValues(keyFindings.flatMap((finding) => finding.sourceIds)),
+		sourceIds: uniqueValues(
+			keyFindings.flatMap((finding) => finding.sourceIds),
+		),
 	};
-	const claimBody = keyFindings.map((finding) => `- ${finding.text}`).join("\n");
-	return sectionHeadingsForIntent(plan.reportIntent, researchLanguage).map((heading) => ({
-		heading,
-		body: claimBody,
-		...references,
-	}));
+	const claimBody = keyFindings
+		.map((finding) => `- ${finding.text}`)
+		.join("\n");
+	const headings = sectionHeadingsForIntent(
+		plan.reportIntent,
+		researchLanguage,
+	);
+	return headings.map((heading, index) => {
+		if (input && isMatrixComparisonSection(plan, index)) {
+			return {
+				heading,
+				body: buildDecisionBriefComparisonMatrix(input, researchLanguage),
+				...references,
+			};
+		}
+		if (input && plan.reportIntent === "comparison" && index > 0) {
+			return {
+				heading,
+				body: buildDecisionImplicationsBody(
+					plan,
+					input.evidenceNotes ?? [],
+					researchLanguage,
+				),
+				...references,
+			};
+		}
+		if (input && plan.reportIntent === "recommendation") {
+			return {
+				heading,
+				body: buildRecommendationReportSectionBody(
+					index,
+					input,
+					keyFindings,
+					researchLanguage,
+				),
+				...references,
+			};
+		}
+		if (input && plan.reportIntent === "investigation") {
+			return {
+				heading,
+				body: buildInvestigationReportSectionBody(index, input, keyFindings),
+				...references,
+			};
+		}
+		if (
+			input &&
+			(plan.reportIntent === "market_scan" ||
+				plan.reportIntent === "product_scan")
+		) {
+			return {
+				heading,
+				body: buildScanReportSectionBody(index, input, keyFindings),
+				...references,
+			};
+		}
+		if (input && plan.reportIntent === "limitation_focused") {
+			return {
+				heading,
+				body: buildEvidenceReviewSectionBody(index, input, keyFindings),
+				...references,
+			};
+		}
+		return {
+			heading,
+			body: claimBody,
+			...references,
+		};
+	});
+}
+
+function buildEvidenceReviewSectionBody(
+	sectionIndex: number,
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+): string {
+	const notes = input.evidenceNotes ?? [];
+	if (sectionIndex === 0) {
+		return [
+			"| Claim | Strength | Evidence basis |",
+			"| --- | --- | --- |",
+			...keyFindings.map((finding) => {
+				const note = findEvidenceNoteForFinding(finding, notes);
+				return `| ${escapeMarkdownTableCell(finding.text)} | ${escapeMarkdownTableCell(evidenceStrengthLabel(note))} | ${escapeMarkdownTableCell(note?.findingText ?? finding.text)} |`;
+			}),
+		].join("\n");
+	}
+
+	if (sectionIndex === 1) {
+		const consensus = notes.filter((note) => {
+			const text = normalizeComparisonKey(
+				`${note.comparedEntity ?? ""} ${note.comparisonAxis ?? ""} ${note.findingText}`,
+			);
+			return text.includes("consensus") || text.includes("agree");
+		});
+		const conflicts = notes.filter((note) => {
+			const text = normalizeComparisonKey(
+				`${note.comparedEntity ?? ""} ${note.comparisonAxis ?? ""} ${note.findingText}`,
+			);
+			return text.includes("conflict") || text.includes("disagree");
+		});
+		return [
+			...renderConsensusConflictBullets("Consensus", consensus),
+			...renderConsensusConflictBullets("Conflict", conflicts),
+		].join("\n");
+	}
+
+	const explicitLimitations = [
+		...input.synthesisNotes.reportLimitations.map(
+			(limitation) => limitation.statement,
+		),
+		...(input.limitations ?? []),
+	]
+		.map(normalizeText)
+		.filter(Boolean);
+	const strengthLimitations = notes
+		.filter((note) => evidenceStrengthLabel(note) !== "Strong")
+		.map(
+			(note) => `- Limitation tied to evidence strength: ${note.findingText}`,
+		);
+	return [
+		...(strengthLimitations.length > 0
+			? strengthLimitations
+			: [
+					"- Limitation tied to evidence strength: No material weakness was identified in the reviewed evidence.",
+				]),
+		...explicitLimitations.map(
+			(limitation) => `- Limitation tied to evidence strength: ${limitation}`,
+		),
+	].join("\n");
+}
+
+function findEvidenceNoteForFinding(
+	finding: StructuredResearchReportTextBlock,
+	evidenceNotes: DeepResearchEvidenceNote[],
+): DeepResearchEvidenceNote | null {
+	return (
+		evidenceNotes.find((note) => finding.text === note.findingText) ??
+		evidenceNotes.find((note) =>
+			normalizeComparisonKey(finding.text).includes(
+				normalizeComparisonKey(note.findingText),
+			),
+		) ??
+		null
+	);
+}
+
+function evidenceStrengthLabel(note: DeepResearchEvidenceNote | null): string {
+	const signals = note?.sourceQualitySignals;
+	if (
+		signals?.claimFit === "strong" &&
+		signals.extractionConfidence === "high" &&
+		signals.directness === "direct"
+	) {
+		return "Strong";
+	}
+	if (
+		signals?.claimFit === "partial" ||
+		signals?.directness === "anecdotal" ||
+		signals?.extractionConfidence === "medium"
+	) {
+		return "Limited";
+	}
+	return "Moderate";
+}
+
+function renderConsensusConflictBullets(
+	label: "Consensus" | "Conflict",
+	notes: DeepResearchEvidenceNote[],
+): string[] {
+	if (notes.length === 0) {
+		return [`- **${label}**: Not established in the reviewed evidence.`];
+	}
+	return notes.map((note) => `- **${label}**: ${note.findingText}`);
+}
+
+function buildScanReportSectionBody(
+	sectionIndex: number,
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+): string {
+	const candidates = recommendationOptions(input, keyFindings);
+	const criteria = recommendationCriteria(input, keyFindings);
+	const notes = input.evidenceNotes ?? [];
+	const primaryFinding = keyFindings[0]?.text ?? "Evidence not established.";
+
+	if (sectionIndex === 0) {
+		return [
+			"| Candidate | Signal | Evidence basis |",
+			"| --- | --- | --- |",
+			...candidates.map((candidate) => {
+				const evidence = findTextForEntity(candidate, keyFindings, notes);
+				return `| ${escapeMarkdownTableCell(candidate)} | ${escapeMarkdownTableCell(scanSignalForCandidate(candidate, notes))} | ${escapeMarkdownTableCell(evidence ?? primaryFinding)} |`;
+			}),
+		].join("\n");
+	}
+
+	if (sectionIndex === 1) {
+		return [
+			"| Criterion | What to check | Evidence basis |",
+			"| --- | --- | --- |",
+			...criteria.map((criterion) => {
+				const evidence = findTextForAxis(criterion, keyFindings, notes);
+				return `| ${escapeMarkdownTableCell(criterion)} | ${escapeMarkdownTableCell(
+					`Check ${criterion.toLowerCase()} against current buyer needs and source quality.`,
+				)} | ${escapeMarkdownTableCell(evidence ?? primaryFinding)} |`;
+			}),
+		].join("\n");
+	}
+
+	if (sectionIndex === 2) {
+		const trackedAxes = ["Pricing", "Availability", "Freshness"];
+		return trackedAxes
+			.map((axis) => {
+				const evidence = findTextForAxis(axis, keyFindings, notes);
+				return `- **${axis}**: ${evidence ?? "Not established in the reviewed evidence."}`;
+			})
+			.join("\n");
+	}
+
+	const watchouts = notes
+		.filter((note) => {
+			const text = normalizeComparisonKey(
+				`${note.comparisonAxis ?? ""} ${note.findingText}`,
+			);
+			return (
+				text.includes("dated") ||
+				text.includes("regional") ||
+				text.includes("risk") ||
+				text.includes("limited") ||
+				text.includes("availability") ||
+				note.sourceQualitySignals?.freshness === "dated" ||
+				note.sourceQualitySignals?.claimFit === "partial"
+			);
+		})
+		.map((note) => `- Watchout: ${note.findingText}`);
+	return (
+		watchouts.length > 0
+			? watchouts
+			: ["- Watchout: Treat missing shortlist cells as evidence gaps."]
+	).join("\n");
+}
+
+function scanSignalForCandidate(
+	candidate: string,
+	evidenceNotes: DeepResearchEvidenceNote[],
+): string {
+	const normalizedCandidate = normalizeComparisonKey(candidate);
+	const candidateNotes = evidenceNotes.filter(
+		(note) =>
+			normalizeComparisonKey(note.comparedEntity ?? "") === normalizedCandidate,
+	);
+	if (
+		candidateNotes.some(
+			(note) => note.sourceQualitySignals?.freshness === "dated",
+		)
+	) {
+		return "Dated or changing signal";
+	}
+	if (
+		candidateNotes.some((note) =>
+			normalizeComparisonKey(note.findingText).includes("regional"),
+		)
+	) {
+		return "Availability-constrained signal";
+	}
+	return "Supported shortlist signal";
+}
+
+function buildInvestigationReportSectionBody(
+	sectionIndex: number,
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+): string {
+	const notes = input.evidenceNotes ?? [];
+	if (sectionIndex === 0) {
+		const mappedNotes = notes.length > 0 ? notes : [];
+		return [
+			"| Sequence | Event or factor | Evidence basis |",
+			"| --- | --- | --- |",
+			...(mappedNotes.length > 0
+				? mappedNotes.map((note, index) => {
+						const factor =
+							normalizeText(note.comparedEntity ?? "") ||
+							normalizeText(note.comparisonAxis ?? "") ||
+							`Finding ${index + 1}`;
+						return `| ${index + 1} | ${escapeMarkdownTableCell(factor)} | ${escapeMarkdownTableCell(note.findingText)} |`;
+					})
+				: keyFindings.map(
+						(finding, index) =>
+							`| ${index + 1} | Finding ${index + 1} | ${escapeMarkdownTableCell(finding.text)} |`,
+					)),
+		].join("\n");
+	}
+
+	if (sectionIndex === 1) {
+		const explanations = uniqueValues(
+			notes
+				.map((note) => normalizeText(note.comparedEntity ?? ""))
+				.filter(Boolean),
+		);
+		const candidates =
+			explanations.length > 0
+				? explanations
+				: keyFindings.map((_finding, index) => `Explanation ${index + 1}`);
+		return candidates
+			.map((candidate, index) => {
+				const evidence =
+					findTextForEntity(candidate, keyFindings, notes) ??
+					keyFindings[index]?.text ??
+					"Evidence not established.";
+				return `- **${candidate}**: ${evidence}`;
+			})
+			.join("\n");
+	}
+
+	const confidence =
+		keyFindings.length >= 2
+			? "Confidence: moderate. Multiple supported findings point to a likely explanation, but remaining gaps still matter."
+			: "Confidence: limited. The evidence base supports a conclusion, but more corroboration is needed.";
+	const openQuestions = input.plan.keyQuestions.map(
+		(question) => `- Open question: ${question}`,
+	);
+	return [confidence, ...openQuestions].join("\n");
+}
+
+function buildRecommendationReportSectionBody(
+	sectionIndex: number,
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	const options = recommendationOptions(input, keyFindings);
+	const criteria = recommendationCriteria(input, keyFindings);
+	const primaryFinding = keyFindings[0]?.text ?? labels.noFindingSummary;
+
+	if (sectionIndex === 0) {
+		const topOption = options[0];
+		return topOption
+			? `Recommend **${topOption}** first, based on the strongest supported finding: ${primaryFinding}`
+			: `${labels.bottomLine}: ${primaryFinding}`;
+	}
+
+	if (sectionIndex === 1) {
+		return options
+			.map((option, index) => {
+				const evidence = findTextForEntity(
+					option,
+					keyFindings,
+					input.evidenceNotes,
+				);
+				return `${index + 1}. **${option}** - ${evidence ?? primaryFinding}`;
+			})
+			.join("\n");
+	}
+
+	if (sectionIndex === 2) {
+		return [
+			"| Criterion | Why it matters | Evidence basis |",
+			"| --- | --- | --- |",
+			...criteria.map((criterion) => {
+				const evidence = findTextForAxis(
+					criterion,
+					keyFindings,
+					input.evidenceNotes,
+				);
+				return `| ${escapeMarkdownTableCell(criterion)} | ${escapeMarkdownTableCell(
+					`Use this to judge whether the recommendation fits ${input.plan.goal}.`,
+				)} | ${escapeMarkdownTableCell(evidence ?? primaryFinding)} |`;
+			}),
+		].join("\n");
+	}
+
+	if (sectionIndex === 3) {
+		return [
+			"| Option | Best fit | Main risk | Evidence basis |",
+			"| --- | --- | --- | --- |",
+			...options.map((option) => {
+				const evidence = findTextForEntity(
+					option,
+					keyFindings,
+					input.evidenceNotes,
+				);
+				const risk = findRiskTextForEntity(
+					option,
+					keyFindings,
+					input.evidenceNotes,
+				);
+				return `| ${escapeMarkdownTableCell(option)} | ${escapeMarkdownTableCell(
+					evidence ?? primaryFinding,
+				)} | ${escapeMarkdownTableCell(risk ?? "Evidence gap to validate before rollout.")} | ${escapeMarkdownTableCell(
+					evidence ?? primaryFinding,
+				)} |`;
+			}),
+		].join("\n");
+	}
+
+	return [
+		`- Validate the top-ranked option against the highest-weight criteria: ${criteria.join("; ") || input.plan.goal}.`,
+		"- Confirm unresolved risks with current primary sources before commitment.",
+		"- Revisit the ranked options if new evidence changes a key criterion.",
+	].join("\n");
+}
+
+function recommendationOptions(
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+): string[] {
+	const plannedOptions = uniqueValues(
+		(input.plan.comparedEntities ?? []).map(normalizeText).filter(Boolean),
+	);
+	if (plannedOptions.length > 0) return plannedOptions;
+	const evidenceOptions = uniqueValues(
+		(input.evidenceNotes ?? [])
+			.map((note) => normalizeText(note.comparedEntity ?? ""))
+			.filter(Boolean),
+	);
+	if (evidenceOptions.length > 0) return evidenceOptions;
+	return keyFindings.slice(0, 3).map((finding, index) => {
+		const candidate = normalizeText(
+			finding.text.split(/\s+(?:has|is|offers|provides)\s+/i)[0] ?? "",
+		);
+		return candidate && candidate.length < 80
+			? candidate
+			: `Option ${index + 1}`;
+	});
+}
+
+function recommendationCriteria(
+	input: WriteResearchReportInput,
+	keyFindings: StructuredResearchReportTextBlock[],
+): string[] {
+	const plannedCriteria = uniqueValues(
+		(input.plan.comparisonAxes ?? []).map(normalizeText).filter(Boolean),
+	);
+	if (plannedCriteria.length > 0) return plannedCriteria;
+	const evidenceCriteria = uniqueValues(
+		(input.evidenceNotes ?? [])
+			.map((note) => normalizeText(note.comparisonAxis ?? ""))
+			.filter(Boolean),
+	);
+	if (evidenceCriteria.length > 0) return evidenceCriteria;
+	return keyFindings
+		.map((finding) =>
+			normalizeText(finding.text.split(/ because | with | and /i)[0] ?? ""),
+		)
+		.filter(Boolean)
+		.slice(0, 3);
+}
+
+function findTextForEntity(
+	entity: string,
+	keyFindings: StructuredResearchReportTextBlock[],
+	evidenceNotes?: DeepResearchEvidenceNote[],
+): string | null {
+	const normalizedEntity = normalizeComparisonKey(entity);
+	const note = (evidenceNotes ?? []).find(
+		(item) =>
+			normalizeComparisonKey(item.comparedEntity ?? "") === normalizedEntity,
+	);
+	if (!note) {
+		return (
+			keyFindings.find((finding) =>
+				normalizeComparisonKey(finding.text).includes(normalizedEntity),
+			)?.text ?? null
+		);
+	}
+	return (
+		keyFindings.find(
+			(finding) =>
+				finding.evidenceLinkIds.length > 0 && finding.text === note.findingText,
+		)?.text ?? note.findingText
+	);
+}
+
+function findRiskTextForEntity(
+	entity: string,
+	keyFindings: StructuredResearchReportTextBlock[],
+	evidenceNotes?: DeepResearchEvidenceNote[],
+): string | null {
+	const normalizedEntity = normalizeComparisonKey(entity);
+	const riskNote = (evidenceNotes ?? []).find((note) => {
+		const axis = normalizeComparisonKey(note.comparisonAxis ?? "");
+		return (
+			normalizeComparisonKey(note.comparedEntity ?? "") === normalizedEntity &&
+			(axis.includes("risk") ||
+				axis.includes("compliance") ||
+				axis.includes("limit"))
+		);
+	});
+	if (riskNote) return riskNote.findingText;
+	return (
+		keyFindings.find((finding) => {
+			const text = normalizeComparisonKey(finding.text);
+			return (
+				text.includes(normalizedEntity) &&
+				(text.includes("risk") ||
+					text.includes("weaker") ||
+					text.includes("limited") ||
+					text.includes("incomplete"))
+			);
+		})?.text ?? null
+	);
+}
+
+function findTextForAxis(
+	axis: string,
+	keyFindings: StructuredResearchReportTextBlock[],
+	evidenceNotes?: DeepResearchEvidenceNote[],
+): string | null {
+	const normalizedAxis = normalizeComparisonKey(axis);
+	const note = (evidenceNotes ?? []).find(
+		(item) =>
+			normalizeComparisonKey(item.comparisonAxis ?? "") === normalizedAxis,
+	);
+	if (note) return note.findingText;
+	return (
+		keyFindings.find((finding) =>
+			normalizeComparisonKey(finding.text).includes(normalizedAxis),
+		)?.text ?? null
+	);
+}
+
+function isMatrixComparisonSection(
+	plan: ResearchPlan,
+	sectionIndex: number,
+): boolean {
+	return (
+		plan.reportIntent === "comparison" &&
+		sectionIndex === 0 &&
+		Boolean(plan.comparedEntities?.length) &&
+		Boolean(plan.comparisonAxes?.length)
+	);
+}
+
+function buildDecisionBriefComparisonMatrix(
+	input: WriteResearchReportInput,
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	const entities = uniqueValues(
+		(input.plan.comparedEntities ?? []).map(normalizeText).filter(Boolean),
+	);
+	const axes = uniqueValues(
+		(input.plan.comparisonAxes ?? []).map(normalizeText).filter(Boolean),
+	);
+	if (entities.length === 0 || axes.length === 0) {
+		return (input.synthesisClaims ?? [])
+			.filter(
+				(claim) => claim.status === "accepted" || claim.status === "limited",
+			)
+			.map((claim) => `- ${normalizeText(claim.statement)}`)
+			.filter((line) => line !== "-")
+			.join("\n");
+	}
+
+	const evidenceById = new Map(
+		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
+	);
+	const claimByEvidenceId = new Map<string, DeepResearchSynthesisClaim>();
+	for (const claim of input.synthesisClaims ?? []) {
+		if (claim.status !== "accepted" && claim.status !== "limited") continue;
+		for (const link of claim.evidenceLinks) {
+			if (!["support", "qualification"].includes(link.relation)) continue;
+			claimByEvidenceId.set(link.evidenceNoteId, claim);
+		}
+	}
+
+	const usedCues = new Set<EvidenceConfidenceCueKind>();
+	const rows = axes.map((axis) => {
+		const cells = entities.map((entity) => {
+			const note = findComparisonEvidenceNote(evidenceById, entity, axis);
+			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
+			const cell = formatComparisonEvidenceCell(
+				claim ? note : null,
+				claim,
+				labels.notEstablished,
+			);
+			if (cell.cue) usedCues.add(cell.cue);
+			return cell.text;
+		});
+		const filledCellCount = cells.filter(
+			(cell) => cell !== labels.notEstablished,
+		).length;
+		return `| ${escapeMarkdownTableCell(axis)} | ${cells
+			.map(escapeMarkdownTableCell)
+			.join(" | ")} | ${escapeMarkdownTableCell(
+			labels.decisionMeaningBody(axis, filledCellCount),
+		)} |`;
+	});
+
+	const legend = renderConfidenceCueLegend(usedCues, researchLanguage);
+	return [
+		`| Axis | ${entities.map(escapeMarkdownTableCell).join(" | ")} | ${labels.decisionMeaning} |`,
+		`| --- | ${entities.map(() => "---").join(" | ")} | --- |`,
+		...rows,
+		...(legend ? ["", legend] : []),
+	].join("\n");
+}
+
+function findComparisonEvidenceNote(
+	evidenceById: Map<string, DeepResearchEvidenceNote>,
+	entity: string,
+	axis: string,
+): DeepResearchEvidenceNote | null {
+	const normalizedEntity = normalizeComparisonKey(entity);
+	const normalizedAxis = normalizeComparisonKey(axis);
+	for (const note of evidenceById.values()) {
+		if (
+			normalizeComparisonKey(note.comparedEntity ?? "") === normalizedEntity &&
+			normalizeComparisonKey(note.comparisonAxis ?? "") === normalizedAxis
+		) {
+			return note;
+		}
+	}
+	return null;
+}
+
+function formatComparisonEvidenceCell(
+	note: DeepResearchEvidenceNote | null,
+	claim: DeepResearchSynthesisClaim | undefined,
+	notEstablishedLabel: string,
+): ComparisonEvidenceCell {
+	if (!note) {
+		return { text: notEstablishedLabel, cue: null };
+	}
+	const text = normalizeText(claim?.statement ?? note.findingText);
+	if (!text) {
+		return { text: notEstablishedLabel, cue: null };
+	}
+	const cue = selectEvidenceConfidenceCue(note, claim);
+	const cueLabel = cue ? confidenceCueLabel(cue) : "";
+	return {
+		text: cueLabel ? `${cueLabel} ${text}` : text,
+		cue,
+	};
+}
+
+function selectEvidenceConfidenceCue(
+	note: DeepResearchEvidenceNote,
+	claim: DeepResearchSynthesisClaim | undefined,
+): EvidenceConfidenceCueKind | null {
+	const signals = note.sourceQualitySignals;
+	const axis = normalizeComparisonKey(note.comparisonAxis ?? "");
+	const finding = normalizeComparisonKey(note.findingText);
+	const isPriceLike =
+		claim?.claimType === "price_availability" ||
+		axis.includes("price") ||
+		finding.includes("price") ||
+		finding.includes("eur") ||
+		finding.includes("usd") ||
+		finding.includes("listed");
+	if (
+		isPriceLike &&
+		(signals?.freshness === "dated" || signals?.freshness === "stale")
+	) {
+		return "dated_price";
+	}
+	if (
+		signals?.sourceType === "forum" ||
+		signals?.independence === "community" ||
+		signals?.directness === "anecdotal"
+	) {
+		return "owner_report";
+	}
+	if (
+		(signals?.sourceType === "official_vendor" ||
+			signals?.sourceType === "official_government") &&
+		signals.independence === "primary" &&
+		signals.directness === "direct"
+	) {
+		return "official_spec";
+	}
+	if (
+		signals?.sourceType === "vendor_marketing" ||
+		signals?.independence === "affiliated"
+	) {
+		return "vendor_claim";
+	}
+	return null;
+}
+
+function confidenceCueLabel(cue: EvidenceConfidenceCueKind): string {
+	const labels: Record<EvidenceConfidenceCueKind, string> = {
+		official_spec: "**Official spec**",
+		vendor_claim: "**Vendor claim**",
+		dated_price: "**Dated price**",
+		owner_report: "**Owner report**",
+	};
+	return labels[cue];
+}
+
+function renderConfidenceCueLegend(
+	usedCues: Set<EvidenceConfidenceCueKind>,
+	researchLanguage: ResearchLanguage,
+): string {
+	if (usedCues.size === 0) return "";
+	const labels = reportLabels[researchLanguage];
+	const orderedCues: EvidenceConfidenceCueKind[] = [
+		"official_spec",
+		"vendor_claim",
+		"dated_price",
+		"owner_report",
+	];
+	const descriptions = orderedCues
+		.filter((cue) => usedCues.has(cue))
+		.map((cue) => labels.confidenceCueDescriptions[cue]);
+	return `${labels.confidenceCues}: ${descriptions.join("; ")}.`;
+}
+
+function buildDecisionImplicationsBody(
+	plan: ResearchPlan,
+	evidenceNotes: DeepResearchEvidenceNote[],
+	researchLanguage: ResearchLanguage,
+): string {
+	const labels = reportLabels[researchLanguage];
+	const coveredAxes = uniqueValues(
+		evidenceNotes
+			.map((note) => normalizeText(note.comparisonAxis ?? ""))
+			.filter(Boolean),
+	);
+	const knownCoverage =
+		coveredAxes.length > 0
+			? coveredAxes.join("; ")
+			: (plan.comparisonAxes ?? []).join("; ");
+	return [
+		labels.recommendationsIntro,
+		`Use the matrix to compare trade-offs by axis instead of treating every evidence note as equal.`,
+		knownCoverage
+			? `The most decision-relevant caveats are concentrated around: ${knownCoverage}.`
+			: "Treat missing cells as evidence gaps, not proof that an option lacks the attribute.",
+		"Give more weight to current primary specifications than to dated prices or owner-reported experience when those cues change interpretation.",
+	].join("\n");
+}
+
+function normalizeComparisonKey(value: string): string {
+	return normalizeText(value)
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
 }
 
 function sectionHeadingsForIntent(
@@ -824,7 +1738,9 @@ function sectionHeadingsForIntent(
 	return reportIntentSectionHeadings[researchLanguage][intent];
 }
 
-function validateStructuredResearchReport(report: StructuredResearchReport): void {
+function validateStructuredResearchReport(
+	report: StructuredResearchReport,
+): void {
 	const missing: string[] = [];
 	if (!normalizeText(report.core.title)) missing.push("title");
 	if (!normalizeText(report.core.scope)) missing.push("scope");
@@ -903,31 +1819,103 @@ function renderEvidenceLimitationMemoMarkdown(input: {
 	researchLanguage: ResearchLanguage;
 }): string {
 	const labels = evidenceLimitationMemoLabels[input.researchLanguage];
-	const reportLedgerLabel =
-		reportLabels[input.researchLanguage].sourceLedgerSnapshot;
+	const limitationReasonLines = renderEvidenceLimitationReasonLines(
+		input.limitations,
+		input.researchLanguage,
+	);
 	return [
 		`# ${input.title}`,
 		"",
 		`## ${labels.reviewedScope}`,
-		`- ${labels.discoveredSources}: ${input.reviewedScope.discoveredCount}`,
-		`- ${labels.reviewedSources}: ${input.reviewedScope.reviewedCount}`,
-		`- ${labels.topicRelevantReviewedSources}: ${input.reviewedScope.topicRelevantCount}`,
-		`- ${labels.rejectedOrOffTopicSources}: ${input.reviewedScope.rejectedOrOffTopicCount}`,
+		`| ${labels.scopeItem} | ${labels.count} |`,
+		"| --- | ---: |",
+		`| ${labels.discoveredSources} | ${input.reviewedScope.discoveredCount} |`,
+		`| ${labels.reviewedSources} | ${input.reviewedScope.reviewedCount} |`,
+		`| ${labels.topicRelevantReviewedSources} | ${input.reviewedScope.topicRelevantCount} |`,
+		`| ${labels.rejectedOrOffTopicSources} | ${input.reviewedScope.rejectedOrOffTopicCount} |`,
 		"",
 		`## ${labels.groundedLimitationReasons}`,
-		...input.limitations.map((limitation) => `- ${limitation}`),
-		"",
-		`## ${labels.nextResearchDirection}`,
-		input.nextResearchDirection,
+		...limitationReasonLines,
 		"",
 		`## ${labels.recoveryActions}`,
+		`**${labels.nextResearchDirection}:** ${input.nextResearchDirection}`,
+		"",
 		...input.recoveryActions.map(
 			(action) => `- **${action.label}**: ${action.description}`,
 		),
 		"",
-		`## ${reportLedgerLabel}`,
+		`## ${labels.sourceLedgerDetailAppendix}`,
 		input.sourceLedgerSnapshot,
 	].join("\n");
+}
+
+function renderEvidenceLimitationReasonLines(
+	limitations: string[],
+	researchLanguage: ResearchLanguage,
+): string[] {
+	const labels = evidenceLimitationMemoLabels[researchLanguage];
+	const groups = new Map<EvidenceLimitationMemoReasonGroup, string[]>(
+		(
+			[
+				"source_coverage",
+				"evidence_quality",
+				"scope_fit",
+				"other",
+			] satisfies EvidenceLimitationMemoReasonGroup[]
+		).map((group) => [group, []]),
+	);
+	const visibleLimitations = limitations.slice(
+		0,
+		MAX_EVIDENCE_LIMITATION_MEMO_REASONS,
+	);
+
+	for (const limitation of visibleLimitations) {
+		groups.get(classifyEvidenceLimitationReason(limitation))?.push(limitation);
+	}
+
+	const lines: string[] = [];
+	for (const [group, groupLimitations] of groups) {
+		if (groupLimitations.length === 0) continue;
+		if (lines.length > 0) lines.push("");
+		lines.push(`### ${labels.limitationReasonGroups[group]}`);
+		lines.push(...groupLimitations.map((limitation) => `- ${limitation}`));
+	}
+
+	const hiddenCount = limitations.length - visibleLimitations.length;
+	if (hiddenCount > 0) {
+		lines.push("");
+		lines.push(`_${labels.additionalLimitationReasons(hiddenCount)}_`);
+	}
+
+	return lines;
+}
+
+function classifyEvidenceLimitationReason(
+	limitation: string,
+): EvidenceLimitationMemoReasonGroup {
+	const normalized = normalizeFindingForReadabilityCheck(limitation);
+	if (
+		/\b(off topic|rejected|unrelated|scope|hatokor|elutasitott|teman kivuli)\b/.test(
+			normalized,
+		)
+	) {
+		return "scope_fit";
+	}
+	if (
+		/\b(official|quality|secondary|verify|verified|missing|current|confidence|primary|hivatalos|minoseg|ellenoriz|hiany|elsodleges)\b/.test(
+			normalized,
+		)
+	) {
+		return "evidence_quality";
+	}
+	if (
+		/\b(source|sources|reviewed|topic relevant|coverage|answer|forras|attekintett|lefedettseg)\b/.test(
+			normalized,
+		)
+	) {
+		return "source_coverage";
+	}
+	return "other";
 }
 
 function buildCitedSources(
@@ -975,12 +1963,7 @@ function buildCitedSourcesFromStructuredReport(
 	report: StructuredResearchReport,
 	sources: ResearchReportSource[],
 ): CitedResearchReportSource[] {
-	const citedSourceIds = uniqueValues([
-		...report.core.executiveSummary.sourceIds,
-		...report.core.keyFindings.flatMap((finding) => finding.sourceIds),
-		...report.core.limitations.flatMap((limitation) => limitation.sourceIds),
-		...report.sections.flatMap((section) => section.sourceIds),
-	]);
+	const citedSourceIds = collectStructuredReportSourceIds(report);
 	const sourcesByReviewedId = new Map(
 		sources
 			.filter((source) => source.reviewedSourceId)
@@ -990,7 +1973,8 @@ function buildCitedSourcesFromStructuredReport(
 	const citedSources: CitedResearchReportSource[] = [];
 	const seen = new Set<string>();
 	for (const sourceId of citedSourceIds) {
-		const source = sourcesByReviewedId.get(sourceId) ?? sourcesById.get(sourceId);
+		const source =
+			sourcesByReviewedId.get(sourceId) ?? sourcesById.get(sourceId);
 		if (!source || seen.has(source.id)) continue;
 		seen.add(source.id);
 		citedSources.push({
@@ -1155,9 +2139,10 @@ function renderComparisonTable(
 	const labels = reportLabels[researchLanguage];
 	const comparisonScope = buildComparisonScopeLines(plan, researchLanguage);
 	if (keyFindings.length === 0) {
-		return [...comparisonScope, ...renderBullets(keyFindings, researchLanguage)].join(
-			"\n",
-		);
+		return [
+			...comparisonScope,
+			...renderBullets(keyFindings, researchLanguage),
+		].join("\n");
 	}
 
 	return [
@@ -1180,7 +2165,9 @@ function buildComparisonScopeLines(
 	const labels = reportLabels[researchLanguage];
 	const lines: string[] = [];
 	if (plan.comparedEntities?.length) {
-		lines.push(`${labels.comparedEntities}: ${plan.comparedEntities.join("; ")}`);
+		lines.push(
+			`${labels.comparedEntities}: ${plan.comparedEntities.join("; ")}`,
+		);
 	}
 	if (plan.comparisonAxes?.length) {
 		lines.push(`${labels.comparisonAxes}: ${plan.comparisonAxes.join("; ")}`);
@@ -1236,97 +2223,188 @@ function formatStructuredTextBlockWithCitations(
 	const citationNumbers = block.sourceIds
 		.map((sourceId) =>
 			citedSources.find(
-				(source) => source.id === sourceId || source.reviewedSourceId === sourceId,
+				(source) =>
+					source.id === sourceId || source.reviewedSourceId === sourceId,
 			),
 		)
 		.filter((source): source is CitedResearchReportSource => Boolean(source))
 		.map((source) => `[${source.citationNumber}]`);
 	const citationSuffix =
-		citationNumbers.length > 0 ? ` ${uniqueValues(citationNumbers).join(" ")}` : "";
+		citationNumbers.length > 0
+			? ` ${uniqueValues(citationNumbers).join(" ")}`
+			: "";
 	return `${block.text}${citationSuffix}`;
 }
 
 function buildStructuredReportSectionsForMarkdown(
 	report: StructuredResearchReport,
 	citedSources: CitedResearchReportSource[],
-	researchLanguage: ResearchLanguage,
 ): ResearchReportSection[] {
-	const labels = reportLabels[researchLanguage];
-	return [
-		{
-			heading: labels.methodologySourceBasis,
-			body: report.core.methodologySourceBasis,
-		},
-		...report.sections.map((section) => ({
-			heading: section.heading,
-			body: section.body
-				.split("\n")
-				.map((line) => {
-					const matchingFinding = report.core.keyFindings.find((finding) =>
-						line.includes(finding.text),
+	return report.sections.map((section) => ({
+		heading: section.heading,
+		body: section.body
+			.split("\n")
+			.map((line) => {
+				let renderedLine = line;
+				for (const finding of report.core.keyFindings) {
+					if (!renderedLine.includes(finding.text)) continue;
+					renderedLine = renderedLine.replace(
+						finding.text,
+						formatStructuredTextBlockWithCitations(finding, citedSources),
 					);
-					if (!matchingFinding) return line;
-					return line.replace(
-						matchingFinding.text,
-						formatStructuredTextBlockWithCitations(
-							matchingFinding,
-							citedSources,
-						),
-					);
-				})
-				.join("\n"),
-		})),
-	];
+				}
+				return renderedLine;
+			})
+			.join("\n"),
+	}));
 }
 
-function renderReportMarkdown(input: {
-	title: string;
+function buildResearchReportBlocks(input: {
 	executiveSummary: string;
 	keyFindings: string[];
 	sections: ResearchReportSection[];
 	sources: CitedResearchReportSource[];
 	limitations: string[];
 	sourceLedgerSnapshot: string;
+	structuredReport: StructuredResearchReport;
 	researchLanguage: ResearchLanguage;
-}): string {
+	useAnswerFirstLayout: boolean;
+}): StructuredResearchReportBlock[] {
 	const labels = reportLabels[input.researchLanguage];
-	const lines = [
-		`# ${input.title}`,
-		"",
-		`## ${labels.executiveSummary}`,
-		input.executiveSummary,
-		"",
-		`## ${labels.keyFindings}`,
-		...renderBullets(input.keyFindings, input.researchLanguage),
-		"",
+	const appendixHeading = (heading: string) =>
+		input.useAnswerFirstLayout ? labels.appendix(heading) : heading;
+	const summaryHeading = input.useAnswerFirstLayout
+		? labels.answer
+		: labels.executiveSummary;
+	const reportSourceIds = collectStructuredReportSourceIds(
+		input.structuredReport,
+	);
+	const blocks: StructuredResearchReportBlock[] = [
+		{
+			kind: "summary",
+			heading: summaryHeading,
+			markdown: input.executiveSummary,
+			...input.structuredReport.core.executiveSummary,
+		},
+		{
+			kind: "findings",
+			heading: labels.keyFindings,
+			markdown: renderBullets(input.keyFindings, input.researchLanguage).join(
+				"\n",
+			),
+			claimIds: uniqueValues(
+				input.structuredReport.core.keyFindings.flatMap(
+					(finding) => finding.claimIds,
+				),
+			),
+			evidenceLinkIds: uniqueValues(
+				input.structuredReport.core.keyFindings.flatMap(
+					(finding) => finding.evidenceLinkIds,
+				),
+			),
+			sourceIds: uniqueValues(
+				input.structuredReport.core.keyFindings.flatMap(
+					(finding) => finding.sourceIds,
+				),
+			),
+		},
+		...input.sections.map((section, index) => {
+			const structuredSection = input.structuredReport.sections[index];
+			return {
+				kind: "section" as const,
+				heading: section.heading,
+				markdown: section.body,
+				claimIds: structuredSection?.claimIds ?? [],
+				evidenceLinkIds: structuredSection?.evidenceLinkIds ?? [],
+				sourceIds: structuredSection?.sourceIds ?? [],
+			};
+		}),
 	];
 
-	for (const section of input.sections) {
-		lines.push(`## ${section.heading}`, section.body, "");
-	}
-
 	if (input.limitations.length > 0) {
-		lines.push(
-			`## ${labels.reportLimitations}`,
-			...renderBullets(input.limitations, input.researchLanguage),
-			"",
-		);
+		blocks.push({
+			kind: "limitations",
+			heading: labels.reportLimitations,
+			markdown: renderBullets(input.limitations, input.researchLanguage).join(
+				"\n",
+			),
+			claimIds: uniqueValues(
+				input.structuredReport.core.limitations.flatMap(
+					(limitation) => limitation.claimIds,
+				),
+			),
+			evidenceLinkIds: uniqueValues(
+				input.structuredReport.core.limitations.flatMap(
+					(limitation) => limitation.evidenceLinkIds,
+				),
+			),
+			sourceIds: uniqueValues(
+				input.structuredReport.core.limitations.flatMap(
+					(limitation) => limitation.sourceIds,
+				),
+			),
+		});
 	}
 
-	lines.push(
-		`## ${labels.sourceLedgerSnapshot}`,
-		input.sourceLedgerSnapshot,
+	if (input.useAnswerFirstLayout) {
+		blocks.push({
+			kind: "appendix",
+			heading: appendixHeading(labels.methodologySourceBasis),
+			markdown: input.structuredReport.core.methodologySourceBasis,
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: [],
+		});
+	}
+
+	blocks.push({
+		kind: "appendix",
+		heading: appendixHeading(labels.sourceLedgerSnapshot),
+		markdown: input.sourceLedgerSnapshot,
+		claimIds: [],
+		evidenceLinkIds: [],
+		sourceIds: input.sourceLedgerSnapshot ? reportSourceIds : [],
+	});
+
+	blocks.push({
+		kind: "appendix",
+		heading: appendixHeading(labels.sources),
+		markdown: input.sources
+			.map(
+				(source) =>
+					`[${source.citationNumber}] ${source.title} - ${source.url}`,
+			)
+			.join("\n"),
+		claimIds: [],
+		evidenceLinkIds: [],
+		sourceIds: input.sources.map((source) => source.id),
+	});
+
+	return blocks;
+}
+
+function collectStructuredReportSourceIds(
+	report: StructuredResearchReport,
+): string[] {
+	return uniqueValues([
+		...report.core.executiveSummary.sourceIds,
+		...report.core.keyFindings.flatMap((finding) => finding.sourceIds),
+		...report.core.limitations.flatMap((limitation) => limitation.sourceIds),
+		...report.sections.flatMap((section) => section.sourceIds),
+	]);
+}
+
+function renderReportMarkdownFromBlocks(
+	title: string,
+	blocks: StructuredResearchReportBlock[],
+): string {
+	return [
+		`# ${title}`,
 		"",
-	);
-
-	lines.push(
-		`## ${labels.sources}`,
-		...input.sources.map(
-			(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`,
-		),
-	);
-
-	return lines.join("\n");
+		...blocks.flatMap((block) => [`## ${block.heading}`, block.markdown, ""]),
+	]
+		.join("\n")
+		.trimEnd();
 }
 
 function renderBullets(

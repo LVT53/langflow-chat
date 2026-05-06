@@ -281,7 +281,10 @@ describe("audited Deep Research report completion", () => {
 			sourceId: lateReviewedSource.id,
 			reviewedNote: "This row was added after the report was completed.",
 		});
-		const [reopened] = await listConversationDeepResearchJobs("user-1", "conv-1");
+		const [reopened] = await listConversationDeepResearchJobs(
+			"user-1",
+			"conv-1",
+		);
 
 		expect(reopened.sourceCounts).toEqual({
 			discovered: 1,
@@ -532,13 +535,15 @@ describe("audited Deep Research report completion", () => {
 			const actual = await importOriginal<typeof import("./llm-steps")>();
 			return {
 				...actual,
-				buildClaimGraphCitationReviewerWithLlm: async () => ({ claim }) => ({
-					claimId: claim.id,
-					verdict: "supported",
-					evidenceNoteIds: [supportedEvidenceNoteId],
-					reason:
-						"The configured citation-audit model judged the linked Evidence Note sufficient.",
-				}),
+				buildClaimGraphCitationReviewerWithLlm:
+					async () =>
+					({ claim }) => ({
+						claimId: claim.id,
+						verdict: "supported",
+						evidenceNoteIds: [supportedEvidenceNoteId],
+						reason:
+							"The configured citation-audit model judged the linked Evidence Note sufficient.",
+					}),
 			};
 		});
 		const {
@@ -679,12 +684,14 @@ describe("audited Deep Research report completion", () => {
 			const actual = await importOriginal<typeof import("./llm-steps")>();
 			return {
 				...actual,
-				buildClaimGraphCitationReviewerWithLlm: async () => ({ claim }) => ({
-					claimId: claim.id,
-					verdict: "needs_repair",
-					evidenceNoteIds: [repairEvidenceNoteId],
-					reason: "The configured citation-audit model requested repair.",
-				}),
+				buildClaimGraphCitationReviewerWithLlm:
+					async () =>
+					({ claim }) => ({
+						claimId: claim.id,
+						verdict: "needs_repair",
+						evidenceNoteIds: [repairEvidenceNoteId],
+						reason: "The configured citation-audit model requested repair.",
+					}),
 			};
 		});
 		const {
@@ -801,10 +808,8 @@ describe("audited Deep Research report completion", () => {
 		const { saveDeepResearchSynthesisClaims } = await import(
 			"./synthesis-claims"
 		);
-		const {
-			markResearchSourceReviewed,
-			saveDiscoveredResearchSource,
-		} = await import("./sources");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
 		const { getArtifactForUser } = await import(
 			"$lib/server/services/knowledge/store"
 		);
@@ -1389,7 +1394,8 @@ describe("audited Deep Research report completion", () => {
 			reportArtifactId: expect.any(String),
 			completedAt: new Date("2026-05-05T10:20:00.000Z").getTime(),
 			evidenceLimitationMemo: {
-				title: "Evidence Limitation Memo: Assess unverified battery recycling claims",
+				title:
+					"Evidence Limitation Memo: Assess unverified battery recycling claims",
 				reviewedScope: {
 					discoveredCount: 1,
 					reviewedCount: 0,
@@ -1465,18 +1471,26 @@ describe("audited Deep Research report completion", () => {
 		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
 		expect(memoArtifact?.contentText).not.toContain("# Research Report:");
 		expect(memoArtifact?.contentText).toContain("## Reviewed Scope");
-		expect(memoArtifact?.contentText).toContain("- Discovered sources: 1");
-		expect(memoArtifact?.contentText).toContain("- Reviewed sources: 0");
+		expect(memoArtifact?.contentText).toContain("| Scope item | Count |");
+		expect(memoArtifact?.contentText).toContain("| Discovered sources | 1 |");
+		expect(memoArtifact?.contentText).toContain("| Reviewed sources | 0 |");
 		expect(memoArtifact?.contentText).toContain(
-			"- Topic-relevant reviewed sources: 0",
+			"| Topic-relevant reviewed sources | 0 |",
 		);
-		expect(memoArtifact?.contentText).toContain("## Grounded Limitation Reasons");
-		expect(memoArtifact?.contentText).toContain("## Next Research Direction");
+		expect(memoArtifact?.contentText).toContain(
+			"## Grounded Limitation Reasons",
+		);
+		expect(memoArtifact?.contentText).toContain("## Recovery Actions");
+		expect(memoArtifact?.contentText).toContain(
+			"## Appendix: Source Ledger Detail",
+		);
 		expect(conversation).toEqual({
 			status: "open",
 			sealedAt: null,
 		});
-		expect(generatedArtifacts).toEqual([{ id: completedMemo?.reportArtifactId }]);
+		expect(generatedArtifacts).toEqual([
+			{ id: completedMemo?.reportArtifactId },
+		]);
 		expect(sources).toEqual([
 			expect.objectContaining({
 				id: source.id,

@@ -310,10 +310,8 @@ describe("real Deep Research workflow stepper", () => {
 			})
 			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
 		const primaryQuestion = singlePassPlan.keyQuestions[0];
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
 		const {
 			upsertResearchPassCheckpoint,
 			completeResearchPassCheckpoint,
@@ -859,8 +857,8 @@ describe("real Deep Research workflow stepper", () => {
 			),
 		);
 		expect(conversation).toEqual({
-				status: "open",
-				sealedAt: null,
+			status: "open",
+			sealedAt: null,
 		});
 		expect(checkpoints).toEqual([
 			expect.objectContaining({
@@ -1088,10 +1086,8 @@ describe("real Deep Research workflow stepper", () => {
 	it("completes with report limitations when source review budget is exhausted after reviewed evidence", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { getArtifactForUser } = await import(
@@ -1323,7 +1319,12 @@ describe("real Deep Research workflow stepper", () => {
 		});
 		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
 		expect(memoArtifact?.contentText).toContain("## Reviewed Scope");
-		expect(memoArtifact?.contentText).toContain("- Reviewed sources: 0");
+		expect(memoArtifact?.contentText).toContain("| Scope item | Count |");
+		expect(memoArtifact?.contentText).toContain("| Reviewed sources | 0 |");
+		expect(memoArtifact?.contentText).toContain("## Recovery Actions");
+		expect(memoArtifact?.contentText).toContain(
+			"## Appendix: Source Ledger Detail",
+		);
 		expect(timeline).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -1341,10 +1342,8 @@ describe("real Deep Research workflow stepper", () => {
 		const approved = await createApprovedResearchJob();
 		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
 		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
 			await import("./tasks");
 		const { listResearchTimelineEvents } = await import("./timeline");
@@ -1378,7 +1377,8 @@ describe("real Deep Research workflow stepper", () => {
 			gaps: [
 				{
 					id: "gap-practical-implications",
-					keyQuestion: "What practical implications should the report call out?",
+					keyQuestion:
+						"What practical implications should the report call out?",
 					summary:
 						"Explain the operational implication of source provenance requirements.",
 					severity: "critical",
@@ -1542,10 +1542,8 @@ describe("real Deep Research workflow stepper", () => {
 	it("claims no more Research Tasks than the task-stage runtime cap", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");
-		const {
-			createResearchTasksFromCoverageGaps,
-			listResearchTasks,
-		} = await import("./tasks");
+		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
+			await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		await createResearchTasksFromCoverageGaps({
 			userId: "user-1",
@@ -1681,7 +1679,8 @@ describe("real Deep Research workflow stepper", () => {
 							],
 							reportLimitations: [
 								{
-									limitation: "Runtime expired before enough evidence was reviewed.",
+									limitation:
+										"Runtime expired before enough evidence was reviewed.",
 									severity: "major",
 								},
 							],
@@ -1692,7 +1691,9 @@ describe("real Deep Research workflow stepper", () => {
 								messageParams: {},
 								sourceCounts: { discovered: 0, reviewed: 0, cited: 0 },
 								assumptions: [],
-								warnings: ["Runtime expired before enough evidence was reviewed."],
+								warnings: [
+									"Runtime expired before enough evidence was reviewed.",
+								],
 								summary: "Runtime expired before enough evidence was reviewed.",
 							},
 						}),
@@ -1717,13 +1718,13 @@ describe("real Deep Research workflow stepper", () => {
 				},
 			});
 			expect(createResearchTasksFromCoverageGaps).not.toHaveBeenCalled();
-			expect(completeDeepResearchJobWithEvidenceLimitationMemo).toHaveBeenCalledWith(
+			expect(
+				completeDeepResearchJobWithEvidenceLimitationMemo,
+			).toHaveBeenCalledWith(
 				expect.objectContaining({
 					userId: "user-1",
 					jobId: approved.id,
-					limitations: [
-						"Runtime expired before enough evidence was reviewed.",
-					],
+					limitations: ["Runtime expired before enough evidence was reviewed."],
 				}),
 			);
 		} finally {
@@ -1739,10 +1740,8 @@ describe("real Deep Research workflow stepper", () => {
 		const approved = await createApprovedResearchJob();
 		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
 		const {
 			claimResearchTasks,
 			createResearchTasksFromCoverageGaps,
@@ -1777,7 +1776,8 @@ describe("real Deep Research workflow stepper", () => {
 				{
 					id: "gap-task-claim-crash",
 					keyQuestion: "What practical implication should the report call out?",
-					summary: "Explain operational implications of provenance requirements.",
+					summary:
+						"Explain operational implications of provenance requirements.",
 					severity: "critical",
 				},
 			],
@@ -1848,10 +1848,8 @@ describe("real Deep Research workflow stepper", () => {
 		await seedCompletedMeaningfulPass(approved.id, 1);
 		await seedCompletedMeaningfulPass(approved.id, 2);
 		const { db } = await import("$lib/server/db");
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 
 		const source = await saveDiscoveredResearchSource({
@@ -2097,14 +2095,10 @@ describe("real Deep Research workflow stepper", () => {
 		const approved = await createApprovedResearchJob();
 		await seedCompletedMeaningfulPass(approved.id, 1);
 		const { db } = await import("$lib/server/db");
-		const {
-			saveDiscoveredResearchSource,
-			markResearchSourceReviewed,
-		} = await import("./sources");
-		const {
-			createResearchTasksFromCoverageGaps,
-			recordResearchTaskFailure,
-		} = await import("./tasks");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
+		const { createResearchTasksFromCoverageGaps, recordResearchTaskFailure } =
+			await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { getArtifactForUser } = await import(
 			"$lib/server/services/knowledge/store"

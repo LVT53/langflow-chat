@@ -592,13 +592,69 @@ _Avoid_: assistant answer, generated file, summary, chat response
 A **Research Report** organized for scanning and decision-making, with a short title, answer-first executive summary, capped key findings, plan-shaped analysis, visible limitations, and a cited source list.
 _Avoid_: source dump, activity log, citation audit transcript, raw findings export
 
+**Decision Brief**:
+The default reading shape of a **Readable Research Report**: an answer-first, scan-friendly report that foregrounds the practical conclusion, recommendation, or comparison outcome before audit detail.
+_Avoid_: transcript, exhaustive research log, source ledger as main body
+
 **Structured Research Report**:
 A machine-checkable report model that AlfyAI renders into Markdown or another user-facing format.
 _Avoid_: markdown blob, prose-only draft, raw report text
 
+**Structured Report Block**:
+An app-owned, typed part of a **Structured Research Report**, such as a summary, finding list, matrix, rubric, timeline, evidence table, limitation, or appendix section.
+_Avoid_: raw Markdown chunk, model-owned layout instruction, untyped prose field
+
 **Report Shape Template**:
 An intent-specific structure used to assemble a **Structured Research Report** while preserving a shared readable core.
 _Avoid_: universal report skeleton, markdown theme, writer preference
+
+**Comparison Matrix**:
+The primary scan surface for a comparison-oriented **Decision Brief**, organized by **Compared Entity** and central **Comparison Axis** so the reader can compare evidence-backed differences before reading prose detail.
+_Avoid_: decorative table, prose recap table, source-note grid
+
+**Decision Meaning**:
+The comparison-matrix explanation of why a difference matters for the user's choice, use case, recommendation, or next action.
+_Avoid_: neutral restatement, citation note, hidden scoring rationale
+
+**Evidence Confidence Cue**:
+A compact user-facing phrase inside a **Decision Brief** that explains the evidence basis only when it changes interpretation, such as official spec, vendor claim, dated price observation, independent review, or owner report.
+_Avoid_: internal audit verdict, full source-quality dump, confidence decoration on every fact
+
+**Report Visual Aid**:
+A table, matrix, chart, timeline, rubric, or other structured reading aid used by a **Report Shape Template** when it improves comprehension of supported claims.
+_Avoid_: decorative chart, infographic filler, visual polish unrelated to evidence
+
+**Comparison Report Shape**:
+A **Report Shape Template** for comparing known **Compared Entities** across central **Comparison Axes**, led by an answer, a **Comparison Matrix**, decision meaning, caveats, and cited sources.
+_Avoid_: parallel prose specs, feature dump, generic analysis section
+
+**Recommendation Report Shape**:
+A **Report Shape Template** for choosing or prioritizing options, led by the recommendation, ranked options, criteria rubric, fit and risk table, and next actions.
+_Avoid_: unordered option list, unsupported ranking, advice without criteria
+
+**Investigation Report Shape**:
+A **Report Shape Template** for explaining what happened, why, or what is most plausible, led by the answer, timeline or causal map, competing explanations, confidence, and open questions.
+_Avoid_: chronology dump, single-cause overclaim, unresolved speculation as fact
+
+**Market/Product Scan Report Shape**:
+A **Report Shape Template** for surveying options, vendors, products, prices, or market signals, led by the answer, shortlist table, evaluation rubric, freshness or pricing notes, and watchouts.
+_Avoid_: search result list, catalog dump, stale availability claim
+
+**Evidence Review Report Shape**:
+A **Report Shape Template** for summarizing what evidence supports or disputes a question, led by the answer, evidence strength table, consensus or conflict map, and limitations.
+_Avoid_: annotated bibliography, source-by-source recap, hidden conflict
+
+**Evidence Limitation Memo Shape**:
+A Deep Research outcome shape for cases that cannot credibly become a **Research Report**, led by reviewed scope, grounded limitation reasons, recovery actions, and a source ledger appendix.
+_Avoid_: failed report, thin research report, apology without next action
+
+**Report Appendix**:
+The end-of-report area for durable provenance and audit detail, such as evidence basis, source ledger, audit notes, and detailed limitations that would interrupt the main **Decision Brief**.
+_Avoid_: main narrative, hidden source truth, unstructured dump
+
+**Report Callout**:
+A sparse semantic Markdown callout used to highlight the report answer, a decision-changing limitation, or an evidence-basis legend.
+_Avoid_: decorative box, every-section wrapper, visual noise
 
 **Report Intent**:
 The approved **Research Plan**'s intended report purpose, such as comparison, recommendation, investigation, market scan, product scan, or evidence limitation.
@@ -940,18 +996,34 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - A Deep Research output should be labeled a **Research Report** only when it is a **Readable Research Report**.
 - A **Readable Research Report** should be produced from a **Structured Research Report** rather than a freeform Markdown blob.
 - A **Structured Research Report** should be assembled through **Claim-Grounded Report Assembly**.
+- A **Structured Research Report** should preserve intent-specific **Structured Report Blocks** before Markdown rendering.
 - A **Structured Research Report** should use a **Report Shape Template** selected by **Report Intent**, not one universal report shape with every optional section.
 - Every **Report Shape Template** should include the **Report Core**.
 - Intent-specific sections should be added only when they help the approved **Research Plan**: comparison reports may include matrices and entity-by-axis analysis; recommendation reports may include criteria, ranked options, fit, and risks; investigation reports may include timelines, competing explanations, and confidence; market or product scans may include shortlists, evaluation rubrics, pricing, and freshness notes; evidence limitation outputs should focus on limitation reasons, searched/reviewed scope, and recovery actions.
+- Every **Report Intent** should have an upgraded Markdown reading shape with appropriate **Report Visual Aids**, not only comparison reports.
+- Initial upgraded Markdown shapes should be **Comparison Report Shape**, **Recommendation Report Shape**, **Investigation Report Shape**, **Market/Product Scan Report Shape**, **Evidence Review Report Shape**, and **Evidence Limitation Memo Shape**.
 - Default **Report Shape Templates** should be compact and answer-first: the executive summary gives the conclusion before methodology; key findings are capped; tables appear where comparison, ranking, or scan structure helps; limitations remain visible near the conclusion and again in the source basis when needed.
+- Charts in a **Readable Research Report** should be reserved for genuinely quantitative patterns such as 3+ option comparisons, ranked shortlists, time series, distributions, or scored axes.
+- Two-entity comparisons should prefer a **Comparison Matrix** over charts unless the approved **Research Plan** asks a specifically quantitative question.
 - A report-writing model may improve organization, transitions, section summaries, and prose quality, but it must not introduce new cited substance outside accepted or limited **Synthesis Claims** and their verified **Claim Evidence Links**.
+- Markdown layout for **Readable Research Reports** should be rendered deterministically by AlfyAI from **Structured Report Blocks**, not left primarily to model-prompted freeform Markdown.
 - A **Structured Research Report** should preserve report parts such as title, scope, executive summary, recommendation, comparison matrix, key findings, sections, limitations, and cited sources before rendering.
 - A **Readable Research Report** is not a dump of every reviewed source note.
 - Styling or Markdown polish cannot turn source titles, snippets, or weak per-source notes into a **Readable Research Report**.
 - When the available evidence can only support weak per-source notes rather than synthesized conclusions, Deep Research should produce an **Evidence Limitation Memo** instead of a normal **Research Report**.
+- By default, a **Readable Research Report** should read as a **Decision Brief** rather than a research transcript.
 - A **Readable Research Report** should lead with the answer, then show the strongest evidence-backed findings, then organize the body around the approved **Research Plan**.
 - Key findings in a **Readable Research Report** should be capped to a small, scannable set; additional reviewed notes belong in the **Research Workspace**, source ledger, or future appendix, not the main report body.
-- A comparison-oriented **Readable Research Report** may use tables or matrices when they make differences easier to scan.
+- Audit detail, source review detail, and full source-ledger context should remain inspectable without dominating the main **Decision Brief** reading path.
+- Source, audit, and detailed limitation material should default to a **Report Appendix** rather than inline main-body prose.
+- A **Report Appendix** should keep durable provenance visible through sections such as evidence basis, compact limitations, source ledger, and audit notes when repair, removal, or limitation materially affected the output.
+- A **Readable Research Report** may use sparse **Report Callouts** for the answer-first conclusion, decision-changing limitations, and evidence confidence legend.
+- **Report Callouts** should carry semantic reading weight and should not be used as decorative wrappers around every section.
+- A comparison-oriented **Readable Research Report** should make the **Comparison Matrix** the primary body surface when central **Compared Entities** and **Comparison Axes** are known.
+- A **Comparison Matrix** should use central **Comparison Axes** as rows and **Compared Entities** as columns, with an additional **Decision Meaning** column when the comparison is meant to support a choice or recommendation.
+- A **Comparison Matrix** should include an **Evidence Confidence Cue** inside a cell only when the evidence basis changes how the reader should interpret that cell.
+- A comparison-oriented **Decision Brief** should include a short confidence legend near the **Comparison Matrix** when it uses **Evidence Confidence Cues**.
+- Prose in a comparison-oriented **Decision Brief** should explain decision-relevant differences, trade-offs, caveats, and evidence confidence rather than restating every matrix cell.
 - Methodology and **Report Limitations** should be visible but compact.
 - A full source ledger or activity history may be attached to the **Research Report** as metadata.
 - Source review produces **Evidence Notes**; it does not produce final report conclusions.
